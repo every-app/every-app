@@ -56,7 +56,6 @@ export function AddCustomAppModal({
       name: data.name,
       description: data.description,
       appUrl: data.appUrl,
-      status: "installed",
       createdAt: now,
       updatedAt: now,
     });

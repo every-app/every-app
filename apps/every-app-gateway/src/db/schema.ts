@@ -11,9 +11,6 @@ export const userApps = sqliteTable("user_apps", {
   name: text("name").notNull(),
   description: text("description").notNull(),
   appUrl: text("app_url").notNull(),
-  status: text("status")
-    .$default(() => "installed")
-    .notNull(),
   createdAt: integer("created_at", { mode: "timestamp" })
     .$defaultFn(() => /* @__PURE__ */ new Date())
     .notNull(),

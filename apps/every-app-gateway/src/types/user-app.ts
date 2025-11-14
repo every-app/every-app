@@ -5,7 +5,6 @@ export type UserApp = {
   name: string;
   description: string;
   appUrl: string;
-  status: string;
   createdAt: Date;
   updatedAt: Date;
 };

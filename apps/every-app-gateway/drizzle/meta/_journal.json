@@ -15,6 +15,13 @@
       "when": 1762384131918,
       "tag": "0001_simple_vindicator",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1731612000000,
+      "tag": "0002_remove_status_column",
+      "breakpoints": true
     }
   ]
 }
