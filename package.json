@@ -1,9 +1,10 @@
 {
   "scripts": {
-    "types:check": "pnpm -r run types:check",
-    "format:check": "pnpm -r run format:check",
-    "format:write": "pnpm -r run format:write",
+    "types:check": "pnpm -r run types:check && for dir in apps/* templates/*; do (cd \"$dir\" && pnpm types:check); done",
+    "format:check": "pnpm -r run format:check && for dir in apps/* templates/*; do (cd \"$dir\" && pnpm format:check); done",
+    "format:write": "pnpm -r run format:write && for dir in apps/* templates/*; do (cd \"$dir\" && pnpm format:write); done",
     "ci:check": "npx concurrently --names \"formatting\",\"types\" \"pnpm run format:check\" \"pnpm run types:check\"",
-    "dev": "npx concurrently --names \"todo-app,every-app-gateway\" --prefix-colors \"blue,green\" \"cd apps/todo-app && npm run dev\" \"cd apps/every-app-gateway && npm run dev\""
+    "dev": "npx concurrently --names \"todo-app,every-app-gateway\" --prefix-colors \"blue,green\" \"cd apps/todo-app && pnpm run dev\" \"cd apps/every-app-gateway && pnpm run dev\"",
+    "install:all": "pnpm install && for dir in apps/* templates/*; do (cd \"$dir\" && pnpm install); done"
   }
 }
