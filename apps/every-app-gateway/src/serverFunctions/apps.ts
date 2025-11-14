@@ -89,7 +89,6 @@ export class AppResolver {
         where: and(
           eq(userApps.userId, userId),
           eq(userApps.appId, appId),
-          eq(userApps.status, "installed"),
         ),
       });
 
@@ -137,7 +136,6 @@ export class AppResolver {
         where: and(
           eq(userApps.userId, userId),
           eq(userApps.appUrl, origin),
-          eq(userApps.status, "installed"),
         ),
       });
 

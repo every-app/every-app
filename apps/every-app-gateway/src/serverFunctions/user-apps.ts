@@ -9,10 +9,7 @@ export const getUserApps = createServerFn()
   .middleware([authMiddleware])
   .handler(async ({ context }: { context: AuthContext }) => {
     const apps = await db.query.userApps.findMany({
-      where: and(
-        eq(userApps.userId, context.user.id),
-        eq(userApps.status, "installed"),
-      ),
+      where: eq(userApps.userId, context.user.id),
     });
 
     return { apps };
@@ -62,7 +59,6 @@ export const createUserApp = createServerFn()
           name: app.name,
           description: app.description,
           appUrl: app.appUrl,
-          status: "installed",
           createdAt: now,
           updatedAt: now,
         },
@@ -149,13 +145,9 @@ export const deleteUserApp = createServerFn()
         throw new Error("App not found or does not belong to user");
       }
 
-      // Soft delete by updating status
+      // Hard delete the app
       await db
-        .update(userApps)
-        .set({
-          status: "uninstalled",
-          updatedAt: new Date(),
-        })
+        .delete(userApps)
         .where(
           and(eq(userApps.userId, context.user.id), eq(userApps.id, app.id)),
         );
