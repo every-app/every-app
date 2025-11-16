@@ -5,5 +5,8 @@
     "format:write": "pnpm -r run format:write",
     "ci:check": "concurrently --names \"formatting\",\"types\",\"deps\" \"pnpm run format:check\" \"pnpm run types:check\" \"pnpm run deps:check\"",
     "dev": "concurrently --names \"todo-app,every-app-gateway\" --prefix-colors \"blue,green\" \"cd apps/todo-app && pnpm run dev\" \"cd apps/every-app-gateway && pnpm run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }
