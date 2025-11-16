@@ -4,7 +4,7 @@
   "description": "Every CLI - Command line tool for deploying and managing Every applications",
   "license": "MIT",
   "type": "module",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "files": [
     "dist"
   ],
@@ -17,8 +17,8 @@
     "node": ">=22"
   },
   "scripts": {
-    "types:check": "npx tsc --noEmit",
-    "prebuild": "npx tsc",
+    "types:check": "tsc --noEmit",
+    "prebuild": "tsc",
     "build": "tsup --silent",
     "build:prepublish": "pnpm install --ignore-scripts && npm run types:check && npm run build",
     "prepublishOnly": "npm run build:prepublish",

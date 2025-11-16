@@ -58,10 +58,47 @@ export const deployCommand = buildCommand({
   },
 });
 
+export const remoteD1ShellCommand = buildCommand({
+  loader: async () => {
+    const { remoteD1Shell } = await import("./remoteD1Shell");
+    return remoteD1Shell;
+  },
+  parameters: {
+    flags: {},
+    positional: {
+      kind: "array",
+      parameter: {
+        brief: "Command and arguments to run with environment variables",
+        parse: String,
+      },
+    },
+  },
+  docs: {
+    brief: "Run a command with Cloudflare D1 connection environment variables",
+    fullDescription: [
+      "Sets environment variables needed to connect to remote Cloudflare D1 and runs any command that requires D1 access.",
+      "",
+      "The command will:",
+      "  1. Get the Cloudflare account ID",
+      "  2. Look up the database ID from the database name in wrangler.jsonc",
+      "  3. Get a valid OAuth token",
+      "  4. Run the provided command with CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_DATABASE_ID, CLOUDFLARE_API_TOKEN, and MIGRATE_REMOTE set",
+      "",
+      "Common use cases:",
+      "  - Running Drizzle migrations: every app remote-d1-shell -- npx drizzle-kit migrate",
+      "  - Opening Drizzle Studio: every app remote-d1-shell -- npx drizzle-kit studio",
+      "  - Pushing schema changes: every app remote-d1-shell -- npx drizzle-kit push",
+      "",
+      "This command is useful for any operation that needs direct access to your production D1 database.",
+    ].join("\n"),
+  },
+});
+
 export const appRoutes = buildRouteMap({
   routes: {
     create: createCommand,
     deploy: deployCommand,
+    "remote-d1-shell": remoteD1ShellCommand,
   },
   docs: {
     brief: "App management commands",

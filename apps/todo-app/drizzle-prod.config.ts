@@ -1,11 +1,13 @@
 import { defineConfig } from "drizzle-kit";
-import { getLocalD1Url } from "./src/server/getLocalD1Url";
 
 export default defineConfig({
   dialect: "sqlite",
   schema: "./src/db/schema.ts",
   out: "./drizzle",
+  driver: "d1-http",
   dbCredentials: {
-    url: getLocalD1Url(),
+    accountId: process.env.CLOUDFLARE_ACCOUNT_ID!,
+    databaseId: process.env.CLOUDFLARE_DATABASE_ID!,
+    token: process.env.CLOUDFLARE_API_TOKEN!,
   },
 });

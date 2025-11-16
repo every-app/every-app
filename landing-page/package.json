@@ -8,10 +8,10 @@
     "build": "astro check && astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "deploy": "npm run build && npx wrangler pages deploy dist --project-name=every-app-landing-page",
-    "types:check": "astro sync && npx tsc --noEmit",
-    "format:check": "npx prettier --check .",
-    "format:write": "npx prettier --write ."
+    "deploy": "npm run build && wrangler pages deploy dist --project-name=every-app-landing-page",
+    "types:check": "astro sync && tsc --noEmit",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write ."
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",
