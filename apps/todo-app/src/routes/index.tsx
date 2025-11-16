@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useLocation } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useState, useMemo } from "react";
 import { Button } from "@/client/components/ui/button";
@@ -41,6 +41,7 @@ export const Route = createFileRoute("/")({
 
 function Home() {
   const isMobile = useIsMobile();
+  const location = useLocation();
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [focusedActionId, setFocusedActionId] = useState<string | null>(null);
   const [newTodoTitle, setNewTodoTitle] = useState<string>("");

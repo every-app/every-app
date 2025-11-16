@@ -2,6 +2,8 @@ node_modules
 package-lock.json
 yarn.lock
 .dev.vars
+dist/
+.wrangler
 
 .output/
 .tanstack/
