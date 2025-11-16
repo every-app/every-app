@@ -86,10 +86,7 @@ export class AppResolver {
     // First check user apps if userId is provided
     if (userId) {
       const userApp = await db.query.userApps.findFirst({
-        where: and(
-          eq(userApps.userId, userId),
-          eq(userApps.appId, appId),
-        ),
+        where: and(eq(userApps.userId, userId), eq(userApps.appId, appId)),
       });
 
       if (userApp) {
@@ -133,10 +130,7 @@ export class AppResolver {
     // First check user apps if userId is provided
     if (userId) {
       const userApp = await db.query.userApps.findFirst({
-        where: and(
-          eq(userApps.userId, userId),
-          eq(userApps.appUrl, origin),
-        ),
+        where: and(eq(userApps.userId, userId), eq(userApps.appUrl, origin)),
       });
 
       if (userApp) {

@@ -85,7 +85,7 @@ function ResetPassword() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
+    <div className="flex h-screen items-center justify-center overflow-hidden">
       <div className="card auth-card">
         <div className="card-body">
           <h2 className="card-title">Reset Password</h2>

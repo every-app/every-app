@@ -30,9 +30,9 @@ function SignIn() {
         setError(result.error.message || "Invalid email or password.");
         setLoading(false);
       } else {
-        // Invalidate and refetch the session to ensure fresh data
+        // Invalidate queries and navigate to the homepage
         await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
-        // Navigate immediately after invalidating the cache
+        await queryClient.invalidateQueries({ queryKey: ["user-apps"] });
         navigate({ to: "/" });
       }
     } catch (err) {
@@ -47,7 +47,7 @@ function SignIn() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center">
+    <div className="flex h-screen items-center justify-center overflow-hidden">
       <div className="relative w-full max-w-md">
         <img
           src="/transparent-logo.png"

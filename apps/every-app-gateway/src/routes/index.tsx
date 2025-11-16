@@ -24,25 +24,18 @@ function App() {
   >(null);
   const navigate = useNavigate();
 
-  // Use TanStack DB live query with conditional query pattern
+  // Use TanStack DB live query - always subscribe to the collection
+  // This ensures mutations work immediately without needing to refresh
   const {
     data: userApps,
     isLoading,
     isError,
-  } = useLiveQuery(
-    (q) => {
-      // Disable the query when user is not authenticated
-      if (!session.data?.user) return undefined;
-
-      return q.from({ userApp: userAppsCollection });
-    },
-    [session.data?.user],
-  );
+  } = useLiveQuery((q) => q.from({ userApp: userAppsCollection }));
 
   return (
-    <div className="bg-base-100 min-h-screen flex flex-col">
+    <div className="bg-base-100 h-screen flex flex-col overflow-y-auto">
       <Header email={session.data?.user.email} />
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1">
         <div className="max-w-3xl mx-auto px-4 py-6">
           <div className="space-y-6">
             {isError && (

@@ -23,11 +23,7 @@ jobs:
           node-version: 22
           cache: 'pnpm'
       - name: Install all dependencies
-        run: |
-          pnpm install --frozen-lockfile --ignore-scripts
-          for dir in apps/* templates/*; do
-            (cd "$dir" && pnpm install --frozen-lockfile --ignore-scripts)
-          done
+        run: pnpm install --ignore-scripts
       - name: Run type checking
         run: pnpm types:check
   prettier-check:
@@ -46,10 +42,6 @@ jobs:
           node-version: 22
           cache: 'pnpm'
       - name: Install all dependencies
-        run: |
-          pnpm install --frozen-lockfile --ignore-scripts
-          for dir in apps/* templates/*; do
-            (cd "$dir" && pnpm install --frozen-lockfile --ignore-scripts)
-          done
+        run: pnpm install --ignore-scripts
       - name: Run prettier check
         run: pnpm format:check

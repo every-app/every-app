@@ -9,7 +9,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "deploy": "npm run build && npx wrangler pages deploy dist --project-name=every-app-landing-page",
-    "types:check": "astro sync && tsc --noEmit",
+    "types:check": "astro sync && npx tsc --noEmit",
     "format:check": "npx prettier --check .",
     "format:write": "npx prettier --write ."
   },
@@ -29,7 +29,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "jsdom": "^27.0.0",
     "prettier": "^3.6.2",
-    "typescript": "^5.7.2",
+    "typescript": "^5.9.3",
     "wrangler": "^4.45.4"
   }
 }
