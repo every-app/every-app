@@ -20,7 +20,7 @@
     "types:check": "npx tsc --noEmit",
     "prebuild": "npx tsc",
     "build": "tsup --silent",
-    "build:prepublish": "npm ci --ignore-scripts && npm run types:check && npm run build",
+    "build:prepublish": "pnpm install --ignore-scripts && npm run types:check && npm run build",
     "prepublishOnly": "npm run build:prepublish",
     "postinstall": "every install"
   },
