@@ -24,7 +24,7 @@ interface CreateCommandFlags {
   // Add flags here as needed
 }
 
-const EVERY_APP_REPO = "git@github.com:every-app/every-app-monorepo.git";
+const EVERY_APP_REPO = "git@github.com:every-app/every-app.git";
 const TEMPLATE_RELATIVE_PATH = "templates/simple-todo";
 
 /**

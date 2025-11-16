@@ -12,7 +12,7 @@ import { execWithIndentedOutput } from "@/lib/formatting";
 import type { CloudflareResources } from "@/commands/gateway/deploy/types";
 
 // Constants
-const EVERY_APP_REPO = "git@github.com:every-app/every-app-monorepo.git";
+const EVERY_APP_REPO = "git@github.com:every-app/every-app.git";
 const D1_DATABASE_NAME = "every-app-gateway";
 const KV_NAMESPACE_NAME = "every-app-gateway";
 const HOMEBASE_RELATIVE_PATH = "apps/every-app-gateway";

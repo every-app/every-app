@@ -1,5 +1,5 @@
 # Deploy Gateway
-1. `git clone git@github.com:every-app/every-app-monorepo.git`
+1. `git clone git@github.com:every-app/every-app.git`
 1. `cd cli && pnpm i`
 1. `bun src/bin/cli.ts gateway deploy`
 1. `npx wrangler tail` to get logs (needed for next step)
@@ -26,8 +26,8 @@
 
 # Create an App for Development
 1. Go to directory where you work on new projects
-1. Run CLI by entering relative path to the every-app-monorepo folder
-    - e.g. `bun ./every-app-monorepo/cli/src/bin/cli.ts app create`
+1. Run CLI by entering relative path to the every-app folder
+    - e.g. `bun ./every-app/cli/src/bin/cli.ts app create`
 1. Follow prompts
 1. Run `npm run dev`
 1. Go to Gateway and create custom app with the same App ID and the url being localhost:3001
