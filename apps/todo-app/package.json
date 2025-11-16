@@ -17,7 +17,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "drizzle-kit migrate",
     "db:migrate:prod": "every app remote-d1-shell -- drizzle-kit migrate --config=drizzle-prod.config.ts",
-    "db:studio:dev": "drizzle-kit studio",
+    "db:studio:local": "drizzle-kit studio",
     "db:studio:prod": "every app remote-d1-shell -- drizzle-kit studio --config=drizzle-prod.config.ts",
     "knip": "knip"
   },
