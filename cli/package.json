@@ -4,7 +4,7 @@
   "description": "Every CLI - Command line tool for deploying and managing Every applications",
   "license": "MIT",
   "type": "module",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "files": [
     "dist"
   ],
