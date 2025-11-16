@@ -24,17 +24,14 @@ export async function remoteD1Shell(
   const cwd = process.cwd();
 
   try {
-    // Filter out the "--" separator if it's included
-    const filteredCommand = command.filter((arg) => arg !== "--");
-
     // Validate that a command was provided
-    if (!filteredCommand || filteredCommand.length === 0) {
+    if (!command || command.length === 0) {
       throw new Error(
         "No command provided. Usage: every app remote-d1-shell -- <command>\nExample: every app remote-d1-shell -- npx drizzle-kit migrate",
       );
     }
 
-    const [cmd, ...cmdArgs] = filteredCommand;
+    const [cmd, ...cmdArgs] = command;
     if (!cmd) {
       throw new Error("Invalid command");
     }

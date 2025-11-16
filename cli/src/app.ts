@@ -28,4 +28,7 @@ export const app = buildApplication(routes, {
   versionInfo: {
     currentVersion: version,
   },
+  scanner: {
+    allowArgumentEscapeSequence: true,
+  },
 });
