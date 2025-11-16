@@ -6,14 +6,14 @@ import type { JwtKeyPair, SecretInfo } from "./types";
 /**
  * Generate a secure random secret for Better Auth
  */
-export function generateBetterAuthSecret(): string {
+function generateBetterAuthSecret(): string {
   return crypto.randomBytes(32).toString("base64");
 }
 
 /**
  * Generate an RSA key pair for JWT signing
  */
-export function generateJwtKeyPair(): JwtKeyPair {
+function generateJwtKeyPair(): JwtKeyPair {
   const { privateKey, publicKey } = crypto.generateKeyPairSync("rsa", {
     modulusLength: 2048,
     publicKeyEncoding: {
@@ -29,7 +29,7 @@ export function generateJwtKeyPair(): JwtKeyPair {
   return { privateKey, publicKey };
 }
 
-export async function listSecrets(cwd: string): Promise<SecretInfo[]> {
+async function listSecrets(cwd: string): Promise<SecretInfo[]> {
   try {
     const { stdout } = await execa(
       "npx",
@@ -43,15 +43,12 @@ export async function listSecrets(cwd: string): Promise<SecretInfo[]> {
   }
 }
 
-export async function secretExists(
-  secretName: string,
-  cwd: string,
-): Promise<boolean> {
+async function secretExists(secretName: string, cwd: string): Promise<boolean> {
   const secrets = await listSecrets(cwd);
   return secrets.some((secret) => secret.name === secretName);
 }
 
-export async function uploadSecret(
+async function uploadSecret(
   secretName: string,
   secretValue: string,
   cwd: string,

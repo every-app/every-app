@@ -11,7 +11,7 @@ export type PackageManager = "pnpm" | "npm";
  * @param cwd - Directory to check for lockfiles
  * @returns Detected package manager or null if none found
  */
-export async function detectPackageManager(
+async function detectPackageManager(
   cwd: string,
 ): Promise<PackageManager | null> {
   try {
@@ -32,20 +32,6 @@ export async function detectPackageManager(
 }
 
 /**
- * Check if a command is available in the system
- * @param command - Command to check
- * @returns True if command is available, false otherwise
- */
-async function isCommandAvailable(command: string): Promise<boolean> {
-  try {
-    await execa("which", [command]);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Install dependencies using the specified package manager
  * @param packageManager - Package manager to use (pnpm or npm)
  * @param cwd - Directory to run installation in
@@ -57,20 +43,17 @@ export async function installDependencies(
   verbose: boolean = false,
 ): Promise<void> {
   try {
-    // For pnpm, check if it's available globally, otherwise use npx
+    // For pnpm, always use npx to ensure it's available
     if (packageManager === "pnpm") {
-      const isPnpmAvailable = await isCommandAvailable("pnpm");
-
-      if (!isPnpmAvailable) {
-        await execWithIndentedOutput("npx", ["pnpm", "install"], {
-          cwd,
-          stdio: "inherit",
-          verbose,
-        });
-        return;
-      }
+      await execWithIndentedOutput("npx", ["pnpm", "install"], {
+        cwd,
+        stdio: "inherit",
+        verbose,
+      });
+      return;
     }
 
+    // For npm, use it directly (always available with Node.js)
     await execWithIndentedOutput(packageManager, ["install"], {
       cwd,
       stdio: "inherit",
@@ -88,7 +71,7 @@ export async function installDependencies(
  * @param cwd - Directory to check for node_modules
  * @returns True if node_modules exists, false otherwise
  */
-export async function hasNodeModules(cwd: string): Promise<boolean> {
+async function hasNodeModules(cwd: string): Promise<boolean> {
   try {
     const stat = await fs.stat(path.join(cwd, "node_modules"));
     return stat.isDirectory();
@@ -103,7 +86,10 @@ export async function hasNodeModules(cwd: string): Promise<boolean> {
  * @param cwd - Directory to check and install dependencies in
  * @param verbose - Whether to show detailed output
  */
-export async function ensureDependencies(cwd: string, verbose: boolean = false): Promise<void> {
+export async function ensureDependencies(
+  cwd: string,
+  verbose: boolean = false,
+): Promise<void> {
   const hasModules = await hasNodeModules(cwd);
 
   if (!hasModules) {

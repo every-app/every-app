@@ -16,7 +16,7 @@ export interface WranglerConfig {
   [key: string]: any;
 }
 
-export interface UpdateWranglerConfigOptions {
+interface UpdateWranglerConfigOptions {
   /**
    * New app/worker name (optional)
    */

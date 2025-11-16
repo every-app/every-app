@@ -1,0 +1,11 @@
+{
+	"entry": [
+		// These files export commands used by the stricli framework via dynamic imports
+		"src/commands/app/command.ts",
+		"src/commands/gateway/commands.ts"
+	],
+	"ignoreBinaries": [
+		"every", // Self-referential binary (this CLI itself)
+		"wrangler" // Peer dependency - required but not directly installed
+	]
+}

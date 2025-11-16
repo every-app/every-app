@@ -4,7 +4,7 @@ import os from "node:os";
 import chalk from "chalk";
 import { getWorkerUrl } from "./cloudflare-auth";
 
-export interface CopyOptions {
+interface CopyOptions {
   exclude?: string[];
 }
 
@@ -60,7 +60,7 @@ export async function directoryExists(dirPath: string): Promise<boolean> {
  * @param filePath - Path to JSON file
  * @param updates - Object with updates to apply (deep merge)
  */
-export async function updateJsonFile(
+async function updateJsonFile(
   filePath: string,
   updates: Record<string, any>,
 ): Promise<void> {

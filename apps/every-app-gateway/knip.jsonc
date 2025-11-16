@@ -7,6 +7,16 @@
     "src/auth/index.ts",
   ],
   "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
-  "ignore": ["src/routeTree.gen.ts"],
-  "ignoreDependencies": ["@tanstack/react-router-devtools", "daisyui"],
+  "ignore": [
+    "src/routeTree.gen.ts",
+    "drizzle-prod.config.ts",
+    "regenerate-secrets.js",
+  ],
+  "ignoreDependencies": [
+    "@tanstack/react-router-devtools",
+    "daisyui",
+    // Used by vite during bundling
+    "tailwindcss",
+  ],
+  "ignoreBinaries": ["every"],
 }

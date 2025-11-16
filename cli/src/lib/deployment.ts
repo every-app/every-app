@@ -67,13 +67,13 @@ export async function confirmDeployment(
  * Initialize/create a workers.dev subdomain for an account
  * This needs to be done once per account before workers can be deployed
  */
-export async function initializeWorkersDevSubdomain(
+async function initializeWorkersDevSubdomain(
   accountId: string,
   desiredSubdomain?: string,
 ): Promise<string> {
   try {
     const body = desiredSubdomain ? { subdomain: desiredSubdomain } : {};
-    
+
     const result = await makeCloudflareAPIRequest<WorkerSubdomain>(
       `/accounts/${accountId}/workers/subdomain`,
       {
@@ -98,9 +98,7 @@ export async function initializeWorkersDevSubdomain(
  * Ensure workers.dev subdomain is set up, prompting user if needed
  * Returns the subdomain string
  */
-export async function ensureWorkersDevSubdomain(
-  accountId?: string,
-): Promise<string> {
+async function ensureWorkersDevSubdomain(accountId?: string): Promise<string> {
   const resolvedAccountId = accountId || (await getDefaultAccountId());
 
   console.log(chalk.bold("Checking workers.dev subdomain...\n"));

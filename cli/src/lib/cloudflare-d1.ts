@@ -6,7 +6,7 @@ export async function listD1Databases(): Promise<any[]> {
   return JSON.parse(stdout);
 }
 
-export async function createD1Database(databaseName: string): Promise<string> {
+async function createD1Database(databaseName: string): Promise<string> {
   const { stdout } = await execa("npx", [
     "wrangler",
     "d1",

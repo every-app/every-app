@@ -6,5 +6,7 @@
     "src/routes/**/*.tsx",
   ],
   "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
-  "ignore": ["src/routeTree.gen.ts"],
+  "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
+  "ignoreDependencies": ["tailwindcss"],
+  "ignoreBinaries": ["every"],
 }

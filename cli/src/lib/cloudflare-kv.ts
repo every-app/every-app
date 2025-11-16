@@ -1,7 +1,7 @@
 import { execa } from "execa";
 import chalk from "chalk";
 
-export async function listKVNamespaces(): Promise<any[]> {
+async function listKVNamespaces(): Promise<any[]> {
   const { stdout } = await execa("npx", [
     "wrangler",
     "kv",
@@ -11,9 +11,7 @@ export async function listKVNamespaces(): Promise<any[]> {
   return JSON.parse(stdout);
 }
 
-export async function createKVNamespace(
-  namespaceName: string,
-): Promise<string> {
+async function createKVNamespace(namespaceName: string): Promise<string> {
   const { stdout } = await execa("npx", [
     "wrangler",
     "kv",

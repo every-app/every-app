@@ -17,7 +17,7 @@ import { confirmDeployment } from "@/lib/deployment";
 import { ensureDependencies } from "@/lib/package-manager";
 import { randomUUID } from "node:crypto";
 
-export interface DeployCommandFlags {
+interface DeployCommandFlags {
   verbose?: boolean;
 }
 
@@ -463,7 +463,7 @@ async function insertUserAppRecords(
  * @param skipConfirmation - Whether to skip the deployment confirmation prompt
  * @param verbose - Whether to show verbose output
  */
-export async function deployAppFromDirectory(
+async function deployAppFromDirectory(
   cwd: string,
   skipConfirmation: boolean = false,
   verbose: boolean = false,

@@ -5,6 +5,23 @@ import { parse } from "jsonc-parser";
 
 export function getLocalD1Url() {
   const basePath = path.resolve(".wrangler");
+
+  // Check if .wrangler directory exists
+  if (!fs.existsSync(basePath)) {
+    console.error(
+      "================================================================================",
+    );
+    console.error("WARNING: .wrangler directory not found");
+    console.error("This is expected in CI/non-development environments.");
+    console.error(
+      "The local D1 database is only available after running 'wrangler dev' which you can trigger by running 'npm run dev'.",
+    );
+    console.error(
+      "================================================================================",
+    );
+    return null;
+  }
+
   const dbFile = fs
     .readdirSync(basePath, { encoding: "utf-8", recursive: true })
     .find((f) => f.endsWith(".sqlite"));

@@ -1,10 +1,10 @@
 {
   "name": "@every-app/cli",
   "author": "",
-  "description": "Every CLI - Command line tool for deploying and managing Every applications",
+  "description": "Every App CLI - Deploy and manage apps.",
   "license": "MIT",
   "type": "module",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "files": [
     "dist"
   ],
@@ -22,7 +22,8 @@
     "build": "tsup --silent",
     "build:prepublish": "pnpm install --ignore-scripts && npm run types:check && npm run build",
     "prepublishOnly": "npm run build:prepublish",
-    "postinstall": "every install"
+    "postinstall": "every install",
+    "knip": "knip"
   },
   "tsup": {
     "entry": {
@@ -48,6 +49,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.18.13",
+    "knip": "^5.66.4",
     "tsup": "^6.7.0",
     "typescript": "5.9.3"
   }

@@ -8,5 +8,14 @@
     "src/client/components/ui/**",
   ],
   "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
-  "ignore": ["src/routeTree.gen.ts"],
+  "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
+  "ignoreDependencies": [
+    // Tailwindcss used via @tailwindcss/vite plugin
+    "tailwindcss",
+    "tailwindcss-animate",
+  ],
+  "ignoreBinaries": [
+    // Every CLI tool used for deployment commands
+    "every",
+  ],
 }
