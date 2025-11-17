@@ -1,0 +1,68 @@
+---
+title: Quickstart
+description: Deploy Every App Gateway into your Cloudflare Account
+---
+
+import { Steps, Aside } from "@astrojs/starlight/components";
+
+## Deploy Every App Gateway
+
+<Steps>
+
+1. **Log in to Cloudflare**
+
+   `npx wrangler login`
+
+   <Aside>
+     If you don't already have an account, run this command which will redirect
+     you to the page where you can create an account. You can use Every App on
+     the Cloudflare free tier without even entering a credit card.
+   </Aside>
+
+2. **Install the Every App CLI**
+
+   `npm i -g @every-app/cli`
+
+3. **Deploy the Every App Gateway into your Cloudflare Account**
+
+   `every gateway deploy`
+
+4. **Follow the link to your deployed Gateway and create an account in your Every App Gateway instance.**
+
+   <Aside>
+     If you go to Storage & Databases > D1 SQL database, find your D1 database
+     for `every-app-gateway`, then click "Explore Data". You can look at the
+     `users` table and see a user has been created in your self hosted instance
+     of Every App.
+   </Aside>
+
+</Steps>
+    
+## Deploy Todo Application
+
+The first application we've built for Every App is a really nice, minimal todo list app. It's been really suprising how much goes into making a great todo list application from keyboard navigation, optimistic mutations, and optimizing for a mobile PWA experience.
+
+We recommend deploying this app so that you can see how easy it is to deploy open source full stack apps, but also hopefully to inspire you to build an app 10x better than this demo.
+
+<Steps>
+
+1. **Clone the `every-app` repo**
+
+   `git clone git@github.com:every-app/every-app.git`
+
+   <Aside>
+     This is a mono repo which contains all the repos in the Every App ecosystem
+     including the Todo Application
+   </Aside>
+
+2. **Navigate to the todo app**
+
+   `cd every-app/apps/todo-app`
+
+3. **Deploy the app**
+
+   `every app deploy`
+
+4. **Go back to the Every App Gateway, refresh and you should see it as an app for you to try out.**
+
+</Steps>

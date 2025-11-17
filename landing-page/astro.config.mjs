@@ -6,6 +6,9 @@ import tailwind from "@astrojs/tailwind";
 // https://astro.build/config
 export default defineConfig({
   output: "static",
+  redirects: {
+    "/docs": "/docs/quickstart",
+  },
   integrations: [
     // TODO Investigate this
     tailwind({
@@ -13,29 +16,27 @@ export default defineConfig({
     }),
     starlight({
       title: "Every App",
-      description: "Documentation for EveryApp - Make every app open source",
+      description: "Every App Docs - Make every app open source",
       logo: {
         src: "./public/transparent-logo.png",
       },
-      sidebar: [
-        {
-          label: "Getting Started",
-          items: [
-            {
-              label: "Introduction",
-              slug: "guides/getting-started/introduction",
-            },
-          ],
-        },
-      ],
       customCss: ["./src/styles/custom.css"],
       components: {
         Head: "./src/components/Head.astro",
         Header: "./src/components/Header.astro",
       },
       social: {
-        github: "https://github.com/yourusername/everyapp",
+        github: "https://github.com/every-app/every-app",
+        discord: "https://discord.gg/EpwPGyDn",
       },
+      sidebar: [
+        {
+          label: "Getting Started",
+          items: [{ slug: "docs/quickstart" }, { slug: "docs/build-an-app" }],
+        },
+      ],
+      // Disable the default 404 route so we can have custom pages at root
+      disable404Route: true,
     }),
   ],
 });
