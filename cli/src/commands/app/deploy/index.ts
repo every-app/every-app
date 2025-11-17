@@ -379,8 +379,8 @@ async function insertUserAppRecords(
         // Insert new record
         const recordId = randomUUID();
         const insertSql = `
-          INSERT INTO user_apps (id, user_id, app_id, name, description, app_url, status, created_at, updated_at)
-          VALUES ('${recordId}', '${user.id}', '${appId}', '${displayName}', '${displayDescription}', '${appUrl}', 'installed', ${now}, ${now})
+          INSERT INTO user_apps (id, user_id, app_id, name, description, app_url, created_at, updated_at)
+          VALUES ('${recordId}', '${user.id}', '${appId}', '${displayName}', '${displayDescription}', '${appUrl}', ${now}, ${now})
         `;
         await queryD1Database(accountId, databaseId, insertSql);
         console.log(
@@ -419,8 +419,8 @@ async function insertUserAppRecords(
           // Insert new record
           const recordId = randomUUID();
           const insertSql = `
-            INSERT INTO user_apps (id, user_id, app_id, name, description, app_url, status, created_at, updated_at)
-            VALUES ('${recordId}', '${user.id}', '${appId}', '${displayName}', '${displayDescription}', '${appUrl}', 'installed', ${now}, ${now})
+            INSERT INTO user_apps (id, user_id, app_id, name, description, app_url, created_at, updated_at)
+            VALUES ('${recordId}', '${user.id}', '${appId}', '${displayName}', '${displayDescription}', '${appUrl}', ${now}, ${now})
           `;
           await queryD1Database(accountId, databaseId, insertSql);
           console.log(
