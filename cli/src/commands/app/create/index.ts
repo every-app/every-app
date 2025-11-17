@@ -96,12 +96,6 @@ async function updatePackageJson(
   // Update name
   packageJson.name = appId;
 
-  // Update migration commands to use the new app ID
-  packageJson.scripts["db:migrate:dev"] =
-    `wrangler d1 migrations apply ${appId} --local`;
-  packageJson.scripts["db:migrate:prod"] =
-    `wrangler d1 migrations apply ${appId} --remote`;
-
   await fs.writeFile(
     packageJsonPath,
     JSON.stringify(packageJson, null, 2) + "\n",
@@ -112,20 +106,12 @@ async function updatePackageJson(
 /**
  * Run database migrations locally
  */
-async function runLocalMigrations(
-  targetDir: string,
-  appId: string,
-): Promise<void> {
+async function runLocalMigrations(targetDir: string): Promise<void> {
   try {
-    await execa(
-      "npx",
-      ["wrangler", "d1", "migrations", "apply", appId, "--local"],
-      {
-        cwd: targetDir,
-        input: "y\n",
-        stdio: ["pipe", "inherit", "inherit"],
-      },
-    );
+    await execa("npm", ["run", "db:migrate:local"], {
+      cwd: targetDir,
+      stdio: ["inherit", "inherit", "inherit"],
+    });
     console.log(
       chalk.green("\nLocal database migrations completed successfully\n"),
     );
@@ -135,7 +121,7 @@ async function runLocalMigrations(
         "\nFailed to run local migrations. You can run them manually with:",
       ),
     );
-    console.warn(chalk.dim("   npm run db:migrate:dev\n"));
+    console.warn(chalk.dim("   npm run db:migrate:local\n"));
     // Don't throw - this is not a fatal error for project creation
   }
 }
@@ -223,7 +209,7 @@ export default async function (
 
     // Phase 7: Run Migrations (LOCAL)
     console.log(chalk.bold("Running database migrations locally...\n"));
-    await runLocalMigrations(targetDir, appId);
+    await runLocalMigrations(targetDir);
 
     // Phase 8: Success Message
     console.log(chalk.bold.green("\nProject created successfully!\n"));

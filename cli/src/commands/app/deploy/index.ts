@@ -156,37 +156,22 @@ async function runMigrations(
 
   console.log(chalk.bold("Running database migrations...\n"));
 
-  // Run migrations for each D1 database
-  for (const db of config.d1_databases as D1DatabaseConfig[]) {
-    const binding = db.binding;
+  try {
+    console.log(chalk.dim(`   Running production migrations...\n`));
 
-    if (!binding) {
-      console.warn(chalk.yellow("Skipping migration: no binding specified\n"));
-      continue;
-    }
+    await execa("npm", ["run", "db:migrate:prod"], {
+      cwd,
+      stdio: ["inherit", "inherit", "inherit"],
+    });
 
-    try {
-      console.log(chalk.dim(`   Running migrations for ${binding}...\n`));
-
-      await execa(
-        "npx",
-        ["wrangler", "d1", "migrations", "apply", binding, "--remote"],
-        {
-          cwd,
-          input: "y\n",
-          stdio: ["pipe", "inherit", "inherit"],
-        },
-      );
-
-      console.log(chalk.green(`Migrations completed for ${binding}\n`));
-    } catch (error) {
-      console.warn(
-        chalk.yellow(
-          `Failed to run migrations for ${binding}. You may need to run them manually.\n`,
-        ),
-      );
-      // Don't throw - continue with deployment
-    }
+    console.log(chalk.green(`Migrations completed\n`));
+  } catch (error) {
+    console.warn(
+      chalk.yellow(
+        `Failed to run migrations. You may need to run them manually with: npm run db:migrate:prod\n`,
+      ),
+    );
+    // Don't throw - continue with deployment
   }
 }
 
