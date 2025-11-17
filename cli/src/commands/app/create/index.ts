@@ -2,7 +2,6 @@ import type { LocalContext } from "@/context";
 import fs from "node:fs/promises";
 import path from "node:path";
 import enquirer from "enquirer";
-import { execa } from "execa";
 import chalk from "chalk";
 import { cloneRepository } from "@/lib/git";
 import {
@@ -19,9 +18,10 @@ import {
 import { updateWranglerConfig } from "@/lib/wrangler-config";
 import { getOrCreateD1Database } from "@/lib/cloudflare-d1";
 import { getOrCreateKVNamespace } from "@/lib/cloudflare-kv";
+import { executeCommandWithFormatting } from "@/lib/formatting";
 
 interface CreateCommandFlags {
-  // Add flags here as needed
+  verbose?: boolean;
 }
 
 const EVERY_APP_REPO = "git@github.com:every-app/every-app.git";
@@ -106,11 +106,26 @@ async function updatePackageJson(
 /**
  * Run database migrations locally
  */
-async function runLocalMigrations(targetDir: string): Promise<void> {
+async function runLocalMigrations(
+  targetDir: string,
+  verbose: boolean,
+): Promise<void> {
   try {
-    await execa("npm", ["run", "db:migrate:local"], {
+    // Generate Cloudflare types and build the project
+    // This creates the .wrangler directory which is necessary for running migrations locally
+    await executeCommandWithFormatting("pnpm", ["run", "cf-typegen"], {
       cwd: targetDir,
-      stdio: ["inherit", "inherit", "inherit"],
+      verbose,
+    });
+
+    await executeCommandWithFormatting("pnpm", ["run", "build"], {
+      cwd: targetDir,
+      verbose,
+    });
+
+    await executeCommandWithFormatting("npm", ["run", "db:migrate:local"], {
+      cwd: targetDir,
+      verbose,
     });
     console.log(
       chalk.green("\nLocal database migrations completed successfully\n"),
@@ -209,7 +224,8 @@ export default async function (
 
     // Phase 7: Run Migrations (LOCAL)
     console.log(chalk.bold("Running database migrations locally...\n"));
-    await runLocalMigrations(targetDir);
+    const verbose = flags.verbose || false;
+    await runLocalMigrations(targetDir, verbose);
 
     // Phase 8: Success Message
     console.log(chalk.bold.green("\nProject created successfully!\n"));

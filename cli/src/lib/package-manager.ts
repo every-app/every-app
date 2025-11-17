@@ -1,35 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import chalk from "chalk";
-import { execWithIndentedOutput } from "./formatting";
-import { execa } from "execa";
+import { executeCommandWithFormatting } from "./formatting";
 
 export type PackageManager = "pnpm" | "npm";
-
-/**
- * Detect package manager based on lockfiles in directory
- * @param cwd - Directory to check for lockfiles
- * @returns Detected package manager or null if none found
- */
-async function detectPackageManager(
-  cwd: string,
-): Promise<PackageManager | null> {
-  try {
-    const files = await fs.readdir(cwd);
-
-    if (files.includes("pnpm-lock.yaml")) {
-      return "pnpm";
-    }
-
-    if (files.includes("package-lock.json")) {
-      return "npm";
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Install dependencies using the specified package manager
@@ -45,18 +19,18 @@ export async function installDependencies(
   try {
     // For pnpm, always use npx to ensure it's available
     if (packageManager === "pnpm") {
-      await execWithIndentedOutput("npx", ["pnpm", "install"], {
+      await executeCommandWithFormatting("npx", ["pnpm", "install"], {
         cwd,
-        stdio: "inherit",
         verbose,
+        logCommandToConsole: false,
       });
       return;
     }
 
     // For npm, use it directly (always available with Node.js)
-    await execWithIndentedOutput(packageManager, ["install"], {
+    await executeCommandWithFormatting(packageManager, ["install"], {
       cwd,
-      stdio: "inherit",
+      logCommandToConsole: false,
       verbose,
     });
   } catch (error) {

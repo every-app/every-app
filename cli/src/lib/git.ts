@@ -1,4 +1,4 @@
-import { execWithIndentedOutput } from "./formatting";
+import { executeCommandWithFormatting } from "./formatting";
 
 /**
  * Clone a git repository to a target directory
@@ -12,8 +12,7 @@ export async function cloneRepository(
   verbose: boolean = false,
 ): Promise<void> {
   try {
-    await execWithIndentedOutput("git", ["clone", url, targetDir], {
-      stdio: "inherit",
+    await executeCommandWithFormatting("git", ["clone", url, targetDir], {
       verbose,
     });
   } catch (error) {

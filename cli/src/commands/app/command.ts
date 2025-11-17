@@ -7,6 +7,13 @@ export const createCommand = buildCommand({
       kind: "tuple",
       parameters: [],
     },
+    flags: {
+      verbose: {
+        kind: "boolean",
+        brief: "Show detailed output during creation",
+        optional: true,
+      },
+    },
   },
   docs: {
     brief: "Create a new app from the starter template",

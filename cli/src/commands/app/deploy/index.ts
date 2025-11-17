@@ -12,7 +12,7 @@ import {
   getDefaultAccountId,
   getValidOAuthToken,
 } from "@/lib/cloudflare-auth";
-import { execWithIndentedOutput } from "@/lib/formatting";
+import { executeCommandWithFormatting } from "@/lib/formatting";
 import { confirmDeployment } from "@/lib/deployment";
 import { ensureDependencies } from "@/lib/package-manager";
 import { randomUUID } from "node:crypto";
@@ -187,39 +187,18 @@ async function buildAndDeploy(
   console.log(chalk.bold("Building and deploying to Cloudflare...\n"));
 
   try {
-    // Check if there's a deploy script in package.json
-    const packageJsonPath = path.join(cwd, "package.json");
-    const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf-8"));
-
     const deployEnv = {
       ...process.env,
       VITE_PARENT_ORIGIN: gatewayUrl,
       VITE_APP_ID: appId,
     };
 
-    if (packageJson.scripts?.deploy) {
-      await execWithIndentedOutput("npm", ["run", "deploy"], {
-        cwd,
-        stdio: "inherit",
-        env: deployEnv,
-        verbose,
-      });
-    } else {
-      // Fallback to basic build and deploy
-      await execWithIndentedOutput("npm", ["run", "build"], {
-        cwd,
-        stdio: "inherit",
-        env: deployEnv,
-        verbose,
-      });
-
-      await execWithIndentedOutput("npx", ["wrangler", "deploy"], {
-        cwd,
-        stdio: "inherit",
-        env: deployEnv,
-        verbose,
-      });
-    }
+    await executeCommandWithFormatting("npm", ["run", "deploy"], {
+      cwd,
+      description: "Deploying your application to Cloudflare workers...",
+      env: deployEnv,
+      verbose,
+    });
 
     console.log(chalk.green("\nDeployment completed successfully!\n"));
   } catch (error) {

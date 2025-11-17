@@ -8,7 +8,7 @@ import { setupSecrets } from "@/commands/gateway/deploy/cloudflareSecrets";
 import { updateWranglerConfig } from "@/lib/wrangler-config";
 import { cloneRepository } from "@/lib/git";
 import { installDependencies } from "@/lib/package-manager";
-import { execWithIndentedOutput } from "@/lib/formatting";
+import { executeCommandWithFormatting } from "@/lib/formatting";
 import type { CloudflareResources } from "@/commands/gateway/deploy/types";
 
 // Constants
@@ -80,9 +80,9 @@ export async function updateConfigAndDeploy(
     // Generate a random secret for build time only (actual secret is set via Cloudflare secrets)
     const buildTimeSecret = crypto.randomUUID();
 
-    await execWithIndentedOutput("npm", ["run", "deploy"], {
+    await executeCommandWithFormatting("npm", ["run", "deploy"], {
       cwd: gatewayPath,
-      stdio: "inherit",
+      description: "Deploying your Gateway to Cloudflare workers...",
       env: {
         ...process.env,
         BETTER_AUTH_SECRET: buildTimeSecret,
