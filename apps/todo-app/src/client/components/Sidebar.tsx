@@ -25,7 +25,7 @@ export function Sidebar({ currentPath }: SidebarProps) {
     <div className="w-64 bg-gray-50 border-r border-gray-200 h-full">
       <div className="px-4 py-2 border-b border-gray-300 mb-2">
         <a
-          href={import.meta.env.VITE_PARENT_ORIGIN}
+          href={import.meta.env.VITE_GATEWAY_URL}
           target="_top"
           className={`text-lg font-semibold text-gray-900 mb-4`}
         >

@@ -73,8 +73,8 @@ async function verifySessionToken(
   // But, the limitation of these services not being able to talk to each other will be frustrating.
   // I wonder if there is a better abstraction to wrap this dynamic fetching and link all the services together.
   const jwksResponse = import.meta.env.PROD
-    ? await env.CORE_APP_SERVICE.fetch("http://localhost/api/embedded/jwks")
-    : await fetch(`${env.CORE_APP_URL}/api/embedded/jwks`);
+    ? await env.EVERY_APP_GATEWAY.fetch("http://localhost/api/embedded/jwks")
+    : await fetch(`${env.GATEWAY_URL}/api/embedded/jwks`);
 
   if (!jwksResponse.ok) {
     throw new Error(

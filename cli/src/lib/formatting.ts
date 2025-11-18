@@ -24,7 +24,7 @@ export async function executeCommandWithFormatting(
   } = options;
 
   if (verbose) {
-    execVerboseCommand(command, args, options);
+    return execVerboseCommand(command, args, options);
   }
 
   if (!logCommandToConsole) {

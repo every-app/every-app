@@ -17,7 +17,7 @@ export function createAuth() {
 
   return betterAuth({
     secret: env?.BETTER_AUTH_SECRET,
-    trustedOrigins: env ? [env.CORE_APP_URL] : [],
+    trustedOrigins: env ? [env.GATEWAY_URL] : [],
     session: {
       cookieCache: {
         enabled: true,
@@ -29,7 +29,7 @@ export function createAuth() {
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
-      sendResetPassword: async ({ user, url, token }, request) => {
+      sendResetPassword: async ({ user, url, token }, _) => {
         // Password reset links are logged to console for admin access via Cloudflare logs
         console.log(`Password reset requested for ${user.email}`);
         console.log(`Reset URL: ${url}`);

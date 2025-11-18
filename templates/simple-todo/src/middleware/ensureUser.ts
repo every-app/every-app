@@ -8,8 +8,8 @@ import { env } from "cloudflare:workers";
 
 function getAuthConfig(): AuthConfig {
   return {
-    jwksUrl: `${env.CORE_APP_URL}/api/embedded/jwks`,
-    issuer: env.CORE_APP_URL,
+    jwksUrl: `${env.GATEWAY_URL}/api/embedded/jwks`,
+    issuer: env.GATEWAY_URL,
     audience: import.meta.env.VITE_APP_ID,
   };
 }

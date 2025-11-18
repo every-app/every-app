@@ -83,13 +83,11 @@ export async function createEnvFiles(
   appId: string,
 ): Promise<void> {
   // Get the every-app-gateway worker URL dynamically
-  const coreAppUrl = await getWorkerUrl("every-app-gateway");
+  const gatewayUrl = await getWorkerUrl("every-app-gateway");
 
-  const devVarsContent = `CORE_APP_URL=${coreAppUrl}\n`;
-  const envLocalContent = `VITE_APP_ID=${appId}\nVITE_PARENT_ORIGIN=${coreAppUrl}\n`;
+  const envLocalContent = `VITE_APP_ID=${appId}\nVITE_GATEWAY_URL=${gatewayUrl}\n`;
 
   await Promise.all([
-    fs.writeFile(path.join(targetDir, ".dev.vars"), devVarsContent),
     fs.writeFile(path.join(targetDir, ".env.local"), envLocalContent),
   ]);
 }

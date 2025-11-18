@@ -26,14 +26,14 @@ export class SessionManager {
   >();
 
   constructor(config: SessionManagerConfig) {
-    this.parentOrigin = import.meta.env.VITE_PARENT_ORIGIN;
+    this.parentOrigin = import.meta.env.VITE_GATEWAY_URL;
     this.appId = config.appId || this.detectAppId();
     this.messageTimeout = 5000;
     this.debug = config.debug ?? false;
 
     if (!this.parentOrigin) {
       throw new Error(
-        "[SessionManager] Set the Parent Origin by specifying the VITE_PARENT_ORIGIN env var.",
+        "[SessionManager] Set the Parent Origin by specifying the VITE_GATEWAY_URL env var.",
       );
     }
 

@@ -17,7 +17,7 @@ interface WorkerSubdomain {
 export async function confirmDeployment(
   message: string = "Do you want to deploy to Cloudflare?",
 ): Promise<boolean> {
-  console.log(chalk.bold("Checking Cloudflare account...\n"));
+  console.log("Checking Cloudflare account...\n");
 
   try {
     const { stdout: accountInfo } = await execa("npx", ["wrangler", "whoami"], {
@@ -98,10 +98,8 @@ async function initializeWorkersDevSubdomain(
  * Ensure workers.dev subdomain is set up, prompting user if needed
  * Returns the subdomain string
  */
-async function ensureWorkersDevSubdomain(accountId?: string): Promise<string> {
-  const resolvedAccountId = accountId || (await getDefaultAccountId());
-
-  console.log(chalk.bold("Checking workers.dev subdomain...\n"));
+export async function ensureWorkersDevSubdomain(): Promise<string> {
+  const resolvedAccountId = await getDefaultAccountId();
 
   try {
     // Try to get existing subdomain

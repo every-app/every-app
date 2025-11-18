@@ -1,93 +1,49 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import chalk from "chalk";
+import { execa } from "execa";
 import { executeCommandWithFormatting } from "./formatting";
 
-export type PackageManager = "pnpm" | "npm";
-
 /**
- * Install dependencies using the specified package manager
- * @param packageManager - Package manager to use (pnpm or npm)
- * @param cwd - Directory to run installation in
- * @param verbose - Whether to show detailed output
+ * Check if pnpm is installed
  */
-export async function installDependencies(
-  packageManager: PackageManager,
-  cwd: string,
-  verbose: boolean = false,
-): Promise<void> {
+async function isPnpmInstalled(): Promise<boolean> {
   try {
-    // For pnpm, always use npx to ensure it's available
-    if (packageManager === "pnpm") {
-      await executeCommandWithFormatting("npx", ["pnpm", "install"], {
-        cwd,
-        verbose,
-        logCommandToConsole: false,
-      });
-      return;
-    }
-
-    // For npm, use it directly (always available with Node.js)
-    await executeCommandWithFormatting(packageManager, ["install"], {
-      cwd,
-      logCommandToConsole: false,
-      verbose,
-    });
-  } catch (error) {
-    throw new Error(
-      `Failed to install dependencies with ${packageManager}: ${error instanceof Error ? error.message : "Unknown error"}`,
-    );
-  }
-}
-
-/**
- * Check if node_modules directory exists
- * @param cwd - Directory to check for node_modules
- * @returns True if node_modules exists, false otherwise
- */
-async function hasNodeModules(cwd: string): Promise<boolean> {
-  try {
-    const stat = await fs.stat(path.join(cwd, "node_modules"));
-    return stat.isDirectory();
+    await execa("pnpm", ["--version"], { stdio: "pipe" });
+    return true;
   } catch {
     return false;
   }
 }
 
 /**
- * Install dependencies if node_modules doesn't exist
- * Automatically detects the package manager from lockfiles
- * @param cwd - Directory to check and install dependencies in
+ * Install dependencies using pnpm (either directly or via npx)
+ * @param cwd - Directory to run installation in
  * @param verbose - Whether to show detailed output
  */
-export async function ensureDependencies(
+export async function installDependencies(
   cwd: string,
+  description: string,
   verbose: boolean = false,
 ): Promise<void> {
-  const hasModules = await hasNodeModules(cwd);
+  const hasPnpm = await isPnpmInstalled();
 
-  if (!hasModules) {
-    console.log(chalk.bold("Installing dependencies...\n"));
-
-    try {
-      // Detect package manager from lock files
-      const hasPnpmLock = await fs
-        .access(path.join(cwd, "pnpm-lock.yaml"))
-        .then(() => true)
-        .catch(() => false);
-      const hasNpmLock = await fs
-        .access(path.join(cwd, "package-lock.json"))
-        .then(() => true)
-        .catch(() => false);
-
-      const packageManager = hasPnpmLock ? "pnpm" : hasNpmLock ? "npm" : "pnpm";
-
-      await installDependencies(packageManager, cwd, verbose);
-
-      console.log(chalk.green("Dependencies installed\n"));
-    } catch (error) {
-      console.error(chalk.red("\nFailed to install dependencies"));
-      throw error;
+  try {
+    if (hasPnpm) {
+      // Use pnpm directly if installed
+      await executeCommandWithFormatting("pnpm", ["install"], {
+        cwd,
+        verbose,
+        description,
+      });
+    } else {
+      // Use npx pnpm if pnpm is not installed globally
+      await executeCommandWithFormatting("npx", ["pnpm", "install"], {
+        cwd,
+        verbose,
+        description,
+      });
     }
+  } catch (error) {
+    throw new Error(
+      `Failed to install dependencies with pnpm: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
   }
 }

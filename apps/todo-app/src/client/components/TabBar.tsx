@@ -41,7 +41,7 @@ export function TabBar({ currentPath }: TabBarProps) {
             return (
               <a
                 key={item.label}
-                href={import.meta.env.VITE_PARENT_ORIGIN}
+                href={import.meta.env.VITE_GATEWAY_URL}
                 target="_top"
                 className="flex flex-col items-center gap-1 px-3 py-2 rounded-md text-xs font-medium transition-colors text-gray-600 hover:text-gray-900 focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:outline-none"
                 aria-label={`Navigate to ${item.label}`}

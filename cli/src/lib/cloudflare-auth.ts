@@ -22,7 +22,7 @@ interface CloudflareAPIResponse<T> {
  * Get the path to the wrangler config directory
  * Based on wrangler's implementation for cross-platform support
  */
-function getWranglerConfigPath(): string {
+function getWranglerOAuthConfigPath(): string {
   const homeDir = os.homedir();
   const platform = os.platform();
 
@@ -49,7 +49,7 @@ function getWranglerConfigPath(): string {
  * Read OAuth token from wrangler config
  */
 async function readOAuthToken(): Promise<OAuthToken> {
-  const configPath = getWranglerConfigPath();
+  const configPath = getWranglerOAuthConfigPath();
 
   try {
     const content = await fs.readFile(configPath, "utf-8");

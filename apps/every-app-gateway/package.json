@@ -16,8 +16,8 @@
     "auth:generate": "@better-auth/cli generate --config src/auth/index.ts --output src/db/auth.schema.ts -y",
     "auth:update": "pnpm run auth:generate",
     "db:generate": "drizzle-kit generate",
-    "db:migrate:local": "wrangler d1 migrations apply DB --local",
-    "db:migrate:prod": "wrangler d1 migrations apply DB --remote",
+    "db:migrate:local": "drizzle-kit migrate",
+    "db:migrate:prod": "every app remote-d1-shell -- drizzle-kit migrate --config=drizzle-prod.config.ts",
     "db:studio:local": "drizzle-kit studio",
     "db:studio:prod": "every app remote-d1-shell -- drizzle-kit studio --config=drizzle-prod.config.ts",
     "knip": "knip"

@@ -6,7 +6,7 @@ interface ViteTypeOptions {
 }
 
 interface ImportMetaEnv {
-  readonly VITE_PARENT_ORIGIN: string;
+  readonly VITE_GATEWAY_URL: string;
   readonly VITE_APP_ID: string;
   // more env variables...
 }

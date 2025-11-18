@@ -33,8 +33,11 @@ function parseKVNamespaceId(output: string): string {
 
 export async function getOrCreateKVNamespace(
   namespaceName: string,
+  verbose: boolean = false,
 ): Promise<string> {
-  console.log(chalk.bold(`Checking KV namespace: ${namespaceName}\n`));
+  if (verbose) {
+    console.log(`  Checking KV namespace: ${namespaceName}`);
+  }
 
   try {
     const namespaces = await listKVNamespaces();
@@ -43,24 +46,36 @@ export async function getOrCreateKVNamespace(
     );
 
     if (existingNamespace) {
-      console.log(
-        chalk.green(
-          `Linking to existing KV namespace: ${namespaceName} (${existingNamespace.id})\n`,
-        ),
-      );
+      if (verbose) {
+        console.log(
+          chalk.dim(
+            `  Linking to existing KV namespace: ${namespaceName} (${existingNamespace.id})\n`,
+          ),
+        );
+      } else {
+        console.log("  KV already set up.");
+      }
       return existingNamespace.id;
     }
 
-    console.log(chalk.bold(`Creating new KV namespace: ${namespaceName}\n`));
+    if (verbose) {
+      console.log(chalk.dim(`  Creating new KV namespace: ${namespaceName}`));
+    }
     const namespaceId = await createKVNamespace(namespaceName);
-    console.log(
-      chalk.green(`Created KV namespace: ${namespaceName} (${namespaceId})\n`),
-    );
+    if (verbose) {
+      console.log(
+        chalk.green(
+          `  Created KV namespace: ${namespaceName} (${namespaceId})\n`,
+        ),
+      );
+    } else {
+      console.log(chalk.green("  KV successfully created."));
+    }
 
     return namespaceId;
   } catch (error) {
     console.error(
-      chalk.red(`\nFailed to get or create KV namespace: ${namespaceName}`),
+      chalk.red(`Failed to get or create KV namespace: ${namespaceName}`),
       error instanceof Error ? chalk.dim(`\n   ${error.message}`) : "",
     );
     throw error;

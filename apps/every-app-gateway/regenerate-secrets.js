@@ -84,13 +84,6 @@ async function main() {
     ),
   );
 
-  // Get the core app URL from user
-  const defaultUrl = "http://localhost:3000";
-  const coreAppUrl = await prompt(
-    chalk.cyan(`Enter your CORE_APP_URL (press Enter for ${defaultUrl}): `),
-  );
-  const finalUrl = coreAppUrl.trim() || defaultUrl;
-
   try {
     console.log(chalk.bold("\nGenerating secrets...\n"));
 
@@ -108,8 +101,6 @@ async function main() {
     );
     console.log(chalk.dim("─".repeat(80)));
     console.log();
-    console.log(`CORE_APP_URL=${finalUrl}`);
-    console.log(`BETTER_AUTH_URL=${finalUrl}`);
     console.log(`BETTER_AUTH_SECRET=${betterAuthSecret}`);
     console.log(`JWT_PRIVATE_KEY=${formatEnvValue(keyPair.privateKey)}`);
     console.log(`JWT_PUBLIC_KEY=${formatEnvValue(keyPair.publicKey)}`);

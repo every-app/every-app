@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as jsonc from "jsonc-parser";
+import chalk from "chalk";
 
 export interface WranglerConfig {
   name?: string;
@@ -18,102 +19,143 @@ export interface WranglerConfig {
 
 interface UpdateWranglerConfigOptions {
   /**
-   * New app/worker name (optional)
+   * Path to wrangler.jsonc file (or directory containing it)
+   * If a directory is provided, will look for wrangler.jsonc in that directory
+   */
+  configPath: string;
+  /**
+   * New app/worker name (updates the "name" field)
    */
   name?: string;
   /**
-   * D1 database ID to set for all D1 databases
+   * D1 database ID to set (we only support one D1 database per app)
    */
   d1DatabaseId?: string;
   /**
-   * D1 database name to set for all D1 databases (optional)
+   * D1 database name to set (we only support one D1 database per app)
    */
   d1DatabaseName?: string;
   /**
-   * KV namespace ID to set for all KV namespaces
+   * KV namespace ID to set (we only support one KV namespace per app)
    */
   kvNamespaceId?: string;
+  /**
+   * Vars to set in wrangler config (e.g., GATEWAY_URL)
+   */
+  vars?: Record<string, string>;
+  /**
+   * Whether to show verbose output
+   */
+  verbose?: boolean;
 }
 
 /**
- * Build JSONC edits for updating wrangler config
- * @param configContent - Original config file content
- * @param config - Parsed config object
- * @param options - Update options
- * @returns Array of JSONC edits
+ * Unified function to update wrangler.jsonc configuration
+ * Supports updating D1 database, KV namespace, and vars in a single operation
+ *
+ * Enforces the invariant that each app has exactly one D1 database and one KV namespace
  */
-function buildConfigEdits(
-  configContent: string,
-  config: WranglerConfig,
+export async function updateWranglerConfig(
   options: UpdateWranglerConfigOptions,
-): jsonc.Edit[] {
-  const edits: jsonc.Edit[] = [];
+): Promise<void> {
+  if (options.verbose) {
+    console.log(
+      "Updating wrangler.jsonc with resource IDs and configuration...",
+    );
+  }
+
+  // Determine the actual config file path
+  let configFilePath = options.configPath;
+  const stats = await fs.stat(configFilePath);
+  if (stats.isDirectory()) {
+    configFilePath = path.join(configFilePath, "wrangler.jsonc");
+  }
+
+  const configContent = await fs.readFile(configFilePath, "utf-8");
+  const config: WranglerConfig = jsonc.parse(configContent);
+  let edits: jsonc.Edit[] = [];
+
+  // Validate invariants: exactly one D1 database and one KV namespace
+  if (config.d1_databases) {
+    if (config.d1_databases.length === 0) {
+      throw new Error(
+        "No D1 databases found in wrangler.jsonc. Every app must have exactly one D1 database.",
+      );
+    }
+    if (config.d1_databases.length > 1) {
+      throw new Error(
+        `Found ${config.d1_databases.length} D1 databases in wrangler.jsonc. Every app must have exactly one D1 database.`,
+      );
+    }
+  }
+
+  if (config.kv_namespaces) {
+    if (config.kv_namespaces.length === 0) {
+      throw new Error(
+        "No KV namespaces found in wrangler.jsonc. Every app must have exactly one KV namespace.",
+      );
+    }
+    if (config.kv_namespaces.length > 1) {
+      throw new Error(
+        `Found ${config.kv_namespaces.length} KV namespaces in wrangler.jsonc. Every app must have exactly one KV namespace.`,
+      );
+    }
+  }
 
   // Update name if provided
   if (options.name) {
     edits.push(...jsonc.modify(configContent, ["name"], options.name, {}));
   }
 
-  // Update D1 database configuration
-  if (config.d1_databases && options.d1DatabaseId) {
-    config.d1_databases.forEach((_, index) => {
-      // Update database_id
-      edits.push(
-        ...jsonc.modify(
-          configContent,
-          ["d1_databases", index, "database_id"],
-          options.d1DatabaseId,
-          {},
-        ),
-      );
-
-      // Update database_name if provided
-      if (options.d1DatabaseName) {
-        edits.push(
-          ...jsonc.modify(
-            configContent,
-            ["d1_databases", index, "database_name"],
-            options.d1DatabaseName,
-            {},
-          ),
-        );
-      }
-    });
+  // Update D1 database ID (index 0 since we enforce exactly one)
+  if (options.d1DatabaseId) {
+    edits.push(
+      ...jsonc.modify(
+        configContent,
+        ["d1_databases", 0, "database_id"],
+        options.d1DatabaseId,
+        {},
+      ),
+    );
   }
 
-  // Update KV namespace IDs
-  if (config.kv_namespaces && options.kvNamespaceId) {
-    config.kv_namespaces.forEach((_, index) => {
-      edits.push(
-        ...jsonc.modify(
-          configContent,
-          ["kv_namespaces", index, "id"],
-          options.kvNamespaceId,
-          {},
-        ),
-      );
-    });
+  // Update D1 database name (index 0 since we enforce exactly one)
+  if (options.d1DatabaseName) {
+    edits.push(
+      ...jsonc.modify(
+        configContent,
+        ["d1_databases", 0, "database_name"],
+        options.d1DatabaseName,
+        {},
+      ),
+    );
   }
 
-  return edits;
-}
+  // Update KV namespace ID (index 0 since we enforce exactly one)
+  if (options.kvNamespaceId) {
+    edits.push(
+      ...jsonc.modify(
+        configContent,
+        ["kv_namespaces", 0, "id"],
+        options.kvNamespaceId,
+        {},
+      ),
+    );
+  }
 
-/**
- * Update wrangler.jsonc configuration file with new resource IDs
- * @param configPath - Path to wrangler.jsonc file
- * @param options - Configuration options to update
- */
-export async function updateWranglerConfig(
-  configPath: string,
-  options: UpdateWranglerConfigOptions,
-): Promise<void> {
-  const configContent = await fs.readFile(configPath, "utf-8");
-  const config: WranglerConfig = jsonc.parse(configContent);
-
-  const edits = buildConfigEdits(configContent, config, options);
+  // Update vars
+  if (options.vars) {
+    for (const [key, value] of Object.entries(options.vars)) {
+      edits.push(...jsonc.modify(configContent, ["vars", key], value, {}));
+    }
+  }
 
   const updatedContent = jsonc.applyEdits(configContent, edits);
-  await fs.writeFile(configPath, updatedContent);
+  await fs.writeFile(configFilePath, updatedContent);
+
+  if (options.verbose) {
+    console.log(chalk.dim("  wrangler.jsonc updated successfully\n"));
+  }
 }
 
 /**

@@ -56,8 +56,8 @@ export async function issueEmbeddedAppToken(
   const env = getBindings();
 
   invariant(
-    env?.BETTER_AUTH_URL,
-    "BETTER_AUTH_URL environment variable is required",
+    env?.GATEWAY_URL,
+    "GATEWAY_URL secret is required to be set or specified in .dev.vars",
   );
 
   const jwt = await new SignJWT({
@@ -67,7 +67,7 @@ export async function issueEmbeddedAppToken(
   })
     .setProtectedHeader({ alg: "RS256" })
     .setSubject(user.id)
-    .setIssuer(env.BETTER_AUTH_URL)
+    .setIssuer(env.GATEWAY_URL)
     .setAudience(audience)
     .setExpirationTime("60s") // 1 minute
     .setIssuedAt()

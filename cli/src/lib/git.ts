@@ -14,6 +14,7 @@ export async function cloneRepository(
   try {
     await executeCommandWithFormatting("git", ["clone", url, targetDir], {
       verbose,
+      logCommandToConsole: false,
     });
   } catch (error) {
     throw new Error(

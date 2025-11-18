@@ -26,8 +26,11 @@ async function createD1Database(databaseName: string): Promise<string> {
 
 export async function getOrCreateD1Database(
   databaseName: string,
+  verbose: boolean = false,
 ): Promise<string> {
-  console.log(chalk.bold(`Checking D1 database: ${databaseName}\n`));
+  if (verbose) {
+    console.log(`  Checking D1 database: ${databaseName}`);
+  }
 
   try {
     const databases = await listD1Databases();
@@ -36,24 +39,34 @@ export async function getOrCreateD1Database(
     );
 
     if (existingDatabase) {
-      console.log(
-        chalk.green(
-          `Linking to existing D1 database: ${databaseName} (${existingDatabase.uuid})\n`,
-        ),
-      );
+      if (verbose) {
+        console.log(
+          chalk.dim(
+            `  Linking to existing D1 database: ${databaseName} (${existingDatabase.uuid})\n`,
+          ),
+        );
+      } else {
+        console.log("  D1 already set up.");
+      }
       return existingDatabase.uuid;
     }
 
-    console.log(chalk.bold(`Creating new D1 database: ${databaseName}\n`));
+    if (verbose) {
+      console.log(chalk.dim(`  Creating new D1 database: ${databaseName}`));
+    }
     const databaseId = await createD1Database(databaseName);
-    console.log(
-      chalk.green(`Created D1 database: ${databaseName} (${databaseId})\n`),
-    );
+    if (verbose) {
+      console.log(
+        chalk.green(`  Created D1 database: ${databaseName} (${databaseId})\n`),
+      );
+    } else {
+      console.log(chalk.green("  D1 successfully created.\n"));
+    }
 
     return databaseId;
   } catch (error) {
     console.error(
-      chalk.red(`\nFailed to get or create D1 database: ${databaseName}`),
+      chalk.red(`Failed to get or create D1 database: ${databaseName}`),
       error instanceof Error ? chalk.dim(`\n   ${error.message}`) : "",
     );
     throw error;

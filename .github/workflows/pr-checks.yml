@@ -62,5 +62,7 @@ jobs:
           cache: 'pnpm'
       - name: Install all dependencies
         run: pnpm install --ignore-scripts
+      - name: Build to init .wrangler directories
+        pnpm run -r --no-bail run build
       - name: Run knip check
         run: pnpm knip

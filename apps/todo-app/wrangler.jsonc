@@ -13,12 +13,9 @@
   "observability": {
     "enabled": true,
   },
-  "vars": {
-    "CORE_APP_URL": "https://every-app-gateway.bensenescu.workers.dev",
-  },
   "services": [
     {
-      "binding": "CORE_APP_SERVICE",
+      "binding": "EVERY_APP_GATEWAY",
       "service": "every-app-gateway",
     },
   ],
@@ -36,4 +33,7 @@
       "migrations_dir": "drizzle",
     },
   ],
+  "vars": {
+    "GATEWAY_URL": "THIS IS SET DURING `every app deploy`",
+  },
 }

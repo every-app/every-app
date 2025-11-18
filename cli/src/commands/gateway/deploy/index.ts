@@ -1,18 +1,16 @@
 import type { LocalContext } from "@/context";
 import chalk from "chalk";
 import path from "node:path";
-import {
-  setupCloudflareResources,
-  cloneAndInstall,
-  updateConfigAndDeploy,
-} from "@/commands/gateway/deploy/cloudflareDeployment";
+import { setupCloudflareResources } from "@/commands/gateway/deploy/steps/setupCloudflareResources";
+import { cloneAndInstall } from "@/commands/gateway/deploy/steps/cloneAndInstall";
+import { updateConfigAndDeploy } from "@/commands/gateway/deploy/steps/updateConfigAndDeploy";
 import type { DeployCommandFlags } from "@/commands/gateway/deploy/types";
 import {
   cleanupTempDirectory,
   createTempDirectory,
 } from "@/lib/file-operations";
 import { getWorkerName } from "@/lib/wrangler-config";
-import { confirmDeployment } from "@/lib/deployment";
+import { confirmDeployment, ensureWorkersDevSubdomain } from "@/lib/deployment";
 import { getWorkerUrl } from "@/lib/cloudflare-auth";
 
 export async function deploy(
@@ -26,33 +24,36 @@ export async function deploy(
     "Do you want to deploy EveryApp Gateway into this Cloudflare account?",
   );
   if (!confirmed) {
-    console.log(chalk.red("\nDeployment cancelled by user\n"));
+    console.log("\nDeployment cancelled by user\n");
     return;
   }
 
+  // If they've never deployed a worker before, they'll need to choose a subdomain.
+  await ensureWorkersDevSubdomain();
+
   // Step 2: Set up Cloudflare resources
-  const resources = await setupCloudflareResources();
+  const resources = await setupCloudflareResources(verbose);
 
   // Step 3: Clone and install (we need this to read the worker name from wrangler.jsonc)
   const tmpDir = await createTempDirectory("gateway-deploy-");
-  console.log(chalk.dim(`\nWorking directory: ${tmpDir}\n`));
+  if (verbose) {
+    console.log(chalk.dim(`Working directory: ${tmpDir}\n`));
+  }
 
   let workerUrl = null;
   try {
     const gatewayPath = await cloneAndInstall(tmpDir, verbose);
 
     // Step 4: Predict worker URL
-    console.log(chalk.bold("Determining worker URL...\n"));
     const wranglerConfigPath = path.join(gatewayPath, "wrangler.jsonc");
     const workerName = await getWorkerName(wranglerConfigPath);
     workerUrl = await getWorkerUrl(workerName);
-    console.log(chalk.green(`Worker will be deployed to: ${workerUrl}\n`));
 
     // Step 5: Update config and deploy (secrets are set inside this function after vars are removed)
     await updateConfigAndDeploy(gatewayPath, resources, workerUrl, verbose);
   } catch (error) {
     console.error(
-      chalk.red("\nDeployment failed:"),
+      "\nDeployment failed:",
       error instanceof Error ? error.message : error,
     );
     throw error;
@@ -61,19 +62,9 @@ export async function deploy(
   }
 
   if (!workerUrl)
-    throw new Error("Worker URL not net properly during deployment");
+    throw new Error("Worker URL not set properly during deployment");
 
-  // Step 6: Show success message with URL
-  console.log(chalk.bold.green("🎉 Gateway deployment successful!\n"));
-  console.log(
-    chalk.bold(`Your gateway is now live at: ${chalk.cyan(workerUrl)}\n`),
-  );
-  console.log(
-    chalk.dim("Try it out by visiting the URL above in your browser.\n"),
-  );
-  console.log(
-    chalk.yellow(
-      "Note: if you see an error in the browser, cloudflare may still be setting up your domain. Wait ~1 minute to see if resolves itself.\n",
-    ),
-  );
+  // Step 6: Show success message
+  console.log(chalk.green("\nGateway deployment successful!\n"));
+  console.log(`Your Gateway is now live at: ${chalk.cyan(workerUrl)}\n`);
 }
