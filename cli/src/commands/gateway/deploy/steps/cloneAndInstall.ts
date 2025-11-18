@@ -3,7 +3,7 @@ import { cloneRepository } from "@/lib/git";
 import { installDependencies } from "@/lib/package-manager";
 
 // Constants
-const EVERY_APP_REPO = "git@github.com:every-app/every-app.git";
+const EVERY_APP_REPO = "https://github.com/every-app/every-app.git";
 const GATEWAY_RELATIVE_PATH = "apps/every-app-gateway";
 
 /**

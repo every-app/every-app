@@ -7,7 +7,7 @@ import {
   createTempDirectory,
 } from "@/lib/file-operations";
 
-const EVERY_APP_REPO = "git@github.com:every-app/every-app.git";
+const EVERY_APP_REPO = "https://github.com/every-app/every-app.git";
 const TEMPLATE_RELATIVE_PATH = "templates/simple-todo";
 
 /**

@@ -1,5 +1,5 @@
 # Deploy Gateway
-1. `git clone git@github.com:every-app/every-app.git`
+1. `git clone https://github.com/every-app/every-app.git`
 1. `cd cli && pnpm i`
 1. `bun src/bin/cli.ts gateway deploy`
 1. `npx wrangler tail` to get logs (needed for next step)
