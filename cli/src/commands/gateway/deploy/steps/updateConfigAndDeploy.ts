@@ -13,12 +13,11 @@ export async function updateConfigAndDeploy(
   workerUrl: string,
   verbose: boolean = false,
 ): Promise<void> {
-  // Update wrangler config with resource IDs and vars
+  // Update wrangler config with resource IDs
   await updateWranglerConfig({
     configPath: gatewayPath,
     d1DatabaseId: resources.d1DatabaseId,
     kvNamespaceId: resources.kvNamespaceId,
-    vars: { GATEWAY_URL: workerUrl },
     verbose,
   });
 

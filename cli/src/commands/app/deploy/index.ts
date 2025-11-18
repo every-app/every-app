@@ -1,6 +1,9 @@
 import type { LocalContext } from "@/context";
 import chalk from "chalk";
-import { readWranglerConfig, updateWranglerConfig } from "@/lib/wrangler-config";
+import {
+  readWranglerConfig,
+  updateWranglerConfig,
+} from "@/lib/wrangler-config";
 import { getWorkerUrl } from "@/lib/cloudflare-auth";
 import { confirmDeployment } from "@/lib/deployment";
 import { installDependencies } from "@/lib/package-manager";
@@ -8,6 +11,7 @@ import { setupCloudflareResources } from "@/commands/app/deploy/steps/setupCloud
 import { runMigrations } from "@/commands/app/deploy/steps/runMigrations";
 import { buildAndDeploy } from "@/commands/app/deploy/steps/buildAndDeploy";
 import { insertUserAppRecords } from "@/commands/app/deploy/steps/insertUserAppRecords";
+import { setupAppSecrets } from "@/commands/app/deploy/steps/setupAppSecrets";
 
 interface DeployCommandFlags {
   verbose?: boolean;
@@ -23,7 +27,6 @@ export async function deploy(
   const cwd = process.cwd();
   const verbose = flags.verbose || false;
 
-  // Step 1: Read wrangler config
   const config = await readWranglerConfig(cwd);
 
   if (!config.name) {
@@ -35,7 +38,6 @@ export async function deploy(
   const workerName = config.name;
   console.log(chalk.bold(`\nProject name: ${workerName}\n`));
 
-  // Step 2: Confirm deployment
   const confirmed = await confirmDeployment(
     "Do you want to deploy this app to Cloudflare?",
   );
@@ -44,7 +46,6 @@ export async function deploy(
     return;
   }
 
-  // Step 3: Set up Cloudflare resources
   const { d1DatabaseId, kvNamespaceId } = await setupCloudflareResources(
     config,
     workerName,
@@ -53,16 +54,13 @@ export async function deploy(
 
   const gatewayUrl = await getWorkerUrl("every-app-gateway");
 
-  // Step 4: Update wrangler.jsonc with resource IDs and vars
   await updateWranglerConfig({
     configPath: cwd,
     d1DatabaseId,
     kvNamespaceId,
-    vars: { GATEWAY_URL: gatewayUrl },
     verbose,
   });
 
-  // Step 5: Ensure dependencies are installed
   console.log();
   await installDependencies(
     cwd,
@@ -70,16 +68,15 @@ export async function deploy(
     verbose,
   );
 
-  // Step 6: Run migrations
   await runMigrations(cwd, config, verbose);
 
-  // Step 7: Build and deploy
   await buildAndDeploy(cwd, gatewayUrl, workerName, verbose);
 
-  // Step 8: Get worker URL
+  await setupAppSecrets(gatewayUrl, cwd, verbose);
+
   const workerUrl = await getWorkerUrl(config.name);
 
-  // Step 9: Insert UserApp records with custom metadata for known apps
+  // Insert UserApp records with custom metadata for known apps
   let appName: string | undefined;
   let appDescription: string | undefined;
 
@@ -97,7 +94,6 @@ export async function deploy(
     appDescription,
   );
 
-  // Step 10: Show success message
   console.log(chalk.green("Deployment successful!\n"));
 
   const gatewayUrlFromDeployment = await getWorkerUrl("every-app-gateway");

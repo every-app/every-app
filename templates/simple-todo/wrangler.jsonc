@@ -33,7 +33,4 @@
       "migrations_dir": "drizzle",
     },
   ],
-  "vars": {
-    "GATEWAY_URL": "THIS IS SET DURING `every app deploy`",
-  },
 }

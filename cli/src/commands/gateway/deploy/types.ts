@@ -13,8 +13,3 @@ export interface JwtKeyPair {
   privateKey: string;
   publicKey: string;
 }
-
-export interface SecretInfo {
-  name: string;
-  type: string;
-}

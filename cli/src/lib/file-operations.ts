@@ -56,24 +56,6 @@ export async function directoryExists(dirPath: string): Promise<boolean> {
 }
 
 /**
- * Update a JSON file with new values
- * @param filePath - Path to JSON file
- * @param updates - Object with updates to apply (deep merge)
- */
-async function updateJsonFile(
-  filePath: string,
-  updates: Record<string, any>,
-): Promise<void> {
-  const content = await fs.readFile(filePath, "utf-8");
-  const data = JSON.parse(content);
-
-  // Deep merge updates into data
-  Object.assign(data, updates);
-
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2) + "\n", "utf-8");
-}
-
-/**
  * Create environment files for the project
  * @param targetDir - Directory to create env files in
  * @param appId - App ID to use in environment variables
@@ -85,7 +67,7 @@ export async function createEnvFiles(
   // Get the every-app-gateway worker URL dynamically
   const gatewayUrl = await getWorkerUrl("every-app-gateway");
 
-  const envLocalContent = `VITE_APP_ID=${appId}\nVITE_GATEWAY_URL=${gatewayUrl}\n`;
+  const envLocalContent = `# Vite client-side secrets\nVITE_APP_ID=${appId}\nVITE_GATEWAY_URL=${gatewayUrl}\n# Set Cloudflare secrets locally\nGATEWAY_URL=${gatewayUrl}\n`;
 
   await Promise.all([
     fs.writeFile(path.join(targetDir, ".env.local"), envLocalContent),

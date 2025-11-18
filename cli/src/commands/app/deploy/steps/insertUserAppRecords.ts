@@ -23,6 +23,7 @@ export async function insertUserAppRecords(
   appDescription?: string,
 ): Promise<void> {
   try {
+    if (verbose) console.log("Adding apps to user gateways...");
     // Get account ID
     const accountId = await getDefaultAccountId();
 
@@ -136,7 +137,7 @@ async function insertUserAppRecord(
     if (verbose) {
       console.log(
         chalk.dim(
-          `  UserApp record already exists for user ${user.name} (${user.email}), skipping...\n`,
+          `  UserApp record already exists for user ${user.name} (${user.email})`,
         ),
       );
     }
@@ -149,7 +150,7 @@ async function insertUserAppRecord(
     `;
     await queryD1Database(accountId, databaseId, insertSql);
     console.log(
-      `  UserApp record created for user ${user.name} (${user.email})\n`,
+      `  UserApp record created for user ${user.name} (${user.email})`,
     );
   }
 }

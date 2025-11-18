@@ -27,7 +27,4 @@
       "migrations_dir": "drizzle",
     },
   ],
-  "vars": {
-    "GATEWAY_URL": "Set to localhost:3000 or it's automatically set during `every app deploy`",
-  },
 }

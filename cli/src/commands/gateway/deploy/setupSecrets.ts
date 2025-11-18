@@ -1,7 +1,7 @@
-import { execa } from "execa";
 import crypto from "node:crypto";
 import chalk from "chalk";
-import type { JwtKeyPair, SecretInfo } from "./types";
+import type { JwtKeyPair } from "./types";
+import { secretExists, uploadSecret } from "@/lib/secrets";
 
 /**
  * Generate a secure random secret for Better Auth
@@ -29,67 +29,12 @@ function generateJwtKeyPair(): JwtKeyPair {
   return { privateKey, publicKey };
 }
 
-async function listSecrets(cwd: string): Promise<SecretInfo[]> {
-  const { stdout } = await execa(
-    "npx",
-    ["wrangler", "secret", "list", "--format", "json"],
-    { cwd },
-  );
-  return JSON.parse(stdout);
-}
-
-async function secretExists(
-  secretName: string,
-  cwd: string,
-  verbose: boolean = false,
-): Promise<boolean> {
-  if (verbose) {
-    console.log(chalk.dim(`   Checking secret: ${secretName}`));
-  }
-  const secrets = await listSecrets(cwd);
-  const exists = secrets.some((secret) => secret.name === secretName);
-
-  if (exists && verbose) {
-    console.log(chalk.dim("   Secret already exists\n"));
-  }
-
-  return exists;
-}
-
-async function uploadSecret(
-  secretName: string,
-  secretValue: string,
-  cwd: string,
-  verbose: boolean = false,
-  description?: string,
-): Promise<void> {
-  if (verbose && description) {
-    console.log(chalk.dim(`   ${description}\n`));
-  }
-
-  const subprocess = execa("npx", ["wrangler", "secret", "put", secretName], {
-    cwd,
-  });
-
-  // Write the secret value to stdin
-  if (subprocess.stdin) {
-    subprocess.stdin.write(secretValue);
-    subprocess.stdin.end();
-  }
-
-  await subprocess;
-
-  if (verbose) {
-    console.log(chalk.green(`Created secret: ${secretName}\n`));
-  }
-}
-
 export async function setupSecrets(
   gatewayUrl: string,
   homebasePath: string,
   verbose: boolean = false,
 ): Promise<void> {
-  console.log("\nConfiguring Secrets...");
+  console.log("Configuring Secrets...");
 
   try {
     // Check and setup GATEWAY_URL

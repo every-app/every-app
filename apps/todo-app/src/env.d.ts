@@ -5,12 +5,5 @@ declare namespace Cloudflare {
   interface Env {
     // Gateway URL
     GATEWAY_URL: string;
-
-    // Better Auth configuration
-    BETTER_AUTH_SECRET: string;
-
-    // JWT keys for embedded app tokens
-    JWT_PRIVATE_KEY: string;
-    JWT_PUBLIC_KEY: string;
   }
 }
