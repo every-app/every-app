@@ -1,4 +1,3 @@
-import chalk from "chalk";
 import { secretExists, uploadSecret } from "@/lib/secrets";
 
 /**
@@ -9,7 +8,7 @@ export async function setupAppSecrets(
   appPath: string,
   verbose: boolean = false,
 ): Promise<void> {
-  console.log("Configuring Secrets...");
+  if (verbose) console.log("Configuring Secrets...");
 
   try {
     // Check and setup GATEWAY_URL
@@ -30,8 +29,6 @@ export async function setupAppSecrets(
 
     if (verbose) {
       console.log("Secret setup complete!\n");
-    } else {
-      console.log("  Finished.\n");
     }
   } catch (error) {
     console.error(

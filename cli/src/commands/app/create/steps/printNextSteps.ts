@@ -35,15 +35,8 @@ export function printNextSteps(
     chalk.dim(
       chalk.bold(
         chalk.italic(
-          `   every app deploy	    # Spin up KV Store, run migrations on prod db, deploy app to Cloudflare Workers.`,
+          "   every app deploy	    # Deploys made easy using the Every App CLI",
         ),
-      ),
-    ),
-  );
-  console.log(
-    chalk.dim(
-      chalk.bold(
-        chalk.italic(`   pnpm run deploy          # Deploy to Cloudflare\n`),
       ),
     ),
   );

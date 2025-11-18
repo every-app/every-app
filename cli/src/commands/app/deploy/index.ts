@@ -94,10 +94,11 @@ export async function deploy(
     appDescription,
   );
 
-  console.log(chalk.green("Deployment successful!\n"));
+  console.log(chalk.green("\nDeployment successful!"));
+  console.log(chalk.dim(`  This app's url: ${chalk.cyan(workerUrl)}\n`));
 
   const gatewayUrlFromDeployment = await getWorkerUrl("every-app-gateway");
   console.log(
-    `Try it out in your gateway: ${chalk.cyan(gatewayUrlFromDeployment)}\n`,
+    `Access it on your gateway: ${chalk.cyan(gatewayUrlFromDeployment)}\n`,
   );
 }

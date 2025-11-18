@@ -9,11 +9,7 @@ export async function setupCloudflareResources(
   appId: string,
   verbose: boolean,
 ): Promise<{ d1DatabaseId: string; kvNamespaceId: string }> {
-  if (!verbose) {
-    console.log("\nCreating Cloudflare resources...\n");
-  } else {
-    console.log("Creating Cloudflare resources...\n");
-  }
+  console.log("Creating Cloudflare resources...\n");
 
   const d1DatabaseId = await getOrCreateD1Database(appId, verbose);
   const kvNamespaceId = await getOrCreateKVNamespace(appId, verbose);

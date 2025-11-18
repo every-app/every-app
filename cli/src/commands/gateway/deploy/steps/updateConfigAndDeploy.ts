@@ -21,12 +21,11 @@ export async function updateConfigAndDeploy(
     verbose,
   });
 
-  // Set up secrets after removing conflicting vars
-  await setupSecrets(workerUrl, gatewayPath, verbose);
-
   // Generate a random secret for build time only (actual secret is set via Cloudflare secrets)
   const buildTimeSecret = crypto.randomUUID();
 
+  // New line
+  console.log();
   await executeCommandWithFormatting("npm", ["run", "deploy"], {
     cwd: gatewayPath,
     description:
@@ -37,4 +36,9 @@ export async function updateConfigAndDeploy(
     },
     verbose,
   });
+
+  // New line
+  console.log();
+  // Set up secrets after the worker is deployed
+  await setupSecrets(workerUrl, gatewayPath, verbose);
 }
