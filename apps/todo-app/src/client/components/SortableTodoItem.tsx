@@ -191,7 +191,7 @@ export function SortableTodoItem({
                 e.currentTarget.blur();
               }
             }}
-            className="w-full border-none bg-transparent focus:ring-0 focus:border-none focus:outline-none shadow-none px-2 py-1 text-sm leading-6 transition-all duration-200 cursor-text focus:cursor-text focus:bg-blue-50 resize-none overflow-hidden"
+            className="w-full border-none bg-transparent focus:ring-0 focus:border-none focus:outline-none shadow-none px-2 py-1 text-base leading-6 transition-all duration-200 cursor-text focus:cursor-text focus:bg-blue-50 resize-none overflow-hidden"
             rows={1}
             autoFocus
             aria-label={`Edit todo: ${todo.title}`}
@@ -203,7 +203,7 @@ export function SortableTodoItem({
             onClick={handleTextClick}
             onKeyDown={handleTextKeyDown}
             onPointerDown={(e) => e.stopPropagation()}
-            className={`px-2 py-1 text-sm leading-6 rounded transition-all duration-200 break-words ${
+            className={`px-2 py-1 text-base leading-6 rounded transition-all duration-200 break-words ${
               todo.completed
                 ? "line-through text-gray-500 cursor-default"
                 : "cursor-text hover:bg-gray-50 focus:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
