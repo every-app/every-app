@@ -22,11 +22,6 @@ export async function handleSessionTokenRequest(
     if (event.data?.source?.startsWith("react-")) {
       return null;
     }
-    console.log(
-      "[session-token-handler] Ignoring message of unknown type",
-      parseResult,
-      event.data,
-    );
     return null;
   }
 

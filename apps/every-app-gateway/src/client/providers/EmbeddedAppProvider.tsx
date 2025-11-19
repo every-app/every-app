@@ -29,7 +29,6 @@ export const EmbeddedAppProvider: React.FC<EmbeddedAppProviderProps> = ({
 
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
-      console.log("[EmbeddedAppProvider] Provider handling message");
       const response = await handleSessionTokenRequest(event, userApps);
       if (response && event.source) {
         sendMessageToWindow(event.source, response, event.origin);
