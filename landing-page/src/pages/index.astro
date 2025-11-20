@@ -1,5 +1,7 @@
 ---
 import '../styles/global.css';
+import LinkCard from '../components/LinkCard.astro';
+import EveryAppDiagram from '../components/EveryAppDiagram.svg?raw';
 
 const title = 'Every App';
 const description = 'Make every app open source. No subscriptions or paywalls. Own your data. Share with the world.';
@@ -104,7 +106,6 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
         </div>
       </section>
 
-      <!-- Philosophy Section -->
       <section class="py-12 px-6 border-t border-stone-800">
         <div class="max-w-2xl mx-auto">
           <h2 class="text-[clamp(1.5rem,4vw,2.5rem)] font-bold text-white mb-6">
@@ -134,19 +135,24 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
         </div>
       </section>
 
-      <!-- Goal Section -->
       <section class="py-12 px-6 border-t border-stone-800">
         <div class="max-w-2xl mx-auto">
           <h2 class="text-[clamp(1.5rem,4vw,2.5rem)] font-bold text-white mb-6">
-            Goal
+            Make any app
           </h2>
-          <p class="text-[clamp(1.25rem,2.5vw,1.75rem)] text-stone-300 font-light leading-relaxed">
-            Every person in the world uses Every App.
+          <div class="space-y-6 text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
+	  <p>
+	  The coolest part about Every App is that you can make almost anything and host it for free.
+	  </p>
+	  <p>It makes using Cloudflare's diverse set of cloud of services easy (which start at $0/month). Make anything from useful tools for yourself or your business, to fun games for your friends and family. 
           </p>
+	  </div>
+          <div class="mt-8 flex justify-center">
+            <div class="w-full max-w-2xl [&_svg]:w-full [&_svg]:h-auto [&_svg]:max-w-full" set:html={EveryAppDiagram} />
+          </div>
         </div>
       </section>
 
-      <!-- How Does It Work Section -->
       <section class="py-12 px-6 border-t border-stone-800">
         <div class="max-w-2xl mx-auto">
           <h2 class="text-[clamp(1.5rem,4vw,2.5rem)] font-bold text-white mb-6">
@@ -172,7 +178,6 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
         </div>
       </section>
 
-      <!-- Why Build Section -->
       <section class="py-12 px-6 border-t border-stone-800">
         <div class="max-w-2xl mx-auto">
           <h2 class="text-[clamp(1.5rem,4vw,2.5rem)] font-bold text-white mb-6">
@@ -205,7 +210,7 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
               </p>
             </div>
             
-            <div class="pb-6 border-b border-stone-800">
+            <div>
               <h3 class="text-[clamp(1.25rem,2.5vw,1.75rem)] font-semibold text-white mb-3">
                 For yourself
               </h3>
@@ -222,25 +227,19 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
       <section class="py-12 px-6 border-t border-stone-800">
         <div class="max-w-2xl mx-auto">
           <h2 class="text-[clamp(1.5rem,4vw,2.5rem)] font-bold text-white mb-6">
-            Get Involved
+            Get involved
           </h2>
-          <p class="text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-            The best way to get involved is to join the <a href="https://discord.gg/EpwPGyDn" target="_blank" rel="noopener noreferrer" class="text-white underline hover:text-stone-200 transition-colors">Discord</a>. The framework will be ready to try by Thanksgiving. If you want to get an email reminder, email me at <a href="mailto:ben@everyapp.dev" class="text-white underline hover:text-stone-200 transition-colors">ben@everyapp.dev</a>.
-          </p>
+          <div class="space-y-6 text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
+	  <p>Try deploying the Gateway yourself following the "Quickstart" guide! This hopefully will give you a feel for what Every App actually is and inspire ideas for what you can build.</p>
+	  <p>Then, make sure to join the <a href="https://discord.gg/EpwPGyDn" target="_blank" rel="noopener noreferrer" class="text-white underline hover:text-stone-200 transition-colors">Discord</a> which is the place where you can go when you're stuck or to talk through ideas before you build them.</p>
+	  <LinkCard title="Quickstart" href="/docs/quickstart" description="(5 minutes) Deploy the Every App Gateway and a Todo App" />
+	  </div>
         </div>
       </section>
 
       <!-- Footer -->
       <footer class="py-12 px-6 border-t border-stone-800">
         <div class="max-w-2xl mx-auto">
-          <!-- <div class="flex flex-col sm:flex-row gap-4 justify-center mb-6">
-            <button class="px-8 py-3 bg-white text-[#0a0f0d] font-semibold rounded-md hover:bg-stone-200 transition-colors">
-              Start Building
-            </button>
-            <button class="px-8 py-3 border border-stone-600 text-white font-semibold rounded-md hover:bg-stone-800 transition-colors">
-              Get Involved
-            </button>
-          </div> -->
           <p class="text-stone-400 text-base text-center">
             Make every app open source.
           </p>
