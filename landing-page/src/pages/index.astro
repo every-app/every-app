@@ -1,7 +1,9 @@
 ---
 import '../styles/global.css';
 import LinkCard from '../components/LinkCard.astro';
-import EveryAppDiagram from '../components/EveryAppDiagram.svg?raw';
+import { Image } from 'astro:assets';
+import gatewayScreenshot from '../assets/gateway-screenshot.png';
+import todoScreenshot from '../assets/todo-screenshot.png';
 
 const title = 'Every App';
 const description = 'Make every app open source. No subscriptions or paywalls. Own your data. Share with the world.';
@@ -147,8 +149,23 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
 	  <p>It makes using Cloudflare's diverse set of cloud of services easy (which start at $0/month). Make anything from useful tools for yourself or your business, to fun games for your friends and family. 
           </p>
 	  </div>
-          <div class="mt-8 flex justify-center">
-            <div class="w-full max-w-2xl [&_svg]:w-full [&_svg]:h-auto [&_svg]:max-w-full" set:html={EveryAppDiagram} />
+          <div class="mt-8 flex flex-col md:flex-row justify-center items-center gap-4 md:gap-8">
+            <div class="mockup-phone border-stone-700 max-w-xs">
+              <div class="mockup-phone-camera"></div>
+              <div class="mockup-phone-display">
+                <div class="w-full">
+                  <img src={gatewayScreenshot.src} alt="Every App Gateway interface showing app management" class="brightness-75" />
+                </div>
+              </div>
+            </div>
+            <div class="mockup-phone border-stone-700 max-w-xs">
+              <div class="mockup-phone-camera"></div>
+              <div class="mockup-phone-display">
+                <div class="w-full">
+                  <img src={todoScreenshot.src} alt="Todo App interface demonstrating embedded app functionality" class="brightness-75" />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -160,7 +177,7 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
           </h2>
           <div class="space-y-6 text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
             <p>
-	      Open source contributors (like you) build and share amazing apps. Others discover your work and host it themselves — completely free.
+	      Open source contributors (like you) build and share amazing web applications. Others discover your work and host it themselves — completely free.
             </p>
             <p>
               Every App is a framework for building these self hosted, full stack

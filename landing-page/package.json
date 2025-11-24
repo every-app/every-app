@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
+    "daisyui": "^5.5.5",
     "knip": "^5.69.1",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
