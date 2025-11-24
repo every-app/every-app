@@ -17,6 +17,20 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
     <title>{title}</title>
     <meta name="description" content={String(description)} />
 
+    <!-- Open Graph / Social Media -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={String(description)} />
+    <meta property="og:image" content="/OpenGraphPreview.png" />
+    <meta property="og:image:alt" content="Every App - Make every app open source" />
+    
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={String(description)} />
+    <meta name="twitter:image" content="/OpenGraphPreview.png" />
+    <meta name="twitter:image:alt" content="Every App - Make every app open source" />
+
     <!-- Preconnect to improve initial connection time -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
@@ -46,7 +60,7 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
               Docs
             </a>
             <a 
-              href="https://discord.gg/EpwPGyDn"
+              href="https://discord.gg/c9uGs3cFXr"
               target="_blank"
               rel="noopener noreferrer"
               class="opacity-80 hover:opacity-100 transition-opacity"
@@ -85,7 +99,7 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
           <div class="space-y-2 text-[clamp(1rem,2vw,1.25rem)] text-stone-400 font-light">
             <p>No subscriptions or paywalls.</p>
             <p>Unleash your creativity.</p>
-            <p>Share with the world.</p>
+            <p>Personal software you can share with the world.</p>
           </div>
         </div>
 
@@ -146,7 +160,7 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
 	  <p>
 	  The coolest part about Every App is that you can make almost anything and host it for free.
 	  </p>
-	  <p>It makes using Cloudflare's diverse set of cloud of services easy (which start at $0/month). Make anything from useful tools for yourself or your business, to fun games for your friends and family. 
+	  <p>It makes using Cloudflare's diverse set of cloud services easy. Make anything from useful tools for yourself or your business, to fun games for your friends and family. 
           </p>
 	  </div>
           <div class="mt-8 flex flex-col md:flex-row justify-center items-center gap-4 md:gap-8">
@@ -177,19 +191,17 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
           </h2>
           <div class="space-y-6 text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
             <p>
-	      Open source contributors (like you) build and share amazing web applications. Others discover your work and host it themselves — completely free.
+              Every App is a framework for building self hosted, full stack
+              web applications.
             </p>
             <p>
-              Every App is a framework for building these self hosted, full stack
-              applications.
+	    It standardizes how to build these web apps and deploy them on Cloudflare. Cloudflare has a unique cloud offering of serverless functions, databases and containers which are pay by usage instead of fixed monthly prices enabling this simple and "free" hosting.
+	    </p>
+	    <p>
+	    These can be apps solving a personal problem or a fun project to show off your skills in a portfolio. 
             </p>
             <p>
-              Apps are designed to be self-hosted on Cloudflare's Developer
-	      Platform. Cloudflare has serverless functions, containers and databases which are pay by usage instead of fixed monthly prices enabling this simple and "free" hosting.
-            </p>
-            <p>
-              As the framework matures, using new open source, full stack apps
-              will be as easy as clicking "Install".
+	    When you build something, you can can share it with others and they can easily use your app in their Gateway with one CLI command. As the framework and ecosystem mature, using new open source, full stack apps will be as easy as clicking "Install" in an App Store.
             </p>
           </div>
         </div>
@@ -247,8 +259,8 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
             Get involved
           </h2>
           <div class="space-y-6 text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-	  <p>Try deploying the Gateway yourself following the "Quickstart" guide! This hopefully will give you a feel for what Every App actually is and inspire ideas for what you can build.</p>
-	  <p>Then, make sure to join the <a href="https://discord.gg/EpwPGyDn" target="_blank" rel="noopener noreferrer" class="text-white underline hover:text-stone-200 transition-colors">Discord</a> which is the place where you can go when you're stuck or to talk through ideas before you build them.</p>
+	  <p>Try deploying the Gateway yourself following the "Quickstart" guide! This will give you a feel for what Every App actually is and inspire ideas for what you can build.</p>
+	  <p>Then, make sure to join the <a href="https://discord.gg/c9uGs3cFXr" target="_blank" rel="noopener noreferrer" class="text-white underline hover:text-stone-200 transition-colors">Discord</a> which is the place you can go when you're stuck or to talk through ideas before you build them.</p>
 	  <LinkCard title="Quickstart" href="/docs/quickstart" description="(5 minutes) Deploy the Every App Gateway and a Todo App" />
 	  </div>
         </div>

@@ -70,7 +70,7 @@ export default defineConfig({
       ],
       social: {
         github: "https://github.com/every-app/every-app",
-        discord: "https://discord.gg/EpwPGyDn",
+        discord: "https://discord.gg/c9uGs3cFXr",
       },
       sidebar: [
         {

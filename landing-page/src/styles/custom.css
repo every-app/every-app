@@ -1,6 +1,9 @@
 /* Custom styles for Starlight documentation - Matching landing page */
 
+/* Set color-scheme to dark to tell browsers this is a dark theme */
 :root {
+  color-scheme: dark;
+
   /* Dark theme matching landing page */
   --sl-color-bg: #0a0f0d;
   --sl-color-bg-nav: #0a0f0d;
@@ -35,12 +38,36 @@
   --sl-color-black: #ffffff;
 }
 
-/* Dark mode is the default */
+/* Force dark theme regardless of system preferences */
 :root[data-theme="light"] {
-  /* Keep dark theme even in light mode */
+  color-scheme: dark;
+  /* Override light theme with dark theme values */
   --sl-color-bg: #0a0f0d;
   --sl-color-bg-nav: #0a0f0d;
   --sl-color-bg-sidebar: #0a0f0d;
+  --sl-color-bg-inline-code: rgba(255, 255, 255, 0.1);
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #f5f5f4;
+  --sl-color-gray-2: #d6d3d1;
+  --sl-color-gray-3: #a8a29e;
+  --sl-color-gray-4: #78716c;
+  --sl-color-gray-5: #57534e;
+  --sl-color-gray-6: #292524;
+  --sl-color-text: #d6d3d1;
+  --sl-color-text-accent: #ffffff;
+  --sl-color-hairline: #292524;
+  --sl-color-hairline-light: #292524;
+  --sl-color-hairline-shade: #292524;
+  --sl-color-text-invert: #0a0f0d;
+  --sl-color-accent: #ffffff;
+  --sl-color-accent-high: #ffffff;
+  --sl-color-accent-low: rgba(255, 255, 255, 0.2);
+  --sl-color-black: #ffffff;
+}
+
+/* Ensure HTML element uses dark color scheme */
+html {
+  color-scheme: dark;
 }
 
 /* Body and main content styling */
@@ -259,4 +286,79 @@ mobile-starlight-toc nav summary .toggle {
 .mobile-preferences,
 div.mobile-preferences {
   display: none !important;
+}
+
+/* Style Starlight aside/note components for dark theme */
+.sl-markdown-content aside,
+.sl-markdown-content .starlight-aside {
+  background-color: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+/* Note style (info) */
+.sl-markdown-content aside.starlight-aside--note,
+.sl-markdown-content .starlight-aside--note {
+  background-color: rgba(59, 130, 246, 0.15); /* Brighter blue tint */
+  border-color: rgba(59, 130, 246, 0.4);
+}
+
+/* Tip style */
+.sl-markdown-content aside.starlight-aside--tip,
+.sl-markdown-content .starlight-aside--tip {
+  background-color: rgba(34, 197, 94, 0.05); /* Green tint */
+  border-color: rgba(34, 197, 94, 0.2);
+}
+
+/* Caution style */
+.sl-markdown-content aside.starlight-aside--caution,
+.sl-markdown-content .starlight-aside--caution {
+  background-color: rgba(251, 191, 36, 0.15); /* Brighter yellow tint */
+  border-color: rgba(251, 191, 36, 0.4);
+}
+
+/* Danger style */
+.sl-markdown-content aside.starlight-aside--danger,
+.sl-markdown-content .starlight-aside--danger {
+  background-color: rgba(239, 68, 68, 0.05); /* Red tint */
+  border-color: rgba(239, 68, 68, 0.2);
+}
+
+/* Aside title styling */
+.sl-markdown-content aside .starlight-aside__title {
+  color: #ffffff;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+/* Aside content text */
+.sl-markdown-content aside p {
+  color: #d6d3d1; /* stone-300 */
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Aside icon styling */
+.sl-markdown-content aside .starlight-aside__icon {
+  color: currentColor;
+  opacity: 0.8;
+}
+
+/* Override default Starlight aside background variables */
+:root {
+  --sl-color-blue-low: rgba(59, 130, 246, 0.15);
+  --sl-color-green-low: rgba(34, 197, 94, 0.1);
+  --sl-color-orange-low: rgba(251, 191, 36, 0.15);
+  --sl-color-red-low: rgba(239, 68, 68, 0.1);
+  --sl-color-purple-low: rgba(147, 51, 234, 0.1);
+}
+
+:root[data-theme="light"] {
+  --sl-color-blue-low: rgba(59, 130, 246, 0.15);
+  --sl-color-green-low: rgba(34, 197, 94, 0.1);
+  --sl-color-orange-low: rgba(251, 191, 36, 0.15);
+  --sl-color-red-low: rgba(239, 68, 68, 0.1);
+  --sl-color-purple-low: rgba(147, 51, 234, 0.1);
 }

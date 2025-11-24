@@ -2,12 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: dark; /* Tell browsers this is a dark theme */
+  --page-scroll-bg: #0a0f0d;
+  --root-bg: #0a0f0d;
+  --color-base-100: #0a0f0d;
+  background-color: #0a0f0d;
+}
+
 html {
+  color-scheme: dark; /* Ensure HTML element also declares dark mode */
   background-color: #0a0f0d;
 }
 
 body {
   margin: 0;
+  background-color: #0a0f0d;
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
     "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
