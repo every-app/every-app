@@ -44,7 +44,11 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
   // Build iframe URL with initial route, memoized to prevent hard reloads
   const iframeUrl = useMemo(() => {
     if (!app?.appUrl) return null;
-    return `${app.appUrl}${embeddedRoute}`;
+    // Remove trailing slash to prevent double slashes (e.g., "https://example.com//")
+    const baseUrl = app.appUrl.endsWith("/")
+      ? app.appUrl.slice(0, -1)
+      : app.appUrl;
+    return `${baseUrl}${embeddedRoute}`;
   }, [app?.appUrl]); // Only recalculate if app.appUrl changes, not on route changes
 
   const handleIframeLoad = useCallback(() => {
