@@ -4,7 +4,7 @@
   "description": "Every App CLI - Deploy and manage apps.",
   "license": "MIT",
   "type": "module",
-  "version": "0.0.16",
+  "version": "0.0.18",
   "files": [
     "dist"
   ],
@@ -45,7 +45,8 @@
     "enquirer": "^2.4.1",
     "execa": "^9.6.0",
     "jsonc-parser": "^3.3.1",
-    "smol-toml": "^1.4.2"
+    "smol-toml": "^1.4.2",
+    "zod": "^4.1.13"
   },
   "devDependencies": {
     "@types/node": "^22.18.13",

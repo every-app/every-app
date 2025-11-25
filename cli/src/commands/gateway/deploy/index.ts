@@ -2,8 +2,8 @@ import type { LocalContext } from "@/context";
 import chalk from "chalk";
 import path from "node:path";
 import { setupCloudflareResources } from "@/commands/gateway/deploy/steps/setupCloudflareResources";
-import { cloneAndInstall } from "@/commands/gateway/deploy/steps/cloneAndInstall";
 import { updateConfigAndDeploy } from "@/commands/gateway/deploy/steps/updateConfigAndDeploy";
+import { runMigrations } from "@/commands/gateway/deploy/steps/runMigrations";
 import type { DeployCommandFlags } from "@/commands/gateway/deploy/types";
 import {
   cleanupTempDirectory,
@@ -12,6 +12,7 @@ import {
 import { getWorkerName } from "@/lib/wrangler-config";
 import { confirmDeployment, ensureWorkersDevSubdomain } from "@/lib/deployment";
 import { getWorkerUrl } from "@/lib/cloudflare-auth";
+import { downloadLatestGatewayRelease } from "@/lib/github-releases";
 
 export async function deploy(
   this: LocalContext,
@@ -32,7 +33,7 @@ export async function deploy(
 
   const resources = await setupCloudflareResources(verbose);
 
-  //  Clone and install (we need this to read the worker name from wrangler.jsonc)
+  // Download prebuilt release
   const tmpDir = await createTempDirectory("gateway-deploy-");
   if (verbose) {
     console.log(chalk.dim(`Working directory: ${tmpDir}\n`));
@@ -40,7 +41,7 @@ export async function deploy(
 
   let workerUrl = null;
   try {
-    const gatewayPath = await cloneAndInstall(tmpDir, verbose);
+    const gatewayPath = await downloadLatestGatewayRelease(tmpDir, verbose);
 
     // Predict worker URL
     const wranglerConfigPath = path.join(gatewayPath, "wrangler.jsonc");
@@ -49,6 +50,9 @@ export async function deploy(
 
     // Update config and deploy (secrets are set inside this function after vars are removed)
     await updateConfigAndDeploy(gatewayPath, resources, workerUrl, verbose);
+
+    // Run database migrations
+    await runMigrations(gatewayPath, verbose);
   } catch (error) {
     console.error(
       "\nDeployment failed:",

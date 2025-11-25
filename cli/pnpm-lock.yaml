@@ -29,6 +29,9 @@ importers:
       smol-toml:
         specifier: ^1.4.2
         version: 1.5.2
+      zod:
+        specifier: ^4.1.13
+        version: 4.1.13
     devDependencies:
       '@types/node':
         specifier: ^22.18.13
@@ -883,8 +886,8 @@ packages:
     resolution: {integrity: sha512-CzhO+pFNo8ajLM2d2IW/R93ipy99LWjtwblvC1RsoSUMZgyLbYFr221TnSNT7GjGdYui6P459mw9JH/g/zW2ug==}
     engines: {node: '>=18'}
 
-  zod@4.1.12:
-    resolution: {integrity: sha512-JInaHOamG8pt5+Ey8kGmdcAcg3OL9reK8ltczgHTAwNhMys/6ThXHityHxVV2p3fkw/c+MAvBHFVYHFZDmjMCQ==}
+  zod@4.1.13:
+    resolution: {integrity: sha512-AvvthqfqrAhNH9dnfmrfKzX5upOdjUVJYFqNSlkmGf64gRaTzlPwz99IHYnVs28qYAybvAlBV+H7pn0saFY4Ig==}
 
 snapshots:
 
@@ -1360,7 +1363,7 @@ snapshots:
       smol-toml: 1.5.2
       strip-json-comments: 5.0.2
       typescript: 5.9.3
-      zod: 4.1.12
+      zod: 4.1.13
 
   lilconfig@2.1.0: {}
 
@@ -1625,4 +1628,4 @@ snapshots:
 
   yoctocolors@2.1.2: {}
 
-  zod@4.1.12: {}
+  zod@4.1.13: {}

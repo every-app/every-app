@@ -1,0 +1,103 @@
+name: Auto Release Gateway
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/every-app-gateway/**'
+jobs:
+  release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+      - name: Get version
+        id: version
+        run: |
+          VERSION=$(grep '"version"' apps/every-app-gateway/package.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install --ignore-scripts
+      - name: Build gateway
+        run: |
+          cd apps/every-app-gateway
+          pnpm run build
+      - name: Create release package
+        run: |
+          cd apps/every-app-gateway
+          mkdir -p release-package
+          # Verify build output exists
+          if [ ! -d ".output" ]; then
+            echo "ERROR: .output directory not found after build"
+            exit 1
+          fi
+          cp -r .output/. release-package/.output/
+          cp wrangler.jsonc release-package/
+          cp package.json release-package/
+          cp -r drizzle release-package/
+          cp drizzle-prod.config.ts release-package/
+          # List contents to verify
+          echo "Release package contents:"
+          ls -la release-package/
+          tar -czf ../../every-app-gateway-build.tar.gz -C release-package .
+      - name: Create version tag
+        run: |
+          git tag -a "gateway-v${{ steps.version.outputs.version }}" -m "Release gateway version ${{ steps.version.outputs.version }}"
+          git push origin "gateway-v${{ steps.version.outputs.version }}"
+      - name: Create versioned release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: gateway-v${{ steps.version.outputs.version }}
+          name: Gateway v${{ steps.version.outputs.version }}
+          files: every-app-gateway-build.tar.gz
+          body: |
+            ## Every App Gateway Release v${{ steps.version.outputs.version }}
+
+            ### Contents:
+            - `.output/` - Built application
+            - `wrangler.jsonc` - Cloudflare configuration
+            - `drizzle/` - Database migrations
+            - `package.json` - Package manifest
+
+            ### Usage:
+            ```bash
+            every gateway deploy
+            ```
+      - name: Update gateway-latest tag
+        run: |
+          git tag -f gateway-latest
+          git push -f origin gateway-latest
+      - name: Update gateway-latest release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: gateway-latest
+          name: Gateway Latest
+          files: every-app-gateway-build.tar.gz
+          body: |
+            ## Every App Gateway - Latest Release
+
+            **Current version:** v${{ steps.version.outputs.version }}
+
+            This release always contains the latest prebuilt version of the gateway application.
+            For a specific version, see the [versioned releases](../../releases).
+
+            ### Usage:
+            ```bash
+            every gateway deploy
+            ```

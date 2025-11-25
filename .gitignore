@@ -3,6 +3,7 @@ dist/
 .claude/settings.local.json
 **/.output/
 **/.tanstack/
+**/.env*
 .wrangler
 .dev.vars*
 *.db

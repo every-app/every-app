@@ -10,17 +10,26 @@ export async function buildAndDeploy(
   appId: string,
   verbose: boolean,
 ): Promise<void> {
-  try {
-    const deployEnv = {
-      ...process.env,
-      VITE_GATEWAY_URL: gatewayUrl,
-      VITE_APP_ID: appId,
-    };
+  const deployEnv = {
+    ...process.env,
+    VITE_GATEWAY_URL: gatewayUrl,
+    VITE_APP_ID: appId,
+  };
 
-    await executeCommandWithFormatting("npm", ["run", "deploy"], {
+  try {
+    // Build the app
+    await executeCommandWithFormatting("npx", ["vite", "build"], {
+      cwd,
+      description: "Building your application...",
+      env: deployEnv,
+      verbose,
+    });
+
+    // Deploy to Cloudflare
+    await executeCommandWithFormatting("npx", ["wrangler", "deploy"], {
       cwd,
       description:
-        "Deploying your application to Cloudflare workers...\n\n  15s to 1m depending on how long the app build takes\n",
+        "Deploying your application to Cloudflare workers...\n\n  This could take up to a minute.",
       env: deployEnv,
       verbose,
     });

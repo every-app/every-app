@@ -1,9 +1,22 @@
 import { execa } from "execa";
 import chalk from "chalk";
+import { z } from "zod";
 
-export async function listD1Databases(): Promise<any[]> {
+const D1DatabaseSchema = z.object({
+  uuid: z.string(),
+  name: z.string(),
+  created_at: z.string().optional(),
+  version: z.string().optional(),
+});
+
+type D1Database = z.infer<typeof D1DatabaseSchema>;
+
+const D1DatabaseListSchema = z.array(D1DatabaseSchema);
+
+export async function listD1Databases(): Promise<D1Database[]> {
   const { stdout } = await execa("npx", ["wrangler", "d1", "list", "--json"]);
-  return JSON.parse(stdout);
+  const parsed = JSON.parse(stdout);
+  return D1DatabaseListSchema.parse(parsed);
 }
 
 async function createD1Database(databaseName: string): Promise<string> {
@@ -34,9 +47,7 @@ export async function getOrCreateD1Database(
 
   try {
     const databases = await listD1Databases();
-    const existingDatabase = databases.find(
-      (db: any) => db.name === databaseName,
-    );
+    const existingDatabase = databases.find((db) => db.name === databaseName);
 
     if (existingDatabase) {
       if (verbose) {

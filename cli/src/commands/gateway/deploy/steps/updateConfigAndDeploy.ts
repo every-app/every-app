@@ -24,9 +24,9 @@ export async function updateConfigAndDeploy(
   // Generate a random secret for build time only (actual secret is set via Cloudflare secrets)
   const buildTimeSecret = crypto.randomUUID();
 
-  // New line
+  // Deploy to Cloudflare
   console.log();
-  await executeCommandWithFormatting("npm", ["run", "deploy"], {
+  await executeCommandWithFormatting("npx", ["wrangler", "deploy"], {
     cwd: gatewayPath,
     description:
       "Deploying your Gateway to Cloudflare workers...\n\n  This could take up to a minute.",

@@ -1,15 +1,16 @@
 import chalk from "chalk";
 import { runWithRemoteD1 } from "@/lib/remote-d1";
-import type { WranglerConfig } from "@/lib/wrangler-config";
+import { readWranglerConfig } from "@/lib/wrangler-config";
 
 /**
- * Run database migrations for the app
+ * Run database migrations for the gateway
  */
 export async function runMigrations(
-  cwd: string,
-  config: WranglerConfig,
+  gatewayPath: string,
   verbose: boolean = false,
 ): Promise<void> {
+  const config = await readWranglerConfig(gatewayPath);
+
   if (!config.d1_databases || config.d1_databases.length === 0) {
     if (verbose) {
       console.log(
@@ -19,29 +20,28 @@ export async function runMigrations(
     return;
   }
 
-  try {
-    console.log();
-    console.log(
-      chalk.dim("Running any pending migrations against your remote D1 Database..."),
-    );
+  console.log(chalk.dim("\nRunning database migrations..."));
 
+  try {
     await runWithRemoteD1(
       "npx",
       ["drizzle-kit", "migrate", "--config=drizzle-prod.config.ts"],
       {
-        cwd,
+        cwd: gatewayPath,
         verbose,
       },
     );
 
-    console.log(chalk.green("\nMigrations completed!\n"));
+    console.log(chalk.green("Migrations completed!\n"));
   } catch (error) {
     console.warn(
       chalk.yellow(
-        `Failed to run migrations. You may need to run them manually:\n` +
-          `  npx drizzle-kit migrate --config=drizzle-prod.config.ts\n`,
+        `Failed to run migrations. You may need to run them manually.\n`,
       ),
     );
+    if (verbose) {
+      console.error(error);
+    }
     // Don't throw - continue with deployment
   }
 }

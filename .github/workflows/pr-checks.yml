@@ -66,3 +66,44 @@ jobs:
         run: pnpm -r --no-bail run build
       - name: Run knip check
         run: pnpm knip
+  gateway-version-check:
+    name: Gateway Version Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch base branch
+        run: git fetch origin ${{ github.base_ref }}
+      - name: Check if gateway code changed
+        id: check_changes
+        run: |
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q "^apps/every-app-gateway/"; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+      - name: Get versions
+        if: steps.check_changes.outputs.changed == 'true'
+        id: versions
+        run: |
+          BASE_VERSION=$(git show origin/${{ github.base_ref }}:apps/every-app-gateway/package.json | grep '"version"' | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
+          PR_VERSION=$(grep '"version"' apps/every-app-gateway/package.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
+          echo "base=$BASE_VERSION" >> $GITHUB_OUTPUT
+          echo "pr=$PR_VERSION" >> $GITHUB_OUTPUT
+      - name: Verify version bump
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          BASE_VERSION="${{ steps.versions.outputs.base }}"
+          PR_VERSION="${{ steps.versions.outputs.pr }}"
+          
+          if [ "$BASE_VERSION" = "$PR_VERSION" ]; then
+            echo "❌ Error: every-app-gateway code changed but version not bumped"
+            echo "Current version: $BASE_VERSION"
+            echo "Please update the version in apps/every-app-gateway/package.json"
+            exit 1
+          else
+            echo "✅ Version bumped: $BASE_VERSION → $PR_VERSION"
+          fi
