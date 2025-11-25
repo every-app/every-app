@@ -68,7 +68,7 @@ export async function downloadLatestGatewayRelease(
 ): Promise<string> {
   const url = getLatestGatewayReleaseUrl();
 
-  console.log(chalk.dim("Downloading gateway release (latest)..."));
+  console.log("\nGetting latest gateway release...");
 
   if (verbose) {
     console.log(chalk.dim(`URL: ${url}`));

@@ -48,9 +48,9 @@ function App() {
 
             <div className="flex justify-between items-start w-full">
               <div>
-                <h2 className="text-2xl font-bold">Apps</h2>
+                <h2 className="text-2xl font-bold">Gateway</h2>
                 <p className="text-base-content/70 mt-2">
-                  Manage and access your applications
+                  Manage and access your apps
                 </p>
               </div>
               <button

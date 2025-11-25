@@ -50,6 +50,7 @@ jobs:
           cp -r .output/. release-package/.output/
           cp wrangler.jsonc release-package/
           cp package.json release-package/
+          cp pnpm-lock.yaml release-package/
           cp -r drizzle release-package/
           cp drizzle-prod.config.ts release-package/
           # List contents to verify

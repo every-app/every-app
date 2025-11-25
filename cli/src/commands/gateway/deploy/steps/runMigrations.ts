@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { execa } from "execa";
 import { runWithRemoteD1 } from "@/lib/remote-d1";
 import { readWranglerConfig } from "@/lib/wrangler-config";
 
@@ -23,6 +24,12 @@ export async function runMigrations(
   console.log(chalk.dim("\nRunning database migrations..."));
 
   try {
+    // Install drizzle-kit so that migrations work without installing all the dependencies
+    await execa("npm", ["install", "--no-save", "drizzle-kit"], {
+      cwd: gatewayPath,
+      stdio: verbose ? "inherit" : "pipe",
+    });
+
     await runWithRemoteD1(
       "npx",
       ["drizzle-kit", "migrate", "--config=drizzle-prod.config.ts"],
@@ -34,14 +41,6 @@ export async function runMigrations(
 
     console.log(chalk.green("Migrations completed!\n"));
   } catch (error) {
-    console.warn(
-      chalk.yellow(
-        `Failed to run migrations. You may need to run them manually.\n`,
-      ),
-    );
-    if (verbose) {
-      console.error(error);
-    }
-    // Don't throw - continue with deployment
+    console.error(error);
   }
 }
