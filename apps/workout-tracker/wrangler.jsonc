@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "workout-tracker",
+  "main": "@tanstack/react-start/server-entry",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "dev": {
+    "port": 3001,
+  },
+  "assets": {
+    "directory": ".output/public",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "services": [
+    {
+      "binding": "EVERY_APP_GATEWAY",
+      "service": "every-app-gateway",
+    },
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "e820090c16e04eae8c74e48e587a1bc1",
+    },
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "workout-tracker",
+      "database_id": "05b54955-5d55-4c3a-85b1-09ed7a46a1a1",
+      "migrations_dir": "drizzle",
+    },
+  ],
+}

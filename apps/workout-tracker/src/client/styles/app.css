@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+@plugin "daisyui";
+
+@theme {
+  --font-sans: "Work Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Space Mono", ui-monospace, monospace;
+}
+
+@plugin "daisyui/theme" {
+  name: "workout";
+  default: true;
+  prefersdark: false;
+  color-scheme: "light";
+  --color-base-100: oklch(100% 0 0);
+  --color-base-200: oklch(97% 0 0);
+  --color-base-300: oklch(92% 0 0);
+  --color-base-content: oklch(20% 0 0);
+  --color-primary: oklch(55% 0.18 260);
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(55% 0.15 145);
+  --color-secondary-content: oklch(100% 0 0);
+  --color-accent: oklch(55% 0.18 260);
+  --color-accent-content: oklch(100% 0 0);
+  --color-neutral: oklch(25% 0 0);
+  --color-neutral-content: oklch(100% 0 0);
+  --color-info: oklch(70% 0.15 230);
+  --color-info-content: oklch(100% 0 0);
+  --color-success: oklch(65% 0.18 145);
+  --color-success-content: oklch(100% 0 0);
+  --color-warning: oklch(80% 0.15 80);
+  --color-warning-content: oklch(20% 0 0);
+  --color-error: oklch(65% 0.2 25);
+  --color-error-content: oklch(100% 0 0);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: "workout-dark";
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: oklch(18% 0 0);
+  --color-base-200: oklch(14% 0 0);
+  --color-base-300: oklch(22% 0 0);
+  --color-base-content: oklch(92% 0 0);
+  --color-primary: oklch(60% 0.18 260);
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(60% 0.15 145);
+  --color-secondary-content: oklch(100% 0 0);
+  --color-accent: oklch(60% 0.18 260);
+  --color-accent-content: oklch(100% 0 0);
+  --color-neutral: oklch(85% 0 0);
+  --color-neutral-content: oklch(20% 0 0);
+  --color-info: oklch(70% 0.15 230);
+  --color-info-content: oklch(100% 0 0);
+  --color-success: oklch(65% 0.18 145);
+  --color-success-content: oklch(100% 0 0);
+  --color-warning: oklch(80% 0.15 80);
+  --color-warning-content: oklch(20% 0 0);
+  --color-error: oklch(65% 0.2 25);
+  --color-error-content: oklch(100% 0 0);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+body {
+  @apply m-0 bg-base-200 font-sans;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family:
+    source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+
+@layer utilities {
+  .pb-safe {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0.5rem) + 0.5rem);
+  }
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0);
+  }
+}
+
+/* Active badge - green status indicator */
+.badge-active {
+  @apply bg-success/15 text-success border border-success/30 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide;
+}
+
+/* Tag/pill styles for metadata (days/week, difficulty) */
+.tag-pill,
+.badge-difficulty-beginner,
+.badge-difficulty-intermediate,
+.badge-difficulty-advanced {
+  @apply border border-base-300 text-base-content/70 bg-transparent rounded-full px-3 py-1 text-xs font-medium;
+}
+
+/* Card styling for program cards */
+.program-card {
+  @apply bg-base-100 border border-base-300 rounded-xl p-5 transition-all;
+}
+
+.program-card:hover {
+  @apply border-base-content/20;
+}
+
+/* Page container */
+.page-container {
+  @apply bg-base-200 min-h-screen pb-20;
+}
+
+/* Header styles */
+.page-header {
+  @apply flex items-center justify-between;
+}
+
+.page-title {
+  @apply text-2xl font-bold text-base-content;
+}
+
+/* Exercise table styles */
+.exercise-table {
+  @apply w-full;
+}
+
+.exercise-table-header {
+  @apply text-xs font-mono uppercase tracking-widest text-base-content/50;
+}
+
+.exercise-row {
+  @apply border-b border-base-200 py-4;
+}
+
+.exercise-row:last-child {
+  @apply border-b-0;
+}
+
+.exercise-name {
+  @apply font-medium text-base-content text-sm;
+}
+
+.exercise-value {
+  @apply bg-base-200 border border-base-300 rounded-md px-3 py-2 text-center text-sm font-mono w-14;
+}
+
+/* Workout card with header */
+.workout-card {
+  @apply bg-base-100 rounded-lg overflow-hidden border border-base-300;
+}
+
+.workout-card-header {
+  @apply p-4 border-b border-base-200;
+}
+
+.workout-card-title {
+  @apply text-lg font-bold text-base-content;
+}
+
+.workout-card-description {
+  @apply text-xs uppercase tracking-widest text-base-content/50 font-mono mt-1;
+}
+
+.workout-card-body {
+  @apply p-4;
+}
+
+/* Exercise input field */
+.exercise-input {
+  @apply w-14 font-mono text-center bg-base-200 border border-base-300 rounded-md p-2 text-base-content focus:outline-none focus:border-base-content/30;
+}
+
+.exercise-input:disabled {
+  @apply bg-transparent border-transparent opacity-100 pointer-events-none;
+}
+
+.exercise-input.border-error {
+  @apply border-error;
+}
+
+@media (pointer: coarse) {
+  html {
+    touch-action: none;
+  }
+
+  body {
+    touch-action: pan-x pan-y;
+  }
+}

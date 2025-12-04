@@ -1,0 +1,19 @@
+{
+  "entry": [
+    // Detect Tanstack Start Routes
+    "src/router.tsx",
+    "src/routes/**/*.tsx",
+  ],
+  "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
+  "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
+  "ignoreDependencies": [
+    "tailwindcss",
+    // Used via @plugin in CSS
+    "daisyui",
+  ],
+  "ignoreBinaries": ["every"],
+  // Standard UI component patterns - keep full API surface for card.tsx
+  "ignoreIssues": {
+    "src/client/components/ui/card.tsx": ["exports"],
+  },
+}
