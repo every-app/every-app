@@ -5,8 +5,6 @@ import {
   createSession,
   updateSession,
   deleteSession,
-  type CreateSessionInput,
-  type UpdateSessionInput,
 } from "@/serverFunctions/sessions";
 import { createCollection } from "@tanstack/react-db";
 import { lazyInitForWorkers } from "@/embedded-sdk/client";
@@ -24,37 +22,18 @@ export const sessionsCollection = lazyInitForWorkers(() =>
       queryClient,
       getKey: (item) => item.id,
       onInsert: async ({ transaction }) => {
-        // Handle all mutations in the transaction
         for (const mutation of transaction.mutations) {
-          const { modified: newSession } = mutation;
-          const input: CreateSessionInput = {
-            id: newSession.id,
-            programId: newSession.programId!,
-            workoutId: newSession.workoutId!,
-            programNameSnapshot: newSession.programNameSnapshot,
-            workoutNameSnapshot: newSession.workoutNameSnapshot,
-            status: newSession.status,
-          };
-          await createSession({ data: input });
+          await createSession({ data: mutation.modified });
         }
       },
       onUpdate: async ({ transaction }) => {
-        // Handle all mutations in the transaction
         for (const mutation of transaction.mutations) {
-          const { modified } = mutation;
-          const input: UpdateSessionInput = {
-            id: modified.id,
-            status: modified.status,
-            completedAt: modified.completedAt ?? undefined,
-          };
-          await updateSession({ data: input });
+          await updateSession({ data: mutation.modified });
         }
       },
       onDelete: async ({ transaction }) => {
-        // Handle all mutations in the transaction
         for (const mutation of transaction.mutations) {
-          const { original } = mutation;
-          await deleteSession({ data: { id: original.id } });
+          await deleteSession({ data: { id: mutation.key as string } });
         }
       },
     }),

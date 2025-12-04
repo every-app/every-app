@@ -6,15 +6,6 @@ import type { AuthConfig } from "@/embedded-sdk/server";
 import { authenticateRequest } from "@/embedded-sdk/server";
 import { env } from "cloudflare:workers";
 
-/**
- * Context provided by ensureUserMiddleware after successful authentication.
- * All server functions using this middleware will have access to these values.
- */
-export type AuthenticatedContext = {
-  userId: string;
-  userEmail: string;
-};
-
 function getAuthConfig(): AuthConfig {
   return {
     jwksUrl: `${env.GATEWAY_URL}/api/embedded/jwks`,

@@ -5,7 +5,7 @@ import {
   createExerciseLibraryItems,
   updateExerciseLibraryItems,
   deleteExerciseLibraryItems,
-} from "@/serverFunctions/exercises";
+} from "@/serverFunctions/exerciseLibrary";
 import { createCollection } from "@tanstack/react-db";
 import { lazyInitForWorkers } from "@/embedded-sdk/client";
 import type { ExerciseLibraryItem } from "@/db/schema";
@@ -22,27 +22,17 @@ export const exerciseLibraryCollection = lazyInitForWorkers(() =>
       getKey: (item) => item.id,
       onInsert: async ({ transaction }) => {
         await createExerciseLibraryItems({
-          data: transaction.mutations.map((mutation) => ({
-            id: mutation.modified.id,
-            name: mutation.modified.name,
-            notes: mutation.modified.notes,
-          })),
+          data: transaction.mutations.map((m) => m.modified),
         });
       },
       onUpdate: async ({ transaction }) => {
         await updateExerciseLibraryItems({
-          data: transaction.mutations.map((mutation) => ({
-            id: mutation.modified.id,
-            name: mutation.modified.name,
-            notes: mutation.modified.notes,
-          })),
+          data: transaction.mutations.map((m) => m.modified),
         });
       },
       onDelete: async ({ transaction }) => {
         await deleteExerciseLibraryItems({
-          data: transaction.mutations.map((mutation) => ({
-            id: mutation.original.id,
-          })),
+          data: transaction.mutations.map((m) => ({ id: m.key as string })),
         });
       },
     }),

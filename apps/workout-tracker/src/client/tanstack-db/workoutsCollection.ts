@@ -5,8 +5,6 @@ import {
   createWorkouts,
   updateWorkout,
   deleteWorkout,
-  type CreateWorkoutInput,
-  type UpdateWorkoutInput,
 } from "@/serverFunctions/workouts";
 import { createCollection } from "@tanstack/react-db";
 import { lazyInitForWorkers } from "@/embedded-sdk/client";
@@ -23,32 +21,19 @@ export const workoutsCollection = lazyInitForWorkers(() =>
       queryClient,
       getKey: (item) => item.id,
       onInsert: async ({ transaction }) => {
-        // Handle batch inserts
-        const workoutsData: CreateWorkoutInput[] = transaction.mutations.map(
-          (mutation) => ({
-            id: mutation.modified.id,
-            programId: mutation.modified.programId,
-            name: mutation.modified.name,
-            description: mutation.modified.description ?? undefined,
-            sortOrder: mutation.modified.sortOrder,
-          }),
-        );
-        await createWorkouts({ data: workoutsData });
+        await createWorkouts({
+          data: transaction.mutations.map((m) => m.modified),
+        });
       },
       onUpdate: async ({ transaction }) => {
-        const { modified } = transaction.mutations[0];
-        // Extract only the fields the server expects for update
-        const input: UpdateWorkoutInput = {
-          id: modified.id,
-          name: modified.name,
-          description: modified.description ?? undefined,
-          sortOrder: modified.sortOrder,
-        };
-        await updateWorkout({ data: input });
+        for (const mutation of transaction.mutations) {
+          await updateWorkout({ data: mutation.modified });
+        }
       },
       onDelete: async ({ transaction }) => {
-        const { original } = transaction.mutations[0];
-        await deleteWorkout({ data: { id: original.id } });
+        for (const mutation of transaction.mutations) {
+          await deleteWorkout({ data: { id: mutation.key as string } });
+        }
       },
     }),
   ),

@@ -5,7 +5,7 @@ import {
   createWorkoutExercises,
   updateWorkoutExercises,
   deleteWorkoutExercises,
-} from "@/serverFunctions/exercises";
+} from "@/serverFunctions/workoutExercises";
 import { createCollection } from "@tanstack/react-db";
 import { lazyInitForWorkers } from "@/embedded-sdk/client";
 import type { WorkoutExercise } from "@/db/schema";
@@ -24,33 +24,17 @@ export const exercisesCollection = lazyInitForWorkers(() =>
       getKey: (item) => item.id,
       onInsert: async ({ transaction }) => {
         await createWorkoutExercises({
-          data: transaction.mutations.map((mutation) => ({
-            id: mutation.modified.id,
-            workoutId: mutation.modified.workoutId,
-            exerciseId: mutation.modified.exerciseId,
-            sets: mutation.modified.sets,
-            targetReps: mutation.modified.targetReps,
-            weight: mutation.modified.weight,
-            sortOrder: mutation.modified.sortOrder,
-          })),
+          data: transaction.mutations.map((m) => m.modified),
         });
       },
       onUpdate: async ({ transaction }) => {
         await updateWorkoutExercises({
-          data: transaction.mutations.map((mutation) => ({
-            id: mutation.modified.id,
-            sets: mutation.modified.sets,
-            targetReps: mutation.modified.targetReps,
-            weight: mutation.modified.weight,
-            sortOrder: mutation.modified.sortOrder,
-          })),
+          data: transaction.mutations.map((m) => m.modified),
         });
       },
       onDelete: async ({ transaction }) => {
         await deleteWorkoutExercises({
-          data: transaction.mutations.map((mutation) => ({
-            id: mutation.original.id,
-          })),
+          data: transaction.mutations.map((m) => ({ id: m.key as string })),
         });
       },
     }),

@@ -5,8 +5,6 @@ import {
   createSetLog,
   updateSetLog,
   deleteSetLog,
-  type CreateSetLogInput,
-  type UpdateSetLogInput,
 } from "@/serverFunctions/setLogs";
 import { createCollection } from "@tanstack/react-db";
 import { lazyInitForWorkers } from "@/embedded-sdk/client";
@@ -23,39 +21,18 @@ export const setLogsCollection = lazyInitForWorkers(() =>
       queryClient,
       getKey: (item) => item.id,
       onInsert: async ({ transaction }) => {
-        // Handle all mutations in the transaction
         for (const mutation of transaction.mutations) {
-          const { modified: newSetLog } = mutation;
-          const input: CreateSetLogInput = {
-            id: newSetLog.id,
-            sessionId: newSetLog.sessionId,
-            exerciseId: newSetLog.exerciseId ?? undefined,
-            exerciseNameSnapshot: newSetLog.exerciseNameSnapshot,
-            setNumber: newSetLog.setNumber,
-            targetReps: newSetLog.targetReps,
-            actualReps: newSetLog.actualReps,
-            weight: newSetLog.weight,
-            sortOrder: newSetLog.sortOrder,
-          };
-          await createSetLog({ data: input });
+          await createSetLog({ data: mutation.modified });
         }
       },
       onUpdate: async ({ transaction }) => {
-        // Handle all mutations in the transaction
         for (const mutation of transaction.mutations) {
-          const { modified } = mutation;
-          const input: UpdateSetLogInput = {
-            id: modified.id,
-            actualReps: modified.actualReps,
-          };
-          await updateSetLog({ data: input });
+          await updateSetLog({ data: mutation.modified });
         }
       },
       onDelete: async ({ transaction }) => {
-        // Handle all mutations in the transaction
         for (const mutation of transaction.mutations) {
-          const { original } = mutation;
-          await deleteSetLog({ data: { id: original.id } });
+          await deleteSetLog({ data: { id: mutation.key as string } });
         }
       },
     }),

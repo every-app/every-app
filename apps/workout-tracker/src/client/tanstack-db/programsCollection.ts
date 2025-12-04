@@ -5,8 +5,6 @@ import {
   createProgram,
   updateProgram,
   deleteProgram,
-  type CreateProgramInput,
-  type UpdateProgramInput,
 } from "@/serverFunctions/programs";
 import { createCollection } from "@tanstack/react-db";
 import { lazyInitForWorkers } from "@/embedded-sdk/client";
@@ -24,40 +22,18 @@ export const programsCollection = lazyInitForWorkers(() =>
       queryClient,
       getKey: (item) => item.id,
       onInsert: async ({ transaction }) => {
-        // Handle all mutations in the transaction
         for (const mutation of transaction.mutations) {
-          const { modified: newProgram } = mutation;
-          const input: CreateProgramInput = {
-            id: newProgram.id,
-            name: newProgram.name,
-            description: newProgram.description,
-            difficulty: newProgram.difficulty,
-            templateId: newProgram.templateId ?? undefined,
-            isActive: newProgram.isActive,
-            currentWorkoutIndex: newProgram.currentWorkoutIndex,
-          };
-          await createProgram({ data: input });
+          await createProgram({ data: mutation.modified });
         }
       },
       onUpdate: async ({ transaction }) => {
-        // Handle all mutations in the transaction
         for (const mutation of transaction.mutations) {
-          const { modified } = mutation;
-          const input: UpdateProgramInput = {
-            id: modified.id,
-            name: modified.name,
-            description: modified.description,
-            isActive: modified.isActive,
-            currentWorkoutIndex: modified.currentWorkoutIndex,
-          };
-          await updateProgram({ data: input });
+          await updateProgram({ data: mutation.modified });
         }
       },
       onDelete: async ({ transaction }) => {
-        // Handle all mutations in the transaction
         for (const mutation of transaction.mutations) {
-          const { original } = mutation;
-          await deleteProgram({ data: { id: original.id } });
+          await deleteProgram({ data: { id: mutation.key as string } });
         }
       },
     }),
