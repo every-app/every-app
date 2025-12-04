@@ -1,11 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { authClient } from "@/client/auth-client";
+import { authClient, CpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
-import {
-  withCpuTimeoutDetection,
-  getAuthErrorMessage,
-} from "@/utils/auth-utils";
 
 export const Route = createFileRoute("/forgot-password")({
   component: ForgotPassword,
@@ -33,33 +29,28 @@ function ForgotPassword() {
         return;
       }
 
-      const { result, isCpuTimeout: cpuTimeout } =
-        await withCpuTimeoutDetection((opts) =>
-          authClient.forgetPassword(
-            { email, redirectTo: `${window.location.origin}/reset-password` },
-            opts,
-          ),
-        );
+      const { error: forgetError } = await authClient.forgetPassword({
+        email,
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
 
-      if (result.error || cpuTimeout) {
-        setIsCpuTimeout(cpuTimeout);
-        setError(
-          getAuthErrorMessage(
-            cpuTimeout,
-            result.error?.message,
-            "Failed to send reset email.",
-          ),
-        );
+      if (forgetError) {
+        setError(forgetError.message || "Failed to send reset email.");
       } else {
         setSuccess(true);
       }
     } catch (err) {
       console.error("Password reset error:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to send reset email. Please try again.",
-      );
+      if (err instanceof CpuTimeoutError) {
+        setIsCpuTimeout(true);
+        setError(err.message);
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to send reset email. Please try again.",
+        );
+      }
     } finally {
       setLoading(false);
     }

@@ -1,12 +1,8 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { authClient } from "@/client/auth-client";
+import { authClient, CpuTimeoutError } from "@/client/auth-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
-import {
-  withCpuTimeoutDetection,
-  getAuthErrorMessage,
-} from "@/utils/auth-utils";
 
 export const Route = createFileRoute("/sign-in")({
   component: SignIn,
@@ -28,20 +24,13 @@ function SignIn() {
     setLoading(true);
 
     try {
-      const { result, isCpuTimeout: cpuTimeout } =
-        await withCpuTimeoutDetection((opts) =>
-          authClient.signIn.email({ email, password }, opts),
-        );
+      const { error: signInError } = await authClient.signIn.email({
+        email,
+        password,
+      });
 
-      if (result.error || cpuTimeout) {
-        setIsCpuTimeout(cpuTimeout);
-        setError(
-          getAuthErrorMessage(
-            cpuTimeout,
-            result.error?.message,
-            "Invalid email or password.",
-          ),
-        );
+      if (signInError) {
+        setError(signInError.message || "Invalid email or password.");
         setLoading(false);
       } else {
         await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
@@ -50,11 +39,16 @@ function SignIn() {
       }
     } catch (err) {
       console.error("Sign in error:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to sign in. Please try again.",
-      );
+      if (err instanceof CpuTimeoutError) {
+        setIsCpuTimeout(true);
+        setError(err.message);
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to sign in. Please try again.",
+        );
+      }
       setLoading(false);
     }
   };

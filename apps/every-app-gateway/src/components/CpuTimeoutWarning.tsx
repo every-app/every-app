@@ -1,24 +1,4 @@
 /**
- * Helper to check if an error is a Cloudflare Worker CPU timeout error.
- * Cloudflare returns error 1102 "Worker exceeded resource limits" when
- * CPU time limits are exceeded on the free plan.
- */
-export function isCpuTimeoutError(error: string | null | undefined): boolean {
-  if (!error) return false;
-  const lowerError = error.toLowerCase();
-  return (
-    lowerError.includes("cpu time limit") ||
-    lowerError.includes("exceeded cpu") ||
-    lowerError.includes("worker exceeded") ||
-    lowerError.includes("exceeded resource limits") ||
-    lowerError.includes("error 1102") ||
-    // Cloudflare HTML error page patterns
-    lowerError.includes("cf-error-code") ||
-    (lowerError.includes("cloudflare") && lowerError.includes("exceeded"))
-  );
-}
-
-/**
  * Custom error message for CPU timeout errors
  */
 export const CPU_TIMEOUT_ERROR_MESSAGE =

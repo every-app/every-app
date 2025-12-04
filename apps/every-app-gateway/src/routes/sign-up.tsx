@@ -1,12 +1,8 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { authClient } from "@/client/auth-client";
+import { authClient, CpuTimeoutError } from "@/client/auth-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
-import {
-  withCpuTimeoutDetection,
-  getAuthErrorMessage,
-} from "@/utils/auth-utils";
 
 export const Route = createFileRoute("/sign-up")({
   component: SignUp,
@@ -35,20 +31,14 @@ function SignUp() {
     setLoading(true);
 
     try {
-      const { result, isCpuTimeout: cpuTimeout } =
-        await withCpuTimeoutDetection((opts) =>
-          authClient.signUp.email({ email, password, name: "" }, opts),
-        );
+      const { error: signUpError } = await authClient.signUp.email({
+        email,
+        password,
+        name: "",
+      });
 
-      if (result.error || cpuTimeout) {
-        setIsCpuTimeout(cpuTimeout);
-        setError(
-          getAuthErrorMessage(
-            cpuTimeout,
-            result.error?.message,
-            "Failed to sign up. Please try again.",
-          ),
-        );
+      if (signUpError) {
+        setError(signUpError.message || "Failed to sign up. Please try again.");
         setLoading(false);
       } else {
         await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
@@ -57,11 +47,16 @@ function SignUp() {
       }
     } catch (err) {
       console.error("Sign up error:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to sign up. Please try again.",
-      );
+      if (err instanceof CpuTimeoutError) {
+        setIsCpuTimeout(true);
+        setError(err.message);
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to sign up. Please try again.",
+        );
+      }
       setLoading(false);
     }
   };
