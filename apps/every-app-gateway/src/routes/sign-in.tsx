@@ -2,6 +2,11 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient } from "@/client/auth-client";
 import { useQueryClient } from "@tanstack/react-query";
+import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
+import {
+  withCpuTimeoutDetection,
+  getAuthErrorMessage,
+} from "@/utils/auth-utils";
 
 export const Route = createFileRoute("/sign-in")({
   component: SignIn,
@@ -12,25 +17,33 @@ function SignIn() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isCpuTimeout, setIsCpuTimeout] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsCpuTimeout(false);
     setLoading(true);
 
     try {
-      const result = await authClient.signIn.email({
-        email,
-        password,
-      });
+      const { result, isCpuTimeout: cpuTimeout } =
+        await withCpuTimeoutDetection((opts) =>
+          authClient.signIn.email({ email, password }, opts),
+        );
 
-      if (result.error) {
-        setError(result.error.message || "Invalid email or password.");
+      if (result.error || cpuTimeout) {
+        setIsCpuTimeout(cpuTimeout);
+        setError(
+          getAuthErrorMessage(
+            cpuTimeout,
+            result.error?.message,
+            "Invalid email or password.",
+          ),
+        );
         setLoading(false);
       } else {
-        // Invalidate queries and navigate to the homepage
         await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
         await queryClient.invalidateQueries({ queryKey: ["user-apps"] });
         navigate({ to: "/" });
@@ -88,7 +101,12 @@ function SignIn() {
                   required
                 />
               </div>
-              {error && <div className="text-sm text-error">{error}</div>}
+              {error &&
+                (isCpuTimeout ? (
+                  <CpuTimeoutWarning />
+                ) : (
+                  <div className="text-sm text-error">{error}</div>
+                ))}
               <button
                 type="submit"
                 className="btn btn-primary w-full"

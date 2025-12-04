@@ -1,6 +1,11 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient } from "@/client/auth-client";
+import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
+import {
+  withCpuTimeoutDetection,
+  getAuthErrorMessage,
+} from "@/utils/auth-utils";
 
 export const Route = createFileRoute("/forgot-password")({
   component: ForgotPassword,
@@ -10,19 +15,17 @@ function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isCpuTimeout, setIsCpuTimeout] = useState(false);
   const [success, setSuccess] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsCpuTimeout(false);
     setSuccess(false);
     setLoading(true);
 
-    console.log("Form submitted, authClient:", authClient);
-    console.log("Available methods:", Object.keys(authClient));
-
     try {
-      // Check if method exists
       if (typeof authClient.forgetPassword !== "function") {
         console.error("forgetPassword method not found on authClient");
         setError("Password reset is not configured. Please contact support.");
@@ -30,15 +33,23 @@ function ForgotPassword() {
         return;
       }
 
-      const result = await authClient.forgetPassword({
-        email,
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
+      const { result, isCpuTimeout: cpuTimeout } =
+        await withCpuTimeoutDetection((opts) =>
+          authClient.forgetPassword(
+            { email, redirectTo: `${window.location.origin}/reset-password` },
+            opts,
+          ),
+        );
 
-      console.log("Password reset result:", result);
-
-      if (result.error) {
-        setError(result.error.message || "Failed to send reset email.");
+      if (result.error || cpuTimeout) {
+        setIsCpuTimeout(cpuTimeout);
+        setError(
+          getAuthErrorMessage(
+            cpuTimeout,
+            result.error?.message,
+            "Failed to send reset email.",
+          ),
+        );
       } else {
         setSuccess(true);
       }
@@ -91,7 +102,12 @@ function ForgotPassword() {
                   required
                 />
               </div>
-              {error && <div className="text-sm text-error">{error}</div>}
+              {error &&
+                (isCpuTimeout ? (
+                  <CpuTimeoutWarning />
+                ) : (
+                  <div className="text-sm text-error">{error}</div>
+                ))}
               <button
                 type="submit"
                 className="btn btn-primary w-full"

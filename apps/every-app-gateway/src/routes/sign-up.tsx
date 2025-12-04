@@ -2,6 +2,11 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient } from "@/client/auth-client";
 import { useQueryClient } from "@tanstack/react-query";
+import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
+import {
+  withCpuTimeoutDetection,
+  getAuthErrorMessage,
+} from "@/utils/auth-utils";
 
 export const Route = createFileRoute("/sign-up")({
   component: SignUp,
@@ -13,14 +18,15 @@ function SignUp() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isCpuTimeout, setIsCpuTimeout] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsCpuTimeout(false);
 
-    // Validate passwords match
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -29,19 +35,22 @@ function SignUp() {
     setLoading(true);
 
     try {
-      const result = await authClient.signUp.email({
-        email,
-        password,
-        name: "", // Keep name empty for now. Later on we'll support names in the UI.
-      });
+      const { result, isCpuTimeout: cpuTimeout } =
+        await withCpuTimeoutDetection((opts) =>
+          authClient.signUp.email({ email, password, name: "" }, opts),
+        );
 
-      if (result.error) {
+      if (result.error || cpuTimeout) {
+        setIsCpuTimeout(cpuTimeout);
         setError(
-          result.error.message || "Failed to sign up. Please try again.",
+          getAuthErrorMessage(
+            cpuTimeout,
+            result.error?.message,
+            "Failed to sign up. Please try again.",
+          ),
         );
         setLoading(false);
       } else {
-        // Invalidate queries and navigate to the homepage
         await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
         await queryClient.invalidateQueries({ queryKey: ["user-apps"] });
         navigate({ to: "/" });
@@ -120,7 +129,12 @@ function SignUp() {
                   minLength={8}
                 />
               </div>
-              {error && <div className="text-sm text-error">{error}</div>}
+              {error &&
+                (isCpuTimeout ? (
+                  <CpuTimeoutWarning />
+                ) : (
+                  <div className="text-sm text-error">{error}</div>
+                ))}
               <button
                 type="submit"
                 className="btn btn-primary w-full"

@@ -6,6 +6,11 @@ import {
 } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { authClient } from "@/client/auth-client";
+import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
+import {
+  withCpuTimeoutDetection,
+  getAuthErrorMessage,
+} from "@/utils/auth-utils";
 
 export const Route = createFileRoute("/reset-password")({
   component: ResetPassword,
@@ -23,6 +28,7 @@ function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isCpuTimeout, setIsCpuTimeout] = useState(false);
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
 
@@ -39,6 +45,7 @@ function ResetPassword() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsCpuTimeout(false);
 
     if (newPassword !== confirmPassword) {
       setError("Passwords do not match");
@@ -58,16 +65,22 @@ function ResetPassword() {
     setLoading(true);
 
     try {
-      const result = await authClient.resetPassword({
-        newPassword,
-        token,
-      });
+      const { result, isCpuTimeout: cpuTimeout } =
+        await withCpuTimeoutDetection((opts) =>
+          authClient.resetPassword({ newPassword, token }, opts),
+        );
 
-      if (result.error) {
-        setError(result.error.message || "Failed to reset password.");
+      if (result.error || cpuTimeout) {
+        setIsCpuTimeout(cpuTimeout);
+        setError(
+          getAuthErrorMessage(
+            cpuTimeout,
+            result.error?.message,
+            "Failed to reset password.",
+          ),
+        );
       } else {
         setSuccess(true);
-        // Redirect to sign-in after 2 seconds
         setTimeout(() => {
           navigate({ to: "/sign-in" });
         }, 2000);
@@ -136,7 +149,12 @@ function ResetPassword() {
                   </span>
                 </label>
               </div>
-              {error && <div className="text-sm text-error">{error}</div>}
+              {error &&
+                (isCpuTimeout ? (
+                  <CpuTimeoutWarning />
+                ) : (
+                  <div className="text-sm text-error">{error}</div>
+                ))}
               <button
                 type="submit"
                 className="btn w-full"
