@@ -1,9 +1,11 @@
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { userAppsCollection } from "@/client/tanstack-db";
+import { queryClient } from "@/client/tanstack-db";
 import { useSession } from "@/client/hooks/useSession";
 import { useCloseModalOnEscape } from "@/client/hooks/useCloseModalOnEscape";
+import { createUserApp } from "@/serverFunctions/user-apps";
 
 const addCustomAppSchema = z.object({
   appId: z
@@ -34,6 +36,8 @@ export function AddCustomAppModal({
   onOpenChange,
 }: AddCustomAppModalProps) {
   const { data: session } = useSession();
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<AddCustomAppFormData>({
     resolver: zodResolver(addCustomAppSchema),
@@ -48,24 +52,39 @@ export function AddCustomAppModal({
   const onSubmit = async (data: AddCustomAppFormData) => {
     if (!session?.user?.id) return;
 
-    const now = new Date();
-    userAppsCollection.insert({
-      id: crypto.randomUUID(),
-      userId: session.user.id,
-      appId: data.appId,
-      name: data.name,
-      description: data.description,
-      appUrl: data.appUrl,
-      createdAt: now,
-      updatedAt: now,
-    });
-    onOpenChange(false);
-    form.reset();
+    setSubmitError(null);
+    setIsSubmitting(true);
+
+    try {
+      const result = await createUserApp({ data });
+
+      if (result.success) {
+        // Invalidate and refetch the user apps collection
+        await queryClient.invalidateQueries({ queryKey: ["user-apps"] });
+        onOpenChange(false);
+        form.reset();
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message.includes("already exists")) {
+          setSubmitError(
+            "You already have an app with this App ID. Please choose a different App ID.",
+          );
+        } else {
+          setSubmitError(error.message);
+        }
+      } else {
+        setSubmitError("An unexpected error occurred. Please try again.");
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleClose = () => {
     onOpenChange(false);
     form.reset();
+    setSubmitError(null);
   };
 
   // Handle Escape key to close modal
@@ -159,16 +178,47 @@ export function AddCustomAppModal({
             )}
           </div>
 
+          {submitError && (
+            <div className="alert alert-error mt-4">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="stroke-current shrink-0 h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <span>{submitError}</span>
+            </div>
+          )}
+
           <div className="modal-action">
             <button
               type="button"
               className="btn btn-outline"
               onClick={handleClose}
+              disabled={isSubmitting}
             >
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary">
-              Add
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <span className="loading loading-spinner loading-sm"></span>
+                  Adding...
+                </>
+              ) : (
+                "Add"
+              )}
             </button>
           </div>
         </form>
