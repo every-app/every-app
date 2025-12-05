@@ -4,11 +4,18 @@ Can you please review this codebase?
 I want to know:
 - Is there anyway that we can simplify / things that are unnecessary?
 - Is there any code that sticks out as needing refactored?
-  - Does anything need split up into larger functions?
+  - Does anything need split up into smaller functions?
   - Were there any shortcuts taken or hardcoded assumptions that we never came back to?
   - Can anything be simplified?
 
-Our guiding philosophy is making code as simple as possible, avoiding premature optimization, all while ensuring that the app has optimistic updates by using TanstackDB and that data is properly and securely stored to our database. 
+Our guiding philosophy is making code as simple as possible, avoiding premature optimization. Some things we don't consider a premature optimization:
+- Optimistic updates by using TanstackDB and that data is properly and securely stored to our database. 
+- Normalized database schemas to make future migrations and iteration cleaner.
+- Service / Repository pattern is desired even if its a bit overkill so that it is more natural to implement more complicated features in the future. 
+- Defense in depth and ensuring that authentication and authorization is happening.
+
+Other patterns we consider acceptable:
+- Hard coding llm related info such as models, reasoning effort and prompts is fione. 
 
 Don't make any changes, just write a report on the above questions. 
 
@@ -20,9 +27,21 @@ Additional things to check:
 - Any other security considerations unique to this project
 
 ## Database Scehma
-# Task
-I want to reevalutate our database schema from the ground up.
-I want the schema to be as normalized as possible, but also want the schema to be mindful of how users will use the app. We also may want to rename some tables given the usage patterns of the app now that we have the prototype built.
+### Task
+Please review or create the database schema based on the below principles.
+
+Ensure that you're using drizzle as designed:
+- https://orm.drizzle.team/docs/relations
+- https://orm.drizzle.team/docs/indexes-constraints
+
+### Guiding Principles
+- Maximal normalization - everything should be normalized as much as possible. This is to avoid keeping tables in sync or having optional columns that only apply to certain record types. Down the line, this will make it challenging to do migrations and lead to bugs due to faulty assumptions.
+- As many assumptions as possible should be enforced at the database layer via the schema / unique constraints.
+- Make sure you properly use drizzle relations.
+  - Be sure to read the docs: https://orm.drizzle.team/docs/relations
+### Before you design
+- Ask the users clarifying questions about use cases down the line
+  - We don't want to build out support in the schema for any future features, but we want to make sure that our schema is designed intelligently so that it is easy to migrate the schema to support new features later.
 
 ## Example problem with current schema
 Summary: Session History Data Model Problem

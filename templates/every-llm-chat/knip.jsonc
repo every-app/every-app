@@ -1,0 +1,13 @@
+{
+  // Detect Tanstack Start Routes
+  "entry": ["src/types/index.ts", "src/router.tsx", "src/routes/**/*.{ts,tsx}"],
+  "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
+  "ignore": [
+    "src/routeTree.gen.ts",
+    "drizzle-prod.config.ts",
+    "src/embedded-sdk/**/*.ts",
+    "src/db/index.ts",
+  ],
+  "ignoreDependencies": ["tailwindcss", "daisyui"],
+  "ignoreBinaries": ["every"],
+}

@@ -4,9 +4,13 @@
     // Detect Tanstack Start Routes
     "src/router.tsx",
     "src/routes/**/*.tsx",
+    // Drizzle config (plugin disabled due to cloudflare:workers import issues)
+    "drizzle.config.ts",
   ],
   "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
-  "ignoreDependencies": ["tailwindcss"],
+  // Disable Drizzle plugin - it tries to load drizzle.config.ts which imports cloudflare:workers
+  "drizzle": false,
+  "ignoreDependencies": ["tailwindcss", "daisyui"],
   "ignoreBinaries": ["every"],
 }

@@ -6,9 +6,13 @@
     "src/routes/**/*.tsx",
     // Treat all ShadeCN Components as Entrypoints
     "src/client/components/ui/**",
+    // Drizzle config (plugin disabled due to cloudflare:workers import issues)
+    "drizzle.config.ts",
   ],
   "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
+  // Disable Drizzle plugin - it tries to load drizzle.config.ts which imports cloudflare:workers
+  "drizzle": false,
   "ignoreDependencies": [
     // Tailwindcss used via @tailwindcss/vite plugin
     "tailwindcss",

@@ -2,17 +2,7 @@ import { createMiddleware } from "@tanstack/react-start";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import type { AuthConfig } from "@/embedded-sdk/server";
-import { authenticateRequest } from "@/embedded-sdk/server";
-import { env } from "cloudflare:workers";
-
-function getAuthConfig(): AuthConfig {
-  return {
-    jwksUrl: `${env.GATEWAY_URL}/api/embedded/jwks`,
-    issuer: env.GATEWAY_URL,
-    audience: import.meta.env.VITE_APP_ID,
-  };
-}
+import { authenticateRequest, getAuthConfig } from "@/embedded-sdk/server";
 
 export const ensureUserMiddleware = createMiddleware({
   type: "function",

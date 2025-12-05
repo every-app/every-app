@@ -1,10 +1,4 @@
 /**
- * Custom error message for CPU timeout errors
- */
-export const CPU_TIMEOUT_ERROR_MESSAGE =
-  "Worker exceeded resource limits. Please try again.";
-
-/**
  * Warning component displayed when Cloudflare Worker CPU timeout occurs.
  * This happens on the free plan due to CPU time limits.
  */

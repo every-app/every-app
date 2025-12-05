@@ -5,7 +5,7 @@ import { createAuthClient } from "better-auth/react";
  * Cloudflare returns error 1102 "Worker exceeded resource limits" when
  * CPU time limits are exceeded on the free plan.
  */
-export function isCpuTimeoutError(error: string | null | undefined): boolean {
+function isCpuTimeoutError(error: string | null | undefined): boolean {
   if (!error) return false;
   const lowerError = error.toLowerCase();
   return (
