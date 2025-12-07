@@ -54,7 +54,7 @@ function App() {
                 </p>
               </div>
               <button
-                className="btn btn-outline hidden sm:flex"
+                className="btn btn-primary hidden sm:flex"
                 onClick={() => setShowAddCustomAppModal(true)}
               >
                 Add App

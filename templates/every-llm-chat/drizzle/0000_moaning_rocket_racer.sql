@@ -7,6 +7,7 @@ CREATE TABLE `chats` (
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE INDEX `chats_user_id_idx` ON `chats` (`user_id`);--> statement-breakpoint
 CREATE TABLE `files` (
 	`id` text PRIMARY KEY NOT NULL,
 	`user_id` text NOT NULL,
@@ -18,6 +19,7 @@ CREATE TABLE `files` (
 );
 --> statement-breakpoint
 CREATE INDEX `files_user_id_idx` ON `files` (`user_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `files_r2_key_idx` ON `files` (`r2_key`);--> statement-breakpoint
 CREATE TABLE `image_message_parts` (
 	`id` text PRIMARY KEY NOT NULL,
 	`part_id` text NOT NULL,
@@ -37,6 +39,7 @@ CREATE TABLE `message_parts` (
 );
 --> statement-breakpoint
 CREATE INDEX `message_parts_message_id_idx` ON `message_parts` (`message_id`);--> statement-breakpoint
+CREATE UNIQUE INDEX `message_parts_message_id_order_uniq` ON `message_parts` (`message_id`,`order`);--> statement-breakpoint
 CREATE TABLE `messages` (
 	`id` text PRIMARY KEY NOT NULL,
 	`chat_id` text NOT NULL,

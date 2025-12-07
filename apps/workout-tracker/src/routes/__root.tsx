@@ -46,6 +46,16 @@ export const Route = createRootRoute({
         name: "apple-mobile-web-app-status-bar-style",
         content: "black-translucent",
       },
+      {
+        name: "theme-color",
+        content: "#242424",
+        media: "(prefers-color-scheme: dark)",
+      },
+      {
+        name: "theme-color",
+        content: "#f7f7f7",
+        media: "(prefers-color-scheme: light)",
+      },
     ],
     links: [
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -129,7 +139,7 @@ function AppLayout() {
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html data-theme="workout">
+    <html>
       <head>
         <HeadContent />
       </head>

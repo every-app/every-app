@@ -15,6 +15,7 @@ interface ServerContext {
 
 // Zod schemas for input validation
 const createChatSchema = z.object({
+  id: z.string().uuid(),
   title: z.string().min(1).max(255),
 });
 
@@ -43,7 +44,7 @@ export const getChats = createServerFn()
     return userChats;
   });
 
-export const createChat = createServerFn()
+export const createChat = createServerFn({ method: "POST" })
   .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
   .inputValidator(createChatSchema)
   .handler(
@@ -55,7 +56,7 @@ export const createChat = createServerFn()
       context: ServerContext;
     }) => {
       const newChat: Chat = {
-        id: crypto.randomUUID(),
+        id: data.id,
         userId: context.userId,
         title: data.title,
         createdAt: new Date().toISOString(),

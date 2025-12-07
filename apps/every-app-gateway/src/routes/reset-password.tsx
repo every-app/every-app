@@ -151,7 +151,7 @@ function ResetPassword() {
                 ))}
               <button
                 type="submit"
-                className="btn w-full"
+                className="btn btn-primary w-full"
                 disabled={loading || !!urlError}
               >
                 {loading ? "Resetting..." : "Reset Password"}

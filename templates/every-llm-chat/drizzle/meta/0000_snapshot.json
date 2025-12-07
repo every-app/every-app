@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "6abab34f-6173-4481-a560-14a3f0d6cf08",
+  "id": "212da058-fdc9-46a3-98a0-ea98786cf7d2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "chats": {
@@ -45,7 +45,15 @@
           "default": "(current_timestamp)"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "chats_user_id_idx": {
+          "name": "chats_user_id_idx",
+          "columns": [
+            "user_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "chats_user_id_users_id_fk": {
           "name": "chats_user_id_users_id_fk",
@@ -119,6 +127,13 @@
             "user_id"
           ],
           "isUnique": false
+        },
+        "files_r2_key_idx": {
+          "name": "files_r2_key_idx",
+          "columns": [
+            "r2_key"
+          ],
+          "isUnique": true
         }
       },
       "foreignKeys": {
@@ -253,6 +268,14 @@
             "message_id"
           ],
           "isUnique": false
+        },
+        "message_parts_message_id_order_uniq": {
+          "name": "message_parts_message_id_order_uniq",
+          "columns": [
+            "message_id",
+            "order"
+          ],
+          "isUnique": true
         }
       },
       "foreignKeys": {

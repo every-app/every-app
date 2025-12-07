@@ -3,5 +3,5 @@
 `todo-app` - This is an example todo application demonstrating how child apps are implemented and leverage the `EmbeddedProvider`.
 
 # Testing Code Guidelines
-- Always type check your code by running `npm run check:types`
+- Always type check your code by running `npm run types:check`
 - Never run dev servers yourself. I will run and test them on my own.

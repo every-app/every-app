@@ -17,7 +17,7 @@ export function createAuth() {
 
   return betterAuth({
     secret: env?.BETTER_AUTH_SECRET,
-    trustedOrigins: env ? [env.GATEWAY_URL] : [],
+    trustedOrigins: env?.GATEWAY_URL ? [env.GATEWAY_URL] : [],
     session: {
       cookieCache: {
         enabled: true,

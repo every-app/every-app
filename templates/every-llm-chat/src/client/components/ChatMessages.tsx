@@ -52,7 +52,7 @@ export function ChatMessages({
     lastMessage?.parts?.length === 0;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 flex justify-center">
+    <div className="flex-1 overflow-y-auto scrollbar-stable p-4 flex justify-center">
       <div className="w-full max-w-2xl space-y-4">
         {allMessages.length > 0 ? (
           allMessages.map((message: UIMessage) => (

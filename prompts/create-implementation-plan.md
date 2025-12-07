@@ -37,10 +37,10 @@ Within that `implementation_plan` create independent md files for each step:
     - It could be possible that we want to use Tanstack DB for some collections, but not others. Example: a Chat App may use Tanstack DB for Chats and other tables, but not for loading messages where it just uses normal react query. 
     - Prefer TanstackDB unless the app will definitely need complex pagination / partial data loading for all users like with the chat app since it will make queries / mutations simpler in our routes and components.
 5. Decide what serverFunctions we need. These should be grouped by domain like todo, chat, message etc. 
-    - Please break backend logic up into services and repositiories.
-        - server/services - Any business logic for validation or calling repositories
-        - server/repositories - Any interactions with the database should be handled via repositories, this is so that multiple database calls so be put behind a nicer interface
-    - Server functions should then call services. 
+    - Please break backend logic up into services and repositories (see Security section in `review-code.md` for authorization pattern):
+        - **server/repositories** - Pure data access only. Include `userId` in WHERE clauses as secondary protection, but do NOT perform authorization checks or import other repositories.
+        - **server/services** - Business logic AND authorization. Services verify ownership BEFORE calling repositories. Services can call multiple repositories.
+    - Server functions should extract userId from session and pass to services.
     - Remember that we may be able to simplify the server functions, services and repos dramatically if we're using Tanstack DB since we'll do the querying clientside.
 6. For EACH route identified in step 3, create a separate file 
    (e.g., `06a-route-index.md`, `06b-route-programs.md`) containing:

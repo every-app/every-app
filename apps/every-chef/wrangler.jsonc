@@ -1,0 +1,36 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "every-chef",
+  "main": "@tanstack/react-start/server-entry",
+  "compatibility_date": "2025-09-02",
+  "compatibility_flags": ["nodejs_compat"],
+  "dev": {
+    "port": 3001,
+  },
+  "assets": {
+    "directory": ".output/public",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  "services": [
+    {
+      "binding": "EVERY_APP_GATEWAY",
+      "service": "every-app-gateway",
+    },
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "KV",
+      "id": "b4e1453842fe4f99af76d8791c23bdae",
+    },
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "every-chef",
+      "database_id": "129cd3fd-a605-49e8-a76c-7002f33e4a4c",
+      "migrations_dir": "drizzle",
+    },
+  ],
+}

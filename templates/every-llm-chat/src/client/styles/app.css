@@ -85,6 +85,9 @@ body {
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0);
   }
+  .scrollbar-stable {
+    scrollbar-gutter: stable;
+  }
 }
 
 /* Touch action handling for mobile */

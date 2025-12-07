@@ -1,0 +1,22 @@
+{
+  "entry": [
+    "src/types/index.ts",
+    // Detect Tanstack Start Routes (including API routes)
+    "src/router.tsx",
+    "src/routes/**/*.{ts,tsx}",
+    // Embedded SDK public API
+    "src/embedded-sdk/client/index.ts",
+  ],
+  "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
+  "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
+  "ignoreDependencies": [
+    "tailwindcss",
+    // Used via @plugin in CSS
+    "daisyui",
+  ],
+  "ignoreBinaries": ["every"],
+  "ignoreIssues": {
+    // Schema export needed for drizzle relational queries
+    "src/db/index.ts": ["exports"],
+  },
+}

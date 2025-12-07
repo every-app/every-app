@@ -88,6 +88,16 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         />
         <meta name="apple-mobile-web-app-title" content="Every App" />
         <meta
+          name="theme-color"
+          content="#242424"
+          media="(prefers-color-scheme: dark)"
+        />
+        <meta
+          name="theme-color"
+          content="#f7f7f7"
+          media="(prefers-color-scheme: light)"
+        />
+        <meta
           name="description"
           content="Make every app open source. No subscriptions or paywalls. Own your data. Share with the world."
         />
