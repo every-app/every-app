@@ -7,9 +7,6 @@
   "dev": {
     "port": 3001,
   },
-  "assets": {
-    "directory": ".output/public",
-  },
   "observability": {
     "enabled": true,
   },

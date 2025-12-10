@@ -4,12 +4,6 @@
   "main": "@tanstack/react-start/server-entry",
   "compatibility_date": "2025-09-02",
   "compatibility_flags": ["nodejs_compat"],
-  "dev": {
-    "port": 3001,
-  },
-  "assets": {
-    "directory": ".output/public",
-  },
   "observability": {
     "enabled": true,
   },

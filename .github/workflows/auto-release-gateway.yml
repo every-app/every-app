@@ -43,11 +43,11 @@ jobs:
           cd apps/every-app-gateway
           mkdir -p release-package
           # Verify build output exists
-          if [ ! -d ".output" ]; then
-            echo "ERROR: .output directory not found after build"
+          if [ ! -d "dist" ]; then
+            echo "ERROR: dist directory not found after build"
             exit 1
           fi
-          cp -r .output/. release-package/.output/
+          cp -r dist/. release-package/dist/
           cp wrangler.jsonc release-package/
           cp package.json release-package/
           cp pnpm-lock.yaml release-package/
@@ -71,7 +71,7 @@ jobs:
             ## Every App Gateway Release v${{ steps.version.outputs.version }}
 
             ### Contents:
-            - `.output/` - Built application
+            - `dist/` - Built application
             - `wrangler.jsonc` - Cloudflare configuration
             - `drizzle/` - Database migrations
             - `package.json` - Package manifest
