@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import { setupSecrets } from "@/commands/gateway/deploy/setupSecrets";
 import { updateWranglerConfig } from "@/lib/wrangler-config";
 import { executeCommandWithFormatting } from "@/lib/formatting";
@@ -13,9 +14,16 @@ export async function updateConfigAndDeploy(
   workerUrl: string,
   verbose: boolean = false,
 ): Promise<void> {
-  // Update wrangler config with resource IDs
+  // Update the built wrangler.json with resource IDs
+  // (wrangler uses .wrangler/deploy/config.json to read from dist/server/wrangler.json)
+  const builtConfigPath = path.join(
+    gatewayPath,
+    "dist",
+    "server",
+    "wrangler.json",
+  );
   await updateWranglerConfig({
-    configPath: gatewayPath,
+    configPath: builtConfigPath,
     d1DatabaseId: resources.d1DatabaseId,
     kvNamespaceId: resources.kvNamespaceId,
     verbose,

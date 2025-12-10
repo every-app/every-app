@@ -21,7 +21,7 @@ export async function runMigrations(
     return;
   }
 
-  console.log(chalk.dim("\nRunning database migrations..."));
+  console.log(chalk.dim("Running database migrations..."));
 
   try {
     // Install drizzle-kit so that migrations work without installing all the dependencies
