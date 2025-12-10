@@ -1,0 +1,197 @@
+---
+title: Users & Authentication
+description: How users are created and requests are authenticated
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Every Chef doesn't implement its own authentication - it relies on the Every App Gateway for that. This page explains how that works.
+
+## How Users Are Created
+
+When you sign up through the Gateway, a user is created in the Gateway's database. Your embedded app never sees the signup flow - it just receives session tokens for authenticated users.
+
+However, your app likely needs its own user record to associate data with. Every Chef handles this with an `ensureUser` middleware.
+
+## The ensureUser Pattern
+
+The first time a user accesses your app, you need to create a local user record. Here's how Every Chef does it:
+
+```ts
+// middleware/ensureUser.ts
+import { createMiddleware } from "@tanstack/react-start";
+import { authenticateRequest } from "@/embedded-sdk/server";
+import { getAuthConfig } from "@/embedded-sdk/server/auth-config";
+import { UserService } from "@/server/services/UserService";
+
+export const ensureUser = createMiddleware().server(async ({ next }) => {
+  const authConfig = getAuthConfig();
+  const session = await authenticateRequest(authConfig);
+
+  if (!session?.sub) {
+    throw new Error("Unauthorized");
+  }
+
+  // Create user if they don't exist
+  await UserService.ensureUser({
+    id: session.sub,
+    email: session.email,
+  });
+
+  return next();
+});
+```
+
+The `UserService.ensureUser` does an upsert - creates the user if they don't exist, does nothing if they do:
+
+```ts
+// server/services/UserService.ts
+async function ensureUser(data: { id: string; email?: string }) {
+  const existing = await UserRepository.findById(data.id);
+  if (existing) return existing;
+
+  return UserRepository.create({
+    id: data.id,
+    email: data.email ?? null,
+    createdAt: new Date().toISOString(),
+  });
+}
+```
+
+<Aside type="tip">
+  The user ID (`session.sub`) comes from the Gateway. Use this same ID in your
+  app so data stays linked to the same user across the Gateway and your app.
+</Aside>
+
+## Adding Session Tokens to Requests
+
+On the client side, every request to your server functions needs a session token. The `useSessionTokenClientMiddleware` handles this automatically:
+
+```ts
+// embedded-sdk/client/useSessionTokenClientMiddleware.ts
+export const useSessionTokenClientMiddleware = createMiddleware({
+  type: "function",
+}).client(async ({ next }) => {
+  const sessionManager = (window as any).__embeddedSessionManager;
+
+  if (!sessionManager) {
+    throw new Error("SessionManager not available");
+  }
+
+  const token = await sessionManager.getToken();
+
+  return next({
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+});
+```
+
+Use it in your server functions:
+
+```ts
+// serverFunctions/recipes.ts
+export const getAllRecipes = createServerFn({ method: "GET" })
+  .middleware([useSessionTokenClientMiddleware])
+  .handler(async () => {
+    const session = await authenticateRequest(authConfig);
+    if (!session?.sub) {
+      throw new Error("Unauthorized");
+    }
+
+    return RecipeService.getAll(session.sub);
+  });
+```
+
+The middleware runs on the client before the request is sent, adding the `Authorization` header.
+
+## Authenticating on the Backend
+
+On the server side, `authenticateRequest` verifies the JWT token:
+
+```ts
+// embedded-sdk/server/authenticateRequest.ts
+export async function authenticateRequest(
+  authConfig: AuthConfig,
+): Promise<SessionTokenPayload | null> {
+  const request = getRequest();
+  const authHeader = request.headers.get("authorization");
+
+  if (!authHeader) {
+    return null;
+  }
+
+  const token = extractBearerToken(authHeader);
+  if (!token) {
+    return null;
+  }
+
+  // Verify the JWT signature and claims
+  const session = await verifySessionToken(token, authConfig);
+  return session;
+}
+```
+
+The `verifySessionToken` function:
+
+1. Fetches the Gateway's JWKS (public keys)
+2. Verifies the JWT signature
+3. Checks the issuer and audience claims
+4. Returns the decoded payload
+
+```ts
+async function verifySessionToken(token: string, config: AuthConfig) {
+  const { issuer, audience } = config;
+
+  // Fetch JWKS from Gateway
+  const jwksResponse = import.meta.env.PROD
+    ? await env.EVERY_APP_GATEWAY.fetch("http://localhost/api/embedded/jwks")
+    : await fetch(`${env.GATEWAY_URL}/api/embedded/jwks`);
+
+  const jwks = await jwksResponse.json();
+  const localJWKS = createLocalJWKSet(jwks);
+
+  // Verify the token
+  const { payload } = await jwtVerify(token, localJWKS, {
+    issuer,
+    audience,
+  });
+
+  return payload as SessionTokenPayload;
+}
+```
+
+## Complete Flow
+
+Here's the full authentication flow:
+
+```
+1. User loads your app in the Gateway iframe
+
+2. EmbeddedAppProvider initializes SessionManager
+
+3. SessionManager requests token from Gateway via postMessage
+   → Gateway validates user session
+   → Gateway generates JWT signed with private key
+   → Gateway sends token back via postMessage
+
+4. User triggers a server function (e.g., getAllRecipes)
+
+5. useSessionTokenClientMiddleware adds Authorization header
+   → Header: "Authorization: Bearer <jwt>"
+
+6. Server function calls authenticateRequest()
+   → Extract token from Authorization header
+   → Fetch Gateway's JWKS (public keys)
+   → Verify JWT signature, issuer, audience
+   → Return decoded payload with user ID
+
+7. Server function uses session.sub to scope data
+   → RecipeService.getAll(session.sub)
+   → Repository includes userId in WHERE clause
+
+8. Response sent back to client
+```
+
+The key insight is that your app never handles passwords or sessions directly. The Gateway does all of that, and your app just verifies the tokens it receives.

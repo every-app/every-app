@@ -1,0 +1,75 @@
+---
+title: Embedded SDK Overview
+description: How Every App handles authentication between the Gateway and your app
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+The Embedded SDK handles all the communication between your app and the Every App Gateway. It's responsible for:
+
+1. **Session token management** - Requesting and refreshing tokens from the Gateway
+2. **Route synchronization** - Keeping your app's URL in sync with the Gateway
+3. **Request authentication** - Adding tokens to your API requests and verifying them on the backend
+
+<Aside type="tip">
+  The SDK currently lives inside your app at `src/embedded-sdk/`. Soon, this
+  will be published as an npm package.
+</Aside>
+
+## How Session Tokens Work
+
+When your app loads inside the Gateway's iframe, here's what happens:
+
+1. The `EmbeddedAppProvider` initializes a `SessionManager`
+2. The `SessionManager` sends a `postMessage` to the parent Gateway requesting a session token
+3. The Gateway validates the request, generates a JWT signed with its private key, and sends it back
+4. Your app stores the token and uses it for all API requests
+5. Before the token expires, the SDK automatically requests a new one
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Every App Gateway                         │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │              Your App (iframe)                       │    │
+│  │                                                      │    │
+│  │   EmbeddedAppProvider                               │    │
+│  │         │                                           │    │
+│  │         ▼                                           │    │
+│  │   SessionManager ──── postMessage ────────────────────────► Gateway
+│  │         │              "Give me a token"            │    │    │
+│  │         │                                           │    │    │
+│  │         │◄──── postMessage ───────────────────────────────────┘
+│  │         │      "Here's your JWT"                    │    │
+│  │         ▼                                           │    │
+│  │   useSessionTokenClientMiddleware                   │    │
+│  │         │                                           │    │
+│  │         ▼                                           │    │
+│  │   Server Function ──── Authorization: Bearer ────────────► Your Backend
+│  │                                                      │    │    │
+│  │                                                      │    │    ▼
+│  │                                                      │    │ authenticateRequest()
+│  │                                                      │    │ verifies JWT with Gateway's
+│  │                                                      │    │ public key (JWKS)
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+## SDK Structure
+
+The SDK is split into client and server code:
+
+### Client (`src/embedded-sdk/client/`)
+
+- **EmbeddedAppProvider** - React context provider that initializes everything
+- **SessionManager** - Handles token requests and storage
+- **useSessionTokenClientMiddleware** - TanStack middleware that adds tokens to requests
+- **lazyInitForWorkers** - Utility for Cloudflare Workers compatibility
+
+See [Client SDK Reference](/docs/embedded-sdk/client) for details.
+
+### Server (`src/embedded-sdk/server/`)
+
+- **authenticateRequest** - Verifies JWT tokens from requests
+- **getLocalD1Url** - Helper for local development with D1
+
+See [Server SDK Reference](/docs/embedded-sdk/server) for details.

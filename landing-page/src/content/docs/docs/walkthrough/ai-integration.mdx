@@ -1,0 +1,224 @@
+---
+title: AI Integration
+description: Streaming chat with tool calls and human-in-the-loop patterns
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+Every Chef uses the Vercel AI SDK for streaming chat with GPT. The interesting part is how it handles "tool calls" - actions the AI wants to take that require user confirmation.
+
+## Streaming Chat Endpoint
+
+The chat endpoint (`src/routes/api/chat.ts`) uses TanStack Router's server handler pattern:
+
+```ts
+export const Route = createFileRoute("/api/chat")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        // Authenticate
+        const session = await authenticateRequest(authConfig, request);
+        if (!session?.sub) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+          });
+        }
+
+        // Validate request
+        const rawData = await request.json();
+        const validationResult =
+          await chatRequestSchema.safeParseAsync(rawData);
+        if (!validationResult.success) {
+          return new Response(
+            JSON.stringify({
+              error: validationResult.error.issues[0]?.message,
+            }),
+            { status: 400 },
+          );
+        }
+
+        // Stream the response
+        const result = streamText({
+          model: openaiProvider("gpt-5.1"),
+          system: COOKING_SYSTEM_PROMPT,
+          messages: openaiMessages,
+          tools: recipeTools,
+          onFinish: async ({ text, toolCalls }) => {
+            // Persist messages after streaming completes
+            if (text) {
+              await MessageService.saveAssistantMessage(chatId, userId, text);
+            }
+            if (toolCalls?.length) {
+              // Save tool calls...
+            }
+          },
+        });
+
+        return result.toUIMessageStreamResponse();
+      },
+    },
+  },
+});
+```
+
+The key parts:
+
+1. **Authentication first** - Validate the session before anything else
+2. **Zod validation** - Parse the request body with a schema
+3. **Streaming response** - `toUIMessageStreamResponse()` returns a streaming Response
+4. **onFinish callback** - Persist messages after streaming completes
+
+## Human-in-the-Loop Tools
+
+Here's where it gets interesting. When the AI wants to save a recipe, it shouldn't just do it - it should ask the user first. This is the "human-in-the-loop" pattern.
+
+Define a tool WITHOUT an `execute` function:
+
+```ts
+// recipeTools.ts
+const promptUserWithRecipeUpdate = tool({
+  description: `Prompt the user to decide whether to save a recipe. Use this when:
+    1. You have suggested a complete recipe and want to offer to save it
+    2. The user has asked you to save, create, or update a recipe
+    
+    Wait for the user's response before proceeding.`,
+  inputSchema: z.object({
+    title: z.string().describe("The title of the recipe"),
+    content: z.string().describe("The full recipe content in markdown"),
+  }),
+  // No execute function - this forwards to the client
+});
+```
+
+<Aside type="tip">
+  When a tool has no `execute` function, the Vercel AI SDK forwards the tool
+  call to the client. The client can then show a UI for the user to respond.
+</Aside>
+
+## Handling Tool Calls on the Client
+
+The chat hook receives tool calls and renders UI for them:
+
+```tsx
+function MessageBubble({ message }) {
+  // Find tool invocations in this message
+  const toolParts = message.parts.filter((p) => p.type === "tool-invocation");
+
+  return (
+    <div>
+      {/* Render text parts */}
+      {message.parts
+        .filter((p) => p.type === "text")
+        .map((p) => (
+          <MarkdownRenderer content={p.text} />
+        ))}
+
+      {/* Render tool calls that need user input */}
+      {toolParts.map((part) => {
+        if (part.toolInvocation.toolName === "promptUserWithRecipeUpdate") {
+          return (
+            <RecipeUpdatePrompt
+              key={part.toolInvocation.toolCallId}
+              toolCallId={part.toolInvocation.toolCallId}
+              recipe={part.toolInvocation.args}
+              onRespond={handleToolResponse}
+            />
+          );
+        }
+      })}
+    </div>
+  );
+}
+```
+
+The `RecipeUpdatePrompt` component shows a preview and buttons:
+
+```tsx
+function RecipeUpdatePrompt({ toolCallId, recipe, onRespond }) {
+  return (
+    <div className="card bg-base-200">
+      <h3>{recipe.title}</h3>
+      <MarkdownRenderer content={recipe.content} />
+
+      <div className="flex gap-2">
+        <button onClick={() => onRespond(toolCallId, { action: "create" })}>
+          Save as New
+        </button>
+        <button onClick={() => onRespond(toolCallId, { action: "ignore" })}>
+          Don't Save
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+## Sending Tool Results Back
+
+When the user clicks a button, send the result back to the AI:
+
+```ts
+const handleToolResponse = async (toolCallId: string, result: ToolResult) => {
+  // Tell the AI SDK about the user's choice
+  addToolOutput({ toolCallId, output: JSON.stringify(result) });
+
+  // If they chose to save, actually create the recipe
+  if (result.action === "create") {
+    await recipesCollection.insert({
+      id: crypto.randomUUID(),
+      title: recipe.title,
+      content: recipe.content,
+      // ...
+    });
+  }
+
+  // Persist the tool result to the database
+  await saveToolOutputAction({
+    chatId,
+    toolCallId,
+    result: JSON.stringify(result),
+  });
+};
+```
+
+The flow is:
+
+1. AI streams a tool call (no execute function)
+2. Client renders UI for user input
+3. User makes a choice
+4. Client performs the action (create recipe)
+5. Client sends result back to AI
+6. AI continues the conversation with knowledge of what happened
+
+## Authenticated Fetch
+
+The chat uses a custom fetch that adds the auth token:
+
+```ts
+// useChatWithAuth.tsx
+transport: new DefaultChatTransport({
+  api: "/api/chat",
+  fetch: authenticatedFetch,
+  prepareSendMessagesRequest: ({ messages }) => {
+    // Only send the new message - server has history in DB
+    const newMessage = messages[messages.length - 1];
+    return {
+      body: {
+        chatId: selectedChatId,
+        message: newMessage,
+      },
+    };
+  },
+}),
+```
+
+The `authenticatedFetch` wrapper gets the session token from the SessionManager and adds it to the request headers.
+
+## Message Persistence
+
+Messages are persisted in two places:
+
+1. **User messages** - Saved immediately when sent
+2. **Assistant messages** - Saved in the `onFinish` callback after streaming
+
+This means if the user refreshes mid-stream, they won't lose the conversation - the user message is already saved, and the assistant will re-generate.

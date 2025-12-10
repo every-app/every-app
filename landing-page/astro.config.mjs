@@ -1,13 +1,14 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 import tailwind from "@astrojs/tailwind";
+import { toStarlightSidebar } from "./src/docs-config.mjs";
 // import cloudflare from '@astrojs/cloudflare';
 
 // https://astro.build/config
 export default defineConfig({
   output: "static",
   redirects: {
-    "/docs": "/docs/quickstart",
+    "/docs": "/docs/introduction",
   },
   integrations: [
     // TODO Investigate this
@@ -72,12 +73,7 @@ export default defineConfig({
         github: "https://github.com/every-app/every-app",
         discord: "https://discord.gg/c9uGs3cFXr",
       },
-      sidebar: [
-        {
-          label: "Getting Started",
-          items: [{ slug: "docs/quickstart" }, { slug: "docs/build-an-app" }],
-        },
-      ],
+      sidebar: toStarlightSidebar(),
       // Disable the default 404 route so we can have custom pages at root
       disable404Route: true,
     }),

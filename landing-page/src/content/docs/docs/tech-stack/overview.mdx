@@ -1,0 +1,21 @@
+---
+title: Tech Stack
+description: Overview of the technologies used in Every App
+---
+
+Since Every App is mostly just there for authentication + integrating with the Gateway, everything else is up to you! At the end of the day, you're building a web app deployed on Cloudflare.
+
+However, we've picked a few technologies and done the heavy lifting to make sure they play nice with Cloudflare Workers.
+
+- **[TanStack Start](/docs/tech-stack/tanstack-start)** - Full-stack React framework with best-in-class type safety. Includes TanStack Router, Query, and optionally DB for client-side state.
+- **[Cloudflare](/docs/tech-stack/cloudflare)** - The only hyperscaler with true scale-to-zero. Workers, D1 database, KV storage, and more - all serverless.
+- **[Drizzle ORM](/docs/tech-stack/drizzle)** - Type-safe SQL ORM that works great with D1. Familiar syntax if you know SQL.
+
+## Why These Choices?
+
+The stack is optimized for:
+
+1. **Simplicity** - Fewer dependencies means less to learn and maintain
+2. **Agentic coding** - AI coding assistants work better with a consistent, well-documented stack
+3. **Type safety** - Catch errors at compile time, not runtime
+4. **Cost** - Everything scales to zero, so you only pay for what you use

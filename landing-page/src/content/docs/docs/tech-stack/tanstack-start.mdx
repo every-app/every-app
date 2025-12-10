@@ -1,0 +1,98 @@
+---
+title: TanStack Start
+description: Full-stack React framework for Every App
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+[TanStack Start](https://tanstack.com/start/latest/docs/framework/react/overview) was selected for the following reasons:
+
+- Easy to deploy as a full-stack app on Cloudflare
+- Best out of the box type safety of any framework
+- While TanStack Start is new, the ecosystem is old and trusted
+- Every tool from TanStack is high quality and becomes my default. They all play extremely nicely together.
+
+## Key Libraries
+
+### TanStack Router
+
+File-based routing with full type safety. Your routes, params, and search params are all typed.
+
+### TanStack Query
+
+Data fetching and caching. Handles loading states, errors, and cache invalidation.
+
+```tsx
+const { data, isLoading } = useQuery({
+  queryKey: ["todos"],
+  queryFn: fetchTodos,
+});
+```
+
+### TanStack DB (Recommended)
+
+<Aside type="tip" title="Give it a shot">
+  We highly recommend trying TanStack DB. It makes managing state + optimistic
+  mutations much easier and works incredibly well with TanStack's server
+  functions.
+</Aside>
+
+TanStack DB is a client-side database that syncs with your server. It's great for:
+
+- **Optimistic updates** - UI updates instantly, syncs in background
+- **Offline support** - Works without network, syncs when online
+- **Simpler code** - No manual cache invalidation
+
+```tsx
+// Define a collection
+export const todosCollection = createCollection(
+  queryCollectionOptions({
+    queryKey: ["todos"],
+    queryFn: async () => getTodos(),
+    getId: (todo) => todo.id,
+  }),
+);
+
+// Use in component - updates optimistically
+const todos = useQuery(todosCollection);
+```
+
+**When to use TanStack DB:**
+
+- Todo apps, note apps, workout trackers - anything where you can load all the user's data at once
+- Apps that benefit from optimistic mutations
+
+**When to skip it:**
+
+The main limitation is that you need to load all records from the API. If you need server-side pagination because you have thousands of messages, or you're working with really large amounts of data, skip TanStack DB for those tables.
+
+**You can use both:**
+
+Use TanStack DB collections for most of your app, and regular React Query for the data that need pagination. You'll write more verbose code to handle optimistic mutations with React Query, but it works.
+
+Check the [TanStack DB docs](https://tanstack.com/db/latest) for more.
+
+## Server Functions
+
+TanStack Start's server functions give you type-safe RPC:
+
+```tsx
+// Define on server
+export const createTodo = createServerFn({ method: "POST" })
+  .middleware([useSessionTokenClientMiddleware])
+  .validator((data: { title: string }) => data)
+  .handler(async ({ data }) => {
+    const session = await authenticateRequest(authConfig);
+    // Create todo...
+  });
+
+// Call from client - fully typed!
+await createTodo({ data: { title: "Buy milk" } });
+```
+
+## Resources
+
+- [TanStack Start Docs](https://tanstack.com/start/latest/docs/framework/react/overview)
+- [TanStack Router Docs](https://tanstack.com/router/latest)
+- [TanStack Query Docs](https://tanstack.com/query/latest)
+- [TanStack DB Docs](https://tanstack.com/db/latest)

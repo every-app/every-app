@@ -1,0 +1,99 @@
+---
+title: Development Workflow
+description: Day-to-day commands for developing your app
+---
+
+import { Tabs, TabItem, Steps } from "@astrojs/starlight/components";
+
+## Common Commands
+
+### Start Development Server
+
+```bash
+pnpm run dev
+```
+
+This starts the Vite dev server with hot reloading. Your app will be available at the port shown in the terminal (usually `http://localhost:3001`).
+
+### Type Checking
+
+```bash
+pnpm run types:check
+```
+
+Run this frequently to catch type errors early.
+
+### Formatting
+
+```bash
+# Check formatting
+pnpm run format:check
+
+# Fix formatting
+pnpm run format:write
+```
+
+## Database Operations
+
+<Steps>
+
+1. **Create a migration**
+
+   Change your schema in `src/db/schema.ts`, then run:
+
+   ```bash
+   pnpm run db:generate
+   ```
+
+2. **Run migrations**
+
+   <Tabs>
+     <TabItem label="Local">```bash pnpm run db:migrate:local ```</TabItem>
+     <TabItem label="Production">```bash pnpm run db:migrate:prod ```</TabItem>
+   </Tabs>
+
+3. **View database data**
+
+   <Tabs>
+     <TabItem label="Local">```bash pnpm run db:studio:local ```</TabItem>
+     <TabItem label="Production">```bash pnpm run db:studio:prod ```</TabItem>
+   </Tabs>
+
+</Steps>
+
+## Cloudflare Types
+
+If you change Cloudflare resources in your `wrangler.jsonc` (add a KV namespace, change D1 binding name, etc.):
+
+```bash
+pnpm run cf-typegen
+```
+
+This regenerates the `worker-configuration.d.ts` file so TypeScript knows about your bindings.
+
+## Project Structure
+
+```
+src/
+├── client/           # Client-only code
+│   ├── components/   # React components
+│   ├── hooks/        # Custom hooks
+│   └── tanstack-db/  # TanStack DB collections
+├── db/               # Database
+│   └── schema.ts     # Drizzle schema
+├── embedded-sdk/     # Gateway integration
+│   ├── client/       # Client SDK
+│   └── server/       # Server SDK
+├── routes/           # TanStack Router routes
+├── server/           # Server-side code
+│   ├── repositories/ # Data access layer
+│   └── services/     # Business logic
+├── serverFunctions/  # TanStack server functions
+└── app.tsx           # App entry point
+```
+
+## Tips
+
+- **Keep client code in `/client`** - Helps avoid accidentally importing server code on the client
+- **Use server functions for all data mutations** - Don't call repositories directly from components
+- **Run `types:check` before committing** - Catches errors that hot reload might miss

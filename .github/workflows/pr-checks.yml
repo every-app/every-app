@@ -66,6 +66,19 @@ jobs:
         run: pnpm -r --no-bail run build
       - name: Run knip check
         run: pnpm knip
+  llms-txt-check:
+    name: llms.txt Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check llms.txt is up to date
+        working-directory: landing-page
+        run: node scripts/generate-llms-txt.js --check
   gateway-version-check:
     name: Gateway Version Check
     runs-on: ubuntu-latest

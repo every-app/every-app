@@ -1,0 +1,149 @@
+---
+title: Repository & Service Pattern
+description: Layered architecture for business logic and data access
+---
+
+Every Chef uses a layered architecture: **Routes → Services → Repositories → Database**.
+
+## Why Bother?
+
+This might seem like overkill for a small app, but it pays off as features grow more complex. The pattern gives you:
+
+1. **A place to put business logic when you need it** - Authorization checks, data transformations, cross-repository coordination
+2. **Consistent patterns** - New team members (or AI agents) know where to put code
+3. **Defense in depth** - Multiple layers of protection against bugs
+
+## Domain-Driven Design
+
+Repositories and services are organized around **domains** (Recipe, Chat, Message), not specific database tables. This provides a simpler interface over a potentially complex schema.
+
+For example, a `MessageRepository.getMessagesForChat` might fetch data from multiple tables (messages, message_parts, text_message_parts, tool_invocation_message_parts) and assemble them into a single response. The caller doesn't need to know about the underlying table structure.
+
+## Repository Layer
+
+Repositories handle all queries to your database. They might contain one query or multiple queries - the point is they provide a clean abstraction for data access.
+
+```ts
+// RecipeRepository.ts
+async function findAllByUserId(userId: string) {
+  return db.query.recipes.findMany({
+    where: eq(recipes.userId, userId),
+    orderBy: (recipes, { desc }) => [desc(recipes.updatedAt)],
+  });
+}
+
+async function update(id: string, userId: string, data: UpdateRecipe) {
+  // userId in WHERE clause as safety net
+  await db
+    .update(recipes)
+    .set({ ...data, updatedAt: new Date().toISOString() })
+    .where(and(eq(recipes.id, id), eq(recipes.userId, userId)));
+}
+
+export const RecipeRepository = {
+  findAllByUserId,
+  findByIdAndUserId,
+  create,
+  update,
+  delete: deleteById,
+} as const;
+```
+
+## Service Layer
+
+Services contain business logic and orchestrate repository calls:
+
+```ts
+// RecipeService.ts
+async function update(userId: string, data: UpdateRecipeInput) {
+  // Authorization: verify ownership before mutation
+  const recipe = await RecipeRepository.findByIdAndUserId(data.id, userId);
+  if (!recipe) {
+    throw new Error("Recipe not found or not authorized");
+  }
+
+  const { id, ...updates } = data;
+  await RecipeRepository.update(id, userId, updates);
+  return { success: true };
+}
+
+async function create(userId: string, data: NewRecipeInput) {
+  const recipe = {
+    id: data.id ?? crypto.randomUUID(),
+    userId,
+    title: data.title,
+    content: data.content ?? "",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await RecipeRepository.create(recipe);
+  return recipe;
+}
+
+export const RecipeService = {
+  getAll,
+  getById,
+  create,
+  update,
+  delete: deleteRecipe,
+} as const;
+```
+
+## Client-Generated IDs
+
+Notice that `create` accepts an optional `id`:
+
+```ts
+async function create(userId: string, data: NewRecipeInput) {
+  const recipe = {
+    id: data.id ?? crypto.randomUUID(),
+    // ...
+  };
+}
+```
+
+This enables true optimistic updates - the client generates the ID, updates the UI immediately, then sends to the server. If no ID is provided, the server generates one.
+
+## Server Functions
+
+Server functions are the entry point from the client. They:
+
+- Extract userId from the session
+- Call services
+- Handle errors
+
+```ts
+// serverFunctions/recipes.ts
+export const updateRecipe = createServerFn({ method: "POST" })
+  .middleware([useSessionTokenClientMiddleware])
+  .validator(updateRecipeInputSchema)
+  .handler(async ({ data }) => {
+    const session = await authenticateRequest(authConfig);
+    if (!session?.sub) {
+      throw new Error("Unauthorized");
+    }
+
+    return RecipeService.update(session.sub, data);
+  });
+```
+
+## The Flow
+
+Here's how a recipe update flows through the layers:
+
+```
+Client
+  ↓ updateRecipe({ id, title, content })
+Server Function
+  ↓ Extract userId from session
+  ↓ Call RecipeService.update(userId, data)
+Service
+  ↓ Verify ownership (throws if not found)
+  ↓ Call RecipeRepository.update(id, userId, data)
+Repository
+  ↓ Execute UPDATE with userId in WHERE clause
+Database
+```
+
+Each layer has a single responsibility, and you always know where to look for specific logic.

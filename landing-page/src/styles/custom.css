@@ -116,6 +116,44 @@ html {
   font-weight: 400;
 }
 
+/* Expressive code block header (the part with the dots) */
+.expressive-code,
+.expressive-code .frame,
+.expressive-code pre,
+.expressive-code .header,
+.expressive-code figure,
+.expressive-code figcaption {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border-color: #292524 !important;
+}
+
+.expressive-code .frame.has-title .header,
+.expressive-code .frame .header {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  border-bottom: 1px solid #292524 !important;
+}
+
+/* The window dots in code blocks */
+.expressive-code .frame::before {
+  background-color: transparent !important;
+}
+
+/* Code block copy button and header elements */
+.expressive-code .copy,
+.expressive-code button,
+.expressive-code .header *,
+.expressive-code figcaption *,
+.expressive-code .frame.has-title figcaption,
+.expressive-code .frame figcaption {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* Override any remaining light backgrounds in code blocks */
+.expressive-code * {
+  --code-background: rgba(255, 255, 255, 0.05) !important;
+}
+
 /* Links */
 .sl-markdown-content a {
   color: #ffffff;
@@ -361,4 +399,37 @@ div.mobile-preferences {
   --sl-color-orange-low: rgba(251, 191, 36, 0.15);
   --sl-color-red-low: rgba(239, 68, 68, 0.1);
   --sl-color-purple-low: rgba(147, 51, 234, 0.1);
+}
+
+/* Card component styling for dark theme */
+article.card {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid #292524 !important; /* stone-800 */
+  border-radius: 0.5rem !important;
+}
+
+article.card .title {
+  color: #ffffff !important;
+}
+
+article.card .body {
+  color: #a8a29e !important; /* stone-400 */
+}
+
+/* Card icon styling */
+article.card .icon {
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border-color: #57534e !important; /* stone-600 */
+}
+
+/* LinkCard styling */
+.sl-link-card {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+  border: 1px solid #292524 !important;
+  border-radius: 0.5rem !important;
+}
+
+.sl-link-card:hover {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+  border-color: #57534e !important;
 }

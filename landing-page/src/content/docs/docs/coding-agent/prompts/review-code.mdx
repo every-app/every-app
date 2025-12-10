@@ -1,0 +1,127 @@
+---
+title: Review Code
+description: Prompts for reviewing code quality, security, and database schema
+---
+
+These prompts help you review your codebase for common issues.
+
+## Simplify Review
+
+Use this to find opportunities to simplify your code:
+
+```markdown
+Can you please review this codebase?
+I want to know:
+
+- Is there anyway that we can simplify / things that are unnecessary?
+- Is there any code that sticks out as needing refactored?
+  - Does anything need split up into smaller functions?
+  - Were there any shortcuts taken or hardcoded assumptions that we never came back to?
+  - Can anything be simplified?
+
+Our guiding philosophy is making code as simple as possible, avoiding premature optimization. Some things we don't consider a premature optimization:
+
+- Optimistic updates by using TanstackDB and that data is properly and securely stored to our database.
+- Normalized database schemas to make future migrations and iteration cleaner.
+- Service / Repository pattern is desired even if its a bit overkill so that it is more natural to implement more complicated features in the future.
+- Defense in depth and ensuring that authentication and authorization is happening.
+
+Other patterns we consider acceptable:
+
+- Hard coding llm related info such as models, reasoning effort and prompts is fione.
+
+Don't make any changes, just write a report on the above questions.
+```
+
+## Security Review
+
+Use this to audit authentication and authorization:
+
+```markdown
+Review authentication and authorization across all API routes and backend services.
+
+### Service/Repository Authorization Pattern
+
+We use defense-in-depth with two layers:
+
+| Layer          | Responsibility                    | On Failure                 |
+| -------------- | --------------------------------- | -------------------------- |
+| **Service**    | Verify ownership BEFORE mutations | Throw clear error          |
+| **Repository** | Include `userId` in WHERE clauses | Return null/empty (silent) |
+
+**Services** handle authorization and can call multiple repositories. **Repositories** are pure data access - no auth checks, no cross-repo imports.
+
+This keeps repositories simple and testable while ensuring authorization can't be accidentally bypassed (the `userId` in WHERE clauses acts as a safety net).
+
+### Checklist
+
+- [ ] Services verify ownership before mutations
+- [ ] Repositories include `userId` in WHERE clauses
+- [ ] Repositories do NOT import other repositories
+- [ ] Server functions extract userId from session (never trust client)
+- [ ] No hardcoded secrets or API keys
+- [ ] Input validation on user-provided data
+```
+
+## Database Schema Review
+
+Use this to review or create a database schema:
+
+```markdown
+### Task
+
+Please review or create the database schema based on the below principles.
+
+Ensure that you're using drizzle as designed:
+
+- https://orm.drizzle.team/docs/relations
+- https://orm.drizzle.team/docs/indexes-constraints
+
+### Guiding Principles
+
+- Maximal normalization - everything should be normalized as much as possible. This is to avoid keeping tables in sync or having optional columns that only apply to certain record types. Down the line, this will make it challenging to do migrations and lead to bugs due to faulty assumptions.
+- As many assumptions as possible should be enforced at the database layer via the schema / unique constraints.
+- Make sure you properly use drizzle relations.
+  - Be sure to read the docs: https://orm.drizzle.team/docs/relations
+
+### Before you design
+
+- Ask the users clarifying questions about use cases down the line
+  - We don't want to build out support in the schema for any future features, but we want to make sure that our schema is designed intelligently so that it is easy to migrate the schema to support new features later.
+
+## Example problem with current schema
+
+Summary: Session History Data Model Problem
+
+Current Behavior
+When a workout session is created, the programName and workoutName are snapshotted (copied) into the session record at creation time (useWorkoutSession.ts:121-122). The session stores these as static strings rather than referencing the source data.
+
+The Problem
+If a user renames a program or workout after sessions have been created, the history page still displays the old names because:
+
+1. Sessions store copies of names, not references to the live program/workout
+2. There's no mechanism to propagate name changes to existing session records
+
+Current Data Flow
+Program (name: "My Program")
+↓ copied at session creation
+Session (programName: "My Program") ← static, never updates
+
+## Flexibility Requirements
+
+- Users should be able to change their workout names
+  - This should reflect when users finish their workout moving forwards
+  - All previous completed workouts should have the name at the time it was completed
+- Exercises should behave like workouts
+  - Users should be able to change the exercise name and it should apply to future set logs, but not past
+
+## Guidance
+
+- Normalized data is a key requirement
+```
+
+## When to Use
+
+- **Simplify**: After finishing a feature, before merging
+- **Security**: Before deploying to production, after adding new endpoints
+- **Schema**: When designing new tables or refactoring existing ones

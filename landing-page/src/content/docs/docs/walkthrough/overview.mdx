@@ -1,0 +1,28 @@
+---
+title: "Walkthrough: AI Cooking Assistant"
+description: A deep dive into how Every Chef is built
+---
+
+This walkthrough explains how the [Every Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) app is built. Every Chef is an AI-powered cooking assistant that helps you manage recipes and get cooking guidance through a chat interface.
+
+We'll cover the key architectural patterns and decisions that make this app work well on the Every App stack.
+
+## What We'll Cover
+
+1. **[Users & Authentication](/docs/walkthrough/users-and-auth)** - How users are created and requests are authenticated
+2. **[DaisyUI Theming](/docs/walkthrough/daisyui-theming)** - How to configure custom themes with Tailwind v4 and DaisyUI
+3. **[Drizzle Schema Design](/docs/walkthrough/schema-design)** - Normalized database schema with relations and type inference
+4. **[Repository & Service Pattern](/docs/walkthrough/repos-and-services)** - Layered architecture for business logic and data access
+5. **[TanStack DB & Optimistic Updates](/docs/walkthrough/tanstack-db)** - Client-side database with optimistic mutations
+6. **[AI Integration](/docs/walkthrough/ai-integration)** - Streaming chat with tool calls and human-in-the-loop patterns
+
+## Why Every Chef?
+
+Every Chef demonstrates several patterns you'll likely need in your own apps:
+
+- **CRUD operations** with optimistic updates
+- **Real-time streaming** from an AI model
+  - Human-in-the-loop AI where the user confirms actions before they happen
+- **Complex state coordination** across multiple data collections
+
+The app is complex enough to show real patterns, but simple enough to understand quickly.

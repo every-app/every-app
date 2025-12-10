@@ -1,0 +1,59 @@
+---
+title: Coding Agent Setup
+description: Set up your AI coding agent to work with Every App
+---
+
+import { Aside, Steps } from "@astrojs/starlight/components";
+
+If you're using an AI coding assistant (Claude, Cursor, Copilot, etc.), here's how to set it up for the best experience with Every App.
+
+## Clone the Reference Repo
+
+Clone the Every App monorepo into a hidden folder so your agent can reference the example apps:
+
+<Steps>
+
+1. **Clone to a hidden folder**
+
+   ```bash
+   git clone https://github.com/every-app/every-app.git .every-app
+   ```
+
+2. **Tell your agent to use it as reference**
+
+   When prompting your agent, mention that examples are available:
+
+   > "Check `.every-app/apps/` for examples of how to implement this pattern"
+
+</Steps>
+
+<Aside type="tip">
+  The hidden folder (starting with `.`) keeps it out of your way while still
+  being accessible to your coding agent.
+</Aside>
+
+## Example Apps to Reference
+
+The monorepo contains several full-stack apps you can point your agent to:
+
+| App                    | Description       | Good for learning                 |
+| ---------------------- | ----------------- | --------------------------------- |
+| `apps/workout-tracker` | Workout tracking  | Complex data relationships, forms |
+| `apps/every-chef`      | Cooking assistant | LLM integration patterns          |
+
+## Prompts
+
+We've developed some prompts that work well for building apps on Every App:
+
+- [Build Mockup from Spec](/docs/coding-agent/prompts/mockup-from-spec) - Create a functional UI mockup
+- [Review Code](/docs/coding-agent/prompts/review-code) - Review code for simplification, security, and schema issues
+
+## Tips for Working with AI Agents
+
+1. **Point to specific examples** - "Look at how `every-chef` handles optimistic mutations" works better than "figure out optimistic mutations"
+
+2. **Use the prompts** - The prompts in this section encode patterns we've found work well
+
+3. **Check types frequently** - Have your agent run `pnpm run types:check` after changes
+
+4. **Reference the tech stack docs** - Tell your agent to use context7 or similar to fetch TanStack/Drizzle docs when needed

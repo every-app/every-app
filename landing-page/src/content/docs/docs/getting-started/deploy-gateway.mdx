@@ -1,0 +1,50 @@
+---
+title: Deploy the Gateway
+description: Deploy Every App Gateway into your Cloudflare Account
+---
+
+import { Steps, Aside } from "@astrojs/starlight/components";
+
+<Steps>
+
+1. **Log in to Cloudflare**
+
+   ```bash
+   npx wrangler login
+   ```
+
+   <Aside type="caution" title="Make a Cloudflare Account">
+     If you don't already have an account, run this command which will redirect
+     you to the page where you can create an account. You can use Every App on
+     the Cloudflare free tier without even entering a credit card.
+   </Aside>
+
+2. **Install the Every App CLI**
+
+   ```bash
+   npm i -g @every-app/cli
+   ```
+
+3. **Deploy the Every App Gateway into your Cloudflare Account**
+
+   ```bash
+   every gateway deploy
+   ```
+
+4. **Follow the link to your deployed Gateway and create an account in your Every App Gateway instance.**
+
+   <Aside title="How does it work?">
+     If you go to Storage & Databases > D1 SQL database, find your D1 database
+     for `every-app-gateway`, then click "Explore Data". You can look at the
+     `users` table and see a user has been created in your self hosted instance
+     of Every App.
+   </Aside>
+
+</Steps>
+
+## Next Steps
+
+Now that you have your Gateway deployed, you can:
+
+- [Deploy the Todo App](/docs/getting-started/deploy-todo-app) to see an example app in action
+- [Start building your own app](/docs/build-an-app/start-from-template)

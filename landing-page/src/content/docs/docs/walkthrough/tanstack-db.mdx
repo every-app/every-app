@@ -1,0 +1,240 @@
+---
+title: TanStack DB & Optimistic Updates
+description: Client-side database with optimistic mutations
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+## Why TanStack DB?
+
+In 2025, apps should feel instant. We don't want to build apps with loading states and spinners everywhere.
+
+You either need to use sync, TanStack DB, or be very careful. For building this personal apps on Cloudflare, TanStack DB has been the simplest way we've found to get that level of UX consistently - especially when using LLMs to code.
+
+TanStack DB gives you a nice abstraction for modeling your frontend state so optimistic updates just work. When you create a recipe from the chat, it updates in your database and in the frontend. When you navigate to the recipes page, it's already there without refreshing.
+
+## Basic Collection Setup
+
+A collection defines how to fetch, insert, update, and delete data:
+
+```ts
+// recipesCollection.ts
+export const recipesCollection = lazyInitForWorkers(() =>
+  createCollection(
+    queryCollectionOptions<Recipe, string>({
+      queryKey: ["recipes"],
+      getId: (recipe) => recipe.id,
+
+      // Fetch all recipes from server
+      queryFn: async () => {
+        const result = await getAllRecipes();
+        return result.recipes;
+      },
+
+      // Sync inserts to server
+      onInsert: async ({ transaction }) => {
+        for (const mutation of transaction.mutations) {
+          await createRecipe({
+            data: {
+              id: mutation.modified.id,
+              title: mutation.modified.title,
+              content: mutation.modified.content,
+            },
+          });
+        }
+      },
+
+      // Sync updates to server
+      onUpdate: async ({ transaction }) => {
+        for (const mutation of transaction.mutations) {
+          await updateRecipe({ data: mutation.modified });
+        }
+      },
+
+      // Sync deletes to server
+      onDelete: async ({ transaction }) => {
+        for (const mutation of transaction.mutations) {
+          await deleteRecipe({ data: { id: mutation.original.id } });
+        }
+      },
+    }),
+  ),
+);
+```
+
+<Aside type="tip">
+  The `lazyInitForWorkers` wrapper defers initialization until first access.
+  This is required for Cloudflare Workers compatibility.
+</Aside>
+
+## Using Collections in Components
+
+Query the collection like any TanStack Query:
+
+```tsx
+function RecipeList() {
+  const recipes = useQuery(recipesCollection);
+
+  if (recipes.isLoading) return null; // Prefer no spinner
+
+  return (
+    <ul>
+      {recipes.data?.map((recipe) => (
+        <li key={recipe.id}>{recipe.title}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+Mutations happen through the collection directly:
+
+```tsx
+function handleCreate() {
+  recipesCollection.insert({
+    id: crypto.randomUUID(),
+    title: "New Recipe",
+    content: "",
+    userId: "", // Server will set this
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+function handleUpdate(recipe: Recipe) {
+  recipesCollection.update({
+    ...recipe,
+    title: "Updated Title",
+  });
+}
+
+function handleDelete(id: string) {
+  recipesCollection.delete(id);
+}
+```
+
+The UI updates immediately, then syncs to the server in the background.
+
+## Complex Optimistic Updates with Actions
+
+Sometimes you need to update multiple collections at once. For example, "Start Cooking" creates a chat AND links it to a recipe. Use `createOptimisticAction` for this:
+
+```ts
+// startCooking.ts
+export const startCooking = createOptimisticAction<StartCookingParams>({
+  // Phase 1: Immediate optimistic update
+  onMutate: ({ chatId, chatTitle, activeRecipeId, recipeId, isNewChat }) => {
+    const now = new Date().toISOString();
+
+    // Conditionally insert the chat
+    if (isNewChat) {
+      chatsCollection.insert({
+        id: chatId,
+        userId: "", // Server will set
+        title: chatTitle,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    // Always insert the active recipe link
+    chatActiveRecipesCollection.insert({
+      id: activeRecipeId,
+      chatId,
+      recipeId,
+      addedAt: now,
+    });
+  },
+
+  // Phase 2: Server sync
+  mutationFn: async (params) => {
+    await startCookingWithRecipe({ data: params });
+
+    // Refetch both collections to sync server state
+    await Promise.all([
+      chatsCollection.utils.refetch(),
+      chatActiveRecipesCollection.utils.refetch(),
+    ]);
+  },
+});
+```
+
+Then use the action in your component:
+
+```tsx
+async function handleStartCooking(recipe: Recipe) {
+  const chatId = crypto.randomUUID();
+  const activeRecipeId = crypto.randomUUID();
+
+  await startCooking({
+    chatId,
+    chatTitle: `Cooking: ${recipe.title}`,
+    activeRecipeId,
+    recipeId: recipe.id,
+    isNewChat: true,
+  });
+
+  // Navigate immediately - optimistic update already happened
+  navigate({ to: "/chat/$chatId", params: { chatId } });
+}
+```
+
+## Client-Generated IDs
+
+The key to true optimistic updates is generating IDs on the client:
+
+```ts
+const chatId = crypto.randomUUID();
+
+// Insert locally with this ID
+chatsCollection.insert({ id: chatId, ... });
+
+// Server receives the same ID
+await createChat({ data: { id: chatId, title } });
+```
+
+The client and server end up with the same ID, so the optimistic state seamlessly becomes the real state.
+
+## When NOT to Use onInsert
+
+Sometimes you want to handle server sync differently. For chats, we skip `onInsert` in the collection:
+
+```ts
+// chatsCollection.ts
+export const chatsCollection = lazyInitForWorkers(() =>
+  createCollection(
+    queryCollectionOptions<Chat, string>({
+      queryKey: ["chats"],
+      // Note: NO onInsert defined
+      onUpdate: async ({ transaction }) => { ... },
+      onDelete: async ({ transaction }) => { ... },
+    })
+  )
+);
+```
+
+Why? Because chat creation is handled by `createChatAction` which does more than just insert - it also sets up the active recipe link. If we had `onInsert`, the chat would be created twice.
+
+## Local Persistence
+
+To persist the cache across page refreshes:
+
+```ts
+// persister.ts
+export const persister = createSyncStoragePersister({
+  storage: typeof window !== "undefined" ? window.localStorage : undefined,
+  key: "every-chef-query-cache",
+});
+
+// queryClient.ts
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      gcTime: 1000 * 60 * 60 * 24 * 7, // Keep for 7 days
+      staleTime: 0, // Always refetch on mount
+    },
+  },
+});
+```
+
+This means the app loads instantly with cached data, then syncs fresh data from the server.

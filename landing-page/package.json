@@ -12,7 +12,9 @@
     "types:check": "astro sync && tsc --noEmit",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
-    "knip": "knip"
+    "knip": "knip",
+    "llms-txt:generate": "node scripts/generate-llms-txt.js",
+    "llms-txt:check": "node scripts/generate-llms-txt.js --check"
   },
   "dependencies": {
     "@astrojs/check": "^0.9.4",

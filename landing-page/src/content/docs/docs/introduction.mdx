@@ -1,0 +1,51 @@
+---
+title: Introduction
+description: What is Every App Gateway and why build with it?
+---
+
+import { Aside } from "@astrojs/starlight/components";
+
+## What is Every App Gateway?
+
+Every App Gateway is a self-hosted hub for all your personal web applications. Think of it as your own private app store that you control, running in your Cloudflare account.
+
+### Main Functions
+
+- **Consistent URL** - Access all your apps from a single URL. No need to remember different domains or ports for each app.
+- **Authentication** - Embedded apps request session tokens from the gateway instead of implementing auth themselves. You log in once and all your apps just work.
+- **Mobile PWA Optimized** - The Gateway is optimized with Progressive Web Apps in mind. Add the Gateway to your home screen, then each embedded app gets PWA benefits without reinventing the wheel.
+
+<Aside type="tip" title="Coming Soon">
+  In the near future, the Gateway will also manage user roles and access to apps
+  if you want to add friends and family to your gateway.
+</Aside>
+
+## Why Build with Every App?
+
+### The Gateway Handles Common Functionality
+
+You don't need to worry about auth and PWAs. In the future, our goal is to abstract away even more like LLM providers & email sending.
+
+### Opinionated Tech Stack with Examples
+
+The stack is designed for simplicity and agentic coding. If you look at the example apps, the only dependencies are really TanStack libraries, Drizzle, and Cloudflare. This means it's less things for you and your coding agent to learn and keep track of.
+
+### Full Stack, Complete Example Apps
+
+While the starter template is minimal, there are several full apps you can reference:
+
+- [Workout Tracker](https://github.com/every-app/every-app/tree/main/apps/workout-tracker) - A workout tracking app
+- [Every Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) - A cooking assistant
+- [Todos](https://github.com/every-app/every-app/tree/main/apps/todo-app) - A minimal todo list app
+
+If you're stuck or not sure how to implement something, there's a good chance there's already an example full stack application using the same stack in one of these apps.
+
+## How It Works
+
+From your app's perspective, Every App does a few things:
+
+1. **Renders your app in an iframe** - Your app lives inside the Gateway's UI
+2. **Provides session tokens** - The Gateway handles auth and gives your app tokens
+3. **Syncs routing** - Navigation in your app syncs with the Gateway's URL bar
+
+The `@embedded-sdk` handles all this communication for you. Check out the [Embedded SDK docs](/docs/embedded-sdk/overview) for details.
