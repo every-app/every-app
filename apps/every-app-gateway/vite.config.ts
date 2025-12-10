@@ -4,19 +4,20 @@ import tsConfigPaths from "vite-tsconfig-paths";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import { cloudflare } from "@cloudflare/vite-plugin";
 
 export default defineConfig({
   server: {
     port: 3000,
   },
   plugins: [
+    // Cloudflare plugin must come first - it sets up the SSR environment
+    cloudflare({ viteEnvironment: { name: "ssr" } }),
     tsConfigPaths({
       projects: ["./tsconfig.json"],
     }),
     tanstackStart({
       spa: { enabled: true },
-      customViteReactPlugin: true,
-      target: "cloudflare-module",
     }),
     viteReact(),
     tailwindcss(),
@@ -59,8 +60,5 @@ export default defineConfig({
   build: {
     minify: process.env.DEBUG_BUILD === "true" ? false : "esbuild",
     sourcemap: process.env.DEBUG_BUILD === "true" ? true : false,
-    rollupOptions: {
-      external: ["wrangler"],
-    },
   },
 });

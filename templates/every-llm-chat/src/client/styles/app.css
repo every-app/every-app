@@ -2,6 +2,8 @@
 
 /* Register DaisyUI as a plugin - only enable light theme */
 @plugin "daisyui" {
+  /* @property isn't supported by some browsers and gives a noisy warning https://github.com/saadeghi/daisyui/issues/3882 */
+  exclude: properties;
   themes: lofi --default;
 }
 

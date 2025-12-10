@@ -2,7 +2,7 @@ import { SignJWT, importPKCS8, importSPKI, exportJWK } from "jose";
 import invariant from "tiny-invariant";
 import { z } from "zod";
 import { auth } from "../auth";
-import { getBindings } from "./bindings";
+import { env } from "cloudflare:workers";
 
 // JWT additional claims schema
 const JWTAdditionalClaimsSchema = z.object({
@@ -14,7 +14,8 @@ const JWTAdditionalClaimsSchema = z.object({
 type JWTAdditionalClaims = z.infer<typeof JWTAdditionalClaimsSchema>;
 
 // Singleton key pair - loaded from environment variables
-let signingKeyPair: { privateKey: any; publicKey: any } | null = null;
+let signingKeyPair: { privateKey: CryptoKey; publicKey: CryptoKey } | null =
+  null;
 
 /**
  * Load the signing keys from environment variables
@@ -22,7 +23,6 @@ let signingKeyPair: { privateKey: any; publicKey: any } | null = null;
  */
 async function getSigningKey() {
   if (!signingKeyPair) {
-    const env = getBindings();
     invariant(
       env?.JWT_PRIVATE_KEY,
       "JWT_PRIVATE_KEY environment variable is required",
@@ -53,7 +53,6 @@ export async function issueEmbeddedAppToken(
   additionalClaims: JWTAdditionalClaims,
 ): Promise<string> {
   const { privateKey } = await getSigningKey();
-  const env = getBindings();
 
   invariant(
     env?.GATEWAY_URL,

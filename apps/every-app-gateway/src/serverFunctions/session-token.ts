@@ -48,7 +48,7 @@ function isTimestampValid(timestamp: number): boolean {
 
 export const createSessionToken = createServerFn()
   .middleware([authMiddleware])
-  .validator((body: unknown) => SessionTokenRequestBodySchema.parse(body))
+  .inputValidator((body: unknown) => SessionTokenRequestBodySchema.parse(body))
   .handler(
     async ({
       data: requestData,

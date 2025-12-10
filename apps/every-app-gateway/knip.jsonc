@@ -10,6 +10,7 @@
   "ignore": [
     "src/routeTree.gen.ts",
     "drizzle-prod.config.ts",
+    "src/auth/cli-config.ts",
     "regenerate-secrets.js",
   ],
   "ignoreDependencies": [

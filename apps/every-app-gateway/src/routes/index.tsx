@@ -68,7 +68,7 @@ function App() {
                   return (
                     <li
                       key={app.id}
-                      className={`border border-base-300 rounded-lg bg-base-100 transition-all cursor-pointer ${
+                      className={`border border-base-content/20 rounded-lg bg-base-100 transition-all cursor-pointer ${
                         !isDropdownHovered
                           ? "hover:bg-base-200 hover:border-base-400 hover:shadow-md"
                           : ""

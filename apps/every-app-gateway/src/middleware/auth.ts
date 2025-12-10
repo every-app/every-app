@@ -1,6 +1,6 @@
 import { createAuth } from "@/auth";
 import { createMiddleware } from "@tanstack/react-start";
-import { getWebRequest } from "@tanstack/react-start/server";
+import { getRequest } from "@tanstack/react-start/server";
 
 export interface AuthContext {
   user: {
@@ -30,7 +30,7 @@ export const authMiddleware = createMiddleware({
   const auth = createAuth();
 
   // Get the request object using TanStack Start's helper
-  const request = getWebRequest();
+  const request = getRequest();
 
   const session = await auth.api.getSession({
     headers: request.headers,

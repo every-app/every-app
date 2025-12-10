@@ -1,6 +1,9 @@
 @import "tailwindcss";
 
-@plugin "daisyui";
+@plugin "daisyui" {
+  /* @property isn't supported by some browsers and gives a noisy warning https://github.com/saadeghi/daisyui/issues/3882 */
+  exclude: properties;
+}
 
 /* Define Light Theme (Default) */
 @plugin "daisyui/theme" {

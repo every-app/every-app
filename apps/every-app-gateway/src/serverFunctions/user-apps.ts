@@ -27,7 +27,7 @@ const createUserAppSchema = z.object({
 
 export const createUserApp = createServerFn()
   .middleware([authMiddleware])
-  .validator((app: unknown) => createUserAppSchema.parse(app))
+  .inputValidator((app: unknown) => createUserAppSchema.parse(app))
   .handler(
     async ({
       data: app,
@@ -80,7 +80,7 @@ const updateUserAppSchema = z.object({
 
 export const updateUserApp = createServerFn()
   .middleware([authMiddleware])
-  .validator((app: unknown) => updateUserAppSchema.parse(app))
+  .inputValidator((app: unknown) => updateUserAppSchema.parse(app))
   .handler(
     async ({
       data: app,
@@ -124,7 +124,7 @@ const deleteUserAppSchema = z.object({
 
 export const deleteUserApp = createServerFn()
   .middleware([authMiddleware])
-  .validator((app: unknown) => deleteUserAppSchema.parse(app))
+  .inputValidator((app: unknown) => deleteUserAppSchema.parse(app))
   .handler(
     async ({
       data: app,

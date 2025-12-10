@@ -1,7 +1,10 @@
 import { createAuth } from "./config";
+import { lazyInitForWorkers } from "@/utils/lazyInitForWorkers";
 
-// Export the auth instance for CLI schema generation
-export const auth = createAuth();
+/**
+ * Lazy-initialized auth instance.
+ * Defers initialization until first access to ensure cloudflare:workers env is available.
+ */
+export const auth = lazyInitForWorkers(() => createAuth());
 
-// Export for runtime usage
 export { createAuth };

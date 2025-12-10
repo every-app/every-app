@@ -1,15 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "every-app-gateway",
-  "main": ".output/server/index.mjs",
-  "compatibility_date": "2025-08-13",
+  "main": "@tanstack/react-start/server-entry",
+  "compatibility_date": "2025-09-02",
   "compatibility_flags": ["nodejs_compat"],
-  "dev": {
-    "port": 3000,
-  },
-  "assets": {
-    "directory": ".output/public",
-  },
   "observability": {
     "enabled": true,
   },

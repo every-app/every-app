@@ -1,11 +1,15 @@
-import { createServerFileRoute } from "@tanstack/react-start/server";
+import { createFileRoute } from "@tanstack/react-router";
 import { getPublicJWKS } from "../../../server/jwt-utils";
 
-export const ServerRoute = createServerFileRoute("/api/embedded/jwks").methods({
-  GET: async () => {
-    const jwks = await getPublicJWKS();
-    return new Response(JSON.stringify(jwks), {
-      headers: { "Content-Type": "application/json" },
-    });
+export const Route = createFileRoute("/api/embedded/jwks")({
+  server: {
+    handlers: {
+      GET: async () => {
+        const jwks = await getPublicJWKS();
+        return new Response(JSON.stringify(jwks), {
+          headers: { "Content-Type": "application/json" },
+        });
+      },
+    },
   },
 });

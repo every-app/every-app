@@ -8,8 +8,6 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { createServerRootRoute } from '@tanstack/react-start/server'
-
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignInRouteImport } from './routes/sign-in'
@@ -18,10 +16,8 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppsAppIdRouteImport } from './routes/apps/$appId'
 import { Route as AppsAppIdSplatRouteImport } from './routes/apps/$appId.$'
-import { ServerRoute as ApiEmbeddedJwksServerRouteImport } from './routes/api/embedded/jwks'
-import { ServerRoute as ApiAuthSplatServerRouteImport } from './routes/api/auth/$'
-
-const rootServerRouteImport = createServerRootRoute()
+import { Route as ApiEmbeddedJwksRouteImport } from './routes/api/embedded/jwks'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
@@ -58,15 +54,15 @@ const AppsAppIdSplatRoute = AppsAppIdSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => AppsAppIdRoute,
 } as any)
-const ApiEmbeddedJwksServerRoute = ApiEmbeddedJwksServerRouteImport.update({
+const ApiEmbeddedJwksRoute = ApiEmbeddedJwksRouteImport.update({
   id: '/api/embedded/jwks',
   path: '/api/embedded/jwks',
-  getParentRoute: () => rootServerRouteImport,
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAuthSplatServerRoute = ApiAuthSplatServerRouteImport.update({
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
-  getParentRoute: () => rootServerRouteImport,
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -76,6 +72,8 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
+  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
   '/apps/$appId/$': typeof AppsAppIdSplatRoute
 }
 export interface FileRoutesByTo {
@@ -85,6 +83,8 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
+  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
   '/apps/$appId/$': typeof AppsAppIdSplatRoute
 }
 export interface FileRoutesById {
@@ -95,6 +95,8 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
+  '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
   '/apps/$appId/$': typeof AppsAppIdSplatRoute
 }
 export interface FileRouteTypes {
@@ -106,6 +108,8 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/apps/$appId'
+    | '/api/auth/$'
+    | '/api/embedded/jwks'
     | '/apps/$appId/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -115,6 +119,8 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/apps/$appId'
+    | '/api/auth/$'
+    | '/api/embedded/jwks'
     | '/apps/$appId/$'
   id:
     | '__root__'
@@ -124,6 +130,8 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/apps/$appId'
+    | '/api/auth/$'
+    | '/api/embedded/jwks'
     | '/apps/$appId/$'
   fileRoutesById: FileRoutesById
 }
@@ -134,31 +142,8 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   AppsAppIdRoute: typeof AppsAppIdRouteWithChildren
-}
-export interface FileServerRoutesByFullPath {
-  '/api/auth/$': typeof ApiAuthSplatServerRoute
-  '/api/embedded/jwks': typeof ApiEmbeddedJwksServerRoute
-}
-export interface FileServerRoutesByTo {
-  '/api/auth/$': typeof ApiAuthSplatServerRoute
-  '/api/embedded/jwks': typeof ApiEmbeddedJwksServerRoute
-}
-export interface FileServerRoutesById {
-  __root__: typeof rootServerRouteImport
-  '/api/auth/$': typeof ApiAuthSplatServerRoute
-  '/api/embedded/jwks': typeof ApiEmbeddedJwksServerRoute
-}
-export interface FileServerRouteTypes {
-  fileServerRoutesByFullPath: FileServerRoutesByFullPath
-  fullPaths: '/api/auth/$' | '/api/embedded/jwks'
-  fileServerRoutesByTo: FileServerRoutesByTo
-  to: '/api/auth/$' | '/api/embedded/jwks'
-  id: '__root__' | '/api/auth/$' | '/api/embedded/jwks'
-  fileServerRoutesById: FileServerRoutesById
-}
-export interface RootServerRouteChildren {
-  ApiAuthSplatServerRoute: typeof ApiAuthSplatServerRoute
-  ApiEmbeddedJwksServerRoute: typeof ApiEmbeddedJwksServerRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiEmbeddedJwksRoute: typeof ApiEmbeddedJwksRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -212,23 +197,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppsAppIdSplatRouteImport
       parentRoute: typeof AppsAppIdRoute
     }
-  }
-}
-declare module '@tanstack/react-start/server' {
-  interface ServerFileRoutesByPath {
     '/api/embedded/jwks': {
       id: '/api/embedded/jwks'
       path: '/api/embedded/jwks'
       fullPath: '/api/embedded/jwks'
-      preLoaderRoute: typeof ApiEmbeddedJwksServerRouteImport
-      parentRoute: typeof rootServerRouteImport
+      preLoaderRoute: typeof ApiEmbeddedJwksRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
       fullPath: '/api/auth/$'
-      preLoaderRoute: typeof ApiAuthSplatServerRouteImport
-      parentRoute: typeof rootServerRouteImport
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -252,14 +233,18 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   AppsAppIdRoute: AppsAppIdRouteWithChildren,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiEmbeddedJwksRoute: ApiEmbeddedJwksRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-const rootServerRouteChildren: RootServerRouteChildren = {
-  ApiAuthSplatServerRoute: ApiAuthSplatServerRoute,
-  ApiEmbeddedJwksServerRoute: ApiEmbeddedJwksServerRoute,
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
 }
-export const serverRouteTree = rootServerRouteImport
-  ._addFileChildren(rootServerRouteChildren)
-  ._addFileTypes<FileServerRouteTypes>()

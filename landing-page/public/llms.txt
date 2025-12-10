@@ -982,7 +982,9 @@ The main CSS file (`src/client/styles/app.css`) configures everything:
 
 ```css
 @import "tailwindcss";
-@plugin "daisyui";
+@plugin "daisyui" {
+  exclude: properties;
+}
 
 @theme {
   --font-sans: "Work Sans", ui-sans-serif, system-ui, sans-serif;
