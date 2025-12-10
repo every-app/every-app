@@ -71,7 +71,7 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
       <iframe
         ref={iframeRef}
         src={iframeUrl}
-        className={`flex-1 w-full bg-white ${className}`}
+        className={`flex-1 w-full bg-base-100 ${className}`}
         title={app.name}
         onLoad={handleIframeLoad}
         sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation"
