@@ -10,14 +10,14 @@
   "kv_namespaces": [
     {
       "binding": "every-app-gateway",
-      "id": "d64e3ceace134a9880055015cbc73265",
+      "id": "6d071b25ae8d40c481fc50bc12746753",
     },
   ],
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "every-app-gateway",
-      "database_id": "a60cae9c-54f1-4ac8-a2a8-d6cf5a9273d5",
+      "database_id": "2ec6dc01-2936-4753-b79b-6ee5625e8831",
       "migrations_dir": "drizzle",
     },
   ],

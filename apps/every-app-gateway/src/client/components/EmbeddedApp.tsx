@@ -67,11 +67,12 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
     );
 
   return (
-    <div className="w-full h-screen flex flex-col">
+    <div className="w-full h-screen flex flex-col bg-base-100">
       <iframe
         ref={iframeRef}
         src={iframeUrl}
-        className={`flex-1 w-full bg-base-100 ${className}`}
+        // Don't show the iframe content until its ready to prevent a white flash in dark mode while its loading
+        className={`flex-1 w-full ${isEmbeddedAppReady ? "opacity-100" : "opacity-0"} ${className}`}
         title={app.name}
         onLoad={handleIframeLoad}
         sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation"
