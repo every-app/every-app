@@ -51,7 +51,7 @@ function cleanMdxContent(content) {
   // Handle <Aside> components - extract content and convert to blockquote
   content = content.replace(
     /<Aside[^>]*title=["']([^"']+)["'][^>]*>([\s\S]*?)<\/Aside>/g,
-    (match, title, innerContent) => {
+    (_, title, innerContent) => {
       const cleanContent = innerContent.trim();
       return `> **${title}**: ${cleanContent}\n`;
     },
@@ -60,7 +60,7 @@ function cleanMdxContent(content) {
   // Handle <Aside> without title
   content = content.replace(
     /<Aside[^>]*>([\s\S]*?)<\/Aside>/g,
-    (match, innerContent) => {
+    (_, innerContent) => {
       const cleanContent = innerContent.trim();
       return `> ${cleanContent}\n`;
     },

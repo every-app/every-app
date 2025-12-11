@@ -1815,10 +1815,10 @@ If you're using an AI coding assistant (Claude, Cursor, Copilot, etc.), here's h
 
 Clone the Every App monorepo into a hidden folder so your agent can reference the example apps:
 
-1. **Clone to a hidden folder**
+1. **Clone to example apps to hidden folder**
 
    ```bash
-   git clone https://github.com/every-app/every-app.git .every-app
+   npx gitpick every-app/every-app/tree/main/apps/ .every-app
    ```
 
 2. **Tell your agent to use it as reference**
