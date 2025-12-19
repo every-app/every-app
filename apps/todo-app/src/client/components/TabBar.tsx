@@ -1,13 +1,10 @@
 import useDetectKeyboardOpen from "@/client/hooks/useDetectKeyboardOpen";
-import { Link } from "@tanstack/react-router";
+import { Link, useLocation } from "@tanstack/react-router";
 import { ClipboardList, History, Home } from "lucide-react";
 
-interface TabBarProps {
-  currentPath: string;
-}
-
-export function TabBar({ currentPath }: TabBarProps) {
+export function TabBar() {
   const isKeyboardOpen = useDetectKeyboardOpen();
+  const currentPath = useLocation({ select: (loc) => loc.pathname });
 
   if (isKeyboardOpen) return null;
   const navItems = [

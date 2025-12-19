@@ -90,7 +90,7 @@ function History() {
       </div>
       {isMobile && (
         <div className="fixed bottom-0 left-0 right-0">
-          <TabBar currentPath={location.pathname} />
+          <TabBar />
         </div>
       )}
     </>

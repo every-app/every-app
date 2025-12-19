@@ -33,7 +33,7 @@ export const getAllTodos = createServerFn()
 
 const createTodoSchema = z.object({
   id: z.string().length(36), // expect uuid
-  title: z.string().min(1, "Title is required").max(255, "Title too long"),
+  title: z.string().min(1, "Title is required").max(1024, "Title too long"),
   sortKey: z.string(),
 });
 
@@ -60,7 +60,7 @@ const updateTodoSchema = z.object({
   title: z
     .string()
     .min(1, "Title is required")
-    .max(255, "Title too long")
+    .max(1024, "Title too long")
     .optional(),
   completed: z.boolean().optional(),
   sortKey: z.string().optional(),

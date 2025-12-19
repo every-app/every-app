@@ -1,4 +1,4 @@
-import { createFileRoute, useLocation } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useState, useMemo } from "react";
 import { Button } from "@/client/components/ui/button";
@@ -39,11 +39,12 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
+/** Completed todos older than this are hidden from the main list */
+const COMPLETED_TODOS_VISIBLE_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
+
 function Home() {
   const isMobile = useIsMobile();
-  const location = useLocation();
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
-  const [focusedActionId, setFocusedActionId] = useState<string | null>(null);
   const [newTodoTitle, setNewTodoTitle] = useState<string>("");
 
   const sensors = useDraggableSensors();
@@ -66,13 +67,13 @@ function Home() {
   );
 
   const completedTodos = useMemo(() => {
-    const eightHoursAgo = Date.now() - 8 * 60 * 60 * 1000;
+    const cutoffTime = Date.now() - COMPLETED_TODOS_VISIBLE_DURATION_MS;
     return (
       todos?.filter((todo) => {
         if (!todo.completed) return false;
         if (!todo.completedAt) return true; // Show if no completedAt timestamp
         const completedTime = new Date(todo.completedAt).getTime();
-        return completedTime > eightHoursAgo;
+        return completedTime > cutoffTime;
       }) ?? []
     );
   }, [todos]);
@@ -180,9 +181,7 @@ function Home() {
                   key={todo.id}
                   todo={todo}
                   editingTodoId={editingTodoId}
-                  focusedActionId={focusedActionId}
                   setEditingTodoId={setEditingTodoId}
-                  setFocusedActionId={setFocusedActionId}
                   isDraggable={editingTodoId !== todo.id}
                 />
               ))}
@@ -200,9 +199,7 @@ function Home() {
                   key={todo.id}
                   todo={todo}
                   editingTodoId={editingTodoId}
-                  focusedActionId={focusedActionId}
                   setEditingTodoId={setEditingTodoId}
-                  setFocusedActionId={setFocusedActionId}
                   isDraggable={false}
                 />
               ))}
@@ -214,7 +211,7 @@ function Home() {
       {isMobile && (
         <div className="fixed bottom-0 left-0 right-0">
           <MobileTodoInput />
-          <TabBar currentPath={location.pathname} />
+          <TabBar />
         </div>
       )}
     </>
@@ -245,11 +242,29 @@ function calculateNewPosition(
   }
 }
 
+/**
+ * Configure drag-and-drop sensors for todo list reordering.
+ *
+ * We use separate MouseSensor and TouchSensor (not PointerSensor) because they require
+ * different activation strategies:
+ *
+ * - MouseSensor (desktop): Uses distance-based activation (8px movement required).
+ *   This allows clicks on interactive elements (checkbox, edit button) to work normally
+ *   since clicks don't involve movement. Drag only initiates after intentional movement.
+ *
+ * - TouchSensor (mobile): Uses delay-based activation (150ms hold required).
+ *   Distance-based doesn't work well on touch because normal scrolling/tapping
+ *   easily exceeds any reasonable distance threshold. The delay allows taps to
+ *   register as clicks while a press-and-hold initiates drag.
+ *
+ * Note: PointerSensor handles both mouse and touch, but we can't use it here because
+ * we need different activation constraints for each input type.
+ */
 function useDraggableSensors() {
   const sensors = useSensors(
     useSensor(MouseSensor, {
       activationConstraint: {
-        distance: 10,
+        distance: 8,
       },
     }),
     useSensor(TouchSensor, {

@@ -12,10 +12,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/client/components/ui/dropdown-menu";
-import { Edit, Trash2, MoreHorizontal } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { useIsMobile } from "@/client/hooks/use-mobile";
-import { DeleteTodoConfirmation } from "@/client/components/DeleteTodoConfirmation";
+import { TodoMenuItems } from "@/client/components/TodoMenuItems";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { todoCollection } from "@/client/tanstack-db";
@@ -23,22 +23,19 @@ import { todoCollection } from "@/client/tanstack-db";
 interface SortableTodoItemProps {
   todo: Todo;
   editingTodoId: string | null;
-  focusedActionId: string | null;
   setEditingTodoId: React.Dispatch<React.SetStateAction<string | null>>;
-  setFocusedActionId: React.Dispatch<React.SetStateAction<string | null>>;
   isDraggable?: boolean;
 }
 
 export function SortableTodoItem({
   todo,
   editingTodoId,
-  focusedActionId,
   setEditingTodoId,
-  setFocusedActionId,
   isDraggable = true,
 }: SortableTodoItemProps) {
   const isMobile = useIsMobile();
   const [localTitle, setLocalTitle] = useState(todo.title);
+  const [isActionFocused, setIsActionFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const {
@@ -54,7 +51,7 @@ export function SortableTodoItem({
   });
 
   const style = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Translate.toString(transform),
     transition,
   };
 
@@ -112,20 +109,7 @@ export function SortableTodoItem({
     });
   };
 
-  const handleTextClick = () => {
-    if (todo.completed) return;
-    handleClickEditTodo();
-  };
-
-  const handleTextKeyDown = (e: React.KeyboardEvent) => {
-    if (todo.completed) return;
-    // Enter or Space to start editing
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      handleClickEditTodo();
-    }
-  };
-
+  // Auto-resize textarea to fit multi-line content without scrollbars
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
     if (textarea) {
@@ -133,13 +117,9 @@ export function SortableTodoItem({
       textarea.style.height = `${textarea.scrollHeight}px`;
     }
   };
-
-  // Auto-resize textarea when editing and content changes
   useEffect(() => {
-    if (editingTodoId === todo.id) {
-      adjustTextareaHeight();
-    }
-  }, [editingTodoId, localTitle, todo.id]);
+    adjustTextareaHeight();
+  }, [localTitle]);
 
   const todoItem = (
     <div
@@ -153,6 +133,7 @@ export function SortableTodoItem({
         editingTodoId === todo.id ? "bg-blue-50" : "hover:bg-gray-100"
       }`}
     >
+      {/* before:absolute before:inset-[-8px] creates an invisible hit area extending 8px beyond the checkbox */}
       <Checkbox
         checked={todo.completed}
         onCheckedChange={(checked) => {
@@ -162,7 +143,7 @@ export function SortableTodoItem({
           });
         }}
         onPointerDown={(e) => e.stopPropagation()}
-        className="focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:outline-none transition-all duration-200 hover:ring-2 hover:ring-gray-300 hover:ring-offset-1"
+        className="focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:outline-none transition-all duration-200 hover:ring-2 hover:ring-gray-300 hover:ring-offset-1 relative before:absolute before:inset-[-8px] before:content-['']"
         aria-label={
           todo.completed
             ? `Mark as incomplete: "${todo.title}"`
@@ -171,65 +152,58 @@ export function SortableTodoItem({
       />
 
       <div className="flex-1">
-        {editingTodoId === todo.id ? (
-          <textarea
-            ref={textareaRef}
-            id={formatInlineEditId(todo.id)}
-            value={localTitle}
-            onChange={(e) => handleTitleChange(e.target.value)}
-            onFocus={handleInputFocus}
-            onBlur={handleInputBlur}
-            onPointerDown={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                setEditingTodoId(null);
-                e.currentTarget.blur();
-              } else if (e.key === "Escape") {
-                setLocalTitle(todo.title);
-                setEditingTodoId(null);
-                e.currentTarget.blur();
-              }
-            }}
-            className="w-full border-none bg-transparent focus:ring-0 focus:border-none focus:outline-none shadow-none px-2 py-1 text-base leading-6 transition-all duration-200 cursor-text focus:cursor-text focus:bg-blue-50 resize-none overflow-hidden"
-            rows={1}
-            autoFocus
-            aria-label={`Edit todo: ${todo.title}`}
-          />
-        ) : (
-          <div
-            role="button"
-            tabIndex={todo.completed ? -1 : 0}
-            onClick={handleTextClick}
-            onKeyDown={handleTextKeyDown}
-            onPointerDown={(e) => e.stopPropagation()}
-            className={`px-2 py-1 text-base leading-6 rounded transition-all duration-200 break-words ${
-              todo.completed
-                ? "line-through text-gray-500 cursor-default"
-                : "cursor-text hover:bg-gray-50 focus:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-200"
-            }`}
-            aria-label={
-              todo.completed
-                ? `Completed todo: ${todo.title}`
-                : `Edit todo: ${todo.title}`
+        <textarea
+          ref={textareaRef}
+          id={formatInlineEditId(todo.id)}
+          value={localTitle}
+          onChange={(e) => handleTitleChange(e.target.value)}
+          onFocus={handleInputFocus}
+          onBlur={handleInputBlur}
+          onPointerDown={(e) => {
+            // Only stop propagation when editing to allow drag gestures when not focused
+            if (editingTodoId === todo.id) {
+              e.stopPropagation();
             }
-          >
-            {todo.title}
-          </div>
-        )}
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              setEditingTodoId(null);
+              e.currentTarget.blur();
+            } else if (e.key === "Escape") {
+              setLocalTitle(todo.title);
+              setEditingTodoId(null);
+              e.currentTarget.blur();
+            }
+          }}
+          disabled={todo.completed}
+          className={`w-full border-none bg-transparent focus:ring-0 focus:border-none focus:outline-none shadow-none px-2 py-1 text-base leading-6 transition-all duration-200 resize-none overflow-hidden break-words ${
+            isDragging
+              ? "!cursor-grabbing"
+              : todo.completed
+                ? "line-through text-gray-500 cursor-default"
+                : "cursor-text focus:bg-blue-50"
+          }`}
+          rows={1}
+          aria-label={
+            todo.completed
+              ? `Completed todo: ${todo.title}`
+              : `Edit todo: ${todo.title}`
+          }
+        />
       </div>
 
       <DropdownMenu>
         <DropdownMenuTrigger
-          onFocus={() => setFocusedActionId(todo.id)}
-          onBlur={() => setFocusedActionId(null)}
+          onFocus={() => setIsActionFocused(true)}
+          onBlur={() => setIsActionFocused(false)}
           onPointerDown={(e) => e.stopPropagation()}
           className={`rounded transition-all duration-200 hover:bg-gray-200 opacity-100 p-1 w-auto h-auto focus:opacity-100 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 focus:p-1 focus:w-auto focus:h-auto`}
           aria-label="More actions"
         >
           <MoreHorizontal
             className={`h-4 w-4 text-gray-600 ${
-              isMobile || focusedActionId === todo.id
+              isMobile || isActionFocused
                 ? "opacity-100 w-auto h-auto"
                 : "opacity-0 w-0 h-0 p-0"
             }`}
@@ -243,25 +217,12 @@ export function SortableTodoItem({
             }
           }}
         >
-          <DropdownMenuItem
-            className="focus:bg-blue-50 focus:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            onClick={todo.completed ? undefined : handleClickEditTodo}
-            disabled={todo.completed}
-          >
-            <Edit className="h-4 w-4 mr-2" />
-            Edit {todo.completed && "(Disabled)"}
-          </DropdownMenuItem>
-          <DeleteTodoConfirmation
-            onConfirm={() => todoCollection.delete(todo.id)}
-          >
-            <DropdownMenuItem
-              onSelect={(e) => e.preventDefault()}
-              className="text-red-600 focus:text-red-700 focus:bg-red-50"
-            >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Delete
-            </DropdownMenuItem>
-          </DeleteTodoConfirmation>
+          <TodoMenuItems
+            MenuItem={DropdownMenuItem}
+            isCompleted={todo.completed}
+            onEdit={handleClickEditTodo}
+            onDelete={() => todoCollection.delete(todo.id)}
+          />
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -273,25 +234,12 @@ export function SortableTodoItem({
     <ContextMenu>
       <ContextMenuTrigger asChild>{todoItem}</ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem
-          onClick={todo.completed ? undefined : handleClickEditTodo}
-          disabled={todo.completed}
-          className="disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Edit className="h-4 w-4 mr-2" />
-          Edit {todo.completed && "(Disabled)"}
-        </ContextMenuItem>
-        <DeleteTodoConfirmation
-          onConfirm={() => todoCollection.delete(todo.id)}
-        >
-          <ContextMenuItem
-            onSelect={(e) => e.preventDefault()}
-            className="text-red-600 focus:text-red-700 focus:bg-red-50"
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Delete
-          </ContextMenuItem>
-        </DeleteTodoConfirmation>
+        <TodoMenuItems
+          MenuItem={ContextMenuItem}
+          isCompleted={todo.completed}
+          onEdit={handleClickEditTodo}
+          onDelete={() => todoCollection.delete(todo.id)}
+        />
       </ContextMenuContent>
     </ContextMenu>
   );

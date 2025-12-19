@@ -93,9 +93,7 @@ function AppLayout() {
             paddingBottom: "80px",
           }}
         >
-          <div className="max-w-2xl mx-auto">
-            <Outlet />
-          </div>
+          <Outlet />
         </div>
       </div>
 
@@ -103,9 +101,7 @@ function AppLayout() {
       <div className="hidden md:flex h-screen">
         <Sidebar currentPath={location.pathname} />
         <div className="flex-1 overflow-auto">
-          <div className="max-w-2xl mx-auto">
-            <Outlet />
-          </div>
+          <Outlet />
         </div>
       </div>
     </>
