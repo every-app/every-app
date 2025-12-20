@@ -19,6 +19,7 @@ import { TodoMenuItems } from "@/client/components/TodoMenuItems";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { todoCollection } from "@/client/tanstack-db";
+import type { ComponentType } from "react";
 
 interface SortableTodoItemProps {
   todo: Todo;
@@ -127,10 +128,10 @@ export function SortableTodoItem({
       style={style}
       {...(isDraggable ? attributes : {})}
       {...(isDraggable ? listeners : {})}
-      className={`flex items-center gap-3 p-2 rounded-md transition-colors ${
+      className={`flex items-start gap-3 p-2 rounded-md transition-colors ${
         isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
       } ${isDragging ? "opacity-50" : ""} ${
-        editingTodoId === todo.id ? "bg-blue-50" : "hover:bg-gray-100"
+        editingTodoId === todo.id ? "bg-primary/10" : "hover:bg-base-200"
       }`}
     >
       {/* before:absolute before:inset-[-8px] creates an invisible hit area extending 8px beyond the checkbox */}
@@ -143,7 +144,7 @@ export function SortableTodoItem({
           });
         }}
         onPointerDown={(e) => e.stopPropagation()}
-        className="focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:outline-none transition-all duration-200 hover:ring-2 hover:ring-gray-300 hover:ring-offset-1 relative before:absolute before:inset-[-8px] before:content-['']"
+        className="mt-1.5 flex-shrink-0 relative before:absolute before:inset-[-8px] before:content-['']"
         aria-label={
           todo.completed
             ? `Mark as incomplete: "${todo.title}"`
@@ -181,8 +182,8 @@ export function SortableTodoItem({
             isDragging
               ? "!cursor-grabbing"
               : todo.completed
-                ? "line-through text-gray-500 cursor-default"
-                : "cursor-text focus:bg-blue-50"
+                ? "line-through text-base-content/50 cursor-default"
+                : "cursor-text"
           }`}
           rows={1}
           aria-label={
@@ -198,11 +199,11 @@ export function SortableTodoItem({
           onFocus={() => setIsActionFocused(true)}
           onBlur={() => setIsActionFocused(false)}
           onPointerDown={(e) => e.stopPropagation()}
-          className={`rounded transition-all duration-200 hover:bg-gray-200 opacity-100 p-1 w-auto h-auto focus:opacity-100 focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 focus:p-1 focus:w-auto focus:h-auto`}
+          className={`rounded transition-all duration-200 hover:bg-base-300 opacity-100 p-1 w-auto h-auto focus:opacity-100 focus:ring-2 focus:ring-primary focus:ring-offset-1 focus:p-1 focus:w-auto focus:h-auto`}
           aria-label="More actions"
         >
           <MoreHorizontal
-            className={`h-4 w-4 text-gray-600 ${
+            className={`h-4 w-4 text-base-content/60 ${
               isMobile || isActionFocused
                 ? "opacity-100 w-auto h-auto"
                 : "opacity-0 w-0 h-0 p-0"

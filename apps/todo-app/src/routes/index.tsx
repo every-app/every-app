@@ -151,13 +151,13 @@ function Home() {
                 value={newTodoTitle}
                 onChange={(e) => setNewTodoTitle(e.target.value)}
                 autoFocus
-                className="focus:border-blue-500 focus:bg-blue-50 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+                className="focus:border-primary focus:bg-primary/10 transition-all duration-200"
                 aria-label="New todo title"
               />
               <Button
                 type="submit"
                 disabled={!newTodoTitle.trim()}
-                className="bg-black text-white hover:bg-gray-700 hover:shadow-lg disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:outline-none transition-all duration-200 transform hover:scale-[1.02]"
+                variant="primary"
                 aria-label="Add new todo"
               >
                 Add
@@ -191,7 +191,7 @@ function Home() {
 
         {completedTodos.length > 0 && (
           <div
-            className={isMobile ? "border-gray-200 mt-4" : "border-gray-200"}
+            className={isMobile ? "border-base-300 mt-4" : "border-base-300"}
           >
             <div className="space-y-2 opacity-75">
               {completedTodos.map((todo) => (
@@ -210,7 +210,7 @@ function Home() {
 
       {isMobile && (
         <div className="fixed bottom-0 left-0 right-0">
-          <MobileTodoInput />
+          {!editingTodoId && <MobileTodoInput />}
           <TabBar />
         </div>
       )}

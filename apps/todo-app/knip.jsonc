@@ -16,7 +16,7 @@
   "ignoreDependencies": [
     // Tailwindcss used via @tailwindcss/vite plugin
     "tailwindcss",
-    "tailwindcss-animate",
+    "daisyui",
   ],
   "ignoreBinaries": [
     // Every CLI tool used for deployment commands

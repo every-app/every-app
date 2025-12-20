@@ -2,10 +2,9 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
 import { Button } from "@/client/components/ui/button";
-import { Card, CardContent } from "@/client/components/ui/card";
-import { Calendar } from "lucide-react";
 import { useIsMobile } from "@/client/hooks/use-mobile";
 import { TabBar } from "@/client/components/TabBar";
+import { MobileTodoInputSpacer } from "@/client/components/MobileTodoInput";
 import { todoCollection } from "@/client/tanstack-db";
 import { HistoryItem } from "@/client/components/TodoHistoryItem";
 
@@ -42,13 +41,7 @@ function History() {
   if (isError) {
     return (
       <div className="p-4 overflow-auto">
-        <Card className="p-4">
-          <CardContent>
-            <p className="text-red-600">
-              Error: Failed to load completed todos
-            </p>
-          </CardContent>
-        </Card>
+        <p className="text-red-600">Error: Failed to load completed todos</p>
       </div>
     );
   }
@@ -57,20 +50,14 @@ function History() {
     <>
       <div className="p-4 overflow-auto">
         {completedTodos.length === 0 ? (
-          <Card className="p-8 text-center">
-            <CardContent>
-              <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 mb-2">
-                No completed todos yet
-              </h3>
-              <p className="text-gray-600 mb-4">
-                Complete some todos to see them appear in your history.
-              </p>
-              <Link to="/">
-                <Button>See todos</Button>
-              </Link>
-            </CardContent>
-          </Card>
+          <div className="flex flex-col items-start gap-2">
+            <p>No completed todos yet</p>
+            <Link to="/">
+              <Button variant="outline" size="sm">
+                Go to todos
+              </Button>
+            </Link>
+          </div>
         ) : (
           <div className="space-y-6">
             {groupedTodos.map((group) => (
@@ -90,6 +77,7 @@ function History() {
       </div>
       {isMobile && (
         <div className="fixed bottom-0 left-0 right-0">
+          <MobileTodoInputSpacer />
           <TabBar />
         </div>
       )}

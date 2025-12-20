@@ -17,7 +17,7 @@ import { Toaster } from "sonner";
 import { Sidebar } from "@/client/components/Sidebar";
 import { MobileHeader } from "@/client/components/MobileHeader";
 import { EmbeddedAppProvider } from "@every-app/sdk/client";
-import { seo } from "@/client/lib/seo";
+
 import { todoCollection, queryClient, persister } from "@/client/tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
 
@@ -39,11 +39,16 @@ export const Route = createRootRoute({
         name: "apple-mobile-web-app-status-bar-style",
         content: "black-translucent",
       },
-      ...seo({
-        title:
-          "TanStack Start | Type-Safe, Client-First, Full-Stack React Framework",
-        description: `TanStack Start is a type-safe, client-first, full-stack React framework. `,
-      }),
+      {
+        name: "theme-color",
+        content: "#242424",
+        media: "(prefers-color-scheme: dark)",
+      },
+      {
+        name: "theme-color",
+        content: "#f7f7f7",
+        media: "(prefers-color-scheme: light)",
+      },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -123,7 +128,14 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             <EmbeddedAppProvider appId={import.meta.env.VITE_APP_ID}>
               <>
                 {children}
-                <Toaster richColors position="top-right" />
+                <Toaster
+                  richColors
+                  position="bottom-right"
+                  toastOptions={{
+                    className:
+                      "!bg-base-300 !text-base-content !shadow-lg !border !border-base-content/20",
+                  }}
+                />
                 <TanStackRouterDevtools position="bottom-right" />
               </>
             </EmbeddedAppProvider>

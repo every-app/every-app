@@ -36,7 +36,7 @@ export function TodoMenuItems({
       <DeleteTodoConfirmation onConfirm={onDelete}>
         <MenuItem
           onSelect={(e) => e.preventDefault()}
-          className="text-red-600 focus:text-red-700 focus:bg-red-50"
+          className="text-error focus:text-error focus:bg-error/10"
         >
           <Trash2 className="h-4 w-4 mr-2" />
           Delete

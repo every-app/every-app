@@ -8,10 +8,7 @@ export function MobileTodoInput() {
   const [newTodoTitle, setNewTodoTitle] = useState<string>("");
 
   return (
-    <div
-      className="fixed left-0 right-0 bg-white p-4 z-40"
-      style={{ bottom: "70px" }}
-    >
+    <div className="bg-base-200 p-4 z-40">
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -33,13 +30,13 @@ export function MobileTodoInput() {
           placeholder="New todo..."
           value={newTodoTitle}
           onChange={(e) => setNewTodoTitle(e.target.value)}
-          className="focus:border-blue-500 focus:bg-blue-50 focus:ring-2 focus:ring-blue-200 transition-all duration-200"
+          className="focus:border-primary focus:bg-primary/10 transition-all duration-200"
           aria-label="Enter new todo"
         />
         <Button
           type="submit"
           disabled={!newTodoTitle.trim()}
-          className="bg-black text-white hover:bg-gray-700 hover:shadow-lg disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:outline-none transition-all duration-200 transform hover:scale-[1.02] whitespace-nowrap"
+          variant="primary"
           aria-label="Add new todo"
         >
           Add
@@ -47,4 +44,9 @@ export function MobileTodoInput() {
       </form>
     </div>
   );
+}
+
+/** Invisible spacer to reserve the same height as MobileTodoInput when it's not shown */
+export function MobileTodoInputSpacer() {
+  return <div className="h-[72px]" aria-hidden="true" />;
 }

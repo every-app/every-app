@@ -1,14 +1,89 @@
 @import "tailwindcss";
 
-@plugin "tailwindcss-animate";
+@plugin "daisyui" {
+  /* @property isn't supported by some browsers and gives a noisy warning https://github.com/saadeghi/daisyui/issues/3882 */
+  exclude: properties;
+}
 
-@custom-variant dark (&:is(.dark *));
-
-body {
-  @apply m-0;
-  font-family:
+@theme {
+  --font-sans:
     -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
     "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+  --font-mono:
+    source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+}
+
+@plugin "daisyui/theme" {
+  name: "todo";
+  default: true;
+  prefersdark: false;
+  color-scheme: "light";
+  --color-base-100: oklch(100% 0 0);
+  --color-base-200: oklch(97% 0 0);
+  --color-base-300: oklch(92% 0 0);
+  --color-base-content: oklch(20% 0 0);
+  --color-primary: oklch(55% 0.18 260);
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(55% 0.15 145);
+  --color-secondary-content: oklch(100% 0 0);
+  --color-accent: oklch(55% 0.18 260);
+  --color-accent-content: oklch(100% 0 0);
+  --color-neutral: oklch(25% 0 0);
+  --color-neutral-content: oklch(100% 0 0);
+  --color-info: oklch(70% 0.15 230);
+  --color-info-content: oklch(100% 0 0);
+  --color-success: oklch(65% 0.18 145);
+  --color-success-content: oklch(100% 0 0);
+  --color-warning: oklch(80% 0.15 80);
+  --color-warning-content: oklch(20% 0 0);
+  --color-error: oklch(65% 0.2 25);
+  --color-error-content: oklch(100% 0 0);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+@plugin "daisyui/theme" {
+  name: "todo-dark";
+  prefersdark: true;
+  color-scheme: "dark";
+  --color-base-100: oklch(18% 0 0);
+  --color-base-200: oklch(14% 0 0);
+  --color-base-300: oklch(22% 0 0);
+  --color-base-content: oklch(92% 0 0);
+  --color-primary: oklch(60% 0.18 260);
+  --color-primary-content: oklch(100% 0 0);
+  --color-secondary: oklch(60% 0.15 145);
+  --color-secondary-content: oklch(100% 0 0);
+  --color-accent: oklch(60% 0.18 260);
+  --color-accent-content: oklch(100% 0 0);
+  --color-neutral: oklch(85% 0 0);
+  --color-neutral-content: oklch(20% 0 0);
+  --color-info: oklch(70% 0.15 230);
+  --color-info-content: oklch(100% 0 0);
+  --color-success: oklch(65% 0.18 145);
+  --color-success-content: oklch(100% 0 0);
+  --color-warning: oklch(80% 0.15 80);
+  --color-warning-content: oklch(20% 0 0);
+  --color-error: oklch(65% 0.2 25);
+  --color-error-content: oklch(100% 0 0);
+  --radius-selector: 0.5rem;
+  --radius-field: 0.5rem;
+  --radius-box: 0.75rem;
+  --size-selector: 0.25rem;
+  --size-field: 0.25rem;
+  --border: 1px;
+  --depth: 0;
+  --noise: 0;
+}
+
+body {
+  @apply m-0 bg-base-200 font-sans;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -18,125 +93,6 @@ code {
     source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
-:root {
-  --background: 0 0% 100%;
-  --foreground: 0 0% 9%;
-  --card: 0 0% 100%;
-  --card-foreground: 0 0% 9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 9%;
-  --primary: 211 100% 40%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 98%;
-  --secondary-foreground: 0 0% 9%;
-  --muted: 0 0% 98%;
-  --muted-foreground: 0 0% 42%;
-  --accent: 211 100% 40%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 0 0% 91%;
-  --input: 0 0% 91%;
-  --ring: 211 100% 40%;
-  --chart-1: 211 100% 40%;
-  --chart-2: 0 0% 42%;
-  --chart-3: 0 0% 66%;
-  --chart-4: 0 0% 85%;
-  --chart-5: 0 0% 95%;
-  --radius: 0.5rem;
-  --sidebar: 0 0% 100%;
-  --sidebar-foreground: 0 0% 9%;
-  --sidebar-primary: 211 100% 40%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 98%;
-  --sidebar-accent-foreground: 0 0% 9%;
-  --sidebar-border: 0 0% 91%;
-  --sidebar-ring: 211 100% 40%;
-}
-
-.dark {
-  --background: 0 0% 100%;
-  --foreground: 0 0% 9%;
-  --card: 0 0% 100%;
-  --card-foreground: 0 0% 9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 9%;
-  --primary: 211 100% 40%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 98%;
-  --secondary-foreground: 0 0% 9%;
-  --muted: 0 0% 98%;
-  --muted-foreground: 0 0% 42%;
-  --accent: 211 100% 40%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 0 0% 91%;
-  --input: 0 0% 91%;
-  --ring: 211 100% 40%;
-  --chart-1: 211 100% 40%;
-  --chart-2: 0 0% 42%;
-  --chart-3: 0 0% 66%;
-  --chart-4: 0 0% 85%;
-  --chart-5: 0 0% 95%;
-  --sidebar: 0 0% 100%;
-  --sidebar-foreground: 0 0% 9%;
-  --sidebar-primary: 211 100% 40%;
-  --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 98%;
-  --sidebar-accent-foreground: 0 0% 9%;
-  --sidebar-border: 0 0% 91%;
-  --sidebar-ring: 211 100% 40%;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-}
-
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-}
-
 @layer utilities {
   .pb-safe {
     padding-bottom: calc(env(safe-area-inset-bottom, 0.5rem) + 0.5rem);
@@ -144,6 +100,41 @@ code {
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0);
   }
+}
+
+/* Custom checkbox */
+.todo-checkbox {
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid
+    color-mix(in oklab, var(--color-base-content) 40%, transparent);
+  border-radius: 4px;
+  background-color: transparent;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.todo-checkbox:checked {
+  border-color: color-mix(in oklab, var(--color-base-content) 50%, transparent);
+}
+
+.todo-checkbox:checked::after {
+  content: "";
+  position: absolute;
+  inset: 2px;
+  background-color: color-mix(
+    in oklab,
+    var(--color-base-content) 50%,
+    transparent
+  );
+  border-radius: 2px;
+}
+
+.todo-checkbox:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 @media (pointer: coarse) {
