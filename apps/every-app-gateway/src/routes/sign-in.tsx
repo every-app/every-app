@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { authClient, CpuTimeoutError } from "@/client/auth-client";
 import { useQueryClient } from "@tanstack/react-query";
+import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 
 export const Route = createFileRoute("/sign-in")({
@@ -24,18 +25,26 @@ function SignIn() {
     setLoading(true);
 
     try {
-      const { error: signInError } = await authClient.signIn.email({
-        email,
-        password,
-      });
+      const { error: signInError } = await authClient.signIn.email(
+        {
+          email,
+          password,
+        },
+        {
+          onSuccess: async () => {
+            // Refetch collections and session now that we're authenticated
+            await refetchCollectionsAfterAuth();
+            await queryClient.invalidateQueries({
+              queryKey: ["auth", "session"],
+            });
+            navigate({ to: "/" });
+          },
+        },
+      );
 
       if (signInError) {
         setError(signInError.message || "Invalid email or password.");
         setLoading(false);
-      } else {
-        await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
-        await queryClient.invalidateQueries({ queryKey: ["user-apps"] });
-        navigate({ to: "/" });
       }
     } catch (err) {
       console.error("Sign in error:", err);
@@ -54,7 +63,7 @@ function SignIn() {
   };
 
   return (
-    <div className="flex h-screen items-center justify-center overflow-hidden">
+    <div className="flex h-screen items-center justify-center overflow-hidden bg-base-100">
       <div className="relative w-full max-w-md">
         <img
           src="/transparent-logo.png"

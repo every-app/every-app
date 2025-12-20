@@ -1,4 +1,4 @@
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, Link } from "@tanstack/react-router";
 import { User } from "lucide-react";
 import { authClient } from "@/client/auth-client";
 import { clearQueryCache } from "@/client/tanstack-db";
@@ -6,9 +6,10 @@ import { useQueryClient } from "@tanstack/react-query";
 
 interface HeaderProps {
   email?: string | null;
+  role?: string | null;
 }
 
-export function Header({ email }: HeaderProps) {
+export function Header({ email, role }: HeaderProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -24,9 +25,9 @@ export function Header({ email }: HeaderProps) {
   return (
     <div className="navbar">
       <div className="max-w-4xl justify-between mx-auto w-full flex items-center">
-        <div className="flex items-center flex-row">
+        <Link to="/" className="flex items-center flex-row">
           <img src="/transparent-logo.png" alt="Logo" className="h-9 w-auto" />
-        </div>
+        </Link>
         <div className="flex-none flex items-center gap-6">
           <a
             href="https://everyapp.dev"
@@ -36,6 +37,11 @@ export function Header({ email }: HeaderProps) {
           >
             Docs
           </a>
+          {role === "owner" && (
+            <Link to="/admin/users" className="link link-hover">
+              Admin
+            </Link>
+          )}
           {email && (
             <div className="dropdown dropdown-end">
               <div

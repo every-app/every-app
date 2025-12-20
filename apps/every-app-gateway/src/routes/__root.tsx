@@ -14,12 +14,14 @@ import { EmbeddedAppProvider } from "@/client/providers/EmbeddedAppProvider";
 import * as React from "react";
 import appCss from "@/client/styles/app.css?url";
 import { queryClient, persister, clearQueryCache } from "@/client/tanstack-db";
+import { Toaster } from "sonner";
 
 const PUBLIC_ROUTES = [
   "/sign-in",
   "/sign-up",
   "/forgot-password",
   "/reset-password",
+  "/accept-invitation",
 ];
 
 // Inner component that handles routing and session management (must be inside QueryClientProvider)
@@ -70,6 +72,14 @@ function RootComponent() {
       <EmbeddedAppProvider>
         <AppRouter />
       </EmbeddedAppProvider>
+      <Toaster
+        richColors
+        position="bottom-right"
+        toastOptions={{
+          className:
+            "!bg-base-300 !text-base-content !shadow-lg !border !border-base-content/20",
+        }}
+      />
       {/* <TanStackRouterDevtools /> */}
     </PersistQueryClientProvider>
   );

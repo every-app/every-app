@@ -1,6 +1,6 @@
 import { userAppsCollection } from "@/client/tanstack-db";
 import type { UserApp } from "@/types/user-app";
-import { useCloseModalOnEscape } from "@/client/hooks/useCloseModalOnEscape";
+import { Modal } from "./Modal";
 
 interface DeleteAppModalProps {
   open: boolean;
@@ -23,20 +23,13 @@ export function DeleteAppModal({
     onOpenChange(false);
   };
 
-  // Handle Escape key to close modal
-  useCloseModalOnEscape(open, handleClose);
-
   return (
-    <dialog className={`modal ${open ? "modal-open" : ""}`}>
-      <div className="modal-box">
-        <h3 className="font-bold text-lg">Delete App</h3>
-        <p className="mt-4">
-          Are you sure you want to delete{" "}
-          <span className="font-semibold">{app?.name}</span>? This action cannot
-          be undone.
-        </p>
-
-        <div className="modal-action">
+    <Modal
+      open={open}
+      onClose={handleClose}
+      title="Delete App"
+      actions={
+        <>
           <button
             type="button"
             className="btn btn-outline"
@@ -51,11 +44,14 @@ export function DeleteAppModal({
           >
             Delete
           </button>
-        </div>
-      </div>
-      <form method="dialog" className="modal-backdrop" onClick={handleClose}>
-        <button type="button">close</button>
-      </form>
-    </dialog>
+        </>
+      }
+    >
+      <p className="mt-4">
+        Are you sure you want to delete{" "}
+        <span className="font-semibold">{app?.name}</span>? This action cannot
+        be undone.
+      </p>
+    </Modal>
   );
 }

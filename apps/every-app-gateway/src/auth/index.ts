@@ -8,3 +8,4 @@ import { lazyInitForWorkers } from "@/utils/lazyInitForWorkers";
 export const auth = lazyInitForWorkers(() => createAuth());
 
 export { createAuth };
+export type { Auth } from "./config";

@@ -1,4 +1,5 @@
 export { queryClient } from "./queryClient";
 export { userAppsCollection } from "./userAppsCollection";
+export { adminUsersCollection } from "./adminUsersCollection";
 export { persister } from "./persister";
-export { clearQueryCache } from "./cache-utils";
+export { clearQueryCache, refetchCollectionsAfterAuth } from "./cache-utils";

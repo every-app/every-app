@@ -31,8 +31,8 @@
   /* Status Colors */
   --color-info: oklch(79.54% 0.103 205.9);
   --color-info-content: oklch(15.908% 0.02 205.9);
-  --color-success: oklch(90.13% 0.153 164.14);
-  --color-success-content: oklch(18.026% 0.03 164.14);
+  --color-success: oklch(85% 0.06 164.14);
+  --color-success-content: oklch(25% 0.03 164.14);
   --color-warning: oklch(88.37% 0.135 79.94);
   --color-warning-content: oklch(17.674% 0.027 79.94);
   --color-error: oklch(55% 0.22 25);
@@ -59,7 +59,7 @@
   prefersdark: true;
   color-scheme: "dark";
 
-  --color-base-100: oklch(18% 0 0);
+  --color-base-100: #0a0f0d;
   --color-base-200: oklch(14% 0 0);
   --color-base-300: oklch(22% 0 0);
   --color-base-content: oklch(92% 0 0);
@@ -75,8 +75,8 @@
 
   --color-info: oklch(79.54% 0.103 205.9);
   --color-info-content: oklch(15.908% 0.02 205.9);
-  --color-success: oklch(90.13% 0.153 164.14);
-  --color-success-content: oklch(18.026% 0.03 164.14);
+  --color-success: oklch(45% 0.08 164.14);
+  --color-success-content: oklch(90% 0.03 164.14);
   --color-warning: oklch(88.37% 0.135 79.94);
   --color-warning-content: oklch(17.674% 0.027 79.94);
   --color-error: oklch(65% 0.2 25);

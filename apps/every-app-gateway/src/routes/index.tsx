@@ -34,9 +34,9 @@ function App() {
 
   return (
     <div className="bg-base-100 h-screen flex flex-col overflow-y-auto">
-      <Header email={session.data?.user.email} />
+      <Header email={session.data?.user.email} role={session.data?.user.role} />
       <div className="flex-1">
-        <div className="max-w-3xl mx-auto px-4 py-6">
+        <div className="max-w-4xl mx-auto px-4 py-6">
           <div className="space-y-6">
             {isError && (
               <div className="text-center py-8">

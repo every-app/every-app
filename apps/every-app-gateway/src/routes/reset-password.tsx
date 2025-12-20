@@ -5,8 +5,9 @@ import {
   useSearch,
 } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { authClient, CpuTimeoutError } from "@/client/auth-client";
+import { CpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
+import { resetPassword as resetPasswordFn } from "@/serverFunctions/admin";
 
 export const Route = createFileRoute("/reset-password")({
   component: ResetPassword,
@@ -61,19 +62,17 @@ function ResetPassword() {
     setLoading(true);
 
     try {
-      const { error: resetError } = await authClient.resetPassword({
-        newPassword,
-        token,
+      await resetPasswordFn({
+        data: {
+          token,
+          password: newPassword,
+        },
       });
 
-      if (resetError) {
-        setError(resetError.message || "Failed to reset password.");
-      } else {
-        setSuccess(true);
-        setTimeout(() => {
-          navigate({ to: "/sign-in" });
-        }, 2000);
-      }
+      setSuccess(true);
+      setTimeout(() => {
+        navigate({ to: "/sign-in" });
+      }, 2000);
     } catch (err) {
       console.error("Password reset error:", err);
       if (err instanceof CpuTimeoutError) {

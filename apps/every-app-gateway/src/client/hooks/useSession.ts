@@ -1,26 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient } from "@/client/auth-client";
+import type { Auth } from "@/auth";
 
 interface SessionData {
-  user: {
-    id: string;
-    email: string;
-    name?: string;
-    emailVerified: boolean;
-    image?: string;
-    createdAt: Date;
-    updatedAt: Date;
-  };
-  session: {
-    id: string;
-    userId: string;
-    expiresAt: Date;
-    token: string;
-    createdAt: Date;
-    updatedAt: Date;
-    ipAddress?: string;
-    userAgent?: string;
-  };
+  user: Auth["$Infer"]["Session"]["user"];
+  session: Auth["$Infer"]["Session"]["session"];
 }
 
 /**

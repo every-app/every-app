@@ -1,6 +1,6 @@
 {
   "name": "every-app-gateway",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -43,6 +43,7 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.62.0",
+    "sonner": "^2.0.7",
     "tailwindcss": "^4.1.11",
     "tiny-invariant": "^1.3.3",
     "vite-plugin-pwa": "^1.1.0",

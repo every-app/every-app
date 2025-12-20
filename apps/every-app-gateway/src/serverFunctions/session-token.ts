@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware, type AuthContext } from "@/middleware/auth";
-import { AppResolver } from "@/serverFunctions/apps";
+import { UserAppService } from "@/server/services/UserAppService";
 import { issueEmbeddedAppToken } from "@/server/jwt-utils";
 
 // Request schemas
@@ -82,7 +82,7 @@ export const createSessionToken = createServerFn()
 
       if (appId) {
         // If appId is provided, verify it matches the origin
-        app = await AppResolver.getApp(appId, user.id);
+        app = await UserAppService.getByAppId(appId, user.id);
 
         if (!app) {
           console.error(`Invalid app ID: ${appId}`);
@@ -99,7 +99,7 @@ export const createSessionToken = createServerFn()
         }
       } else {
         // Otherwise, look up app by origin
-        app = await AppResolver.getAppByOrigin(requestOrigin, user.id);
+        app = await UserAppService.getByOrigin(requestOrigin, user.id);
 
         if (!app) {
           console.error(`Unregistered origin: ${requestOrigin}`);

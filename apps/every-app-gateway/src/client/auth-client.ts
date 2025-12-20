@@ -1,4 +1,5 @@
 import { createAuthClient } from "better-auth/react";
+import { adminClient } from "better-auth/client/plugins";
 
 /**
  * Helper to check if an error is a Cloudflare Worker CPU timeout error.
@@ -32,6 +33,7 @@ export class CpuTimeoutError extends Error {
 const authClient = createAuthClient({
   // This client should only be used in client-side code which will always have a window.
   baseURL: typeof window !== "undefined" ? window.location.origin : "",
+  plugins: [adminClient()],
   fetchOptions: {
     onError: async (ctx) => {
       // Check for Cloudflare CPU timeout (503 with specific error content)

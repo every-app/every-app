@@ -36,6 +36,20 @@
       "when": 1765400762394,
       "tag": "0004_complex_moira_mactaggert",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1766172987251,
+      "tag": "0005_chunky_hammerhead",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1766175942689,
+      "tag": "0006_skinny_robbie_robertson",
+      "breakpoints": true
     }
   ]
 }

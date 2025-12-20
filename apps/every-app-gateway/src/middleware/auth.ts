@@ -1,27 +1,10 @@
-import { createAuth } from "@/auth";
+import { createAuth, type Auth } from "@/auth";
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 
 export interface AuthContext {
-  user: {
-    id: string;
-    email: string;
-    name?: string;
-    emailVerified: boolean;
-    image?: string;
-    createdAt: Date;
-    updatedAt: Date;
-  };
-  session: {
-    id: string;
-    userId: string;
-    expiresAt: Date;
-    token: string;
-    createdAt: Date;
-    updatedAt: Date;
-    ipAddress?: string;
-    userAgent?: string;
-  };
+  user: Auth["$Infer"]["Session"]["user"];
+  session: Auth["$Infer"]["Session"]["session"];
 }
 
 export const authMiddleware = createMiddleware({
@@ -47,3 +30,19 @@ export const authMiddleware = createMiddleware({
     } as AuthContext,
   });
 });
+
+/**
+ * Middleware that requires the user to have the "owner" role.
+ * Chains with authMiddleware to inherit the AuthContext type.
+ */
+export const ownerMiddleware = createMiddleware({
+  type: "function",
+})
+  .middleware([authMiddleware])
+  .server(async ({ next, context }) => {
+    if (context.user.role !== "owner") {
+      throw new Error("Unauthorized: Owner access required");
+    }
+
+    return next();
+  });
