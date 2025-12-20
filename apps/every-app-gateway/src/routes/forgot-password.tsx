@@ -43,7 +43,6 @@ function ForgotPassword() {
       console.error("Password reset error:", err);
       if (err instanceof CpuTimeoutError) {
         setIsCpuTimeout(true);
-        setError(err.message);
       } else {
         setError(
           err instanceof Error
@@ -93,12 +92,11 @@ function ForgotPassword() {
                   required
                 />
               </div>
-              {error &&
-                (isCpuTimeout ? (
-                  <CpuTimeoutWarning />
-                ) : (
-                  <div className="text-sm text-error">{error}</div>
-                ))}
+              {isCpuTimeout ? (
+                <CpuTimeoutWarning />
+              ) : (
+                error && <div className="text-sm text-error">{error}</div>
+              )}
               <button
                 type="submit"
                 className="btn btn-primary w-full"

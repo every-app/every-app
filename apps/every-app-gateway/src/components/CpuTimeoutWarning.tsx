@@ -7,7 +7,7 @@ export function CpuTimeoutWarning() {
     <div className="alert alert-warning text-sm">
       <svg
         xmlns="http://www.w3.org/2000/svg"
-        className="stroke-current shrink-0 h-5 w-5"
+        className="stroke-current shrink-0 h-5 w-5 mt-0.5"
         fill="none"
         viewBox="0 0 24 24"
       >
@@ -19,12 +19,10 @@ export function CpuTimeoutWarning() {
         />
       </svg>
       <div>
-        <p className="font-semibold">Cloudflare Free Plan Limit</p>
+        <p className="font-semibold">Cloudflare Free Plan Limitation</p>
         <p>
-          The request timed out due to Cloudflare free plan CPU limits. Please
-          try again in 15 seconds. It may take a few attempts, but it should
-          work eventually. For higher limits, consider upgrading to the $5/month
-          Workers Paid plan.
+          Please wait 15 seconds and try again. This may take a few attempts.
+          Upgrading to the Cloudflare $5 / month plan will resolve this issue.
         </p>
       </div>
     </div>

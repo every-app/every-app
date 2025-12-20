@@ -35,21 +35,15 @@ const authClient = createAuthClient({
   baseURL: typeof window !== "undefined" ? window.location.origin : "",
   plugins: [adminClient()],
   fetchOptions: {
-    onError: async (ctx) => {
-      // Check for Cloudflare CPU timeout (503 with specific error content)
-      if (ctx.response?.status === 503) {
-        try {
-          const text = await ctx.response.clone().text();
-          if (isCpuTimeoutError(text)) {
-            throw new CpuTimeoutError();
-          }
-        } catch (e) {
-          // If it's already a CpuTimeoutError, re-throw it
-          if (e instanceof CpuTimeoutError) {
-            throw e;
-          }
-          // Otherwise ignore errors reading response body
-        }
+    onResponse: async (ctx) => {
+      // Continue unless it's potentially a Cloudflare error
+      if (ctx.response.status < 500) {
+        return;
+      }
+
+      const text = await ctx.response?.clone().text();
+      if (isCpuTimeoutError(text)) {
+        throw new CpuTimeoutError();
       }
     },
   },

@@ -193,3 +193,44 @@ form {
 .btn-primary:hover {
   background: linear-gradient(180deg, #4d4d4d 0%, #404040 50%, #353535 100%);
 }
+
+/* Custom alert styling with border and semi-transparent background */
+.alert {
+  @apply flex gap-3 rounded-lg border p-4;
+}
+
+/* Light mode */
+.alert-warning {
+  @apply border-warning bg-warning/20 text-warning;
+}
+
+.alert-info {
+  @apply border-info bg-info/20 text-info;
+}
+
+.alert-success {
+  @apply border-success bg-success/20 text-success;
+}
+
+.alert-error {
+  @apply border-error bg-error/20 text-error;
+}
+
+/* Dark mode - slightly more visible */
+@media (prefers-color-scheme: dark) {
+  .alert-warning {
+    @apply border-warning/30 bg-warning/10;
+  }
+
+  .alert-info {
+    @apply border-info/30 bg-info/10;
+  }
+
+  .alert-success {
+    @apply border-success/30 bg-success/10;
+  }
+
+  .alert-error {
+    @apply border-error/30 bg-error/10;
+  }
+}
