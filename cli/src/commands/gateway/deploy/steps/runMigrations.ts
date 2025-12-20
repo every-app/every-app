@@ -24,8 +24,9 @@ export async function runMigrations(
   console.log(chalk.dim("Running database migrations..."));
 
   try {
-    // Install drizzle-kit so that migrations work without installing all the dependencies
-    await execa("npm", ["install", "--no-save", "drizzle-kit"], {
+    // Install drizzle-kit locally because drizzle-prod.config.ts imports from 'drizzle-kit'
+    // Use --legacy-peer-deps to avoid peer dependency conflicts (e.g., better-auth expects older drizzle-orm)
+    await execa("npm", ["install", "--no-save", "--legacy-peer-deps", "drizzle-kit"], {
       cwd: gatewayPath,
       stdio: verbose ? "inherit" : "pipe",
     });
