@@ -1,8 +1,6 @@
-import { useNavigate, Link } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { User } from "lucide-react";
 import { authClient } from "@/client/auth-client";
-import { clearQueryCache } from "@/client/tanstack-db";
-import { useQueryClient } from "@tanstack/react-query";
 
 interface HeaderProps {
   email?: string | null;
@@ -10,16 +8,10 @@ interface HeaderProps {
 }
 
 export function Header({ email, role }: HeaderProps) {
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-
   const handleSignOut = async () => {
     await authClient.signOut();
-    // Invalidate session query immediately
-    await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
-    // Clear all cached query data for security/privacy
-    clearQueryCache();
-    navigate({ to: "/sign-in" });
+    // Hard refresh clears all client state (query cache, session, etc.)
+    window.location.href = "/sign-in";
   };
 
   return (

@@ -46,8 +46,8 @@ export function UsersTable({
             <td className="capitalize">{user.role || "member"}</td>
             <td>
               <span
-                className={`badge rounded w-full ${
-                  user.status === "active" ? "badge-success" : "badge-warning"
+                className={`badge rounded w-full capitalize ${
+                  user.status === "active" ? "badge-neutral" : "badge-warning"
                 }`}
               >
                 {user.status || "active"}

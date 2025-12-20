@@ -32,11 +32,12 @@ function SignIn() {
         },
         {
           onSuccess: async () => {
-            // Refetch collections and session now that we're authenticated
-            await refetchCollectionsAfterAuth();
+            // Refetch session and collections now that we're authenticated
             await queryClient.invalidateQueries({
               queryKey: ["auth", "session"],
             });
+            await refetchCollectionsAfterAuth();
+            setLoading(false);
             navigate({ to: "/" });
           },
         },

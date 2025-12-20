@@ -8,12 +8,12 @@ import {
   Scripts,
   HeadContent,
 } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import { EmbeddedAppProvider } from "@/client/providers/EmbeddedAppProvider";
 import * as React from "react";
 import appCss from "@/client/styles/app.css?url";
-import { queryClient, persister, clearQueryCache } from "@/client/tanstack-db";
+import { queryClient, persister } from "@/client/tanstack-db";
 import { Toaster } from "sonner";
 
 const PUBLIC_ROUTES = [
@@ -29,22 +29,6 @@ function AppRouter() {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: session, isPending } = useSession();
-  const previousSessionRef = useRef(session);
-
-  // Clear cache when user signs out
-  useEffect(() => {
-    const wasLoggedIn =
-      previousSessionRef.current !== null &&
-      previousSessionRef.current !== undefined;
-    const isNowLoggedOut = session === null || session === undefined;
-
-    if (!isPending && wasLoggedIn && isNowLoggedOut) {
-      // User just signed out - clear cache for security/privacy
-      clearQueryCache();
-    }
-
-    previousSessionRef.current = session;
-  }, [session, isPending]);
 
   useEffect(() => {
     const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname);
