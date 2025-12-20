@@ -1913,6 +1913,13 @@ Please still try to follow good frontend coding practices like breaking things i
 
 These prompts help you review your codebase for common issues.
 
+## When to Use
+
+- **[Simplify](#simplify-review)**: After finishing a feature, before merging
+- **[Security](#security-review)**: Before deploying to production, after adding new endpoints
+- **[Schema](#database-schema-review)**: When designing new tables or refactoring existing ones
+- **[TanStack DB](#tanstack-db-review)**: When reviewing optimistic updates and collection patterns
+
 ## Simplify Review
 
 Use this to find opportunities to simplify your code:
@@ -2082,11 +2089,4 @@ await collection.utils.refetch();
 | Generate IDs inside `onMutate` or `mutationFn`             | Pre-generate IDs in helper function       |
 | Skip refetch after `mutationFn`                            | Always `await collection.utils.refetch()` |
 ```
-
-## When to Use
-
-- **Simplify**: After finishing a feature, before merging
-- **Security**: Before deploying to production, after adding new endpoints
-- **Schema**: When designing new tables or refactoring existing ones
-- **TanStack DB**: When reviewing optimistic updates and collection patterns
 
