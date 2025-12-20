@@ -20,18 +20,12 @@ importers:
       '@tanstack/query-db-collection':
         specifier: ^1.0.0
         version: 1.0.0(@tanstack/db@0.5.0(typescript@5.9.3))(@tanstack/query-core@5.90.9)(typescript@5.9.3)
-      '@tanstack/query-sync-storage-persister':
-        specifier: ^5.90.9
-        version: 5.90.9
       '@tanstack/react-db':
         specifier: ^0.1.44
         version: 0.1.44(react@19.2.0)(typescript@5.9.3)
       '@tanstack/react-query':
         specifier: ^5.90.9
         version: 5.90.9(react@19.2.0)
-      '@tanstack/react-query-persist-client':
-        specifier: ^5.90.9
-        version: 5.90.9(@tanstack/react-query@5.90.9(react@19.2.0))(react@19.2.0)
       '@tanstack/react-router':
         specifier: 1.140.5
         version: 1.140.5(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -56,6 +50,9 @@ importers:
       lucide-react:
         specifier: ^0.540.0
         version: 0.540.0(react@19.2.0)
+      qrcode.react:
+        specifier: ^4.2.0
+        version: 4.2.0(react@19.2.0)
       react:
         specifier: ^19.0.0
         version: 19.2.0
@@ -1907,9 +1904,6 @@ packages:
     resolution: {integrity: sha512-QVzkGO5clvGj/qdX8H2wUj0QCXCLZ/pwPMnfSqhoYfpzDRkRHDj+3D+VzdcehBIVnE+GCd1D/P1tGMzfjmfrzQ==}
     engines: {node: '>=18'}
 
-  '@tanstack/query-core@5.90.7':
-    resolution: {integrity: sha512-6PN65csiuTNfBMXqQUxQhCNdtm1rV+9kC9YwWAIKcaxAauq3Wu7p18j3gQY3YIBJU70jT/wzCCZ2uqto/vQgiQ==}
-
   '@tanstack/query-core@5.90.9':
     resolution: {integrity: sha512-UFOCQzi6pRGeVTVlPNwNdnAvT35zugcIydqjvFUzG62dvz2iVjElmNp/hJkUoM5eqbUPfSU/GJIr/wbvD8bTUw==}
 
@@ -1920,22 +1914,10 @@ packages:
       '@tanstack/query-core': ^5.0.0
       typescript: '>=4.7'
 
-  '@tanstack/query-persist-client-core@5.91.6':
-    resolution: {integrity: sha512-VDnWKhXn4YD8fosh35oSEkwqvsO9vveOyswp4bL/L8SZuQukPFRjyNIq4xGHO/olQneudLt57MdA4mYLAp5P5g==}
-
-  '@tanstack/query-sync-storage-persister@5.90.9':
-    resolution: {integrity: sha512-8x/1w8G2mWAI5gpnJqOM5vPxAsx3SXFrk1bsStr8wpaXFtAJWk+K5dMwmYB5ee7pVkeUvBhNo4+UPOMvG/GgwQ==}
-
   '@tanstack/react-db@0.1.44':
     resolution: {integrity: sha512-O1jYNhCWhrGvJYP2QBmG4HMPcUEbJoX78WYHAwjNl1slGqm7KuGKQtkOZovFNuioLiLaJmkU+77X5k+MBo2wfw==}
     peerDependencies:
       react: '>=16.8.0'
-
-  '@tanstack/react-query-persist-client@5.90.9':
-    resolution: {integrity: sha512-rNisr2kq/WUvO8vBhNkfeK/QmLJ8w4cP1vVPB04ENFMW863Y9kDUuI21ryRheZBefFzicuBzOIQq9XdhzBRfGw==}
-    peerDependencies:
-      '@tanstack/react-query': ^5.90.7
-      react: ^18 || ^19
 
   '@tanstack/react-query@5.90.9':
     resolution: {integrity: sha512-Zke2AaXiaSfnG8jqPZR52m8SsclKT2d9//AgE/QIzyNvbpj/Q2ln+FsZjb1j69bJZUouBvX2tg9PHirkTm8arw==}
@@ -3430,6 +3412,11 @@ packages:
   pvutils@1.1.5:
     resolution: {integrity: sha512-KTqnxsgGiQ6ZAzZCVlJH5eOjSnvlyEgx1m8bkRJfOhmGRqfo5KLvmAlACQkrjEtOQ4B7wF9TdSLIs9O90MX9xA==}
     engines: {node: '>=16.0.0'}
+
+  qrcode.react@4.2.0:
+    resolution: {integrity: sha512-QpgqWi8rD9DsS9EP3z7BT+5lY5SFhsqGjpgW5DY/i3mK4M9DTBNz3ErMi8BWYEfI3L0d8GIbGmcdFAS1uIRGjA==}
+    peerDependencies:
+      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   queue-microtask@1.2.3:
     resolution: {integrity: sha512-NuaNSa6flKT5JaSYQzJok04JzTL1CA6aGhv5rfLW3PgqA+M2ChpZQnAC8h8i4ZFkBS8X5RqkDBHA7r4hej3K9A==}
@@ -5816,8 +5803,6 @@ snapshots:
 
   '@tanstack/pacer@0.1.0': {}
 
-  '@tanstack/query-core@5.90.7': {}
-
   '@tanstack/query-core@5.90.9': {}
 
   '@tanstack/query-db-collection@1.0.0(@tanstack/db@0.5.0(typescript@5.9.3))(@tanstack/query-core@5.90.9)(typescript@5.9.3)':
@@ -5827,15 +5812,6 @@ snapshots:
       '@tanstack/query-core': 5.90.9
       typescript: 5.9.3
 
-  '@tanstack/query-persist-client-core@5.91.6':
-    dependencies:
-      '@tanstack/query-core': 5.90.7
-
-  '@tanstack/query-sync-storage-persister@5.90.9':
-    dependencies:
-      '@tanstack/query-core': 5.90.7
-      '@tanstack/query-persist-client-core': 5.91.6
-
   '@tanstack/react-db@0.1.44(react@19.2.0)(typescript@5.9.3)':
     dependencies:
       '@tanstack/db': 0.5.0(typescript@5.9.3)
@@ -5843,12 +5819,6 @@ snapshots:
       use-sync-external-store: 1.6.0(react@19.2.0)
     transitivePeerDependencies:
       - typescript
-
-  '@tanstack/react-query-persist-client@5.90.9(@tanstack/react-query@5.90.9(react@19.2.0))(react@19.2.0)':
-    dependencies:
-      '@tanstack/query-persist-client-core': 5.91.6
-      '@tanstack/react-query': 5.90.9(react@19.2.0)
-      react: 19.2.0
 
   '@tanstack/react-query@5.90.9(react@19.2.0)':
     dependencies:
@@ -7540,6 +7510,10 @@ snapshots:
       tslib: 2.8.1
 
   pvutils@1.1.5: {}
+
+  qrcode.react@4.2.0(react@19.2.0):
+    dependencies:
+      react: 19.2.0
 
   queue-microtask@1.2.3: {}
 

@@ -7,7 +7,7 @@ import {
   Outlet,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { QueryClientProvider } from "@tanstack/react-query";
 import * as React from "react";
 import { DefaultCatchBoundary } from "@/client/components/DefaultCatchBoundary";
 import { NotFound } from "@/client/components/NotFound";
@@ -15,7 +15,6 @@ import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
 import { EmbeddedAppProvider } from "@every-app/sdk/client";
 import { queryClient } from "@/client/lib/queryClient";
-import { persister } from "@/client/lib/persister";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -82,10 +81,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <ClientOnly>
-          <PersistQueryClientProvider
-            client={queryClient}
-            persistOptions={{ persister }}
-          >
+          <QueryClientProvider client={queryClient}>
             <EmbeddedAppProvider appId={import.meta.env.VITE_APP_ID}>
               <>
                 {children}
@@ -95,7 +91,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                 )}
               </>
             </EmbeddedAppProvider>
-          </PersistQueryClientProvider>
+          </QueryClientProvider>
         </ClientOnly>
         <Scripts />
       </body>

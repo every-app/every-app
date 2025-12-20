@@ -7,6 +7,7 @@ import { MoreVertical } from "lucide-react";
 import { AddCustomAppModal } from "@/client/components/AddCustomAppModal";
 import { EditAppModal } from "@/client/components/EditAppModal";
 import { DeleteAppModal } from "@/client/components/DeleteAppModal";
+import { OnboardingBanner } from "@/client/components/onboarding/OnboardingBanner";
 import type { UserApp } from "@/types/user-app";
 import { Header } from "@/client/components/Header";
 export const Route = createFileRoute("/")({
@@ -60,6 +61,8 @@ function App() {
                 Add App
               </button>
             </div>
+
+            <OnboardingBanner />
 
             {!isLoading && userApps && userApps.length > 0 && (
               <ul className="w-full mt-4 space-y-3">

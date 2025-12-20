@@ -9,11 +9,11 @@ import {
   HeadContent,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { EmbeddedAppProvider } from "@/client/providers/EmbeddedAppProvider";
 import * as React from "react";
 import appCss from "@/client/styles/app.css?url";
-import { queryClient, persister } from "@/client/tanstack-db";
+import { queryClient } from "@/client/tanstack-db";
 import { Toaster } from "sonner";
 
 const PUBLIC_ROUTES = [
@@ -49,10 +49,7 @@ function RootComponent() {
   }
 
   return (
-    <PersistQueryClientProvider
-      client={queryClient}
-      persistOptions={{ persister }}
-    >
+    <QueryClientProvider client={queryClient}>
       <EmbeddedAppProvider>
         <AppRouter />
       </EmbeddedAppProvider>
@@ -65,7 +62,7 @@ function RootComponent() {
         }}
       />
       {/* <TanStackRouterDevtools /> */}
-    </PersistQueryClientProvider>
+    </QueryClientProvider>
   );
 }
 

@@ -6,6 +6,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 import { users } from "./auth.schema";
 export * from "./auth.schema";
+export * from "./onboarding.schema";
 
 export const userApps = sqliteTable(
   "user_apps",

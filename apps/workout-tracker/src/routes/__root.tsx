@@ -8,7 +8,7 @@ import {
   useLocation,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { QueryClientProvider } from "@tanstack/react-query";
 import * as React from "react";
 import { DefaultCatchBoundary } from "@/client/components/DefaultCatchBoundary";
 import { NotFound } from "@/client/components/NotFound";
@@ -24,7 +24,6 @@ import {
   sessionsCollection,
   setLogsCollection,
   queryClient,
-  persister,
 } from "@/client/tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
 
@@ -145,10 +144,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <ClientOnly>
-          <PersistQueryClientProvider
-            client={queryClient}
-            persistOptions={{ persister }}
-          >
+          <QueryClientProvider client={queryClient}>
             <EmbeddedAppProvider appId={import.meta.env.VITE_APP_ID}>
               <>
                 {children}
@@ -163,7 +159,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                 <TanStackRouterDevtools position="bottom-right" />
               </>
             </EmbeddedAppProvider>
-          </PersistQueryClientProvider>
+          </QueryClientProvider>
         </ClientOnly>
         <Scripts />
       </body>

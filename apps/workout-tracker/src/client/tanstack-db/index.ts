@@ -1,5 +1,4 @@
 export { queryClient } from "./queryClient";
-export { persister } from "./persister";
 export { programsCollection } from "./programsCollection";
 export { workoutsCollection } from "./workoutsCollection";
 export { exerciseLibraryCollection } from "./exerciseLibraryCollection";

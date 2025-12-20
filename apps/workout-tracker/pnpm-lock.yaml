@@ -26,18 +26,12 @@ importers:
       '@tanstack/query-db-collection':
         specifier: ^1.0.0
         version: 1.0.5(@tanstack/db@0.5.8(typescript@5.9.3))(@tanstack/query-core@5.90.11)(typescript@5.9.3)
-      '@tanstack/query-sync-storage-persister':
-        specifier: ^5.90.11
-        version: 5.90.13
       '@tanstack/react-db':
         specifier: ^0.1.44
         version: 0.1.52(react@19.2.0)(typescript@5.9.3)
       '@tanstack/react-query':
         specifier: ^5.90.9
         version: 5.90.11(react@19.2.0)
-      '@tanstack/react-query-persist-client':
-        specifier: ^5.90.11
-        version: 5.90.13(@tanstack/react-query@5.90.11(react@19.2.0))(react@19.2.0)
       '@tanstack/react-router':
         specifier: ^1.136.3
         version: 1.139.7(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
@@ -1400,22 +1394,10 @@ packages:
       '@tanstack/query-core': ^5.0.0
       typescript: '>=4.7'
 
-  '@tanstack/query-persist-client-core@5.91.10':
-    resolution: {integrity: sha512-oZQk/kap5jHx2w+JcSI6CvDFXR5jmAldqJsH5IEQizVOEwaRlCyYEBZ3Df56HXNxW4spWX0cjhI/4o+mnCGtHw==}
-
-  '@tanstack/query-sync-storage-persister@5.90.13':
-    resolution: {integrity: sha512-ysJFlPzQat1FyXKiKx+bK1kDiF0zdHgZV5Kc3V7rw6w5Uz7shaiQaAmp3VJoZXl63diE4mErFBSra/z+6iBigg==}
-
   '@tanstack/react-db@0.1.52':
     resolution: {integrity: sha512-luzzEe7Asb47gHMmONnsfmBX2ljtdkD7T6a+n/6Z+dbFQjqAqI9NNA9ewlchPjOXbkrjqTs4Wv7qKjbtdqGaVQ==}
     peerDependencies:
       react: '>=16.8.0'
-
-  '@tanstack/react-query-persist-client@5.90.13':
-    resolution: {integrity: sha512-04R+o/su8wuqlEvUl6dJLLI8auUCFCCJ2qGfELPSJSE4mF0HOh+ZtmsDRuLXA/jBMyV6X2RZLrZTMRWNgWM4gw==}
-    peerDependencies:
-      '@tanstack/react-query': ^5.90.11
-      react: ^18 || ^19
 
   '@tanstack/react-query@5.90.11':
     resolution: {integrity: sha512-3uyzz01D1fkTLXuxF3JfoJoHQMU2fxsfJwE+6N5hHy0dVNoZOvwKP8Z2k7k1KDeD54N20apcJnG75TBAStIrBA==}
@@ -3831,15 +3813,6 @@ snapshots:
       '@tanstack/query-core': 5.90.11
       typescript: 5.9.3
 
-  '@tanstack/query-persist-client-core@5.91.10':
-    dependencies:
-      '@tanstack/query-core': 5.90.11
-
-  '@tanstack/query-sync-storage-persister@5.90.13':
-    dependencies:
-      '@tanstack/query-core': 5.90.11
-      '@tanstack/query-persist-client-core': 5.91.10
-
   '@tanstack/react-db@0.1.52(react@19.2.0)(typescript@5.9.3)':
     dependencies:
       '@tanstack/db': 0.5.8(typescript@5.9.3)
@@ -3847,12 +3820,6 @@ snapshots:
       use-sync-external-store: 1.6.0(react@19.2.0)
     transitivePeerDependencies:
       - typescript
-
-  '@tanstack/react-query-persist-client@5.90.13(@tanstack/react-query@5.90.11(react@19.2.0))(react@19.2.0)':
-    dependencies:
-      '@tanstack/query-persist-client-core': 5.91.10
-      '@tanstack/react-query': 5.90.11(react@19.2.0)
-      react: 19.2.0
 
   '@tanstack/react-query@5.90.11(react@19.2.0)':
     dependencies:

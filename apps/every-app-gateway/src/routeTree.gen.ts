@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as PwaRouteImport } from './routes/pwa'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
@@ -36,6 +37,11 @@ const SignInRoute = SignInRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PwaRoute = PwaRouteImport.update({
+  id: '/pwa',
+  path: '/pwa',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/accept-invitation': typeof AcceptInvitationRoute
   '/admin': typeof AdminRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
+  '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/accept-invitation': typeof AcceptInvitationRoute
   '/admin': typeof AdminRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
+  '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/accept-invitation'
     | '/admin'
     | '/forgot-password'
+    | '/pwa'
     | '/reset-password'
     | '/sign-in'
     | '/sign-up'
@@ -155,6 +165,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invitation'
     | '/forgot-password'
+    | '/pwa'
     | '/reset-password'
     | '/sign-in'
     | '/sign-up'
@@ -170,6 +181,7 @@ export interface FileRouteTypes {
     | '/accept-invitation'
     | '/admin'
     | '/forgot-password'
+    | '/pwa'
     | '/reset-password'
     | '/sign-in'
     | '/sign-up'
@@ -186,6 +198,7 @@ export interface RootRouteChildren {
   AcceptInvitationRoute: typeof AcceptInvitationRoute
   AdminRoute: typeof AdminRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
+  PwaRoute: typeof PwaRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
@@ -215,6 +228,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pwa': {
+      id: '/pwa'
+      path: '/pwa'
+      fullPath: '/pwa'
+      preLoaderRoute: typeof PwaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/forgot-password': {
@@ -319,6 +339,7 @@ const rootRouteChildren: RootRouteChildren = {
   AcceptInvitationRoute: AcceptInvitationRoute,
   AdminRoute: AdminRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
+  PwaRoute: PwaRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
