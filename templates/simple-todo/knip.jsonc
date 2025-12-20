@@ -11,6 +11,6 @@
   "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
   // Disable Drizzle plugin - it tries to load drizzle.config.ts which imports cloudflare:workers
   "drizzle": false,
-  "ignoreDependencies": ["tailwindcss", "daisyui"],
+  "ignoreDependencies": ["tailwindcss"],
   "ignoreBinaries": ["every"],
 }

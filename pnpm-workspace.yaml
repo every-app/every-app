@@ -1,7 +1,6 @@
 packages:
   - 'apps/*'
-  - 'cli'
   - 'landing-page'
+  - 'packages/*'
   - 'templates/*'
-
 sharedWorkspaceLockfile: false

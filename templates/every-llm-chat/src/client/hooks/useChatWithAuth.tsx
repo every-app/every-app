@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { authenticatedFetch } from "@/embedded-sdk/client";
+import { authenticatedFetch } from "@every-app/sdk/client";
 import { toast } from "sonner";
 
 interface UseChatWithAuthProps {

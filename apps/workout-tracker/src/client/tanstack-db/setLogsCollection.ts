@@ -7,7 +7,7 @@ import {
   deleteSetLog,
 } from "@/serverFunctions/setLogs";
 import { createCollection } from "@tanstack/react-db";
-import { lazyInitForWorkers } from "@/embedded-sdk/client";
+import { lazyInitForWorkers } from "@every-app/sdk/client";
 import type { WorkoutSetLog } from "@/db/schema";
 
 export const setLogsCollection = lazyInitForWorkers(() =>

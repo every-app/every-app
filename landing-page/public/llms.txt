@@ -492,6 +492,59 @@ Returns the configured app ID.
 
 Returns the Gateway URL (from `VITE_GATEWAY_URL` env var).
 
+#### `getUser(): { userId: string; email: string } | null`
+
+Extracts user information from the current JWT token. Returns `null` if no valid token is available.
+
+```ts
+const user = sessionManager.getUser();
+if (user) {
+  console.log(`Logged in as ${user.email}`);
+}
+```
+
+## useCurrentUser
+
+A React hook that returns the current authenticated user's information.
+
+```tsx
+
+function UserProfile() {
+  const user = useCurrentUser();
+
+  if (!user) {
+    return <div>Not authenticated</div>;
+  }
+
+  return (
+    <div>
+      <p>User ID: {user.userId}</p>
+      <p>Email: {user.email}</p>
+    </div>
+  );
+}
+```
+
+### Return Value
+
+Returns `{ userId: string; email: string } | null`
+
+| Property | Type     | Description                                 |
+| -------- | -------- | ------------------------------------------- |
+| `userId` | `string` | The user's unique ID (from JWT `sub` claim) |
+| `email`  | `string` | The user's email address                    |
+
+Returns `null` if the user is not authenticated or the session token is not yet available.
+
+### How it works
+
+1. Accesses the `SessionManager` from the `EmbeddedAppProvider` context
+2. Only returns user data when the token status is `"VALID"`
+3. Decodes the JWT token payload to extract `sub` (userId) and `email` claims
+
+> **Must be inside EmbeddedAppProvider**: This hook must be used within a component that is wrapped by
+  `EmbeddedAppProvider`. It will throw an error if used outside the provider.
+
 ## useSessionTokenClientMiddleware
 
 A TanStack Start middleware that automatically adds the session token to all server function requests.

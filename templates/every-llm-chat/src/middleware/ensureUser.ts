@@ -2,8 +2,8 @@ import { createMiddleware } from "@tanstack/react-start";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { authenticateRequest } from "@/embedded-sdk/server";
-import { getAuthConfig } from "@/embedded-sdk/server";
+import { authenticateRequest } from "@every-app/sdk/server";
+import { getAuthConfig } from "@every-app/sdk/server";
 
 export const ensureUserMiddleware = createMiddleware({
   type: "function",

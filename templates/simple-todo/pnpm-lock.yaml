@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@every-app/sdk':
+        specifier: ^0.0.2
+        version: 0.0.2(@tanstack/react-router@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@tanstack/react-start@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(vite@7.1.12(@types/node@22.19.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.20.6)))(jose@6.1.0)(react@19.2.0)
       '@tanstack/query-core':
         specifier: ^5.90.9
         version: 5.90.9
@@ -90,9 +93,6 @@ importers:
       drizzle-kit:
         specifier: ^0.31.4
         version: 0.31.6
-      jsonc-parser:
-        specifier: ^3.3.1
-        version: 3.3.1
       knip:
         specifier: ^5.66.4
         version: 5.67.1(@types/node@22.19.0)(typescript@5.9.3)
@@ -775,6 +775,14 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
+
+  '@every-app/sdk@0.0.2':
+    resolution: {integrity: sha512-W1tvAY5XMSLY5+ho/4U0plTFsG4+tQ+WqN+oufNYetU5YnElvFVRZ8VZWSePDghGbOvkIzC45HvUOW/WSe6+hw==}
+    peerDependencies:
+      '@tanstack/react-router': ^1.0.0
+      '@tanstack/react-start': ^1.0.0
+      jose: ^6.0.0
+      react: ^18.0.0 || ^19.0.0
 
   '@img/sharp-darwin-arm64@0.33.5':
     resolution: {integrity: sha512-UT4p+iz/2H4twwAoLCqfA9UH5pI6DggwKEGuaPy7nCVQ8ZsiY5PIcrRvD1DzuY3qYL07NtIQcWnBSY/heikIFQ==}
@@ -3282,6 +3290,14 @@ snapshots:
 
   '@esbuild/win32-x64@0.25.4':
     optional: true
+
+  '@every-app/sdk@0.0.2(@tanstack/react-router@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@tanstack/react-start@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(vite@7.1.12(@types/node@22.19.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.20.6)))(jose@6.1.0)(react@19.2.0)':
+    dependencies:
+      '@tanstack/react-router': 1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
+      '@tanstack/react-start': 1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(vite@7.1.12(@types/node@22.19.0)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.20.6))
+      jose: 6.1.0
+      jsonc-parser: 3.3.1
+      react: 19.2.0
 
   '@img/sharp-darwin-arm64@0.33.5':
     optionalDependencies:

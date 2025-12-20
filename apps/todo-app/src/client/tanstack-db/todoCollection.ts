@@ -7,7 +7,7 @@ import {
   getAllTodos,
   updateTodo,
 } from "@/serverFunctions/todos";
-import { lazyInitForWorkers } from "@/embedded-sdk/client";
+import { lazyInitForWorkers } from "@every-app/sdk/client";
 
 export const todoCollection = lazyInitForWorkers(() =>
   createCollection(

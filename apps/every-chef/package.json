@@ -22,6 +22,7 @@
     "knip": "knip"
   },
   "dependencies": {
+    "@every-app/sdk": "^0.0.2",
     "@ai-sdk/openai": "^2.0.77",
     "@ai-sdk/react": "^2.0.106",
     "@tanstack/query-core": "^5.90.9",

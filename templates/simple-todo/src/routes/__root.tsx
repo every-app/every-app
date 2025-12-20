@@ -17,7 +17,7 @@ import { Toaster } from "sonner";
 import { Sidebar } from "@/client/components/Sidebar";
 import { MobileHeader } from "@/client/components/MobileHeader";
 import { useIsMobile } from "@/client/hooks/use-mobile";
-import { EmbeddedAppProvider } from "@/embedded-sdk/client";
+import { EmbeddedAppProvider } from "@every-app/sdk/client";
 import { todoCollection, queryClient, persister } from "@/client/tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
 

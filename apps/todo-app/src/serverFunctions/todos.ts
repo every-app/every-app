@@ -4,7 +4,7 @@ import { db, schema } from "@/db";
 import { todos } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
-import { useSessionTokenClientMiddleware } from "@/embedded-sdk/client";
+import { useSessionTokenClientMiddleware } from "@every-app/sdk/client";
 
 export const getAllTodos = createServerFn()
   // TODO Global middlewares don't seem to work right now in tanstack-start. We should move to this once this is resolved.

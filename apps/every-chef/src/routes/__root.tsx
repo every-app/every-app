@@ -16,7 +16,7 @@ import { Toaster } from "sonner";
 import { Sidebar, DrawerSidebar } from "@/client/components/Sidebar";
 import { useIsMobile } from "@/client/hooks/use-mobile";
 import { useCreateChat } from "@/client/hooks/useChats";
-import { EmbeddedAppProvider } from "@/embedded-sdk/client";
+import { EmbeddedAppProvider } from "@every-app/sdk/client";
 import { queryClient, persister } from "@/client/tanstack-db";
 import { Plus, Pencil } from "lucide-react";
 import { useLocation, useNavigate, Link } from "@tanstack/react-router";

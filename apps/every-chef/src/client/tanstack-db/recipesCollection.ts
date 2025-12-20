@@ -7,7 +7,7 @@ import {
   deleteRecipe,
 } from "@/serverFunctions/recipes";
 import { createCollection } from "@tanstack/react-db";
-import { lazyInitForWorkers } from "@/embedded-sdk/client";
+import { lazyInitForWorkers } from "@every-app/sdk/client";
 import type { Recipe } from "@/db/schema";
 
 export const recipesCollection = lazyInitForWorkers(() =>

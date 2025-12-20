@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
-import { useSessionTokenClientMiddleware } from "@/embedded-sdk/client";
+import { useSessionTokenClientMiddleware } from "@every-app/sdk/client";
 import { ProgramService } from "@/server/services/ProgramService";
 import {
   createProgramSchema,

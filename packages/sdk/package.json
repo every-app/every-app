@@ -1,0 +1,39 @@
+{
+  "name": "@every-app/sdk",
+  "version": "0.0.2",
+  "type": "module",
+  "main": "./src/client/index.ts",
+  "exports": {
+    "./client": "./src/client/index.ts",
+    "./server": "./src/server/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "types:check": "tsc --noEmit",
+    "format:check": "prettier --check .",
+    "format:write": "prettier . --write"
+  },
+  "dependencies": {
+    "jsonc-parser": "^3.3.1"
+  },
+  "peerDependencies": {
+    "@tanstack/react-router": "^1.0.0",
+    "@tanstack/react-start": "^1.0.0",
+    "jose": "^6.0.0",
+    "react": "^18.0.0 || ^19.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251014.0",
+    "@tanstack/react-router": "^1.136.3",
+    "@tanstack/react-start": "^1.136.3",
+    "@types/node": "^22.18.13",
+    "@types/react": "^19.0.8",
+    "jose": "^6.0.12",
+    "prettier": "^3.6.2",
+    "react": "^19.0.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.2"
+  }
+}

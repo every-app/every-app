@@ -13,7 +13,7 @@ import { DefaultCatchBoundary } from "@/client/components/DefaultCatchBoundary";
 import { NotFound } from "@/client/components/NotFound";
 import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
-import { EmbeddedAppProvider } from "@/embedded-sdk/client";
+import { EmbeddedAppProvider } from "@every-app/sdk/client";
 import { queryClient } from "@/client/lib/queryClient";
 import { persister } from "@/client/lib/persister";
 

@@ -7,7 +7,7 @@ import {
   deleteWorkout,
 } from "@/serverFunctions/workouts";
 import { createCollection } from "@tanstack/react-db";
-import { lazyInitForWorkers } from "@/embedded-sdk/client";
+import { lazyInitForWorkers } from "@every-app/sdk/client";
 import type { Workout } from "@/db/schema";
 
 export const workoutsCollection = lazyInitForWorkers(() =>

@@ -1,4 +1,4 @@
-import { authenticateRequest, getAuthConfig } from "@/embedded-sdk/server";
+import { authenticateRequest, getAuthConfig } from "@every-app/sdk/server";
 
 /**
  * Standard JSON error response

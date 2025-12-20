@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
-import { useSessionTokenClientMiddleware } from "@/embedded-sdk/client";
+import { useSessionTokenClientMiddleware } from "@every-app/sdk/client";
 import { ExerciseLibraryService } from "@/server/services/ExerciseLibraryService";
 import {
   batchCreateExerciseLibrarySchema,

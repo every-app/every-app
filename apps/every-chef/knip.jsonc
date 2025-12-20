@@ -4,8 +4,6 @@
     // Detect Tanstack Start Routes (including API routes)
     "src/router.tsx",
     "src/routes/**/*.{ts,tsx}",
-    // Embedded SDK public API
-    "src/embedded-sdk/client/index.ts",
   ],
   "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
