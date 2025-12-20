@@ -14,7 +14,7 @@ export function HistoryItem({ todo }: HistoryItemProps) {
 
   return (
     <div
-      className={`flex items-center gap-3 p-2 rounded-md hover:bg-gray-100 transition-colors ${!isMobile ? "group" : ""}`}
+      className={`flex items-center gap-3 p-2 rounded-md border border-transparent hover:border-base-300 hover:bg-base-300/50 transition-all ${!isMobile ? "group" : ""}`}
     >
       <Checkbox
         checked={todo.completed}
