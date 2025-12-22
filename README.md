@@ -13,6 +13,12 @@ The goal is to handle the boring parts so you can focus on building your idea:
 - **Example Patterns** - Reference implementations for optimistic updates (TanStack DB), data modeling (Drizzle), Cloudflare infrastructure, and organizing your backend code.
 - **Coding Agent Prompts** - Prompts for common dev workflows like implementing from a spec, refactoring and security review tailored to the stack.
 
+### Gateway Home Page
+<img width="1722" height="1013" alt="Screenshot 2025-12-22 at 5 31 18 PM" src="https://github.com/user-attachments/assets/2e152ebd-11a4-4908-80f4-c4b636865993" />
+
+### Example Page in Workout Tracker
+<img width="1723" height="1014" alt="Screenshot 2025-12-22 at 5 31 01 PM" src="https://github.com/user-attachments/assets/c1b1a9fb-e8a4-4f3c-9613-bb68c0e081c5" />
+
 ## What is the Every App Gateway?
 The Gateway is the parent application that hosts all your embedded apps. It provides:
 
