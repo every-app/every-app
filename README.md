@@ -8,7 +8,8 @@ Build apps for yourself, share them with the community, or host apps others have
 
 ## Every App Handles the Boring Parts
 The goal is to handle the boring parts so you can focus on building your idea:
-- **Simplified Auth** - Apps are embedded in the Gateway which handles Sign up + Sign in. Your app receive session tokens automatically via the `EmbeddedAppProvider` which you can use to authenticate your users.
+- **Easy Self Hosting** - Self host by running `every app deploy` instead of creating a docker image and writing a cross-platform script.
+- **Simplified Auth** - The Gateway handles Sign up + Sign in so you don't need to. Your app receive session tokens automatically via the `EmbeddedAppProvider` which you can use to authenticate your users.
 - **Example Patterns** - Reference implementations for optimistic updates (TanStack DB), data modeling (Drizzle), Cloudflare infrastructure, and organizing your backend code.
 - **Coding Agent Prompts** - Prompts for common dev workflows like implementing from a spec, refactoring and security review tailored to the stack.
 
