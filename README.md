@@ -10,8 +10,8 @@ Build apps for yourself, share them with the community, or host apps others have
 The goal is to handle the boring parts so you can focus on building your idea:
 - **1 command self hosting**
 - **Simplified auth** 
-- **Real examples from other open source Apps** 
-- **Prompts tailored for apps built with Every App**
+- **Real full stack examples from other open source apps** 
+- **AI prompts for building features and maintaining your codebase**
 
 ### Gateway Home Page
 ![Gateway Home Page](docs/images/Screenshot-2025-12-22-at-5.31.18-PM.png)
