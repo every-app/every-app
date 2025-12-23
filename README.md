@@ -8,10 +8,10 @@ Build apps for yourself, share them with the community, or host apps others have
 
 ## Every App Handles the Boring Parts
 The goal is to handle the boring parts so you can focus on building your idea:
-- **Easy Self Hosting** - Self host by running `every app deploy` instead of creating a docker image and writing a cross-platform script.
-- **Simplified Auth** - The Gateway handles Sign up + Sign in so you don't need to. Your app receive session tokens automatically via the `EmbeddedAppProvider` which you can use to authenticate your users.
-- **Example Patterns** - Reference implementations for optimistic updates (TanStack DB), data modeling (Drizzle), Cloudflare infrastructure, and organizing your backend code.
-- **Coding Agent Prompts** - Prompts for common dev workflows like implementing from a spec, refactoring and security review tailored to the stack.
+- **1 command self hosting**
+- **Simplified auth** 
+- **Real examples from other open source Apps** 
+- **Prompts tailored for apps built with Every App**
 
 ### Gateway Home Page
 ![Gateway Home Page](docs/images/Screenshot-2025-12-22-at-5.31.18-PM.png)
@@ -25,7 +25,7 @@ The Gateway is the parent application that hosts all your embedded apps. It prov
 - **Single URL** - Access all apps from one place
 - **Shared Auth** - Log in once, access all apps
 - **PWA Support** - Add to home screen, all apps inherit PWA benefits
-- **LLM Gateway (Coming soon)** - Instead of needing to configure each app with an API token, do it once and set a per-app budget. 
+- **LLM Gateway (Coming soon)** - Configure LLM provider once, instead of once per app. Define per-app budgets.
 
 Apps run inside the Gateway's iframe and receive scoped session tokens for authentication, so you don't need to implement auth in your apps.
 
