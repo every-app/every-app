@@ -1,11 +1,12 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "type": "module",
   "main": "./src/client/index.ts",
   "exports": {
     "./client": "./src/client/index.ts",
-    "./server": "./src/server/index.ts"
+    "./server": "./src/server/index.ts",
+    "./server/getLocalD1Url": "./src/server/getLocalD1Url.ts"
   },
   "files": [
     "src"
