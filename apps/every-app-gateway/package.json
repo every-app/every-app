@@ -1,6 +1,6 @@
 {
   "name": "every-app-gateway",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -28,8 +28,10 @@
     "@hookform/resolvers": "^5.2.2",
     "@tanstack/query-core": "^5.90.9",
     "@tanstack/query-db-collection": "^1.0.0",
+    "@tanstack/query-sync-storage-persister": "^5.90.14",
     "@tanstack/react-db": "^0.1.44",
     "@tanstack/react-query": "^5.90.9",
+    "@tanstack/react-query-persist-client": "^5.90.14",
     "@tanstack/react-router": "1.140.5",
     "@tanstack/react-router-devtools": "1.140.5",
     "@tanstack/react-start": "1.140.5",

@@ -7,7 +7,7 @@ import {
   Outlet,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import * as React from "react";
 import { DefaultCatchBoundary } from "@/client/components/DefaultCatchBoundary";
 import { NotFound } from "@/client/components/NotFound";
@@ -17,7 +17,7 @@ import { Sidebar, DrawerSidebar } from "@/client/components/Sidebar";
 import { useIsMobile } from "@/client/hooks/use-mobile";
 import { useCreateChat } from "@/client/hooks/useChats";
 import { EmbeddedAppProvider } from "@every-app/sdk/client";
-import { queryClient } from "@/client/tanstack-db";
+import { queryClient, persister } from "@/client/tanstack-db";
 import { Plus, Pencil } from "lucide-react";
 import { useLocation, useNavigate, Link } from "@tanstack/react-router";
 
@@ -194,7 +194,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <ClientOnly>
-          <QueryClientProvider client={queryClient}>
+          <PersistQueryClientProvider
+            client={queryClient}
+            persistOptions={{ persister }}
+          >
             <EmbeddedAppProvider appId={import.meta.env.VITE_APP_ID}>
               {children}
               <Toaster
@@ -207,7 +210,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               />
               <TanStackRouterDevtools position="bottom-right" />
             </EmbeddedAppProvider>
-          </QueryClientProvider>
+          </PersistQueryClientProvider>
         </ClientOnly>
         <Scripts />
       </body>
