@@ -11,5 +11,3 @@ dist/
 *.db-wal
 *.db-shm
 .env
-opencode.json
-opencode.jsonc

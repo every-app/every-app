@@ -4,7 +4,8 @@
     "format:check": "pnpm -r --no-bail run format:check",
     "format:write": "pnpm -r --no-bail run format:write",
     "cf-typegen": "pnpm -r --no-bail run cf-typegen",
-    "ci:check": "npx concurrently --names \"formatting\",\"types\",\"knip\" --prefix-colors \"yellow,blue,magenta\" \"pnpm run format:check\" \"pnpm run types:check\" \"pnpm run knip\" ",
+    "ci:check": "npx concurrently --names \"formatting\",\"types\",\"knip\",\"llms-txt\" --prefix-colors \"yellow,blue,magenta,cyan\" \"pnpm run format:check\" \"pnpm run types:check\" \"pnpm run knip\" \"pnpm run llms-txt:check\"",
+    "llms-txt:check": "cd landing-page && node scripts/generate-llms-txt.js --check",
     "dev": "npx concurrently --names \"todo-app,every-app-gateway\" --prefix-colors \"blue,green\" \"cd apps/todo-app && pnpm run dev\" \"cd apps/every-app-gateway && pnpm run dev\"",
     "knip": "pnpm -r --no-bail run knip"
   }

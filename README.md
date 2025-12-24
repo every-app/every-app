@@ -97,7 +97,28 @@ pnpm run dev
 Then add your app in the Gateway UI. The App ID must match your project name.
 
 
-Reference the full docs to learn more. Here are key docs:
+## Coding Agent Setup
+
+We recommend using an AI coding assistant to build your app. You can ask it to reference the example apps we've built using this MCP server and get started super quickly building out your app.
+
+Add to your `opencode.json`:
+
+```json
+{
+  "mcp": {
+    "every-app": {
+      "type": "local",
+      "command": ["npx", "-y", "@every-app/mcp"]
+    }
+  }
+}
+```
+
+For other AI tools (Claude Code, Cursor, etc.), see the [Coding Agent Setup docs](https://everyapp.dev/docs/coding-agent/setup/).
+
+## Docs
+
+Reference the full docs to learn more:
 - Walkthrough of the AI Cooking Assistant: https://everyapp.dev/docs/walkthrough/overview/
 - Coding Agent Setup: https://everyapp.dev/docs/coding-agent/setup/
 - Helpful Prompts: https://everyapp.dev/docs/coding-agent/prompts/review-code/

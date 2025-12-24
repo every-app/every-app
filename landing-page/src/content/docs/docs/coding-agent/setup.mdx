@@ -3,43 +3,106 @@ title: Coding Agent Setup
 description: Set up your AI coding agent to work with Every App
 ---
 
-import { Aside, Steps } from "@astrojs/starlight/components";
+import { Aside, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 
 If you're using an AI coding assistant (Claude, Cursor, Copilot, etc.), here's how to set it up for the best experience with Every App.
 
-## Clone the Reference Repo
+## Using the Every App MCP Server (Recommended)
 
-Clone the Every App monorepo into a hidden folder so your agent can reference the example apps:
+The Every App MCP (Model Context Protocol) server gives your AI coding agent direct access to:
+
+- **Example apps** - Browse and search implementation patterns
+- **Documentation** - Fetch Every App docs on demand
+- **Prompts** - Access curated prompts for common tasks
 
 <Steps>
 
-1. **Clone to example apps to hidden folder**
+1.  **Add the MCP server to your AI tool**
 
-   ```bash
-   npx gitpick every-app/every-app/tree/main/apps/ .every-app
-   ```
+          <Tabs>
 
-2. **Tell your agent to use it as reference**
+    <TabItem label="Claude Code">
 
-   When prompting your agent, mention that examples are available:
+    Run this command:
 
-   > "Check `.every-app/apps/` for examples of how to implement this pattern"
+    ```sh
+    claude mcp add every-app -- npx -y @every-app/mcp
+    ```
+
+          </TabItem>
+
+    <TabItem label="Cursor">
+
+    Add to your `.cursor/mcp.json`:
+
+    ```json
+    {
+      "mcpServers": {
+        "every-app": {
+          "command": "npx",
+          "args": ["-y", "@every-app/mcp"]
+        }
+      }
+    }
+    ```
+
+          </TabItem>
+
+    <TabItem label="OpenCode">
+
+    Add to your `opencode.json`:
+
+    ```json
+    {
+      "mcp": {
+        "every-app": {
+          "type": "local",
+          "command": ["npx", "-y", "@every-app/mcp"]
+        }
+      }
+    }
+    ```
+
+          </TabItem>
+
+    </Tabs>
+
+2.  **Restart your AI tool**
+
+    The MCP server will automatically download the Every App examples on first run. Your agent can then use tools like:
+    - `every_app_mcp_list_examples` - See all available example apps
+    - `every_app_mcp_list_directory` - Browse file structure
+    - `every_app_mcp_read_file` - Read implementation code
+    - `every_app_mcp_search_code` - Find patterns across examples
+    - `every_app_mcp_fetch_docs` - Get Every App documentation
 
 </Steps>
 
 <Aside type="tip">
-  The hidden folder (starting with `.`) keeps it out of your way while still
-  being accessible to your coding agent.
+  Examples are cached at `~/.every-app-mcp/examples` and automatically updated
+  when the server starts.
 </Aside>
+
+### MCP Tools Reference
+
+| Tool                           | Description                             | Example Usage                            |
+| ------------------------------ | --------------------------------------- | ---------------------------------------- |
+| `every_app_mcp_list_examples`  | List all example apps with descriptions | "What examples are available?"           |
+| `every_app_mcp_list_directory` | Browse directory structure              | "Show me the structure of apps/todo-app" |
+| `every_app_mcp_read_file`      | Read file contents with line numbers    | "Read the todo-app's main route"         |
+| `every_app_mcp_search_code`    | Regex search across files               | "Find how optimistic updates are done"   |
+| `every_app_mcp_find_files`     | Find files by glob pattern              | "Find all schema.ts files"               |
+| `every_app_mcp_fetch_docs`     | Get documentation pages                 | "Fetch the Drizzle docs"                 |
 
 ## Example Apps to Reference
 
-The monorepo contains several full-stack apps you can point your agent to:
+The MCP server provides access to several full-stack example apps:
 
-| App                    | Description       | Good for learning                 |
-| ---------------------- | ----------------- | --------------------------------- |
-| `apps/workout-tracker` | Workout tracking  | Complex data relationships, forms |
-| `apps/every-chef`      | Cooking assistant | LLM integration patterns          |
+| App                    | Description       | Good for learning                  |
+| ---------------------- | ----------------- | ---------------------------------- |
+| `apps/todo-app`        | Todo application  | Basic CRUD, routing, embedded apps |
+| `apps/workout-tracker` | Workout tracking  | Complex data relationships, forms  |
+| `apps/every-chef`      | Cooking assistant | LLM integration patterns           |
 
 ## Prompts
 
@@ -56,4 +119,4 @@ We've developed some prompts that work well for building apps on Every App:
 
 3. **Check types frequently** - Have your agent run `pnpm run types:check` after changes
 
-4. **Reference the tech stack docs** - Tell your agent to use context7 or similar to fetch TanStack/Drizzle docs when needed
+4. **Reference the tech stack docs** - Tell your agent to use the `every_app_mcp_fetch_docs` tool or context7 to fetch TanStack/Drizzle docs when needed
