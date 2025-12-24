@@ -192,6 +192,9 @@ export function useWorkoutCompletion(
   const allComplete =
     completedExercises === totalExercises && totalExercises > 0;
 
+  // Check if any sets have been logged (enables early finish)
+  const hasAnyProgress = sessionSetLogs.length > 0;
+
   // Find the setLog for a specific workout exercise and set index
   const findSetLog = useCallback(
     (workoutExercise: WorkoutExerciseWithName, setIndex: number) => {
@@ -276,6 +279,7 @@ export function useWorkoutCompletion(
     completedExercises,
     totalExercises,
     allComplete,
+    hasAnyProgress,
     isCompleting,
     handleRepClick,
     handleCompleteWorkout,

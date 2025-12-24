@@ -7,6 +7,7 @@ import {
   createSessionSchema,
   updateSessionSchema,
   completeSessionSchema,
+  skipToWorkoutSchema,
 } from "@/types/schemas/sessions";
 
 // Get all workout sessions for user
@@ -46,4 +47,12 @@ export const deleteSession = createServerFn({ method: "POST" })
   .inputValidator((data: unknown) => z.object({ id: z.string() }).parse(data))
   .handler(async ({ data, context }) => {
     return SessionService.delete(context.userId, data.id);
+  });
+
+// Skip to a specific workout (optionally abandoning in-progress session)
+export const skipToWorkout = createServerFn({ method: "POST" })
+  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .inputValidator((data: unknown) => skipToWorkoutSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    return SessionService.skipToWorkout(context.userId, data);
   });

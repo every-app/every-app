@@ -3,6 +3,7 @@ import type {
   CreateProgramInput,
   UpdateProgramInput,
   CreateProgramFromTemplateInput,
+  CreateCustomProgramInput,
 } from "@/types/schemas/programs";
 
 /**
@@ -75,6 +76,11 @@ async function createFromTemplate(
   userId: string,
   data: CreateProgramFromTemplateInput,
 ) {
+  // If setting this program as active, deactivate all other programs first
+  if (data.program.isActive) {
+    await ProgramRepository.deactivateAllForUser(userId);
+  }
+
   // Transform input data to repository format
   const repoData = {
     program: {
@@ -84,6 +90,7 @@ async function createFromTemplate(
       description: data.program.description,
       difficulty: data.program.difficulty,
       templateId: data.program.templateId,
+      isActive: data.program.isActive,
     },
     exerciseLibraryItems: data.exerciseLibraryItems.map((item) => ({
       id: item.id,
@@ -114,10 +121,38 @@ async function createFromTemplate(
   return { success: true };
 }
 
+/**
+ * Create a custom program with an initial workout.
+ * Atomically creates both the program and a default "Workout 1".
+ */
+async function createCustomProgram(
+  userId: string,
+  data: CreateCustomProgramInput,
+) {
+  await ProgramRepository.createCustomProgramAtomic({
+    program: {
+      id: data.programId,
+      userId,
+      name: "My Custom Program",
+      description: "",
+      difficulty: "n/a",
+    },
+    workout: {
+      id: data.workoutId,
+      programId: data.programId,
+      name: "Workout 1",
+      sortOrder: 0,
+    },
+  });
+
+  return { success: true };
+}
+
 export const ProgramService = {
   getAll,
   create,
   update,
   delete: deleteProgram,
   createFromTemplate,
+  createCustomProgram,
 } as const;

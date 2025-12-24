@@ -7,6 +7,7 @@ import {
   createProgramSchema,
   updateProgramSchema,
   createProgramFromTemplateSchema,
+  createCustomProgramSchema,
 } from "@/types/schemas/programs";
 
 // List all user programs with their workouts and exercises
@@ -48,4 +49,12 @@ export const createProgramFromTemplate = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     return ProgramService.createFromTemplate(context.userId, data);
+  });
+
+// Create custom program with initial workout
+export const createCustomProgram = createServerFn({ method: "POST" })
+  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .inputValidator((data: unknown) => createCustomProgramSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    return ProgramService.createCustomProgram(context.userId, data);
   });

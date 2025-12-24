@@ -10,19 +10,34 @@ import {
   useProgramById,
   useAllProgramsWithWorkouts,
 } from "@/client/hooks/useProgramData";
+import { nanoid } from "nanoid";
 import { TabBar } from "@/client/components/TabBar";
-import { programsCollection } from "@/client/tanstack-db";
+import { programsCollection, workoutsCollection } from "@/client/tanstack-db";
 import { Button } from "@/client/components/ui/button";
+import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
+import { InfoModal } from "@/client/components/ui/info-modal";
 import { WorkoutCard } from "@/client/components/WorkoutCard";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 
+type ProgramSearchParams = {
+  newProgramSource?: "custom" | "template";
+};
+
 export const Route = createFileRoute("/programs_/$programId")({
   component: ProgramDetailPage,
+  validateSearch: (search: Record<string, unknown>): ProgramSearchParams => {
+    const source = search.newProgramSource;
+    return {
+      newProgramSource:
+        source === "custom" || source === "template" ? source : undefined,
+    };
+  },
 });
 
 function ProgramDetailPage() {
   const { programId } = Route.useParams();
+  const { newProgramSource } = Route.useSearch();
   const isMobile = useIsMobile();
   const location = useLocation();
   const navigate = useNavigate();
@@ -31,6 +46,10 @@ function ProgramDetailPage() {
   const { programs: allPrograms } = useAllProgramsWithWorkouts();
 
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showRemoveModal, setShowRemoveModal] = useState(false);
+  const [showTemplateWelcomeModal, setShowTemplateWelcomeModal] = useState(
+    newProgramSource === "template",
+  );
 
   // Editable title and description state
   const [editedName, setEditedName] = useState(program?.name ?? "");
@@ -121,6 +140,42 @@ function ProgramDetailPage() {
     }
   };
 
+  const handleRemoveProgram = () => {
+    if (!program) return;
+    try {
+      programsCollection.delete(program.id);
+      toast("Program removed");
+      navigate({ to: "/programs" });
+    } catch (error) {
+      console.error("Failed to remove program:", error);
+      toast.error("Failed to remove program");
+    }
+  };
+
+  const handleAddWorkout = () => {
+    if (!program) return;
+    try {
+      const workoutId = nanoid();
+      const now = new Date().toISOString();
+      const nextSortOrder = program.workouts.length;
+
+      workoutsCollection.insert({
+        id: workoutId,
+        programId: program.id,
+        name: `Workout ${nextSortOrder + 1}`,
+        description: null,
+        sortOrder: nextSortOrder,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      toast("Workout added");
+    } catch (error) {
+      console.error("Failed to add workout:", error);
+      toast.error("Failed to add workout");
+    }
+  };
+
   if (!program) {
     return (
       <>
@@ -179,6 +234,16 @@ function ProgramDetailPage() {
               {program.isActive && (
                 <span className="badge-active shrink-0">Active</span>
               )}
+              {!isMobile && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowRemoveModal(true)}
+                  className="shrink-0"
+                >
+                  Remove
+                </Button>
+              )}
               {!program.isActive && !isMobile && (
                 <Button
                   variant="primary"
@@ -223,6 +288,15 @@ function ProgramDetailPage() {
             {program.workouts.map((workout) => (
               <WorkoutCard key={workout.id} workout={workout} />
             ))}
+
+            {/* Add Workout Button */}
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={handleAddWorkout}
+            >
+              Add Workout
+            </Button>
           </div>
         </div>
       </div>
@@ -230,16 +304,52 @@ function ProgramDetailPage() {
       {/* Mobile: Sticky bottom banner when not active */}
       {!program.isActive && isMobile && (
         <div className="fixed bottom-0 left-0 right-0 bg-base-100 border-t border-base-300 p-4 shadow-lg">
-          <Button
-            variant="primary"
-            className="w-full"
-            onClick={handleSetActive}
-            disabled={isUpdating}
-          >
-            {isUpdating ? "Setting..." : "Set as Active Program"}
-          </Button>
+          <div className="flex gap-3">
+            <Button
+              variant="primary"
+              className="flex-1"
+              onClick={handleSetActive}
+              disabled={isUpdating}
+            >
+              {isUpdating ? "Setting..." : "Set as Active"}
+            </Button>
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setShowRemoveModal(true)}
+            >
+              Remove
+            </Button>
+          </div>
         </div>
       )}
+
+      {/* Remove Program Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showRemoveModal}
+        onClose={() => setShowRemoveModal(false)}
+        onConfirm={handleRemoveProgram}
+        title="Remove Program"
+        description={`Are you sure you want to remove "${program.name}" from your programs?\n\nThis will not affect your workout history.`}
+        confirmText="Remove"
+      />
+
+      {/* Welcome Modal for programs created from templates */}
+      <InfoModal
+        isOpen={showTemplateWelcomeModal}
+        onClose={() => {
+          setShowTemplateWelcomeModal(false);
+          // Clear the query param from the URL
+          navigate({
+            to: "/programs/$programId",
+            params: { programId },
+            search: {},
+            replace: true,
+          });
+        }}
+        title="Program Saved"
+        description="Your program has been saved! You can now customize it by entering your weights and making any changes you'd like to the exercises, sets, and reps."
+      />
     </>
   );
 }

@@ -183,7 +183,7 @@ code {
 
 /* Exercise input field */
 .exercise-input {
-  @apply w-14 font-mono text-center bg-base-200 border border-base-300 rounded-md p-2 text-base-content focus:outline-none focus:border-base-content/30;
+  @apply font-mono text-center bg-base-200 border border-base-300 rounded-md p-2 text-base-content focus:outline-none focus:border-base-content/30;
 }
 
 .exercise-input:disabled {

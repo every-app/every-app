@@ -41,7 +41,7 @@ function ActiveWorkout() {
   const {
     completedExercises,
     totalExercises,
-    allComplete,
+    hasAnyProgress,
     isCompleting,
     handleRepClick,
     handleCompleteWorkout,
@@ -99,7 +99,7 @@ function ActiveWorkout() {
             <Button
               variant="primary"
               size="sm"
-              disabled={!allComplete || isCompleting}
+              disabled={!hasAnyProgress || isCompleting}
               onClick={() => handleCompleteWorkout(() => navigate({ to: "/" }))}
               className="gap-2"
             >

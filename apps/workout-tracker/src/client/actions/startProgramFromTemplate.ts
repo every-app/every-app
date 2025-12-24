@@ -20,6 +20,7 @@ type StartProgramFromTemplateParams = {
   workoutIds: string[];
   exerciseLibraryIds: Map<string, string>; // name -> id
   workoutExerciseIds: string[][]; // [workoutIndex][exerciseIndex]
+  isActive?: boolean;
 };
 
 /**
@@ -34,6 +35,7 @@ export const startProgramFromTemplate =
       workoutIds,
       exerciseLibraryIds,
       workoutExerciseIds,
+      isActive,
     }) => {
       const now = new Date().toISOString();
 
@@ -49,6 +51,17 @@ export const startProgramFromTemplate =
         });
       });
 
+      // If setting as active, deactivate all other programs first
+      if (isActive) {
+        for (const [, p] of programsCollection.state) {
+          if (p.isActive) {
+            programsCollection.update(p.id, (draft) => {
+              draft.isActive = false;
+            });
+          }
+        }
+      }
+
       // Optimistically insert the program
       programsCollection.insert({
         id: programId,
@@ -58,7 +71,7 @@ export const startProgramFromTemplate =
         difficulty: template.difficulty,
         templateId: template.id,
         currentWorkoutIndex: 0,
-        isActive: false,
+        isActive: isActive ?? false,
         createdAt: now,
         updatedAt: now,
       });
@@ -101,6 +114,7 @@ export const startProgramFromTemplate =
       workoutIds,
       exerciseLibraryIds,
       workoutExerciseIds,
+      isActive,
     }) => {
       // Build the data for the server function
       const exerciseLibraryItems = Array.from(exerciseLibraryIds.entries()).map(
@@ -133,6 +147,7 @@ export const startProgramFromTemplate =
             description: template.description,
             difficulty: template.difficulty,
             templateId: template.id,
+            isActive: isActive ?? false,
           },
           exerciseLibraryItems,
           workouts,

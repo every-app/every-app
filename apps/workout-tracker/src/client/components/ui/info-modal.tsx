@@ -1,27 +1,21 @@
 import { Button } from "./button";
 import { useModal } from "@/client/hooks/useModal";
 
-interface ConfirmationModalProps {
+interface InfoModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
   title: string;
   description: string;
-  confirmText?: string;
-  cancelText?: string;
-  variant?: "danger" | "warning";
+  buttonText?: string;
 }
 
-export function ConfirmationModal({
+export function InfoModal({
   isOpen,
   onClose,
-  onConfirm,
   title,
   description,
-  confirmText = "Delete",
-  cancelText = "Cancel",
-  variant = "danger",
-}: ConfirmationModalProps) {
+  buttonText = "Got it",
+}: InfoModalProps) {
   const { dialogRef, handleBackdropClick } = useModal(isOpen, onClose);
 
   return (
@@ -37,17 +31,8 @@ export function ConfirmationModal({
           {description}
         </p>
         <div className="modal-action">
-          <Button variant="ghost" onClick={onClose}>
-            {cancelText}
-          </Button>
-          <Button
-            variant={variant === "danger" ? "error" : "default"}
-            onClick={() => {
-              onConfirm();
-              onClose();
-            }}
-          >
-            {confirmText}
+          <Button variant="primary" onClick={onClose}>
+            {buttonText}
           </Button>
         </div>
       </div>

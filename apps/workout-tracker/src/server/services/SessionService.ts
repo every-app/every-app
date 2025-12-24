@@ -4,6 +4,7 @@ import type {
   CreateSessionInput,
   UpdateSessionInput,
   CompleteSessionInput,
+  SkipToWorkoutInput,
 } from "@/types/schemas/sessions";
 
 /**
@@ -122,10 +123,48 @@ async function complete(userId: string, data: CompleteSessionInput) {
   return { success: true };
 }
 
+/**
+ * Skip to a specific workout in the program.
+ * Optionally abandons an in-progress session if one exists.
+ */
+async function skipToWorkout(userId: string, data: SkipToWorkoutInput) {
+  // Verify program ownership
+  const program = await ProgramRepository.findByIdAndUserId(
+    data.programId,
+    userId,
+  );
+
+  if (!program) {
+    throw new Error("Program not found or not authorized");
+  }
+
+  // If there's a session to abandon, verify ownership
+  if (data.sessionIdToAbandon) {
+    const session = await SessionRepository.findByIdAndUserId(
+      data.sessionIdToAbandon,
+      userId,
+    );
+
+    if (!session) {
+      throw new Error("Session not found or not authorized");
+    }
+  }
+
+  await SessionRepository.skipToWorkout(
+    userId,
+    data.programId,
+    data.targetWorkoutIndex,
+    data.sessionIdToAbandon,
+  );
+
+  return { success: true };
+}
+
 export const SessionService = {
   getAll,
   create,
   update,
   delete: deleteSession,
   complete,
+  skipToWorkout,
 } as const;

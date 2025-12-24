@@ -13,7 +13,7 @@ type CreateWorkout = {
 
 type UpdateWorkout = {
   name?: string;
-  description?: string;
+  description?: string | null;
   sortOrder?: number;
 };
 

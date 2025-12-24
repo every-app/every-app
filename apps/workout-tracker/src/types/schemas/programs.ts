@@ -5,8 +5,8 @@ export const createProgramSchema = z.object({
   id: z.string(),
   name: z.string().min(1),
   description: z.string(),
-  difficulty: z.enum(["beginner", "intermediate", "advanced"]),
-  templateId: z.string().optional(),
+  difficulty: z.enum(["beginner", "intermediate", "advanced", "n/a"]),
+  templateId: z.string().nullable().optional(),
   isActive: z.boolean().default(false),
   currentWorkoutIndex: z.number().default(0),
 });
@@ -46,8 +46,9 @@ export const createProgramFromTemplateSchema = z.object({
     id: z.string(),
     name: z.string(),
     description: z.string(),
-    difficulty: z.enum(["beginner", "intermediate", "advanced"]),
+    difficulty: z.enum(["beginner", "intermediate", "advanced", "n/a"]),
     templateId: z.string().optional(),
+    isActive: z.boolean().default(false),
   }),
   exerciseLibraryItems: z.array(
     z.object({
@@ -60,4 +61,14 @@ export const createProgramFromTemplateSchema = z.object({
 
 export type CreateProgramFromTemplateInput = z.infer<
   typeof createProgramFromTemplateSchema
+>;
+
+// === Create Custom Program ===
+export const createCustomProgramSchema = z.object({
+  programId: z.string(),
+  workoutId: z.string(),
+});
+
+export type CreateCustomProgramInput = z.infer<
+  typeof createCustomProgramSchema
 >;

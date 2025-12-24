@@ -18,7 +18,7 @@ export const batchCreateWorkoutsSchema = z.array(createWorkoutSchema);
 export const updateWorkoutSchema = z.object({
   id: z.string(),
   name: z.string().optional(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
   sortOrder: z.number().optional(),
 });
 

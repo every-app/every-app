@@ -121,6 +121,7 @@ type CreateProgramFromTemplateData = {
     description: string;
     difficulty: DifficultyLevel;
     templateId?: string | null;
+    isActive?: boolean;
   };
   exerciseLibraryItems: Array<{
     id: string;
@@ -161,7 +162,7 @@ async function createFromTemplateAtomic(data: CreateProgramFromTemplateData) {
     difficulty: data.program.difficulty,
     templateId: data.program.templateId ?? null,
     currentWorkoutIndex: 0,
-    isActive: false,
+    isActive: data.program.isActive ?? false,
     createdAt: now,
     updatedAt: now,
   });
@@ -217,6 +218,55 @@ async function createFromTemplateAtomic(data: CreateProgramFromTemplateData) {
   ]);
 }
 
+// Types for custom program creation
+type CreateCustomProgramData = {
+  program: {
+    id: string;
+    userId: string;
+    name: string;
+    description: string;
+    difficulty: DifficultyLevel;
+  };
+  workout: {
+    id: string;
+    programId: string;
+    name: string;
+    sortOrder: number;
+  };
+};
+
+/**
+ * Atomically create a custom program with an initial workout.
+ * Uses db.batch() to ensure both inserts happen in a single transaction.
+ */
+async function createCustomProgramAtomic(data: CreateCustomProgramData) {
+  const now = new Date().toISOString();
+
+  await db.batch([
+    db.insert(programs).values({
+      id: data.program.id,
+      userId: data.program.userId,
+      name: data.program.name,
+      description: data.program.description,
+      difficulty: data.program.difficulty,
+      templateId: null,
+      currentWorkoutIndex: 0,
+      isActive: false,
+      createdAt: now,
+      updatedAt: now,
+    }),
+    db.insert(workouts).values({
+      id: data.workout.id,
+      programId: data.workout.programId,
+      name: data.workout.name,
+      description: null,
+      sortOrder: data.workout.sortOrder,
+      createdAt: now,
+      updatedAt: now,
+    }),
+  ]);
+}
+
 export const ProgramRepository = {
   findAllByUserId,
   findByIdAndUserId,
@@ -225,4 +275,5 @@ export const ProgramRepository = {
   delete: deleteById,
   deactivateAllForUser,
   createFromTemplateAtomic,
+  createCustomProgramAtomic,
 } as const;

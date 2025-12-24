@@ -1,8 +1,8 @@
 import {
   createFileRoute,
   Link,
-  useNavigate,
   useLocation,
+  useNavigate,
 } from "@tanstack/react-router";
 import { useState } from "react";
 import { useIsMobile } from "@/client/hooks/use-mobile";
@@ -12,12 +12,12 @@ import {
 } from "@/client/hooks/useProgramData";
 import { TabBar } from "@/client/components/TabBar";
 import { programTemplates } from "@/data/program-templates";
-import { EmptyState } from "@/client/components/ui/empty-state";
-import { Dumbbell } from "lucide-react";
 import {
-  startProgramFromTemplate,
-  createStartProgramParams,
-} from "@/client/actions/startProgramFromTemplate";
+  createCustomProgram,
+  createCustomProgramParams,
+} from "@/client/actions/createCustomProgram";
+import { Button } from "@/client/components/ui/button";
+import { capitalize } from "@/client/lib/utils";
 
 export const Route = createFileRoute("/programs")({
   component: ProgramsListPage,
@@ -26,31 +26,36 @@ export const Route = createFileRoute("/programs")({
 function ProgramsListPage() {
   const isMobile = useIsMobile();
   const location = useLocation();
+  const navigate = useNavigate();
+  const [isCreating, setIsCreating] = useState(false);
 
   const { programs: userPrograms } = useAllProgramsWithWorkouts();
 
-  // Templates not yet started
-  const startedTemplateIds = new Set(
-    userPrograms.map((p) => p.templateId).filter(Boolean),
-  );
-  const availableTemplates = programTemplates.filter(
-    (t) => !startedTemplateIds.has(t.id),
-  );
+  const handleCreateProgram = async () => {
+    if (isCreating) return;
+    setIsCreating(true);
 
-  // Combine all programs (user programs + available templates), with active program first
+    try {
+      const params = createCustomProgramParams();
+      await createCustomProgram(params);
+
+      navigate({
+        to: "/programs/$programId",
+        params: { programId: params.programId },
+        search: { newProgramSource: "custom" },
+      });
+    } catch (error) {
+      console.error("Failed to create program:", error);
+      setIsCreating(false);
+    }
+  };
+
+  // Sort user programs with active program first
   const sortedPrograms = [...userPrograms].sort((a, b) => {
     if (a.isActive && !b.isActive) return -1;
     if (!a.isActive && b.isActive) return 1;
     return 0;
   });
-
-  const allItems = [
-    ...sortedPrograms.map((p) => ({ type: "program" as const, data: p })),
-    ...availableTemplates.map((t) => ({
-      type: "template" as const,
-      data: t,
-    })),
-  ];
 
   return (
     <>
@@ -66,24 +71,49 @@ function ProgramsListPage() {
             </div>
           </div>
 
-          {/* Programs List */}
-          {allItems.length === 0 ? (
-            <EmptyState
-              icon={<Dumbbell className="h-12 w-12 mx-auto" />}
-              title="No Programs"
-              description="Get started by creating your first program."
-            />
-          ) : (
-            <div className="space-y-4">
-              {allItems.map((item) =>
-                item.type === "program" ? (
-                  <ProgramCard key={item.data.id} program={item.data} />
-                ) : (
-                  <TemplateCard key={item.data.id} template={item.data} />
-                ),
-              )}
+          {/* My Programs Section */}
+          <section className="mb-8">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold text-base-content">
+                My Programs
+              </h2>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCreateProgram}
+                disabled={isCreating}
+              >
+                Create
+              </Button>
             </div>
-          )}
+            {sortedPrograms.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-base-content/20 p-6 text-center">
+                <p className="text-base-content/70">
+                  You haven't started any programs yet. Pick a template below to
+                  get started!
+                </p>
+                <div className="text-base-content/40 text-2xl mt-2">↓</div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {sortedPrograms.map((program) => (
+                  <ProgramCard key={program.id} program={program} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Program Templates Section */}
+          <section>
+            <h2 className="text-lg font-semibold text-base-content mb-4">
+              Program Templates
+            </h2>
+            <div className="space-y-4">
+              {programTemplates.map((template) => (
+                <TemplateCard key={template.id} template={template} />
+              ))}
+            </div>
+          </section>
         </div>
       </div>
 
@@ -106,12 +136,16 @@ function ProgramCard({ program }: { program: ProgramWithWorkouts }) {
           </h3>
           {program.isActive && <span className="badge-active">Active</span>}
         </div>
-        <p className="text-sm text-base-content/70 mb-4">
-          {program.description}
-        </p>
+        {program.description && (
+          <p className="text-sm text-base-content/70 mb-4">
+            {program.description}
+          </p>
+        )}
         <div className="flex flex-wrap gap-2">
           <span className="tag-pill">{program.workouts.length} days/week</span>
-          <span className="tag-pill">{capitalize(program.difficulty)}</span>
+          {program.difficulty !== "n/a" && (
+            <span className="tag-pill">{capitalize(program.difficulty)}</span>
+          )}
         </div>
       </div>
     </Link>
@@ -123,51 +157,24 @@ function TemplateCard({
 }: {
   template: (typeof programTemplates)[0];
 }) {
-  const navigate = useNavigate();
-  const [isCreating, setIsCreating] = useState(false);
-
-  const handleStartProgram = async () => {
-    if (isCreating) return;
-    setIsCreating(true);
-
-    try {
-      // Create params with pre-generated IDs
-      const params = createStartProgramParams(template);
-
-      // Use the atomic action
-      await startProgramFromTemplate(params);
-
-      // Navigate to the new program
-      navigate({
-        to: "/programs/$programId",
-        params: { programId: params.programId },
-      });
-    } catch (error) {
-      console.error("Failed to create program:", error);
-    } finally {
-      setIsCreating(false);
-    }
-  };
-
   return (
-    <div
-      className={`program-card ${isCreating ? "opacity-50 pointer-events-none" : ""}`}
-      onClick={handleStartProgram}
+    <Link
+      to="/templates/$templateId"
+      params={{ templateId: template.id }}
+      className="block"
     >
-      <h3 className="font-bold text-lg text-base-content mb-3">
-        {template.name}
-      </h3>
-      <p className="text-sm text-base-content/70 mb-4">
-        {template.description}
-      </p>
-      <div className="flex flex-wrap gap-2">
-        <span className="tag-pill">{template.workouts.length} days/week</span>
-        <span className="tag-pill">{capitalize(template.difficulty)}</span>
+      <div className="program-card">
+        <h3 className="font-bold text-lg text-base-content mb-3">
+          {template.name}
+        </h3>
+        <p className="text-sm text-base-content/70 mb-4">
+          {template.description}
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <span className="tag-pill">{template.workouts.length} days/week</span>
+          <span className="tag-pill">{capitalize(template.difficulty)}</span>
+        </div>
       </div>
-    </div>
+    </Link>
   );
-}
-
-function capitalize(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }

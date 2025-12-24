@@ -84,6 +84,7 @@ function buildProgramWorkouts(
  */
 export function useAllProgramsWithWorkouts(): {
   programs: ProgramWithWorkouts[];
+  isLoading: boolean;
 } {
   const { data: programs } = useLiveQuery((q) =>
     q.from({ program: programsCollection }),
@@ -98,6 +99,13 @@ export function useAllProgramsWithWorkouts(): {
     q.from({ libraryItem: exerciseLibraryCollection }),
   );
 
+  // Data is loading if any of the queries haven't returned yet
+  const isLoading =
+    programs === undefined ||
+    workouts === undefined ||
+    workoutExercises === undefined ||
+    exerciseLibrary === undefined;
+
   const programsWithWorkouts: ProgramWithWorkouts[] = (programs ?? []).map(
     (program) => ({
       ...program,
@@ -110,7 +118,7 @@ export function useAllProgramsWithWorkouts(): {
     }),
   );
 
-  return { programs: programsWithWorkouts };
+  return { programs: programsWithWorkouts, isLoading };
 }
 
 /**
@@ -118,10 +126,11 @@ export function useAllProgramsWithWorkouts(): {
  */
 export function useActiveProgram(): {
   activeProgram: ProgramWithWorkouts | null;
+  isLoading: boolean;
 } {
-  const { programs } = useAllProgramsWithWorkouts();
+  const { programs, isLoading } = useAllProgramsWithWorkouts();
   const activeProgram = programs.find((p) => p.isActive) ?? null;
-  return { activeProgram };
+  return { activeProgram, isLoading };
 }
 
 /**

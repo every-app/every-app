@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/client/components/ui/button";
 import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
-import { Trash2, Plus, Pencil } from "lucide-react";
+import { Trash2, Pencil } from "lucide-react";
 import { DndContext, closestCenter } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -118,24 +118,37 @@ export function WorkoutCard({ workout }: WorkoutCardProps) {
                 </p>
               )}
             </div>
-            {workout.exercises.length > 0 && (
-              <div className="flex gap-2 shrink-0">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleEditButtonClick}
-                >
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Edit
-                </Button>
-              </div>
-            )}
+            <div className="flex gap-2 shrink-0">
+              <Button variant="ghost" size="sm" onClick={handleEditButtonClick}>
+                <Pencil className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            </div>
           </div>
         )}
       </div>
 
       {/* Exercise Table */}
       <div className="workout-card-body">
+        {/* Empty state when no exercises and not in edit mode */}
+        {displayExercises.length === 0 && !isEditMode && (
+          <div className="text-center py-6">
+            <p className="text-base-content/50 text-sm mb-3">
+              No exercises yet
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                startEdit();
+                setIsAddingExercise(true);
+              }}
+            >
+              Add Exercise
+            </Button>
+          </div>
+        )}
+
         {displayExercises.length > 0 && (
           <div className="exercise-table">
             {/* Table Header */}
@@ -197,15 +210,15 @@ export function WorkoutCard({ workout }: WorkoutCardProps) {
                 onAddExercise={addExercise}
               />
             ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => setIsAddingExercise(true)}
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Add Exercise
-              </Button>
+              <div className="flex justify-end">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsAddingExercise(true)}
+                >
+                  Add Exercise
+                </Button>
+              </div>
             )}
           </div>
         )}

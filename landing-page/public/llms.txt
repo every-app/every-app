@@ -2155,7 +2155,7 @@ Session (programName: "My Program") ← static, never updates
 
 Use this to review TanStack DB usage patterns. Reference `apps/workout-tracker/` for correct patterns.
 
-```markdown
+````markdown
 Review this codebase for proper TanStack DB usage.
 
 ### Documentation
@@ -2181,9 +2181,23 @@ Review this codebase for proper TanStack DB usage.
 
 - [ ] Wrapped with `lazyInitForWorkers()` so it works on Cloudflare
 
-#### Optimistic Actions
+#### Simple Mutations (Single Collection)
 
-- [ ] Use `createOptimisticAction` for complex mutations
+For simple operations on a single collection, call collection methods directly. The collection's `onInsert`/`onUpdate`/`onDelete` callbacks handle server sync automatically:
+
+```ts
+// Direct insert - collection handles server sync
+workoutsCollection.insert({ id: nanoid(), name: "Workout 1", ... });
+
+// Direct delete
+sessionsCollection.delete(sessionId);
+```
+````
+
+#### Complex Mutations (Multiple Collections)
+
+Use `createOptimisticAction` only when coordinating updates across multiple collections atomically:
+
 - [ ] Pre-generate IDs with `nanoid()` before action - same ID used in `onMutate` and `mutationFn`
 - [ ] `onMutate` updates all affected collections synchronously
 - [ ] `mutationFn` calls server then refetches via `collection.utils.refetch()`
@@ -2192,17 +2206,23 @@ Review this codebase for proper TanStack DB usage.
 
 When the client lacks data needed for optimistic updates (e.g., adding a friend by email where the server looks up the user), call the server function directly then refetch:
 
+```ts
 await serverFunction({ data });
 await collection.utils.refetch();
+```
 
 ### Anti-Patterns
 
-| Don't                                                      | Do Instead                                |
-| ---------------------------------------------------------- | ----------------------------------------- |
-| Use `useQuery`/`useMutation` from react-query              | Use `useLiveQuery` and collections        |
-| Coordinate multiple optimistic mutations in component code | Use `createOptimisticAction`              |
-| Store nested entities in collections                       | Flat data, join at query time             |
-| Generate IDs inside `onMutate` or `mutationFn`             | Pre-generate IDs in helper function       |
-| Skip refetch after `mutationFn`                            | Always `await collection.utils.refetch()` |
+| Don't                                                    | Do Instead                                 |
+| -------------------------------------------------------- | ------------------------------------------ |
+| Use `useQuery`/`useMutation` from react-query            | Use `useLiveQuery` and collections         |
+| Use `createOptimisticAction` for single-collection ops   | Call collection methods directly (simpler) |
+| Coordinate multiple collection updates in component code | Use `createOptimisticAction`               |
+| Store nested entities in collections                     | Flat data, join at query time              |
+| Generate IDs inside `onMutate` or `mutationFn`           | Pre-generate IDs in helper function        |
+| Skip refetch after `mutationFn`                          | Always `await collection.utils.refetch()`  |
+
+```
+
 ```
 

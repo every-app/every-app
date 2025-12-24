@@ -31,3 +31,13 @@ export const completeSessionSchema = z.object({
 });
 
 export type CompleteSessionInput = z.infer<typeof completeSessionSchema>;
+
+// === Skip to Workout ===
+export const skipToWorkoutSchema = z.object({
+  programId: z.string(),
+  targetWorkoutIndex: z.number(),
+  // Optional session to abandon (if there's an in-progress session for current workout)
+  sessionIdToAbandon: z.string().optional(),
+});
+
+export type SkipToWorkoutInput = z.infer<typeof skipToWorkoutSchema>;

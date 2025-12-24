@@ -13,6 +13,7 @@ export const difficultyLevels = [
   "beginner",
   "intermediate",
   "advanced",
+  "n/a",
 ] as const;
 export type DifficultyLevel = (typeof difficultyLevels)[number];
 

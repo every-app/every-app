@@ -13,6 +13,7 @@ import { Route as WorkoutRouteImport } from './routes/workout'
 import { Route as ProgramsRouteImport } from './routes/programs'
 import { Route as HistoryRouteImport } from './routes/history'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TemplatesTemplateIdRouteImport } from './routes/templates_.$templateId'
 import { Route as ProgramsProgramIdRouteImport } from './routes/programs_.$programId'
 
 const WorkoutRoute = WorkoutRouteImport.update({
@@ -35,6 +36,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TemplatesTemplateIdRoute = TemplatesTemplateIdRouteImport.update({
+  id: '/templates_/$templateId',
+  path: '/templates/$templateId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProgramsProgramIdRoute = ProgramsProgramIdRouteImport.update({
   id: '/programs_/$programId',
   path: '/programs/$programId',
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/programs': typeof ProgramsRoute
   '/workout': typeof WorkoutRoute
   '/programs/$programId': typeof ProgramsProgramIdRoute
+  '/templates/$templateId': typeof TemplatesTemplateIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/programs': typeof ProgramsRoute
   '/workout': typeof WorkoutRoute
   '/programs/$programId': typeof ProgramsProgramIdRoute
+  '/templates/$templateId': typeof TemplatesTemplateIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,6 +70,7 @@ export interface FileRoutesById {
   '/programs': typeof ProgramsRoute
   '/workout': typeof WorkoutRoute
   '/programs_/$programId': typeof ProgramsProgramIdRoute
+  '/templates_/$templateId': typeof TemplatesTemplateIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -71,8 +80,15 @@ export interface FileRouteTypes {
     | '/programs'
     | '/workout'
     | '/programs/$programId'
+    | '/templates/$templateId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/history' | '/programs' | '/workout' | '/programs/$programId'
+  to:
+    | '/'
+    | '/history'
+    | '/programs'
+    | '/workout'
+    | '/programs/$programId'
+    | '/templates/$templateId'
   id:
     | '__root__'
     | '/'
@@ -80,6 +96,7 @@ export interface FileRouteTypes {
     | '/programs'
     | '/workout'
     | '/programs_/$programId'
+    | '/templates_/$templateId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -88,6 +105,7 @@ export interface RootRouteChildren {
   ProgramsRoute: typeof ProgramsRoute
   WorkoutRoute: typeof WorkoutRoute
   ProgramsProgramIdRoute: typeof ProgramsProgramIdRoute
+  TemplatesTemplateIdRoute: typeof TemplatesTemplateIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -120,6 +138,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/templates_/$templateId': {
+      id: '/templates_/$templateId'
+      path: '/templates/$templateId'
+      fullPath: '/templates/$templateId'
+      preLoaderRoute: typeof TemplatesTemplateIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/programs_/$programId': {
       id: '/programs_/$programId'
       path: '/programs/$programId'
@@ -136,6 +161,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProgramsRoute: ProgramsRoute,
   WorkoutRoute: WorkoutRoute,
   ProgramsProgramIdRoute: ProgramsProgramIdRoute,
+  TemplatesTemplateIdRoute: TemplatesTemplateIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

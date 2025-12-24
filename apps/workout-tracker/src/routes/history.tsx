@@ -8,7 +8,8 @@ import { Card, CardTitle } from "@/client/components/ui/card";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { EmptyState } from "@/client/components/ui/empty-state";
-import { History, ChevronRight, ChevronDown } from "lucide-react";
+import { History, ChevronRight, ChevronDown, Trash2 } from "lucide-react";
+import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
 import type { WorkoutSession, WorkoutSetLog } from "@/db/schema";
 
 type SessionWithSetLogs = WorkoutSession & {
@@ -99,12 +100,22 @@ function HistoryPage() {
 
 function SessionCard({ session }: { session: SessionWithSetLogs }) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const exerciseGroups = groupSetLogsByExercise(session.setLogs);
   const duration =
     session.completedAt && session.startedAt
       ? formatDuration(session.startedAt, session.completedAt)
       : null;
+
+  const handleDeleteSession = () => {
+    // Delete associated set logs from local collection (optimistic)
+    session.setLogs.forEach((log) => {
+      setLogsCollection.delete(log.id);
+    });
+    // Delete session (triggers server delete, which cascades to set logs)
+    sessionsCollection.delete(session.id);
+  };
 
   return (
     <Card className="border border-base-300">
@@ -133,6 +144,15 @@ function SessionCard({ session }: { session: SessionWithSetLogs }) {
               )}
             </div>
           </div>
+
+          {/* Delete Button */}
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="btn btn-ghost btn-sm text-error opacity-60 hover:opacity-100"
+            aria-label="Delete workout"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
         </div>
 
         {/* Expandable Exercise List */}
@@ -162,6 +182,17 @@ function SessionCard({ session }: { session: SessionWithSetLogs }) {
           </div>
         )}
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={handleDeleteSession}
+        title="Delete Workout"
+        description={`Are you sure you want to delete "${session.workoutNameSnapshot}" from ${formatDate(session.startedAt)}?\n\nThis will permanently remove this workout and all its recorded sets.`}
+        confirmText="Delete Workout"
+        variant="danger"
+      />
     </Card>
   );
 }

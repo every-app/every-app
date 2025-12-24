@@ -1,0 +1,213 @@
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+import { useIsMobile } from "@/client/hooks/use-mobile";
+import { programTemplates } from "@/data/program-templates";
+import type { WorkoutTemplate } from "@/data/program-templates";
+import { Button } from "@/client/components/ui/button";
+import { ArrowLeft } from "lucide-react";
+import {
+  startProgramFromTemplate,
+  createStartProgramParams,
+} from "@/client/actions/startProgramFromTemplate";
+import { capitalize } from "@/client/lib/utils";
+
+export const Route = createFileRoute("/templates_/$templateId")({
+  component: TemplatePreviewPage,
+});
+
+function TemplatePreviewPage() {
+  const { templateId } = Route.useParams();
+  const isMobile = useIsMobile();
+  const navigate = useNavigate();
+  const [isCreating, setIsCreating] = useState(false);
+
+  const template = programTemplates.find((t) => t.id === templateId);
+
+  const handleSaveProgram = async (setAsActive: boolean) => {
+    if (!template || isCreating) return;
+    setIsCreating(true);
+
+    try {
+      const params = createStartProgramParams(template);
+      await startProgramFromTemplate({ ...params, isActive: setAsActive });
+
+      navigate({
+        to: "/programs/$programId",
+        params: { programId: params.programId },
+        search: { newProgramSource: "template" },
+      });
+    } catch (error) {
+      console.error("Failed to create program:", error);
+      setIsCreating(false);
+    }
+  };
+
+  if (!template) {
+    return (
+      <div className="page-container">
+        <div className="px-4 pt-12 pb-24">
+          <div className="text-center py-12">
+            <h2 className="text-2xl font-bold mb-2">Template Not Found</h2>
+            <p className="text-base-content/70 mb-4">
+              The template you're looking for doesn't exist.
+            </p>
+            <Button
+              variant="default"
+              onClick={() => navigate({ to: "/programs" })}
+            >
+              Back to Programs
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="page-container">
+        <div className={`px-4 pt-6 ${isMobile ? "pb-28" : "pb-24"}`}>
+          {/* Back Link */}
+          <Link
+            to="/programs"
+            className="inline-flex items-center text-xs font-mono uppercase tracking-widest text-base-content/50 hover:text-base-content transition-colors mb-6"
+          >
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Programs
+          </Link>
+
+          {/* Template Header */}
+          <div className="mb-6 px-0">
+            <div className="flex items-center gap-3 mb-1">
+              <h1 className="page-title">{template.name}</h1>
+              <span className="tag-pill shrink-0">Template</span>
+              <div className="flex-1" />
+              {!isMobile && (
+                <>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleSaveProgram(false)}
+                    disabled={isCreating}
+                    className="shrink-0"
+                  >
+                    Save
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => handleSaveProgram(true)}
+                    disabled={isCreating}
+                    className="shrink-0"
+                  >
+                    Start Program
+                  </Button>
+                </>
+              )}
+            </div>
+            <p className="text-base-content/70 mt-2">{template.description}</p>
+            <div className="flex flex-wrap gap-2 mt-3">
+              <span className="tag-pill">
+                {template.workouts.length} days/week
+              </span>
+              <span className="tag-pill">
+                {capitalize(template.difficulty)}
+              </span>
+            </div>
+          </div>
+
+          {/* Workouts */}
+          <div className="space-y-6">
+            {template.workouts.map((workout, index) => (
+              <TemplateWorkoutCard key={index} workout={workout} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Mobile: Sticky bottom banner */}
+      {isMobile && (
+        <div className="fixed bottom-0 left-0 right-0 bg-base-100 border-t border-base-300 p-4 shadow-lg">
+          <div className="flex gap-3">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => handleSaveProgram(false)}
+              disabled={isCreating}
+            >
+              Save
+            </Button>
+            <Button
+              variant="primary"
+              className="flex-1"
+              onClick={() => handleSaveProgram(true)}
+              disabled={isCreating}
+            >
+              Start Program
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function TemplateWorkoutCard({ workout }: { workout: WorkoutTemplate }) {
+  return (
+    <div className="workout-card">
+      {/* Workout Header */}
+      <div className="workout-card-header">
+        <div className="flex-1">
+          <h2 className="workout-card-title">{workout.name}</h2>
+          {workout.description && (
+            <p className="workout-card-description">{workout.description}</p>
+          )}
+        </div>
+      </div>
+
+      {/* Exercise Table */}
+      <div className="workout-card-body">
+        {workout.exercises.length > 0 && (
+          <div className="exercise-table">
+            {/* Table Header */}
+            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 mb-4 items-center">
+              <span className="exercise-table-header">Exercise</span>
+              <span className="exercise-table-header text-center w-14">
+                Sets
+              </span>
+              <span className="exercise-table-header text-center w-14">
+                Reps
+              </span>
+              <span className="exercise-table-header text-center w-14">
+                Lbs
+              </span>
+            </div>
+
+            {/* Exercise Rows */}
+            <div className="divide-y divide-base-200">
+              {workout.exercises.map((exercise, index) => (
+                <div
+                  key={index}
+                  className="grid grid-cols-[1fr_auto_auto_auto] gap-3 py-3 items-center"
+                >
+                  <span className="text-base-content font-medium">
+                    {exercise.name}
+                  </span>
+                  <span className="text-base-content text-center w-14">
+                    {exercise.sets}
+                  </span>
+                  <span className="text-base-content text-center w-14">
+                    {exercise.targetReps}
+                  </span>
+                  <span className="text-base-content/50 text-center w-14">
+                    {exercise.weight ?? "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -108,7 +108,7 @@ export function SortableExerciseRow({
         }}
         onKeyDown={handleKeyDown}
         disabled={!isEditMode}
-        className={`exercise-input ${isEditMode && !isValidNumber(localSets) ? "border-error" : ""}`}
+        className={`exercise-input w-14 ${isEditMode && !isValidNumber(localSets) ? "border-error" : ""}`}
       />
       <input
         type="text"
@@ -122,7 +122,7 @@ export function SortableExerciseRow({
         }}
         onKeyDown={handleKeyDown}
         disabled={!isEditMode}
-        className={`exercise-input ${isEditMode && !isValidNumber(localReps) ? "border-error" : ""}`}
+        className={`exercise-input w-14 ${isEditMode && !isValidNumber(localReps) ? "border-error" : ""}`}
       />
       <input
         type="text"
@@ -136,7 +136,7 @@ export function SortableExerciseRow({
         }}
         onKeyDown={handleKeyDown}
         disabled={!isEditMode}
-        className={`exercise-input ${isEditMode && !isValidWeight(localWeight) ? "border-error" : ""}`}
+        className={`exercise-input w-16 ${isEditMode && !isValidWeight(localWeight) ? "border-error" : ""}`}
       />
       {isEditMode && (
         <Button

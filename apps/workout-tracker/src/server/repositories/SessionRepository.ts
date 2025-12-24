@@ -122,6 +122,43 @@ async function completeWithProgramUpdate(
   ]);
 }
 
+/**
+ * Skip to a specific workout, optionally abandoning an in-progress session.
+ */
+async function skipToWorkout(
+  userId: string,
+  programId: string,
+  targetWorkoutIndex: number,
+  sessionIdToAbandon?: string,
+) {
+  const now = new Date().toISOString();
+
+  if (sessionIdToAbandon) {
+    // Abandon the session and update the program index atomically
+    await db.batch([
+      db
+        .update(workoutSessions)
+        .set({ status: "abandoned", completedAt: now })
+        .where(
+          and(
+            eq(workoutSessions.id, sessionIdToAbandon),
+            eq(workoutSessions.userId, userId),
+          ),
+        ),
+      db
+        .update(programs)
+        .set({ currentWorkoutIndex: targetWorkoutIndex, updatedAt: now })
+        .where(and(eq(programs.id, programId), eq(programs.userId, userId))),
+    ]);
+  } else {
+    // Just update the program index
+    await db
+      .update(programs)
+      .set({ currentWorkoutIndex: targetWorkoutIndex, updatedAt: now })
+      .where(and(eq(programs.id, programId), eq(programs.userId, userId)));
+  }
+}
+
 export const SessionRepository = {
   findAllByUserId,
   findByIdAndUserId,
@@ -130,4 +167,5 @@ export const SessionRepository = {
   update,
   delete: deleteById,
   completeWithProgramUpdate,
+  skipToWorkout,
 } as const;
