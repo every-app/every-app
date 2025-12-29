@@ -15,6 +15,13 @@
       "when": 1764872671632,
       "tag": "0001_polite_toro",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1767032924287,
+      "tag": "0002_handy_amphibian",
+      "breakpoints": true
     }
   ]
 }

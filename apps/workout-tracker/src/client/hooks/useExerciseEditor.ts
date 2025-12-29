@@ -1,24 +1,14 @@
 import { useState, useCallback } from "react";
 import { DragEndEvent } from "@dnd-kit/core";
 import { toast } from "sonner";
-import { exercisesCollection, workoutsCollection } from "@/client/tanstack-db";
+import {
+  exercisesCollection,
+  workoutsCollection,
+  exerciseLibraryCollection,
+} from "@/client/tanstack-db";
 import { deleteWorkout as deleteWorkoutAction } from "@/client/actions/deleteWorkout";
-import type { WorkoutExerciseWithName } from "./useProgramData";
-
-// Local exercise type for editing - includes name for display but doesn't modify it
-type LocalExercise = {
-  id: string;
-  exerciseId: string; // Reference to exercise library
-  name: string; // Display only, from library
-  sets: number;
-  targetReps: number;
-  weight: number | null;
-  sortOrder: number;
-  workoutId: string;
-  createdAt: string;
-  updatedAt: string;
-  isNew?: boolean; // Flag to track newly added exercises that need to be created on save
-};
+import { DEFAULT_PROGRESSION_INCREMENT } from "@/client/lib/constants";
+import type { WorkoutExerciseWithName, LocalExercise } from "./useProgramData";
 
 type UseExerciseEditorOptions = {
   workoutId: string;
@@ -55,9 +45,11 @@ export function useExerciseEditor({
         id: e.id,
         exerciseId: e.exerciseId,
         name: e.name,
+        notes: e.notes,
         sets: e.sets,
         targetReps: e.targetReps,
         weight: e.weight,
+        progressionIncrement: e.progressionIncrement,
         sortOrder: e.sortOrder,
         workoutId: e.workoutId,
         createdAt: e.createdAt,
@@ -145,9 +137,11 @@ export function useExerciseEditor({
           id: params.id,
           exerciseId: params.exerciseId,
           name: params.name,
+          notes: null,
           sets: params.sets,
           targetReps: params.targetReps,
           weight: params.weight,
+          progressionIncrement: DEFAULT_PROGRESSION_INCREMENT,
           sortOrder: prev.length,
           workoutId,
           createdAt: now,
@@ -237,6 +231,29 @@ export function useExerciseEditor({
       draft.name = localName.trim();
       draft.description = localDescription.trim() || null;
     });
+
+    // Update progression increments in exercise library for exercises that changed
+    const changedIncrements = localExercises.filter((local) => {
+      const original = exercises.find((e) => e.id === local.id);
+      return (
+        original && original.progressionIncrement !== local.progressionIncrement
+      );
+    });
+
+    // Batch update exercise library increments for consistency
+    if (changedIncrements.length > 0) {
+      const changedExerciseIds = changedIncrements.map((e) => e.exerciseId);
+      exerciseLibraryCollection.update(changedExerciseIds, (drafts) => {
+        drafts.forEach((draft) => {
+          const local = changedIncrements.find(
+            (e) => e.exerciseId === draft.id,
+          );
+          if (local) {
+            draft.progressionIncrement = local.progressionIncrement;
+          }
+        });
+      });
+    }
 
     // Exit edit mode
     setLocalExercises([]);

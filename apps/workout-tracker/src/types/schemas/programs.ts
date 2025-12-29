@@ -20,6 +20,7 @@ export const updateProgramSchema = z.object({
   description: z.string().optional(),
   isActive: z.boolean().optional(),
   currentWorkoutIndex: z.number().optional(),
+  progressionMode: z.enum(["linear", "smart"]).optional(),
 });
 
 export type UpdateProgramInput = z.infer<typeof updateProgramSchema>;

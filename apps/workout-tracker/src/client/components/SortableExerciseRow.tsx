@@ -3,6 +3,10 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/client/components/ui/button";
 import { GripVertical, Trash2 } from "lucide-react";
+import {
+  EXERCISE_TABLE_GRID,
+  DEFAULT_PROGRESSION_INCREMENT,
+} from "@/client/lib/constants";
 
 type SortableExerciseRowProps = {
   exercise: {
@@ -11,6 +15,7 @@ type SortableExerciseRowProps = {
     sets: number;
     targetReps: number;
     weight: number | null;
+    progressionIncrement: number;
   };
   isEditMode: boolean;
   onExerciseChange: (
@@ -52,13 +57,22 @@ export function SortableExerciseRow({
   const [localWeight, setLocalWeight] = useState(
     exercise.weight != null ? String(exercise.weight) : "",
   );
+  const [localIncrement, setLocalIncrement] = useState(
+    String(exercise.progressionIncrement),
+  );
 
   // Sync local state when exercise data changes
   useEffect(() => {
     setLocalSets(String(exercise.sets));
     setLocalReps(String(exercise.targetReps));
     setLocalWeight(exercise.weight != null ? String(exercise.weight) : "");
-  }, [exercise.sets, exercise.targetReps, exercise.weight]);
+    setLocalIncrement(String(exercise.progressionIncrement));
+  }, [
+    exercise.sets,
+    exercise.targetReps,
+    exercise.weight,
+    exercise.progressionIncrement,
+  ]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
@@ -84,18 +98,18 @@ export function SortableExerciseRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`exercise-row grid ${isEditMode ? "grid-cols-[auto_1fr_auto_auto_auto_auto]" : "grid-cols-[1fr_auto_auto_auto]"} gap-3 items-center ${isDragging ? "opacity-50" : ""}`}
+      className={`exercise-row grid ${isEditMode ? EXERCISE_TABLE_GRID.editMode : EXERCISE_TABLE_GRID.viewMode} gap-3 items-center min-w-max ${isDragging ? "opacity-50" : ""}`}
     >
       {isEditMode && (
         <div
           {...attributes}
           {...listeners}
-          className="w-6 h-10 flex items-center justify-center cursor-grab active:cursor-grabbing text-base-content/50 hover:text-base-content"
+          className="h-10 flex items-center justify-center cursor-grab active:cursor-grabbing text-base-content/50 hover:text-base-content"
         >
           <GripVertical className="h-4 w-4" />
         </div>
       )}
-      <span className="exercise-name">{exercise.name}</span>
+      <span className="exercise-name truncate">{exercise.name}</span>
       <input
         type="text"
         inputMode="numeric"
@@ -108,7 +122,7 @@ export function SortableExerciseRow({
         }}
         onKeyDown={handleKeyDown}
         disabled={!isEditMode}
-        className={`exercise-input w-14 ${isEditMode && !isValidNumber(localSets) ? "border-error" : ""}`}
+        className={`exercise-input ${isEditMode && !isValidNumber(localSets) ? "border-error" : ""}`}
       />
       <input
         type="text"
@@ -122,7 +136,7 @@ export function SortableExerciseRow({
         }}
         onKeyDown={handleKeyDown}
         disabled={!isEditMode}
-        className={`exercise-input w-14 ${isEditMode && !isValidNumber(localReps) ? "border-error" : ""}`}
+        className={`exercise-input ${isEditMode && !isValidNumber(localReps) ? "border-error" : ""}`}
       />
       <input
         type="text"
@@ -136,14 +150,30 @@ export function SortableExerciseRow({
         }}
         onKeyDown={handleKeyDown}
         disabled={!isEditMode}
-        className={`exercise-input w-16 ${isEditMode && !isValidWeight(localWeight) ? "border-error" : ""}`}
+        className={`exercise-input ${isEditMode && !isValidWeight(localWeight) ? "border-error" : ""}`}
+      />
+      <input
+        type="text"
+        inputMode="numeric"
+        value={isEditMode ? localIncrement : exercise.progressionIncrement}
+        onChange={(e) => {
+          const filtered = handleNumericInput(e.target.value);
+          setLocalIncrement(filtered);
+          const numVal = filtered
+            ? Number(filtered)
+            : DEFAULT_PROGRESSION_INCREMENT;
+          onExerciseChange(exercise.id, "progressionIncrement", numVal);
+        }}
+        onKeyDown={handleKeyDown}
+        disabled={!isEditMode}
+        className={`exercise-input ${isEditMode && !isValidNumber(localIncrement) ? "border-error" : ""}`}
       />
       {isEditMode && (
         <Button
           variant="ghost"
           size="sm"
           onClick={() => onDelete(exercise.id)}
-          className="w-10 h-10 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+          className="h-10 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
         >
           <Trash2 className="h-4 w-4" />
         </Button>

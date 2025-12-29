@@ -27,6 +27,7 @@ export const createCustomProgram =
         templateId: null,
         currentWorkoutIndex: 0,
         isActive: false,
+        progressionMode: "linear",
         createdAt: now,
         updatedAt: now,
       });

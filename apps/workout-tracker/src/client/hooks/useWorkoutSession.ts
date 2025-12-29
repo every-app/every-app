@@ -1,21 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLiveQuery } from "@tanstack/react-db";
 import { nanoid } from "nanoid";
-import {
-  useActiveProgram,
-  type WorkoutWithExercises,
-  type WorkoutExerciseWithName,
-} from "./useProgramData";
+import { useActiveProgram, type WorkoutWithExercises } from "./useProgramData";
+import { useSetLogDebounce } from "./useSetLogDebounce";
 import { sessionsCollection, setLogsCollection } from "@/client/tanstack-db";
 import { completeWorkout } from "@/client/actions/completeWorkout";
 import type { WorkoutSetLog } from "@/db/schema";
-
-/**
- * Spacing factor for sortOrder calculation.
- * Must be larger than max sets per exercise (20) to ensure unique sort orders.
- * Used as: sortOrder = exerciseIndex * SORT_ORDER_SPACING + setIndex
- */
-const SORT_ORDER_SPACING = 100;
 
 type WorkoutData = {
   program: {
@@ -25,11 +15,6 @@ type WorkoutData = {
     workoutsCount: number;
   };
   workout: WorkoutWithExercises;
-};
-
-type SetTrackingState = {
-  setReps: Record<string, number[]>;
-  setTouched: Record<string, boolean[]>;
 };
 
 /**
@@ -132,123 +117,35 @@ export function useWorkoutSession() {
 }
 
 /**
- * Hook to derive set tracking state from setLogs
- * Key insight: setLog exists = touched, no setLog = untouched
- */
-export function useSetLogTracking(
-  workoutData: WorkoutData | null,
-  sessionSetLogs: WorkoutSetLog[],
-): SetTrackingState {
-  const setReps: Record<string, number[]> = {};
-  const setTouched: Record<string, boolean[]> = {};
-
-  if (workoutData?.workout) {
-    // Initialize with default values from exercises (all untouched)
-    workoutData.workout.exercises.forEach((exercise) => {
-      setReps[exercise.id] = Array(exercise.sets).fill(exercise.targetReps);
-      setTouched[exercise.id] = Array(exercise.sets).fill(false);
-    });
-
-    // Overlay with actual setLog values - if a setLog exists, it's touched
-    // Note: exerciseId in setLogs references exerciseLibrary, but we match by
-    // looking up the workout exercise that uses that library exercise
-    sessionSetLogs.forEach((log) => {
-      // Find the workout exercise that matches this log's exerciseId
-      const workoutExercise = workoutData.workout.exercises.find(
-        (e) => e.exerciseId === log.exerciseId,
-      );
-      if (workoutExercise && setReps[workoutExercise.id]) {
-        const setIndex = log.setNumber - 1; // setNumber is 1-indexed
-        if (setIndex >= 0 && setIndex < setReps[workoutExercise.id].length) {
-          setReps[workoutExercise.id][setIndex] = log.actualReps;
-          setTouched[workoutExercise.id][setIndex] = true; // setLog exists = touched
-        }
-      }
-    });
-  }
-
-  return { setReps, setTouched };
-}
-
-/**
  * Hook to track workout completion state and provide handlers for rep clicks and workout completion
  */
 export function useWorkoutCompletion(
   workoutData: WorkoutData | null,
   sessionId: string | null,
   sessionSetLogs: WorkoutSetLog[],
-  setTouched: Record<string, boolean[]>,
 ) {
   const [isCompleting, setIsCompleting] = useState(false);
 
-  // Completion tracking
+  // Use extracted debounce hook for rep click handling
+  const { handleRepClick, getReps, hasPendingChanges } = useSetLogDebounce(
+    sessionId,
+    workoutData?.workout.exercises ?? [],
+    sessionSetLogs,
+  );
+
+  // Completion tracking - an exercise is complete when all its sets are touched
   const completedExercises =
     workoutData?.workout.exercises.filter((exercise) => {
-      const touched = setTouched[exercise.id] ?? [];
-      return touched.length > 0 && touched.every(Boolean);
+      for (let i = 0; i < exercise.sets; i++) {
+        if (getReps(exercise.id, exercise.exerciseId, i) === null) return false;
+      }
+      return true;
     }).length ?? 0;
 
   const totalExercises = workoutData?.workout.exercises.length ?? 0;
-  const allComplete =
-    completedExercises === totalExercises && totalExercises > 0;
 
   // Check if any sets have been logged (enables early finish)
-  const hasAnyProgress = sessionSetLogs.length > 0;
-
-  // Find the setLog for a specific workout exercise and set index
-  const findSetLog = useCallback(
-    (workoutExercise: WorkoutExerciseWithName, setIndex: number) => {
-      return sessionSetLogs.find(
-        (log) =>
-          log.exerciseId === workoutExercise.exerciseId &&
-          log.setNumber === setIndex + 1,
-      );
-    },
-    [sessionSetLogs],
-  );
-
-  // Rep click handler - creates setLog on first touch, updates on subsequent clicks
-  const handleRepClick = useCallback(
-    (workoutExerciseId: string, setIndex: number) => {
-      if (!sessionId || !workoutData) return;
-
-      const exercise = workoutData.workout.exercises.find(
-        (e) => e.id === workoutExerciseId,
-      );
-      if (!exercise) return;
-
-      const existingLog = findSetLog(exercise, setIndex);
-
-      if (existingLog) {
-        // Already touched - decrement reps (cycle back to target at 0)
-        const newReps =
-          existingLog.actualReps > 0
-            ? existingLog.actualReps - 1
-            : exercise.targetReps;
-        setLogsCollection.update(existingLog.id, (draft) => {
-          draft.actualReps = newReps;
-        });
-      } else {
-        // First touch - create setLog with target reps (confirms the set)
-        const exerciseIndex = workoutData.workout.exercises.findIndex(
-          (e) => e.id === workoutExerciseId,
-        );
-
-        setLogsCollection.insert({
-          id: nanoid(),
-          sessionId,
-          exerciseId: exercise.exerciseId, // Reference to exercise library
-          exerciseNameSnapshot: exercise.name, // Snapshot the name at this moment
-          setNumber: setIndex + 1,
-          targetReps: exercise.targetReps,
-          actualReps: exercise.targetReps, // First touch confirms target
-          weight: exercise.weight ?? null,
-          sortOrder: exerciseIndex * SORT_ORDER_SPACING + setIndex,
-        });
-      }
-    },
-    [sessionId, workoutData, findSetLog],
-  );
+  const hasAnyProgress = sessionSetLogs.length > 0 || hasPendingChanges;
 
   // Complete workout handler - uses atomic action for session + program update
   const handleCompleteWorkout = useCallback(
@@ -278,10 +175,10 @@ export function useWorkoutCompletion(
   return {
     completedExercises,
     totalExercises,
-    allComplete,
     hasAnyProgress,
     isCompleting,
     handleRepClick,
     handleCompleteWorkout,
+    getReps,
   };
 }

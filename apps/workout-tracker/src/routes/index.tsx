@@ -136,7 +136,10 @@ function Home() {
                 Current Workout
               </h2>
 
-              <div className="program-card mb-8 border-primary">
+              <div
+                className="program-card mb-8 border-primary cursor-pointer hover:border-primary/50 transition-colors"
+                onClick={() => handleWorkoutClick(currentWorkout)}
+              >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1">
                     <h2 className="font-bold text-lg text-base-content mb-1">
@@ -151,7 +154,7 @@ function Home() {
                       {currentWorkout.exercises.length} exercises
                     </div>
                   </div>
-                  <Link to="/workout">
+                  <Link to="/workout" onClick={(e) => e.stopPropagation()}>
                     <Button variant="primary">
                       {hasTrackedProgress ? "Continue" : "Start"}
                     </Button>
@@ -205,6 +208,7 @@ function Home() {
           workout={previewWorkout}
           programId={activeProgram.id}
           targetWorkoutIndex={previewWorkoutIndex}
+          isCurrentWorkout={previewWorkout?.id === currentWorkout?.id}
           hasTrackedProgress={hasTrackedProgress}
           inProgressSessionId={inProgressSession?.id}
         />

@@ -7,7 +7,6 @@ import {
 import { useIsMobile } from "@/client/hooks/use-mobile";
 import {
   useWorkoutSession,
-  useSetLogTracking,
   useWorkoutCompletion,
 } from "@/client/hooks/useWorkoutSession";
 import { TabBar } from "@/client/components/TabBar";
@@ -16,7 +15,13 @@ import { Button } from "@/client/components/ui/button";
 import { EmptyState } from "@/client/components/ui/empty-state";
 import { RepButton } from "@/client/components/ui/rep-button";
 import { ProgressBar } from "@/client/components/ui/progress-bar";
-import { Dumbbell, ArrowLeft, Check, ChevronRight } from "lucide-react";
+import {
+  Dumbbell,
+  ArrowLeft,
+  Check,
+  CheckCircle,
+  ChevronRight,
+} from "lucide-react";
 import type { WorkoutExerciseWithName } from "@/client/hooks/useProgramData";
 
 export const Route = createFileRoute("/workout")({
@@ -31,12 +36,6 @@ function ActiveWorkout() {
   // Use extracted hooks for session management
   const { workoutData, sessionId, sessionSetLogs } = useWorkoutSession();
 
-  // Derive set tracking state from setLogs
-  const { setReps, setTouched } = useSetLogTracking(
-    workoutData,
-    sessionSetLogs,
-  );
-
   // Get completion tracking and handlers
   const {
     completedExercises,
@@ -45,7 +44,8 @@ function ActiveWorkout() {
     isCompleting,
     handleRepClick,
     handleCompleteWorkout,
-  } = useWorkoutCompletion(workoutData, sessionId, sessionSetLogs, setTouched);
+    getReps,
+  } = useWorkoutCompletion(workoutData, sessionId, sessionSetLogs);
 
   if (!workoutData) {
     return (
@@ -123,16 +123,19 @@ function ActiveWorkout() {
           {/* Exercises */}
           <div className="space-y-6">
             {workout.exercises.map((exercise) => {
-              const reps = setReps[exercise.id] ?? [];
-              const touched = setTouched[exercise.id] ?? [];
-              const isCompleted = touched.length > 0 && touched.every(Boolean);
+              // Build reps array using getReps (returns null if untouched)
+              const reps = Array.from({ length: exercise.sets }, (_, i) =>
+                getReps(exercise.id, exercise.exerciseId, i),
+              );
+
+              // Exercise is complete when all sets are touched (not null)
+              const isCompleted = reps.every((r) => r !== null);
 
               return (
                 <ExerciseCard
                   key={exercise.id}
                   exercise={exercise}
                   reps={reps}
-                  touched={touched}
                   isCompleted={isCompleted}
                   onRepClick={(setIndex) =>
                     handleRepClick(exercise.id, setIndex)
@@ -153,34 +156,34 @@ function ActiveWorkout() {
 function ExerciseCard({
   exercise,
   reps,
-  touched,
   isCompleted,
   onRepClick,
   programId,
 }: {
   exercise: WorkoutExerciseWithName;
-  reps: number[];
-  touched: boolean[];
+  reps: (number | null)[];
   isCompleted: boolean;
   onRepClick: (setIndex: number) => void;
   programId: string;
 }) {
   return (
-    <Card
-      className={`shadow-sm transition-all ${isCompleted ? "opacity-60" : ""}`}
-    >
+    <Card className="shadow-sm transition-all">
       <CardContent className="card-body">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
             <div className="flex items-start justify-between mb-1">
               <CardTitle className="text-lg">{exercise.name}</CardTitle>
-              <Link
-                to="/programs/$programId"
-                params={{ programId }}
-                className="opacity-40 hover:opacity-100 transition-opacity"
-              >
-                <ChevronRight className="h-5 w-5" />
-              </Link>
+              {isCompleted ? (
+                <CheckCircle className="h-5 w-5 text-success" />
+              ) : (
+                <Link
+                  to="/programs/$programId"
+                  params={{ programId }}
+                  className="opacity-40 hover:opacity-100 transition-opacity"
+                >
+                  <ChevronRight className="h-5 w-5" />
+                </Link>
+              )}
             </div>
             <p className="text-sm opacity-50 mb-4 font-bold">
               {exercise.sets} x {exercise.targetReps}
@@ -194,7 +197,6 @@ function ExerciseCard({
                   key={index}
                   reps={repCount}
                   targetReps={exercise.targetReps}
-                  isTouched={touched[index] ?? false}
                   onClick={() => onRepClick(index)}
                 />
               ))}

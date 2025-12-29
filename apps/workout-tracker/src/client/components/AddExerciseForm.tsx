@@ -2,6 +2,7 @@ import { useState } from "react";
 import { nanoid } from "nanoid";
 import { exerciseLibraryCollection } from "@/client/tanstack-db";
 import { Button } from "@/client/components/ui/button";
+import { DEFAULT_PROGRESSION_INCREMENT } from "@/client/lib/constants";
 import { toast } from "sonner";
 
 type AddExerciseFormProps = {
@@ -55,6 +56,7 @@ export function AddExerciseForm({
       userId: "", // Will be set by server on sync
       name: name.trim(),
       notes: null,
+      progressionIncrement: DEFAULT_PROGRESSION_INCREMENT,
       createdAt: now,
       updatedAt: now,
     });

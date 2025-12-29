@@ -21,6 +21,7 @@ const updateExerciseLibrarySchema = z.object({
   id: z.string(),
   name: z.string().optional(),
   notes: z.string().nullable().optional(),
+  progressionIncrement: z.number().optional(),
 });
 
 export type UpdateExerciseLibraryInput = z.infer<

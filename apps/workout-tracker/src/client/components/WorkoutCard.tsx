@@ -11,6 +11,7 @@ import { useDraggableSensors } from "@/client/hooks/useDraggableSensors";
 import { useExerciseEditor } from "@/client/hooks/useExerciseEditor";
 import { SortableExerciseRow } from "@/client/components/SortableExerciseRow";
 import { AddExerciseForm } from "@/client/components/AddExerciseForm";
+import { EXERCISE_TABLE_GRID } from "@/client/lib/constants";
 import type { WorkoutWithExercises } from "@/client/hooks/useProgramData";
 
 type WorkoutCardProps = {
@@ -150,27 +151,18 @@ export function WorkoutCard({ workout }: WorkoutCardProps) {
         )}
 
         {displayExercises.length > 0 && (
-          <div className="exercise-table">
+          <div className="exercise-table overflow-x-auto">
             {/* Table Header */}
             <div
-              className={`grid ${isEditMode ? "grid-cols-[auto_1fr_auto_auto_auto_auto]" : "grid-cols-[1fr_auto_auto_auto]"} gap-3 mb-4 items-center`}
+              className={`grid ${isEditMode ? EXERCISE_TABLE_GRID.editMode : EXERCISE_TABLE_GRID.viewMode} gap-3 mb-4 items-center min-w-max`}
             >
-              {isEditMode && (
-                <span className="exercise-table-header w-6"></span>
-              )}
+              {isEditMode && <span className="exercise-table-header"></span>}
               <span className="exercise-table-header">Exercise</span>
-              <span className="exercise-table-header text-center w-14">
-                Sets
-              </span>
-              <span className="exercise-table-header text-center w-14">
-                Reps
-              </span>
-              <span className="exercise-table-header text-center w-14">
-                Lbs
-              </span>
-              {isEditMode && (
-                <span className="exercise-table-header text-center w-10"></span>
-              )}
+              <span className="exercise-table-header text-center">Sets</span>
+              <span className="exercise-table-header text-center">Reps</span>
+              <span className="exercise-table-header text-center">Lbs</span>
+              <span className="exercise-table-header text-center">Incr By</span>
+              {isEditMode && <span className="exercise-table-header"></span>}
             </div>
 
             {/* Exercise Rows */}

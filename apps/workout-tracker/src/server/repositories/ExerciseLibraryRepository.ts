@@ -14,6 +14,7 @@ type UpdateExerciseLibraryItem = {
   id: string;
   name?: string;
   notes?: string | null;
+  progressionIncrement?: number;
 };
 
 /**

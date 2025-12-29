@@ -5,6 +5,7 @@ import {
   exercisesCollection,
   exerciseLibraryCollection,
 } from "@/client/tanstack-db";
+import { DEFAULT_PROGRESSION_INCREMENT } from "@/client/lib/constants";
 import type {
   Program,
   Workout,
@@ -13,11 +14,20 @@ import type {
 } from "@/db/schema";
 
 /**
- * A workout exercise with its library data (name) attached
+ * A workout exercise with its library data (name, progressionIncrement) attached
  */
 export type WorkoutExerciseWithName = WorkoutExercise & {
   name: string;
   notes: string | null;
+  progressionIncrement: number;
+};
+
+/**
+ * Local exercise type for editing - extends WorkoutExerciseWithName with edit-specific fields
+ */
+export type LocalExercise = WorkoutExerciseWithName & {
+  /** Flag to track newly added exercises that need to be created on save */
+  isNew?: boolean;
 };
 
 /**
@@ -53,6 +63,8 @@ function buildWorkoutExercisesWithNames(
         ...workoutExercise,
         name: libraryItem?.name ?? "Unknown Exercise",
         notes: libraryItem?.notes ?? null,
+        progressionIncrement:
+          libraryItem?.progressionIncrement ?? DEFAULT_PROGRESSION_INCREMENT,
       };
     });
 }

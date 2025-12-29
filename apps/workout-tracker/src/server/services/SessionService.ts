@@ -1,5 +1,6 @@
 import { SessionRepository } from "../repositories/SessionRepository";
 import { ProgramRepository } from "../repositories/ProgramRepository";
+import { ProgressionService } from "./ProgressionService";
 import type {
   CreateSessionInput,
   UpdateSessionInput,
@@ -119,6 +120,16 @@ async function complete(userId: string, data: CompleteSessionInput) {
     data.programId,
     data.nextWorkoutIndex,
   );
+
+  // Apply weight progression based on program settings
+  if (session.workoutId) {
+    await ProgressionService.applyProgression(
+      userId,
+      data.sessionId,
+      data.programId,
+      session.workoutId,
+    );
+  }
 
   return { success: true };
 }

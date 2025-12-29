@@ -7,6 +7,7 @@ import {
   exerciseLibraryCollection,
 } from "@/client/tanstack-db";
 import { createProgramFromTemplate } from "@/serverFunctions/programs";
+import { DEFAULT_PROGRESSION_INCREMENT } from "@/client/lib/constants";
 import type {
   ProgramTemplate,
   WorkoutTemplate,
@@ -46,6 +47,7 @@ export const startProgramFromTemplate =
           userId: "",
           name,
           notes: null,
+          progressionIncrement: DEFAULT_PROGRESSION_INCREMENT,
           createdAt: now,
           updatedAt: now,
         });
@@ -72,6 +74,7 @@ export const startProgramFromTemplate =
         templateId: template.id,
         currentWorkoutIndex: 0,
         isActive: isActive ?? false,
+        progressionMode: "linear",
         createdAt: now,
         updatedAt: now,
       });

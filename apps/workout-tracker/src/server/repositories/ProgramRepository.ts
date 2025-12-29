@@ -25,6 +25,7 @@ type UpdateProgram = {
   description?: string;
   isActive?: boolean;
   currentWorkoutIndex?: number;
+  progressionMode?: "linear" | "smart";
 };
 
 /**

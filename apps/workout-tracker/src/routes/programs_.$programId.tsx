@@ -283,6 +283,50 @@ function ProgramDetailPage() {
             )}
           </div>
 
+          {/* Progression Settings */}
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-base-content mb-2">
+              Progression Mode
+            </h3>
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="progressionMode"
+                  className="radio radio-primary radio-sm"
+                  checked={program.progressionMode === "linear"}
+                  onChange={() => {
+                    programsCollection.update(program.id, (draft) => {
+                      draft.progressionMode = "linear";
+                    });
+                    toast("Linear progression enabled");
+                  }}
+                />
+                <span className="text-sm text-base-content/80">
+                  Linear - Add fixed weight when all reps in set are completed
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="progressionMode"
+                  className="radio radio-primary radio-sm"
+                  checked={program.progressionMode === "smart"}
+                  onChange={() => {
+                    programsCollection.update(program.id, (draft) => {
+                      draft.progressionMode = "smart";
+                    });
+                    toast("Smart progression enabled");
+                  }}
+                />
+                <span className="text-sm text-base-content/80">
+                  Smart - Calculate weights using estimated 1RM based on
+                  previous workout data
+                </span>
+              </label>
+            </div>
+          </div>
+
           {/* Workouts */}
           <div className="space-y-6">
             {program.workouts.map((workout) => (

@@ -1,5 +1,9 @@
 import { createOptimisticAction } from "@tanstack/react-db";
-import { sessionsCollection, programsCollection } from "@/client/tanstack-db";
+import {
+  sessionsCollection,
+  programsCollection,
+  exercisesCollection,
+} from "@/client/tanstack-db";
 import { completeWorkoutSession } from "@/serverFunctions/sessions";
 
 type CompleteWorkoutParams = {
@@ -46,9 +50,11 @@ export const completeWorkout = createOptimisticAction<CompleteWorkoutParams>({
     });
 
     // Refetch to sync optimistic state with server
+    // exercisesCollection is included because ProgressionService may have updated weights
     await Promise.all([
       sessionsCollection.utils.refetch(),
       programsCollection.utils.refetch(),
+      exercisesCollection.utils.refetch(),
     ]);
   },
 });

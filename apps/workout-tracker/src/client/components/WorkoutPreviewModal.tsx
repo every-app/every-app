@@ -11,6 +11,8 @@ interface WorkoutPreviewModalProps {
   workout: WorkoutWithExercises | null;
   programId: string;
   targetWorkoutIndex: number;
+  /** Whether this is the current workout (no need to skip) */
+  isCurrentWorkout: boolean;
   /** Whether the current workout has tracked set progress that would be lost */
   hasTrackedProgress: boolean;
   inProgressSessionId?: string;
@@ -22,6 +24,7 @@ export function WorkoutPreviewModal({
   workout,
   programId,
   targetWorkoutIndex,
+  isCurrentWorkout,
   hasTrackedProgress,
   inProgressSessionId,
 }: WorkoutPreviewModalProps) {
@@ -37,6 +40,13 @@ export function WorkoutPreviewModal({
   }, [isOpen]);
 
   const handleStartWorkout = async () => {
+    // If this is the current workout, just navigate directly
+    if (isCurrentWorkout) {
+      onClose();
+      navigate({ to: "/workout" });
+      return;
+    }
+
     // If there's tracked progress, show confirmation first
     if (hasTrackedProgress && !showConfirmation) {
       setShowConfirmation(true);
@@ -123,7 +133,11 @@ export function WorkoutPreviewModal({
                 Cancel
               </Button>
               <Button variant="primary" onClick={handleStartWorkout}>
-                Start Workout
+                {isCurrentWorkout
+                  ? hasTrackedProgress
+                    ? "Continue"
+                    : "Start"
+                  : "Start Workout"}
               </Button>
             </div>
           </>

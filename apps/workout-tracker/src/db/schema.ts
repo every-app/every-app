@@ -24,6 +24,9 @@ export const sessionStatuses = [
 ] as const;
 export type SessionStatus = (typeof sessionStatuses)[number];
 
+export const progressionModes = ["linear", "smart"] as const;
+export type ProgressionMode = (typeof progressionModes)[number];
+
 // === Users table ===
 
 export const users = sqliteTable("users", {
@@ -51,6 +54,9 @@ export const programs = sqliteTable(
     isActive: integer("is_active", { mode: "boolean" })
       .notNull()
       .default(false),
+    progressionMode: text("progression_mode", { enum: progressionModes })
+      .notNull()
+      .default("linear"),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(current_timestamp)`),
@@ -98,6 +104,7 @@ export const exerciseLibrary = sqliteTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     notes: text("notes"),
+    progressionIncrement: integer("progression_increment").notNull().default(5),
     createdAt: text("created_at")
       .notNull()
       .default(sql`(current_timestamp)`),
