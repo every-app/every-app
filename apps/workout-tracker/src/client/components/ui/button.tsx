@@ -16,7 +16,7 @@ const variantClasses = {
   primary: "btn btn-primary",
   secondary: "btn btn-secondary",
   accent: "btn btn-accent",
-  ghost: "btn btn-ghost",
+  ghost: "btn btn-ghost focus:outline-base-content/10",
   link: "btn btn-link",
   outline: "btn btn-outline",
   error: "btn btn-error",
