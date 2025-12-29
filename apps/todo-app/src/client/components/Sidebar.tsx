@@ -30,7 +30,7 @@ export function Sidebar({ currentPath }: SidebarProps) {
   ];
 
   return (
-    <div className="w-64 border-r border-base-300 h-full bg-base-100 flex flex-col">
+    <div className="sidebar w-64 border-r border-base-300 h-full bg-base-100 flex flex-col">
       {/* Header */}
       <div className="px-4 py-4 border-b border-base-300">
         <a

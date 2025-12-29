@@ -6,9 +6,13 @@ import { todoCollection } from "@/client/tanstack-db";
 
 export function MobileTodoInput() {
   const [newTodoTitle, setNewTodoTitle] = useState<string>("");
+  const [isFocused, setIsFocused] = useState(false);
 
   return (
-    <div className="bg-base-200 p-4 z-40">
+    <div
+      className="fixed left-0 right-0 z-40 bg-base-200 px-4 py-2 transition-[bottom] duration-200"
+      style={{ bottom: isFocused ? "8px" : "84px" }}
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -23,13 +27,15 @@ export function MobileTodoInput() {
             setNewTodoTitle("");
           }
         }}
-        className="flex gap-2 max-w-md mx-auto"
+        className="flex gap-2"
       >
         <Input
           name="title"
           placeholder="New todo..."
           value={newTodoTitle}
           onChange={(e) => setNewTodoTitle(e.target.value)}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
           className="focus:border-primary focus:bg-primary/10 transition-all duration-200"
           aria-label="Enter new todo"
         />
@@ -44,9 +50,4 @@ export function MobileTodoInput() {
       </form>
     </div>
   );
-}
-
-/** Invisible spacer to reserve the same height as MobileTodoInput when it's not shown */
-export function MobileTodoInputSpacer() {
-  return <div className="h-[72px]" aria-hidden="true" />;
 }

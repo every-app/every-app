@@ -28,7 +28,7 @@ import {
   persister,
 } from "@/client/tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
-import { getTransitionType } from "@/client/hooks/useViewTransition";
+import { getTransitionType } from "@/client/lib/utils";
 
 export const Route = createRootRoute({
   head: () => ({

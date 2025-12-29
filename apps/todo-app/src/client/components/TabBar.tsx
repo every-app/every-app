@@ -1,10 +1,13 @@
 import useDetectKeyboardOpen from "@/client/hooks/useDetectKeyboardOpen";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { ClipboardList, History, Home } from "lucide-react";
 
-export function TabBar() {
+interface TabBarProps {
+  currentPath?: string;
+}
+
+export function TabBar({ currentPath = "/" }: TabBarProps) {
   const isKeyboardOpen = useDetectKeyboardOpen();
-  const currentPath = useLocation({ select: (loc) => loc.pathname });
 
   if (isKeyboardOpen) return null;
   const navItems = [
@@ -29,7 +32,7 @@ export function TabBar() {
   ];
 
   return (
-    <div className="bg-base-100 border-t border-base-300 pb-safe">
+    <div className="tab-bar fixed bottom-0 left-0 right-0 bg-base-100 border-t border-base-300 pb-safe">
       <nav className="flex justify-around items-center max-w-md mx-auto py-2 px-4">
         {navItems.map((item) => {
           const Icon = item.icon;

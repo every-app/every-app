@@ -2,9 +2,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
 import { Button } from "@/client/components/ui/button";
-import { useIsMobile } from "@/client/hooks/use-mobile";
-import { TabBar } from "@/client/components/TabBar";
-import { MobileTodoInputSpacer } from "@/client/components/MobileTodoInput";
 import { todoCollection } from "@/client/tanstack-db";
 import { HistoryItem } from "@/client/components/TodoHistoryItem";
 
@@ -13,8 +10,6 @@ export const Route = createFileRoute("/history")({
 });
 
 function History() {
-  const isMobile = useIsMobile();
-
   // Live query that updates automatically when data changes
   const {
     data: todos,
@@ -75,12 +70,6 @@ function History() {
           </div>
         )}
       </div>
-      {isMobile && (
-        <div className="fixed bottom-0 left-0 right-0">
-          <MobileTodoInputSpacer />
-          <TabBar />
-        </div>
-      )}
     </>
   );
 }

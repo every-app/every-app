@@ -16,7 +16,10 @@ import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
 import { Sidebar } from "@/client/components/Sidebar";
 import { MobileHeader } from "@/client/components/MobileHeader";
+import { TabBar } from "@/client/components/TabBar";
 import { EmbeddedAppProvider } from "@every-app/sdk/client";
+import { useIsMobile } from "@/client/hooks/use-mobile";
+import { getTransitionType } from "@/client/lib/utils";
 
 import { todoCollection, queryClient, persister } from "@/client/tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
@@ -82,34 +85,53 @@ export const Route = createRootRoute({
 
 function AppLayout() {
   const location = useLocation();
+  const isMobile = useIsMobile();
+  const lastPathRef = React.useRef(location.pathname);
+
+  // Set transition type before navigation occurs
+  React.useEffect(() => {
+    const currentPath = location.pathname;
+    const lastPath = lastPathRef.current;
+
+    if (currentPath !== lastPath) {
+      const transitionType = getTransitionType({
+        from: lastPath,
+        to: currentPath,
+        isMobile: isMobile ?? false,
+      });
+      document.documentElement.dataset.transition = transitionType;
+      lastPathRef.current = currentPath;
+    }
+  }, [location.pathname, isMobile]);
 
   // Always fetch todos regardless of route so that they are preloaded
   useLiveQuery((q) => q.from({ todo: todoCollection }));
 
-  return (
-    <>
-      {/* Mobile Layout - shown only on screens < 768px */}
-      <div className="flex flex-col h-screen md:hidden">
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-screen bg-base-200">
         <MobileHeader currentPath={location.pathname} />
         <div
-          className="flex-1 overflow-auto"
+          className="main-content flex-1 overflow-auto"
           style={{
             paddingTop: "60px",
-            paddingBottom: "80px",
+            paddingBottom: "60px",
           }}
         >
           <Outlet />
         </div>
+        <TabBar currentPath={location.pathname} />
       </div>
+    );
+  }
 
-      {/* Desktop Layout - shown only on screens >= 768px */}
-      <div className="hidden md:flex h-screen">
-        <Sidebar currentPath={location.pathname} />
-        <div className="flex-1 overflow-auto">
-          <Outlet />
-        </div>
+  return (
+    <div className="flex h-screen bg-base-200">
+      <Sidebar currentPath={location.pathname} />
+      <div className="main-content flex-1 overflow-auto">
+        <Outlet />
       </div>
-    </>
+    </div>
   );
 }
 

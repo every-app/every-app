@@ -27,7 +27,6 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { TabBar } from "@/client/components/TabBar";
 import { todoCollection } from "@/client/tanstack-db";
 import {
   generateDefaultSortKey,
@@ -208,12 +207,7 @@ function Home() {
         )}
       </div>
 
-      {isMobile && (
-        <div className="fixed bottom-0 left-0 right-0">
-          {!editingTodoId && <MobileTodoInput />}
-          <TabBar />
-        </div>
-      )}
+      {isMobile && !editingTodoId && <MobileTodoInput />}
     </>
   );
 }
