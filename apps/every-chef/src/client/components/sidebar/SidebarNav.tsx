@@ -1,22 +1,22 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
-import {
-  MessageSquare,
-  BookOpen,
-  ChefHat,
-  ChevronRight,
-  Menu,
-} from "lucide-react";
+import { MessageSquare, BookOpen, ChefHat, ChevronRight } from "lucide-react";
 import { queryClient } from "@/client/tanstack-db";
 import { useSortedChats } from "@/client/hooks/useChats";
-import { ChatItem } from "./sidebar/ChatItem";
+import { ChatItem } from "./ChatItem";
 import { getMessages } from "@/serverFunctions/chats";
 
-interface SidebarContentProps {
+interface SidebarNavProps {
   onNavigate?: () => void;
 }
 
-function SidebarContent({ onNavigate }: SidebarContentProps) {
+/**
+ * Sidebar navigation content including:
+ * - App header with logo
+ * - Chef/Chat section with recent chats
+ * - Recipes section
+ */
+export function SidebarNav({ onNavigate }: SidebarNavProps) {
   const location = useLocation();
   const currentPath = location.pathname;
   const sortedChats = useSortedChats();
@@ -78,8 +78,8 @@ function SidebarContent({ onNavigate }: SidebarContentProps) {
           Chef
         </Link>
 
-        {/* Recent Chats (only show when Chat section is active) */}
-        {isChatSectionActive && recentChats.length > 0 && (
+        {/* Recent Chats - always show */}
+        {recentChats.length > 0 && (
           <div className="ml-4 pl-4 border-l border-base-300">
             {recentChats.map((chat) => {
               const isActiveChat = chat.id === activeChatId;
@@ -125,80 +125,6 @@ function SidebarContent({ onNavigate }: SidebarContentProps) {
           Recipes
         </Link>
       </nav>
-    </div>
-  );
-}
-
-/** Desktop sidebar - always visible */
-export function Sidebar() {
-  return (
-    <div className="w-64 border-r border-base-300 h-full">
-      <SidebarContent />
-    </div>
-  );
-}
-
-interface DrawerSidebarProps {
-  children: React.ReactNode;
-  /** Optional content to render on the right side of the mobile navbar */
-  navbarRight?: React.ReactNode;
-  /** Title to display in the mobile navbar */
-  title?: string;
-}
-
-/** Mobile drawer sidebar - toggleable */
-export function DrawerSidebar({
-  children,
-  navbarRight,
-  title = "Chef",
-}: DrawerSidebarProps) {
-  const closeDrawer = () => {
-    const checkbox = document.getElementById(
-      "mobile-drawer",
-    ) as HTMLInputElement;
-    if (checkbox) {
-      checkbox.checked = false;
-    }
-  };
-
-  return (
-    <div className="drawer h-screen overflow-hidden">
-      <input id="mobile-drawer" type="checkbox" className="drawer-toggle" />
-      <div className="drawer-content flex flex-col h-screen overflow-hidden">
-        {/* Navbar with hamburger - fixed at top */}
-        <div className="navbar bg-base-100 border-b border-base-300 px-4 min-h-14 flex-shrink-0">
-          <div className="flex-none">
-            <label
-              htmlFor="mobile-drawer"
-              aria-label="open sidebar"
-              className="btn btn-square btn-ghost btn-sm"
-            >
-              <Menu className="h-5 w-5" />
-            </label>
-          </div>
-          <div className="flex-1 pl-2">
-            <div className="flex items-center gap-2">
-              <ChefHat className="h-5 w-5 text-primary" />
-              <span className="font-semibold">{title}</span>
-            </div>
-          </div>
-          {navbarRight && <div className="flex-none">{navbarRight}</div>}
-        </div>
-
-        {/* Page content - takes remaining space */}
-        <div className="flex-1 overflow-hidden min-h-0">{children}</div>
-      </div>
-
-      <div className="drawer-side z-50">
-        <label
-          htmlFor="mobile-drawer"
-          aria-label="close sidebar"
-          className="drawer-overlay"
-        />
-        <div className="w-72 min-h-full bg-base-100">
-          <SidebarContent onNavigate={closeDrawer} />
-        </div>
-      </div>
     </div>
   );
 }

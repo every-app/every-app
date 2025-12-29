@@ -155,11 +155,7 @@ code {
 
 /* Program/Recipe card styling (matching workout-tracker) */
 .program-card {
-  @apply bg-base-100 border border-base-300 rounded-xl p-5 transition-all;
-}
-
-.program-card:hover {
-  @apply border-base-content/20;
+  @apply bg-base-100 border border-base-300 rounded-xl p-5;
 }
 
 /* Page container */
@@ -238,5 +234,68 @@ code {
 
   body {
     touch-action: pan-x pan-y;
+  }
+}
+
+/* ============================================
+   View Transitions API - Route Animations (Desktop only)
+   ============================================ */
+
+@media (min-width: 768px) {
+  /* Opt-in to view transitions */
+  @view-transition {
+    navigation: auto;
+  }
+
+  /* Named view transitions - only animate main content */
+  .main-content {
+    view-transition-name: main-content;
+  }
+
+  /* Exclude sidebar from transitions */
+  .sidebar {
+    view-transition-name: sidebar;
+  }
+
+  /* Don't animate the sidebar */
+  ::view-transition-old(sidebar),
+  ::view-transition-new(sidebar) {
+    animation: none;
+  }
+
+  /* Fade transition */
+  ::view-transition-old(main-content) {
+    animation: vt-fade-out 180ms ease-out forwards;
+  }
+
+  ::view-transition-new(main-content) {
+    animation: vt-fade-in 180ms ease-out forwards;
+  }
+}
+
+/* Keyframes */
+@keyframes vt-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes vt-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(main-content),
+  ::view-transition-new(main-content) {
+    animation: none;
   }
 }

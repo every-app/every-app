@@ -1,19 +1,21 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { authenticatedFetch } from "@every-app/sdk/client";
 import { toast } from "sonner";
 
-// Note: toast import is used by the onError callback in useChat
-
 interface UseChatWithAuthProps {
   selectedChatId: string | undefined;
   initialMessages: UIMessage[];
+  onUserMessage?: (message: UIMessage) => void;
+  onAssistantMessage?: (message: UIMessage) => void;
 }
 
 export function useChatWithAuth({
   selectedChatId,
   initialMessages,
+  onUserMessage,
+  onAssistantMessage,
 }: UseChatWithAuthProps) {
   const {
     messages: streamingMessages,
@@ -44,20 +46,47 @@ export function useChatWithAuth({
     },
   });
 
+  // Track previous status to detect when streaming finishes
+  const prevStatusRef = useRef(status);
+
+  // When streaming finishes, add the assistant message to cache
+  useEffect(() => {
+    const wasStreaming = prevStatusRef.current === "streaming";
+    const isNowReady = status === "ready";
+
+    if (wasStreaming && isNowReady && onAssistantMessage) {
+      // Find the last assistant message
+      const lastMessage = streamingMessages[streamingMessages.length - 1];
+      if (lastMessage?.role === "assistant") {
+        onAssistantMessage(lastMessage);
+      }
+    }
+
+    prevStatusRef.current = status;
+  }, [status, streamingMessages, onAssistantMessage]);
+
   const handleSendMessage = useCallback(
     (content: string) => {
       if (!selectedChatId || !content.trim()) return;
 
       const parts: UIMessage["parts"] = [{ type: "text", text: content }];
 
+      const userMessage: UIMessage = {
+        id: crypto.randomUUID(),
+        role: "user",
+        parts,
+      };
+
+      // Optimistically add user message to cache
+      onUserMessage?.(userMessage);
+
       // Send message to chat API
-      // Note: Errors are handled by the onError callback in useChat config
       sendMessage({
         role: "user",
         parts,
       });
     },
-    [selectedChatId, sendMessage],
+    [selectedChatId, sendMessage, onUserMessage],
   );
 
   return {

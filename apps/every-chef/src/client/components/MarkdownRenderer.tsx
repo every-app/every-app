@@ -11,7 +11,7 @@ export function MarkdownRenderer({
 }: MarkdownRendererProps) {
   return (
     <div className={`markdown-content ${className}`}>
-      <Streamdown>{content}</Streamdown>
+      <Streamdown mode="static">{content}</Streamdown>
     </div>
   );
 }

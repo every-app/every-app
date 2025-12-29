@@ -110,14 +110,19 @@ export function MessageBubble({
                   );
                 }
 
+                // Use static mode for non-streaming content to avoid animation flash
+                const isLastPart = index === parts.length - 1;
+                const showStreamingIndicator =
+                  isStreaming && isLastPart && !hasToolParts;
+
                 return (
                   <div key={`${message.id}-text-${index}`} className="text-sm">
-                    <Streamdown>{text}</Streamdown>
-                    {isStreaming &&
-                      index === parts.length - 1 &&
-                      !hasToolParts && (
-                        <span className="loading loading-dots loading-xs ml-1 inline-block"></span>
-                      )}
+                    <Streamdown mode={isStreaming ? "streaming" : "static"}>
+                      {text}
+                    </Streamdown>
+                    {showStreamingIndicator && (
+                      <span className="loading loading-dots loading-xs ml-1 inline-block"></span>
+                    )}
                   </div>
                 );
               }

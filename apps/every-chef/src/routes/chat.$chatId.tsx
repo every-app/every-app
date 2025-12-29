@@ -40,6 +40,7 @@ function ChatPage() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
   const pendingMessageSentRef = useRef(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const chats = useSortedChats();
   const createNewChat = useCreateChat();
   const chat = chats.find((c) => c.id === chatId);
@@ -90,6 +91,24 @@ function ChatPage() {
 
   const initialMessages = (persistedMessages ?? []) as UIMessage[];
 
+  // Optimistically update the messages cache
+  const addMessageToCache = useCallback(
+    (message: UIMessage) => {
+      queryClient.setQueryData(
+        ["messages", chatId],
+        (oldMessages: UIMessage[] | undefined) => {
+          if (!oldMessages) return [message];
+          // Avoid duplicates by checking if message already exists
+          if (oldMessages.some((m) => m.id === message.id)) {
+            return oldMessages;
+          }
+          return [...oldMessages, message];
+        },
+      );
+    },
+    [queryClient, chatId],
+  );
+
   const {
     streamingMessages,
     handleSendMessage,
@@ -99,7 +118,17 @@ function ChatPage() {
   } = useChatWithAuth({
     selectedChatId: chatId,
     initialMessages,
+    onUserMessage: addMessageToCache,
+    onAssistantMessage: addMessageToCache,
   });
+
+  // Scroll to bottom when messages load or when streaming new content
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop =
+        scrollContainerRef.current.scrollHeight;
+    }
+  }, [initialMessages, streamingMessages]);
 
   // Auto-send pending message from index page navigation
   useEffect(() => {
@@ -266,6 +295,11 @@ function ChatPage() {
     [chatId, getToolInput, addToolOutput, queryClient],
   );
 
+  // Don't render chat until messages are loaded
+  if (isLoadingMessages) {
+    return <div className="flex flex-col h-full bg-base-200" />;
+  }
+
   return (
     <div className="flex flex-col h-full bg-base-200">
       {/* Fixed header - only show on desktop, mobile uses drawer navbar */}
@@ -298,7 +332,10 @@ function ChatPage() {
       />
 
       {/* Scrollable chat area */}
-      <div className="flex-1 overflow-auto scrollbar-stable min-h-0">
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-auto scrollbar-stable min-h-0"
+      >
         <ChatWindow
           messages={
             (streamingMessages.length > 0
