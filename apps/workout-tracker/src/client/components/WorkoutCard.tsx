@@ -11,7 +11,10 @@ import { useDraggableSensors } from "@/client/hooks/useDraggableSensors";
 import { useExerciseEditor } from "@/client/hooks/useExerciseEditor";
 import { SortableExerciseRow } from "@/client/components/SortableExerciseRow";
 import { AddExerciseForm } from "@/client/components/AddExerciseForm";
-import { EXERCISE_TABLE_GRID } from "@/client/lib/constants";
+import {
+  DATA_COLUMN_WIDTH,
+  EXERCISE_NAME_MIN_WIDTH,
+} from "@/client/lib/constants";
 import type { WorkoutWithExercises } from "@/client/hooks/useProgramData";
 
 type WorkoutCardProps = {
@@ -153,16 +156,34 @@ export function WorkoutCard({ workout }: WorkoutCardProps) {
         {displayExercises.length > 0 && (
           <div className="exercise-table overflow-x-auto">
             {/* Table Header */}
-            <div
-              className={`grid ${isEditMode ? EXERCISE_TABLE_GRID.editMode : EXERCISE_TABLE_GRID.viewMode} gap-3 mb-4 items-center min-w-max`}
-            >
-              {isEditMode && <span className="exercise-table-header"></span>}
-              <span className="exercise-table-header">Exercise</span>
-              <span className="exercise-table-header text-center">Sets</span>
-              <span className="exercise-table-header text-center">Reps</span>
-              <span className="exercise-table-header text-center">Lbs</span>
-              <span className="exercise-table-header text-center">Incr By</span>
-              {isEditMode && <span className="exercise-table-header"></span>}
+            <div className="flex items-center gap-3 mb-4">
+              {isEditMode && <span className="w-5 shrink-0"></span>}
+              <span
+                className={`exercise-table-header flex-1 ${EXERCISE_NAME_MIN_WIDTH}`}
+              >
+                Exercise
+              </span>
+              <span
+                className={`exercise-table-header text-center shrink-0 ${DATA_COLUMN_WIDTH}`}
+              >
+                Lbs
+              </span>
+              <span
+                className={`exercise-table-header text-center shrink-0 ${DATA_COLUMN_WIDTH}`}
+              >
+                Sets
+              </span>
+              <span
+                className={`exercise-table-header text-center shrink-0 ${DATA_COLUMN_WIDTH}`}
+              >
+                Reps
+              </span>
+              <span
+                className={`exercise-table-header text-center shrink-0 ${DATA_COLUMN_WIDTH}`}
+              >
+                Incr By
+              </span>
+              {isEditMode && <span className="w-8 shrink-0"></span>}
             </div>
 
             {/* Exercise Rows */}

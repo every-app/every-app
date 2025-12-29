@@ -1,16 +1,9 @@
-import {
-  createFileRoute,
-  Link,
-  useLocation,
-  useNavigate,
-} from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useIsMobile } from "@/client/hooks/use-mobile";
 import {
   useAllProgramsWithWorkouts,
   type ProgramWithWorkouts,
 } from "@/client/hooks/useProgramData";
-import { TabBar } from "@/client/components/TabBar";
 import { programTemplates } from "@/data/program-templates";
 import {
   createCustomProgram,
@@ -24,8 +17,6 @@ export const Route = createFileRoute("/programs")({
 });
 
 function ProgramsListPage() {
-  const isMobile = useIsMobile();
-  const location = useLocation();
   const navigate = useNavigate();
   const [isCreating, setIsCreating] = useState(false);
 
@@ -58,67 +49,63 @@ function ProgramsListPage() {
   });
 
   return (
-    <>
-      <div className="page-container">
-        <div className="px-4 pt-6 pb-24">
-          {/* Page Header */}
-          <div className="page-header mb-6 px-0">
-            <div>
-              <h1 className="page-title">Programs</h1>
-              <p className="text-base-content/70 mt-1">
-                Explore programs as starting templates for your training
-              </p>
-            </div>
+    <div className="page-container">
+      <div className="px-4 pt-6 pb-24">
+        {/* Page Header */}
+        <div className="page-header mb-6 px-0">
+          <div>
+            <h1 className="page-title">Programs</h1>
+            <p className="text-base-content/70 mt-1">
+              Explore programs as starting templates for your training
+            </p>
           </div>
+        </div>
 
-          {/* My Programs Section */}
-          <section className="mb-8">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-base-content">
-                My Programs
-              </h2>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCreateProgram}
-                disabled={isCreating}
-              >
-                Create
-              </Button>
-            </div>
-            {sortedPrograms.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-base-content/20 p-6 text-center">
-                <p className="text-base-content/70">
-                  You haven't started any programs yet. Pick a template below to
-                  get started!
-                </p>
-                <div className="text-base-content/40 text-2xl mt-2">↓</div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {sortedPrograms.map((program) => (
-                  <ProgramCard key={program.id} program={program} />
-                ))}
-              </div>
-            )}
-          </section>
-
-          {/* Program Templates Section */}
-          <section>
-            <h2 className="text-lg font-semibold text-base-content mb-4">
-              Program Templates
+        {/* My Programs Section */}
+        <section className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold text-base-content">
+              My Programs
             </h2>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCreateProgram}
+              disabled={isCreating}
+            >
+              Create
+            </Button>
+          </div>
+          {sortedPrograms.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-base-content/20 p-6 text-center">
+              <p className="text-base-content/70">
+                You haven't started any programs yet. Pick a template below to
+                get started!
+              </p>
+              <div className="text-base-content/40 text-2xl mt-2">↓</div>
+            </div>
+          ) : (
             <div className="space-y-4">
-              {programTemplates.map((template) => (
-                <TemplateCard key={template.id} template={template} />
+              {sortedPrograms.map((program) => (
+                <ProgramCard key={program.id} program={program} />
               ))}
             </div>
-          </section>
-        </div>
-      </div>
+          )}
+        </section>
 
-      {isMobile && <TabBar currentPath={location.pathname} />}
-    </>
+        {/* Program Templates Section */}
+        <section>
+          <h2 className="text-lg font-semibold text-base-content mb-4">
+            Program Templates
+          </h2>
+          <div className="space-y-4">
+            {programTemplates.map((template) => (
+              <TemplateCard key={template.id} template={template} />
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
   );
 }
 

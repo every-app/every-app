@@ -15,6 +15,7 @@ import { NotFound } from "@/client/components/NotFound";
 import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
 import { Sidebar } from "@/client/components/Sidebar";
+import { TabBar } from "@/client/components/TabBar";
 import { useIsMobile } from "@/client/hooks/use-mobile";
 import { EmbeddedAppProvider } from "@every-app/sdk/client";
 import {
@@ -27,6 +28,7 @@ import {
   persister,
 } from "@/client/tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
+import { getTransitionType } from "@/client/hooks/useViewTransition";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -100,6 +102,23 @@ export const Route = createRootRoute({
 function AppLayout() {
   const location = useLocation();
   const isMobile = useIsMobile();
+  const lastPathRef = React.useRef(location.pathname);
+
+  // Set transition type before navigation occurs
+  React.useEffect(() => {
+    const currentPath = location.pathname;
+    const lastPath = lastPathRef.current;
+
+    if (currentPath !== lastPath) {
+      const transitionType = getTransitionType({
+        from: lastPath,
+        to: currentPath,
+        isMobile: isMobile ?? false,
+      });
+      document.documentElement.dataset.transition = transitionType;
+      lastPathRef.current = currentPath;
+    }
+  }, [location.pathname, isMobile]);
 
   // Preload all workout data into collections
   useLiveQuery((q) => q.from({ program: programsCollection }));
@@ -112,7 +131,7 @@ function AppLayout() {
     return (
       <div className="flex flex-col h-screen bg-base-200">
         <div
-          className="flex-1 overflow-auto"
+          className="main-content flex-1 overflow-auto"
           style={{
             paddingBottom: "80px",
           }}
@@ -121,6 +140,7 @@ function AppLayout() {
             <Outlet />
           </div>
         </div>
+        <TabBar currentPath={location.pathname} />
       </div>
     );
   }
@@ -128,7 +148,7 @@ function AppLayout() {
   return (
     <div className="flex h-screen bg-base-200">
       <Sidebar currentPath={location.pathname} />
-      <div className="flex-1 overflow-auto">
+      <div className="main-content flex-1 overflow-auto">
         <div className="max-w-2xl mx-auto">
           <Outlet />
         </div>

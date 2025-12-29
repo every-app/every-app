@@ -201,6 +201,43 @@ code {
   @apply border-error;
 }
 
+/* Modal styling - darker backdrop + open animation */
+.modal {
+  background-color: rgba(0, 0, 0, 0.85);
+}
+
+.modal[open] {
+  animation: modal-backdrop-fade-in 0.2s ease-out;
+}
+
+.modal[open] > .modal-box {
+  animation: modal-pop-in 0.2s ease-out;
+}
+
+.modal > .modal-box {
+  @apply border border-base-content/20;
+}
+
+@keyframes modal-backdrop-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 @media (pointer: coarse) {
   html {
     touch-action: none;
@@ -208,5 +245,127 @@ code {
 
   body {
     touch-action: pan-x pan-y;
+  }
+}
+
+/* ============================================
+   View Transitions API - Route Animations
+   ============================================ */
+
+/* Opt-in to view transitions */
+@view-transition {
+  navigation: auto;
+}
+
+/* Named view transitions - only animate main content */
+.main-content {
+  view-transition-name: main-content;
+}
+
+/* Exclude sidebar and tab bar from transitions */
+.sidebar {
+  view-transition-name: sidebar;
+}
+
+.tab-bar {
+  view-transition-name: tab-bar;
+}
+
+/* Don't animate sidebar and tab bar */
+::view-transition-old(sidebar),
+::view-transition-new(sidebar),
+::view-transition-old(tab-bar),
+::view-transition-new(tab-bar) {
+  animation: none;
+}
+
+/* Fade transition (default for desktop and top-level navigation) */
+[data-transition="fade"]::view-transition-old(main-content) {
+  animation: vt-fade-out 150ms ease-out forwards;
+}
+
+[data-transition="fade"]::view-transition-new(main-content) {
+  animation: vt-fade-in 150ms ease-out forwards;
+}
+
+/* Slide left (navigating deeper - mobile only) */
+[data-transition="slide-left"]::view-transition-old(main-content) {
+  animation: vt-slide-out-left 180ms ease-out forwards;
+}
+
+[data-transition="slide-left"]::view-transition-new(main-content) {
+  animation: vt-slide-in-right 180ms ease-out forwards;
+}
+
+/* Slide right (navigating back - mobile only) */
+[data-transition="slide-right"]::view-transition-old(main-content) {
+  animation: vt-slide-out-right 180ms ease-out forwards;
+}
+
+[data-transition="slide-right"]::view-transition-new(main-content) {
+  animation: vt-slide-in-left 180ms ease-out forwards;
+}
+
+/* Keyframes */
+@keyframes vt-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes vt-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+/* Slide animations - full width for native app feel */
+@keyframes vt-slide-in-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes vt-slide-out-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-30%);
+  }
+}
+
+@keyframes vt-slide-in-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes vt-slide-out-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(30%);
+  }
+}
+
+/* Reduce motion for users who prefer it */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(main-content),
+  ::view-transition-new(main-content) {
+    animation: none;
   }
 }

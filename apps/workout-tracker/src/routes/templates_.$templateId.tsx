@@ -170,37 +170,36 @@ function TemplateWorkoutCard({ workout }: { workout: WorkoutTemplate }) {
         {workout.exercises.length > 0 && (
           <div className="exercise-table">
             {/* Table Header */}
-            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 mb-4 items-center">
-              <span className="exercise-table-header">Exercise</span>
-              <span className="exercise-table-header text-center w-14">
+            <div className="flex items-center gap-3 mb-4">
+              <span className="exercise-table-header flex-1 min-w-16">
+                Exercise
+              </span>
+              <span className="exercise-table-header text-center shrink-0 w-12">
+                Lbs
+              </span>
+              <span className="exercise-table-header text-center shrink-0 w-12">
                 Sets
               </span>
-              <span className="exercise-table-header text-center w-14">
+              <span className="exercise-table-header text-center shrink-0 w-12">
                 Reps
-              </span>
-              <span className="exercise-table-header text-center w-14">
-                Lbs
               </span>
             </div>
 
             {/* Exercise Rows */}
             <div className="divide-y divide-base-200">
               {workout.exercises.map((exercise, index) => (
-                <div
-                  key={index}
-                  className="grid grid-cols-[1fr_auto_auto_auto] gap-3 py-3 items-center"
-                >
-                  <span className="text-base-content font-medium">
+                <div key={index} className="flex items-center gap-3 py-3">
+                  <span className="text-base-content font-medium flex-1 min-w-16 break-words">
                     {exercise.name}
                   </span>
-                  <span className="text-base-content text-center w-14">
+                  <span className="text-base-content/50 text-center shrink-0 w-12">
+                    {exercise.weight ?? "—"}
+                  </span>
+                  <span className="text-base-content text-center shrink-0 w-12">
                     {exercise.sets}
                   </span>
-                  <span className="text-base-content text-center w-14">
+                  <span className="text-base-content text-center shrink-0 w-12">
                     {exercise.targetReps}
-                  </span>
-                  <span className="text-base-content/50 text-center w-14">
-                    {exercise.weight ?? "—"}
                   </span>
                 </div>
               ))}

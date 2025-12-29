@@ -1,13 +1,11 @@
 import { useState } from "react";
-import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useIsMobile } from "@/client/hooks/use-mobile";
 import {
   useActiveProgram,
   type WorkoutWithExercises,
 } from "@/client/hooks/useProgramData";
 import { sessionsCollection, setLogsCollection } from "@/client/tanstack-db";
-import { TabBar } from "@/client/components/TabBar";
 import { Button } from "@/client/components/ui/button";
 import { EmptyState } from "@/client/components/ui/empty-state";
 import { WorkoutPreviewModal } from "@/client/components/WorkoutPreviewModal";
@@ -18,9 +16,6 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
-  const isMobile = useIsMobile();
-  const location = useLocation();
-
   const { activeProgram, isLoading } = useActiveProgram();
 
   // State for workout preview modal
@@ -85,33 +80,25 @@ function Home() {
 
   // Show empty screen while loading to avoid flash of empty state
   if (isLoading) {
-    return (
-      <>
-        <div className="page-container" />
-        {isMobile && <TabBar currentPath={location.pathname} />}
-      </>
-    );
+    return <div className="page-container" />;
   }
 
   if (!activeProgram) {
     return (
-      <>
-        <div className="page-container">
-          <div className="px-4 pt-6">
-            <EmptyState
-              icon={<Dumbbell className="h-12 w-12 mx-auto" />}
-              title="No Active Program"
-              description="Select a program to start your fitness journey."
-              action={
-                <Link to="/programs">
-                  <Button variant="primary">See Programs</Button>
-                </Link>
-              }
-            />
-          </div>
+      <div className="page-container">
+        <div className="px-4 pt-6">
+          <EmptyState
+            icon={<Dumbbell className="h-12 w-12 mx-auto" />}
+            title="No Active Program"
+            description="Select a program to start your fitness journey."
+            action={
+              <Link to="/programs">
+                <Button variant="primary">See Programs</Button>
+              </Link>
+            }
+          />
         </div>
-        {isMobile && <TabBar currentPath={location.pathname} />}
-      </>
+      </div>
     );
   }
 
@@ -197,8 +184,6 @@ function Home() {
           )}
         </div>
       </div>
-
-      {isMobile && <TabBar currentPath={location.pathname} />}
 
       {/* Workout Preview Modal */}
       {activeProgram && (

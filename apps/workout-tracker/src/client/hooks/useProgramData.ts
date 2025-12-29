@@ -98,25 +98,22 @@ export function useAllProgramsWithWorkouts(): {
   programs: ProgramWithWorkouts[];
   isLoading: boolean;
 } {
-  const { data: programs } = useLiveQuery((q) =>
+  const { data: programs, isLoading: programsLoading } = useLiveQuery((q) =>
     q.from({ program: programsCollection }),
   );
-  const { data: workouts } = useLiveQuery((q) =>
+  const { data: workouts, isLoading: workoutsLoading } = useLiveQuery((q) =>
     q.from({ workout: workoutsCollection }),
   );
-  const { data: workoutExercises } = useLiveQuery((q) =>
-    q.from({ exercise: exercisesCollection }),
+  const { data: workoutExercises, isLoading: exercisesLoading } = useLiveQuery(
+    (q) => q.from({ exercise: exercisesCollection }),
   );
-  const { data: exerciseLibrary } = useLiveQuery((q) =>
-    q.from({ libraryItem: exerciseLibraryCollection }),
+  const { data: exerciseLibrary, isLoading: libraryLoading } = useLiveQuery(
+    (q) => q.from({ libraryItem: exerciseLibraryCollection }),
   );
 
-  // Data is loading if any of the queries haven't returned yet
+  // Data is loading if any of the queries are still loading
   const isLoading =
-    programs === undefined ||
-    workouts === undefined ||
-    workoutExercises === undefined ||
-    exerciseLibrary === undefined;
+    programsLoading || workoutsLoading || exercisesLoading || libraryLoading;
 
   const programsWithWorkouts: ProgramWithWorkouts[] = (programs ?? []).map(
     (program) => ({

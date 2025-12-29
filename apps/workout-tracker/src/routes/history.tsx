@@ -1,8 +1,6 @@
-import { createFileRoute, Link, useLocation } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useState } from "react";
-import { useIsMobile } from "@/client/hooks/use-mobile";
-import { TabBar } from "@/client/components/TabBar";
 import { sessionsCollection, setLogsCollection } from "@/client/tanstack-db";
 import { Card, CardTitle } from "@/client/components/ui/card";
 import { Badge } from "@/client/components/ui/badge";
@@ -21,9 +19,6 @@ export const Route = createFileRoute("/history")({
 });
 
 function HistoryPage() {
-  const isMobile = useIsMobile();
-  const location = useLocation();
-
   // Live queries
   const { data: sessions } = useLiveQuery((q) =>
     q.from({ session: sessionsCollection }),
@@ -50,51 +45,42 @@ function HistoryPage() {
 
   if (!completedSessions || completedSessions.length === 0) {
     return (
-      <>
-        <div className="page-container">
-          <div className="px-4 pt-6">
-            <EmptyState
-              icon={<History className="h-12 w-12 mx-auto" />}
-              title="No Workout History"
-              description="Complete a workout to see it here."
-              action={
-                <Link to="/">
-                  <Button variant="primary">Start Workout</Button>
-                </Link>
-              }
-            />
-          </div>
+      <div className="page-container">
+        <div className="px-4 pt-6">
+          <EmptyState
+            icon={<History className="h-12 w-12 mx-auto" />}
+            title="No Workout History"
+            description="Complete a workout to see it here."
+            action={
+              <Link to="/">
+                <Button variant="primary">Start Workout</Button>
+              </Link>
+            }
+          />
         </div>
-        {isMobile && <TabBar currentPath={location.pathname} />}
-      </>
+      </div>
     );
   }
 
   return (
-    <>
-      <div className="page-container">
-        <div className="px-4 pt-6 pb-24">
-          {/* Header */}
-          <div className="page-header mb-6 px-0">
-            <div>
-              <h1 className="page-title">History</h1>
-              <p className="text-base-content/70 mt-1">
-                Your completed workouts
-              </p>
-            </div>
-          </div>
-
-          {/* Session List */}
-          <div className="space-y-4">
-            {completedSessions.map((session) => (
-              <SessionCard key={session.id} session={session} />
-            ))}
+    <div className="page-container">
+      <div className="px-4 pt-6 pb-24">
+        {/* Header */}
+        <div className="page-header mb-6 px-0">
+          <div>
+            <h1 className="page-title">History</h1>
+            <p className="text-base-content/70 mt-1">Your completed workouts</p>
           </div>
         </div>
-      </div>
 
-      {isMobile && <TabBar currentPath={location.pathname} />}
-    </>
+        {/* Session List */}
+        <div className="space-y-4">
+          {completedSessions.map((session) => (
+            <SessionCard key={session.id} session={session} />
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 

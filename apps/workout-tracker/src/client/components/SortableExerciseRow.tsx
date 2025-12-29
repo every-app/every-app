@@ -4,7 +4,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { Button } from "@/client/components/ui/button";
 import { GripVertical, Trash2 } from "lucide-react";
 import {
-  EXERCISE_TABLE_GRID,
+  DATA_COLUMN_WIDTH,
+  EXERCISE_NAME_MIN_WIDTH,
   DEFAULT_PROGRESSION_INCREMENT,
 } from "@/client/lib/constants";
 
@@ -98,18 +99,36 @@ export function SortableExerciseRow({
     <div
       ref={setNodeRef}
       style={style}
-      className={`exercise-row grid ${isEditMode ? EXERCISE_TABLE_GRID.editMode : EXERCISE_TABLE_GRID.viewMode} gap-3 items-center min-w-max ${isDragging ? "opacity-50" : ""}`}
+      className={`exercise-row flex items-center gap-3 ${isDragging ? "opacity-50" : ""}`}
     >
       {isEditMode && (
         <div
           {...attributes}
           {...listeners}
-          className="h-10 flex items-center justify-center cursor-grab active:cursor-grabbing text-base-content/50 hover:text-base-content"
+          className="w-5 shrink-0 h-10 flex items-center justify-center cursor-grab active:cursor-grabbing text-base-content/50 hover:text-base-content"
         >
           <GripVertical className="h-4 w-4" />
         </div>
       )}
-      <span className="exercise-name truncate">{exercise.name}</span>
+      <span
+        className={`exercise-name flex-1 ${EXERCISE_NAME_MIN_WIDTH} break-words`}
+      >
+        {exercise.name}
+      </span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={isEditMode ? localWeight : (exercise.weight ?? "—")}
+        onChange={(e) => {
+          const filtered = handleNumericInput(e.target.value);
+          setLocalWeight(filtered);
+          const numVal = filtered ? Number(filtered) : null;
+          onExerciseChange(exercise.id, "weight", numVal);
+        }}
+        onKeyDown={handleKeyDown}
+        disabled={!isEditMode}
+        className={`exercise-input shrink-0 ${DATA_COLUMN_WIDTH} ${isEditMode && !isValidWeight(localWeight) ? "border-error" : ""}`}
+      />
       <input
         type="text"
         inputMode="numeric"
@@ -122,7 +141,7 @@ export function SortableExerciseRow({
         }}
         onKeyDown={handleKeyDown}
         disabled={!isEditMode}
-        className={`exercise-input ${isEditMode && !isValidNumber(localSets) ? "border-error" : ""}`}
+        className={`exercise-input shrink-0 ${DATA_COLUMN_WIDTH} ${isEditMode && !isValidNumber(localSets) ? "border-error" : ""}`}
       />
       <input
         type="text"
@@ -136,21 +155,7 @@ export function SortableExerciseRow({
         }}
         onKeyDown={handleKeyDown}
         disabled={!isEditMode}
-        className={`exercise-input ${isEditMode && !isValidNumber(localReps) ? "border-error" : ""}`}
-      />
-      <input
-        type="text"
-        inputMode="numeric"
-        value={isEditMode ? localWeight : (exercise.weight ?? "—")}
-        onChange={(e) => {
-          const filtered = handleNumericInput(e.target.value);
-          setLocalWeight(filtered);
-          const numVal = filtered ? Number(filtered) : null;
-          onExerciseChange(exercise.id, "weight", numVal);
-        }}
-        onKeyDown={handleKeyDown}
-        disabled={!isEditMode}
-        className={`exercise-input ${isEditMode && !isValidWeight(localWeight) ? "border-error" : ""}`}
+        className={`exercise-input shrink-0 ${DATA_COLUMN_WIDTH} ${isEditMode && !isValidNumber(localReps) ? "border-error" : ""}`}
       />
       <input
         type="text"
@@ -166,14 +171,14 @@ export function SortableExerciseRow({
         }}
         onKeyDown={handleKeyDown}
         disabled={!isEditMode}
-        className={`exercise-input ${isEditMode && !isValidNumber(localIncrement) ? "border-error" : ""}`}
+        className={`exercise-input shrink-0 ${DATA_COLUMN_WIDTH} ${isEditMode && !isValidNumber(localIncrement) ? "border-error" : ""}`}
       />
       {isEditMode && (
         <Button
           variant="ghost"
           size="sm"
           onClick={() => onDelete(exercise.id)}
-          className="h-10 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+          className="w-8 shrink-0 h-10 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
         >
           <Trash2 className="h-4 w-4" />
         </Button>

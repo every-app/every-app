@@ -8,13 +8,8 @@
  */
 export const DEFAULT_PROGRESSION_INCREMENT = 5;
 
-/**
- * Grid column definitions for exercise tables.
- * These define the column widths for the exercise table header and rows.
- */
-export const EXERCISE_TABLE_GRID = {
-  /** Grid columns when in edit mode: [grip, name, sets, reps, lbs, incr, delete] */
-  editMode: "grid-cols-[1.5rem_8rem_4.5rem_4.5rem_4.5rem_4.5rem_2.5rem]",
-  /** Grid columns when in view mode: [name, sets, reps, lbs, incr] */
-  viewMode: "grid-cols-[1fr_3.5rem_3.5rem_4rem_3.5rem]",
-} as const;
+/** Fixed width for data columns (Lbs, Sets, Reps, Incr By) */
+export const DATA_COLUMN_WIDTH = "w-12"; // 3rem
+
+/** Minimum width for exercise name column */
+export const EXERCISE_NAME_MIN_WIDTH = "min-w-16"; // 4rem

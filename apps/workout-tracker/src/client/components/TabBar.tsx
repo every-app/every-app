@@ -39,7 +39,7 @@ export function TabBar({ currentPath }: TabBarProps) {
   ];
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-base-100 border-t border-base-300 pb-safe">
+    <div className="tab-bar fixed bottom-0 left-0 right-0 bg-base-100 border-t border-base-300 pb-safe">
       <nav className="flex justify-around items-center max-w-md mx-auto py-2 px-4">
         {navItems.map((item) => {
           const Icon = item.icon;

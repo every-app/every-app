@@ -1,9 +1,4 @@
-import {
-  createFileRoute,
-  Link,
-  useNavigate,
-  useLocation,
-} from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
 import { useIsMobile } from "@/client/hooks/use-mobile";
 import {
@@ -11,7 +6,6 @@ import {
   useAllProgramsWithWorkouts,
 } from "@/client/hooks/useProgramData";
 import { nanoid } from "nanoid";
-import { TabBar } from "@/client/components/TabBar";
 import { programsCollection, workoutsCollection } from "@/client/tanstack-db";
 import { Button } from "@/client/components/ui/button";
 import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
@@ -39,7 +33,6 @@ function ProgramDetailPage() {
   const { programId } = Route.useParams();
   const { newProgramSource } = Route.useSearch();
   const isMobile = useIsMobile();
-  const location = useLocation();
   const navigate = useNavigate();
 
   const { program } = useProgramById(programId);
@@ -178,25 +171,22 @@ function ProgramDetailPage() {
 
   if (!program) {
     return (
-      <>
-        <div className="page-container">
-          <div className="px-4 pt-12 pb-24">
-            <div className="text-center py-12">
-              <h2 className="text-2xl font-bold mb-2">Program Not Found</h2>
-              <p className="text-base-content/70 mb-4">
-                The program you're looking for doesn't exist.
-              </p>
-              <Button
-                variant="default"
-                onClick={() => navigate({ to: "/programs" })}
-              >
-                Back to Programs
-              </Button>
-            </div>
+      <div className="page-container">
+        <div className="px-4 pt-12 pb-24">
+          <div className="text-center py-12">
+            <h2 className="text-2xl font-bold mb-2">Program Not Found</h2>
+            <p className="text-base-content/70 mb-4">
+              The program you're looking for doesn't exist.
+            </p>
+            <Button
+              variant="default"
+              onClick={() => navigate({ to: "/programs" })}
+            >
+              Back to Programs
+            </Button>
           </div>
         </div>
-        {isMobile && <TabBar currentPath={location.pathname} />}
-      </>
+      </div>
     );
   }
 
