@@ -88,6 +88,13 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Prevent Safari mobile from zooming on input focus (requires 16px minimum) */
+input,
+textarea,
+select {
+  @apply text-base;
+}
+
 code {
   font-family:
     source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;

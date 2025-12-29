@@ -154,6 +154,13 @@ input:-webkit-autofill:active {
   color: var(--color-base-content) !important;
 }
 
+/* Prevent Safari mobile from zooming on input focus (requires 16px minimum) */
+input,
+textarea,
+select {
+  @apply text-base;
+}
+
 /* Add spacing between labels and inputs */
 .form-control .label {
   @apply pb-2;

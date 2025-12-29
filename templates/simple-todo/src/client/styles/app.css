@@ -135,6 +135,13 @@ code {
   }
 }
 
+/* Prevent Safari mobile from zooming on input focus (requires 16px minimum) */
+input,
+textarea,
+select {
+  @apply text-base;
+}
+
 @layer utilities {
   .pb-safe {
     padding-bottom: calc(env(safe-area-inset-bottom, 0.5rem) + 0.5rem);

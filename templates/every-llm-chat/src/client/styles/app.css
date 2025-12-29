@@ -72,6 +72,13 @@ body {
   @apply bg-base-100 text-base-content;
 }
 
+/* Prevent Safari mobile from zooming on input focus (requires 16px minimum) */
+input,
+textarea,
+select {
+  @apply text-base;
+}
+
 #app {
   @apply flex flex-col;
   height: 100%;
