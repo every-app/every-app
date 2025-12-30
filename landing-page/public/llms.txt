@@ -14,6 +14,14 @@ Deploy the Gateway to your Cloudflare account, and access all your apps through 
 
 Self host open source apps with one simple command or build your own and share them with the community.
 
+<img
+  src={gatewayScreenshot.src}
+  alt="Gateway and Workout Tracker"
+  style="border-radius: 8px; margin: 1rem 0;"
+/>
+
+_Split browser windows showing the Gateway (left) with self-hosted apps and the mobile friendly Workout Tracker app (right) on the program editor page._
+
 ## Open Source App Ecosystem
 
 In the near future, there will be hundreds of high quality open source apps for you to self host. We need passionate community members to get there.
@@ -35,14 +43,6 @@ The Gateway is the parent application that hosts all your embedded apps:
 - **LLM Gateway (Coming soon)** - Configure LLM provider once, instead of once per app. Define per-app budgets.
 
 Apps run inside the Gateway's iframe and receive scoped session tokens for authentication, so you don't need to implement auth in your apps.
-
-## Example Apps
-
-While the starter template is minimal, there are several full apps you can reference:
-
-- [Todos](https://github.com/every-app/every-app/tree/main/apps/todo-app) - A minimal todo list
-- [Workout Tracker](https://github.com/every-app/every-app/tree/main/apps/workout-tracker) - Create programs and track workouts
-- [Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) - AI cooking assistant
 
 
 ## Getting Started
@@ -177,11 +177,9 @@ Restart your AI tool after adding the MCP server.
 
 ### Walkthrough: AI Cooking Assistant
 
-This walkthrough explains how the [Every Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) app is built. Every Chef is an AI-powered cooking assistant that helps you manage recipes and get cooking guidance through a chat interface.
+This walkthrough explains how the [Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) app is built. Chef is an AI-powered cooking assistant that helps you manage recipes and get cooking guidance through a chat interface.
 
-### Why Every Chef?
-
-It covers the patterns most apps need like:
+It covers patterns most apps need like:
 
 - Saving data with instant UI feedback
 - Using a component library with light and dark themes

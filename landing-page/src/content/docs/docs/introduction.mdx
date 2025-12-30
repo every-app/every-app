@@ -3,11 +3,21 @@ title: Introduction
 description: What is Every App?
 ---
 
+import gatewayScreenshot from "../../../assets/gateway-and-workout-tracker.png";
+
 Every App is a self-hosted platform for running personal web applications.
 
 Deploy the Gateway to your Cloudflare account, and access all your apps through a single interface.
 
 Self host open source apps with one simple command or build your own and share them with the community.
+
+<img
+  src={gatewayScreenshot.src}
+  alt="Gateway and Workout Tracker"
+  style="border-radius: 8px; margin: 1rem 0;"
+/>
+
+_Split browser windows showing the Gateway (left) with self-hosted apps and the mobile friendly Workout Tracker app (right) on the program editor page._
 
 ## Open Source App Ecosystem
 
@@ -30,11 +40,3 @@ The Gateway is the parent application that hosts all your embedded apps:
 - **LLM Gateway (Coming soon)** - Configure LLM provider once, instead of once per app. Define per-app budgets.
 
 Apps run inside the Gateway's iframe and receive scoped session tokens for authentication, so you don't need to implement auth in your apps.
-
-## Example Apps
-
-While the starter template is minimal, there are several full apps you can reference:
-
-- [Todos](https://github.com/every-app/every-app/tree/main/apps/todo-app) - A minimal todo list
-- [Workout Tracker](https://github.com/every-app/every-app/tree/main/apps/workout-tracker) - Create programs and track workouts
-- [Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) - AI cooking assistant

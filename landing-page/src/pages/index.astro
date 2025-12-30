@@ -92,187 +92,25 @@ const description = 'Make every app open source. No subscriptions or paywalls. O
           </h1>
 
           <p class="text-[clamp(1.5rem,3vw,2rem)] text-white font-normal mb-6">
-            Make every app open source.
+            Make every app open source
           </p>
 
-          <div class="space-y-2 text-[clamp(1rem,2vw,1.25rem)] text-stone-400 font-light">
-            <p>No subscriptions or paywalls.</p>
-            <p>Unleash your creativity.</p>
-            <p>Personal software you can share with the world.</p>
+          <div class="space-y-2 text-[clamp(1rem,2vw,1.25rem)] text-stone-400 font-light mb-8">
+            <p>Personal software you can share with the world</p>
+            <p>No subscriptions or paywalls</p>
+            <p>Unleash your creativity</p>
           </div>
-        </div>
 
-        <!-- Scroll Indicator -->
-        <div class="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 mb-[env(safe-area-inset-bottom)]">
-          <svg
-            class="w-6 h-6 text-stone-500"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-            aria-label="Scroll down indicator"
+          <a 
+            href="/docs/introduction"
+            class="inline-flex items-center gap-2 text-stone-400 font-medium underline underline-offset-4 decoration-stone-600 hover:text-white hover:decoration-stone-400 transition-colors"
           >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M19 9l-7 7-7-7"
-            />
-          </svg>
+            Learn More
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </a>
         </div>
-      </section>
-
-      <section class="py-12 px-6 border-t border-stone-800">
-        <div class="max-w-2xl mx-auto">
-          <h2 class="text-[clamp(1.5rem,4vw,2.5rem)] font-bold text-white mb-6">
-            Philosophy
-          </h2>
-          <div class="pb-4 border-b border-stone-800">
-            <p class="text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-              The best apps are made with love by people who use them.
-            </p>
-          </div>
-          <div class="pt-4 pb-4 border-b border-stone-800">
-            <p class="text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-              Apps solving common problems should be free.
-            </p>
-          </div>
-          <div class="pt-4 pb-4 border-b border-stone-800">
-            <p class="text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-              The best possible cooking app will not be a good business.
-            </p>
-          </div>
-          <div class="pt-4 pb-4">
-            <p class="text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-              Open source apps will be 10x better quality and result in more
-              interesting applications.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section class="py-12 px-6 border-t border-stone-800">
-        <div class="max-w-2xl mx-auto">
-          <h2 class="text-[clamp(1.5rem,4vw,2.5rem)] font-bold text-white mb-6">
-            Make any app
-          </h2>
-          <div class="space-y-6 text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-	  <p>
-	  The coolest part about Every App is that you can make almost anything and host it for free.
-	  </p>
-	  <p>It makes using Cloudflare's diverse set of cloud services easy. Make anything from useful tools for yourself or your business, to fun games for your friends and family. 
-          </p>
-	  </div>
-          <div class="mt-8 flex flex-col md:flex-row justify-center items-center gap-4 md:gap-8">
-            <div class="mockup-phone border-stone-700 max-w-xs">
-              <div class="mockup-phone-camera"></div>
-              <div class="mockup-phone-display">
-                <div class="w-full">
-                  <img src={gatewayScreenshot.src} alt="Every App Gateway interface showing app management" class="brightness-75" />
-                </div>
-              </div>
-            </div>
-            <div class="mockup-phone border-stone-700 max-w-xs">
-              <div class="mockup-phone-camera"></div>
-              <div class="mockup-phone-display">
-                <div class="w-full">
-                  <img src={todoScreenshot.src} alt="Todo App interface demonstrating embedded app functionality" class="brightness-75" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section class="py-12 px-6 border-t border-stone-800">
-        <div class="max-w-2xl mx-auto">
-          <h2 class="text-[clamp(1.5rem,4vw,2.5rem)] font-bold text-white mb-6">
-            How does it work?
-          </h2>
-          <div class="space-y-6 text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-            <p>
-              Every App is a framework for building self hosted, full stack
-              web applications.
-            </p>
-            <p>
-	    It standardizes how to build these web apps and deploy them on Cloudflare. Cloudflare has a unique cloud offering of serverless functions, databases and containers which are pay by usage instead of fixed monthly prices enabling this simple and "free" hosting.
-	    </p>
-	    <p>
-	    These can be apps solving a personal problem or a fun project to show off your skills in a portfolio. 
-            </p>
-            <p>
-	    When you build something, you can can share it with others and they can easily use your app in their Gateway with one CLI command. As the framework and ecosystem mature, using new open source, full stack apps will be as easy as clicking "Install" in an App Store.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section class="py-12 px-6 border-t border-stone-800">
-        <div class="max-w-2xl mx-auto">
-          <h2 class="text-[clamp(1.5rem,4vw,2.5rem)] font-bold text-white mb-6">
-            Why should you try Every App?
-          </h2>
-          <div class="space-y-8">
-            <div class="pb-6 border-b border-stone-800">
-              <h3 class="text-[clamp(1.25rem,2.5vw,1.75rem)] font-semibold text-white mb-3">
-                For the community
-              </h3>
-              <p class="text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-	      Be part of a group of people who love to build for the sake of it. Learn from others experiences and read the code of other apps. This can be a place you meet friends, find jobs, or find co-founders for future ventures.
-              </p>
-            </div>
-            <div class="pb-6 border-b border-stone-800">
-              <h3 class="text-[clamp(1.25rem,2.5vw,1.75rem)] font-semibold text-white mb-3">
-                For your resume
-              </h3>
-              <p class="text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-                Having a project you're passionate about is the best way to differentiate yourself in the job hunt and interviews. Every App is aiming to be the easiest way to build, deploy and share your passion projects.
-              </p>
-            </div>
-            
-            <div class="pb-6 border-b border-stone-800">
-              <h3 class="text-[clamp(1.25rem,2.5vw,1.75rem)] font-semibold text-white mb-3">
-                To learn how to start a company
-              </h3>
-              <p class="text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-                Building a product is a key skill in company building. Get experience rapidly building and marketing products through Every App without being bogged down by the unsexy parts of starting a company like billing, scalability, and legal.
-              </p>
-            </div>
-            
-            <div>
-              <h3 class="text-[clamp(1.25rem,2.5vw,1.75rem)] font-semibold text-white mb-3">
-                For yourself
-              </h3>
-              <p class="text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-                Solve your own problems with the help of the community and have a central, free place for your side projects without duct taping together a bunch of services trying to upcharge you.
-              </p>
-            </div>
-            
-          </div>
-        </div>
-      </section>
-
-      <!-- Get Involved Section -->
-      <section class="py-12 px-6 border-t border-stone-800">
-        <div class="max-w-2xl mx-auto">
-          <h2 class="text-[clamp(1.5rem,4vw,2.5rem)] font-bold text-white mb-6">
-            Get involved
-          </h2>
-          <div class="space-y-6 text-[clamp(1rem,2vw,1.25rem)] text-stone-300 font-light leading-relaxed">
-	  <p>Try deploying the Gateway yourself following the "Quickstart" guide! This will give you a feel for what Every App actually is and inspire ideas for what you can build.</p>
-	  <p>Then, make sure to join the <a href="https://discord.gg/c9uGs3cFXr" target="_blank" rel="noopener noreferrer" class="text-white underline hover:text-stone-200 transition-colors">Discord</a> which is the place you can go when you're stuck or to talk through ideas before you build them.</p>
-	  <LinkCard title="Quickstart" href="/docs/getting-started/quickstart" description="(5 minutes) Deploy the Every App Gateway and a Todo App" />
-	  </div>
-        </div>
-      </section>
-
-      <!-- Footer -->
-      <footer class="py-12 px-6 border-t border-stone-800">
-        <div class="max-w-2xl mx-auto">
-          <p class="text-stone-400 text-base text-center">
-            Make every app open source.
-          </p>
-        </div>
-      </footer>
     </div>
   </body>
 </html>
