@@ -4,20 +4,23 @@ Every App is a self-hosted platform for running personal web applications.
 
 Deploy the Gateway to your Cloudflare account, and access all your apps through a single interface.
 
-Build apps for yourself, share them with the community, or host apps others have built with one simple command.
+Self host open source apps with one simple command or build your own and share them with the community.
 
-## Every App Handles the Boring Parts
-The goal is to handle the boring parts so you can focus on building your idea:
+## Open Source App Ecosystem
+In the near future, there will be hundreds of high quality open source apps for you to self host. We need passionate community members to get there. 
+
+Every App handles the boring parts so you can focus on building your idea:
 - **1 command self hosting**
 - **Simplified auth** 
-- **Real full stack examples from other open source apps** 
-- **AI prompts for building features and maintaining your codebase**
+- **Complete Full Stack example codebases** 
+- **Prompts for agents to build features and maintain code**
 
-### Gateway Home Page
-![Gateway Home Page](docs/images/Screenshot-2025-12-22-at-5.31.18-PM.png)
+### App Screenshots
+This screenshot is of a split window. 
+- Left - Gateway showing the apps the user is self hosting
+- Right - Workout App: Program editor page
 
-### Example Page in Workout Tracker
-![Workout Tracker Example](docs/images/Screenshot-2025-12-22-at-5.31.01-PM.png)
+![Gateway and Workout Tracker](docs/images/gateway-and-workout-tracker.png)
 
 ## What is the Every App Gateway?
 The Gateway is the parent application that hosts all your embedded apps. It provides:
@@ -31,20 +34,14 @@ Apps run inside the Gateway's iframe and receive scoped session tokens for authe
 
 ## Self Host
 ### Prerequisites
-1. Make a Cloudflare Account (No credit card needed)
-- https://dash.cloudflare.com/sign-up
+1. Make a Cloudflare Account (No credit card needed) - https://dash.cloudflare.com/sign-up
 2. Login via the Cloudflare CLI
 ```bash
 npx wrangler login
 ```
-3. Install the Every App CLI
-```bash
-npm i -g @every-app/cli
-```
-
 ### Self Host Gateway
 ```bash
-every gateway deploy
+npx @every-app/cli gateway deploy
 ```
 
 Follow the link to create your account.
@@ -59,7 +56,7 @@ Follow the link to create your account.
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
 cd every-todo-app
-every app deploy
+npx @every-app/cli app deploy
 ```
 
 
@@ -69,7 +66,7 @@ every app deploy
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/workout-tracker every-workout-tracker
 cd every-workout-tracker
-every app deploy
+npx @every-app/cli app deploy
 ```
 
 
@@ -79,7 +76,7 @@ every app deploy
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/every-chef every-chef
 cd every-chef
-every app deploy
+npx @every-app/cli app deploy
 ```
 
 
@@ -87,7 +84,7 @@ every app deploy
 
 
 ```bash
-every app create
+npx @every-app/cli app create
 cd your-project-name
 pnpm install
 pnpm run dev

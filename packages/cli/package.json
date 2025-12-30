@@ -4,7 +4,7 @@
   "description": "Every App CLI - Deploy and manage apps.",
   "license": "MIT",
   "type": "module",
-  "version": "0.0.20",
+  "version": "0.0.21",
   "files": [
     "dist"
   ],
@@ -22,7 +22,6 @@
     "build": "tsup --silent",
     "build:prepublish": "pnpm install --ignore-scripts && npm run types:check && npm run build",
     "prepublishOnly": "npm run build:prepublish",
-    "postinstall": "every install",
     "knip": "knip"
   },
   "tsup": {

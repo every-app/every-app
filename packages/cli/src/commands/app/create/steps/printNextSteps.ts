@@ -35,7 +35,7 @@ export function printNextSteps(
     chalk.dim(
       chalk.bold(
         chalk.italic(
-          "   every app deploy	    # Deploys made easy using the Every App CLI",
+          "   npx @every-app/cli app deploy",
         ),
       ),
     ),

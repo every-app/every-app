@@ -20,7 +20,7 @@ export async function buildAndDeploy(
     // Build the app
     await executeCommandWithFormatting("npx", ["vite", "build"], {
       cwd,
-      description: "Building your application...",
+      description: "Building your application...\n",
       env: deployEnv,
       verbose,
     });

@@ -22,32 +22,6 @@ function validateAppId(input: string): boolean | string {
 }
 
 /**
- * Prompt user to acknowledge pnpm requirement
- * Loops until user confirms with 'y'
- */
-async function promptPnpmAcknowledgement(): Promise<void> {
-  let acknowledged = false;
-  let response = null;
-
-  while (!acknowledged) {
-    response = await enquirer.prompt<{ acknowledged: boolean }>({
-      type: "confirm",
-      name: "acknowledged",
-      message: !response
-        ? "pnpm has been chosen as the package manager for Every App projects. Other package managers will not work with `every app deploy` currently.\n\n  Press y to acknowledge this."
-        : "You must acknowledge this to proceed. Press y to continue.\n",
-      initial: false,
-    });
-
-    if (response.acknowledged) {
-      acknowledged = true;
-    } else {
-      console.log();
-    }
-  }
-}
-
-/**
  * Prompt user for app configuration
  */
 export async function promptUserInput(): Promise<{ appId: string }> {
@@ -59,9 +33,6 @@ export async function promptUserInput(): Promise<{ appId: string }> {
     message: "Enter your app ID (kebab-case format)",
     validate: validateAppId,
   });
-
-  console.log();
-  await promptPnpmAcknowledgement();
 
   return { appId: response.appId };
 }
