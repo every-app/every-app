@@ -1,5 +1,5 @@
 import { Button } from "./button";
-import { useModal } from "@/client/hooks/useModal";
+import { useDialogControl } from "@/client/hooks/useDialogControl";
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -22,13 +22,12 @@ export function ConfirmationModal({
   cancelText = "Cancel",
   variant = "danger",
 }: ConfirmationModalProps) {
-  const { dialogRef, handleBackdropClick } = useModal(isOpen, onClose);
+  const dialogRef = useDialogControl(isOpen);
 
   return (
     <dialog
       ref={dialogRef}
-      className="modal"
-      onClick={handleBackdropClick}
+      className="modal modal-bottom sm:modal-middle"
       onClose={onClose}
     >
       <div className="modal-box">
@@ -51,6 +50,9 @@ export function ConfirmationModal({
           </Button>
         </div>
       </div>
+      <form method="dialog" className="modal-backdrop">
+        <button>close</button>
+      </form>
     </dialog>
   );
 }

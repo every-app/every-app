@@ -1,4 +1,5 @@
 import { Button } from "./button";
+import { useDialogControl } from "@/client/hooks/useDialogControl";
 
 interface ConfirmationModalProps {
   isOpen: boolean;
@@ -21,8 +22,14 @@ export function ConfirmationModal({
   cancelText = "Cancel",
   variant = "danger",
 }: ConfirmationModalProps) {
+  const dialogRef = useDialogControl(isOpen);
+
   return (
-    <dialog className="modal" open={isOpen}>
+    <dialog
+      ref={dialogRef}
+      className="modal modal-bottom sm:modal-middle"
+      onClose={onClose}
+    >
       <div className="modal-box">
         <h3 className="font-bold text-lg">{title}</h3>
         <p className="py-4 text-base-content/70 whitespace-pre-line">
@@ -43,7 +50,9 @@ export function ConfirmationModal({
           </Button>
         </div>
       </div>
-      <div className="modal-backdrop" onClick={onClose} />
+      <form method="dialog" className="modal-backdrop">
+        <button>close</button>
+      </form>
     </dialog>
   );
 }

@@ -1,5 +1,5 @@
 import { Button } from "./button";
-import { useModal } from "@/client/hooks/useModal";
+import { useDialogControl } from "@/client/hooks/useDialogControl";
 
 interface InfoModalProps {
   isOpen: boolean;
@@ -16,13 +16,12 @@ export function InfoModal({
   description,
   buttonText = "Got it",
 }: InfoModalProps) {
-  const { dialogRef, handleBackdropClick } = useModal(isOpen, onClose);
+  const dialogRef = useDialogControl(isOpen);
 
   return (
     <dialog
       ref={dialogRef}
-      className="modal"
-      onClick={handleBackdropClick}
+      className="modal modal-bottom sm:modal-middle"
       onClose={onClose}
     >
       <div className="modal-box">
@@ -36,6 +35,9 @@ export function InfoModal({
           </Button>
         </div>
       </div>
+      <form method="dialog" className="modal-backdrop">
+        <button>close</button>
+      </form>
     </dialog>
   );
 }

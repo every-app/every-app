@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "./ui/button";
 import { skipToWorkout } from "@/client/actions/skipToWorkout";
-import { useModal } from "@/client/hooks/useModal";
 import type { WorkoutWithExercises } from "@/client/hooks/useProgramData";
+import { useDialogControl } from "@/client/hooks/useDialogControl";
 
 interface WorkoutPreviewModalProps {
   isOpen: boolean;
@@ -28,7 +28,7 @@ export function WorkoutPreviewModal({
   hasTrackedProgress,
   inProgressSessionId,
 }: WorkoutPreviewModalProps) {
-  const { dialogRef, handleBackdropClick } = useModal(isOpen, onClose);
+  const dialogRef = useDialogControl(isOpen);
   const navigate = useNavigate();
   const [showConfirmation, setShowConfirmation] = useState(false);
 
@@ -77,8 +77,7 @@ export function WorkoutPreviewModal({
   return (
     <dialog
       ref={dialogRef}
-      className="modal"
-      onClick={handleBackdropClick}
+      className="modal modal-bottom sm:modal-middle"
       onClose={onClose}
     >
       <div className="modal-box max-w-md">
@@ -143,6 +142,9 @@ export function WorkoutPreviewModal({
           </>
         )}
       </div>
+      <form method="dialog" className="modal-backdrop">
+        <button>close</button>
+      </form>
     </dialog>
   );
 }

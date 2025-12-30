@@ -1,5 +1,5 @@
-import { useCloseModalOnEscape } from "@/client/hooks/useCloseModalOnEscape";
 import type { ReactNode } from "react";
+import { useDialogControl } from "@/client/hooks/useDialogControl";
 
 interface ModalProps {
   open: boolean;
@@ -12,7 +12,7 @@ interface ModalProps {
 
 /**
  * Reusable modal component with consistent styling and behavior.
- * Handles escape key closing and backdrop click.
+ * Uses native dialog showModal() API for proper top-layer rendering.
  */
 export function Modal({
   open,
@@ -22,18 +22,22 @@ export function Modal({
   children,
   actions,
 }: ModalProps) {
-  useCloseModalOnEscape(open, onClose);
+  const dialogRef = useDialogControl(open);
 
   return (
-    <dialog className={`modal ${open ? "modal-open" : ""}`}>
+    <dialog
+      ref={dialogRef}
+      className="modal modal-bottom sm:modal-middle"
+      onClose={onClose}
+    >
       <div className="modal-box">
         <h3 className="font-bold text-lg">{title}</h3>
         {description && <p>{description}</p>}
         {children}
         <div className="modal-action">{actions}</div>
       </div>
-      <form method="dialog" className="modal-backdrop" onClick={onClose}>
-        <button type="button">close</button>
+      <form method="dialog" className="modal-backdrop">
+        <button>close</button>
       </form>
     </dialog>
   );

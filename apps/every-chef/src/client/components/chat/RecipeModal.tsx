@@ -1,5 +1,5 @@
-import { X } from "lucide-react";
 import type { Recipe } from "@/db/schema";
+import { useDialogControl } from "@/client/hooks/useDialogControl";
 import { MarkdownRenderer } from "../MarkdownRenderer";
 
 interface RecipeModalProps {
@@ -15,7 +15,7 @@ export function RecipeModal({
   onClose,
   onRemove,
 }: RecipeModalProps) {
-  if (!isOpen) return null;
+  const dialogRef = useDialogControl(isOpen);
 
   const handleRemove = () => {
     onRemove();
@@ -23,37 +23,34 @@ export function RecipeModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-base-100">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-base-300 bg-base-100">
-        <h2 className="font-bold text-lg text-base-content">{recipe.title}</h2>
-        <button
-          onClick={onClose}
-          className="btn btn-ghost btn-sm btn-circle"
-          aria-label="Close"
-        >
-          <X size={20} />
-        </button>
-      </div>
+    <dialog
+      ref={dialogRef}
+      className="modal modal-bottom sm:modal-middle"
+      onClose={onClose}
+    >
+      <div className="modal-box h-[100dvh] max-h-[100dvh] sm:h-auto sm:max-h-[calc(100vh-5em)] flex flex-col rounded-none sm:rounded-box">
+        <h3 className="font-bold text-lg mb-4">{recipe.title}</h3>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4">
-        <div className="max-w-2xl mx-auto">
-          <MarkdownRenderer content={recipe.content} />
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="max-w-2xl mx-auto">
+            <MarkdownRenderer content={recipe.content} />
+          </div>
         </div>
-      </div>
 
-      {/* Footer */}
-      <div className="border-t border-base-300 p-4 bg-base-100">
-        <div className="max-w-2xl mx-auto flex gap-3">
-          <button onClick={onClose} className="btn btn-primary flex-1">
+        {/* Footer */}
+        <div className="modal-action flex-col gap-2 mt-auto">
+          <button onClick={onClose} className="btn btn-primary w-full">
             Back to Chat
           </button>
-          <button onClick={handleRemove} className="btn btn-ghost">
+          <button onClick={handleRemove} className="btn btn-ghost w-full">
             Done Cooking
           </button>
         </div>
       </div>
-    </div>
+      <form method="dialog" className="modal-backdrop">
+        <button>close</button>
+      </form>
+    </dialog>
   );
 }
