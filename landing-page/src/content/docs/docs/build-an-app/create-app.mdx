@@ -1,0 +1,25 @@
+---
+title: Build Your Own App
+description: Create a new app using the Every App template
+---
+
+Start from the template to get a working app with auth and database already set up correctly with Cloudflare.
+
+```bash
+npx @every-app/cli app create
+cd your-project-name
+pnpm install
+pnpm run dev
+```
+
+Then add your app in the Gateway UI. The App ID must match your project name.
+
+## Deploy to Production
+
+```bash
+npx @every-app/cli app deploy
+```
+
+This builds your app, creates any needed Cloudflare resources (D1 database, etc.), runs migrations, and deploys to Cloudflare Workers.
+
+To update your deployed app, just run the same command again.

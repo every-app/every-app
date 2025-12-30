@@ -8,423 +8,693 @@ This documentation covers how to deploy and build apps with Every App, including
 
 ### Introduction
 
-## What is Every App Gateway?
+Every App is a self-hosted platform for running personal web applications.
 
-Every App Gateway is a self-hosted hub for all your personal web applications. Think of it as your own private app store that you control, running in your Cloudflare account.
+Deploy the Gateway to your Cloudflare account, and access all your apps through a single interface.
 
-### Main Functions
+Self host open source apps with one simple command or build your own and share them with the community.
 
-- **Consistent URL** - Access all your apps from a single URL. No need to remember different domains or ports for each app.
-- **Authentication** - Embedded apps request session tokens from the gateway instead of implementing auth themselves. You log in once and all your apps just work.
-- **Mobile PWA Optimized** - The Gateway is optimized with Progressive Web Apps in mind. Add the Gateway to your home screen, then each embedded app gets PWA benefits without reinventing the wheel.
+## Open Source App Ecosystem
 
-> **Coming Soon**: In the near future, the Gateway will also manage user roles and access to apps
-  if you want to add friends and family to your gateway.
+In the near future, there will be hundreds of high quality open source apps for you to self host. We need passionate community members to get there.
 
-## Why Build with Every App?
+Every App handles the boring parts so you can focus on building your idea:
 
-### The Gateway Handles Common Functionality
+- **1 command self hosting**
+- **Simplified auth**
+- **Complete full stack example codebases**
+- **Prompts for agents to build features and maintain code**
 
-You don't need to worry about auth and PWAs. In the future, our goal is to abstract away even more like LLM providers & email sending.
+## What is the Gateway?
 
-### Opinionated Tech Stack with Examples
+The Gateway is the parent application that hosts all your embedded apps:
 
-The stack is designed for simplicity and agentic coding. If you look at the example apps, the only dependencies are really TanStack libraries, Drizzle, and Cloudflare. This means it's less things for you and your coding agent to learn and keep track of.
+- **Single URL** - Access all apps from one place
+- **Shared Auth** - Log in once, access all apps
+- **PWA Support** - Add to home screen, all apps inherit PWA benefits
+- **LLM Gateway (Coming soon)** - Configure LLM provider once, instead of once per app. Define per-app budgets.
 
-### Full Stack, Complete Example Apps
+Apps run inside the Gateway's iframe and receive scoped session tokens for authentication, so you don't need to implement auth in your apps.
+
+## Example Apps
 
 While the starter template is minimal, there are several full apps you can reference:
 
-- [Workout Tracker](https://github.com/every-app/every-app/tree/main/apps/workout-tracker) - A workout tracking app
-- [Every Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) - A cooking assistant
-- [Todos](https://github.com/every-app/every-app/tree/main/apps/todo-app) - A minimal todo list app
-
-If you're stuck or not sure how to implement something, there's a good chance there's already an example full stack application using the same stack in one of these apps.
-
-## How It Works
-
-From your app's perspective, Every App does a few things:
-
-1. **Renders your app in an iframe** - Your app lives inside the Gateway's UI
-2. **Provides session tokens** - The Gateway handles auth and gives your app tokens
-3. **Syncs routing** - Navigation in your app syncs with the Gateway's URL bar
-
-The `@embedded-sdk` handles all this communication for you. Check out the [Embedded SDK docs](/docs/embedded-sdk/overview) for details.
+- [Todos](https://github.com/every-app/every-app/tree/main/apps/todo-app) - A minimal todo list
+- [Workout Tracker](https://github.com/every-app/every-app/tree/main/apps/workout-tracker) - Create programs and track workouts
+- [Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) - AI cooking assistant
 
 
 ## Getting Started
 
-### Deploy the Gateway
+### Getting Started
 
-1. **Log in to Cloudflare**
+This guide walks through self hosting the Gateway and your first app.
+
+## Prerequisites
+
+1. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) (free, no credit card required)
+
+2. Login via the Cloudflare CLI:
 
    ```bash
    npx wrangler login
    ```
 
-   > **Make a Cloudflare Account**: If you don't already have an account, run this command which will redirect
-     you to the page where you can create an account. You can use Every App on
-     the Cloudflare free tier without even entering a credit card.
+## Self Host the Gateway
 
-2. **Install the Every App CLI**
+```bash
+npx @every-app/cli gateway deploy
+```
 
-   ```bash
-   npm i -g @every-app/cli
-   ```
+Follow the link this returns to create your account in the Gateway.
 
-3. **Deploy the Every App Gateway into your Cloudflare Account**
+## Self Host Apps
 
-   ```bash
-   every gateway deploy
-   ```
+Pick an app to deploy:
 
-4. **Follow the link to your deployed Gateway and create an account in your Every App Gateway instance.**
+### Todo App
 
-   > **How does it work?**: If you go to Storage & Databases > D1 SQL database, find your D1 database
-     for `every-app-gateway`, then click "Explore Data". You can look at the
-     `users` table and see a user has been created in your self hosted instance
-     of Every App.
+```bash
+npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
+cd every-todo-app
+npx @every-app/cli app deploy
+```
 
-## Next Steps
+### Workout Tracker
 
-Now that you have your Gateway deployed, you can:
+```bash
+npx gitpick every-app/every-app/tree/main/apps/workout-tracker every-workout-tracker
+cd every-workout-tracker
+npx @every-app/cli app deploy
+```
 
-- [Deploy the Todo App](/docs/getting-started/deploy-todo-app) to see an example app in action
-- [Start building your own app](/docs/build-an-app/start-from-template)
+### Cooking Assistant
 
+```bash
+npx gitpick every-app/every-app/tree/main/apps/every-chef every-chef
+cd every-chef
+npx @every-app/cli app deploy
+npx wrangler secret put OPENAI_API_KEY
+```
 
-### Deploy Todo App
-
-The first application we've built for Every App is a really nice, minimal todo list app. It's been really surprising how much goes into making a great todo list application from keyboard navigation, optimistic mutations, and optimizing for a mobile PWA experience.
-
-We recommend deploying this app so that you can see how easy it is to deploy open source full stack apps, but also hopefully to inspire you to build an app 10x better than this demo.
-
-1. **Clone the `every-app` repo**
-
-   ```bash
-   npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
-   ```
-
-   > https://github.com/every-app/every-app.git is the monorepo which contains
-     many projects related to Every App. `gitpick` clones just the Todo App.
-
-2. **Navigate to the Todo App**
-
-   ```bash
-   cd every-todo-app
-   ```
-
-3. **Deploy the app**
-
-   ```bash
-   every app deploy
-   ```
-
-4. **Go back to the Every App Gateway, refresh and you should see it as an app for you to try out.**
-
-## Next Steps
-
-Ready to build your own app? Check out [Start from Template](/docs/build-an-app/start-from-template).
+Refresh your Gateway and you should see the app available.
 
 
 ## Build an App
 
-### Start from Template
+### Build Your Own App
 
-We highly recommend starting from the template to ensure that everything is configured properly for Cloudflare. There are lots of gotchas that have been solved in the template.
-
-1. **Create a new project**
-
-   ```bash
-   every app create
-   ```
-
-2. **Name your project**
-
-   Note: this is also what the resources will be called in your Cloudflare account.
-
-3. **Navigate to your project**
-
-   ```bash
-   cd your-project-name
-   ```
-
-4. **Install dependencies**
-
-   ```bash
-   pnpm install
-   ```
-
-5. **Start the development server**
-
-   ```bash
-   pnpm run dev
-   ```
-
-6. **Navigate to Every App Gateway**
-
-   Go to the Every App Gateway in your browser.
-
-7. **Click "Add App"**
-
-   > **Important**: The App ID must match your project name or the handshake between the
-     Gateway and your app won't work.
-
-8. **Configure your app**
-   - Assign a name and description
-   - The App URL should be whatever port your dev server is running on (e.g. `http://localhost:3001`)
-
-9. **Test your app**
-
-   Click on your newly created app and you should see a simple todo app template!
-
-## What's in the Template?
-
-The template includes:
-
-- **TanStack Start** configured for Cloudflare Workers
-- **Drizzle ORM** with D1 database setup
-- **Embedded SDK** for Gateway authentication
-- **Example todo CRUD** to show patterns for server functions
-- **TanStack DB** setup for optimistic mutations
-
-## Next Steps
-
-- [Development Workflow](/docs/build-an-app/development-workflow) - Learn the day-to-day commands
-- [Deployment](/docs/build-an-app/deployment) - Deploy to production
-- [Tech Stack](/docs/tech-stack) - Understand the technologies
-
-
-### Development Workflow
-
-## Common Commands
-
-### Start Development Server
+Start from the template to get a working app with auth and database already set up correctly with Cloudflare.
 
 ```bash
+npx @every-app/cli app create
+cd your-project-name
+pnpm install
 pnpm run dev
 ```
 
-This starts the Vite dev server with hot reloading. Your app will be available at the port shown in the terminal (usually `http://localhost:3001`).
+Then add your app in the Gateway UI. The App ID must match your project name.
 
-### Type Checking
-
-```bash
-pnpm run types:check
-```
-
-Run this frequently to catch type errors early.
-
-### Formatting
+## Deploy to Production
 
 ```bash
-# Check formatting
-pnpm run format:check
-
-# Fix formatting
-pnpm run format:write
+npx @every-app/cli app deploy
 ```
 
-## Database Operations
+This builds your app, creates any needed Cloudflare resources (D1 database, etc.), runs migrations, and deploys to Cloudflare Workers.
 
-1. **Create a migration**
-
-   Change your schema in `src/db/schema.ts`, then run:
-
-   ```bash
-   pnpm run db:generate
-   ```
-
-2. **Run migrations**
-
-   
-     ```bash pnpm run db:migrate:local ```
-     ```bash pnpm run db:migrate:prod ```
-   
-
-3. **View database data**
-
-   
-     ```bash pnpm run db:studio:local ```
-     ```bash pnpm run db:studio:prod ```
-   
-
-## Cloudflare Types
-
-If you change Cloudflare resources in your `wrangler.jsonc` (add a KV namespace, change D1 binding name, etc.):
-
-```bash
-pnpm run cf-typegen
-```
-
-This regenerates the `worker-configuration.d.ts` file so TypeScript knows about your bindings.
-
-## Project Structure
-
-```
-src/
-├── client/           # Client-only code
-│   ├── components/   # React components
-│   ├── hooks/        # Custom hooks
-│   └── tanstack-db/  # TanStack DB collections
-├── db/               # Database
-│   └── schema.ts     # Drizzle schema
-├── embedded-sdk/     # Gateway integration
-│   ├── client/       # Client SDK
-│   └── server/       # Server SDK
-├── routes/           # TanStack Router routes
-├── server/           # Server-side code
-│   ├── repositories/ # Data access layer
-│   └── services/     # Business logic
-├── serverFunctions/  # TanStack server functions
-└── app.tsx           # App entry point
-```
-
-## Tips
-
-- **Keep client code in `/client`** - Helps avoid accidentally importing server code on the client
-- **Use server functions for all data mutations** - Don't call repositories directly from components
-- **Run `types:check` before committing** - Catches errors that hot reload might miss
+To update your deployed app, just run the same command again.
 
 
-### Deployment
+## Coding Agents
 
-Deploy your app to production with a single command:
+### Coding Agent Setup
 
-```bash
-every app deploy
-```
+We recommend using an AI coding assistant to build your app. The Every App MCP server gives your agent access to example apps and documentation.
 
-## What Happens
+## Setup
 
-Running this command will:
+Add to `opencode.json`:
 
-1. **Build your code** - Compiles your TanStack Start app for Cloudflare Workers
-2. **Create resources** - Creates your D1 Database or KV Store if they don't already exist
-3. **Run migrations** - Executes any pending database migrations
-4. **Deploy to Workers** - Uploads your code to Cloudflare's edge network
-
-> After deployment, refresh your Gateway and you'll see your app available. The
-  App URL in your Gateway config will automatically update to your production
-  URL.
-
-## Updating Your App
-
-Just run the same command again:
-
-```bash
-every app deploy
-```
-
-Your database data is preserved - only the code is updated.
-
-## Manual Deployment
-
-If you prefer more control, you can use Wrangler directly:
-
-```bash
-# Build and deploy
-pnpm run deploy
-
-# Or step by step:
-pnpm run build
-npx wrangler deploy
-```
-
-## Environment Variables
-
-Production environment variables are set in your `wrangler.jsonc`:
-
-```jsonc
+```json
 {
-  "vars": {
-    "GATEWAY_URL": "https://your-gateway.your-subdomain.workers.dev",
-  },
+  "mcp": {
+    "every-app": {
+      "type": "local",
+      "command": ["npx", "-y", "@every-app/mcp"]
+    }
+  }
 }
 ```
 
-For secrets (like API keys), use Wrangler:
+Add to `.cursor/mcp.json`:
 
-```bash
-npx wrangler secret put MY_SECRET
+```json
+{
+  "mcpServers": {
+    "every-app": {
+      "command": "npx",
+      "args": ["-y", "@every-app/mcp"]
+    }
+  }
+}
+```
+
+```sh
+claude mcp add every-app -- npx -y @every-app/mcp
+```
+
+Restart your AI tool after adding the MCP server.
+
+## Tips
+
+- **Point to specific examples** - `Look at how the cooking app in Every App handles optimistic mutations` works better than `implement optimistic mutations`
+- **Ask questions** - If you're not sure how to do something, ask! `How do migrations work in Every App?` or `Are there any drag and drop Every App examples?`
+
+
+## Walkthrough: AI Cooking Assistant
+
+### Walkthrough: AI Cooking Assistant
+
+This walkthrough explains how the [Every Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) app is built. Every Chef is an AI-powered cooking assistant that helps you manage recipes and get cooking guidance through a chat interface.
+
+### Why Every Chef?
+
+It covers the patterns most apps need like:
+
+- Saving data with instant UI feedback
+- Using a component library with light and dark themes
+- Organizing backend logic
+- Streaming AI responses
+- Confirming with user before executing AI actions
+
+
+### Users & Auth
+
+## How It Works
+
+The Gateway handles signup, login, and sessions. Your app receives session tokens and verifies them. On first access, you create a local user record so you have somewhere to associate data.
+
+## The ensureUser Pattern
+
+On every authenticated request, check if the user exists locally. If not, create them:
+
+```ts
+// middleware/ensureUser.ts
+export const ensureUser = createMiddleware().server(async ({ next }) => {
+  const session = await authenticateRequest(getAuthConfig());
+  if (!session?.sub) throw new Error("Unauthorized");
+
+  // Create user if they don't exist (upsert)
+  await UserService.ensureUser({
+    id: session.sub,
+    email: session.email,
+  });
+
+  return next();
+});
+```
+
+The user ID (`session.sub`) comes from the Gateway - use this same ID so data stays linked across both systems.
+
+## Authenticating Requests
+
+**Client side:** The SDK middleware adds the session token to every request automatically.
+
+```ts
+export const getAllRecipes = createServerFn({ method: "GET" })
+  .middleware([useSessionTokenClientMiddleware]) // Adds Authorization header
+  .handler(async () => {
+    const session = await authenticateRequest(authConfig);
+    return RecipeService.getAll(session.sub);
+  });
+```
+
+**Server side:** `authenticateRequest` verifies the JWT using the Gateway's public keys (JWKS) and returns the decoded payload with the user ID.
+
+See the [SDK docs](/docs/embedded-sdk/overview) for more details on how session tokens work.
+
+
+### Theming & Styling
+
+[DaisyUI](https://daisyui.com/) is a component library built on top of Tailwind with support for themes. These themes are all defined within a single CSS file (`src/client/styles/app.css`) and provide powerful components without adding a ton of dependencies.
+
+## Custom Themes
+
+Define themes with the `@plugin "daisyui/theme"` directive using OKLCH colors:
+
+```css
+@plugin "daisyui/theme" {
+  name: "chef";
+  default: true;
+  color-scheme: "light";
+
+  --color-primary: oklch(55% 0.15 145);
+  --color-secondary: oklch(65% 0.12 45);
+  --color-base-100: oklch(98% 0.005 90);
+  --color-base-content: oklch(25% 0.02 90);
+  /* ... see full theme in every-chef */
+}
+```
+
+You can define multiple themes (light, dark, etc.) and DaisyUI handles switching between them.
+
+## Custom Classes with Theme Variables
+
+You can create reusable classes that reference your theme variables:
+
+```css
+.chat-message-user {
+  @apply bg-base-300 text-base-content rounded-2xl px-4 py-2;
+}
+
+.chat-message-assistant {
+  @apply bg-base-200 text-base-content rounded-2xl px-4 py-2;
+}
+```
+
+These classes automatically adapt when switching themes since they use the theme's color variables (`base-300`, `base-content`, etc.) rather than hard-coded colors.
+
+See the full [Every Chef app.css](https://github.com/every-app/every-app/blob/main/apps/every-chef/src/client/styles/app.css) for a complete example.
+
+
+### Database Schema
+
+Schema is the hardest thing to change as the app evolves once you have users. Most data modeling shortcuts come back to bite you. We try to normalize data from the start to make changing it easier later.
+
+## Normalized Tables
+
+Rather than JSON columns with nullable fields, we use separate tables for different content types. For example, messages can have different parts (text, tool calls):
+
+```ts
+// Base parts table
+export const messageParts = sqliteTable("message_parts", {
+  id: text("id").primaryKey(),
+  messageId: text("message_id").references(() => messages.id, {
+    onDelete: "cascade",
+  }),
+  type: text("type", { enum: messagePartTypes }).notNull(),
+});
+
+// Specialized table for text content
+export const textMessageParts = sqliteTable("text_message_parts", {
+  partId: text("part_id")
+    .primaryKey()
+    .references(() => messageParts.id, { onDelete: "cascade" }),
+  text: text("text").notNull(),
+});
+
+// Specialized table for tool invocations
+export const toolInvocationMessageParts = sqliteTable(
+  "tool_invocation_message_parts",
+  {
+    partId: text("part_id")
+      .primaryKey()
+      .references(() => messageParts.id, { onDelete: "cascade" }),
+    toolCallId: text("tool_call_id").notNull(),
+    toolName: text("tool_name").notNull(),
+    args: text("args").notNull(),
+  },
+);
+```
+
+This avoids nullable columns that only apply to certain types and makes migrations cleaner.
+
+## Enum Pattern
+
+SQLite doesn't have native enums, so we use const arrays:
+
+```ts
+export const messageRoles = ["user", "assistant"] as const;
+export type MessageRole = (typeof messageRoles)[number];
+
+export const messages = sqliteTable("messages", {
+  id: text("id").primaryKey(),
+  role: text("role", { enum: messageRoles }).notNull(),
+});
+```
+
+This gives you type safety, runtime validation, and a reusable union type.
+
+## Cascading Deletes
+
+Use cascading deletes to keep data consistent automatically:
+
+```ts
+messageId: text("message_id").references(() => messages.id, {
+  onDelete: "cascade",
+});
+```
+
+When a message is deleted, all its parts are deleted too.
+
+## Type Inference
+
+Export inferred types for use throughout the app:
+
+```ts
+export type Recipe = typeof recipes.$inferSelect;
+export type NewRecipe = typeof recipes.$inferInsert;
+```
+
+These types stay in sync with your schema automatically.
+
+
+### Organizing Backend Code
+
+It's much easier to move fast as the codebase grows if you're already using patterns that scale. That's why we use a layered architecture even if its overkill at the start: **Routes → Services → Repositories → Database**.
+
+## Repositories
+
+Repositories handle database queries. They provide a clean abstraction over a potentially complex schema. For example, fetching messages requires joining across multiple tables (messages, parts, text parts, image parts, tool invocations):
+
+```ts
+// MessageRepository.ts
+async function getMessagesByChatIdRaw(chatId: string) {
+  return db.query.messages.findMany({
+    where: eq(messages.chatId, chatId),
+    orderBy: [asc(messages.createdAt)],
+    with: {
+      parts: {
+        orderBy: [asc(messageParts.order)],
+        with: {
+          textPart: true,
+          imagePart: { with: { file: true } },
+          toolInvocationPart: true,
+        },
+      },
+    },
+  });
+}
+```
+
+The caller doesn't need to know about the underlying table structure - they just call `MessageRepository.getMessagesByChatIdRaw(chatId)`.
+
+## Services
+
+Services handle authorization and transform data for the caller. Here's the service that uses the repository above:
+
+```ts
+// MessageService.ts
+async function getMessagesForChat(chatId: string, userId: string) {
+  // Verify chat ownership before fetching
+  const hasAccess = await ChatRepository.verifyChatOwnership(chatId, userId);
+  if (!hasAccess) {
+    throw new Error("Unauthorized: Chat not found or access denied");
+  }
+
+  const rawMessages = await MessageRepository.getMessagesByChatIdRaw(chatId);
+  return transformToNormalizedMessages(rawMessages);
+}
+```
+
+The service checks authorization, calls the repository, and transforms the raw database format into something the UI can use.
+
+## Server Functions
+
+Server functions are the entry point from the client - they handle auth middleware and call services:
+
+```ts
+export const getMessages = createServerFn()
+  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .inputValidator(getMessagesSchema)
+  .handler(async ({ data, context }) => {
+    const messages = await MessageService.getMessagesForChat(
+      data.chatId,
+      context.userId,
+    );
+    return MessageService.toUIMessages(messages);
+  });
 ```
 
 
-## Embedded SDK
+### Instant UI Updates
 
-### Embedded SDK Overview
+We want any app we use to feel instant. No spinners! [TanStack DB](https://tanstack.com/db/latest) is the best way we've found to do this on Cloudflare's infrastructure.
 
-The Embedded SDK handles all the communication between your app and the Every App Gateway. It's responsible for:
+When you create a recipe from the chat, it appears in the UI immediately. Navigate to the recipes page and it's already there - no refresh needed.
 
-1. **Session token management** - Requesting and refreshing tokens from the Gateway
+## Collections
+
+A collection defines how to fetch and sync data:
+
+```ts
+export const recipesCollection = lazyInitForWorkers(() =>
+  createCollection(
+    queryCollectionOptions({
+      queryKey: ["recipes"],
+      getId: (recipe) => recipe.id,
+
+      queryFn: async () => {
+        const result = await getAllRecipes();
+        return result.recipes;
+      },
+
+      onInsert: async ({ transaction }) => {
+        for (const mutation of transaction.mutations) {
+          await createRecipe({ data: mutation.modified });
+        }
+      },
+
+      onUpdate: async ({ transaction }) => {
+        for (const mutation of transaction.mutations) {
+          await updateRecipe({ data: mutation.modified });
+        }
+      },
+
+      onDelete: async ({ transaction }) => {
+        for (const mutation of transaction.mutations) {
+          await deleteRecipe({ data: { id: mutation.original.id } });
+        }
+      },
+    }),
+  ),
+);
+```
+
+The `lazyInitForWorkers` wrapper is required for Cloudflare Workers compatibility.
+
+## Using Collections
+
+Query like any TanStack Query, mutate directly on the collection:
+
+```tsx
+function RecipeList() {
+  const recipes = useQuery(recipesCollection);
+  return recipes.data?.map((r) => <li key={r.id}>{r.title}</li>);
+}
+
+function handleCreate() {
+  recipesCollection.insert({
+    id: crypto.randomUUID(),
+    title: "New Recipe",
+    // ...
+  });
+}
+```
+
+The UI updates immediately, then syncs to the server in the background.
+
+## Multi-Collection Updates
+
+Use `createOptimisticAction` when you need to update multiple collections at once:
+
+```ts
+export const startCooking = createOptimisticAction({
+  onMutate: ({ chatId, recipeId }) => {
+    // Optimistically insert into both collections
+    chatsCollection.insert({ id: chatId, ... });
+    chatActiveRecipesCollection.insert({ chatId, recipeId, ... });
+  },
+
+  mutationFn: async (params) => {
+    await startCookingWithRecipe({ data: params });
+    // Refetch to sync server state
+    await Promise.all([
+      chatsCollection.utils.refetch(),
+      chatActiveRecipesCollection.utils.refetch(),
+    ]);
+  },
+});
+```
+
+## Client-Generated IDs
+
+The key to true optimistic updates: generate IDs on the client.
+
+```ts
+const chatId = crypto.randomUUID();
+chatsCollection.insert({ id: chatId, ... });  // Local
+await createChat({ data: { id: chatId } });   // Server gets same ID
+```
+
+The optimistic state seamlessly becomes the real state.
+
+
+### AI Chat & Tool Calls
+
+Most apps will want AI for some feature. This explains common patterns you'll run into and how we solved them in Every Chef using the [Vercel AI SDK](https://ai-sdk.dev/docs/introduction).
+
+## Streaming Endpoint
+
+The chat endpoint uses TanStack Router's server handler with `streamText`:
+
+```ts
+const result = streamText({
+  model: openaiProvider("gpt-5.1"),
+  messages,
+  tools: recipeTools,
+  onFinish: async ({ text }) => {
+    // Persist assistant message after streaming completes
+    await MessageService.saveAssistantMessage(chatId, userId, text);
+  },
+});
+
+return result.toUIMessageStreamResponse();
+```
+
+User messages are saved immediately when sent. Assistant messages are saved in `onFinish` after streaming completes.
+
+## Human-in-the-Loop Tools
+
+When the AI wants to save a recipe, it shouldn't just do it - it should ask the user first. Define tools WITHOUT an `execute` function to forward them to the client:
+
+```ts
+const promptUserWithRecipeUpdate = tool({
+  description: "Prompt the user to decide whether to save a recipe",
+  inputSchema: z.object({
+    title: z.string(),
+    content: z.string(),
+  }),
+  // No execute function - forwards to client
+});
+```
+
+When a tool has no `execute` function, the AI SDK forwards the call to the client, which can show UI for the user to respond.
+
+```
+┌──────────┐     ┌──────────┐     ┌──────────┐
+│    AI    │     │  Client  │     │   User   │
+└────┬─────┘     └────┬─────┘     └────┬─────┘
+     │                │                │
+     │  tool call     │                │
+     │───────────────►│                │
+     │                │  show UI       │
+     │                │───────────────►│
+     │                │                │
+     │                │  user decides  │
+     │                │◄───────────────│
+     │                │                │
+     │  tool result   │                │
+     │◄───────────────│                │
+     │                │                │
+     │  continues...  │                │
+     │───────────────►│                │
+```
+
+## Rendering Tool Calls
+
+The client renders tool calls as interactive UI:
+
+```tsx
+{
+  toolParts.map((part) => {
+    if (part.toolInvocation.toolName === "promptUserWithRecipeUpdate") {
+      return (
+        
+      );
+    }
+  });
+}
+```
+
+## Sending Results Back
+
+When the user makes a choice, send it back to the AI:
+
+```ts
+const handleToolResponse = async (toolCallId: string, result: ToolResult) => {
+  // Tell the AI about the user's choice
+  addToolOutput({ toolCallId, output: JSON.stringify(result) });
+
+  // If they chose to save, create the recipe
+  if (result.action === "create") {
+    await recipesCollection.insert({ ... });
+  }
+};
+```
+
+
+## Reference
+
+### Tech Stack
+
+Every App apps are web apps deployed on Cloudflare. We've picked technologies that work well together and are easy for AI coding assistants to work with.
+
+- **[TanStack Start](https://tanstack.com/start)** - Full-stack React framework with TanStack Router and Query
+- **[Cloudflare Workers](https://developers.cloudflare.com/workers/)** - Serverless compute with scale-to-zero pricing
+- **[D1](https://developers.cloudflare.com/d1/)** - Cloudflare's serverless SQL database
+- **[Drizzle ORM](https://orm.drizzle.team/)** - Type-safe SQL ORM
+
+The stack is optimized for simplicity, type safety, and cost (everything scales to zero).
+
+
+### Every App SDK
+
+The Every App SDK (`@every-app/sdk`) handles all the communication between your app and the Gateway. It's responsible for:
+
+1. **Session token management** - Requesting and refreshing session tokens from the Gateway
 2. **Route synchronization** - Keeping your app's URL in sync with the Gateway
-3. **Request authentication** - Adding tokens to your API requests and verifying them on the backend
+3. **API Request authentication** - Simplifying adding tokens to your API requests and verifying them on the backend
 
-> The SDK currently lives inside your app at `src/embedded-sdk/`. Soon, this
-  will be published as an npm package.
+```bash
+npm install @every-app/sdk
+```
 
 ## How Session Tokens Work
 
-When your app loads inside the Gateway's iframe, here's what happens:
+When your app loads inside the Gateway's iframe using the SDK:
 
-1. The `EmbeddedAppProvider` initializes a `SessionManager`
-2. The `SessionManager` sends a `postMessage` to the parent Gateway requesting a session token
-3. The Gateway validates the request, generates a JWT signed with its private key, and sends it back
-4. Your app stores the token and uses it for all API requests
+1. Your app client requests a session token from the Gateway via `postMessage`
+2. The Gateway returns a signed JWT scoped to your app ID
+3. Your app client includes the token in all API requests to your backend
+4. Your backend verifies the token using the Gateway's public key (JWKS)
 5. Before the token expires, the SDK automatically requests a new one
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Every App Gateway                         │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │              Your App (iframe)                       │    │
-│  │                                                      │    │
-│  │   EmbeddedAppProvider                               │    │
-│  │         │                                           │    │
-│  │         ▼                                           │    │
-│  │   SessionManager ──── postMessage ────────────────────────► Gateway
-│  │         │              "Give me a token"            │    │    │
-│  │         │                                           │    │    │
-│  │         │◄──── postMessage ───────────────────────────────────┘
-│  │         │      "Here's your JWT"                    │    │
-│  │         ▼                                           │    │
-│  │   useSessionTokenClientMiddleware                   │    │
-│  │         │                                           │    │
-│  │         ▼                                           │    │
-│  │   Server Function ──── Authorization: Bearer ────────────► Your Backend
-│  │                                                      │    │    │
-│  │                                                      │    │    ▼
-│  │                                                      │    │ authenticateRequest()
-│  │                                                      │    │ verifies JWT with Gateway's
-│  │                                                      │    │ public key (JWKS)
-│  └─────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Gateway    │     │  App Client  │     │  App Backend │
+│   (parent)   │     │   (iframe)   │     │ (Cloudflare) │
+└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
+       │                    │                    │
+       │  1. postMessage    │                    │
+       │  "request token"   │                    │
+       │◄───────────────────│                    │
+       │                    │                    │
+       │  2. postMessage    │                    │
+       │  JWT session token │                    │
+       │───────────────────►│                    │
+       │                    │                    │
+       │                    │  3. API request    │
+       │                    │  Authorization:    │
+       │                    │  Bearer <token>    │
+       │                    │───────────────────►│
+       │                    │                    │
+       │                    │                    │ 4. Verify JWT
+       │                    │                    │    via Gateway
+       │  ◄ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  │    JWKS
+       │         (fetch public key)              │
+       │                    │                    │
 ```
 
-## SDK Structure
+---
 
-The SDK is split into client and server code:
+## Client SDK
 
-### Client (`src/embedded-sdk/client/`)
+The client SDK is imported from `@every-app/sdk/client` and provides React components and hooks for authentication.
 
-- **EmbeddedAppProvider** - React context provider that initializes everything
-- **SessionManager** - Handles token requests and storage
-- **useSessionTokenClientMiddleware** - TanStack middleware that adds tokens to requests
-- **lazyInitForWorkers** - Utility for Cloudflare Workers compatibility
-
-See [Client SDK Reference](/docs/embedded-sdk/client) for details.
-
-### Server (`src/embedded-sdk/server/`)
-
-- **authenticateRequest** - Verifies JWT tokens from requests
-- **getLocalD1Url** - Helper for local development with D1
-
-See [Server SDK Reference](/docs/embedded-sdk/server) for details.
-
-
-### Client SDK
-
-## EmbeddedAppProvider
+### EmbeddedAppProvider
 
 The main React provider that wraps your app. It initializes the session manager and handles route synchronization.
 
@@ -439,43 +709,38 @@ function App() {
 }
 ```
 
-### Props
+#### Props
 
-| Prop    | Type      | Required | Description                                     |
-| ------- | --------- | -------- | ----------------------------------------------- |
-| `appId` | `string`  | Yes      | Must match the App ID configured in the Gateway |
-| `debug` | `boolean` | No       | Enables verbose logging for troubleshooting     |
+| Prop    | Type     | Required | Description                                     |
+| ------- | -------- | -------- | ----------------------------------------------- |
+| `appId` | `string` | Yes      | Must match the App ID configured in the Gateway |
 
-### What it does
+#### What it does
 
 - Creates a `SessionManager` instance
 - Requests an initial session token from the Gateway
 - Sets up route synchronization (your app's routes sync with the Gateway's URL bar)
 - Makes the session manager globally available for the middleware
 
-> **Important**: The `appId` must match exactly what you configured when adding the app to your
-  Gateway. If they don't match, the handshake will fail.
+:::caution
+The `appId` must match exactly what you configured when adding the app to your Gateway. If they don't match, the handshake will fail.
+:::
 
-## SessionManager
+### SessionManager
 
 The class that handles all token management. You usually don't interact with this directly - the provider and middleware handle it for you.
 
 ```ts
 interface SessionManagerConfig {
   appId: string;
-  debug?: boolean;
 }
 ```
 
-### Key Methods
+#### Key Methods
 
-#### `getToken(): Promise<string>`
+**`getToken(): Promise<string>`** - Returns a valid session token. If the current token is expired or expiring soon (within 10 seconds), it automatically requests a new one.
 
-Returns a valid session token. If the current token is expired or expiring soon (within 10 seconds), it automatically requests a new one.
-
-#### `getTokenState()`
-
-Returns the current token state:
+**`getTokenState()`** - Returns the current token state:
 
 ```ts
 type TokenState = {
@@ -484,17 +749,11 @@ type TokenState = {
 };
 ```
 
-#### `getAppId(): string`
+**`getAppId(): string`** - Returns the configured app ID.
 
-Returns the configured app ID.
+**`getParentOrigin(): string`** - Returns the Gateway URL (from `VITE_GATEWAY_URL` env var).
 
-#### `getParentOrigin(): string`
-
-Returns the Gateway URL (from `VITE_GATEWAY_URL` env var).
-
-#### `getUser(): { userId: string; email: string } | null`
-
-Extracts user information from the current JWT token. Returns `null` if no valid token is available.
+**`getUser(): { userId: string; email: string } | null`** - Extracts user information from the current JWT token. Returns `null` if no valid token is available.
 
 ```ts
 const user = sessionManager.getUser();
@@ -503,7 +762,7 @@ if (user) {
 }
 ```
 
-## useCurrentUser
+### useCurrentUser
 
 A React hook that returns the current authenticated user's information.
 
@@ -525,7 +784,7 @@ function UserProfile() {
 }
 ```
 
-### Return Value
+#### Return Value
 
 Returns `{ userId: string; email: string } | null`
 
@@ -536,16 +795,11 @@ Returns `{ userId: string; email: string } | null`
 
 Returns `null` if the user is not authenticated or the session token is not yet available.
 
-### How it works
+:::note
+This hook must be used within a component wrapped by `EmbeddedAppProvider`. It will throw an error if used outside the provider.
+:::
 
-1. Accesses the `SessionManager` from the `EmbeddedAppProvider` context
-2. Only returns user data when the token status is `"VALID"`
-3. Decodes the JWT token payload to extract `sub` (userId) and `email` claims
-
-> **Must be inside EmbeddedAppProvider**: This hook must be used within a component that is wrapped by
-  `EmbeddedAppProvider`. It will throw an error if used outside the provider.
-
-## useSessionTokenClientMiddleware
+### useSessionTokenClientMiddleware
 
 A TanStack Start middleware that automatically adds the session token to all server function requests.
 
@@ -558,16 +812,17 @@ export const myServerFunction = createServerFn({ method: "GET" })
   });
 ```
 
-### How it works
+#### How it works
 
 1. Gets the global `SessionManager` instance (set by `EmbeddedAppProvider`)
 2. Calls `getToken()` to get a valid token
 3. Adds an `Authorization: Bearer <token>` header to the request
 
-> You should add this middleware to every server function that needs
-  authentication. Check out the starter template for examples.
+:::tip
+You should add this middleware to every server function that needs authentication. Check out the starter template for examples.
+:::
 
-## lazyInitForWorkers
+### lazyInitForWorkers
 
 A utility that wraps resource creation to avoid Cloudflare Workers' global scope restrictions.
 
@@ -584,11 +839,11 @@ export const todosCollection = lazyInitForWorkers(() =>
 );
 ```
 
-### Why it's needed
+#### Why it's needed
 
 Cloudflare Workers don't allow certain async operations (like creating TanStack DB collections) to run in the global scope at module load time. This utility defers initialization until the resource is first accessed.
 
-### How it works
+#### How it works
 
 Returns a Proxy that:
 
@@ -596,10 +851,13 @@ Returns a Proxy that:
 2. Creates the actual resource on first property access
 3. Caches the instance for subsequent accesses (singleton pattern)
 
+---
 
-### Server SDK
+## Server SDK
 
-## authenticateRequest
+The server SDK is imported from `@every-app/sdk/server` and provides authentication utilities.
+
+### authenticateRequest
 
 Verifies the JWT session token from incoming requests. This is the main function you'll use to authenticate users in your server functions.
 
@@ -625,18 +883,17 @@ export const myServerFunction = createServerFn({ method: "GET" })
   });
 ```
 
-### Parameters
+#### Parameters
 
 ```ts
 interface AuthConfig {
   jwksUrl: string; // Currently unused - JWKS fetched from Gateway
   issuer: string; // The Gateway URL (validates token issuer)
   audience: string; // Your app ID (validates token audience)
-  debug?: boolean; // Enable verbose logging
 }
 ```
 
-### Return Value
+#### Return Value
 
 Returns the decoded JWT payload or `null` if authentication fails:
 
@@ -653,1576 +910,10 @@ interface SessionTokenPayload {
 }
 ```
 
-### How it works
+#### How it works
 
 1. Extracts the `Authorization: Bearer <token>` header from the request
 2. Fetches the Gateway's JWKS (JSON Web Key Set) to get the public key
 3. Verifies the JWT signature, issuer, and audience
 4. Returns the decoded payload if valid, `null` if invalid
-
-
-## Tech Stack
-
-### Tech Stack
-
-Since Every App is mostly just there for authentication + integrating with the Gateway, everything else is up to you! At the end of the day, you're building a web app deployed on Cloudflare.
-
-However, we've picked a few technologies and done the heavy lifting to make sure they play nice with Cloudflare Workers.
-
-- **[TanStack Start](/docs/tech-stack/tanstack-start)** - Full-stack React framework with best-in-class type safety. Includes TanStack Router, Query, and optionally DB for client-side state.
-- **[Cloudflare](/docs/tech-stack/cloudflare)** - The only hyperscaler with true scale-to-zero. Workers, D1 database, KV storage, and more - all serverless.
-- **[Drizzle ORM](/docs/tech-stack/drizzle)** - Type-safe SQL ORM that works great with D1. Familiar syntax if you know SQL.
-
-## Why These Choices?
-
-The stack is optimized for:
-
-1. **Simplicity** - Fewer dependencies means less to learn and maintain
-2. **Agentic coding** - AI coding assistants work better with a consistent, well-documented stack
-3. **Type safety** - Catch errors at compile time, not runtime
-4. **Cost** - Everything scales to zero, so you only pay for what you use
-
-
-### TanStack Start
-
-[TanStack Start](https://tanstack.com/start/latest/docs/framework/react/overview) was selected for the following reasons:
-
-- Easy to deploy as a full-stack app on Cloudflare
-- Best out of the box type safety of any framework
-- While TanStack Start is new, the ecosystem is old and trusted
-- Every tool from TanStack is high quality and becomes my default. They all play extremely nicely together.
-
-## Key Libraries
-
-### TanStack Router
-
-File-based routing with full type safety. Your routes, params, and search params are all typed.
-
-### TanStack Query
-
-Data fetching and caching. Handles loading states, errors, and cache invalidation.
-
-```tsx
-const { data, isLoading } = useQuery({
-  queryKey: ["todos"],
-  queryFn: fetchTodos,
-});
-```
-
-### TanStack DB (Recommended)
-
-> **Give it a shot**: We highly recommend trying TanStack DB. It makes managing state + optimistic
-  mutations much easier and works incredibly well with TanStack's server
-  functions.
-
-TanStack DB is a client-side database that syncs with your server. It's great for:
-
-- **Optimistic updates** - UI updates instantly, syncs in background
-- **Offline support** - Works without network, syncs when online
-- **Simpler code** - No manual cache invalidation
-
-```tsx
-// Define a collection
-export const todosCollection = createCollection(
-  queryCollectionOptions({
-    queryKey: ["todos"],
-    queryFn: async () => getTodos(),
-    getId: (todo) => todo.id,
-  }),
-);
-
-// Use in component - updates optimistically
-const todos = useQuery(todosCollection);
-```
-
-**When to use TanStack DB:**
-
-- Todo apps, note apps, workout trackers - anything where you can load all the user's data at once
-- Apps that benefit from optimistic mutations
-
-**When to skip it:**
-
-The main limitation is that you need to load all records from the API. If you need server-side pagination because you have thousands of messages, or you're working with really large amounts of data, skip TanStack DB for those tables.
-
-**You can use both:**
-
-Use TanStack DB collections for most of your app, and regular React Query for the data that need pagination. You'll write more verbose code to handle optimistic mutations with React Query, but it works.
-
-Check the [TanStack DB docs](https://tanstack.com/db/latest) for more.
-
-## Server Functions
-
-TanStack Start's server functions give you type-safe RPC:
-
-```tsx
-// Define on server
-export const createTodo = createServerFn({ method: "POST" })
-  .middleware([useSessionTokenClientMiddleware])
-  .validator((data: { title: string }) => data)
-  .handler(async ({ data }) => {
-    const session = await authenticateRequest(authConfig);
-    // Create todo...
-  });
-
-// Call from client - fully typed!
-await createTodo({ data: { title: "Buy milk" } });
-```
-
-## Resources
-
-- [TanStack Start Docs](https://tanstack.com/start/latest/docs/framework/react/overview)
-- [TanStack Router Docs](https://tanstack.com/router/latest)
-- [TanStack Query Docs](https://tanstack.com/query/latest)
-- [TanStack DB Docs](https://tanstack.com/db/latest)
-
-
-### Cloudflare
-
-Cloudflare is the most user-friendly, simple hyperscaler with true scale-to-zero. They have every cloud component needed to build 99.9% of apps, and everything scales to zero so you only pay for what you use.
-
-## Key Services
-
-- **Workers** - This is where your TanStack Start code is deployed and run. Pay per millisecond of compute, scales to zero.
-- **D1** - A SQLite database (SQLite API, but not exactly SQLite). Generous free tier, pay per query.
-- **KV** - Key-value storage for simple data like sessions and cache.
-- **R2** - S3-compatible object storage for file uploads.
-- **Service Bindings** - Lets you bind other workers, Cloudflare resources, or secrets to your worker.
-
-Read the [Cloudflare Developer Platform Docs](https://developers.cloudflare.com/directory/?product-group=Developer+platform) to understand how each of these works.
-
-## Resources
-
-- [Workers Documentation](https://developers.cloudflare.com/workers/)
-- [D1 Documentation](https://developers.cloudflare.com/d1/)
-- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/)
-
-
-### Drizzle ORM
-
-[Drizzle](https://orm.drizzle.team/docs/overview) is an ORM that supports Cloudflare D1. It's the most popular type-safe ORM with great TypeScript support.
-
-Read the Drizzle docs to understand how it works:
-
-- [Drizzle with D1](https://orm.drizzle.team/docs/get-started/d1-new)
-- [Drizzle Relations](https://orm.drizzle.team/docs/relations)
-- [Drizzle Migrations](https://orm.drizzle.team/docs/migrations)
-
-
-## Walkthrough: AI Cooking Assistant
-
-### Walkthrough: AI Cooking Assistant
-
-This walkthrough explains how the [Every Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) app is built. Every Chef is an AI-powered cooking assistant that helps you manage recipes and get cooking guidance through a chat interface.
-
-We'll cover the key architectural patterns and decisions that make this app work well on the Every App stack.
-
-## What We'll Cover
-
-1. **[Users & Authentication](/docs/walkthrough/users-and-auth)** - How users are created and requests are authenticated
-2. **[DaisyUI Theming](/docs/walkthrough/daisyui-theming)** - How to configure custom themes with Tailwind v4 and DaisyUI
-3. **[Drizzle Schema Design](/docs/walkthrough/schema-design)** - Normalized database schema with relations and type inference
-4. **[Repository & Service Pattern](/docs/walkthrough/repos-and-services)** - Layered architecture for business logic and data access
-5. **[TanStack DB & Optimistic Updates](/docs/walkthrough/tanstack-db)** - Client-side database with optimistic mutations
-6. **[AI Integration](/docs/walkthrough/ai-integration)** - Streaming chat with tool calls and human-in-the-loop patterns
-
-## Why Every Chef?
-
-Every Chef demonstrates several patterns you'll likely need in your own apps:
-
-- **CRUD operations** with optimistic updates
-- **Real-time streaming** from an AI model
-  - Human-in-the-loop AI where the user confirms actions before they happen
-- **Complex state coordination** across multiple data collections
-
-The app is complex enough to show real patterns, but simple enough to understand quickly.
-
-
-### Users & Authentication
-
-Every Chef doesn't implement its own authentication - it relies on the Every App Gateway for that. This page explains how that works.
-
-## How Users Are Created
-
-When you sign up through the Gateway, a user is created in the Gateway's database. Your embedded app never sees the signup flow - it just receives session tokens for authenticated users.
-
-However, your app likely needs its own user record to associate data with. Every Chef handles this with an `ensureUser` middleware.
-
-## The ensureUser Pattern
-
-The first time a user accesses your app, you need to create a local user record. Here's how Every Chef does it:
-
-```ts
-// middleware/ensureUser.ts
-
-export const ensureUser = createMiddleware().server(async ({ next }) => {
-  const authConfig = getAuthConfig();
-  const session = await authenticateRequest(authConfig);
-
-  if (!session?.sub) {
-    throw new Error("Unauthorized");
-  }
-
-  // Create user if they don't exist
-  await UserService.ensureUser({
-    id: session.sub,
-    email: session.email,
-  });
-
-  return next();
-});
-```
-
-The `UserService.ensureUser` does an upsert - creates the user if they don't exist, does nothing if they do:
-
-```ts
-// server/services/UserService.ts
-async function ensureUser(data: { id: string; email?: string }) {
-  const existing = await UserRepository.findById(data.id);
-  if (existing) return existing;
-
-  return UserRepository.create({
-    id: data.id,
-    email: data.email ?? null,
-    createdAt: new Date().toISOString(),
-  });
-}
-```
-
-> The user ID (`session.sub`) comes from the Gateway. Use this same ID in your
-  app so data stays linked to the same user across the Gateway and your app.
-
-## Adding Session Tokens to Requests
-
-On the client side, every request to your server functions needs a session token. The `useSessionTokenClientMiddleware` handles this automatically:
-
-```ts
-// embedded-sdk/client/useSessionTokenClientMiddleware.ts
-export const useSessionTokenClientMiddleware = createMiddleware({
-  type: "function",
-}).client(async ({ next }) => {
-  const sessionManager = (window as any).__embeddedSessionManager;
-
-  if (!sessionManager) {
-    throw new Error("SessionManager not available");
-  }
-
-  const token = await sessionManager.getToken();
-
-  return next({
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
-});
-```
-
-Use it in your server functions:
-
-```ts
-// serverFunctions/recipes.ts
-export const getAllRecipes = createServerFn({ method: "GET" })
-  .middleware([useSessionTokenClientMiddleware])
-  .handler(async () => {
-    const session = await authenticateRequest(authConfig);
-    if (!session?.sub) {
-      throw new Error("Unauthorized");
-    }
-
-    return RecipeService.getAll(session.sub);
-  });
-```
-
-The middleware runs on the client before the request is sent, adding the `Authorization` header.
-
-## Authenticating on the Backend
-
-On the server side, `authenticateRequest` verifies the JWT token:
-
-```ts
-// embedded-sdk/server/authenticateRequest.ts
-export async function authenticateRequest(
-  authConfig: AuthConfig,
-): Promise {
-  const request = getRequest();
-  const authHeader = request.headers.get("authorization");
-
-  if (!authHeader) {
-    return null;
-  }
-
-  const token = extractBearerToken(authHeader);
-  if (!token) {
-    return null;
-  }
-
-  // Verify the JWT signature and claims
-  const session = await verifySessionToken(token, authConfig);
-  return session;
-}
-```
-
-The `verifySessionToken` function:
-
-1. Fetches the Gateway's JWKS (public keys)
-2. Verifies the JWT signature
-3. Checks the issuer and audience claims
-4. Returns the decoded payload
-
-```ts
-async function verifySessionToken(token: string, config: AuthConfig) {
-  const { issuer, audience } = config;
-
-  // Fetch JWKS from Gateway
-  const jwksResponse = import.meta.env.PROD
-    ? await env.EVERY_APP_GATEWAY.fetch("http://localhost/api/embedded/jwks")
-    : await fetch(`${env.GATEWAY_URL}/api/embedded/jwks`);
-
-  const jwks = await jwksResponse.json();
-  const localJWKS = createLocalJWKSet(jwks);
-
-  // Verify the token
-  const { payload } = await jwtVerify(token, localJWKS, {
-    issuer,
-    audience,
-  });
-
-  return payload as SessionTokenPayload;
-}
-```
-
-## Complete Flow
-
-Here's the full authentication flow:
-
-```
-1. User loads your app in the Gateway iframe
-
-2. EmbeddedAppProvider initializes SessionManager
-
-3. SessionManager requests token from Gateway via postMessage
-   → Gateway validates user session
-   → Gateway generates JWT signed with private key
-   → Gateway sends token back via postMessage
-
-4. User triggers a server function (e.g., getAllRecipes)
-
-5. useSessionTokenClientMiddleware adds Authorization header
-   → Header: "Authorization: Bearer <jwt>"
-
-6. Server function calls authenticateRequest()
-   → Extract token from Authorization header
-   → Fetch Gateway's JWKS (public keys)
-   → Verify JWT signature, issuer, audience
-   → Return decoded payload with user ID
-
-7. Server function uses session.sub to scope data
-   → RecipeService.getAll(session.sub)
-   → Repository includes userId in WHERE clause
-
-8. Response sent back to client
-```
-
-The key insight is that your app never handles passwords or sessions directly. The Gateway does all of that, and your app just verifies the tokens it receives.
-
-
-### DaisyUI Theming
-
-Every Chef uses Tailwind CSS v4 with DaisyUI for styling. All configuration happens in CSS - no separate `tailwind.config.js` file needed.
-
-## Basic Setup
-
-The main CSS file (`src/client/styles/app.css`) configures everything:
-
-```css
-@import "tailwindcss";
-@plugin "daisyui" {
-  exclude: properties;
-}
-
-@theme {
-  --font-sans: "Work Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "Space Mono", ui-monospace, monospace;
-}
-```
-
-## Custom Themes
-
-DaisyUI themes are defined using the `@plugin` directive with OKLCH colors:
-
-```css
-@plugin "daisyui/theme" {
-  name: "chef";
-  default: true;
-  prefersdark: false;
-  color-scheme: "light";
-
-  /* Primary green for cooking/fresh theme */
-  --color-primary: oklch(55% 0.15 145);
-  --color-primary-content: oklch(98% 0.01 145);
-
-  /* Warm orange secondary */
-  --color-secondary: oklch(65% 0.12 45);
-  --color-secondary-content: oklch(98% 0.01 45);
-
-  /* Base colors */
-  --color-base-100: oklch(98% 0.005 90);
-  --color-base-200: oklch(95% 0.008 90);
-  --color-base-300: oklch(90% 0.01 90);
-  --color-base-content: oklch(25% 0.02 90);
-}
-```
-
-You can define multiple themes (light, dark, etc.) and DaisyUI handles switching between them.
-
-## Reusable Component Classes
-
-For consistent styling across the app, define reusable classes:
-
-```css
-.chat-message-user {
-  @apply bg-base-300 text-base-content rounded-2xl rounded-br-sm px-4 py-2;
-}
-
-.chat-message-assistant {
-  @apply bg-base-200 text-base-content rounded-2xl rounded-bl-sm px-4 py-2;
-}
-
-.program-card {
-  @apply bg-base-100 border border-base-300 rounded-xl p-5 transition-all;
-}
-```
-
-## PWA Safe Areas
-
-For mobile PWA support, add utilities for safe area insets:
-
-```css
-@layer utilities {
-  .pb-safe {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0.5rem) + 0.5rem);
-  }
-
-  .pt-safe {
-    padding-top: calc(env(safe-area-inset-top, 0.5rem) + 0.5rem);
-  }
-}
-```
-
-This ensures content doesn't get hidden behind the notch or home indicator on mobile devices.
-
-
-### Drizzle Schema Design
-
-Every Chef's database schema demonstrates several patterns for building maintainable, type-safe schemas with Drizzle.
-
-## Enum Pattern for SQLite
-
-SQLite doesn't have native enums, so we use a const array pattern:
-
-```ts
-export const messageRoles = ["user", "assistant"] as const;
-export type MessageRole = (typeof messageRoles)[number];
-
-// Use in table definition
-export const messages = sqliteTable("messages", {
-  id: text("id").primaryKey(),
-  role: text("role", { enum: messageRoles }).notNull(),
-  // ...
-});
-```
-
-This gives you:
-
-- Type safety in TypeScript
-- Runtime validation from Drizzle
-- A union type you can use elsewhere
-
-## Normalized Data with Specialized Tables
-
-Rather than storing everything in JSON columns, Every Chef normalizes data into separate tables. For example, messages can have different types of content (text, images, tool calls):
-
-```ts
-// Base parts table
-export const messageParts = sqliteTable("message_parts", {
-  id: text("id").primaryKey(),
-  messageId: text("message_id").references(() => messages.id, {
-    onDelete: "cascade",
-  }),
-  type: text("type", { enum: messagePartTypes }).notNull(),
-  order: text("order").notNull(),
-});
-
-// Specialized tables for each type
-export const textMessageParts = sqliteTable("text_message_parts", {
-  partId: text("part_id")
-    .primaryKey()
-    .references(() => messageParts.id, { onDelete: "cascade" }),
-  text: text("text").notNull(),
-});
-
-export const toolInvocationMessageParts = sqliteTable(
-  "tool_invocation_message_parts",
-  {
-    partId: text("part_id")
-      .primaryKey()
-      .references(() => messageParts.id, { onDelete: "cascade" }),
-    toolCallId: text("tool_call_id").notNull(),
-    toolName: text("tool_name").notNull(),
-    args: text("args").notNull(), // JSON stringified
-    result: text("result"), // JSON stringified, nullable
-  },
-);
-```
-
-This approach:
-
-- Avoids nullable columns that only apply to certain types
-- Makes migrations cleaner
-- Enforces data integrity at the database level
-
-## Referential Integrity
-
-Use cascading deletes to keep data consistent:
-
-```ts
-// When a message is deleted, delete all its parts
-messageId: text("message_id")
-  .references(() => messages.id, { onDelete: "cascade" }),
-
-// When a chat is deleted, set recipe's chatId to null
-chatId: text("chat_id")
-  .references(() => chats.id, { onDelete: "set null" }),
-```
-
-## Junction Tables with Unique Constraints
-
-For many-to-many relationships, use junction tables with unique indexes:
-
-```ts
-export const chatActiveRecipes = sqliteTable(
-  "chat_active_recipes",
-  {
-    id: text("id").primaryKey(),
-    chatId: text("chat_id")
-      .notNull()
-      .references(() => chats.id, { onDelete: "cascade" }),
-    recipeId: text("recipe_id")
-      .notNull()
-      .references(() => recipes.id, { onDelete: "cascade" }),
-    addedAt: text("added_at").notNull(),
-  },
-  (table) => [
-    uniqueIndex("chat_active_recipes_unique_idx").on(
-      table.chatId,
-      table.recipeId,
-    ),
-  ],
-);
-```
-
-The unique index prevents duplicate associations.
-
-## Drizzle Relations
-
-Define relations for type-safe queries with nested data:
-
-```ts
-export const messagePartsRelations = relations(messageParts, ({ one }) => ({
-  message: one(messages, {
-    fields: [messageParts.messageId],
-    references: [messages.id],
-  }),
-  textPart: one(textMessageParts, {
-    fields: [messageParts.id],
-    references: [textMessageParts.partId],
-  }),
-  toolInvocationPart: one(toolInvocationMessageParts, {
-    fields: [messageParts.id],
-    references: [toolInvocationMessageParts.partId],
-  }),
-}));
-```
-
-## Type Inference
-
-Export inferred types for use throughout the app:
-
-```ts
-// Basic types
-export type Recipe = typeof recipes.$inferSelect;
-export type NewRecipe = typeof recipes.$inferInsert;
-
-// Composite types for complex queries
-export type ChatWithActiveRecipes = Chat & {
-  activeRecipes: (ChatActiveRecipe & { recipe: Recipe })[];
-};
-```
-
-These types are automatically kept in sync with your schema.
-
-
-### Repository & Service Pattern
-
-Every Chef uses a layered architecture: **Routes → Services → Repositories → Database**.
-
-## Why Bother?
-
-This might seem like overkill for a small app, but it pays off as features grow more complex. The pattern gives you:
-
-1. **A place to put business logic when you need it** - Authorization checks, data transformations, cross-repository coordination
-2. **Consistent patterns** - New team members (or AI agents) know where to put code
-3. **Defense in depth** - Multiple layers of protection against bugs
-
-## Domain-Driven Design
-
-Repositories and services are organized around **domains** (Recipe, Chat, Message), not specific database tables. This provides a simpler interface over a potentially complex schema.
-
-For example, a `MessageRepository.getMessagesForChat` might fetch data from multiple tables (messages, message_parts, text_message_parts, tool_invocation_message_parts) and assemble them into a single response. The caller doesn't need to know about the underlying table structure.
-
-## Repository Layer
-
-Repositories handle all queries to your database. They might contain one query or multiple queries - the point is they provide a clean abstraction for data access.
-
-```ts
-// RecipeRepository.ts
-async function findAllByUserId(userId: string) {
-  return db.query.recipes.findMany({
-    where: eq(recipes.userId, userId),
-    orderBy: (recipes, { desc }) => [desc(recipes.updatedAt)],
-  });
-}
-
-async function update(id: string, userId: string, data: UpdateRecipe) {
-  // userId in WHERE clause as safety net
-  await db
-    .update(recipes)
-    .set({ ...data, updatedAt: new Date().toISOString() })
-    .where(and(eq(recipes.id, id), eq(recipes.userId, userId)));
-}
-
-export const RecipeRepository = {
-  findAllByUserId,
-  findByIdAndUserId,
-  create,
-  update,
-  delete: deleteById,
-} as const;
-```
-
-## Service Layer
-
-Services contain business logic and orchestrate repository calls:
-
-```ts
-// RecipeService.ts
-async function update(userId: string, data: UpdateRecipeInput) {
-  // Authorization: verify ownership before mutation
-  const recipe = await RecipeRepository.findByIdAndUserId(data.id, userId);
-  if (!recipe) {
-    throw new Error("Recipe not found or not authorized");
-  }
-
-  const { id, ...updates } = data;
-  await RecipeRepository.update(id, userId, updates);
-  return { success: true };
-}
-
-async function create(userId: string, data: NewRecipeInput) {
-  const recipe = {
-    id: data.id ?? crypto.randomUUID(),
-    userId,
-    title: data.title,
-    content: data.content ?? "",
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  };
-
-  await RecipeRepository.create(recipe);
-  return recipe;
-}
-
-export const RecipeService = {
-  getAll,
-  getById,
-  create,
-  update,
-  delete: deleteRecipe,
-} as const;
-```
-
-## Client-Generated IDs
-
-Notice that `create` accepts an optional `id`:
-
-```ts
-async function create(userId: string, data: NewRecipeInput) {
-  const recipe = {
-    id: data.id ?? crypto.randomUUID(),
-    // ...
-  };
-}
-```
-
-This enables true optimistic updates - the client generates the ID, updates the UI immediately, then sends to the server. If no ID is provided, the server generates one.
-
-## Server Functions
-
-Server functions are the entry point from the client. They:
-
-- Extract userId from the session
-- Call services
-- Handle errors
-
-```ts
-// serverFunctions/recipes.ts
-export const updateRecipe = createServerFn({ method: "POST" })
-  .middleware([useSessionTokenClientMiddleware])
-  .validator(updateRecipeInputSchema)
-  .handler(async ({ data }) => {
-    const session = await authenticateRequest(authConfig);
-    if (!session?.sub) {
-      throw new Error("Unauthorized");
-    }
-
-    return RecipeService.update(session.sub, data);
-  });
-```
-
-## The Flow
-
-Here's how a recipe update flows through the layers:
-
-```
-Client
-  ↓ updateRecipe({ id, title, content })
-Server Function
-  ↓ Extract userId from session
-  ↓ Call RecipeService.update(userId, data)
-Service
-  ↓ Verify ownership (throws if not found)
-  ↓ Call RecipeRepository.update(id, userId, data)
-Repository
-  ↓ Execute UPDATE with userId in WHERE clause
-Database
-```
-
-Each layer has a single responsibility, and you always know where to look for specific logic.
-
-
-### TanStack DB & Optimistic Updates
-
-## Why TanStack DB?
-
-In 2025, apps should feel instant. We don't want to build apps with loading states and spinners everywhere.
-
-You either need to use sync, TanStack DB, or be very careful. For building this personal apps on Cloudflare, TanStack DB has been the simplest way we've found to get that level of UX consistently - especially when using LLMs to code.
-
-TanStack DB gives you a nice abstraction for modeling your frontend state so optimistic updates just work. When you create a recipe from the chat, it updates in your database and in the frontend. When you navigate to the recipes page, it's already there without refreshing.
-
-## Basic Collection Setup
-
-A collection defines how to fetch, insert, update, and delete data:
-
-```ts
-// recipesCollection.ts
-export const recipesCollection = lazyInitForWorkers(() =>
-  createCollection(
-    queryCollectionOptions({
-      queryKey: ["recipes"],
-      getId: (recipe) => recipe.id,
-
-      // Fetch all recipes from server
-      queryFn: async () => {
-        const result = await getAllRecipes();
-        return result.recipes;
-      },
-
-      // Sync inserts to server
-      onInsert: async ({ transaction }) => {
-        for (const mutation of transaction.mutations) {
-          await createRecipe({
-            data: {
-              id: mutation.modified.id,
-              title: mutation.modified.title,
-              content: mutation.modified.content,
-            },
-          });
-        }
-      },
-
-      // Sync updates to server
-      onUpdate: async ({ transaction }) => {
-        for (const mutation of transaction.mutations) {
-          await updateRecipe({ data: mutation.modified });
-        }
-      },
-
-      // Sync deletes to server
-      onDelete: async ({ transaction }) => {
-        for (const mutation of transaction.mutations) {
-          await deleteRecipe({ data: { id: mutation.original.id } });
-        }
-      },
-    }),
-  ),
-);
-```
-
-> The `lazyInitForWorkers` wrapper defers initialization until first access.
-  This is required for Cloudflare Workers compatibility.
-
-## Using Collections in Components
-
-Query the collection like any TanStack Query:
-
-```tsx
-function RecipeList() {
-  const recipes = useQuery(recipesCollection);
-
-  if (recipes.isLoading) return null; // Prefer no spinner
-
-  return (
-    <ul>
-      {recipes.data?.map((recipe) => (
-        <li key={recipe.id}>{recipe.title}</li>
-      ))}
-    </ul>
-  );
-}
-```
-
-Mutations happen through the collection directly:
-
-```tsx
-function handleCreate() {
-  recipesCollection.insert({
-    id: crypto.randomUUID(),
-    title: "New Recipe",
-    content: "",
-    userId: "", // Server will set this
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
-}
-
-function handleUpdate(recipe: Recipe) {
-  recipesCollection.update({
-    ...recipe,
-    title: "Updated Title",
-  });
-}
-
-function handleDelete(id: string) {
-  recipesCollection.delete(id);
-}
-```
-
-The UI updates immediately, then syncs to the server in the background.
-
-## Complex Optimistic Updates with Actions
-
-Sometimes you need to update multiple collections at once. For example, "Start Cooking" creates a chat AND links it to a recipe. Use `createOptimisticAction` for this:
-
-```ts
-// startCooking.ts
-export const startCooking = createOptimisticAction({
-  // Phase 1: Immediate optimistic update
-  onMutate: ({ chatId, chatTitle, activeRecipeId, recipeId, isNewChat }) => {
-    const now = new Date().toISOString();
-
-    // Conditionally insert the chat
-    if (isNewChat) {
-      chatsCollection.insert({
-        id: chatId,
-        userId: "", // Server will set
-        title: chatTitle,
-        createdAt: now,
-        updatedAt: now,
-      });
-    }
-
-    // Always insert the active recipe link
-    chatActiveRecipesCollection.insert({
-      id: activeRecipeId,
-      chatId,
-      recipeId,
-      addedAt: now,
-    });
-  },
-
-  // Phase 2: Server sync
-  mutationFn: async (params) => {
-    await startCookingWithRecipe({ data: params });
-
-    // Refetch both collections to sync server state
-    await Promise.all([
-      chatsCollection.utils.refetch(),
-      chatActiveRecipesCollection.utils.refetch(),
-    ]);
-  },
-});
-```
-
-Then use the action in your component:
-
-```tsx
-async function handleStartCooking(recipe: Recipe) {
-  const chatId = crypto.randomUUID();
-  const activeRecipeId = crypto.randomUUID();
-
-  await startCooking({
-    chatId,
-    chatTitle: `Cooking: ${recipe.title}`,
-    activeRecipeId,
-    recipeId: recipe.id,
-    isNewChat: true,
-  });
-
-  // Navigate immediately - optimistic update already happened
-  navigate({ to: "/chat/$chatId", params: { chatId } });
-}
-```
-
-## Client-Generated IDs
-
-The key to true optimistic updates is generating IDs on the client:
-
-```ts
-const chatId = crypto.randomUUID();
-
-// Insert locally with this ID
-chatsCollection.insert({ id: chatId, ... });
-
-// Server receives the same ID
-await createChat({ data: { id: chatId, title } });
-```
-
-The client and server end up with the same ID, so the optimistic state seamlessly becomes the real state.
-
-## When NOT to Use onInsert
-
-Sometimes you want to handle server sync differently. For chats, we skip `onInsert` in the collection:
-
-```ts
-// chatsCollection.ts
-export const chatsCollection = lazyInitForWorkers(() =>
-  createCollection(
-    queryCollectionOptions({
-      queryKey: ["chats"],
-      // Note: NO onInsert defined
-      onUpdate: async ({ transaction }) => { ... },
-      onDelete: async ({ transaction }) => { ... },
-    })
-  )
-);
-```
-
-Why? Because chat creation is handled by `createChatAction` which does more than just insert - it also sets up the active recipe link. If we had `onInsert`, the chat would be created twice.
-
-## Local Persistence
-
-To persist the cache across page refreshes:
-
-```ts
-// persister.ts
-export const persister = createSyncStoragePersister({
-  storage: typeof window !== "undefined" ? window.localStorage : undefined,
-  key: "every-chef-query-cache",
-});
-
-// queryClient.ts
-export const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      gcTime: 1000 * 60 * 60 * 24 * 7, // Keep for 7 days
-      staleTime: 0, // Always refetch on mount
-    },
-  },
-});
-```
-
-This means the app loads instantly with cached data, then syncs fresh data from the server.
-
-
-### AI Integration
-
-Every Chef uses the Vercel AI SDK for streaming chat with GPT. The interesting part is how it handles "tool calls" - actions the AI wants to take that require user confirmation.
-
-## Streaming Chat Endpoint
-
-The chat endpoint (`src/routes/api/chat.ts`) uses TanStack Router's server handler pattern:
-
-```ts
-export const Route = createFileRoute("/api/chat")({
-  server: {
-    handlers: {
-      POST: async ({ request }) => {
-        // Authenticate
-        const session = await authenticateRequest(authConfig, request);
-        if (!session?.sub) {
-          return new Response(JSON.stringify({ error: "Unauthorized" }), {
-            status: 401,
-          });
-        }
-
-        // Validate request
-        const rawData = await request.json();
-        const validationResult =
-          await chatRequestSchema.safeParseAsync(rawData);
-        if (!validationResult.success) {
-          return new Response(
-            JSON.stringify({
-              error: validationResult.error.issues[0]?.message,
-            }),
-            { status: 400 },
-          );
-        }
-
-        // Stream the response
-        const result = streamText({
-          model: openaiProvider("gpt-5.1"),
-          system: COOKING_SYSTEM_PROMPT,
-          messages: openaiMessages,
-          tools: recipeTools,
-          onFinish: async ({ text, toolCalls }) => {
-            // Persist messages after streaming completes
-            if (text) {
-              await MessageService.saveAssistantMessage(chatId, userId, text);
-            }
-            if (toolCalls?.length) {
-              // Save tool calls...
-            }
-          },
-        });
-
-        return result.toUIMessageStreamResponse();
-      },
-    },
-  },
-});
-```
-
-The key parts:
-
-1. **Authentication first** - Validate the session before anything else
-2. **Zod validation** - Parse the request body with a schema
-3. **Streaming response** - `toUIMessageStreamResponse()` returns a streaming Response
-4. **onFinish callback** - Persist messages after streaming completes
-
-## Human-in-the-Loop Tools
-
-Here's where it gets interesting. When the AI wants to save a recipe, it shouldn't just do it - it should ask the user first. This is the "human-in-the-loop" pattern.
-
-Define a tool WITHOUT an `execute` function:
-
-```ts
-// recipeTools.ts
-const promptUserWithRecipeUpdate = tool({
-  description: `Prompt the user to decide whether to save a recipe. Use this when:
-    1. You have suggested a complete recipe and want to offer to save it
-    2. The user has asked you to save, create, or update a recipe
-    
-    Wait for the user's response before proceeding.`,
-  inputSchema: z.object({
-    title: z.string().describe("The title of the recipe"),
-    content: z.string().describe("The full recipe content in markdown"),
-  }),
-  // No execute function - this forwards to the client
-});
-```
-
-> When a tool has no `execute` function, the Vercel AI SDK forwards the tool
-  call to the client. The client can then show a UI for the user to respond.
-
-## Handling Tool Calls on the Client
-
-The chat hook receives tool calls and renders UI for them:
-
-```tsx
-function MessageBubble({ message }) {
-  // Find tool invocations in this message
-  const toolParts = message.parts.filter((p) => p.type === "tool-invocation");
-
-  return (
-    <div>
-      {/* Render text parts */}
-      {message.parts
-        .filter((p) => p.type === "text")
-        .map((p) => (
-          
-        ))}
-
-      {/* Render tool calls that need user input */}
-      {toolParts.map((part) => {
-        if (part.toolInvocation.toolName === "promptUserWithRecipeUpdate") {
-          return (
-            
-          );
-        }
-      })}
-    </div>
-  );
-}
-```
-
-The `RecipeUpdatePrompt` component shows a preview and buttons:
-
-```tsx
-function RecipeUpdatePrompt({ toolCallId, recipe, onRespond }) {
-  return (
-    <div className="card bg-base-200">
-      <h3>{recipe.title}</h3>
-      
-
-      <div className="flex gap-2">
-        <button onClick={() => onRespond(toolCallId, { action: "create" })}>
-          Save as New
-        </button>
-        <button onClick={() => onRespond(toolCallId, { action: "ignore" })}>
-          Don't Save
-        </button>
-      </div>
-    </div>
-  );
-}
-```
-
-## Sending Tool Results Back
-
-When the user clicks a button, send the result back to the AI:
-
-```ts
-const handleToolResponse = async (toolCallId: string, result: ToolResult) => {
-  // Tell the AI SDK about the user's choice
-  addToolOutput({ toolCallId, output: JSON.stringify(result) });
-
-  // If they chose to save, actually create the recipe
-  if (result.action === "create") {
-    await recipesCollection.insert({
-      id: crypto.randomUUID(),
-      title: recipe.title,
-      content: recipe.content,
-      // ...
-    });
-  }
-
-  // Persist the tool result to the database
-  await saveToolOutputAction({
-    chatId,
-    toolCallId,
-    result: JSON.stringify(result),
-  });
-};
-```
-
-The flow is:
-
-1. AI streams a tool call (no execute function)
-2. Client renders UI for user input
-3. User makes a choice
-4. Client performs the action (create recipe)
-5. Client sends result back to AI
-6. AI continues the conversation with knowledge of what happened
-
-## Authenticated Fetch
-
-The chat uses a custom fetch that adds the auth token:
-
-```ts
-// useChatWithAuth.tsx
-transport: new DefaultChatTransport({
-  api: "/api/chat",
-  fetch: authenticatedFetch,
-  prepareSendMessagesRequest: ({ messages }) => {
-    // Only send the new message - server has history in DB
-    const newMessage = messages[messages.length - 1];
-    return {
-      body: {
-        chatId: selectedChatId,
-        message: newMessage,
-      },
-    };
-  },
-}),
-```
-
-The `authenticatedFetch` wrapper gets the session token from the SessionManager and adds it to the request headers.
-
-## Message Persistence
-
-Messages are persisted in two places:
-
-1. **User messages** - Saved immediately when sent
-2. **Assistant messages** - Saved in the `onFinish` callback after streaming
-
-This means if the user refreshes mid-stream, they won't lose the conversation - the user message is already saved, and the assistant will re-generate.
-
-
-## Coding Agent
-
-### Coding Agent Setup
-
-If you're using an AI coding assistant (Claude, Cursor, Copilot, etc.), here's how to set it up for the best experience with Every App.
-
-## Using the Every App MCP Server (Recommended)
-
-The Every App MCP (Model Context Protocol) server gives your AI coding agent direct access to:
-
-- **Example apps** - Browse and search implementation patterns
-- **Documentation** - Fetch Every App docs on demand
-- **Prompts** - Access curated prompts for common tasks
-
-1.  **Add the MCP server to your AI tool**
-
-          
-
-    
-
-    Run this command:
-
-    ```sh
-    claude mcp add every-app -- npx -y @every-app/mcp
-    ```
-
-          
-
-    
-
-    Add to your `.cursor/mcp.json`:
-
-    ```json
-    {
-      "mcpServers": {
-        "every-app": {
-          "command": "npx",
-          "args": ["-y", "@every-app/mcp"]
-        }
-      }
-    }
-    ```
-
-          
-
-    
-
-    Add to your `opencode.json`:
-
-    ```json
-    {
-      "mcp": {
-        "every-app": {
-          "type": "local",
-          "command": ["npx", "-y", "@every-app/mcp"]
-        }
-      }
-    }
-    ```
-
-          
-
-    
-
-2.  **Restart your AI tool**
-
-    The MCP server will automatically download the Every App examples on first run. Your agent can then use tools like:
-    - `every_app_mcp_list_examples` - See all available example apps
-    - `every_app_mcp_list_directory` - Browse file structure
-    - `every_app_mcp_read_file` - Read implementation code
-    - `every_app_mcp_search_code` - Find patterns across examples
-    - `every_app_mcp_fetch_docs` - Get Every App documentation
-
-> Examples are cached at `~/.every-app-mcp/examples` and automatically updated
-  when the server starts.
-
-### MCP Tools Reference
-
-| Tool                           | Description                             | Example Usage                            |
-| ------------------------------ | --------------------------------------- | ---------------------------------------- |
-| `every_app_mcp_list_examples`  | List all example apps with descriptions | "What examples are available?"           |
-| `every_app_mcp_list_directory` | Browse directory structure              | "Show me the structure of apps/todo-app" |
-| `every_app_mcp_read_file`      | Read file contents with line numbers    | "Read the todo-app's main route"         |
-| `every_app_mcp_search_code`    | Regex search across files               | "Find how optimistic updates are done"   |
-| `every_app_mcp_find_files`     | Find files by glob pattern              | "Find all schema.ts files"               |
-| `every_app_mcp_fetch_docs`     | Get documentation pages                 | "Fetch the Drizzle docs"                 |
-
-## Example Apps to Reference
-
-The MCP server provides access to several full-stack example apps:
-
-| App                    | Description       | Good for learning                  |
-| ---------------------- | ----------------- | ---------------------------------- |
-| `apps/todo-app`        | Todo application  | Basic CRUD, routing, embedded apps |
-| `apps/workout-tracker` | Workout tracking  | Complex data relationships, forms  |
-| `apps/every-chef`      | Cooking assistant | LLM integration patterns           |
-
-## Prompts
-
-We've developed some prompts that work well for building apps on Every App:
-
-- [Build Mockup from Spec](/docs/coding-agent/prompts/mockup-from-spec) - Create a functional UI mockup
-- [Review Code](/docs/coding-agent/prompts/review-code) - Review code for simplification, security, and schema issues
-
-## Tips for Working with AI Agents
-
-1. **Point to specific examples** - "Look at how `every-chef` handles optimistic mutations" works better than "figure out optimistic mutations"
-
-2. **Use the prompts** - The prompts in this section encode patterns we've found work well
-
-3. **Check types frequently** - Have your agent run `pnpm run types:check` after changes
-
-4. **Reference the tech stack docs** - Tell your agent to use the `every_app_mcp_fetch_docs` tool or context7 to fetch TanStack/Drizzle docs when needed
-
-
-### Build Mockup from Spec
-
-Use this prompt when you have a product spec and want to create a functional UI mockup before implementing the backend.
-
-## The Prompt
-
-```markdown
-# Task: Build Mockup UI for App
-
-Below is a description of a Product Spec for my app idea that I want to create a functional mockup for.
-
-Please implement all the pages and key interactions described in the product spec. Please use Daisy UI to accomplish this. Reference the context7 tool to read the DaisyUI docs if necessary.
-
-Please implement any interactions that seem reasonable. You can mock all data / should not implement any backend logic.
-
-## Goal
-
-Functional mockup of product spec supporting key flows built using Daisy UI
-
-## Non-Goals
-
-Implementing any backend functionality
-
-## Coding Guidelines
-
-Please still try to follow good frontend coding practices like breaking things into smaller components / file so that the code is readable.
-
-## Checklist before implementing
-
-- Please ask any clarifying questions if the Product Spec is ambigious
-  - Asking these are not essential and you should only do so if there are major things which are not clear in the spec.
-
---
-
-# Product Spec
-
-[PASTE PRODUCT SPEC HERE]
-```
-
-## When to Use
-
-- At the start of a new app or feature
-- When you want to validate UI/UX before building the backend
-- When iterating on design with stakeholders
-
-## Tips
-
-- Replace `[PASTE PRODUCT SPEC HERE]` with your actual product spec
-- Upload screenshots or wireframes if you have them
-- The mockup should use mock data so you can test all the UI states
-
-
-### Review Code
-
-These prompts help you review your codebase for common issues.
-
-## When to Use
-
-- **[Simplify](#simplify-review)**: After finishing a feature, before merging
-- **[Security](#security-review)**: Before deploying to production, after adding new endpoints
-- **[Schema](#database-schema-review)**: When designing new tables or refactoring existing ones
-- **[TanStack DB](#tanstack-db-review)**: When reviewing optimistic updates and collection patterns
-
-## Simplify Review
-
-Use this to find opportunities to simplify your code:
-
-```markdown
-Can you please review this codebase?
-I want to know:
-
-- Is there anyway that we can simplify / things that are unnecessary?
-- Is there any code that sticks out as needing refactored?
-  - Does anything need split up into smaller functions?
-  - Were there any shortcuts taken or hardcoded assumptions that we never came back to?
-  - Can anything be simplified?
-
-Our guiding philosophy is making code as simple as possible, avoiding premature optimization. Some things we don't consider a premature optimization:
-
-- Optimistic updates by using TanstackDB and that data is properly and securely stored to our database.
-- Normalized database schemas to make future migrations and iteration cleaner.
-- Service / Repository pattern is desired even if its a bit overkill so that it is more natural to implement more complicated features in the future.
-- Defense in depth and ensuring that authentication and authorization is happening.
-
-Other patterns we consider acceptable:
-
-- Hard coding llm related info such as models, reasoning effort and prompts is fione.
-
-Don't make any changes, just write a report on the above questions.
-```
-
-## Security Review
-
-Use this to audit authentication and authorization:
-
-```markdown
-Review authentication and authorization across all API routes and backend services.
-
-### Service/Repository Authorization Pattern
-
-We use defense-in-depth with two layers:
-
-| Layer          | Responsibility                    | On Failure                 |
-| -------------- | --------------------------------- | -------------------------- |
-| **Service**    | Verify ownership BEFORE mutations | Throw clear error          |
-| **Repository** | Include `userId` in WHERE clauses | Return null/empty (silent) |
-
-**Services** handle authorization and can call multiple repositories. **Repositories** are pure data access - no auth checks, no cross-repo imports.
-
-This keeps repositories simple and testable while ensuring authorization can't be accidentally bypassed (the `userId` in WHERE clauses acts as a safety net).
-
-### Checklist
-
-- [ ] Services verify ownership before mutations
-- [ ] Repositories include `userId` in WHERE clauses
-- [ ] Repositories do NOT import other repositories
-- [ ] Server functions extract userId from session (never trust client)
-- [ ] No hardcoded secrets or API keys
-- [ ] Input validation on user-provided data
-```
-
-## Database Schema Review
-
-Use this to review or create a database schema:
-
-```markdown
-### Task
-
-Please review or create the database schema based on the below principles.
-
-Ensure that you're using drizzle as designed:
-
-- https://orm.drizzle.team/docs/relations
-- https://orm.drizzle.team/docs/indexes-constraints
-
-### Guiding Principles
-
-- Maximal normalization - everything should be normalized as much as possible. This is to avoid keeping tables in sync or having optional columns that only apply to certain record types. Down the line, this will make it challenging to do migrations and lead to bugs due to faulty assumptions.
-- As many assumptions as possible should be enforced at the database layer via the schema / unique constraints.
-- Make sure you properly use drizzle relations.
-  - Be sure to read the docs: https://orm.drizzle.team/docs/relations
-
-### Before you design
-
-- Ask the users clarifying questions about use cases down the line
-  - We don't want to build out support in the schema for any future features, but we want to make sure that our schema is designed intelligently so that it is easy to migrate the schema to support new features later.
-
-## Example problem with current schema
-
-Summary: Session History Data Model Problem
-
-Current Behavior
-When a workout session is created, the programName and workoutName are snapshotted (copied) into the session record at creation time (useWorkoutSession.ts:121-122). The session stores these as static strings rather than referencing the source data.
-
-The Problem
-If a user renames a program or workout after sessions have been created, the history page still displays the old names because:
-
-1. Sessions store copies of names, not references to the live program/workout
-2. There's no mechanism to propagate name changes to existing session records
-
-Current Data Flow
-Program (name: "My Program")
-↓ copied at session creation
-Session (programName: "My Program") ← static, never updates
-
-## Flexibility Requirements
-
-- Users should be able to change their workout names
-  - This should reflect when users finish their workout moving forwards
-  - All previous completed workouts should have the name at the time it was completed
-- Exercises should behave like workouts
-  - Users should be able to change the exercise name and it should apply to future set logs, but not past
-
-## Guidance
-
-- Normalized data is a key requirement
-```
-
-## TanStack DB Review
-
-Use this to review TanStack DB usage patterns. Reference `apps/workout-tracker/` for correct patterns.
-
-````markdown
-Review this codebase for proper TanStack DB usage.
-
-### Documentation
-
-- [Live Queries](https://tanstack.com/db/latest/docs/guides/live-queries)
-- [Mutations](https://tanstack.com/db/latest/docs/guides/mutations)
-- [Schemas](https://tanstack.com/db/latest/docs/guides/schemas)
-- [createOptimisticAction](https://tanstack.com/db/latest/docs/reference/functions/createOptimisticAction)
-
-### File Structure
-
-| Location                            | Purpose                                         |
-| ----------------------------------- | ----------------------------------------------- |
-| `client/tanstack-db/*Collection.ts` | One collection per entity                       |
-| `client/tanstack-db/index.ts`       | Re-exports all collections                      |
-| `client/tanstack-db/queryClient.ts` | QueryClient with gcTime/staleTime               |
-| `client/tanstack-db/persister.ts`   | localStorage persister for offline              |
-| `client/actions/*.ts`               | Optimistic actions via `createOptimisticAction` |
-
-### Checklist
-
-#### Collections
-
-- [ ] Wrapped with `lazyInitForWorkers()` so it works on Cloudflare
-
-#### Simple Mutations (Single Collection)
-
-For simple operations on a single collection, call collection methods directly. The collection's `onInsert`/`onUpdate`/`onDelete` callbacks handle server sync automatically:
-
-```ts
-// Direct insert - collection handles server sync
-workoutsCollection.insert({ id: nanoid(), name: "Workout 1", ... });
-
-// Direct delete
-sessionsCollection.delete(sessionId);
-```
-````
-
-#### Complex Mutations (Multiple Collections)
-
-Use `createOptimisticAction` only when coordinating updates across multiple collections atomically:
-
-- [ ] Pre-generate IDs with `nanoid()` before action - same ID used in `onMutate` and `mutationFn`
-- [ ] `onMutate` updates all affected collections synchronously
-- [ ] `mutationFn` calls server then refetches via `collection.utils.refetch()`
-
-#### Non-Optimistic Mutations
-
-When the client lacks data needed for optimistic updates (e.g., adding a friend by email where the server looks up the user), call the server function directly then refetch:
-
-```ts
-await serverFunction({ data });
-await collection.utils.refetch();
-```
-
-### Anti-Patterns
-
-| Don't                                                    | Do Instead                                 |
-| -------------------------------------------------------- | ------------------------------------------ |
-| Use `useQuery`/`useMutation` from react-query            | Use `useLiveQuery` and collections         |
-| Use `createOptimisticAction` for single-collection ops   | Call collection methods directly (simpler) |
-| Coordinate multiple collection updates in component code | Use `createOptimisticAction`               |
-| Store nested entities in collections                     | Flat data, join at query time              |
-| Generate IDs inside `onMutate` or `mutationFn`           | Pre-generate IDs in helper function        |
-| Skip refetch after `mutationFn`                          | Always `await collection.utils.refetch()`  |
-
-```
-
-```
 

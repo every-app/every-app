@@ -1,0 +1,55 @@
+---
+title: Getting Started
+description: Self host the Gateway and your first app
+---
+
+This guide walks through self hosting the Gateway and your first app.
+
+## Prerequisites
+
+1. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) (free, no credit card required)
+
+2. Login via the Cloudflare CLI:
+
+   ```bash
+   npx wrangler login
+   ```
+
+## Self Host the Gateway
+
+```bash
+npx @every-app/cli gateway deploy
+```
+
+Follow the link this returns to create your account in the Gateway.
+
+## Self Host Apps
+
+Pick an app to deploy:
+
+### Todo App
+
+```bash
+npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
+cd every-todo-app
+npx @every-app/cli app deploy
+```
+
+### Workout Tracker
+
+```bash
+npx gitpick every-app/every-app/tree/main/apps/workout-tracker every-workout-tracker
+cd every-workout-tracker
+npx @every-app/cli app deploy
+```
+
+### Cooking Assistant
+
+```bash
+npx gitpick every-app/every-app/tree/main/apps/every-chef every-chef
+cd every-chef
+npx @every-app/cli app deploy
+npx wrangler secret put OPENAI_API_KEY
+```
+
+Refresh your Gateway and you should see the app available.

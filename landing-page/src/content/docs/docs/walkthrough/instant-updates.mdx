@@ -1,0 +1,104 @@
+---
+title: Instant UI Updates
+description: Make your app feel instant with optimistic updates
+---
+
+We want any app we use to feel instant. No spinners! [TanStack DB](https://tanstack.com/db/latest) is the best way we've found to do this on Cloudflare's infrastructure.
+
+When you create a recipe from the chat, it appears in the UI immediately. Navigate to the recipes page and it's already there - no refresh needed.
+
+## Collections
+
+A collection defines how to fetch and sync data:
+
+```ts
+export const recipesCollection = lazyInitForWorkers(() =>
+  createCollection(
+    queryCollectionOptions<Recipe, string>({
+      queryKey: ["recipes"],
+      getId: (recipe) => recipe.id,
+
+      queryFn: async () => {
+        const result = await getAllRecipes();
+        return result.recipes;
+      },
+
+      onInsert: async ({ transaction }) => {
+        for (const mutation of transaction.mutations) {
+          await createRecipe({ data: mutation.modified });
+        }
+      },
+
+      onUpdate: async ({ transaction }) => {
+        for (const mutation of transaction.mutations) {
+          await updateRecipe({ data: mutation.modified });
+        }
+      },
+
+      onDelete: async ({ transaction }) => {
+        for (const mutation of transaction.mutations) {
+          await deleteRecipe({ data: { id: mutation.original.id } });
+        }
+      },
+    }),
+  ),
+);
+```
+
+The `lazyInitForWorkers` wrapper is required for Cloudflare Workers compatibility.
+
+## Using Collections
+
+Query like any TanStack Query, mutate directly on the collection:
+
+```tsx
+function RecipeList() {
+  const recipes = useQuery(recipesCollection);
+  return recipes.data?.map((r) => <li key={r.id}>{r.title}</li>);
+}
+
+function handleCreate() {
+  recipesCollection.insert({
+    id: crypto.randomUUID(),
+    title: "New Recipe",
+    // ...
+  });
+}
+```
+
+The UI updates immediately, then syncs to the server in the background.
+
+## Multi-Collection Updates
+
+Use `createOptimisticAction` when you need to update multiple collections at once:
+
+```ts
+export const startCooking = createOptimisticAction<StartCookingParams>({
+  onMutate: ({ chatId, recipeId }) => {
+    // Optimistically insert into both collections
+    chatsCollection.insert({ id: chatId, ... });
+    chatActiveRecipesCollection.insert({ chatId, recipeId, ... });
+  },
+
+  mutationFn: async (params) => {
+    await startCookingWithRecipe({ data: params });
+    // Refetch to sync server state
+    await Promise.all([
+      chatsCollection.utils.refetch(),
+      chatActiveRecipesCollection.utils.refetch(),
+    ]);
+  },
+});
+```
+
+## Client-Generated IDs
+
+The key to true optimistic updates: generate IDs on the client.
+
+```ts
+const chatId = crypto.randomUUID();
+chatsCollection.insert({ id: chatId, ... });  // Local
+await createChat({ data: { id: chatId } });   // Server gets same ID
+```
+
+The optimistic state seamlessly becomes the real state.

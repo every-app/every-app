@@ -1,0 +1,83 @@
+---
+title: Database Schema
+description: Structured data that's easy to query and maintain
+---
+
+Schema is the hardest thing to change as the app evolves once you have users. Most data modeling shortcuts come back to bite you. We try to normalize data from the start to make changing it easier later.
+
+## Normalized Tables
+
+Rather than JSON columns with nullable fields, we use separate tables for different content types. For example, messages can have different parts (text, tool calls):
+
+```ts
+// Base parts table
+export const messageParts = sqliteTable("message_parts", {
+  id: text("id").primaryKey(),
+  messageId: text("message_id").references(() => messages.id, {
+    onDelete: "cascade",
+  }),
+  type: text("type", { enum: messagePartTypes }).notNull(),
+});
+
+// Specialized table for text content
+export const textMessageParts = sqliteTable("text_message_parts", {
+  partId: text("part_id")
+    .primaryKey()
+    .references(() => messageParts.id, { onDelete: "cascade" }),
+  text: text("text").notNull(),
+});
+
+// Specialized table for tool invocations
+export const toolInvocationMessageParts = sqliteTable(
+  "tool_invocation_message_parts",
+  {
+    partId: text("part_id")
+      .primaryKey()
+      .references(() => messageParts.id, { onDelete: "cascade" }),
+    toolCallId: text("tool_call_id").notNull(),
+    toolName: text("tool_name").notNull(),
+    args: text("args").notNull(),
+  },
+);
+```
+
+This avoids nullable columns that only apply to certain types and makes migrations cleaner.
+
+## Enum Pattern
+
+SQLite doesn't have native enums, so we use const arrays:
+
+```ts
+export const messageRoles = ["user", "assistant"] as const;
+export type MessageRole = (typeof messageRoles)[number];
+
+export const messages = sqliteTable("messages", {
+  id: text("id").primaryKey(),
+  role: text("role", { enum: messageRoles }).notNull(),
+});
+```
+
+This gives you type safety, runtime validation, and a reusable union type.
+
+## Cascading Deletes
+
+Use cascading deletes to keep data consistent automatically:
+
+```ts
+messageId: text("message_id").references(() => messages.id, {
+  onDelete: "cascade",
+});
+```
+
+When a message is deleted, all its parts are deleted too.
+
+## Type Inference
+
+Export inferred types for use throughout the app:
+
+```ts
+export type Recipe = typeof recipes.$inferSelect;
+export type NewRecipe = typeof recipes.$inferInsert;
+```
+
+These types stay in sync with your schema automatically.

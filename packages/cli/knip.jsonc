@@ -5,7 +5,6 @@
 		"src/commands/gateway/commands.ts"
 	],
 	"ignoreBinaries": [
-		"every", // Self-referential binary (this CLI itself)
 		"wrangler" // Peer dependency - required but not directly installed
 	]
 }

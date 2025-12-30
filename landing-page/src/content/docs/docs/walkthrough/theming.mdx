@@ -1,0 +1,44 @@
+---
+title: Theming & Styling
+description: Make your app look good with Tailwind and DaisyUI
+---
+
+[DaisyUI](https://daisyui.com/) is a component library built on top of Tailwind with support for themes. These themes are all defined within a single CSS file (`src/client/styles/app.css`) and provide powerful components without adding a ton of dependencies.
+
+## Custom Themes
+
+Define themes with the `@plugin "daisyui/theme"` directive using OKLCH colors:
+
+```css
+@plugin "daisyui/theme" {
+  name: "chef";
+  default: true;
+  color-scheme: "light";
+
+  --color-primary: oklch(55% 0.15 145);
+  --color-secondary: oklch(65% 0.12 45);
+  --color-base-100: oklch(98% 0.005 90);
+  --color-base-content: oklch(25% 0.02 90);
+  /* ... see full theme in every-chef */
+}
+```
+
+You can define multiple themes (light, dark, etc.) and DaisyUI handles switching between them.
+
+## Custom Classes with Theme Variables
+
+You can create reusable classes that reference your theme variables:
+
+```css
+.chat-message-user {
+  @apply bg-base-300 text-base-content rounded-2xl px-4 py-2;
+}
+
+.chat-message-assistant {
+  @apply bg-base-200 text-base-content rounded-2xl px-4 py-2;
+}
+```
+
+These classes automatically adapt when switching themes since they use the theme's color variables (`base-300`, `base-content`, etc.) rather than hard-coded colors.
+
+See the full [Every Chef app.css](https://github.com/every-app/every-app/blob/main/apps/every-chef/src/client/styles/app.css) for a complete example.

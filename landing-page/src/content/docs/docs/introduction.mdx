@@ -1,51 +1,40 @@
 ---
 title: Introduction
-description: What is Every App Gateway and why build with it?
+description: What is Every App?
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+Every App is a self-hosted platform for running personal web applications.
 
-## What is Every App Gateway?
+Deploy the Gateway to your Cloudflare account, and access all your apps through a single interface.
 
-Every App Gateway is a self-hosted hub for all your personal web applications. Think of it as your own private app store that you control, running in your Cloudflare account.
+Self host open source apps with one simple command or build your own and share them with the community.
 
-### Main Functions
+## Open Source App Ecosystem
 
-- **Consistent URL** - Access all your apps from a single URL. No need to remember different domains or ports for each app.
-- **Authentication** - Embedded apps request session tokens from the gateway instead of implementing auth themselves. You log in once and all your apps just work.
-- **Mobile PWA Optimized** - The Gateway is optimized with Progressive Web Apps in mind. Add the Gateway to your home screen, then each embedded app gets PWA benefits without reinventing the wheel.
+In the near future, there will be hundreds of high quality open source apps for you to self host. We need passionate community members to get there.
 
-<Aside type="tip" title="Coming Soon">
-  In the near future, the Gateway will also manage user roles and access to apps
-  if you want to add friends and family to your gateway.
-</Aside>
+Every App handles the boring parts so you can focus on building your idea:
 
-## Why Build with Every App?
+- **1 command self hosting**
+- **Simplified auth**
+- **Complete full stack example codebases**
+- **Prompts for agents to build features and maintain code**
 
-### The Gateway Handles Common Functionality
+## What is the Gateway?
 
-You don't need to worry about auth and PWAs. In the future, our goal is to abstract away even more like LLM providers & email sending.
+The Gateway is the parent application that hosts all your embedded apps:
 
-### Opinionated Tech Stack with Examples
+- **Single URL** - Access all apps from one place
+- **Shared Auth** - Log in once, access all apps
+- **PWA Support** - Add to home screen, all apps inherit PWA benefits
+- **LLM Gateway (Coming soon)** - Configure LLM provider once, instead of once per app. Define per-app budgets.
 
-The stack is designed for simplicity and agentic coding. If you look at the example apps, the only dependencies are really TanStack libraries, Drizzle, and Cloudflare. This means it's less things for you and your coding agent to learn and keep track of.
+Apps run inside the Gateway's iframe and receive scoped session tokens for authentication, so you don't need to implement auth in your apps.
 
-### Full Stack, Complete Example Apps
+## Example Apps
 
 While the starter template is minimal, there are several full apps you can reference:
 
-- [Workout Tracker](https://github.com/every-app/every-app/tree/main/apps/workout-tracker) - A workout tracking app
-- [Every Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) - A cooking assistant
-- [Todos](https://github.com/every-app/every-app/tree/main/apps/todo-app) - A minimal todo list app
-
-If you're stuck or not sure how to implement something, there's a good chance there's already an example full stack application using the same stack in one of these apps.
-
-## How It Works
-
-From your app's perspective, Every App does a few things:
-
-1. **Renders your app in an iframe** - Your app lives inside the Gateway's UI
-2. **Provides session tokens** - The Gateway handles auth and gives your app tokens
-3. **Syncs routing** - Navigation in your app syncs with the Gateway's URL bar
-
-The `@embedded-sdk` handles all this communication for you. Check out the [Embedded SDK docs](/docs/embedded-sdk/overview) for details.
+- [Todos](https://github.com/every-app/every-app/tree/main/apps/todo-app) - A minimal todo list
+- [Workout Tracker](https://github.com/every-app/every-app/tree/main/apps/workout-tracker) - Create programs and track workouts
+- [Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) - AI cooking assistant

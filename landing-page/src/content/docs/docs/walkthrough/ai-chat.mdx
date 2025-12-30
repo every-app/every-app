@@ -1,0 +1,98 @@
+---
+title: AI Chat & Tool Calls
+description: Streaming responses and letting users confirm AI actions
+---
+
+Most apps will want AI for some feature. This explains common patterns you'll run into and how we solved them in Every Chef using the [Vercel AI SDK](https://ai-sdk.dev/docs/introduction).
+
+## Streaming Endpoint
+
+The chat endpoint uses TanStack Router's server handler with `streamText`:
+
+```ts
+const result = streamText({
+  model: openaiProvider("gpt-5.1"),
+  messages,
+  tools: recipeTools,
+  onFinish: async ({ text }) => {
+    // Persist assistant message after streaming completes
+    await MessageService.saveAssistantMessage(chatId, userId, text);
+  },
+});
+
+return result.toUIMessageStreamResponse();
+```
+
+User messages are saved immediately when sent. Assistant messages are saved in `onFinish` after streaming completes.
+
+## Human-in-the-Loop Tools
+
+When the AI wants to save a recipe, it shouldn't just do it - it should ask the user first. Define tools WITHOUT an `execute` function to forward them to the client:
+
+```ts
+const promptUserWithRecipeUpdate = tool({
+  description: "Prompt the user to decide whether to save a recipe",
+  inputSchema: z.object({
+    title: z.string(),
+    content: z.string(),
+  }),
+  // No execute function - forwards to client
+});
+```
+
+When a tool has no `execute` function, the AI SDK forwards the call to the client, which can show UI for the user to respond.
+
+```
+┌──────────┐     ┌──────────┐     ┌──────────┐
+│    AI    │     │  Client  │     │   User   │
+└────┬─────┘     └────┬─────┘     └────┬─────┘
+     │                │                │
+     │  tool call     │                │
+     │───────────────►│                │
+     │                │  show UI       │
+     │                │───────────────►│
+     │                │                │
+     │                │  user decides  │
+     │                │◄───────────────│
+     │                │                │
+     │  tool result   │                │
+     │◄───────────────│                │
+     │                │                │
+     │  continues...  │                │
+     │───────────────►│                │
+```
+
+## Rendering Tool Calls
+
+The client renders tool calls as interactive UI:
+
+```tsx
+{
+  toolParts.map((part) => {
+    if (part.toolInvocation.toolName === "promptUserWithRecipeUpdate") {
+      return (
+        <RecipeUpdatePrompt
+          recipe={part.toolInvocation.args}
+          onRespond={handleToolResponse}
+        />
+      );
+    }
+  });
+}
+```
+
+## Sending Results Back
+
+When the user makes a choice, send it back to the AI:
+
+```ts
+const handleToolResponse = async (toolCallId: string, result: ToolResult) => {
+  // Tell the AI about the user's choice
+  addToolOutput({ toolCallId, output: JSON.stringify(result) });
+
+  // If they chose to save, create the recipe
+  if (result.action === "create") {
+    await recipesCollection.insert({ ... });
+  }
+};
+```

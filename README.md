@@ -44,7 +44,7 @@ npx wrangler login
 npx @every-app/cli gateway deploy
 ```
 
-Follow the link to create your account.
+Follow the link this returns to create your account in the Gateway.
 
 
 ### Self Host Apps

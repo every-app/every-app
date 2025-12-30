@@ -1,75 +1,285 @@
 ---
-title: Embedded SDK Overview
-description: How Every App handles authentication between the Gateway and your app
+title: Every App SDK
+description: How authentication works between the Gateway and your app
 ---
 
-import { Aside } from "@astrojs/starlight/components";
+The Every App SDK (`@every-app/sdk`) handles all the communication between your app and the Gateway. It's responsible for:
 
-The Embedded SDK handles all the communication between your app and the Every App Gateway. It's responsible for:
-
-1. **Session token management** - Requesting and refreshing tokens from the Gateway
+1. **Session token management** - Requesting and refreshing session tokens from the Gateway
 2. **Route synchronization** - Keeping your app's URL in sync with the Gateway
-3. **Request authentication** - Adding tokens to your API requests and verifying them on the backend
+3. **API Request authentication** - Simplifying adding tokens to your API requests and verifying them on the backend
 
-<Aside type="tip">
-  The SDK currently lives inside your app at `src/embedded-sdk/`. Soon, this
-  will be published as an npm package.
-</Aside>
+```bash
+npm install @every-app/sdk
+```
 
 ## How Session Tokens Work
 
-When your app loads inside the Gateway's iframe, here's what happens:
+When your app loads inside the Gateway's iframe using the SDK:
 
-1. The `EmbeddedAppProvider` initializes a `SessionManager`
-2. The `SessionManager` sends a `postMessage` to the parent Gateway requesting a session token
-3. The Gateway validates the request, generates a JWT signed with its private key, and sends it back
-4. Your app stores the token and uses it for all API requests
+1. Your app client requests a session token from the Gateway via `postMessage`
+2. The Gateway returns a signed JWT scoped to your app ID
+3. Your app client includes the token in all API requests to your backend
+4. Your backend verifies the token using the Gateway's public key (JWKS)
 5. Before the token expires, the SDK automatically requests a new one
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Every App Gateway                         │
-│  ┌─────────────────────────────────────────────────────┐    │
-│  │              Your App (iframe)                       │    │
-│  │                                                      │    │
-│  │   EmbeddedAppProvider                               │    │
-│  │         │                                           │    │
-│  │         ▼                                           │    │
-│  │   SessionManager ──── postMessage ────────────────────────► Gateway
-│  │         │              "Give me a token"            │    │    │
-│  │         │                                           │    │    │
-│  │         │◄──── postMessage ───────────────────────────────────┘
-│  │         │      "Here's your JWT"                    │    │
-│  │         ▼                                           │    │
-│  │   useSessionTokenClientMiddleware                   │    │
-│  │         │                                           │    │
-│  │         ▼                                           │    │
-│  │   Server Function ──── Authorization: Bearer ────────────► Your Backend
-│  │                                                      │    │    │
-│  │                                                      │    │    ▼
-│  │                                                      │    │ authenticateRequest()
-│  │                                                      │    │ verifies JWT with Gateway's
-│  │                                                      │    │ public key (JWKS)
-│  └─────────────────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│   Gateway    │     │  App Client  │     │  App Backend │
+│   (parent)   │     │   (iframe)   │     │ (Cloudflare) │
+└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
+       │                    │                    │
+       │  1. postMessage    │                    │
+       │  "request token"   │                    │
+       │◄───────────────────│                    │
+       │                    │                    │
+       │  2. postMessage    │                    │
+       │  JWT session token │                    │
+       │───────────────────►│                    │
+       │                    │                    │
+       │                    │  3. API request    │
+       │                    │  Authorization:    │
+       │                    │  Bearer <token>    │
+       │                    │───────────────────►│
+       │                    │                    │
+       │                    │                    │ 4. Verify JWT
+       │                    │                    │    via Gateway
+       │  ◄ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─  │    JWKS
+       │         (fetch public key)              │
+       │                    │                    │
 ```
 
-## SDK Structure
+---
 
-The SDK is split into client and server code:
+## Client SDK
 
-### Client (`src/embedded-sdk/client/`)
+The client SDK is imported from `@every-app/sdk/client` and provides React components and hooks for authentication.
 
-- **EmbeddedAppProvider** - React context provider that initializes everything
-- **SessionManager** - Handles token requests and storage
-- **useSessionTokenClientMiddleware** - TanStack middleware that adds tokens to requests
-- **lazyInitForWorkers** - Utility for Cloudflare Workers compatibility
+### EmbeddedAppProvider
 
-See [Client SDK Reference](/docs/embedded-sdk/client) for details.
+The main React provider that wraps your app. It initializes the session manager and handles route synchronization.
 
-### Server (`src/embedded-sdk/server/`)
+```tsx
+import { EmbeddedAppProvider } from "@every-app/sdk/client";
 
-- **authenticateRequest** - Verifies JWT tokens from requests
-- **getLocalD1Url** - Helper for local development with D1
+function App() {
+  return (
+    <EmbeddedAppProvider appId="your-app-id">
+      <YourApp />
+    </EmbeddedAppProvider>
+  );
+}
+```
 
-See [Server SDK Reference](/docs/embedded-sdk/server) for details.
+#### Props
+
+| Prop    | Type     | Required | Description                                     |
+| ------- | -------- | -------- | ----------------------------------------------- |
+| `appId` | `string` | Yes      | Must match the App ID configured in the Gateway |
+
+#### What it does
+
+- Creates a `SessionManager` instance
+- Requests an initial session token from the Gateway
+- Sets up route synchronization (your app's routes sync with the Gateway's URL bar)
+- Makes the session manager globally available for the middleware
+
+:::caution
+The `appId` must match exactly what you configured when adding the app to your Gateway. If they don't match, the handshake will fail.
+:::
+
+### SessionManager
+
+The class that handles all token management. You usually don't interact with this directly - the provider and middleware handle it for you.
+
+```ts
+interface SessionManagerConfig {
+  appId: string;
+}
+```
+
+#### Key Methods
+
+**`getToken(): Promise<string>`** - Returns a valid session token. If the current token is expired or expiring soon (within 10 seconds), it automatically requests a new one.
+
+**`getTokenState()`** - Returns the current token state:
+
+```ts
+type TokenState = {
+  status: "NO_TOKEN" | "VALID" | "EXPIRED" | "REFRESHING";
+  token: string | null;
+};
+```
+
+**`getAppId(): string`** - Returns the configured app ID.
+
+**`getParentOrigin(): string`** - Returns the Gateway URL (from `VITE_GATEWAY_URL` env var).
+
+**`getUser(): { userId: string; email: string } | null`** - Extracts user information from the current JWT token. Returns `null` if no valid token is available.
+
+```ts
+const user = sessionManager.getUser();
+if (user) {
+  console.log(`Logged in as ${user.email}`);
+}
+```
+
+### useCurrentUser
+
+A React hook that returns the current authenticated user's information.
+
+```tsx
+import { useCurrentUser } from "@every-app/sdk/client";
+
+function UserProfile() {
+  const user = useCurrentUser();
+
+  if (!user) {
+    return <div>Not authenticated</div>;
+  }
+
+  return (
+    <div>
+      <p>User ID: {user.userId}</p>
+      <p>Email: {user.email}</p>
+    </div>
+  );
+}
+```
+
+#### Return Value
+
+Returns `{ userId: string; email: string } | null`
+
+| Property | Type     | Description                                 |
+| -------- | -------- | ------------------------------------------- |
+| `userId` | `string` | The user's unique ID (from JWT `sub` claim) |
+| `email`  | `string` | The user's email address                    |
+
+Returns `null` if the user is not authenticated or the session token is not yet available.
+
+:::note
+This hook must be used within a component wrapped by `EmbeddedAppProvider`. It will throw an error if used outside the provider.
+:::
+
+### useSessionTokenClientMiddleware
+
+A TanStack Start middleware that automatically adds the session token to all server function requests.
+
+```ts
+import { useSessionTokenClientMiddleware } from "@every-app/sdk/client";
+
+export const myServerFunction = createServerFn({ method: "GET" })
+  .middleware([useSessionTokenClientMiddleware])
+  .handler(async () => {
+    // Your handler code
+  });
+```
+
+#### How it works
+
+1. Gets the global `SessionManager` instance (set by `EmbeddedAppProvider`)
+2. Calls `getToken()` to get a valid token
+3. Adds an `Authorization: Bearer <token>` header to the request
+
+:::tip
+You should add this middleware to every server function that needs authentication. Check out the starter template for examples.
+:::
+
+### lazyInitForWorkers
+
+A utility that wraps resource creation to avoid Cloudflare Workers' global scope restrictions.
+
+```ts
+import { lazyInitForWorkers } from "@every-app/sdk/client";
+import { createCollection, queryCollectionOptions } from "@tanstack/db";
+
+export const todosCollection = lazyInitForWorkers(() =>
+  createCollection(
+    queryCollectionOptions({
+      queryKey: ["todos"],
+      queryFn: async () => fetchTodos(),
+      // ... other options
+    }),
+  ),
+);
+```
+
+#### Why it's needed
+
+Cloudflare Workers don't allow certain async operations (like creating TanStack DB collections) to run in the global scope at module load time. This utility defers initialization until the resource is first accessed.
+
+#### How it works
+
+Returns a Proxy that:
+
+1. Does nothing at module load time
+2. Creates the actual resource on first property access
+3. Caches the instance for subsequent accesses (singleton pattern)
+
+---
+
+## Server SDK
+
+The server SDK is imported from `@every-app/sdk/server` and provides authentication utilities.
+
+### authenticateRequest
+
+Verifies the JWT session token from incoming requests. This is the main function you'll use to authenticate users in your server functions.
+
+```ts
+import { authenticateRequest } from "@every-app/sdk/server";
+
+const authConfig = {
+  jwksUrl: "", // Not used - JWKS is fetched from Gateway
+  issuer: env.GATEWAY_URL,
+  audience: "your-app-id",
+};
+
+export const myServerFunction = createServerFn({ method: "GET" })
+  .middleware([useSessionTokenClientMiddleware])
+  .handler(async () => {
+    const session = await authenticateRequest(authConfig);
+
+    if (!session) {
+      throw new Error("Unauthorized");
+    }
+
+    const userId = session.sub;
+    // ... your logic
+  });
+```
+
+#### Parameters
+
+```ts
+interface AuthConfig {
+  jwksUrl: string; // Currently unused - JWKS fetched from Gateway
+  issuer: string; // The Gateway URL (validates token issuer)
+  audience: string; // Your app ID (validates token audience)
+}
+```
+
+#### Return Value
+
+Returns the decoded JWT payload or `null` if authentication fails:
+
+```ts
+interface SessionTokenPayload {
+  sub: string; // User ID
+  iss: string; // Issuer (Gateway URL)
+  aud: string; // Audience (your app ID)
+  exp: number; // Expiration timestamp
+  iat: number; // Issued at timestamp
+  appId?: string; // App ID (if included)
+  permissions?: string[]; // User permissions (if included)
+  email?: string; // User email (if included)
+}
+```
+
+#### How it works
+
+1. Extracts the `Authorization: Bearer <token>` header from the request
+2. Fetches the Gateway's JWKS (JSON Web Key Set) to get the public key
+3. Verifies the JWT signature, issuer, and audience
+4. Returns the decoded payload if valid, `null` if invalid
