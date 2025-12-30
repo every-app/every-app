@@ -77,6 +77,7 @@ npx @every-app/cli app deploy
 npx gitpick every-app/every-app/tree/main/apps/every-chef every-chef
 cd every-chef
 npx @every-app/cli app deploy
+npx wrangler secret put OPENAI_API_KEY
 ```
 
 
