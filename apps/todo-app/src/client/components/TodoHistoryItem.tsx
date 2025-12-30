@@ -1,7 +1,7 @@
+import { useState } from "react";
 import { Checkbox } from "@/client/components/ui/checkbox";
+import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
 import { Trash2 } from "lucide-react";
-import { useIsMobile } from "@/client/hooks/use-mobile";
-import { DeleteTodoConfirmation } from "@/client/components/DeleteTodoConfirmation";
 import { Button } from "./ui/button";
 import { todoCollection } from "@/client/tanstack-db";
 
@@ -10,12 +10,10 @@ interface HistoryItemProps {
 }
 
 export function HistoryItem({ todo }: HistoryItemProps) {
-  const isMobile = useIsMobile();
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   return (
-    <div
-      className={`flex items-center gap-3 p-2 rounded-md border border-transparent hover:border-base-300 hover:bg-base-300/50 transition-all ${!isMobile ? "group" : ""}`}
-    >
+    <div className="group flex items-center gap-3 p-2 rounded-md border border-transparent hover:border-base-300 hover:bg-base-300/50 transition-all">
       <Checkbox
         checked={todo.completed}
         onCheckedChange={(checked) => {
@@ -34,16 +32,25 @@ export function HistoryItem({ todo }: HistoryItemProps) {
         {todo.title}
       </span>
 
-      <DeleteTodoConfirmation onConfirm={() => todoCollection.delete(todo.id)}>
-        <Button
-          variant="ghost"
-          size="sm"
-          className={`${!isMobile ? "opacity-0 group-hover:opacity-100" : ""} transition-opacity hover:bg-red-50 hover:text-red-600`}
-          aria-label={`Delete todo: ${todo.title}`}
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
-      </DeleteTodoConfirmation>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => setShowDeleteModal(true)}
+        className="md:opacity-0 md:group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-600"
+        aria-label={`Delete todo: ${todo.title}`}
+      >
+        <Trash2 className="h-4 w-4" />
+      </Button>
+
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={() => todoCollection.delete(todo.id)}
+        title="Delete Todo"
+        description="Are you sure you want to delete this todo? This action cannot be undone."
+        confirmText="Delete"
+        variant="danger"
+      />
     </div>
   );
 }

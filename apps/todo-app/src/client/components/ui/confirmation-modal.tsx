@@ -1,4 +1,3 @@
-import { useEffect, useRef } from "react";
 import { Button } from "./button";
 
 interface ConfirmationModalProps {
@@ -22,43 +21,8 @@ export function ConfirmationModal({
   cancelText = "Cancel",
   variant = "danger",
 }: ConfirmationModalProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-
-    if (isOpen) {
-      dialog.showModal();
-    } else {
-      dialog.close();
-    }
-  }, [isOpen]);
-
-  // Handle backdrop click
-  const handleBackdropClick = (e: React.MouseEvent<HTMLDialogElement>) => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-
-    const rect = dialog.getBoundingClientRect();
-    const isInDialog =
-      rect.top <= e.clientY &&
-      e.clientY <= rect.top + rect.height &&
-      rect.left <= e.clientX &&
-      e.clientX <= rect.left + rect.width;
-
-    if (!isInDialog) {
-      onClose();
-    }
-  };
-
   return (
-    <dialog
-      ref={dialogRef}
-      className="modal"
-      onClick={handleBackdropClick}
-      onClose={onClose}
-    >
+    <dialog className="modal" open={isOpen}>
       <div className="modal-box">
         <h3 className="font-bold text-lg">{title}</h3>
         <p className="py-4 text-base-content/70 whitespace-pre-line">
@@ -79,6 +43,7 @@ export function ConfirmationModal({
           </Button>
         </div>
       </div>
+      <div className="modal-backdrop" onClick={onClose} />
     </dialog>
   );
 }

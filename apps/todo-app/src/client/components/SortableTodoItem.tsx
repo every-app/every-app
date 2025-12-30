@@ -1,25 +1,17 @@
 import { useState, useRef, useEffect } from "react";
 import { Checkbox } from "@/client/components/ui/checkbox";
 import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/client/components/ui/context-menu";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/client/components/ui/dropdown-menu";
-import { MoreHorizontal } from "lucide-react";
+import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
+import { MoreHorizontal, Edit, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { useIsMobile } from "@/client/hooks/use-mobile";
-import { TodoMenuItems } from "@/client/components/TodoMenuItems";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { todoCollection } from "@/client/tanstack-db";
-import type { ComponentType } from "react";
 
 interface SortableTodoItemProps {
   todo: Todo;
@@ -34,9 +26,8 @@ export function SortableTodoItem({
   setEditingTodoId,
   isDraggable = true,
 }: SortableTodoItemProps) {
-  const isMobile = useIsMobile();
   const [localTitle, setLocalTitle] = useState(todo.title);
-  const [isActionFocused, setIsActionFocused] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const {
@@ -122,7 +113,7 @@ export function SortableTodoItem({
     adjustTextareaHeight();
   }, [localTitle]);
 
-  const todoItem = (
+  return (
     <div
       ref={setNodeRef}
       style={style}
@@ -196,53 +187,40 @@ export function SortableTodoItem({
 
       <DropdownMenu>
         <DropdownMenuTrigger
-          onFocus={() => setIsActionFocused(true)}
-          onBlur={() => setIsActionFocused(false)}
           onPointerDown={(e) => e.stopPropagation()}
-          className={`rounded transition-all duration-200 hover:bg-base-300 opacity-100 p-1 w-auto h-auto focus:opacity-100 focus:ring-2 focus:ring-primary focus:ring-offset-1 focus:p-1 focus:w-auto focus:h-auto`}
+          className="rounded transition-all duration-200 hover:bg-base-300 p-1 focus:ring-2 focus:ring-primary focus:ring-offset-1"
           aria-label="More actions"
         >
-          <MoreHorizontal
-            className={`h-4 w-4 text-base-content/60 ${
-              isMobile || isActionFocused
-                ? "opacity-100 w-auto h-auto"
-                : "opacity-0 w-0 h-0 p-0"
-            }`}
-          />
+          <MoreHorizontal className="h-4 w-4 text-base-content/60" />
         </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          onCloseAutoFocus={(event) => {
-            if (editingTodoId === todo.id) {
-              event.preventDefault();
-            }
-          }}
-        >
-          <TodoMenuItems
-            MenuItem={DropdownMenuItem}
-            isCompleted={todo.completed}
-            onEdit={handleClickEditTodo}
-            onDelete={() => todoCollection.delete(todo.id)}
-          />
+        <DropdownMenuContent>
+          <DropdownMenuItem
+            onClick={!todo.completed ? handleClickEditTodo : undefined}
+            disabled={todo.completed}
+          >
+            <Edit className="h-4 w-4 mr-2" />
+            Edit {todo.completed && "(Disabled)"}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setShowDeleteModal(true)}
+            className="text-error focus:text-error focus:bg-error/10"
+          >
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
-  );
 
-  return isMobile ? (
-    todoItem
-  ) : (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>{todoItem}</ContextMenuTrigger>
-      <ContextMenuContent>
-        <TodoMenuItems
-          MenuItem={ContextMenuItem}
-          isCompleted={todo.completed}
-          onEdit={handleClickEditTodo}
-          onDelete={() => todoCollection.delete(todo.id)}
-        />
-      </ContextMenuContent>
-    </ContextMenu>
+      <ConfirmationModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={() => todoCollection.delete(todo.id)}
+        title="Delete Todo"
+        description="Are you sure you want to delete this todo? This action cannot be undone."
+        confirmText="Delete"
+        variant="danger"
+      />
+    </div>
   );
 }
 

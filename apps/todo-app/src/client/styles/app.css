@@ -173,21 +173,15 @@ code {
   view-transition-name: sidebar;
 }
 
-.mobile-header {
-  view-transition-name: mobile-header;
-}
-
-.tab-bar {
-  view-transition-name: tab-bar;
+.dock {
+  view-transition-name: dock;
 }
 
 /* Don't animate fixed elements */
 ::view-transition-old(sidebar),
 ::view-transition-new(sidebar),
-::view-transition-old(mobile-header),
-::view-transition-new(mobile-header),
-::view-transition-old(tab-bar),
-::view-transition-new(tab-bar) {
+::view-transition-old(dock),
+::view-transition-new(dock) {
   animation: none;
 }
 
@@ -202,20 +196,24 @@ code {
 
 /* Slide left (navigating deeper - mobile only) */
 [data-transition="slide-left"]::view-transition-old(main-content) {
-  animation: vt-slide-out-left 180ms ease-out forwards;
+  animation: vt-slide-out-left 250ms ease-out forwards;
+  z-index: 1;
 }
 
 [data-transition="slide-left"]::view-transition-new(main-content) {
-  animation: vt-slide-in-right 180ms ease-out forwards;
+  animation: vt-slide-in-right 250ms ease-out forwards;
+  z-index: 2;
 }
 
 /* Slide right (navigating back - mobile only) */
 [data-transition="slide-right"]::view-transition-old(main-content) {
-  animation: vt-slide-out-right 180ms ease-out forwards;
+  animation: vt-slide-out-right 250ms ease-out forwards;
+  z-index: 2;
 }
 
 [data-transition="slide-right"]::view-transition-new(main-content) {
-  animation: vt-slide-in-left 180ms ease-out forwards;
+  animation: vt-slide-in-left 250ms ease-out forwards;
+  z-index: 1;
 }
 
 /* Keyframes */
@@ -237,40 +235,48 @@ code {
   }
 }
 
-/* Slide animations - full width for native app feel */
+/* Slide animations - native iOS-style push/pop */
 @keyframes vt-slide-in-right {
   from {
     transform: translateX(100%);
+    opacity: 1;
   }
   to {
     transform: translateX(0);
+    opacity: 1;
   }
 }
 
 @keyframes vt-slide-out-left {
   from {
     transform: translateX(0);
+    opacity: 1;
   }
   to {
     transform: translateX(-30%);
+    opacity: 0.8;
   }
 }
 
 @keyframes vt-slide-in-left {
   from {
-    transform: translateX(-100%);
+    transform: translateX(-30%);
+    opacity: 0.8;
   }
   to {
     transform: translateX(0);
+    opacity: 1;
   }
 }
 
 @keyframes vt-slide-out-right {
   from {
     transform: translateX(0);
+    opacity: 1;
   }
   to {
-    transform: translateX(30%);
+    transform: translateX(100%);
+    opacity: 1;
   }
 }
 

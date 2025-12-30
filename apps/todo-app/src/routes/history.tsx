@@ -43,7 +43,10 @@ function History() {
 
   return (
     <>
-      <div className="p-4 overflow-auto">
+      <div className="px-4 pb-4 md:pt-4 overflow-auto">
+        <h1 className="text-xl font-semibold text-base-content py-3 md:hidden">
+          History
+        </h1>
         {completedTodos.length === 0 ? (
           <div className="flex flex-col items-start gap-2">
             <p>No completed todos yet</p>

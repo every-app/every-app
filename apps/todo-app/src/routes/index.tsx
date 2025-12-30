@@ -9,8 +9,8 @@ import {
   CardTitle,
 } from "@/client/components/ui/card";
 import { Input } from "@/client/components/ui/input";
-import { useIsMobile } from "@/client/hooks/use-mobile";
-import { MobileTodoInput } from "@/client/components/MobileTodoInput";
+import { Plus } from "lucide-react";
+import { CreateTodoModal } from "@/client/components/CreateTodoModal";
 
 import {
   DndContext,
@@ -42,9 +42,9 @@ export const Route = createFileRoute("/")({
 const COMPLETED_TODOS_VISIBLE_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 function Home() {
-  const isMobile = useIsMobile();
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [newTodoTitle, setNewTodoTitle] = useState<string>("");
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
   const sensors = useDraggableSensors();
 
@@ -125,45 +125,47 @@ function Home() {
 
   return (
     <>
-      <div className="px-4 pb-16 md:pt-4 md:pb-0 overflow-auto">
-        {!isMobile && (
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (newTodoTitle.trim()) {
-                todoCollection.insert({
-                  id: crypto.randomUUID(),
-                  title: newTodoTitle.trim(),
-                  sortKey: generateDefaultSortKey(),
-                  completed: false,
-                  completedAt: null,
-                });
-                setNewTodoTitle("");
-              }
-            }}
-            className="space-y-4"
-          >
-            <div className="flex gap-2">
-              <Input
-                name="title"
-                placeholder="New todo..."
-                value={newTodoTitle}
-                onChange={(e) => setNewTodoTitle(e.target.value)}
-                autoFocus
-                className="focus:border-primary focus:bg-primary/10 transition-all duration-200"
-                aria-label="New todo title"
-              />
-              <Button
-                type="submit"
-                disabled={!newTodoTitle.trim()}
-                variant="primary"
-                aria-label="Add new todo"
-              >
-                Add
-              </Button>
-            </div>
-          </form>
-        )}
+      <div className="px-4 pb-24 md:pt-4 md:pb-0 overflow-auto">
+        <h1 className="text-xl font-semibold text-base-content py-3 md:hidden">
+          Todos
+        </h1>
+        {/* Desktop: inline form for creating todos */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (newTodoTitle.trim()) {
+              todoCollection.insert({
+                id: crypto.randomUUID(),
+                title: newTodoTitle.trim(),
+                sortKey: generateDefaultSortKey(),
+                completed: false,
+                completedAt: null,
+              });
+              setNewTodoTitle("");
+            }
+          }}
+          className="hidden md:block space-y-4"
+        >
+          <div className="flex gap-2">
+            <Input
+              name="title"
+              placeholder="New todo..."
+              value={newTodoTitle}
+              onChange={(e) => setNewTodoTitle(e.target.value)}
+              autoFocus
+              className="focus:border-primary focus:bg-primary/10 transition-all duration-200"
+              aria-label="New todo title"
+            />
+            <Button
+              type="submit"
+              disabled={!newTodoTitle.trim()}
+              variant="primary"
+              aria-label="Add new todo"
+            >
+              Add
+            </Button>
+          </div>
+        </form>
 
         <DndContext
           sensors={sensors}
@@ -174,7 +176,7 @@ function Home() {
             items={activeTodos.map((todo) => todo.id)}
             strategy={verticalListSortingStrategy}
           >
-            <div className={isMobile ? "space-y-2" : "sm:mt-4 space-y-2"}>
+            <div className="md:mt-4 space-y-2">
               {activeTodos.map((todo) => (
                 <SortableTodoItem
                   key={todo.id}
@@ -189,9 +191,7 @@ function Home() {
         </DndContext>
 
         {completedTodos.length > 0 && (
-          <div
-            className={isMobile ? "border-base-300 mt-4" : "border-base-300"}
-          >
+          <div className="border-base-300 mt-4">
             <div className="space-y-2 opacity-75">
               {completedTodos.map((todo) => (
                 <SortableTodoItem
@@ -207,7 +207,21 @@ function Home() {
         )}
       </div>
 
-      {isMobile && !editingTodoId && <MobileTodoInput />}
+      {/* Mobile: FAB for creating todos */}
+      {!editingTodoId && (
+        <button
+          onClick={() => setIsCreateModalOpen(true)}
+          className="md:hidden fixed bottom-24 right-4 z-40 w-14 h-14 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg"
+          aria-label="Add new todo"
+        >
+          <Plus className="w-6 h-6" />
+        </button>
+      )}
+
+      <CreateTodoModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+      />
     </>
   );
 }
