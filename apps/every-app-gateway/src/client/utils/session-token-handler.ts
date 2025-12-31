@@ -4,6 +4,10 @@ import {
   SessionTokenRequestSchema,
   SessionTokenResponseMessage,
 } from "./embedded-app-types";
+import {
+  isValidAppOrigin,
+  formatExpectedOrigins,
+} from "@/utils/origin-validator";
 
 /**
  * Handles session token requests from embedded apps
@@ -45,10 +49,14 @@ export async function handleSessionTokenRequest(
     return null;
   }
 
-  // Validate origin matches the app's configured URL
-  if (event.origin !== new URL(appConfig.appUrl).origin) {
+  // Validate origin matches the app's configured URL (production or dev)
+  if (!isValidAppOrigin(event.origin, appConfig.appUrl, appConfig.devUrl)) {
+    const expectedOrigins = formatExpectedOrigins(
+      appConfig.appUrl,
+      appConfig.devUrl,
+    );
     console.warn(
-      `[session-token-handler] Message rejected from unexpected origin: ${event.origin} (expected: ${new URL(appConfig.appUrl).origin} for app: ${appId})`,
+      `[session-token-handler] Message rejected from unexpected origin: ${event.origin} (expected: ${expectedOrigins} for app: ${appId})`,
     );
     return null;
   }

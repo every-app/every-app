@@ -11,7 +11,6 @@ interface PWAInstallStepProps {
   onSkipPermanently: () => void;
   showSkipPermanently: boolean;
   isComplete: boolean;
-  stepNumber: number;
 }
 
 export function PWAInstallStep({
@@ -22,7 +21,6 @@ export function PWAInstallStep({
   onSkipPermanently,
   showSkipPermanently,
   isComplete,
-  stepNumber,
 }: PWAInstallStepProps) {
   // Platform doesn't change during a session, compute once
   const platform = useMemo(() => detectPlatform(), []);
@@ -40,19 +38,6 @@ export function PWAInstallStep({
         className="w-full flex items-center justify-between p-4 hover:bg-base-200 transition-colors text-left"
       >
         <div className="flex items-center gap-3">
-          <div
-            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-              isComplete ? "border-success bg-success" : "border-primary"
-            }`}
-          >
-            {isComplete ? (
-              <Check className="w-3 h-3 text-success-content" />
-            ) : (
-              <span className="text-xs font-bold text-primary">
-                {stepNumber}
-              </span>
-            )}
-          </div>
           <div>
             <h3 className="font-semibold">
               {isComplete ? "Mobile app installed" : "Add to your phone (PWA)"}

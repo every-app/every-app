@@ -1,4 +1,5 @@
 import { UserAppRepository } from "../repositories/UserAppRepository";
+import { isValidAppOrigin } from "@/utils/origin-validator";
 
 // Types for service operations
 type CreateUserAppInput = {
@@ -6,6 +7,7 @@ type CreateUserAppInput = {
   name: string;
   description: string;
   appUrl: string;
+  devUrl?: string | null;
 };
 
 type UpdateUserAppInput = {
@@ -13,6 +15,7 @@ type UpdateUserAppInput = {
   name: string;
   description: string;
   appUrl: string;
+  devUrl?: string | null;
 };
 
 /**
@@ -47,6 +50,7 @@ async function create(userId: string, data: CreateUserAppInput) {
     name: data.name,
     description: data.description,
     appUrl: data.appUrl,
+    devUrl: data.devUrl,
   });
 
   return { appId: id };
@@ -71,6 +75,7 @@ async function update(userId: string, data: UpdateUserAppInput) {
     name: data.name,
     description: data.description,
     appUrl: data.appUrl,
+    devUrl: data.devUrl,
   });
 }
 
@@ -90,10 +95,22 @@ async function deleteApp(userId: string, id: string) {
 }
 
 /**
+ * App configuration needed for token generation and origin validation.
+ */
+type AppConfigForToken = {
+  appId: string;
+  appUrl: string;
+  devUrl: string | null;
+};
+
+/**
  * Get app configuration by appId.
  * Returns null if not found or user doesn't own it.
  */
-async function getByAppId(appId: string, userId: string) {
+async function getByAppId(
+  appId: string,
+  userId: string,
+): Promise<AppConfigForToken | null> {
   const userApp = await UserAppRepository.findByAppIdAndUserId(appId, userId);
 
   if (!userApp) {
@@ -102,12 +119,8 @@ async function getByAppId(appId: string, userId: string) {
 
   return {
     appId: userApp.appId,
-    name: userApp.name,
-    description: userApp.description,
     appUrl: userApp.appUrl,
-    createdAt: userApp.createdAt,
-    updatedAt: userApp.updatedAt,
-    isUserApp: true,
+    devUrl: userApp.devUrl,
   };
 }
 
@@ -117,20 +130,17 @@ async function getByAppId(appId: string, userId: string) {
  * allowing appUrl to contain paths (e.g., "https://app.com/some-path").
  * Returns null if not found or user doesn't own it.
  */
-async function getByOrigin(origin: string, userId: string) {
+async function getByOrigin(
+  origin: string,
+  userId: string,
+): Promise<AppConfigForToken | null> {
   // Fetch all user apps and compare origins
   // This handles cases where appUrl includes a path
   const userApps = await UserAppRepository.findAllByUserId(userId);
 
-  const userApp = userApps.find((app) => {
-    try {
-      const appOrigin = new URL(app.appUrl).origin;
-      return appOrigin === origin;
-    } catch {
-      // Invalid URL in appUrl, skip this app
-      return false;
-    }
-  });
+  const userApp = userApps.find((app) =>
+    isValidAppOrigin(origin, app.appUrl, app.devUrl),
+  );
 
   if (!userApp) {
     return null;
@@ -138,12 +148,8 @@ async function getByOrigin(origin: string, userId: string) {
 
   return {
     appId: userApp.appId,
-    name: userApp.name,
-    description: userApp.description,
     appUrl: userApp.appUrl,
-    createdAt: userApp.createdAt,
-    updatedAt: userApp.updatedAt,
-    isUserApp: true,
+    devUrl: userApp.devUrl,
   };
 }
 

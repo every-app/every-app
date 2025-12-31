@@ -1,18 +1,13 @@
-import React, {
-  useRef,
-  useMemo,
-  useState,
-  useCallback,
-  useEffect,
-} from "react";
+import React, { useRef, useMemo, useState, useCallback } from "react";
+import { X } from "lucide-react";
 import { useAppConfig } from "../hooks/useAppConfig";
 import { useIframeMessaging } from "../hooks/useIframeMessaging";
 import { useRouteSync } from "../hooks/useRouteSync";
 
 interface EmbeddedAppProps {
   appId: string;
-  height?: string | number;
   className?: string;
+  isDevMode?: boolean;
 }
 
 const StatusMessage: React.FC<{ message: string; isError?: boolean }> = ({
@@ -29,27 +24,32 @@ const StatusMessage: React.FC<{ message: string; isError?: boolean }> = ({
 export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
   appId,
   className = "",
+  isDevMode = false,
 }) => {
   const { app, isLoading, isError } = useAppConfig(appId);
   const [isEmbeddedAppReady, setIsEmbeddedAppReady] = useState(false);
+  const [showDevModeIndicator, setShowDevModeIndicator] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Determine the base URL to use (dev or production)
+  const activeUrl = isDevMode && app?.devUrl ? app.devUrl : app?.appUrl;
 
   const { postMessage } = useIframeMessaging(
     iframeRef,
-    app?.appUrl,
+    activeUrl,
     isEmbeddedAppReady,
   );
-  const { embeddedRoute } = useRouteSync(appId, app?.appUrl, postMessage);
+  const { embeddedRoute } = useRouteSync(appId, activeUrl, postMessage);
 
   // Build iframe URL with initial route, memoized to prevent hard reloads
   const iframeUrl = useMemo(() => {
-    if (!app?.appUrl) return null;
+    if (!activeUrl) return null;
     // Remove trailing slash to prevent double slashes (e.g., "https://example.com//")
-    const baseUrl = app.appUrl.endsWith("/")
-      ? app.appUrl.slice(0, -1)
-      : app.appUrl;
+    const baseUrl = activeUrl.endsWith("/")
+      ? activeUrl.slice(0, -1)
+      : activeUrl;
     return `${baseUrl}${embeddedRoute}`;
-  }, [app?.appUrl]); // Only recalculate if app.appUrl changes, not on route changes
+  }, [activeUrl]); // Only recalculate if activeUrl changes, not on route changes
 
   const handleIframeLoad = useCallback(() => {
     setIsEmbeddedAppReady(true);
@@ -67,7 +67,7 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
     );
 
   return (
-    <div className="w-full h-screen flex flex-col bg-base-100">
+    <div className="w-full h-screen flex flex-col bg-base-100 relative">
       <iframe
         ref={iframeRef}
         src={iframeUrl}
@@ -77,6 +77,18 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
         onLoad={handleIframeLoad}
         sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation"
       />
+      {isDevMode && showDevModeIndicator && (
+        <div className="absolute top-2 right-2 border border-warning/30 bg-warning/10 text-warning px-3 py-1.5 rounded-lg flex items-center gap-2 z-50">
+          <span className="text-sm font-medium">Dev</span>
+          <button
+            onClick={() => setShowDevModeIndicator(false)}
+            className="hover:bg-warning/20 rounded p-0.5"
+            aria-label="Dismiss dev mode indicator"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

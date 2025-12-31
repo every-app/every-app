@@ -4,24 +4,16 @@ import { CodeBlock } from "@/client/components/CodeBlock";
 interface DeployAppStepProps {
   isExpanded: boolean;
   onToggle: () => void;
-  stepNumber: number;
 }
 
-export function DeployAppStep({
-  isExpanded,
-  onToggle,
-  stepNumber,
-}: DeployAppStepProps) {
+export function DeployAppStep({ isExpanded, onToggle }: DeployAppStepProps) {
   return (
-    <div className="border border-base-content/20 rounded-lg overflow-hidden">
+    <div className="border border-base-content/20 rounded-lg overflow-hidden shadow-sm">
       <button
         onClick={onToggle}
         className="w-full flex items-center justify-between p-4 hover:bg-base-200 transition-colors text-left"
       >
         <div className="flex items-center gap-3">
-          <div className="w-6 h-6 rounded-full border-2 border-primary flex items-center justify-center">
-            <span className="text-xs font-bold text-primary">{stepNumber}</span>
-          </div>
           <div>
             <h3 className="font-semibold">Deploy your first app</h3>
             <p className="text-sm text-base-content/70">
@@ -53,10 +45,10 @@ export function DeployAppStep({
           </div>
 
           {/* Desktop instructions - hidden on small screens */}
-          <div className="hidden sm:block bg-base-200/50 rounded-lg p-4">
-            <div className="flex items-center gap-2 mb-3">
+          <div className="hidden sm:block">
+            <div className="flex items-center gap-2 mb-4 pb-3 border-b border-base-content/10">
               <Terminal className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium">
+              <span className="text-sm font-semibold text-primary">
                 Follow these steps in your terminal
               </span>
             </div>
@@ -98,7 +90,7 @@ export function DeployAppStep({
                   </span>
                   <div className="flex-1">
                     <p className="text-sm mb-2">Deploy the app</p>
-                    <CodeBlock code="every app deploy" />
+                    <CodeBlock code="npx @every-app/cli app deploy" />
                   </div>
                 </div>
               </li>

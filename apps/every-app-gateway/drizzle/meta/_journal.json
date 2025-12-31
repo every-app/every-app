@@ -57,6 +57,13 @@
       "when": 1766260863093,
       "tag": "0007_previous_marvex",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1767055731426,
+      "tag": "0008_swift_falcon",
+      "breakpoints": true
     }
   ]
 }

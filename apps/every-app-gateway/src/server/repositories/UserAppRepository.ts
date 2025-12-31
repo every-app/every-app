@@ -10,12 +10,14 @@ type CreateUserApp = {
   name: string;
   description: string;
   appUrl: string;
+  devUrl?: string | null;
 };
 
 type UpdateUserApp = {
   name?: string;
   description?: string;
   appUrl?: string;
+  devUrl?: string | null;
 };
 
 /**
@@ -58,6 +60,7 @@ async function create(data: CreateUserApp) {
     name: data.name,
     description: data.description,
     appUrl: data.appUrl,
+    devUrl: data.devUrl,
     createdAt: now,
     updatedAt: now,
   });

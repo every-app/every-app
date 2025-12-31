@@ -49,6 +49,7 @@ export const userAppsCollection = lazyInitForWorkers(() =>
                 name: mutation.modified.name,
                 description: mutation.modified.description,
                 appUrl: mutation.modified.appUrl,
+                devUrl: mutation.modified.devUrl,
               },
             }),
           ),

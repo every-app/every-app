@@ -181,6 +181,19 @@ form {
   @apply max-w-lg;
 }
 
+/* Make toggle switches fully rounded */
+.toggle {
+  @apply rounded-full bg-base-300;
+}
+
+.toggle:checked {
+  @apply bg-base-content/70;
+}
+
+.toggle::before {
+  @apply rounded-full;
+}
+
 /* Apply consistent auth card styling */
 .card.auth-card {
   @apply w-full max-w-md;

@@ -16,8 +16,8 @@ export function CodeBlock({ code }: CodeBlockProps) {
 
   return (
     <div className="relative group">
-      <pre className="bg-base-300 rounded-lg p-3 overflow-x-auto text-sm font-mono">
-        <code>{code}</code>
+      <pre className="bg-base-200 rounded-lg p-3 overflow-x-auto text-sm font-mono">
+        <code className="text-base-content/70">{code}</code>
       </pre>
       <button
         onClick={handleCopy}

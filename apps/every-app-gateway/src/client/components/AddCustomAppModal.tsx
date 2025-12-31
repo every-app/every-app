@@ -1,28 +1,15 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
 import { userAppsCollection } from "@/client/tanstack-db";
 import { useSession } from "@/client/hooks/useSession";
 import { Modal } from "./Modal";
-
-const addCustomAppSchema = z.object({
-  appId: z
-    .string()
-    .min(1, "App ID is required")
-    .max(50, "App ID too long")
-    .regex(
-      /^[a-z0-9-]+$/,
-      "App ID must contain only lowercase letters, numbers, and hyphens",
-    ),
-  name: z.string().min(1, "App name is required").max(255, "App name too long"),
-  description: z
-    .string()
-    .min(1, "Description is required")
-    .max(1000, "Description too long"),
-  appUrl: z.string().url("Please enter a valid URL"),
-});
-
-type AddCustomAppFormData = z.infer<typeof addCustomAppSchema>;
+import { FormField } from "./FormField";
+import { DevModeFormSection } from "./DevModeFormSection";
+import {
+  createUserAppSchema,
+  DEFAULT_DEV_URL,
+  type CreateUserAppFormData,
+} from "@/schemas/user-app";
 
 interface AddCustomAppModalProps {
   open: boolean;
@@ -35,17 +22,18 @@ export function AddCustomAppModal({
 }: AddCustomAppModalProps) {
   const { data: session } = useSession();
 
-  const form = useForm<AddCustomAppFormData>({
-    resolver: zodResolver(addCustomAppSchema),
+  const form = useForm<CreateUserAppFormData>({
+    resolver: zodResolver(createUserAppSchema),
     defaultValues: {
       appId: "",
       name: "",
       description: "",
       appUrl: "",
+      devUrl: null,
     },
   });
 
-  const onSubmit = (data: AddCustomAppFormData) => {
+  const onSubmit = (data: CreateUserAppFormData) => {
     if (!session?.user?.id) return;
 
     // Pre-generate ID before insert for optimistic update
@@ -61,6 +49,7 @@ export function AddCustomAppModal({
       name: data.name,
       description: data.description,
       appUrl: data.appUrl,
+      devUrl: data.devUrl ?? null,
       createdAt: now,
       updatedAt: now,
     });
@@ -76,8 +65,16 @@ export function AddCustomAppModal({
 
   const {
     register,
+    watch,
+    setValue,
     formState: { errors },
   } = form;
+
+  const devUrl = watch("devUrl");
+
+  const handleDevModeToggle = (enabled: boolean) => {
+    setValue("devUrl", enabled ? DEFAULT_DEV_URL : null);
+  };
 
   return (
     <Modal
@@ -101,81 +98,37 @@ export function AddCustomAppModal({
       }
     >
       <form id="add-app-form" onSubmit={form.handleSubmit(onSubmit)}>
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text">App ID</span>
-          </label>
-          <input
-            type="text"
-            placeholder="my-custom-app"
-            className="input input-bordered w-full"
-            {...register("appId")}
-          />
-          {errors.appId && (
-            <label className="label">
-              <span className="label-text-alt text-error">
-                {errors.appId.message}
-              </span>
-            </label>
-          )}
-        </div>
-
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text">App Name</span>
-          </label>
-          <input
-            type="text"
-            placeholder="My Custom App"
-            className="input input-bordered w-full"
-            {...register("name")}
-          />
-          {errors.name && (
-            <label className="label">
-              <span className="label-text-alt text-error">
-                {errors.name.message}
-              </span>
-            </label>
-          )}
-        </div>
-
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text">Description</span>
-          </label>
-          <textarea
-            placeholder="Describe what your app does..."
-            className="textarea textarea-bordered w-full"
-            rows={3}
-            {...register("description")}
-          />
-          {errors.description && (
-            <label className="label">
-              <span className="label-text-alt text-error">
-                {errors.description.message}
-              </span>
-            </label>
-          )}
-        </div>
-
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text">App URL</span>
-          </label>
-          <input
-            type="text"
-            placeholder="https://your-app.example.com"
-            className="input input-bordered w-full"
-            {...register("appUrl")}
-          />
-          {errors.appUrl && (
-            <label className="label">
-              <span className="label-text-alt text-error">
-                {errors.appUrl.message}
-              </span>
-            </label>
-          )}
-        </div>
+        <FormField
+          label="App ID"
+          placeholder="my-custom-app"
+          registration={register("appId")}
+          error={errors.appId}
+        />
+        <FormField
+          label="App Name"
+          placeholder="My Custom App"
+          registration={register("name")}
+          error={errors.name}
+        />
+        <FormField
+          label="Description"
+          placeholder="Describe what your app does..."
+          type="textarea"
+          registration={register("description")}
+          error={errors.description}
+        />
+        <FormField
+          label="App URL"
+          placeholder="https://your-app.example.com"
+          registration={register("appUrl")}
+          error={errors.appUrl}
+        />
+        <DevModeFormSection
+          devUrl={devUrl}
+          onToggle={handleDevModeToggle}
+          registration={register("devUrl")}
+          error={errors.devUrl}
+        />
       </form>
     </Modal>
   );

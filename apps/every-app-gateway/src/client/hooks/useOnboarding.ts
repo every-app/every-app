@@ -12,9 +12,11 @@ const SKIP_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
  * Check if the skip cooldown is still active (user recently skipped).
  * Returns true if the user skipped within the cooldown period.
  */
-function isSkipCooldownActive(date: Date | null): boolean {
+function isSkipCooldownActive(date: Date | string | number | null): boolean {
   if (!date) return false;
-  return Date.now() - date.getTime() < SKIP_COOLDOWN_MS;
+  const timestamp =
+    date instanceof Date ? date.getTime() : new Date(date).getTime();
+  return Date.now() - timestamp < SKIP_COOLDOWN_MS;
 }
 
 export function useOnboarding() {

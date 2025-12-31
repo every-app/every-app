@@ -3,6 +3,10 @@ import { z } from "zod";
 import { authMiddleware, type AuthContext } from "@/middleware/auth";
 import { UserAppService } from "@/server/services/UserAppService";
 import { issueEmbeddedAppToken } from "@/server/jwt-utils";
+import {
+  isValidAppOrigin,
+  formatExpectedOrigins,
+} from "@/utils/origin-validator";
 
 // Request schemas
 const SessionTokenRequestBodySchema = z.object({
@@ -90,10 +94,10 @@ export const createSessionToken = createServerFn()
         }
 
         // Validate origin directly without making another DB query
-        const appOrigin = new URL(app.appUrl).origin;
-        if (appOrigin !== requestOrigin) {
+        if (!isValidAppOrigin(requestOrigin, app.appUrl, app.devUrl)) {
+          const expectedOrigins = formatExpectedOrigins(app.appUrl, app.devUrl);
           console.error(
-            `Origin ${requestOrigin} not allowed for app ${appId}. Expected: ${appOrigin}`,
+            `Origin ${requestOrigin} not allowed for app ${appId}. Expected: ${expectedOrigins}`,
           );
           throw new Error("Origin not allowed for this app");
         }

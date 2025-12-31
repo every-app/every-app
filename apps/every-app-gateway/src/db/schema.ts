@@ -19,6 +19,7 @@ export const userApps = sqliteTable(
     name: text("name").notNull(),
     description: text("description").notNull(),
     appUrl: text("app_url").notNull(),
+    devUrl: text("dev_url"),
     createdAt: integer("created_at", { mode: "timestamp" })
       .$defaultFn(() => /* @__PURE__ */ new Date())
       .notNull(),
