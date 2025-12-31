@@ -21,8 +21,10 @@ export async function insertUserAppRecords(
   verbose: boolean = false,
   appName?: string,
   appDescription?: string,
+  devUrl?: string,
 ): Promise<void> {
   try {
+    console.log("");
     if (verbose) console.log("Adding apps to user gateways...");
     // Get account ID
     const accountId = await getDefaultAccountId();
@@ -73,6 +75,7 @@ export async function insertUserAppRecords(
         displayName,
         displayDescription,
         verbose,
+        devUrl,
       );
     } else {
       // Multiple users - add to all
@@ -94,6 +97,7 @@ export async function insertUserAppRecords(
           displayName,
           displayDescription,
           verbose,
+          devUrl,
         );
       }
 
@@ -122,14 +126,16 @@ async function insertUserAppRecord(
   displayName: string,
   displayDescription: string,
   verbose: boolean,
+  devUrl?: string,
 ): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
 
-  // Check if record already exists
+  // Check if record already exists (using parameterized query)
   const existingRecords = await queryD1Database<{ id: string }>(
     accountId,
     databaseId,
-    `SELECT id FROM user_apps WHERE user_id = '${user.id}' AND app_id = '${appId}'`,
+    "SELECT id FROM user_apps WHERE user_id = ? AND app_id = ?",
+    [user.id, appId],
   );
 
   if (existingRecords.length > 0) {
@@ -142,13 +148,23 @@ async function insertUserAppRecord(
       );
     }
   } else {
-    // Insert new record
+    // Insert new record (using parameterized query)
     const recordId = randomUUID();
     const insertSql = `
-      INSERT INTO user_apps (id, user_id, app_id, name, description, app_url, created_at, updated_at)
-      VALUES ('${recordId}', '${user.id}', '${appId}', '${displayName}', '${displayDescription}', '${appUrl}', ${now}, ${now})
+      INSERT INTO user_apps (id, user_id, app_id, name, description, app_url, dev_url, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
-    await queryD1Database(accountId, databaseId, insertSql);
+    await queryD1Database(accountId, databaseId, insertSql, [
+      recordId,
+      user.id,
+      appId,
+      displayName,
+      displayDescription,
+      appUrl,
+      devUrl ?? null,
+      now,
+      now,
+    ]);
     console.log(
       `  UserApp record created for user ${user.name} (${user.email})`,
     );

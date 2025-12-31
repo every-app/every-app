@@ -20,9 +20,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AppsAppIdRouteImport } from './routes/apps/$appId'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AppsAppIdDevRouteImport } from './routes/apps/$appId_.dev'
 import { Route as AppsAppIdSplatRouteImport } from './routes/apps/$appId.$'
 import { Route as ApiEmbeddedJwksRouteImport } from './routes/api/embedded/jwks'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AppsAppIdDevSplatRouteImport } from './routes/apps/$appId_.dev.$'
 
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
@@ -79,6 +81,11 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
+const AppsAppIdDevRoute = AppsAppIdDevRouteImport.update({
+  id: '/apps/$appId_/dev',
+  path: '/apps/$appId/dev',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppsAppIdSplatRoute = AppsAppIdSplatRouteImport.update({
   id: '/$',
   path: '/$',
@@ -93,6 +100,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppsAppIdDevSplatRoute = AppsAppIdDevSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => AppsAppIdDevRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -110,6 +122,8 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
   '/apps/$appId/$': typeof AppsAppIdSplatRoute
+  '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
+  '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -125,6 +139,8 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
   '/apps/$appId/$': typeof AppsAppIdSplatRoute
+  '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
+  '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -142,6 +158,8 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
   '/apps/$appId/$': typeof AppsAppIdSplatRoute
+  '/apps/$appId_/dev': typeof AppsAppIdDevRouteWithChildren
+  '/apps/$appId_/dev/$': typeof AppsAppIdDevSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -160,6 +178,8 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/embedded/jwks'
     | '/apps/$appId/$'
+    | '/apps/$appId/dev'
+    | '/apps/$appId/dev/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -175,6 +195,8 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/embedded/jwks'
     | '/apps/$appId/$'
+    | '/apps/$appId/dev'
+    | '/apps/$appId/dev/$'
   id:
     | '__root__'
     | '/'
@@ -191,6 +213,8 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/embedded/jwks'
     | '/apps/$appId/$'
+    | '/apps/$appId_/dev'
+    | '/apps/$appId_/dev/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -205,6 +229,7 @@ export interface RootRouteChildren {
   AppsAppIdRoute: typeof AppsAppIdRouteWithChildren
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiEmbeddedJwksRoute: typeof ApiEmbeddedJwksRoute
+  AppsAppIdDevRoute: typeof AppsAppIdDevRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
@@ -286,6 +311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/apps/$appId_/dev': {
+      id: '/apps/$appId_/dev'
+      path: '/apps/$appId/dev'
+      fullPath: '/apps/$appId/dev'
+      preLoaderRoute: typeof AppsAppIdDevRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/apps/$appId/$': {
       id: '/apps/$appId/$'
       path: '/$'
@@ -306,6 +338,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/auth/$'
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/apps/$appId_/dev/$': {
+      id: '/apps/$appId_/dev/$'
+      path: '/$'
+      fullPath: '/apps/$appId/dev/$'
+      preLoaderRoute: typeof AppsAppIdDevSplatRouteImport
+      parentRoute: typeof AppsAppIdDevRoute
     }
   }
 }
@@ -334,6 +373,18 @@ const AppsAppIdRouteWithChildren = AppsAppIdRoute._addFileChildren(
   AppsAppIdRouteChildren,
 )
 
+interface AppsAppIdDevRouteChildren {
+  AppsAppIdDevSplatRoute: typeof AppsAppIdDevSplatRoute
+}
+
+const AppsAppIdDevRouteChildren: AppsAppIdDevRouteChildren = {
+  AppsAppIdDevSplatRoute: AppsAppIdDevSplatRoute,
+}
+
+const AppsAppIdDevRouteWithChildren = AppsAppIdDevRoute._addFileChildren(
+  AppsAppIdDevRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInvitationRoute: AcceptInvitationRoute,
@@ -346,6 +397,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppsAppIdRoute: AppsAppIdRouteWithChildren,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiEmbeddedJwksRoute: ApiEmbeddedJwksRoute,
+  AppsAppIdDevRoute: AppsAppIdDevRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

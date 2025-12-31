@@ -23,16 +23,21 @@ function validateAppId(input: string): boolean | string {
 
 /**
  * Prompt user for app configuration
+ * @param defaultAppId - Optional default value for the app ID prompt
  */
-export async function promptUserInput(): Promise<{ appId: string }> {
+export async function promptUserInput(
+  defaultAppId?: string,
+): Promise<{ appId: string }> {
   console.log("Project Configuration\n");
 
   const response = await enquirer.prompt<{ appId: string }>({
     type: "input",
     name: "appId",
     message: "Enter your app ID (kebab-case format)",
+    initial: defaultAppId,
     validate: validateAppId,
   });
 
+  console.log();
   return { appId: response.appId };
 }

@@ -5,7 +5,13 @@ export const createCommand = buildCommand({
   parameters: {
     positional: {
       kind: "tuple",
-      parameters: [],
+      parameters: [
+        {
+          brief: "App ID (kebab-case format)",
+          parse: String,
+          optional: true,
+        },
+      ],
     },
     flags: {
       verbose: {
@@ -18,16 +24,17 @@ export const createCommand = buildCommand({
   docs: {
     brief: "Create a new app from the starter template",
     fullDescription: [
-      "Copies the simple-todo starter template and configures your local development environment.",
+      "Copies the simple-todo starter template, deploys to Cloudflare, and configures local development.",
+      "",
+      "Usage: every app create [name]",
       "",
       "The command will:",
-      "  1. Prompt for app ID (kebab-case) and package manager",
-      "  2. Copy the template to a new directory",
-      "  3. Create Cloudflare D1 database and KV namespace",
-      "  4. Configure wrangler.jsonc, package.json, and .env files",
-      "  5. Install dependencies and run local migrations",
+      "  1. Prompt for app ID (or use provided name)",
+      "  2. Deploy to Cloudflare (D1 database, KV namespace, Worker)",
+      "  3. Configure wrangler.jsonc, package.json, and .env files",
+      "  4. Install dependencies and run local migrations",
       "",
-      "After creation, run 'npm run dev' to start developing.",
+      "After creation, run 'pnpm run dev' to start developing.",
     ].join("\n"),
   },
 });

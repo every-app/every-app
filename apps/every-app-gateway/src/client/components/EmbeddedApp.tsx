@@ -78,11 +78,11 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
         sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation"
       />
       {isDevMode && showDevModeIndicator && (
-        <div className="absolute top-2 right-2 border border-warning/30 bg-warning/10 text-warning px-3 py-1.5 rounded-lg flex items-center gap-2 z-50">
+        <div className="absolute top-2 right-2 border border-warning bg-warning/80 text-warning-content px-3 py-1.5 rounded-lg flex items-center gap-2 z-50">
           <span className="text-sm font-medium">Dev</span>
           <button
             onClick={() => setShowDevModeIndicator(false)}
-            className="hover:bg-warning/20 rounded p-0.5"
+            className="hover:bg-warning-content/10 rounded p-0.5"
             aria-label="Dismiss dev mode indicator"
           >
             <X className="w-4 h-4" />

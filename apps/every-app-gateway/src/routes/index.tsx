@@ -70,8 +70,7 @@ function App() {
                     onNavigate={() => navigate({ to: `/apps/${app.appId}` })}
                     onNavigateDev={() =>
                       navigate({
-                        to: `/apps/${app.appId}`,
-                        search: { dev: true },
+                        to: `/apps/${app.appId}/dev`,
                       })
                     }
                     onEdit={() => {

@@ -22,7 +22,9 @@ export async function runMigrations(
   try {
     console.log();
     console.log(
-      chalk.dim("Running any pending migrations against your remote D1 Database..."),
+      chalk.dim(
+        "  Running any pending migrations against your remote D1 Database...",
+      ),
     );
 
     await runWithRemoteD1(

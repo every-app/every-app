@@ -19,12 +19,29 @@ export function useRouteSync(
   const navigate = useNavigate();
   const isNavigatingFromChild = useRef(false);
 
+  // Detect if we're in dev mode based on URL path
+  // /apps/todo-app/dev/... -> dev mode
+  // /apps/todo-app/... -> production mode
+  const isDevMode = useMemo(() => {
+    const devPrefix = `/apps/${appId}/dev`;
+    return location.pathname.startsWith(devPrefix);
+  }, [location.pathname, appId]);
+
   // Extract embedded app route from parent route
   // e.g., /apps/todo-app/history -> /history
+  // e.g., /apps/todo-app/dev/history -> /history
   const embeddedRoute = useMemo(() => {
-    const prefix = `/apps/${appId}`;
-    if (location.pathname.startsWith(prefix)) {
-      return location.pathname.slice(prefix.length) || "/";
+    const devPrefix = `/apps/${appId}/dev`;
+    const prodPrefix = `/apps/${appId}`;
+
+    if (location.pathname.startsWith(devPrefix)) {
+      // Dev mode: strip /apps/{appId}/dev prefix
+      const route = location.pathname.slice(devPrefix.length);
+      return route || "/";
+    } else if (location.pathname.startsWith(prodPrefix)) {
+      // Production mode: strip /apps/{appId} prefix
+      const route = location.pathname.slice(prodPrefix.length);
+      return route || "/";
     }
     return "/";
   }, [location.pathname, appId]);
@@ -52,7 +69,10 @@ export function useRouteSync(
         return;
       }
 
-      const newParentRoute = `/apps/${appId}${route}`;
+      // Preserve dev mode in the route
+      const newParentRoute = isDevMode
+        ? `/apps/${appId}/dev${route}`
+        : `/apps/${appId}${route}`;
 
       // Prevent navigation loops
       if (
@@ -66,7 +86,7 @@ export function useRouteSync(
 
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
-  }, [appId, appUrl, location.pathname, navigate]);
+  }, [appId, appUrl, isDevMode, location.pathname, navigate]);
 
   // Sync parent route changes to embedded app (parent-to-child)
   useEffect(() => {

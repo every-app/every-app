@@ -22,16 +22,23 @@ interface D1APIResponse<T = any> {
  * Query a D1 database using the HTTP API
  * @param accountId - Cloudflare account ID
  * @param databaseId - D1 database UUID
- * @param sql - SQL query to execute
+ * @param sql - SQL query to execute (use ? for parameterized queries)
+ * @param params - Optional array of parameters to bind to the query
  * @returns Array of results
  */
 export async function queryD1Database<T = any>(
   accountId: string,
   databaseId: string,
   sql: string,
+  params?: (string | number | null)[],
 ): Promise<T[]> {
   try {
     const accessToken = await getValidOAuthToken();
+
+    const body: { sql: string; params?: (string | number | null)[] } = { sql };
+    if (params && params.length > 0) {
+      body.params = params;
+    }
 
     const response = await fetch(
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${databaseId}/query`,
@@ -41,7 +48,7 @@ export async function queryD1Database<T = any>(
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ sql }),
+        body: JSON.stringify(body),
       },
     );
 
