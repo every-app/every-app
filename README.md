@@ -118,8 +118,7 @@ For other AI tools (Claude Code, Cursor, etc.), see the [Coding Agent Setup docs
 
 Reference the full docs to learn more:
 - Walkthrough of the AI Cooking Assistant: https://everyapp.dev/docs/walkthrough/overview/
-- Coding Agent Setup: https://everyapp.dev/docs/coding-agent/setup/
-- Helpful Prompts: https://everyapp.dev/docs/coding-agent/prompts/review-code/
+- Coding Agent Setup: https://everyapp.dev/docs/coding-agents/setup/
 
 
 
