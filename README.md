@@ -87,12 +87,12 @@ npx wrangler secret put OPENAI_API_KEY
 ```bash
 npx @every-app/cli app create
 cd your-project-name
-pnpm install
 pnpm run dev
 ```
 
+The create command deploys your app to Cloudflare and registers it with your Gateway automatically.
 
-Then add your app in the Gateway UI. The App ID must match your project name.
+For local development, click the "Dev" button on your app in the Gateway to use your local dev server instead of the deployed version.
 
 
 ## Coding Agent Setup

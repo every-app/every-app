@@ -8,18 +8,19 @@ Start from the template to get a working app with auth and database already set 
 ```bash
 npx @every-app/cli app create
 cd your-project-name
-pnpm install
 pnpm run dev
 ```
 
-Then add your app in the Gateway UI. The App ID must match your project name.
+The create command deploys your app to Cloudflare and registers it with your Gateway automatically.
 
-## Deploy to Production
+For local development, click the "Dev" button on your app in the Gateway to use your local dev server instead of the deployed version.
+
+## Deploy Updates
+
+After making changes, deploy updates with:
 
 ```bash
 npx @every-app/cli app deploy
 ```
 
-This builds your app, creates any needed Cloudflare resources (D1 database, etc.), runs migrations, and deploys to Cloudflare Workers.
-
-To update your deployed app, just run the same command again.
+This builds your app, runs any pending migrations, and deploys to Cloudflare Workers.
