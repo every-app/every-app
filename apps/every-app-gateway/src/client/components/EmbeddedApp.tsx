@@ -1,5 +1,4 @@
 import React, { useRef, useMemo, useState, useCallback } from "react";
-import { X } from "lucide-react";
 import { useAppConfig } from "../hooks/useAppConfig";
 import { useIframeMessaging } from "../hooks/useIframeMessaging";
 import { useRouteSync } from "../hooks/useRouteSync";
@@ -28,7 +27,6 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
 }) => {
   const { app, isLoading, isError } = useAppConfig(appId);
   const [isEmbeddedAppReady, setIsEmbeddedAppReady] = useState(false);
-  const [showDevModeIndicator, setShowDevModeIndicator] = useState(true);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Determine the base URL to use (dev or production)
@@ -77,18 +75,6 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
         onLoad={handleIframeLoad}
         sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation"
       />
-      {isDevMode && showDevModeIndicator && (
-        <div className="absolute top-2 right-2 border border-warning bg-warning/80 text-warning-content px-3 py-1.5 rounded-lg flex items-center gap-2 z-50">
-          <span className="text-sm font-medium">Dev</span>
-          <button
-            onClick={() => setShowDevModeIndicator(false)}
-            className="hover:bg-warning-content/10 rounded p-0.5"
-            aria-label="Dismiss dev mode indicator"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
     </div>
   );
 };
