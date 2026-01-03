@@ -1,5 +1,5 @@
-import React, { createContext, useEffect } from "react";
-import { useSession } from "../hooks/useSession";
+import { useEffect } from "react";
+import { useSession } from "./useSession";
 import { userAppsCollection } from "../tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
 import {
@@ -7,19 +7,15 @@ import {
   sendMessageToWindow,
 } from "../utils/session-token-handler";
 
-interface EmbeddedAppContextValue {
-  // Empty for now, can be extended if needed
-}
-
-const EmbeddedAppContext = createContext<EmbeddedAppContextValue>({});
-
-interface EmbeddedAppProviderProps {
-  children: React.ReactNode;
-}
-
-export const EmbeddedAppProvider: React.FC<EmbeddedAppProviderProps> = ({
-  children,
-}) => {
+/**
+ * Hook that sets up the session token request handler for embedded apps.
+ *
+ * This listens for SESSION_TOKEN_REQUEST messages from embedded iframes
+ * and responds with signed JWT tokens for authentication.
+ *
+ * Should be called once at the app root level.
+ */
+export function useSessionTokenHandler() {
   const { data: session } = useSession();
   const { data: userApps } = useLiveQuery(
     (q) =>
@@ -38,10 +34,4 @@ export const EmbeddedAppProvider: React.FC<EmbeddedAppProviderProps> = ({
     window.addEventListener("message", handleMessage);
     return () => window.removeEventListener("message", handleMessage);
   }, [userApps]);
-
-  return (
-    <EmbeddedAppContext.Provider value={{}}>
-      {children}
-    </EmbeddedAppContext.Provider>
-  );
-};
+}

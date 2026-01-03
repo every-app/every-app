@@ -3,6 +3,7 @@ import invariant from "tiny-invariant";
 import { z } from "zod";
 import { auth } from "../auth";
 import { env } from "cloudflare:workers";
+import { EMBEDDED_APP_TOKEN_EXPIRY_SECONDS } from "./constants";
 
 // JWT additional claims schema
 const JWTAdditionalClaimsSchema = z.object({
@@ -68,7 +69,7 @@ export async function issueEmbeddedAppToken(
     .setSubject(user.id)
     .setIssuer(env.GATEWAY_URL)
     .setAudience(audience)
-    .setExpirationTime("60s") // 1 minute
+    .setExpirationTime(`${EMBEDDED_APP_TOKEN_EXPIRY_SECONDS}s`)
     .setIssuedAt()
     .sign(privateKey);
 

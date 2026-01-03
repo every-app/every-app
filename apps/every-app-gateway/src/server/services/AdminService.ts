@@ -21,6 +21,32 @@ function generateSecureToken(): string {
 }
 
 /**
+ * Validate a verification token exists and is not expired.
+ * Cleans up expired tokens automatically.
+ *
+ * @param token - The verification token to validate
+ * @param tokenType - The type of token for error messaging
+ * @returns The verification record if valid
+ * @throws Error if token is invalid or expired
+ */
+async function validateToken(token: string, tokenType: "invitation" | "reset") {
+  const verification = await TokenVerificationRepository.findByToken(token);
+
+  if (!verification) {
+    throw new Error(`Invalid or expired ${tokenType} token`);
+  }
+
+  if (new Date() > verification.expiresAt) {
+    await TokenVerificationRepository.delete(verification.id);
+    throw new Error(
+      `${tokenType === "invitation" ? "Invitation" : "Reset"} link has expired. Please request a new one.`,
+    );
+  }
+
+  return verification;
+}
+
+/**
  * Create a verification token and return the full URL.
  */
 async function createVerificationUrl(
@@ -207,19 +233,8 @@ async function regenerateInviteLink(userId: string) {
  * Accept an invitation by validating the token, setting the password, and activating the user.
  */
 async function acceptInvitation(token: string, password: string) {
-  const verification = await TokenVerificationRepository.findByToken(token);
-
-  if (!verification) {
-    throw new Error("Invalid or expired invitation token");
-  }
-
-  if (new Date() > verification.expiresAt) {
-    await TokenVerificationRepository.delete(verification.id);
-    throw new Error("Invitation link has expired. Please request a new one.");
-  }
-
-  const userEmail = verification.identifier;
-  const user = await UserRepository.findByEmail(userEmail);
+  const verification = await validateToken(token, "invitation");
+  const user = await UserRepository.findByEmail(verification.identifier);
 
   if (!user) {
     throw new Error("User not found");
@@ -267,19 +282,8 @@ async function createPasswordResetLink(userId: string) {
  * Reset password for an active user using our custom token system.
  */
 async function resetPassword(token: string, password: string) {
-  const verification = await TokenVerificationRepository.findByToken(token);
-
-  if (!verification) {
-    throw new Error("Invalid or expired reset token");
-  }
-
-  if (new Date() > verification.expiresAt) {
-    await TokenVerificationRepository.delete(verification.id);
-    throw new Error("Reset link has expired. Please request a new one.");
-  }
-
-  const userEmail = verification.identifier;
-  const user = await UserRepository.findByEmail(userEmail);
+  const verification = await validateToken(token, "reset");
+  const user = await UserRepository.findByEmail(verification.identifier);
 
   if (!user) {
     throw new Error("User not found");

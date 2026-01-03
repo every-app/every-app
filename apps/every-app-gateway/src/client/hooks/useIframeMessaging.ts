@@ -1,4 +1,5 @@
 import { useCallback, RefObject } from "react";
+import type { IframeMessage } from "../utils/embedded-app-types";
 
 /**
  * Hook to safely post messages to an iframe
@@ -13,7 +14,7 @@ export function useIframeMessaging(
   isReady: boolean,
 ) {
   const postMessage = useCallback(
-    (message: any) => {
+    (message: IframeMessage) => {
       if (!isReady || !iframeRef.current?.contentWindow || !appUrl) {
         return;
       }

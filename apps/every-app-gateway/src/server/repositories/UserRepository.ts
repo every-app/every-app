@@ -2,17 +2,7 @@ import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import type { UserRole, UserStatus } from "@/auth/shared";
-
-// Types for repository operations
-type UserListItem = {
-  id: string;
-  name: string;
-  email: string;
-  role: string | null;
-  status: string | null;
-  createdAt: Date;
-  banned: boolean | null;
-};
+import type { AdminUser } from "@/types/admin-user";
 
 type UpdateUserData = {
   role?: UserRole;
@@ -49,7 +39,7 @@ async function findOwner() {
 /**
  * Find all users with selected columns for listing.
  */
-async function findAllForList(): Promise<UserListItem[]> {
+async function findAllForList(): Promise<AdminUser[]> {
   return db.query.users.findMany({
     columns: {
       id: true,

@@ -1,4 +1,5 @@
 import { useSession } from "@/client/hooks/useSession";
+import { useSessionTokenHandler } from "@/client/hooks/useSessionTokenHandler";
 import {
   Outlet,
   ClientOnly,
@@ -10,7 +11,6 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import { EmbeddedAppProvider } from "@/client/providers/EmbeddedAppProvider";
 import * as React from "react";
 import appCss from "@/client/styles/app.css?url";
 import { queryClient, persister } from "@/client/tanstack-db";
@@ -29,6 +29,9 @@ function AppRouter() {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: session, isPending } = useSession();
+
+  // Set up session token handler for embedded app iframes
+  useSessionTokenHandler();
 
   useEffect(() => {
     const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname);
@@ -53,9 +56,7 @@ function RootComponent() {
       client={queryClient}
       persistOptions={{ persister }}
     >
-      <EmbeddedAppProvider>
-        <AppRouter />
-      </EmbeddedAppProvider>
+      <AppRouter />
       <Toaster
         richColors
         position="bottom-right"

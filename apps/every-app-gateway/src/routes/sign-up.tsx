@@ -69,12 +69,16 @@ function CreateOwnerForm() {
         },
         {
           onSuccess: async () => {
-            // Refetch collections and session now that we're authenticated
-            await refetchCollectionsAfterAuth();
+            // Refetch session first and wait for it to complete
+            await queryClient.refetchQueries({
+              queryKey: ["auth", "session"],
+            });
+            // Then refetch collections in parallel (no need to wait)
+            refetchCollectionsAfterAuth();
             setLoading(false);
             navigate({ to: "/" });
             // Invalidate hasOwner after navigating to prevent flicker
-            await queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
+            queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
           },
         },
       );

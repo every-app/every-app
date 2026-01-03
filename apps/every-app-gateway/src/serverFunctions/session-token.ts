@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authMiddleware, type AuthContext } from "@/middleware/auth";
 import { UserAppService } from "@/server/services/UserAppService";
 import { issueEmbeddedAppToken } from "@/server/jwt-utils";
+import { EMBEDDED_APP_TOKEN_EXPIRY_SECONDS } from "@/server/constants";
 import {
   isValidAppOrigin,
   formatExpectedOrigins,
@@ -18,20 +19,17 @@ const SessionTokenRequestBodySchema = z.object({
   timestamp: z.number(), // For preventing replay attacks
 });
 
-// Response schemas
-const SessionTokenResponseSchema = z.object({
-  token: z.string(),
-  expiresAt: z.string(),
-  audience: z.string(),
-  appId: z.string(),
-  user: z.object({
-    id: z.string(),
-    email: z.string().optional(),
-    name: z.string().optional(),
-  }),
-});
-
-type SessionTokenResponse = z.infer<typeof SessionTokenResponseSchema>;
+type SessionTokenResponse = {
+  token: string;
+  expiresAt: string;
+  audience: string;
+  appId: string;
+  user: {
+    id: string;
+    email?: string;
+    name?: string;
+  };
+};
 
 // Timestamp validation constants
 // Used to prevent replay attacks where an attacker could intercept and replay
@@ -72,13 +70,6 @@ export const createSessionToken = createServerFn()
           `Request timestamp invalid: ${timestamp}, current: ${now}, age: ${age}ms`,
         );
         throw new Error("Request expired or clock skew detected");
-      }
-
-      // SECURITY: Require postMessage flow - direct HTTP requests are not allowed
-      if (!requestOrigin) {
-        throw new Error(
-          "Direct requests not allowed. Tokens must be requested through the postMessage flow.",
-        );
       }
 
       // Look up app configuration
@@ -127,7 +118,9 @@ export const createSessionToken = createServerFn()
 
       const response: SessionTokenResponse = {
         token,
-        expiresAt: new Date(Date.now() + 60 * 1000).toISOString(), // 1 minute from now
+        expiresAt: new Date(
+          Date.now() + EMBEDDED_APP_TOKEN_EXPIRY_SECONDS * 1000,
+        ).toISOString(),
         audience: app.appId, // Use appId as audience
         appId: app.appId,
         user: {

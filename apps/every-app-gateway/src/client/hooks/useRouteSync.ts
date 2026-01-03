@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import { RouteChangeMessageSchema } from "../utils/embedded-app-types";
+import {
+  RouteChangeMessageSchema,
+  type ParentToChildMessage,
+} from "../utils/embedded-app-types";
 
 /**
  * Hook to synchronize routing between parent and embedded app
@@ -13,7 +16,7 @@ import { RouteChangeMessageSchema } from "../utils/embedded-app-types";
 export function useRouteSync(
   appId: string,
   appUrl: string | undefined,
-  postMessage: (message: any) => void,
+  postMessage: (message: ParentToChildMessage) => void,
 ) {
   const location = useLocation();
   const navigate = useNavigate();

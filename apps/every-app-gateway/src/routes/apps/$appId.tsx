@@ -1,7 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useSession } from "@/client/hooks/useSession";
+import { useSessionGuard } from "@/client/hooks/useSessionGuard";
 import { EmbeddedApp } from "@/client/components/EmbeddedApp";
-import { useRef, useEffect } from "react";
 
 /**
  * IMPORTANT: This is a LAYOUT ROUTE that persists across child route changes.
@@ -26,25 +25,9 @@ export const Route = createFileRoute("/apps/$appId")({
 
 function EmbeddedAppLayout() {
   const { appId } = Route.useParams();
-  const { data: session, isPending } = useSession();
+  const { shouldRender } = useSessionGuard();
 
-  // Track if we've ever had a session to prevent unmounting during refetches
-  const hasHadSession = useRef(false);
-
-  useEffect(() => {
-    if (session) {
-      hasHadSession.current = true;
-    }
-  }, [session]);
-
-  // On initial load, wait for session
-  if (!hasHadSession.current && isPending) {
-    return null;
-  }
-
-  // If we've had a session before, keep the component mounted even during refetches
-  // This prevents the iframe from being destroyed during navigation
-  if (!hasHadSession.current && !session) {
+  if (!shouldRender) {
     return null;
   }
 
