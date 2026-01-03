@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import chalk from "chalk";
-import { getWorkerUrl } from "./cloudflare-auth";
+import { getWorkerUrl } from "./cloudflare";
 
 interface CopyOptions {
   exclude?: string[];

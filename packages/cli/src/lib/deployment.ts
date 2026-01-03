@@ -5,7 +5,7 @@ import {
   getWorkersDevSubdomain,
   getDefaultAccountId,
   makeCloudflareAPIRequest,
-} from "@/lib/cloudflare-auth";
+} from "@/lib/cloudflare";
 
 interface WorkerSubdomain {
   subdomain: string;

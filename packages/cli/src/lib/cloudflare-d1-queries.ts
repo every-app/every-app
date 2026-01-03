@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { getValidOAuthToken } from "@/lib/cloudflare-auth";
+import { getValidOAuthToken } from "@/lib/cloudflare";
 
 interface D1QueryResponse<T = any> {
   results: T[];

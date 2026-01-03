@@ -1,6 +1,9 @@
 import { execa, type Options as ExecaOptions } from "execa";
-import { getDefaultAccountId, getValidOAuthToken } from "@/lib/cloudflare-auth";
-import { listD1Databases } from "@/lib/cloudflare-d1";
+import {
+  getDefaultAccountId,
+  getValidOAuthToken,
+  listD1Databases,
+} from "@/lib/cloudflare";
 import { readWranglerConfig } from "@/lib/wrangler-config";
 
 interface RemoteD1EnvVars {

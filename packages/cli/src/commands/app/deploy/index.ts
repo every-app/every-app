@@ -1,6 +1,6 @@
 import type { LocalContext } from "@/context";
 import chalk from "chalk";
-import { readWranglerConfig } from "@/lib/wrangler-config";
+import { getAppId } from "@/lib/everyapp-config";
 import { confirmDeployment } from "@/lib/deployment";
 import { deployApp } from "@/commands/app/deploy/deployApp";
 
@@ -18,16 +18,10 @@ export async function deploy(
   const cwd = process.cwd();
   const verbose = flags.verbose || false;
 
-  const config = await readWranglerConfig(cwd);
+  // Get appId from every-app.jsonc (required)
+  const appId = await getAppId(cwd);
 
-  if (!config.name) {
-    throw new Error(
-      "Worker name not found in wrangler.jsonc. Please add a 'name' field.",
-    );
-  }
-
-  const workerName = config.name;
-  console.log(chalk.bold(`\nProject name: ${workerName}\n`));
+  console.log(chalk.bold(`\nProject: ${appId}\n`));
 
   const confirmed = await confirmDeployment(
     "Do you want to deploy this app to Cloudflare?",
@@ -39,9 +33,8 @@ export async function deploy(
 
   const { workerUrl, gatewayUrl } = await deployApp({
     cwd,
-    workerName,
+    appId,
     verbose,
-    config,
   });
 
   console.log(chalk.green("\nDeployment successful!"));

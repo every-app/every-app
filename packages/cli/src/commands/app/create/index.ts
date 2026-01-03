@@ -2,6 +2,7 @@ import type { LocalContext } from "@/context";
 import chalk from "chalk";
 import { cleanupTempDirectory, createEnvFiles } from "@/lib/file-operations";
 import { confirmDeployment } from "@/lib/deployment";
+import { writeEveryAppConfig } from "@/lib/everyapp-config";
 import { checkPnpm } from "@/commands/app/create/steps/checkPnpm";
 import { promptUserInput } from "@/commands/app/create/steps/promptUserInput";
 import { cloneTemplate } from "@/commands/app/create/steps/cloneTemplate";
@@ -63,10 +64,13 @@ export default async function (
     // Update package.json with app name before deployment
     await updatePackageJson(targetDir, appId);
 
+    // Write every-app.jsonc with the canonical appId
+    await writeEveryAppConfig(targetDir, { appId });
+
     // Deploy to Cloudflare (creates D1/KV, installs deps, runs prod migrations, deploys)
     const { workerUrl, gatewayUrl } = await deployApp({
       cwd: targetDir,
-      workerName: appId,
+      appId,
       verbose,
       devUrl: "http://localhost:3001",
     });

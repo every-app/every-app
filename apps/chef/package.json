@@ -1,5 +1,5 @@
 {
-  "name": "every-chef",
+  "name": "chef",
   "private": true,
   "sideEffects": false,
   "type": "module",

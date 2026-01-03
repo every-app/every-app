@@ -1,24 +1,13 @@
 import chalk from "chalk";
 import { runWithRemoteD1 } from "@/lib/remote-d1";
-import type { WranglerConfig } from "@/lib/wrangler-config";
 
 /**
  * Run database migrations for the app
  */
 export async function runMigrations(
   cwd: string,
-  config: WranglerConfig,
   verbose: boolean = false,
 ): Promise<void> {
-  if (!config.d1_databases || config.d1_databases.length === 0) {
-    if (verbose) {
-      console.log(
-        chalk.dim("No D1 databases configured, skipping migrations\n"),
-      );
-    }
-    return;
-  }
-
   try {
     console.log();
     console.log(

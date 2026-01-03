@@ -1,61 +1,114 @@
 import chalk from "chalk";
-import { getOrCreateD1Database } from "@/lib/cloudflare-d1";
-import { getOrCreateKVNamespace } from "@/lib/cloudflare-kv";
-import type { WranglerConfig } from "@/lib/wrangler-config";
+import {
+  getOrCreateD1Database,
+  getOrCreateKVNamespace,
+  applyResourcePrefix,
+} from "@/lib/cloudflare";
+
+interface SetupCloudflareResourcesResult {
+  d1DatabaseId: string;
+  kvNamespaceId: string;
+  /** The prefixed resource name used for D1 and KV */
+  resourceName: string;
+}
 
 /**
- * Set up Cloudflare resources based on wrangler.jsonc configuration
- * Returns the D1 database ID and KV namespace ID
+ * Set up Cloudflare resources (D1 database and KV namespace).
+ * Returns the D1 database ID, KV namespace ID, and the prefixed resource name.
  *
- * Enforces the invariant that each app has exactly one D1 database and one KV namespace
- *
- * Note: Uses workerName for both D1 database name and KV namespace name,
- * not the names from the template's wrangler.jsonc
+ * Note: Uses prefixed appId for both D1 database name and KV namespace name
+ * (e.g., "my-app" becomes "every-my-app" for resources)
  */
 export async function setupCloudflareResources(
-  config: WranglerConfig,
-  workerName: string,
+  appId: string,
   verbose: boolean = false,
-): Promise<{ d1DatabaseId: string; kvNamespaceId: string }> {
-  console.log("\nSetting up Cloudflare your D1 Database and KV Store...\n");
+): Promise<SetupCloudflareResourcesResult> {
+  console.log("\nSetting up your Cloudflare D1 Database and KV Store...\n");
 
-  // Validate D1 database configuration exists in template
-  if (!config.d1_databases || config.d1_databases.length === 0) {
-    throw new Error(
-      "No D1 databases found in wrangler.jsonc. Every app must have exactly one D1 database.",
-    );
-  }
-  if (config.d1_databases.length > 1) {
-    throw new Error(
-      `Found ${config.d1_databases.length} D1 databases in wrangler.jsonc. Every app must have exactly one D1 database.`,
-    );
-  }
+  const resourceName = applyResourcePrefix(appId);
 
-  // Validate KV namespace configuration exists in template
-  if (!config.kv_namespaces || config.kv_namespaces.length === 0) {
-    throw new Error(
-      "No KV namespaces found in wrangler.jsonc. Every app must have exactly one KV namespace.",
-    );
-  }
-  if (config.kv_namespaces.length > 1) {
-    throw new Error(
-      `Found ${config.kv_namespaces.length} KV namespaces in wrangler.jsonc. Every app must have exactly one KV namespace.`,
-    );
-  }
+  const d1DatabaseId = await setupD1Database(resourceName, verbose);
+  const kvNamespaceId = await setupKVNamespace(resourceName, verbose);
 
+  return {
+    d1DatabaseId,
+    kvNamespaceId,
+    resourceName,
+  };
+}
+
+/**
+ * Set up D1 database and log the result.
+ * Returns the database ID.
+ */
+async function setupD1Database(
+  resourceName: string,
+  verbose: boolean,
+): Promise<string> {
   if (verbose) {
     console.log(chalk.bold("Processing D1 database...\n"));
+    console.log(`  Checking D1 database: ${resourceName}`);
   }
 
-  // Use workerName for the D1 database name (not the template's database_name)
-  const d1DatabaseId = await getOrCreateD1Database(workerName, verbose);
+  const result = await getOrCreateD1Database(resourceName);
 
   if (verbose) {
-    console.log(chalk.bold("Processing KV namespace...\n"));
+    if (result.wasCreated) {
+      console.log(
+        chalk.green(`  Created D1 database: ${resourceName} (${result.id})\n`),
+      );
+    } else {
+      console.log(
+        chalk.dim(
+          `  Linking to existing D1 database: ${resourceName} (${result.id})\n`,
+        ),
+      );
+    }
+  } else {
+    if (result.wasCreated) {
+      console.log(chalk.green("  D1 successfully created.\n"));
+    } else {
+      console.log("  D1 already set up.");
+    }
   }
 
-  // Use workerName for the KV namespace name
-  const kvNamespaceId = await getOrCreateKVNamespace(workerName, verbose);
+  return result.id;
+}
 
-  return { d1DatabaseId, kvNamespaceId };
+/**
+ * Set up KV namespace and log the result.
+ * Returns the namespace ID.
+ */
+async function setupKVNamespace(
+  resourceName: string,
+  verbose: boolean,
+): Promise<string> {
+  if (verbose) {
+    console.log(chalk.bold("Processing KV namespace...\n"));
+    console.log(`  Checking KV namespace: ${resourceName}`);
+  }
+
+  const result = await getOrCreateKVNamespace(resourceName);
+
+  if (verbose) {
+    if (result.wasCreated) {
+      console.log(
+        chalk.green(`  Created KV namespace: ${resourceName} (${result.id})\n`),
+      );
+    } else {
+      console.log(
+        chalk.dim(
+          `  Linking to existing KV namespace: ${resourceName} (${result.id})\n`,
+        ),
+      );
+    }
+  } else {
+    if (result.wasCreated) {
+      console.log(chalk.green("  KV successfully created."));
+    } else {
+      console.log("  KV already set up.");
+    }
+  }
+
+  return result.id;
 }

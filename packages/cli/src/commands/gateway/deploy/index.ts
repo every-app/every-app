@@ -11,7 +11,7 @@ import {
 } from "@/lib/file-operations";
 import { getWorkerName } from "@/lib/wrangler-config";
 import { confirmDeployment, ensureWorkersDevSubdomain } from "@/lib/deployment";
-import { getWorkerUrl } from "@/lib/cloudflare-auth";
+import { getWorkerUrl } from "@/lib/cloudflare";
 import { downloadLatestGatewayRelease } from "@/lib/github-releases";
 
 export async function deploy(

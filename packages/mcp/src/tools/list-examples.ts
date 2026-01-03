@@ -32,7 +32,7 @@ const EXAMPLE_APPS: ExampleApp[] = [
     ],
   },
   {
-    name: "apps/every-chef",
+    name: "apps/chef",
     description: "Cooking assistant with LLM integration",
     goodFor: [
       "LLM integration patterns",

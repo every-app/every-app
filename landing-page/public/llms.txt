@@ -92,8 +92,8 @@ npx @every-app/cli app deploy
 ### Cooking Assistant
 
 ```bash
-npx gitpick every-app/every-app/tree/main/apps/every-chef every-chef
-cd every-chef
+npx gitpick every-app/every-app/tree/main/apps/chef every-app-chef
+cd every-app-chef
 npx @every-app/cli app deploy
 npx wrangler secret put OPENAI_API_KEY
 ```
@@ -178,7 +178,7 @@ Restart your AI tool after adding the MCP server.
 
 ### Walkthrough: AI Cooking Assistant
 
-This walkthrough explains how the [Chef](https://github.com/every-app/every-app/tree/main/apps/every-chef) app is built. Chef is an AI-powered cooking assistant that helps you manage recipes and get cooking guidance through a chat interface.
+This walkthrough explains how the [Chef](https://github.com/every-app/every-app/tree/main/apps/chef) app is built. Chef is an AI-powered cooking assistant that helps you manage recipes and get cooking guidance through a chat interface.
 
 It covers patterns most apps need like:
 
@@ -253,7 +253,7 @@ Define themes with the `@plugin "daisyui/theme"` directive using OKLCH colors:
   --color-secondary: oklch(65% 0.12 45);
   --color-base-100: oklch(98% 0.005 90);
   --color-base-content: oklch(25% 0.02 90);
-  /* ... see full theme in every-chef */
+  /* ... see full theme in chef */
 }
 ```
 
@@ -275,7 +275,7 @@ You can create reusable classes that reference your theme variables:
 
 These classes automatically adapt when switching themes since they use the theme's color variables (`base-300`, `base-content`, etc.) rather than hard-coded colors.
 
-See the full [Every Chef app.css](https://github.com/every-app/every-app/blob/main/apps/every-chef/src/client/styles/app.css) for a complete example.
+See the full [Every Chef app.css](https://github.com/every-app/every-app/blob/main/apps/chef/src/client/styles/app.css) for a complete example.
 
 
 ### Database Schema

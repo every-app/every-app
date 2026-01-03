@@ -3,7 +3,7 @@ import path from "node:path";
 import * as jsonc from "jsonc-parser";
 import chalk from "chalk";
 
-export interface WranglerConfig {
+interface WranglerConfig {
   name?: string;
   d1_databases?: Array<{
     binding: string;

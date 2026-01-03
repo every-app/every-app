@@ -1,13 +1,22 @@
 import chalk from "chalk";
-import { randomUUID } from "node:crypto";
-import { getDefaultAccountId } from "@/lib/cloudflare-auth";
-import { listD1Databases } from "@/lib/cloudflare-d1";
-import { queryD1Database } from "@/lib/cloudflare-d1-queries";
+import {
+  getGatewayDatabase,
+  getAllUsers,
+  upsertUserApp,
+  type User,
+  type GatewayDbConnection,
+} from "@/lib/gateway-db";
 
-interface User {
-  id: string;
-  name: string;
-  email: string;
+/**
+ * Options for inserting user app records
+ */
+interface InsertUserAppOptions {
+  appId: string;
+  appUrl: string;
+  verbose?: boolean;
+  appName?: string;
+  appDescription?: string;
+  devUrl?: string;
 }
 
 /**
@@ -16,26 +25,23 @@ interface User {
  * every-app-gateway database to register the app for users
  */
 export async function insertUserAppRecords(
-  appId: string,
-  appUrl: string,
-  verbose: boolean = false,
-  appName?: string,
-  appDescription?: string,
-  devUrl?: string,
+  options: InsertUserAppOptions,
 ): Promise<void> {
+  const {
+    appId,
+    appUrl,
+    verbose = false,
+    appName,
+    appDescription,
+    devUrl,
+  } = options;
+
   try {
     console.log("");
     if (verbose) console.log("Adding apps to user gateways...");
-    // Get account ID
-    const accountId = await getDefaultAccountId();
 
-    // Get every-app-gateway database ID
-    const databases = await listD1Databases();
-    const gatewayDb = databases.find(
-      (db: any) => db.name === "every-app-gateway",
-    );
-
-    if (!gatewayDb) {
+    const db = await getGatewayDatabase();
+    if (!db) {
       console.warn(
         chalk.yellow(
           "every-app-gateway database not found. Skipping UserApp record creation.\n",
@@ -44,66 +50,37 @@ export async function insertUserAppRecords(
       return;
     }
 
-    const databaseId = gatewayDb.uuid;
-
-    // Query users from the database
-    const users = await queryD1Database<User>(
-      accountId,
-      databaseId,
-      "SELECT id, name, email FROM users",
-    );
-
-    // Handle different user count scenarios
+    const users = await getAllUsers(db);
     if (users.length === 0) {
       throw new Error(
         "No users found in the database. Please create a user first before deploying apps.",
       );
     }
 
-    // Use provided name/description or fall back to appId
     const displayName = appName || appId;
     const displayDescription = appDescription || appId;
 
-    if (users.length === 1) {
-      // Insert for single user if not already exists
-      await insertUserAppRecord(
-        accountId,
-        databaseId,
-        users[0] as User,
+    if (verbose && users.length > 1) {
+      console.log(
+        chalk.yellow(
+          `Multiple users found (${users.length}). Adding app to all users...\n`,
+        ),
+      );
+    }
+
+    for (const user of users) {
+      await processUserAppRecord(db, user, {
         appId,
         appUrl,
-        displayName,
-        displayDescription,
-        verbose,
+        name: displayName,
+        description: displayDescription,
         devUrl,
-      );
-    } else {
-      // Multiple users - add to all
-      if (verbose) {
-        console.log(
-          chalk.yellow(
-            `Multiple users found (${users.length}). Adding app to all users...\n`,
-          ),
-        );
-      }
+        verbose,
+      });
+    }
 
-      for (const user of users) {
-        await insertUserAppRecord(
-          accountId,
-          databaseId,
-          user,
-          appId,
-          appUrl,
-          displayName,
-          displayDescription,
-          verbose,
-          devUrl,
-        );
-      }
-
-      if (verbose) {
-        console.log(`  UserApp records processed for ${users.length} users\n`);
-      }
+    if (verbose && users.length > 1) {
+      console.log(`  UserApp records processed for ${users.length} users\n`);
     }
   } catch (error) {
     console.error(
@@ -115,58 +92,33 @@ export async function insertUserAppRecords(
 }
 
 /**
- * Insert a single UserApp record for a user
+ * Process a single user's app record with logging
  */
-async function insertUserAppRecord(
-  accountId: string,
-  databaseId: string,
+async function processUserAppRecord(
+  db: GatewayDbConnection,
   user: User,
-  appId: string,
-  appUrl: string,
-  displayName: string,
-  displayDescription: string,
-  verbose: boolean,
-  devUrl?: string,
+  options: {
+    appId: string;
+    appUrl: string;
+    name: string;
+    description: string;
+    devUrl?: string;
+    verbose: boolean;
+  },
 ): Promise<void> {
-  const now = Math.floor(Date.now() / 1000);
+  const { verbose, ...upsertOptions } = options;
 
-  // Check if record already exists (using parameterized query)
-  const existingRecords = await queryD1Database<{ id: string }>(
-    accountId,
-    databaseId,
-    "SELECT id FROM user_apps WHERE user_id = ? AND app_id = ?",
-    [user.id, appId],
-  );
+  const result = await upsertUserApp(db, user, upsertOptions);
 
-  if (existingRecords.length > 0) {
-    // Skip - record already exists
-    if (verbose) {
-      console.log(
-        chalk.dim(
-          `  UserApp record already exists for user ${user.name} (${user.email})`,
-        ),
-      );
-    }
-  } else {
-    // Insert new record (using parameterized query)
-    const recordId = randomUUID();
-    const insertSql = `
-      INSERT INTO user_apps (id, user_id, app_id, name, description, app_url, dev_url, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-    await queryD1Database(accountId, databaseId, insertSql, [
-      recordId,
-      user.id,
-      appId,
-      displayName,
-      displayDescription,
-      appUrl,
-      devUrl ?? null,
-      now,
-      now,
-    ]);
+  if (result.created) {
     console.log(
       `  UserApp record created for user ${user.name} (${user.email})`,
+    );
+  } else if (verbose) {
+    console.log(
+      chalk.dim(
+        `  UserApp record already exists for user ${user.name} (${user.email})`,
+      ),
     );
   }
 }
