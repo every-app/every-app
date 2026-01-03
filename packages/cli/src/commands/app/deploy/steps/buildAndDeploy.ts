@@ -1,15 +1,23 @@
 import chalk from "chalk";
 import { executeCommandWithFormatting } from "@/lib/formatting";
 
+interface BuildAndDeployOptions {
+  cwd: string;
+  gatewayUrl: string;
+  /** The unprefixed app ID (e.g., "todo-app") used to set VITE_APP_ID */
+  appId: string;
+  verbose: boolean;
+}
+
 /**
  * Build and deploy the app to Cloudflare Workers
  */
-export async function buildAndDeploy(
-  cwd: string,
-  gatewayUrl: string,
-  appId: string,
-  verbose: boolean,
-): Promise<void> {
+export async function buildAndDeploy({
+  cwd,
+  gatewayUrl,
+  appId,
+  verbose,
+}: BuildAndDeployOptions): Promise<void> {
   const deployEnv = {
     ...process.env,
     VITE_GATEWAY_URL: gatewayUrl,

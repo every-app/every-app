@@ -18,8 +18,8 @@ importers:
         specifier: ^3.2.2
         version: 3.2.2(react@19.2.0)
       '@every-app/sdk':
-        specifier: ^0.0.3
-        version: 0.0.3(@tanstack/react-router@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@tanstack/react-start@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(vite@7.2.2(@types/node@22.19.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.20.6)))(jose@6.1.1)(react@19.2.0)
+        specifier: ^0.0.4
+        version: 0.0.4(@tanstack/react-router@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@tanstack/react-start@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(vite@7.2.2(@types/node@22.19.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.20.6)))(jose@6.1.1)(react@19.2.0)
       '@tanstack/query-core':
         specifier: ^5.90.9
         version: 5.90.9
@@ -810,8 +810,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@every-app/sdk@0.0.3':
-    resolution: {integrity: sha512-256iKzJguPBWZ0ty0wOE5b/8BsqexThQ7vIRkmqWFFOxuVRJ1F9Dv2pa0rUz3xAA7YYK00d/TOdlUQh4okVbmA==}
+  '@every-app/sdk@0.0.4':
+    resolution: {integrity: sha512-KFSJ9MSzx3j2BGm+XZgfFIAU2gYcZ84nAmOCFb60xm9S+IQs4Ktle8N13bjHvfJcwI3D31PZCHk0LuGwOVXDhg==}
     peerDependencies:
       '@tanstack/react-router': ^1.0.0
       '@tanstack/react-start': ^1.0.0
@@ -3352,7 +3352,7 @@ snapshots:
   '@esbuild/win32-x64@0.25.4':
     optional: true
 
-  '@every-app/sdk@0.0.3(@tanstack/react-router@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@tanstack/react-start@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(vite@7.2.2(@types/node@22.19.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.20.6)))(jose@6.1.1)(react@19.2.0)':
+  '@every-app/sdk@0.0.4(@tanstack/react-router@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0))(@tanstack/react-start@1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(vite@7.2.2(@types/node@22.19.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.20.6)))(jose@6.1.1)(react@19.2.0)':
     dependencies:
       '@tanstack/react-router': 1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0)
       '@tanstack/react-start': 1.136.3(react-dom@19.2.0(react@19.2.0))(react@19.2.0)(vite@7.2.2(@types/node@22.19.1)(jiti@2.6.1)(lightningcss@1.30.2)(tsx@4.20.6))

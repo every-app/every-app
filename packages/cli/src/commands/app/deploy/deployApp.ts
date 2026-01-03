@@ -66,7 +66,7 @@ export async function deployApp(
   await runMigrations(cwd, verbose);
 
   // Build and deploy
-  await buildAndDeploy(cwd, gatewayUrl, resourceName, verbose);
+  await buildAndDeploy({ cwd, gatewayUrl, appId, verbose });
 
   // Setup secrets
   await setupAppSecrets(gatewayUrl, cwd, verbose);

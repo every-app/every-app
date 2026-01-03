@@ -1,0 +1,9 @@
+.env
+.env.local
+.env.*
+**/.env*
+.dev.vars*
+.wrangler
+node_modules/
+**/node_modules/
+**/.claude/settings.local.json

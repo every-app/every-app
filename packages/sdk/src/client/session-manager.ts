@@ -27,9 +27,13 @@ export class SessionManager {
 
   constructor(config: SessionManagerConfig) {
     this.parentOrigin = import.meta.env.VITE_GATEWAY_URL;
-    this.appId = config.appId || this.detectAppId();
     this.messageTimeout = 5000;
     this.debug = config.debug ?? false;
+
+    if (!config.appId) {
+      throw new Error("[SessionManager] appId is required.");
+    }
+    this.appId = config.appId;
 
     if (!this.parentOrigin) {
       throw new Error(
@@ -46,17 +50,6 @@ export class SessionManager {
     }
 
     this.setupMessageListener();
-  }
-
-  private detectAppId(): string {
-    if (typeof window === "undefined") return "";
-
-    const url = new URL(window.location.href);
-    return (
-      url.searchParams.get("appId") ||
-      url.hostname.split(".")[0] ||
-      "embedded-app"
-    );
   }
 
   private log(message: string, data?: unknown) {
