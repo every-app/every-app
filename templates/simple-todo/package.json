@@ -20,6 +20,7 @@
     "knip": "knip"
   },
   "dependencies": {
+    "daisyui": "^5.5.5",
     "@every-app/sdk": "^0.0.3",
     "@tanstack/query-core": "^5.90.9",
     "@tanstack/query-db-collection": "^1.0.0",

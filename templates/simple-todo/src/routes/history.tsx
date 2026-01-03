@@ -1,9 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import { Calendar } from "lucide-react";
-import { useIsMobile } from "@/client/hooks/use-mobile";
-import { TabBar } from "@/client/components/TabBar";
 import { todoCollection } from "@/client/tanstack-db";
 import { HistoryItem } from "@/client/components/TodoHistoryItem";
 
@@ -12,8 +9,6 @@ export const Route = createFileRoute("/history")({
 });
 
 function History() {
-  const isMobile = useIsMobile();
-
   // Live query that updates automatically when data changes
   const {
     data: todos,
@@ -33,29 +28,22 @@ function History() {
   if (isError) {
     return (
       <div className="p-4 overflow-auto">
-        <div className="p-4 bg-white rounded-lg border border-gray-200">
-          <p className="text-red-600">Error: Failed to load completed todos</p>
-        </div>
+        <p className="text-error">Error: Failed to load completed todos</p>
       </div>
     );
   }
 
   return (
     <>
-      <div className="p-4 overflow-auto">
+      <div className="px-4 pb-4 md:pt-4 overflow-auto">
+        <h1 className="text-xl font-semibold text-base-content py-3">
+          History
+        </h1>
         {completedTodos.length === 0 ? (
-          <div className="p-8 text-center bg-white rounded-lg border border-gray-200">
-            <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">
-              No completed todos yet
-            </h3>
-            <p className="text-gray-600 mb-4">
-              Complete some todos to see them appear in your history.
-            </p>
+          <div className="flex flex-col items-start gap-2">
+            <p className="text-base-content/70">No completed todos yet</p>
             <Link to="/">
-              <button className="px-4 py-2 bg-black text-white rounded-md hover:bg-gray-700 focus:ring-2 focus:ring-black focus:ring-offset-2 focus:outline-none transition-all duration-200">
-                See Todos
-              </button>
+              <button className="btn btn-primary btn-sm">Go to todos</button>
             </Link>
           </div>
         ) : (
@@ -66,11 +54,6 @@ function History() {
           </div>
         )}
       </div>
-      {isMobile && (
-        <div className="fixed bottom-0 left-0 right-0">
-          <TabBar currentPath={location.pathname} />
-        </div>
-      )}
     </>
   );
 }

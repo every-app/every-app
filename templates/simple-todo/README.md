@@ -1,15 +1,28 @@
-# Todo Example App
+# Every App
 
 ## Development
 
-From your terminal:
+Run locally
 
 ```sh
 pnpm install
 pnpm dev
 ```
 
-## Helpful Resources
+Generate Migration
 
-https://developers.cloudflare.com/workers/framework-guides/web-apps/tanstack/
-https://orm.drizzle.team/docs/connect-cloudflare-d1
+```sh
+pnpm run db:generate
+```
+
+Migrate Local DB
+
+```sh
+pnpm run db:migrate:local
+```
+
+## Deploy
+
+```sh
+npx @every-app/cli app deploy
+```

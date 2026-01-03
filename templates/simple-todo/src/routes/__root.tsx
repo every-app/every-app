@@ -15,8 +15,7 @@ import { NotFound } from "@/client/components/NotFound";
 import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
 import { Sidebar } from "@/client/components/Sidebar";
-import { MobileHeader } from "@/client/components/MobileHeader";
-import { useIsMobile } from "@/client/hooks/use-mobile";
+import { TabBar } from "@/client/components/TabBar";
 import { EmbeddedAppProvider } from "@every-app/sdk/client";
 import { todoCollection, queryClient, persister } from "@/client/tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
@@ -72,33 +71,25 @@ export const Route = createRootRoute({
 
 function AppLayout() {
   const location = useLocation();
-  const isMobile = useIsMobile();
 
   // Always fetch todos regardless of route so that they are preloaded
   useLiveQuery((q) => q.from({ todo: todoCollection }));
 
-  if (isMobile) {
-    return (
-      <div className="flex flex-col h-screen">
-        <MobileHeader currentPath={location.pathname} />
-        <div
-          className="flex-1 overflow-auto"
-          style={{
-            paddingTop: "60px",
-            paddingBottom: "80px",
-          }}
-        >
-          <Outlet />
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex h-screen">
-      <Sidebar currentPath={location.pathname} />
-      <div className="flex-1 overflow-auto">
+    <div className="flex flex-col md:flex-row h-screen bg-base-200">
+      {/* Desktop: Sidebar */}
+      <div className="hidden md:block">
+        <Sidebar currentPath={location.pathname} />
+      </div>
+
+      {/* Main content */}
+      <div className="main-content flex-1 overflow-auto pb-20 md:pb-0">
         <Outlet />
+      </div>
+
+      {/* Mobile: TabBar */}
+      <div className="md:hidden">
+        <TabBar currentPath={location.pathname} />
       </div>
     </div>
   );
@@ -119,7 +110,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             <EmbeddedAppProvider appId={import.meta.env.VITE_APP_ID}>
               <>
                 {children}
-                <Toaster richColors position="top-right" />
+                <Toaster
+                  position="bottom-right"
+                  mobileOffset={{ bottom: 100 }}
+                />
                 <TanStackRouterDevtools position="bottom-right" />
               </>
             </EmbeddedAppProvider>

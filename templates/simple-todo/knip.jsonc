@@ -6,11 +6,20 @@
     "src/routes/**/*.tsx",
     // Drizzle config (plugin disabled due to cloudflare:workers import issues)
     "drizzle.config.ts",
+    // DB index re-exports schema for convenience
+    "src/db/index.ts",
   ],
   "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
   // Disable Drizzle plugin - it tries to load drizzle.config.ts which imports cloudflare:workers
   "drizzle": false,
-  "ignoreDependencies": ["tailwindcss"],
-  "ignoreBinaries": ["every"],
+  "ignoreDependencies": [
+    // Tailwindcss used via @tailwindcss/vite plugin
+    "tailwindcss",
+    "daisyui",
+  ],
+  "ignoreBinaries": [
+    // Every CLI tool used for deployment commands
+    "every",
+  ],
 }

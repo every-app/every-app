@@ -92,6 +92,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
               <Toaster
                 richColors
                 position="bottom-right"
+                mobileOffset={{ bottom: 100 }}
                 toastOptions={{
                   className:
                     "!bg-base-300 !text-base-content !shadow-lg !border !border-base-content/20",
