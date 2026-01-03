@@ -17,15 +17,15 @@
   view-transition-name: sidebar;
 }
 
-.tab-bar {
-  view-transition-name: tab-bar;
+.dock {
+  view-transition-name: dock;
 }
 
-/* Don't animate sidebar and tab bar */
+/* Don't animate fixed elements */
 ::view-transition-old(sidebar),
 ::view-transition-new(sidebar),
-::view-transition-old(tab-bar),
-::view-transition-new(tab-bar) {
+::view-transition-old(dock),
+::view-transition-new(dock) {
   animation: none;
 }
 

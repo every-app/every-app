@@ -1,6 +1,6 @@
 import useDetectKeyboardOpen from "@/client/hooks/useDetectKeyboardOpen";
 import { Link } from "@tanstack/react-router";
-import { ClipboardList, Dumbbell, History, LayoutGrid } from "lucide-react";
+import { ClipboardList, Dumbbell, History, TreePine } from "lucide-react";
 
 interface TabBarProps {
   currentPath: string;
@@ -28,15 +28,6 @@ export function TabBar({ currentPath }: TabBarProps) {
           <span className="dock-label">Home</span>
         </Link>
         <Link
-          to="/programs"
-          className={`no-underline ${isProgramsActive ? "dock-active text-primary" : ""}`}
-          aria-label="Navigate to Programs"
-          aria-current={isProgramsActive ? "page" : undefined}
-        >
-          <Dumbbell className="size-[1.2em]" aria-hidden="true" />
-          <span className="dock-label">Programs</span>
-        </Link>
-        <Link
           to="/history"
           className={`no-underline ${isHistoryActive ? "dock-active text-primary" : ""}`}
           aria-label="Navigate to History"
@@ -45,14 +36,23 @@ export function TabBar({ currentPath }: TabBarProps) {
           <History className="size-[1.2em]" aria-hidden="true" />
           <span className="dock-label">History</span>
         </Link>
+        <Link
+          to="/programs"
+          className={`no-underline ${isProgramsActive ? "dock-active text-primary" : ""}`}
+          aria-label="Navigate to Programs"
+          aria-current={isProgramsActive ? "page" : undefined}
+        >
+          <Dumbbell className="size-[1.2em]" aria-hidden="true" />
+          <span className="dock-label">Programs</span>
+        </Link>
         <a
           href={import.meta.env.VITE_GATEWAY_URL}
           target="_top"
           className="no-underline"
-          aria-label="Navigate to Apps"
+          aria-label="Navigate to Gateway"
         >
-          <LayoutGrid className="size-[1.2em]" aria-hidden="true" />
-          <span className="dock-label">Apps</span>
+          <TreePine className="size-[1.2em]" aria-hidden="true" />
+          <span className="dock-label">Gateway</span>
         </a>
       </div>
     </div>
