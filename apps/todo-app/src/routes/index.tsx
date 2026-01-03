@@ -27,11 +27,8 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { todoCollection } from "@/client/tanstack-db";
-import {
-  generateDefaultSortKey,
-  generateSortKeyBetween,
-} from "@/client/lib/fractional-indexing";
+import { todoCollection, insertNewTodo } from "@/client/tanstack-db";
+import { generateSortKeyBetween } from "@/client/lib/fractional-indexing";
 import { SortableTodoItem } from "@/client/components/SortableTodoItem";
 
 export const Route = createFileRoute("/")({
@@ -134,13 +131,7 @@ function Home() {
           onSubmit={(e) => {
             e.preventDefault();
             if (newTodoTitle.trim()) {
-              todoCollection.insert({
-                id: crypto.randomUUID(),
-                title: newTodoTitle.trim(),
-                sortKey: generateDefaultSortKey(),
-                completed: false,
-                completedAt: null,
-              });
+              insertNewTodo(newTodoTitle);
               setNewTodoTitle("");
             }
           }}
@@ -265,6 +256,11 @@ function calculateNewPosition(
  *   easily exceeds any reasonable distance threshold. The delay allows taps to
  *   register as clicks while a press-and-hold initiates drag.
  *
+ * - KeyboardSensor: Enables keyboard-based reordering for accessibility.
+ *   Users can focus a todo item, press Space/Enter to start dragging,
+ *   use arrow keys to move, and press Space/Enter again to drop.
+ *   Press Escape to cancel the drag operation.
+ *
  * Note: PointerSensor handles both mouse and touch, but we can't use it here because
  * we need different activation constraints for each input type.
  */
@@ -283,11 +279,6 @@ function useDraggableSensors() {
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
-      keyboardCodes: {
-        start: [],
-        cancel: [],
-        end: [],
-      },
     }),
   );
   return sensors;

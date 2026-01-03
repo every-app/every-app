@@ -111,7 +111,7 @@ function formatDateHeader(dateString: string): string {
   } else if (date.toDateString() === yesterday.toDateString()) {
     return "Yesterday";
   } else {
-    return date.toLocaleDateString("en-US", {
+    return date.toLocaleDateString(undefined, {
       weekday: "long",
       month: "long",
       day: "numeric",

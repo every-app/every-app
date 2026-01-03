@@ -19,9 +19,8 @@ export function HistoryItem({ todo }: HistoryItemProps) {
         onCheckedChange={(checked) => {
           todoCollection.update(todo.id, (draft) => {
             draft.completed = Boolean(checked);
-            if (!checked) {
-              draft.completedAt = null;
-            }
+            // Set client-side for optimistic UI; server overwrites with authoritative timestamp on refetch
+            draft.completedAt = checked ? new Date().toISOString() : null;
           });
         }}
         className="focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:outline-none transition-all duration-200 hover:ring-2 hover:ring-gray-300 hover:ring-offset-1"

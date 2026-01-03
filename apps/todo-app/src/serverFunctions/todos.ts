@@ -6,11 +6,32 @@ import { and, eq } from "drizzle-orm";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
 import { useSessionTokenClientMiddleware } from "@every-app/sdk/client";
 
+const createTodoSchema = z.object({
+  id: z.string().uuid("Invalid todo ID"),
+  title: z.string().min(1, "Title is required").max(1024, "Title too long"),
+  sortKey: z.string(),
+});
+
+const updateTodoSchema = z.object({
+  id: z.string().uuid("Invalid todo ID"),
+  title: z
+    .string()
+    .min(1, "Title is required")
+    .max(1024, "Title too long")
+    .optional(),
+  completed: z.boolean().optional(),
+  sortKey: z.string().optional(),
+});
+
+const deleteTodoSchema = z.object({
+  id: z.string().uuid("Invalid todo ID"),
+});
+
 export const getAllTodos = createServerFn()
   // TODO Global middlewares don't seem to work right now in tanstack-start. We should move to this once this is resolved.
   // https://github.com/TanStack/router/issues/3869
   .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
-  .handler(async ({ context }: any) => {
+  .handler(async ({ context }) => {
     if (!context?.userId) {
       throw new Error("Unauthorized: No user ID in context");
     }
@@ -31,16 +52,10 @@ export const getAllTodos = createServerFn()
     return { todos: allTodos };
   });
 
-const createTodoSchema = z.object({
-  id: z.string().length(36), // expect uuid
-  title: z.string().min(1, "Title is required").max(1024, "Title too long"),
-  sortKey: z.string(),
-});
-
 export const createTodo = createServerFn()
   .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
   .inputValidator((todo: unknown) => createTodoSchema.parse(todo))
-  .handler(async ({ data: todo, context }: any) => {
+  .handler(async ({ data: todo, context }) => {
     if (!context?.userId) {
       throw new Error("Unauthorized: No user ID in context");
     }
@@ -55,21 +70,10 @@ export const createTodo = createServerFn()
     ]);
   });
 
-const updateTodoSchema = z.object({
-  id: z.string().uuid("Invalid todo ID"),
-  title: z
-    .string()
-    .min(1, "Title is required")
-    .max(1024, "Title too long")
-    .optional(),
-  completed: z.boolean().optional(),
-  sortKey: z.string().optional(),
-});
-
 export const updateTodo = createServerFn()
   .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
   .inputValidator((todo: unknown) => updateTodoSchema.parse(todo))
-  .handler(async ({ data: todo, context }: any) => {
+  .handler(async ({ data: todo, context }) => {
     const existingTodo = await db.query.todos.findFirst({
       where: and(eq(todos.id, todo.id), eq(todos.userId, context.userId)),
     });
@@ -90,10 +94,11 @@ export const updateTodo = createServerFn()
     }
 
     // Prepare update data
-    const updateData: any = {
+    const updateData = {
       title: todo.title ?? existingTodo.title,
       completed: todo.completed ?? existingTodo.completed,
       sortKey: todo.sortKey ?? existingTodo.sortKey,
+      completedAt: existingTodo.completedAt as string | null,
     };
 
     // Set completedAt timestamp when marking as completed
@@ -107,17 +112,16 @@ export const updateTodo = createServerFn()
       }
     }
 
-    await db.update(todos).set(updateData).where(eq(todos.id, todo.id));
+    await db
+      .update(todos)
+      .set(updateData)
+      .where(and(eq(todos.id, todo.id), eq(todos.userId, context.userId)));
   });
-
-const deleteTodoSchema = z.object({
-  id: z.string().uuid("Invalid todo ID"),
-});
 
 export const deleteTodo = createServerFn()
   .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
   .inputValidator((todo: unknown) => deleteTodoSchema.parse(todo))
-  .handler(async ({ data: todo, context }: any) => {
+  .handler(async ({ data: todo, context }) => {
     const existingTodo = await db.query.todos.findFirst({
       where: and(eq(todos.id, todo.id), eq(todos.userId, context.userId)),
     });
@@ -126,5 +130,7 @@ export const deleteTodo = createServerFn()
       throw new Error("Todo not found");
     }
 
-    await db.delete(todos).where(eq(todos.id, todo.id));
+    await db
+      .delete(todos)
+      .where(and(eq(todos.id, todo.id), eq(todos.userId, context.userId)));
   });

@@ -106,6 +106,17 @@ function AppLayout() {
   // Always fetch todos regardless of route so that they are preloaded
   useLiveQuery((q) => q.from({ todo: todoCollection }));
 
+  // During SSR/initial hydration, render a minimal layout to avoid flash
+  if (isMobile === undefined) {
+    return (
+      <div className="flex h-screen bg-base-200">
+        <div className="main-content flex-1 overflow-auto">
+          <Outlet />
+        </div>
+      </div>
+    );
+  }
+
   if (isMobile) {
     return (
       <div className="flex flex-col h-screen bg-base-200">

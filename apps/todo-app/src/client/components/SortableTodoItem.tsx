@@ -131,7 +131,8 @@ export function SortableTodoItem({
         onCheckedChange={(checked) => {
           todoCollection.update(todo.id, (draft) => {
             draft.completed = Boolean(checked);
-            draft.completedAt = new Date().toString();
+            // Set client-side for optimistic UI; server overwrites with authoritative timestamp on refetch
+            draft.completedAt = checked ? new Date().toISOString() : null;
           });
         }}
         onPointerDown={(e) => e.stopPropagation()}

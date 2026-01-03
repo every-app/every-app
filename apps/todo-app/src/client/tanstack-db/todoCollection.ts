@@ -8,6 +8,22 @@ import {
   updateTodo,
 } from "@/serverFunctions/todos";
 import { lazyInitForWorkers } from "@every-app/sdk/client";
+import { generateDefaultSortKey } from "@/client/lib/fractional-indexing";
+
+/**
+ * Creates a new todo item with a unique ID and default sort key.
+ * Use this helper instead of manually constructing the todo object
+ * to ensure consistency across all todo creation points.
+ */
+export function insertNewTodo(title: string): void {
+  todoCollection.insert({
+    id: crypto.randomUUID(),
+    title: title.trim(),
+    sortKey: generateDefaultSortKey(),
+    completed: false,
+    completedAt: null,
+  });
+}
 
 export const todoCollection = lazyInitForWorkers(() =>
   createCollection(

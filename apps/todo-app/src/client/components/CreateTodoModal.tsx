@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/client/components/ui/button";
 import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
-import { todoCollection } from "@/client/tanstack-db";
-import { generateDefaultSortKey } from "@/client/lib/fractional-indexing";
+import { insertNewTodo } from "@/client/tanstack-db";
 
 interface CreateTodoModalProps {
   isOpen: boolean;
@@ -48,13 +47,7 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (title.trim()) {
-      todoCollection.insert({
-        id: crypto.randomUUID(),
-        title: title.trim(),
-        sortKey: generateDefaultSortKey(),
-        completed: false,
-        completedAt: null,
-      });
+      insertNewTodo(title);
       setTitle("");
       onClose();
     }
