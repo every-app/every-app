@@ -73,7 +73,9 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
         className={`flex-1 w-full ${isEmbeddedAppReady ? "opacity-100" : "opacity-0"} ${className}`}
         title={app.name}
         onLoad={handleIframeLoad}
-        sandbox="allow-scripts allow-same-origin allow-forms"
+        // allow-top-navigation: Required for embedded apps to navigate back to the gateway
+        // (e.g., logout redirects) and to support third-party integrations like OAuth flows
+        sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation"
       />
     </div>
   );
