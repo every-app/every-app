@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "chef",
+  "name": "every-chef",
   "main": "@tanstack/react-start/server-entry",
   "compatibility_date": "2025-09-02",
   "compatibility_flags": ["nodejs_compat"],
@@ -25,7 +25,7 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "chef",
+      "database_name": "every-chef",
       "database_id": "129cd3fd-a605-49e8-a76c-7002f33e4a4c",
       "migrations_dir": "drizzle",
     },

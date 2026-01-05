@@ -22,7 +22,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^2.0.77",
     "@ai-sdk/react": "^2.0.106",
-    "@every-app/sdk": "^0.0.5",
+    "@every-app/sdk": "^0.0.6",
     "@tanstack/query-core": "^5.90.9",
     "@tanstack/query-db-collection": "^1.0.0",
     "@tanstack/query-sync-storage-persister": "^5.90.14",
@@ -55,7 +55,6 @@
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.6.0",
     "drizzle-kit": "^0.31.4",
-    "jsonc-parser": "^3.3.1",
     "knip": "^5.66.4",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",

@@ -1,17 +1,29 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "type": "module",
-  "main": "./src/client/index.ts",
+  "main": "./dist/client/index.js",
+  "types": "./dist/client/index.d.ts",
   "exports": {
-    "./client": "./src/client/index.ts",
-    "./server": "./src/server/index.ts",
-    "./server/getLocalD1Url": "./src/server/getLocalD1Url.ts"
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "default": "./dist/client/index.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "default": "./dist/server/index.js"
+    },
+    "./server/getLocalD1Url": {
+      "types": "./dist/server/getLocalD1Url.d.ts",
+      "default": "./dist/server/getLocalD1Url.js"
+    }
   },
   "files": [
+    "dist",
     "src"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "types:check": "tsc --noEmit",
     "format:check": "prettier --check .",
     "format:write": "prettier . --write",

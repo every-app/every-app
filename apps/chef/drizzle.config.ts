@@ -1,5 +1,5 @@
 import { defineConfig } from "drizzle-kit";
-import { getLocalD1Url } from "./src/server/getLocalD1Url";
+import { getLocalD1Url } from "@every-app/sdk/server/getLocalD1Url";
 
 const localUrl = getLocalD1Url();
 
