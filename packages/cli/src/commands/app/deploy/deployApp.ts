@@ -40,7 +40,7 @@ export async function deployApp(
 
   // Setup Cloudflare resources (D1, KV) - returns prefixed resource name
   const { d1DatabaseId, kvNamespaceId, resourceName } =
-    await setupCloudflareResources(appId, verbose);
+    await setupCloudflareResources({ appId, verbose });
 
   // Update wrangler.jsonc with prefixed worker name and resource IDs
   await updateWranglerConfig({
@@ -56,20 +56,20 @@ export async function deployApp(
 
   // Install dependencies
   console.log();
-  await installDependencies(
+  await installDependencies({
     cwd,
-    "Installing dependencies for Cloudflare deployment...",
+    description: "Installing dependencies for Cloudflare deployment...",
     verbose,
-  );
+  });
 
   // Run production migrations
-  await runMigrations(cwd, verbose);
+  await runMigrations({ cwd, verbose });
 
   // Build and deploy
   await buildAndDeploy({ cwd, gatewayUrl, appId, verbose });
 
   // Setup secrets
-  await setupAppSecrets(gatewayUrl, cwd, verbose);
+  await setupAppSecrets({ gatewayUrl, appPath: cwd, verbose });
 
   // Get deployed URL
   const workerUrl = await getWorkerUrl(resourceName);

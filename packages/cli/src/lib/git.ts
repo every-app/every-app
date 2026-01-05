@@ -1,16 +1,19 @@
 import { executeCommandWithFormatting } from "./formatting";
 
+interface CloneRepositoryOptions {
+  url: string;
+  targetDir: string;
+  verbose?: boolean;
+}
+
 /**
  * Clone a git repository to a target directory
- * @param url - The git repository URL
- * @param targetDir - The directory to clone into
- * @param verbose - Whether to show detailed output
  */
-export async function cloneRepository(
-  url: string,
-  targetDir: string,
-  verbose: boolean = false,
-): Promise<void> {
+export async function cloneRepository({
+  url,
+  targetDir,
+  verbose = false,
+}: CloneRepositoryOptions): Promise<void> {
   try {
     await executeCommandWithFormatting("git", ["clone", url, targetDir], {
       verbose,

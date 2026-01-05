@@ -1,13 +1,18 @@
 import chalk from "chalk";
 import { executeCommandWithFormatting } from "@/lib/formatting";
 
+interface RunLocalMigrationsOptions {
+  targetDir: string;
+  verbose?: boolean;
+}
+
 /**
  * Run database migrations locally
  */
-export async function runLocalMigrations(
-  targetDir: string,
-  verbose: boolean,
-): Promise<void> {
+export async function runLocalMigrations({
+  targetDir,
+  verbose = false,
+}: RunLocalMigrationsOptions): Promise<void> {
   try {
     if (!verbose) {
       console.log("\nSetting up Cloudflare for local dev...");

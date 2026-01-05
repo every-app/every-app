@@ -10,19 +10,30 @@ import {
 const EVERY_APP_REPO = "https://github.com/every-app/every-app.git";
 const TEMPLATE_RELATIVE_PATH = "templates/simple-todo";
 
+interface CloneTemplateOptions {
+  /** The unprefixed app ID (e.g., "todo-app") */
+  appId: string;
+  verbose?: boolean;
+}
+
+interface CloneTemplateResult {
+  tempDir: string;
+  targetDir: string;
+}
+
 /**
  * Clone the template repository and copy it to the target directory
  */
-export async function cloneTemplate(
-  appId: string,
-  verbose: boolean,
-): Promise<{ tempDir: string; targetDir: string }> {
+export async function cloneTemplate({
+  appId,
+  verbose = false,
+}: CloneTemplateOptions): Promise<CloneTemplateResult> {
   if (verbose) {
     console.log("Cloning template repository...\n");
   }
 
   const tempDir = await createTempDirectory("every-app-create-");
-  await cloneRepository(EVERY_APP_REPO, tempDir, verbose);
+  await cloneRepository({ url: EVERY_APP_REPO, targetDir: tempDir, verbose });
 
   if (verbose) {
     console.log("Extracting template...\n");

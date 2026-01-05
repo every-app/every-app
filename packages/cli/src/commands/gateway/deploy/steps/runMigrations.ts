@@ -3,13 +3,18 @@ import { execa } from "execa";
 import { runWithRemoteD1 } from "@/lib/remote-d1";
 import { readWranglerConfig } from "@/lib/wrangler-config";
 
+interface RunMigrationsOptions {
+  gatewayPath: string;
+  verbose?: boolean;
+}
+
 /**
  * Run database migrations for the gateway
  */
-export async function runMigrations(
-  gatewayPath: string,
-  verbose: boolean = false,
-): Promise<void> {
+export async function runMigrations({
+  gatewayPath,
+  verbose = false,
+}: RunMigrationsOptions): Promise<void> {
   const config = await readWranglerConfig(gatewayPath);
 
   if (!config.d1_databases || config.d1_databases.length === 0) {

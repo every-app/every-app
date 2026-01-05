@@ -5,6 +5,12 @@ import {
   applyResourcePrefix,
 } from "@/lib/cloudflare";
 
+interface SetupCloudflareResourcesOptions {
+  /** The unprefixed app ID (e.g., "todo-app") */
+  appId: string;
+  verbose?: boolean;
+}
+
 interface SetupCloudflareResourcesResult {
   d1DatabaseId: string;
   kvNamespaceId: string;
@@ -19,10 +25,10 @@ interface SetupCloudflareResourcesResult {
  * Note: Uses prefixed appId for both D1 database name and KV namespace name
  * (e.g., "my-app" becomes "every-my-app" for resources)
  */
-export async function setupCloudflareResources(
-  appId: string,
-  verbose: boolean = false,
-): Promise<SetupCloudflareResourcesResult> {
+export async function setupCloudflareResources({
+  appId,
+  verbose = false,
+}: SetupCloudflareResourcesOptions): Promise<SetupCloudflareResourcesResult> {
   console.log("\nSetting up your Cloudflare D1 Database and KV Store...\n");
 
   const resourceName = applyResourcePrefix(appId);

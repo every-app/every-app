@@ -1,14 +1,22 @@
 import chalk from "chalk";
 
+interface PrintNextStepsOptions {
+  /** The unprefixed app ID (e.g., "todo-app") */
+  appId: string;
+  targetDir: string;
+  gatewayUrl: string;
+  workerUrl: string;
+}
+
 /**
  * Print next steps for the user after successful project creation and deployment
  */
-export function printNextSteps(
-  appId: string,
-  targetDir: string,
-  gatewayUrl: string,
-  workerUrl: string,
-): void {
+export function printNextSteps({
+  appId,
+  targetDir,
+  gatewayUrl,
+  workerUrl,
+}: PrintNextStepsOptions): void {
   console.log(chalk.green("Project created and deployed successfully!\n"));
   console.log(chalk.dim(`  Location: ${targetDir}`));
   console.log(chalk.dim(`  App URL:  ${chalk.cyan(workerUrl)}`));

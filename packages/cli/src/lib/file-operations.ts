@@ -55,15 +55,19 @@ export async function directoryExists(dirPath: string): Promise<boolean> {
   }
 }
 
+interface CreateEnvFilesOptions {
+  targetDir: string;
+  /** The unprefixed app ID (e.g., "todo-app") */
+  appId: string;
+}
+
 /**
  * Create environment files for the project
- * @param targetDir - Directory to create env files in
- * @param appId - App ID to use in environment variables
  */
-export async function createEnvFiles(
-  targetDir: string,
-  appId: string,
-): Promise<void> {
+export async function createEnvFiles({
+  targetDir,
+  appId,
+}: CreateEnvFilesOptions): Promise<void> {
   // Get the every-app-gateway worker URL dynamically
   const gatewayUrl = await getWorkerUrl("every-app-gateway");
 
@@ -84,15 +88,18 @@ export async function createTempDirectory(prefix: string): Promise<string> {
   return tmpDir;
 }
 
+interface CleanupTempDirectoryOptions {
+  tmpDir: string;
+  verbose?: boolean;
+}
+
 /**
  * Cleanup a temporary directory
- * @param tmpDir - Path to the temporary directory to remove
- * @param verbose - If true, log the cleanup action
  */
-export async function cleanupTempDirectory(
-  tmpDir: string,
+export async function cleanupTempDirectory({
+  tmpDir,
   verbose = false,
-): Promise<void> {
+}: CleanupTempDirectoryOptions): Promise<void> {
   try {
     await fs.rm(tmpDir, { recursive: true, force: true });
     if (verbose) {

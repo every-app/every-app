@@ -10,12 +10,16 @@ import type { CloudflareResources } from "@/commands/gateway/deploy/types";
 const D1_DATABASE_NAME = "every-app-gateway";
 const KV_NAMESPACE_NAME = "every-app-gateway";
 
+interface SetupCloudflareResourcesOptions {
+  verbose?: boolean;
+}
+
 /**
  * Set up Cloudflare resources (D1 database and KV namespace) for the gateway.
  */
-export async function setupCloudflareResources(
-  verbose: boolean = false,
-): Promise<CloudflareResources> {
+export async function setupCloudflareResources({
+  verbose = false,
+}: SetupCloudflareResourcesOptions = {}): Promise<CloudflareResources> {
   console.log("\nSetting up your Cloudflare D1 Database and KV Store...\n");
 
   const accountId = await getDefaultAccountId();

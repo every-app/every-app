@@ -1,30 +1,36 @@
 import { secretExists, uploadSecret } from "@/lib/secrets";
 
+interface SetupAppSecretsOptions {
+  gatewayUrl: string;
+  appPath: string;
+  verbose?: boolean;
+}
+
 /**
  * Setup GATEWAY_URL secret for app deployment
  */
-export async function setupAppSecrets(
-  gatewayUrl: string,
-  appPath: string,
-  verbose: boolean = false,
-): Promise<void> {
+export async function setupAppSecrets({
+  gatewayUrl,
+  appPath,
+  verbose = false,
+}: SetupAppSecretsOptions): Promise<void> {
   if (verbose) console.log("Configuring Secrets...");
 
   try {
     // Check and setup GATEWAY_URL
-    const gatewayUrlExists = await secretExists(
-      "GATEWAY_URL",
-      appPath,
+    const gatewayUrlExists = await secretExists({
+      secretName: "GATEWAY_URL",
+      cwd: appPath,
       verbose,
-    );
+    });
     if (!gatewayUrlExists) {
-      await uploadSecret(
-        "GATEWAY_URL",
-        gatewayUrl,
-        appPath,
+      await uploadSecret({
+        secretName: "GATEWAY_URL",
+        secretValue: gatewayUrl,
+        cwd: appPath,
         verbose,
-        `Setting GATEWAY_URL to: ${gatewayUrl}`,
-      );
+        description: `Setting GATEWAY_URL to: ${gatewayUrl}`,
+      });
     }
 
     if (verbose) {

@@ -29,58 +29,64 @@ function generateJwtKeyPair(): JwtKeyPair {
   return { privateKey, publicKey };
 }
 
-export async function setupSecrets(
-  gatewayUrl: string,
-  homebasePath: string,
-  verbose: boolean = false,
-): Promise<void> {
+interface SetupSecretsOptions {
+  gatewayUrl: string;
+  gatewayPath: string;
+  verbose?: boolean;
+}
+
+export async function setupSecrets({
+  gatewayUrl,
+  gatewayPath,
+  verbose = false,
+}: SetupSecretsOptions): Promise<void> {
   console.log("Configuring Secrets...");
 
   try {
     // Check and setup GATEWAY_URL
-    const gatewayUrlExists = await secretExists(
-      "GATEWAY_URL",
-      homebasePath,
+    const gatewayUrlExists = await secretExists({
+      secretName: "GATEWAY_URL",
+      cwd: gatewayPath,
       verbose,
-    );
+    });
     if (!gatewayUrlExists) {
-      await uploadSecret(
-        "GATEWAY_URL",
-        gatewayUrl,
-        homebasePath,
+      await uploadSecret({
+        secretName: "GATEWAY_URL",
+        secretValue: gatewayUrl,
+        cwd: gatewayPath,
         verbose,
-        `Setting GATEWAY_URL to: ${gatewayUrl}`,
-      );
+        description: `Setting GATEWAY_URL to: ${gatewayUrl}`,
+      });
     }
 
     // Check and setup BETTER_AUTH_SECRET
-    const betterAuthSecretExists = await secretExists(
-      "BETTER_AUTH_SECRET",
-      homebasePath,
+    const betterAuthSecretExists = await secretExists({
+      secretName: "BETTER_AUTH_SECRET",
+      cwd: gatewayPath,
       verbose,
-    );
+    });
     if (!betterAuthSecretExists) {
       const betterAuthSecret = generateBetterAuthSecret();
-      await uploadSecret(
-        "BETTER_AUTH_SECRET",
-        betterAuthSecret,
-        homebasePath,
+      await uploadSecret({
+        secretName: "BETTER_AUTH_SECRET",
+        secretValue: betterAuthSecret,
+        cwd: gatewayPath,
         verbose,
-        "Generating new Better Auth secret...",
-      );
+        description: "Generating new Better Auth secret...",
+      });
     }
 
     // Check and setup JWT key pair
-    const privateKeyExists = await secretExists(
-      "JWT_PRIVATE_KEY",
-      homebasePath,
+    const privateKeyExists = await secretExists({
+      secretName: "JWT_PRIVATE_KEY",
+      cwd: gatewayPath,
       verbose,
-    );
-    const publicKeyExists = await secretExists(
-      "JWT_PUBLIC_KEY",
-      homebasePath,
+    });
+    const publicKeyExists = await secretExists({
+      secretName: "JWT_PUBLIC_KEY",
+      cwd: gatewayPath,
       verbose,
-    );
+    });
 
     if (privateKeyExists && publicKeyExists) {
       if (verbose) {
@@ -91,18 +97,18 @@ export async function setupSecrets(
         console.log(chalk.dim("   Generating new JWT key pair...\n"));
       }
       const keyPair = generateJwtKeyPair();
-      await uploadSecret(
-        "JWT_PRIVATE_KEY",
-        keyPair.privateKey,
-        homebasePath,
+      await uploadSecret({
+        secretName: "JWT_PRIVATE_KEY",
+        secretValue: keyPair.privateKey,
+        cwd: gatewayPath,
         verbose,
-      );
-      await uploadSecret(
-        "JWT_PUBLIC_KEY",
-        keyPair.publicKey,
-        homebasePath,
+      });
+      await uploadSecret({
+        secretName: "JWT_PUBLIC_KEY",
+        secretValue: keyPair.publicKey,
+        cwd: gatewayPath,
         verbose,
-      );
+      });
       if (verbose) {
         console.log(chalk.green("Created JWT key pair secrets\n"));
       }

@@ -55,14 +55,14 @@ export default async function (
   let tempDir: string | null = null;
 
   try {
-    const { tempDir: clonedTempDir, targetDir } = await cloneTemplate(
+    const { tempDir: clonedTempDir, targetDir } = await cloneTemplate({
       appId,
       verbose,
-    );
+    });
     tempDir = clonedTempDir;
 
     // Update package.json with app name before deployment
-    await updatePackageJson(targetDir, appId);
+    await updatePackageJson({ targetDir, appId });
 
     // Write every-app.jsonc with the canonical appId
     await writeEveryAppConfig(targetDir, { appId });
@@ -76,10 +76,10 @@ export default async function (
     });
 
     // Local setup: create .env.local and run local migrations
-    await createEnvFiles(targetDir, appId);
-    await runLocalMigrations(targetDir, verbose);
+    await createEnvFiles({ targetDir, appId });
+    await runLocalMigrations({ targetDir, verbose });
 
-    printNextSteps(appId, targetDir, gatewayUrl, workerUrl);
+    printNextSteps({ appId, targetDir, gatewayUrl, workerUrl });
   } catch (error) {
     console.error(
       chalk.red("\nFailed to create project:"),
@@ -88,7 +88,7 @@ export default async function (
     throw error;
   } finally {
     if (tempDir) {
-      await cleanupTempDirectory(tempDir);
+      await cleanupTempDirectory({ tmpDir: tempDir });
     }
   }
 }

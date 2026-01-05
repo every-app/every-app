@@ -5,15 +5,22 @@ import { updateWranglerConfig } from "@/lib/wrangler-config";
 import { executeCommandWithFormatting } from "@/lib/formatting";
 import type { CloudflareResources } from "@/commands/gateway/deploy/types";
 
+interface UpdateConfigAndDeployOptions {
+  gatewayPath: string;
+  resources: CloudflareResources;
+  workerUrl: string;
+  verbose?: boolean;
+}
+
 /**
  * Update wrangler config with resources and deploy
  */
-export async function updateConfigAndDeploy(
-  gatewayPath: string,
-  resources: CloudflareResources,
-  workerUrl: string,
-  verbose: boolean = false,
-): Promise<void> {
+export async function updateConfigAndDeploy({
+  gatewayPath,
+  resources,
+  workerUrl,
+  verbose = false,
+}: UpdateConfigAndDeployOptions): Promise<void> {
   // Update the built wrangler.json with resource IDs
   // (wrangler uses .wrangler/deploy/config.json to read from dist/server/wrangler.json)
   const builtConfigPath = path.join(
@@ -48,5 +55,5 @@ export async function updateConfigAndDeploy(
   // New line
   console.log();
   // Set up secrets after the worker is deployed
-  await setupSecrets(workerUrl, gatewayPath, verbose);
+  await setupSecrets({ gatewayUrl: workerUrl, gatewayPath, verbose });
 }

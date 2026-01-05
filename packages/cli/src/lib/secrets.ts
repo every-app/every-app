@@ -18,14 +18,20 @@ async function listSecrets(cwd: string): Promise<SecretInfo[]> {
   return JSON.parse(stdout);
 }
 
+interface SecretExistsOptions {
+  secretName: string;
+  cwd: string;
+  verbose?: boolean;
+}
+
 /**
  * Check if a secret exists
  */
-export async function secretExists(
-  secretName: string,
-  cwd: string,
-  verbose: boolean = false,
-): Promise<boolean> {
+export async function secretExists({
+  secretName,
+  cwd,
+  verbose = false,
+}: SecretExistsOptions): Promise<boolean> {
   if (verbose) {
     console.log(chalk.dim(`   Checking secret: ${secretName}`));
   }
@@ -39,16 +45,24 @@ export async function secretExists(
   return exists;
 }
 
+interface UploadSecretOptions {
+  secretName: string;
+  secretValue: string;
+  cwd: string;
+  verbose?: boolean;
+  description?: string;
+}
+
 /**
  * Upload a secret to Cloudflare
  */
-export async function uploadSecret(
-  secretName: string,
-  secretValue: string,
-  cwd: string,
-  verbose: boolean = false,
-  description?: string,
-): Promise<void> {
+export async function uploadSecret({
+  secretName,
+  secretValue,
+  cwd,
+  verbose = false,
+  description,
+}: UploadSecretOptions): Promise<void> {
   if (verbose && description) {
     console.log(chalk.dim(`   ${description}\n`));
   }

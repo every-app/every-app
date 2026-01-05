@@ -13,16 +13,20 @@ async function isPnpmInstalled(): Promise<boolean> {
   }
 }
 
+interface InstallDependenciesOptions {
+  cwd: string;
+  description: string;
+  verbose?: boolean;
+}
+
 /**
  * Install dependencies using pnpm (either directly or via npx)
- * @param cwd - Directory to run installation in
- * @param verbose - Whether to show detailed output
  */
-export async function installDependencies(
-  cwd: string,
-  description: string,
-  verbose: boolean = false,
-): Promise<void> {
+export async function installDependencies({
+  cwd,
+  description,
+  verbose = false,
+}: InstallDependenciesOptions): Promise<void> {
   const hasPnpm = await isPnpmInstalled();
 
   try {

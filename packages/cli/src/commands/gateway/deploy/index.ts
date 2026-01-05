@@ -31,7 +31,7 @@ export async function deploy(
   // If they've never deployed a worker before, they'll need to choose a subdomain.
   await ensureWorkersDevSubdomain();
 
-  const resources = await setupCloudflareResources(verbose);
+  const resources = await setupCloudflareResources({ verbose });
 
   // Download prebuilt release
   const tmpDir = await createTempDirectory("gateway-deploy-");
@@ -49,10 +49,10 @@ export async function deploy(
     workerUrl = await getWorkerUrl(workerName);
 
     // Update config and deploy (secrets are set inside this function after vars are removed)
-    await updateConfigAndDeploy(gatewayPath, resources, workerUrl, verbose);
+    await updateConfigAndDeploy({ gatewayPath, resources, workerUrl, verbose });
 
     // Run database migrations
-    await runMigrations(gatewayPath, verbose);
+    await runMigrations({ gatewayPath, verbose });
   } catch (error) {
     console.error(
       "\nDeployment failed:",
@@ -60,7 +60,7 @@ export async function deploy(
     );
     throw error;
   } finally {
-    await cleanupTempDirectory(tmpDir, verbose);
+    await cleanupTempDirectory({ tmpDir, verbose });
   }
 
   if (!workerUrl)

@@ -1,13 +1,18 @@
 import chalk from "chalk";
 import { runWithRemoteD1 } from "@/lib/remote-d1";
 
+interface RunMigrationsOptions {
+  cwd: string;
+  verbose?: boolean;
+}
+
 /**
  * Run database migrations for the app
  */
-export async function runMigrations(
-  cwd: string,
-  verbose: boolean = false,
-): Promise<void> {
+export async function runMigrations({
+  cwd,
+  verbose = false,
+}: RunMigrationsOptions): Promise<void> {
   try {
     console.log();
     console.log(
