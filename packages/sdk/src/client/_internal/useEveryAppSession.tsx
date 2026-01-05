@@ -26,11 +26,7 @@ export function useEveryAppSession({
     if (!sessionManager) return;
     const interval = setInterval(() => {
       setSessionTokenState(sessionManager.getTokenState());
-    }, 1000);
-
-    const unsubscribe = sessionManager.onDebugEvent(() => {
-      setSessionTokenState(sessionManager.getTokenState());
-    });
+    }, 5000);
 
     sessionManager.getToken().catch((err) => {
       console.error("[EmbeddedProvider] Initial token request failed:", err);
@@ -38,7 +34,6 @@ export function useEveryAppSession({
 
     return () => {
       clearInterval(interval);
-      unsubscribe();
     };
   }, [sessionManager]);
 

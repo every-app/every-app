@@ -228,18 +228,12 @@ The server SDK is imported from `@every-app/sdk/server` and provides authenticat
 Verifies the JWT session token from incoming requests. This is the main function you'll use to authenticate users in your server functions.
 
 ```ts
-import { authenticateRequest } from "@every-app/sdk/server";
-
-const authConfig = {
-  jwksUrl: "", // Not used - JWKS is fetched from Gateway
-  issuer: env.GATEWAY_URL,
-  audience: "your-app-id",
-};
+import { authenticateRequest, getAuthConfig } from "@every-app/sdk/server";
 
 export const myServerFunction = createServerFn({ method: "GET" })
   .middleware([useSessionTokenClientMiddleware])
   .handler(async () => {
-    const session = await authenticateRequest(authConfig);
+    const session = await authenticateRequest(getAuthConfig());
 
     if (!session) {
       throw new Error("Unauthorized");
@@ -254,7 +248,6 @@ export const myServerFunction = createServerFn({ method: "GET" })
 
 ```ts
 interface AuthConfig {
-  jwksUrl: string; // Currently unused - JWKS fetched from Gateway
   issuer: string; // The Gateway URL (validates token issuer)
   audience: string; // Your app ID (validates token audience)
 }

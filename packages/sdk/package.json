@@ -1,6 +1,6 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "type": "module",
   "main": "./src/client/index.ts",
   "exports": {
@@ -14,7 +14,9 @@
   "scripts": {
     "types:check": "tsc --noEmit",
     "format:check": "prettier --check .",
-    "format:write": "prettier . --write"
+    "format:write": "prettier . --write",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "jsonc-parser": "^3.3.1"
@@ -35,6 +37,8 @@
     "prettier": "^3.6.2",
     "react": "^19.0.0",
     "typescript": "^5.9.3",
-    "vite": "^7.1.2"
+    "vite": "^7.1.2",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.4"
   }
 }

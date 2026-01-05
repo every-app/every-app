@@ -3,6 +3,12 @@ import path from "path";
 import { execSync } from "child_process";
 import { parse } from "jsonc-parser";
 
+function findSqliteFile(basePath: string): string | undefined {
+  return fs
+    .readdirSync(basePath, { encoding: "utf-8", recursive: true })
+    .find((f) => f.endsWith(".sqlite"));
+}
+
 export function getLocalD1Url() {
   const basePath = path.resolve(".wrangler");
 
@@ -22,9 +28,7 @@ export function getLocalD1Url() {
     return null;
   }
 
-  const dbFile = fs
-    .readdirSync(basePath, { encoding: "utf-8", recursive: true })
-    .find((f) => f.endsWith(".sqlite"));
+  let dbFile = findSqliteFile(basePath);
 
   if (!dbFile) {
     // Read wrangler.jsonc to get the database name
@@ -47,20 +51,14 @@ export function getLocalD1Url() {
     );
 
     // Try to find the db file again after initialization
-    const dbFileAfterInit = fs
-      .readdirSync(basePath, { encoding: "utf-8", recursive: true })
-      .find((f) => f.endsWith(".sqlite"));
+    dbFile = findSqliteFile(basePath);
 
-    if (!dbFileAfterInit) {
+    if (!dbFile) {
       throw new Error(
         `Failed to initialize local D1 database. The sqlite file was not created.`,
       );
     }
-
-    const url = path.resolve(basePath, dbFileAfterInit);
-    return url;
   }
 
-  const url = path.resolve(basePath, dbFile);
-  return url;
+  return path.resolve(basePath, dbFile);
 }

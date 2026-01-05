@@ -3,85 +3,91 @@ interface SessionToken {
   expiresAt: number;
 }
 
-export interface SessionManagerConfig {
-  appId: string;
-  debug?: boolean;
+interface TokenResponse {
+  token: string;
+  expiresAt?: string;
+  error?: string;
 }
 
+export interface SessionManagerConfig {
+  appId: string;
+}
+
+const MESSAGE_TIMEOUT_MS = 5000;
+const TOKEN_EXPIRY_BUFFER_MS = 10000;
+const DEFAULT_TOKEN_LIFETIME_MS = 60000;
+
 export class SessionManager {
+  readonly parentOrigin: string;
+  readonly appId: string;
+
   private token: SessionToken | null = null;
   private refreshPromise: Promise<string> | null = null;
-  private parentOrigin: string;
-  private appId: string;
-  private messageTimeout: number;
-  private debug: boolean;
-  private onError?: (error: Error) => void;
-  private pendingRequests = new Map<
-    string,
-    {
-      resolve: (token: string) => void;
-      reject: (error: Error) => void;
-      timeout: NodeJS.Timeout;
-    }
-  >();
 
   constructor(config: SessionManagerConfig) {
-    this.parentOrigin = import.meta.env.VITE_GATEWAY_URL;
-    this.messageTimeout = 5000;
-    this.debug = config.debug ?? false;
-
     if (!config.appId) {
       throw new Error("[SessionManager] appId is required.");
     }
-    this.appId = config.appId;
 
-    if (!this.parentOrigin) {
-      throw new Error(
-        "[SessionManager] Set the Parent Origin by specifying the VITE_GATEWAY_URL env var.",
-      );
+    const gatewayUrl = import.meta.env.VITE_GATEWAY_URL;
+    if (!gatewayUrl) {
+      throw new Error("[SessionManager] VITE_GATEWAY_URL env var is required.");
     }
 
     try {
-      new URL(this.parentOrigin);
+      new URL(gatewayUrl);
     } catch {
-      throw new Error(
-        `[SessionManager] Invalid parent origin URL: ${this.parentOrigin}`,
-      );
+      throw new Error(`[SessionManager] Invalid gateway URL: ${gatewayUrl}`);
     }
 
-    this.setupMessageListener();
+    this.appId = config.appId;
+    this.parentOrigin = gatewayUrl;
   }
 
-  private log(message: string, data?: unknown) {
-    if (this.debug) {
-      console.log(`[SessionManager - Logger] ${message}`, data);
-    }
-  }
-
-  private setupMessageListener() {
-    if (typeof window === "undefined") return;
-
-    window.addEventListener("message", (event) => {
-      if (event.origin !== this.parentOrigin) {
-        this.log("Message rejected due to origin mismatch", {
-          expected: this.parentOrigin,
-          received: event.origin,
-        });
-        return;
-      }
-
-      this.log("Accepted message from parent", event.data);
-    });
-  }
-
-  private isTokenExpired(): boolean {
-    if (!this.token) return true;
-    return Date.now() >= this.token.expiresAt;
-  }
-
-  private isTokenExpiringSoon(bufferMs: number = 10000): boolean {
+  private isTokenExpiringSoon(
+    bufferMs: number = TOKEN_EXPIRY_BUFFER_MS,
+  ): boolean {
     if (!this.token) return true;
     return Date.now() >= this.token.expiresAt - bufferMs;
+  }
+
+  private postMessageWithResponse<T>(
+    request: object,
+    responseType: string,
+    requestId: string,
+  ): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timeout);
+        window.removeEventListener("message", handler);
+      };
+
+      const handler = (event: MessageEvent) => {
+        // Security: reject messages from wrong origin (including null from sandboxed iframes)
+        if (event.origin !== this.parentOrigin) return;
+        // Safety: ignore malformed messages that could crash the handler
+        if (!event.data || typeof event.data !== "object") return;
+        if (
+          event.data.type === responseType &&
+          event.data.requestId === requestId
+        ) {
+          cleanup();
+          if (event.data.error) {
+            reject(new Error(event.data.error));
+          } else {
+            resolve(event.data as T);
+          }
+        }
+      };
+
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error("Token request timeout - parent did not respond"));
+      }, MESSAGE_TIMEOUT_MS);
+
+      window.addEventListener("message", handler);
+      window.parent.postMessage(request, this.parentOrigin);
+    });
   }
 
   async requestNewToken(): Promise<string> {
@@ -89,97 +95,39 @@ export class SessionManager {
       return this.refreshPromise;
     }
 
-    this.refreshPromise = new Promise((resolve, reject) => {
-      const requestId = Date.now().toString();
+    this.refreshPromise = (async () => {
+      const requestId = crypto.randomUUID();
 
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(requestId);
-        this.log(`Token request #${requestId} timed out`);
-        const error = new Error(
-          "Token refresh timeout - parent did not respond",
-        );
-        this.onError?.(error);
-        reject(error);
-      }, this.messageTimeout);
-
-      this.pendingRequests.set(requestId, { resolve, reject, timeout });
-
-      const messageHandler = (event: MessageEvent) => {
-        if (event.origin !== this.parentOrigin) {
-          this.log("Ignoring message from unexpected origin", {
-            expected: this.parentOrigin,
-            received: event.origin,
-          });
-          return;
-        }
-
-        this.log(`Received message for request #${requestId}`, event.data);
-
-        if (
-          event.data.type === "SESSION_TOKEN_RESPONSE" &&
-          event.data.requestId === requestId
-        ) {
-          clearTimeout(timeout);
-          window.removeEventListener("message", messageHandler);
-
-          if (event.data.error) {
-            this.log(`Token request #${requestId} failed`, {
-              error: event.data.error,
-            });
-            const error = new Error(event.data.error);
-            this.onError?.(error);
-            reject(error);
-            return;
-          }
-
-          if (!event.data.token) {
-            this.log(
-              `Token request #${requestId} failed - no token in response`,
-            );
-            const error = new Error("No token in response");
-            this.onError?.(error);
-            reject(error);
-            return;
-          }
-
-          this.token = {
-            token: event.data.token,
-            expiresAt: event.data.expiresAt
-              ? new Date(event.data.expiresAt).getTime()
-              : Date.now() + 60000,
-          };
-
-          this.log(`Token #${requestId} received successfully`, {
-            expiresAt: new Date(this.token.expiresAt).toISOString(),
-          });
-          resolve(this.token.token);
-        }
-      };
-
-      window.addEventListener("message", messageHandler);
-
-      this.log(
-        `Requesting new session token #${requestId} for app "${this.appId}"`,
+      const response = await this.postMessageWithResponse<TokenResponse>(
+        {
+          type: "SESSION_TOKEN_REQUEST",
+          requestId,
+          appId: this.appId,
+        },
+        "SESSION_TOKEN_RESPONSE",
+        requestId,
       );
 
-      // Fire-and-forget postMessage to the parent
-      try {
-        window.parent.postMessage(
-          {
-            type: "SESSION_TOKEN_REQUEST",
-            requestId: requestId,
-            appId: this.appId,
-          },
-          this.parentOrigin,
-        );
-        this.log(`Message sent for token request #${requestId}`, {
-          targetOrigin: this.parentOrigin,
-        });
-      } catch (e) {
-        this.log(`postMessage failed for token request #${requestId}`, e);
-        // We don't reject the promise here because the timeout will handle it
+      if (!response.token) {
+        throw new Error("No token in response");
       }
-    });
+
+      // Parse expiresAt, falling back to default lifetime if invalid
+      let expiresAt = Date.now() + DEFAULT_TOKEN_LIFETIME_MS;
+      if (response.expiresAt) {
+        const parsed = new Date(response.expiresAt).getTime();
+        if (!Number.isNaN(parsed)) {
+          expiresAt = parsed;
+        }
+      }
+
+      this.token = {
+        token: response.token,
+        expiresAt,
+      };
+
+      return this.token.token;
+    })();
 
     try {
       return await this.refreshPromise;
@@ -189,27 +137,10 @@ export class SessionManager {
   }
 
   async getToken(): Promise<string> {
-    // If token is expired or expiring soon (within 10 seconds), get a new one
-    if (this.isTokenExpiringSoon() || !this.token) {
-      this.log("Token expired or expiring soon, requesting new token", {
-        hasToken: !!this.token,
-        expiresAt: this.token
-          ? new Date(this.token.expiresAt).toISOString()
-          : "N/A",
-        timeUntilExpiry: this.token ? this.token.expiresAt - Date.now() : "N/A",
-      });
+    if (this.isTokenExpiringSoon()) {
       return this.requestNewToken();
     }
-
-    return this.token.token;
-  }
-
-  getParentOrigin(): string {
-    return this.parentOrigin;
-  }
-
-  getAppId(): string {
-    return this.appId;
+    return this.token!.token;
   }
 
   getTokenState(): {
@@ -224,23 +155,11 @@ export class SessionManager {
       return { status: "NO_TOKEN", token: null };
     }
 
-    if (this.isTokenExpired()) {
+    if (this.isTokenExpiringSoon(0)) {
       return { status: "EXPIRED", token: this.token.token };
     }
 
     return { status: "VALID", token: this.token.token };
-  }
-
-  onDebugEvent(callback: () => void): () => void {
-    // For now, we'll create a simple event system
-    // In a more complete implementation, you might want to emit events at various points
-    const intervalId = setInterval(() => {
-      // This will trigger the callback periodically to update the UI
-      callback();
-    }, 5000);
-
-    // Return an unsubscribe function
-    return () => clearInterval(intervalId);
   }
 
   /**
@@ -253,20 +172,13 @@ export class SessionManager {
     }
 
     try {
-      // JWT structure: header.payload.signature
       const parts = this.token.token.split(".");
       if (parts.length !== 3) {
-        this.log("Invalid JWT format - expected 3 parts", {
-          parts: parts.length,
-        });
         return null;
       }
 
-      // Decode the payload (second part)
       const payload = JSON.parse(atob(parts[1]));
-
       if (!payload.sub) {
-        this.log("JWT payload missing 'sub' claim");
         return null;
       }
 
@@ -274,8 +186,7 @@ export class SessionManager {
         userId: payload.sub,
         email: payload.email ?? "",
       };
-    } catch (error) {
-      this.log("Failed to decode JWT", error);
+    } catch {
       return null;
     }
   }

@@ -41,7 +41,6 @@ export async function authenticateRequest(
   try {
     const session = await verifySessionToken(token, authConfig);
     return session;
-    // TODO Is there a way to handle this more gracefully?
   } catch (error) {
     console.error(
       JSON.stringify({
@@ -49,7 +48,8 @@ export async function authenticateRequest(
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
         errorType: error instanceof Error ? error.constructor.name : "Unknown",
-        authConfig,
+        issuer: authConfig.issuer,
+        audience: authConfig.audience,
       }),
     );
     return null;
@@ -70,9 +70,7 @@ async function verifySessionToken(
     throw new Error("Audience must be provided for token verification");
   }
 
-  // TODO Maybe we don't even need this if we just store the jwks as an env when we deploy
-  // But, the limitation of these services not being able to talk to each other will be frustrating.
-  // I wonder if there is a better abstraction to wrap this dynamic fetching and link all the services together.
+  // Fetch JWKS - use service binding in production, direct fetch in development
   const jwksResponse =
     import.meta.env.PROD && env.EVERY_APP_GATEWAY
       ? await env.EVERY_APP_GATEWAY.fetch("http://localhost/api/embedded/jwks")
@@ -90,13 +88,20 @@ async function verifySessionToken(
   const options: JWTVerifyOptions = {
     issuer,
     audience,
+    algorithms: ["RS256"],
   };
 
   const { payload } = await jwtVerify(token, localJWKS, options);
   return payload as SessionTokenPayload;
 }
 
-function extractBearerToken(authHeader: string | null): string | null {
+/**
+ * Extracts the bearer token from an Authorization header.
+ *
+ * @param authHeader - The Authorization header value (e.g., "Bearer eyJ...")
+ * @returns The token string if valid, null otherwise
+ */
+export function extractBearerToken(authHeader: string | null): string | null {
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return null;
   }

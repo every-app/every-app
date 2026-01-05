@@ -12,7 +12,7 @@ export function useEveryAppRouter({ sessionManager }: UseEveryAppRouterParams) {
     if (!sessionManager) return;
     // Listen for route sync messages from parent
     const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== sessionManager.getParentOrigin()) return;
+      if (event.origin !== sessionManager.parentOrigin) return;
 
       if (
         event.data.type === "ROUTE_CHANGE" &&
@@ -48,10 +48,10 @@ export function useEveryAppRouter({ sessionManager }: UseEveryAppRouterParams) {
           {
             type: "ROUTE_CHANGE",
             route: currentPath,
-            appId: sessionManager.getAppId(),
+            appId: sessionManager.appId,
             direction: "child-to-parent",
           },
-          sessionManager.getParentOrigin(),
+          sessionManager.parentOrigin,
         );
       }
     };

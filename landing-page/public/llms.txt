@@ -862,16 +862,10 @@ Verifies the JWT session token from incoming requests. This is the main function
 
 ```ts
 
-const authConfig = {
-  jwksUrl: "", // Not used - JWKS is fetched from Gateway
-  issuer: env.GATEWAY_URL,
-  audience: "your-app-id",
-};
-
 export const myServerFunction = createServerFn({ method: "GET" })
   .middleware([useSessionTokenClientMiddleware])
   .handler(async () => {
-    const session = await authenticateRequest(authConfig);
+    const session = await authenticateRequest(getAuthConfig());
 
     if (!session) {
       throw new Error("Unauthorized");
@@ -886,7 +880,6 @@ export const myServerFunction = createServerFn({ method: "GET" })
 
 ```ts
 interface AuthConfig {
-  jwksUrl: string; // Currently unused - JWKS fetched from Gateway
   issuer: string; // The Gateway URL (validates token issuer)
   audience: string; // Your app ID (validates token audience)
 }
