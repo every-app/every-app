@@ -4,10 +4,67 @@ import {
   SessionTokenRequestSchema,
   SessionTokenResponseMessage,
 } from "./embedded-app-types";
-import {
-  isValidAppOrigin,
-  formatExpectedOrigins,
-} from "@/utils/origin-validator";
+import { isValidAppOrigin } from "@/utils/origin-validator";
+
+/**
+ * Minimal app config needed for token request validation.
+ * This is a subset of UserApp to make testing easier.
+ */
+export interface AppConfig {
+  appId: string;
+  appUrl: string;
+  devUrl?: string | null;
+}
+
+/**
+ * Result of validating a token request.
+ */
+type TokenRequestValidationResult =
+  | { valid: true; appId: string; requestId: string; appConfig: AppConfig }
+  | { valid: false; reason: string };
+
+/**
+ * Pure validation function for token requests.
+ * Validates that:
+ * 1. The message has the correct schema
+ * 2. The appId is provided and exists in userApps
+ * 3. The request origin matches the app's configured URL
+ *
+ * This is the security-critical function that prevents cross-app token theft.
+ */
+export function validateTokenRequest(
+  origin: string,
+  data: unknown,
+  userApps: AppConfig[] | undefined,
+): TokenRequestValidationResult {
+  // Validate the incoming message schema
+  const parseResult = SessionTokenRequestSchema.safeParse(data);
+  if (!parseResult.success) {
+    return { valid: false, reason: "invalid_schema" };
+  }
+
+  const { requestId, appId } = parseResult.data;
+
+  // Validate that appId is provided
+  if (!appId) {
+    return { valid: false, reason: "missing_app_id" };
+  }
+
+  // Find the app config from user apps
+  const appConfig = userApps?.find((a) => a.appId === appId);
+
+  if (!appConfig || !appConfig.appUrl) {
+    return { valid: false, reason: "unknown_app" };
+  }
+
+  // Validate origin matches the app's configured URL (production or dev)
+  // This is the critical security check that prevents cross-app attacks
+  if (!isValidAppOrigin(origin, appConfig.appUrl, appConfig.devUrl)) {
+    return { valid: false, reason: "origin_mismatch" };
+  }
+
+  return { valid: true, appId, requestId, appConfig };
+}
 
 /**
  * Handles session token requests from embedded apps
@@ -19,47 +76,23 @@ export async function handleSessionTokenRequest(
   event: MessageEvent,
   userApps: UserApp[] | undefined,
 ): Promise<SessionTokenResponseMessage | null> {
-  // Validate the incoming message first to get appId
-  const parseResult = SessionTokenRequestSchema.safeParse(event.data);
-  if (!parseResult.success) {
-    // Ignore react devtools messages
-    if (event.data?.source?.startsWith("react-")) {
-      return null;
+  // Ignore react devtools messages
+  if (event.data?.source?.startsWith("react-")) {
+    return null;
+  }
+
+  const validation = validateTokenRequest(event.origin, event.data, userApps);
+
+  if (!validation.valid) {
+    if (validation.reason !== "invalid_schema") {
+      console.warn(
+        `[session-token-handler] Message rejected: ${validation.reason}`,
+      );
     }
     return null;
   }
 
-  const { requestId, appId } = parseResult.data;
-
-  // Validate that appId is provided
-  if (!appId) {
-    console.warn(
-      `[session-token-handler] Message rejected - missing appId in request`,
-    );
-    return null;
-  }
-
-  // Find the app config from either user apps or marketplace apps
-  const appConfig = userApps?.find((a) => a.appId === appId);
-
-  if (!appConfig || !appConfig.appUrl) {
-    console.warn(
-      `[session-token-handler] Message rejected - unknown or misconfigured app: ${appId}`,
-    );
-    return null;
-  }
-
-  // Validate origin matches the app's configured URL (production or dev)
-  if (!isValidAppOrigin(event.origin, appConfig.appUrl, appConfig.devUrl)) {
-    const expectedOrigins = formatExpectedOrigins(
-      appConfig.appUrl,
-      appConfig.devUrl,
-    );
-    console.warn(
-      `[session-token-handler] Message rejected from unexpected origin: ${event.origin} (expected: ${expectedOrigins} for app: ${appId})`,
-    );
-    return null;
-  }
+  const { appId, requestId } = validation;
 
   // Generate and return session token
   try {

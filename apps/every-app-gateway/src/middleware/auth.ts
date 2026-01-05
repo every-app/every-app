@@ -2,6 +2,34 @@ import { createAuth, type Auth } from "@/auth";
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 
+type UserRole = "owner" | "user" | "admin";
+
+/**
+ * Checks if a user has the owner role.
+ * Used by ownerMiddleware to restrict access to owner-only endpoints.
+ *
+ * @param role - The user's role from their session
+ * @returns true if the user is an owner
+ */
+function isOwner(role: string | undefined | null): boolean {
+  return role === "owner";
+}
+
+/**
+ * Checks if a user has one of the allowed roles.
+ *
+ * @param role - The user's role from their session
+ * @param allowedRoles - Array of roles that are permitted
+ * @returns true if the user's role is in the allowed list
+ */
+function hasRole(
+  role: string | undefined | null,
+  allowedRoles: UserRole[],
+): boolean {
+  if (!role) return false;
+  return allowedRoles.includes(role as UserRole);
+}
+
 export interface AuthContext {
   user: Auth["$Infer"]["Session"]["user"];
   session: Auth["$Infer"]["Session"]["session"];
@@ -40,7 +68,7 @@ export const ownerMiddleware = createMiddleware({
 })
   .middleware([authMiddleware])
   .server(async ({ next, context }) => {
-    if (context.user.role !== "owner") {
+    if (!isOwner(context.user.role)) {
       throw new Error("Unauthorized: Owner access required");
     }
 

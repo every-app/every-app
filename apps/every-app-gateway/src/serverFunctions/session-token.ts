@@ -19,6 +19,31 @@ const SessionTokenRequestBodySchema = z.object({
   timestamp: z.number(), // For preventing replay attacks
 });
 
+// Timestamp validation constants
+// Used to prevent replay attacks where an attacker could intercept and replay
+// a token request to gain unauthorized access. By requiring fresh timestamps,
+// captured requests become useless after 30 seconds.
+const STALE_REQUEST_MAX_AGE_MS = 30000; // 30 seconds
+const CLOCK_SKEW_TOLERANCE_MS = 5000; // 5 seconds tolerance for clock skew
+
+/**
+ * Validates that a timestamp is fresh enough to prevent replay attacks.
+ *
+ * @param timestamp - Unix timestamp in milliseconds from the request
+ * @param now - Current time (injectable for testing, defaults to Date.now())
+ * @returns true if timestamp is within acceptable range
+ */
+function isTimestampValid(
+  timestamp: number,
+  now: number = Date.now(),
+): boolean {
+  const age = now - timestamp;
+
+  // Allow for some clock skew - timestamp can be slightly in the future
+  // or up to STALE_REQUEST_MAX_AGE_MS in the past
+  return age >= -CLOCK_SKEW_TOLERANCE_MS && age <= STALE_REQUEST_MAX_AGE_MS;
+}
+
 type SessionTokenResponse = {
   token: string;
   expiresAt: string;
@@ -30,23 +55,6 @@ type SessionTokenResponse = {
     name?: string;
   };
 };
-
-// Timestamp validation constants
-// Used to prevent replay attacks where an attacker could intercept and replay
-// a token request to gain unauthorized access. By requiring fresh timestamps,
-// captured requests become useless after 30 seconds.
-const STALE_REQUEST_MAX_AGE_MS = 30000; // 30 seconds
-const CLOCK_SKEW_TOLERANCE_MS = 5000; // 5 seconds tolerance for clock skew
-
-// Helper to validate timestamp for preventing replay attacks
-function isTimestampValid(timestamp: number): boolean {
-  const now = Date.now();
-  const age = now - timestamp;
-
-  // Allow for some clock skew - timestamp can be slightly in the future
-  // or up to STALE_REQUEST_MAX_AGE_MS in the past
-  return age >= -CLOCK_SKEW_TOLERANCE_MS && age <= STALE_REQUEST_MAX_AGE_MS;
-}
 
 export const createSessionToken = createServerFn()
   .middleware([authMiddleware])
