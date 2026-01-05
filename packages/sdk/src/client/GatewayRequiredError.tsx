@@ -11,12 +11,6 @@ interface GatewayRequiredErrorProps {
   appId: string;
 }
 
-// Button gradient styles
-const BUTTON_GRADIENT =
-  "linear-gradient(180deg, #424242 0%, #353535 50%, #2a2a2a 100%)";
-const BUTTON_GRADIENT_HOVER =
-  "linear-gradient(180deg, #4d4d4d 0%, #404040 50%, #353535 100%)";
-
 // CSS custom properties for theming
 const CSS_VARIABLES = `
   @media (prefers-color-scheme: light) {
@@ -25,7 +19,7 @@ const CSS_VARIABLES = `
       --gateway-text: oklch(0% 0 0);
       --gateway-text-muted: oklch(40% 0 0);
       --gateway-icon-bg: oklch(94% 0 0);
-      --gateway-icon-stroke: oklch(55% 0.22 25);
+      --gateway-icon-stroke: oklch(80% 0.18 90);
       --gateway-border: oklch(94% 0 0);
     }
   }
@@ -35,7 +29,7 @@ const CSS_VARIABLES = `
       --gateway-text: oklch(92% 0 0);
       --gateway-text-muted: oklch(60% 0 0);
       --gateway-icon-bg: oklch(22% 0 0);
-      --gateway-icon-stroke: oklch(65% 0.2 25);
+      --gateway-icon-stroke: oklch(85% 0.18 90);
       --gateway-border: oklch(30% 0 0);
     }
   }
@@ -84,16 +78,20 @@ const styles = {
     color: "var(--gateway-text-muted, oklch(40% 0 0))",
     marginBottom: "20px",
   } satisfies CSSProperties,
-  button: {
-    display: "inline-block",
-    padding: "10px 20px",
+  link: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
     fontSize: "14px",
     fontWeight: 500,
-    color: "#ffffff",
-    background: BUTTON_GRADIENT,
-    borderRadius: "0.25rem",
-    textDecoration: "none",
-    border: "none",
+    lineHeight: "24px",
+    color: "rgb(168, 162, 158)",
+    textDecoration: "underline",
+    textDecorationColor: "rgb(87, 83, 78)",
+    textUnderlineOffset: "4px",
+    cursor: "pointer",
+    transition:
+      "color, background-color, border-color, text-decoration-color, fill, stroke 0.15s cubic-bezier(0.4, 0, 0.2, 1)",
   } satisfies CSSProperties,
 };
 
@@ -108,7 +106,6 @@ export function GatewayRequiredError({
   gatewayOrigin,
   appId,
 }: GatewayRequiredErrorProps) {
-  const displayName = appId || "This app";
   const gatewayUrl = `${gatewayOrigin}/apps/${appId}${window.location.pathname}`;
 
   return (
@@ -134,26 +131,30 @@ export function GatewayRequiredError({
         </div>
 
         {/* Title */}
-        <h1 style={styles.title}>Gateway Required</h1>
+        <h1 style={styles.title}>Open in Gateway</h1>
 
         {/* Description */}
         <p style={styles.description}>
-          {displayName} needs to be accessed through the Gateway for
-          authentication to work properly.
+          The Gateway handles sign in and user auth. Access your app from there
+          so this works properly.
         </p>
 
-        {/* Redirect Link/Button - Metallic style */}
-        <a
-          href={gatewayUrl}
-          style={styles.button}
-          onMouseOver={(e) => {
-            e.currentTarget.style.background = BUTTON_GRADIENT_HOVER;
-          }}
-          onMouseOut={(e) => {
-            e.currentTarget.style.background = BUTTON_GRADIENT;
-          }}
-        >
-          Open in Gateway
+        {/* Redirect Link */}
+        <a href={gatewayUrl} style={styles.link}>
+          Go to Gateway
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="5" y1="12" x2="19" y2="12" />
+            <polyline points="12 5 19 12 12 19" />
+          </svg>
         </a>
       </div>
     </div>
