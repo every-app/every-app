@@ -24,6 +24,9 @@ export function useEveryAppSession({
 
   useEffect(() => {
     if (!sessionManager) return;
+    // Skip token requests when not in iframe - the app will show GatewayRequiredError instead
+    if (!sessionManager.isInIframe) return;
+
     const interval = setInterval(() => {
       setSessionTokenState(sessionManager.getTokenState());
     }, 5000);

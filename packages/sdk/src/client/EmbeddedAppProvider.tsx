@@ -2,6 +2,7 @@ import React, { createContext, useContext, useMemo } from "react";
 import { SessionManager, SessionManagerConfig } from "./session-manager";
 import { useEveryAppSession } from "./_internal/useEveryAppSession";
 import { useEveryAppRouter } from "./_internal/useEveryAppRouter";
+import { GatewayRequiredError } from "./GatewayRequiredError";
 
 interface EmbeddedProviderConfig extends SessionManagerConfig {
   children: React.ReactNode;
@@ -25,6 +26,16 @@ export function EmbeddedAppProvider({
   useEveryAppRouter({ sessionManager });
 
   if (!sessionManager) return null;
+
+  // Check if the app is running outside of the Gateway iframe
+  if (!sessionManager.isInIframe) {
+    return (
+      <GatewayRequiredError
+        gatewayOrigin={sessionManager.parentOrigin}
+        appId={config.appId}
+      />
+    );
+  }
 
   const value: EmbeddedAppContextValue = {
     sessionManager,

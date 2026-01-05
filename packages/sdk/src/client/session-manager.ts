@@ -17,9 +17,24 @@ const MESSAGE_TIMEOUT_MS = 5000;
 const TOKEN_EXPIRY_BUFFER_MS = 10000;
 const DEFAULT_TOKEN_LIFETIME_MS = 60000;
 
+/**
+ * Detects whether the current window is running inside an iframe.
+ * Returns true if in an iframe, false if running as top-level window.
+ */
+export function isRunningInIframe(): boolean {
+  try {
+    return window.self !== window.top;
+  } catch {
+    // If we can't access window.top due to cross-origin restrictions,
+    // we're definitely in an iframe
+    return true;
+  }
+}
+
 export class SessionManager {
   readonly parentOrigin: string;
   readonly appId: string;
+  readonly isInIframe: boolean;
 
   private token: SessionToken | null = null;
   private refreshPromise: Promise<string> | null = null;
@@ -42,6 +57,7 @@ export class SessionManager {
 
     this.appId = config.appId;
     this.parentOrigin = gatewayUrl;
+    this.isInIframe = isRunningInIframe();
   }
 
   private isTokenExpiringSoon(

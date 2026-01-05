@@ -1,6 +1,6 @@
 {
   "name": "every-app-gateway",
-  "version": "0.0.25",
+  "version": "0.0.26",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -22,7 +22,7 @@
     "db:studio:local": "drizzle-kit studio",
     "db:studio:prod": "every app remote-d1-shell -- drizzle-kit studio --config=drizzle-prod.config.ts",
     "knip": "knip",
-    "test": "vitest run",
+    "test": "vitest run --silent",
     "test:watch": "vitest"
   },
   "dependencies": {

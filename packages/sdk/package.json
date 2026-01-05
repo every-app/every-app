@@ -1,6 +1,6 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "type": "module",
   "main": "./dist/client/index.js",
   "types": "./dist/client/index.d.ts",
@@ -27,7 +27,7 @@
     "types:check": "tsc --noEmit",
     "format:check": "prettier --check .",
     "format:write": "prettier . --write",
-    "test": "vitest run",
+    "test": "vitest run --silent",
     "test:watch": "vitest"
   },
   "dependencies": {
