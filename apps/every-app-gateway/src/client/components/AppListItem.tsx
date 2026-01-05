@@ -5,7 +5,6 @@ import type { UserApp } from "@/types/user-app";
 interface AppListItemProps {
   app: UserApp;
   onNavigate: () => void;
-  onNavigateDev: () => void;
   onEdit: () => void;
   onDelete: () => void;
 }
@@ -13,7 +12,6 @@ interface AppListItemProps {
 export function AppListItem({
   app,
   onNavigate,
-  onNavigateDev,
   onEdit,
   onDelete,
 }: AppListItemProps) {
@@ -39,18 +37,6 @@ export function AppListItem({
           onMouseEnter={() => setIsInteractingWithControls(true)}
           onMouseLeave={() => setIsInteractingWithControls(false)}
         >
-          {app.devUrl && (
-            <button
-              className="btn btn-sm btn-ghost gap-1 hidden sm:flex"
-              onClick={(e) => {
-                e.stopPropagation();
-                onNavigateDev();
-              }}
-            >
-              <Code className="w-3 h-3" />
-              Dev
-            </button>
-          )}
           <div
             className="dropdown dropdown-end relative z-10 hidden sm:block"
             onClick={(e) => e.stopPropagation()}
@@ -68,6 +54,32 @@ export function AppListItem({
                 </button>
               </li>
             </ul>
+          </div>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+interface DevAppListItemProps {
+  app: UserApp;
+  onNavigate: () => void;
+}
+
+export function DevAppListItem({ app, onNavigate }: DevAppListItemProps) {
+  return (
+    <li
+      className="ml-6 border-l-2 border-primary rounded-r-lg bg-base-100 border-y border-r border-y-base-content/20 border-r-base-content/20 transition-all cursor-pointer hover:bg-base-200 hover:border-y-base-400 hover:border-r-base-400 hover:shadow-md"
+      onClick={onNavigate}
+    >
+      <div className="flex items-center justify-between p-3 pl-4">
+        <div className="flex items-center gap-3 flex-1">
+          <Code className="w-4 h-4 text-primary" />
+          <div>
+            <div className="font-medium text-sm">Dev</div>
+            <div className="text-xs text-base-content/50 truncate max-w-[200px] sm:max-w-none">
+              {app.devUrl}
+            </div>
           </div>
         </div>
       </div>
