@@ -127,31 +127,25 @@ function AppLayout() {
   useLiveQuery((q) => q.from({ session: sessionsCollection }));
   useLiveQuery((q) => q.from({ setLog: setLogsCollection }));
 
-  if (isMobile) {
-    return (
-      <div className="flex flex-col h-screen bg-base-200">
-        <div
-          className="main-content flex-1 overflow-auto"
-          style={{
-            paddingBottom: "80px",
-          }}
-        >
-          <div className="max-w-2xl mx-auto">
-            <Outlet />
-          </div>
-        </div>
-        <TabBar currentPath={location.pathname} />
-      </div>
-    );
-  }
-
+  // Use CSS-based responsive design to avoid hydration mismatch
+  // The same HTML structure is rendered on server and client
   return (
-    <div className="flex h-screen bg-base-200">
-      <Sidebar currentPath={location.pathname} />
-      <div className="main-content flex-1 overflow-auto">
+    <div className="flex flex-col md:flex-row h-screen bg-base-200">
+      {/* Desktop: Sidebar */}
+      <div className="hidden md:block">
+        <Sidebar currentPath={location.pathname} />
+      </div>
+
+      {/* Main content */}
+      <div className="main-content flex-1 overflow-auto pb-[80px] md:pb-0">
         <div className="max-w-2xl mx-auto">
           <Outlet />
         </div>
+      </div>
+
+      {/* Mobile: TabBar */}
+      <div className="md:hidden">
+        <TabBar currentPath={location.pathname} />
       </div>
     </div>
   );
