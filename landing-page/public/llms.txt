@@ -55,11 +55,12 @@ This guide walks through self hosting the Gateway and your first app.
 
 1. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) (free, no credit card required)
 
-2. Login via the Cloudflare CLI:
-
-   ```bash
-   npx wrangler login
-   ```
+2. Authenticate with Cloudflare (choose one):
+   - Login via the Cloudflare CLI (recommended):
+     ```bash
+     npx wrangler login
+     ```
+   - Or set the `CLOUDFLARE_API_TOKEN` environment variable
 
 ## Self Host the Gateway
 

@@ -1,44 +1,51 @@
-import { execa } from "execa";
 import type { KVNamespace, KVNamespaceResult } from "./types";
+import { makeCloudflareAPIRequest } from "./auth";
 
-/**
- * List all KV namespaces in the account
- */
-async function listKVNamespaces(): Promise<KVNamespace[]> {
-  const { stdout } = await execa("npx", [
-    "wrangler",
-    "kv",
-    "namespace",
-    "list",
-  ]);
-  return JSON.parse(stdout);
+interface KVNamespaceAPIResponse {
+  id: string;
+  title: string;
+  supports_url_encoding?: boolean;
 }
 
 /**
- * Create a new KV namespace
+ * List all KV namespaces in the account using the Cloudflare REST API
+ * GET /accounts/{account_id}/storage/kv/namespaces
+ * Uses per_page=1000 to minimize pagination issues
+ */
+async function listKVNamespaces(accountId: string): Promise<KVNamespace[]> {
+  const result = await makeCloudflareAPIRequest<KVNamespaceAPIResponse[]>(
+    `/accounts/${accountId}/storage/kv/namespaces?per_page=1000`,
+  );
+
+  // Map API response to our KVNamespace type
+  return result.map((ns) => ({
+    id: ns.id,
+    title: ns.title,
+  }));
+}
+
+/**
+ * Create a new KV namespace using the Cloudflare REST API
+ * POST /accounts/{account_id}/storage/kv/namespaces
  * @returns The namespace ID
  */
-async function createKVNamespace(namespaceName: string): Promise<string> {
-  const { stdout } = await execa("npx", [
-    "wrangler",
-    "kv",
-    "namespace",
-    "create",
-    namespaceName,
-  ]);
+async function createKVNamespace(
+  namespaceName: string,
+  accountId: string,
+): Promise<string> {
+  const result = await makeCloudflareAPIRequest<KVNamespaceAPIResponse>(
+    `/accounts/${accountId}/storage/kv/namespaces`,
+    {
+      method: "POST",
+      body: JSON.stringify({ title: namespaceName }),
+    },
+  );
 
-  return parseKVNamespaceId(stdout);
-}
-
-/**
- * Parse the namespace ID from wrangler output
- */
-function parseKVNamespaceId(output: string): string {
-  const idMatch = output.match(/"id":\s*"([a-f0-9]+)"/);
-  if (!idMatch || !idMatch[1]) {
-    throw new Error("Failed to parse namespace ID from wrangler output");
+  if (!result || !result.id) {
+    throw new Error("Failed to create KV namespace: no ID returned");
   }
-  return idMatch[1];
+
+  return result.id;
 }
 
 /**
@@ -47,11 +54,10 @@ function parseKVNamespaceId(output: string): string {
  */
 export async function getOrCreateKVNamespace(
   namespaceName: string,
+  accountId: string,
 ): Promise<KVNamespaceResult> {
-  const namespaces = await listKVNamespaces();
-  const existingNamespace = namespaces.find(
-    (ns) => ns.title === namespaceName,
-  );
+  const namespaces = await listKVNamespaces(accountId);
+  const existingNamespace = namespaces.find((ns) => ns.title === namespaceName);
 
   if (existingNamespace) {
     return {
@@ -61,7 +67,7 @@ export async function getOrCreateKVNamespace(
     };
   }
 
-  const namespaceId = await createKVNamespace(namespaceName);
+  const namespaceId = await createKVNamespace(namespaceName, accountId);
   return {
     id: namespaceId,
     name: namespaceName,

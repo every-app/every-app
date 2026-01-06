@@ -24,8 +24,16 @@ export async function setupCloudflareResources({
 
   const accountId = await getDefaultAccountId();
 
-  const d1DatabaseId = await setupD1Database(D1_DATABASE_NAME, verbose);
-  const kvNamespaceId = await setupKVNamespace(KV_NAMESPACE_NAME, verbose);
+  const d1DatabaseId = await setupD1Database(
+    D1_DATABASE_NAME,
+    accountId,
+    verbose,
+  );
+  const kvNamespaceId = await setupKVNamespace(
+    KV_NAMESPACE_NAME,
+    accountId,
+    verbose,
+  );
 
   return {
     d1DatabaseId,
@@ -40,13 +48,14 @@ export async function setupCloudflareResources({
  */
 async function setupD1Database(
   resourceName: string,
+  accountId: string,
   verbose: boolean,
 ): Promise<string> {
   if (verbose) {
     console.log(`  Checking D1 database: ${resourceName}`);
   }
 
-  const result = await getOrCreateD1Database(resourceName);
+  const result = await getOrCreateD1Database(resourceName, accountId);
 
   if (verbose) {
     if (result.wasCreated) {
@@ -77,13 +86,14 @@ async function setupD1Database(
  */
 async function setupKVNamespace(
   resourceName: string,
+  accountId: string,
   verbose: boolean,
 ): Promise<string> {
   if (verbose) {
     console.log(`  Checking KV namespace: ${resourceName}`);
   }
 
-  const result = await getOrCreateKVNamespace(resourceName);
+  const result = await getOrCreateKVNamespace(resourceName, accountId);
 
   if (verbose) {
     if (result.wasCreated) {

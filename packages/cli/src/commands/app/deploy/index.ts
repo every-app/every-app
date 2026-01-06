@@ -2,6 +2,7 @@ import type { LocalContext } from "@/context";
 import chalk from "chalk";
 import { getAppId } from "@/lib/everyapp-config";
 import { confirmDeployment } from "@/lib/deployment";
+import { requireCloudflareAuth } from "@/lib/cloudflare";
 import { deployApp } from "@/commands/app/deploy/deployApp";
 
 interface DeployCommandFlags {
@@ -15,6 +16,8 @@ export async function deploy(
   this: LocalContext,
   flags: DeployCommandFlags,
 ): Promise<void> {
+  await requireCloudflareAuth();
+
   const cwd = process.cwd();
   const verbose = flags.verbose || false;
 

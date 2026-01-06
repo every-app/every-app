@@ -1,5 +1,5 @@
 import chalk from "chalk";
-import { getValidOAuthToken } from "@/lib/cloudflare";
+import { getValidCloudflareToken } from "@/lib/cloudflare";
 
 interface D1QueryResponse<T = any> {
   results: T[];
@@ -33,7 +33,7 @@ export async function queryD1Database<T = any>(
   params?: (string | number | null)[],
 ): Promise<T[]> {
   try {
-    const accessToken = await getValidOAuthToken();
+    const accessToken = await getValidCloudflareToken();
 
     const body: { sql: string; params?: (string | number | null)[] } = { sql };
     if (params && params.length > 0) {

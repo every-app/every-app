@@ -2,6 +2,7 @@ import chalk from "chalk";
 import {
   getOrCreateD1Database,
   getOrCreateKVNamespace,
+  getDefaultAccountId,
   applyResourcePrefix,
 } from "@/lib/cloudflare";
 
@@ -31,10 +32,15 @@ export async function setupCloudflareResources({
 }: SetupCloudflareResourcesOptions): Promise<SetupCloudflareResourcesResult> {
   console.log("\nSetting up your Cloudflare D1 Database and KV Store...\n");
 
+  const accountId = await getDefaultAccountId();
   const resourceName = applyResourcePrefix(appId);
 
-  const d1DatabaseId = await setupD1Database(resourceName, verbose);
-  const kvNamespaceId = await setupKVNamespace(resourceName, verbose);
+  const d1DatabaseId = await setupD1Database(resourceName, accountId, verbose);
+  const kvNamespaceId = await setupKVNamespace(
+    resourceName,
+    accountId,
+    verbose,
+  );
 
   return {
     d1DatabaseId,
@@ -49,6 +55,7 @@ export async function setupCloudflareResources({
  */
 async function setupD1Database(
   resourceName: string,
+  accountId: string,
   verbose: boolean,
 ): Promise<string> {
   if (verbose) {
@@ -56,7 +63,7 @@ async function setupD1Database(
     console.log(`  Checking D1 database: ${resourceName}`);
   }
 
-  const result = await getOrCreateD1Database(resourceName);
+  const result = await getOrCreateD1Database(resourceName, accountId);
 
   if (verbose) {
     if (result.wasCreated) {
@@ -87,6 +94,7 @@ async function setupD1Database(
  */
 async function setupKVNamespace(
   resourceName: string,
+  accountId: string,
   verbose: boolean,
 ): Promise<string> {
   if (verbose) {
@@ -94,7 +102,7 @@ async function setupKVNamespace(
     console.log(`  Checking KV namespace: ${resourceName}`);
   }
 
-  const result = await getOrCreateKVNamespace(resourceName);
+  const result = await getOrCreateKVNamespace(resourceName, accountId);
 
   if (verbose) {
     if (result.wasCreated) {

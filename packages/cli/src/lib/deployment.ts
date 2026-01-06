@@ -1,14 +1,19 @@
 import chalk from "chalk";
 import enquirer from "enquirer";
-import { execa } from "execa";
 import {
   getWorkersDevSubdomain,
   getDefaultAccountId,
   makeCloudflareAPIRequest,
+  type AccountInfo,
+  type WorkerSubdomain,
 } from "@/lib/cloudflare";
 
-interface WorkerSubdomain {
-  subdomain: string;
+/**
+ * Get account information using the Cloudflare REST API
+ * GET /accounts
+ */
+async function getAccountInfo(): Promise<AccountInfo[]> {
+  return await makeCloudflareAPIRequest<AccountInfo[]>("/accounts");
 }
 
 /**
@@ -19,48 +24,27 @@ export async function confirmDeployment(
 ): Promise<boolean> {
   console.log("Checking Cloudflare account...\n");
 
-  try {
-    const { stdout: accountInfo } = await execa("npx", ["wrangler", "whoami"], {
-      reject: false,
-    });
+  const accounts = await getAccountInfo();
 
-    // Truncate output after the account table
-    const lines = accountInfo.split("\n");
-    const truncatedLines: string[] = [];
-    let foundTableEnd = false;
-
-    for (const line of lines) {
-      truncatedLines.push(line);
-      if (line.includes("└─") && line.includes("┴─") && line.includes("┘")) {
-        foundTableEnd = true;
-        break;
-      }
-    }
-
-    const truncatedInfo = foundTableEnd
-      ? truncatedLines.join("\n")
-      : accountInfo;
-
-    console.log(chalk.dim(truncatedInfo));
-    console.log();
-
-    const response = await enquirer.prompt<{ confirm: boolean }>({
-      type: "confirm",
-      name: "confirm",
-      message,
-      initial: false,
-    });
-
-    return response.confirm;
-  } catch (error) {
-    console.error(
-      chalk.red("\nFailed to retrieve Cloudflare account information"),
-    );
-    console.error(
-      chalk.dim("   Make sure you're logged in with: npx wrangler login\n"),
-    );
-    throw error;
+  if (accounts.length === 0) {
+    throw new Error("No Cloudflare accounts found");
   }
+
+  // Display account information
+  console.log(chalk.dim("  Cloudflare Accounts:"));
+  for (const account of accounts) {
+    console.log(chalk.dim(`    - ${account.name} (${account.id})`));
+  }
+  console.log();
+
+  const response = await enquirer.prompt<{ confirm: boolean }>({
+    type: "confirm",
+    name: "confirm",
+    message,
+    initial: false,
+  });
+
+  return response.confirm;
 }
 
 /**

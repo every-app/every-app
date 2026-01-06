@@ -1,7 +1,7 @@
 import { execa, type Options as ExecaOptions } from "execa";
 import {
   getDefaultAccountId,
-  getValidOAuthToken,
+  getValidCloudflareToken,
   listD1Databases,
 } from "@/lib/cloudflare";
 import { readWranglerConfig } from "@/lib/wrangler-config";
@@ -29,9 +29,7 @@ export async function getRemoteD1Env(cwd: string): Promise<RemoteD1EnvVars> {
   // Get the first D1 database configuration
   const d1Config = config.d1_databases[0];
   if (!d1Config) {
-    throw new Error(
-      "No D1 database configuration found in wrangler.jsonc.",
-    );
+    throw new Error("No D1 database configuration found in wrangler.jsonc.");
   }
   const databaseName = d1Config.database_name;
 
@@ -41,11 +39,12 @@ export async function getRemoteD1Env(cwd: string): Promise<RemoteD1EnvVars> {
     );
   }
 
-  const [accountId, databases, token] = await Promise.all([
+  const [accountId, token] = await Promise.all([
     getDefaultAccountId(),
-    listD1Databases(),
-    getValidOAuthToken(),
+    getValidCloudflareToken(),
   ]);
+
+  const databases = await listD1Databases(accountId);
 
   // Get database ID by looking up the database with matching name
   const database = databases.find((db) => db.name === databaseName);

@@ -2,13 +2,15 @@
 // Logging is handled at the call site for flexibility
 
 export { applyResourcePrefix } from "./types";
+export type { AccountInfo, WorkerSubdomain } from "./types";
 
 export { getOrCreateD1Database, listD1Databases } from "./d1";
 export { getOrCreateKVNamespace } from "./kv";
 export {
   getDefaultAccountId,
-  getValidOAuthToken,
+  getValidCloudflareToken,
   getWorkerUrl,
   getWorkersDevSubdomain,
   makeCloudflareAPIRequest,
+  requireCloudflareAuth,
 } from "./auth";

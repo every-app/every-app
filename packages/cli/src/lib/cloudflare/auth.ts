@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import * as TOML from "smol-toml";
+import chalk from "chalk";
+import type { AccountInfo, WorkerSubdomain } from "./types";
 
 interface OAuthToken {
   oauth_token: string;
@@ -117,9 +119,72 @@ async function refreshOAuthToken(refreshToken: string): Promise<OAuthToken> {
 }
 
 /**
- * Get a valid OAuth token, refreshing if necessary
+ * Require Cloudflare authentication to be available.
+ * Exits the process with a helpful error message if not authenticated.
+ *
+ * Auth precedence:
+ * 1. If CLOUDFLARE_API_TOKEN is set, it will be used (requires CLOUDFLARE_ACCOUNT_ID)
+ * 2. Otherwise, fall back to wrangler OAuth
  */
-export async function getValidOAuthToken(): Promise<string> {
+export async function requireCloudflareAuth(): Promise<void> {
+  const hasApiToken = !!process.env["CLOUDFLARE_API_TOKEN"];
+  const hasAccountId = !!process.env["CLOUDFLARE_ACCOUNT_ID"];
+  const hasOAuth = await isWranglerOAuthConfigured();
+
+  // API token takes precedence - if set, require account ID regardless of OAuth
+  if (hasApiToken && !hasAccountId) {
+    console.error(chalk.red("\nMissing CLOUDFLARE_ACCOUNT_ID\n"));
+    console.error(
+      chalk.dim(
+        "When using CLOUDFLARE_API_TOKEN, you must also set CLOUDFLARE_ACCOUNT_ID.\n",
+      ),
+    );
+    console.error(
+      chalk.dim("  export CLOUDFLARE_ACCOUNT_ID=<your_account_id>\n"),
+    );
+    process.exit(1);
+  }
+
+  // No authentication configured at all
+  if (!hasApiToken && !hasOAuth) {
+    console.error(chalk.red("\nCloudflare authentication not found.\n"));
+    console.error(
+      chalk.dim("Please authenticate using one of these methods:\n"),
+    );
+    console.error(chalk.dim("  1. npx wrangler login (recommended)"));
+    console.error(
+      chalk.dim("  2. Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID\n"),
+    );
+    process.exit(1);
+  }
+}
+
+/**
+ * Check if wrangler OAuth config exists
+ */
+async function isWranglerOAuthConfigured(): Promise<boolean> {
+  const configPath = getWranglerOAuthConfigPath();
+  try {
+    await fs.access(configPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get a valid Cloudflare API token.
+ * If CLOUDFLARE_API_TOKEN is set in the environment, use it directly.
+ * Otherwise, fall back to OAuth token from wrangler config (refreshing if necessary).
+ */
+export async function getValidCloudflareToken(): Promise<string> {
+  // Check for API token in environment first
+  const envToken = process.env["CLOUDFLARE_API_TOKEN"];
+  if (envToken) {
+    return envToken;
+  }
+
+  // Fall back to OAuth token from wrangler config
   const token = await readOAuthToken();
 
   if (isTokenExpired(token.expiration_time)) {
@@ -137,7 +202,7 @@ export async function makeCloudflareAPIRequest<T>(
   endpoint: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const accessToken = await getValidOAuthToken();
+  const accessToken = await getValidCloudflareToken();
 
   const response = await fetch(
     `https://api.cloudflare.com/client/v4${endpoint}`,
@@ -170,18 +235,6 @@ export async function makeCloudflareAPIRequest<T>(
   }
 
   return data.result;
-}
-
-interface AccountInfo {
-  id: string;
-  name: string;
-  settings: {
-    default_nameservers?: string;
-  };
-}
-
-interface WorkerSubdomain {
-  subdomain: string;
 }
 
 /**

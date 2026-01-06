@@ -11,13 +11,15 @@ import {
 } from "@/lib/file-operations";
 import { getWorkerName } from "@/lib/wrangler-config";
 import { confirmDeployment, ensureWorkersDevSubdomain } from "@/lib/deployment";
-import { getWorkerUrl } from "@/lib/cloudflare";
+import { getWorkerUrl, requireCloudflareAuth } from "@/lib/cloudflare";
 import { downloadLatestGatewayRelease } from "@/lib/github-releases";
 
 export async function deploy(
   this: LocalContext,
   flags: DeployCommandFlags,
 ): Promise<void> {
+  await requireCloudflareAuth();
+
   const verbose = flags.verbose || false;
 
   const confirmed = await confirmDeployment(

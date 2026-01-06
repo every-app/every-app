@@ -1,39 +1,53 @@
-import { execa } from "execa";
 import {
   D1DatabaseListSchema,
   type D1Database,
   type D1DatabaseResult,
 } from "./types";
+import { makeCloudflareAPIRequest } from "./auth";
 
-/**
- * List all D1 databases in the account
- */
-export async function listD1Databases(): Promise<D1Database[]> {
-  const { stdout } = await execa("npx", ["wrangler", "d1", "list", "--json"]);
-  const parsed = JSON.parse(stdout);
-  return D1DatabaseListSchema.parse(parsed);
+interface D1DatabaseAPIResponse {
+  uuid: string;
+  name: string;
+  created_at?: string;
+  version?: string;
 }
 
 /**
- * Create a new D1 database
+ * List all D1 databases in the account using the Cloudflare REST API
+ * GET /accounts/{account_id}/d1/database
+ * Uses per_page=1000 to minimize pagination issues
+ */
+export async function listD1Databases(
+  accountId: string,
+): Promise<D1Database[]> {
+  const result = await makeCloudflareAPIRequest<D1DatabaseAPIResponse[]>(
+    `/accounts/${accountId}/d1/database?per_page=1000`,
+  );
+  return D1DatabaseListSchema.parse(result);
+}
+
+/**
+ * Create a new D1 database using the Cloudflare REST API
+ * POST /accounts/{account_id}/d1/database
  * @returns The database UUID
  */
-async function createD1Database(databaseName: string): Promise<string> {
-  const { stdout } = await execa("npx", [
-    "wrangler",
-    "d1",
-    "create",
-    databaseName,
-  ]);
+async function createD1Database(
+  databaseName: string,
+  accountId: string,
+): Promise<string> {
+  const result = await makeCloudflareAPIRequest<D1DatabaseAPIResponse>(
+    `/accounts/${accountId}/d1/database`,
+    {
+      method: "POST",
+      body: JSON.stringify({ name: databaseName }),
+    },
+  );
 
-  // Parse the output to extract the database_id
-  // Output format includes: "database_id": "uuid-here"
-  const match = stdout.match(/"database_id":\s*"([^"]+)"/);
-  if (!match || !match[1]) {
-    throw new Error("Failed to parse database ID from wrangler output");
+  if (!result || !result.uuid) {
+    throw new Error("Failed to create D1 database: no UUID returned");
   }
 
-  return match[1];
+  return result.uuid;
 }
 
 /**
@@ -42,8 +56,9 @@ async function createD1Database(databaseName: string): Promise<string> {
  */
 export async function getOrCreateD1Database(
   databaseName: string,
+  accountId: string,
 ): Promise<D1DatabaseResult> {
-  const databases = await listD1Databases();
+  const databases = await listD1Databases(accountId);
   const existingDatabase = databases.find((db) => db.name === databaseName);
 
   if (existingDatabase) {
@@ -54,7 +69,7 @@ export async function getOrCreateD1Database(
     };
   }
 
-  const databaseId = await createD1Database(databaseName);
+  const databaseId = await createD1Database(databaseName, accountId);
   return {
     id: databaseId,
     name: databaseName,

@@ -16,7 +16,7 @@ export interface GatewayDbConnection {
  */
 export async function getGatewayDatabase(): Promise<GatewayDbConnection | null> {
   const accountId = await getDefaultAccountId();
-  const databases = await listD1Databases();
+  const databases = await listD1Databases(accountId);
 
   const gatewayDb = databases.find((db) => db.name === GATEWAY_DB_NAME);
 

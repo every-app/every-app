@@ -1,21 +1,41 @@
-import { execa } from "execa";
 import chalk from "chalk";
+import path from "node:path";
+import {
+  makeCloudflareAPIRequest,
+  getDefaultAccountId,
+} from "@/lib/cloudflare/auth";
+import { getWorkerName } from "@/lib/wrangler-config";
 
 interface SecretInfo {
   name: string;
   type: string;
 }
 
+interface WorkerContext {
+  accountId: string;
+  workerName: string;
+}
+
 /**
- * List all secrets for a worker
+ * Resolve worker context (account ID and worker name) for secrets operations
  */
-async function listSecrets(cwd: string): Promise<SecretInfo[]> {
-  const { stdout } = await execa(
-    "npx",
-    ["wrangler", "secret", "list", "--format", "json"],
-    { cwd },
+async function resolveWorkerContext(cwd: string): Promise<WorkerContext> {
+  const accountId = await getDefaultAccountId();
+  const wranglerConfigPath = path.join(cwd, "wrangler.jsonc");
+  const workerName = await getWorkerName(wranglerConfigPath);
+  return { accountId, workerName };
+}
+
+/**
+ * List all secrets for a worker using the Cloudflare REST API
+ * GET /accounts/{account_id}/workers/scripts/{script_name}/secrets
+ */
+async function listSecrets(ctx: WorkerContext): Promise<SecretInfo[]> {
+  const result = await makeCloudflareAPIRequest<SecretInfo[]>(
+    `/accounts/${ctx.accountId}/workers/scripts/${ctx.workerName}/secrets`,
   );
-  return JSON.parse(stdout);
+
+  return result;
 }
 
 interface SecretExistsOptions {
@@ -35,7 +55,9 @@ export async function secretExists({
   if (verbose) {
     console.log(chalk.dim(`   Checking secret: ${secretName}`));
   }
-  const secrets = await listSecrets(cwd);
+
+  const ctx = await resolveWorkerContext(cwd);
+  const secrets = await listSecrets(ctx);
   const exists = secrets.some((secret) => secret.name === secretName);
 
   if (exists && verbose) {
@@ -54,7 +76,8 @@ interface UploadSecretOptions {
 }
 
 /**
- * Upload a secret to Cloudflare
+ * Upload a secret to Cloudflare using the REST API
+ * PUT /accounts/{account_id}/workers/scripts/{script_name}/secrets
  */
 export async function uploadSecret({
   secretName,
@@ -67,17 +90,19 @@ export async function uploadSecret({
     console.log(chalk.dim(`   ${description}\n`));
   }
 
-  const subprocess = execa("npx", ["wrangler", "secret", "put", secretName], {
-    cwd,
-  });
+  const ctx = await resolveWorkerContext(cwd);
 
-  // Write the secret value to stdin
-  if (subprocess.stdin) {
-    subprocess.stdin.write(secretValue);
-    subprocess.stdin.end();
-  }
-
-  await subprocess;
+  await makeCloudflareAPIRequest(
+    `/accounts/${ctx.accountId}/workers/scripts/${ctx.workerName}/secrets`,
+    {
+      method: "PUT",
+      body: JSON.stringify({
+        name: secretName,
+        text: secretValue,
+        type: "secret_text",
+      }),
+    },
+  );
 
   if (verbose) {
     console.log(chalk.green(`Created secret: ${secretName}\n`));

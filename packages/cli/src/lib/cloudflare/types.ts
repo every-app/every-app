@@ -54,3 +54,18 @@ export interface KVNamespace {
   id: string;
   title: string;
 }
+
+/**
+ * Cloudflare account info from API
+ */
+export interface AccountInfo {
+  id: string;
+  name: string;
+}
+
+/**
+ * Worker subdomain info from API
+ */
+export interface WorkerSubdomain {
+  subdomain: string;
+}

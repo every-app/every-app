@@ -2,6 +2,7 @@ import type { LocalContext } from "@/context";
 import chalk from "chalk";
 import { execa } from "execa";
 import { getRemoteD1Env } from "@/lib/remote-d1";
+import { requireCloudflareAuth } from "@/lib/cloudflare";
 
 /**
  * Remote D1 shell command implementation
@@ -12,6 +13,8 @@ export async function remoteD1Shell(
   _flags: Record<string, never>,
   ...command: string[]
 ): Promise<void> {
+  await requireCloudflareAuth();
+
   const cwd = process.cwd();
 
   try {

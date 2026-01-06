@@ -3,6 +3,8 @@ import chalk from "chalk";
 import { cleanupTempDirectory, createEnvFiles } from "@/lib/file-operations";
 import { confirmDeployment } from "@/lib/deployment";
 import { writeEveryAppConfig } from "@/lib/everyapp-config";
+import { initRepository } from "@/lib/git";
+import { requireCloudflareAuth } from "@/lib/cloudflare";
 import { checkPnpm } from "@/commands/app/create/steps/checkPnpm";
 import { promptUserInput } from "@/commands/app/create/steps/promptUserInput";
 import { cloneTemplate } from "@/commands/app/create/steps/cloneTemplate";
@@ -37,6 +39,7 @@ export default async function (
   const verbose = flags.verbose || false;
 
   await checkPnpm();
+  await requireCloudflareAuth();
 
   console.log("\nCreate a new Every App project\n");
 
@@ -78,6 +81,9 @@ export default async function (
     // Local setup: create .env.local and run local migrations
     await createEnvFiles({ targetDir, appId });
     await runLocalMigrations({ targetDir, verbose });
+
+    // Initialize git repository with initial commit
+    await initRepository({ targetDir, verbose });
 
     printNextSteps({ appId, targetDir, gatewayUrl, workerUrl });
   } catch (error) {
