@@ -34,6 +34,22 @@ export interface KVNamespaceResult {
 }
 
 /**
+ * Result of an R2 bucket get-or-create operation
+ */
+export interface R2BucketResult {
+  name: string;
+  wasCreated: boolean;
+}
+
+/**
+ * R2 bucket info from Cloudflare API
+ */
+export interface R2Bucket {
+  name: string;
+  creation_date?: string;
+}
+
+/**
  * D1 database info from Cloudflare API
  */
 const D1DatabaseSchema = z.object({

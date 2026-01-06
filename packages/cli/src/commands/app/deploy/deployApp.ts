@@ -1,4 +1,7 @@
-import { updateWranglerConfig } from "@/lib/wrangler-config";
+import {
+  updateWranglerConfig,
+  readWranglerConfig,
+} from "@/lib/wrangler-config";
 import { getWorkerUrl } from "@/lib/cloudflare";
 import { installDependencies } from "@/lib/package-manager";
 import { setupCloudflareResources } from "@/commands/app/deploy/steps/setupCloudflareResources";
@@ -25,7 +28,7 @@ interface DeployAppResult {
  * Shared deployment logic used by both `app create` and `app deploy` commands.
  *
  * This function handles:
- * 1. Setting up Cloudflare resources (D1, KV) with "every-" prefix
+ * 1. Setting up Cloudflare resources (D1, KV, and optionally R2) with "every-" prefix
  * 2. Updating wrangler.jsonc with resource IDs
  * 3. Installing dependencies
  * 4. Running production migrations
@@ -38,9 +41,13 @@ export async function deployApp(
 ): Promise<DeployAppResult> {
   const { cwd, appId, verbose, devUrl } = options;
 
-  // Setup Cloudflare resources (D1, KV) - returns prefixed resource name
-  const { d1DatabaseId, kvNamespaceId, resourceName } =
-    await setupCloudflareResources({ appId, verbose });
+  // Check if the app needs an R2 bucket by reading wrangler.jsonc
+  const wranglerConfig = await readWranglerConfig(cwd);
+  const needsR2Bucket = Boolean(wranglerConfig.r2_buckets?.length);
+
+  // Setup Cloudflare resources (D1, KV, and optionally R2) - returns prefixed resource name
+  const { d1DatabaseId, kvNamespaceId, r2BucketName, resourceName } =
+    await setupCloudflareResources({ appId, needsR2Bucket, verbose });
 
   // Update wrangler.jsonc with prefixed worker name and resource IDs
   await updateWranglerConfig({
@@ -49,6 +56,7 @@ export async function deployApp(
     d1DatabaseId,
     d1DatabaseName: resourceName,
     kvNamespaceId,
+    r2BucketName,
     verbose,
   });
 

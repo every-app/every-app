@@ -6,6 +6,7 @@ export type { AccountInfo, WorkerSubdomain } from "./types";
 
 export { getOrCreateD1Database, listD1Databases } from "./d1";
 export { getOrCreateKVNamespace } from "./kv";
+export { getOrCreateR2Bucket } from "./r2";
 export {
   getDefaultAccountId,
   getValidCloudflareToken,

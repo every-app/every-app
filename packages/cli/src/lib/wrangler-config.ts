@@ -14,6 +14,10 @@ interface WranglerConfig {
     binding: string;
     id: string;
   }>;
+  r2_buckets?: Array<{
+    binding: string;
+    bucket_name: string;
+  }>;
   [key: string]: any;
 }
 
@@ -39,6 +43,10 @@ interface UpdateWranglerConfigOptions {
    * KV namespace ID to set (we only support one KV namespace per app)
    */
   kvNamespaceId?: string;
+  /**
+   * R2 bucket name to set (we only support one R2 bucket per app)
+   */
+  r2BucketName?: string;
   /**
    * Vars to set in wrangler config (e.g., GATEWAY_URL)
    */
@@ -102,6 +110,20 @@ export async function updateWranglerConfig(
     }
   }
 
+  // R2 buckets are optional, but if present must have exactly one
+  if (config.r2_buckets) {
+    if (config.r2_buckets.length === 0) {
+      throw new Error(
+        "Empty r2_buckets array found in wrangler.jsonc. Remove it or add exactly one R2 bucket.",
+      );
+    }
+    if (config.r2_buckets.length > 1) {
+      throw new Error(
+        `Found ${config.r2_buckets.length} R2 buckets in wrangler.jsonc. Every app must have at most one R2 bucket.`,
+      );
+    }
+  }
+
   // Update name if provided
   if (options.name) {
     edits.push(...jsonc.modify(configContent, ["name"], options.name, {}));
@@ -138,6 +160,18 @@ export async function updateWranglerConfig(
         configContent,
         ["kv_namespaces", 0, "id"],
         options.kvNamespaceId,
+        {},
+      ),
+    );
+  }
+
+  // Update R2 bucket name (index 0 since we enforce at most one)
+  if (options.r2BucketName && config.r2_buckets) {
+    edits.push(
+      ...jsonc.modify(
+        configContent,
+        ["r2_buckets", 0, "bucket_name"],
+        options.r2BucketName,
         {},
       ),
     );

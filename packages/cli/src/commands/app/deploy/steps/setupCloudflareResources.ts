@@ -2,6 +2,7 @@ import chalk from "chalk";
 import {
   getOrCreateD1Database,
   getOrCreateKVNamespace,
+  getOrCreateR2Bucket,
   getDefaultAccountId,
   applyResourcePrefix,
 } from "@/lib/cloudflare";
@@ -9,28 +10,36 @@ import {
 interface SetupCloudflareResourcesOptions {
   /** The unprefixed app ID (e.g., "todo-app") */
   appId: string;
+  /** Whether the app needs an R2 bucket */
+  needsR2Bucket?: boolean;
   verbose?: boolean;
 }
 
 interface SetupCloudflareResourcesResult {
   d1DatabaseId: string;
   kvNamespaceId: string;
+  /** The R2 bucket name if configured */
+  r2BucketName?: string;
   /** The prefixed resource name used for D1 and KV */
   resourceName: string;
 }
 
 /**
- * Set up Cloudflare resources (D1 database and KV namespace).
- * Returns the D1 database ID, KV namespace ID, and the prefixed resource name.
+ * Set up Cloudflare resources (D1 database, KV namespace, and optionally R2 bucket).
+ * Returns the D1 database ID, KV namespace ID, optional R2 bucket name, and the prefixed resource name.
  *
- * Note: Uses prefixed appId for both D1 database name and KV namespace name
+ * Note: Uses prefixed appId for all resource names
  * (e.g., "my-app" becomes "every-my-app" for resources)
  */
 export async function setupCloudflareResources({
   appId,
+  needsR2Bucket = false,
   verbose = false,
 }: SetupCloudflareResourcesOptions): Promise<SetupCloudflareResourcesResult> {
-  console.log("\nSetting up your Cloudflare D1 Database and KV Store...\n");
+  const resourceTypes = needsR2Bucket
+    ? "D1 Database, KV Store, and R2 Bucket"
+    : "D1 Database and KV Store";
+  console.log(`\nSetting up your Cloudflare ${resourceTypes}...\n`);
 
   const accountId = await getDefaultAccountId();
   const resourceName = applyResourcePrefix(appId);
@@ -42,9 +51,15 @@ export async function setupCloudflareResources({
     verbose,
   );
 
+  let r2BucketName: string | undefined;
+  if (needsR2Bucket) {
+    r2BucketName = await setupR2Bucket(resourceName, accountId, verbose);
+  }
+
   return {
     d1DatabaseId,
     kvNamespaceId,
+    r2BucketName,
     resourceName,
   };
 }
@@ -79,7 +94,7 @@ async function setupD1Database(
     }
   } else {
     if (result.wasCreated) {
-      console.log(chalk.green("  D1 successfully created.\n"));
+      console.log(chalk.green("  D1 successfully created."));
     } else {
       console.log("  D1 already set up.");
     }
@@ -125,4 +140,39 @@ async function setupKVNamespace(
   }
 
   return result.id;
+}
+
+/**
+ * Set up R2 bucket and log the result.
+ * Returns the bucket name.
+ */
+async function setupR2Bucket(
+  resourceName: string,
+  accountId: string,
+  verbose: boolean,
+): Promise<string> {
+  if (verbose) {
+    console.log(chalk.bold("Processing R2 bucket...\n"));
+    console.log(`  Checking R2 bucket: ${resourceName}`);
+  }
+
+  const result = await getOrCreateR2Bucket(resourceName, accountId);
+
+  if (verbose) {
+    if (result.wasCreated) {
+      console.log(chalk.green(`  Created R2 bucket: ${resourceName}\n`));
+    } else {
+      console.log(
+        chalk.dim(`  Linking to existing R2 bucket: ${resourceName}\n`),
+      );
+    }
+  } else {
+    if (result.wasCreated) {
+      console.log(chalk.green("  R2 successfully created."));
+    } else {
+      console.log("  R2 already set up.");
+    }
+  }
+
+  return result.name;
 }
