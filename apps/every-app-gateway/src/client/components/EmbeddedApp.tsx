@@ -65,7 +65,7 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
     );
 
   return (
-    <div className="w-full h-screen flex flex-col bg-base-100 relative">
+    <div className="w-full h-full flex flex-col bg-base-100 relative">
       <iframe
         ref={iframeRef}
         src={iframeUrl}

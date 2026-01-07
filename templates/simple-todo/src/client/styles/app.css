@@ -108,6 +108,16 @@ select {
   }
 }
 
+/* Override DaisyUI dock's fixed positioning to use flex layout instead */
+/* This allows the TabBar to work correctly with Safari's browser toolbar */
+.dock {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  border-top: none;
+}
+
 /* Touch device optimizations */
 @media (pointer: coarse) {
   html {

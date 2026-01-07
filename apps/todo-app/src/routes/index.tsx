@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from "@/client/components/ui/card";
 import { Input } from "@/client/components/ui/input";
-import { Plus } from "lucide-react";
+import { Plus, ClipboardList } from "lucide-react";
 import { CreateTodoModal } from "@/client/components/CreateTodoModal";
 
 import {
@@ -158,43 +158,56 @@ function Home() {
           </div>
         </form>
 
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext
-            items={activeTodos.map((todo) => todo.id)}
-            strategy={verticalListSortingStrategy}
-          >
-            <div className="md:mt-4 space-y-2">
-              {activeTodos.map((todo) => (
-                <SortableTodoItem
-                  key={todo.id}
-                  todo={todo}
-                  editingTodoId={editingTodoId}
-                  setEditingTodoId={setEditingTodoId}
-                  isDraggable={editingTodoId !== todo.id}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
-
-        {completedTodos.length > 0 && (
-          <div className="border-base-300 mt-4">
-            <div className="space-y-2 opacity-75">
-              {completedTodos.map((todo) => (
-                <SortableTodoItem
-                  key={todo.id}
-                  todo={todo}
-                  editingTodoId={editingTodoId}
-                  setEditingTodoId={setEditingTodoId}
-                  isDraggable={false}
-                />
-              ))}
-            </div>
+        {activeTodos.length === 0 && completedTodos.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-base-content/50">
+            <ClipboardList className="w-16 h-16 mb-4" />
+            <p className="text-lg font-medium">No todos yet</p>
+            <p className="text-sm md:hidden">Tap + to add your first todo</p>
+            <p className="text-sm hidden md:block">
+              Type above to add your first todo
+            </p>
           </div>
+        ) : (
+          <>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={activeTodos.map((todo) => todo.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="md:mt-4 space-y-2">
+                  {activeTodos.map((todo) => (
+                    <SortableTodoItem
+                      key={todo.id}
+                      todo={todo}
+                      editingTodoId={editingTodoId}
+                      setEditingTodoId={setEditingTodoId}
+                      isDraggable={editingTodoId !== todo.id}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+
+            {completedTodos.length > 0 && (
+              <div className="border-base-300 mt-4">
+                <div className="space-y-2 opacity-75">
+                  {completedTodos.map((todo) => (
+                    <SortableTodoItem
+                      key={todo.id}
+                      todo={todo}
+                      editingTodoId={editingTodoId}
+                      setEditingTodoId={setEditingTodoId}
+                      isDraggable={false}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -202,7 +215,7 @@ function Home() {
       {!editingTodoId && (
         <button
           onClick={() => setIsCreateModalOpen(true)}
-          className="md:hidden fixed bottom-24 right-4 z-40 w-14 h-14 bg-primary text-primary-foreground rounded-xl flex items-center justify-center shadow-lg"
+          className="md:hidden fixed bottom-24 right-4 z-40 w-14 h-14 bg-primary text-primary-content rounded-xl flex items-center justify-center shadow-lg border border-base-content/10"
           aria-label="Add new todo"
         >
           <Plus className="w-6 h-6" />

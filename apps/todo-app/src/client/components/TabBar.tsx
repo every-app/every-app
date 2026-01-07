@@ -7,8 +7,8 @@ interface TabBarProps {
 
 export function TabBar({ currentPath = "/" }: TabBarProps) {
   return (
-    <div className="pt-4">
-      <div className="dock dock-xl">
+    <div className="tab-bar px-4 pb-4">
+      <div className="dock bg-base-300/80 backdrop-blur-xl rounded-full border border-base-content/10">
         <Link
           to="/"
           className={`no-underline ${currentPath === "/" ? "dock-active text-primary" : ""}`}

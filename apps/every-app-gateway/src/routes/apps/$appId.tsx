@@ -33,5 +33,9 @@ function EmbeddedAppLayout() {
 
   // The iframe will persist because this layout component doesn't remount
   // when child routes (like /apps/$appId/$) change
-  return <EmbeddedApp key={appId} appId={appId} />;
+  return (
+    <div className="h-full">
+      <EmbeddedApp key={appId} appId={appId} />
+    </div>
+  );
 }

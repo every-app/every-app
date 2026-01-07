@@ -51,7 +51,7 @@ function App() {
   const hasAnyDevUrls = userApps?.some((app) => app.devUrl) ?? false;
 
   return (
-    <div className="bg-base-100 h-screen flex flex-col overflow-y-auto">
+    <div className="bg-base-100 h-full flex flex-col overflow-y-auto">
       <Header email={session.data?.user.email} role={session.data?.user.role} />
       <div className="flex-1">
         <div className="max-w-4xl mx-auto px-4 py-6">

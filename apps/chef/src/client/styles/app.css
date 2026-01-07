@@ -252,15 +252,9 @@ code {
     view-transition-name: main-content;
   }
 
-  /* Exclude sidebar from transitions */
+  /* Exclude sidebar from view transitions entirely */
   .sidebar {
-    view-transition-name: sidebar;
-  }
-
-  /* Don't animate the sidebar */
-  ::view-transition-old(sidebar),
-  ::view-transition-new(sidebar) {
-    animation: none;
+    view-transition-name: none;
   }
 
   /* Fade transition */

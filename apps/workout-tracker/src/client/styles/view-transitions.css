@@ -12,21 +12,10 @@
   view-transition-name: main-content;
 }
 
-/* Exclude sidebar and tab bar from transitions */
-.sidebar {
-  view-transition-name: sidebar;
-}
-
-.dock {
-  view-transition-name: dock;
-}
-
-/* Don't animate fixed elements */
-::view-transition-old(sidebar),
-::view-transition-new(sidebar),
-::view-transition-old(dock),
-::view-transition-new(dock) {
-  animation: none;
+/* Exclude sidebar and tab bar from view transitions entirely */
+.sidebar,
+.tab-bar {
+  view-transition-name: none;
 }
 
 /* Fade transition (default for desktop and top-level navigation) */

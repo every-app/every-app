@@ -1,19 +1,14 @@
-import useDetectKeyboardOpen from "@/client/hooks/useDetectKeyboardOpen";
 import { Link } from "@tanstack/react-router";
 import { ClipboardList, History, TreePine } from "lucide-react";
 
 interface TabBarProps {
-  currentPath: string;
+  currentPath?: string;
 }
 
-export function TabBar({ currentPath }: TabBarProps) {
-  const isKeyboardOpen = useDetectKeyboardOpen();
-
-  if (isKeyboardOpen) return null;
-
+export function TabBar({ currentPath = "/" }: TabBarProps) {
   return (
-    <div className="py-4">
-      <div className="dock dock-xl">
+    <div className="tab-bar px-4 pb-4">
+      <div className="dock bg-base-300/80 backdrop-blur-xl rounded-full border border-base-content/10">
         <Link
           to="/"
           className={`no-underline ${currentPath === "/" ? "dock-active text-primary" : ""}`}

@@ -101,9 +101,10 @@ body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
     "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
-  /* Lock height and prevent overflow from password manager extensions */
-  height: 100%;
-  max-height: 100vh;
+  /* Fallback for browsers that don't support dvh */
+  height: 100vh;
+  /* Use dvh for proper mobile viewport handling in Chrome/Safari */
+  height: 100dvh;
   overflow: hidden;
   /* Allow browser/extensions to detect color scheme preference */
   color-scheme: light dark;
@@ -111,12 +112,12 @@ body {
 
 body {
   @apply bg-base-100 text-base-content;
+  height: 100%;
 }
 
 #app {
   @apply flex flex-col;
   height: 100%;
-  max-height: 100vh;
   overflow-y: auto;
 }
 

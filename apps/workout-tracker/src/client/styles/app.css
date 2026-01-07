@@ -107,6 +107,15 @@ code {
   }
 }
 
+/* Override DaisyUI dock's fixed positioning to use flex layout instead */
+/* This allows the TabBar to work correctly with Safari's browser toolbar */
+.dock {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  right: auto;
+}
+
 /* Active badge - green status indicator */
 .badge-active {
   @apply bg-success/15 text-success border border-success/30 rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide;

@@ -83,10 +83,13 @@
   --noise: 0;
 }
 
+html,
 body {
   @apply m-0 bg-base-200 font-sans;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Prevent Safari mobile from zooming on input focus (requires 16px minimum) */
@@ -108,6 +111,25 @@ code {
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0);
   }
+}
+
+/* Override DaisyUI dock's fixed positioning and safe-area handling */
+/* We handle layout via flexbox, not fixed positioning */
+.dock {
+  position: relative;
+  bottom: auto;
+  left: auto;
+  right: auto;
+  border-top: none;
+  /* Override DaisyUI's safe-area-inset-bottom handling */
+  height: 4rem;
+  padding-bottom: 0;
+}
+
+/* Tab bar container - ensure it stays at bottom and doesn't shrink */
+.tab-bar {
+  flex-shrink: 0;
+  width: 100%;
 }
 
 /* Custom checkbox */

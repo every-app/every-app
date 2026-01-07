@@ -94,7 +94,7 @@ function Home() {
       {/* Mobile: FAB for creating todos */}
       <button
         onClick={() => setIsCreateModalOpen(true)}
-        className="btn btn-primary btn-circle btn-lg md:hidden fixed bottom-24 right-4 z-40 shadow-lg"
+        className="md:hidden fixed bottom-24 right-4 z-40 w-14 h-14 bg-primary text-primary-content rounded-xl flex items-center justify-center shadow-lg border border-base-content/10"
         aria-label="Add new todo"
       >
         <Plus className="w-6 h-6" />
