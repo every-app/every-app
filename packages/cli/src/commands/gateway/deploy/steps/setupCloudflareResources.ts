@@ -35,6 +35,9 @@ export async function setupCloudflareResources({
     verbose,
   );
 
+  // new line
+  console.log();
+
   return {
     d1DatabaseId,
     kvNamespaceId,

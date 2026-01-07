@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { executeCommandWithFormatting } from "@/lib/formatting";
+import { formatCloudflareError } from "@/lib/cloudflare/errors";
 
 interface BuildAndDeployOptions {
   cwd: string;
@@ -42,6 +43,13 @@ export async function buildAndDeploy({
       verbose,
     });
   } catch (error) {
+    // Check if this is a known Cloudflare error with a user-friendly message
+    const cloudflareError = await formatCloudflareError(error);
+    if (cloudflareError) {
+      console.log(cloudflareError.formatted);
+      process.exit(1);
+    }
+
     console.error(chalk.red("\nFailed to build or deploy"));
     throw error;
   }

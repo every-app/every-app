@@ -103,7 +103,7 @@ export async function cleanupTempDirectory({
   try {
     await fs.rm(tmpDir, { recursive: true, force: true });
     if (verbose) {
-      console.log(chalk.dim(`   Removed: ${tmpDir}`));
+      console.log(chalk.dim(`  Removed: ${tmpDir}`));
     }
   } catch (error) {
     console.warn(

@@ -4,7 +4,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createWriteStream } from "node:fs";
 import { spawn } from "node:child_process";
-import chalk from "chalk";
+import { verboseLog, verboseLogLines } from "@/lib/logging";
 
 const REPO_OWNER = "every-app";
 const REPO_NAME = "every-app";
@@ -66,16 +66,14 @@ export async function downloadLatestGatewayRelease(
   destDir: string,
   verbose: boolean = false,
 ): Promise<string> {
-  const url = getLatestGatewayReleaseUrl();
-
-  console.log("\nGetting latest gateway release...");
-
-  if (verbose) {
-    console.log(chalk.dim(`URL: ${url}`));
-  }
+  console.log("Getting latest gateway release...");
 
   // Create destination directory
   fs.mkdirSync(destDir, { recursive: true });
+
+  const url = getLatestGatewayReleaseUrl();
+
+  verboseLog(verbose, `URL: ${url}`);
 
   // Download the archive
   const archivePath = path.join(destDir, GATEWAY_ASSET_NAME);
@@ -91,10 +89,11 @@ export async function downloadLatestGatewayRelease(
     throw error;
   }
 
-  if (verbose) {
-    console.log(chalk.dim(`Downloaded to: ${archivePath}`));
-    console.log(chalk.dim("Extracting archive..."));
-  }
+  verboseLogLines(
+    verbose,
+    `Downloaded to: ${archivePath}`,
+    "Extracting archive...",
+  );
 
   // Extract the archive
   await extractTarGz(archivePath, destDir);
@@ -102,9 +101,34 @@ export async function downloadLatestGatewayRelease(
   // Clean up the archive
   fs.unlinkSync(archivePath);
 
-  if (verbose) {
-    console.log(chalk.dim("Extraction complete"));
+  verboseLog(verbose, "Extraction complete\n");
+
+  return destDir;
+}
+
+/**
+ * Extract a local gateway tarball (for testing)
+ */
+export async function extractLocalGatewayTarball(
+  tarballPath: string,
+  destDir: string,
+  verbose: boolean = false,
+): Promise<string> {
+  console.log("Using local gateway tarball...");
+
+  if (!fs.existsSync(tarballPath)) {
+    throw new Error(`Local gateway tarball not found: ${tarballPath}`);
   }
+
+  // Create destination directory
+  fs.mkdirSync(destDir, { recursive: true });
+
+  verboseLogLines(verbose, `Tarball: ${tarballPath}`, "Extracting archive...");
+
+  // Extract the archive
+  await extractTarGz(tarballPath, destDir);
+
+  verboseLog(verbose, "Extraction complete\n");
 
   return destDir;
 }

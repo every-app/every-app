@@ -125,7 +125,7 @@ async function main() {
   console.log(`  Tarball: ${TARBALL_PATH}`);
   console.log(`  Size: ${tarballSize}`);
   console.log("\nTo test locally with the CLI, run:");
-  console.log(`  every gateway deploy --local-gateway "${TARBALL_PATH}"`);
+  console.log(`  every gateway deploy --localGateway "${TARBALL_PATH}"`);
 }
 
 main().catch((error) => {

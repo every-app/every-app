@@ -22,6 +22,12 @@ export const deployCommand = buildCommand({
         brief: "Show detailed output during deployment",
         optional: true,
       },
+      localGateway: {
+        kind: "parsed",
+        parse: String,
+        brief: "Path to local gateway tarball (for testing)",
+        optional: true,
+      },
     },
   },
   docs: {

@@ -3,7 +3,7 @@ import chalk from "chalk";
 import path from "node:path";
 import { setupCloudflareResources } from "@/commands/gateway/deploy/steps/setupCloudflareResources";
 import { updateConfigAndDeploy } from "@/commands/gateway/deploy/steps/updateConfigAndDeploy";
-import { runMigrations } from "@/commands/gateway/deploy/steps/runMigrations";
+import { runDrizzleMigrations } from "@/lib/migrations";
 import type { DeployCommandFlags } from "@/commands/gateway/deploy/types";
 import {
   cleanupTempDirectory,
@@ -12,7 +12,12 @@ import {
 import { getWorkerName } from "@/lib/wrangler-config";
 import { confirmDeployment, ensureWorkersDevSubdomain } from "@/lib/deployment";
 import { getWorkerUrl, requireCloudflareAuth } from "@/lib/cloudflare";
-import { downloadLatestGatewayRelease } from "@/lib/github-releases";
+import { formatCloudflareError } from "@/lib/cloudflare/errors";
+import {
+  downloadLatestGatewayRelease,
+  extractLocalGatewayTarball,
+} from "@/lib/github-releases";
+import { checkGatewayHasOwner } from "@/lib/gateway";
 
 export async function deploy(
   this: LocalContext,
@@ -21,10 +26,11 @@ export async function deploy(
   await requireCloudflareAuth();
 
   const verbose = flags.verbose || false;
+  const localGateway = flags.localGateway;
 
-  const confirmed = await confirmDeployment(
-    "Do you want to deploy EveryApp Gateway into this Cloudflare account?",
-  );
+  console.log(chalk.bold("\nEvery App Gateway\n"));
+
+  const confirmed = await confirmDeployment("the Gateway");
   if (!confirmed) {
     console.log("\nDeployment cancelled by user\n");
     return;
@@ -35,7 +41,7 @@ export async function deploy(
 
   const resources = await setupCloudflareResources({ verbose });
 
-  // Download prebuilt release
+  // Download prebuilt release or use local tarball
   const tmpDir = await createTempDirectory("gateway-deploy-");
   if (verbose) {
     console.log(chalk.dim(`Working directory: ${tmpDir}\n`));
@@ -43,7 +49,9 @@ export async function deploy(
 
   let workerUrl = null;
   try {
-    const gatewayPath = await downloadLatestGatewayRelease(tmpDir, verbose);
+    const gatewayPath = localGateway
+      ? await extractLocalGatewayTarball(localGateway, tmpDir, verbose)
+      : await downloadLatestGatewayRelease(tmpDir, verbose);
 
     // Predict worker URL
     const wranglerConfigPath = path.join(gatewayPath, "wrangler.jsonc");
@@ -54,8 +62,16 @@ export async function deploy(
     await updateConfigAndDeploy({ gatewayPath, resources, workerUrl, verbose });
 
     // Run database migrations
-    await runMigrations({ gatewayPath, verbose });
+    await runDrizzleMigrations({ cwd: gatewayPath, verbose });
   } catch (error) {
+    // Check if this is a known Cloudflare error with a user-friendly message
+    const cloudflareError = await formatCloudflareError(error);
+    if (cloudflareError) {
+      console.log(cloudflareError.formatted);
+      process.exit(1);
+    }
+
+    // Unknown error - show the raw message
     console.error(
       "\nDeployment failed:",
       error instanceof Error ? error.message : error,
@@ -69,5 +85,19 @@ export async function deploy(
     throw new Error("Worker URL not set properly during deployment");
 
   console.log(chalk.green("\nGateway deployment successful!\n"));
-  console.log(`Your Gateway is now live at: ${chalk.cyan(workerUrl)}\n`);
+
+  // Check if the gateway has an owner account
+  const hasOwner = await checkGatewayHasOwner(workerUrl);
+
+  if (hasOwner) {
+    console.log(`Your Gateway is now live at: ${chalk.cyan(workerUrl)}\n`);
+  } else {
+    const signUpUrl = `${workerUrl}/sign-up`;
+    console.log(`Your Gateway is now live at: ${chalk.cyan(signUpUrl)}\n`);
+    console.log(
+      chalk.dim(
+        "  Create an owner account to get started with your Gateway.\n",
+      ),
+    );
+  }
 }

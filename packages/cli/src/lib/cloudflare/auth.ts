@@ -73,6 +73,22 @@ async function readOAuthToken(): Promise<OAuthToken> {
 }
 
 /**
+ * Write OAuth token to wrangler config.
+ * Matches wrangler's writeAuthConfigFile behavior - overwrites with OAuth fields only.
+ * See: https://github.com/cloudflare/workers-sdk/blob/main/packages/wrangler/src/user/user.ts
+ */
+async function writeOAuthToken(token: OAuthToken): Promise<void> {
+  const configPath = getWranglerOAuthConfigPath();
+
+  // Ensure directory exists
+  const configDir = path.dirname(configPath);
+  await fs.mkdir(configDir, { recursive: true });
+
+  const content = TOML.stringify(token as unknown as Record<string, unknown>);
+  await fs.writeFile(configPath, content, "utf-8");
+}
+
+/**
  * Check if the OAuth token is expired or about to expire (within 5 minutes)
  */
 function isTokenExpired(expirationTime: string): boolean {
@@ -129,46 +145,38 @@ async function refreshOAuthToken(refreshToken: string): Promise<OAuthToken> {
 export async function requireCloudflareAuth(): Promise<void> {
   const hasApiToken = !!process.env["CLOUDFLARE_API_TOKEN"];
   const hasAccountId = !!process.env["CLOUDFLARE_ACCOUNT_ID"];
-  const hasOAuth = await isWranglerOAuthConfigured();
 
   // API token takes precedence - if set, require account ID regardless of OAuth
   if (hasApiToken && !hasAccountId) {
-    console.error(chalk.red("\nMissing CLOUDFLARE_ACCOUNT_ID\n"));
-    console.error(
-      chalk.dim(
-        "When using CLOUDFLARE_API_TOKEN, you must also set CLOUDFLARE_ACCOUNT_ID.\n",
-      ),
+    console.log(chalk.yellow("\nMissing CLOUDFLARE_ACCOUNT_ID\n"));
+    console.log(
+      "When using CLOUDFLARE_API_TOKEN, you must also set CLOUDFLARE_ACCOUNT_ID.\n",
     );
-    console.error(
+    console.log(
       chalk.dim("  export CLOUDFLARE_ACCOUNT_ID=<your_account_id>\n"),
     );
     process.exit(1);
   }
 
-  // No authentication configured at all
-  if (!hasApiToken && !hasOAuth) {
-    console.error(chalk.red("\nCloudflare authentication not found.\n"));
-    console.error(
-      chalk.dim("Please authenticate using one of these methods:\n"),
+  // API token auth is fully configured
+  if (hasApiToken && hasAccountId) {
+    return;
+  }
+
+  // Try OAuth - actually validate it works, not just that file exists
+  try {
+    await getValidCloudflareToken();
+  } catch {
+    console.log(chalk.yellow("\nPlease log in to Cloudflare.\n"));
+    console.log(
+      chalk.dim("  1. Cloudflare CLI (recommended): npx wrangler login"),
     );
-    console.error(chalk.dim("  1. npx wrangler login (recommended)"));
-    console.error(
-      chalk.dim("  2. Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID\n"),
+    console.log(
+      chalk.dim(
+        "  2. Environment variables: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID\n",
+      ),
     );
     process.exit(1);
-  }
-}
-
-/**
- * Check if wrangler OAuth config exists
- */
-async function isWranglerOAuthConfigured(): Promise<boolean> {
-  const configPath = getWranglerOAuthConfigPath();
-  try {
-    await fs.access(configPath);
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -189,6 +197,7 @@ export async function getValidCloudflareToken(): Promise<string> {
 
   if (isTokenExpired(token.expiration_time)) {
     const refreshedToken = await refreshOAuthToken(token.refresh_token);
+    await writeOAuthToken(refreshedToken);
     return refreshedToken.oauth_token;
   }
 
@@ -238,9 +247,18 @@ export async function makeCloudflareAPIRequest<T>(
 }
 
 /**
- * Get the default Cloudflare account ID
+ * Get the default Cloudflare account ID.
+ * If CLOUDFLARE_ACCOUNT_ID is set in the environment, use it directly.
+ * Otherwise, fetch accounts from API and return the first one.
  */
 export async function getDefaultAccountId(): Promise<string> {
+  // Check for account ID in environment first
+  const envAccountId = process.env["CLOUDFLARE_ACCOUNT_ID"];
+  if (envAccountId) {
+    return envAccountId;
+  }
+
+  // Fall back to fetching from API
   const accounts = await makeCloudflareAPIRequest<AccountInfo[]>("/accounts");
 
   if (!accounts || accounts.length === 0) {
@@ -254,6 +272,22 @@ export async function getDefaultAccountId(): Promise<string> {
 
   // Return the first account ID (typically the default)
   return firstAccount.id;
+}
+
+/**
+ * Get account details by ID.
+ * Uses GET /accounts/{account_id} endpoint which works with both OAuth and API tokens.
+ */
+export async function getAccountById(accountId: string): Promise<AccountInfo> {
+  const result = await makeCloudflareAPIRequest<AccountInfo>(
+    `/accounts/${accountId}`,
+  );
+
+  if (!result || !result.id) {
+    throw new Error(`Account ${accountId} not found`);
+  }
+
+  return result;
 }
 
 /**

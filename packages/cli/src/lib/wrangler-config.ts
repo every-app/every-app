@@ -110,18 +110,11 @@ export async function updateWranglerConfig(
     }
   }
 
-  // R2 buckets are optional, but if present must have exactly one
-  if (config.r2_buckets) {
-    if (config.r2_buckets.length === 0) {
-      throw new Error(
-        "Empty r2_buckets array found in wrangler.jsonc. Remove it or add exactly one R2 bucket.",
-      );
-    }
-    if (config.r2_buckets.length > 1) {
-      throw new Error(
-        `Found ${config.r2_buckets.length} R2 buckets in wrangler.jsonc. Every app must have at most one R2 bucket.`,
-      );
-    }
+  // R2 buckets are optional, but if present must have at most one
+  if (config.r2_buckets && config.r2_buckets.length > 1) {
+    throw new Error(
+      `Found ${config.r2_buckets.length} R2 buckets in wrangler.jsonc. Every app must have at most one R2 bucket.`,
+    );
   }
 
   // Update name if provided
@@ -166,7 +159,7 @@ export async function updateWranglerConfig(
   }
 
   // Update R2 bucket name (index 0 since we enforce at most one)
-  if (options.r2BucketName && config.r2_buckets) {
+  if (options.r2BucketName && config.r2_buckets?.length) {
     edits.push(
       ...jsonc.modify(
         configContent,

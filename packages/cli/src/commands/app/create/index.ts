@@ -47,9 +47,7 @@ export default async function (
 
   // Confirm deployment BEFORE cloning to avoid leaving project in weird state
   console.log(chalk.dim(".\n"));
-  const confirmed = await confirmDeployment(
-    "Deploy this app to the above account? We deploy during app creation for smoother local dev with Cloudflare.",
-  );
+  const confirmed = await confirmDeployment("this app");
   if (!confirmed) {
     console.log(chalk.yellow("\nApp creation cancelled.\n"));
     return;

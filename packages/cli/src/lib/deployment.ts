@@ -1,153 +1,64 @@
-import chalk from "chalk";
 import enquirer from "enquirer";
+import chalk from "chalk";
 import {
-  getWorkersDevSubdomain,
-  getDefaultAccountId,
-  makeCloudflareAPIRequest,
+  getAccountById,
+  getMemberships,
+  displayAccountInfo,
+  resolveAccountFromMemberships,
   type AccountInfo,
-  type WorkerSubdomain,
 } from "@/lib/cloudflare";
 
+// Re-export for backwards compatibility
+export { ensureWorkersDevSubdomain } from "@/lib/cloudflare";
+
 /**
- * Get account information using the Cloudflare REST API
- * GET /accounts
+ * Get account info for the current authentication method.
+ * - API token: fetches from /accounts/{id} endpoint
+ * - OAuth: fetches from /memberships endpoint and handles multi-account selection
  */
-async function getAccountInfo(): Promise<AccountInfo[]> {
-  return await makeCloudflareAPIRequest<AccountInfo[]>("/accounts");
+async function getAccountInfo(): Promise<AccountInfo> {
+  // API token auth: use /accounts/{id} endpoint (can't use /memberships)
+  if (process.env["CLOUDFLARE_API_TOKEN"]) {
+    const accountId = process.env["CLOUDFLARE_ACCOUNT_ID"];
+    if (!accountId) {
+      console.log(
+        chalk.yellow(
+          "\nCLOUDFLARE_ACCOUNT_ID is required when using CLOUDFLARE_API_TOKEN\n",
+        ),
+      );
+      process.exit(1);
+    }
+    return getAccountById(accountId);
+  }
+
+  // OAuth: use /memberships endpoint (supports multi-account selection)
+  const memberships = await getMemberships();
+  const { account, otherAccounts } = resolveAccountFromMemberships(memberships);
+  displayAccountInfo(account, otherAccounts);
+  return { id: account.account.id, name: account.account.name };
 }
 
 /**
- * Confirm deployment with the user after showing Cloudflare account info
+ * Confirm deployment with the user after showing Cloudflare account info.
+ * @param deployTarget - What is being deployed (e.g., "the Gateway", "this app")
  */
 export async function confirmDeployment(
-  message: string = "Do you want to deploy to Cloudflare?",
+  deployTarget: string = "this",
 ): Promise<boolean> {
-  console.log("Checking Cloudflare account...\n");
+  const account = await getAccountInfo();
 
-  const accounts = await getAccountInfo();
-
-  if (accounts.length === 0) {
-    throw new Error("No Cloudflare accounts found");
+  // For API token auth, we need to display account info (OAuth already displayed it)
+  if (process.env["CLOUDFLARE_API_TOKEN"]) {
+    console.log(chalk.dim(`  ${account.name} (${account.id})`));
+    console.log();
   }
 
-  // Display account information
-  console.log(chalk.dim("  Cloudflare Accounts:"));
-  for (const account of accounts) {
-    console.log(chalk.dim(`    - ${account.name} (${account.id})`));
-  }
-  console.log();
-
-  const response = await enquirer.prompt<{ confirm: boolean }>({
+  const { confirm } = await enquirer.prompt<{ confirm: boolean }>({
     type: "confirm",
     name: "confirm",
-    message,
+    message: `Do you want to deploy ${deployTarget} to ${account.name}?`,
     initial: false,
   });
 
-  return response.confirm;
-}
-
-/**
- * Initialize/create a workers.dev subdomain for an account
- * This needs to be done once per account before workers can be deployed
- */
-async function initializeWorkersDevSubdomain(
-  accountId: string,
-  desiredSubdomain?: string,
-): Promise<string> {
-  try {
-    const body = desiredSubdomain ? { subdomain: desiredSubdomain } : {};
-
-    const result = await makeCloudflareAPIRequest<WorkerSubdomain>(
-      `/accounts/${accountId}/workers/subdomain`,
-      {
-        method: "PUT",
-        body: JSON.stringify(body),
-      },
-    );
-
-    if (!result || !result.subdomain) {
-      throw new Error("Failed to initialize workers.dev subdomain");
-    }
-
-    return result.subdomain;
-  } catch (error) {
-    throw new Error(
-      `Failed to initialize workers.dev subdomain: ${error instanceof Error ? error.message : "Unknown error"}`,
-    );
-  }
-}
-
-/**
- * Ensure workers.dev subdomain is set up, prompting user if needed
- * Returns the subdomain string
- */
-export async function ensureWorkersDevSubdomain(): Promise<string> {
-  const resolvedAccountId = await getDefaultAccountId();
-
-  try {
-    // Try to get existing subdomain
-    const subdomain = await getWorkersDevSubdomain(resolvedAccountId);
-    return subdomain;
-  } catch (error) {
-    // Subdomain doesn't exist, need to create one
-    console.log(
-      chalk.yellow("No workers.dev subdomain found for this account.\n"),
-    );
-    console.log(
-      chalk.dim(
-        "A workers.dev subdomain is required to deploy Workers applications.",
-      ),
-    );
-    console.log(
-      chalk.dim(
-        "This subdomain will be used for all Workers you deploy: [worker-name].[subdomain].workers.dev\n",
-      ),
-    );
-
-    const response = await enquirer.prompt<{ subdomain: string }>({
-      type: "input",
-      name: "subdomain",
-      message: "Choose a subdomain name (alphanumeric and hyphens only):",
-      validate: (value: string) => {
-        if (!value || value.trim() === "") {
-          return "Subdomain cannot be empty";
-        }
-        if (!/^[a-z0-9-]+$/.test(value)) {
-          return "Subdomain must contain only lowercase letters, numbers, and hyphens";
-        }
-        if (value.startsWith("-") || value.endsWith("-")) {
-          return "Subdomain cannot start or end with a hyphen";
-        }
-        return true;
-      },
-    });
-
-    const desiredSubdomain = response.subdomain.trim();
-
-    console.log(
-      chalk.dim(`\nCreating workers.dev subdomain: ${desiredSubdomain}...\n`),
-    );
-
-    try {
-      const subdomain = await initializeWorkersDevSubdomain(
-        resolvedAccountId,
-        desiredSubdomain,
-      );
-      console.log(
-        chalk.green(
-          `Successfully created subdomain: ${chalk.cyan(subdomain)}\n`,
-        ),
-      );
-      return subdomain;
-    } catch (initError) {
-      console.error(
-        chalk.red("\nFailed to create workers.dev subdomain"),
-        chalk.dim(
-          `\n   ${initError instanceof Error ? initError.message : "Unknown error"}`,
-        ),
-      );
-      throw initError;
-    }
-  }
+  return confirm;
 }

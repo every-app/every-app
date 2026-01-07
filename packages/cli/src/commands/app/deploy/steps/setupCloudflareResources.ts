@@ -5,6 +5,7 @@ import {
   getOrCreateR2Bucket,
   getDefaultAccountId,
   applyResourcePrefix,
+  formatCloudflareError,
 } from "@/lib/cloudflare";
 
 interface SetupCloudflareResourcesOptions {
@@ -44,17 +45,18 @@ export async function setupCloudflareResources({
   const accountId = await getDefaultAccountId();
   const resourceName = applyResourcePrefix(appId);
 
+  // Set up R2 first so we don't create D1/KV if R2 is not enabled
+  let r2BucketName: string | undefined;
+  if (needsR2Bucket) {
+    r2BucketName = await setupR2Bucket(resourceName, accountId, verbose);
+  }
+
   const d1DatabaseId = await setupD1Database(resourceName, accountId, verbose);
   const kvNamespaceId = await setupKVNamespace(
     resourceName,
     accountId,
     verbose,
   );
-
-  let r2BucketName: string | undefined;
-  if (needsR2Bucket) {
-    r2BucketName = await setupR2Bucket(resourceName, accountId, verbose);
-  }
 
   return {
     d1DatabaseId,
@@ -156,7 +158,18 @@ async function setupR2Bucket(
     console.log(`  Checking R2 bucket: ${resourceName}`);
   }
 
-  const result = await getOrCreateR2Bucket(resourceName, accountId);
+  let result;
+  try {
+    result = await getOrCreateR2Bucket(resourceName, accountId);
+  } catch (error) {
+    // Check for known Cloudflare errors (e.g., R2 not enabled)
+    const cloudflareError = await formatCloudflareError(error, { accountId });
+    if (cloudflareError) {
+      console.log(cloudflareError.formatted);
+      process.exit(1);
+    }
+    throw error;
+  }
 
   if (verbose) {
     if (result.wasCreated) {

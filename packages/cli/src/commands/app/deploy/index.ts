@@ -26,9 +26,7 @@ export async function deploy(
 
   console.log(chalk.bold(`\nProject: ${appId}\n`));
 
-  const confirmed = await confirmDeployment(
-    "Do you want to deploy this app to Cloudflare?",
-  );
+  const confirmed = await confirmDeployment("this app");
   if (!confirmed) {
     console.log(chalk.red("\nDeployment cancelled by user\n"));
     return;

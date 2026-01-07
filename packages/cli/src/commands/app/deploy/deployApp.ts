@@ -5,7 +5,7 @@ import {
 import { getWorkerUrl } from "@/lib/cloudflare";
 import { installDependencies } from "@/lib/package-manager";
 import { setupCloudflareResources } from "@/commands/app/deploy/steps/setupCloudflareResources";
-import { runMigrations } from "@/commands/app/deploy/steps/runMigrations";
+import { runDrizzleMigrations } from "@/lib/migrations";
 import { buildAndDeploy } from "@/commands/app/deploy/steps/buildAndDeploy";
 import { insertUserAppRecords } from "@/commands/app/deploy/steps/insertUserAppRecords";
 import { setupAppSecrets } from "@/commands/app/deploy/steps/setupAppSecrets";
@@ -71,7 +71,7 @@ export async function deployApp(
   });
 
   // Run production migrations
-  await runMigrations({ cwd, verbose });
+  await runDrizzleMigrations({ cwd, verbose });
 
   // Build and deploy
   await buildAndDeploy({ cwd, gatewayUrl, appId, verbose });

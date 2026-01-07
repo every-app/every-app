@@ -80,6 +80,18 @@ export interface AccountInfo {
 }
 
 /**
+ * Cloudflare membership info from API (includes pending invitations)
+ */
+export interface MembershipInfo {
+  id: string;
+  status: "accepted" | "pending" | "rejected";
+  account: {
+    id: string;
+    name: string;
+  };
+}
+
+/**
  * Worker subdomain info from API
  */
 export interface WorkerSubdomain {
