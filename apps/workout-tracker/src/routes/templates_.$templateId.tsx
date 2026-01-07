@@ -1,15 +1,16 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { useIsMobile } from "@/client/hooks/use-mobile";
 import { programTemplates } from "@/data/program-templates";
 import type { WorkoutTemplate } from "@/data/program-templates";
 import { Button } from "@/client/components/ui/button";
+import { MobileSlideLink } from "@/client/components/MobileSlideLink";
 import { ArrowLeft } from "lucide-react";
 import {
   startProgramFromTemplate,
   createStartProgramParams,
 } from "@/client/actions/startProgramFromTemplate";
 import { capitalize } from "@/client/lib/utils";
+import { useIsMobile } from "@/client/hooks/use-mobile";
 
 export const Route = createFileRoute("/templates_/$templateId")({
   component: TemplatePreviewPage,
@@ -45,7 +46,7 @@ function TemplatePreviewPage() {
   if (!template) {
     return (
       <div className="page-container">
-        <div className="px-4 pt-12 pb-24">
+        <div className="px-4 pt-12 pb-4">
           <div className="text-center py-12">
             <h2 className="text-2xl font-bold mb-2">Template Not Found</h2>
             <p className="text-base-content/70 mb-4">
@@ -66,15 +67,16 @@ function TemplatePreviewPage() {
   return (
     <>
       <div className="page-container">
-        <div className={`px-4 pt-6 ${isMobile ? "pb-28" : "pb-24"}`}>
+        <div className={`px-4 pt-6 ${isMobile ? "pb-24" : "pb-4"}`}>
           {/* Back Link */}
-          <Link
+          <MobileSlideLink
             to="/programs"
+            direction="right"
             className="inline-flex items-center text-xs font-mono uppercase tracking-widest text-base-content/50 hover:text-base-content transition-colors mb-6"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Programs
-          </Link>
+          </MobileSlideLink>
 
           {/* Template Header */}
           <div className="mb-6 px-0">

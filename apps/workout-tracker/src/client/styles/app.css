@@ -80,10 +80,13 @@
   --noise: 0;
 }
 
+html,
 body {
   @apply m-0 bg-base-200 font-sans;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Prevent Safari mobile from zooming on input focus (requires 16px minimum) */
@@ -140,7 +143,7 @@ code {
 
 /* Page container */
 .page-container {
-  @apply bg-base-200 min-h-screen pb-20;
+  @apply bg-base-200 pb-4;
 }
 
 /* Header styles */

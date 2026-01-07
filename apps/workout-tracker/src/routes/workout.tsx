@@ -8,6 +8,7 @@ import { Button } from "@/client/components/ui/button";
 import { EmptyState } from "@/client/components/ui/empty-state";
 import { RepButton } from "@/client/components/ui/rep-button";
 import { ProgressBar } from "@/client/components/ui/progress-bar";
+import { MobileSlideLink } from "@/client/components/MobileSlideLink";
 import {
   Dumbbell,
   ArrowLeft,
@@ -61,15 +62,16 @@ function ActiveWorkout() {
 
   return (
     <div className="page-container">
-      <div className="px-4 pt-6 pb-24">
+      <div className="px-4 pt-6 pb-4">
         {/* Back Link */}
-        <Link
+        <MobileSlideLink
           to="/"
+          direction="right"
           className="inline-flex items-center text-xs font-mono uppercase tracking-widest text-base-content/50 hover:text-base-content transition-colors mb-6"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
           Home
-        </Link>
+        </MobileSlideLink>
 
         {/* Header */}
         <div className="page-header mb-6 px-0">
@@ -100,7 +102,7 @@ function ActiveWorkout() {
           <ProgressBar
             value={completedExercises}
             max={totalExercises}
-            className="mb-2 [&::-webkit-progress-value]:bg-gray-400 [&::-moz-progress-bar]:bg-gray-400"
+            className="mb-2 [&::-webkit-progress-value]:bg-base-content/40 [&::-moz-progress-bar]:bg-base-content/40"
           />
           <p className="text-sm text-base-content/60">
             {completedExercises} of {totalExercises} exercises completed
@@ -158,13 +160,14 @@ function ExerciseCard({
               {isCompleted ? (
                 <CheckCircle className="h-5 w-5 text-success" />
               ) : (
-                <Link
+                <MobileSlideLink
                   to="/programs/$programId"
                   params={{ programId }}
+                  direction="left"
                   className="opacity-40 hover:opacity-100 transition-opacity"
                 >
                   <ChevronRight className="h-5 w-5" />
-                </Link>
+                </MobileSlideLink>
               )}
             </div>
             <p className="text-sm opacity-50 mb-4 font-bold">

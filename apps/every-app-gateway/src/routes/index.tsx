@@ -53,7 +53,7 @@ function App() {
   return (
     <div className="bg-base-100 h-full flex flex-col overflow-y-auto">
       <Header email={session.data?.user.email} role={session.data?.user.role} />
-      <div className="flex-1">
+      <div className="flex-1 animate-fade-in">
         <div className="max-w-4xl mx-auto px-4 py-6">
           <div className="space-y-6">
             {isError && (

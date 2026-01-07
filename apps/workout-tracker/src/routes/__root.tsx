@@ -9,14 +9,13 @@ import {
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import * as React from "react";
+import type { ReactNode } from "react";
 import { DefaultCatchBoundary } from "@/client/components/DefaultCatchBoundary";
 import { NotFound } from "@/client/components/NotFound";
 import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
 import { Sidebar } from "@/client/components/Sidebar";
 import { TabBar } from "@/client/components/TabBar";
-import { useIsMobile } from "@/client/hooks/use-mobile";
 import { EmbeddedAppProvider } from "@every-app/sdk/client";
 import {
   programsCollection,
@@ -28,7 +27,6 @@ import {
   persister,
 } from "@/client/tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
-import { getTransitionType } from "@/client/lib/utils";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -99,26 +97,14 @@ export const Route = createRootRoute({
   shellComponent: RootDocument,
 });
 
+// Routes where tab bar should be hidden
+function shouldHideTabBar(pathname: string): boolean {
+  return pathname.startsWith("/templates/");
+}
+
 function AppLayout() {
   const location = useLocation();
-  const isMobile = useIsMobile();
-  const lastPathRef = React.useRef(location.pathname);
-
-  // Set transition type before navigation occurs
-  React.useEffect(() => {
-    const currentPath = location.pathname;
-    const lastPath = lastPathRef.current;
-
-    if (currentPath !== lastPath) {
-      const transitionType = getTransitionType({
-        from: lastPath,
-        to: currentPath,
-        isMobile: isMobile ?? false,
-      });
-      document.documentElement.dataset.transition = transitionType;
-      lastPathRef.current = currentPath;
-    }
-  }, [location.pathname, isMobile]);
+  const hideTabBar = shouldHideTabBar(location.pathname);
 
   // Preload all workout data into collections
   useLiveQuery((q) => q.from({ program: programsCollection }));
@@ -130,28 +116,32 @@ function AppLayout() {
   // Use CSS-based responsive design to avoid hydration mismatch
   // The same HTML structure is rendered on server and client
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-base-200">
+    <div className="flex flex-col md:flex-row h-full overflow-hidden bg-base-200">
       {/* Desktop: Sidebar */}
       <div className="hidden md:block">
         <Sidebar currentPath={location.pathname} />
       </div>
 
       {/* Main content */}
-      <div className="main-content flex-1 overflow-auto pb-[80px] md:pb-0">
+      <div
+        className={`main-content flex-1 min-h-0 overflow-auto md:pb-0 ${hideTabBar ? "pb-0" : "pb-[60px]"}`}
+      >
         <div className="max-w-2xl mx-auto">
           <Outlet />
         </div>
       </div>
 
-      {/* Mobile: TabBar */}
-      <div className="md:hidden">
-        <TabBar currentPath={location.pathname} />
-      </div>
+      {/* Mobile: TabBar - hidden on nested routes */}
+      {!hideTabBar && (
+        <div className="md:hidden flex-shrink-0">
+          <TabBar currentPath={location.pathname} />
+        </div>
+      )}
     </div>
   );
 }
 
-function RootDocument({ children }: { children: React.ReactNode }) {
+function RootDocument({ children }: { children: ReactNode }) {
   return (
     <html>
       <head>

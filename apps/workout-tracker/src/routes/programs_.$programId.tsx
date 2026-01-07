@@ -1,6 +1,5 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
-import { useIsMobile } from "@/client/hooks/use-mobile";
 import {
   useProgramById,
   useAllProgramsWithWorkouts,
@@ -11,8 +10,10 @@ import { Button } from "@/client/components/ui/button";
 import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
 import { InfoModal } from "@/client/components/ui/info-modal";
 import { WorkoutCard } from "@/client/components/WorkoutCard";
+import { MobileSlideLink } from "@/client/components/MobileSlideLink";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { useIsMobile } from "@/client/hooks/use-mobile";
 
 type ProgramSearchParams = {
   newProgramSource?: "custom" | "template";
@@ -172,7 +173,7 @@ function ProgramDetailPage() {
   if (!program) {
     return (
       <div className="page-container">
-        <div className="px-4 pt-12 pb-24">
+        <div className="px-4 pt-12 pb-4">
           <div className="text-center py-12">
             <h2 className="text-2xl font-bold mb-2">Program Not Found</h2>
             <p className="text-base-content/70 mb-4">
@@ -194,16 +195,17 @@ function ProgramDetailPage() {
     <>
       <div className="page-container">
         <div
-          className={`px-4 pt-6 ${isMobile && !program.isActive ? "pb-28" : "pb-24"}`}
+          className={`px-4 pt-6 ${isMobile && !program.isActive ? "pb-24" : "pb-4"}`}
         >
           {/* Back Link */}
-          <Link
+          <MobileSlideLink
             to="/programs"
+            direction="right"
             className="inline-flex items-center text-xs font-mono uppercase tracking-widest text-base-content/50 hover:text-base-content transition-colors mb-6"
           >
             <ArrowLeft className="h-4 w-4 mr-2" />
             Programs
-          </Link>
+          </MobileSlideLink>
 
           {/* Program Header */}
           <div className="mb-6 px-0">

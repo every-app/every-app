@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   useAllProgramsWithWorkouts,
@@ -10,6 +10,7 @@ import {
   createCustomProgramParams,
 } from "@/client/actions/createCustomProgram";
 import { Button } from "@/client/components/ui/button";
+import { MobileSlideLink } from "@/client/components/MobileSlideLink";
 import { capitalize } from "@/client/lib/utils";
 
 export const Route = createFileRoute("/programs")({
@@ -50,7 +51,7 @@ function ProgramsListPage() {
 
   return (
     <div className="page-container">
-      <div className="px-4 pt-6 pb-24">
+      <div className="px-4 pt-6 pb-4">
         {/* Page Header */}
         <div className="page-header mb-6 px-0">
           <div>
@@ -111,9 +112,10 @@ function ProgramsListPage() {
 
 function ProgramCard({ program }: { program: ProgramWithWorkouts }) {
   return (
-    <Link
+    <MobileSlideLink
       to="/programs/$programId"
       params={{ programId: program.id }}
+      direction="left"
       className="block"
     >
       <div className="program-card">
@@ -135,7 +137,7 @@ function ProgramCard({ program }: { program: ProgramWithWorkouts }) {
           )}
         </div>
       </div>
-    </Link>
+    </MobileSlideLink>
   );
 }
 
@@ -145,9 +147,10 @@ function TemplateCard({
   template: (typeof programTemplates)[0];
 }) {
   return (
-    <Link
+    <MobileSlideLink
       to="/templates/$templateId"
       params={{ templateId: template.id }}
+      direction="left"
       className="block"
     >
       <div className="program-card">
@@ -162,6 +165,6 @@ function TemplateCard({
           <span className="tag-pill">{capitalize(template.difficulty)}</span>
         </div>
       </div>
-    </Link>
+    </MobileSlideLink>
   );
 }

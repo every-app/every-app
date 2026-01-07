@@ -1,5 +1,11 @@
 /* ============================================
    View Transitions API - Route Animations
+   ============================================
+   
+   Default: fade transition
+   Custom transitions via Link props:
+   <Link viewTransition={{ types: ['slide-left'] }} />
+   <Link viewTransition={{ types: ['slide-right'] }} />
    ============================================ */
 
 /* Opt-in to view transitions */
@@ -18,34 +24,70 @@
   view-transition-name: none;
 }
 
-/* Fade transition (default for desktop and top-level navigation) */
-[data-transition="fade"]::view-transition-old(main-content) {
+/* ============================================
+   WORKAROUND: Height Mismatch Between Pages
+   ============================================
+   
+   Problem: When navigating from a tall/scrollable page to a shorter page,
+   the View Transitions API snapshot from the taller page extends beyond 
+   where the shorter page ends. During animation, this extra content stays
+   visible and doesn't animate properly.
+   
+   Workaround: Constrain snapshots to viewport height with solid background
+   to mask the content that would otherwise show through.
+   
+   TODO: Find a proper solution - this is a known limitation of the API.
+   See: https://developer.chrome.com/docs/web-platform/view-transitions
+   ============================================ */
+::view-transition-old(main-content),
+::view-transition-new(main-content) {
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-base-200);
+}
+
+/* ============================================
+   Default: Fade transition
+   ============================================ */
+::view-transition-old(main-content) {
   animation: vt-fade-out 150ms ease-out forwards;
 }
 
-[data-transition="fade"]::view-transition-new(main-content) {
+::view-transition-new(main-content) {
   animation: vt-fade-in 150ms ease-out forwards;
 }
 
-/* Slide left (navigating deeper - mobile only) */
-[data-transition="slide-left"]::view-transition-old(main-content) {
-  animation: vt-slide-out-left 180ms ease-out forwards;
+/* ============================================
+   Slide Left (navigating deeper)
+   Usage: <Link viewTransition={{ types: ['slide-left'] }} />
+   ============================================ */
+:active-view-transition-type(slide-left)::view-transition-old(main-content) {
+  animation: vt-slide-out-left 250ms ease-out forwards;
+  z-index: 1;
 }
 
-[data-transition="slide-left"]::view-transition-new(main-content) {
-  animation: vt-slide-in-right 180ms ease-out forwards;
+:active-view-transition-type(slide-left)::view-transition-new(main-content) {
+  animation: vt-slide-in-right 250ms ease-out forwards;
+  z-index: 2;
 }
 
-/* Slide right (navigating back - mobile only) */
-[data-transition="slide-right"]::view-transition-old(main-content) {
-  animation: vt-slide-out-right 180ms ease-out forwards;
+/* ============================================
+   Slide Right (navigating back)
+   Usage: <Link viewTransition={{ types: ['slide-right'] }} />
+   ============================================ */
+:active-view-transition-type(slide-right)::view-transition-old(main-content) {
+  animation: vt-slide-out-right 250ms ease-out forwards;
+  z-index: 2;
 }
 
-[data-transition="slide-right"]::view-transition-new(main-content) {
-  animation: vt-slide-in-left 180ms ease-out forwards;
+:active-view-transition-type(slide-right)::view-transition-new(main-content) {
+  animation: vt-slide-in-left 250ms ease-out forwards;
+  z-index: 1;
 }
 
-/* Keyframes */
+/* ============================================
+   Keyframes
+   ============================================ */
 @keyframes vt-fade-in {
   from {
     opacity: 0;
@@ -64,40 +106,48 @@
   }
 }
 
-/* Slide animations - full width for native app feel */
+/* Slide animations - native iOS-style push/pop */
 @keyframes vt-slide-in-right {
   from {
     transform: translateX(100%);
+    opacity: 1;
   }
   to {
     transform: translateX(0);
+    opacity: 1;
   }
 }
 
 @keyframes vt-slide-out-left {
   from {
     transform: translateX(0);
+    opacity: 1;
   }
   to {
     transform: translateX(-30%);
+    opacity: 0.8;
   }
 }
 
 @keyframes vt-slide-in-left {
   from {
-    transform: translateX(-100%);
+    transform: translateX(-30%);
+    opacity: 0.8;
   }
   to {
     transform: translateX(0);
+    opacity: 1;
   }
 }
 
 @keyframes vt-slide-out-right {
   from {
     transform: translateX(0);
+    opacity: 1;
   }
   to {
-    transform: translateX(30%);
+    transform: translateX(100%);
+    opacity: 1;
   }
 }
 

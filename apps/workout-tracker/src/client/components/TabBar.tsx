@@ -17,7 +17,7 @@ export function TabBar({ currentPath }: TabBarProps) {
 
   return (
     <div className="tab-bar px-4 pb-4">
-      <div className="dock dock-xl bg-base-300/80 backdrop-blur-xl rounded-full border border-base-content/10">
+      <div className="dock bg-base-300/80 backdrop-blur-xl rounded-full border border-base-content/10">
         <Link
           to="/"
           className={`no-underline ${isHomeActive ? "dock-active text-primary" : ""}`}

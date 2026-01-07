@@ -9,7 +9,6 @@ import {
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
-import * as React from "react";
 import { DefaultCatchBoundary } from "@/client/components/DefaultCatchBoundary";
 import { NotFound } from "@/client/components/NotFound";
 import appCss from "@/client/styles/app.css?url";
@@ -17,8 +16,6 @@ import { Toaster } from "sonner";
 import { Sidebar } from "@/client/components/Sidebar";
 import { TabBar } from "@/client/components/TabBar";
 import { EmbeddedAppProvider } from "@every-app/sdk/client";
-import { useIsMobile } from "@/client/hooks/use-mobile";
-import { getTransitionType } from "@/client/lib/utils";
 
 import { todoCollection, queryClient, persister } from "@/client/tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
@@ -84,24 +81,6 @@ export const Route = createRootRoute({
 
 function AppLayout() {
   const location = useLocation();
-  const isMobile = useIsMobile();
-  const lastPathRef = React.useRef(location.pathname);
-
-  // Set transition type before navigation occurs
-  React.useEffect(() => {
-    const currentPath = location.pathname;
-    const lastPath = lastPathRef.current;
-
-    if (currentPath !== lastPath) {
-      const transitionType = getTransitionType({
-        from: lastPath,
-        to: currentPath,
-        isMobile: isMobile ?? false,
-      });
-      document.documentElement.dataset.transition = transitionType;
-      lastPathRef.current = currentPath;
-    }
-  }, [location.pathname, isMobile]);
 
   // Always fetch todos regardless of route so that they are preloaded
   useLiveQuery((q) => q.from({ todo: todoCollection }));

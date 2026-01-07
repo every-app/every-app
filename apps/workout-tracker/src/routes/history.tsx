@@ -64,7 +64,7 @@ function HistoryPage() {
 
   return (
     <div className="page-container">
-      <div className="px-4 pt-6 pb-24">
+      <div className="px-4 pt-6 pb-4">
         {/* Header */}
         <div className="page-header mb-6 px-0">
           <div>

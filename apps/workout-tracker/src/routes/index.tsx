@@ -9,6 +9,7 @@ import { sessionsCollection, setLogsCollection } from "@/client/tanstack-db";
 import { Button } from "@/client/components/ui/button";
 import { EmptyState } from "@/client/components/ui/empty-state";
 import { WorkoutPreviewModal } from "@/client/components/WorkoutPreviewModal";
+import { MobileSlideLink } from "@/client/components/MobileSlideLink";
 import { Dumbbell } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -105,7 +106,7 @@ function Home() {
   return (
     <>
       <div className="page-container">
-        <div className="px-4 pt-6 pb-24">
+        <div className="px-4 pt-6 pb-4">
           {/* Program Header */}
           <div className="page-header mb-6 px-0">
             <div>
@@ -141,11 +142,15 @@ function Home() {
                       {currentWorkout.exercises.length} exercises
                     </div>
                   </div>
-                  <Link to="/workout" onClick={(e) => e.stopPropagation()}>
+                  <MobileSlideLink
+                    to="/workout"
+                    direction="left"
+                    onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                  >
                     <Button variant="primary">
                       {hasTrackedProgress ? "Continue" : "Start"}
                     </Button>
-                  </Link>
+                  </MobileSlideLink>
                 </div>
               </div>
             </div>
