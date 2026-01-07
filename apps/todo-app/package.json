@@ -39,6 +39,7 @@
     "cloudflare": "^5.2.0",
     "daisyui": "^5.5.5",
     "drizzle-orm": "^0.44.4",
+    "framer-motion": "^12.24.7",
     "jose": "^6.0.12",
     "lucide-react": "^0.542.0",
     "react": "^19.0.0",

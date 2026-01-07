@@ -1,6 +1,16 @@
 /**
- * Fractional indexing utilities for ordering todos
- * Based on lexicographic string ordering
+ * Fractional indexing utilities for ordering todos.
+ *
+ * Sort keys are strings that can be compared lexicographically to determine order.
+ * The list is sorted in DESCENDING order, meaning:
+ * - Higher sort keys appear at the TOP of the list
+ * - Lower sort keys appear at the BOTTOM of the list
+ *
+ * Key generation strategies:
+ * - New todos: timestamp-based keys (ensures newer = higher = appears at top)
+ * - Insert before a key: prepend "!" (always lexicographically smaller)
+ * - Insert after a key: append "~" (always lexicographically greater)
+ * - Insert between two keys: find midpoint or extend with middle char
  */
 
 // Counter to ensure uniqueness within the same millisecond
@@ -8,16 +18,13 @@ let counter = 0;
 let lastTimestamp = 0;
 
 /**
- * Generate a sort key for new todos that appears at the top of the list
- * Uses timestamp-based approach to ensure each new todo has a unique, increasing sort key
+ * Generate a sort key for new todos that appears at the top of the list.
+ * Uses timestamp-based approach to ensure each new todo has a unique, increasing sort key.
  */
 export function generateDefaultSortKey(): string {
-  // Use base36 encoding of timestamp to get lexicographically increasing keys
-  // More recent todos have "larger" strings (e.g., "x..." -> "y..." -> "z...")
-  // This ensures newest items appear first when sorted in descending order
   const timestamp = Date.now();
 
-  // Reset counter if we're in a new millisecond
+  // Handle multiple calls within the same millisecond
   if (timestamp !== lastTimestamp) {
     counter = 0;
     lastTimestamp = timestamp;
@@ -25,133 +32,82 @@ export function generateDefaultSortKey(): string {
     counter++;
   }
 
-  // Combine timestamp and counter for uniqueness
-  const combined = timestamp + counter;
-  return combined.toString(36);
+  // Base36 encoding gives lexicographically increasing keys for increasing timestamps
+  return (timestamp + counter).toString(36);
 }
 
 /**
- * Generate a sort key between two existing sort keys
- * @param before - The sort key that should come before the new key (optional)
- * @param after - The sort key that should come after the new key (optional)
+ * Generate a sort key between two existing sort keys.
+ *
+ * @param before - Key that should come BEFORE the new key (lower in DESC order)
+ * @param after - Key that should come AFTER the new key (higher in DESC order)
  * @returns A sort key that will be ordered between before and after
+ *
+ * Note: Despite the parameter names, `before < newKey < after` lexicographically.
+ * In a DESC-sorted list, `after` appears above `before`.
  */
 export function generateSortKeyBetween(
   before?: string,
   after?: string,
 ): string {
-  // If no bounds provided, return default
+  // No bounds: generate a new default key
   if (!before && !after) {
     return generateDefaultSortKey();
   }
 
-  // If only after is provided, insert before it
+  // Only upper bound: generate key below it (for bottom of list)
   if (!before) {
-    return generateSortKeyBefore(after!);
+    return "!" + after;
   }
 
-  // If only before is provided, insert after it
+  // Only lower bound: generate key above it (for top of list)
   if (!after) {
-    return generateSortKeyAfter(before!);
+    return before + "~";
   }
 
-  // Generate key between before and after
-  return generateSortKeyBetweenTwo(before, after);
+  // Both bounds: find a key between them
+  return generateKeyBetween(before, after);
 }
 
 /**
- * Generate a sort key that comes before the given key (lexicographically smaller)
+ * Generate a key lexicographically between two keys where before < after.
  */
-function generateSortKeyBefore(key: string): string {
-  // If the key starts with a character > 'a', decrement the first character
-  if (key.charAt(0) > "a") {
-    const firstChar = String.fromCharCode(key.charCodeAt(0) - 1);
-    return firstChar + "z"; // Use 'z' to be just before the decremented character
-  }
-
-  // If the key is 'a' or starts with 'a', we need to go lexicographically earlier
-  // We can't go before 'a', so we prepend a null byte or use a special prefix
-  // For simplicity, use '0' which comes before 'a'
-  if (key.charAt(0) === "a") {
-    return "0" + key;
-  }
-
-  // For keys starting with characters before 'a' (like numbers)
-  const firstChar = String.fromCharCode(key.charCodeAt(0) - 1);
-  return firstChar + "z";
-}
-
-/**
- * Generate a sort key that comes after the given key
- */
-function generateSortKeyAfter(key: string): string {
-  // If the key starts with a character < 'z', increment the first character
-  if (key.charAt(0) < "z") {
-    const firstChar = String.fromCharCode(key.charCodeAt(0) + 1);
-    return firstChar;
-  }
-
-  // If the key is 'z' or starts with 'z', append middle char
-  return key + "n";
-}
-
-/**
- * Generate a sort key between two existing keys
- */
-function generateSortKeyBetweenTwo(before: string, after: string): string {
-  // Find the first position where the strings differ
+function generateKeyBetween(before: string, after: string): string {
+  // Find first position where strings differ
+  const minLen = Math.min(before.length, after.length);
   let i = 0;
-  while (
-    i < Math.min(before.length, after.length) &&
-    before.charAt(i) === after.charAt(i)
-  ) {
+  while (i < minLen && before[i] === after[i]) {
     i++;
   }
 
-  // If one string is a prefix of the other
+  // Common prefix
+  const prefix = before.substring(0, i);
+
+  // Case 1: before is a prefix of after (e.g., "a" and "ab")
   if (i === before.length) {
-    // before is prefix of after (e.g., "a" and "ab")
-    // We need a character between "" and after.charAt(i)
-    // Get the character at position i in 'after'
-    const afterNextChar = after.charCodeAt(i);
-
-    // If the next character in 'after' is 'a' or close to it, we need to go smaller
-    if (afterNextChar === "a".charCodeAt(0)) {
-      // Can't go below 'a', so extend with a character before 'a'
-      return before + "0"; // '0' < 'a'
-    }
-
-    // Find midpoint between start of alphabet and the after character
-    const midChar = String.fromCharCode(Math.floor(afterNextChar / 2));
-    return before + midChar;
+    // Insert between "" and after[i] by using a char in between
+    const afterChar = after.charCodeAt(i);
+    // Use midpoint between 0 and afterChar, but at least '!' (33) for printability
+    const midCode = Math.max(33, Math.floor(afterChar / 2));
+    return prefix + String.fromCharCode(midCode);
   }
 
+  // Case 2: after is a prefix of before (shouldn't happen if before < after, but handle it)
   if (i === after.length) {
-    // after is prefix of before (shouldn't happen if before < after)
-    // but handle gracefully
-    return generateSortKeyBefore(after);
+    return "!" + after;
   }
 
-  // Strings differ at position i
+  // Case 3: strings differ at position i
   const beforeChar = before.charCodeAt(i);
   const afterChar = after.charCodeAt(i);
 
-  // If characters are adjacent, we need to extend the string
-  if (afterChar - beforeChar === 1) {
-    // Characters are adjacent (like 'y' and 'z' at position 0)
-    // We need to use the 'before' character and extend it
-    // But first check if 'before' already has more characters after position i
-    if (i + 1 < before.length) {
-      // before has more characters (e.g., "yn" vs "z")
-      // We need to generate something between "yn" and "z"
-      // Since 'y' and 'z' are adjacent, append to before
-      return before + "n";
-    }
-    // Use the before character and append middle character
-    return before.substring(0, i + 1) + "n";
+  // If there's room between the characters, use the midpoint
+  if (afterChar - beforeChar > 1) {
+    const midCode = Math.floor((beforeChar + afterChar) / 2);
+    return prefix + String.fromCharCode(midCode);
   }
 
-  // Characters have space between them, find midpoint
-  const midChar = String.fromCharCode(Math.floor((beforeChar + afterChar) / 2));
-  return before.substring(0, i) + midChar;
+  // Characters are adjacent - extend the before string with a middle character
+  // This gives us: before < before + "n" < after (assuming before + "n" < after)
+  return before + "n";
 }

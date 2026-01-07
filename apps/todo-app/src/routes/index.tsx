@@ -1,16 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { Button } from "@/client/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/client/components/ui/card";
 import { Input } from "@/client/components/ui/input";
 import { Plus, ClipboardList } from "lucide-react";
 import { CreateTodoModal } from "@/client/components/CreateTodoModal";
+import { AnimatePresence } from "framer-motion";
+import {
+  AnimatedTodoItem,
+  DragStateProvider,
+  useDragStateControl,
+} from "@/client/components/AnimatedTodoItem";
 
 import {
   DndContext,
@@ -21,6 +21,7 @@ import {
   useSensor,
   useSensors,
   DragEndEvent,
+  Modifier,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -30,6 +31,7 @@ import {
 import { todoCollection, insertNewTodo } from "@/client/tanstack-db";
 import { generateSortKeyBetween } from "@/client/lib/fractional-indexing";
 import { SortableTodoItem } from "@/client/components/SortableTodoItem";
+import { useDelayedAnimation } from "@/client/hooks/useDelayedAnimation";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -39,6 +41,15 @@ export const Route = createFileRoute("/")({
 const COMPLETED_TODOS_VISIBLE_DURATION_MS = 8 * 60 * 60 * 1000; // 8 hours
 
 function Home() {
+  return (
+    <DragStateProvider>
+      <HomeContent />
+    </DragStateProvider>
+  );
+}
+
+function HomeContent() {
+  const { setDragging } = useDragStateControl();
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [newTodoTitle, setNewTodoTitle] = useState<string>("");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -57,24 +68,69 @@ function Home() {
   );
 
   // Derive active and completed todos from query data
+  // Sort explicitly to ensure correct order after filtering (descending by sortKey)
   const activeTodos = useMemo(
-    () => todos?.filter((todo) => !todo.completed) ?? [],
+    () =>
+      todos
+        ?.filter((todo) => !todo.completed)
+        .sort((a, b) =>
+          b.sortKey > a.sortKey ? 1 : b.sortKey < a.sortKey ? -1 : 0,
+        ) ?? [],
     [todos],
   );
 
   const completedTodos = useMemo(() => {
     const cutoffTime = Date.now() - COMPLETED_TODOS_VISIBLE_DURATION_MS;
     return (
-      todos?.filter((todo) => {
-        if (!todo.completed) return false;
-        if (!todo.completedAt) return true; // Show if no completedAt timestamp
-        const completedTime = new Date(todo.completedAt).getTime();
-        return completedTime > cutoffTime;
-      }) ?? []
+      todos
+        ?.filter((todo) => {
+          if (!todo.completed) return false;
+          if (!todo.completedAt) return true; // Show if no completedAt timestamp
+          const completedTime = new Date(todo.completedAt).getTime();
+          return completedTime > cutoffTime;
+        })
+        // Sort by completedAt ascending (oldest first) so recently completed appear at bottom
+        .sort((a, b) => {
+          const aTime = a.completedAt ? new Date(a.completedAt).getTime() : 0;
+          const bTime = b.completedAt ? new Date(b.completedAt).getTime() : 0;
+          return aTime - bTime;
+        }) ?? []
     );
   }, [todos]);
 
+  // Enable animations after a delay to avoid jarring effects on page load
+  const animationsEnabled = useDelayedAnimation(500);
+
+  // Use a ref to access activeTodos at call time without recreating the callback
+  const activeTodosRef = useRef(activeTodos);
+  activeTodosRef.current = activeTodos;
+
+  // Callback to toggle a todo's completed status
+  const handleToggleComplete = useCallback(
+    (todoId: string, completed: boolean) => {
+      todoCollection.update(todoId, (draft) => {
+        draft.completed = completed;
+        draft.completedAt = completed ? new Date().toISOString() : null;
+        // When uncompleting, always move to bottom of active list
+        if (!completed) {
+          const currentActiveTodos = activeTodosRef.current;
+          if (currentActiveTodos.length > 0) {
+            const lowestSortKey =
+              currentActiveTodos[currentActiveTodos.length - 1].sortKey;
+            draft.sortKey = generateSortKeyBetween(undefined, lowestSortKey);
+          } else {
+            // No active todos - use a low sort key so it appears at bottom
+            // when new todos are added (which get high keys)
+            draft.sortKey = "0";
+          }
+        }
+      });
+    },
+    [],
+  );
+
   const handleDragEnd = (event: DragEndEvent) => {
+    setDragging(false);
     const { active, over } = event;
 
     if (!over || active.id === over.id) return;
@@ -108,21 +164,14 @@ function Home() {
   if (isError) {
     return (
       <div className="p-4">
-        <Card className="p-2">
-          <CardHeader>
-            <CardTitle>Error</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>Todo live query error.</p>
-          </CardContent>
-        </Card>
+        <p className="text-error">Failed to load todos.</p>
       </div>
     );
   }
 
   return (
     <>
-      <div className="px-4 pb-24 md:pt-4 md:pb-0 overflow-auto">
+      <div className="px-4 pb-24 md:pt-4 md:pb-0 overflow-y-auto overflow-x-hidden">
         <h1 className="text-xl font-semibold text-base-content py-3 md:hidden">
           Todos
         </h1>
@@ -144,7 +193,7 @@ function Home() {
               value={newTodoTitle}
               onChange={(e) => setNewTodoTitle(e.target.value)}
               autoFocus
-              className="focus:border-primary focus:bg-primary/10 transition-all duration-200"
+              className="focus:border-primary focus:bg-primary/10 transition-colors duration-200"
               aria-label="New todo title"
             />
             <Button
@@ -172,6 +221,9 @@ function Home() {
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
+              modifiers={[restrictToVerticalAxis]}
+              onDragStart={() => setDragging(true)}
+              onDragCancel={() => setDragging(false)}
               onDragEnd={handleDragEnd}
             >
               <SortableContext
@@ -179,15 +231,22 @@ function Home() {
                 strategy={verticalListSortingStrategy}
               >
                 <div className="md:mt-4 space-y-2">
-                  {activeTodos.map((todo) => (
-                    <SortableTodoItem
-                      key={todo.id}
-                      todo={todo}
-                      editingTodoId={editingTodoId}
-                      setEditingTodoId={setEditingTodoId}
-                      isDraggable={editingTodoId !== todo.id}
-                    />
-                  ))}
+                  <AnimatePresence mode="sync">
+                    {activeTodos.map((todo) => (
+                      <AnimatedTodoItem
+                        key={todo.id}
+                        isAnimationEnabled={animationsEnabled}
+                      >
+                        <SortableTodoItem
+                          todo={todo}
+                          editingTodoId={editingTodoId}
+                          setEditingTodoId={setEditingTodoId}
+                          isDraggable={editingTodoId !== todo.id}
+                          onToggleComplete={handleToggleComplete}
+                        />
+                      </AnimatedTodoItem>
+                    ))}
+                  </AnimatePresence>
                 </div>
               </SortableContext>
             </DndContext>
@@ -195,15 +254,22 @@ function Home() {
             {completedTodos.length > 0 && (
               <div className="border-base-300 mt-4">
                 <div className="space-y-2 opacity-75">
-                  {completedTodos.map((todo) => (
-                    <SortableTodoItem
-                      key={todo.id}
-                      todo={todo}
-                      editingTodoId={editingTodoId}
-                      setEditingTodoId={setEditingTodoId}
-                      isDraggable={false}
-                    />
-                  ))}
+                  <AnimatePresence mode="sync">
+                    {completedTodos.map((todo) => (
+                      <AnimatedTodoItem
+                        key={todo.id}
+                        isAnimationEnabled={animationsEnabled}
+                      >
+                        <SortableTodoItem
+                          todo={todo}
+                          editingTodoId={editingTodoId}
+                          setEditingTodoId={setEditingTodoId}
+                          isDraggable={false}
+                          onToggleComplete={handleToggleComplete}
+                        />
+                      </AnimatedTodoItem>
+                    ))}
+                  </AnimatePresence>
                 </div>
               </div>
             )}
@@ -296,3 +362,12 @@ function useDraggableSensors() {
   );
   return sensors;
 }
+
+/**
+ * Modifier that restricts drag movement to vertical axis only.
+ * Prevents horizontal dragging which can cause items to overflow the container.
+ */
+const restrictToVerticalAxis: Modifier = ({ transform }) => ({
+  ...transform,
+  x: 0,
+});

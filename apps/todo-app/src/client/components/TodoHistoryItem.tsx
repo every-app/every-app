@@ -7,9 +7,10 @@ import { todoCollection } from "@/client/tanstack-db";
 
 interface HistoryItemProps {
   todo: Todo;
+  onToggleComplete?: (todoId: string, completed: boolean) => void;
 }
 
-export function HistoryItem({ todo }: HistoryItemProps) {
+export function HistoryItem({ todo, onToggleComplete }: HistoryItemProps) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   return (
@@ -17,11 +18,7 @@ export function HistoryItem({ todo }: HistoryItemProps) {
       <Checkbox
         checked={todo.completed}
         onCheckedChange={(checked) => {
-          todoCollection.update(todo.id, (draft) => {
-            draft.completed = Boolean(checked);
-            // Set client-side for optimistic UI; server overwrites with authoritative timestamp on refetch
-            draft.completedAt = checked ? new Date().toISOString() : null;
-          });
+          onToggleComplete?.(todo.id, Boolean(checked));
         }}
         className="focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 focus-visible:outline-none transition-all duration-200 hover:ring-2 hover:ring-gray-300 hover:ring-offset-1"
         aria-label={`Mark "${todo.title}" as incomplete`}

@@ -5,306 +5,248 @@ import {
 } from "./fractional-indexing";
 
 describe("fractional-indexing", () => {
-  describe("generateDefaultSortKey", () => {
-    it("should generate unique sort keys for consecutive calls", () => {
-      const key1 = generateDefaultSortKey();
-      // Wait a tiny bit to ensure different timestamp
-      const key2 = generateDefaultSortKey();
+  /**
+   * Helper to sort an array of sort keys in descending order (like the UI does)
+   */
+  const sortDesc = (keys: string[]) =>
+    [...keys].sort((a, b) => (b > a ? 1 : b < a ? -1 : 0));
 
-      expect(key1).not.toBe(key2);
+  describe("generateDefaultSortKey", () => {
+    it("generates unique keys for consecutive calls", () => {
+      const keys = Array.from({ length: 10 }, () => generateDefaultSortKey());
+      const uniqueKeys = new Set(keys);
+      expect(uniqueKeys.size).toBe(keys.length);
     });
 
-    it("should generate keys that sort in descending order for newer items", () => {
+    it("generates increasing keys over time (newer = higher)", () => {
+      const key1 = generateDefaultSortKey();
+      const key2 = generateDefaultSortKey();
+      expect(key2 > key1).toBe(true);
+    });
+
+    it("newer todos appear at top of DESC-sorted list", () => {
       const older = generateDefaultSortKey();
-      // Small delay to ensure different timestamp
       const newer = generateDefaultSortKey();
 
-      // Newer items should have lexicographically larger keys for DESC ordering
-      expect(newer > older).toBe(true);
+      const sorted = sortDesc([older, newer]);
+      expect(sorted[0]).toBe(newer); // Newer at top
+      expect(sorted[1]).toBe(older); // Older below
     });
   });
 
   describe("generateSortKeyBetween", () => {
-    describe("basic cases", () => {
-      it("should generate a key between two single-character keys", () => {
-        const result = generateSortKeyBetween("a", "z");
-        expect(result > "a").toBe(true);
-        expect(result < "z").toBe(true);
+    describe("inserting at boundaries", () => {
+      it("no bounds: returns a default key", () => {
+        const key = generateSortKeyBetween(undefined, undefined);
+        expect(typeof key).toBe("string");
+        expect(key.length).toBeGreaterThan(0);
       });
 
-      it("should generate a key between adjacent characters", () => {
-        const result = generateSortKeyBetween("a", "b");
-        expect(result > "a").toBe(true);
-        expect(result < "b").toBe(true);
+      it("only upper bound (after): generates key below it", () => {
+        const after = "m";
+        const key = generateSortKeyBetween(undefined, after);
+        expect(key < after).toBe(true);
       });
 
-      it("should generate a key when only 'after' is provided", () => {
-        const result = generateSortKeyBetween(undefined, "m");
-        expect(result < "m").toBe(true);
-      });
-
-      it("should generate a key when only 'before' is provided", () => {
-        const result = generateSortKeyBetween("m", undefined);
-        expect(result > "m").toBe(true);
-      });
-
-      it("should generate a default key when both are undefined", () => {
-        const result = generateSortKeyBetween(undefined, undefined);
-        expect(result).toBeDefined();
-        expect(typeof result).toBe("string");
+      it("only lower bound (before): generates key above it", () => {
+        const before = "m";
+        const key = generateSortKeyBetween(before, undefined);
+        expect(key > before).toBe(true);
       });
     });
 
-    describe("edge cases", () => {
-      it("should handle keys at the start of alphabet", () => {
-        const result = generateSortKeyBetween("a", "b");
-        expect(result > "a").toBe(true);
-        expect(result < "b").toBe(true);
+    describe("inserting between two keys", () => {
+      it("generates key between two single chars", () => {
+        const key = generateSortKeyBetween("a", "z");
+        expect(key > "a").toBe(true);
+        expect(key < "z").toBe(true);
       });
 
-      it("should handle keys at the end of alphabet", () => {
-        const result = generateSortKeyBetween("y", "z");
-        expect(result > "y").toBe(true);
-        expect(result < "z").toBe(true);
+      it("generates key between adjacent chars", () => {
+        const key = generateSortKeyBetween("a", "b");
+        expect(key > "a").toBe(true);
+        expect(key < "b").toBe(true);
       });
 
-      it("should handle multi-character keys", () => {
-        const result = generateSortKeyBetween("abc", "abd");
-        expect(result > "abc").toBe(true);
-        expect(result < "abd").toBe(true);
+      it("generates key between multi-char strings", () => {
+        const key = generateSortKeyBetween("abc", "abd");
+        expect(key > "abc").toBe(true);
+        expect(key < "abd").toBe(true);
       });
 
-      it("should handle keys where one is a prefix of the other", () => {
-        const result = generateSortKeyBetween("a", "ab");
-        expect(result > "a").toBe(true);
-        expect(result < "ab").toBe(true);
-      });
-    });
-
-    describe("DESC ordering scenarios (real-world use case)", () => {
-      it("should work when moving item down in DESC-sorted list", () => {
-        // List sorted DESC: ['z', 'y', 'x', 'w', 'v']
-        // Drag index 1 (y) to index 3
-        // Visual position: between 'w' (index 3) and 'v' (index 4)
-        // beforeTodo=w, afterTodo=v
-        // MUST swap params: pass lower key first
-        const result = generateSortKeyBetween("v", "w");
-
-        expect(result > "v").toBe(true);
-        expect(result < "w").toBe(true);
-
-        // Verify it sorts correctly in DESC order
-        const sorted = ["z", "y", "x", "w", result, "v"].sort().reverse();
-        const expectedIndex = sorted.indexOf(result);
-        expect(expectedIndex).toBe(4); // Should be at index 4 (between w and v)
-      });
-
-      it("should work when moving item up in DESC-sorted list", () => {
-        // List sorted DESC: ['z', 'y', 'x', 'w', 'v']
-        // Drag index 3 (w) to index 1
-        // Visual position: between 'z' (index 0) and 'y' (index 1)
-        // beforeTodo=z, afterTodo=y
-        // MUST swap params: pass lower key first
-        const result = generateSortKeyBetween("y", "z");
-
-        expect(result > "y").toBe(true);
-        expect(result < "z").toBe(true);
-
-        // Verify it sorts correctly in DESC order
-        const sorted = ["z", result, "y", "x", "v"].sort().reverse();
-        const expectedIndex = sorted.indexOf(result);
-        expect(expectedIndex).toBe(1); // Should be at index 1 (between z and y)
-      });
-
-      it("should handle dragging to top of DESC list", () => {
-        // Drag to position 0 (top)
-        // beforeTodo=undefined, afterTodo='z' (current top item)
-        // Need key > 'z'
-        const result = generateSortKeyBetween("z", undefined);
-
-        expect(result > "z").toBe(true);
-
-        // Verify it appears at top in DESC order
-        const sorted = [result, "z", "y", "x"].sort().reverse();
-        expect(sorted[0]).toBe(result);
-      });
-
-      it("should handle dragging to bottom of DESC list", () => {
-        // Drag to last position
-        // beforeTodo='a' (current bottom), afterTodo=undefined
-        // Need key < 'a'
-        const result = generateSortKeyBetween(undefined, "a");
-
-        expect(result < "a").toBe(true);
-
-        // Verify it appears at bottom in DESC order
-        const sorted = ["z", "y", "x", "a", result].sort().reverse();
-        expect(sorted[sorted.length - 1]).toBe(result);
+      it("handles prefix case (before is prefix of after)", () => {
+        const key = generateSortKeyBetween("a", "ab");
+        expect(key > "a").toBe(true);
+        expect(key < "ab").toBe(true);
       });
     });
 
-    describe("multiple insertions", () => {
-      it("should allow many insertions between two keys", () => {
+    describe("repeated insertions", () => {
+      it("allows many insertions at the bottom", () => {
+        let bottomKey = "zzz";
+        const keys = [bottomKey];
+
+        for (let i = 0; i < 10; i++) {
+          const newKey = generateSortKeyBetween(undefined, bottomKey);
+          expect(newKey < bottomKey).toBe(true);
+          keys.push(newKey);
+          bottomKey = newKey;
+        }
+
+        // All keys should be in descending order
+        const sorted = sortDesc(keys);
+        expect(sorted).toEqual(keys);
+      });
+
+      it("allows many insertions at the top", () => {
+        let topKey = "aaa";
+        const keys = [topKey];
+
+        for (let i = 0; i < 10; i++) {
+          const newKey = generateSortKeyBetween(topKey, undefined);
+          expect(newKey > topKey).toBe(true);
+          keys.unshift(newKey);
+          topKey = newKey;
+        }
+
+        // All keys should be in descending order
+        const sorted = sortDesc(keys);
+        expect(sorted).toEqual(keys);
+      });
+
+      it("allows many insertions between two keys", () => {
         let lower = "a";
-        let upper = "z";
-        const keys = [lower];
+        const upper = "z";
+        const keys = [lower, upper];
 
-        // Insert 10 keys between 'a' and 'z'
         for (let i = 0; i < 10; i++) {
           const newKey = generateSortKeyBetween(lower, upper);
           expect(newKey > lower).toBe(true);
           expect(newKey < upper).toBe(true);
-          keys.push(newKey);
+          keys.splice(keys.length - 1, 0, newKey); // Insert before upper
           lower = newKey;
         }
 
-        keys.push(upper);
-
-        // Verify all keys are in correct order
+        // All keys should be in ascending order (for the between insertions)
         const sorted = [...keys].sort();
         expect(sorted).toEqual(keys);
       });
+    });
+  });
 
-      it("should allow repeated insertions at the top (real-world scenario)", () => {
-        // Simulate adding new todos to the top of the list repeatedly
-        // Each new todo should get a unique sort key that appears first in DESC order
-        const sortKeys: string[] = [];
+  describe("real-world scenarios (DESC-sorted todo list)", () => {
+    it("new todos appear at the top", () => {
+      // Existing todos
+      const existingKeys = ["mk3a", "mk39", "mk38"];
 
-        for (let i = 0; i < 5; i++) {
-          const newKey = generateDefaultSortKey();
-          sortKeys.push(newKey);
-        }
+      // Add new todo
+      const newKey = generateDefaultSortKey();
+      const allKeys = [...existingKeys, newKey];
 
-        // All keys should be unique
-        const uniqueKeys = new Set(sortKeys);
-        expect(uniqueKeys.size).toBe(sortKeys.length);
-
-        // When sorted in DESC order, newest items (created last) should appear first
-        // Since newer items have larger keys, DESC sort puts them at the top
-        const sorted = [...sortKeys].sort().reverse();
-        // Sorted DESC should be: [newest (last created), ..., oldest (first created)]
-        // Which is the reverse of creation order
-        expect(sorted).toEqual([...sortKeys].reverse());
-      });
-
-      it("should create new todos that appear at the top of a DESC-ordered list", () => {
-        // Simulate the real scenario: existing todos with sort keys from earlier timestamps
-        // Using realistic timestamp-based keys (older timestamps = smaller values)
-        const baseTimestamp = Date.now() - 10000; // 10 seconds ago
-        const existingTodos = [
-          { id: "1", sortKey: (baseTimestamp + 0).toString(36) },
-          { id: "2", sortKey: (baseTimestamp + 1000).toString(36) },
-          { id: "3", sortKey: (baseTimestamp + 2000).toString(36) },
-        ];
-
-        // Add a new todo with current timestamp (should be larger)
-        const newTodo1 = {
-          id: "4",
-          sortKey: generateDefaultSortKey(),
-        };
-
-        // Wait a tiny bit and add another (should be even larger)
-        const newTodo2 = {
-          id: "5",
-          sortKey: generateDefaultSortKey(),
-        };
-
-        // Combine all todos
-        const allTodos = [...existingTodos, newTodo1, newTodo2];
-
-        // Sort in DESC order (like the UI does)
-        const sortedDesc = allTodos.sort((a, b) =>
-          b.sortKey.localeCompare(a.sortKey),
-        );
-
-        // New todos should appear at the top (first positions)
-        // Most recent (newTodo2) should be first, then newTodo1
-        expect(sortedDesc[0].id).toBe("5");
-        expect(sortedDesc[1].id).toBe("4");
-      });
+      // New key should be at top after DESC sort
+      const sorted = sortDesc(allKeys);
+      expect(sorted[0]).toBe(newKey);
     });
 
-    describe("real drag-and-drop simulation", () => {
-      it("should correctly reorder items through multiple drags (DESC order)", () => {
-        // Start with 5 items in DESC order
-        const items = [
-          { id: "1", sortKey: "e" },
-          { id: "2", sortKey: "d" },
-          { id: "3", sortKey: "c" },
-          { id: "4", sortKey: "b" },
-          { id: "5", sortKey: "a" },
-        ];
+    it("uncompleting a todo moves it to the bottom", () => {
+      // Active todos sorted DESC
+      const activeTodos = ["mk3c", "mk3b", "mk3a"];
+      const bottomKey = activeTodos[activeTodos.length - 1];
 
-        // Drag item at index 1 (d) to index 3
-        // Position between index 3 (b) and index 4 (a)
-        const newSortKey1 = generateSortKeyBetween(
-          items[4].sortKey, // afterTodo (lower key)
-          items[3].sortKey, // beforeTodo (higher key)
-        );
-        items[1].sortKey = newSortKey1;
+      // Uncomplete a todo - generate key below the bottom
+      const newKey = generateSortKeyBetween(undefined, bottomKey);
 
-        // Re-sort in DESC order
-        items.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+      expect(newKey < bottomKey).toBe(true);
 
-        // Item '2' should now be at index 3
-        expect(items[3].id).toBe("2");
-        expect(items.map((i) => i.id)).toEqual(["1", "3", "4", "2", "5"]);
+      // Verify it appears at bottom
+      const sorted = sortDesc([...activeTodos, newKey]);
+      expect(sorted[sorted.length - 1]).toBe(newKey);
+    });
 
-        // Drag item at index 0 (e) to index 2
-        const draggedIndex = 0;
-        const targetIndex = 2;
-        const newSortKey2 = generateSortKeyBetween(
-          items[targetIndex + 1].sortKey, // afterTodo
-          items[targetIndex].sortKey, // beforeTodo
-        );
-        items[draggedIndex].sortKey = newSortKey2;
+    it("dragging to top of list", () => {
+      const todos = ["z", "y", "x", "w"];
+      const topKey = todos[0];
 
-        // Re-sort in DESC order
-        items.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+      // Drag 'w' to top - need key > topKey
+      const newKey = generateSortKeyBetween(topKey, undefined);
 
-        // Item '1' should now be at index 2
-        expect(items[2].id).toBe("1");
-      });
+      expect(newKey > topKey).toBe(true);
 
-      it("should handle edge case: dragging first item to second position", () => {
-        const items = [
-          { id: "1", sortKey: "z" },
-          { id: "2", sortKey: "y" },
-          { id: "3", sortKey: "x" },
-        ];
+      // 'w' with new key should be at top
+      const sorted = sortDesc(["z", "y", "x", newKey]);
+      expect(sorted[0]).toBe(newKey);
+    });
 
-        // Drag index 0 to index 1 (swap first two items)
-        // Position between index 1 (y) and index 2 (x)
-        const newSortKey = generateSortKeyBetween(
-          items[2].sortKey, // afterTodo (x)
-          items[1].sortKey, // beforeTodo (y)
-        );
-        items[0].sortKey = newSortKey;
+    it("dragging to bottom of list", () => {
+      const todos = ["z", "y", "x", "w"];
+      const bottomKey = todos[todos.length - 1];
 
-        items.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+      // Drag 'z' to bottom - need key < bottomKey
+      const newKey = generateSortKeyBetween(undefined, bottomKey);
 
-        expect(items.map((i) => i.id)).toEqual(["2", "1", "3"]);
-      });
+      expect(newKey < bottomKey).toBe(true);
 
-      it("should handle edge case: dragging last item to second-to-last position", () => {
-        const items = [
-          { id: "1", sortKey: "z" },
-          { id: "2", sortKey: "y" },
-          { id: "3", sortKey: "x" },
-        ];
+      // 'z' with new key should be at bottom
+      const sorted = sortDesc([newKey, "y", "x", "w"]);
+      expect(sorted[sorted.length - 1]).toBe(newKey);
+    });
 
-        // Drag index 2 to index 1 (swap last two items)
-        // Position between index 0 (z) and index 1 (y)
-        const newSortKey = generateSortKeyBetween(
-          items[1].sortKey, // afterTodo (y)
-          items[0].sortKey, // beforeTodo (z)
-        );
-        items[2].sortKey = newSortKey;
+    it("dragging between two items", () => {
+      // List in DESC order: ["z", "y", "x", "w"]
+      // Drag 'z' to between 'y' and 'x'
+      // Need key: x < newKey < y
+      const newKey = generateSortKeyBetween("x", "y");
 
-        items.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+      expect(newKey > "x").toBe(true);
+      expect(newKey < "y").toBe(true);
 
-        expect(items.map((i) => i.id)).toEqual(["1", "3", "2"]);
-      });
+      // Verify position in sorted list
+      const sorted = sortDesc([newKey, "y", "x", "w"]);
+      expect(sorted).toEqual(["y", newKey, "x", "w"]);
+    });
+
+    it("handles complex reordering sequence", () => {
+      const items = [
+        { id: "1", sortKey: "e" },
+        { id: "2", sortKey: "d" },
+        { id: "3", sortKey: "c" },
+        { id: "4", sortKey: "b" },
+        { id: "5", sortKey: "a" },
+      ];
+
+      // Drag item 2 (d) to between item 4 (b) and item 5 (a)
+      items[1].sortKey = generateSortKeyBetween("a", "b");
+      items.sort((a, b) => (b.sortKey > a.sortKey ? 1 : -1));
+      expect(items.map((i) => i.id)).toEqual(["1", "3", "4", "2", "5"]);
+
+      // Drag item 1 (e) to between item 3 (c) and item 4 (b)
+      items[0].sortKey = generateSortKeyBetween("b", "c");
+      items.sort((a, b) => (b.sortKey > a.sortKey ? 1 : -1));
+      expect(items.map((i) => i.id)).toEqual(["3", "1", "4", "2", "5"]);
+    });
+
+    it("handles keys with special characters from repeated bottom insertions", () => {
+      // Simulates the "!" prefix chain from repeated uncomplete operations
+      const keys = ["mk3a", "!mk3a", "!!mk3a", "!!!mk3a"];
+
+      const sorted = sortDesc(keys);
+      expect(sorted).toEqual(["mk3a", "!mk3a", "!!mk3a", "!!!mk3a"]);
+
+      // Can still insert below the lowest
+      const evenLower = generateSortKeyBetween(undefined, "!!!mk3a");
+      expect(evenLower < "!!!mk3a").toBe(true);
+    });
+
+    it("handles keys with ~ suffix from repeated top insertions", () => {
+      // Simulates the "~" suffix chain from repeated drag-to-top operations
+      const keys = ["mk3a", "mk3a~", "mk3a~~", "mk3a~~~"];
+
+      const sorted = sortDesc(keys);
+      expect(sorted).toEqual(["mk3a~~~", "mk3a~~", "mk3a~", "mk3a"]);
+
+      // Can still insert above the highest
+      const evenHigher = generateSortKeyBetween("mk3a~~~", undefined);
+      expect(evenHigher > "mk3a~~~").toBe(true);
     });
   });
 });

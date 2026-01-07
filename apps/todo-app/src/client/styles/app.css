@@ -105,9 +105,6 @@ code {
 }
 
 @layer utilities {
-  .pb-safe {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0.5rem) + 0.5rem);
-  }
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0);
   }

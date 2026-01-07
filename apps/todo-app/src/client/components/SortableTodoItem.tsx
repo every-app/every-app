@@ -18,6 +18,7 @@ interface SortableTodoItemProps {
   editingTodoId: string | null;
   setEditingTodoId: React.Dispatch<React.SetStateAction<string | null>>;
   isDraggable?: boolean;
+  onToggleComplete?: (todoId: string, completed: boolean) => void;
 }
 
 export function SortableTodoItem({
@@ -25,6 +26,7 @@ export function SortableTodoItem({
   editingTodoId,
   setEditingTodoId,
   isDraggable = true,
+  onToggleComplete,
 }: SortableTodoItemProps) {
   const [localTitle, setLocalTitle] = useState(todo.title);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -104,14 +106,37 @@ export function SortableTodoItem({
   // Auto-resize textarea to fit multi-line content without scrollbars
   const adjustTextareaHeight = () => {
     const textarea = textareaRef.current;
-    if (textarea) {
-      textarea.style.height = "auto";
-      textarea.style.height = `${textarea.scrollHeight}px`;
-    }
+    if (!textarea) return;
+
+    // Store current scroll position to prevent page jumping
+    const scrollTop = window.scrollY;
+
+    // Reset height to auto to get the correct scrollHeight
+    // Use minHeight instead of height to avoid collapsing during transition
+    textarea.style.minHeight = "0";
+    textarea.style.height = "auto";
+
+    // Force a reflow to ensure scrollHeight is recalculated
+    // This is necessary because some browsers batch style changes
+    void textarea.offsetHeight;
+
+    const newHeight = Math.max(textarea.scrollHeight, 24); // Minimum height of 24px (one line)
+    textarea.style.height = `${newHeight}px`;
+    textarea.style.minHeight = "";
+
+    // Restore scroll position
+    window.scrollTo({ top: scrollTop });
   };
+
   useEffect(() => {
     adjustTextareaHeight();
   }, [localTitle]);
+
+  // Also adjust on window resize (handles font scaling, zoom changes)
+  useEffect(() => {
+    window.addEventListener("resize", adjustTextareaHeight);
+    return () => window.removeEventListener("resize", adjustTextareaHeight);
+  }, []);
 
   return (
     <div
@@ -119,21 +144,21 @@ export function SortableTodoItem({
       style={style}
       {...(isDraggable ? attributes : {})}
       {...(isDraggable ? listeners : {})}
-      className={`flex items-start gap-3 p-2 rounded-md transition-colors ${
+      className={`flex items-start gap-3 p-2 rounded-md border ${
         isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
-      } ${isDragging ? "opacity-50" : ""} ${
-        editingTodoId === todo.id ? "bg-primary/10" : "hover:bg-base-200"
+      } ${
+        isDragging
+          ? "z-50 bg-base-200 shadow-lg border-base-300"
+          : editingTodoId === todo.id
+            ? "border-base-300 bg-base-300/50"
+            : "border-transparent hover:bg-base-200"
       }`}
     >
       {/* before:absolute before:inset-[-8px] creates an invisible hit area extending 8px beyond the checkbox */}
       <Checkbox
         checked={todo.completed}
         onCheckedChange={(checked) => {
-          todoCollection.update(todo.id, (draft) => {
-            draft.completed = Boolean(checked);
-            // Set client-side for optimistic UI; server overwrites with authoritative timestamp on refetch
-            draft.completedAt = checked ? new Date().toISOString() : null;
-          });
+          onToggleComplete?.(todo.id, Boolean(checked));
         }}
         onPointerDown={(e) => e.stopPropagation()}
         className="mt-1.5 flex-shrink-0 relative before:absolute before:inset-[-8px] before:content-['']"
@@ -170,7 +195,7 @@ export function SortableTodoItem({
             }
           }}
           disabled={todo.completed}
-          className={`w-full border-none bg-transparent focus:ring-0 focus:border-none focus:outline-none shadow-none px-2 py-1 text-base leading-6 transition-all duration-200 resize-none overflow-hidden break-words ${
+          className={`w-full border-none bg-transparent focus:ring-0 focus:border-none focus:outline-none shadow-none px-2 py-1 text-base leading-6 resize-none overflow-hidden break-words ${
             isDragging
               ? "!cursor-grabbing"
               : todo.completed

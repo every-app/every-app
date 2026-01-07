@@ -1,9 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
+import { AnimatePresence } from "framer-motion";
 import { Button } from "@/client/components/ui/button";
 import { todoCollection } from "@/client/tanstack-db";
 import { HistoryItem } from "@/client/components/TodoHistoryItem";
+import { AnimatedTodoItem } from "@/client/components/AnimatedTodoItem";
+import { useDelayedAnimation } from "@/client/hooks/useDelayedAnimation";
 
 export const Route = createFileRoute("/history")({
   component: History,
@@ -27,6 +30,20 @@ function History() {
   const groupedTodos = useMemo(
     () => groupTodosByDate(completedTodos),
     [completedTodos],
+  );
+
+  // Enable animations after a delay to avoid jarring effects on page load
+  const animationsEnabled = useDelayedAnimation(500);
+
+  // Callback to toggle a todo's completed status
+  const handleToggleComplete = useCallback(
+    (todoId: string, completed: boolean) => {
+      todoCollection.update(todoId, (draft) => {
+        draft.completed = completed;
+        draft.completedAt = completed ? new Date().toISOString() : null;
+      });
+    },
+    [],
   );
 
   if (isLoading) {
@@ -64,9 +81,19 @@ function History() {
                   {formatDateHeader(group.date)}
                 </h2>
                 <div className="space-y-2">
-                  {group.todos.map((todo) => (
-                    <HistoryItem key={todo.id} todo={todo} />
-                  ))}
+                  <AnimatePresence mode="sync">
+                    {group.todos.map((todo) => (
+                      <AnimatedTodoItem
+                        key={todo.id}
+                        isAnimationEnabled={animationsEnabled}
+                      >
+                        <HistoryItem
+                          todo={todo}
+                          onToggleComplete={handleToggleComplete}
+                        />
+                      </AnimatedTodoItem>
+                    ))}
+                  </AnimatePresence>
                 </div>
               </div>
             ))}
