@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
-import { CpuTimeoutError } from "@/client/auth-client";
+import { CpuTimeoutError, isCpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { acceptInvitation } from "@/serverFunctions/admin";
 
@@ -103,7 +103,10 @@ function AcceptInvitation() {
       setSuccess(true);
     } catch (err) {
       console.error("Accept invitation error:", err);
-      if (err instanceof CpuTimeoutError) {
+      // Check for CPU timeout error - either from authClient (CpuTimeoutError instance)
+      // or from server functions (error message contains CPU timeout keywords)
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (err instanceof CpuTimeoutError || isCpuTimeoutError(errorMessage)) {
         setIsCpuTimeout(true);
       } else {
         setError(

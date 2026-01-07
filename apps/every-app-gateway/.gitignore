@@ -20,3 +20,5 @@ yarn.lock
 /blob-report/
 /playwright/.cache/
 .tanstack
+/release-package/
+*.tar.gz

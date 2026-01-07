@@ -5,7 +5,7 @@ import {
   useSearch,
 } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { CpuTimeoutError } from "@/client/auth-client";
+import { CpuTimeoutError, isCpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { resetPassword as resetPasswordFn } from "@/serverFunctions/admin";
 
@@ -75,7 +75,10 @@ function ResetPassword() {
       }, 2000);
     } catch (err) {
       console.error("Password reset error:", err);
-      if (err instanceof CpuTimeoutError) {
+      // Check for CPU timeout error - either from authClient (CpuTimeoutError instance)
+      // or from server functions (error message contains CPU timeout keywords)
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      if (err instanceof CpuTimeoutError || isCpuTimeoutError(errorMessage)) {
         setIsCpuTimeout(true);
       } else {
         setError(

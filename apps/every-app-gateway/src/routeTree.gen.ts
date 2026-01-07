@@ -8,382 +8,402 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-import { Route as rootRouteImport } from './routes/__root'
-import { Route as SignUpRouteImport } from './routes/sign-up'
-import { Route as SignInRouteImport } from './routes/sign-in'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as PwaRouteImport } from './routes/pwa'
-import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
-import { Route as AdminRouteImport } from './routes/admin'
-import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AdminIndexRouteImport } from './routes/admin/index'
-import { Route as AppsAppIdRouteImport } from './routes/apps/$appId'
-import { Route as AdminUsersRouteImport } from './routes/admin/users'
-import { Route as AppsAppIdDevRouteImport } from './routes/apps/$appId_.dev'
-import { Route as AppsAppIdSplatRouteImport } from './routes/apps/$appId.$'
-import { Route as ApiEmbeddedJwksRouteImport } from './routes/api/embedded/jwks'
-import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as AppsAppIdDevSplatRouteImport } from './routes/apps/$appId_.dev.$'
+import { Route as rootRouteImport } from "./routes/__root";
+import { Route as SignUpRouteImport } from "./routes/sign-up";
+import { Route as SignInRouteImport } from "./routes/sign-in";
+import { Route as ResetPasswordRouteImport } from "./routes/reset-password";
+import { Route as PwaRouteImport } from "./routes/pwa";
+import { Route as ForgotPasswordRouteImport } from "./routes/forgot-password";
+import { Route as AdminRouteImport } from "./routes/admin";
+import { Route as AcceptInvitationRouteImport } from "./routes/accept-invitation";
+import { Route as IndexRouteImport } from "./routes/index";
+import { Route as AdminIndexRouteImport } from "./routes/admin/index";
+import { Route as AppsAppIdRouteImport } from "./routes/apps/$appId";
+import { Route as AdminUsersRouteImport } from "./routes/admin/users";
+import { Route as AppsAppIdDevRouteImport } from "./routes/apps/$appId_.dev";
+import { Route as AppsAppIdSplatRouteImport } from "./routes/apps/$appId.$";
+import { Route as ApiEmbeddedJwksRouteImport } from "./routes/api/embedded/jwks";
+import { Route as ApiAuthSplatRouteImport } from "./routes/api/auth/$";
+import { Route as ApiAdminHasOwnerRouteImport } from "./routes/api/admin/has-owner";
+import { Route as AppsAppIdDevSplatRouteImport } from "./routes/apps/$appId_.dev.$";
 
 const SignUpRoute = SignUpRouteImport.update({
-  id: '/sign-up',
-  path: '/sign-up',
+  id: "/sign-up",
+  path: "/sign-up",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const SignInRoute = SignInRouteImport.update({
-  id: '/sign-in',
-  path: '/sign-in',
+  id: "/sign-in",
+  path: "/sign-in",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
+  id: "/reset-password",
+  path: "/reset-password",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const PwaRoute = PwaRouteImport.update({
-  id: '/pwa',
-  path: '/pwa',
+  id: "/pwa",
+  path: "/pwa",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
-  id: '/forgot-password',
-  path: '/forgot-password',
+  id: "/forgot-password",
+  path: "/forgot-password",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+  id: "/admin",
+  path: "/admin",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
-  id: '/accept-invitation',
-  path: '/accept-invitation',
+  id: "/accept-invitation",
+  path: "/accept-invitation",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const AdminIndexRoute = AdminIndexRouteImport.update({
-  id: '/',
-  path: '/',
+  id: "/",
+  path: "/",
   getParentRoute: () => AdminRoute,
-} as any)
+} as any);
 const AppsAppIdRoute = AppsAppIdRouteImport.update({
-  id: '/apps/$appId',
-  path: '/apps/$appId',
+  id: "/apps/$appId",
+  path: "/apps/$appId",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const AdminUsersRoute = AdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
+  id: "/users",
+  path: "/users",
   getParentRoute: () => AdminRoute,
-} as any)
+} as any);
 const AppsAppIdDevRoute = AppsAppIdDevRouteImport.update({
-  id: '/apps/$appId_/dev',
-  path: '/apps/$appId/dev',
+  id: "/apps/$appId_/dev",
+  path: "/apps/$appId/dev",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const AppsAppIdSplatRoute = AppsAppIdSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
+  id: "/$",
+  path: "/$",
   getParentRoute: () => AppsAppIdRoute,
-} as any)
+} as any);
 const ApiEmbeddedJwksRoute = ApiEmbeddedJwksRouteImport.update({
-  id: '/api/embedded/jwks',
-  path: '/api/embedded/jwks',
+  id: "/api/embedded/jwks",
+  path: "/api/embedded/jwks",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
-  id: '/api/auth/$',
-  path: '/api/auth/$',
+  id: "/api/auth/$",
+  path: "/api/auth/$",
   getParentRoute: () => rootRouteImport,
-} as any)
+} as any);
+const ApiAdminHasOwnerRoute = ApiAdminHasOwnerRouteImport.update({
+  id: "/api/admin/has-owner",
+  path: "/api/admin/has-owner",
+  getParentRoute: () => rootRouteImport,
+} as any);
 const AppsAppIdDevSplatRoute = AppsAppIdDevSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
+  id: "/$",
+  path: "/$",
   getParentRoute: () => AppsAppIdDevRoute,
-} as any)
+} as any);
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/accept-invitation': typeof AcceptInvitationRoute
-  '/admin': typeof AdminRouteWithChildren
-  '/forgot-password': typeof ForgotPasswordRoute
-  '/pwa': typeof PwaRoute
-  '/reset-password': typeof ResetPasswordRoute
-  '/sign-in': typeof SignInRoute
-  '/sign-up': typeof SignUpRoute
-  '/admin/users': typeof AdminUsersRoute
-  '/apps/$appId': typeof AppsAppIdRouteWithChildren
-  '/admin/': typeof AdminIndexRoute
-  '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
-  '/apps/$appId/$': typeof AppsAppIdSplatRoute
-  '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
-  '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
+  "/": typeof IndexRoute;
+  "/accept-invitation": typeof AcceptInvitationRoute;
+  "/admin": typeof AdminRouteWithChildren;
+  "/forgot-password": typeof ForgotPasswordRoute;
+  "/pwa": typeof PwaRoute;
+  "/reset-password": typeof ResetPasswordRoute;
+  "/sign-in": typeof SignInRoute;
+  "/sign-up": typeof SignUpRoute;
+  "/admin/users": typeof AdminUsersRoute;
+  "/apps/$appId": typeof AppsAppIdRouteWithChildren;
+  "/admin/": typeof AdminIndexRoute;
+  "/api/admin/has-owner": typeof ApiAdminHasOwnerRoute;
+  "/api/auth/$": typeof ApiAuthSplatRoute;
+  "/api/embedded/jwks": typeof ApiEmbeddedJwksRoute;
+  "/apps/$appId/$": typeof AppsAppIdSplatRoute;
+  "/apps/$appId/dev": typeof AppsAppIdDevRouteWithChildren;
+  "/apps/$appId/dev/$": typeof AppsAppIdDevSplatRoute;
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/accept-invitation': typeof AcceptInvitationRoute
-  '/forgot-password': typeof ForgotPasswordRoute
-  '/pwa': typeof PwaRoute
-  '/reset-password': typeof ResetPasswordRoute
-  '/sign-in': typeof SignInRoute
-  '/sign-up': typeof SignUpRoute
-  '/admin/users': typeof AdminUsersRoute
-  '/apps/$appId': typeof AppsAppIdRouteWithChildren
-  '/admin': typeof AdminIndexRoute
-  '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
-  '/apps/$appId/$': typeof AppsAppIdSplatRoute
-  '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
-  '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
+  "/": typeof IndexRoute;
+  "/accept-invitation": typeof AcceptInvitationRoute;
+  "/forgot-password": typeof ForgotPasswordRoute;
+  "/pwa": typeof PwaRoute;
+  "/reset-password": typeof ResetPasswordRoute;
+  "/sign-in": typeof SignInRoute;
+  "/sign-up": typeof SignUpRoute;
+  "/admin/users": typeof AdminUsersRoute;
+  "/apps/$appId": typeof AppsAppIdRouteWithChildren;
+  "/admin": typeof AdminIndexRoute;
+  "/api/admin/has-owner": typeof ApiAdminHasOwnerRoute;
+  "/api/auth/$": typeof ApiAuthSplatRoute;
+  "/api/embedded/jwks": typeof ApiEmbeddedJwksRoute;
+  "/apps/$appId/$": typeof AppsAppIdSplatRoute;
+  "/apps/$appId/dev": typeof AppsAppIdDevRouteWithChildren;
+  "/apps/$appId/dev/$": typeof AppsAppIdDevSplatRoute;
 }
 export interface FileRoutesById {
-  __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/accept-invitation': typeof AcceptInvitationRoute
-  '/admin': typeof AdminRouteWithChildren
-  '/forgot-password': typeof ForgotPasswordRoute
-  '/pwa': typeof PwaRoute
-  '/reset-password': typeof ResetPasswordRoute
-  '/sign-in': typeof SignInRoute
-  '/sign-up': typeof SignUpRoute
-  '/admin/users': typeof AdminUsersRoute
-  '/apps/$appId': typeof AppsAppIdRouteWithChildren
-  '/admin/': typeof AdminIndexRoute
-  '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
-  '/apps/$appId/$': typeof AppsAppIdSplatRoute
-  '/apps/$appId_/dev': typeof AppsAppIdDevRouteWithChildren
-  '/apps/$appId_/dev/$': typeof AppsAppIdDevSplatRoute
+  __root__: typeof rootRouteImport;
+  "/": typeof IndexRoute;
+  "/accept-invitation": typeof AcceptInvitationRoute;
+  "/admin": typeof AdminRouteWithChildren;
+  "/forgot-password": typeof ForgotPasswordRoute;
+  "/pwa": typeof PwaRoute;
+  "/reset-password": typeof ResetPasswordRoute;
+  "/sign-in": typeof SignInRoute;
+  "/sign-up": typeof SignUpRoute;
+  "/admin/users": typeof AdminUsersRoute;
+  "/apps/$appId": typeof AppsAppIdRouteWithChildren;
+  "/admin/": typeof AdminIndexRoute;
+  "/api/admin/has-owner": typeof ApiAdminHasOwnerRoute;
+  "/api/auth/$": typeof ApiAuthSplatRoute;
+  "/api/embedded/jwks": typeof ApiEmbeddedJwksRoute;
+  "/apps/$appId/$": typeof AppsAppIdSplatRoute;
+  "/apps/$appId_/dev": typeof AppsAppIdDevRouteWithChildren;
+  "/apps/$appId_/dev/$": typeof AppsAppIdDevSplatRoute;
 }
 export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
+  fileRoutesByFullPath: FileRoutesByFullPath;
   fullPaths:
-    | '/'
-    | '/accept-invitation'
-    | '/admin'
-    | '/forgot-password'
-    | '/pwa'
-    | '/reset-password'
-    | '/sign-in'
-    | '/sign-up'
-    | '/admin/users'
-    | '/apps/$appId'
-    | '/admin/'
-    | '/api/auth/$'
-    | '/api/embedded/jwks'
-    | '/apps/$appId/$'
-    | '/apps/$appId/dev'
-    | '/apps/$appId/dev/$'
-  fileRoutesByTo: FileRoutesByTo
+    | "/"
+    | "/accept-invitation"
+    | "/admin"
+    | "/forgot-password"
+    | "/pwa"
+    | "/reset-password"
+    | "/sign-in"
+    | "/sign-up"
+    | "/admin/users"
+    | "/apps/$appId"
+    | "/admin/"
+    | "/api/admin/has-owner"
+    | "/api/auth/$"
+    | "/api/embedded/jwks"
+    | "/apps/$appId/$"
+    | "/apps/$appId/dev"
+    | "/apps/$appId/dev/$";
+  fileRoutesByTo: FileRoutesByTo;
   to:
-    | '/'
-    | '/accept-invitation'
-    | '/forgot-password'
-    | '/pwa'
-    | '/reset-password'
-    | '/sign-in'
-    | '/sign-up'
-    | '/admin/users'
-    | '/apps/$appId'
-    | '/admin'
-    | '/api/auth/$'
-    | '/api/embedded/jwks'
-    | '/apps/$appId/$'
-    | '/apps/$appId/dev'
-    | '/apps/$appId/dev/$'
+    | "/"
+    | "/accept-invitation"
+    | "/forgot-password"
+    | "/pwa"
+    | "/reset-password"
+    | "/sign-in"
+    | "/sign-up"
+    | "/admin/users"
+    | "/apps/$appId"
+    | "/admin"
+    | "/api/admin/has-owner"
+    | "/api/auth/$"
+    | "/api/embedded/jwks"
+    | "/apps/$appId/$"
+    | "/apps/$appId/dev"
+    | "/apps/$appId/dev/$";
   id:
-    | '__root__'
-    | '/'
-    | '/accept-invitation'
-    | '/admin'
-    | '/forgot-password'
-    | '/pwa'
-    | '/reset-password'
-    | '/sign-in'
-    | '/sign-up'
-    | '/admin/users'
-    | '/apps/$appId'
-    | '/admin/'
-    | '/api/auth/$'
-    | '/api/embedded/jwks'
-    | '/apps/$appId/$'
-    | '/apps/$appId_/dev'
-    | '/apps/$appId_/dev/$'
-  fileRoutesById: FileRoutesById
+    | "__root__"
+    | "/"
+    | "/accept-invitation"
+    | "/admin"
+    | "/forgot-password"
+    | "/pwa"
+    | "/reset-password"
+    | "/sign-in"
+    | "/sign-up"
+    | "/admin/users"
+    | "/apps/$appId"
+    | "/admin/"
+    | "/api/admin/has-owner"
+    | "/api/auth/$"
+    | "/api/embedded/jwks"
+    | "/apps/$appId/$"
+    | "/apps/$appId_/dev"
+    | "/apps/$appId_/dev/$";
+  fileRoutesById: FileRoutesById;
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AcceptInvitationRoute: typeof AcceptInvitationRoute
-  AdminRoute: typeof AdminRouteWithChildren
-  ForgotPasswordRoute: typeof ForgotPasswordRoute
-  PwaRoute: typeof PwaRoute
-  ResetPasswordRoute: typeof ResetPasswordRoute
-  SignInRoute: typeof SignInRoute
-  SignUpRoute: typeof SignUpRoute
-  AppsAppIdRoute: typeof AppsAppIdRouteWithChildren
-  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiEmbeddedJwksRoute: typeof ApiEmbeddedJwksRoute
-  AppsAppIdDevRoute: typeof AppsAppIdDevRouteWithChildren
+  IndexRoute: typeof IndexRoute;
+  AcceptInvitationRoute: typeof AcceptInvitationRoute;
+  AdminRoute: typeof AdminRouteWithChildren;
+  ForgotPasswordRoute: typeof ForgotPasswordRoute;
+  PwaRoute: typeof PwaRoute;
+  ResetPasswordRoute: typeof ResetPasswordRoute;
+  SignInRoute: typeof SignInRoute;
+  SignUpRoute: typeof SignUpRoute;
+  AppsAppIdRoute: typeof AppsAppIdRouteWithChildren;
+  ApiAdminHasOwnerRoute: typeof ApiAdminHasOwnerRoute;
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute;
+  ApiEmbeddedJwksRoute: typeof ApiEmbeddedJwksRoute;
+  AppsAppIdDevRoute: typeof AppsAppIdDevRouteWithChildren;
 }
 
-declare module '@tanstack/react-router' {
+declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
-    '/sign-up': {
-      id: '/sign-up'
-      path: '/sign-up'
-      fullPath: '/sign-up'
-      preLoaderRoute: typeof SignUpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sign-in': {
-      id: '/sign-in'
-      path: '/sign-in'
-      fullPath: '/sign-in'
-      preLoaderRoute: typeof SignInRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pwa': {
-      id: '/pwa'
-      path: '/pwa'
-      fullPath: '/pwa'
-      preLoaderRoute: typeof PwaRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/forgot-password': {
-      id: '/forgot-password'
-      path: '/forgot-password'
-      fullPath: '/forgot-password'
-      preLoaderRoute: typeof ForgotPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/accept-invitation': {
-      id: '/accept-invitation'
-      path: '/accept-invitation'
-      fullPath: '/accept-invitation'
-      preLoaderRoute: typeof AcceptInvitationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/': {
-      id: '/admin/'
-      path: '/'
-      fullPath: '/admin/'
-      preLoaderRoute: typeof AdminIndexRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/apps/$appId': {
-      id: '/apps/$appId'
-      path: '/apps/$appId'
-      fullPath: '/apps/$appId'
-      preLoaderRoute: typeof AppsAppIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/users': {
-      id: '/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof AdminUsersRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/apps/$appId_/dev': {
-      id: '/apps/$appId_/dev'
-      path: '/apps/$appId/dev'
-      fullPath: '/apps/$appId/dev'
-      preLoaderRoute: typeof AppsAppIdDevRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/apps/$appId/$': {
-      id: '/apps/$appId/$'
-      path: '/$'
-      fullPath: '/apps/$appId/$'
-      preLoaderRoute: typeof AppsAppIdSplatRouteImport
-      parentRoute: typeof AppsAppIdRoute
-    }
-    '/api/embedded/jwks': {
-      id: '/api/embedded/jwks'
-      path: '/api/embedded/jwks'
-      fullPath: '/api/embedded/jwks'
-      preLoaderRoute: typeof ApiEmbeddedJwksRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/auth/$': {
-      id: '/api/auth/$'
-      path: '/api/auth/$'
-      fullPath: '/api/auth/$'
-      preLoaderRoute: typeof ApiAuthSplatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/apps/$appId_/dev/$': {
-      id: '/apps/$appId_/dev/$'
-      path: '/$'
-      fullPath: '/apps/$appId/dev/$'
-      preLoaderRoute: typeof AppsAppIdDevSplatRouteImport
-      parentRoute: typeof AppsAppIdDevRoute
-    }
+    "/sign-up": {
+      id: "/sign-up";
+      path: "/sign-up";
+      fullPath: "/sign-up";
+      preLoaderRoute: typeof SignUpRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/sign-in": {
+      id: "/sign-in";
+      path: "/sign-in";
+      fullPath: "/sign-in";
+      preLoaderRoute: typeof SignInRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/reset-password": {
+      id: "/reset-password";
+      path: "/reset-password";
+      fullPath: "/reset-password";
+      preLoaderRoute: typeof ResetPasswordRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/pwa": {
+      id: "/pwa";
+      path: "/pwa";
+      fullPath: "/pwa";
+      preLoaderRoute: typeof PwaRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/forgot-password": {
+      id: "/forgot-password";
+      path: "/forgot-password";
+      fullPath: "/forgot-password";
+      preLoaderRoute: typeof ForgotPasswordRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/admin": {
+      id: "/admin";
+      path: "/admin";
+      fullPath: "/admin";
+      preLoaderRoute: typeof AdminRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/accept-invitation": {
+      id: "/accept-invitation";
+      path: "/accept-invitation";
+      fullPath: "/accept-invitation";
+      preLoaderRoute: typeof AcceptInvitationRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/": {
+      id: "/";
+      path: "/";
+      fullPath: "/";
+      preLoaderRoute: typeof IndexRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/admin/": {
+      id: "/admin/";
+      path: "/";
+      fullPath: "/admin/";
+      preLoaderRoute: typeof AdminIndexRouteImport;
+      parentRoute: typeof AdminRoute;
+    };
+    "/apps/$appId": {
+      id: "/apps/$appId";
+      path: "/apps/$appId";
+      fullPath: "/apps/$appId";
+      preLoaderRoute: typeof AppsAppIdRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/admin/users": {
+      id: "/admin/users";
+      path: "/users";
+      fullPath: "/admin/users";
+      preLoaderRoute: typeof AdminUsersRouteImport;
+      parentRoute: typeof AdminRoute;
+    };
+    "/apps/$appId_/dev": {
+      id: "/apps/$appId_/dev";
+      path: "/apps/$appId/dev";
+      fullPath: "/apps/$appId/dev";
+      preLoaderRoute: typeof AppsAppIdDevRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/apps/$appId/$": {
+      id: "/apps/$appId/$";
+      path: "/$";
+      fullPath: "/apps/$appId/$";
+      preLoaderRoute: typeof AppsAppIdSplatRouteImport;
+      parentRoute: typeof AppsAppIdRoute;
+    };
+    "/api/embedded/jwks": {
+      id: "/api/embedded/jwks";
+      path: "/api/embedded/jwks";
+      fullPath: "/api/embedded/jwks";
+      preLoaderRoute: typeof ApiEmbeddedJwksRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/auth/$": {
+      id: "/api/auth/$";
+      path: "/api/auth/$";
+      fullPath: "/api/auth/$";
+      preLoaderRoute: typeof ApiAuthSplatRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/api/admin/has-owner": {
+      id: "/api/admin/has-owner";
+      path: "/api/admin/has-owner";
+      fullPath: "/api/admin/has-owner";
+      preLoaderRoute: typeof ApiAdminHasOwnerRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    "/apps/$appId_/dev/$": {
+      id: "/apps/$appId_/dev/$";
+      path: "/$";
+      fullPath: "/apps/$appId/dev/$";
+      preLoaderRoute: typeof AppsAppIdDevSplatRouteImport;
+      parentRoute: typeof AppsAppIdDevRoute;
+    };
   }
 }
 
 interface AdminRouteChildren {
-  AdminUsersRoute: typeof AdminUsersRoute
-  AdminIndexRoute: typeof AdminIndexRoute
+  AdminUsersRoute: typeof AdminUsersRoute;
+  AdminIndexRoute: typeof AdminIndexRoute;
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
-}
+};
 
-const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren);
 
 interface AppsAppIdRouteChildren {
-  AppsAppIdSplatRoute: typeof AppsAppIdSplatRoute
+  AppsAppIdSplatRoute: typeof AppsAppIdSplatRoute;
 }
 
 const AppsAppIdRouteChildren: AppsAppIdRouteChildren = {
   AppsAppIdSplatRoute: AppsAppIdSplatRoute,
-}
+};
 
 const AppsAppIdRouteWithChildren = AppsAppIdRoute._addFileChildren(
   AppsAppIdRouteChildren,
-)
+);
 
 interface AppsAppIdDevRouteChildren {
-  AppsAppIdDevSplatRoute: typeof AppsAppIdDevSplatRoute
+  AppsAppIdDevSplatRoute: typeof AppsAppIdDevSplatRoute;
 }
 
 const AppsAppIdDevRouteChildren: AppsAppIdDevRouteChildren = {
   AppsAppIdDevSplatRoute: AppsAppIdDevSplatRoute,
-}
+};
 
 const AppsAppIdDevRouteWithChildren = AppsAppIdDevRoute._addFileChildren(
   AppsAppIdDevRouteChildren,
-)
+);
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -395,19 +415,20 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   AppsAppIdRoute: AppsAppIdRouteWithChildren,
+  ApiAdminHasOwnerRoute: ApiAdminHasOwnerRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiEmbeddedJwksRoute: ApiEmbeddedJwksRoute,
   AppsAppIdDevRoute: AppsAppIdDevRouteWithChildren,
-}
+};
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
-  ._addFileTypes<FileRouteTypes>()
+  ._addFileTypes<FileRouteTypes>();
 
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
+import type { getRouter } from "./router.tsx";
+import type { createStart } from "@tanstack/react-start";
+declare module "@tanstack/react-start" {
   interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
+    ssr: true;
+    router: Awaited<ReturnType<typeof getRouter>>;
   }
 }

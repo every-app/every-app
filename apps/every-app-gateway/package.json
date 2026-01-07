@@ -1,6 +1,6 @@
 {
   "name": "every-app-gateway",
-  "version": "0.0.26",
+  "version": "0.0.27",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -23,7 +23,8 @@
     "db:studio:prod": "every app remote-d1-shell -- drizzle-kit studio --config=drizzle-prod.config.ts",
     "knip": "knip",
     "test": "vitest run --silent",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:release": "node scripts/build-release.js"
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.17.0",

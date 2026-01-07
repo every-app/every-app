@@ -155,7 +155,7 @@ function IOSInstructions() {
           <div>
             <p className="font-medium flex items-center gap-2">
               Tap <SquarePlus className="w-5 h-5" />{" "}
-              <span>Add to Home Screen</span>
+              <span>Add to Home Screen (bottom of the page)</span>
             </p>
           </div>
         </div>
