@@ -1,14 +1,17 @@
 ---
-title: "Walkthrough: AI Cooking Assistant"
-description: A deep dive into how Chef is built
+title: Patterns
+description: Common patterns and why we use them
 ---
 
-This walkthrough explains how the [Chef](https://github.com/every-app/every-app/tree/main/apps/chef) app is built. Chef is an AI-powered cooking assistant that helps you manage recipes and get cooking guidance through a chat interface.
+These docs explain the patterns used across Every App's example apps and why we've made certain decisions. They're not a step-by-step tutorial—use them as a reference when you need to understand how something works.
 
-It covers patterns most apps need like:
+Examples are pulled from the [Chef](https://github.com/every-app/every-app/tree/main/apps/chef) app, an AI-powered cooking assistant.
 
-- Saving data with instant UI feedback
-- Using a component library with light and dark themes
-- Organizing backend logic
-- Streaming AI responses
-- Confirming with user before executing AI actions
+**What's covered:**
+
+- [Users & Auth](/docs/walkthrough/users-and-auth) - How auth flows from the Gateway to your app
+- [Theming & Styling](/docs/walkthrough/theming) - Component library setup with light/dark themes
+- [Database Schema](/docs/walkthrough/database-schema) - Drizzle schema patterns
+- [Organize Backend Code](/docs/walkthrough/organize-backend-code) - Structuring server functions
+- [Instant UI Updates](/docs/walkthrough/instant-updates) - Optimistic updates for snappy UX
+- [AI Chat & Tool Calls](/docs/walkthrough/ai-chat) - Streaming responses and user confirmations

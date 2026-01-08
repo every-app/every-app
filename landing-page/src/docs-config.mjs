@@ -33,11 +33,7 @@ export const docsConfig = [
     items: [{ slug: "docs/build-an-app/create-app" }],
   },
   {
-    label: "Coding Agents",
-    items: [{ slug: "docs/coding-agents/setup" }],
-  },
-  {
-    label: "Walkthrough: AI Cooking Assistant",
+    label: "Patterns",
     collapsed: true,
     items: [
       { slug: "docs/walkthrough/overview", label: "Overview" },
@@ -69,12 +65,7 @@ export function toStarlightSidebar() {
   const sidebar = [];
 
   // Sections with a single item that should be flattened to top-level
-  const flattenedSections = [
-    "Introduction",
-    "Getting Started",
-    "Build an App",
-    "Coding Agents",
-  ];
+  const flattenedSections = ["Introduction", "Getting Started", "Build an App"];
 
   for (const section of docsConfig) {
     // Single-item sections are flattened to top-level links

@@ -8,11 +8,13 @@ This documentation covers how to deploy and build apps with Every App, including
 
 ### Introduction
 
-Every App is a self-hosted platform for running personal web applications.
+Every App is a self-hosted platform for personal web apps. Use your favorite coding agent to build apps tailored to yourself, family, friends or your company.
 
-Deploy the Gateway to your Cloudflare account, and access all your apps through a single interface.
+Every App handles the boring parts like auth and hosting so that you can focus on building your idea.
 
-Self host open source apps with one simple command or build your own and share them with the community.
+Self-host on Cloudflare with one simple CLI command. Since apps are built for Cloudflare's serverless platform, hosting starts completely free. Even with dozens of apps, you're unlikely to exceed the $5/month paid plan.
+
+Make your app open source, sharing it online for others to use.
 
 <img
   src={gatewayScreenshot.src}
@@ -20,61 +22,54 @@ Self host open source apps with one simple command or build your own and share t
   style="border-radius: 8px; margin: 1rem 0;"
 />
 
-_Split browser windows showing the Gateway (left) with self-hosted apps and the mobile friendly Workout Tracker app (right) on the program editor page._
-
-## Open Source App Ecosystem
-
-In the near future, there will be hundreds of high quality open source apps for you to self host. We need passionate community members to get there.
-
-Every App handles the boring parts so you can focus on building your idea:
-
-- **1 command self hosting**
-- **Simplified auth**
-- **Complete full stack example codebases**
-- **Prompts for agents to build features and maintain code**
+_The Gateway (left) showing self-hosted apps, and the Workout Tracker (right) on mobile._
 
 ## What is the Gateway?
 
-The Gateway is the parent application that hosts all your embedded apps:
+The Gateway is the parent application where you manage and access your apps.
 
-- **Single URL** - Access all apps from one place
-- **Shared Auth** - Log in once, access all apps
-- **PWA Support** - Add to home screen, all apps inherit PWA benefits
+Normal SaaS and consumer apps each implement the same stuff over and over—authentication, user management, etc. We simplify building apps by standardizing as much as possible and hoisting what we can into the Gateway.
+
+### Gateway Features
+
+- **Single URL** - Go to your Gateway. Access all your apps.
+- **Authentication** - Users log into the Gateway. Apps inherit auth from the Gateway. You don't need to worry about screwing up auth or building out frontend flows.
+- **User Management** - Add other users to the Gateway so that they can use the apps.
+- **Mobile Optimized** - User adds Gateway to their home screen once. All apps get the benefits of being rendered within the Gateway.
 - **LLM Gateway (Coming soon)** - Configure LLM provider once, instead of once per app. Define per-app budgets.
-
-Apps run inside the Gateway's iframe and receive scoped session tokens for authentication, so you don't need to implement auth in your apps.
+- **App Management (Coming soon)** - Deploy and update apps via the UI instead of by running CLI commands.
 
 
 ## Getting Started
 
 ### Getting Started
 
-This guide walks through self hosting the Gateway and your first app.
-
 ## Prerequisites
 
 1. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) (free, no credit card required)
 
-2. Authenticate with Cloudflare (choose one):
-   - Login via the Cloudflare CLI (recommended):
-     ```bash
-     npx wrangler login
-     ```
-   - Or set the `CLOUDFLARE_API_TOKEN` environment variable
+2. Log in to Cloudflare:
+   ```bash
+   npx wrangler login
+   ```
 
-## Self Host the Gateway
+## Self-Host the Gateway
+
+The Gateway is your app hub—it handles auth and gives you a single URL for all your apps.
 
 ```bash
 npx @every-app/cli gateway deploy
 ```
 
-Follow the link this returns to create your account in the Gateway.
+Follow the link to create your account.
 
-## Self Host Apps
+## Self-Host an Example App
 
-Pick an app to deploy:
+Try one of the example apps to see how it works:
 
 ### Todo App
+
+A simple task manager to get started.
 
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
@@ -84,6 +79,8 @@ npx @every-app/cli app deploy
 
 ### Workout Tracker
 
+Track your workouts and programs.
+
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/workout-tracker every-workout-tracker
 cd every-workout-tracker
@@ -92,6 +89,8 @@ npx @every-app/cli app deploy
 
 ### Cooking Assistant
 
+An AI-powered recipe manager (requires OpenAI API key and Cloudflare paid plan since the bundle is too big currently).
+
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/chef every-app-chef
 cd every-app-chef
@@ -99,14 +98,20 @@ npx @every-app/cli app deploy
 npx wrangler secret put OPENAI_API_KEY
 ```
 
-Refresh your Gateway and you should see the app available.
+Refresh your Gateway and the app will appear.
+
+## Next Steps
+
+[Build your own app](/docs/build-an-app/create-app) - Set up your coding agent and start from a template
 
 
 ## Build an App
 
-### Build Your Own App
+### Build an App
 
-Start from the template to get a working app with auth and database already set up correctly with Cloudflare.
+## Create Your App
+
+The create command deploys your app to Cloudflare, registers it with your Gateway, and sets up your local dev environment.
 
 ```bash
 npx @every-app/cli app create
@@ -114,39 +119,47 @@ cd your-project-name
 pnpm run dev
 ```
 
-The create command deploys your app to Cloudflare and registers it with your Gateway automatically.
+### Local Development
 
-For local development, click the "Dev" button on your app in the Gateway to use your local dev server instead of the deployed version.
+Click the "Dev" button for your app in the Gateway to use your local dev server instead of the deployed version.
 
-## Deploy Updates
+### Deploy Updates
 
-After making changes, deploy updates with:
+After making changes:
 
 ```bash
 npx @every-app/cli app deploy
 ```
 
-This builds your app, runs any pending migrations, and deploys to Cloudflare Workers.
+This builds your app, runs any pending database migrations, and deploys to Cloudflare.
 
+## Coding Agent Setup
 
-## Coding Agents
+Coding Agents are realllllly good at building these apps.
 
-### Coding Agent Setup
+Agents usually struggle on new projects because there aren't any patterns defined yet. They struggle in legacy codebases because they're very complex and have lots of bad code to reference as example.
 
-We recommend using an AI coding assistant to build your app. The Every App MCP server gives your agent access to example apps and documentation.
+We've been meticulous about the example applications having well-defined patterns that agents can follow. These patterns cover most of what every full stack app needs. It's your job to figure out the rest!
 
-## Setup
+### Add the MCP Server
+
+Add the Every App MCP server to your agent so it can reference the example apps when building yours.
 
 Add to `opencode.json`:
 
-```json
+```jsonc
 {
   "mcp": {
     "every-app": {
       "type": "local",
-      "command": ["npx", "-y", "@every-app/mcp"]
-    }
-  }
+      "command": ["npx", "-y", "@every-app/mcp"],
+    },
+    // Up to date docs for libraries + Cloudflare
+    "context7": {
+      "type": "local",
+      "command": ["npx", "-y", "@upstash/context7-mcp"],
+    },
+  },
 }
 ```
 
@@ -169,25 +182,26 @@ claude mcp add every-app -- npx -y @every-app/mcp
 
 Restart your AI tool after adding the MCP server.
 
-## Tips
-
-- **Point to specific examples** - `Look at how the cooking app in Every App handles optimistic mutations` works better than `implement optimistic mutations`
-- **Ask questions** - If you're not sure how to do something, ask! `How do migrations work in Every App?` or `Are there any drag and drop Every App examples?`
+> Remind your agent to reference the examples with the Every App tool if it's
+  not doing so automatically.
 
 
-## Walkthrough: AI Cooking Assistant
+## Patterns
 
-### Walkthrough: AI Cooking Assistant
+### Patterns
 
-This walkthrough explains how the [Chef](https://github.com/every-app/every-app/tree/main/apps/chef) app is built. Chef is an AI-powered cooking assistant that helps you manage recipes and get cooking guidance through a chat interface.
+These docs explain the patterns used across Every App's example apps and why we've made certain decisions. They're not a step-by-step tutorial—use them as a reference when you need to understand how something works.
 
-It covers patterns most apps need like:
+Examples are pulled from the [Chef](https://github.com/every-app/every-app/tree/main/apps/chef) app, an AI-powered cooking assistant.
 
-- Saving data with instant UI feedback
-- Using a component library with light and dark themes
-- Organizing backend logic
-- Streaming AI responses
-- Confirming with user before executing AI actions
+**What's covered:**
+
+- [Users & Auth](/docs/walkthrough/users-and-auth) - How auth flows from the Gateway to your app
+- [Theming & Styling](/docs/walkthrough/theming) - Component library setup with light/dark themes
+- [Database Schema](/docs/walkthrough/database-schema) - Drizzle schema patterns
+- [Organize Backend Code](/docs/walkthrough/organize-backend-code) - Structuring server functions
+- [Instant UI Updates](/docs/walkthrough/instant-updates) - Optimistic updates for snappy UX
+- [AI Chat & Tool Calls](/docs/walkthrough/ai-chat) - Streaming responses and user confirmations
 
 
 ### Users & Auth
@@ -630,14 +644,20 @@ const handleToolResponse = async (toolCallId: string, result: ToolResult) => {
 
 ### Tech Stack
 
-Every App apps are web apps deployed on Cloudflare. We've picked technologies that work well together and are easy for AI coding assistants to work with.
+Every App uses a modern stack that's straightforward for developers and AI coding agents alike.
 
-- **[TanStack Start](https://tanstack.com/start)** - Full-stack React framework with TanStack Router and Query
-- **[Cloudflare Workers](https://developers.cloudflare.com/workers/)** - Serverless compute with scale-to-zero pricing
-- **[D1](https://developers.cloudflare.com/d1/)** - Cloudflare's serverless SQL database
-- **[Drizzle ORM](https://orm.drizzle.team/)** - Type-safe SQL ORM
+| Technology                                                       | What it does                        |
+| ---------------------------------------------------------------- | ----------------------------------- |
+| [TanStack Start](https://tanstack.com/start)                     | Full-stack React framework          |
+| [Cloudflare Workers](https://developers.cloudflare.com/workers/) | Serverless hosting (scales to zero) |
+| [D1](https://developers.cloudflare.com/d1/)                      | SQL database                        |
+| [Drizzle ORM](https://orm.drizzle.team/)                         | Type-safe database queries          |
 
-The stack is optimized for simplicity, type safety, and cost (everything scales to zero).
+## Why this stack?
+
+- **Type-safe end to end** - Catch errors before they happen
+- **Scales to zero** - You only pay for what you use
+- **AI-friendly** - Common patterns that coding agents understand well
 
 
 ### Every App SDK

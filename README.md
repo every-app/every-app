@@ -104,7 +104,7 @@ Coding Agents are realllllly good at building these apps.
 
 Agents usually struggle on new projects because there aren't any patterns defined yet. They struggle in legacy codebases because they're very complex and have lots of bad code to reference as example.
 
-We've been meticilous about the example applications having well defined patterns that agents can follow and cover 80% of what every full stack app needs. It's your job to figure out the rest!
+We've been meticulous about the example applications having well-defined patterns that agents can follow. These patterns cover most of what every full stack app needs. It's your job to figure out the rest!
 
 #### Setup
 Add the Every App MCP server to your agent so that it can reference the example applications when building your app. Remember to remind it to use this tool if its not automatically.

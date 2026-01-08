@@ -5,11 +5,13 @@ description: What is Every App?
 
 import gatewayScreenshot from "../../../assets/gateway-and-workout-tracker.png";
 
-Every App is a self-hosted platform for running personal web applications.
+Every App is a self-hosted platform for personal web apps. Use your favorite coding agent to build apps tailored to yourself, family, friends or your company.
 
-Deploy the Gateway to your Cloudflare account, and access all your apps through a single interface.
+Every App handles the boring parts like auth and hosting so that you can focus on building your idea.
 
-Self host open source apps with one simple command or build your own and share them with the community.
+Self-host on Cloudflare with one simple CLI command. Since apps are built for Cloudflare's serverless platform, hosting starts completely free. Even with dozens of apps, you're unlikely to exceed the $5/month paid plan.
+
+Make your app open source, sharing it online for others to use.
 
 <img
   src={gatewayScreenshot.src}
@@ -17,26 +19,19 @@ Self host open source apps with one simple command or build your own and share t
   style="border-radius: 8px; margin: 1rem 0;"
 />
 
-_Split browser windows showing the Gateway (left) with self-hosted apps and the mobile friendly Workout Tracker app (right) on the program editor page._
-
-## Open Source App Ecosystem
-
-In the near future, there will be hundreds of high quality open source apps for you to self host. We need passionate community members to get there.
-
-Every App handles the boring parts so you can focus on building your idea:
-
-- **1 command self hosting**
-- **Simplified auth**
-- **Complete full stack example codebases**
-- **Prompts for agents to build features and maintain code**
+_The Gateway (left) showing self-hosted apps, and the Workout Tracker (right) on mobile._
 
 ## What is the Gateway?
 
-The Gateway is the parent application that hosts all your embedded apps:
+The Gateway is the parent application where you manage and access your apps.
 
-- **Single URL** - Access all apps from one place
-- **Shared Auth** - Log in once, access all apps
-- **PWA Support** - Add to home screen, all apps inherit PWA benefits
+Normal SaaS and consumer apps each implement the same stuff over and over—authentication, user management, etc. We simplify building apps by standardizing as much as possible and hoisting what we can into the Gateway.
+
+### Gateway Features
+
+- **Single URL** - Go to your Gateway. Access all your apps.
+- **Authentication** - Users log into the Gateway. Apps inherit auth from the Gateway. You don't need to worry about screwing up auth or building out frontend flows.
+- **User Management** - Add other users to the Gateway so that they can use the apps.
+- **Mobile Optimized** - User adds Gateway to their home screen once. All apps get the benefits of being rendered within the Gateway.
 - **LLM Gateway (Coming soon)** - Configure LLM provider once, instead of once per app. Define per-app budgets.
-
-Apps run inside the Gateway's iframe and receive scoped session tokens for authentication, so you don't need to implement auth in your apps.
+- **App Management (Coming soon)** - Deploy and update apps via the UI instead of by running CLI commands.
