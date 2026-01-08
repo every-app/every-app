@@ -1,5 +1,4 @@
 @import "tailwindcss";
-@import "./view-transitions.css";
 
 @plugin "daisyui" {
   /* @property isn't supported by some browsers and gives a noisy warning https://github.com/saadeghi/daisyui/issues/3882 */

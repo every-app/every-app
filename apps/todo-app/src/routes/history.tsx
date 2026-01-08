@@ -33,7 +33,7 @@ function History() {
   );
 
   // Enable animations after a delay to avoid jarring effects on page load
-  const animationsEnabled = useDelayedAnimation(500);
+  const animationsEnabled = useDelayedAnimation(1000);
 
   // Callback to toggle a todo's completed status
   const handleToggleComplete = useCallback(

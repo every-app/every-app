@@ -99,7 +99,7 @@ function HomeContent() {
   }, [todos]);
 
   // Enable animations after a delay to avoid jarring effects on page load
-  const animationsEnabled = useDelayedAnimation(500);
+  const animationsEnabled = useDelayedAnimation(1000);
 
   // Use a ref to access activeTodos at call time without recreating the callback
   const activeTodosRef = useRef(activeTodos);
