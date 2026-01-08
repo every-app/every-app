@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+import * as React from "react";
 import {
   ClientOnly,
   HeadContent,
@@ -15,10 +16,12 @@ import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
 import { Sidebar } from "@/client/components/Sidebar";
 import { TabBar } from "@/client/components/TabBar";
+import { KeyboardShortcutsModal } from "@/client/components/KeyboardShortcutsModal";
 import { EmbeddedAppProvider } from "@every-app/sdk/client";
 
 import { todoCollection, queryClient, persister } from "@/client/tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
+import { useGlobalHotkeys } from "@/client/hooks/useGlobalHotkeys";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -81,6 +84,10 @@ export const Route = createRootRoute({
 
 function AppLayout() {
   const location = useLocation();
+  const [showShortcuts, setShowShortcuts] = React.useState(false);
+
+  // Global keyboard shortcuts
+  useGlobalHotkeys({ onShowShortcuts: () => setShowShortcuts(true) });
 
   // Always fetch todos regardless of route so that they are preloaded
   useLiveQuery((q) => q.from({ todo: todoCollection }));
@@ -88,22 +95,32 @@ function AppLayout() {
   // Use CSS-based responsive design to avoid hydration mismatch
   // The same HTML structure is rendered on server and client
   return (
-    <div className="flex flex-col md:flex-row h-full overflow-hidden bg-base-200">
-      {/* Desktop: Sidebar */}
-      <div className="hidden md:block">
-        <Sidebar currentPath={location.pathname} />
+    <>
+      <div className="flex flex-col md:flex-row h-full overflow-hidden bg-base-200">
+        {/* Desktop: Sidebar */}
+        <div className="hidden md:block">
+          <Sidebar
+            currentPath={location.pathname}
+            onShowShortcuts={() => setShowShortcuts(true)}
+          />
+        </div>
+
+        {/* Main content */}
+        <div className="main-content flex-1 min-h-0 overflow-auto md:pb-0">
+          <Outlet />
+        </div>
+
+        {/* Mobile: TabBar */}
+        <div className="md:hidden flex-shrink-0">
+          <TabBar currentPath={location.pathname} />
+        </div>
       </div>
 
-      {/* Main content */}
-      <div className="flex-1 min-h-0 overflow-auto md:pb-0">
-        <Outlet />
-      </div>
-
-      {/* Mobile: TabBar */}
-      <div className="md:hidden flex-shrink-0">
-        <TabBar currentPath={location.pathname} />
-      </div>
-    </div>
+      <KeyboardShortcutsModal
+        isOpen={showShortcuts}
+        onClose={() => setShowShortcuts(false)}
+      />
+    </>
   );
 }
 

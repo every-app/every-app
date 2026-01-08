@@ -4,6 +4,7 @@ import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
 import { Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
 import { todoCollection } from "@/client/tanstack-db";
+import { getHistoryItemId } from "@/client/lib/element-ids";
 
 interface HistoryItemProps {
   todo: Todo;
@@ -14,7 +15,11 @@ export function HistoryItem({ todo, onToggleComplete }: HistoryItemProps) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   return (
-    <div className="group flex items-center gap-3 p-2 rounded-md border border-transparent hover:border-base-300 hover:bg-base-300/50 transition-all">
+    <div
+      id={getHistoryItemId(todo.id)}
+      tabIndex={0}
+      className="group flex items-center gap-3 p-2 rounded-md border border-transparent hover:border-base-300 hover:bg-base-300/50 focus:border-primary focus:bg-base-300/50 focus:outline-none transition-all"
+    >
       <Checkbox
         checked={todo.completed}
         onCheckedChange={(checked) => {

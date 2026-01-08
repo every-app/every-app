@@ -72,9 +72,15 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
               ref={textareaRef}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  handleClose();
+                }
+              }}
               placeholder="New todo..."
               autoFocus
-              className="w-full flex-1 bg-transparent border-none outline-none resize-none text-base-content placeholder:text-base-content/50 focus:ring-0 text-base"
+              className="w-full flex-1 bg-transparent !border-none !outline-none resize-none text-base-content placeholder:text-base-content/50 !ring-0 focus:!ring-0 focus:!outline-none focus:!border-none text-base"
             />
           </form>
 

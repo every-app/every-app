@@ -1,12 +1,16 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { Button } from "@/client/components/ui/button";
+import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
 import { todoCollection } from "@/client/tanstack-db";
 import { HistoryItem } from "@/client/components/TodoHistoryItem";
 import { AnimatedTodoItem } from "@/client/components/AnimatedTodoItem";
 import { useDelayedAnimation } from "@/client/hooks/useDelayedAnimation";
+import { useKeyboardNavigation } from "@/client/hooks/useKeyboardNavigation";
+import { useTodoActions } from "@/client/hooks/useTodoActions";
+import { getHistoryItemId } from "@/client/lib/element-ids";
 
 export const Route = createFileRoute("/history")({
   component: History,
@@ -27,24 +31,69 @@ function History() {
     [todos],
   );
 
+  // Get active todos for sortKey calculation when un-completing
+  const activeTodos = useMemo(
+    () =>
+      todos
+        ?.filter((todo) => !todo.completed)
+        .sort((a, b) =>
+          b.sortKey > a.sortKey ? 1 : b.sortKey < a.sortKey ? -1 : 0,
+        ) ?? [],
+    [todos],
+  );
+
   const groupedTodos = useMemo(
     () => groupTodosByDate(completedTodos),
     [completedTodos],
   );
 
+  // Get all todo IDs in display order (flattened from grouped todos)
+  const allTodoIds = useMemo(() => {
+    return groupedTodos.flatMap((group) => group.todos.map((t) => t.id));
+  }, [groupedTodos]);
+
   // Enable animations after a delay to avoid jarring effects on page load
   const animationsEnabled = useDelayedAnimation(1000);
 
-  // Callback to toggle a todo's completed status
-  const handleToggleComplete = useCallback(
-    (todoId: string, completed: boolean) => {
-      todoCollection.update(todoId, (draft) => {
-        draft.completed = completed;
-        draft.completedAt = completed ? new Date().toISOString() : null;
-      });
-    },
-    [],
+  const [deleteModalTodoId, setDeleteModalTodoId] = useState<string | null>(
+    null,
   );
+
+  // Use shared hook for todo actions
+  const { handleToggleComplete } = useTodoActions({ activeTodos });
+
+  // Create a map for quick todo lookup
+  const todoMap = useMemo(() => {
+    const map = new Map<string, Todo>();
+    for (const todo of completedTodos) {
+      map.set(todo.id, todo);
+    }
+    return map;
+  }, [completedTodos]);
+
+  // Handle toggle from keyboard navigation
+  const handleKeyboardToggle = useCallback(
+    (id: string) => {
+      const todo = todoMap.get(id);
+      if (todo) {
+        handleToggleComplete(id, !todo.completed);
+      }
+    },
+    [todoMap, handleToggleComplete],
+  );
+
+  // Handle delete from keyboard navigation (opens modal)
+  const handleKeyboardDelete = useCallback((id: string) => {
+    setDeleteModalTodoId(id);
+  }, []);
+
+  // Use the keyboard navigation hook
+  useKeyboardNavigation({
+    itemIds: allTodoIds,
+    getElementId: getHistoryItemId,
+    onToggle: handleKeyboardToggle,
+    onDelete: handleKeyboardDelete,
+  });
 
   if (isLoading) {
     return null;
@@ -77,7 +126,7 @@ function History() {
           <div className="space-y-6">
             {groupedTodos.map((group) => (
               <div key={group.date}>
-                <h2 className="text-sm font-medium text-gray-600">
+                <h2 className="text-sm font-medium text-gray-600 mb-2">
                   {formatDateHeader(group.date)}
                 </h2>
                 <div className="space-y-2">
@@ -100,6 +149,21 @@ function History() {
           </div>
         )}
       </div>
+
+      <ConfirmationModal
+        isOpen={deleteModalTodoId !== null}
+        onClose={() => setDeleteModalTodoId(null)}
+        onConfirm={() => {
+          if (deleteModalTodoId) {
+            todoCollection.delete(deleteModalTodoId);
+            setDeleteModalTodoId(null);
+          }
+        }}
+        title="Delete Todo"
+        description="Are you sure you want to delete this todo? This action cannot be undone."
+        confirmText="Delete"
+        variant="danger"
+      />
     </>
   );
 }

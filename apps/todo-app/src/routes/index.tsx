@@ -1,10 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Button } from "@/client/components/ui/button";
 import { Input } from "@/client/components/ui/input";
 import { Plus, ClipboardList } from "lucide-react";
 import { CreateTodoModal } from "@/client/components/CreateTodoModal";
+import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
 import { AnimatePresence } from "framer-motion";
 import {
   AnimatedTodoItem,
@@ -32,6 +33,9 @@ import { todoCollection, insertNewTodo } from "@/client/tanstack-db";
 import { generateSortKeyBetween } from "@/client/lib/fractional-indexing";
 import { SortableTodoItem } from "@/client/components/SortableTodoItem";
 import { useDelayedAnimation } from "@/client/hooks/useDelayedAnimation";
+import { useKeyboardNavigation } from "@/client/hooks/useKeyboardNavigation";
+import { useTodoActions } from "@/client/hooks/useTodoActions";
+import { getTodoItemId, NEW_TODO_INPUT_ID } from "@/client/lib/element-ids";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -53,6 +57,9 @@ function HomeContent() {
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
   const [newTodoTitle, setNewTodoTitle] = useState<string>("");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [deleteModalTodoId, setDeleteModalTodoId] = useState<string | null>(
+    null,
+  );
 
   const sensors = useDraggableSensors();
 
@@ -101,33 +108,48 @@ function HomeContent() {
   // Enable animations after a delay to avoid jarring effects on page load
   const animationsEnabled = useDelayedAnimation(1000);
 
-  // Use a ref to access activeTodos at call time without recreating the callback
-  const activeTodosRef = useRef(activeTodos);
-  activeTodosRef.current = activeTodos;
+  // Use shared hook for todo actions
+  const { handleToggleComplete } = useTodoActions({ activeTodos });
 
-  // Callback to toggle a todo's completed status
-  const handleToggleComplete = useCallback(
-    (todoId: string, completed: boolean) => {
-      todoCollection.update(todoId, (draft) => {
-        draft.completed = completed;
-        draft.completedAt = completed ? new Date().toISOString() : null;
-        // When uncompleting, always move to bottom of active list
-        if (!completed) {
-          const currentActiveTodos = activeTodosRef.current;
-          if (currentActiveTodos.length > 0) {
-            const lowestSortKey =
-              currentActiveTodos[currentActiveTodos.length - 1].sortKey;
-            draft.sortKey = generateSortKeyBetween(undefined, lowestSortKey);
-          } else {
-            // No active todos - use a low sort key so it appears at bottom
-            // when new todos are added (which get high keys)
-            draft.sortKey = "0";
-          }
-        }
-      });
+  // Get all todo IDs in display order (active + completed)
+  const allTodoIds = useMemo(() => {
+    const activeIds = activeTodos.map((t) => t.id);
+    const completedIds = completedTodos.map((t) => t.id);
+    return [...activeIds, ...completedIds];
+  }, [activeTodos, completedTodos]);
+
+  // Create a map for quick todo lookup
+  const todoMap = useMemo(() => {
+    const map = new Map<string, Todo>();
+    for (const todo of [...activeTodos, ...completedTodos]) {
+      map.set(todo.id, todo);
+    }
+    return map;
+  }, [activeTodos, completedTodos]);
+
+  // Handle toggle from keyboard navigation
+  const handleKeyboardToggle = useCallback(
+    (id: string) => {
+      const todo = todoMap.get(id);
+      if (todo) {
+        handleToggleComplete(id, !todo.completed);
+      }
     },
-    [],
+    [todoMap, handleToggleComplete],
   );
+
+  // Handle delete from keyboard navigation (opens modal)
+  const handleKeyboardDelete = useCallback((id: string) => {
+    setDeleteModalTodoId(id);
+  }, []);
+
+  // Use the keyboard navigation hook
+  useKeyboardNavigation({
+    itemIds: allTodoIds,
+    getElementId: getTodoItemId,
+    onToggle: handleKeyboardToggle,
+    onDelete: handleKeyboardDelete,
+  });
 
   const handleDragEnd = (event: DragEndEvent) => {
     setDragging(false);
@@ -188,11 +210,17 @@ function HomeContent() {
         >
           <div className="flex gap-2">
             <Input
+              id={NEW_TODO_INPUT_ID}
               name="title"
-              placeholder="New todo..."
+              placeholder="New todo... (c)"
               value={newTodoTitle}
               onChange={(e) => setNewTodoTitle(e.target.value)}
-              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  e.currentTarget.blur();
+                }
+              }}
               className="focus:border-primary focus:bg-primary/10 transition-colors duration-200"
               aria-label="New todo title"
             />
@@ -291,6 +319,21 @@ function HomeContent() {
       <CreateTodoModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
+      />
+
+      <ConfirmationModal
+        isOpen={deleteModalTodoId !== null}
+        onClose={() => setDeleteModalTodoId(null)}
+        onConfirm={() => {
+          if (deleteModalTodoId) {
+            todoCollection.delete(deleteModalTodoId);
+            setDeleteModalTodoId(null);
+          }
+        }}
+        title="Delete Todo"
+        description="Are you sure you want to delete this todo? This action cannot be undone."
+        confirmText="Delete"
+        variant="danger"
       />
     </>
   );

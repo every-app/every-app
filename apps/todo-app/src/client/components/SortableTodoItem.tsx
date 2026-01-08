@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Checkbox } from "@/client/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { todoCollection } from "@/client/tanstack-db";
+import { getTodoItemId, getTodoInlineEditId } from "@/client/lib/element-ids";
 
 interface SortableTodoItemProps {
   todo: Todo;
@@ -31,6 +32,7 @@ export function SortableTodoItem({
   const [localTitle, setLocalTitle] = useState(todo.title);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const {
     attributes,
@@ -43,6 +45,16 @@ export function SortableTodoItem({
     id: todo.id,
     disabled: !isDraggable,
   });
+
+  // Combine dnd-kit's setNodeRef with our containerRef
+  const setCombinedRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      setNodeRef(node);
+      (containerRef as React.MutableRefObject<HTMLDivElement | null>).current =
+        node;
+    },
+    [setNodeRef],
+  );
 
   const style = {
     transform: CSS.Translate.toString(transform),
@@ -138,20 +150,23 @@ export function SortableTodoItem({
     return () => window.removeEventListener("resize", adjustTextareaHeight);
   }, []);
 
+  // !outline-none !ring-0 focus:!ring-0 - Force hide browser default focus styles that cause fat corners
   return (
     <div
-      ref={setNodeRef}
+      ref={setCombinedRef}
       style={style}
       {...(isDraggable ? attributes : {})}
       {...(isDraggable ? listeners : {})}
-      className={`flex items-start gap-3 p-2 rounded-md border ${
+      id={getTodoItemId(todo.id)}
+      tabIndex={0}
+      className={`flex items-start gap-3 p-2 rounded-lg border !outline-none !ring-0 focus:!ring-0 ${
         isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
       } ${
         isDragging
           ? "z-50 bg-base-200 shadow-lg border-base-300"
           : editingTodoId === todo.id
             ? "border-base-300 bg-base-300/50"
-            : "border-transparent hover:bg-base-200"
+            : "border-transparent hover:bg-base-200 focus:border-primary focus:bg-base-300/50"
       }`}
     >
       {/* before:absolute before:inset-[-8px] creates an invisible hit area extending 8px beyond the checkbox */}
@@ -161,6 +176,13 @@ export function SortableTodoItem({
           onToggleComplete?.(todo.id, Boolean(checked));
         }}
         onPointerDown={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          // Stop Space/Enter from bubbling to dnd-kit's KeyboardSensor
+          // so native checkbox toggle works
+          if (e.key === " " || e.key === "Enter") {
+            e.stopPropagation();
+          }
+        }}
         className="mt-1.5 flex-shrink-0 relative before:absolute before:inset-[-8px] before:content-['']"
         aria-label={
           todo.completed
@@ -170,9 +192,10 @@ export function SortableTodoItem({
       />
 
       <div className="flex-1">
+        {/* !border-none !ring-0 !outline-none !shadow-none - Force hide browser/global focus styles */}
         <textarea
           ref={textareaRef}
-          id={formatInlineEditId(todo.id)}
+          id={getTodoInlineEditId(todo.id)}
           value={localTitle}
           onChange={(e) => handleTitleChange(e.target.value)}
           onFocus={handleInputFocus}
@@ -187,15 +210,17 @@ export function SortableTodoItem({
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               setEditingTodoId(null);
-              e.currentTarget.blur();
+              // Bubble focus back up to the container
+              containerRef.current?.focus();
             } else if (e.key === "Escape") {
               setLocalTitle(todo.title);
               setEditingTodoId(null);
-              e.currentTarget.blur();
+              // Bubble focus back up to the container
+              containerRef.current?.focus();
             }
           }}
           disabled={todo.completed}
-          className={`w-full border-none bg-transparent focus:ring-0 focus:border-none focus:outline-none shadow-none px-2 py-1 text-base leading-6 resize-none overflow-hidden break-words ${
+          className={`w-full !border-none bg-transparent !ring-0 !outline-none !shadow-none px-2 py-1 text-base leading-6 resize-none overflow-hidden break-words ${
             isDragging
               ? "!cursor-grabbing"
               : todo.completed
@@ -214,6 +239,13 @@ export function SortableTodoItem({
       <DropdownMenu>
         <DropdownMenuTrigger
           onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            // Stop Space/Enter from bubbling to dnd-kit's KeyboardSensor
+            // so dropdown can be opened with keyboard
+            if (e.key === " " || e.key === "Enter") {
+              e.stopPropagation();
+            }
+          }}
           className="rounded transition-all duration-200 hover:bg-base-300 p-1 focus:ring-2 focus:ring-primary focus:ring-offset-1"
           aria-label="More actions"
         >
@@ -248,8 +280,4 @@ export function SortableTodoItem({
       />
     </div>
   );
-}
-
-function formatInlineEditId(id: string) {
-  return `todo-inline-edit-id-${id}`;
 }

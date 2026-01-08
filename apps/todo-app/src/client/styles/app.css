@@ -91,6 +91,22 @@ body {
   overflow: hidden;
 }
 
+/* Global focus styles - primary colored ring using box-shadow to avoid flash */
+*:focus {
+  outline: none;
+}
+
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-primary);
+}
+
+/* Hide focus ring on all elements during drag and drop */
+body.is-dragging *:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
 /* Prevent Safari mobile from zooming on input focus (requires 16px minimum) */
 input,
 textarea,
@@ -159,8 +175,7 @@ code {
 }
 
 .todo-checkbox:focus-visible {
-  outline: 2px solid var(--color-primary);
-  outline-offset: 2px;
+  border-color: var(--color-primary);
 }
 
 @media (pointer: coarse) {
