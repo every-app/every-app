@@ -1,4 +1,10 @@
-# What is Every App?
+# Every App
+The open source personal software platform.
+- Build what you wish existed.
+- Bring your own AI. No credits, no limits.
+- Self-host on Cloudflare. Free to start, $5/month max.
+
+## What is Every App?
 
 Every App is a self-hosted platform for personal web apps. Use your favorite coding agent to build apps tailored to yourself, family, friends or your company.
 
@@ -8,7 +14,7 @@ Self host on Cloudflare with one simple CLI command. Since apps are built for Cl
 
 Make your app open source, sharing it online for others to use.
 
-### App Screenshots
+### Screenshots
 
 This screenshot is of a split window.
 
