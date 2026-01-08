@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Build a release tarball for the gateway with drizzle-kit bundled
+// Build a release tarball for the gateway
 // Usage: node scripts/build-release.js
 
 import { execSync } from "node:child_process";
@@ -91,31 +91,7 @@ async function main() {
   delete wranglerConfig.userConfigPath;
   writeFileSync(wranglerConfigPath, JSON.stringify(wranglerConfig, null, 2));
 
-  // Bundle drizzle-kit and drizzle-orm for migrations
-  console.log("\nBundling drizzle-kit and drizzle-orm...");
-  const originalPackageJson = join(RELEASE_DIR, "package.json");
-  const backupPackageJson = join(RELEASE_DIR, "package-original.json");
-
-  cpSync(originalPackageJson, backupPackageJson);
-  writeFileSync(
-    originalPackageJson,
-    JSON.stringify({
-      name: "gateway-migrations",
-      private: true,
-      dependencies: {
-        "drizzle-kit": "^0.31.4",
-        "drizzle-orm": "^0.44.2",
-      },
-    }),
-  );
-
-  exec("npm install --silent", { cwd: RELEASE_DIR });
-
-  cpSync(backupPackageJson, originalPackageJson);
-  rmSync(backupPackageJson);
-  rmSync(join(RELEASE_DIR, "package-lock.json"), { force: true });
-
-  // Create tarball
+  // Create tarball (dependencies are installed at deploy time by the CLI)
   console.log("\nCreating tarball...");
   exec(`tar -czf "${TARBALL_PATH}" -C "${RELEASE_DIR}" .`);
 

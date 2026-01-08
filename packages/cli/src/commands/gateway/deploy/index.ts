@@ -18,6 +18,7 @@ import {
   extractLocalGatewayTarball,
 } from "@/lib/github-releases";
 import { checkGatewayHasOwner } from "@/lib/gateway";
+import { installDependencies } from "@/lib/package-manager";
 
 export async function deploy(
   this: LocalContext,
@@ -60,6 +61,13 @@ export async function deploy(
 
     // Update config and deploy (secrets are set inside this function after vars are removed)
     await updateConfigAndDeploy({ gatewayPath, resources, workerUrl, verbose });
+
+    // Install dependencies for current platform (release tarball may contain different platform binaries)
+    await installDependencies({
+      cwd: gatewayPath,
+      verbose,
+      description: "Installing dependencies for migrations...",
+    });
 
     // Run database migrations
     await runDrizzleMigrations({ cwd: gatewayPath, verbose });
