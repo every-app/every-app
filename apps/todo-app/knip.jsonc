@@ -18,8 +18,4 @@
     "tailwindcss",
     "daisyui",
   ],
-  "ignoreBinaries": [
-    // Every CLI tool used for deployment commands
-    "every",
-  ],
 }

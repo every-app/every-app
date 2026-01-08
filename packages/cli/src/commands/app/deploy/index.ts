@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { getAppId } from "@/lib/everyapp-config";
 import { confirmDeployment } from "@/lib/deployment";
 import { requireCloudflareAuth } from "@/lib/cloudflare";
+import { requireGatewaySetup } from "@/lib/gateway";
 import { deployApp } from "@/commands/app/deploy/deployApp";
 
 interface DeployCommandFlags {
@@ -17,6 +18,9 @@ export async function deploy(
   flags: DeployCommandFlags,
 ): Promise<void> {
   await requireCloudflareAuth();
+
+  // Check gateway is deployed and has an owner account before proceeding
+  await requireGatewaySetup();
 
   const cwd = process.cwd();
   const verbose = flags.verbose || false;

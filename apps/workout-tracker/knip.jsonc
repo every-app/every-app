@@ -11,7 +11,6 @@
     // Used via @plugin in CSS
     "daisyui",
   ],
-  "ignoreBinaries": ["every"],
   // Standard UI component patterns - keep full API surface for card.tsx
   "ignoreIssues": {
     "src/client/components/ui/card.tsx": ["exports"],

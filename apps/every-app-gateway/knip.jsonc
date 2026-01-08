@@ -19,5 +19,4 @@
     // Used by vite during bundling
     "tailwindcss",
   ],
-  "ignoreBinaries": ["every"],
 }

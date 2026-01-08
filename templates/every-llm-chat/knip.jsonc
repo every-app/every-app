@@ -16,7 +16,6 @@
   // Disable Drizzle plugin - it tries to load drizzle.config.ts which imports cloudflare:workers
   "drizzle": false,
   "ignoreDependencies": ["tailwindcss", "daisyui"],
-  "ignoreBinaries": ["every"],
   "ignoreIssues": {
     // Drizzle relation exports are needed for relational queries
     "src/db/schema.ts": ["exports"],

@@ -5,6 +5,7 @@ import { confirmDeployment } from "@/lib/deployment";
 import { writeEveryAppConfig } from "@/lib/everyapp-config";
 import { initRepository } from "@/lib/git";
 import { requireCloudflareAuth } from "@/lib/cloudflare";
+import { requireGatewaySetup } from "@/lib/gateway";
 import { checkPnpm } from "@/commands/app/create/steps/checkPnpm";
 import { promptUserInput } from "@/commands/app/create/steps/promptUserInput";
 import { cloneTemplate } from "@/commands/app/create/steps/cloneTemplate";
@@ -40,6 +41,9 @@ export default async function (
 
   await checkPnpm();
   await requireCloudflareAuth();
+
+  // Check gateway is deployed and has an owner account before proceeding
+  await requireGatewaySetup();
 
   console.log("\nCreate a new Every App project\n");
 

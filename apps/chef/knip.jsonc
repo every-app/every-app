@@ -12,7 +12,6 @@
     // Used via @plugin in CSS
     "daisyui",
   ],
-  "ignoreBinaries": ["every"],
   "ignoreIssues": {
     // Schema export needed for drizzle relational queries
     "src/db/index.ts": ["exports"],

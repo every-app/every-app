@@ -12,6 +12,7 @@ export {
   getDefaultAccountId,
   getValidCloudflareToken,
   getWorkerUrl,
+  makeCloudflareAPIRequest,
   requireCloudflareAuth,
 } from "./auth";
 export { formatCloudflareError } from "./errors";
