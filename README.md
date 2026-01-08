@@ -1,21 +1,12 @@
 # What is Every App?
 
-Every App is a self-hosted platform for running personal web applications.
+Every App is a self-hosted platform for personal web apps. Use your favorite coding agent to build apps tailored to yourself, family, friends or your company.
 
-Deploy the Gateway to your Cloudflare account, and access all your apps through a single interface.
+Every App handles the boring parts like auth and hosting so that you can focus on building your idea.
 
-Self host open source apps with one simple command or build your own and share them with the community.
+Self host on Cloudflare with one simple CLI command. Since apps are built for Cloudflare's Serverless platform, hosting starts completely free. Even with dozens of apps, you're unlikely to exceed the $5/month paid plan.
 
-## Open Source App Ecosystem
-
-In the near future, there will be hundreds of high quality open source apps for you to self host. We need passionate community members to get there.
-
-Every App handles the boring parts so you can focus on building your idea:
-
-- **1 command self hosting**
-- **Simplified auth**
-- **Complete Full Stack example codebases**
-- **Prompts for agents to build features and maintain code**
+Make your app open source, sharing it online for others to use.
 
 ### App Screenshots
 
@@ -26,18 +17,29 @@ This screenshot is of a split window.
 
 ![Gateway and Workout Tracker](docs/images/gateway-and-workout-tracker.png)
 
-## What is the Every App Gateway?
+## What is the Gateway?
 
-The Gateway is the parent application that hosts all your embedded apps. It provides:
+The Gateway is the parent application where you manage and access your apps.
 
-- **Single URL** - Access all apps from one place
-- **Shared Auth** - Log in once, access all apps
-- **PWA Support** - Add to home screen, all apps inherit PWA benefits
-- **LLM Gateway (Coming soon)** - Configure LLM provider once, instead of once per app. Define per-app budgets.
+If you look at normal SaaS or Consumer apps, they each implement the same stuff over and over like authentication and user management.
 
-Apps run inside the Gateway's iframe and receive scoped session tokens for authentication, so you don't need to implement auth in your apps.
+We simplify building apps by standardizing as much as possible and hoisting what we can into the Gateway.
 
-## Self Host
+### Gateway Features:
+- Single URL 
+    - Go to your Gateway. Access all your apps.
+- Authentication
+    - Users log into the Gateway. Apps inherit auth from the Gateway. You don't need to worry about screwing up auth or building out frontend flows.
+- User Management 
+    - Add other users to the Gateway so that they can use the apps.
+- Mobile Optimized 
+    - User adds Gateway to their home screen once. All apps get the benefits of being rendered within the Gateway.
+- LLM Gateway (Coming soon) 
+    - Configure LLM provider once, instead of once per app. Define per-app budgets.
+- App Management (Coming soon)
+    - Deploy and update apps via the UI instead of by running CLI commands to deploy.
+
+## Self Hosting
 
 ### Prerequisites
 
@@ -76,6 +78,7 @@ npx @every-app/cli app deploy
 ```
 
 #### Cooking Assistant
+Note: This only works on the Paid plan since the bundle is too big currently. 
 
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/chef every-app-chef
@@ -85,6 +88,7 @@ npx wrangler secret put OPENAI_API_KEY
 ```
 
 ## Build Your Own App
+The create command deploys your app to Cloudflare, registers it with your Gateway and sets up your local development environment.
 
 ```bash
 npx @every-app/cli app create
@@ -92,32 +96,38 @@ cd your-project-name
 pnpm run dev
 ```
 
-The create command deploys your app to Cloudflare and registers it with your Gateway automatically.
+Click the "Dev" button for the app in the Gateway to use your local dev server instead of the deployed version.
 
-For local development, click the "Dev" button on your app in the Gateway to use your local dev server instead of the deployed version.
+### Coding Agent Setup
+#### Why are they good at building for Every App?
+Coding Agents are realllllly good at building these apps.
 
-## Coding Agent Setup
+Agents usually struggle on new projects because there aren't any patterns defined yet. They struggle in legacy codebases because they're very complex and have lots of bad code to reference as example.
 
-We recommend using an AI coding assistant to build your app. You can ask it to reference the example apps we've built using this MCP server and get started super quickly building out your app.
+We've been meticilous about the example applications having well defined patterns that agents can follow and cover 80% of what every full stack app needs. It's your job to figure out the rest!
+
+#### Setup
+Add the Every App MCP server to your agent so that it can reference the example applications when building your app. Remember to remind it to use this tool if its not automatically.
 
 Add to your `opencode.json`:
 
-```json
+```jsonc
 {
   "mcp": {
     "every-app": {
       "type": "local",
       "command": ["npx", "-y", "@every-app/mcp"]
+    },
+    // Tool for up to date documentation for libraries + Cloudflare
+    "context7": {
+      "type": "local",
+      "command": [ "npx", "-y", "@upstash/context7-mcp"]
     }
-  }
 }
 ```
 
 For other AI tools (Claude Code, Cursor, etc.), see the [Coding Agent Setup docs](https://everyapp.dev/docs/coding-agent/setup/).
 
 ## Docs
-
-Reference the full docs to learn more:
-
-- Walkthrough of the AI Cooking Assistant: https://everyapp.dev/docs/walkthrough/overview/
-- Coding Agent Setup: https://everyapp.dev/docs/coding-agents/setup/
+Reference the full docs to learn more: 
+- https://everyapp.dev/docs
