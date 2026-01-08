@@ -2,8 +2,8 @@
    View Transitions API - Route Animations
    ============================================
    
-   Default: fade transition
-   Custom transitions via Link props:
+   Slide transitions only (no default fade).
+   Usage:
    <Link viewTransition={{ types: ['slide-left'] }} />
    <Link viewTransition={{ types: ['slide-right'] }} />
    ============================================ */
@@ -25,36 +25,22 @@
 }
 
 /* ============================================
-   WORKAROUND: Height Mismatch Between Pages
-   ============================================
-   
-   Problem: When navigating from a tall/scrollable page to a shorter page,
-   the View Transitions API snapshot from the taller page extends beyond 
-   where the shorter page ends. During animation, this extra content stays
-   visible and doesn't animate properly.
-   
-   Workaround: Constrain snapshots to viewport height with solid background
-   to mask the content that would otherwise show through.
-   
-   TODO: Find a proper solution - this is a known limitation of the API.
-   See: https://developer.chrome.com/docs/web-platform/view-transitions
+   Default: No animation (instant transition)
    ============================================ */
 ::view-transition-old(main-content),
 ::view-transition-new(main-content) {
+  animation: none;
+}
+
+/* Shared styles for slide animations to prevent flash on completion */
+:active-view-transition-type(slide-left)::view-transition-old(main-content),
+:active-view-transition-type(slide-left)::view-transition-new(main-content),
+:active-view-transition-type(slide-right)::view-transition-old(main-content),
+:active-view-transition-type(slide-right)::view-transition-new(main-content) {
+  /* Prevent flash when animation completes */
+  background: var(--color-base-200);
   height: 100%;
   overflow: hidden;
-  background: var(--color-base-200);
-}
-
-/* ============================================
-   Default: Fade transition
-   ============================================ */
-::view-transition-old(main-content) {
-  animation: vt-fade-out 150ms ease-out forwards;
-}
-
-::view-transition-new(main-content) {
-  animation: vt-fade-in 150ms ease-out forwards;
 }
 
 /* ============================================
@@ -88,66 +74,39 @@
 /* ============================================
    Keyframes
    ============================================ */
-@keyframes vt-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@keyframes vt-fade-out {
-  from {
-    opacity: 1;
-  }
-  to {
-    opacity: 0;
-  }
-}
-
-/* Slide animations - native iOS-style push/pop */
 @keyframes vt-slide-in-right {
   from {
     transform: translateX(100%);
-    opacity: 1;
   }
   to {
     transform: translateX(0);
-    opacity: 1;
   }
 }
 
 @keyframes vt-slide-out-left {
   from {
     transform: translateX(0);
-    opacity: 1;
   }
   to {
     transform: translateX(-30%);
-    opacity: 0.8;
   }
 }
 
 @keyframes vt-slide-in-left {
   from {
     transform: translateX(-30%);
-    opacity: 0.8;
   }
   to {
     transform: translateX(0);
-    opacity: 1;
   }
 }
 
 @keyframes vt-slide-out-right {
   from {
     transform: translateX(0);
-    opacity: 1;
   }
   to {
     transform: translateX(100%);
-    opacity: 1;
   }
 }
 

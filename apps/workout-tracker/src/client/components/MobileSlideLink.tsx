@@ -13,7 +13,7 @@ type MobileSlideLinkProps = Omit<
 
 /**
  * A Link component that applies slide transitions on mobile only.
- * On desktop, it uses the default fade transition.
+ * On desktop, it uses an instant transition (no animation).
  *
  * Usage:
  * <MobileSlideLink to="/details" direction="left">View details</MobileSlideLink>

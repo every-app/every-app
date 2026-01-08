@@ -110,13 +110,23 @@ code {
   }
 }
 
-/* Override DaisyUI dock's fixed positioning to use flex layout instead */
-/* This allows the TabBar to work correctly with Safari's browser toolbar */
+/* Override DaisyUI dock's fixed positioning and safe-area handling */
+/* We handle layout via flexbox, not fixed positioning */
 .dock {
   position: relative;
   bottom: auto;
   left: auto;
   right: auto;
+  border-top: none;
+  /* Override DaisyUI's safe-area-inset-bottom handling */
+  height: 4rem;
+  padding-bottom: 0;
+}
+
+/* Tab bar container - ensure it stays at bottom and doesn't shrink */
+.tab-bar {
+  flex-shrink: 0;
+  width: 100%;
 }
 
 /* Active badge - green status indicator */
