@@ -111,6 +111,7 @@ async function refreshOAuthToken(refreshToken: string): Promise<OAuthToken> {
     body: new URLSearchParams({
       grant_type: "refresh_token",
       refresh_token: refreshToken,
+      client_id: "54d11594-84e4-41aa-b438-e81b8fa78ee7",
     }),
   });
 
