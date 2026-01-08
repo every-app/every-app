@@ -73,6 +73,7 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="New todo..."
+              autoFocus
               className="w-full flex-1 bg-transparent border-none outline-none resize-none text-base-content placeholder:text-base-content/50 focus:ring-0 text-base"
             />
           </form>
