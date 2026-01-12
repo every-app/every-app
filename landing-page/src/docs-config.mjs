@@ -29,8 +29,20 @@ export const docsConfig = [
     items: [{ slug: "docs/getting-started/quickstart" }],
   },
   {
+    label: "Coding Agents",
+    items: [{ slug: "docs/coding-agents" }],
+  },
+  {
     label: "Build an App",
     items: [{ slug: "docs/build-an-app/create-app" }],
+  },
+  {
+    label: "Prompts",
+    items: [{ slug: "docs/prompts" }],
+  },
+  {
+    label: "Learn More",
+    items: [{ slug: "docs/learn-more" }],
   },
   {
     label: "Patterns",
@@ -65,7 +77,14 @@ export function toStarlightSidebar() {
   const sidebar = [];
 
   // Sections with a single item that should be flattened to top-level
-  const flattenedSections = ["Introduction", "Getting Started", "Build an App"];
+  const flattenedSections = [
+    "Introduction",
+    "Getting Started",
+    "Coding Agents",
+    "Build an App",
+    "Prompts",
+    "Learn More",
+  ];
 
   for (const section of docsConfig) {
     // Single-item sections are flattened to top-level links

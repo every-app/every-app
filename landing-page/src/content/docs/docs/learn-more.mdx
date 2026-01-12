@@ -1,0 +1,332 @@
+---
+title: Learn More
+description: Copy these prompts into your coding agent to learn more about Every App
+---
+
+import { Aside } from "@astrojs/starlight/components";
+import OpenDetailsOnHash from "../../../components/OpenDetailsOnHash.astro";
+
+<Aside type="note">
+  The best way to build apps is with coding agents using our starter template
+  and referencing example apps with MCP. Make sure you've [set up your coding
+  agent](/docs/coding-agents) before building.
+</Aside>
+
+Use these prompts with your coding agent to explore Every App in depth. Click any question to reveal a prompt you can copy.
+
+<details class="faq">
+<summary>
+
+## What does the Every App CLI do?
+
+</summary>
+<div class="faq-content">
+
+The CLI enables one-command deploys of your entire app. It reads your app config and automatically provisions all the infrastructure you need—databases, storage, KV namespaces—and deploys your code, so you don't have to manage any of this yourself.
+
+```bash
+npx @every-app/cli gateway deploy # Deploys the Gateway
+npx @every-app/cli app create    # Sets up local dev enviornment + deploys app (needed for local dev)
+npx @every-app/cli app deploy    # Deploy updates to your app
+```
+
+<div class="prompt-block">
+
+**Ask your agent:**
+
+```text
+Explain what the Every App CLI does. How does it provision infrastructure automatically? What happens when I run `app create` vs `app deploy`? How does it know what infrastructure my app needs?
+
+Response Guidelines for LLM:
+- Keep responses succinct so I can ask follow-up questions
+- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+```
+
+</div>
+
+</div>
+</details>
+
+<details class="faq">
+<summary>
+
+## What is the suggested folder structure and organization of apps?
+
+</summary>
+<div class="faq-content">
+
+Here is the folder structure for the example workout-tracker app:
+
+```
+src/
+├── client/                       # Frontend React code
+│   ├── actions/                  # Complex multi-step actions
+│   │   ├── completeWorkout.ts
+│   │   └── startProgramFromTemplate.ts
+│   ├── components/               # React components
+│   ├── hooks/                    # Custom React hooks
+│   ├── lib/                      # Utility functions
+│   ├── styles/                   # CSS files
+│   └── tanstack-db/              # Client-side data layer
+│       ├── programsCollection.ts
+│       └── workoutsCollection.ts
+├── db/                           # Database schemas (Drizzle)
+│   ├── schema.ts                 # Table definitions
+│   └── migrations/               # Generated migration files
+├── server/                       # Repositories and services
+│   ├── programsRepository.ts     # DB queries for programs
+│   └── workoutsRepository.ts     # DB queries for workouts
+├── serverFunctions/              # Server functions (RPC endpoints)
+│   ├── programs.ts               # CRUD for programs
+│   └── workouts.ts               # CRUD for workouts
+└── routes/                       # React Router routes
+    ├── index.ts                  # Route definitions
+    ├── programs.$programId.ts    # Programs page route
+    └── templates.ts              # Templates page route
+```
+
+<div class="prompt-block">
+
+**Ask your agent:**
+
+```text
+Explain Every App folder structure using workout-tracker as the reference example. Show the complete structure and key patterns with code examples for: database schemas (src/db/), server functions (src/serverFunctions/), repositories/services (src/server/), client collections (src/client/tanstack-db/), types/schemas (src/types/), routes (src/routes/), and middleware (src/middleware/). Include how authentication works: how session tokens are added to requests (useSessionTokenClientMiddleware) and validated on the backend (ensureUserMiddleware). Use the Every App example apps.
+
+Response Guidelines for LLM:
+- Keep responses succinct so I can ask follow-up questions
+- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+```
+
+</div>
+
+</div>
+</details>
+
+<details class="faq">
+<summary>
+
+## How does authentication and users work in apps?
+
+</summary>
+<div class="faq-content">
+
+Read [How Session Tokens Work](/docs/embedded-sdk/overview#how-session-tokens-work) to understand the handshake between the Gateway and your apps.
+
+Other than that, auth is already set up for you if you're using the template apps. Use the below prompt to dig deeper into how that works.
+
+<div class="prompt-block">
+
+**Ask your agent:**
+
+```text
+Explain how authentication and users work in Every App using workout-tracker as the reference. Cover with code examples:
+
+1. **Token flow**: How EmbeddedAppProvider requests session tokens from the Gateway
+2. **Client setup**: Wrapping app with EmbeddedAppProvider and required env vars
+3. **Adding tokens**: How useSessionTokenClientMiddleware attaches Bearer tokens automatically
+4. **Server validation**: How ensureUserMiddleware validates JWTs via authenticateRequest
+5. **User provisioning**: How apps auto-create users on first authenticated request
+6. **Accessing user info**: Using useCurrentUser hook and context.userId in handlers
+
+Show the middleware chain: useSessionTokenClientMiddleware → ensureUserMiddleware → handler. Use Every App example apps.
+
+Response Guidelines:
+- Keep responses succinct so I can ask follow-up questions
+- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+```
+
+</div>
+
+</div>
+</details>
+
+<details class="faq">
+<summary>
+
+## How does auth work in the Gateway?
+
+</summary>
+<div class="faq-content">
+
+TODO Fill in this top section.
+
+<div class="prompt-block">
+
+**Ask your agent:**
+
+```text
+Explain how authentication and user management works in the Every App Gateway. How are users created and managed? How does the Gateway authenticate users and pass that authentication to apps? What are the security considerations?
+
+Response Guidelines for LLM:
+- Keep responses succinct so I can ask follow-up questions
+- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+```
+
+</div>
+
+</div>
+</details>
+
+<details class="faq">
+<summary>
+
+## What do I need to know about the @every-app/sdk?
+
+</summary>
+<div class="faq-content">
+
+TODO Fill in this top section.
+
+<div class="prompt-block">
+
+**Ask your agent:**
+
+```text
+Give me a comprehensive overview of the @every-app/sdk package. What functions and utilities does it provide? How do I use it in my app's frontend and backend? Show me common usage patterns and examples.
+
+Response Guidelines for LLM:
+- Keep responses succinct so I can ask follow-up questions
+- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+```
+
+</div>
+
+</div>
+</details>
+
+<details class="faq">
+<summary>
+
+## How do I change my database schema?
+
+</summary>
+<div class="faq-content">
+
+TODO Fill in this top section.
+
+<div class="prompt-block">
+
+**Ask your agent:**
+
+```text
+Explain the workflow for changing a database schema in an Every App application. How do I add, modify, or remove tables and columns? What tools are used? Walk me through a complete example of making a schema change.
+
+Response Guidelines for LLM:
+- Keep responses succinct so I can ask follow-up questions
+- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+```
+
+</div>
+
+</div>
+</details>
+
+<details class="faq">
+<summary>
+
+## What should my dev workflow be locally?
+
+</summary>
+<div class="faq-content">
+
+TODO Fill in this top section.
+
+<div class="prompt-block">
+
+**Ask your agent:**
+
+```text
+What is the recommended local development workflow for Every App? How do I start the development server? How do I test my app locally? What commands should I be running? Are there any tips for efficient development?
+
+Response Guidelines for LLM:
+- Keep responses succinct so I can ask follow-up questions
+- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+```
+
+</div>
+
+</div>
+</details>
+
+<details class="faq">
+<summary>
+
+## How do migrations work for deployed apps?
+
+</summary>
+<div class="faq-content">
+
+TODO Fill in this top section.
+
+<div class="prompt-block">
+
+**Ask your agent:**
+
+```text
+Explain how database migrations work for deployed Every App applications. What happens when I deploy an app with schema changes? How are migrations run in production? What should I be careful about when migrating production data?
+
+Response Guidelines for LLM:
+- Keep responses succinct so I can ask follow-up questions
+- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+```
+
+</div>
+
+</div>
+</details>
+
+<details class="faq">
+<summary>
+
+## How do I add an environment variable or secret?
+
+</summary>
+<div class="faq-content">
+
+TODO Fill in this top section.
+
+<div class="prompt-block">
+
+**Ask your agent:**
+
+```text
+How do I add environment variables or secrets to an Every App application? Where are they configured for local development vs production? How do I access them in my code? Show me examples.
+
+Response Guidelines for LLM:
+- Keep responses succinct so I can ask follow-up questions
+- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+```
+
+</div>
+
+</div>
+</details>
+
+<details class="faq">
+<summary>
+
+## How do I debug a failed deployment?
+
+</summary>
+<div class="faq-content">
+
+TODO Fill in this top section.
+
+<div class="prompt-block">
+
+**Ask your agent:**
+
+```text
+How do I debug a failed deployment in Every App? What are common causes of deployment failures? How do I view deployment logs? What troubleshooting steps should I follow? Show me how to diagnose and fix common issues.
+
+Response Guidelines for LLM:
+- Keep responses succinct so I can ask follow-up questions
+- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+```
+
+</div>
+
+</div>
+</details>
+
+<OpenDetailsOnHash />

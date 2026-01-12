@@ -14,6 +14,13 @@ Self host on Cloudflare with one simple CLI command. Since apps are built for Cl
 
 Make your app open source, sharing it online for others to use.
 
+## Coding Agents & Vibe Coding
+Every App is for Engineers. It’s designed so that you can build awesome apps leveraging Coding Agents quickly, but with an unlimited ceiling of quality.
+
+After you follow the instructions for setting up the Gateway, start with just vibe coding an idea you have, reimplement an old side project or test the example prompt in Build an App for building a kanban board.
+
+Once you’ve built something you love, you could stay in this Vibe Coding zone forever (please use the Security Review prompt), or you could dig deeper and build the best project of your life.
+
 ### Screenshots
 
 This screenshot is of a split window.

@@ -1,9 +1,15 @@
 ---
 title: Build an App
-description: Set up your coding agent and create your first app
+description: Create your first app
 ---
 
-import { Tabs, TabItem, Aside } from "@astrojs/starlight/components";
+import { Aside } from "@astrojs/starlight/components";
+
+<Aside type="note">
+  The best way to build apps is with coding agents using our starter template
+  and referencing example apps with MCP. Make sure you've [set up your coding
+  agent](/docs/coding-agents) before building.
+</Aside>
 
 ## Create Your App
 
@@ -15,10 +21,6 @@ cd your-project-name
 pnpm run dev
 ```
 
-### Local Development
-
-Click the "Dev" button for your app in the Gateway to use your local dev server instead of the deployed version.
-
 ### Deploy Updates
 
 After making changes:
@@ -29,71 +31,81 @@ npx @every-app/cli app deploy
 
 This builds your app, runs any pending database migrations, and deploys to Cloudflare.
 
-## Coding Agent Setup
+### Example Prompt
 
-Coding Agents are realllllly good at building these apps.
+#### Simple Prompt
 
-Agents usually struggle on new projects because there aren't any patterns defined yet. They struggle in legacy codebases because they're very complex and have lots of bad code to reference as example.
+<div class="wrap-code">
 
-We've been meticulous about the example applications having well-defined patterns that agents can follow. These patterns cover most of what every full stack app needs. It's your job to figure out the rest!
+```md
+Please make me task management tool. My goal is to build a minimal tool where I can track the state of tasks within multiple projects.
 
-### Add the MCP Server
+I'm thinking there should be a page for the board and a page for editing each task. I want it to support multiple boards as well.
 
-Add the Every App MCP server to your agent so it can reference the example apps when building yours.
-
-<Tabs>
-
-<TabItem label="OpenCode">
-
-Add to `opencode.json`:
-
-```jsonc
-{
-  "mcp": {
-    "every-app": {
-      "type": "local",
-      "command": ["npx", "-y", "@every-app/mcp"],
-    },
-    // Up to date docs for libraries + Cloudflare
-    "context7": {
-      "type": "local",
-      "command": ["npx", "-y", "@upstash/context7-mcp"],
-    },
-  },
-}
+There should also be a flow for me to invite other users to my board by email.
 ```
 
-</TabItem>
+</div>
 
-<TabItem label="Cursor">
+#### Detailed Prompt
 
-Add to `.cursor/mcp.json`:
+The more detailed your prompt. The closer it will be to your vision.
 
-```json
-{
-  "mcpServers": {
-    "every-app": {
-      "command": "npx",
-      "args": ["-y", "@every-app/mcp"]
-    }
-  }
-}
+Don't worry about having everything figured out though. The agent can often piece together your intent and give you a good first draft to start from.
+
+<div class="wrap-code">
+
+```md
+Please make me task management tool. My goal is to build a minimal tool where I can track the state of tasks within multiple projects.
+
+## Key Concepts
+
+Task - This is a discrete task that someone needs to complete. It should store the following data:
+
+- Title (Required)
+- Description
+- Due Date
+- Assignee
+- Creator
+- Status
+
+Board - This is a collection of tasks. It should store the the following:
+
+- Title
+- Description
+- Statuses (These are the possible statuses of tasks within the board, these should ordered)
+
+## UI
+
+### Pages
+
+- Board - This shows the board and all the tasks. This has two view types: List and Board.
+- Task - Show the task details and make the fields easily editable.
+- User Settings - The user settings page should just allow users to change their name right now.
+
+### Flows
+
+- Request Name for new Users
+  - When the user enters the app for the first time or if they just haven't set their name yet in general, prompt them to enter their name so that we can show it in the UI.
+- Invite Users to Board
+  - Somewhere in the board UI, add the ability to add Users to the board. Validate that the user exists server side, if they don't, show an error in the UI.
+- Sidebar
+  - (Mobile) - Please use a drawer sidebar instead of a TabBar. This will lets us show the boards easier. Also, default to list view for mobile.
+  - The sidebar should show the list of boards that the user has access to. It should show them in order of which board they've last interacted with. Interaction counts as clicking on it in navigation.
 ```
 
-</TabItem>
+</div>
 
-<TabItem label="Claude Code">
+#### Add Keyboard Navigation
 
-```sh
-claude mcp add every-app -- npx -y @every-app/mcp
+This makes the code more complicated and not everyone wants this. If you do, ask for it to add keyboard navigation. This is set up in the Every App Todo app so it has a good example to reference.
+
+<div class="wrap-code">
+
+```md
+Please come up with a plan for adding keyboard navigation based on the example Todo App in the Every App MCP tool.
 ```
 
-</TabItem>
-</Tabs>
+</div>
 
-Restart your AI tool after adding the MCP server.
-
-<Aside type="tip">
-  Remind your agent to reference the examples with the Every App tool if it's
-  not doing so automatically.
-</Aside>
+Click the "Dev" button for your app in the Gateway to use your local dev server instead of the deployed version.
