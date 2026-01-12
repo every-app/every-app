@@ -8,11 +8,9 @@ The open source personal software platform.
 
 Every App is a self-hosted platform for personal web apps. Use your favorite coding agent to build apps tailored to yourself, family, friends or your company.
 
-Every App handles the boring parts like auth and hosting so that you can focus on building your idea.
+Every App handles the boring parts like auth, setting up your database, and hosting so that you can focus on building your idea.
 
-Self host on Cloudflare with one simple CLI command which deploys your code and provisions any infrastructure like databases or queues. Since apps are built for Cloudflare's Serverless platform, hosting starts completely free. Even with dozens of apps, you're unlikely to exceed the $5/month paid plan.
-
-Make your app open source, sharing it online for others to use.
+Self host on Cloudflare with one simple CLI command. Since apps are built for Cloudflare's Serverless platform, hosting starts completely free. Even with dozens of apps, you're unlikely to exceed the $5/month paid plan.
 
 ## Coding Agents & Vibe Coding
 Every App is for Engineers. It’s designed so that you can build awesome apps leveraging Coding Agents quickly, but with an unlimited ceiling of quality.
