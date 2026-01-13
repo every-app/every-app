@@ -40,7 +40,11 @@ export async function setupSecrets({
   gatewayPath,
   verbose = false,
 }: SetupSecretsOptions): Promise<void> {
-  console.log("Configuring Secrets...");
+  console.log("Configuring secrets for the authentication service (Better Auth)...");
+  console.log(chalk.dim("  BETTER_AUTH_SECRET - Session signing and encryption"));
+  console.log(chalk.dim("  JWT_PRIVATE_KEY    - Signs JWTs issued to your apps"));
+  console.log(chalk.dim("  JWT_PUBLIC_KEY     - Apps use this to verify JWTs"));
+  console.log();
 
   try {
     // Check and setup GATEWAY_URL
