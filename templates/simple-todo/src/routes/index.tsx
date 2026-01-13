@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { Plus, Info } from "lucide-react";
 import { CreateTodoModal } from "@/client/components/CreateTodoModal";
 import { todoCollection } from "@/client/tanstack-db";
 import { TodoItem } from "@/client/components/TodoItem";
@@ -46,6 +46,25 @@ function Home() {
         <h1 className="text-xl font-semibold text-base-content py-3 md:hidden">
           Todos
         </h1>
+
+        {/* Template starter alert */}
+        <div className="alert alert-info mb-4">
+          <Info className="w-5 h-5" />
+          <div>
+            <span className="font-medium">This the starter template.</span>{" "}
+            <a
+              href="https://everyapp.dev/docs/build-an-app/create-app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:opacity-80"
+            >
+              See the docs
+            </a>{" "}
+            to see an example prompt for building an app and what features are
+            available to you.
+          </div>
+        </div>
+
         {/* Desktop: inline form for creating todos */}
         <form
           onSubmit={(e) => {

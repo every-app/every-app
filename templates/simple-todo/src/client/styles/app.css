@@ -29,7 +29,7 @@
   --color-success: oklch(65% 0.18 145);
   --color-success-content: oklch(100% 0 0);
   --color-warning: oklch(80% 0.15 80);
-  --color-warning-content: oklch(20% 0 0);
+  --color-warning-content: oklch(100% 0 0);
   --color-error: oklch(65% 0.2 25);
   --color-error-content: oklch(100% 0 0);
   --radius-selector: 0.5rem;
@@ -64,7 +64,7 @@
   --color-success: oklch(65% 0.18 145);
   --color-success-content: oklch(100% 0 0);
   --color-warning: oklch(80% 0.15 80);
-  --color-warning-content: oklch(20% 0 0);
+  --color-warning-content: oklch(100% 0 0);
   --color-error: oklch(65% 0.2 25);
   --color-error-content: oklch(100% 0 0);
   --radius-selector: 0.5rem;
@@ -125,5 +125,44 @@ select {
   }
   body {
     touch-action: pan-x pan-y;
+  }
+}
+
+/* Custom alert styling with darker borders and transparent background */
+.alert {
+  @apply flex gap-3 rounded-lg border p-4 text-base-content/70;
+}
+
+.alert-warning {
+  @apply border-warning/70 bg-warning/40 text-base-content/90;
+}
+
+.alert-info {
+  @apply border-info/70 bg-info/40 text-base-content/90;
+}
+
+.alert-success {
+  @apply border-success/70 bg-success/40 text-base-content/90;
+}
+
+.alert-error {
+  @apply border-error/70 bg-error/40 text-base-content/90;
+}
+
+@media (prefers-color-scheme: dark) {
+  .alert-warning {
+    @apply border-warning/60 bg-warning/20;
+  }
+
+  .alert-info {
+    @apply border-info/60 bg-info/20;
+  }
+
+  .alert-success {
+    @apply border-success/60 bg-success/20;
+  }
+
+  .alert-error {
+    @apply border-error/60 bg-error/20;
   }
 }

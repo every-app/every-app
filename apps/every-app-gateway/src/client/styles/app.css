@@ -29,14 +29,14 @@
   --color-neutral-content: oklch(100% 0 0);
 
   /* Status Colors */
-  --color-info: oklch(79.54% 0.103 205.9);
-  --color-info-content: oklch(15.908% 0.02 205.9);
-  --color-success: oklch(85% 0.06 164.14);
-  --color-success-content: oklch(25% 0.03 164.14);
-  --color-warning: oklch(88.37% 0.135 79.94);
-  --color-warning-content: oklch(17.674% 0.027 79.94);
-  --color-error: oklch(55% 0.22 25);
-  --color-error-content: oklch(98% 0.01 25);
+  --color-info: oklch(70% 0.15 230);
+  --color-info-content: oklch(100% 0 0);
+  --color-success: oklch(65% 0.18 145);
+  --color-success-content: oklch(100% 0 0);
+  --color-warning: oklch(80% 0.15 80);
+  --color-warning-content: oklch(100% 0 0);
+  --color-error: oklch(65% 0.2 25);
+  --color-error-content: oklch(100% 0 0);
 
   /* Border Radius */
   --radius-selector: 0rem;
@@ -73,12 +73,12 @@
   --color-neutral: oklch(30% 0 0);
   --color-neutral-content: oklch(100% 0 0);
 
-  --color-info: oklch(79.54% 0.103 205.9);
-  --color-info-content: oklch(15.908% 0.02 205.9);
-  --color-success: oklch(45% 0.08 164.14);
-  --color-success-content: oklch(90% 0.03 164.14);
-  --color-warning: oklch(88.37% 0.135 79.94);
-  --color-warning-content: oklch(17.674% 0.027 79.94);
+  --color-info: oklch(70% 0.15 230);
+  --color-info-content: oklch(100% 0 0);
+  --color-success: oklch(65% 0.18 145);
+  --color-success-content: oklch(100% 0 0);
+  --color-warning: oklch(80% 0.15 80);
+  --color-warning-content: oklch(100% 0 0);
   --color-error: oklch(65% 0.2 25);
   --color-error-content: oklch(100% 0 0);
 
@@ -229,43 +229,41 @@ form {
   background: linear-gradient(180deg, #4d4d4d 0%, #404040 50%, #353535 100%);
 }
 
-/* Custom alert styling with border and semi-transparent background */
+/* Custom alert styling with darker borders and transparent background */
 .alert {
-  @apply flex gap-3 rounded-lg border p-4;
+  @apply flex gap-3 rounded-lg border p-4 text-base-content/70;
 }
 
-/* Light mode */
 .alert-warning {
-  @apply border-warning bg-warning/20 text-warning;
+  @apply border-warning/70 bg-warning/40 text-base-content/90;
 }
 
 .alert-info {
-  @apply border-info bg-info/20 text-info;
+  @apply border-info/70 bg-info/40 text-base-content/90;
 }
 
 .alert-success {
-  @apply border-success bg-success/20 text-success;
+  @apply border-success/70 bg-success/40 text-base-content/90;
 }
 
 .alert-error {
-  @apply border-error bg-error/20 text-error;
+  @apply border-error/70 bg-error/40 text-base-content/90;
 }
 
-/* Dark mode - slightly more visible */
 @media (prefers-color-scheme: dark) {
   .alert-warning {
-    @apply border-warning/30 bg-warning/10;
+    @apply border-warning/60 bg-warning/20;
   }
 
   .alert-info {
-    @apply border-info/30 bg-info/10;
+    @apply border-info/60 bg-info/20;
   }
 
   .alert-success {
-    @apply border-success/30 bg-success/10;
+    @apply border-success/60 bg-success/20;
   }
 
   .alert-error {
-    @apply border-error/30 bg-error/10;
+    @apply border-error/60 bg-error/20;
   }
 }
