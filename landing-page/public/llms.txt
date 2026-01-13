@@ -54,11 +54,15 @@ Normal SaaS and consumer apps each implement the same stuff over and over—auth
 
 ## Prerequisites
 
-1. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) (free, no credit card required)
+1. Install [Node.js](https://nodejs.org/) (LTS version recommended)
+
+   This also installs `npx`, a tool that runs Node packages without installing them globally. You'll see `npx` commands throughout these docs.
+
+2. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) (free, no credit card required)
 
    Skip any Cloudflare onboarding like configuring a domain, this is unnecessary for Every App.
 
-2. Log in to Cloudflare:
+3. Log in to Cloudflare:
    ```bash
    npx wrangler login
    ```

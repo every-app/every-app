@@ -65,11 +65,15 @@ We simplify building apps by standardizing as much as possible and hoisting what
 
 ### Prerequisites
 
-1. Make a Cloudflare Account (No credit card needed) - https://dash.cloudflare.com/sign-up
+1. Install [Node.js](https://nodejs.org/) (LTS version recommended)
+
+   This also installs `npx`, a tool that runs Node packages without installing them globally. You'll see `npx` commands throughout these docs.
+
+2. Make a Cloudflare Account (No credit card needed) - https://dash.cloudflare.com/sign-up
 
    Skip any Cloudflare onboarding like configuring a domain, this is unnecessary for Every App. 
 
-2. Authenticate with Cloudflare (choose one):
+3. Authenticate with Cloudflare (choose one):
    - Login via the Cloudflare CLI (recommended):
      ```bash
      npx wrangler login
