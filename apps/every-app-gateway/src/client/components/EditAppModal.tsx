@@ -114,6 +114,7 @@ export function EditAppModal({ open, onOpenChange, app }: EditAppModalProps) {
         />
         <FormField
           label="App URL"
+          description="The URL where your app is hosted (requests will be proxied here)"
           placeholder="https://your-app.example.com"
           registration={register("appUrl")}
           error={errors.appUrl}

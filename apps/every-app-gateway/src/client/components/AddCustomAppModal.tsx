@@ -71,9 +71,25 @@ export function AddCustomAppModal({
   } = form;
 
   const devUrl = watch("devUrl");
+  const appUrl = watch("appUrl");
 
   const handleDevModeToggle = (enabled: boolean) => {
     setValue("devUrl", enabled ? DEFAULT_DEV_URL : null);
+  };
+
+  const handleAppIdBlur = (
+    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    const appId = e.target.value;
+    if (appId && !appUrl && window.location.hostname !== "localhost") {
+      // Replace "every-app-gateway" with the appId in the current URL
+      // e.g., https://every-app-gateway.user.workers.dev -> https://my-app.user.workers.dev
+      const suggestedUrl = window.location.origin.replace(
+        "every-app-gateway",
+        appId,
+      );
+      setValue("appUrl", suggestedUrl, { shouldDirty: true });
+    }
   };
 
   return (
@@ -103,6 +119,7 @@ export function AddCustomAppModal({
           placeholder="my-custom-app"
           registration={register("appId")}
           error={errors.appId}
+          onBlur={handleAppIdBlur}
         />
         <FormField
           label="App Name"
@@ -119,7 +136,7 @@ export function AddCustomAppModal({
         />
         <FormField
           label="App URL"
-          placeholder="https://your-app.example.com"
+          placeholder="https://my-custom-app.[yoursubdomain].workers.dev"
           registration={register("appUrl")}
           error={errors.appUrl}
         />
