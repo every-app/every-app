@@ -32,17 +32,12 @@ const KNOWN_ERRORS: Record<number, Omit<CloudflareErrorInfo, "code">> = {
 Then run this command again.`,
   },
   [CLOUDFLARE_ERROR_CODES.R2_NOT_ENABLED]: {
-    userMessage: "Enable R2 to deploy this app.",
-    action: `${chalk.bold("What is R2?")}
-R2 is Cloudflare's file storage service. It's used for storing things like
-images and other files this app might need.
-
-${chalk.bold("How to fix:")}
-Enable R2 on your account by visiting this link:
+    userMessage: "R2 not enabled",
+    action: `R2 is Cloudflare's file storage service, used for storing images and files.
 
   ${chalk.cyan("https://dash.cloudflare.com/{accountId}/r2/plans")}
 
-Once it's enabled, run the deploy command again.`,
+${chalk.dim("  Visit the URL above to enable R2, then run this command again.")}`,
   },
 };
 
@@ -50,7 +45,7 @@ Once it's enabled, run the deploy command again.`,
  * Parse error output from wrangler or Cloudflare API to extract error code
  */
 function parseCloudflareErrorCode(errorOutput: string): number | undefined {
-  // Match patterns like [code: 10034] or "code":10034
+  // Match patterns like [code: 10034] or "code":10034 or [10042]
   const codeMatch = errorOutput.match(/\[code:\s*(\d+)\]/);
   if (codeMatch?.[1]) {
     return parseInt(codeMatch[1], 10);
@@ -59,6 +54,12 @@ function parseCloudflareErrorCode(errorOutput: string): number | undefined {
   const jsonCodeMatch = errorOutput.match(/"code"\s*:\s*(\d+)/);
   if (jsonCodeMatch?.[1]) {
     return parseInt(jsonCodeMatch[1], 10);
+  }
+
+  // Match standalone error code in brackets like [10042]
+  const bracketCodeMatch = errorOutput.match(/\[(\d{5})\]/);
+  if (bracketCodeMatch?.[1]) {
+    return parseInt(bracketCodeMatch[1], 10);
   }
 
   return undefined;
@@ -120,6 +121,7 @@ async function buildFormattedMessage(
 ): Promise<string> {
   // Replace placeholders in action text
   let action = errorInfo.action;
+
   // Try to get accountId from options, or fall back to fetching it
   let accountId = options.accountId;
   if (!accountId && action.includes("{accountId}")) {
