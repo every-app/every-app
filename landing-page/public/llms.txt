@@ -56,6 +56,8 @@ Normal SaaS and consumer apps each implement the same stuff over and over—auth
 
 1. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) (free, no credit card required)
 
+   Skip any Cloudflare onboarding like configuring a domain, this is unnecessary for Every App.
+
 2. Log in to Cloudflare:
    ```bash
    npx wrangler login

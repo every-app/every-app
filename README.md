@@ -55,6 +55,9 @@ We simplify building apps by standardizing as much as possible and hoisting what
 ### Prerequisites
 
 1. Make a Cloudflare Account (No credit card needed) - https://dash.cloudflare.com/sign-up
+
+   Skip any Cloudflare onboarding like configuring a domain, this is unnecessary for Every App. 
+
 2. Authenticate with Cloudflare (choose one):
    - Login via the Cloudflare CLI (recommended):
      ```bash
