@@ -50,7 +50,7 @@ const styles = {
     colorScheme: "light dark",
   } satisfies CSSProperties,
   content: {
-    maxWidth: "380px",
+    maxWidth: "520px",
     width: "100%",
     textAlign: "left",
   } satisfies CSSProperties,
@@ -78,20 +78,17 @@ const styles = {
     color: "var(--gateway-text-muted, oklch(40% 0 0))",
     marginBottom: "20px",
   } satisfies CSSProperties,
-  link: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "8px",
+  urlText: {
     fontSize: "14px",
-    fontWeight: 500,
-    lineHeight: "24px",
+    lineHeight: 1.5,
+    color: "var(--gateway-text-muted, oklch(40% 0 0))",
+    wordBreak: "break-all",
+  } satisfies CSSProperties,
+  urlLink: {
     color: "rgb(168, 162, 158)",
     textDecoration: "underline",
     textDecorationColor: "rgb(87, 83, 78)",
-    textUnderlineOffset: "4px",
-    cursor: "pointer",
-    transition:
-      "color, background-color, border-color, text-decoration-color, fill, stroke 0.15s cubic-bezier(0.4, 0, 0.2, 1)",
+    textUnderlineOffset: "2px",
   } satisfies CSSProperties,
 };
 
@@ -106,7 +103,8 @@ export function GatewayRequiredError({
   gatewayOrigin,
   appId,
 }: GatewayRequiredErrorProps) {
-  const gatewayUrl = `${gatewayOrigin}/apps/${appId}${window.location.pathname}`;
+  const isLocalhost = window.location.hostname === "localhost";
+  const gatewayUrl = `${gatewayOrigin}/apps/${appId}${window.location.pathname}${isLocalhost ? "dev" : ""}`;
 
   return (
     <div style={styles.container}>
@@ -139,23 +137,13 @@ export function GatewayRequiredError({
           so this works properly.
         </p>
 
-        {/* Redirect Link */}
-        <a href={gatewayUrl} style={styles.link}>
-          Go to Gateway
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="5" y1="12" x2="19" y2="12" />
-            <polyline points="12 5 19 12 12 19" />
-          </svg>
-        </a>
+        {/* URL Link */}
+        <p style={styles.urlText}>
+          Go to{" "}
+          <a href={gatewayUrl} style={styles.urlLink}>
+            {gatewayUrl}
+          </a>
+        </p>
       </div>
     </div>
   );
