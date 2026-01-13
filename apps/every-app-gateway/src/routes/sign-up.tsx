@@ -1,17 +1,25 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 import { hasOwner, initializeOwner } from "@/serverFunctions/admin";
+import { getSafeRedirect } from "@/utils/auth";
+
+const searchSchema = z.object({
+  redirect: z.string().optional(),
+});
 
 export const Route = createFileRoute("/sign-up")({
   component: SignUp,
+  validateSearch: searchSchema,
 });
 
 function SignUp() {
+  const { redirect } = Route.useSearch();
   const { data: ownerData, isLoading: isCheckingOwner } = useQuery({
     queryKey: ["hasOwner"],
     queryFn: () => hasOwner(),
@@ -22,28 +30,29 @@ function SignUp() {
   }
 
   if (ownerData?.hasOwner) {
-    return <InvitationRequired />;
+    return <InvitationRequired redirect={redirect} />;
   }
 
-  return <CreateOwnerForm />;
+  return <CreateOwnerForm redirect={redirect} />;
 }
 
 /**
  * Form for creating the first owner account.
  * Only shown when no owner exists in the system.
  */
-function CreateOwnerForm() {
+function CreateOwnerForm({ redirect }: { redirect?: string }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const safeRedirect = getSafeRedirect(redirect);
 
   const handleSuccess = async () => {
     await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
     refetchCollectionsAfterAuth();
-    navigate({ to: "/" });
+    navigate({ to: safeRedirect });
     queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
   };
 
@@ -58,7 +67,10 @@ function CreateOwnerForm() {
 
       if (signInError) {
         await queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
-        navigate({ to: "/sign-in" });
+        navigate({
+          to: "/sign-in",
+          search: redirect ? { redirect } : undefined,
+        });
       }
       return true;
     } catch (err) {
@@ -186,6 +198,7 @@ function CreateOwnerForm() {
                 Already have an account?{" "}
                 <Link
                   to="/sign-in"
+                  search={redirect ? { redirect } : undefined}
                   className="font-medium text-base-content hover:underline"
                 >
                   Sign in
@@ -203,7 +216,7 @@ function CreateOwnerForm() {
  * Message shown when an owner already exists.
  * Users must be invited to create an account.
  */
-function InvitationRequired() {
+function InvitationRequired({ redirect }: { redirect?: string }) {
   return (
     <div className="flex h-screen items-center justify-center overflow-hidden">
       <div className="relative w-full max-w-md">
@@ -226,6 +239,7 @@ function InvitationRequired() {
               Already have an account?{" "}
               <Link
                 to="/sign-in"
+                search={redirect ? { redirect } : undefined}
                 className="font-medium text-base-content hover:underline"
               >
                 Sign in

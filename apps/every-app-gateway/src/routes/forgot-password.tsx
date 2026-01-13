@@ -1,17 +1,24 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 
+const searchSchema = z.object({
+  redirect: z.string().optional(),
+});
+
 export const Route = createFileRoute("/forgot-password")({
   component: ForgotPassword,
+  validateSearch: searchSchema,
 });
 
 function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const { redirect } = Route.useSearch();
 
   const attemptForgotPassword = async (): Promise<boolean> => {
     try {
@@ -21,9 +28,14 @@ function ForgotPassword() {
         return true;
       }
 
+      // Include redirect param in the reset-password URL if present
+      const resetPasswordUrl = redirect
+        ? `${window.location.origin}/reset-password?redirect=${encodeURIComponent(redirect)}`
+        : `${window.location.origin}/reset-password`;
+
       const { error: forgetError } = await authClient.forgetPassword({
         email,
-        redirectTo: `${window.location.origin}/reset-password`,
+        redirectTo: resetPasswordUrl,
       });
 
       if (forgetError) {
@@ -80,7 +92,11 @@ function ForgotPassword() {
                 logs of every-app-gateway in Cloudflare in order to get the
                 password reset link if you've forgotten your email.
               </div>
-              <Link to="/sign-in" className="btn btn-primary w-full">
+              <Link
+                to="/sign-in"
+                search={redirect ? { redirect } : undefined}
+                className="btn btn-primary w-full"
+              >
                 Back to Sign In
               </Link>
             </div>
@@ -127,6 +143,7 @@ function ForgotPassword() {
                 Remember your password?{" "}
                 <Link
                   to="/sign-in"
+                  search={redirect ? { redirect } : undefined}
                   className="font-medium text-base-content hover:underline"
                 >
                   Sign in

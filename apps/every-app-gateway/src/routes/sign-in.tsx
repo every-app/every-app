@@ -1,13 +1,20 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
+import { getSafeRedirect } from "@/utils/auth";
+
+const searchSchema = z.object({
+  redirect: z.string().optional(),
+});
 
 export const Route = createFileRoute("/sign-in")({
   component: SignIn,
+  validateSearch: searchSchema,
 });
 
 function SignIn() {
@@ -16,6 +23,8 @@ function SignIn() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { redirect } = Route.useSearch();
+  const safeRedirect = getSafeRedirect(redirect);
 
   const attemptSignIn = async (): Promise<boolean> => {
     try {
@@ -25,7 +34,7 @@ function SignIn() {
           onSuccess: async () => {
             await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
             refetchCollectionsAfterAuth();
-            navigate({ to: "/" });
+            navigate({ to: safeRedirect });
           },
         },
       );
@@ -133,6 +142,7 @@ function SignIn() {
                 Don't have an account?{" "}
                 <Link
                   to="/sign-up"
+                  search={redirect ? { redirect } : undefined}
                   className="font-medium text-base-content hover:underline"
                 >
                   Sign up
@@ -141,6 +151,7 @@ function SignIn() {
               <p className="text-sm text-base-content/60">
                 <Link
                   to="/forgot-password"
+                  search={redirect ? { redirect } : undefined}
                   className="font-medium text-base-content hover:underline"
                 >
                   Forgot password?

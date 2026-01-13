@@ -1,27 +1,24 @@
-import {
-  createFileRoute,
-  useNavigate,
-  Link,
-  useSearch,
-} from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
+import { z } from "zod";
 import { isCpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 import { resetPassword as resetPasswordFn } from "@/serverFunctions/admin";
 
+const searchSchema = z.object({
+  token: z.string().default(""),
+  error: z.string().default(""),
+  redirect: z.string().optional(),
+});
+
 export const Route = createFileRoute("/reset-password")({
   component: ResetPassword,
-  validateSearch: (search: Record<string, unknown>) => {
-    return {
-      token: (search.token as string) || "",
-      error: (search.error as string) || "",
-    };
-  },
+  validateSearch: searchSchema,
 });
 
 function ResetPassword() {
-  const { token, error: urlError } = useSearch({ from: "/reset-password" });
+  const { token, error: urlError, redirect } = Route.useSearch();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
@@ -42,7 +39,14 @@ function ResetPassword() {
     try {
       await resetPasswordFn({ data: { token, password: newPassword } });
       setSuccess(true);
-      setTimeout(() => navigate({ to: "/sign-in" }), 2000);
+      setTimeout(
+        () =>
+          navigate({
+            to: "/sign-in",
+            search: redirect ? { redirect } : undefined,
+          }),
+        2000,
+      );
       return true;
     } catch (err) {
       if (isCpuTimeoutError(err)) {
@@ -165,6 +169,7 @@ function ResetPassword() {
             <p className="text-sm text-base-content/60">
               <Link
                 to="/sign-in"
+                search={redirect ? { redirect } : undefined}
                 className="font-medium text-base-content hover:underline"
               >
                 Back to Sign In

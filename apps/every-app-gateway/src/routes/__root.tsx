@@ -37,9 +37,17 @@ function AppRouter() {
     const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname);
 
     if (!isPending && !session && !isPublicRoute) {
-      navigate({ to: "/sign-in" });
+      // Preserve the current URL (path + search params) as a redirect parameter
+      // Use searchStr for the raw query string (location.search is the parsed object)
+      const searchStr = location.searchStr || "";
+      const currentUrl = location.pathname + searchStr;
+      const hasRedirect = currentUrl !== "/";
+      navigate({
+        to: "/sign-in",
+        search: hasRedirect ? { redirect: currentUrl } : undefined,
+      });
     }
-  }, [session, isPending, navigate, location.pathname]);
+  }, [session, isPending, navigate, location.pathname, location.searchStr]);
 
   return <Outlet />;
 }
