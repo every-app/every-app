@@ -4,6 +4,7 @@ import { getAppId } from "@/lib/everyapp-config";
 import { confirmDeployment } from "@/lib/deployment";
 import { requireCloudflareAuth } from "@/lib/cloudflare";
 import { requireGatewaySetup } from "@/lib/gateway";
+import { checkIsEveryAppProject } from "@/commands/app/deploy/steps/checkIsEveryAppProject";
 import { deployApp } from "@/commands/app/deploy/deployApp";
 
 interface DeployCommandFlags {
@@ -24,6 +25,9 @@ export async function deploy(
 
   const cwd = process.cwd();
   const verbose = flags.verbose || false;
+
+  // Check we're inside an Every App project
+  await checkIsEveryAppProject();
 
   // Get appId from every-app.jsonc (required)
   const appId = await getAppId(cwd);
