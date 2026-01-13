@@ -8,6 +8,10 @@ interface ModalProps {
   description?: string;
   children: ReactNode;
   actions: ReactNode;
+  /** When true, prevents dismissing via backdrop click or ESC key */
+  blocking?: boolean;
+  /** Optional icon to display inline with the title */
+  icon?: ReactNode;
 }
 
 /**
@@ -21,24 +25,39 @@ export function Modal({
   description,
   children,
   actions,
+  blocking = false,
+  icon,
 }: ModalProps) {
   const dialogRef = useDialogControl(open);
+
+  // Prevent ESC key from closing blocking modals
+  const handleCancel = (e: React.SyntheticEvent) => {
+    if (blocking) {
+      e.preventDefault();
+    }
+  };
 
   return (
     <dialog
       ref={dialogRef}
       className="modal modal-bottom sm:modal-middle"
       onClose={onClose}
+      onCancel={handleCancel}
     >
       <div className="modal-box">
-        <h3 className="font-bold text-lg">{title}</h3>
+        <div className="flex items-center gap-3">
+          {icon}
+          <h3 className="font-bold text-lg">{title}</h3>
+        </div>
         {description && <p>{description}</p>}
         {children}
         <div className="modal-action">{actions}</div>
       </div>
-      <form method="dialog" className="modal-backdrop">
-        <button>close</button>
-      </form>
+      {!blocking && (
+        <form method="dialog" className="modal-backdrop">
+          <button>close</button>
+        </form>
+      )}
     </dialog>
   );
 }

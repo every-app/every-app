@@ -9,10 +9,12 @@ import { AddCustomAppModal } from "@/client/components/AddCustomAppModal";
 import { EditAppModal } from "@/client/components/EditAppModal";
 import { DeleteAppModal } from "@/client/components/DeleteAppModal";
 import { PWAInstallModal } from "@/client/components/PWAInstallModal";
+import { SafariDevModeWarningModal } from "@/client/components/SafariDevModeWarningModal";
 import { OnboardingBanner } from "@/client/components/onboarding/OnboardingBanner";
 import { AppListItem, DevAppListItem } from "@/client/components/AppListItem";
 import type { UserApp } from "@/types/user-app";
 import { Header } from "@/client/components/Header";
+import { isSafari } from "@/client/utils/browser";
 
 const searchSchema = z.object({
   // Handle both boolean (from programmatic navigation) and string (from URL)
@@ -63,6 +65,7 @@ function App() {
   const [showPWAInstallModal, setShowPWAInstallModal] = useState(false);
   const [selectedApp, setSelectedApp] = useState<UserApp | null>(null);
   const [showDevUrls, setShowDevUrls] = useShowDevUrls();
+  const [showSafariWarning, setShowSafariWarning] = useState(false);
   const navigate = useNavigate();
   const hasStrippedPwaParam = useRef(false);
 
@@ -162,11 +165,15 @@ function App() {
                     {showDevUrls && app.devUrl && (
                       <DevAppListItem
                         app={app}
-                        onNavigate={() =>
-                          navigate({
-                            to: `/apps/${app.appId}/dev`,
-                          })
-                        }
+                        onNavigate={() => {
+                          if (isSafari()) {
+                            setShowSafariWarning(true);
+                          } else {
+                            navigate({
+                              to: `/apps/${app.appId}/dev`,
+                            });
+                          }
+                        }}
                       />
                     )}
                   </ul>
@@ -199,6 +206,10 @@ function App() {
             <PWAInstallModal
               open={showPWAInstallModal}
               onClose={() => setShowPWAInstallModal(false)}
+            />
+            <SafariDevModeWarningModal
+              open={showSafariWarning}
+              onOpenChange={setShowSafariWarning}
             />
           </div>
         </div>

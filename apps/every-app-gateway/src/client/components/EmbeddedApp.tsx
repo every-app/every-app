@@ -1,37 +1,7 @@
-import React, {
-  useRef,
-  useMemo,
-  useState,
-  useCallback,
-  useEffect,
-} from "react";
+import React, { useRef, useMemo, useState, useCallback } from "react";
 import { useAppConfig } from "../hooks/useAppConfig";
 import { useIframeMessaging } from "../hooks/useIframeMessaging";
 import { useRouteSync } from "../hooks/useRouteSync";
-import { SafariDevModeWarningModal } from "./SafariDevModeWarningModal";
-
-/**
- * Detects if the current browser is Safari.
- * Safari is the only major browser that blocks http:// iframes from https:// pages.
- */
-function isSafari(): boolean {
-  const ua = navigator.userAgent;
-  // Safari includes "Safari" but not "Chrome" or "Chromium" in its user agent
-  return (
-    ua.includes("Safari") && !ua.includes("Chrome") && !ua.includes("Chromium")
-  );
-}
-
-/**
- * Checks if a URL is using http:// (insecure) protocol.
- */
-function isHttpUrl(url: string): boolean {
-  try {
-    return new URL(url).protocol === "http:";
-  } catch {
-    return false;
-  }
-}
 
 interface EmbeddedAppProps {
   appId: string;
@@ -57,18 +27,10 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
 }) => {
   const { app, isLoading, isError } = useAppConfig(appId);
   const [isEmbeddedAppReady, setIsEmbeddedAppReady] = useState(false);
-  const [showSafariWarning, setShowSafariWarning] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Determine the base URL to use (dev or production)
   const activeUrl = isDevMode && app?.devUrl ? app.devUrl : app?.appUrl;
-
-  // Show Safari warning when in dev mode with an http:// URL
-  useEffect(() => {
-    if (isDevMode && activeUrl && isHttpUrl(activeUrl) && isSafari()) {
-      setShowSafariWarning(true);
-    }
-  }, [isDevMode, activeUrl]);
 
   const { postMessage } = useIframeMessaging(
     iframeRef,
@@ -104,10 +66,6 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
 
   return (
     <div className="w-full h-full flex flex-col bg-base-100 relative">
-      <SafariDevModeWarningModal
-        open={showSafariWarning}
-        onOpenChange={setShowSafariWarning}
-      />
       <iframe
         ref={iframeRef}
         src={iframeUrl}
