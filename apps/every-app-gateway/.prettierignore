@@ -6,3 +6,4 @@ dist/
 drizzle/
 planning/
 worker-configuration.d.ts
+.wrangler/

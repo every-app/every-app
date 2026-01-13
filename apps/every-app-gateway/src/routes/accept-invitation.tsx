@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
-import { CpuTimeoutError, isCpuTimeoutError } from "@/client/auth-client";
+import { isCpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
+import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 import { acceptInvitation } from "@/serverFunctions/admin";
 
 const searchSchema = z.object({
@@ -18,10 +19,36 @@ function AcceptInvitation() {
   const { token } = Route.useSearch();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
-  const [isCpuTimeout, setIsCpuTimeout] = useState(false);
+
+  const performAcceptInvitation = async (): Promise<boolean> => {
+    try {
+      await acceptInvitation({ data: { token, password } });
+      setSuccess(true);
+      return true;
+    } catch (err) {
+      if (isCpuTimeoutError(err)) {
+        return false;
+      }
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to set password. Please try again.",
+      );
+      return true;
+    }
+  };
+
+  const {
+    isRunning,
+    attemptCount,
+    maxRetries,
+    hasExhaustedRetries,
+    secondsUntilRetry,
+    showWarning,
+    executeWithRetry,
+  } = useCpuTimeoutRetry(performAcceptInvitation);
 
   if (!token) {
     return (
@@ -79,44 +106,16 @@ function AcceptInvitation() {
     );
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setIsCpuTimeout(false);
 
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
     }
 
-    setLoading(true);
-
-    try {
-      // Accept invitation: validate token, set password, and activate user
-      await acceptInvitation({
-        data: {
-          token,
-          password,
-        },
-      });
-
-      setSuccess(true);
-    } catch (err) {
-      console.error("Accept invitation error:", err);
-      // Check for CPU timeout error - either from authClient (CpuTimeoutError instance)
-      // or from server functions (error message contains CPU timeout keywords)
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      if (err instanceof CpuTimeoutError || isCpuTimeoutError(errorMessage)) {
-        setIsCpuTimeout(true);
-      } else {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to set password. Please try again.",
-        );
-      }
-      setLoading(false);
-    }
+    executeWithRetry();
   };
 
   return (
@@ -146,6 +145,7 @@ function AcceptInvitation() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={8}
+                  disabled={isRunning}
                 />
                 <label className="label">
                   <span className="label-text-alt text-base-content/60">
@@ -166,19 +166,25 @@ function AcceptInvitation() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   minLength={8}
+                  disabled={isRunning}
                 />
               </div>
-              {isCpuTimeout ? (
-                <CpuTimeoutWarning />
+              {showWarning ? (
+                <CpuTimeoutWarning
+                  attemptCount={attemptCount}
+                  maxRetries={maxRetries}
+                  hasExhaustedRetries={hasExhaustedRetries}
+                  secondsUntilRetry={secondsUntilRetry}
+                />
               ) : (
                 error && <div className="text-sm text-error">{error}</div>
               )}
               <button
                 type="submit"
                 className="btn btn-primary w-full"
-                disabled={loading}
+                disabled={isRunning}
               >
-                {loading ? "Setting up account..." : "Complete Setup"}
+                {isRunning ? "Setting up account..." : "Complete Setup"}
               </button>
             </form>
 

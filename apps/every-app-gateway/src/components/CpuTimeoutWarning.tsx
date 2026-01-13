@@ -1,8 +1,24 @@
+interface CpuTimeoutWarningProps {
+  attemptCount?: number;
+  maxRetries?: number;
+  hasExhaustedRetries?: boolean;
+  secondsUntilRetry?: number;
+}
+
 /**
- * Warning component displayed when Cloudflare Worker CPU timeout occurs.
- * This happens on the free plan due to CPU time limits.
+ * Warning component displayed when retrying due to Cloudflare Worker CPU timeout.
+ * Props are optional - when omitted, displays a simple "timeout occurred" message.
  */
-export function CpuTimeoutWarning() {
+export function CpuTimeoutWarning({
+  attemptCount,
+  maxRetries,
+  hasExhaustedRetries,
+  secondsUntilRetry,
+}: CpuTimeoutWarningProps = {}) {
+  const isRetrying =
+    attemptCount !== undefined &&
+    maxRetries !== undefined &&
+    !hasExhaustedRetries;
   return (
     <div className="alert alert-warning text-sm">
       <svg
@@ -19,11 +35,46 @@ export function CpuTimeoutWarning() {
         />
       </svg>
       <div>
-        <p className="font-semibold">Cloudflare Free Plan Limitation</p>
-        <p>
-          Please wait 15 seconds and try again. This may take a few attempts.
-          Upgrading to the Cloudflare $5 / month plan will resolve this issue.
-        </p>
+        {isRetrying ? (
+          <>
+            <p className="font-semibold">
+              {secondsUntilRetry && secondsUntilRetry > 0
+                ? `Retrying in ${secondsUntilRetry} seconds (${attemptCount} of ${maxRetries})...`
+                : `Retrying request (${attemptCount} of ${maxRetries})...`}
+            </p>
+            <p>
+              Hashing passwords sometimes takes longer than the Cloudflare Free
+              Plan allows for CPU time. We're automatically retrying your
+              request.
+            </p>
+            <p className="mt-2">
+              Read how to{" "}
+              <a
+                href="https://everyapp.dev/docs/build-an-app/create-app/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                Build an App
+              </a>{" "}
+              while you wait.
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="font-semibold">Max Retries Reached</p>
+            <p>
+              We tried {maxRetries} times but the request keeps timing out.
+              Please wait a few minutes before trying again. If you make too
+              many requests in quick succession, Cloudflare will lock you out.
+            </p>
+            <p className="mt-2">
+              Upgrading to the $5/month paid plan and redeploying the Gateway
+              will resolve this problem. Go to the Cloudflare Sidebar: Compute &
+              AI &gt; Workers Plans
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

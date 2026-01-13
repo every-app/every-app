@@ -1,9 +1,10 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { authClient, CpuTimeoutError } from "@/client/auth-client";
+import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
+import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 
 export const Route = createFileRoute("/sign-in")({
   component: SignIn,
@@ -12,33 +13,18 @@ export const Route = createFileRoute("/sign-in")({
 function SignIn() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [isCpuTimeout, setIsCpuTimeout] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setIsCpuTimeout(false);
-    setLoading(true);
-
+  const attemptSignIn = async (): Promise<boolean> => {
     try {
       const { error: signInError } = await authClient.signIn.email(
-        {
-          email,
-          password,
-        },
+        { email, password },
         {
           onSuccess: async () => {
-            // Refetch session first and wait for it to complete
-            await queryClient.refetchQueries({
-              queryKey: ["auth", "session"],
-            });
-            // Then refetch collections in parallel (no need to wait)
+            await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
             refetchCollectionsAfterAuth();
-            setLoading(false);
             navigate({ to: "/" });
           },
         },
@@ -46,21 +32,37 @@ function SignIn() {
 
       if (signInError) {
         setError(signInError.message || "Invalid email or password.");
-        setLoading(false);
+        return true;
       }
+      return true;
     } catch (err) {
       console.error("Sign in error:", err);
-      if (err instanceof CpuTimeoutError) {
-        setIsCpuTimeout(true);
-      } else {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to sign in. Please try again.",
-        );
+      if (isCpuTimeoutError(err)) {
+        return false;
       }
-      setLoading(false);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to sign in. Please try again.",
+      );
+      return true;
     }
+  };
+
+  const {
+    isRunning,
+    attemptCount,
+    maxRetries,
+    hasExhaustedRetries,
+    secondsUntilRetry,
+    showWarning,
+    executeWithRetry: runSignIn,
+  } = useCpuTimeoutRetry(attemptSignIn);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    runSignIn();
   };
 
   return (
@@ -89,6 +91,7 @@ function SignIn() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  disabled={isRunning}
                 />
               </div>
               <div className="form-control">
@@ -103,19 +106,25 @@ function SignIn() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  disabled={isRunning}
                 />
               </div>
-              {isCpuTimeout ? (
-                <CpuTimeoutWarning />
+              {showWarning ? (
+                <CpuTimeoutWarning
+                  attemptCount={attemptCount}
+                  maxRetries={maxRetries}
+                  hasExhaustedRetries={hasExhaustedRetries}
+                  secondsUntilRetry={secondsUntilRetry}
+                />
               ) : (
                 error && <div className="text-sm text-error">{error}</div>
               )}
               <button
                 type="submit"
                 className="btn btn-primary w-full"
-                disabled={loading}
+                disabled={isRunning}
               >
-                {loading ? "Signing in..." : "Sign In"}
+                {isRunning ? "Signing in..." : "Sign In"}
               </button>
             </form>
 

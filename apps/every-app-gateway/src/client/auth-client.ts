@@ -2,11 +2,9 @@ import { createAuthClient } from "better-auth/react";
 import { adminClient } from "better-auth/client/plugins";
 
 /**
- * Helper to check if an error is a Cloudflare Worker CPU timeout error.
- * Cloudflare returns error 1102 "Worker exceeded resource limits" when
- * CPU time limits are exceeded on the free plan.
+ * Helper to check if an error message matches Cloudflare Worker CPU timeout patterns.
  */
-export function isCpuTimeoutError(error: string | null | undefined): boolean {
+function matchesCpuTimeoutMessage(error: string | null | undefined): boolean {
   if (!error) return false;
   const lowerError = error.toLowerCase();
   return (
@@ -18,10 +16,20 @@ export function isCpuTimeoutError(error: string | null | undefined): boolean {
 }
 
 /**
+ * Check if an error is a Cloudflare Worker CPU timeout error.
+ * Works with CpuTimeoutError instances, Error objects, or strings.
+ */
+export function isCpuTimeoutError(err: unknown): boolean {
+  if (err instanceof CpuTimeoutError) return true;
+  const message = err instanceof Error ? err.message : String(err);
+  return matchesCpuTimeoutMessage(message);
+}
+
+/**
  * Custom error class for Cloudflare CPU timeout errors.
  * This allows consumers to easily identify and handle these specific errors.
  */
-export class CpuTimeoutError extends Error {
+class CpuTimeoutError extends Error {
   constructor() {
     super(
       "The server is experiencing high load. Please wait a moment and try again.",
@@ -42,7 +50,7 @@ const authClient = createAuthClient({
       }
 
       const text = await ctx.response?.clone().text();
-      if (isCpuTimeoutError(text)) {
+      if (matchesCpuTimeoutMessage(text)) {
         throw new CpuTimeoutError();
       }
     },

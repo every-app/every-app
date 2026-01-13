@@ -5,8 +5,9 @@ import {
   useSearch,
 } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
-import { CpuTimeoutError, isCpuTimeoutError } from "@/client/auth-client";
+import { isCpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
+import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 import { resetPassword as resetPasswordFn } from "@/serverFunctions/admin";
 
 export const Route = createFileRoute("/reset-password")({
@@ -23,9 +24,7 @@ function ResetPassword() {
   const { token, error: urlError } = useSearch({ from: "/reset-password" });
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [isCpuTimeout, setIsCpuTimeout] = useState(false);
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
 
@@ -39,10 +38,38 @@ function ResetPassword() {
     }
   }, [urlError]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const performResetPassword = async (): Promise<boolean> => {
+    try {
+      await resetPasswordFn({ data: { token, password: newPassword } });
+      setSuccess(true);
+      setTimeout(() => navigate({ to: "/sign-in" }), 2000);
+      return true;
+    } catch (err) {
+      if (isCpuTimeoutError(err)) {
+        return false;
+      }
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to reset password. Please try again.",
+      );
+      return true;
+    }
+  };
+
+  const {
+    isRunning,
+    attemptCount,
+    maxRetries,
+    hasExhaustedRetries,
+    secondsUntilRetry,
+    showWarning,
+    executeWithRetry,
+  } = useCpuTimeoutRetry(performResetPassword);
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setIsCpuTimeout(false);
 
     if (newPassword !== confirmPassword) {
       setError("Passwords do not match");
@@ -59,37 +86,7 @@ function ResetPassword() {
       return;
     }
 
-    setLoading(true);
-
-    try {
-      await resetPasswordFn({
-        data: {
-          token,
-          password: newPassword,
-        },
-      });
-
-      setSuccess(true);
-      setTimeout(() => {
-        navigate({ to: "/sign-in" });
-      }, 2000);
-    } catch (err) {
-      console.error("Password reset error:", err);
-      // Check for CPU timeout error - either from authClient (CpuTimeoutError instance)
-      // or from server functions (error message contains CPU timeout keywords)
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      if (err instanceof CpuTimeoutError || isCpuTimeoutError(errorMessage)) {
-        setIsCpuTimeout(true);
-      } else {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to reset password. Please try again.",
-        );
-      }
-    } finally {
-      setLoading(false);
-    }
+    executeWithRetry();
   };
 
   return (
@@ -120,7 +117,7 @@ function ResetPassword() {
                   onChange={(e) => setNewPassword(e.target.value)}
                   required
                   minLength={8}
-                  disabled={!!urlError}
+                  disabled={!!urlError || isRunning}
                 />
               </div>
               <div className="form-control">
@@ -136,7 +133,7 @@ function ResetPassword() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   minLength={8}
-                  disabled={!!urlError}
+                  disabled={!!urlError || isRunning}
                 />
                 <label className="label">
                   <span className="label-text-alt text-base-content/60">
@@ -144,17 +141,22 @@ function ResetPassword() {
                   </span>
                 </label>
               </div>
-              {isCpuTimeout ? (
-                <CpuTimeoutWarning />
+              {showWarning ? (
+                <CpuTimeoutWarning
+                  attemptCount={attemptCount}
+                  maxRetries={maxRetries}
+                  hasExhaustedRetries={hasExhaustedRetries}
+                  secondsUntilRetry={secondsUntilRetry}
+                />
               ) : (
                 error && <div className="text-sm text-error">{error}</div>
               )}
               <button
                 type="submit"
                 className="btn btn-primary w-full"
-                disabled={loading || !!urlError}
+                disabled={!!urlError || isRunning}
               >
-                {loading ? "Resetting..." : "Reset Password"}
+                {isRunning ? "Resetting..." : "Reset Password"}
               </button>
             </form>
           )}

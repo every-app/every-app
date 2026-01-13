@@ -1,13 +1,10 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import {
-  authClient,
-  CpuTimeoutError,
-  isCpuTimeoutError,
-} from "@/client/auth-client";
+import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
+import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 import { hasOwner, initializeOwner } from "@/serverFunctions/admin";
 
 export const Route = createFileRoute("/sign-up")({
@@ -39,76 +36,64 @@ function CreateOwnerForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [isCpuTimeout, setIsCpuTimeout] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSuccess = async () => {
+    await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
+    refetchCollectionsAfterAuth();
+    navigate({ to: "/" });
+    queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
+  };
+
+  const performSignUp = async (): Promise<boolean> => {
+    try {
+      await initializeOwner({ data: { email, password } });
+
+      const { error: signInError } = await authClient.signIn.email(
+        { email, password },
+        { onSuccess: handleSuccess },
+      );
+
+      if (signInError) {
+        await queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
+        navigate({ to: "/sign-in" });
+      }
+      return true;
+    } catch (err) {
+      if (isCpuTimeoutError(err)) {
+        return false;
+      }
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to create account. Please try again.",
+      );
+      return true;
+    }
+  };
+
+  const {
+    isRunning,
+    attemptCount,
+    maxRetries,
+    hasExhaustedRetries,
+    secondsUntilRetry,
+    showWarning,
+    executeWithRetry,
+  } = useCpuTimeoutRetry(performSignUp);
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setIsCpuTimeout(false);
 
     if (password !== confirmPassword) {
       setError("Passwords do not match");
       return;
     }
 
-    setLoading(true);
-
-    try {
-      await initializeOwner({
-        data: {
-          email,
-          password,
-        },
-      });
-
-      // Sign in the newly created owner
-      const { error: signInError } = await authClient.signIn.email(
-        {
-          email,
-          password,
-        },
-        {
-          onSuccess: async () => {
-            // Refetch session first and wait for it to complete
-            await queryClient.refetchQueries({
-              queryKey: ["auth", "session"],
-            });
-            // Then refetch collections in parallel (no need to wait)
-            refetchCollectionsAfterAuth();
-            setLoading(false);
-            navigate({ to: "/" });
-            // Invalidate hasOwner after navigating to prevent flicker
-            queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
-          },
-        },
-      );
-
-      // Only handle error case - success is handled in onSuccess callback
-      if (signInError) {
-        // Owner was created but sign-in failed, redirect to sign-in page
-        await queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
-        navigate({ to: "/sign-in" });
-      }
-    } catch (err) {
-      console.error("Owner creation error:", err);
-      // Check for CPU timeout error - either from authClient (CpuTimeoutError instance)
-      // or from server functions (error message contains CPU timeout keywords)
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      if (err instanceof CpuTimeoutError || isCpuTimeoutError(errorMessage)) {
-        setIsCpuTimeout(true);
-      } else {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to create account. Please try again.",
-        );
-      }
-      setLoading(false);
-    }
+    executeWithRetry();
   };
 
   return (
@@ -137,6 +122,7 @@ function CreateOwnerForm() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  disabled={isRunning}
                 />
               </div>
               <div className="form-control">
@@ -152,6 +138,7 @@ function CreateOwnerForm() {
                   onChange={(e) => setPassword(e.target.value)}
                   required
                   minLength={8}
+                  disabled={isRunning}
                 />
                 <label className="label">
                   <span className="label-text-alt text-base-content/60">
@@ -172,19 +159,25 @@ function CreateOwnerForm() {
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
                   minLength={8}
+                  disabled={isRunning}
                 />
               </div>
-              {isCpuTimeout ? (
-                <CpuTimeoutWarning />
+              {showWarning ? (
+                <CpuTimeoutWarning
+                  attemptCount={attemptCount}
+                  maxRetries={maxRetries}
+                  hasExhaustedRetries={hasExhaustedRetries}
+                  secondsUntilRetry={secondsUntilRetry}
+                />
               ) : (
                 error && <div className="text-sm text-error">{error}</div>
               )}
               <button
                 type="submit"
                 className="btn btn-primary w-full"
-                disabled={loading}
+                disabled={isRunning}
               >
-                {loading ? "Creating account..." : "Create Admin Account"}
+                {isRunning ? "Creating account..." : "Create Admin Account"}
               </button>
             </form>
 
