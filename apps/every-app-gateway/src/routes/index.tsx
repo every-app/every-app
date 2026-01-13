@@ -31,11 +31,20 @@ export const Route = createFileRoute("/")({
 
 const SHOW_DEV_URLS_KEY = "gateway-show-dev-urls";
 
+function isMobileScreen() {
+  if (typeof window === "undefined") return false;
+  return window.innerWidth < 640;
+}
+
 function useShowDevUrls() {
   const [showDevUrls, setShowDevUrls] = useState(() => {
     if (typeof window === "undefined") return true;
     const stored = localStorage.getItem(SHOW_DEV_URLS_KEY);
-    return stored === null ? true : stored === "true";
+    if (stored === null) {
+      // Default to false on mobile if not previously set
+      return !isMobileScreen();
+    }
+    return stored === "true";
   });
 
   useEffect(() => {
@@ -111,12 +120,25 @@ function App() {
                   Manage and access your apps
                 </p>
               </div>
-              <button
-                className="btn btn-primary hidden sm:flex"
-                onClick={() => setShowAddCustomAppModal(true)}
-              >
-                Add App
-              </button>
+              <div className="flex items-center gap-2">
+                {hasAnyDevUrls && (
+                  <label className="flex sm:hidden items-center gap-1.5 cursor-pointer">
+                    <Code className="w-4 h-4 text-base-content/50" />
+                    <input
+                      type="checkbox"
+                      className="toggle toggle-xs toggle-primary"
+                      checked={showDevUrls}
+                      onChange={(e) => setShowDevUrls(e.target.checked)}
+                    />
+                  </label>
+                )}
+                <button
+                  className="btn btn-primary hidden sm:flex"
+                  onClick={() => setShowAddCustomAppModal(true)}
+                >
+                  Add App
+                </button>
+              </div>
             </div>
 
             <OnboardingBanner />
@@ -138,16 +160,14 @@ function App() {
                       }}
                     />
                     {showDevUrls && app.devUrl && (
-                      <div className="hidden sm:block">
-                        <DevAppListItem
-                          app={app}
-                          onNavigate={() =>
-                            navigate({
-                              to: `/apps/${app.appId}/dev`,
-                            })
-                          }
-                        />
-                      </div>
+                      <DevAppListItem
+                        app={app}
+                        onNavigate={() =>
+                          navigate({
+                            to: `/apps/${app.appId}/dev`,
+                          })
+                        }
+                      />
                     )}
                   </ul>
                 ))}
