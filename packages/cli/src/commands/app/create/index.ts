@@ -6,6 +6,7 @@ import { writeEveryAppConfig } from "@/lib/everyapp-config";
 import { initRepository } from "@/lib/git";
 import { requireCloudflareAuth } from "@/lib/cloudflare";
 import { requireGatewaySetup } from "@/lib/gateway";
+import { checkNotNestedApp } from "@/commands/app/create/steps/checkNotNestedApp";
 import { checkPnpm } from "@/commands/app/create/steps/checkPnpm";
 import { promptUserInput } from "@/commands/app/create/steps/promptUserInput";
 import { cloneTemplate } from "@/commands/app/create/steps/cloneTemplate";
@@ -22,15 +23,16 @@ interface CreateCommandFlags {
  * Main create command implementation
  *
  * Flow:
- * 1. Check pnpm installed
- * 2. Prompt for app ID (with optional default from CLI argument)
- * 3. Confirm deployment to Cloudflare account (before any file operations)
- * 4. Clone template
- * 5. Update package.json with app name
- * 6. Deploy to Cloudflare (creates D1/KV, runs migrations, deploys worker)
- * 7. Create .env.local
- * 8. Run local migrations
- * 9. Print success message
+ * 1. Check not inside existing Every App project
+ * 2. Check pnpm installed
+ * 3. Prompt for app ID (with optional default from CLI argument)
+ * 4. Confirm deployment to Cloudflare account (before any file operations)
+ * 5. Clone template
+ * 6. Update package.json with app name
+ * 7. Deploy to Cloudflare (creates D1/KV, runs migrations, deploys worker)
+ * 8. Create .env.local
+ * 9. Run local migrations
+ * 10. Print success message
  */
 export default async function (
   this: LocalContext,
@@ -38,6 +40,9 @@ export default async function (
   nameArg?: string,
 ): Promise<void> {
   const verbose = flags.verbose || false;
+
+  // Check we're not inside an existing Every App project
+  await checkNotNestedApp();
 
   await checkPnpm();
   await requireCloudflareAuth();
