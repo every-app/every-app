@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
+import { PWAQRCode } from "@/client/components/PWAQRCode";
 import { detectPlatform, isMobilePlatform } from "@/utils/platform";
 
 interface PWAInstallStepProps {
@@ -24,11 +24,6 @@ export function PWAInstallStep({
 }: PWAInstallStepProps) {
   // Platform doesn't change during a session, compute once
   const platform = useMemo(() => detectPlatform(), []);
-  const pwaUrl = useMemo(
-    () =>
-      typeof window === "undefined" ? "/pwa" : `${window.location.origin}/pwa`,
-    [],
-  );
   const isMobile = isMobilePlatform(platform);
 
   return (
@@ -72,7 +67,7 @@ export function PWAInstallStep({
                   Follow the step-by-step instructions to add Every App to your
                   home screen.
                 </p>
-                <a href="/pwa" className="btn btn-primary btn-sm">
+                <a href="/?pwa=true" className="btn btn-primary btn-sm">
                   View Installation Instructions
                 </a>
               </div>
@@ -86,15 +81,7 @@ export function PWAInstallStep({
                   This page has instructions for how to save Every App as a
                   Mobile App (PWA).
                 </p>
-                <div className="bg-white p-3 rounded-lg w-fit">
-                  <QRCodeSVG value={pwaUrl} size={140} level="M" />
-                </div>
-                <p className="text-xs text-base-content/50">
-                  Or go to,
-                  <code className="bg-base-300 px-1.5 py-0.5 rounded text-base-content/70">
-                    {pwaUrl}
-                  </code>
-                </p>
+                <PWAQRCode />
               </div>
             )}
           </div>
