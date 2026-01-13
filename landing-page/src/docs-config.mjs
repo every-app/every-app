@@ -51,7 +51,10 @@ export const docsConfig = [
       { slug: "docs/walkthrough/overview", label: "Overview" },
       { slug: "docs/walkthrough/users-and-auth", label: "Users & Auth" },
       { slug: "docs/walkthrough/theming", label: "Theming & Styling" },
-      { slug: "docs/walkthrough/database-schema", label: "Database Schema" },
+      {
+        slug: "docs/walkthrough/drizzle-db-schema-design",
+        label: "Drizzle & DB Schema Design",
+      },
       {
         slug: "docs/walkthrough/organize-backend-code",
         label: "Organize Backend Code",

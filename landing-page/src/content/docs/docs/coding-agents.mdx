@@ -43,19 +43,18 @@ Add to `opencode.json`:
 
 Add to `.cursor/mcp.json`:
 
-```jsonc
+```json
 {
   "mcpServers": {
     "every-app": {
       "command": "npx",
-      "args": ["-y", "@every-app/mcp"],
+      "args": ["-y", "@every-app/mcp"]
     },
-    // Up to date docs for libraries + Cloudflare
     "context7": {
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"],
-    },
-  },
+      "args": ["-y", "@upstash/context7-mcp"]
+    }
+  }
 }
 ```
 

@@ -149,19 +149,18 @@ Add to `opencode.json`:
 
 Add to `.cursor/mcp.json`:
 
-```jsonc
+```json
 {
   "mcpServers": {
     "every-app": {
       "command": "npx",
-      "args": ["-y", "@every-app/mcp"],
+      "args": ["-y", "@every-app/mcp"]
     },
-    // Up to date docs for libraries + Cloudflare
     "context7": {
       "command": "npx",
-      "args": ["-y", "@upstash/context7-mcp"],
-    },
-  },
+      "args": ["-y", "@upstash/context7-mcp"]
+    }
+  }
 }
 ```
 
@@ -194,6 +193,26 @@ npx @every-app/cli app create
 cd your-project-name
 pnpm run dev
 ```
+
+### App Features
+
+Anything you can build on Cloudflare, you can build in Every App.
+
+- [All Cloudflare Infrastructure](https://developers.cloudflare.com/directory/?product-group=Developer+platform)
+  - Workers, KV, D1, Queues, Serverless Containers, Agents and more. Cloudflare's developer platform gives you everything you need to build amazing full stack web apps.
+- [Tanstack Start](https://tanstack.com/start/latest)
+  - Modern full stack framework built by the react-query team. Focused on type safety and a great DevEx for building applications.
+
+### Patterns
+
+Our example apps follow well-defined patterns so that coding agents can help build high-quality apps. Reading the [Patterns docs](/docs/walkthrough/overview/) isn't necessary to get started, but could be helpful when you want to understand why your agent is structuring code the way it is.
+
+- [Users & Auth](/docs/walkthrough/users-and-auth/) - How auth flows from the Gateway to your app
+- [Theming & Styling](/docs/walkthrough/theming/) - Component library setup with light/dark themes
+- [Drizzle & DB Schema Design](/docs/walkthrough/drizzle-db-schema-design/) - Drizzle schema patterns
+- [Organize Backend Code](/docs/walkthrough/organize-backend-code/) - Structuring server functions
+- [Instant UI Updates](/docs/walkthrough/instant-updates/) - Optimistic updates for snappy UX
+- [AI Chat & Tool Calls](/docs/walkthrough/ai-chat/) - Streaming responses and user confirmations
 
 ### Deploy Updates
 
@@ -882,7 +901,7 @@ Examples are pulled from the [Chef](https://github.com/every-app/every-app/tree/
 
 - [Users & Auth](/docs/walkthrough/users-and-auth) - How auth flows from the Gateway to your app
 - [Theming & Styling](/docs/walkthrough/theming) - Component library setup with light/dark themes
-- [Database Schema](/docs/walkthrough/database-schema) - Drizzle schema patterns
+- [Drizzle & DB Schema Design](/docs/walkthrough/drizzle-db-schema-design) - Drizzle schema patterns
 - [Organize Backend Code](/docs/walkthrough/organize-backend-code) - Structuring server functions
 - [Instant UI Updates](/docs/walkthrough/instant-updates) - Optimistic updates for snappy UX
 - [AI Chat & Tool Calls](/docs/walkthrough/ai-chat) - Streaming responses and user confirmations
@@ -977,7 +996,7 @@ These classes automatically adapt when switching themes since they use the theme
 See the full [Every Chef app.css](https://github.com/every-app/every-app/blob/main/apps/chef/src/client/styles/app.css) for a complete example.
 
 
-### Database Schema
+### Drizzle & DB Schema Design
 
 Schema is the hardest thing to change as the app evolves once you have users. Most data modeling shortcuts come back to bite you. We try to normalize data from the start to make changing it easier later.
 
