@@ -74,7 +74,7 @@ We simplify building apps by standardizing as much as possible and hoisting what
    Skip any Cloudflare onboarding like configuring a domain, this is unnecessary for Every App. 
 
 3. Authenticate with Cloudflare (choose one):
-   - Login via the Cloudflare CLI (recommended):
+   - Login via the [Cloudflare CLI](https://developers.cloudflare.com/workers/wrangler/commands/#login) (recommended):
      ```bash
      npx wrangler login
      ```

@@ -62,7 +62,7 @@ Normal SaaS and consumer apps each implement the same stuff over and over—auth
 
    Skip any Cloudflare onboarding like configuring a domain, this is unnecessary for Every App.
 
-3. Log in to Cloudflare:
+3. Log in to Cloudflare via the [Cloudflare CLI](https://developers.cloudflare.com/workers/wrangler/commands/#login):
    ```bash
    npx wrangler login
    ```
