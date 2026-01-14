@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -20,20 +20,33 @@ export const Route = createFileRoute("/sign-up")({
 
 function SignUp() {
   const { redirect } = Route.useSearch();
+  const [showOwnerForm, setShowOwnerForm] = useState(false);
   const { data: ownerData, isLoading: isCheckingOwner } = useQuery({
     queryKey: ["hasOwner"],
     queryFn: () => hasOwner(),
+    // Prevent background refetches from switching views during retry success screen
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
+
+  // Once we show the owner form, keep showing it (prevents switching to InvitationRequired
+  // if hasOwner query refetches in the background during retry success screen)
+  useEffect(() => {
+    if (!isCheckingOwner && !ownerData?.hasOwner) {
+      setShowOwnerForm(true);
+    }
+  }, [isCheckingOwner, ownerData?.hasOwner]);
 
   if (isCheckingOwner) {
     return null;
   }
 
-  if (ownerData?.hasOwner) {
-    return <InvitationRequired redirect={redirect} />;
+  if (showOwnerForm || !ownerData?.hasOwner) {
+    return <CreateOwnerForm redirect={redirect} />;
   }
 
-  return <CreateOwnerForm redirect={redirect} />;
+  return <InvitationRequired redirect={redirect} />;
 }
 
 /**
@@ -49,20 +62,35 @@ function CreateOwnerForm({ redirect }: { redirect?: string }) {
   const queryClient = useQueryClient();
   const safeRedirect = getSafeRedirect(redirect);
 
-  const handleSuccess = async () => {
-    await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
-    refetchCollectionsAfterAuth();
-    navigate({ to: safeRedirect });
-    queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
-  };
-
-  const performSignUp = async (): Promise<boolean> => {
+  const {
+    isRunning,
+    attemptCount,
+    maxRetries,
+    hasExhaustedRetries,
+    secondsUntilRetry,
+    isRetrySuccess,
+    showWarning,
+    hadRetries,
+    setRetrySuccess,
+    executeWithRetry,
+  } = useCpuTimeoutRetry(async () => {
     try {
       await initializeOwner({ data: { email, password } });
 
       const { error: signInError } = await authClient.signIn.email(
         { email, password },
-        { onSuccess: handleSuccess },
+        {
+          onSuccess: async () => {
+            await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
+            refetchCollectionsAfterAuth();
+            if (hadRetries) {
+              setRetrySuccess();
+            } else {
+              queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
+              navigate({ to: safeRedirect });
+            }
+          },
+        },
       );
 
       if (signInError) {
@@ -84,17 +112,7 @@ function CreateOwnerForm({ redirect }: { redirect?: string }) {
       );
       return true;
     }
-  };
-
-  const {
-    isRunning,
-    attemptCount,
-    maxRetries,
-    hasExhaustedRetries,
-    secondsUntilRetry,
-    showWarning,
-    executeWithRetry,
-  } = useCpuTimeoutRetry(performSignUp);
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,6 +125,23 @@ function CreateOwnerForm({ redirect }: { redirect?: string }) {
 
     executeWithRetry();
   };
+
+  // Show the game when retrying or when retries are exhausted
+  if (showWarning || isRetrySuccess) {
+    return (
+      <CpuTimeoutWarning
+        attemptCount={attemptCount}
+        maxRetries={maxRetries}
+        hasExhaustedRetries={hasExhaustedRetries}
+        secondsUntilRetry={secondsUntilRetry}
+        isSuccess={isRetrySuccess}
+        onContinue={() => {
+          queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
+          navigate({ to: safeRedirect });
+        }}
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen items-center justify-center overflow-hidden">
@@ -174,16 +209,7 @@ function CreateOwnerForm({ redirect }: { redirect?: string }) {
                   disabled={isRunning}
                 />
               </div>
-              {showWarning ? (
-                <CpuTimeoutWarning
-                  attemptCount={attemptCount}
-                  maxRetries={maxRetries}
-                  hasExhaustedRetries={hasExhaustedRetries}
-                  secondsUntilRetry={secondsUntilRetry}
-                />
-              ) : (
-                error && <div className="text-sm text-error">{error}</div>
-              )}
+              {error && <div className="text-sm text-error">{error}</div>}
               <button
                 type="submit"
                 className="btn btn-primary w-full"

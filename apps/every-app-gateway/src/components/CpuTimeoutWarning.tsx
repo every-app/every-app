@@ -1,80 +1,109 @@
+import { useState } from "react";
+import { CheckCircle, XCircle, AlertTriangle } from "lucide-react";
+import { GameSnake } from "./GameSnake";
+
 interface CpuTimeoutWarningProps {
-  attemptCount?: number;
-  maxRetries?: number;
-  hasExhaustedRetries?: boolean;
-  secondsUntilRetry?: number;
+  attemptCount: number;
+  maxRetries: number;
+  hasExhaustedRetries: boolean;
+  secondsUntilRetry: number;
+  isSuccess?: boolean;
+  onContinue?: () => void;
 }
 
+const iconClassName = "shrink-0 h-5 w-5 mt-0.5";
+
 /**
- * Warning component displayed when retrying due to Cloudflare Worker CPU timeout.
- * Props are optional - when omitted, displays a simple "timeout occurred" message.
+ * Full-page warning component displayed when retrying due to Cloudflare Worker CPU timeout.
+ * Shows a friendly waiting game while retrying to keep users engaged.
  */
 export function CpuTimeoutWarning({
   attemptCount,
   maxRetries,
   hasExhaustedRetries,
   secondsUntilRetry,
-}: CpuTimeoutWarningProps = {}) {
-  const isRetrying =
-    attemptCount !== undefined &&
-    maxRetries !== undefined &&
-    !hasExhaustedRetries;
-  return (
-    <div className="alert alert-warning text-sm">
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="stroke-current shrink-0 h-5 w-5 mt-0.5"
-        fill="none"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth="2"
-          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-        />
-      </svg>
-      <div>
-        {isRetrying ? (
-          <>
+  isSuccess,
+  onContinue,
+}: CpuTimeoutWarningProps) {
+  const [showGame, setShowGame] = useState(false);
+
+  const content = (
+    <div className="flex flex-col items-center gap-4 py-4 flex-1">
+      {/* Success/Warning/Error Alert */}
+      {isSuccess ? (
+        <div className="alert alert-success text-sm w-full">
+          <CheckCircle className={iconClassName} />
+          <div>
+            <p className="font-semibold">You're signed in!</p>
+            <p>Your sign in was successful. Continue when you're ready.</p>
+          </div>
+        </div>
+      ) : hasExhaustedRetries ? (
+        <div className="alert alert-error text-sm w-full">
+          <XCircle className={iconClassName} />
+          <div>
+            <p className="font-semibold">Max Retries Reached</p>
+            <p>
+              We tried {maxRetries} times but the request keeps timing out.
+              Please wait a few minutes before trying again.
+            </p>
+            <p className="mt-2">
+              Upgrading to the $5/month paid plan will resolve this. Go to
+              Cloudflare: Compute & AI &gt; Workers Plans
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="alert alert-warning text-sm w-full">
+          <AlertTriangle className={iconClassName} />
+          <div>
             <p className="font-semibold">
               {secondsUntilRetry && secondsUntilRetry > 0
                 ? `Retrying in ${secondsUntilRetry} seconds (${attemptCount} of ${maxRetries})...`
                 : `Retrying request (${attemptCount} of ${maxRetries})...`}
             </p>
-            <p>
-              Hashing passwords sometimes takes longer than the Cloudflare Free
-              Plan allows for CPU time. We're automatically retrying your
+            <p className="pb-2">
+              Hashing passwords sometimes takes more CPU time than the
+              Cloudflare Free Plan allows. We're automatically retrying your
               request.
             </p>
-            <p className="mt-2">
-              Read how to{" "}
-              <a
-                href="https://everyapp.dev/docs/build-an-app/create-app/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline"
-              >
-                Build an App
-              </a>{" "}
-              while you wait.
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="font-semibold">Max Retries Reached</p>
             <p>
-              We tried {maxRetries} times but the request keeps timing out.
-              Please wait a few minutes before trying again. If you make too
-              many requests in quick succession, Cloudflare will lock you out.
+              Upgrading to the $5/month Cloudflare paid plan and redeploying the
+              Every App Gateway will fix this problem.
             </p>
-            <p className="mt-2">
-              Upgrading to the $5/month paid plan and redeploying the Gateway
-              will resolve this problem. Go to the Cloudflare Sidebar: Compute &
-              AI &gt; Workers Plans
-            </p>
-          </>
-        )}
+          </div>
+        </div>
+      )}
+
+      {/* Continue button when success */}
+      {isSuccess && onContinue && (
+        <button className="btn btn-primary" onClick={onContinue}>
+          Continue
+        </button>
+      )}
+
+      {/* Game or button to show game */}
+      {showGame ? (
+        <GameSnake />
+      ) : (
+        <div className="w-full max-w-sm">
+          <button className="btn btn-primary" onClick={() => setShowGame(true)}>
+            Play a game while you wait?
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="flex min-h-screen items-center justify-center overflow-auto py-8">
+      <div className="w-full max-w-md px-4 flex flex-col min-h-[80vh]">
+        <img
+          src="/transparent-logo.png"
+          alt="Logo"
+          className="h-12 w-auto mx-auto mb-6"
+        />
+        {content}
       </div>
     </div>
   );

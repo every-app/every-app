@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { isCpuTimeoutError } from "@/client/auth-client";
@@ -21,11 +21,27 @@ function AcceptInvitation() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const navigate = useNavigate();
 
-  const performAcceptInvitation = async (): Promise<boolean> => {
+  const {
+    isRunning,
+    attemptCount,
+    maxRetries,
+    hasExhaustedRetries,
+    secondsUntilRetry,
+    isRetrySuccess,
+    showWarning,
+    hadRetries,
+    setRetrySuccess,
+    executeWithRetry,
+  } = useCpuTimeoutRetry(async () => {
     try {
       await acceptInvitation({ data: { token, password } });
-      setSuccess(true);
+      if (hadRetries) {
+        setRetrySuccess();
+      } else {
+        setSuccess(true);
+      }
       return true;
     } catch (err) {
       if (isCpuTimeoutError(err)) {
@@ -38,17 +54,7 @@ function AcceptInvitation() {
       );
       return true;
     }
-  };
-
-  const {
-    isRunning,
-    attemptCount,
-    maxRetries,
-    hasExhaustedRetries,
-    secondsUntilRetry,
-    showWarning,
-    executeWithRetry,
-  } = useCpuTimeoutRetry(performAcceptInvitation);
+  });
 
   if (!token) {
     return (
@@ -118,6 +124,20 @@ function AcceptInvitation() {
     executeWithRetry();
   };
 
+  // Show the game when retrying or when retries are exhausted
+  if (showWarning || isRetrySuccess) {
+    return (
+      <CpuTimeoutWarning
+        attemptCount={attemptCount}
+        maxRetries={maxRetries}
+        hasExhaustedRetries={hasExhaustedRetries}
+        secondsUntilRetry={secondsUntilRetry}
+        isSuccess={isRetrySuccess}
+        onContinue={() => navigate({ to: "/sign-in" })}
+      />
+    );
+  }
+
   return (
     <div className="flex h-screen items-center justify-center overflow-hidden">
       <div className="relative w-full max-w-md">
@@ -169,16 +189,7 @@ function AcceptInvitation() {
                   disabled={isRunning}
                 />
               </div>
-              {showWarning ? (
-                <CpuTimeoutWarning
-                  attemptCount={attemptCount}
-                  maxRetries={maxRetries}
-                  hasExhaustedRetries={hasExhaustedRetries}
-                  secondsUntilRetry={secondsUntilRetry}
-                />
-              ) : (
-                error && <div className="text-sm text-error">{error}</div>
-              )}
+              {error && <div className="text-sm text-error">{error}</div>}
               <button
                 type="submit"
                 className="btn btn-primary w-full"

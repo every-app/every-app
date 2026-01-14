@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SnakeRouteImport } from './routes/snake'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
@@ -27,6 +28,11 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAdminHasOwnerRouteImport } from './routes/api/admin/has-owner'
 import { Route as AppsAppIdDevSplatRouteImport } from './routes/apps/$appId_.dev.$'
 
+const SnakeRoute = SnakeRouteImport.update({
+  id: '/snake',
+  path: '/snake',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
   path: '/sign-up',
@@ -122,6 +128,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/snake': typeof SnakeRoute
   '/admin/users': typeof AdminUsersRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin/': typeof AdminIndexRoute
@@ -140,6 +147,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/snake': typeof SnakeRoute
   '/admin/users': typeof AdminUsersRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin': typeof AdminIndexRoute
@@ -160,6 +168,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/snake': typeof SnakeRoute
   '/admin/users': typeof AdminUsersRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin/': typeof AdminIndexRoute
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/sign-in'
     | '/sign-up'
+    | '/snake'
     | '/admin/users'
     | '/apps/$appId'
     | '/admin/'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/sign-in'
     | '/sign-up'
+    | '/snake'
     | '/admin/users'
     | '/apps/$appId'
     | '/admin'
@@ -218,6 +229,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/sign-in'
     | '/sign-up'
+    | '/snake'
     | '/admin/users'
     | '/apps/$appId'
     | '/admin/'
@@ -238,6 +250,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
+  SnakeRoute: typeof SnakeRoute
   AppsAppIdRoute: typeof AppsAppIdRouteWithChildren
   ApiAdminHasOwnerRoute: typeof ApiAdminHasOwnerRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -247,6 +260,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/snake': {
+      id: '/snake'
+      path: '/snake'
+      fullPath: '/snake'
+      preLoaderRoute: typeof SnakeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sign-up': {
       id: '/sign-up'
       path: '/sign-up'
@@ -414,6 +434,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
+  SnakeRoute: SnakeRoute,
   AppsAppIdRoute: AppsAppIdRouteWithChildren,
   ApiAdminHasOwnerRoute: ApiAdminHasOwnerRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

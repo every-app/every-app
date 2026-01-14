@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
@@ -18,9 +18,21 @@ function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const navigate = useNavigate();
   const { redirect } = Route.useSearch();
 
-  const attemptForgotPassword = async (): Promise<boolean> => {
+  const {
+    isRunning,
+    attemptCount,
+    maxRetries,
+    hasExhaustedRetries,
+    secondsUntilRetry,
+    isRetrySuccess,
+    showWarning,
+    hadRetries,
+    setRetrySuccess,
+    executeWithRetry: runForgotPassword,
+  } = useCpuTimeoutRetry(async () => {
     try {
       if (typeof authClient.forgetPassword !== "function") {
         console.error("forgetPassword method not found on authClient");
@@ -42,7 +54,11 @@ function ForgotPassword() {
         setError(forgetError.message || "Failed to send reset email.");
         return true;
       }
-      setSuccess(true);
+      if (hadRetries) {
+        setRetrySuccess();
+      } else {
+        setSuccess(true);
+      }
       return true;
     } catch (err) {
       console.error("Password reset error:", err);
@@ -56,17 +72,7 @@ function ForgotPassword() {
       );
       return true;
     }
-  };
-
-  const {
-    isRunning,
-    attemptCount,
-    maxRetries,
-    hasExhaustedRetries,
-    secondsUntilRetry,
-    showWarning,
-    executeWithRetry: runForgotPassword,
-  } = useCpuTimeoutRetry(attemptForgotPassword);
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -74,6 +80,25 @@ function ForgotPassword() {
     setSuccess(false);
     runForgotPassword();
   };
+
+  // Show the game when retrying or when retries are exhausted
+  if (showWarning || isRetrySuccess) {
+    return (
+      <CpuTimeoutWarning
+        attemptCount={attemptCount}
+        maxRetries={maxRetries}
+        hasExhaustedRetries={hasExhaustedRetries}
+        secondsUntilRetry={secondsUntilRetry}
+        isSuccess={isRetrySuccess}
+        onContinue={() =>
+          navigate({
+            to: "/sign-in",
+            search: redirect ? { redirect } : undefined,
+          })
+        }
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen items-center justify-center overflow-hidden">
@@ -117,16 +142,7 @@ function ForgotPassword() {
                   disabled={isRunning}
                 />
               </div>
-              {showWarning ? (
-                <CpuTimeoutWarning
-                  attemptCount={attemptCount}
-                  maxRetries={maxRetries}
-                  hasExhaustedRetries={hasExhaustedRetries}
-                  secondsUntilRetry={secondsUntilRetry}
-                />
-              ) : (
-                error && <div className="text-sm text-error">{error}</div>
-              )}
+              {error && <div className="text-sm text-error">{error}</div>}
               <button
                 type="submit"
                 className="btn btn-primary w-full"

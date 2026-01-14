@@ -35,18 +35,33 @@ function ResetPassword() {
     }
   }, [urlError]);
 
-  const performResetPassword = async (): Promise<boolean> => {
+  const {
+    isRunning,
+    attemptCount,
+    maxRetries,
+    hasExhaustedRetries,
+    secondsUntilRetry,
+    isRetrySuccess,
+    showWarning,
+    hadRetries,
+    setRetrySuccess,
+    executeWithRetry,
+  } = useCpuTimeoutRetry(async () => {
     try {
       await resetPasswordFn({ data: { token, password: newPassword } });
-      setSuccess(true);
-      setTimeout(
-        () =>
-          navigate({
-            to: "/sign-in",
-            search: redirect ? { redirect } : undefined,
-          }),
-        2000,
-      );
+      if (hadRetries) {
+        setRetrySuccess();
+      } else {
+        setSuccess(true);
+        setTimeout(
+          () =>
+            navigate({
+              to: "/sign-in",
+              search: redirect ? { redirect } : undefined,
+            }),
+          2000,
+        );
+      }
       return true;
     } catch (err) {
       if (isCpuTimeoutError(err)) {
@@ -59,17 +74,7 @@ function ResetPassword() {
       );
       return true;
     }
-  };
-
-  const {
-    isRunning,
-    attemptCount,
-    maxRetries,
-    hasExhaustedRetries,
-    secondsUntilRetry,
-    showWarning,
-    executeWithRetry,
-  } = useCpuTimeoutRetry(performResetPassword);
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,6 +97,25 @@ function ResetPassword() {
 
     executeWithRetry();
   };
+
+  // Show the game when retrying or when retries are exhausted
+  if (showWarning || isRetrySuccess) {
+    return (
+      <CpuTimeoutWarning
+        attemptCount={attemptCount}
+        maxRetries={maxRetries}
+        hasExhaustedRetries={hasExhaustedRetries}
+        secondsUntilRetry={secondsUntilRetry}
+        isSuccess={isRetrySuccess}
+        onContinue={() =>
+          navigate({
+            to: "/sign-in",
+            search: redirect ? { redirect } : undefined,
+          })
+        }
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen items-center justify-center overflow-hidden">
@@ -145,16 +169,7 @@ function ResetPassword() {
                   </span>
                 </label>
               </div>
-              {showWarning ? (
-                <CpuTimeoutWarning
-                  attemptCount={attemptCount}
-                  maxRetries={maxRetries}
-                  hasExhaustedRetries={hasExhaustedRetries}
-                  secondsUntilRetry={secondsUntilRetry}
-                />
-              ) : (
-                error && <div className="text-sm text-error">{error}</div>
-              )}
+              {error && <div className="text-sm text-error">{error}</div>}
               <button
                 type="submit"
                 className="btn btn-primary w-full"

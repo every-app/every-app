@@ -26,7 +26,18 @@ function SignIn() {
   const { redirect } = Route.useSearch();
   const safeRedirect = getSafeRedirect(redirect);
 
-  const attemptSignIn = async (): Promise<boolean> => {
+  const {
+    isRunning,
+    attemptCount,
+    maxRetries,
+    hasExhaustedRetries,
+    secondsUntilRetry,
+    isRetrySuccess,
+    showWarning,
+    hadRetries,
+    setRetrySuccess,
+    executeWithRetry: runSignIn,
+  } = useCpuTimeoutRetry(async () => {
     try {
       const { error: signInError } = await authClient.signIn.email(
         { email, password },
@@ -34,14 +45,17 @@ function SignIn() {
           onSuccess: async () => {
             await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
             refetchCollectionsAfterAuth();
-            navigate({ to: safeRedirect });
+            if (hadRetries) {
+              setRetrySuccess();
+            } else {
+              navigate({ to: safeRedirect });
+            }
           },
         },
       );
 
       if (signInError) {
         setError(signInError.message || "Invalid email or password.");
-        return true;
       }
       return true;
     } catch (err) {
@@ -56,23 +70,27 @@ function SignIn() {
       );
       return true;
     }
-  };
-
-  const {
-    isRunning,
-    attemptCount,
-    maxRetries,
-    hasExhaustedRetries,
-    secondsUntilRetry,
-    showWarning,
-    executeWithRetry: runSignIn,
-  } = useCpuTimeoutRetry(attemptSignIn);
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     runSignIn();
   };
+
+  // Show the game when retrying or when retries are exhausted
+  if (showWarning || isRetrySuccess) {
+    return (
+      <CpuTimeoutWarning
+        attemptCount={attemptCount}
+        maxRetries={maxRetries}
+        hasExhaustedRetries={hasExhaustedRetries}
+        secondsUntilRetry={secondsUntilRetry}
+        isSuccess={isRetrySuccess}
+        onContinue={() => navigate({ to: safeRedirect })}
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen items-center justify-center overflow-hidden bg-base-100">
@@ -118,16 +136,7 @@ function SignIn() {
                   disabled={isRunning}
                 />
               </div>
-              {showWarning ? (
-                <CpuTimeoutWarning
-                  attemptCount={attemptCount}
-                  maxRetries={maxRetries}
-                  hasExhaustedRetries={hasExhaustedRetries}
-                  secondsUntilRetry={secondsUntilRetry}
-                />
-              ) : (
-                error && <div className="text-sm text-error">{error}</div>
-              )}
+              {error && <div className="text-sm text-error">{error}</div>}
               <button
                 type="submit"
                 className="btn btn-primary w-full"
