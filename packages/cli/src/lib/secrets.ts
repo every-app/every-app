@@ -38,6 +38,21 @@ async function listSecrets(ctx: WorkerContext): Promise<SecretInfo[]> {
   return result;
 }
 
+interface ListSecretNamesOptions {
+  cwd: string;
+}
+
+/**
+ * List all secret names for a worker
+ */
+export async function listSecretNames({
+  cwd,
+}: ListSecretNamesOptions): Promise<string[]> {
+  const ctx = await resolveWorkerContext(cwd);
+  const secrets = await listSecrets(ctx);
+  return secrets.map((secret) => secret.name);
+}
+
 interface SecretExistsOptions {
   secretName: string;
   cwd: string;

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import chalk from "chalk";
 import type { JwtKeyPair } from "./types";
-import { secretExists, uploadSecret } from "@/lib/secrets";
+import { listSecretNames, uploadSecret } from "@/lib/secrets";
 
 /**
  * Generate a secure random secret for Better Auth
@@ -40,19 +40,36 @@ export async function setupSecrets({
   gatewayPath,
   verbose = false,
 }: SetupSecretsOptions): Promise<void> {
-  console.log("Configuring secrets for the authentication service (Better Auth)...");
-  console.log(chalk.dim("  BETTER_AUTH_SECRET - Session signing and encryption"));
-  console.log(chalk.dim("  JWT_PRIVATE_KEY    - Signs JWTs issued to your apps"));
-  console.log(chalk.dim("  JWT_PUBLIC_KEY     - Apps use this to verify JWTs"));
-  console.log();
-
   try {
-    // Check and setup GATEWAY_URL
-    const gatewayUrlExists = await secretExists({
-      secretName: "GATEWAY_URL",
-      cwd: gatewayPath,
-      verbose,
-    });
+    // Fetch all existing secrets in a single API call
+    const existingSecrets = new Set(await listSecretNames({ cwd: gatewayPath }));
+
+    const gatewayUrlExists = existingSecrets.has("GATEWAY_URL");
+    const betterAuthSecretExists = existingSecrets.has("BETTER_AUTH_SECRET");
+    const privateKeyExists = existingSecrets.has("JWT_PRIVATE_KEY");
+    const publicKeyExists = existingSecrets.has("JWT_PUBLIC_KEY");
+
+    // Only show auth secrets message if any are missing
+    const authSecretsNeeded =
+      !betterAuthSecretExists || !privateKeyExists || !publicKeyExists;
+
+    if (authSecretsNeeded) {
+      console.log(
+        "Configuring secrets for the authentication service (Better Auth)...",
+      );
+      console.log(
+        chalk.dim("  BETTER_AUTH_SECRET - Session signing and encryption"),
+      );
+      console.log(
+        chalk.dim("  JWT_PRIVATE_KEY    - Signs JWTs issued to your apps"),
+      );
+      console.log(
+        chalk.dim("  JWT_PUBLIC_KEY     - Apps use this to verify JWTs"),
+      );
+      console.log();
+    }
+
+    // Setup GATEWAY_URL if needed
     if (!gatewayUrlExists) {
       await uploadSecret({
         secretName: "GATEWAY_URL",
@@ -63,12 +80,7 @@ export async function setupSecrets({
       });
     }
 
-    // Check and setup BETTER_AUTH_SECRET
-    const betterAuthSecretExists = await secretExists({
-      secretName: "BETTER_AUTH_SECRET",
-      cwd: gatewayPath,
-      verbose,
-    });
+    // Setup BETTER_AUTH_SECRET if needed
     if (!betterAuthSecretExists) {
       const betterAuthSecret = generateBetterAuthSecret();
       await uploadSecret({
@@ -80,18 +92,7 @@ export async function setupSecrets({
       });
     }
 
-    // Check and setup JWT key pair
-    const privateKeyExists = await secretExists({
-      secretName: "JWT_PRIVATE_KEY",
-      cwd: gatewayPath,
-      verbose,
-    });
-    const publicKeyExists = await secretExists({
-      secretName: "JWT_PUBLIC_KEY",
-      cwd: gatewayPath,
-      verbose,
-    });
-
+    // Setup JWT key pair
     if (privateKeyExists && publicKeyExists) {
       if (verbose) {
         console.log(chalk.dim("   JWT key pair already exists\n"));
@@ -123,10 +124,12 @@ export async function setupSecrets({
       );
     }
 
-    if (verbose) {
-      console.log("Secret setup complete!\n");
-    } else {
-      console.log("  Finished.\n");
+    if (authSecretsNeeded) {
+      if (verbose) {
+        console.log("Secret setup complete!\n");
+      } else {
+        console.log("  Finished.\n");
+      }
     }
   } catch (error) {
     console.error(
