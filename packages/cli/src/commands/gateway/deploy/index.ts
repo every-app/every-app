@@ -17,7 +17,8 @@ import {
   downloadLatestGatewayRelease,
   extractLocalGatewayTarball,
 } from "@/lib/github-releases";
-import { checkGatewayHasOwner } from "@/lib/gateway";
+import { checkGatewayHasOwner, checkSslReady } from "@/lib/gateway";
+import { waitForSslCertificate } from "@/commands/gateway/deploy/steps/waitForSslCertificate";
 import { installDependencies } from "@/lib/package-manager";
 
 export async function deploy(
@@ -92,9 +93,18 @@ export async function deploy(
   if (!workerUrl)
     throw new Error("Worker URL not set properly during deployment");
 
+  // Check if SSL is ready (it usually is for existing subdomains)
+  const sslReady = await checkSslReady(workerUrl);
+
+  if (!sslReady) {
+    // SSL not ready - hand off to step that handles waiting and final messaging
+    await waitForSslCertificate({ workerUrl });
+    return;
+  }
+
   console.log(chalk.green("\nGateway deployment successful!\n"));
 
-  // Check if the gateway has an owner account
+  // SSL is ready - check if the gateway has an owner account
   const hasOwner = await checkGatewayHasOwner(workerUrl);
 
   if (hasOwner) {
