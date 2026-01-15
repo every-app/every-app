@@ -1,6 +1,6 @@
 # Every App
 The open source personal software platform.
-- Build what you wish existed.
+- Build exactly what you want.
 - Bring your own AI. No credits, no limits.
 - Self-host on Cloudflare. Free to start, $5/month max.
 
