@@ -7,7 +7,7 @@ import {
   deleteSession,
 } from "@/serverFunctions/sessions";
 import { createCollection } from "@tanstack/react-db";
-import { lazyInitForWorkers } from "@every-app/sdk/client";
+import { lazyInitForWorkers } from "@every-app/sdk/cloudflare";
 import type { WorkoutSession } from "@/db/schema";
 
 export const sessionsCollection = lazyInitForWorkers(() =>

@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useMemo } from "react";
-import { SessionManager, SessionManagerConfig } from "./session-manager";
+import { SessionManager, SessionManagerConfig } from "../core/sessionManager";
 import { useEveryAppSession } from "./_internal/useEveryAppSession";
-import { useEveryAppRouter } from "./_internal/useEveryAppRouter";
+import { useEveryAppRouter } from "./useEveryAppRouter";
 import { GatewayRequiredError } from "./GatewayRequiredError";
 
 interface EmbeddedProviderConfig extends SessionManagerConfig {

@@ -1,4 +1,7 @@
-import { authenticateRequest, getAuthConfig } from "@every-app/sdk/server";
+import {
+  authenticateRequest,
+  getAuthConfig,
+} from "@every-app/sdk/tanstack/server";
 
 /**
  * Standard JSON error response

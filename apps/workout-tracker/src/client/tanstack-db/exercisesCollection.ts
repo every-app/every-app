@@ -7,7 +7,7 @@ import {
   deleteWorkoutExercises,
 } from "@/serverFunctions/workoutExercises";
 import { createCollection } from "@tanstack/react-db";
-import { lazyInitForWorkers } from "@every-app/sdk/client";
+import { lazyInitForWorkers } from "@every-app/sdk/cloudflare";
 import type { WorkoutExercise } from "@/db/schema";
 
 // This collection manages workout exercises (instances of exercises in workouts)

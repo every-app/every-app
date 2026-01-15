@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
-import { useSessionTokenClientMiddleware } from "@every-app/sdk/client";
+import { useSessionTokenClientMiddleware } from "@every-app/sdk/tanstack";
 import { RecipeService } from "@/server/services/RecipeService";
 import {
   createRecipeSchema,

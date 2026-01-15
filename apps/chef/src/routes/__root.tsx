@@ -13,7 +13,7 @@ import { NotFound } from "@/client/components/NotFound";
 import { AppShell } from "@/client/components/AppShell";
 import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
-import { EmbeddedAppProvider } from "@every-app/sdk/client";
+import { EmbeddedAppProvider } from "@every-app/sdk/tanstack";
 import { queryClient, persister } from "@/client/tanstack-db";
 
 export const Route = createRootRoute({

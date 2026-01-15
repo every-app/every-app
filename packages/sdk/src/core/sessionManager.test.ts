@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.stubEnv("VITE_GATEWAY_URL", "https://gateway.example.com");
 
 describe("SessionManager", () => {
-  let SessionManager: typeof import("./session-manager").SessionManager;
+  let SessionManager: typeof import("./sessionManager").SessionManager;
   let mockPostMessage: ReturnType<typeof vi.fn>;
   let messageHandler: ((event: MessageEvent) => void) | null = null;
   let addEventListenerSpy: ReturnType<typeof vi.fn>;
@@ -74,7 +74,7 @@ describe("SessionManager", () => {
     });
 
     // Import fresh module
-    const module = await import("./session-manager");
+    const module = await import("./sessionManager");
     SessionManager = module.SessionManager;
   });
 
@@ -97,7 +97,7 @@ describe("SessionManager", () => {
       vi.resetModules();
       vi.stubEnv("VITE_GATEWAY_URL", "");
 
-      const module = await import("./session-manager");
+      const module = await import("./sessionManager");
 
       expect(() => new module.SessionManager({ appId: "test-app" })).toThrow(
         "[SessionManager] VITE_GATEWAY_URL env var is required.",
@@ -108,7 +108,7 @@ describe("SessionManager", () => {
       vi.resetModules();
       vi.stubEnv("VITE_GATEWAY_URL", "not-a-valid-url");
 
-      const module = await import("./session-manager");
+      const module = await import("./sessionManager");
 
       expect(() => new module.SessionManager({ appId: "test-app" })).toThrow(
         "[SessionManager] Invalid gateway URL: not-a-valid-url",

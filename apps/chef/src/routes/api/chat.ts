@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { streamText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { authenticateRequest, getAuthConfig } from "@every-app/sdk/server";
+import {
+  authenticateRequest,
+  getAuthConfig,
+} from "@every-app/sdk/tanstack/server";
 import { env } from "cloudflare:workers";
 import { chatRequestSchema } from "@/server/utils/validation";
 import { MessageService } from "@/server/services/MessageService";

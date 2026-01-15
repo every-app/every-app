@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
-import { useSessionTokenClientMiddleware } from "@every-app/sdk/client";
+import { useSessionTokenClientMiddleware } from "@every-app/sdk/tanstack";
 import { WorkoutService } from "@/server/services/WorkoutService";
 import {
   batchCreateWorkoutsSchema,

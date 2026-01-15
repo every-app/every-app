@@ -1,10 +1,11 @@
 import { useEffect } from "react";
-import { SessionManager } from "../session-manager";
+import { SessionManager } from "../core/sessionManager";
 import { useRouter } from "@tanstack/react-router";
 
 interface UseEveryAppRouterParams {
   sessionManager: SessionManager | null;
 }
+
 export function useEveryAppRouter({ sessionManager }: UseEveryAppRouterParams) {
   const router = useRouter();
   // Route synchronization effect

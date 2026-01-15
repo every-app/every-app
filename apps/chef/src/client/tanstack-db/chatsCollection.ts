@@ -2,7 +2,7 @@ import { queryCollectionOptions } from "@tanstack/query-db-collection";
 import { queryClient } from "./queryClient";
 import { getChats, updateChat, deleteChat } from "@/serverFunctions/chats";
 import { createCollection } from "@tanstack/react-db";
-import { lazyInitForWorkers } from "@every-app/sdk/client";
+import { lazyInitForWorkers } from "@every-app/sdk/cloudflare";
 import type { Chat } from "@/db/schema";
 
 /**

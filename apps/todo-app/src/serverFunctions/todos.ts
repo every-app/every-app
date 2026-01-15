@@ -4,7 +4,7 @@ import { db, schema } from "@/db";
 import { todos } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
-import { useSessionTokenClientMiddleware } from "@every-app/sdk/client";
+import { useSessionTokenClientMiddleware } from "@every-app/sdk/tanstack";
 
 const createTodoSchema = z.object({
   id: z.string().uuid("Invalid todo ID"),

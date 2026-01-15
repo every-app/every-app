@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { authenticatedFetch } from "@every-app/sdk/client";
+import { authenticatedFetch } from "@every-app/sdk/core";
 
 export function useAuthenticatedImage(imageKey: string | null) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);

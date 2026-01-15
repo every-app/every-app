@@ -7,7 +7,7 @@ import {
   getAllTodos,
   updateTodo,
 } from "@/serverFunctions/todos";
-import { lazyInitForWorkers } from "@every-app/sdk/client";
+import { lazyInitForWorkers } from "@every-app/sdk/cloudflare";
 import { generateDefaultSortKey } from "@/client/lib/fractional-indexing";
 
 /**

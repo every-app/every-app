@@ -3,7 +3,7 @@ import { chats } from "@/db/schema";
 import { db } from "@/db";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
 import { eq, desc, and } from "drizzle-orm";
-import { useSessionTokenClientMiddleware } from "@every-app/sdk/client";
+import { useSessionTokenClientMiddleware } from "@every-app/sdk/tanstack";
 import type { Chat } from "@/types";
 import { z } from "zod";
 import { MessageService } from "@/server/services/MessageService";

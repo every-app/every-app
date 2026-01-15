@@ -16,7 +16,7 @@ import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
 import { Sidebar } from "@/client/components/Sidebar";
 import { TabBar } from "@/client/components/TabBar";
-import { EmbeddedAppProvider } from "@every-app/sdk/client";
+import { EmbeddedAppProvider } from "@every-app/sdk/tanstack";
 import {
   programsCollection,
   workoutsCollection,

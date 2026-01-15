@@ -1,21 +1,27 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "type": "module",
-  "main": "./dist/client/index.js",
-  "types": "./dist/client/index.d.ts",
   "exports": {
-    "./client": {
-      "types": "./dist/client/index.d.ts",
-      "default": "./dist/client/index.js"
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "default": "./dist/core/index.js"
     },
-    "./server": {
-      "types": "./dist/server/index.d.ts",
-      "default": "./dist/server/index.js"
+    "./tanstack": {
+      "types": "./dist/tanstack/index.d.ts",
+      "default": "./dist/tanstack/index.js"
     },
-    "./server/getLocalD1Url": {
-      "types": "./dist/server/getLocalD1Url.d.ts",
-      "default": "./dist/server/getLocalD1Url.js"
+    "./tanstack/server": {
+      "types": "./dist/tanstack/server/index.d.ts",
+      "default": "./dist/tanstack/server/index.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare/index.d.ts",
+      "default": "./dist/cloudflare/index.js"
+    },
+    "./cloudflare/server": {
+      "types": "./dist/cloudflare/server/index.d.ts",
+      "default": "./dist/cloudflare/server/index.js"
     }
   },
   "files": [

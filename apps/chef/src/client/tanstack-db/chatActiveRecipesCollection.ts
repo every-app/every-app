@@ -6,7 +6,7 @@ import {
   removeActiveRecipe,
 } from "@/serverFunctions/chats";
 import { createCollection } from "@tanstack/react-db";
-import { lazyInitForWorkers } from "@every-app/sdk/client";
+import { lazyInitForWorkers } from "@every-app/sdk/cloudflare";
 import type { ChatActiveRecipe } from "@/db/schema";
 
 export const chatActiveRecipesCollection = lazyInitForWorkers(() =>

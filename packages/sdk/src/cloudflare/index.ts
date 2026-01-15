@@ -1,0 +1,1 @@
+export { lazyInitForWorkers } from "./lazyInit";

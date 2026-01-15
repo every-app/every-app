@@ -7,7 +7,7 @@ import {
   updateTodo,
 } from "@/serverFunctions/todos";
 import { createCollection } from "@tanstack/react-db";
-import { lazyInitForWorkers } from "@every-app/sdk/client";
+import { lazyInitForWorkers } from "@every-app/sdk/cloudflare";
 
 export const todoCollection = lazyInitForWorkers(() =>
   createCollection(
