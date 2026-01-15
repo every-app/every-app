@@ -1,6 +1,6 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "type": "module",
   "main": "./dist/client/index.js",
   "types": "./dist/client/index.d.ts",
