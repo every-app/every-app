@@ -19,14 +19,14 @@
   "kv_namespaces": [
     {
       "binding": "KV",
-      "id": "b4e1453842fe4f99af76d8791c23bdae",
+      "id": "935dec5f006046a7b3fabf24920f65a6",
     },
   ],
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "every-chef",
-      "database_id": "129cd3fd-a605-49e8-a76c-7002f33e4a4c",
+      "database_id": "e5bb985e-9390-4150-83ab-8db35c154a54",
       "migrations_dir": "drizzle",
     },
   ],
