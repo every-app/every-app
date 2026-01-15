@@ -1630,12 +1630,10 @@ Returns the decoded JWT payload or `null` if authentication fails:
 interface SessionTokenPayload {
   sub: string; // User ID
   iss: string; // Issuer (Gateway URL)
-  aud: string; // Audience (your app ID)
+  aud: string; // Audience (your app ID - use this for app identification)
   exp: number; // Expiration timestamp
   iat: number; // Issued at timestamp
-  appId?: string; // App ID (if included)
-  permissions?: string[]; // User permissions (if included)
-  email?: string; // User email (if included)
+  email?: string; // User email (for user provisioning)
 }
 ```
 

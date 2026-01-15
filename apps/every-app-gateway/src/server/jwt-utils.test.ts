@@ -60,11 +60,8 @@ describe("jwt-utils", () => {
       banned: false,
     };
 
-    const additionalClaims = {
-      appId: "test-app",
-      permissions: ["read", "write"],
-      embeddedApp: true,
-    };
+    // Minimal additional claims - the token now only contains essential fields
+    const additionalClaims = {};
 
     it("issues a valid JWT token with correct structure", async () => {
       const { issueEmbeddedAppToken } = await import("./jwt-utils");
@@ -110,7 +107,7 @@ describe("jwt-utils", () => {
       expect(payload.exp).toBeDefined();
     });
 
-    it("includes user email and name in claims", async () => {
+    it("includes user email in claims (name excluded for minimal payload)", async () => {
       const { issueEmbeddedAppToken, getPublicJWKS } = await import(
         "./jwt-utils"
       );
@@ -129,10 +126,11 @@ describe("jwt-utils", () => {
       });
 
       expect(payload.email).toBe("test@example.com");
-      expect(payload.name).toBe("Test User");
+      // name is intentionally excluded to minimize token payload
+      expect(payload.name).toBeUndefined();
     });
 
-    it("includes additional claims (appId, permissions, embeddedApp)", async () => {
+    it("does not include deprecated claims (appId, permissions, embeddedApp)", async () => {
       const { issueEmbeddedAppToken, getPublicJWKS } = await import(
         "./jwt-utils"
       );
@@ -150,9 +148,11 @@ describe("jwt-utils", () => {
         audience: "test-audience",
       });
 
-      expect(payload.appId).toBe("test-app");
-      expect(payload.permissions).toEqual(["read", "write"]);
-      expect(payload.embeddedApp).toBe(true);
+      // These claims were removed to minimize the token payload
+      // appId is redundant with aud, permissions was always empty, embeddedApp was always true
+      expect(payload.appId).toBeUndefined();
+      expect(payload.permissions).toBeUndefined();
+      expect(payload.embeddedApp).toBeUndefined();
     });
 
     it("sets correct expiration time", async () => {
@@ -186,7 +186,7 @@ describe("jwt-utils", () => {
       expect(payload.exp).toBeLessThanOrEqual(expectedMaxExp);
     });
 
-    it("uses RS256 algorithm", async () => {
+    it("uses RS256 algorithm with kid in header (RFC 7515 compliance)", async () => {
       const { issueEmbeddedAppToken } = await import("./jwt-utils");
 
       const token = await issueEmbeddedAppToken(
@@ -195,11 +195,13 @@ describe("jwt-utils", () => {
         additionalClaims,
       );
 
-      // Decode header to check algorithm
+      // Decode header to check algorithm and kid
       const [headerB64] = token.split(".");
       const header = JSON.parse(atob(headerB64));
 
       expect(header.alg).toBe("RS256");
+      // kid must be present for JWKS key selection during verification
+      expect(header.kid).toBe("embedded-app-key-1");
     });
 
     it("sets different audiences correctly", async () => {
@@ -347,11 +349,7 @@ describe("jwt-utils", () => {
         banned: false,
       };
 
-      const token = await issueEmbeddedAppToken(mockUser, "test-audience", {
-        appId: "test-app",
-        permissions: ["read"],
-        embeddedApp: true,
-      });
+      const token = await issueEmbeddedAppToken(mockUser, "test-audience", {});
 
       const jwks = await getPublicJWKS();
       const localJWKS = createLocalJWKSet(jwks);
@@ -381,11 +379,11 @@ describe("jwt-utils", () => {
         banned: false,
       };
 
-      const token = await issueEmbeddedAppToken(mockUser, "correct-audience", {
-        appId: "test-app",
-        permissions: ["read"],
-        embeddedApp: true,
-      });
+      const token = await issueEmbeddedAppToken(
+        mockUser,
+        "correct-audience",
+        {},
+      );
 
       const jwks = await getPublicJWKS();
       const localJWKS = createLocalJWKSet(jwks);
@@ -414,11 +412,7 @@ describe("jwt-utils", () => {
         banned: false,
       };
 
-      const token = await issueEmbeddedAppToken(mockUser, "test-audience", {
-        appId: "test-app",
-        permissions: ["read"],
-        embeddedApp: true,
-      });
+      const token = await issueEmbeddedAppToken(mockUser, "test-audience", {});
 
       const jwks = await getPublicJWKS();
       const localJWKS = createLocalJWKSet(jwks);

@@ -9,14 +9,22 @@ import {
 import type { AuthConfig } from "./types";
 import { env } from "cloudflare:workers";
 
+/**
+ * JWT payload structure for embedded app session tokens.
+ * Contains minimal claims for security - only what's needed for authentication.
+ */
 interface SessionTokenPayload {
+  /** User ID (subject claim) */
   sub: string;
+  /** Gateway URL (issuer claim) */
   iss: string;
+  /** App ID (audience claim) - scopes token to specific app */
   aud: string;
+  /** Expiration timestamp */
   exp: number;
+  /** Issued at timestamp */
   iat: number;
-  appId?: string;
-  permissions?: string[];
+  /** User email - used for user provisioning in apps */
   email?: string;
 }
 

@@ -5,12 +5,13 @@ import { auth } from "../auth";
 import { env } from "cloudflare:workers";
 import { EMBEDDED_APP_TOKEN_EXPIRY_SECONDS } from "./constants";
 
-// JWT additional claims schema
-const JWTAdditionalClaimsSchema = z.object({
-  appId: z.string(),
-  permissions: z.array(z.string()),
-  embeddedApp: z.boolean(),
-});
+// Key ID for JWKS - must match between token header and JWKS endpoint
+// Per RFC 7515, this allows verifiers to identify which key to use
+const JWT_KEY_ID = "embedded-app-key-1";
+
+// JWT additional claims schema - minimal for security
+// appId uses aud claim, permissions/embeddedApp/name removed as unused
+const JWTAdditionalClaimsSchema = z.object({});
 
 type JWTAdditionalClaims = z.infer<typeof JWTAdditionalClaimsSchema>;
 
@@ -62,10 +63,9 @@ export async function issueEmbeddedAppToken(
 
   const jwt = await new SignJWT({
     email: user.email,
-    name: user.name,
     ...additionalClaims,
   })
-    .setProtectedHeader({ alg: "RS256" })
+    .setProtectedHeader({ alg: "RS256", kid: JWT_KEY_ID })
     .setSubject(user.id)
     .setIssuer(env.GATEWAY_URL)
     .setAudience(audience)
@@ -87,7 +87,7 @@ export async function getPublicJWKS() {
     keys: [
       {
         ...jwk,
-        kid: "embedded-app-key-1",
+        kid: JWT_KEY_ID,
         use: "sig",
         alg: "RS256",
       },

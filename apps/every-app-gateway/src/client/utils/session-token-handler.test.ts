@@ -229,7 +229,6 @@ describe("handleSessionTokenRequest", () => {
       expiresAt: "2024-01-01T00:00:00Z",
       audience: "todo-app",
       appId: "todo-app",
-      user: { id: "user-1", email: "test@example.com", name: "Test User" },
     });
 
     const event = createMockEvent(

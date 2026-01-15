@@ -59,10 +59,10 @@ describe("authenticateRequest", () => {
   });
 
   async function createValidToken(overrides: Record<string, unknown> = {}) {
+    // Token now only contains minimal claims: sub, email, iss, aud, exp, iat
+    // appId is represented by aud claim, permissions and embeddedApp were removed
     const jwt = await new SignJWT({
       email: "user@example.com",
-      appId: "test-app",
-      permissions: ["read", "write"],
       ...overrides,
     })
       .setProtectedHeader({ alg: "RS256" })
@@ -127,9 +127,8 @@ describe("authenticateRequest", () => {
       expect(result).not.toBeNull();
       expect(result!.sub).toBe("user-123");
       expect(result!.email).toBe("user@example.com");
-      expect(result!.appId).toBe("test-app");
-      expect(result!.permissions).toEqual(["read", "write"]);
       expect(result!.iss).toBe(authConfig.issuer);
+      // audience contains the appId
       expect(result!.aud).toBe(authConfig.audience);
     });
 

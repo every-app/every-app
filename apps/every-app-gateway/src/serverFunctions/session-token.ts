@@ -44,16 +44,13 @@ function isTimestampValid(
   return age >= -CLOCK_SKEW_TOLERANCE_MS && age <= STALE_REQUEST_MAX_AGE_MS;
 }
 
+// Minimal response - only token and expiry are used by the SDK client
+// audience and appId are included for debugging/logging purposes only
 type SessionTokenResponse = {
   token: string;
   expiresAt: string;
   audience: string;
   appId: string;
-  user: {
-    id: string;
-    email?: string;
-    name?: string;
-  };
 };
 
 export const createSessionToken = createServerFn()
@@ -111,31 +108,16 @@ export const createSessionToken = createServerFn()
       }
 
       // Issue a JWT token for the specific embedded app
-      const token = await issueEmbeddedAppToken(
-        {
-          ...user,
-          name: user.name || "", // Provide default empty string if name is undefined
-        },
-        app.appId,
-        {
-          appId: app.appId,
-          permissions: [],
-          embeddedApp: true,
-        },
-      );
+      // The token contains minimal claims: sub (userId), email, aud (appId), iss, exp, iat
+      const token = await issueEmbeddedAppToken(user, app.appId, {});
 
       const response: SessionTokenResponse = {
         token,
         expiresAt: new Date(
           Date.now() + EMBEDDED_APP_TOKEN_EXPIRY_SECONDS * 1000,
         ).toISOString(),
-        audience: app.appId, // Use appId as audience
+        audience: app.appId,
         appId: app.appId,
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-        },
       };
 
       return response;
