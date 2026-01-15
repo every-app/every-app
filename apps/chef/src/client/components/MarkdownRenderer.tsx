@@ -1,4 +1,4 @@
-import { Streamdown } from "streamdown";
+import Markdown from "react-markdown";
 
 interface MarkdownRendererProps {
   content: string;
@@ -11,7 +11,7 @@ export function MarkdownRenderer({
 }: MarkdownRendererProps) {
   return (
     <div className={`markdown-content ${className}`}>
-      <Streamdown mode="static">{content}</Streamdown>
+      <Markdown>{content}</Markdown>
     </div>
   );
 }

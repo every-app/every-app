@@ -92,6 +92,8 @@ Follow the link this returns to create your account in the Gateway.
 
 #### Todo App
 
+A minimal todo list app with keyboard navigation.
+
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
 cd every-todo-app
@@ -100,6 +102,8 @@ npx @every-app/cli app deploy
 
 <details>
 <summary><h4>Workout Tracker</h4></summary>
+
+Track your workouts and programs.
 
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/workout-tracker every-workout-tracker
@@ -112,12 +116,16 @@ npx @every-app/cli app deploy
 <details>
 <summary><h4>Cooking Assistant</h4></summary>
 
-Note: This only works on the Paid plan since the bundle is too big currently. 
+An AI Cooking Assistant and Recipe Manager
 
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/chef every-app-chef
 cd every-app-chef
 npx @every-app/cli app deploy
+```
+
+This also requires an OpenAI API key since its a chat interface:
+```bash
 npx wrangler secret put OPENAI_API_KEY
 ```
 

@@ -77,9 +77,9 @@ npx @every-app/cli gateway deploy
 
 Follow the link to create your account.
 
-## Self-Host an Example App
+## Self-Host an App
 
-Try one of the example apps to see how it works:
+Try one of the apps we've built to see how it works:
 
 ### Todo App
 
@@ -103,12 +103,17 @@ npx @every-app/cli app deploy
 
 ### Cooking Assistant
 
-An AI-powered recipe manager (requires OpenAI API key and Cloudflare paid plan since the bundle is too big currently).
+An AI Cooking Assistant and Recipe Manager
 
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/chef every-app-chef
 cd every-app-chef
 npx @every-app/cli app deploy
+```
+
+This also requires an OpenAI API key since its a chat interface:
+
+```bash
 npx wrangler secret put OPENAI_API_KEY
 ```
 

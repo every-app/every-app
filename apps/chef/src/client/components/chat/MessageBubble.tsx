@@ -1,5 +1,5 @@
 import type { UIMessage } from "ai";
-import { Streamdown } from "streamdown";
+import Markdown from "react-markdown";
 import { RecipeUpdatePrompt } from "./RecipeUpdatePrompt";
 import { AuthenticatedImage } from "../AuthenticatedImage";
 import type { Recipe } from "@/db/schema";
@@ -125,10 +125,11 @@ export function MessageBubble({
                   isStreaming && isLastPart && !hasToolParts;
 
                 return (
-                  <div key={`${message.id}-text-${index}`} className="text-sm">
-                    <Streamdown mode={isStreaming ? "streaming" : "static"}>
-                      {text}
-                    </Streamdown>
+                  <div
+                    key={`${message.id}-text-${index}`}
+                    className="text-sm markdown-content"
+                  >
+                    <Markdown>{text}</Markdown>
                     {showStreamingIndicator && (
                       <span className="loading loading-dots loading-xs ml-1 inline-block"></span>
                     )}
