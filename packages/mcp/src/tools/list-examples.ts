@@ -1,13 +1,16 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { textResponse } from "../utils.js";
+import { getExamplesDirectory } from "../setup.js";
 
-interface ExampleApp {
+interface CodebaseEntry {
   name: string;
   description: string;
   goodFor: string[];
 }
 
-const EXAMPLE_APPS: ExampleApp[] = [
+const EXAMPLE_APPS: CodebaseEntry[] = [
   {
     name: "apps/todo-app",
     description:
@@ -48,20 +51,140 @@ const EXAMPLE_APPS: ExampleApp[] = [
   },
 ];
 
-export function registerListExamplesTool(server: McpServer) {
+const INTERNAL_PACKAGES: CodebaseEntry[] = [
+  {
+    name: "apps/every-app-gateway",
+    description:
+      "The Every App Gateway - central authentication hub that manages user accounts and hosts embedded apps",
+    goodFor: [
+      "Understanding how authentication flows work",
+      "How embedded apps are loaded and displayed",
+      "JWT token generation and validation",
+      "User session management",
+      "How the Gateway communicates with embedded apps via postMessage",
+    ],
+  },
+  {
+    name: "packages/sdk",
+    description:
+      "The @every-app/sdk package - client and server utilities for building Every Apps",
+    goodFor: [
+      "EmbeddedAppProvider implementation",
+      "Session management and authentication helpers",
+      "Server-side request authentication",
+      "Understanding how apps communicate with the Gateway",
+    ],
+  },
+  {
+    name: "packages/cli",
+    description:
+      "The @every-app/cli package - command-line tool for creating and deploying Every Apps",
+    goodFor: [
+      "How app creation works (templates, scaffolding)",
+      "Deployment flow to Cloudflare",
+      "Gateway deployment and configuration",
+      "Database migrations and secret management",
+    ],
+  },
+  {
+    name: "packages/mcp",
+    description:
+      "The @every-app/mcp package - MCP server that provides access to examples and documentation",
+    goodFor: [
+      "How this MCP server is built",
+      "Example of building MCP tools",
+      "Sparse git checkout patterns",
+    ],
+  },
+];
+
+/**
+ * Recursively find all .mdx files in a directory and return their paths relative to the base
+ */
+function findMdxFiles(dir: string, basePath: string = ""): string[] {
+  const results: string[] = [];
+
+  if (!fs.existsSync(dir)) {
+    return results;
+  }
+
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
+
+    if (entry.isDirectory()) {
+      results.push(...findMdxFiles(fullPath, relativePath));
+    } else if (entry.isFile() && entry.name.endsWith(".mdx")) {
+      // Remove .mdx extension for display
+      results.push(relativePath.replace(/\.mdx$/, ""));
+    }
+  }
+
+  return results;
+}
+
+/**
+ * Get the docs directory path
+ */
+function getDocsDirectory(): string {
+  return path.join(
+    getExamplesDirectory(),
+    "landing-page/src/content/docs/docs"
+  );
+}
+
+function formatEntries(entries: CodebaseEntry[]): string {
+  return entries
+    .map(
+      (entry) =>
+        `## ${entry.name}\n${entry.description}\n\n**Good for learning:**\n${entry.goodFor.map((g) => `- ${g}`).join("\n")}`
+    )
+    .join("\n\n---\n\n");
+}
+
+export function registerBrowseTool(server: McpServer) {
   server.tool(
-    "every_app_mcp_list_examples",
-    "List available Every App example applications and what they demonstrate.",
+    "browse",
+    "Browse available Every App resources: example apps, internal packages, and documentation. Start here to discover what's available.",
     {},
     async () => {
-      const output = EXAMPLE_APPS.map(
-        (ex) =>
-          `## ${ex.name}\n${ex.description}\n\n**Good for learning:**\n${ex.goodFor.map((g) => `- ${g}`).join("\n")}`,
-      ).join("\n\n---\n\n");
+      const examplesOutput = formatEntries(EXAMPLE_APPS);
+      const internalsOutput = formatEntries(INTERNAL_PACKAGES);
+
+      // Dynamically discover docs
+      const docsDir = getDocsDirectory();
+      const docPages = findMdxFiles(docsDir).sort();
+      const docsOutput =
+        docPages.length > 0
+          ? `Use \`read_file\` with path \`landing-page/src/content/docs/docs/<page>.mdx\` to read any of these:\n\n${docPages.map((p) => `- ${p}`).join("\n")}`
+          : "Documentation not available. Try reconnecting the MCP server to trigger a fresh clone.";
 
       return textResponse(
-        `# Available Every App Examples\n\n${output}\n\n---\n\nUse \`every_app_mcp_list_directory\` to explore the structure of any example, and \`every_app_mcp_read_file\` to view implementation details.`,
+        `# Every App Resources
+
+**Note:** Code examples are from the latest version on GitHub. The user may be on an older version of the SDK, CLI, or Gateway. If something doesn't match what they're seeing, check their package versions.
+
+---
+
+# Documentation
+${docsOutput}
+
+---
+
+# Example Applications
+Complete example apps you can learn from. Use \`list_directory\` and \`read_file\` to explore:
+
+${examplesOutput}
+
+---
+
+# Internal Packages
+Core Every App packages - useful for understanding how Every App works:
+
+${internalsOutput}`
       );
-    },
+    }
   );
 }

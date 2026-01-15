@@ -11,7 +11,7 @@ import {
 
 export function registerFindFilesTool(server: McpServer) {
   server.tool(
-    "every_app_mcp_find_files",
+    "find_files",
     "Find files matching a glob pattern in the Every App examples.",
     {
       pattern: z

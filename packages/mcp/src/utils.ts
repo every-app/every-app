@@ -64,14 +64,33 @@ export function validatePathWithinBase(
   baseDir: string,
   inputPath: string
 ): { valid: true; resolvedPath: string } | { valid: false; error: string } {
-  const resolvedBase = path.resolve(baseDir);
-  const resolvedPath = path.resolve(baseDir, inputPath);
+  let resolvedBase: string;
+  try {
+    resolvedBase = fs.realpathSync(baseDir);
+  } catch {
+    return { valid: false, error: "Base directory not accessible" };
+  }
+
+  const resolvedPath = path.resolve(resolvedBase, inputPath);
 
   if (!resolvedPath.startsWith(resolvedBase + path.sep) && resolvedPath !== resolvedBase) {
     return {
       valid: false,
       error: "Path traversal detected - access denied",
     };
+  }
+
+  if (fs.existsSync(resolvedPath)) {
+    let realPath: string;
+    try {
+      realPath = fs.realpathSync(resolvedPath);
+    } catch {
+      return { valid: false, error: "Path not accessible" };
+    }
+
+    if (!realPath.startsWith(resolvedBase + path.sep) && realPath !== resolvedBase) {
+      return { valid: false, error: "Path resolves outside base directory" };
+    }
   }
 
   return { valid: true, resolvedPath };

@@ -11,7 +11,7 @@ import {
 
 export function registerSearchCodeTool(server: McpServer) {
   server.tool(
-    "every_app_mcp_search_code",
+    "search_code",
     "Search for patterns in the Every App examples using regex. Use this to find implementations of specific patterns.",
     {
       pattern: z.string().describe("Regular expression pattern to search for"),

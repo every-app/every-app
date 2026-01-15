@@ -12,7 +12,7 @@ import {
 
 export function registerListDirectoryTool(server: McpServer) {
   server.tool(
-    "every_app_mcp_list_directory",
+    "list_directory",
     "List files and directories in the Every App examples. Use this to explore the structure of example apps.",
     {
       path: z

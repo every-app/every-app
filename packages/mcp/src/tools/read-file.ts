@@ -5,7 +5,7 @@ import { getExamplesDir, errorResponse, textResponse, validatePathWithinBase } f
 
 export function registerReadFileTool(server: McpServer) {
   server.tool(
-    "every_app_mcp_read_file",
+    "read_file",
     "Read the contents of a file from the Every App examples. Use this to see how patterns are implemented.",
     {
       path: z

@@ -3,7 +3,7 @@ This server gives your coding agent access to example apps and Every App documen
 
 ## Quick Start
 
-This MCP server is compatabile with any coding agent tool. Below are some example configs:
+This MCP server is compatible with any coding agent tool. Below are some example configs:
 
 ### Claude Code
 
@@ -47,12 +47,11 @@ Add to `opencode.json`:
 
 | Tool | Description |
 |------|-------------|
-| `every_app_mcp_list_examples` | List all available example apps with descriptions |
-| `every_app_mcp_list_directory` | Browse directory structure of example apps |
-| `every_app_mcp_read_file` | Read file contents with line numbers |
-| `every_app_mcp_search_code` | Search for patterns using regex |
-| `every_app_mcp_find_files` | Find files matching a glob pattern |
-| `every_app_mcp_fetch_docs` | Fetch Every App documentation pages |
+| `browse` | List available example apps, internal packages, and documentation |
+| `list_directory` | Browse directory structure of examples and docs |
+| `read_file` | Read file contents with line numbers |
+| `search_code` | Search for patterns using regex |
+| `find_files` | Find files matching a glob pattern |
 
 
 ## Development
