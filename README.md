@@ -6,7 +6,6 @@ The open source personal software platform.
 
 ## Table of Contents
 - [What is Every App?](#what-is-every-app)
-- [Coding Agents & Vibe Coding](#coding-agents--vibe-coding)
 - [What is the Gateway?](#what-is-the-gateway)
 - [Self Hosting](#self-hosting)
 - [Build Your Own App](#build-your-own-app)
@@ -14,18 +13,16 @@ The open source personal software platform.
 
 ## What is Every App?
 
-Every App is a self-hosted platform for personal web apps. Use your favorite coding agent to build apps tailored to yourself, family, friends or your company.
+Every App is an open source platform for personal web apps.
 
-Every App handles the boring parts like auth, setting up your database, and hosting so that you can focus on building your idea.
+It's built for experienced engineers who want to use their favorite AI tooling to build something with an unlimited ceiling of quality.
 
-Self host on Cloudflare with one simple CLI command. Since apps are built for Cloudflare's Serverless platform, hosting starts completely free. Even with dozens of apps, you're unlikely to exceed the $5/month paid plan.
+- We handle the tedious parts like auth, user management, database setup, and hosting so you can focus on your idea.
+- Your agent can reference example apps via our MCP server, with patterns that scale as your codebase grows.
+- Self host on Cloudflare with one CLI command: `npx everyapp gateway deploy`
+- Since apps are built for Cloudflare's serverless platform, hosting scales to zero and starts completely free.
 
-## Coding Agents & Vibe Coding
-Every App is for Engineers. It’s designed so that you can build awesome apps leveraging Coding Agents quickly, but with an unlimited ceiling of quality.
-
-After you follow the instructions for setting up the Gateway, start with just vibe coding an idea you have, reimplement an old side project or test the example prompt in Build an App for building a kanban board. This will be a full stack app with a database and any other infra you need from Cloudflare, not a toy app that only works on localhost.
-
-Once you’ve built something you love, you could stay in this Vibe Coding zone forever (please use the Security Review prompt), or you could dig deeper and build the best project of your life.
+Start by vibe coding an idea, reimplement an old side project, or try the example prompt in Build an App. Once you've built something you love, stay in vibe coding mode forever, or dig deeper and build the best project of your life.
 
 ### Screenshots
 
