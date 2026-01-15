@@ -22,3 +22,7 @@ export const chatRequestSchema = z.object({
     .uuid("Invalid chat ID format"),
   message: uiMessageSchema,
 });
+
+export const imageRequestSchema = z.object({
+  key: z.string().min(1, "Image key is required"),
+});

@@ -65,7 +65,7 @@ export const Route = createFileRoute("/api/chat")({
 
           // Stream text with AI SDK
           const result = streamText({
-            model: openaiProvider("gpt-5"),
+            model: openaiProvider("gpt-5.2"),
             system: "You are a helpful AI assistant.",
             messages: openaiMessages,
             providerOptions: {

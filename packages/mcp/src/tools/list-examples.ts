@@ -13,10 +13,11 @@ const EXAMPLE_APPS: ExampleApp[] = [
     description:
       "Simple todo application demonstrating basic CRUD operations, routing, and embedded app patterns",
     goodFor: [
-      "Basic data relationships",
-      "Complex Drag & Drop",
-      "Route setup",
       "Embedded provider usage",
+      "Basic data relationships",
+      "Complex Drag & Drop and fractional indexing for ordering",
+      "Keybindings and keyboard based navigation",
+      "Route setup",
     ],
   },
   {
@@ -26,18 +27,23 @@ const EXAMPLE_APPS: ExampleApp[] = [
     goodFor: [
       "Complex TanstackDB Optimistic Updates",
       "Simple Drag & Drop",
-      "Complex data relationships",
+      "Slide animations for mobile navigation",
+      "Complex data relationships and drizzle schema",
       "Form handling",
       "Advanced queries",
     ],
   },
   {
     name: "apps/chef",
-    description: "Cooking assistant with LLM integration",
+    description:
+      "AI-powered cooking assistant with image analysis and recipe management",
     goodFor: [
-      "LLM integration patterns",
-      "AI-powered features",
-      "Streaming responses",
+      "Authenticated image upload and access (R2 storage with auth-gated retrieval)",
+      "AI Chat with image upload, mobile camera access, and optimistic UI updates",
+      "Streaming AI responses with database persistence",
+      "Human-in-loop AI tools (AI suggests, user approves)",
+      "Multi-part messages (text, images, tool invocations)",
+      "Drawer based mobile navigation instead of TabBar due to wanting to show list of chats nicely. Helpful for any UI which needs dynamic navigation instead of 4 or 5 TabBar items.",
     ],
   },
 ];

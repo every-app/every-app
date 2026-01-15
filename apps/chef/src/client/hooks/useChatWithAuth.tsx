@@ -3,6 +3,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { authenticatedFetch } from "@every-app/sdk/client";
 import { toast } from "sonner";
+import { fileToDataUrl } from "../utils/file";
 
 interface UseChatWithAuthProps {
   selectedChatId: string | undefined;
@@ -66,10 +67,28 @@ export function useChatWithAuth({
   }, [status, streamingMessages, onAssistantMessage]);
 
   const handleSendMessage = useCallback(
-    (content: string) => {
-      if (!selectedChatId || !content.trim()) return;
+    async (content: string, imageFile?: File) => {
+      if (!selectedChatId || (!content.trim() && !imageFile)) return;
 
-      const parts: UIMessage["parts"] = [{ type: "text", text: content }];
+      const parts: UIMessage["parts"] = [];
+      let imagePreviewUrl: string | null = null;
+
+      // If there's an image, create a preview URL for optimistic display
+      if (imageFile) {
+        imagePreviewUrl = await fileToDataUrl(imageFile);
+
+        // Add image part with preview URL for optimistic display
+        parts.push({
+          type: "file",
+          url: imagePreviewUrl,
+          mediaType: imageFile.type,
+        });
+      }
+
+      // Add text part if there's content
+      if (content.trim()) {
+        parts.push({ type: "text", text: content });
+      }
 
       const userMessage: UIMessage = {
         id: crypto.randomUUID(),
@@ -77,14 +96,60 @@ export function useChatWithAuth({
         parts,
       };
 
-      // Optimistically add user message to cache
+      // Optimistically add user message to cache with preview URL
       onUserMessage?.(userMessage);
 
-      // Send message to chat API
-      sendMessage({
-        role: "user",
-        parts,
-      });
+      try {
+        // If there's an image, upload it to R2 first
+        let r2Key: string | null = null;
+        if (imageFile) {
+          const formData = new FormData();
+          formData.append("file", imageFile);
+          formData.append("chatId", selectedChatId);
+
+          const uploadResponse = await authenticatedFetch("/api/upload", {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!uploadResponse.ok) {
+            const errorData = (await uploadResponse
+              .json()
+              .catch(() => ({}))) as {
+              error?: string;
+            };
+            toast.error(
+              errorData.error || "Failed to upload image. Please try again.",
+            );
+            return;
+          }
+
+          const data = (await uploadResponse.json()) as { key: string };
+          r2Key = data.key;
+        }
+
+        // Build the final parts with R2 key instead of data URL
+        const finalParts: UIMessage["parts"] = [];
+        if (r2Key) {
+          finalParts.push({
+            type: "file",
+            url: r2Key,
+            mediaType: imageFile?.type || "image/jpeg",
+          });
+        }
+        if (content.trim()) {
+          finalParts.push({ type: "text", text: content });
+        }
+
+        // Send message to chat API
+        sendMessage({
+          role: "user",
+          parts: finalParts,
+        });
+      } catch (error) {
+        console.error("Failed to send message:", error);
+        toast.error("Failed to send message. Please try again.");
+      }
     },
     [selectedChatId, sendMessage, onUserMessage],
   );

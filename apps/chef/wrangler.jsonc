@@ -30,4 +30,10 @@
       "migrations_dir": "drizzle",
     },
   ],
+  "r2_buckets": [
+    {
+      "bucket_name": "every-chef",
+      "binding": "R2",
+    },
+  ],
 }

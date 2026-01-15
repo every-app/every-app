@@ -15,6 +15,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as RecipesNewRouteImport } from './routes/recipes_.new'
 import { Route as RecipesRecipeIdRouteImport } from './routes/recipes_.$recipeId'
 import { Route as ChatChatIdRouteImport } from './routes/chat.$chatId'
+import { Route as ApiUploadRouteImport } from './routes/api/upload'
+import { Route as ApiImageRouteImport } from './routes/api/image'
 import { Route as ApiChatRouteImport } from './routes/api/chat'
 
 const RecipesRoute = RecipesRouteImport.update({
@@ -47,6 +49,16 @@ const ChatChatIdRoute = ChatChatIdRouteImport.update({
   path: '/chat/$chatId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiUploadRoute = ApiUploadRouteImport.update({
+  id: '/api/upload',
+  path: '/api/upload',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiImageRoute = ApiImageRouteImport.update({
+  id: '/api/image',
+  path: '/api/image',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiChatRoute = ApiChatRouteImport.update({
   id: '/api/chat',
   path: '/api/chat',
@@ -58,6 +70,8 @@ export interface FileRoutesByFullPath {
   '/chats': typeof ChatsRoute
   '/recipes': typeof RecipesRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/image': typeof ApiImageRoute
+  '/api/upload': typeof ApiUploadRoute
   '/chat/$chatId': typeof ChatChatIdRoute
   '/recipes/$recipeId': typeof RecipesRecipeIdRoute
   '/recipes/new': typeof RecipesNewRoute
@@ -67,6 +81,8 @@ export interface FileRoutesByTo {
   '/chats': typeof ChatsRoute
   '/recipes': typeof RecipesRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/image': typeof ApiImageRoute
+  '/api/upload': typeof ApiUploadRoute
   '/chat/$chatId': typeof ChatChatIdRoute
   '/recipes/$recipeId': typeof RecipesRecipeIdRoute
   '/recipes/new': typeof RecipesNewRoute
@@ -77,6 +93,8 @@ export interface FileRoutesById {
   '/chats': typeof ChatsRoute
   '/recipes': typeof RecipesRoute
   '/api/chat': typeof ApiChatRoute
+  '/api/image': typeof ApiImageRoute
+  '/api/upload': typeof ApiUploadRoute
   '/chat/$chatId': typeof ChatChatIdRoute
   '/recipes_/$recipeId': typeof RecipesRecipeIdRoute
   '/recipes_/new': typeof RecipesNewRoute
@@ -88,6 +106,8 @@ export interface FileRouteTypes {
     | '/chats'
     | '/recipes'
     | '/api/chat'
+    | '/api/image'
+    | '/api/upload'
     | '/chat/$chatId'
     | '/recipes/$recipeId'
     | '/recipes/new'
@@ -97,6 +117,8 @@ export interface FileRouteTypes {
     | '/chats'
     | '/recipes'
     | '/api/chat'
+    | '/api/image'
+    | '/api/upload'
     | '/chat/$chatId'
     | '/recipes/$recipeId'
     | '/recipes/new'
@@ -106,6 +128,8 @@ export interface FileRouteTypes {
     | '/chats'
     | '/recipes'
     | '/api/chat'
+    | '/api/image'
+    | '/api/upload'
     | '/chat/$chatId'
     | '/recipes_/$recipeId'
     | '/recipes_/new'
@@ -116,6 +140,8 @@ export interface RootRouteChildren {
   ChatsRoute: typeof ChatsRoute
   RecipesRoute: typeof RecipesRoute
   ApiChatRoute: typeof ApiChatRoute
+  ApiImageRoute: typeof ApiImageRoute
+  ApiUploadRoute: typeof ApiUploadRoute
   ChatChatIdRoute: typeof ChatChatIdRoute
   RecipesRecipeIdRoute: typeof RecipesRecipeIdRoute
   RecipesNewRoute: typeof RecipesNewRoute
@@ -165,6 +191,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatChatIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/upload': {
+      id: '/api/upload'
+      path: '/api/upload'
+      fullPath: '/api/upload'
+      preLoaderRoute: typeof ApiUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/image': {
+      id: '/api/image'
+      path: '/api/image'
+      fullPath: '/api/image'
+      preLoaderRoute: typeof ApiImageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/chat': {
       id: '/api/chat'
       path: '/api/chat'
@@ -180,6 +220,8 @@ const rootRouteChildren: RootRouteChildren = {
   ChatsRoute: ChatsRoute,
   RecipesRoute: RecipesRoute,
   ApiChatRoute: ApiChatRoute,
+  ApiImageRoute: ApiImageRoute,
+  ApiUploadRoute: ApiUploadRoute,
   ChatChatIdRoute: ChatChatIdRoute,
   RecipesRecipeIdRoute: RecipesRecipeIdRoute,
   RecipesNewRoute: RecipesNewRoute,

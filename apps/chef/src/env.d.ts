@@ -5,5 +5,7 @@ declare namespace Cloudflare {
   interface Env {
     // Gateway URL
     GATEWAY_URL: string;
+    // OpenAI API key
+    OPENAI_API_KEY: string;
   }
 }

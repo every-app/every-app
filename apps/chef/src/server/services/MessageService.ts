@@ -1,6 +1,8 @@
 import type { UIMessage } from "ai";
+import { convertToModelMessages } from "ai";
 import { MessageRepository } from "../repositories/MessageRepository";
 import { ChatRepository } from "../repositories/ChatRepository";
+import { R2Utils } from "../utils/r2";
 import type { ToolInvocationState } from "@/db/schema";
 
 // Types for our normalized message structure
@@ -319,8 +321,18 @@ type ToolInvocationUIPart = {
 
 type UIPart =
   | { type: "text"; text: string }
-  | { type: "file"; url: string; mimeType?: string }
+  | { type: "file"; url: string; mediaType: string }
   | ToolInvocationUIPart;
+
+// Type for messages that can be passed to convertToModelMessages
+type ModelMessagePart =
+  | { type: "text"; text: string }
+  | { type: "file"; url: string; mediaType: string };
+
+type ModelMessage = {
+  role: "user" | "assistant" | "system";
+  parts: ModelMessagePart[];
+};
 
 /**
  * Converts normalized messages to UI format for the frontend.
@@ -341,7 +353,7 @@ function toUIMessages(normalizedMessages: NormalizedMessage[]): Array<{
         return {
           type: "file" as const,
           url: part.url,
-          mimeType: part.mediaType,
+          mediaType: part.mediaType,
         };
       }
       if (part.type === "tool-invocation") {
@@ -362,22 +374,75 @@ function toUIMessages(normalizedMessages: NormalizedMessage[]): Array<{
 }
 
 /**
- * Converts normalized messages to OpenAI format.
- * For now, only handles text messages. Image support will be added later.
+ * Converts normalized messages to OpenAI format with R2 URL processing.
+ * This handles converting R2 keys to data URLs for the LLM.
+ * Requires userId for authorization check when fetching images from R2.
  */
-function toOpenAIFormat(normalizedMessages: NormalizedMessage[]) {
-  return normalizedMessages.map((msg) => {
-    // Extract text from parts
-    const textContent = msg.content
-      .filter((part) => part.type === "text")
-      .map((part) => (part as { type: "text"; text: string }).text)
-      .join("\n");
+async function toOpenAIFormat(
+  normalizedMessages: NormalizedMessage[],
+  userId: string,
+) {
+  // Convert to UI messages first
+  const uiMessages = toUIMessages(normalizedMessages);
 
-    return {
-      role: msg.role as "user" | "assistant",
-      content: textContent,
-    };
-  });
+  // Process R2 URLs to data URLs
+  const processedMessages = await Promise.all(
+    uiMessages.map(async (message) => ({
+      ...message,
+      parts: await Promise.all(
+        message.parts.map(async (part) => {
+          if (
+            part.type === "file" &&
+            "url" in part &&
+            typeof part.url === "string"
+          ) {
+            // If it's a data URL, pass through
+            if (part.url.startsWith("data:")) {
+              return part;
+            }
+
+            // If it's an R2 key, convert to data URL
+            if (part.url.includes("/") && !part.url.startsWith("http")) {
+              const mediaType =
+                "mediaType" in part && typeof part.mediaType === "string"
+                  ? part.mediaType
+                  : "image/jpeg";
+
+              try {
+                const dataUrl = await R2Utils.r2ToDataUrl(
+                  part.url,
+                  mediaType,
+                  userId,
+                );
+                return {
+                  ...part,
+                  url: dataUrl,
+                };
+              } catch (error) {
+                console.error("Failed to load image for OpenAI:", error);
+                return part;
+              }
+            }
+          }
+          return part;
+        }),
+      ),
+    })),
+  );
+
+  // Convert to OpenAI format using AI SDK
+  // Filter out tool invocation parts since they're not supported by convertToModelMessages
+  const messagesForConversion: ModelMessage[] = processedMessages
+    .map((msg) => ({
+      role: msg.role,
+      parts: msg.parts.filter(
+        (part): part is ModelMessagePart =>
+          part.type === "text" || part.type === "file",
+      ),
+    }))
+    .filter((msg) => msg.parts.length > 0);
+
+  return convertToModelMessages(messagesForConversion);
 }
 
 export const MessageService = {

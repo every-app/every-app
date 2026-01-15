@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { Streamdown } from "streamdown";
 import { RecipeUpdatePrompt } from "./RecipeUpdatePrompt";
+import { AuthenticatedImage } from "../AuthenticatedImage";
 import type { Recipe } from "@/db/schema";
 import type {
   PromptUserWithRecipeUpdateInput,
@@ -83,14 +84,22 @@ export function MessageBubble({
       part.type === "text" && "text" in part && (part.text as string).trim(),
   );
 
+  // Check if this message has file parts
+  const hasFileParts = parts.some(
+    (part) => part.type === "file" && "url" in part && part.url,
+  );
+
   // Check if this message has tool parts
   const hasToolParts = parts.some((part) => isToolPart(part));
+
+  // Show content bubble if there's text or file content
+  const hasContentParts = hasTextContent || hasFileParts;
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div className="max-w-[85%] space-y-2">
-        {/* Text content in assistant bubble */}
-        {hasTextContent && (
+        {/* Text and file content in message bubble */}
+        {hasContentParts && (
           <div
             className={isUser ? "chat-message-user" : "chat-message-assistant"}
           >
@@ -128,9 +137,27 @@ export function MessageBubble({
               }
 
               if (part.type === "file" && "url" in part && part.url) {
+                const url = part.url as string;
+                // For data URLs (optimistic preview), display directly
+                if (url.startsWith("data:")) {
+                  return (
+                    <div key={`${message.id}-file-${index}`} className="mb-2">
+                      <img
+                        src={url}
+                        alt="Uploaded"
+                        className="max-w-full max-h-64 rounded-lg"
+                      />
+                    </div>
+                  );
+                }
+                // For R2 keys, use AuthenticatedImage
                 return (
                   <div key={`${message.id}-file-${index}`} className="mb-2">
-                    <div className="text-xs text-base-content/50">[Image]</div>
+                    <AuthenticatedImage
+                      imageKey={url}
+                      alt="Uploaded"
+                      className="max-w-full max-h-64 rounded-lg"
+                    />
                   </div>
                 );
               }
@@ -220,7 +247,7 @@ export function MessageBubble({
         )}
 
         {/* Show loading when message has no content yet */}
-        {!hasTextContent && !hasToolParts && isStreaming && (
+        {!hasContentParts && !hasToolParts && isStreaming && (
           <div className="chat-message-assistant">
             <span className="loading loading-dots loading-sm"></span>
           </div>
