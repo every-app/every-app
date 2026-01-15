@@ -151,7 +151,7 @@ Add to your `opencode.json`:
 }
 ```
 
-For other AI tools (Claude Code, Cursor, etc.), see the [Coding Agent Setup docs](https://everyapp.dev/docs/coding-agent/setup/).
+For other AI tools (Claude Code, Cursor, etc.), see the [Coding Agent Setup docs](https://everyapp.dev/docs/coding-agents/).
 
 ### CLI - app create
 The create command deploys your app to Cloudflare, registers it with your Gateway and sets up your local development environment.
