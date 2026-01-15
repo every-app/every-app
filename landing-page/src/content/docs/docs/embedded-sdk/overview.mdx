@@ -53,14 +53,14 @@ When your app loads inside the Gateway's iframe using the SDK:
 
 ## Client SDK
 
-The client SDK is imported from `@every-app/sdk/client` and provides React components and hooks for authentication.
+The client SDK is imported from `@every-app/sdk/tanstack` and provides React components and hooks for authentication.
 
 ### EmbeddedAppProvider
 
 The main React provider that wraps your app. It initializes the session manager and handles route synchronization.
 
 ```tsx
-import { EmbeddedAppProvider } from "@every-app/sdk/client";
+import { EmbeddedAppProvider } from "@every-app/sdk/tanstack";
 
 function App() {
   return (
@@ -129,7 +129,7 @@ if (user) {
 A React hook that returns the current authenticated user's information.
 
 ```tsx
-import { useCurrentUser } from "@every-app/sdk/client";
+import { useCurrentUser } from "@every-app/sdk/tanstack";
 
 function UserProfile() {
   const user = useCurrentUser();
@@ -167,7 +167,7 @@ This hook must be used within a component wrapped by `EmbeddedAppProvider`. It w
 A TanStack Start middleware that automatically adds the session token to all server function requests.
 
 ```ts
-import { useSessionTokenClientMiddleware } from "@every-app/sdk/client";
+import { useSessionTokenClientMiddleware } from "@every-app/sdk/tanstack";
 
 export const myServerFunction = createServerFn({ method: "GET" })
   .middleware([useSessionTokenClientMiddleware])
@@ -191,7 +191,7 @@ You should add this middleware to every server function that needs authenticatio
 A utility that wraps resource creation to avoid Cloudflare Workers' global scope restrictions.
 
 ```ts
-import { lazyInitForWorkers } from "@every-app/sdk/client";
+import { lazyInitForWorkers } from "@every-app/sdk/cloudflare";
 import { createCollection, queryCollectionOptions } from "@tanstack/db";
 
 export const todosCollection = lazyInitForWorkers(() =>
@@ -221,14 +221,17 @@ Returns a Proxy that:
 
 ## Server SDK
 
-The server SDK is imported from `@every-app/sdk/server` and provides authentication utilities.
+The server SDK is imported from `@every-app/sdk/tanstack/server` and provides authentication utilities.
 
 ### authenticateRequest
 
 Verifies the JWT session token from incoming requests. This is the main function you'll use to authenticate users in your server functions.
 
 ```ts
-import { authenticateRequest, getAuthConfig } from "@every-app/sdk/server";
+import {
+  authenticateRequest,
+  getAuthConfig,
+} from "@every-app/sdk/tanstack/server";
 
 export const myServerFunction = createServerFn({ method: "GET" })
   .middleware([useSessionTokenClientMiddleware])

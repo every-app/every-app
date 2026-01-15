@@ -1428,7 +1428,7 @@ When your app loads inside the Gateway's iframe using the SDK:
 
 ## Client SDK
 
-The client SDK is imported from `@every-app/sdk/client` and provides React components and hooks for authentication.
+The client SDK is imported from `@every-app/sdk/tanstack` and provides React components and hooks for authentication.
 
 ### EmbeddedAppProvider
 
@@ -1591,13 +1591,17 @@ Returns a Proxy that:
 
 ## Server SDK
 
-The server SDK is imported from `@every-app/sdk/server` and provides authentication utilities.
+The server SDK is imported from `@every-app/sdk/tanstack/server` and provides authentication utilities.
 
 ### authenticateRequest
 
 Verifies the JWT session token from incoming requests. This is the main function you'll use to authenticate users in your server functions.
 
 ```ts
+import {
+  authenticateRequest,
+  getAuthConfig,
+} from "@every-app/sdk/tanstack/server";
 
 export const myServerFunction = createServerFn({ method: "GET" })
   .middleware([useSessionTokenClientMiddleware])
