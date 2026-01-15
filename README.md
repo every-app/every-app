@@ -9,6 +9,10 @@ The open source personal software platform.
 - [What is the Gateway?](#what-is-the-gateway)
 - [Self Hosting](#self-hosting)
 - [Build Your Own App](#build-your-own-app)
+  - [CLI - app create](#cli---app-create)
+  - [Database Migrations](#database-migrations)
+  - [Coding Agent Setup](#coding-agent-setup)
+  - [Patterns](#patterns)
 - [Docs](#docs)
 
 ## What is Every App?
@@ -129,10 +133,27 @@ npx wrangler secret put OPENAI_API_KEY
 </details>
 
 ## Build Your Own App
-### Coding Agent Setup
-We recommend setting up the Every App MCP before building your app.
+### CLI - app create
+The create command deploys your app to Cloudflare, registers it with your Gateway and sets up your local development environment.
 
-Add this config so that your agent can reference the example applications when building your app. Remember to remind it to use this tool if its not automatically.
+```bash
+npx everyapp app create
+cd your-project-name
+pnpm run dev
+```
+
+Click the "Dev" button for the app in the Gateway to use your local dev server instead of the deployed version.
+
+### Database Migrations
+When you or your coding agent make changes to the database schema, run the migrations locally:
+
+```bash
+pnpm run db:generate
+pnpm run db:migrate:local
+```
+
+### Coding Agent Setup
+For the best experience, set up the Every App MCP so your agent can reference the example applications when building your app.
 
 Add to your `opencode.json`:
 
@@ -152,25 +173,6 @@ Add to your `opencode.json`:
 ```
 
 For other AI tools (Claude Code, Cursor, etc.), see the [Coding Agent Setup docs](https://everyapp.dev/docs/coding-agents/).
-
-### CLI - app create
-The create command deploys your app to Cloudflare, registers it with your Gateway and sets up your local development environment.
-
-```bash
-npx everyapp app create
-cd your-project-name
-pnpm run dev
-```
-
-Click the "Dev" button for the app in the Gateway to use your local dev server instead of the deployed version.
-
-### Database Migrations
-When you or your coding agent make changes to the database schema, run the migrations locally:
-
-```bash
-pnpm run db:generate
-pnpm run db:migrate:local
-```
 
 ### App Features
 Anything you can build on Cloudflare, you can build in Every App.
