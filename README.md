@@ -26,7 +26,7 @@ It's built for experienced engineers who want to use their favorite AI tooling t
 - Self host on Cloudflare with one CLI command: `npx everyapp gateway deploy`
 - Since apps are built for Cloudflare's serverless platform, hosting scales to zero and starts completely free.
 
-Start by vibe coding an idea, reimplementing an old side project, or trying the example prompt in Build an App. Once you've built something you love, stay in vibe coding mode forever, or dig deeper and build the best project of your life.
+Start by vibe coding an idea, reimplementing an old side project, or trying the [example prompt](https://everyapp.dev/docs/build-an-app/create-app/#example-prompt). Once you've built something you love, stay in vibe coding mode forever, or dig deeper and build the best project of your life.
 
 ### Screenshots
 
@@ -143,6 +143,8 @@ pnpm run dev
 ```
 
 Click the "Dev" button for the app in the Gateway to use your local dev server instead of the deployed version.
+
+Need inspiration? Try the [example prompt](https://everyapp.dev/docs/build-an-app/create-app/#example-prompt) to get started.
 
 ### Database Migrations
 When you or your coding agent make changes to the database schema, run the migrations locally:
