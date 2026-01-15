@@ -11,8 +11,8 @@ const routes = buildRouteMap({
   routes: {
     app: appRoutes,
     gateway: gatewayRoutes,
-    install: buildInstallCommand("every", { bash: "__every_bash_complete" }),
-    uninstall: buildUninstallCommand("every", { bash: true }),
+    install: buildInstallCommand("everyapp", { bash: "__everyapp_bash_complete" }),
+    uninstall: buildUninstallCommand("everyapp", { bash: true }),
   },
   docs: {
     brief: description,

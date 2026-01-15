@@ -23,7 +23,7 @@ export async function checkNotNestedApp(): Promise<void> {
         "To create a new app, run app create from the directory where you store your projects.\n",
       );
       console.log("If you meant to deploy this app, run:");
-      console.log(chalk.dim("  npx @every-app/cli app deploy\n"));
+      console.log(chalk.dim("  npx everyapp app deploy\n"));
       process.exit(1);
     } catch {
       // File doesn't exist, continue checking

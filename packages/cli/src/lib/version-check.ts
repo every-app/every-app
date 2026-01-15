@@ -2,7 +2,7 @@ import chalk from "chalk";
 import { version as currentVersion } from "../../package.json";
 
 const NPM_REGISTRY_URL =
-  "https://registry.npmjs.org/@every-app/cli?fields=dist-tags";
+  "https://registry.npmjs.org/everyapp?fields=dist-tags";
 const FETCH_TIMEOUT_MS = 2000;
 
 interface VersionCheckResult {
@@ -94,10 +94,10 @@ export function printUpdateNotice(result: VersionCheckResult): void {
       chalk.yellow(`  Update available: ${result.currentVersion} → ${result.latestVersion}`)
     );
     console.log(
-      chalk.dim(`  npx:    ${chalk.cyan("npx @every-app/cli@latest")}`)
+      chalk.dim(`  npx:    ${chalk.cyan("npx everyapp@latest")}`)
     );
     console.log(
-      chalk.dim(`  global: ${chalk.cyan("npm update -g @every-app/cli")}`)
+      chalk.dim(`  global: ${chalk.cyan("npm update -g everyapp")}`)
     );
   }
 }

@@ -78,7 +78,7 @@ const INTERNAL_PACKAGES: CodebaseEntry[] = [
   {
     name: "packages/cli",
     description:
-      "The @every-app/cli package - command-line tool for creating and deploying Every Apps",
+      "The everyapp package - command-line tool for creating and deploying Every Apps",
     goodFor: [
       "How app creation works (templates, scaffolding)",
       "Deployment flow to Cloudflare",
@@ -131,7 +131,7 @@ function findMdxFiles(dir: string, basePath: string = ""): string[] {
 function getDocsDirectory(): string {
   return path.join(
     getExamplesDirectory(),
-    "landing-page/src/content/docs/docs"
+    "landing-page/src/content/docs/docs",
   );
 }
 
@@ -139,7 +139,7 @@ function formatEntries(entries: CodebaseEntry[]): string {
   return entries
     .map(
       (entry) =>
-        `## ${entry.name}\n${entry.description}\n\n**Good for learning:**\n${entry.goodFor.map((g) => `- ${g}`).join("\n")}`
+        `## ${entry.name}\n${entry.description}\n\n**Good for learning:**\n${entry.goodFor.map((g) => `- ${g}`).join("\n")}`,
     )
     .join("\n\n---\n\n");
 }
@@ -183,8 +183,8 @@ ${examplesOutput}
 # Internal Packages
 Core Every App packages - useful for understanding how Every App works:
 
-${internalsOutput}`
+${internalsOutput}`,
       );
-    }
+    },
   );
 }

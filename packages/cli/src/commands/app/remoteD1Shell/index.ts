@@ -21,7 +21,7 @@ export async function remoteD1Shell(
     // Validate that a command was provided
     if (!command || command.length === 0) {
       throw new Error(
-        "No command provided. Usage: npx @every-app/cli app remote-d1-shell -- <command>\nExample: npx @every-app/cli app remote-d1-shell -- npx drizzle-kit migrate",
+        "No command provided. Usage: npx everyapp app remote-d1-shell -- <command>\nExample: npx everyapp app remote-d1-shell -- npx drizzle-kit migrate",
       );
     }
 

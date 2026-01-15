@@ -17,9 +17,9 @@
     "format:write": "prettier . --write",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "drizzle-kit migrate",
-    "db:migrate:prod": "npx @every-app/cli app remote-d1-shell -- drizzle-kit migrate --config=drizzle-prod.config.ts",
+    "db:migrate:prod": "npx everyapp app remote-d1-shell -- drizzle-kit migrate --config=drizzle-prod.config.ts",
     "db:studio:local": "drizzle-kit studio",
-    "db:studio:prod": "npx @every-app/cli app remote-d1-shell -- drizzle-kit studio --config=drizzle-prod.config.ts",
+    "db:studio:prod": "npx everyapp app remote-d1-shell -- drizzle-kit studio --config=drizzle-prod.config.ts",
     "knip": "knip"
   },
   "dependencies": {

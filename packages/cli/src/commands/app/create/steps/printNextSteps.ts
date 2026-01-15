@@ -32,6 +32,6 @@ export function printNextSteps({
   );
   console.log();
   console.log("To deploy updates after changes:\n");
-  console.log(chalk.dim(`  ${chalk.bold("npx @every-app/cli app deploy")}`));
+  console.log(chalk.dim(`  ${chalk.bold("npx everyapp app deploy")}`));
   console.log();
 }

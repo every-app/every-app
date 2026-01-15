@@ -132,7 +132,7 @@ export async function requireGatewaySetup(): Promise<string> {
     console.log(
       "You need to deploy the Every App Gateway before creating or deploying apps.\n",
     );
-    console.log(chalk.dim("  Run: npx @every-app/cli gateway deploy\n"));
+    console.log(chalk.dim("  Run: npx everyapp gateway deploy\n"));
     process.exit(1);
   }
 

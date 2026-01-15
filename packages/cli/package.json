@@ -1,17 +1,16 @@
 {
-  "name": "@every-app/cli",
+  "name": "everyapp",
   "author": "",
   "description": "Every App CLI - Deploy and manage apps.",
   "license": "MIT",
   "type": "module",
-  "version": "0.0.34",
+  "version": "0.0.35",
   "files": [
     "dist"
   ],
   "bin": {
-    "every": "./dist/index.js",
-    "@every-app/cli": "./dist/index.js",
-    "__every_bash_complete": "./dist/bash-complete.js"
+    "everyapp": "./dist/index.js",
+    "__everyapp_bash_complete": "./dist/bash-complete.js"
   },
   "engines": {
     "node": ">=22"

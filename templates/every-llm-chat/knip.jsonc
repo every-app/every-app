@@ -1,4 +1,5 @@
 {
+  "ignoreBinaries": ["everyapp"],
   // Detect Tanstack Start Routes
   "entry": [
     "src/types/index.ts",

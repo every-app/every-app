@@ -83,7 +83,7 @@ We simplify building apps by standardizing as much as possible and hoisting what
 ### Self Host Gateway
 
 ```bash
-npx @every-app/cli gateway deploy
+npx everyapp gateway deploy
 ```
 
 Follow the link this returns to create your account in the Gateway.
@@ -97,7 +97,7 @@ A minimal todo list app with keyboard navigation.
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
 cd every-todo-app
-npx @every-app/cli app deploy
+npx everyapp app deploy
 ```
 
 <details>
@@ -108,7 +108,7 @@ Track your workouts and programs.
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/workout-tracker every-workout-tracker
 cd every-workout-tracker
-npx @every-app/cli app deploy
+npx everyapp app deploy
 ```
 
 </details>
@@ -121,7 +121,7 @@ An AI Cooking Assistant and Recipe Manager
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/chef every-app-chef
 cd every-app-chef
-npx @every-app/cli app deploy
+npx everyapp app deploy
 ```
 
 This also requires an OpenAI API key since its a chat interface:
@@ -160,7 +160,7 @@ For other AI tools (Claude Code, Cursor, etc.), see the [Coding Agent Setup docs
 The create command deploys your app to Cloudflare, registers it with your Gateway and sets up your local development environment.
 
 ```bash
-npx @every-app/cli app create
+npx everyapp app create
 cd your-project-name
 pnpm run dev
 ```

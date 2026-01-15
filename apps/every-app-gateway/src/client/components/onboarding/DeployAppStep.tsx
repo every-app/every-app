@@ -90,7 +90,7 @@ export function DeployAppStep({ isExpanded, onToggle }: DeployAppStepProps) {
                   </span>
                   <div className="flex-1">
                     <p className="text-sm mb-2">Deploy the app</p>
-                    <CodeBlock code="npx @every-app/cli app deploy" />
+                    <CodeBlock code="npx everyapp app deploy" />
                   </div>
                 </div>
               </li>
