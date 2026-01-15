@@ -4,6 +4,22 @@ The open source personal software platform.
 - Bring your own AI. No credits, no limits.
 - Self-host on Cloudflare. Free to start, $5/month max.
 
+### Demos
+
+<details>
+<summary><i>Every App Gateway + Todo List app with keyboard navigation</i></summary>
+
+![Every App Gateway + Todo List](https://github.com/user-attachments/assets/360c6d62-53fd-4138-857d-260bb5bcaf61)
+
+</details>
+
+<details>
+<summary><i>Mobile optimized workout app</i></summary>
+
+![Mobile optimized workout app](https://github.com/user-attachments/assets/1c2596ad-1e54-4f75-9c96-37dbdfb158f9)
+
+</details>
+
 ## Table of Contents
 - [What is Every App?](#what-is-every-app)
 - [What is the Gateway?](#what-is-the-gateway)
@@ -27,15 +43,6 @@ It's built for experienced engineers who want to use their favorite AI tooling t
 - Since apps are built for Cloudflare's serverless platform, hosting scales to zero and starts completely free.
 
 Start by vibe coding an idea, reimplementing an old side project, or trying the [example prompt](https://everyapp.dev/docs/build-an-app/create-app/#example-prompt). Once you've built something you love, stay in vibe coding mode forever, or dig deeper and build the best project of your life.
-
-### Screenshots
-
-This screenshot is of a split window.
-
-- Left - Gateway showing the apps the user is self hosting
-- Right - Workout App: Program editor page
-
-![Gateway and Workout Tracker](docs/images/gateway-and-workout-tracker.png)
 
 <details>
 <summary><h2>What is the Gateway?</h2></summary>
@@ -66,7 +73,7 @@ We simplify building apps by standardizing as much as possible and hoisting what
 
 ### Prerequisites
 
-1. Install [Node.js](https://nodejs.org/) (LTS version recommended)
+1. Install [Node.js](https://nodejs.org/)
 
    This also installs `npx`, a tool that runs Node packages without installing them globally. You'll see `npx` commands throughout these docs.
 
