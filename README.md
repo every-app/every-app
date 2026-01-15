@@ -26,7 +26,7 @@ It's built for experienced engineers who want to use their favorite AI tooling t
 - Self host on Cloudflare with one CLI command: `npx everyapp gateway deploy`
 - Since apps are built for Cloudflare's serverless platform, hosting scales to zero and starts completely free.
 
-Start by vibe coding an idea, reimplement an old side project, or try the example prompt in Build an App. Once you've built something you love, stay in vibe coding mode forever, or dig deeper and build the best project of your life.
+Start by vibe coding an idea, reimplementing an old side project, or trying the example prompt in Build an App. Once you've built something you love, stay in vibe coding mode forever, or dig deeper and build the best project of your life.
 
 ### Screenshots
 
