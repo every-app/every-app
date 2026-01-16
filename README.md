@@ -4,21 +4,9 @@ The open source personal software platform.
 - Bring your own AI. No credits, no limits.
 - Self-host on Cloudflare. Free to start, $5/month max.
 
-### Demos
+*Demo shows the Every App Gateway, a todo list optimized for keyboard navigation and an AI cooking assistant*
 
-<details>
-<summary><i>Every App Gateway + Todo List app with keyboard navigation</i></summary>
-
-![Every App Gateway + Todo List](https://github.com/user-attachments/assets/360c6d62-53fd-4138-857d-260bb5bcaf61)
-
-</details>
-
-<details>
-<summary><i>Mobile optimized workout app</i></summary>
-
-![Mobile optimized workout app](https://github.com/user-attachments/assets/1c2596ad-1e54-4f75-9c96-37dbdfb158f9)
-
-</details>
+https://github.com/user-attachments/assets/7802f9ca-defd-4995-96f0-f46845cb3e83
 
 ## Table of Contents
 - [What is Every App?](#what-is-every-app)
