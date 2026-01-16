@@ -6,7 +6,7 @@ The open source personal software platform.
 
 *Demo shows the Every App Gateway, a todo list optimized for keyboard navigation and an AI cooking assistant*
 
-<video src="https://github.com/user-attachments/assets/7802f9ca-defd-4995-96f0-f46845cb3e83" controls></video>
+https://github.com/user-attachments/assets/7802f9ca-defd-4995-96f0-f46845cb3e83
 
 ## Table of Contents
 - [What is Every App?](#what-is-every-app)
