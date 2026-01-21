@@ -75,7 +75,10 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
         onLoad={handleIframeLoad}
         // allow-top-navigation: Required for embedded apps to navigate back to the gateway
         // (e.g., logout redirects) and to support third-party integrations like OAuth flows
-        sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation allow-popups"
+        // allow-downloads: Enables embedded apps to trigger file downloads
+        sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation allow-popups allow-downloads"
+        // Permissions Policy: clipboard-read/write enables clipboard access for embedded apps
+        allow="clipboard-read; clipboard-write"
       />
     </div>
   );
