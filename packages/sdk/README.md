@@ -7,4 +7,3 @@ This SDK handles authentication and session management for apps running within t
 ## Documentation
 
 For full API reference and usage guides, see the [Embedded SDK documentation](https://everyapp.dev/docs/embedded-sdk/overview/).
-

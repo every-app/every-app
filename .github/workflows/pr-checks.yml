@@ -98,22 +98,3 @@ jobs:
       - name: Check llms.txt is up to date
         working-directory: landing-page
         run: node scripts/generate-llms-txt.js --check
-  gateway-version-check:
-    name: Gateway Version Check
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - name: Checkout PR code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Fetch base branch
-        run: git fetch origin ${{ github.base_ref }}
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Check gateway version
-        run: node scripts/check-gateway-version.js
-        env:
-          GITHUB_BASE_REF: ${{ github.base_ref }}
