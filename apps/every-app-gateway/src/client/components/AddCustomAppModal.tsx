@@ -82,11 +82,13 @@ export function AddCustomAppModal({
   ) => {
     const appId = e.target.value;
     if (appId && !appUrl && window.location.hostname !== "localhost") {
-      // Replace "every-app-gateway" with the appId in the current URL
-      // e.g., https://every-app-gateway.user.workers.dev -> https://my-app.user.workers.dev
+      // Prefix with "every-" if not already present
+      const urlAppId = appId.startsWith("every-") ? appId : `every-${appId}`;
+      // Replace "every-app-gateway" with the urlAppId in the current URL
+      // e.g., https://every-app-gateway.user.workers.dev -> https://every-my-app.user.workers.dev
       const suggestedUrl = window.location.origin.replace(
         "every-app-gateway",
-        appId,
+        urlAppId,
       );
       setValue("appUrl", suggestedUrl, { shouldDirty: true });
     }
