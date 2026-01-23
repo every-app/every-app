@@ -4,6 +4,7 @@ import { db, schema } from "@/db";
 import { todos } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
+import { emitSyncEvent } from "@/middleware/emitSyncEvent";
 import { useSessionTokenClientMiddleware } from "@every-app/sdk/tanstack";
 
 const createTodoSchema = z.object({
@@ -53,7 +54,11 @@ export const getAllTodos = createServerFn()
   });
 
 export const createTodo = createServerFn()
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .middleware([
+    useSessionTokenClientMiddleware,
+    ensureUserMiddleware,
+    emitSyncEvent("createTodo"),
+  ])
   .inputValidator((todo: unknown) => createTodoSchema.parse(todo))
   .handler(async ({ data: todo, context }) => {
     if (!context?.userId) {
@@ -71,7 +76,11 @@ export const createTodo = createServerFn()
   });
 
 export const updateTodo = createServerFn()
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .middleware([
+    useSessionTokenClientMiddleware,
+    ensureUserMiddleware,
+    emitSyncEvent("updateTodo"),
+  ])
   .inputValidator((todo: unknown) => updateTodoSchema.parse(todo))
   .handler(async ({ data: todo, context }) => {
     const existingTodo = await db.query.todos.findFirst({
@@ -119,7 +128,11 @@ export const updateTodo = createServerFn()
   });
 
 export const deleteTodo = createServerFn()
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .middleware([
+    useSessionTokenClientMiddleware,
+    ensureUserMiddleware,
+    emitSyncEvent("deleteTodo"),
+  ])
   .inputValidator((todo: unknown) => deleteTodoSchema.parse(todo))
   .handler(async ({ data: todo, context }) => {
     const existingTodo = await db.query.todos.findFirst({

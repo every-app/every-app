@@ -22,6 +22,7 @@ import { EmbeddedAppProvider } from "@every-app/sdk/tanstack";
 import { todoCollection, queryClient, persister } from "@/client/tanstack-db";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useGlobalHotkeys } from "@/client/hooks/useGlobalHotkeys";
+import { useSyncEvents } from "@/client/sync/useSyncEvents";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -91,6 +92,9 @@ function AppLayout() {
 
   // Always fetch todos regardless of route so that they are preloaded
   useLiveQuery((q) => q.from({ todo: todoCollection }));
+
+  // Connect to sync WebSocket for real-time updates across devices
+  useSyncEvents();
 
   // Use CSS-based responsive design to avoid hydration mismatch
   // The same HTML structure is rendered on server and client

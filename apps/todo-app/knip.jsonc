@@ -9,6 +9,8 @@
     "src/client/components/ui/**",
     // Drizzle config (plugin disabled due to cloudflare:workers import issues)
     "drizzle.config.ts",
+    // Cloudflare worker entry point with Durable Object exports
+    "src/entry.worker.ts",
   ],
   "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
