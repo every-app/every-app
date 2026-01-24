@@ -7,6 +7,7 @@ import {
   applyResourcePrefix,
   formatCloudflareError,
 } from "@/lib/cloudflare";
+import { exitWithUpdateNotice } from "@/lib/version-check";
 
 interface SetupCloudflareResourcesOptions {
   /** The unprefixed app ID (e.g., "todo-app") */
@@ -166,7 +167,7 @@ async function setupR2Bucket(
     const cloudflareError = await formatCloudflareError(error, { accountId });
     if (cloudflareError) {
       console.log(cloudflareError.formatted);
-      process.exit(1);
+      await exitWithUpdateNotice(1);
     }
     throw error;
   }

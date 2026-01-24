@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import { makeCloudflareAPIRequest } from "./auth";
 import type { MembershipInfo } from "./types";
+import { exitWithUpdateNotice } from "@/lib/version-check";
 
 /**
  * Get all account memberships using the Cloudflare REST API
@@ -54,7 +55,7 @@ export function displayAccountInfo(
  * Prompt user to select an account when multiple accounts are found.
  * Displays account selection instructions and exits.
  */
-function requireAccountSelection(memberships: MembershipInfo[]): never {
+async function requireAccountSelection(memberships: MembershipInfo[]): Promise<never> {
   console.log(chalk.yellow("Multiple Cloudflare accounts found.\n"));
   console.log("Please set the CLOUDFLARE_ACCOUNT_ID environment variable:\n");
 
@@ -68,7 +69,7 @@ function requireAccountSelection(memberships: MembershipInfo[]): never {
   });
 
   console.log(chalk.dim("\n  export CLOUDFLARE_ACCOUNT_ID=<account_id>\n"));
-  process.exit(1);
+  return exitWithUpdateNotice(1);
 }
 
 /**
@@ -77,10 +78,10 @@ function requireAccountSelection(memberships: MembershipInfo[]): never {
  * If there's only one account, use it.
  * If there are multiple accounts and no selection, throw UserFacingError.
  */
-export function resolveAccountFromMemberships(memberships: MembershipInfo[]): {
+export async function resolveAccountFromMemberships(memberships: MembershipInfo[]): Promise<{
   account: MembershipInfo;
   otherAccounts: MembershipInfo[];
-} {
+}> {
   if (memberships.length === 0) {
     throw new Error("No Cloudflare accounts found");
   }
@@ -89,7 +90,7 @@ export function resolveAccountFromMemberships(memberships: MembershipInfo[]): {
 
   // Check if user has multiple accounts/memberships and no account ID set
   if (!selectedAccountId && memberships.length > 1) {
-    requireAccountSelection(memberships);
+    await requireAccountSelection(memberships);
   }
 
   // Find the account to show - selected account or the single account

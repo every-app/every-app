@@ -11,6 +11,57 @@ interface VersionCheckResult {
   currentVersion: string;
 }
 
+// Module-level promise for the version check, started on import
+let versionCheckPromise: Promise<VersionCheckResult> | null = null;
+
+/**
+ * Initializes the version check. Should be called early in CLI startup.
+ */
+export function initVersionCheck(): void {
+  if (!versionCheckPromise) {
+    versionCheckPromise = fetchLatestVersion().then((latestVersion) => {
+      if (
+        latestVersion &&
+        latestVersion !== currentVersion &&
+        isVersionLessThan(currentVersion, latestVersion)
+      ) {
+        return {
+          updateAvailable: true,
+          latestVersion,
+          currentVersion,
+        };
+      }
+
+      return {
+        updateAvailable: false,
+        currentVersion,
+      };
+    });
+  }
+}
+
+/**
+ * Waits for version check and prints update notice if available.
+ * Safe to call multiple times - will only print once.
+ */
+let noticePrinted = false;
+export async function printUpdateNoticeIfAvailable(): Promise<void> {
+  if (noticePrinted || !versionCheckPromise) return;
+  noticePrinted = true;
+  
+  const result = await versionCheckPromise;
+  printUpdateNoticeSync(result);
+}
+
+/**
+ * Prints update notice (if available) and exits the process.
+ * Use this instead of process.exit() to ensure the update notice is shown.
+ */
+export async function exitWithUpdateNotice(status: number): Promise<never> {
+  await printUpdateNoticeIfAvailable();
+  process.exit(status);
+}
+
 /**
  * Fetches the latest version from npm registry.
  * Returns null if the fetch fails or times out.
@@ -60,44 +111,16 @@ function isVersionLessThan(a: string, b: string): boolean {
 }
 
 /**
- * Starts a non-blocking version check.
- * Returns a promise that resolves to the check result.
- */
-export function startVersionCheck(): Promise<VersionCheckResult> {
-  return fetchLatestVersion().then((latestVersion) => {
-    if (
-      latestVersion &&
-      latestVersion !== currentVersion &&
-      isVersionLessThan(currentVersion, latestVersion)
-    ) {
-      return {
-        updateAvailable: true,
-        latestVersion,
-        currentVersion,
-      };
-    }
-
-    return {
-      updateAvailable: false,
-      currentVersion,
-    };
-  });
-}
-
-/**
  * Prints an update notice if an update is available.
  */
-export function printUpdateNotice(result: VersionCheckResult): void {
+function printUpdateNoticeSync(result: VersionCheckResult): void {
   if (result.updateAvailable && result.latestVersion) {
     console.log();
     console.log(
       chalk.yellow(`  Update available: ${result.currentVersion} → ${result.latestVersion}`)
     );
     console.log(
-      chalk.dim(`  npx:    ${chalk.cyan("npx everyapp@latest")}`)
-    );
-    console.log(
-      chalk.dim(`  global: ${chalk.cyan("npm update -g everyapp")}`)
+      chalk.dim(`  Update: ${chalk.cyan("npm install -g everyapp@latest")}`)
     );
   }
 }

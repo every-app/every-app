@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import { exitWithUpdateNotice } from "@/lib/version-check";
 import {
   getWorkerUrl,
   getDefaultAccountId,
@@ -133,7 +134,7 @@ export async function requireGatewaySetup(): Promise<string> {
       "You need to deploy the Every App Gateway before creating or deploying apps.\n",
     );
     console.log(chalk.dim("  Run: npx everyapp gateway deploy\n"));
-    process.exit(1);
+    await exitWithUpdateNotice(1);
   }
 
   if (!hasOwner) {
@@ -148,7 +149,7 @@ export async function requireGatewaySetup(): Promise<string> {
         "  Visit the URL above to create your owner account, then run this command again.\n",
       ),
     );
-    process.exit(1);
+    await exitWithUpdateNotice(1);
   }
 
   return gatewayUrl;

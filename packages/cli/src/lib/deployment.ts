@@ -7,6 +7,7 @@ import {
   resolveAccountFromMemberships,
   type AccountInfo,
 } from "@/lib/cloudflare";
+import { exitWithUpdateNotice } from "@/lib/version-check";
 
 // Re-export for backwards compatibility
 export { ensureWorkersDevSubdomain } from "@/lib/cloudflare";
@@ -26,14 +27,14 @@ async function getAccountInfo(): Promise<AccountInfo> {
           "\nCLOUDFLARE_ACCOUNT_ID is required when using CLOUDFLARE_API_TOKEN\n",
         ),
       );
-      process.exit(1);
+      return exitWithUpdateNotice(1);
     }
     return getAccountById(accountId);
   }
 
   // OAuth: use /memberships endpoint (supports multi-account selection)
   const memberships = await getMemberships();
-  const { account, otherAccounts } = resolveAccountFromMemberships(memberships);
+  const { account, otherAccounts } = await resolveAccountFromMemberships(memberships);
   displayAccountInfo(account, otherAccounts);
   return { id: account.account.id, name: account.account.name };
 }

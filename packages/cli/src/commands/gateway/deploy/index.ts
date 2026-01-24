@@ -12,6 +12,7 @@ import {
 import { getWorkerName } from "@/lib/wrangler-config";
 import { confirmDeployment, ensureWorkersDevSubdomain } from "@/lib/deployment";
 import { getWorkerUrl, requireCloudflareAuth } from "@/lib/cloudflare";
+import { exitWithUpdateNotice } from "@/lib/version-check";
 import { formatCloudflareError } from "@/lib/cloudflare/errors";
 import {
   downloadLatestGatewayRelease,
@@ -25,7 +26,7 @@ export async function deploy(
   this: LocalContext,
   flags: DeployCommandFlags,
 ): Promise<void> {
-  await requireCloudflareAuth();
+  await requireCloudflareAuth({ showNewUserHelp: true });
 
   const verbose = flags.verbose || false;
   const localGateway = flags.localGateway;
@@ -77,7 +78,7 @@ export async function deploy(
     const cloudflareError = await formatCloudflareError(error);
     if (cloudflareError) {
       console.log(cloudflareError.formatted);
-      process.exit(1);
+      await exitWithUpdateNotice(1);
     }
 
     // Unknown error - show the raw message

@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import chalk from "chalk";
+import { exitWithUpdateNotice } from "@/lib/version-check";
 
 const CONFIG_FILES = ["every-app.jsonc", "every-app.json"];
 
@@ -24,7 +25,7 @@ export async function checkNotNestedApp(): Promise<void> {
       );
       console.log("If you meant to deploy this app, run:");
       console.log(chalk.dim("  npx everyapp app deploy\n"));
-      process.exit(1);
+      await exitWithUpdateNotice(1);
     } catch {
       // File doesn't exist, continue checking
     }

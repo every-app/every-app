@@ -5,6 +5,7 @@ import os from "node:os";
 import * as TOML from "smol-toml";
 import chalk from "chalk";
 import type { AccountInfo, WorkerSubdomain } from "./types";
+import { exitWithUpdateNotice } from "@/lib/version-check";
 
 interface OAuthToken {
   oauth_token: string;
@@ -135,6 +136,11 @@ async function refreshOAuthToken(refreshToken: string): Promise<OAuthToken> {
   return newToken;
 }
 
+interface RequireCloudflareAuthOptions {
+  /** Show extended help for users who don't have a Cloudflare account yet */
+  showNewUserHelp?: boolean;
+}
+
 /**
  * Require Cloudflare authentication to be available.
  * Exits the process with a helpful error message if not authenticated.
@@ -143,7 +149,10 @@ async function refreshOAuthToken(refreshToken: string): Promise<OAuthToken> {
  * 1. If CLOUDFLARE_API_TOKEN is set, it will be used (requires CLOUDFLARE_ACCOUNT_ID)
  * 2. Otherwise, fall back to wrangler OAuth
  */
-export async function requireCloudflareAuth(): Promise<void> {
+export async function requireCloudflareAuth(
+  options: RequireCloudflareAuthOptions = {},
+): Promise<void> {
+  const { showNewUserHelp = false } = options;
   const hasApiToken = !!process.env["CLOUDFLARE_API_TOKEN"];
   const hasAccountId = !!process.env["CLOUDFLARE_ACCOUNT_ID"];
 
@@ -156,7 +165,7 @@ export async function requireCloudflareAuth(): Promise<void> {
     console.log(
       chalk.dim("  export CLOUDFLARE_ACCOUNT_ID=<your_account_id>\n"),
     );
-    process.exit(1);
+    await exitWithUpdateNotice(1);
   }
 
   // API token auth is fully configured
@@ -168,7 +177,11 @@ export async function requireCloudflareAuth(): Promise<void> {
   try {
     await getValidCloudflareToken();
   } catch {
-    console.log(chalk.yellow("\nPlease log in to Cloudflare.\n"));
+    if (showNewUserHelp) {
+      console.log(chalk.yellow("\nAlready have a Cloudflare account?\n"));
+    } else {
+      console.log(chalk.yellow("\nPlease log in to Cloudflare.\n"));
+    }
     console.log(
       chalk.dim("  1. Cloudflare CLI (recommended): npx wrangler login"),
     );
@@ -177,7 +190,42 @@ export async function requireCloudflareAuth(): Promise<void> {
         "  2. Environment variables: CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID\n",
       ),
     );
-    process.exit(1);
+
+    if (showNewUserHelp) {
+      console.log(chalk.yellow("Don't have a Cloudflare account?\n"));
+      console.log(
+        "Every App uses Cloudflare so that you can inexpensively host your applications",
+      );
+      console.log(
+        "on a secure and powerful platform without needing to think about the machines",
+      );
+      console.log("your code runs on.\n");
+      console.log("Here are the steps to get started:\n");
+      console.log(
+        chalk.dim(
+          "  1. Create a Cloudflare account (free, no credit card required):",
+        ),
+      );
+      console.log(chalk.cyan("     https://dash.cloudflare.com/sign-up\n"));
+      console.log(
+        chalk.dim(
+          "     - Skip any Cloudflare onboarding like configuring a domain, this is unnecessary for Every App.\n",
+        ),
+      );
+      console.log(
+        chalk.dim("  2. Check your email to verify your email address\n"),
+      );
+      console.log(chalk.dim("  3. Log in to Cloudflare via the CLI:"));
+      console.log(chalk.cyan("     npx wrangler login\n"));
+      console.log(
+        chalk.dim("     - Learn more: ") +
+          chalk.cyan(
+            "https://developers.cloudflare.com/workers/wrangler/commands/#login\n",
+          ),
+      );
+    }
+
+    await exitWithUpdateNotice(1);
   }
 }
 
