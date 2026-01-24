@@ -27,7 +27,7 @@ function EmbeddedAppDevLayout() {
 
   // Always render in dev mode
   return (
-    <div className="h-full">
+    <div className="h-full pt-safe">
       <EmbeddedApp key={`${appId}-dev`} appId={appId} isDevMode={true} />
     </div>
   );

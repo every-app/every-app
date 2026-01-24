@@ -15,7 +15,7 @@ export function Header({ email, role }: HeaderProps) {
   };
 
   return (
-    <div className="navbar">
+    <div className="navbar pt-safe">
       <div className="max-w-4xl justify-between mx-auto w-full flex items-center">
         <Link to="/" className="flex items-center flex-row">
           <img src="/transparent-logo.png" alt="Logo" className="h-9 w-auto" />
