@@ -1,8 +1,9 @@
 ---
 import '../styles/global.css';
 import LinkCard from '../components/LinkCard.astro';
-import gatewayScreenshot from '../assets/gateway-screenshot.png';
-import todoScreenshot from '../assets/todo-screenshot.png';
+import todosScreenshot from '../assets/todo-dark.png';
+import workoutTrackerScreenshot from '../assets/workout-tracker-dark.png';
+import chefScreenshot from '../assets/chef-dark.png';
 
 const title = 'Every App';
 const description = 'The open source personal software platform. Build exactly what you want.';
@@ -95,22 +96,444 @@ const description = 'The open source personal software platform. Build exactly w
             The open source personal software platform
           </p>
 
-          <div class="space-y-2 text-[clamp(1rem,2vw,1.25rem)] text-stone-400 font-light mb-8">
+          <div class="space-y-2 text-[clamp(1rem,2vw,1.25rem)] text-stone-400 font-light mb-10">
             <p>Build exactly what you want.</p>
             <p>Bring your own AI. No credits, no limits.</p>
             <p>Self-host on Cloudflare. Free to start, $5/month max.</p>
           </div>
 
-          <a 
-            href="/docs/introduction"
-            class="inline-flex items-center gap-2 text-stone-400 font-medium underline underline-offset-4 decoration-stone-600 hover:text-white hover:decoration-stone-400 transition-colors"
-          >
-            Learn More
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M5 12h14M12 5l7 7-7 7"/>
-            </svg>
-          </a>
+          <p class="text-stone-500 text-sm mb-2">Self host with one command</p>
+          <div class="bg-[#141a17] border border-stone-800 rounded-md px-3 py-2 inline-flex items-center gap-3">
+            <code class="text-sm text-stone-300 font-mono">
+              npx everyapp gateway deploy
+            </code>
+            <button 
+              id="copy-command"
+              class="text-stone-500 hover:text-stone-300 transition-colors"
+              aria-label="Copy command"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon">
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+              </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon hidden">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </button>
+          </div>
+          
+          <script>
+            const copyButton = document.getElementById('copy-command');
+            const copyIcon = copyButton?.querySelector('.copy-icon');
+            const checkIcon = copyButton?.querySelector('.check-icon');
+            
+            copyButton?.addEventListener('click', async () => {
+              await navigator.clipboard.writeText('npx everyapp gateway deploy');
+              copyIcon?.classList.add('hidden');
+              checkIcon?.classList.remove('hidden');
+              
+              setTimeout(() => {
+                copyIcon?.classList.remove('hidden');
+                checkIcon?.classList.add('hidden');
+              }, 2000);
+            });
+          </script>
         </div>
+
+        <!-- Scroll indicator -->
+        <div class="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-500">
+            <path d="M12 5v14M19 12l-7 7-7-7"/>
+          </svg>
+        </div>
+      </section>
+
+      <!-- Section Divider -->
+      <div class="px-16">
+        <hr class="border-stone-800" />
+      </div>
+
+      <!-- Stop Rebuilding Section -->
+      <section class="px-6 py-12 md:py-24">
+        <div class="max-w-5xl mx-auto">
+          <h2 class="text-[clamp(2rem,5vw,3rem)] font-bold text-white mb-4">
+            Stop rebuilding the same stuff
+          </h2>
+          <p class="text-stone-400 text-lg mb-12 max-w-3xl">
+            Every App handles the tedious parts of building new apps so you can focus on your idea.
+          </p>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Authentication -->
+            <div class="bg-[#141a17] border border-stone-800 rounded-lg p-6">
+              <div class="flex items-center gap-3 mb-3 md:block">
+                <div class="w-9 h-9 md:w-10 md:h-10 bg-stone-800 rounded-lg flex items-center justify-center flex-shrink-0 md:mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-300 md:w-5 md:h-5">
+                    <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                </div>
+                <h3 class="text-white font-semibold text-lg md:mb-2">Authentication</h3>
+              </div>
+              <p class="text-stone-400 text-sm">Users log in once to the Gateway. Your apps inherit auth automatically.</p>
+            </div>
+
+            <!-- User Management -->
+            <div class="bg-[#141a17] border border-stone-800 rounded-lg p-6">
+              <div class="flex items-center gap-3 mb-3 md:block">
+                <div class="w-9 h-9 md:w-10 md:h-10 bg-stone-800 rounded-lg flex items-center justify-center flex-shrink-0 md:mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-300 md:w-5 md:h-5">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                </div>
+                <h3 class="text-white font-semibold text-lg md:mb-2">User Management</h3>
+              </div>
+              <p class="text-stone-400 text-sm">Add users to your Gateway. They instantly get access to all your apps.</p>
+            </div>
+
+            <!-- Database Setup -->
+            <div class="bg-[#141a17] border border-stone-800 rounded-lg p-6">
+              <div class="flex items-center gap-3 mb-3 md:block">
+                <div class="w-9 h-9 md:w-10 md:h-10 bg-stone-800 rounded-lg flex items-center justify-center flex-shrink-0 md:mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-300 md:w-5 md:h-5">
+                    <ellipse cx="12" cy="5" rx="9" ry="3"/>
+                    <path d="M3 5V19A9 3 0 0 0 21 19V5"/>
+                    <path d="M3 12A9 3 0 0 0 21 12"/>
+                  </svg>
+                </div>
+                <h3 class="text-white font-semibold text-lg md:mb-2">Database Setup</h3>
+              </div>
+              <p class="text-stone-400 text-sm">Cloudflare D1 pre-configured. Just define your schema and go.</p>
+            </div>
+
+            <!-- Hosting & Deployment -->
+            <div class="bg-[#141a17] border border-stone-800 rounded-lg p-6">
+              <div class="flex items-center gap-3 mb-3 md:block">
+                <div class="w-9 h-9 md:w-10 md:h-10 bg-stone-800 rounded-lg flex items-center justify-center flex-shrink-0 md:mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-300 md:w-5 md:h-5">
+                    <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>
+                  </svg>
+                </div>
+                <h3 class="text-white font-semibold text-lg md:mb-2">Hosting & Deployment</h3>
+              </div>
+              <p class="text-stone-400 text-sm">One CLI command deploys to Cloudflare. Scales to zero, starts free.</p>
+            </div>
+
+            <!-- AI Agent Context -->
+            <div class="bg-[#141a17] border border-stone-800 rounded-lg p-6">
+              <div class="flex items-center gap-3 mb-3 md:block">
+                <div class="w-9 h-9 md:w-10 md:h-10 bg-stone-800 rounded-lg flex items-center justify-center flex-shrink-0 md:mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-300 md:w-5 md:h-5">
+                    <path d="M12 8V4H8"/>
+                    <rect width="16" height="12" x="4" y="8" rx="2"/>
+                    <path d="M2 14h2"/>
+                    <path d="M20 14h2"/>
+                    <path d="M15 13v2"/>
+                    <path d="M9 13v2"/>
+                  </svg>
+                </div>
+                <h3 class="text-white font-semibold text-lg md:mb-2">Agent First</h3>
+              </div>
+              <p class="text-stone-400 text-sm">MCP server gives your coding agent full example apps to reference.</p>
+            </div>
+
+            <!-- Patterns That Scale -->
+            <div class="bg-[#141a17] border border-stone-800 rounded-lg p-6">
+              <div class="flex items-center gap-3 mb-3 md:block">
+                <div class="w-9 h-9 md:w-10 md:h-10 bg-stone-800 rounded-lg flex items-center justify-center flex-shrink-0 md:mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-300 md:w-5 md:h-5">
+                    <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+                    <polyline points="2 17 12 22 22 17"/>
+                    <polyline points="2 12 12 17 22 12"/>
+                  </svg>
+                </div>
+                <h3 class="text-white font-semibold text-lg md:mb-2">Patterns That Scale</h3>
+              </div>
+              <p class="text-stone-400 text-sm">Well-defined patterns for your agent to follow.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section Divider -->
+      <div class="px-16">
+        <hr class="border-stone-800" />
+      </div>
+
+      <!-- One Place Section -->
+      <section class="px-6 py-12 md:py-24">
+        <div class="max-w-5xl mx-auto">
+          <h2 class="text-[clamp(2rem,5vw,3rem)] font-bold text-white mb-4">
+            One place for all your apps
+          </h2>
+          <p class="text-stone-400 text-lg mb-12 max-w-3xl">
+            The Gateway is your personal app hub. Manage and access everything from a single URL.
+          </p>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Single URL -->
+            <div class="bg-[#141a17] border border-stone-800 rounded-lg p-6">
+              <div class="flex items-center gap-3 mb-3 md:block">
+                <div class="w-9 h-9 md:w-10 md:h-10 bg-stone-800 rounded-lg flex items-center justify-center flex-shrink-0 md:mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-300 md:w-5 md:h-5">
+                    <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                    <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                  </svg>
+                </div>
+                <h3 class="text-white font-semibold text-lg md:mb-2">Single URL</h3>
+              </div>
+              <p class="text-stone-400 text-sm">Go to your Gateway. Access all your apps.</p>
+            </div>
+
+            <!-- Mobile Optimized -->
+            <div class="bg-[#141a17] border border-stone-800 rounded-lg p-6">
+              <div class="flex items-center gap-3 mb-3 md:block">
+                <div class="w-9 h-9 md:w-10 md:h-10 bg-stone-800 rounded-lg flex items-center justify-center flex-shrink-0 md:mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-300 md:w-5 md:h-5">
+                    <rect width="14" height="20" x="5" y="2" rx="2" ry="2"/>
+                    <path d="M12 18h.01"/>
+                  </svg>
+                </div>
+                <h3 class="text-white font-semibold text-lg md:mb-2">Mobile Optimized</h3>
+              </div>
+              <p class="text-stone-400 text-sm">Add Gateway to your home screen once. All apps get the mobile PWA benefits. Native mobile (and Roku) apps coming soon.</p>
+            </div>
+
+            <!-- No Auth Per App -->
+            <div class="bg-[#141a17] border border-stone-800 rounded-lg p-6">
+              <div class="flex items-center gap-3 mb-3 md:block">
+                <div class="w-9 h-9 md:w-10 md:h-10 bg-stone-800 rounded-lg flex items-center justify-center flex-shrink-0 md:mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-300 md:w-5 md:h-5">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/>
+                    <path d="m9 12 2 2 4-4"/>
+                  </svg>
+                </div>
+                <h3 class="text-white font-semibold text-lg md:mb-2">Simplified Auth</h3>
+              </div>
+              <p class="text-stone-400 text-sm">Never build login flows again. Apps inherit authentication from the Gateway.</p>
+            </div>
+
+            <!-- LLM Gateway Coming Soon -->
+            <div class="bg-[#141a17] border border-stone-800 rounded-lg p-6">
+              <div class="flex items-center gap-3 mb-3 md:block">
+                <div class="w-9 h-9 md:w-10 md:h-10 bg-stone-800 rounded-lg flex items-center justify-center flex-shrink-0 md:mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-300 md:w-5 md:h-5">
+                    <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.54"/>
+                    <path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.54"/>
+                  </svg>
+                </div>
+                <h3 class="text-white font-semibold text-lg md:mb-2">LLM Gateway <span class="text-stone-500 text-sm font-normal">(Coming Soon)</span></h3>
+              </div>
+              <p class="text-stone-400 text-sm">Configure your AI provider once. Set per-app budgets. No more scattered API keys.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section Divider -->
+      <div class="px-16">
+        <hr class="border-stone-800" />
+      </div>
+
+      <!-- Example Apps Section -->
+      <section class="px-6 py-12 md:py-24">
+        <div class="max-w-5xl mx-auto">
+          <h2 class="text-[clamp(2rem,5vw,3rem)] font-bold text-white mb-4">
+             App Examples
+          </h2>
+          <p class="text-stone-400 text-lg mb-12 max-w-2xl">
+	  Deploy these open source apps with one command. Tell your agent to reference their code with our MCP. 
+          </p>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Todo App -->
+            <button class="bg-[#141a17] border border-stone-800 rounded-lg overflow-hidden text-left cursor-pointer hover:border-stone-700 transition-colors" data-preview={todosScreenshot.src} data-alt="Todo App Screenshot">
+              <div class="aspect-video bg-stone-900 flex items-center justify-center">
+                <img src={todosScreenshot.src} alt="Todo App Screenshot" class="h-full object-contain" loading="lazy" />
+              </div>
+              <div class="p-6">
+                <h3 class="text-white font-semibold text-lg mb-2">Todo App</h3>
+                <p class="text-stone-400 text-sm">A minimal todo list with sync across your devices and keyboard navigation.</p>
+              </div>
+            </button>
+
+            <!-- Workout Tracker -->
+            <button class="bg-[#141a17] border border-stone-800 rounded-lg overflow-hidden text-left cursor-pointer hover:border-stone-700 transition-colors" data-preview={workoutTrackerScreenshot.src} data-alt="Workout Tracker Screenshot">
+              <div class="aspect-video bg-stone-900 flex items-center justify-center">
+                <img src={workoutTrackerScreenshot.src} alt="Workout Tracker Screenshot" class="h-full object-contain" loading="lazy" />
+              </div>
+              <div class="p-6">
+                <h3 class="text-white font-semibold text-lg mb-2">Workout Tracker</h3>
+                <p class="text-stone-400 text-sm">Mobile optimized. Track your workouts, programs, and progress over time.</p>
+              </div>
+            </button>
+
+            <!-- Cooking Assistant -->
+            <button class="bg-[#141a17] border border-stone-800 rounded-lg overflow-hidden text-left cursor-pointer hover:border-stone-700 transition-colors" data-preview={chefScreenshot.src} data-alt="Cooking Assistant Screenshot">
+              <div class="aspect-video bg-stone-900 flex items-center justify-center">
+                <img src={chefScreenshot.src} alt="Cooking Assistant Screenshot" class="h-full object-contain" loading="lazy" />
+              </div>
+              <div class="p-6">
+                <h3 class="text-white font-semibold text-lg mb-2">Cooking Assistant</h3>
+                <p class="text-stone-400 text-sm">An AI-powered cooking assistant and recipe manager.</p>
+              </div>
+            </button>
+          </div>
+          
+          <!-- Image Preview Modal -->
+          <div id="image-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div class="relative w-full max-w-4xl max-h-[66vh] m-auto">
+              <button id="modal-close" class="absolute -top-10 right-0 text-white/60 hover:text-white transition-colors" aria-label="Close preview">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 6 6 18M6 6l12 12"/>
+                </svg>
+              </button>
+              <img id="modal-image" src="" alt="" class="w-full h-full object-contain rounded-lg" />
+            </div>
+          </div>
+          
+          <script>
+            const modal = document.getElementById('image-modal');
+            const modalImage = document.getElementById('modal-image') as HTMLImageElement;
+            const modalClose = document.getElementById('modal-close');
+            const previewButtons = document.querySelectorAll('[data-preview]');
+            
+            previewButtons.forEach(button => {
+              button.addEventListener('click', () => {
+                const src = button.getAttribute('data-preview');
+                const alt = button.getAttribute('data-alt');
+                if (src && modalImage) {
+                  modalImage.src = src;
+                  modalImage.alt = alt || '';
+                  modal?.classList.remove('hidden');
+                  modal?.classList.add('flex');
+                  document.body.style.overflow = 'hidden';
+                }
+              });
+            });
+            
+            function closeModal() {
+              modal?.classList.add('hidden');
+              modal?.classList.remove('flex');
+              document.body.style.overflow = '';
+            }
+            
+            modalClose?.addEventListener('click', closeModal);
+            modal?.addEventListener('click', (e) => {
+              if (e.target === modal) closeModal();
+            });
+            document.addEventListener('keydown', (e) => {
+              if (e.key === 'Escape') closeModal();
+            });
+          </script>
+        </div>
+      </section>
+
+      <!-- Section Divider -->
+      <div class="px-16">
+        <hr class="border-stone-800" />
+      </div>
+
+      <!-- Quick Start Section -->
+      <section class="px-6 py-12 md:py-24">
+        <div class="max-w-5xl mx-auto">
+          <h2 class="text-[clamp(2rem,5vw,3rem)] font-bold text-white mb-4">
+            Get Started
+          </h2>
+          <p class="text-stone-400 text-lg mb-8">
+            Deploy your own Gateway to Cloudflare in one command.
+          </p>
+          
+          <div class="bg-[#141a17] border border-stone-800 rounded-md px-3 py-2 mb-6 inline-flex items-center gap-3">
+            <code class="text-sm text-stone-300 font-mono">
+              npx everyapp gateway deploy
+            </code>
+            <button 
+              id="copy-command-bottom"
+              class="text-stone-500 hover:text-stone-300 transition-colors"
+              aria-label="Copy command"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon-bottom">
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+              </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon-bottom hidden">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            </button>
+          </div>
+          
+          <script>
+            const copyButtonBottom = document.getElementById('copy-command-bottom');
+            const copyIconBottom = copyButtonBottom?.querySelector('.copy-icon-bottom');
+            const checkIconBottom = copyButtonBottom?.querySelector('.check-icon-bottom');
+            
+            copyButtonBottom?.addEventListener('click', async () => {
+              await navigator.clipboard.writeText('npx everyapp gateway deploy');
+              copyIconBottom?.classList.add('hidden');
+              checkIconBottom?.classList.remove('hidden');
+              
+              setTimeout(() => {
+                copyIconBottom?.classList.remove('hidden');
+                checkIconBottom?.classList.add('hidden');
+              }, 2000);
+            });
+          </script>
+          
+          <div>
+            <a 
+              href="/docs/introduction"
+              class="inline-flex items-center gap-2 text-stone-400 hover:text-white transition-colors underline underline-offset-4 decoration-stone-600 hover:decoration-stone-400"
+            >
+              Read the Docs
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14M12 5l7 7-7 7"/>
+              </svg>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- Footer -->
+      <footer class="px-6 py-12 border-t border-stone-800">
+        <div class="max-w-5xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div class="hidden md:flex items-center gap-3">
+            <img
+              src="/transparent-logo.png"
+              alt="Every App Logo"
+              class="w-8 h-8 opacity-60"
+            />
+            <span class="text-stone-500 text-sm">The open source personal software platform</span>
+          </div>
+          <div class="flex items-center gap-6 self-end md:self-auto">
+            <a 
+              href="https://discord.gg/c9uGs3cFXr"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-stone-500 hover:text-white transition-colors text-sm"
+            >
+              Discord
+            </a>
+            <a 
+              href="https://github.com/every-app/every-app"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-stone-500 hover:text-white transition-colors text-sm"
+            >
+              GitHub
+            </a>
+            <a 
+              href="/docs/introduction"
+              class="text-stone-500 hover:text-white transition-colors text-sm"
+            >
+              Docs
+            </a>
+          </div>
+        </div>
+      </footer>
     </div>
   </body>
 </html>
