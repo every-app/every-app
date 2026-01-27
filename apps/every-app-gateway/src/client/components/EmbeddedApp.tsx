@@ -78,7 +78,7 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
         // allow-downloads: Enables embedded apps to trigger file downloads
         sandbox="allow-scripts allow-same-origin allow-forms allow-top-navigation allow-popups allow-downloads"
         // Permissions Policy: clipboard-read/write enables clipboard access for embedded apps
-        allow="clipboard-read; clipboard-write"
+        allow="clipboard-read; clipboard-write; microphone; camera"
       />
     </div>
   );
