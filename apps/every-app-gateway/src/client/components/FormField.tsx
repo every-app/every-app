@@ -68,27 +68,3 @@ export function FormField({
     </div>
   );
 }
-
-interface DisabledFieldProps {
-  label: string;
-  value: string;
-}
-
-/**
- * A read-only form field for displaying non-editable values.
- */
-export function DisabledField({ label, value }: DisabledFieldProps) {
-  return (
-    <div className="form-control">
-      <label className="label">
-        <span className="label-text">{label}</span>
-      </label>
-      <input
-        type="text"
-        className="input input-bordered w-full"
-        value={value}
-        disabled
-      />
-    </div>
-  );
-}

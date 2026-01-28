@@ -33,6 +33,12 @@ vi.mock("../repositories/SessionRepository", () => ({
   },
 }));
 
+vi.mock("./AppAccessService", () => ({
+  AppAccessService: {
+    grantDefaultAppsToUser: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
 const mockSignUpEmail = vi.fn();
 vi.mock("@/auth", () => ({
   createAuth: () => ({

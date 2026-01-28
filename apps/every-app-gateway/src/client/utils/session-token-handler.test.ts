@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock Cloudflare worker dependencies before importing the module under test
-vi.mock("@/types/user-app", () => ({}));
 vi.mock("@/serverFunctions/session-token", () => ({
   createSessionToken: vi.fn(),
 }));
@@ -193,29 +192,31 @@ describe("handleSessionTokenRequest", () => {
     return { origin, data } as MessageEvent;
   }
 
-  // Full UserApp objects for handleSessionTokenRequest tests
+  // Full UserAccessApp objects for handleSessionTokenRequest tests
   const mockFullUserApps = [
     {
       id: "1",
-      userId: "user-1",
       appId: "todo-app",
       name: "Todo App",
       description: "A todo app",
       appUrl: "https://todo.example.com",
       devUrl: "http://localhost:3001",
+      isDefault: true,
       createdAt: new Date(),
       updatedAt: new Date(),
+      grantedAt: new Date(),
     },
     {
       id: "2",
-      userId: "user-1",
       appId: "workout-tracker",
       name: "Workout Tracker",
       description: "A workout tracker",
       appUrl: "https://workout.example.com",
       devUrl: "http://localhost:3002",
+      isDefault: false,
       createdAt: new Date(),
       updatedAt: new Date(),
+      grantedAt: new Date(),
     },
   ];
 

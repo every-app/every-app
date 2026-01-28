@@ -64,6 +64,20 @@
       "when": 1767055731426,
       "tag": "0008_swift_falcon",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1769549952755,
+      "tag": "0009_freezing_the_professor",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1769555682095,
+      "tag": "0010_loving_captain_universe",
+      "breakpoints": true
     }
   ]
 }

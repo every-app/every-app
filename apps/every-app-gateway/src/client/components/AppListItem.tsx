@@ -1,30 +1,15 @@
-import { useState } from "react";
-import { MoreVertical, Code } from "lucide-react";
-import type { UserApp } from "@/types/user-app";
+import { Code } from "lucide-react";
+import type { UserAccessApp } from "@/types/app";
 
 interface AppListItemProps {
-  app: UserApp;
+  app: UserAccessApp;
   onNavigate: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
 }
 
-export function AppListItem({
-  app,
-  onNavigate,
-  onEdit,
-  onDelete,
-}: AppListItemProps) {
-  const [isInteractingWithControls, setIsInteractingWithControls] =
-    useState(false);
-
+export function AppListItem({ app, onNavigate }: AppListItemProps) {
   return (
     <li
-      className={`border border-base-content/20 rounded-lg bg-base-100 transition-all cursor-pointer ${
-        !isInteractingWithControls
-          ? "hover:bg-base-200 hover:border-base-400 hover:shadow-md"
-          : ""
-      }`}
+      className="border border-base-content/20 rounded-lg bg-base-100 transition-all cursor-pointer hover:bg-base-200 hover:border-base-400 hover:shadow-md"
       onClick={onNavigate}
     >
       <div className="flex items-center justify-between p-4">
@@ -32,37 +17,13 @@ export function AppListItem({
           <div className="font-medium">{app.name}</div>
           <div className="text-sm text-base-content/70">{app.description}</div>
         </div>
-        <div
-          className="flex items-center gap-2"
-          onMouseEnter={() => setIsInteractingWithControls(true)}
-          onMouseLeave={() => setIsInteractingWithControls(false)}
-        >
-          <div
-            className="dropdown dropdown-end relative z-10 hidden sm:block"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button tabIndex={0} className="btn btn-ghost btn-sm btn-square">
-              <MoreVertical className="w-4 h-4" />
-            </button>
-            <ul tabIndex={0} className="dropdown-content menu z-1 w-52">
-              <li>
-                <button onClick={onEdit}>Edit</button>
-              </li>
-              <li>
-                <button className="text-error" onClick={onDelete}>
-                  Delete
-                </button>
-              </li>
-            </ul>
-          </div>
-        </div>
       </div>
     </li>
   );
 }
 
 interface DevAppListItemProps {
-  app: UserApp;
+  app: UserAccessApp;
   onNavigate: () => void;
 }
 

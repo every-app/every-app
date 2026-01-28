@@ -1,18 +1,14 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useSession } from "@/client/hooks/useSession";
 import { userAppsCollection } from "@/client/tanstack-db";
 import { useState, useEffect, useRef } from "react";
 import { z } from "zod";
-import { Code } from "lucide-react";
-import { AddCustomAppModal } from "@/client/components/AddCustomAppModal";
-import { EditAppModal } from "@/client/components/EditAppModal";
-import { DeleteAppModal } from "@/client/components/DeleteAppModal";
+import { Code, Settings } from "lucide-react";
 import { PWAInstallModal } from "@/client/components/PWAInstallModal";
 import { SafariDevModeWarningModal } from "@/client/components/SafariDevModeWarningModal";
 import { OnboardingBanner } from "@/client/components/onboarding/OnboardingBanner";
 import { AppListItem, DevAppListItem } from "@/client/components/AppListItem";
-import type { UserApp } from "@/types/user-app";
 import { Header } from "@/client/components/Header";
 import { isSafari } from "@/client/utils/browser";
 
@@ -59,15 +55,12 @@ function useShowDevUrls() {
 function App() {
   const session = useSession();
   const { pwa: pwaParam } = Route.useSearch();
-  const [showAddCustomAppModal, setShowAddCustomAppModal] = useState(false);
-  const [showEditAppModal, setShowEditAppModal] = useState(false);
-  const [showDeleteAppModal, setShowDeleteAppModal] = useState(false);
   const [showPWAInstallModal, setShowPWAInstallModal] = useState(false);
-  const [selectedApp, setSelectedApp] = useState<UserApp | null>(null);
   const [showDevUrls, setShowDevUrls] = useShowDevUrls();
   const [showSafariWarning, setShowSafariWarning] = useState(false);
   const navigate = useNavigate();
   const hasStrippedPwaParam = useRef(false);
+  const userIsOwner = session.data?.user.role === "owner";
 
   // Open PWA modal when ?pwa=true is present, then strip the param
   useEffect(() => {
@@ -119,9 +112,7 @@ function App() {
                     </label>
                   )}
                 </div>
-                <p className="text-base-content/70 mt-2">
-                  Manage and access your apps
-                </p>
+                <p className="text-base-content/70 mt-2">Access your apps</p>
               </div>
               <div className="flex items-center gap-2">
                 {hasAnyDevUrls && (
@@ -135,12 +126,15 @@ function App() {
                     />
                   </label>
                 )}
-                <button
-                  className="btn btn-primary hidden sm:flex"
-                  onClick={() => setShowAddCustomAppModal(true)}
-                >
-                  Add App
-                </button>
+                {userIsOwner && (
+                  <Link
+                    to="/admin/apps"
+                    className="btn btn-primary hidden sm:flex"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Manage Apps
+                  </Link>
+                )}
               </div>
             </div>
 
@@ -153,14 +147,6 @@ function App() {
                     <AppListItem
                       app={app}
                       onNavigate={() => navigate({ to: `/apps/${app.appId}` })}
-                      onEdit={() => {
-                        setSelectedApp(app);
-                        setShowEditAppModal(true);
-                      }}
-                      onDelete={() => {
-                        setSelectedApp(app);
-                        setShowDeleteAppModal(true);
-                      }}
                     />
                     {showDevUrls && app.devUrl && (
                       <DevAppListItem
@@ -184,25 +170,19 @@ function App() {
             {!isLoading && userApps && userApps.length === 0 && (
               <div className="text-center py-8">
                 <p className="text-base-content/70">
-                  No apps installed yet. Add your first app to get started!
+                  {userIsOwner
+                    ? "No apps yet. Add your first app to get started!"
+                    : "No apps available. Contact your administrator to get access."}
                 </p>
+                {userIsOwner && (
+                  <Link to="/admin/apps" className="btn btn-primary mt-4">
+                    <Settings className="w-4 h-4" />
+                    Manage Apps
+                  </Link>
+                )}
               </div>
             )}
 
-            <AddCustomAppModal
-              open={showAddCustomAppModal}
-              onOpenChange={setShowAddCustomAppModal}
-            />
-            <EditAppModal
-              open={showEditAppModal}
-              onOpenChange={setShowEditAppModal}
-              app={selectedApp}
-            />
-            <DeleteAppModal
-              open={showDeleteAppModal}
-              onOpenChange={setShowDeleteAppModal}
-              app={selectedApp}
-            />
             <PWAInstallModal
               open={showPWAInstallModal}
               onClose={() => setShowPWAInstallModal(false)}

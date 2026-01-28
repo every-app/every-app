@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { authMiddleware, type AuthContext } from "@/middleware/auth";
-import { UserAppService } from "@/server/services/UserAppService";
+import { AppService } from "@/server/services/AppService";
 import { issueEmbeddedAppToken } from "@/server/jwt-utils";
 import { EMBEDDED_APP_TOKEN_EXPIRY_SECONDS } from "@/server/constants";
 import {
@@ -77,16 +77,18 @@ export const createSessionToken = createServerFn()
         throw new Error("Request expired or clock skew detected");
       }
 
-      // Look up app configuration
+      // Look up app configuration and verify user access
       let app = null;
 
       if (appId) {
-        // If appId is provided, verify it matches the origin
-        app = await UserAppService.getByAppId(appId, user.id);
+        // If appId is provided, verify user has access and origin matches
+        app = await AppService.getByAppIdForUser(appId, user.id);
 
         if (!app) {
-          console.error(`Invalid app ID: ${appId}`);
-          throw new Error("Invalid app ID");
+          console.error(
+            `User ${user.id} does not have access to app: ${appId}`,
+          );
+          throw new Error("Access denied or invalid app ID");
         }
 
         // Validate origin directly without making another DB query
@@ -98,12 +100,14 @@ export const createSessionToken = createServerFn()
           throw new Error("Origin not allowed for this app");
         }
       } else {
-        // Otherwise, look up app by origin
-        app = await UserAppService.getByOrigin(requestOrigin, user.id);
+        // Otherwise, look up app by origin (also verifies user access)
+        app = await AppService.getByOriginForUser(requestOrigin, user.id);
 
         if (!app) {
-          console.error(`Unregistered origin: ${requestOrigin}`);
-          throw new Error("Unregistered origin");
+          console.error(
+            `User ${user.id} does not have access to any app at origin: ${requestOrigin}`,
+          );
+          throw new Error("Access denied or unregistered origin");
         }
       }
 

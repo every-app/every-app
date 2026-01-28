@@ -1,4 +1,4 @@
-import { UserApp } from "@/types/user-app";
+import type { UserAccessApp } from "@/types/app";
 import { createSessionToken } from "@/serverFunctions/session-token";
 import {
   SessionTokenRequestSchema,
@@ -69,12 +69,12 @@ export function validateTokenRequest(
 /**
  * Handles session token requests from embedded apps
  * @param event - The MessageEvent from postMessage
- * @param userApps - Array of user's installed apps
+ * @param userApps - Array of user's apps they have access to
  * @returns SessionTokenResponseMessage or null if request is invalid/rejected
  */
 export async function handleSessionTokenRequest(
   event: MessageEvent,
-  userApps: UserApp[] | undefined,
+  userApps: UserAccessApp[] | undefined,
 ): Promise<SessionTokenResponseMessage | null> {
   // Ignore react devtools messages
   if (event.data?.source?.startsWith("react-")) {

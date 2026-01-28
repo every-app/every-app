@@ -2,6 +2,7 @@ import { queryClient } from "./queryClient";
 import { userAppsCollection } from "./userAppsCollection";
 import { onboardingCollection } from "./onboardingCollection";
 import { adminUsersCollection } from "./adminUsersCollection";
+import { adminAppsCollection } from "./adminAppsCollection";
 
 /**
  * Refetches all user-specific collections to ensure fresh data from the server.
@@ -21,10 +22,12 @@ export async function refetchCollectionsAfterAuth() {
   void userAppsCollection.state;
   void onboardingCollection.state;
   void adminUsersCollection.state;
+  void adminAppsCollection.state;
 
   await Promise.all([
     queryClient.refetchQueries({ queryKey: ["user-apps"] }),
     queryClient.refetchQueries({ queryKey: ["admin", "users"] }),
+    queryClient.refetchQueries({ queryKey: ["admin", "apps"] }),
     queryClient.refetchQueries({ queryKey: ["onboarding"] }),
   ]);
 }

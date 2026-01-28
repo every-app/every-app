@@ -1,14 +1,25 @@
-import { createFileRoute, Outlet, Link } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Outlet,
+  Link,
+  useLocation,
+} from "@tanstack/react-router";
 import { useSession } from "@/client/hooks/useSession";
 import { Header } from "@/client/components/Header";
-import { Monitor } from "lucide-react";
+import { Monitor, Users, AppWindow } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
   component: AdminLayout,
 });
 
+const adminTabs = [
+  { path: "/admin/users", label: "Users", icon: Users },
+  { path: "/admin/apps", label: "Apps", icon: AppWindow },
+];
+
 function AdminLayout() {
   const { data: session, isPending } = useSession();
+  const location = useLocation();
 
   // Show loading while checking session
   if (isPending) {
@@ -56,9 +67,33 @@ function AdminLayout() {
         </div>
       </div>
       {/* Desktop content - hidden on small screens */}
-      <div className="hidden sm:block flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-4 py-6">
-          <Outlet />
+      <div className="hidden sm:flex flex-col flex-1 overflow-hidden">
+        {/* Admin navigation tabs */}
+        <div className="border-b border-base-300">
+          <div className="max-w-4xl mx-auto px-4">
+            <div className="tabs tabs-bordered">
+              {adminTabs.map((tab, index) => {
+                const Icon = tab.icon;
+                const isActive = location.pathname === tab.path;
+                return (
+                  <Link
+                    key={tab.path}
+                    to={tab.path}
+                    className={`tab gap-2 ${index === 0 ? "!pl-0" : ""} ${isActive ? "tab-active" : ""}`}
+                  >
+                    <Icon className="w-4 h-4 shrink-0" />
+                    <span>{tab.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+        {/* Content area */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-4xl mx-auto px-4 py-6">
+            <Outlet />
+          </div>
         </div>
       </div>
     </div>

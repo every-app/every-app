@@ -13,7 +13,7 @@ import { useEffect } from "react";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
 import * as React from "react";
 import appCss from "@/client/styles/app.css?url";
-import { queryClient, persister } from "@/client/tanstack-db";
+import { queryClient, persister, CACHE_BUSTER } from "@/client/tanstack-db";
 import { Toaster } from "sonner";
 
 const PUBLIC_ROUTES = [
@@ -62,7 +62,7 @@ function RootComponent() {
   return (
     <PersistQueryClientProvider
       client={queryClient}
-      persistOptions={{ persister }}
+      persistOptions={{ persister, buster: CACHE_BUSTER }}
     >
       <AppRouter />
       <Toaster

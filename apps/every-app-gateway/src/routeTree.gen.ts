@@ -21,6 +21,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AppsAppIdRouteImport } from './routes/apps/$appId'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AdminAppsRouteImport } from './routes/admin/apps'
 import { Route as AppsAppIdDevRouteImport } from './routes/apps/$appId_.dev'
 import { Route as AppsAppIdSplatRouteImport } from './routes/apps/$appId.$'
 import { Route as ApiEmbeddedJwksRouteImport } from './routes/api/embedded/jwks'
@@ -88,6 +89,11 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminAppsRoute = AdminAppsRouteImport.update({
+  id: '/apps',
+  path: '/apps',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AppsAppIdDevRoute = AppsAppIdDevRouteImport.update({
   id: '/apps/$appId_/dev',
   path: '/apps/$appId/dev',
@@ -129,6 +135,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/snake': typeof SnakeRoute
+  '/admin/apps': typeof AdminAppsRoute
   '/admin/users': typeof AdminUsersRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin/': typeof AdminIndexRoute
@@ -148,6 +155,7 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/snake': typeof SnakeRoute
+  '/admin/apps': typeof AdminAppsRoute
   '/admin/users': typeof AdminUsersRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin': typeof AdminIndexRoute
@@ -169,6 +177,7 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/snake': typeof SnakeRoute
+  '/admin/apps': typeof AdminAppsRoute
   '/admin/users': typeof AdminUsersRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin/': typeof AdminIndexRoute
@@ -191,6 +200,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/snake'
+    | '/admin/apps'
     | '/admin/users'
     | '/apps/$appId'
     | '/admin/'
@@ -210,6 +220,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/snake'
+    | '/admin/apps'
     | '/admin/users'
     | '/apps/$appId'
     | '/admin'
@@ -230,6 +241,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/snake'
+    | '/admin/apps'
     | '/admin/users'
     | '/apps/$appId'
     | '/admin/'
@@ -344,6 +356,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/apps': {
+      id: '/admin/apps'
+      path: '/apps'
+      fullPath: '/admin/apps'
+      preLoaderRoute: typeof AdminAppsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/apps/$appId_/dev': {
       id: '/apps/$appId_/dev'
       path: '/apps/$appId/dev'
@@ -390,11 +409,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminAppsRoute: typeof AdminAppsRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminAppsRoute: AdminAppsRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }

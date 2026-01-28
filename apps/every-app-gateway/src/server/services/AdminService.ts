@@ -2,6 +2,7 @@ import { UserRepository } from "../repositories/UserRepository";
 import { TokenVerificationRepository } from "../repositories/TokenVerificationRepository";
 import { AccountRepository } from "../repositories/AccountRepository";
 import { SessionRepository } from "../repositories/SessionRepository";
+import { AppAccessService } from "./AppAccessService";
 import { createAuth } from "@/auth";
 import type { UserRole, UserStatus } from "@/auth/shared";
 import { env } from "cloudflare:workers";
@@ -106,6 +107,9 @@ async function initializeOwner(email: string, password: string) {
     role: "owner",
     status: "active",
   });
+
+  // Grant default apps to the new owner
+  await AppAccessService.grantDefaultAppsToUser(result.user.id);
 
   return { userId: result.user.id };
 }
@@ -247,6 +251,9 @@ async function acceptInvitation(token: string, password: string) {
   await UserRepository.update(user.id, {
     status: "active" satisfies UserStatus,
   });
+
+  // Grant default apps to the newly activated user
+  await AppAccessService.grantDefaultAppsToUser(user.id);
 
   await TokenVerificationRepository.delete(verification.id);
 }
