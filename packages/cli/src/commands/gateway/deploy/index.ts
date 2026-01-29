@@ -30,10 +30,11 @@ export async function deploy(
 
   const verbose = flags.verbose || false;
   const localGateway = flags.localGateway;
+  const skipConfirmation = flags.yes || false;
 
   console.log(chalk.bold("\nEvery App Gateway\n"));
 
-  const confirmed = await confirmDeployment("the Gateway");
+  const confirmed = await confirmDeployment("the Gateway", skipConfirmation);
   if (!confirmed) {
     console.log("\nDeployment cancelled by user\n");
     return;

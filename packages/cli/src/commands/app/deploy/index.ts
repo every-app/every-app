@@ -9,6 +9,7 @@ import { deployApp } from "@/commands/app/deploy/deployApp";
 
 interface DeployCommandFlags {
   verbose?: boolean;
+  yes?: boolean;
 }
 
 /**
@@ -25,6 +26,7 @@ export async function deploy(
 
   const cwd = process.cwd();
   const verbose = flags.verbose || false;
+  const skipConfirmation = flags.yes || false;
 
   // Check we're inside an Every App project
   await checkIsEveryAppProject();
@@ -34,7 +36,7 @@ export async function deploy(
 
   console.log(chalk.bold(`\nProject: ${appId}\n`));
 
-  const confirmed = await confirmDeployment("this app");
+  const confirmed = await confirmDeployment("this app", skipConfirmation);
   if (!confirmed) {
     console.log(chalk.red("\nDeployment cancelled by user\n"));
     return;

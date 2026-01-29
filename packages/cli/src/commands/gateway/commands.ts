@@ -28,6 +28,14 @@ export const deployCommand = buildCommand({
         brief: "Path to local gateway tarball (for testing)",
         optional: true,
       },
+      yes: {
+        kind: "boolean",
+        brief: "Skip deployment confirmation",
+        optional: true,
+      },
+    },
+    aliases: {
+      y: "yes",
     },
   },
   docs: {

@@ -1,8 +1,11 @@
 import chalk from "chalk";
+import enquirer from "enquirer";
 import {
   getGatewayDatabase,
   getAllUsers,
-  upsertUserApp,
+  getAppCatalogByAppId,
+  upsertAppCatalog,
+  upsertUserAppAccess,
   type User,
   type GatewayDbConnection,
 } from "@/lib/gateway-db";
@@ -51,36 +54,79 @@ export async function insertUserAppRecords(
     }
 
     const users = await getAllUsers(db);
-    if (users.length === 0) {
-      throw new Error(
-        "No users found in the database. Please create a user first before deploying apps.",
-      );
-    }
+    const existingApp = await getAppCatalogByAppId(db, appId);
+    const isFirstDeploy = existingApp === null;
 
     const displayName = appName || appId;
     const displayDescription = appDescription || appId;
 
-    if (verbose && users.length > 1) {
+    if (!isFirstDeploy && verbose) {
       console.log(
-        chalk.yellow(
-          `Multiple users found (${users.length}). Adding app to all users...\n`,
+        chalk.dim(
+          "App already configured in gateway. Skipping access prompts.",
         ),
       );
     }
 
-    for (const user of users) {
+    const resolvedDefaultAccess = isFirstDeploy
+      ? await promptForDefaultAccess("Add future users by default to this app?")
+      : Boolean(existingApp?.is_default);
+
+    const resolvedAccessMode = isFirstDeploy
+      ? await promptForAccessMode()
+      : "none";
+
+    let resolvedUserIds: string[] = [];
+    if (users.length === 0 && resolvedAccessMode === "select") {
+      throw new Error(
+        "No users found in the database to select from. Please create a user first.",
+      );
+    }
+    if (resolvedAccessMode === "all") {
+      resolvedUserIds = users.map((user) => user.id);
+    } else if (resolvedAccessMode === "select") {
+      resolvedUserIds = await promptForUserSelection(users);
+    }
+
+    const appRecordId = await upsertAppCatalog(db, {
+      appId,
+      appUrl,
+      name: displayName,
+      description: displayDescription,
+      devUrl,
+      isDefault: resolvedDefaultAccess,
+    });
+
+    const usersToProcess = users.filter((user) =>
+      resolvedUserIds.includes(user.id),
+    );
+
+    if (verbose && usersToProcess.length > 1) {
+      console.log(
+        chalk.yellow(`Adding app to ${usersToProcess.length} user(s)...\n`),
+      );
+    }
+
+    for (const user of usersToProcess) {
       await processUserAppRecord(db, user, {
-        appId,
-        appUrl,
-        name: displayName,
-        description: displayDescription,
-        devUrl,
+        appRecordId,
         verbose,
       });
     }
 
-    if (verbose && users.length > 1) {
-      console.log(`  UserApp records processed for ${users.length} users\n`);
+    if (verbose) {
+      const accessLabel =
+        resolvedAccessMode === "all"
+          ? "all users"
+          : resolvedAccessMode === "select"
+            ? `${usersToProcess.length} selected users`
+            : "no users";
+      console.log(
+        chalk.dim(
+          `  Default access: ${resolvedDefaultAccess ? "enabled" : "disabled"}`,
+        ),
+      );
+      console.log(chalk.dim(`  Access granted to ${accessLabel}\n`));
     }
   } catch (error) {
     console.error(
@@ -98,17 +144,13 @@ async function processUserAppRecord(
   db: GatewayDbConnection,
   user: User,
   options: {
-    appId: string;
-    appUrl: string;
-    name: string;
-    description: string;
-    devUrl?: string;
+    appRecordId: string;
     verbose: boolean;
   },
 ): Promise<void> {
-  const { verbose, ...upsertOptions } = options;
+  const { verbose, appRecordId } = options;
 
-  const result = await upsertUserApp(db, user, upsertOptions);
+  const result = await upsertUserAppAccess(db, user.id, appRecordId);
 
   if (result.created) {
     console.log(
@@ -121,4 +163,53 @@ async function processUserAppRecord(
       ),
     );
   }
+}
+
+async function promptForDefaultAccess(message: string): Promise<boolean> {
+  const { confirm } = await enquirer.prompt<{ confirm: boolean }>({
+    type: "confirm",
+    name: "confirm",
+    message,
+    initial: true,
+  });
+
+  return confirm;
+}
+
+async function promptForAccessMode(): Promise<"all" | "select" | "none"> {
+  const { mode } = await enquirer.prompt<{ mode: "all" | "select" | "none" }>({
+    type: "select",
+    name: "mode",
+    message: "Add existing users now?",
+    choices: [
+      { name: "all", message: "All users" },
+      { name: "select", message: "Select users" },
+      { name: "none", message: "None" },
+    ],
+    initial: 0,
+  });
+
+  return mode;
+}
+
+async function promptForUserSelection(users: User[]): Promise<string[]> {
+  const { selected } = await enquirer.prompt<{ selected: string[] }>({
+    type: "multiselect",
+    name: "selected",
+    message: "Select users to grant access",
+    choices: users.map((user) => ({
+      name: user.id,
+      message: formatUserLabel(user),
+    })),
+  });
+
+  return selected;
+}
+
+function formatUserLabel(user: User): string {
+  if (user.name && user.name.trim()) {
+    return `${user.name} <${user.email}>`;
+  }
+
+  return user.email;
 }

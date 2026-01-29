@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { queryD1Database } from "@/lib/cloudflare-d1-queries";
 import type { GatewayDbConnection } from "./connection";
-import type { User } from "./users";
 
 /**
  * Options for upserting a user app record
@@ -12,6 +11,7 @@ interface UpsertUserAppOptions {
   name: string;
   description: string;
   devUrl?: string;
+  isDefault?: boolean;
 }
 
 /**
@@ -21,10 +21,85 @@ interface UpsertResult {
   created: boolean;
 }
 
+type AppRecord = {
+  id: string;
+  dev_url: string | null;
+  is_default: number;
+};
+
 /**
- * Check if a UserApp record exists for a user and app
+ * Fetch an app record by app slug (app_id)
  */
-async function userAppExists(
+export async function getAppCatalogByAppId(
+  db: GatewayDbConnection,
+  appId: string,
+): Promise<AppRecord | null> {
+  const records = await queryD1Database<AppRecord>(
+    db.accountId,
+    db.databaseId,
+    "SELECT id, dev_url, is_default FROM apps WHERE app_id = ?",
+    [appId],
+  );
+
+  return records[0] ?? null;
+}
+
+/**
+ * Ensure an app exists in the apps catalog and return its ID
+ */
+export async function upsertAppCatalog(
+  db: GatewayDbConnection,
+  options: UpsertUserAppOptions,
+): Promise<string> {
+  const existingApp = await getAppCatalogByAppId(db, options.appId);
+  const now = Date.now();
+  const isDefault = options.isDefault ?? Boolean(existingApp?.is_default ?? 0);
+
+  if (existingApp) {
+    const devUrl = options.devUrl ?? existingApp.dev_url ?? null;
+    await queryD1Database(
+      db.accountId,
+      db.databaseId,
+      "UPDATE apps SET name = ?, description = ?, app_url = ?, dev_url = ?, is_default = ?, updated_at = ? WHERE id = ?",
+      [
+        options.name,
+        options.description,
+        options.appUrl,
+        devUrl,
+        isDefault ? 1 : 0,
+        now,
+        existingApp.id,
+      ],
+    );
+
+    return existingApp.id;
+  }
+
+  const appRecordId = randomUUID();
+  await queryD1Database(
+    db.accountId,
+    db.databaseId,
+    "INSERT INTO apps (id, app_id, name, description, app_url, dev_url, is_default, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    [
+      appRecordId,
+      options.appId,
+      options.name,
+      options.description,
+      options.appUrl,
+      options.devUrl ?? null,
+      isDefault ? 1 : 0,
+      now,
+      now,
+    ],
+  );
+
+  return appRecordId;
+}
+
+/**
+ * Check if a user already has access to an app
+ */
+async function userAppAccessExists(
   db: GatewayDbConnection,
   userId: string,
   appId: string,
@@ -32,7 +107,7 @@ async function userAppExists(
   const existingRecords = await queryD1Database<{ id: string }>(
     db.accountId,
     db.databaseId,
-    "SELECT id FROM user_apps WHERE user_id = ? AND app_id = ?",
+    "SELECT id FROM user_app_access WHERE user_id = ? AND app_id = ?",
     [userId, appId],
   );
 
@@ -40,39 +115,30 @@ async function userAppExists(
 }
 
 /**
- * Insert a UserApp record if it doesn't already exist
- * @returns Whether a new record was created
+ * Insert a user access record if it doesn't already exist
+ * Ensures the app is registered in the apps catalog first
+ * @returns Whether a new access record was created
  */
-export async function upsertUserApp(
+export async function upsertUserAppAccess(
   db: GatewayDbConnection,
-  user: User,
-  options: UpsertUserAppOptions,
+  userId: string,
+  appRecordId: string,
 ): Promise<UpsertResult> {
-  const exists = await userAppExists(db, user.id, options.appId);
+  const exists = await userAppAccessExists(db, userId, appRecordId);
 
   if (exists) {
     return { created: false };
   }
 
-  const now = Math.floor(Date.now() / 1000);
+  const now = Date.now();
   const recordId = randomUUID();
 
-  const insertSql = `
-    INSERT INTO user_apps (id, user_id, app_id, name, description, app_url, dev_url, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `;
-
-  await queryD1Database(db.accountId, db.databaseId, insertSql, [
-    recordId,
-    user.id,
-    options.appId,
-    options.name,
-    options.description,
-    options.appUrl,
-    options.devUrl ?? null,
-    now,
-    now,
-  ]);
+  await queryD1Database(
+    db.accountId,
+    db.databaseId,
+    "INSERT INTO user_app_access (id, user_id, app_id, granted_at, granted_by) VALUES (?, ?, ?, ?, ?)",
+    [recordId, userId, appRecordId, now, null],
+  );
 
   return { created: true };
 }

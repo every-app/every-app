@@ -34,7 +34,8 @@ async function getAccountInfo(): Promise<AccountInfo> {
 
   // OAuth: use /memberships endpoint (supports multi-account selection)
   const memberships = await getMemberships();
-  const { account, otherAccounts } = await resolveAccountFromMemberships(memberships);
+  const { account, otherAccounts } =
+    await resolveAccountFromMemberships(memberships);
   displayAccountInfo(account, otherAccounts);
   return { id: account.account.id, name: account.account.name };
 }
@@ -45,6 +46,7 @@ async function getAccountInfo(): Promise<AccountInfo> {
  */
 export async function confirmDeployment(
   deployTarget: string = "this",
+  skipConfirmation: boolean = false,
 ): Promise<boolean> {
   const account = await getAccountInfo();
 
@@ -52,6 +54,13 @@ export async function confirmDeployment(
   if (process.env["CLOUDFLARE_API_TOKEN"]) {
     console.log(chalk.dim(`  ${account.name} (${account.id})`));
     console.log();
+  }
+
+  if (skipConfirmation) {
+    console.log(
+      chalk.dim("Skipping deployment confirmation due to -y flag.\n"),
+    );
+    return true;
   }
 
   const { confirm } = await enquirer.prompt<{ confirm: boolean }>({

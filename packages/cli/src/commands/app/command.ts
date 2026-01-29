@@ -19,6 +19,14 @@ export const createCommand = buildCommand({
         brief: "Show detailed output during creation",
         optional: true,
       },
+      yes: {
+        kind: "boolean",
+        brief: "Skip deployment confirmation",
+        optional: true,
+      },
+    },
+    aliases: {
+      y: "yes",
     },
   },
   docs: {
@@ -55,6 +63,14 @@ export const deployCommand = buildCommand({
         brief: "Show detailed output during deployment",
         optional: true,
       },
+      yes: {
+        kind: "boolean",
+        brief: "Skip deployment confirmation",
+        optional: true,
+      },
+    },
+    aliases: {
+      y: "yes",
     },
   },
   docs: {

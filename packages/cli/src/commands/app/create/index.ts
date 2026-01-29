@@ -17,6 +17,7 @@ import { deployApp } from "@/commands/app/deploy/deployApp";
 
 interface CreateCommandFlags {
   verbose?: boolean;
+  yes?: boolean;
 }
 
 /**
@@ -40,6 +41,7 @@ export default async function (
   nameArg?: string,
 ): Promise<void> {
   const verbose = flags.verbose || false;
+  const skipConfirmation = flags.yes || false;
 
   // Check we're not inside an existing Every App project
   await checkNotNestedApp();
@@ -56,7 +58,7 @@ export default async function (
 
   // Confirm deployment BEFORE cloning to avoid leaving project in weird state
   console.log(chalk.dim(".\n"));
-  const confirmed = await confirmDeployment("this app");
+  const confirmed = await confirmDeployment("this app", skipConfirmation);
   if (!confirmed) {
     console.log(chalk.yellow("\nApp creation cancelled.\n"));
     return;

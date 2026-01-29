@@ -2,6 +2,7 @@ export interface DeployCommandFlags {
   repo?: string;
   verbose?: boolean;
   localGateway?: string;
+  yes?: boolean;
 }
 
 export interface CloudflareResources {
