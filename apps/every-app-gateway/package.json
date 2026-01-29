@@ -24,7 +24,8 @@
     "knip": "knip",
     "test": "vitest run --silent",
     "test:watch": "vitest",
-    "build:release": "node scripts/build-release.js"
+    "build:release": "node scripts/build-release.js",
+    "build:release:deploy": "pnpm run build:release && npx everyapp gateway deploy --localGateway \"every-app-gateway-build.tar.gz\""
   },
   "dependencies": {
     "@cloudflare/vite-plugin": "^1.17.0",

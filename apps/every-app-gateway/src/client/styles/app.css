@@ -103,8 +103,6 @@ body {
     "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
   /* Fallback for browsers that don't support dvh */
   height: 100vh;
-  /* Use dvh for proper mobile viewport handling in Chrome/Safari */
-  height: 100dvh;
   overflow: hidden;
   /* Allow browser/extensions to detect color scheme preference */
   color-scheme: light dark;
@@ -121,6 +119,14 @@ body {
   overflow-y: auto;
 }
 
+.embedded-app-frame {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: transparent;
+}
+
 /* Custom Utility Classes */
 @layer utilities {
   .pb-safe {
@@ -128,6 +134,27 @@ body {
   }
   .pt-safe {
     padding-top: env(safe-area-inset-top, 0);
+  }
+  .scrollbar-stable {
+    scrollbar-gutter: stable;
+  }
+  .scrollbar-hidden {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .scrollbar-hidden::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+  @media (pointer: coarse) {
+    .scrollbar-hidden-mobile {
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+    }
+    .scrollbar-hidden-mobile::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+    }
   }
 }
 

@@ -45,7 +45,7 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
   return (
     <div className="bg-base-100 h-full flex flex-col">
       {/* Header */}
-      <div className="px-4 py-4 border-b border-base-300">
+      <div className="px-4 py-2 border-b border-base-300">
         <div className="flex items-center gap-2">
           <ChefHat className="h-5 w-5 text-primary" />
           <span className="font-semibold text-base-content">Chef</span>

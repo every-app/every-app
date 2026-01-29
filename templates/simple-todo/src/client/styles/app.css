@@ -77,10 +77,13 @@
   --noise: 0;
 }
 
+html,
 body {
   @apply m-0 bg-base-200;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Prevent Safari mobile from zooming on input focus (requires 16px minimum) */
@@ -104,7 +107,7 @@ select {
     padding-bottom: calc(env(safe-area-inset-bottom, 0.5rem) + 0.5rem);
   }
   .pt-safe {
-    padding-top: env(safe-area-inset-top, 0);
+    padding-top: max(env(safe-area-inset-top, 0), 12px);
   }
 }
 
@@ -116,6 +119,8 @@ select {
   left: auto;
   right: auto;
   border-top: none;
+  height: 4rem;
+  padding-bottom: 0;
 }
 
 /* Touch device optimizations */

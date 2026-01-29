@@ -113,7 +113,7 @@ export function AppShell() {
       />
       <div className="drawer-content flex flex-col h-screen overflow-hidden">
         {/* Mobile navbar - hidden on desktop */}
-        <div className="navbar bg-base-100 border-b border-base-300 px-4 min-h-14 flex-shrink-0 md:hidden">
+        <div className="navbar pt-safe bg-base-100 border-b border-base-300 px-4 min-h-14 flex-shrink-0 md:hidden">
           <div className="flex-none">
             <button
               onClick={() => setIsDrawerOpen(true)}
@@ -146,7 +146,7 @@ export function AppShell() {
           aria-label="close sidebar"
           className="drawer-overlay"
         />
-        <div className="sidebar w-72 min-h-full bg-base-100 border-r border-base-300">
+        <div className="sidebar w-72 min-h-full pt-safe bg-base-100 border-r border-base-300">
           <SidebarNav onNavigate={() => setIsDrawerOpen(false)} />
         </div>
       </div>

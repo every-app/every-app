@@ -110,12 +110,12 @@ function AppLayout() {
         </div>
 
         {/* Main content */}
-        <div className="main-content flex-1 min-h-0 overflow-auto md:pb-0">
+        <div className="main-content flex-1 min-h-0 overflow-auto pt-safe md:pt-0 md:pb-0 pb-[80px]">
           <Outlet />
         </div>
 
         {/* Mobile: TabBar */}
-        <div className="md:hidden flex-shrink-0">
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-50">
           <TabBar currentPath={location.pathname} />
         </div>
       </div>

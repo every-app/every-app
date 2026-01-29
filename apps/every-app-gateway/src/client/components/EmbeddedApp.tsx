@@ -65,12 +65,12 @@ export const EmbeddedApp: React.FC<EmbeddedAppProps> = ({
     );
 
   return (
-    <div className="w-full h-full flex flex-col bg-base-100 relative">
+    <div className="w-full h-full flex flex-col min-h-0 bg-base-100 relative">
       <iframe
         ref={iframeRef}
         src={iframeUrl}
         // Don't show the iframe content until its ready to prevent a white flash in dark mode while its loading
-        className={`flex-1 w-full ${isEmbeddedAppReady ? "opacity-100" : "opacity-0"} ${className}`}
+        className={`flex-1 w-full h-full ${isEmbeddedAppReady ? "opacity-100" : "opacity-0"} ${className}`}
         title={app.name}
         onLoad={handleIframeLoad}
         // allow-top-navigation: Required for embedded apps to navigate back to the gateway

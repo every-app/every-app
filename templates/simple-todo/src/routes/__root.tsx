@@ -76,19 +76,19 @@ function AppLayout() {
   useLiveQuery((q) => q.from({ todo: todoCollection }));
 
   return (
-    <div className="flex flex-col md:flex-row h-screen bg-base-200">
+    <div className="flex flex-col md:flex-row h-[100dvh] overflow-hidden bg-base-200">
       {/* Desktop: Sidebar */}
       <div className="hidden md:block">
         <Sidebar currentPath={location.pathname} />
       </div>
 
       {/* Main content */}
-      <div className="main-content flex-1 overflow-auto md:pb-0">
+      <div className="main-content flex-1 min-h-0 overflow-auto pt-safe md:pt-0 md:pb-0 pb-[80px]">
         <Outlet />
       </div>
 
       {/* Mobile: TabBar */}
-      <div className="md:hidden">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50">
         <TabBar currentPath={location.pathname} />
       </div>
     </div>

@@ -83,19 +83,11 @@ function App() {
   const hasAnyDevUrls = userApps?.some((app) => app.devUrl) ?? false;
 
   return (
-    <div className="bg-base-100 h-full flex flex-col overflow-y-auto">
+    <div className="bg-base-100 h-full flex flex-col">
       <Header email={session.data?.user.email} role={session.data?.user.role} />
-      <div className="flex-1 animate-fade-in">
-        <div className="max-w-4xl mx-auto px-4 py-6">
+      <div className="flex-1 min-h-0 animate-fade-in">
+        <div className="max-w-4xl mx-auto px-4 py-6 h-full flex flex-col">
           <div className="space-y-6">
-            {isError && (
-              <div className="text-center py-8">
-                <p className="text-error">
-                  Failed to load apps. Please try again.
-                </p>
-              </div>
-            )}
-
             <div className="flex justify-between items-start w-full">
               <div>
                 <div className="flex items-center gap-3">
@@ -139,9 +131,19 @@ function App() {
             </div>
 
             <OnboardingBanner />
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-y-auto pt-4 scrollbar-stable scrollbar-hidden-mobile">
+            {isError && (
+              <div className="text-center py-8">
+                <p className="text-error">
+                  Failed to load apps. Please try again.
+                </p>
+              </div>
+            )}
 
             {!isLoading && userApps && userApps.length > 0 && (
-              <div className="w-full mt-4 space-y-3">
+              <div className="w-full space-y-3">
                 {userApps.map((app) => (
                   <ul key={app.id} className="space-y-2">
                     <AppListItem
@@ -182,16 +184,16 @@ function App() {
                 )}
               </div>
             )}
-
-            <PWAInstallModal
-              open={showPWAInstallModal}
-              onClose={() => setShowPWAInstallModal(false)}
-            />
-            <SafariDevModeWarningModal
-              open={showSafariWarning}
-              onOpenChange={setShowSafariWarning}
-            />
           </div>
+
+          <PWAInstallModal
+            open={showPWAInstallModal}
+            onClose={() => setShowPWAInstallModal(false)}
+          />
+          <SafariDevModeWarningModal
+            open={showSafariWarning}
+            onOpenChange={setShowSafariWarning}
+          />
         </div>
       </div>
     </div>
