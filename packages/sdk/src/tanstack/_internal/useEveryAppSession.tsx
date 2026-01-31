@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import {
-  SessionManager,
-  SessionManagerConfig,
-} from "../../core/sessionManager";
+import { SessionManager } from "../../core/sessionManager";
+
+interface SessionManagerConfig {
+  appId: string;
+}
 
 interface UseEveryAppSessionParams {
   sessionManagerConfig: SessionManagerConfig;
@@ -34,9 +35,14 @@ export function useEveryAppSession({
       setSessionTokenState(sessionManager.getTokenState());
     }, 5000);
 
-    sessionManager.getToken().catch((err) => {
-      console.error("[EmbeddedProvider] Initial token request failed:", err);
-    });
+    sessionManager
+      .getToken()
+      .then(() => {
+        setSessionTokenState(sessionManager.getTokenState());
+      })
+      .catch((err) => {
+        console.error("[EmbeddedProvider] Initial token request failed:", err);
+      });
 
     return () => {
       clearInterval(interval);
