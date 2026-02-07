@@ -1,12 +1,11 @@
 ---
 import '../styles/global.css';
-import LinkCard from '../components/LinkCard.astro';
 import todosScreenshot from '../assets/todo-dark.png';
 import workoutTrackerScreenshot from '../assets/workout-tracker-dark.png';
 import chefScreenshot from '../assets/chef-dark.png';
 
 const title = 'Every App';
-const description = 'The open source personal software platform. Build exactly what you want.';
+const description = 'Make every app open source. Build what you want to exist. Share it easily with others. Self host unlimited apps on Cloudflare for $5/month';
 ---
 
 <!doctype html>
@@ -93,13 +92,13 @@ const description = 'The open source personal software platform. Build exactly w
           </h1>
 
           <p class="text-[clamp(1.5rem,3vw,2rem)] text-white font-normal mb-6">
-            The open source personal software platform
+            Make every app open source
           </p>
 
           <div class="space-y-2 text-[clamp(1rem,2vw,1.25rem)] text-stone-400 font-light mb-10">
-            <p>Build exactly what you want.</p>
-            <p>Bring your own AI. No credits, no limits.</p>
-            <p>Self-host on Cloudflare. Free to start, $5/month max.</p>
+		  <p>Build what you want to exist<p>
+		  <p>Share it easily with others</p>
+		  <p>Self host unlimited apps on Cloudflare for $5/month</p>
           </div>
 
           <p class="text-stone-500 text-sm mb-2">Self host with one command</p>
@@ -145,6 +144,31 @@ const description = 'The open source personal software platform. Build exactly w
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-500">
             <path d="M12 5v14M19 12l-7 7-7-7"/>
           </svg>
+        </div>
+      </section>
+
+      <!-- Section Divider -->
+      <div class="px-16">
+        <hr class="border-stone-800" />
+      </div>
+
+      <!-- What is Every App Section -->
+      <section class="px-6 py-12 md:py-24">
+        <div class="max-w-5xl mx-auto">
+          <h2 class="text-[clamp(2rem,5vw,3rem)] font-bold text-white mb-4">
+            What is Every App?
+          </h2>
+          <div class="text-stone-400 text-lg max-w-3xl space-y-4">
+            <p>
+              Every App is a platform for self hosting apps. It standardizes how to build them on Cloudflare so that your apps scale to zero and also to infinity.
+            </p>
+            <p>
+              It hoists common logic like authentication and user management to the Every App Gateway so that you don't need to triple check if your AI agent screwed that up.
+            </p>
+            <p>
+              Every App's goal is to kickstart a community that builds a thousands of fun and powerful applications that are just as easy to use as any traditional consumer app or SaaS.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -313,7 +337,7 @@ const description = 'The open source personal software platform. Build exactly w
                 </div>
                 <h3 class="text-white font-semibold text-lg md:mb-2">Simplified Auth</h3>
               </div>
-              <p class="text-stone-400 text-sm">Never build login flows again. Apps inherit authentication from the Gateway.</p>
+              <p class="text-stone-400 text-sm">Apps inherit authentication from the Gateway. Deploy new apps faster than it takes to Login with Google.</p>
             </div>
 
             <!-- LLM Gateway Coming Soon -->
@@ -506,7 +530,7 @@ const description = 'The open source personal software platform. Build exactly w
               alt="Every App Logo"
               class="w-8 h-8 opacity-60"
             />
-            <span class="text-stone-500 text-sm">The open source personal software platform</span>
+	    <span class="text-stone-500 text-sm">Make every app open source</span>
           </div>
           <div class="flex items-center gap-6 self-end md:self-auto">
             <a 

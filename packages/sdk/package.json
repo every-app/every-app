@@ -1,6 +1,6 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.1.2",
+  "version": "0.1.5",
   "license": "MIT",
   "type": "module",
   "exports": {
