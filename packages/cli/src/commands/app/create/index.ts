@@ -14,6 +14,7 @@ import { updatePackageJson } from "@/commands/app/create/steps/updateConfigurati
 import { runLocalMigrations } from "@/commands/app/create/steps/runLocalMigrations";
 import { printNextSteps } from "@/commands/app/create/steps/printNextSteps";
 import { deployApp } from "@/commands/app/deploy/deployApp";
+import { provisionGatewayAppApiToken } from "@/commands/app/deploy/steps/setupAppSecrets";
 
 interface CreateCommandFlags {
   verbose?: boolean;
@@ -87,8 +88,18 @@ export default async function (
       devUrl: "http://localhost:3001",
     });
 
+    const localGatewayAppApiToken = await provisionGatewayAppApiToken({
+      gatewayUrl,
+      appId,
+    });
+
     // Local setup: create .env.local and run local migrations
-    await createEnvFiles({ targetDir, appId });
+    await createEnvFiles({
+      targetDir,
+      appId,
+      gatewayUrl,
+      gatewayAppApiToken: localGatewayAppApiToken,
+    });
     await runLocalMigrations({ targetDir, verbose });
 
     // Initialize git repository with initial commit

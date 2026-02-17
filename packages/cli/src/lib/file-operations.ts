@@ -59,6 +59,8 @@ interface CreateEnvFilesOptions {
   targetDir: string;
   /** The unprefixed app ID (e.g., "todo-app") */
   appId: string;
+  gatewayUrl?: string;
+  gatewayAppApiToken?: string;
 }
 
 /**
@@ -67,11 +69,17 @@ interface CreateEnvFilesOptions {
 export async function createEnvFiles({
   targetDir,
   appId,
+  gatewayUrl: providedGatewayUrl,
+  gatewayAppApiToken,
 }: CreateEnvFilesOptions): Promise<void> {
-  // Get the every-app-gateway worker URL dynamically
-  const gatewayUrl = await getWorkerUrl("every-app-gateway");
+  const gatewayUrl =
+    providedGatewayUrl ?? (await getWorkerUrl("every-app-gateway"));
 
-  const envLocalContent = `# Vite client-side secrets\nVITE_APP_ID=${appId}\nVITE_GATEWAY_URL=${gatewayUrl}\n# Set Cloudflare secrets locally\nGATEWAY_URL=${gatewayUrl}\n`;
+  const tokenLine = gatewayAppApiToken
+    ? `GATEWAY_APP_API_TOKEN=${gatewayAppApiToken}\n`
+    : "";
+
+  const envLocalContent = `# Vite client-side secrets\nVITE_APP_ID=${appId}\nVITE_GATEWAY_URL=${gatewayUrl}\n# Set Cloudflare secrets locally\nGATEWAY_URL=${gatewayUrl}\n${tokenLine}`;
 
   await Promise.all([
     fs.writeFile(path.join(targetDir, ".env.local"), envLocalContent),

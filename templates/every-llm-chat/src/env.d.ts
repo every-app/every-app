@@ -5,5 +5,7 @@ declare namespace Cloudflare {
   interface Env {
     OPENAI_API_KEY: string;
     GATEWAY_URL: string;
+    GATEWAY_APP_API_TOKEN?: string;
+    APP_TOKEN?: string;
   }
 }

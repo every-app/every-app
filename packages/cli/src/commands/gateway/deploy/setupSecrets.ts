@@ -31,12 +31,14 @@ function generateJwtKeyPair(): JwtKeyPair {
 
 interface SetupSecretsOptions {
   gatewayUrl: string;
+  cloudflareAccountId: string;
   gatewayPath: string;
   verbose?: boolean;
 }
 
 export async function setupSecrets({
   gatewayUrl,
+  cloudflareAccountId,
   gatewayPath,
   verbose = false,
 }: SetupSecretsOptions): Promise<void> {
@@ -45,6 +47,9 @@ export async function setupSecrets({
     const existingSecrets = new Set(await listSecretNames({ cwd: gatewayPath }));
 
     const gatewayUrlExists = existingSecrets.has("GATEWAY_URL");
+    const cloudflareAccountIdExists = existingSecrets.has(
+      "CLOUDFLARE_ACCOUNT_ID",
+    );
     const betterAuthSecretExists = existingSecrets.has("BETTER_AUTH_SECRET");
     const privateKeyExists = existingSecrets.has("JWT_PRIVATE_KEY");
     const publicKeyExists = existingSecrets.has("JWT_PUBLIC_KEY");
@@ -77,6 +82,16 @@ export async function setupSecrets({
         cwd: gatewayPath,
         verbose,
         description: `Setting GATEWAY_URL to: ${gatewayUrl}`,
+      });
+    }
+
+    if (!cloudflareAccountIdExists) {
+      await uploadSecret({
+        secretName: "CLOUDFLARE_ACCOUNT_ID",
+        secretValue: cloudflareAccountId,
+        cwd: gatewayPath,
+        verbose,
+        description: `Setting CLOUDFLARE_ACCOUNT_ID to: ${cloudflareAccountId}`,
       });
     }
 

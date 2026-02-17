@@ -17,7 +17,6 @@ export const ensureUserMiddleware = createMiddleware({
   const session = await authenticateRequest(authConfig);
 
   if (!session) {
-    console.error("No session found, returning 401");
     throw new Response("Unauthenticated", { status: 401 });
   }
 

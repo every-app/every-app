@@ -33,8 +33,8 @@ interface DeployAppResult {
  * 3. Installing dependencies
  * 4. Running production migrations
  * 5. Building and deploying to Cloudflare Workers
- * 6. Setting up secrets
- * 7. Registering the app with the gateway
+ * 6. Registering the app with the gateway
+ * 7. Setting up secrets
  */
 export async function deployApp(
   options: DeployAppOptions,
@@ -76,9 +76,6 @@ export async function deployApp(
   // Build and deploy
   await buildAndDeploy({ cwd, gatewayUrl, appId, verbose });
 
-  // Setup secrets
-  await setupAppSecrets({ gatewayUrl, appPath: cwd, verbose });
-
   // Get deployed URL
   const workerUrl = await getWorkerUrl(resourceName);
 
@@ -95,6 +92,10 @@ export async function deployApp(
     appDescription: config.description,
     devUrl,
   });
+
+  // Setup app-level secrets after gateway registration so app token provisioning
+  // can resolve this app in the gateway catalog.
+  await setupAppSecrets({ gatewayUrl, appPath: cwd, appId, verbose });
 
   return { workerUrl, gatewayUrl };
 }

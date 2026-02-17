@@ -5,6 +5,8 @@ declare namespace Cloudflare {
   interface Env {
     GATEWAY_URL: string;
     EVERY_APP_GATEWAY?: Fetcher;
+    GATEWAY_APP_API_TOKEN?: string;
+    APP_TOKEN?: string;
   }
 }
 

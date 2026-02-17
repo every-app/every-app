@@ -36,7 +36,6 @@ export async function authenticateRequest(
   const authHeader = request.headers.get("authorization");
 
   if (!authHeader) {
-    console.log("No auth header found");
     return null;
   }
 

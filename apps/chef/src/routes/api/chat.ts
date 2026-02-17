@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { streamText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { fetchGateway, getGatewayUrl } from "@every-app/sdk/cloudflare/server";
 import {
   authenticateRequest,
   getAuthConfig,
@@ -168,9 +169,17 @@ export const Route = createFileRoute("/api/chat")({
             userId,
           );
 
-          // Create OpenAI provider instance
+          // Create OpenAI provider instance routed through the Every App gateway.
+          // The gateway authenticates requests via x-every-app-token (set by
+          // fetchGateway) and injects the real OpenAI key server-side.
           const openaiProvider = createOpenAI({
-            apiKey: env.OPENAI_API_KEY,
+            // @ai-sdk/openai requires apiKey — it throws at request time if
+            // both this and the OPENAI_API_KEY env var are missing. The value
+            // doesn't matter because fetchGateway strips the Authorization
+            // header the SDK generates before the request reaches the gateway.
+            apiKey: "gateway-managed",
+            baseURL: `${getGatewayUrl(env)}/api/ai/openai/v1`,
+            fetch: (url, init) => fetchGateway({ env, url, init }),
           });
 
           // Stream text with AI SDK

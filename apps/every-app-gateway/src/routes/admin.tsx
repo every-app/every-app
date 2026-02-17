@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-router";
 import { useSession } from "@/client/hooks/useSession";
 import { Header } from "@/client/components/Header";
-import { Monitor, Users, AppWindow } from "lucide-react";
+import { Monitor, Users, AppWindow, KeyRound } from "lucide-react";
 
 export const Route = createFileRoute("/admin")({
   component: AdminLayout,
@@ -15,6 +15,7 @@ export const Route = createFileRoute("/admin")({
 const adminTabs = [
   { path: "/admin/users", label: "Users", icon: Users },
   { path: "/admin/apps", label: "Apps", icon: AppWindow },
+  { path: "/admin/tokens", label: "App Tokens", icon: KeyRound },
 ];
 
 function AdminLayout() {

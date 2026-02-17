@@ -15,13 +15,13 @@ export function CodeBlock({ code }: CodeBlockProps) {
   };
 
   return (
-    <div className="relative group">
-      <pre className="bg-base-200 rounded-lg p-3 overflow-x-auto text-sm font-mono">
+    <div className="relative">
+      <pre className="bg-base-200 rounded-lg p-3 pr-14 overflow-x-auto text-sm font-mono">
         <code className="text-base-content/70">{code}</code>
       </pre>
       <button
         onClick={handleCopy}
-        className="absolute top-2 right-2 btn btn-ghost btn-xs opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute top-2 right-2 btn btn-ghost btn-xs bg-base-100/80 border border-base-content/10 backdrop-blur-sm opacity-100"
         title="Copy to clipboard"
       >
         {copied ? (

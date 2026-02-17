@@ -21,6 +21,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AppsAppIdRouteImport } from './routes/apps/$appId'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AdminTokensRouteImport } from './routes/admin/tokens'
 import { Route as AdminAppsRouteImport } from './routes/admin/apps'
 import { Route as AppsAppIdDevRouteImport } from './routes/apps/$appId_.dev'
 import { Route as AppsAppIdSplatRouteImport } from './routes/apps/$appId.$'
@@ -28,6 +29,8 @@ import { Route as ApiEmbeddedJwksRouteImport } from './routes/api/embedded/jwks'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAdminHasOwnerRouteImport } from './routes/api/admin/has-owner'
 import { Route as AppsAppIdDevSplatRouteImport } from './routes/apps/$appId_.dev.$'
+import { Route as ApiInternalAppTokenProvisionRouteImport } from './routes/api/internal/app-token/provision'
+import { Route as ApiAiProviderSplatRouteImport } from './routes/api/ai/$provider.$'
 
 const SnakeRoute = SnakeRouteImport.update({
   id: '/snake',
@@ -89,6 +92,11 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminTokensRoute = AdminTokensRouteImport.update({
+  id: '/tokens',
+  path: '/tokens',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminAppsRoute = AdminAppsRouteImport.update({
   id: '/apps',
   path: '/apps',
@@ -124,6 +132,17 @@ const AppsAppIdDevSplatRoute = AppsAppIdDevSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => AppsAppIdDevRoute,
 } as any)
+const ApiInternalAppTokenProvisionRoute =
+  ApiInternalAppTokenProvisionRouteImport.update({
+    id: '/api/internal/app-token/provision',
+    path: '/api/internal/app-token/provision',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiAiProviderSplatRoute = ApiAiProviderSplatRouteImport.update({
+  id: '/api/ai/$provider/$',
+  path: '/api/ai/$provider/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -136,6 +155,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/snake': typeof SnakeRoute
   '/admin/apps': typeof AdminAppsRoute
+  '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin/': typeof AdminIndexRoute
@@ -144,6 +164,8 @@ export interface FileRoutesByFullPath {
   '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
   '/apps/$appId/$': typeof AppsAppIdSplatRoute
   '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
+  '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
+  '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
   '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
 }
 export interface FileRoutesByTo {
@@ -156,6 +178,7 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/snake': typeof SnakeRoute
   '/admin/apps': typeof AdminAppsRoute
+  '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin': typeof AdminIndexRoute
@@ -164,6 +187,8 @@ export interface FileRoutesByTo {
   '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
   '/apps/$appId/$': typeof AppsAppIdSplatRoute
   '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
+  '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
+  '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
   '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
 }
 export interface FileRoutesById {
@@ -178,6 +203,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/snake': typeof SnakeRoute
   '/admin/apps': typeof AdminAppsRoute
+  '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin/': typeof AdminIndexRoute
@@ -186,6 +212,8 @@ export interface FileRoutesById {
   '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
   '/apps/$appId/$': typeof AppsAppIdSplatRoute
   '/apps/$appId_/dev': typeof AppsAppIdDevRouteWithChildren
+  '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
+  '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
   '/apps/$appId_/dev/$': typeof AppsAppIdDevSplatRoute
 }
 export interface FileRouteTypes {
@@ -201,6 +229,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/snake'
     | '/admin/apps'
+    | '/admin/tokens'
     | '/admin/users'
     | '/apps/$appId'
     | '/admin/'
@@ -209,6 +238,8 @@ export interface FileRouteTypes {
     | '/api/embedded/jwks'
     | '/apps/$appId/$'
     | '/apps/$appId/dev'
+    | '/api/ai/$provider/$'
+    | '/api/internal/app-token/provision'
     | '/apps/$appId/dev/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -221,6 +252,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/snake'
     | '/admin/apps'
+    | '/admin/tokens'
     | '/admin/users'
     | '/apps/$appId'
     | '/admin'
@@ -229,6 +261,8 @@ export interface FileRouteTypes {
     | '/api/embedded/jwks'
     | '/apps/$appId/$'
     | '/apps/$appId/dev'
+    | '/api/ai/$provider/$'
+    | '/api/internal/app-token/provision'
     | '/apps/$appId/dev/$'
   id:
     | '__root__'
@@ -242,6 +276,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/snake'
     | '/admin/apps'
+    | '/admin/tokens'
     | '/admin/users'
     | '/apps/$appId'
     | '/admin/'
@@ -250,6 +285,8 @@ export interface FileRouteTypes {
     | '/api/embedded/jwks'
     | '/apps/$appId/$'
     | '/apps/$appId_/dev'
+    | '/api/ai/$provider/$'
+    | '/api/internal/app-token/provision'
     | '/apps/$appId_/dev/$'
   fileRoutesById: FileRoutesById
 }
@@ -268,6 +305,8 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiEmbeddedJwksRoute: typeof ApiEmbeddedJwksRoute
   AppsAppIdDevRoute: typeof AppsAppIdDevRouteWithChildren
+  ApiAiProviderSplatRoute: typeof ApiAiProviderSplatRoute
+  ApiInternalAppTokenProvisionRoute: typeof ApiInternalAppTokenProvisionRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -356,6 +395,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/tokens': {
+      id: '/admin/tokens'
+      path: '/tokens'
+      fullPath: '/admin/tokens'
+      preLoaderRoute: typeof AdminTokensRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/apps': {
       id: '/admin/apps'
       path: '/apps'
@@ -405,17 +451,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppsAppIdDevSplatRouteImport
       parentRoute: typeof AppsAppIdDevRoute
     }
+    '/api/internal/app-token/provision': {
+      id: '/api/internal/app-token/provision'
+      path: '/api/internal/app-token/provision'
+      fullPath: '/api/internal/app-token/provision'
+      preLoaderRoute: typeof ApiInternalAppTokenProvisionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ai/$provider/$': {
+      id: '/api/ai/$provider/$'
+      path: '/api/ai/$provider/$'
+      fullPath: '/api/ai/$provider/$'
+      preLoaderRoute: typeof ApiAiProviderSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 interface AdminRouteChildren {
   AdminAppsRoute: typeof AdminAppsRoute
+  AdminTokensRoute: typeof AdminTokensRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAppsRoute: AdminAppsRoute,
+  AdminTokensRoute: AdminTokensRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }
@@ -461,6 +523,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiEmbeddedJwksRoute: ApiEmbeddedJwksRoute,
   AppsAppIdDevRoute: AppsAppIdDevRouteWithChildren,
+  ApiAiProviderSplatRoute: ApiAiProviderSplatRoute,
+  ApiInternalAppTokenProvisionRoute: ApiInternalAppTokenProvisionRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

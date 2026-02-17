@@ -55,5 +55,10 @@ export async function updateConfigAndDeploy({
   // New line
   console.log();
   // Set up secrets after the worker is deployed
-  await setupSecrets({ gatewayUrl: workerUrl, gatewayPath, verbose });
+  await setupSecrets({
+    gatewayUrl: workerUrl,
+    cloudflareAccountId: resources.accountId,
+    gatewayPath,
+    verbose,
+  });
 }

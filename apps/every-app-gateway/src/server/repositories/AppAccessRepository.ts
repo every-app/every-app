@@ -77,7 +77,13 @@ async function findByUserAndApp(userId: string, appId: string) {
 /**
  * Check if a user has access to an app by app slug (appId field in apps table).
  */
-async function findByUserAndAppSlug(userId: string, appSlug: string) {
+async function findByUserAndAppSlug(
+  userId: string,
+  appSlug: string,
+): Promise<{
+  access: typeof userAppAccess.$inferSelect;
+  app: typeof apps.$inferSelect;
+} | null> {
   const result = await db
     .select({
       access: userAppAccess,

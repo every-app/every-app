@@ -5,7 +5,11 @@ declare namespace Cloudflare {
   interface Env {
     // Gateway URL
     GATEWAY_URL: string;
-    // OpenAI API key
-    OPENAI_API_KEY: string;
+
+    // Optional machine token used for app-to-gateway requests
+    GATEWAY_APP_API_TOKEN?: string;
+
+    // Legacy alias retained for backwards compatibility
+    APP_TOKEN?: string;
   }
 }

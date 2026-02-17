@@ -62,7 +62,7 @@ export async function deploy(
     const workerName = await getWorkerName(wranglerConfigPath);
     workerUrl = await getWorkerUrl(workerName);
 
-    // Update config and deploy (secrets are set inside this function after vars are removed)
+    // Update config and deploy (secrets are set inside this function after deploy)
     await updateConfigAndDeploy({ gatewayPath, resources, workerUrl, verbose });
 
     // Install dependencies for current platform (release tarball may contain different platform binaries)

@@ -8,7 +8,7 @@ export interface DeployCommandFlags {
 export interface CloudflareResources {
   d1DatabaseId: string;
   kvNamespaceId: string;
-  accountId?: string;
+  accountId: string;
 }
 
 export interface JwtKeyPair {
