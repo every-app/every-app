@@ -6,7 +6,12 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "types:check": "tsc --noEmit",
+    "format:check": "npx prettier --check .",
+    "format:write": "npx prettier . --write",
+    "test": "npm run types:check",
+    "knip": "npm run types:check"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

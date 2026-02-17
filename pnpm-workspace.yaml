@@ -1,5 +1,6 @@
 packages:
   - 'apps/*'
+  - 'gateway/*'
   - 'landing-page'
   - 'packages/*'
   - 'templates/*'
