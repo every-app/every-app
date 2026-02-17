@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { SessionManager } from "../../core/sessionManager";
+import { SessionManager } from "../../core/sessionManager.js";
 
 interface SessionManagerConfig {
   appId: string;

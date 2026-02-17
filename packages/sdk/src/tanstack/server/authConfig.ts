@@ -1,4 +1,4 @@
-import type { AuthConfig } from "./types";
+import type { AuthConfig } from "./types.js";
 import { env } from "cloudflare:workers";
 
 export function getAuthConfig(): AuthConfig {

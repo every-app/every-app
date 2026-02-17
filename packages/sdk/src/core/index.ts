@@ -1,4 +1,4 @@
-export { SessionManager, isRunningInIframe } from "./sessionManager";
-export type { SessionManagerConfig } from "./sessionManager";
+export { SessionManager, isRunningInIframe } from "./sessionManager.js";
+export type { SessionManagerConfig } from "./sessionManager.js";
 
-export { authenticatedFetch, getSessionToken } from "./authenticatedFetch";
+export { authenticatedFetch, getSessionToken } from "./authenticatedFetch.js";

@@ -26,6 +26,8 @@ jobs:
         run: pnpm install --ignore-scripts
       - name: Run type checking
         run: pnpm types:check
+      - name: Validate SDK relative ESM import extensions
+        run: pnpm -C packages/sdk check:esm-relative-imports
   prettier-check:
     name: Prettier Check
     runs-on: ubuntu-latest

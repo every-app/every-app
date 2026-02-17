@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { SessionManager } from "../core/sessionManager";
+import { SessionManager } from "../core/sessionManager.js";
 import { useRouter } from "@tanstack/react-router";
 
 interface UseEveryAppRouterParams {

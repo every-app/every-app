@@ -1,8 +1,11 @@
 import React, { createContext, useContext, useMemo } from "react";
-import { SessionManager, SessionManagerConfig } from "../core/sessionManager";
-import { useEveryAppSession } from "./_internal/useEveryAppSession";
-import { useEveryAppRouter } from "./useEveryAppRouter";
-import { GatewayRequiredError } from "./GatewayRequiredError";
+import {
+  SessionManager,
+  SessionManagerConfig,
+} from "../core/sessionManager.js";
+import { useEveryAppSession } from "./_internal/useEveryAppSession.js";
+import { useEveryAppRouter } from "./useEveryAppRouter.js";
+import { GatewayRequiredError } from "./GatewayRequiredError.js";
 
 interface EmbeddedProviderConfig extends SessionManagerConfig {
   children: React.ReactNode;

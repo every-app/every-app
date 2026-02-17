@@ -1,5 +1,5 @@
 import { createMiddleware } from "@tanstack/react-start";
-import type { SessionManager } from "../core/sessionManager";
+import type { SessionManager } from "../core/sessionManager.js";
 
 export const useSessionTokenClientMiddleware = createMiddleware({
   type: "function",

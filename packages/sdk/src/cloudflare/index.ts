@@ -1,1 +1,1 @@
-export { lazyInitForWorkers } from "./lazyInit";
+export { lazyInitForWorkers } from "./lazyInit.js";

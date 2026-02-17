@@ -1,6 +1,6 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.1.6",
+  "version": "0.1.8",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -35,7 +35,8 @@
     "format:check": "prettier --check .",
     "format:write": "prettier . --write",
     "test": "vitest run --silent",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "check:esm-relative-imports": "node ./scripts/check-esm-relative-imports.mjs"
   },
   "dependencies": {
     "jsonc-parser": "^3.3.1"

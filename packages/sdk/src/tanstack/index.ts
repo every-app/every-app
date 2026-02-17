@@ -1,3 +1,3 @@
-export { useSessionTokenClientMiddleware } from "./useSessionTokenClientMiddleware";
-export { useEveryAppRouter } from "./useEveryAppRouter";
-export { EmbeddedAppProvider, useCurrentUser } from "./EmbeddedAppProvider";
+export { useSessionTokenClientMiddleware } from "./useSessionTokenClientMiddleware.js";
+export { useEveryAppRouter } from "./useEveryAppRouter.js";
+export { EmbeddedAppProvider, useCurrentUser } from "./EmbeddedAppProvider.js";

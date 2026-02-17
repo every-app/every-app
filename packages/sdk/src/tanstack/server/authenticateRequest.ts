@@ -6,7 +6,7 @@ import {
   JSONWebKeySet,
 } from "jose";
 
-import type { AuthConfig } from "./types";
+import type { AuthConfig } from "./types.js";
 import { env } from "cloudflare:workers";
 
 /**

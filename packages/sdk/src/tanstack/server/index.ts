@@ -1,3 +1,3 @@
-export { authenticateRequest } from "./authenticateRequest";
-export type { AuthConfig } from "./types";
-export { getAuthConfig } from "./authConfig";
+export { authenticateRequest } from "./authenticateRequest.js";
+export type { AuthConfig } from "./types.js";
+export { getAuthConfig } from "./authConfig.js";
