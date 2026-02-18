@@ -1,6 +1,6 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.1.8",
+  "version": "0.1.10",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -30,7 +30,10 @@
     "src"
   ],
   "scripts": {
+    "postinstall": "tsc -p tsconfig.build.json",
     "build": "tsc -p tsconfig.build.json",
+    "build:prepublish": "pnpm install --ignore-scripts && npm run types:check && npm run build",
+    "prepublishOnly": "npm run build:prepublish",
     "types:check": "tsc --noEmit",
     "format:check": "prettier --check .",
     "format:write": "prettier . --write",

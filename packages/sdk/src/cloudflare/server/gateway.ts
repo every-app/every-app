@@ -46,16 +46,17 @@ export async function fetchGateway({
   const resolvedRequest = toRequest(url, init, gatewayBaseUrl);
   const authenticatedRequest = applyAppTokenAuth(resolvedRequest, env);
 
-  // Use service binding when available for zero-latency internal routing
-  // (available in production Workers, not in local dev)
-  if (env.EVERY_APP_GATEWAY) {
+  // Use service binding in production for zero-latency internal routing.
+  // In local dev wrangler still exposes the binding object, but the target
+  // service usually isn't running locally, so we skip it and use HTTP fetch.
+  if (import.meta.env.PROD && env.EVERY_APP_GATEWAY) {
     const url = new URL(authenticatedRequest.url);
     const bindingUrl = `${SERVICE_BINDING_ORIGIN}${url.pathname}${url.search}`;
     const bindingRequest = new Request(bindingUrl, authenticatedRequest);
     return env.EVERY_APP_GATEWAY.fetch(bindingRequest);
   }
 
-  // Fall back to HTTP fetch for local dev
+  // HTTP fetch – used in local dev, or as a fallback when no binding exists
   return fetch(authenticatedRequest);
 }
 

@@ -56,10 +56,45 @@ describe("gateway server helpers", () => {
     );
   });
 
-  it("fetches via service binding when available", async () => {
-    const bindingFetch = vi
-      .fn()
+  it("fetches via service binding when available in production", async () => {
+    // Service binding is only used when import.meta.env.PROD is true
+    const originalProd = import.meta.env.PROD;
+    import.meta.env.PROD = true;
+
+    try {
+      const bindingFetch = vi
+        .fn()
+        .mockResolvedValue(new Response("ok", { status: 200 }));
+
+      const env: TestEnv = {
+        GATEWAY_URL: "https://gateway.example.com",
+        EVERY_APP_GATEWAY: { fetch: bindingFetch },
+        GATEWAY_APP_API_TOKEN: "eat_test_token",
+      };
+
+      await fetchGateway({
+        env,
+        url: "/api/ai/openai/v1/chat/completions",
+        init: { method: "POST" },
+      });
+
+      expect(bindingFetch).toHaveBeenCalledTimes(1);
+      const [requestArg] = bindingFetch.mock.calls[0];
+      const request = requestArg as Request;
+      expect(request.url).toBe(
+        "http://localhost/api/ai/openai/v1/chat/completions",
+      );
+    } finally {
+      import.meta.env.PROD = originalProd;
+    }
+  });
+
+  it("skips service binding in development and uses HTTP fetch", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("ok", { status: 200 }));
+
+    const bindingFetch = vi.fn();
 
     const env: TestEnv = {
       GATEWAY_URL: "https://gateway.example.com",
@@ -73,12 +108,9 @@ describe("gateway server helpers", () => {
       init: { method: "POST" },
     });
 
-    expect(bindingFetch).toHaveBeenCalledTimes(1);
-    const [requestArg] = bindingFetch.mock.calls[0];
-    const request = requestArg as Request;
-    expect(request.url).toBe(
-      "http://localhost/api/ai/openai/v1/chat/completions",
-    );
+    // In dev, should use HTTP fetch, not service binding
+    expect(bindingFetch).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("always injects app token and strips Authorization header", async () => {
