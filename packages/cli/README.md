@@ -46,6 +46,20 @@ npx everyapp app deploy
 
 Run this from your app directory to build and deploy updates.
 
+### Set up local environment
+
+Set up local development for an existing Every App app (for example, after cloning a repo):
+
+```bash
+npx everyapp app setup-local
+```
+
+This will:
+1. Verify Cloudflare and gateway setup
+2. Install dependencies
+3. Create or refresh `.env.local`
+4. Generate Cloudflare types and run local migrations
+
 ### Remote D1 shell
 
 Run commands with access to your production D1 database:

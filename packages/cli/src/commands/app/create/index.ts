@@ -1,6 +1,6 @@
 import type { LocalContext } from "@/context";
 import chalk from "chalk";
-import { cleanupTempDirectory, createEnvFiles } from "@/lib/file-operations";
+import { cleanupTempDirectory } from "@/lib/file-operations";
 import { confirmDeployment } from "@/lib/deployment";
 import { writeEveryAppConfig } from "@/lib/everyapp-config";
 import { initRepository } from "@/lib/git";
@@ -11,7 +11,7 @@ import { checkPnpm } from "@/commands/app/create/steps/checkPnpm";
 import { promptUserInput } from "@/commands/app/create/steps/promptUserInput";
 import { cloneTemplate } from "@/commands/app/create/steps/cloneTemplate";
 import { updatePackageJson } from "@/commands/app/create/steps/updateConfiguration";
-import { runLocalMigrations } from "@/commands/app/create/steps/runLocalMigrations";
+import { setupLocalEnvironment } from "@/commands/app/shared/setupLocalEnvironment";
 import { printNextSteps } from "@/commands/app/create/steps/printNextSteps";
 import { deployApp } from "@/commands/app/deploy/deployApp";
 import { provisionGatewayAppApiToken } from "@/commands/app/deploy/steps/setupAppSecrets";
@@ -94,13 +94,13 @@ export default async function (
     });
 
     // Local setup: create .env.local and run local migrations
-    await createEnvFiles({
+    await setupLocalEnvironment({
       targetDir,
       appId,
+      verbose,
       gatewayUrl,
       gatewayAppApiToken: localGatewayAppApiToken,
     });
-    await runLocalMigrations({ targetDir, verbose });
 
     // Initialize git repository with initial commit
     await initRepository({ targetDir, verbose });

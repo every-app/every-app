@@ -88,6 +88,43 @@ export const deployCommand = buildCommand({
   },
 });
 
+export const setupLocalCommand = buildCommand({
+  loader: async () => {
+    const { setupLocal } = await import("./setupLocal");
+    return setupLocal;
+  },
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [],
+    },
+    flags: {
+      verbose: {
+        kind: "boolean",
+        brief: "Show detailed output during local setup",
+        optional: true,
+      },
+    },
+  },
+  docs: {
+    brief: "Set up local development in an existing app",
+    fullDescription: [
+      "Configures local development for an existing Every App project in the current directory.",
+      "",
+      "Usage: every app setup-local",
+      "",
+      "The command will:",
+      "  1. Verify the current directory is an Every App project",
+      "  2. Verify Cloudflare and gateway setup",
+      "  3. Install dependencies",
+      "  4. Create or refresh .env.local",
+      "  5. Generate Cloudflare types and run local database migrations",
+      "",
+      "This is useful after cloning an existing Every App repository.",
+    ].join("\n"),
+  },
+});
+
 export const remoteD1ShellCommand = buildCommand({
   loader: async () => {
     const { remoteD1Shell } = await import("./remoteD1Shell");
@@ -128,6 +165,7 @@ export const appRoutes = buildRouteMap({
   routes: {
     create: createCommand,
     deploy: deployCommand,
+    "setup-local": setupLocalCommand,
     "remote-d1-shell": remoteD1ShellCommand,
   },
   docs: {
