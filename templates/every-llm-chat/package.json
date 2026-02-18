@@ -22,7 +22,7 @@
   "dependencies": {
     "@ai-sdk/openai": "^2.0.71",
     "@ai-sdk/react": "^2.0.98",
-    "@every-app/sdk": "^0.1.10",
+    "@every-app/sdk": "^0.1.11",
     "@tanstack/query-sync-storage-persister": "^5.90.14",
     "@tanstack/react-query": "^5.90.9",
     "@tanstack/react-query-persist-client": "^5.90.14",

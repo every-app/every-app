@@ -8,6 +8,11 @@ import {
 
 import type { AuthConfig } from "./types.js";
 import { env } from "cloudflare:workers";
+import {
+  BYPASS_GATEWAY_LOCAL_ONLY_TOKEN,
+  createBypassGatewayLocalOnlySessionPayload,
+  isBypassGatewayLocalOnlyServer,
+} from "../../shared/bypassGatewayLocalOnly.js";
 
 /**
  * JWT payload structure for embedded app session tokens.
@@ -35,6 +40,14 @@ export async function authenticateRequest(
   const request = providedRequest || getRequest();
   const authHeader = request.headers.get("authorization");
 
+  const bypassGatewayLocalOnlyEnv = (
+    env as { BYPASS_GATEWAY_LOCAL_ONLY?: string }
+  ).BYPASS_GATEWAY_LOCAL_ONLY;
+  const isBypassGatewayLocalOnly =
+    import.meta.env.PROD !== true &&
+    (bypassGatewayLocalOnlyEnv === "true" ||
+      isBypassGatewayLocalOnlyServer() === true);
+
   if (!authHeader) {
     return null;
   }
@@ -43,6 +56,14 @@ export async function authenticateRequest(
 
   if (!token) {
     return null;
+  }
+
+  if (isBypassGatewayLocalOnly) {
+    if (token !== BYPASS_GATEWAY_LOCAL_ONLY_TOKEN) {
+      return null;
+    }
+
+    return createBypassGatewayLocalOnlySessionPayload(authConfig.audience);
   }
 
   try {

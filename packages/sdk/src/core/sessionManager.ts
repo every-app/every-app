@@ -1,3 +1,10 @@
+import {
+  BYPASS_GATEWAY_LOCAL_ONLY_EMAIL,
+  BYPASS_GATEWAY_LOCAL_ONLY_TOKEN,
+  BYPASS_GATEWAY_LOCAL_ONLY_USER_ID,
+  isBypassGatewayLocalOnlyClient,
+} from "../shared/bypassGatewayLocalOnly.js";
+
 interface SessionToken {
   token: string;
   expiresAt: number;
@@ -35,6 +42,9 @@ export class SessionManager {
   readonly parentOrigin: string;
   readonly appId: string;
   readonly isInIframe: boolean;
+  readonly isBypassGatewayLocalOnly: boolean;
+  /** @deprecated Use isBypassGatewayLocalOnly instead. */
+  readonly isDemoModeLocalOnly: boolean;
 
   private token: SessionToken | null = null;
   private refreshPromise: Promise<string> | null = null;
@@ -44,20 +54,36 @@ export class SessionManager {
       throw new Error("[SessionManager] appId is required.");
     }
 
-    const gatewayUrl = import.meta.env.VITE_GATEWAY_URL;
-    if (!gatewayUrl) {
-      throw new Error("[SessionManager] VITE_GATEWAY_URL env var is required.");
-    }
+    this.isBypassGatewayLocalOnly = isBypassGatewayLocalOnlyClient();
+    this.isDemoModeLocalOnly = this.isBypassGatewayLocalOnly;
 
-    try {
-      new URL(gatewayUrl);
-    } catch {
-      throw new Error(`[SessionManager] Invalid gateway URL: ${gatewayUrl}`);
+    const gatewayUrl = import.meta.env.VITE_GATEWAY_URL;
+    if (!this.isBypassGatewayLocalOnly) {
+      if (!gatewayUrl) {
+        throw new Error(
+          "[SessionManager] VITE_GATEWAY_URL env var is required.",
+        );
+      }
+
+      try {
+        new URL(gatewayUrl);
+      } catch {
+        throw new Error(`[SessionManager] Invalid gateway URL: ${gatewayUrl}`);
+      }
     }
 
     this.appId = config.appId;
-    this.parentOrigin = gatewayUrl;
+    this.parentOrigin = this.isBypassGatewayLocalOnly
+      ? window.location.origin
+      : gatewayUrl;
     this.isInIframe = isRunningInIframe();
+
+    if (this.isBypassGatewayLocalOnly) {
+      this.token = {
+        token: BYPASS_GATEWAY_LOCAL_ONLY_TOKEN,
+        expiresAt: Date.now() + DEFAULT_TOKEN_LIFETIME_MS,
+      };
+    }
   }
 
   private isTokenExpiringSoon(
@@ -107,6 +133,14 @@ export class SessionManager {
   }
 
   async requestNewToken(): Promise<string> {
+    if (this.isBypassGatewayLocalOnly) {
+      this.token = {
+        token: BYPASS_GATEWAY_LOCAL_ONLY_TOKEN,
+        expiresAt: Date.now() + DEFAULT_TOKEN_LIFETIME_MS,
+      };
+      return this.token.token;
+    }
+
     if (this.refreshPromise) {
       return this.refreshPromise;
     }
@@ -153,6 +187,13 @@ export class SessionManager {
   }
 
   async getToken(): Promise<string> {
+    if (this.isBypassGatewayLocalOnly) {
+      if (!this.token || this.isTokenExpiringSoon()) {
+        return this.requestNewToken();
+      }
+      return this.token.token;
+    }
+
     if (this.isTokenExpiringSoon()) {
       return this.requestNewToken();
     }
@@ -183,6 +224,13 @@ export class SessionManager {
    * Returns null if no valid token is available.
    */
   getUser(): { userId: string; email: string } | null {
+    if (this.isBypassGatewayLocalOnly) {
+      return {
+        userId: BYPASS_GATEWAY_LOCAL_ONLY_USER_ID,
+        email: BYPASS_GATEWAY_LOCAL_ONLY_EMAIL,
+      };
+    }
+
     if (!this.token) {
       return null;
     }

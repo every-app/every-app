@@ -16,6 +16,7 @@ vi.mock("@tanstack/react-start/server", () => ({
 
 import { authenticateRequest } from "./authenticateRequest";
 import type { AuthConfig } from "./types";
+import { env } from "cloudflare:workers";
 
 describe("authenticateRequest", () => {
   let keyPair: Awaited<ReturnType<typeof generateKeyPair>>;
@@ -24,6 +25,9 @@ describe("authenticateRequest", () => {
   const authConfig: AuthConfig = {
     issuer: "https://gateway.example.com",
     audience: "test-app",
+  };
+  const workersEnv = env as unknown as {
+    BYPASS_GATEWAY_LOCAL_ONLY?: string;
   };
 
   beforeEach(async () => {
@@ -56,6 +60,7 @@ describe("authenticateRequest", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    delete workersEnv.BYPASS_GATEWAY_LOCAL_ONLY;
   });
 
   async function createValidToken(overrides: Record<string, unknown> = {}) {
@@ -114,6 +119,33 @@ describe("authenticateRequest", () => {
       const request = createRequest(`bearer ${token}`);
       const result = await authenticateRequest(authConfig, request);
       expect(result).toBeNull();
+    });
+  });
+
+  describe("BYPASS_GATEWAY_LOCAL_ONLY mode", () => {
+    it("accepts the local bypass token when BYPASS_GATEWAY_LOCAL_ONLY is true", async () => {
+      workersEnv.BYPASS_GATEWAY_LOCAL_ONLY = "true";
+      const request = createRequest("Bearer BYPASS_GATEWAY_LOCAL_ONLY");
+
+      const result = await authenticateRequest(authConfig, request);
+
+      expect(result).toMatchObject({
+        sub: "demo-local-user",
+        email: "demo-local-user@local",
+        iss: "local",
+        aud: authConfig.audience,
+      });
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it("rejects non-bypass tokens when BYPASS_GATEWAY_LOCAL_ONLY is true", async () => {
+      workersEnv.BYPASS_GATEWAY_LOCAL_ONLY = "true";
+      const request = createRequest("Bearer regular-token");
+
+      const result = await authenticateRequest(authConfig, request);
+
+      expect(result).toBeNull();
+      expect(global.fetch).not.toHaveBeenCalled();
     });
   });
 

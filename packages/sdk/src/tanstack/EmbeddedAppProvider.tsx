@@ -30,8 +30,8 @@ export function EmbeddedAppProvider({
 
   if (!sessionManager) return null;
 
-  // Check if the app is running outside of the Gateway iframe
-  if (!sessionManager.isInIframe) {
+  // Check if the app is running outside of the Gateway iframe (skip in demo mode)
+  if (!sessionManager.isInIframe && !sessionManager.isBypassGatewayLocalOnly) {
     return (
       <GatewayRequiredError
         gatewayOrigin={sessionManager.parentOrigin}

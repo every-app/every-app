@@ -1,3 +1,8 @@
+import {
+  BYPASS_GATEWAY_LOCAL_ONLY_TOKEN,
+  isBypassGatewayLocalOnlyClient,
+} from "../shared/bypassGatewayLocalOnly.js";
+
 interface SessionManager {
   getToken(): Promise<string>;
 }
@@ -10,6 +15,10 @@ interface WindowWithSessionManager extends Window {
  * Gets the current session token from the embedded session manager
  */
 export async function getSessionToken(): Promise<string> {
+  if (isBypassGatewayLocalOnlyClient()) {
+    return BYPASS_GATEWAY_LOCAL_ONLY_TOKEN;
+  }
+
   const windowWithSession = window as WindowWithSessionManager;
   const sessionManager = windowWithSession.__embeddedSessionManager;
 
