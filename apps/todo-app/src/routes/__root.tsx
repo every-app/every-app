@@ -100,7 +100,7 @@ function AppLayout() {
   // The same HTML structure is rendered on server and client
   return (
     <>
-      <div className="flex flex-col md:flex-row h-full overflow-hidden bg-base-200">
+      <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-base-200 md:flex-row">
         {/* Desktop: Sidebar */}
         <div className="hidden md:block">
           <Sidebar
@@ -110,7 +110,7 @@ function AppLayout() {
         </div>
 
         {/* Main content */}
-        <div className="main-content flex-1 min-h-0 overflow-auto pt-safe md:pt-0 md:pb-0 pb-[80px]">
+        <div className="main-content flex-1 min-h-0 overflow-hidden pt-safe md:pt-0 md:pb-0 pb-[80px]">
           <Outlet />
         </div>
 

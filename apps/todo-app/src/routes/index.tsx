@@ -205,112 +205,114 @@ function HomeContent() {
 
   return (
     <>
-      <div className="px-4 pb-24 md:pt-4 md:pb-0 overflow-y-auto overflow-x-hidden">
-        <h1 className="text-xl font-semibold text-base-content py-3 md:hidden">
+      <div className="flex h-full min-h-0 flex-col">
+        <h1 className="shrink-0 bg-base-200 px-4 py-3 text-xl font-semibold text-base-content md:hidden">
           Todos
         </h1>
-        {/* Desktop: inline form for creating todos */}
-        <form
-          onSubmit={handleCreateTodoSubmit}
-          className="hidden md:block space-y-4"
-        >
-          <div className="space-y-2">
-            <div className="flex gap-2 items-start">
-              <div className="flex-1">
-                <NewTodoComposer
-                  inputId={NEW_TODO_INPUT_ID}
-                  rawValue={newTodoTitle}
-                  parsedTodo={parsedNewTodo}
-                  onRawValueChange={setNewTodoTitle}
-                  placeholder="New todo... (c)"
-                  onEscape={() => {
-                    const input = document.getElementById(
-                      NEW_TODO_INPUT_ID,
-                    ) as HTMLInputElement | null;
-                    input?.blur();
-                  }}
-                />
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 pb-24 md:pt-4 md:pb-0">
+          {/* Desktop: inline form for creating todos */}
+          <form
+            onSubmit={handleCreateTodoSubmit}
+            className="hidden md:block space-y-4"
+          >
+            <div className="space-y-2">
+              <div className="flex gap-2 items-start">
+                <div className="flex-1">
+                  <NewTodoComposer
+                    inputId={NEW_TODO_INPUT_ID}
+                    rawValue={newTodoTitle}
+                    parsedTodo={parsedNewTodo}
+                    onRawValueChange={setNewTodoTitle}
+                    placeholder="New todo... (c)"
+                    onEscape={() => {
+                      const input = document.getElementById(
+                        NEW_TODO_INPUT_ID,
+                      ) as HTMLInputElement | null;
+                      input?.blur();
+                    }}
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  disabled={!parsedNewTodo.title.trim()}
+                  variant="primary"
+                  aria-label="Add new todo"
+                >
+                  Add
+                </Button>
               </div>
-              <Button
-                type="submit"
-                disabled={!parsedNewTodo.title.trim()}
-                variant="primary"
-                aria-label="Add new todo"
-              >
-                Add
-              </Button>
             </div>
-          </div>
-        </form>
+          </form>
 
-        {activeTodos.length === 0 && completedTodos.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-base-content/50">
-            <ClipboardList className="w-16 h-16 mb-4" />
-            <p className="text-lg font-medium">No todos yet</p>
-            <p className="text-sm md:hidden">Tap + to add your first todo</p>
-            <p className="text-sm hidden md:block">
-              Type above to add your first todo
-            </p>
-          </div>
-        ) : (
-          <>
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              modifiers={[restrictToVerticalAxis]}
-              onDragStart={() => setDragging(true)}
-              onDragCancel={() => setDragging(false)}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={activeTodos.map((todo) => todo.id)}
-                strategy={verticalListSortingStrategy}
+          {activeTodos.length === 0 && completedTodos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-base-content/50">
+              <ClipboardList className="w-16 h-16 mb-4" />
+              <p className="text-lg font-medium">No todos yet</p>
+              <p className="text-sm md:hidden">Tap + to add your first todo</p>
+              <p className="text-sm hidden md:block">
+                Type above to add your first todo
+              </p>
+            </div>
+          ) : (
+            <>
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                modifiers={[restrictToVerticalAxis]}
+                onDragStart={() => setDragging(true)}
+                onDragCancel={() => setDragging(false)}
+                onDragEnd={handleDragEnd}
               >
-                <div className="md:mt-4 space-y-2">
-                  <AnimatePresence mode="sync">
-                    {activeTodos.map((todo) => (
-                      <AnimatedTodoItem
-                        key={todo.id}
-                        isAnimationEnabled={animationsEnabled}
-                      >
-                        <SortableTodoItem
-                          todo={todo}
-                          editingTodoId={editingTodoId}
-                          setEditingTodoId={setEditingTodoId}
-                          isDraggable={editingTodoId !== todo.id}
-                          onToggleComplete={handleToggleComplete}
-                        />
-                      </AnimatedTodoItem>
-                    ))}
-                  </AnimatePresence>
-                </div>
-              </SortableContext>
-            </DndContext>
+                <SortableContext
+                  items={activeTodos.map((todo) => todo.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="md:mt-4 space-y-2">
+                    <AnimatePresence mode="sync">
+                      {activeTodos.map((todo) => (
+                        <AnimatedTodoItem
+                          key={todo.id}
+                          isAnimationEnabled={animationsEnabled}
+                        >
+                          <SortableTodoItem
+                            todo={todo}
+                            editingTodoId={editingTodoId}
+                            setEditingTodoId={setEditingTodoId}
+                            isDraggable={editingTodoId !== todo.id}
+                            onToggleComplete={handleToggleComplete}
+                          />
+                        </AnimatedTodoItem>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+                </SortableContext>
+              </DndContext>
 
-            {completedTodos.length > 0 && (
-              <div className="border-base-300 mt-4">
-                <div className="space-y-2 opacity-75">
-                  <AnimatePresence mode="sync">
-                    {completedTodos.map((todo) => (
-                      <AnimatedTodoItem
-                        key={todo.id}
-                        isAnimationEnabled={animationsEnabled}
-                      >
-                        <SortableTodoItem
-                          todo={todo}
-                          editingTodoId={editingTodoId}
-                          setEditingTodoId={setEditingTodoId}
-                          isDraggable={false}
-                          onToggleComplete={handleToggleComplete}
-                        />
-                      </AnimatedTodoItem>
-                    ))}
-                  </AnimatePresence>
+              {completedTodos.length > 0 && (
+                <div className="border-base-300 mt-4">
+                  <div className="space-y-2 opacity-75">
+                    <AnimatePresence mode="sync">
+                      {completedTodos.map((todo) => (
+                        <AnimatedTodoItem
+                          key={todo.id}
+                          isAnimationEnabled={animationsEnabled}
+                        >
+                          <SortableTodoItem
+                            todo={todo}
+                            editingTodoId={editingTodoId}
+                            setEditingTodoId={setEditingTodoId}
+                            isDraggable={false}
+                            onToggleComplete={handleToggleComplete}
+                          />
+                        </AnimatedTodoItem>
+                      ))}
+                    </AnimatePresence>
+                  </div>
                 </div>
-              </div>
-            )}
-          </>
-        )}
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Mobile: FAB for creating todos */}

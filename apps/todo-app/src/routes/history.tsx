@@ -109,45 +109,47 @@ function History() {
 
   return (
     <>
-      <div className="px-4 pb-4 md:pt-4 overflow-auto">
-        <h1 className="text-xl font-semibold text-base-content py-3 md:hidden">
+      <div className="flex h-full min-h-0 flex-col">
+        <h1 className="shrink-0 bg-base-200 px-4 py-3 text-xl font-semibold text-base-content md:hidden">
           History
         </h1>
-        {completedTodos.length === 0 ? (
-          <div className="flex flex-col items-start gap-2">
-            <p>No completed todos yet</p>
-            <Link to="/">
-              <Button variant="outline" size="sm">
-                Go to todos
-              </Button>
-            </Link>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {groupedTodos.map((group) => (
-              <div key={group.date}>
-                <h2 className="text-sm font-medium text-gray-600 mb-2">
-                  {formatDateHeader(group.date)}
-                </h2>
-                <div className="space-y-2">
-                  <AnimatePresence mode="sync">
-                    {group.todos.map((todo) => (
-                      <AnimatedTodoItem
-                        key={todo.id}
-                        isAnimationEnabled={animationsEnabled}
-                      >
-                        <HistoryItem
-                          todo={todo}
-                          onToggleComplete={handleToggleComplete}
-                        />
-                      </AnimatedTodoItem>
-                    ))}
-                  </AnimatePresence>
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-4 md:pt-4">
+          {completedTodos.length === 0 ? (
+            <div className="flex flex-col items-start gap-2">
+              <p>No completed todos yet</p>
+              <Link to="/">
+                <Button variant="outline" size="sm">
+                  Go to todos
+                </Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {groupedTodos.map((group) => (
+                <div key={group.date}>
+                  <h2 className="text-sm font-medium text-gray-600 mb-2">
+                    {formatDateHeader(group.date)}
+                  </h2>
+                  <div className="space-y-2">
+                    <AnimatePresence mode="sync">
+                      {group.todos.map((todo) => (
+                        <AnimatedTodoItem
+                          key={todo.id}
+                          isAnimationEnabled={animationsEnabled}
+                        >
+                          <HistoryItem
+                            todo={todo}
+                            onToggleComplete={handleToggleComplete}
+                          />
+                        </AnimatedTodoItem>
+                      ))}
+                    </AnimatePresence>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <ConfirmationModal
