@@ -1,10 +1,20 @@
+---
+import { Image } from "astro:assets";
+import transparentLogo from "../assets/transparent-logo.png";
+---
+
 <div class="header">
 	<div class="title-wrapper">
 		<a href="/" class="site-title">
-			<img
-				src="/transparent-logo.png"
+			<Image
+				src={transparentLogo}
 				alt="Every App Logo"
+				width={48}
+				height={48}
+				format="webp"
 				class="logo"
+				loading="eager"
+				decoding="async"
 			/>
 		</a>
 	</div>

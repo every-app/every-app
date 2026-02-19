@@ -1,5 +1,7 @@
 ---
+import { Image } from 'astro:assets';
 import '../styles/global.css';
+import transparentLogo from '../assets/transparent-logo.png';
 import todosScreenshot from '../assets/todo-dark.png';
 import workoutTrackerScreenshot from '../assets/workout-tracker-dark.png';
 import chefScreenshot from '../assets/chef-dark.png';
@@ -40,10 +42,15 @@ const demoTimestamps = [
     <meta name="twitter:image" content="/OpenGraphPreview.png" />
     <meta name="twitter:image:alt" content="Every App - The open source personal software platform" />
 
-    <!-- Preconnect to improve initial connection time -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css" />
+    <link
+      rel="preload"
+      href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css"
+      as="style"
+      onload="this.onload=null;this.rel='stylesheet'"
+    />
+    <noscript>
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css" />
+    </noscript>
 
     <!-- Favicons -->
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
@@ -57,10 +64,15 @@ const demoTimestamps = [
       <!-- Header -->
       <header class="absolute top-0 left-0 right-0 z-10 px-6 py-6">
         <div class="max-w-7xl mx-auto flex items-center justify-between">
-          <img
-            src="/transparent-logo.png"
+          <Image
+            src={transparentLogo}
             alt="Every App Logo"
+            width={48}
+            height={48}
+            format="webp"
             class="w-12 h-12 opacity-80 hover:opacity-100 transition-opacity"
+            loading="eager"
+            decoding="async"
           />
           <nav class="flex items-center gap-6">
             <a 
@@ -502,7 +514,16 @@ const demoTimestamps = [
             <!-- Todo App -->
             <button class="bg-[#141a17] border border-stone-800 rounded-lg overflow-hidden text-left cursor-pointer hover:border-stone-700 transition-colors" data-preview={todosScreenshot.src} data-alt="Todo App Screenshot">
               <div class="aspect-video bg-stone-900 flex items-center justify-center">
-                <img src={todosScreenshot.src} alt="Todo App Screenshot" class="h-full object-contain" loading="lazy" />
+                <Image
+                  src={todosScreenshot}
+                  alt="Todo App Screenshot"
+                  class="w-full h-full object-contain"
+                  widths={[420, 820, 1200]}
+                  sizes="(min-width: 768px) 50vw, 100vw"
+                  format="webp"
+                  loading="lazy"
+                  decoding="async"
+                />
               </div>
               <div class="p-6">
                 <h3 class="text-white font-semibold text-lg mb-2">Todo App</h3>
@@ -513,7 +534,16 @@ const demoTimestamps = [
             <!-- Workout Tracker -->
             <button class="bg-[#141a17] border border-stone-800 rounded-lg overflow-hidden text-left cursor-pointer hover:border-stone-700 transition-colors" data-preview={workoutTrackerScreenshot.src} data-alt="Workout Tracker Screenshot">
               <div class="aspect-video bg-stone-900 flex items-center justify-center">
-                <img src={workoutTrackerScreenshot.src} alt="Workout Tracker Screenshot" class="h-full object-contain" loading="lazy" />
+                <Image
+                  src={workoutTrackerScreenshot}
+                  alt="Workout Tracker Screenshot"
+                  class="w-full h-full object-contain"
+                  widths={[420, 820, 1200]}
+                  sizes="(min-width: 768px) 50vw, 100vw"
+                  format="webp"
+                  loading="lazy"
+                  decoding="async"
+                />
               </div>
               <div class="p-6">
                 <h3 class="text-white font-semibold text-lg mb-2">Workout Tracker</h3>
@@ -524,7 +554,16 @@ const demoTimestamps = [
             <!-- Cooking Assistant -->
             <button class="bg-[#141a17] border border-stone-800 rounded-lg overflow-hidden text-left cursor-pointer hover:border-stone-700 transition-colors" data-preview={chefScreenshot.src} data-alt="Cooking Assistant Screenshot">
               <div class="aspect-video bg-stone-900 flex items-center justify-center">
-                <img src={chefScreenshot.src} alt="Cooking Assistant Screenshot" class="h-full object-contain" loading="lazy" />
+                <Image
+                  src={chefScreenshot}
+                  alt="Cooking Assistant Screenshot"
+                  class="w-full h-full object-contain"
+                  widths={[420, 820, 1200]}
+                  sizes="(min-width: 768px) 50vw, 100vw"
+                  format="webp"
+                  loading="lazy"
+                  decoding="async"
+                />
               </div>
               <div class="p-6">
                 <h3 class="text-white font-semibold text-lg mb-2">Cooking Assistant</h3>
@@ -651,10 +690,15 @@ const demoTimestamps = [
       <footer class="px-6 py-12 border-t border-stone-800">
         <div class="max-w-5xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div class="hidden md:flex items-center gap-3">
-            <img
-              src="/transparent-logo.png"
+            <Image
+              src={transparentLogo}
               alt="Every App Logo"
+              width={32}
+              height={32}
+              format="webp"
               class="w-8 h-8 opacity-60"
+              loading="lazy"
+              decoding="async"
             />
 	    <span class="text-stone-500 text-sm">Make every app open source</span>
           </div>

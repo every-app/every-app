@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "astro check && astro build",
+    "build": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\" && astro check && astro build && node scripts/generate-sitemap.js",
     "preview": "astro preview",
     "astro": "astro",
     "deploy": "npm run build && wrangler pages deploy dist --project-name=every-app-landing-page",
@@ -28,6 +28,7 @@
     "daisyui": "^5.5.5",
     "knip": "^5.69.1",
     "prettier": "^3.6.2",
+    "sharp": "^0.34.5",
     "typescript": "^5.9.3",
     "wrangler": "^4.45.4"
   }

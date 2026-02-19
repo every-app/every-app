@@ -4,13 +4,19 @@ import tailwind from "@astrojs/tailwind";
 import { toStarlightSidebar } from "./src/docs-config.mjs";
 // import cloudflare from '@astrojs/cloudflare';
 
+const disableStarlightAutoSitemap = {
+  name: "@astrojs/sitemap",
+};
+
 // https://astro.build/config
 export default defineConfig({
   output: "static",
+  site: "https://everyapp.dev",
   redirects: {
     "/docs": "/docs/introduction",
   },
   integrations: [
+    disableStarlightAutoSitemap,
     // TODO Investigate this
     tailwind({
       applyBaseStyles: false,
