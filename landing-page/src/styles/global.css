@@ -15,3 +15,91 @@ code {
   font-family:
     source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
 }
+
+:root {
+  --plyr-color-main: #f1f5f9;
+}
+
+.plyr {
+  --plyr-video-control-color: #d6d3d1;
+  --plyr-video-controls-background: linear-gradient(
+    transparent,
+    rgba(8, 12, 11, 0.8)
+  );
+}
+
+.plyr--video {
+  background: #060908;
+}
+
+.plyr__control:hover,
+.plyr__control[aria-expanded="true"] {
+  background: rgba(39, 39, 42, 0.9);
+}
+
+.demo-player-frame {
+  position: relative;
+  background: #060908;
+}
+
+.demo-player-chapters {
+  position: absolute;
+  left: 0.9rem;
+  bottom: 5rem;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.4rem;
+  width: min(15.5rem, calc(100% - 1.8rem));
+  max-height: min(52%, 17rem);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+  scrollbar-width: thin;
+}
+
+.demo-chapter-button {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid rgba(39, 39, 42, 0.95);
+  border-radius: 0.75rem;
+  background: rgba(12, 18, 16, 0.88);
+  color: #f5f5f4;
+  font-size: 0.78rem;
+  line-height: 1.2;
+  padding: 0.34rem 0.54rem;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.demo-chapter-button:hover {
+  border-color: rgba(168, 162, 158, 0.95);
+  background: rgba(21, 30, 26, 0.96);
+}
+
+.demo-chapter-time {
+  font-family:
+    source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
+  color: #d6d3d1;
+}
+
+.demo-chapter-label {
+  display: inline-block;
+  max-width: min(11.8rem, 55vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fafaf9;
+}
+
+@media (max-width: 768px) {
+  .demo-player-chapters {
+    display: none;
+  }
+}

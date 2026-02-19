@@ -6,6 +6,16 @@ import chefScreenshot from '../assets/chef-dark.png';
 
 const title = 'Every App';
 const description = 'Make every app open source. Build what you want to exist. Share it easily with others. Self host unlimited apps on Cloudflare for $5/month';
+const videoManifestUrl =
+  'https://customer-30n86idll8ihv3ko.cloudflarestream.com/2382a24aad763613e4072c789e743759/manifest/video.m3u8';
+const demoTimestamps = [
+  { label: 'App Demos', time: '0:11', seconds: 11 },
+  { label: 'Why Every App Exists', time: '0:40', seconds: 40 },
+  { label: 'Self Host w/ 1 Command', time: '1:21', seconds: 81 },
+  { label: 'Walkthrough: Workout Tracker', time: '2:37', seconds: 157 },
+  { label: 'Gateway Architecture', time: '3:36', seconds: 216 },
+  { label: 'Build an App', time: '5:46', seconds: 346 },
+];
 ---
 
 <!doctype html>
@@ -33,6 +43,7 @@ const description = 'Make every app open source. Build what you want to exist. S
     <!-- Preconnect to improve initial connection time -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.css" />
 
     <!-- Favicons -->
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
@@ -42,7 +53,7 @@ const description = 'Make every app open source. Build what you want to exist. S
     <link rel="manifest" href="/manifest.json" />
   </head>
   <body>
-    <div class="min-h-screen bg-[#0a0f0d]">
+    <div class="bg-[#0a0f0d]">
       <!-- Header -->
       <header class="absolute top-0 left-0 right-0 z-10 px-6 py-6">
         <div class="max-w-7xl mx-auto flex items-center justify-between">
@@ -85,52 +96,77 @@ const description = 'Make every app open source. Build what you want to exist. S
       </header>
 
       <!-- Hero Section -->
-      <section class="relative min-h-screen px-6 flex items-center justify-center">
-        <div class="max-w-2xl mx-auto">
-          <h1 class="text-[clamp(3rem,10vw,7rem)] font-bold text-white leading-none tracking-tight mb-6">
-            EVERY APP
-          </h1>
+      <section class="relative min-h-[100svh] md:min-h-0 px-6 pt-32 pb-16 md:pt-36 md:pb-20">
+        <div class="max-w-6xl mx-auto">
+          <div class="max-w-2xl">
+            <h1 class="text-[clamp(3rem,10vw,7rem)] font-bold text-white leading-none tracking-tight mb-6">
+              EVERY APP
+            </h1>
 
-          <p class="text-[clamp(1.5rem,3vw,2rem)] text-white font-normal mb-6">
-            Make every app open source
-          </p>
+            <p class="text-[clamp(1.5rem,3vw,2rem)] text-white font-normal mb-6">
+              Make every app open source
+            </p>
 
-          <div class="space-y-2 text-[clamp(1rem,2vw,1.25rem)] text-stone-400 font-light mb-10">
-		  <p>Build what you want to exist<p>
-		  <p>Share it easily with others</p>
-		  <p>Self host unlimited apps on Cloudflare for $5/month</p>
+            <div class="space-y-2 text-[clamp(1rem,2vw,1.25rem)] text-stone-400 font-light mb-10">
+              <p>Build what you want to exist</p>
+              <p>Share it easily with others</p>
+              <p>Self host unlimited apps on Cloudflare for $5/month</p>
+            </div>
+
+            <p class="text-stone-500 text-sm mb-2">Self host with one command</p>
+            <div class="bg-[#141a17] border border-stone-800 rounded-md px-3 py-2 inline-flex items-center gap-3">
+              <code class="text-sm text-stone-300 font-mono">
+                npx everyapp gateway deploy
+              </code>
+              <button
+                id="copy-command"
+                class="text-stone-500 hover:text-stone-300 transition-colors"
+                aria-label="Copy command"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon">
+                  <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                  <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon hidden">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+              </button>
+            </div>
           </div>
 
-          <p class="text-stone-500 text-sm mb-2">Self host with one command</p>
-          <div class="bg-[#141a17] border border-stone-800 rounded-md px-3 py-2 inline-flex items-center gap-3">
-            <code class="text-sm text-stone-300 font-mono">
-              npx everyapp gateway deploy
-            </code>
-            <button 
-              id="copy-command"
-              class="text-stone-500 hover:text-stone-300 transition-colors"
-              aria-label="Copy command"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon">
-                <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-              </svg>
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon hidden">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            </button>
+          <div class="mt-20 md:mt-24">
+            <div class="rounded-2xl border border-stone-800 overflow-hidden bg-[#090e0c]">
+              <div class="demo-player-frame">
+                <video id="everyapp-demo-player" class="block w-full h-auto" playsinline controls />
+                <div class="demo-player-chapters" aria-label="Video timestamps">
+                  {
+                    demoTimestamps.map((entry) => (
+                      <button
+                        class="demo-chapter-button"
+                        type="button"
+                        data-seconds={entry.seconds}
+                        title={`${entry.time} — ${entry.label}`}
+                      >
+                        <span class="demo-chapter-time">{entry.time}</span>
+                        <span class="demo-chapter-label">{entry.label}</span>
+                      </button>
+                    ))
+                  }
+                </div>
+              </div>
+            </div>
           </div>
-          
+
           <script>
             const copyButton = document.getElementById('copy-command');
             const copyIcon = copyButton?.querySelector('.copy-icon');
             const checkIcon = copyButton?.querySelector('.check-icon');
-            
+
             copyButton?.addEventListener('click', async () => {
               await navigator.clipboard.writeText('npx everyapp gateway deploy');
               copyIcon?.classList.add('hidden');
               checkIcon?.classList.remove('hidden');
-              
+
               setTimeout(() => {
                 copyIcon?.classList.remove('hidden');
                 checkIcon?.classList.add('hidden');
@@ -139,12 +175,85 @@ const description = 'Make every app open source. Build what you want to exist. S
           </script>
         </div>
 
-        <!-- Scroll indicator -->
-        <div class="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-stone-500">
-            <path d="M12 5v14M19 12l-7 7-7-7"/>
-          </svg>
-        </div>
+        <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js" defer></script>
+        <script src="https://cdn.jsdelivr.net/npm/plyr@3.7.8/dist/plyr.polyfilled.min.js" defer></script>
+        <script define:vars={{ videoManifestUrl }}>
+          const initializeDemoPlayer = () => {
+            const playerElement = document.getElementById('everyapp-demo-player');
+
+            if (!(playerElement instanceof HTMLVideoElement) || !window.Plyr) {
+              return;
+            }
+
+            const player = new window.Plyr(playerElement, {
+              controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'fullscreen'],
+              captions: { active: false, language: 'auto', update: true },
+            });
+
+            if (window.Hls?.isSupported()) {
+              const hls = new window.Hls();
+              hls.loadSource(videoManifestUrl);
+              hls.attachMedia(playerElement);
+            } else {
+              playerElement.src = videoManifestUrl;
+            }
+
+            const tryEnableCaptions = () => {
+              const textTracks = Array.from(playerElement.textTracks ?? []);
+              const firstSubtitleTrack = textTracks.find((track) => (
+                track.kind === 'subtitles' || track.kind === 'captions'
+              ));
+
+              if (!firstSubtitleTrack) {
+                return false;
+              }
+
+              textTracks.forEach((track) => {
+                track.mode = track === firstSubtitleTrack ? 'showing' : 'disabled';
+              });
+
+              if (player.captions) {
+                player.captions.active = true;
+              }
+
+              return true;
+            };
+
+            const enableCaptionsOnFirstPlay = () => {
+              let attempts = 0;
+              const maxAttempts = 12;
+              const intervalId = window.setInterval(() => {
+                attempts += 1;
+
+                if (tryEnableCaptions() || attempts >= maxAttempts) {
+                  window.clearInterval(intervalId);
+                }
+              }, 500);
+
+              if (tryEnableCaptions()) {
+                window.clearInterval(intervalId);
+              }
+
+              if (typeof player.off === 'function') {
+                player.off('play', enableCaptionsOnFirstPlay);
+              }
+            };
+
+            player.on('play', enableCaptionsOnFirstPlay);
+
+            const chapterButtons = document.querySelectorAll('.demo-chapter-button');
+
+            chapterButtons.forEach((button) => {
+              button.addEventListener('click', () => {
+                const seconds = Number(button.getAttribute('data-seconds') ?? '0');
+                player.currentTime = seconds;
+                void player.play();
+              });
+            });
+          };
+
+          window.addEventListener('load', initializeDemoPlayer);
+        </script>
       </section>
 
       <!-- Section Divider -->
