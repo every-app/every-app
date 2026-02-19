@@ -48,6 +48,12 @@ const SHORTCUT_GO_TO_HISTORY: ShortcutDefinition = {
   hotkey: "g>h",
 };
 
+const SHORTCUT_GO_TO_UPCOMING: ShortcutDefinition = {
+  keys: ["g", "u"],
+  description: "Go to Upcoming",
+  hotkey: "g>u",
+};
+
 // Action shortcuts
 const SHORTCUT_CREATE_TODO: ShortcutDefinition = {
   keys: ["c"],
@@ -103,6 +109,7 @@ export const KEYBOARD_SHORTCUTS: ShortcutCategory[] = [
       SHORTCUT_MOVE_DOWN,
       SHORTCUT_MOVE_UP,
       SHORTCUT_GO_TO_TODOS,
+      SHORTCUT_GO_TO_UPCOMING,
       SHORTCUT_GO_TO_HISTORY,
     ],
   },

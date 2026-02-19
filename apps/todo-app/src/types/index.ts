@@ -4,4 +4,5 @@ type Todo = {
   completed: boolean;
   sortKey: string;
   completedAt: string | null;
+  dueDate: string | null;
 };

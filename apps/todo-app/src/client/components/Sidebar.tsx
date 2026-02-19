@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ClipboardList, History } from "lucide-react";
+import { ClipboardList, History, CalendarClock } from "lucide-react";
 import { useLiveQuery } from "@tanstack/react-db";
 import { todoCollection } from "@/client/tanstack-db";
 import { createPortal } from "react-dom";
@@ -25,6 +25,14 @@ export function Sidebar({ currentPath, onShowShortcuts }: SidebarProps) {
       isActive: currentPath === "/",
       show: true,
       shortcut: ["G", "T"],
+    },
+    {
+      to: "/upcoming",
+      label: "Upcoming",
+      icon: CalendarClock,
+      isActive: currentPath === "/upcoming",
+      show: true,
+      shortcut: ["G", "U"],
     },
     {
       to: "/history",

@@ -1,7 +1,13 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/client/components/ui/button";
 import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
 import { insertNewTodo } from "@/client/tanstack-db";
+import { NewTodoComposer } from "@/client/components/NewTodoComposer";
+import {
+  extractDueDateFromInput,
+  isFutureDueDate,
+} from "@/client/lib/due-date-parser";
+import { toast } from "sonner";
 
 interface CreateTodoModalProps {
   isOpen: boolean;
@@ -12,7 +18,7 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
   const [title, setTitle] = useState("");
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const parsedTodo = useMemo(() => extractDueDateFromInput(title), [title]);
 
   // Open/close modal using native dialog API
   useEffect(() => {
@@ -21,9 +27,6 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
 
     if (isOpen) {
       dialog.showModal();
-      // Focus textarea after modal opens
-      const timer = setTimeout(() => textareaRef.current?.focus(), 50);
-      return () => clearTimeout(timer);
     } else {
       dialog.close();
       setTitle("");
@@ -31,7 +34,7 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
   }, [isOpen]);
 
   const handleClose = () => {
-    if (title.trim()) {
+    if (parsedTodo.title.trim()) {
       setShowDiscardModal(true);
     } else {
       onClose();
@@ -46,8 +49,11 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (title.trim()) {
-      insertNewTodo(title);
+    if (parsedTodo.title.trim()) {
+      insertNewTodo(parsedTodo.title, parsedTodo.dueDate);
+      if (isFutureDueDate(parsedTodo.dueDate)) {
+        toast("Saved to Upcoming Todos");
+      }
       setTitle("");
       onClose();
     }
@@ -68,19 +74,13 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
             onSubmit={handleSubmit}
             className="flex-1 flex flex-col min-h-0"
           >
-            <textarea
-              ref={textareaRef}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  handleClose();
-                }
-              }}
-              placeholder="New todo..."
+            <NewTodoComposer
+              rawValue={title}
+              onRawValueChange={setTitle}
+              parsedTodo={parsedTodo}
+              multiline
               autoFocus
-              className="w-full flex-1 bg-transparent !border-none !outline-none resize-none text-base-content placeholder:text-base-content/50 !ring-0 focus:!ring-0 focus:!outline-none focus:!border-none text-base"
+              onEscape={handleClose}
             />
           </form>
 
@@ -88,7 +88,7 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
             <Button
               type="submit"
               form="create-todo-form"
-              disabled={!title.trim()}
+              disabled={!parsedTodo.title.trim()}
               variant="primary"
               className="w-full"
             >

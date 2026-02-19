@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Checkbox } from "@/client/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -7,12 +8,17 @@ import {
   DropdownMenuTrigger,
 } from "@/client/components/ui/dropdown-menu";
 import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
-import { MoreHorizontal, Edit, Trash2 } from "lucide-react";
+import { MoreHorizontal, Edit, Trash2, CalendarDays, X } from "lucide-react";
 import { toast } from "sonner";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { todoCollection } from "@/client/tanstack-db";
 import { getTodoItemId, getTodoInlineEditId } from "@/client/lib/element-ids";
+import {
+  extractDueDateFromInput,
+  formatDueDateBadge,
+} from "@/client/lib/due-date-parser";
+import { TiptapTodoInput } from "@/client/components/TiptapTodoInput";
 
 interface SortableTodoItemProps {
   todo: Todo;
@@ -31,8 +37,10 @@ export function SortableTodoItem({
 }: SortableTodoItemProps) {
   const [localTitle, setLocalTitle] = useState(todo.title);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownTriggerRef = useRef<HTMLButtonElement>(null);
+  const dueDateInputRef = useRef<HTMLInputElement>(null);
+  const skipBlurSaveRef = useRef(false);
 
   const {
     attributes,
@@ -49,9 +57,8 @@ export function SortableTodoItem({
   // Combine dnd-kit's setNodeRef with our containerRef
   const setCombinedRef = useCallback(
     (node: HTMLDivElement | null) => {
+      containerRef.current = node;
       setNodeRef(node);
-      (containerRef as React.MutableRefObject<HTMLDivElement | null>).current =
-        node;
     },
     [setNodeRef],
   );
@@ -61,29 +68,61 @@ export function SortableTodoItem({
     transition,
   };
 
+  const parsedInlineInput = useMemo(
+    () => extractDueDateFromInput(localTitle),
+    [localTitle],
+  );
+  const detectedInlineDueDate =
+    editingTodoId === todo.id &&
+    parsedInlineInput.dueDate &&
+    parsedInlineInput.matchedText
+      ? parsedInlineInput.dueDate
+      : null;
+  const showDetectedDueDateHint =
+    detectedInlineDueDate !== null && detectedInlineDueDate !== todo.dueDate;
+
   const handleTitleChange = (newTitle: string) => {
     if (todo.completed) return;
     setLocalTitle(newTitle);
   };
 
+  const isEditable = useCallback(() => {
+    if (todo.completed) {
+      toast.error("Cannot edit completed todos. Unmark as completed first.");
+      return false;
+    }
+    return true;
+  }, [todo.completed]);
+
+  const stopEditing = useCallback(() => {
+    setEditingTodoId(null);
+    containerRef.current?.focus();
+  }, [setEditingTodoId]);
+
   const handleTitleSave = () => {
     const currentValue = localTitle.trim();
 
     if (todo.completed) {
-      toast.error("Cannot edit completed todos. Unmark as completed first.");
       setLocalTitle(todo.title);
       return;
     }
 
-    if (currentValue !== todo.title) {
-      if (currentValue) {
-        todoCollection.update(todo.id, (draft) => {
-          draft.title = currentValue;
-        });
-      } else {
-        toast.error("Todo title cannot be empty");
-        setLocalTitle(todo.title);
-      }
+    const nextTitle = parsedInlineInput.title.trim();
+    const nextDueDate = parsedInlineInput.matchedText
+      ? parsedInlineInput.dueDate
+      : todo.dueDate;
+
+    if (!nextTitle) {
+      toast.error("Todo title cannot be empty");
+      setLocalTitle(todo.title);
+      return;
+    }
+
+    if (nextTitle !== todo.title || nextDueDate !== todo.dueDate) {
+      todoCollection.update(todo.id, (draft) => {
+        draft.title = nextTitle;
+        draft.dueDate = nextDueDate;
+      });
     }
   };
 
@@ -94,61 +133,54 @@ export function SortableTodoItem({
 
   const handleInputBlur = () => {
     if (todo.completed) return;
+
+    if (skipBlurSaveRef.current) {
+      skipBlurSaveRef.current = false;
+      return;
+    }
+
     setEditingTodoId(null);
     handleTitleSave();
   };
 
   const handleClickEditTodo = () => {
-    if (todo.completed) {
-      toast.error("Cannot edit completed todos. Unmark as completed first.");
-      return;
-    }
+    if (!isEditable()) return;
 
     setEditingTodoId(todo.id);
-    requestAnimationFrame(() => {
-      if (textareaRef.current) {
-        textareaRef.current.focus();
-        const textLength = textareaRef.current.value.length;
-        textareaRef.current.setSelectionRange(textLength, textLength);
-        adjustTextareaHeight();
-      }
+  };
+
+  const handleClickChangeDueDate = (anchorElement?: HTMLElement | null) => {
+    if (!isEditable()) return;
+
+    const input = dueDateInputRef.current;
+    const trigger = anchorElement ?? dropdownTriggerRef.current;
+    if (!input || !trigger) return;
+
+    // Position the portal-mounted date input near the trigger so
+    // native picker popovers open next to the dropdown area.
+    const rect = trigger.getBoundingClientRect();
+    input.style.top = `${Math.round(rect.bottom + 6)}px`;
+    input.style.left = `${Math.round(rect.right - 2)}px`;
+
+    input.focus({ preventScroll: true });
+    if (typeof input.showPicker === "function") {
+      input.showPicker();
+    } else {
+      input.click();
+    }
+  };
+
+  const handleClearDueDate = () => {
+    if (!isEditable()) return;
+    todoCollection.update(todo.id, (draft) => {
+      draft.dueDate = null;
     });
   };
 
-  // Auto-resize textarea to fit multi-line content without scrollbars
-  const adjustTextareaHeight = () => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    // Store current scroll position to prevent page jumping
-    const scrollTop = window.scrollY;
-
-    // Reset height to auto to get the correct scrollHeight
-    // Use minHeight instead of height to avoid collapsing during transition
-    textarea.style.minHeight = "0";
-    textarea.style.height = "auto";
-
-    // Force a reflow to ensure scrollHeight is recalculated
-    // This is necessary because some browsers batch style changes
-    void textarea.offsetHeight;
-
-    const newHeight = Math.max(textarea.scrollHeight, 24); // Minimum height of 24px (one line)
-    textarea.style.height = `${newHeight}px`;
-    textarea.style.minHeight = "";
-
-    // Restore scroll position
-    window.scrollTo({ top: scrollTop });
-  };
-
   useEffect(() => {
-    adjustTextareaHeight();
-  }, [localTitle]);
-
-  // Also adjust on window resize (handles font scaling, zoom changes)
-  useEffect(() => {
-    window.addEventListener("resize", adjustTextareaHeight);
-    return () => window.removeEventListener("resize", adjustTextareaHeight);
-  }, []);
+    if (editingTodoId === todo.id) return;
+    setLocalTitle(todo.title);
+  }, [editingTodoId, todo.id, todo.title]);
 
   // !outline-none !ring-0 focus:!ring-0 - Force hide browser default focus styles that cause fat corners
   return (
@@ -192,52 +224,91 @@ export function SortableTodoItem({
       />
 
       <div className="flex-1">
-        {/* !border-none !ring-0 !outline-none !shadow-none - Force hide browser/global focus styles */}
-        <textarea
-          ref={textareaRef}
-          id={getTodoInlineEditId(todo.id)}
+        <TiptapTodoInput
+          inputId={getTodoInlineEditId(todo.id)}
           value={localTitle}
-          onChange={(e) => handleTitleChange(e.target.value)}
-          onFocus={handleInputFocus}
-          onBlur={handleInputBlur}
-          onPointerDown={(e) => {
-            // Only stop propagation when editing to allow drag gestures when not focused
-            if (editingTodoId === todo.id) {
-              e.stopPropagation();
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              setEditingTodoId(null);
-              // Bubble focus back up to the container
-              containerRef.current?.focus();
-            } else if (e.key === "Escape") {
-              setLocalTitle(todo.title);
-              setEditingTodoId(null);
-              // Bubble focus back up to the container
-              containerRef.current?.focus();
-            }
-          }}
+          onChange={handleTitleChange}
+          multiline
+          variant="inline"
+          focused={editingTodoId === todo.id}
           disabled={todo.completed}
-          className={`w-full !border-none bg-transparent !ring-0 !outline-none !shadow-none px-2 py-1 text-base leading-6 resize-none overflow-hidden break-words ${
+          ariaLabel={
+            todo.completed
+              ? `Completed todo: ${todo.title}`
+              : `Edit todo: ${todo.title}`
+          }
+          className={`todo-tiptap-input todo-tiptap-input--inline ${
             isDragging
               ? "!cursor-grabbing"
               : todo.completed
                 ? "line-through text-base-content/50 cursor-default"
                 : "cursor-text"
           }`}
-          rows={1}
-          aria-label={
-            todo.completed
-              ? `Completed todo: ${todo.title}`
-              : `Edit todo: ${todo.title}`
-          }
+          onFocus={handleInputFocus}
+          onBlur={handleInputBlur}
+          onPointerDown={(e) => {
+            if (editingTodoId === todo.id) {
+              e.stopPropagation();
+            }
+          }}
+          onEnter={() => {
+            skipBlurSaveRef.current = true;
+            handleTitleSave();
+            stopEditing();
+          }}
+          onEscape={() => {
+            setLocalTitle(todo.title);
+            stopEditing();
+          }}
         />
+        {showDetectedDueDateHint && detectedInlineDueDate && (
+          <div className="mt-1 px-2">
+            <span className="inline-flex items-center rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-xs text-primary">
+              On save: Due {formatDueDateBadge(detectedInlineDueDate)}
+            </span>
+          </div>
+        )}
+        {todo.dueDate && !showDetectedDueDateHint && (
+          <div className="mt-1 px-2">
+            {todo.completed ? (
+              <span className="inline-flex items-center rounded-full bg-base-300 text-xs px-2 py-0.5 text-base-content/70">
+                Due {formatDueDateBadge(todo.dueDate)}
+              </span>
+            ) : (
+              <div className="group relative inline-flex items-center overflow-hidden rounded-full border border-base-300 bg-base-300/70 text-xs text-base-content/70">
+                <button
+                  type="button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleClearDueDate();
+                  }}
+                  className="absolute left-1 top-1/2 z-10 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full text-base-content/50 opacity-0 transition-all duration-200 hover:bg-error/10 hover:text-error group-hover:opacity-100 group-focus-within:opacity-100"
+                  aria-label="Clear due date"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleClickChangeDueDate(event.currentTarget);
+                  }}
+                  className="inline-flex items-center px-3 py-0.5 transition-all duration-200 hover:text-primary group-hover:pl-6 group-focus-within:pl-6"
+                  aria-label={`Edit due date, currently ${formatDueDateBadge(todo.dueDate)}`}
+                >
+                  Due {formatDueDateBadge(todo.dueDate)}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <DropdownMenu>
         <DropdownMenuTrigger
+          ref={dropdownTriggerRef}
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             // Stop Space/Enter from bubbling to dnd-kit's KeyboardSensor
@@ -260,6 +331,15 @@ export function SortableTodoItem({
             Edit {todo.completed && "(Disabled)"}
           </DropdownMenuItem>
           <DropdownMenuItem
+            onClick={
+              !todo.completed ? () => handleClickChangeDueDate() : undefined
+            }
+            disabled={todo.completed}
+          >
+            <CalendarDays className="h-4 w-4 mr-2" />
+            Due Date
+          </DropdownMenuItem>
+          <DropdownMenuItem
             onClick={() => setShowDeleteModal(true)}
             className="text-error focus:text-error focus:bg-error/10"
           >
@@ -268,6 +348,31 @@ export function SortableTodoItem({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {typeof document !== "undefined" &&
+        createPortal(
+          <input
+            ref={dueDateInputRef}
+            type="date"
+            value={todo.dueDate ?? ""}
+            onChange={(event) => {
+              todoCollection.update(todo.id, (draft) => {
+                draft.dueDate = event.target.value || null;
+              });
+            }}
+            tabIndex={-1}
+            aria-hidden="true"
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: 1,
+              height: 1,
+              opacity: 0,
+              pointerEvents: "none",
+            }}
+          />,
+          document.body,
+        )}
 
       <ConfirmationModal
         isOpen={showDeleteModal}

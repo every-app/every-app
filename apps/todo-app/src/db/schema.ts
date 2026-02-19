@@ -23,4 +23,5 @@ export const todos = sqliteTable("todos", {
     .notNull()
     .default(sql`(current_timestamp)`),
   completedAt: text("completed_at"),
+  dueDate: text("due_date"),
 });

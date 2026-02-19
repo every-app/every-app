@@ -15,13 +15,17 @@ import { generateDefaultSortKey } from "@/client/lib/fractional-indexing";
  * Use this helper instead of manually constructing the todo object
  * to ensure consistency across all todo creation points.
  */
-export function insertNewTodo(title: string): void {
+export function insertNewTodo(
+  title: string,
+  dueDate: string | null = null,
+): void {
   todoCollection.insert({
     id: crypto.randomUUID(),
     title: title.trim(),
     sortKey: generateDefaultSortKey(),
     completed: false,
     completedAt: null,
+    dueDate,
   });
 }
 

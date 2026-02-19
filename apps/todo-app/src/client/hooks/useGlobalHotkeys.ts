@@ -36,6 +36,14 @@ export function useGlobalHotkeys({ onShowShortcuts }: UseGlobalHotkeysOptions) {
     [],
   );
 
+  // Navigation: g then u -> Go to Upcoming
+  useHotkeys(
+    "g>u",
+    () => navigate({ to: "/upcoming" }),
+    { preventDefault: true },
+    [],
+  );
+
   // Create new todo: c -> Focus input
   useHotkeys(
     "c",

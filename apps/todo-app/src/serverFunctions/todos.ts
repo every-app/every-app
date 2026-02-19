@@ -6,11 +6,18 @@ import { and, eq } from "drizzle-orm";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
 import { emitSyncEvent } from "@/middleware/emitSyncEvent";
 import { useSessionTokenClientMiddleware } from "@every-app/sdk/tanstack";
+import { DATE_KEY_REGEX, isValidDateKey } from "@/lib/date-key";
+
+const dueDateSchema = z
+  .string()
+  .regex(DATE_KEY_REGEX, "Due date must be in YYYY-MM-DD format")
+  .refine(isValidDateKey, "Due date must be a valid calendar date");
 
 const createTodoSchema = z.object({
   id: z.string().uuid("Invalid todo ID"),
   title: z.string().min(1, "Title is required").max(1024, "Title too long"),
   sortKey: z.string(),
+  dueDate: dueDateSchema.nullable().optional(),
 });
 
 const updateTodoSchema = z.object({
@@ -22,6 +29,7 @@ const updateTodoSchema = z.object({
     .optional(),
   completed: z.boolean().optional(),
   sortKey: z.string().optional(),
+  dueDate: dueDateSchema.nullable().optional(),
 });
 
 const deleteTodoSchema = z.object({
@@ -46,6 +54,7 @@ export const getAllTodos = createServerFn()
         completed: schema.todos.completed,
         completedAt: schema.todos.completedAt,
         sortKey: schema.todos.sortKey,
+        dueDate: schema.todos.dueDate,
       })
       .from(schema.todos)
       .where(eq(todos.userId, context.userId));
@@ -71,6 +80,7 @@ export const createTodo = createServerFn()
         userId: context.userId,
         id: todo.id,
         sortKey: todo.sortKey,
+        dueDate: todo.dueDate ?? null,
       },
     ]);
   });
@@ -108,6 +118,7 @@ export const updateTodo = createServerFn()
       completed: todo.completed ?? existingTodo.completed,
       sortKey: todo.sortKey ?? existingTodo.sortKey,
       completedAt: existingTodo.completedAt as string | null,
+      dueDate: todo.dueDate !== undefined ? todo.dueDate : existingTodo.dueDate,
     };
 
     // Set completedAt timestamp when marking as completed

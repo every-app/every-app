@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ClipboardList, History, TreePine } from "lucide-react";
+import { ClipboardList, History, TreePine, CalendarClock } from "lucide-react";
 
 interface TabBarProps {
   currentPath?: string;
@@ -17,6 +17,15 @@ export function TabBar({ currentPath = "/" }: TabBarProps) {
         >
           <ClipboardList className="size-[1.2em]" aria-hidden="true" />
           <span className="dock-label">Todos</span>
+        </Link>
+        <Link
+          to="/upcoming"
+          className={`no-underline ${currentPath === "/upcoming" ? "dock-active text-primary" : ""}`}
+          aria-label="Navigate to Upcoming"
+          aria-current={currentPath === "/upcoming" ? "page" : undefined}
+        >
+          <CalendarClock className="size-[1.2em]" aria-hidden="true" />
+          <span className="dock-label">Upcoming</span>
         </Link>
         <Link
           to="/history"

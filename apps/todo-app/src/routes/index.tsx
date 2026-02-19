@@ -2,7 +2,6 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useState, useMemo, useCallback } from "react";
 import { Button } from "@/client/components/ui/button";
-import { Input } from "@/client/components/ui/input";
 import { Plus, ClipboardList } from "lucide-react";
 import { CreateTodoModal } from "@/client/components/CreateTodoModal";
 import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
@@ -30,12 +29,23 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { todoCollection, insertNewTodo } from "@/client/tanstack-db";
+import {
+  extractDueDateFromInput,
+  isFutureDueDate,
+} from "@/client/lib/due-date-parser";
+import {
+  getHomeActiveTodos,
+  getRecentCompletedTodos,
+} from "@/client/lib/todo-list-helpers";
+import { NewTodoComposer } from "@/client/components/NewTodoComposer";
 import { generateSortKeyBetween } from "@/client/lib/fractional-indexing";
 import { SortableTodoItem } from "@/client/components/SortableTodoItem";
 import { useDelayedAnimation } from "@/client/hooks/useDelayedAnimation";
 import { useKeyboardNavigation } from "@/client/hooks/useKeyboardNavigation";
 import { useTodoActions } from "@/client/hooks/useTodoActions";
 import { getTodoItemId, NEW_TODO_INPUT_ID } from "@/client/lib/element-ids";
+import { toast } from "sonner";
+import { formatDateKey } from "@/lib/date-key";
 
 export const Route = createFileRoute("/")({
   component: Home,
@@ -74,36 +84,24 @@ function HomeContent() {
       .orderBy(({ todo }) => todo.sortKey, "desc"),
   );
 
+  const today = new Date();
+  const todayKey = formatDateKey(today);
+  const parsedNewTodo = useMemo(
+    () => extractDueDateFromInput(newTodoTitle),
+    [newTodoTitle],
+  );
+
   // Derive active and completed todos from query data
   // Sort explicitly to ensure correct order after filtering (descending by sortKey)
   const activeTodos = useMemo(
-    () =>
-      todos
-        ?.filter((todo) => !todo.completed)
-        .sort((a, b) =>
-          b.sortKey > a.sortKey ? 1 : b.sortKey < a.sortKey ? -1 : 0,
-        ) ?? [],
-    [todos],
+    () => getHomeActiveTodos(todos, todayKey),
+    [todos, todayKey],
   );
 
-  const completedTodos = useMemo(() => {
-    const cutoffTime = Date.now() - COMPLETED_TODOS_VISIBLE_DURATION_MS;
-    return (
-      todos
-        ?.filter((todo) => {
-          if (!todo.completed) return false;
-          if (!todo.completedAt) return true; // Show if no completedAt timestamp
-          const completedTime = new Date(todo.completedAt).getTime();
-          return completedTime > cutoffTime;
-        })
-        // Sort by completedAt ascending (oldest first) so recently completed appear at bottom
-        .sort((a, b) => {
-          const aTime = a.completedAt ? new Date(a.completedAt).getTime() : 0;
-          const bTime = b.completedAt ? new Date(b.completedAt).getTime() : 0;
-          return aTime - bTime;
-        }) ?? []
-    );
-  }, [todos]);
+  const completedTodos = useMemo(
+    () => getRecentCompletedTodos(todos, COMPLETED_TODOS_VISIBLE_DURATION_MS),
+    [todos],
+  );
 
   // Enable animations after a delay to avoid jarring effects on page load
   const animationsEnabled = useDelayedAnimation(1000);
@@ -179,6 +177,20 @@ function HomeContent() {
     });
   };
 
+  const handleCreateTodoSubmit = useCallback(
+    (event: React.FormEvent) => {
+      event.preventDefault();
+      if (!parsedNewTodo.title.trim()) return;
+
+      insertNewTodo(parsedNewTodo.title, parsedNewTodo.dueDate);
+      if (isFutureDueDate(parsedNewTodo.dueDate, today)) {
+        toast("Saved to Upcoming Todos");
+      }
+      setNewTodoTitle("");
+    },
+    [parsedNewTodo, today],
+  );
+
   if (isLoading) {
     return null;
   }
@@ -199,39 +211,35 @@ function HomeContent() {
         </h1>
         {/* Desktop: inline form for creating todos */}
         <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (newTodoTitle.trim()) {
-              insertNewTodo(newTodoTitle);
-              setNewTodoTitle("");
-            }
-          }}
+          onSubmit={handleCreateTodoSubmit}
           className="hidden md:block space-y-4"
         >
-          <div className="flex gap-2">
-            <Input
-              id={NEW_TODO_INPUT_ID}
-              name="title"
-              placeholder="New todo... (c)"
-              value={newTodoTitle}
-              onChange={(e) => setNewTodoTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  e.currentTarget.blur();
-                }
-              }}
-              className="focus:border-primary focus:bg-primary/10 transition-colors duration-200"
-              aria-label="New todo title"
-            />
-            <Button
-              type="submit"
-              disabled={!newTodoTitle.trim()}
-              variant="primary"
-              aria-label="Add new todo"
-            >
-              Add
-            </Button>
+          <div className="space-y-2">
+            <div className="flex gap-2 items-start">
+              <div className="flex-1">
+                <NewTodoComposer
+                  inputId={NEW_TODO_INPUT_ID}
+                  rawValue={newTodoTitle}
+                  parsedTodo={parsedNewTodo}
+                  onRawValueChange={setNewTodoTitle}
+                  placeholder="New todo... (c)"
+                  onEscape={() => {
+                    const input = document.getElementById(
+                      NEW_TODO_INPUT_ID,
+                    ) as HTMLInputElement | null;
+                    input?.blur();
+                  }}
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={!parsedNewTodo.title.trim()}
+                variant="primary"
+                aria-label="Add new todo"
+              >
+                Add
+              </Button>
+            </div>
           </div>
         </form>
 

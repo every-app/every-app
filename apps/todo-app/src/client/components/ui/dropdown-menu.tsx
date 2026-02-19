@@ -144,7 +144,7 @@ function DropdownMenuContent({ children }: { children: ReactNode }) {
   return createPortal(
     <ul
       ref={contentRef}
-      className="menu bg-base-100 rounded-box z-50 min-w-[8rem] p-2 shadow-lg border border-base-300 fixed"
+      className="menu bg-base-100 rounded-box z-50 min-w-[10.5rem] p-2 shadow-lg border border-base-300 fixed"
       style={{
         top: position.top,
         left: position.left,
@@ -179,7 +179,7 @@ const DropdownMenuItem = forwardRef<HTMLLIElement, DropdownMenuItemProps>(
         <button
           type="button"
           disabled={disabled}
-          className={`flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none transition-colors hover:bg-base-200 focus:bg-base-200 ${disabled ? "pointer-events-none opacity-50" : ""}`}
+          className={`flex w-full cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm whitespace-nowrap outline-none transition-colors hover:bg-base-200 focus:bg-base-200 ${disabled ? "pointer-events-none opacity-50" : ""}`}
         >
           {children}
         </button>
