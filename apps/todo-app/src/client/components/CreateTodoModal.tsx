@@ -66,7 +66,7 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
         className="modal modal-bottom sm:modal-middle"
         onClose={onClose}
       >
-        <div className="modal-box h-[100dvh] max-h-[100dvh] sm:h-auto sm:max-h-[calc(100vh-5em)] flex flex-col rounded-none sm:rounded-box">
+        <div className="modal-box pt-[calc(env(safe-area-inset-top)+1rem)] sm:pt-6 h-[100dvh] max-h-[100dvh] sm:h-auto sm:max-h-[calc(100vh-5em)] flex flex-col rounded-none sm:rounded-box">
           <h3 className="font-bold text-lg mb-4">Create Todo</h3>
 
           <form

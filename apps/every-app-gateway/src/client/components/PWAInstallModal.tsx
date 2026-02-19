@@ -1,6 +1,7 @@
 import { usePWAInstall } from "@/client/hooks/usePWAInstall";
 import { useDialogControl } from "@/client/hooks/useDialogControl";
 import { PWAQRCode } from "@/client/components/PWAQRCode";
+import { BaseModal } from "@/client/components/Modal";
 import {
   Check,
   Download,
@@ -25,81 +26,78 @@ export function PWAInstallModal({ open, onClose }: PWAInstallModalProps) {
   const isDesktop = platform === "desktop";
 
   return (
-    <dialog ref={dialogRef} className="modal" onClose={onClose}>
-      <div
-        className={
-          isDesktop
-            ? "modal-box"
-            : "modal-box w-full h-full max-w-none max-h-none rounded-none"
-        }
+    <BaseModal
+      dialogRef={dialogRef}
+      onClose={onClose}
+      boxClassName={
+        isDesktop ? "" : "w-full h-full max-w-none max-h-none rounded-none"
+      }
+      showBackdrop={false}
+    >
+      <button
+        onClick={onClose}
+        className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
       >
-        <button
-          onClick={onClose}
-          className="btn btn-sm btn-circle btn-ghost absolute right-2 top-2"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <X className="w-4 h-4" />
+      </button>
 
-        <div className={isDesktop ? "" : "flex justify-center pt-6"}>
-          <div className={isDesktop ? "" : "w-full max-w-md"}>
-            {isStandalone ? (
-              <div className="text-center space-y-4 py-4">
-                <div className="w-16 h-16 bg-success/20 rounded-full flex items-center justify-center mx-auto">
-                  <Check className="w-8 h-8 text-success" />
-                </div>
-                <h1 className="text-2xl font-bold">Already Installed</h1>
-                <p className="text-base-content/70">
-                  You're already using Every App as an installed app.
-                </p>
-                <button onClick={onClose} className="btn btn-primary">
-                  <Home className="w-4 h-4" />
-                  Continue
-                </button>
+      <div className={isDesktop ? "" : "flex justify-center pt-6"}>
+        <div className={isDesktop ? "" : "w-full max-w-md"}>
+          {isStandalone ? (
+            <div className="text-center space-y-4 py-4">
+              <div className="w-16 h-16 bg-success/20 rounded-full flex items-center justify-center mx-auto">
+                <Check className="w-8 h-8 text-success" />
               </div>
-            ) : (
-              <div className="py-2">
-                {/* Android with native prompt */}
-                {platform === "android" && canPromptNatively && (
-                  <div className="text-center space-y-4">
-                    <img
-                      src="/android-chrome-192x192.png"
-                      alt="Every App"
-                      className="w-16 h-16 mx-auto rounded-xl"
-                    />
-                    <div>
-                      <h2 className="text-xl font-semibold">
-                        Install Every App
-                      </h2>
-                      <p className="text-base-content/60 text-sm">
-                        Add to your home screen for an app-like experience
-                      </p>
-                    </div>
-                    <button
-                      onClick={promptInstall}
-                      className="btn btn-primary btn-lg w-full"
-                    >
-                      <Download className="w-5 h-5" />
-                      Install App
-                    </button>
+              <h1 className="text-2xl font-bold">Already Installed</h1>
+              <p className="text-base-content/70">
+                You're already using Every App as an installed app.
+              </p>
+              <button onClick={onClose} className="btn btn-primary">
+                <Home className="w-4 h-4" />
+                Continue
+              </button>
+            </div>
+          ) : (
+            <div className="py-2">
+              {/* Android with native prompt */}
+              {platform === "android" && canPromptNatively && (
+                <div className="text-center space-y-4">
+                  <img
+                    src="/android-chrome-192x192.png"
+                    alt="Every App"
+                    className="w-16 h-16 mx-auto rounded-xl"
+                  />
+                  <div>
+                    <h2 className="text-xl font-semibold">Install Every App</h2>
+                    <p className="text-base-content/60 text-sm">
+                      Add to your home screen for an app-like experience
+                    </p>
                   </div>
-                )}
+                  <button
+                    onClick={promptInstall}
+                    className="btn btn-primary btn-lg w-full"
+                  >
+                    <Download className="w-5 h-5" />
+                    Install App
+                  </button>
+                </div>
+              )}
 
-                {/* Android without native prompt (fallback instructions) */}
-                {platform === "android" && !canPromptNatively && (
-                  <AndroidInstructions onClose={onClose} />
-                )}
+              {/* Android without native prompt (fallback instructions) */}
+              {platform === "android" && !canPromptNatively && (
+                <AndroidInstructions onClose={onClose} />
+              )}
 
-                {/* iOS instructions */}
-                {platform === "ios" && <IOSInstructions onClose={onClose} />}
+              {/* iOS instructions */}
+              {platform === "ios" && <IOSInstructions onClose={onClose} />}
 
-                {/* Desktop */}
-                {platform === "desktop" && <DesktopInstructions />}
-              </div>
-            )}
-          </div>
+              {/* Desktop */}
+              {platform === "desktop" && <DesktopInstructions />}
+            </div>
+          )}
         </div>
       </div>
-    </dialog>
+    </BaseModal>
   );
 }
 
