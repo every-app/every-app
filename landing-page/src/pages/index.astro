@@ -96,48 +96,51 @@ const demoTimestamps = [
       </header>
 
       <!-- Hero Section -->
-      <section class="relative min-h-[100svh] md:min-h-0 px-6 pt-32 pb-16 md:pt-36 md:pb-20">
+      <section class="relative px-6 pt-[10svh] md:pt-[8svh] pb-16 md:pb-20">
         <div class="max-w-6xl mx-auto">
-          <div class="max-w-2xl">
-            <h1 class="text-[clamp(3rem,10vw,7rem)] font-bold text-white leading-none tracking-tight mb-6">
-              EVERY APP
-            </h1>
+          <div class="min-h-[72svh] md:min-h-[76svh] flex items-center">
+            <div class="max-w-2xl">
+              <h1 class="text-[clamp(3rem,10vw,7rem)] font-bold text-white leading-none tracking-tight mb-6">
+                EVERY APP
+              </h1>
 
-            <p class="text-[clamp(1.5rem,3vw,2rem)] text-white font-normal mb-6">
-              Make every app open source
-            </p>
+              <p class="text-[clamp(1.5rem,3vw,2rem)] text-white font-normal mb-6">
+                Make every app open source
+              </p>
 
-            <div class="space-y-2 text-[clamp(1rem,2vw,1.25rem)] text-stone-400 font-light mb-10">
-              <p>Build what you want to exist</p>
-              <p>Share it easily with others</p>
-              <p>Self host unlimited apps on Cloudflare for $5/month</p>
-            </div>
+              <div class="space-y-2 text-[clamp(1rem,2vw,1.25rem)] text-stone-400 font-light mb-10">
+                <p>Build what you want to exist</p>
+                <p>Share it easily with others</p>
+                <p>Self host unlimited apps on Cloudflare for $5/month</p>
+              </div>
 
-            <p class="text-stone-500 text-sm mb-2">Self host with one command</p>
-            <div class="bg-[#141a17] border border-stone-800 rounded-md px-3 py-2 inline-flex items-center gap-3">
-              <code class="text-sm text-stone-300 font-mono">
-                npx everyapp gateway deploy
-              </code>
-              <button
-                id="copy-command"
-                class="text-stone-500 hover:text-stone-300 transition-colors"
-                aria-label="Copy command"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon">
-                  <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-                  <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-                </svg>
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon hidden">
-                  <polyline points="20 6 9 17 4 12"/>
-                </svg>
-              </button>
+              <p class="text-stone-500 text-sm mb-2">Self host with one command</p>
+              <div class="bg-[#141a17] border border-stone-800 rounded-md px-3 py-2 inline-flex items-center gap-3">
+                <code class="text-sm text-stone-300 font-mono">
+                  npx everyapp gateway deploy
+                </code>
+                <button
+                  id="copy-command"
+                  class="text-stone-500 hover:text-stone-300 transition-colors"
+                  aria-label="Copy command"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="copy-icon">
+                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                  </svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-icon hidden">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
 
-          <div class="mt-20 md:mt-24">
+          <div class="mt-4 md:mt-6">
             <div class="rounded-2xl border border-stone-800 overflow-hidden bg-[#090e0c]">
               <div class="demo-player-frame">
-                <video id="everyapp-demo-player" class="block w-full h-auto" playsinline controls />
+                <div class="demo-player-skeleton" aria-hidden="true"></div>
+                <video id="everyapp-demo-player" class="demo-player-video block w-full h-auto" playsinline controls preload="metadata" />
                 <div class="demo-player-chapters" aria-label="Video timestamps">
                   {
                     demoTimestamps.map((entry) => (
@@ -185,6 +188,13 @@ const demoTimestamps = [
               return;
             }
 
+            const playerFrame = playerElement.closest('.demo-player-frame');
+            const markPlayerLoaded = () => {
+              if (playerFrame instanceof HTMLElement) {
+                playerFrame.classList.add('is-loaded');
+              }
+            };
+
             const player = new window.Plyr(playerElement, {
               controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'captions', 'fullscreen'],
               captions: { active: false, language: 'auto', update: true },
@@ -196,6 +206,13 @@ const demoTimestamps = [
               hls.attachMedia(playerElement);
             } else {
               playerElement.src = videoManifestUrl;
+            }
+
+            if (playerElement.readyState >= 1) {
+              markPlayerLoaded();
+            } else {
+              playerElement.addEventListener('loadedmetadata', markPlayerLoaded, { once: true });
+              playerElement.addEventListener('canplay', markPlayerLoaded, { once: true });
             }
 
             const tryEnableCaptions = () => {

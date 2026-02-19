@@ -40,6 +40,71 @@ code {
 .demo-player-frame {
   position: relative;
   background: #060908;
+  aspect-ratio: 16 / 9;
+  isolation: isolate;
+}
+
+.demo-player-frame > .demo-player-video,
+.demo-player-frame > .plyr {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.demo-player-video {
+  object-fit: contain;
+}
+
+.demo-player-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background:
+    radial-gradient(circle at 22% 20%, rgba(43, 53, 49, 0.45), transparent 48%),
+    linear-gradient(120deg, rgba(20, 27, 24, 0.9), rgba(10, 14, 13, 0.95));
+  overflow: hidden;
+}
+
+.demo-player-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(231, 229, 228, 0.1) 50%,
+    transparent 100%
+  );
+  animation: demo-player-shimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes demo-player-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.demo-player-frame:not(.is-loaded) > .demo-player-video,
+.demo-player-frame:not(.is-loaded) > .plyr,
+.demo-player-frame:not(.is-loaded) .demo-player-chapters {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.demo-player-frame.is-loaded .demo-player-skeleton {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 220ms ease,
+    visibility 220ms ease;
+}
+
+.demo-player-frame.is-loaded > .demo-player-video,
+.demo-player-frame.is-loaded > .plyr,
+.demo-player-frame.is-loaded .demo-player-chapters {
+  opacity: 1;
+  transition: opacity 220ms ease;
 }
 
 .demo-player-chapters {
