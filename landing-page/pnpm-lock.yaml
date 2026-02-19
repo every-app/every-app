@@ -46,28 +46,6 @@ importers:
         specifier: ^4.45.4
         version: 4.45.4(@cloudflare/workers-types@4.20251109.0)
 
-  ..: {}
-
-  ../apps/chef: {}
-
-  ../apps/every-app-gateway: {}
-
-  ../apps/todo-app: {}
-
-  ../apps/workout-tracker: {}
-
-  ../gateway/mobile-native: {}
-
-  ../packages/cli: {}
-
-  ../packages/mcp: {}
-
-  ../packages/sdk: {}
-
-  ../templates/every-llm-chat: {}
-
-  ../templates/simple-todo: {}
-
 packages:
 
   '@alloc/quick-lru@5.2.0':
