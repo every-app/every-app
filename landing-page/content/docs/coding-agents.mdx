@@ -1,0 +1,80 @@
+---
+title: Coding Agents
+description: Set up your coding agent to build Every App applications
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+import { Tab, Tabs } from "fumadocs-ui/components/tabs";
+
+Coding Agents are realllllly good at building these apps.
+
+Agents usually struggle on new projects because there aren't any patterns defined yet. They struggle in legacy codebases because they're very complex and have lots of bad code to reference as example.
+
+We've been meticulous about the example applications having well-defined patterns that agents can follow. These patterns cover most of what every full stack app needs. It's your job to figure out the rest!
+
+## Add the MCP Server
+
+Add the Every App MCP server to your agent so it can reference the example apps when building yours.
+
+<Tabs items={["OpenCode", "Cursor", "Claude Code"]}>
+
+<Tab value="OpenCode">
+
+Add to `opencode.json`:
+
+```jsonc
+{
+  "mcp": {
+    "every-app": {
+      "type": "local",
+      "command": ["npx", "-y", "@every-app/mcp"],
+    },
+    // Up to date docs for libraries + Cloudflare
+    "context7": {
+      "type": "local",
+      "command": ["npx", "-y", "@upstash/context7-mcp"],
+    },
+  },
+}
+```
+
+</Tab>
+
+<Tab value="Cursor">
+
+Add to `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "every-app": {
+      "command": "npx",
+      "args": ["-y", "@every-app/mcp"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    }
+  }
+}
+```
+
+</Tab>
+
+<Tab value="Claude Code">
+
+```sh
+claude mcp add every-app -- npx -y @every-app/mcp
+# Up to date docs for libraries + Cloudflare
+claude mcp add context7 -- npx -y @upstash/context7-mcp
+```
+
+</Tab>
+</Tabs>
+
+Restart your AI tool after adding the MCP server.
+
+<Callout type="info">
+  Remind your agent to reference the examples with the Every App tool if it's
+  not doing so automatically.
+</Callout>

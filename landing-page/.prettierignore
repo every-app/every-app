@@ -1,2 +1,9 @@
-pnpm-lock.yaml
+node_modules
+dist
+.wrangler
+.tanstack
+.astro
+.vercel
+source.generated.ts
 src/routeTree.gen.ts
+pnpm-lock.yaml

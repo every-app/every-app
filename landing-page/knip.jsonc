@@ -1,4 +1,0 @@
-{
-  "ignore": ["src/styles/custom.css"],
-  "ignoreDependencies": ["sharp"],
-}

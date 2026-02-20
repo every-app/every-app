@@ -1,0 +1,21 @@
+{
+  "title": "Docs",
+  "pages": [
+    "---Start Here---",
+    "introduction",
+    "getting-started/quickstart",
+    "build-an-app/create-app",
+    "---Workflows---",
+    "coding-agents",
+    "---Prompts---",
+    "prompts",
+    "---Patterns---",
+    "...walkthrough",
+    "---Reference---",
+    "[llms.txt](/llms.txt)",
+    "...tech-stack",
+    "...embedded-sdk",
+    "---Learn More---",
+    "learn-more"
+  ]
+}

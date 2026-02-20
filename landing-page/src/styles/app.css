@@ -1,0 +1,206 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+:root {
+  --plyr-color-main: #a8a29e;
+}
+
+.demo-player-frame {
+  position: relative;
+  background: #060908;
+  aspect-ratio: 16 / 9;
+  isolation: isolate;
+}
+
+.demo-player-frame > .demo-player-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.demo-player-video {
+  object-fit: contain;
+}
+
+.demo-player-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background:
+    radial-gradient(circle at 22% 20%, rgba(43, 53, 49, 0.45), transparent 48%),
+    linear-gradient(120deg, rgba(20, 27, 24, 0.9), rgba(10, 14, 13, 0.95));
+  overflow: hidden;
+}
+
+.demo-player-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(231, 229, 228, 0.1) 50%,
+    transparent 100%
+  );
+  animation: demo-player-shimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes demo-player-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.demo-player-frame:not(.is-loaded) > .demo-player-video,
+.demo-player-frame:not(.is-loaded) .demo-player-chapters {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.demo-player-frame.is-loaded .demo-player-skeleton {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity 220ms ease,
+    visibility 220ms ease;
+}
+
+.demo-player-frame.is-loaded > .demo-player-video,
+.demo-player-frame.is-loaded .demo-player-chapters {
+  opacity: 1;
+  transition: opacity 220ms ease;
+}
+
+.demo-player-chapters {
+  position: absolute;
+  left: 1rem;
+  bottom: 4.8rem;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+  max-width: min(24rem, calc(100% - 2rem));
+}
+
+.demo-chapter-button {
+  display: inline-flex;
+  gap: 0.35rem;
+  align-items: center;
+  border: 1px solid rgba(120, 113, 108, 0.55);
+  border-radius: 999px;
+  background: rgba(9, 14, 12, 0.8);
+  color: #e7e5e4;
+  padding: 0.3rem 0.65rem;
+  line-height: 1;
+  backdrop-filter: blur(6px);
+  max-width: 100%;
+}
+
+.demo-chapter-button:hover {
+  border-color: rgba(214, 211, 209, 0.8);
+  color: #fafaf9;
+}
+
+.demo-chapter-time {
+  font-size: 0.7rem;
+  color: #d6d3d1;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
+}
+
+.demo-chapter-label {
+  font-size: 0.72rem;
+}
+
+@media (max-width: 768px) {
+  .demo-player-chapters {
+    display: none;
+  }
+
+  .demo-player-chapters {
+    left: 0.75rem;
+    bottom: 2.9rem;
+    gap: 0.4rem;
+    max-width: calc(100% - 1.5rem);
+  }
+
+  .demo-chapter-button {
+    padding: 0.28rem 0.55rem;
+  }
+
+  .demo-chapter-label {
+    display: none;
+  }
+}
+
+details.faq {
+  border: 1px solid rgba(41, 37, 36, 0.85);
+  border-radius: 0.75rem;
+  background: rgba(15, 14, 14, 0.62);
+  margin: 0.8rem 0;
+  overflow: hidden;
+}
+
+details.faq > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.9rem 1rem;
+  font-weight: 600;
+  color: #fafaf9;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+details.faq > summary::-webkit-details-marker {
+  display: none;
+}
+
+details.faq > summary::before {
+  content: ">";
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.8rem;
+  color: #a8a29e;
+  transform-origin: center;
+  transition: transform 140ms ease;
+}
+
+details.faq[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+details.faq > summary > * {
+  margin: 0;
+}
+
+details.faq > summary a {
+  pointer-events: none;
+  color: inherit;
+  text-decoration: none;
+}
+
+details.faq > summary img[alt="Link to section"] {
+  display: none;
+}
+
+details.faq[open] > summary {
+  border-bottom: 1px solid rgba(41, 37, 36, 0.8);
+}
+
+.faq-content {
+  padding: 1rem;
+}
+
+.prompt-block {
+  margin-top: 1rem;
+  border: 1px solid rgba(68, 64, 60, 0.8);
+  border-radius: 0.6rem;
+  background: rgba(10, 10, 10, 0.7);
+  padding: 0.9rem;
+}

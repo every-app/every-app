@@ -1,0 +1,75 @@
+---
+title: Quickstart
+description: Get up and running in 5 minutes
+---
+
+## Prerequisites
+
+1. Install [Node.js](https://nodejs.org/) (LTS version recommended)
+
+   This also installs `npx`, a tool that runs Node packages without installing them globally. You'll see `npx` commands throughout these docs.
+
+2. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) (free, no credit card required)
+
+   Skip any Cloudflare onboarding like configuring a domain, this is unnecessary for Every App.
+
+3. Log in to Cloudflare via the [Cloudflare CLI](https://developers.cloudflare.com/workers/wrangler/commands/#login):
+   ```bash
+   npx wrangler login
+   ```
+
+## Self-Host the Gateway
+
+The Gateway is your app hub—it handles auth and gives you a single URL for all your apps.
+
+```bash
+npx everyapp gateway deploy
+```
+
+Follow the link to create your account.
+
+## Self-Host an App
+
+Try one of the apps we've built to see how it works:
+
+### Todo App
+
+A simple task manager to get started.
+
+```bash
+npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
+cd every-todo-app
+npx everyapp app deploy
+```
+
+### Workout Tracker
+
+Track your workouts and programs.
+
+```bash
+npx gitpick every-app/every-app/tree/main/apps/workout-tracker every-workout-tracker
+cd every-workout-tracker
+npx everyapp app deploy
+```
+
+### Cooking Assistant
+
+An AI Cooking Assistant and Recipe Manager
+
+```bash
+npx gitpick every-app/every-app/tree/main/apps/chef every-app-chef
+cd every-app-chef
+npx everyapp app deploy
+```
+
+This also requires an OpenAI API key since its a chat interface:
+
+```bash
+npx wrangler secret put OPENAI_API_KEY
+```
+
+Refresh your Gateway and the app will appear.
+
+## Next Steps
+
+[Build your own app](/docs/build-an-app/create-app) - Set up your coding agent and start from a template

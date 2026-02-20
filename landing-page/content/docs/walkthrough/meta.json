@@ -1,0 +1,12 @@
+{
+  "title": "Patterns",
+  "pages": [
+    "overview",
+    "users-and-auth",
+    "theming",
+    "drizzle-db-schema-design",
+    "organize-backend-code",
+    "instant-updates",
+    "ai-chat"
+  ]
+}
