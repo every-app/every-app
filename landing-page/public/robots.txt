@@ -1,4 +1,4 @@
 # https://www.robotstxt.org/robotstxt.html
 User-agent: *
 Disallow:
-Sitemap: https://everyapp.dev/sitemap-index.xml
+Sitemap: https://everyapp.dev/sitemap.xml

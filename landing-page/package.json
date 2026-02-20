@@ -5,13 +5,17 @@
   "sideEffects": false,
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "vite build && node scripts/generate-sitemap.js",
+    "build:app": "vite build",
+    "sitemap": "node scripts/generate-sitemap.js",
     "start": "wrangler dev",
     "preview": "vite preview",
     "types:check": "fumadocs-mdx && tsc --noEmit",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:prod": "npm run build && wrangler deploy",
+    "deploy:preview": "npm run build && wrangler deploy --env preview"
   },
   "dependencies": {
     "@tanstack/react-router": "^1.161.3",

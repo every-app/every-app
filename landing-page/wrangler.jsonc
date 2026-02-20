@@ -4,4 +4,19 @@
   "compatibility_date": "2026-02-19",
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
+  "workers_dev": true,
+  "preview_urls": true,
+  "routes": [
+    {
+      "pattern": "everyapp.dev",
+      "custom_domain": true,
+    },
+  ],
+  "env": {
+    "preview": {
+      "name": "every-app-landing-page-preview",
+      "workers_dev": true,
+      "preview_urls": true,
+    },
+  },
 }

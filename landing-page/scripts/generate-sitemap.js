@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const DIST_DIR = join(__dirname, "../dist");
+const DIST_DIR = join(__dirname, "../dist/client");
 const DEFAULT_SITE_URL = "https://everyapp.dev";
 const SITE_URL = (process.env.SITE_URL ?? DEFAULT_SITE_URL).replace(/\/+$/, "");
 const EXCLUDED_HTML = new Set(["404.html", "500.html"]);
@@ -80,13 +80,7 @@ function main() {
   const sitemapPath = join(DIST_DIR, "sitemap.xml");
   writeFileSync(sitemapPath, sitemapXml);
 
-  const sitemapIndexXml = `<?xml version="1.0" encoding="UTF-8"?>\n<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <sitemap>\n    <loc>${SITE_URL}/sitemap.xml</loc>\n    <lastmod>${lastmod}</lastmod>\n  </sitemap>\n</sitemapindex>\n`;
-  const sitemapIndexPath = join(DIST_DIR, "sitemap-index.xml");
-  writeFileSync(sitemapIndexPath, sitemapIndexXml);
-
-  console.log(
-    `Generated sitemap with ${urls.length} URLs at ${sitemapPath} and ${sitemapIndexPath}`,
-  );
+  console.log(`Generated sitemap with ${urls.length} URLs at ${sitemapPath}`);
 }
 
 main();
