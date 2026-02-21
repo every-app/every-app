@@ -9,6 +9,20 @@ interface UseEveryAppSessionParams {
   sessionManagerConfig: SessionManagerConfig;
 }
 
+type SessionBootstrapGate = Pick<
+  SessionManager,
+  "isEmbedded" | "isBypassGatewayLocalOnly"
+>;
+
+export function shouldBootstrapSession(
+  sessionManager: SessionBootstrapGate,
+): boolean {
+  // Bootstrapping should happen whenever the app is hosted by a trusted container.
+  // This intentionally keys off embedded environment semantics (iframe OR RN WebView),
+  // not iframe-only detection, so RN can initialize auth from pushed tokens.
+  return sessionManager.isEmbedded() || sessionManager.isBypassGatewayLocalOnly;
+}
+
 export function useEveryAppSession({
   sessionManagerConfig,
 }: UseEveryAppSessionParams) {
@@ -28,9 +42,8 @@ export function useEveryAppSession({
 
   useEffect(() => {
     if (!sessionManager) return;
-    // Skip token requests when not in iframe (unless in demo mode) - the app will show GatewayRequiredError instead
-    if (!sessionManager.isInIframe && !sessionManager.isBypassGatewayLocalOnly)
-      return;
+    // Skip token bootstrap when not embedded (unless in demo mode) - the app will show GatewayRequiredError instead
+    if (!shouldBootstrapSession(sessionManager)) return;
 
     const interval = setInterval(() => {
       setSessionTokenState(sessionManager.getTokenState());

@@ -30,8 +30,11 @@ export function EmbeddedAppProvider({
 
   if (!sessionManager) return null;
 
-  // Check if the app is running outside of the Gateway iframe (skip in demo mode)
-  if (!sessionManager.isInIframe && !sessionManager.isBypassGatewayLocalOnly) {
+  // Check if the app is running outside of the Gateway (iframe or React Native WebView)
+  if (
+    !sessionManager.isEmbedded() &&
+    !sessionManager.isBypassGatewayLocalOnly
+  ) {
     return (
       <GatewayRequiredError
         gatewayOrigin={sessionManager.parentOrigin}

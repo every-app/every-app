@@ -4,6 +4,7 @@ import {
   BYPASS_GATEWAY_LOCAL_ONLY_USER_ID,
   isBypassGatewayLocalOnlyClient,
 } from "../shared/bypassGatewayLocalOnly.js";
+import { parseMessagePayload } from "../shared/parseMessagePayload.js";
 
 interface SessionToken {
   token: string;
@@ -16,6 +17,52 @@ interface TokenResponse {
   error?: string;
 }
 
+interface TokenUpdateMessage {
+  type: "SESSION_TOKEN_UPDATE";
+  token?: string;
+  expiresAt?: string;
+  appId?: string;
+}
+
+function isTokenUpdateMessage(data: unknown): data is TokenUpdateMessage {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return false;
+  }
+
+  return (data as { type?: unknown }).type === "SESSION_TOKEN_UPDATE";
+}
+
+function decodeJwtPayload(token: string): Record<string, unknown> | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      return null;
+    }
+
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    return JSON.parse(atob(padded)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function tokenAudienceMatchesApp(
+  payload: Record<string, unknown>,
+  appId: string,
+): boolean {
+  const aud = payload.aud;
+  if (typeof aud === "string") {
+    return aud === appId;
+  }
+
+  if (Array.isArray(aud)) {
+    return aud.some((value) => value === appId);
+  }
+
+  return false;
+}
+
 export interface SessionManagerConfig {
   appId: string;
 }
@@ -23,12 +70,25 @@ export interface SessionManagerConfig {
 const MESSAGE_TIMEOUT_MS = 5000;
 const TOKEN_EXPIRY_BUFFER_MS = 10000;
 const DEFAULT_TOKEN_LIFETIME_MS = 60000;
+const REACT_NATIVE_TOKEN_WAIT_TIMEOUT_MS = 10000;
+
+/**
+ * Environment detection types
+ */
+export type EmbeddedEnvironment =
+  | "iframe"
+  | "react-native-webview"
+  | "standalone";
 
 /**
  * Detects whether the current window is running inside an iframe.
  * Returns true if in an iframe, false if running as top-level window.
  */
 export function isRunningInIframe(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
   try {
     return window.self !== window.top;
   } catch {
@@ -38,16 +98,52 @@ export function isRunningInIframe(): boolean {
   }
 }
 
+/**
+ * Detects whether the current window is running inside a React Native WebView.
+ * Returns true if window.ReactNativeWebView is available.
+ */
+export function isRunningInReactNativeWebView(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return (
+    typeof (window as any).ReactNativeWebView?.postMessage === "function" ||
+    (window as any).isReactNativeWebView === true
+  );
+}
+
+/**
+ * Detects the current embedded environment.
+ * Priority: React Native WebView > iframe > standalone
+ */
+export function detectEnvironment(): EmbeddedEnvironment {
+  const isRNWebView = isRunningInReactNativeWebView();
+  const isIframe = isRunningInIframe();
+
+  if (isRNWebView) {
+    return "react-native-webview";
+  }
+  if (isIframe) {
+    return "iframe";
+  }
+  return "standalone";
+}
+
 export class SessionManager {
   readonly parentOrigin: string;
   readonly appId: string;
   readonly isInIframe: boolean;
+  readonly environment: EmbeddedEnvironment;
   readonly isBypassGatewayLocalOnly: boolean;
-  /** @deprecated Use isBypassGatewayLocalOnly instead. */
-  readonly isDemoModeLocalOnly: boolean;
 
   private token: SessionToken | null = null;
   private refreshPromise: Promise<string> | null = null;
+  private tokenWaiters: Array<{
+    resolve: (token: string) => void;
+    reject: (error: Error) => void;
+    timeout: ReturnType<typeof setTimeout>;
+  }> = [];
 
   constructor(config: SessionManagerConfig) {
     if (!config.appId) {
@@ -55,7 +151,6 @@ export class SessionManager {
     }
 
     this.isBypassGatewayLocalOnly = isBypassGatewayLocalOnlyClient();
-    this.isDemoModeLocalOnly = this.isBypassGatewayLocalOnly;
 
     const gatewayUrl = import.meta.env.VITE_GATEWAY_URL;
     if (!this.isBypassGatewayLocalOnly) {
@@ -76,7 +171,12 @@ export class SessionManager {
     this.parentOrigin = this.isBypassGatewayLocalOnly
       ? window.location.origin
       : gatewayUrl;
+    this.environment = detectEnvironment();
     this.isInIframe = isRunningInIframe();
+
+    if (this.environment === "react-native-webview") {
+      this.setupReactNativeTokenListener();
+    }
 
     if (this.isBypassGatewayLocalOnly) {
       this.token = {
@@ -84,6 +184,45 @@ export class SessionManager {
         expiresAt: Date.now() + DEFAULT_TOKEN_LIFETIME_MS,
       };
     }
+  }
+
+  /**
+   * Check if running in an embedded environment (iframe or React Native WebView)
+   */
+  isEmbedded(): boolean {
+    return this.environment !== "standalone";
+  }
+
+  isTrustedHostMessage(event: MessageEvent): boolean {
+    if (this.environment === "react-native-webview") {
+      const origin = (event as MessageEvent & { origin?: string | null })
+        .origin;
+      return (
+        origin === "react-native" ||
+        origin === "null" ||
+        origin === "" ||
+        origin == null
+      );
+    }
+
+    return event.origin === this.parentOrigin;
+  }
+
+  postToHost(message: object): void {
+    if (this.environment === "react-native-webview") {
+      const postMessage = (window as any).ReactNativeWebView?.postMessage;
+      if (typeof postMessage !== "function") {
+        throw new Error("React Native WebView bridge is unavailable");
+      }
+
+      postMessage.call(
+        (window as any).ReactNativeWebView,
+        JSON.stringify(message),
+      );
+      return;
+    }
+
+    window.parent.postMessage(message, this.parentOrigin);
   }
 
   private isTokenExpiringSoon(
@@ -105,19 +244,17 @@ export class SessionManager {
       };
 
       const handler = (event: MessageEvent) => {
-        // Security: reject messages from wrong origin (including null from sandboxed iframes)
-        if (event.origin !== this.parentOrigin) return;
-        // Safety: ignore malformed messages that could crash the handler
-        if (!event.data || typeof event.data !== "object") return;
-        if (
-          event.data.type === responseType &&
-          event.data.requestId === requestId
-        ) {
+        // Security: validate message origin based on environment
+        if (!this.isTrustedHostMessage(event)) return;
+        const data = parseMessagePayload(event.data);
+        if (!data) return;
+
+        if (data.type === responseType && data.requestId === requestId) {
           cleanup();
-          if (event.data.error) {
-            reject(new Error(event.data.error));
+          if (typeof data.error === "string" && data.error) {
+            reject(new Error(data.error));
           } else {
-            resolve(event.data as T);
+            resolve(data as T);
           }
         }
       };
@@ -128,7 +265,100 @@ export class SessionManager {
       }, MESSAGE_TIMEOUT_MS);
 
       window.addEventListener("message", handler);
-      window.parent.postMessage(request, this.parentOrigin);
+
+      try {
+        this.postToHost(request);
+      } catch (error) {
+        cleanup();
+        reject(
+          error instanceof Error
+            ? error
+            : new Error("Failed to post message to host"),
+        );
+      }
+    });
+  }
+
+  private setupReactNativeTokenListener(): void {
+    window.addEventListener("message", (event: MessageEvent) => {
+      if (!this.isTrustedHostMessage(event)) {
+        return;
+      }
+
+      const data = parseMessagePayload(event.data);
+      if (!data) {
+        return;
+      }
+
+      if (!isTokenUpdateMessage(data)) {
+        return;
+      }
+
+      const message = data;
+
+      if (!message.token || typeof message.token !== "string") {
+        return;
+      }
+
+      if (typeof message.appId !== "string" || message.appId !== this.appId) {
+        return;
+      }
+
+      if (
+        message.expiresAt !== undefined &&
+        typeof message.expiresAt !== "string"
+      ) {
+        return;
+      }
+
+      const payload = decodeJwtPayload(message.token);
+      if (!payload || !tokenAudienceMatchesApp(payload, this.appId)) {
+        return;
+      }
+
+      // Native controls token minting and pushes updates into the embedded app.
+      // We only consume pushed tokens in React Native WebView mode.
+      let expiresAt = Date.now() + DEFAULT_TOKEN_LIFETIME_MS;
+      if (message.expiresAt) {
+        const parsed = new Date(message.expiresAt).getTime();
+        if (!Number.isNaN(parsed)) {
+          expiresAt = parsed;
+        }
+      }
+
+      this.token = {
+        token: message.token,
+        expiresAt,
+      };
+
+      if (this.tokenWaiters.length > 0) {
+        const waiters = this.tokenWaiters;
+        this.tokenWaiters = [];
+
+        for (const waiter of waiters) {
+          clearTimeout(waiter.timeout);
+          waiter.resolve(message.token);
+        }
+      }
+    });
+  }
+
+  private waitForReactNativeTokenPush(): Promise<string> {
+    if (this.token && !this.isTokenExpiringSoon()) {
+      return Promise.resolve(this.token.token);
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.tokenWaiters = this.tokenWaiters.filter(
+          (w) => w.timeout !== timeout,
+        );
+        reject(
+          new Error("Timed out waiting for token from React Native bridge"),
+        );
+      }, REACT_NATIVE_TOKEN_WAIT_TIMEOUT_MS);
+
+      this.tokenWaiters.push({ resolve, reject, timeout });
     });
   }
 
@@ -143,6 +373,16 @@ export class SessionManager {
 
     if (this.refreshPromise) {
       return this.refreshPromise;
+    }
+
+    if (this.environment === "react-native-webview") {
+      this.refreshPromise = this.waitForReactNativeTokenPush();
+
+      try {
+        return await this.refreshPromise;
+      } finally {
+        this.refreshPromise = null;
+      }
     }
 
     this.refreshPromise = (async () => {
@@ -235,23 +475,18 @@ export class SessionManager {
       return null;
     }
 
-    try {
-      const parts = this.token.token.split(".");
-      if (parts.length !== 3) {
-        return null;
-      }
-
-      const payload = JSON.parse(atob(parts[1]));
-      if (!payload.sub) {
-        return null;
-      }
-
-      return {
-        userId: payload.sub,
-        email: payload.email ?? "",
-      };
-    } catch {
+    const payload = decodeJwtPayload(this.token.token);
+    if (!payload) {
       return null;
     }
+
+    if (typeof payload.sub !== "string") {
+      return null;
+    }
+
+    return {
+      userId: payload.sub,
+      email: typeof payload.email === "string" ? payload.email : "",
+    };
   }
 }

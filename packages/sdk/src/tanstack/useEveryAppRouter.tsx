@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { SessionManager } from "../core/sessionManager.js";
 import { useRouter } from "@tanstack/react-router";
+import { parseMessagePayload } from "../shared/parseMessagePayload.js";
 
 interface UseEveryAppRouterParams {
   sessionManager: SessionManager | null;
@@ -11,15 +12,20 @@ export function useEveryAppRouter({ sessionManager }: UseEveryAppRouterParams) {
   // Route synchronization effect
   useEffect(() => {
     if (!sessionManager) return;
+
     // Listen for route sync messages from parent
     const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== sessionManager.parentOrigin) return;
+      // Validate origin based on environment
+      if (!sessionManager.isTrustedHostMessage(event)) return;
+
+      const data = parseMessagePayload(event.data);
+      if (!data) return;
 
       if (
-        event.data.type === "ROUTE_CHANGE" &&
-        event.data.direction === "parent-to-child"
+        data.type === "ROUTE_CHANGE" &&
+        data.direction === "parent-to-child"
       ) {
-        const targetRoute = event.data.route;
+        const targetRoute = typeof data.route === "string" ? data.route : null;
         const currentRoute = window.location.pathname;
 
         // Only navigate if the route is different from current location
@@ -44,16 +50,17 @@ export function useEveryAppRouter({ sessionManager }: UseEveryAppRouterParams) {
 
       lastReportedPath = currentPath;
 
-      if (window.parent !== window) {
-        window.parent.postMessage(
-          {
-            type: "ROUTE_CHANGE",
-            route: currentPath,
-            appId: sessionManager.appId,
-            direction: "child-to-parent",
-          },
-          sessionManager.parentOrigin,
-        );
+      const message = {
+        type: "ROUTE_CHANGE",
+        route: currentPath,
+        appId: sessionManager.appId,
+        direction: "child-to-parent",
+      };
+
+      try {
+        sessionManager.postToHost(message);
+      } catch {
+        return;
       }
     };
     // Listen to popstate for browser back/forward

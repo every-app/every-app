@@ -47,6 +47,21 @@ describe("SessionManager", () => {
     } as MessageEvent);
   }
 
+  function createJwtLikeToken(payload: Record<string, unknown>): string {
+    return `header.${btoa(JSON.stringify(payload))}.signature`;
+  }
+
+  function createBase64UrlJwtLikeToken(
+    payload: Record<string, unknown>,
+  ): string {
+    const encoded = btoa(JSON.stringify(payload))
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+
+    return `header.${encoded}.signature`;
+  }
+
   beforeEach(async () => {
     vi.resetModules();
     vi.stubEnv("VITE_GATEWAY_URL", "https://gateway.example.com");
@@ -552,6 +567,31 @@ describe("SessionManager", () => {
         email: "", // Defaults to empty string
       });
     });
+
+    it("extracts user info from base64url-encoded JWT payload", async () => {
+      const manager = new SessionManager({ appId: "test-app" });
+
+      const fakeToken = createBase64UrlJwtLikeToken({
+        sub: "user-123",
+        email: "test@example.com",
+      });
+
+      const tokenPromise = manager.requestNewToken();
+
+      simulateTokenResponse({
+        token: fakeToken,
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      });
+
+      await tokenPromise;
+
+      const user = manager.getUser();
+
+      expect(user).toEqual({
+        userId: "user-123",
+        email: "test@example.com",
+      });
+    });
   });
 
   describe("default token lifetime", () => {
@@ -791,6 +831,109 @@ describe("SessionManager", () => {
 
       const token = await successPromise;
       expect(token).toBe("success-token");
+    });
+  });
+
+  describe("react-native-webview token push", () => {
+    beforeEach(() => {
+      messageHandler = null;
+      addEventListenerSpy = vi.fn((event: string, handler: Function) => {
+        if (event === "message") {
+          messageHandler = handler as (event: MessageEvent) => void;
+        }
+      });
+
+      vi.stubGlobal("window", {
+        addEventListener: addEventListenerSpy,
+        removeEventListener: removeEventListenerSpy,
+        ReactNativeWebView: {
+          postMessage: vi.fn(),
+        },
+        parent: {
+          postMessage: mockPostMessage,
+        },
+      });
+    });
+
+    it("accepts pushed token only when appId and audience match", async () => {
+      const manager = new SessionManager({ appId: "todo-app" });
+      const tokenPromise = manager.requestNewToken();
+
+      const token = createJwtLikeToken({
+        sub: "user-1",
+        aud: "todo-app",
+      });
+
+      simulateMalformedMessage("react-native", {
+        type: "SESSION_TOKEN_UPDATE",
+        appId: "todo-app",
+        token,
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      });
+
+      await expect(tokenPromise).resolves.toBe(token);
+    });
+
+    it("accepts stringified token update payload with null-like origin", async () => {
+      const manager = new SessionManager({ appId: "todo-app" });
+      const tokenPromise = manager.requestNewToken();
+
+      const token = createJwtLikeToken({
+        sub: "user-1",
+        aud: "todo-app",
+      });
+
+      simulateMalformedMessage(
+        "null",
+        JSON.stringify({
+          type: "SESSION_TOKEN_UPDATE",
+          appId: "todo-app",
+          token,
+          expiresAt: new Date(Date.now() + 60000).toISOString(),
+        }),
+      );
+
+      await expect(tokenPromise).resolves.toBe(token);
+    });
+
+    it("ignores malformed JSON token updates", async () => {
+      vi.useFakeTimers();
+
+      const manager = new SessionManager({ appId: "todo-app" });
+      const tokenPromise = manager.requestNewToken();
+
+      simulateMalformedMessage("react-native", "{not-json");
+
+      vi.advanceTimersByTime(10001);
+
+      await expect(tokenPromise).rejects.toThrow(
+        "Timed out waiting for token from React Native bridge",
+      );
+    });
+
+    it("rejects pushed token when audience does not match expected app", async () => {
+      vi.useFakeTimers();
+
+      const manager = new SessionManager({ appId: "todo-app" });
+      const tokenPromise = manager.requestNewToken();
+
+      const wrongAudienceToken = createJwtLikeToken({
+        sub: "user-1",
+        aud: "chef-app",
+      });
+
+      simulateMalformedMessage("react-native", {
+        type: "SESSION_TOKEN_UPDATE",
+        appId: "todo-app",
+        token: wrongAudienceToken,
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+      });
+
+      vi.advanceTimersByTime(10001);
+
+      await expect(tokenPromise).rejects.toThrow(
+        "Timed out waiting for token from React Native bridge",
+      );
     });
   });
 });
