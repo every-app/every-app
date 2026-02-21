@@ -34,24 +34,18 @@ function ForgotPassword() {
     executeWithRetry: runForgotPassword,
   } = useCpuTimeoutRetry(async () => {
     try {
-      if (typeof authClient.forgetPassword !== "function") {
-        console.error("forgetPassword method not found on authClient");
-        setError("Password reset is not configured. Please contact support.");
-        return true;
-      }
-
       // Include redirect param in the reset-password URL if present
       const resetPasswordUrl = redirect
         ? `${window.location.origin}/reset-password?redirect=${encodeURIComponent(redirect)}`
         : `${window.location.origin}/reset-password`;
 
-      const { error: forgetError } = await authClient.forgetPassword({
+      const { error: resetError } = await authClient.requestPasswordReset({
         email,
         redirectTo: resetPasswordUrl,
       });
 
-      if (forgetError) {
-        setError(forgetError.message || "Failed to send reset email.");
+      if (resetError) {
+        setError(resetError.message || "Failed to send reset email.");
         return true;
       }
       if (hadRetries) {

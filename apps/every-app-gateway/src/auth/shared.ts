@@ -1,5 +1,7 @@
 import { admin } from "better-auth/plugins";
-import { reactStartCookies } from "better-auth/react-start";
+import { expo } from "@better-auth/expo";
+import { tanstackStartCookies } from "better-auth/tanstack-start";
+import { defaultRoles } from "better-auth/plugins/admin/access";
 
 /**
  * User status values:
@@ -22,8 +24,7 @@ export type UserRole = "owner" | "member";
 export const sharedAuthOptions = {
   session: {
     cookieCache: {
-      enabled: true,
-      maxAge: 5 * 60, // Cache duration in seconds
+      enabled: false,
     },
   },
   emailAndPassword: {
@@ -51,10 +52,20 @@ export const sharedAuthOptions = {
     },
   },
   plugins: [
-    reactStartCookies(),
+    tanstackStartCookies(),
+    // Keep Better Auth Expo origin override disabled on Workers and normalize
+    // expo-origin in the /api/auth/$ route instead.
+    // Context: https://github.com/better-auth/better-auth/issues/5568
+    // Context: https://github.com/better-auth/better-auth/issues/7014
+    expo({ disableOriginOverride: true }),
     admin({
       defaultRole: "member",
-      adminRoles: ["owner"], // Only owners have admin privileges
+      adminRoles: ["owner"],
+      roles: {
+        ...defaultRoles,
+        owner: defaultRoles.admin,
+        member: defaultRoles.user,
+      },
     }),
   ],
 };

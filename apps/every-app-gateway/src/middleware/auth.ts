@@ -1,6 +1,7 @@
 import { createAuth, type Auth } from "@/auth";
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
+import { GatewayError } from "@/server/errors";
 
 type UserRole = "owner" | "user" | "admin";
 
@@ -48,7 +49,10 @@ export const authMiddleware = createMiddleware({
   });
 
   if (!session || !session.user || !session.user.id) {
-    throw new Error("Unauthorized - missing session, user, or user ID");
+    throw new GatewayError(
+      "UNAUTHORIZED",
+      "Unauthorized - missing session, user, or user ID",
+    );
   }
 
   return next({
@@ -69,7 +73,10 @@ export const ownerMiddleware = createMiddleware({
   .middleware([authMiddleware])
   .server(async ({ next, context }) => {
     if (!isOwner(context.user.role)) {
-      throw new Error("Unauthorized: Owner access required");
+      throw new GatewayError(
+        "UNAUTHORIZED",
+        "Unauthorized: Owner access required",
+      );
     }
 
     return next();

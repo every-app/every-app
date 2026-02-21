@@ -20,6 +20,8 @@ import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AppsAppIdRouteImport } from './routes/apps/$appId'
+import { Route as ApiUserAppsRouteImport } from './routes/api/user-apps'
+import { Route as ApiSessionTokenRouteImport } from './routes/api/session-token'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminTokensRouteImport } from './routes/admin/tokens'
 import { Route as AdminAppsRouteImport } from './routes/admin/apps'
@@ -85,6 +87,16 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
 const AppsAppIdRoute = AppsAppIdRouteImport.update({
   id: '/apps/$appId',
   path: '/apps/$appId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUserAppsRoute = ApiUserAppsRouteImport.update({
+  id: '/api/user-apps',
+  path: '/api/user-apps',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSessionTokenRoute = ApiSessionTokenRouteImport.update({
+  id: '/api/session-token',
+  path: '/api/session-token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
@@ -157,6 +169,8 @@ export interface FileRoutesByFullPath {
   '/admin/apps': typeof AdminAppsRoute
   '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/session-token': typeof ApiSessionTokenRoute
+  '/api/user-apps': typeof ApiUserAppsRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin/': typeof AdminIndexRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
@@ -180,6 +194,8 @@ export interface FileRoutesByTo {
   '/admin/apps': typeof AdminAppsRoute
   '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/session-token': typeof ApiSessionTokenRoute
+  '/api/user-apps': typeof ApiUserAppsRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin': typeof AdminIndexRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
@@ -205,6 +221,8 @@ export interface FileRoutesById {
   '/admin/apps': typeof AdminAppsRoute
   '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/session-token': typeof ApiSessionTokenRoute
+  '/api/user-apps': typeof ApiUserAppsRoute
   '/apps/$appId': typeof AppsAppIdRouteWithChildren
   '/admin/': typeof AdminIndexRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
@@ -231,6 +249,8 @@ export interface FileRouteTypes {
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/users'
+    | '/api/session-token'
+    | '/api/user-apps'
     | '/apps/$appId'
     | '/admin/'
     | '/api/admin/has-owner'
@@ -254,6 +274,8 @@ export interface FileRouteTypes {
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/users'
+    | '/api/session-token'
+    | '/api/user-apps'
     | '/apps/$appId'
     | '/admin'
     | '/api/admin/has-owner'
@@ -278,6 +300,8 @@ export interface FileRouteTypes {
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/users'
+    | '/api/session-token'
+    | '/api/user-apps'
     | '/apps/$appId'
     | '/admin/'
     | '/api/admin/has-owner'
@@ -300,6 +324,8 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   SnakeRoute: typeof SnakeRoute
+  ApiSessionTokenRoute: typeof ApiSessionTokenRoute
+  ApiUserAppsRoute: typeof ApiUserAppsRoute
   AppsAppIdRoute: typeof AppsAppIdRouteWithChildren
   ApiAdminHasOwnerRoute: typeof ApiAdminHasOwnerRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -386,6 +412,20 @@ declare module '@tanstack/react-router' {
       path: '/apps/$appId'
       fullPath: '/apps/$appId'
       preLoaderRoute: typeof AppsAppIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/user-apps': {
+      id: '/api/user-apps'
+      path: '/api/user-apps'
+      fullPath: '/api/user-apps'
+      preLoaderRoute: typeof ApiUserAppsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/session-token': {
+      id: '/api/session-token'
+      path: '/api/session-token'
+      fullPath: '/api/session-token'
+      preLoaderRoute: typeof ApiSessionTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/users': {
@@ -518,6 +558,8 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   SnakeRoute: SnakeRoute,
+  ApiSessionTokenRoute: ApiSessionTokenRoute,
+  ApiUserAppsRoute: ApiUserAppsRoute,
   AppsAppIdRoute: AppsAppIdRouteWithChildren,
   ApiAdminHasOwnerRoute: ApiAdminHasOwnerRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

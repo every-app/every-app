@@ -30,26 +30,3 @@ export function isValidAppOrigin(
     return false;
   }
 }
-
-/**
- * Formats the expected origins for error messages.
- *
- * @param appUrl - The app's production URL
- * @param devUrl - Optional development URL
- * @returns A formatted string like "https://app.com" or "https://app.com or http://localhost:3001"
- */
-export function formatExpectedOrigins(
-  appUrl: string,
-  devUrl?: string | null,
-): string {
-  try {
-    const prodOrigin = new URL(appUrl).origin;
-    if (devUrl) {
-      const devOrigin = new URL(devUrl).origin;
-      return `${prodOrigin} or ${devOrigin}`;
-    }
-    return prodOrigin;
-  } catch {
-    return appUrl;
-  }
-}

@@ -4,10 +4,8 @@ import { authMiddleware, type AuthContext } from "@/middleware/auth";
 import { AppService } from "@/server/services/AppService";
 import { issueEmbeddedAppToken } from "@/server/jwt-utils";
 import { EMBEDDED_APP_TOKEN_EXPIRY_SECONDS } from "@/server/constants";
-import {
-  isValidAppOrigin,
-  formatExpectedOrigins,
-} from "@/utils/origin-validator";
+import { GatewayError } from "@/server/errors";
+import { isValidAppOrigin } from "@/utils/origin-validator";
 
 // Request schemas
 const SessionTokenRequestBodySchema = z.object({
@@ -69,12 +67,10 @@ export const createSessionToken = createServerFn()
 
       // Validate timestamp to prevent replay attacks
       if (!isTimestampValid(timestamp)) {
-        const now = Date.now();
-        const age = timestamp ? now - timestamp : 0;
-        console.error(
-          `Request timestamp invalid: ${timestamp}, current: ${now}, age: ${age}ms`,
+        throw new GatewayError(
+          "REQUEST_EXPIRED",
+          "Request expired or clock skew detected",
         );
-        throw new Error("Request expired or clock skew detected");
       }
 
       // Look up app configuration and verify user access
@@ -85,29 +81,28 @@ export const createSessionToken = createServerFn()
         app = await AppService.getByAppIdForUser(appId, user.id);
 
         if (!app) {
-          console.error(
-            `User ${user.id} does not have access to app: ${appId}`,
+          throw new GatewayError(
+            "ACCESS_DENIED",
+            "Access denied or invalid app ID",
           );
-          throw new Error("Access denied or invalid app ID");
         }
 
         // Validate origin directly without making another DB query
         if (!isValidAppOrigin(requestOrigin, app.appUrl, app.devUrl)) {
-          const expectedOrigins = formatExpectedOrigins(app.appUrl, app.devUrl);
-          console.error(
-            `Origin ${requestOrigin} not allowed for app ${appId}. Expected: ${expectedOrigins}`,
+          throw new GatewayError(
+            "ORIGIN_NOT_ALLOWED",
+            "Origin not allowed for this app",
           );
-          throw new Error("Origin not allowed for this app");
         }
       } else {
         // Otherwise, look up app by origin (also verifies user access)
         app = await AppService.getByOriginForUser(requestOrigin, user.id);
 
         if (!app) {
-          console.error(
-            `User ${user.id} does not have access to any app at origin: ${requestOrigin}`,
+          throw new GatewayError(
+            "ACCESS_DENIED",
+            "Access denied or unregistered origin",
           );
-          throw new Error("Access denied or unregistered origin");
         }
       }
 
