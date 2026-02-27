@@ -1,18 +1,25 @@
 #!/usr/bin/env node
 
 import { existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, sep } from "node:path";
+import { dirname, extname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const DIST_DIR = join(__dirname, "../dist/client");
+const DOCS_CONTENT_DIR = join(__dirname, "../content/docs");
+const BLOG_CONTENT_DIR = join(__dirname, "../content/blog");
+
 const DEFAULT_SITE_URL = "https://everyapp.dev";
 const SITE_URL = (process.env.SITE_URL ?? DEFAULT_SITE_URL).replace(/\/+$/, "");
-const EXCLUDED_HTML = new Set(["404.html", "500.html"]);
 
-function walkHtmlFiles(directory) {
+const DOC_EXTENSIONS = new Set([".md", ".mdx"]);
+const STATIC_PATHS = new Set(["/", "/docs", "/blogs"]);
+
+function walkMarkdownFiles(directory) {
+  if (!existsSync(directory)) return [];
+
   const entries = readdirSync(directory, { withFileTypes: true });
   const files = [];
 
@@ -20,11 +27,11 @@ function walkHtmlFiles(directory) {
     const absolutePath = join(directory, entry.name);
 
     if (entry.isDirectory()) {
-      files.push(...walkHtmlFiles(absolutePath));
+      files.push(...walkMarkdownFiles(absolutePath));
       continue;
     }
 
-    if (entry.isFile() && entry.name.endsWith(".html")) {
+    if (entry.isFile() && DOC_EXTENSIONS.has(extname(entry.name))) {
       files.push(absolutePath);
     }
   }
@@ -32,22 +39,37 @@ function walkHtmlFiles(directory) {
   return files;
 }
 
-function toUrlPath(htmlFilePath) {
-  const relativePath = relative(DIST_DIR, htmlFilePath).split(sep).join("/");
+function toSlugs(rootDir, filePath) {
+  const relativePath = relative(rootDir, filePath).split(sep).join("/");
+  const withoutExtension = relativePath.replace(/\.(md|mdx)$/i, "");
+  const slugs = withoutExtension.split("/").filter(Boolean);
 
-  if (EXCLUDED_HTML.has(relativePath)) {
-    return null;
+  if (slugs[slugs.length - 1] === "index") {
+    slugs.pop();
   }
 
-  if (relativePath === "index.html") {
-    return "/";
+  return slugs;
+}
+
+function joinPath(basePath, slugs) {
+  if (slugs.length === 0) return basePath;
+  return `${basePath}/${slugs.join("/")}`;
+}
+
+function toCanonicalUrl(path) {
+  if (path === "/") {
+    return `${SITE_URL}/`;
   }
 
-  if (relativePath.endsWith("/index.html")) {
-    return `/${relativePath.slice(0, -"/index.html".length)}/`;
-  }
+  return `${SITE_URL}${path.replace(/\/+$/, "")}`;
+}
 
-  return `/${relativePath}`;
+function addContentPaths(urlPaths, basePath, contentDir) {
+  for (const filePath of walkMarkdownFiles(contentDir)) {
+    const slugs = toSlugs(contentDir, filePath);
+    if (slugs.length === 0) continue;
+    urlPaths.add(joinPath(basePath, slugs));
+  }
 }
 
 function main() {
@@ -55,20 +77,16 @@ function main() {
     throw new Error(`Build output directory does not exist: ${DIST_DIR}`);
   }
 
-  const urlSet = new Set();
-  const htmlFiles = walkHtmlFiles(DIST_DIR);
+  const urlPaths = new Set(STATIC_PATHS);
 
-  for (const htmlFile of htmlFiles) {
-    const urlPath = toUrlPath(htmlFile);
-    if (!urlPath) continue;
+  addContentPaths(urlPaths, "/docs", DOCS_CONTENT_DIR);
+  addContentPaths(urlPaths, "/blogs", BLOG_CONTENT_DIR);
 
-    const fullUrl = new URL(urlPath, `${SITE_URL}/`).href;
-    urlSet.add(fullUrl);
-  }
+  const urls = Array.from(urlPaths)
+    .map((path) => toCanonicalUrl(path))
+    .sort((a, b) => a.localeCompare(b));
 
-  const urls = Array.from(urlSet).sort((a, b) => a.localeCompare(b));
   const lastmod = new Date().toISOString();
-
   const sitemapBody = urls
     .map(
       (url) =>
@@ -77,6 +95,7 @@ function main() {
     .join("\n");
 
   const sitemapXml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${sitemapBody}\n</urlset>\n`;
+
   const sitemapPath = join(DIST_DIR, "sitemap.xml");
   writeFileSync(sitemapPath, sitemapXml);
 

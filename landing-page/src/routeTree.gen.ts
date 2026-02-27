@@ -13,6 +13,8 @@ import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as BlogsIndexRouteImport } from './routes/blogs/index'
+import { Route as DocsQuickstartRouteImport } from './routes/docs/quickstart'
+import { Route as DocsBuildAnAppRouteImport } from './routes/docs/build-an-app'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as BlogsSplatRouteImport } from './routes/blogs/$'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
@@ -37,6 +39,16 @@ const BlogsIndexRoute = BlogsIndexRouteImport.update({
   path: '/blogs/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DocsQuickstartRoute = DocsQuickstartRouteImport.update({
+  id: '/docs/quickstart',
+  path: '/docs/quickstart',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DocsBuildAnAppRoute = DocsBuildAnAppRouteImport.update({
+  id: '/docs/build-an-app',
+  path: '/docs/build-an-app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DocsSplatRoute = DocsSplatRouteImport.update({
   id: '/docs/$',
   path: '/docs/$',
@@ -59,6 +71,8 @@ export interface FileRoutesByFullPath {
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
+  '/docs/build-an-app': typeof DocsBuildAnAppRoute
+  '/docs/quickstart': typeof DocsQuickstartRoute
   '/blogs/': typeof BlogsIndexRoute
   '/docs/': typeof DocsIndexRoute
 }
@@ -68,6 +82,8 @@ export interface FileRoutesByTo {
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
+  '/docs/build-an-app': typeof DocsBuildAnAppRoute
+  '/docs/quickstart': typeof DocsQuickstartRoute
   '/blogs': typeof BlogsIndexRoute
   '/docs': typeof DocsIndexRoute
 }
@@ -78,6 +94,8 @@ export interface FileRoutesById {
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
+  '/docs/build-an-app': typeof DocsBuildAnAppRoute
+  '/docs/quickstart': typeof DocsQuickstartRoute
   '/blogs/': typeof BlogsIndexRoute
   '/docs/': typeof DocsIndexRoute
 }
@@ -89,6 +107,8 @@ export interface FileRouteTypes {
     | '/api/search'
     | '/blogs/$'
     | '/docs/$'
+    | '/docs/build-an-app'
+    | '/docs/quickstart'
     | '/blogs/'
     | '/docs/'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +118,8 @@ export interface FileRouteTypes {
     | '/api/search'
     | '/blogs/$'
     | '/docs/$'
+    | '/docs/build-an-app'
+    | '/docs/quickstart'
     | '/blogs'
     | '/docs'
   id:
@@ -107,6 +129,8 @@ export interface FileRouteTypes {
     | '/api/search'
     | '/blogs/$'
     | '/docs/$'
+    | '/docs/build-an-app'
+    | '/docs/quickstart'
     | '/blogs/'
     | '/docs/'
   fileRoutesById: FileRoutesById
@@ -117,6 +141,8 @@ export interface RootRouteChildren {
   ApiSearchRoute: typeof ApiSearchRoute
   BlogsSplatRoute: typeof BlogsSplatRoute
   DocsSplatRoute: typeof DocsSplatRoute
+  DocsBuildAnAppRoute: typeof DocsBuildAnAppRoute
+  DocsQuickstartRoute: typeof DocsQuickstartRoute
   BlogsIndexRoute: typeof BlogsIndexRoute
   DocsIndexRoute: typeof DocsIndexRoute
 }
@@ -151,6 +177,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BlogsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/docs/quickstart': {
+      id: '/docs/quickstart'
+      path: '/docs/quickstart'
+      fullPath: '/docs/quickstart'
+      preLoaderRoute: typeof DocsQuickstartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs/build-an-app': {
+      id: '/docs/build-an-app'
+      path: '/docs/build-an-app'
+      fullPath: '/docs/build-an-app'
+      preLoaderRoute: typeof DocsBuildAnAppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/docs/$': {
       id: '/docs/$'
       path: '/docs/$'
@@ -181,6 +221,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSearchRoute: ApiSearchRoute,
   BlogsSplatRoute: BlogsSplatRoute,
   DocsSplatRoute: DocsSplatRoute,
+  DocsBuildAnAppRoute: DocsBuildAnAppRoute,
+  DocsQuickstartRoute: DocsQuickstartRoute,
   BlogsIndexRoute: BlogsIndexRoute,
   DocsIndexRoute: DocsIndexRoute,
 }

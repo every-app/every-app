@@ -2,8 +2,18 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { baseOptions } from "@/lib/layout.shared";
 import { getBlogPosts } from "@/lib/content.functions";
+import { buildPageSeo } from "@/lib/seo";
+
+const blogIndexDescription =
+  "Product updates, guides, and technical deep dives from Every App.";
 
 export const Route = createFileRoute("/blogs/")({
+  head: () =>
+    buildPageSeo({
+      title: "Every App Blog",
+      description: blogIndexDescription,
+      path: "/blogs",
+    }),
   component: BlogIndex,
   loader: async () => await getBlogPosts(),
 });

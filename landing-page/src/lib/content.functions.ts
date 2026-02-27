@@ -10,6 +10,9 @@ export const getDocsPage = createServerFn({ method: "GET" })
 
     return {
       path: page.path,
+      title: page.data.title,
+      description: page.data.description,
+      url: page.url,
       pageTree: source.getPageTree() as unknown as object,
     };
   });
@@ -24,6 +27,7 @@ export const getBlogPost = createServerFn({ method: "GET" })
       path: page.path,
       title: page.data.title,
       description: page.data.description,
+      url: page.url,
     };
   });
 

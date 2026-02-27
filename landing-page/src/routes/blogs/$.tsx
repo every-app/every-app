@@ -7,15 +7,30 @@ import { baseOptions } from "@/lib/layout.shared";
 import { Suspense } from "react";
 import { getBlogPost } from "@/lib/content.functions";
 import { blog } from "../../../source.generated";
+import { buildPageSeo } from "@/lib/seo";
 
 export const Route = createFileRoute("/blogs/$")({
-  component: BlogPost,
-  loader: async ({ params }) => {
+  loader: async ({ params }: { params: { _splat?: string } }) => {
     const slugs = params._splat?.split("/") ?? [];
     const data = await getBlogPost({ data: slugs });
     await clientMdxLoader.preload(data.path);
     return data;
   },
+  head: ({ loaderData }: { loaderData?: unknown }) => {
+    const data = loaderData as
+      | { title?: string; description?: string; url?: string }
+      | undefined;
+    const title = data?.title ?? "Every App Blog";
+    const description = data?.description;
+    return buildPageSeo({
+      title,
+      description,
+      path: data?.url ?? "/blogs",
+      titleSuffix: "Every App Blog",
+      ogType: "article",
+    });
+  },
+  component: BlogPost,
 });
 
 const clientMdxLoader = createClientLoader(blog, {
@@ -34,7 +49,11 @@ const clientMdxLoader = createClientLoader(blog, {
 });
 
 function BlogPost() {
-  const data = Route.useLoaderData();
+  const data = Route.useLoaderData() as {
+    path: string;
+    title: string;
+    description?: string;
+  };
   const Content = clientMdxLoader.getComponent(data.path);
 
   return (

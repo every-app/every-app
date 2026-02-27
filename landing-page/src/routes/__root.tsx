@@ -18,44 +18,6 @@ export const Route = createRootRoute({
         name: "viewport",
         content: "width=device-width, initial-scale=1",
       },
-      {
-        title: "Every App - Make every app open source",
-      },
-      {
-        name: "description",
-        content:
-          "Make every app open source. Build what you want to exist. Share it easily with others. Self host unlimited apps on Cloudflare for $5/month.",
-      },
-      { property: "og:type", content: "website" },
-      {
-        property: "og:title",
-        content: "Every App - Make every app open source",
-      },
-      {
-        property: "og:description",
-        content:
-          "Make every app open source. Build what you want to exist. Share it easily with others. Self host unlimited apps on Cloudflare for $5/month.",
-      },
-      { property: "og:image", content: "/OpenGraphPreview.png" },
-      {
-        property: "og:image:alt",
-        content: "Every App - Make every app open source",
-      },
-      { name: "twitter:card", content: "summary_large_image" },
-      {
-        name: "twitter:title",
-        content: "Every App - Make every app open source",
-      },
-      {
-        name: "twitter:description",
-        content:
-          "Make every app open source. Build what you want to exist. Share it easily with others. Self host unlimited apps on Cloudflare for $5/month.",
-      },
-      { name: "twitter:image", content: "/OpenGraphPreview.png" },
-      {
-        name: "twitter:image:alt",
-        content: "Every App - Make every app open source",
-      },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

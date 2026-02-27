@@ -2,8 +2,31 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import Hls from "hls.js";
 import "plyr/dist/plyr.css";
+import { toCanonicalUrl } from "@/lib/seo";
+
+const homeTitle = "Every App - Make every app open source";
+const homeDescription =
+  "Make every app open source. Build what you want to exist. Share it easily with others. Self host unlimited apps on Cloudflare for $5/month.";
 
 export const Route = createFileRoute("/")({
+  head: () => ({
+    meta: [
+      { title: homeTitle },
+      { name: "description", content: homeDescription },
+      { property: "og:type", content: "website" },
+      { property: "og:title", content: homeTitle },
+      { property: "og:description", content: homeDescription },
+      { property: "og:url", content: toCanonicalUrl("/") },
+      { property: "og:image", content: "/OpenGraphPreview.png" },
+      { property: "og:image:alt", content: homeTitle },
+      { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: homeTitle },
+      { name: "twitter:description", content: homeDescription },
+      { name: "twitter:image", content: "/OpenGraphPreview.png" },
+      { name: "twitter:image:alt", content: homeTitle },
+    ],
+    links: [{ rel: "canonical", href: toCanonicalUrl("/") }],
+  }),
   component: Home,
 });
 

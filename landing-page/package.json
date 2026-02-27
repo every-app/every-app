@@ -8,6 +8,7 @@
     "build": "vite build && node scripts/generate-sitemap.js",
     "build:app": "vite build",
     "sitemap": "node scripts/generate-sitemap.js",
+    "verify:seo": "node scripts/verify-seo.js",
     "start": "wrangler dev",
     "preview": "vite preview",
     "types:check": "fumadocs-mdx && tsc --noEmit",
