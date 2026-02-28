@@ -8,6 +8,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  role: string | null;
 }
 
 /**
@@ -17,6 +18,6 @@ export async function getAllUsers(db: GatewayDbConnection): Promise<User[]> {
   return queryD1Database<User>(
     db.accountId,
     db.databaseId,
-    "SELECT id, name, email FROM users",
+    "SELECT id, name, email, role FROM users",
   );
 }

@@ -22,6 +22,8 @@ interface InsertUserAppOptions {
   devUrl?: string;
 }
 
+type AccessMode = "all" | "select" | "none" | "owner-only";
+
 /**
  * Insert UserApp records for the deployed app
  * This is specific to the app deploy command - it creates records in the
@@ -54,6 +56,8 @@ export async function insertUserAppRecords(
     }
 
     const users = await getAllUsers(db);
+    const ownerUsers = users.filter((user) => user.role === "owner");
+    const nonOwnerUsers = users.filter((user) => user.role !== "owner");
     const existingApp = await getAppCatalogByAppId(db, appId);
     const isFirstDeploy = existingApp === null;
 
@@ -72,21 +76,28 @@ export async function insertUserAppRecords(
       ? await promptForDefaultAccess("Add future users by default to this app?")
       : Boolean(existingApp?.is_default);
 
-    const resolvedAccessMode = isFirstDeploy
-      ? await promptForAccessMode()
+    const resolvedAccessMode: AccessMode = isFirstDeploy
+      ? nonOwnerUsers.length === 0
+        ? "owner-only"
+        : await promptForAccessMode()
       : "none";
 
-    let resolvedUserIds: string[] = [];
-    if (users.length === 0 && resolvedAccessMode === "select") {
+    let resolvedUserIds: string[] = ownerUsers.map((user) => user.id);
+    if (nonOwnerUsers.length === 0 && resolvedAccessMode === "select") {
       throw new Error(
         "No users found in the database to select from. Please create a user first.",
       );
     }
     if (resolvedAccessMode === "all") {
-      resolvedUserIds = users.map((user) => user.id);
+      resolvedUserIds = ownerUsers
+        .map((user) => user.id)
+        .concat(nonOwnerUsers.map((user) => user.id));
     } else if (resolvedAccessMode === "select") {
-      resolvedUserIds = await promptForUserSelection(users);
+      resolvedUserIds = resolvedUserIds.concat(
+        await promptForUserSelection(nonOwnerUsers),
+      );
     }
+    resolvedUserIds = Array.from(new Set(resolvedUserIds));
 
     const appRecordId = await upsertAppCatalog(db, {
       appId,
@@ -115,12 +126,20 @@ export async function insertUserAppRecords(
     }
 
     if (verbose) {
+      const ownerCount = ownerUsers.length;
+      const nonOwnerGrantedCount = usersToProcess.length - ownerCount;
       const accessLabel =
-        resolvedAccessMode === "all"
-          ? "all users"
-          : resolvedAccessMode === "select"
-            ? `${usersToProcess.length} selected users`
-            : "no users";
+        usersToProcess.length === 0
+          ? "no users"
+          : resolvedAccessMode === "all"
+            ? "all users"
+            : resolvedAccessMode === "select"
+              ? ownerCount > 0
+                ? `${nonOwnerGrantedCount} selected users + owner`
+                : `${nonOwnerGrantedCount} selected users`
+              : ownerCount > 1
+                ? "owner users"
+                : "owner user";
       console.log(
         chalk.dim(
           `  Default access: ${resolvedDefaultAccess ? "enabled" : "disabled"}`,
