@@ -167,7 +167,7 @@ describe("AdminService", () => {
 
         await expect(
           AdminService.acceptInvitation("valid-token", "new-password"),
-        ).resolves.toBeUndefined();
+        ).resolves.toEqual({ email: "user@example.com" });
 
         // Verify password was updated for the correct user
         expect(mockAccountRepository.updatePassword).toHaveBeenCalledTimes(1);

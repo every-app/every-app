@@ -1,7 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
-import { isCpuTimeoutError } from "@/client/auth-client";
+import { useQueryClient } from "@tanstack/react-query";
+import { authClient, isCpuTimeoutError } from "@/client/auth-client";
+import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 import { acceptInvitation } from "@/serverFunctions/admin";
@@ -22,6 +24,7 @@ function AcceptInvitation() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const {
     isRunning,
@@ -36,10 +39,23 @@ function AcceptInvitation() {
     executeWithRetry,
   } = useCpuTimeoutRetry(async () => {
     try {
-      await acceptInvitation({ data: { token, password } });
-      if (hadRetries) {
-        setRetrySuccess();
-      } else {
+      const result = await acceptInvitation({ data: { token, password } });
+      const { error: signInError } = await authClient.signIn.email(
+        { email: result.email, password },
+        {
+          onSuccess: async () => {
+            await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
+            refetchCollectionsAfterAuth();
+            if (hadRetries) {
+              setRetrySuccess();
+            } else {
+              navigate({ to: "/" });
+            }
+          },
+        },
+      );
+
+      if (signInError) {
         setSuccess(true);
       }
       return true;
@@ -133,7 +149,7 @@ function AcceptInvitation() {
         hasExhaustedRetries={hasExhaustedRetries}
         secondsUntilRetry={secondsUntilRetry}
         isSuccess={isRetrySuccess}
-        onContinue={() => navigate({ to: "/sign-in" })}
+        onContinue={() => navigate({ to: "/" })}
       />
     );
   }

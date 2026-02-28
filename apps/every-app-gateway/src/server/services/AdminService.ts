@@ -256,6 +256,8 @@ async function acceptInvitation(token: string, password: string) {
   await AppAccessService.grantDefaultAppsToUser(user.id);
 
   await TokenVerificationRepository.delete(verification.id);
+
+  return { email: user.email };
 }
 
 // ============================================================================

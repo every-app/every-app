@@ -29,6 +29,7 @@ export const sharedAuthOptions = {
   },
   emailAndPassword: {
     enabled: true,
+    autoSignIn: false,
     requireEmailVerification: false,
     sendResetPassword: async ({
       user,
