@@ -2,6 +2,7 @@ import { AppRepository } from "../repositories/AppRepository";
 import { AppAccessRepository } from "../repositories/AppAccessRepository";
 import { UserRepository } from "../repositories/UserRepository";
 import { isValidAppOrigin } from "@/utils/origin-validator";
+import { PublicError } from "@/server/errors";
 
 // Types for service operations
 type CreateAppInput = {
@@ -46,7 +47,7 @@ async function getAllWithAccessCounts() {
 async function getById(id: string) {
   const app = await AppRepository.findById(id);
   if (!app) {
-    throw new Error("App not found");
+    throw new PublicError("APP_NOT_FOUND", "App not found");
   }
   return { app };
 }
@@ -71,7 +72,10 @@ async function create(data: CreateAppInput, grantedBy?: string) {
   // Check if app with this appId already exists
   const existingApp = await AppRepository.findByAppId(data.appId);
   if (existingApp) {
-    throw new Error("App with this ID already exists");
+    throw new PublicError(
+      "APP_ID_ALREADY_EXISTS",
+      "App with this ID already exists",
+    );
   }
 
   // Use provided ID or generate a new one
@@ -117,7 +121,7 @@ async function create(data: CreateAppInput, grantedBy?: string) {
 async function update(data: UpdateAppInput) {
   const existingApp = await AppRepository.findById(data.id);
   if (!existingApp) {
-    throw new Error("App not found");
+    throw new PublicError("APP_NOT_FOUND", "App not found");
   }
 
   await AppRepository.update(data.id, {
@@ -136,7 +140,7 @@ async function update(data: UpdateAppInput) {
 async function deleteApp(id: string) {
   const existingApp = await AppRepository.findById(id);
   if (!existingApp) {
-    throw new Error("App not found");
+    throw new PublicError("APP_NOT_FOUND", "App not found");
   }
 
   await AppRepository.delete(id);

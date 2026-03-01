@@ -7,6 +7,8 @@ import { createAuth } from "@/auth";
 import type { UserRole, UserStatus } from "@/auth/shared";
 import { env } from "cloudflare:workers";
 import { hashPassword } from "better-auth/crypto";
+import { APIError } from "better-auth/api";
+import { PublicError } from "@/server/errors";
 
 // Token expiration time: 7 days for invitations
 const INVITE_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
@@ -34,12 +36,20 @@ async function validateToken(token: string, tokenType: "invitation" | "reset") {
   const verification = await TokenVerificationRepository.findByToken(token);
 
   if (!verification) {
-    throw new Error(`Invalid or expired ${tokenType} token`);
+    throw new PublicError(
+      tokenType === "invitation"
+        ? "INVITATION_TOKEN_INVALID"
+        : "RESET_TOKEN_INVALID",
+      `Invalid or expired ${tokenType} token`,
+    );
   }
 
   if (new Date() > verification.expiresAt) {
     await TokenVerificationRepository.delete(verification.id);
-    throw new Error(
+    throw new PublicError(
+      tokenType === "invitation"
+        ? "INVITATION_TOKEN_EXPIRED"
+        : "RESET_TOKEN_EXPIRED",
       `${tokenType === "invitation" ? "Invitation" : "Reset"} link has expired. Please request a new one.`,
     );
   }
@@ -86,7 +96,10 @@ async function hasOwner() {
 async function initializeOwner(email: string, password: string) {
   const existingOwner = await UserRepository.findOwner();
   if (existingOwner) {
-    throw new Error("Owner already exists. Registration is invite-only.");
+    throw new PublicError(
+      "OWNER_ALREADY_EXISTS",
+      "Owner already exists. Registration is invite-only.",
+    );
   }
 
   const auth = createAuth();
@@ -100,7 +113,10 @@ async function initializeOwner(email: string, password: string) {
   });
 
   if (!result.user) {
-    throw new Error("Failed to create owner account");
+    throw new PublicError(
+      "ACCOUNT_CREATION_FAILED",
+      "Failed to create owner account",
+    );
   }
 
   await UserRepository.update(result.user.id, {
@@ -132,17 +148,23 @@ async function listUsers() {
  */
 async function deleteUser(userId: string, currentUserId: string) {
   if (userId === currentUserId) {
-    throw new Error("Cannot delete your own account");
+    throw new PublicError(
+      "CANNOT_DELETE_SELF",
+      "Cannot delete your own account",
+    );
   }
 
   const userToDelete = await UserRepository.findById(userId);
 
   if (!userToDelete) {
-    throw new Error("User not found");
+    throw new PublicError("USER_NOT_FOUND", "User not found");
   }
 
   if (userToDelete.role === "owner") {
-    throw new Error("Cannot delete owner accounts");
+    throw new PublicError(
+      "CANNOT_DELETE_OWNER",
+      "Cannot delete owner accounts",
+    );
   }
 
   await UserRepository.delete(userId);
@@ -162,7 +184,10 @@ async function createInviteLink(email: string) {
   const existingUser = await UserRepository.findByEmail(email);
 
   if (existingUser) {
-    throw new Error("A user with this email already exists");
+    throw new PublicError(
+      "USER_ALREADY_EXISTS",
+      "A user with this email already exists",
+    );
   }
 
   // Random password that will be immediately replaced when user accepts invitation
@@ -178,7 +203,7 @@ async function createInviteLink(email: string) {
     });
 
     if (!result.user) {
-      throw new Error("Failed to create user");
+      throw new PublicError("ACCOUNT_CREATION_FAILED", "Failed to create user");
     }
 
     await UserRepository.update(result.user.id, {
@@ -197,11 +222,20 @@ async function createInviteLink(email: string) {
       inviteUrl,
     };
   } catch (error) {
+    if (error instanceof APIError && error.status === 409) {
+      throw new PublicError(
+        "USER_ALREADY_EXISTS",
+        "A user with this email already exists",
+      );
+    }
     if (
       error instanceof Error &&
-      error.message.toLowerCase().includes("email")
+      /already exists|already registered/i.test(error.message)
     ) {
-      throw new Error("A user with this email already exists");
+      throw new PublicError(
+        "USER_ALREADY_EXISTS",
+        "A user with this email already exists",
+      );
     }
     throw error;
   }
@@ -214,11 +248,14 @@ async function regenerateInviteLink(userId: string) {
   const user = await UserRepository.findById(userId);
 
   if (!user) {
-    throw new Error("User not found");
+    throw new PublicError("USER_NOT_FOUND", "User not found");
   }
 
   if (user.status !== "pending") {
-    throw new Error("Can only regenerate invite links for pending users");
+    throw new PublicError(
+      "INVITATION_REQUIRES_PENDING_USER",
+      "Can only regenerate invite links for pending users",
+    );
   }
 
   // Delete any existing verification tokens for this user
@@ -241,7 +278,7 @@ async function acceptInvitation(token: string, password: string) {
   const user = await UserRepository.findByEmail(verification.identifier);
 
   if (!user) {
-    throw new Error("User not found");
+    throw new PublicError("USER_NOT_FOUND", "User not found");
   }
 
   const hashedPassword = await hashPassword(password);
@@ -271,11 +308,14 @@ async function createPasswordResetLink(userId: string) {
   const user = await UserRepository.findById(userId);
 
   if (!user) {
-    throw new Error("User not found");
+    throw new PublicError("USER_NOT_FOUND", "User not found");
   }
 
   if (user.status !== "active") {
-    throw new Error("Can only generate password reset links for active users");
+    throw new PublicError(
+      "PASSWORD_RESET_REQUIRES_ACTIVE_USER",
+      "Can only generate password reset links for active users",
+    );
   }
 
   const resetUrl = await createVerificationUrl(
@@ -295,11 +335,12 @@ async function resetPassword(token: string, password: string) {
   const user = await UserRepository.findByEmail(verification.identifier);
 
   if (!user) {
-    throw new Error("User not found");
+    throw new PublicError("USER_NOT_FOUND", "User not found");
   }
 
   if (user.status !== "active") {
-    throw new Error(
+    throw new PublicError(
+      "PASSWORD_RESET_REQUIRES_ACTIVE_USER",
       "Password reset is only available for active users. Please use the invitation link instead.",
     );
   }

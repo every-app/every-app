@@ -5,6 +5,7 @@ import { Modal } from "../Modal";
 import { FormField } from "../FormField";
 import { DevModeFormSection } from "../DevModeFormSection";
 import { createAppAction } from "@/client/actions/createApp";
+import { getServerErrorMessage } from "@/client/errors";
 import { createAppSchema, type CreateAppFormData } from "@/schemas/app";
 import { DEFAULT_DEV_URL } from "@/schemas/user-app";
 
@@ -39,7 +40,7 @@ export function AddAppModal({ open, onClose }: AddAppModalProps) {
       handleClose();
     } catch (err) {
       form.setError("root", {
-        message: err instanceof Error ? err.message : "Failed to create app",
+        message: getServerErrorMessage(err, "Failed to create app"),
       });
     } finally {
       setIsPending(false);

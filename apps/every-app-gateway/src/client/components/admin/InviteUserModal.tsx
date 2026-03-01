@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { createInviteLink } from "@/serverFunctions/admin";
+import { getServerErrorMessage } from "@/client/errors";
 import { Modal } from "../Modal";
 
 interface InviteUserModalProps {
@@ -25,7 +26,7 @@ export function InviteUserModal({
       onSuccess(data.inviteUrl);
     },
     onError: (err) => {
-      setError(err instanceof Error ? err.message : "Failed to create invite");
+      setError(getServerErrorMessage(err, "Failed to create invite"));
     },
   });
 

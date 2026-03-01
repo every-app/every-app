@@ -2,6 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
 import { ownerMiddleware } from "@/middleware/auth";
+import { publicErrorMiddleware } from "@/middleware/publicError";
+import { PublicError } from "@/server/errors";
 import { AdminService } from "@/server/services/AdminService";
 
 // ============================================================================
@@ -13,9 +15,11 @@ import { AdminService } from "@/server/services/AdminService";
  * This is used to determine if the system needs initial setup.
  * No authentication required since this is needed for the sign-up flow.
  */
-export const hasOwner = createServerFn().handler(async () => {
-  return AdminService.hasOwner();
-});
+export const hasOwner = createServerFn()
+  .middleware([publicErrorMiddleware])
+  .handler(async () => {
+    return AdminService.hasOwner();
+  });
 
 const initializeOwnerSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -31,6 +35,7 @@ const initializeOwnerSchema = z.object({
  * (service checks for existing owner), and better-auth handles signup protections.
  */
 export const initializeOwner = createServerFn()
+  .middleware([publicErrorMiddleware])
   .inputValidator((data: unknown) => initializeOwnerSchema.parse(data))
   .handler(async ({ data }) => {
     return AdminService.initializeOwner(data.email, data.password);
@@ -45,7 +50,7 @@ export const initializeOwner = createServerFn()
  * Only accessible by owners.
  */
 export const listUsers = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .handler(async () => {
     return AdminService.listUsers();
   });
@@ -60,7 +65,7 @@ const deleteUserSchema = z.object({
  * Cannot delete yourself.
  */
 export const deleteUser = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .inputValidator((data: unknown) => deleteUserSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AdminService.deleteUser(data.userId, context.user.id);
@@ -81,7 +86,7 @@ const createInviteLinkSchema = z.object({
  * Only accessible by owners.
  */
 export const createInviteLink = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .inputValidator((data: unknown) => createInviteLinkSchema.parse(data))
   .handler(async ({ data }) => {
     return AdminService.createInviteLink(data.email);
@@ -96,7 +101,7 @@ const regenerateInviteLinkSchema = z.object({
  * Only accessible by owners.
  */
 export const regenerateInviteLink = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .inputValidator((data: unknown) => regenerateInviteLinkSchema.parse(data))
   .handler(async ({ data }) => {
     return AdminService.regenerateInviteLink(data.userId);
@@ -111,7 +116,7 @@ const createPasswordResetLinkSchema = z.object({
  * Only accessible by owners.
  */
 export const createPasswordResetLink = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .inputValidator((data: unknown) => createPasswordResetLinkSchema.parse(data))
   .handler(async ({ data }) => {
     return AdminService.createPasswordResetLink(data.userId);
@@ -132,13 +137,17 @@ const acceptInvitationSchema = z.object({
  * Rate limited per token to prevent brute-force attacks on invitation tokens.
  */
 export const acceptInvitation = createServerFn()
+  .middleware([publicErrorMiddleware])
   .inputValidator((data: unknown) => acceptInvitationSchema.parse(data))
   .handler(async ({ data }) => {
     const { success } = await env.RATE_LIMIT_AUTH_TOKEN.limit({
       key: data.token,
     });
     if (!success) {
-      throw new Error("Too many attempts. Please try again later.");
+      throw new PublicError(
+        "RATE_LIMITED",
+        "Too many attempts. Please try again later.",
+      );
     }
 
     return AdminService.acceptInvitation(data.token, data.password);
@@ -159,13 +168,17 @@ const resetPasswordSchema = z.object({
  * Rate limited per token to prevent brute-force attacks on reset tokens.
  */
 export const resetPassword = createServerFn()
+  .middleware([publicErrorMiddleware])
   .inputValidator((data: unknown) => resetPasswordSchema.parse(data))
   .handler(async ({ data }) => {
     const { success } = await env.RATE_LIMIT_AUTH_TOKEN.limit({
       key: data.token,
     });
     if (!success) {
-      throw new Error("Too many attempts. Please try again later.");
+      throw new PublicError(
+        "RATE_LIMITED",
+        "Too many attempts. Please try again later.",
+      );
     }
 
     return AdminService.resetPassword(data.token, data.password);

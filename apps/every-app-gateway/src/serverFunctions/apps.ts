@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { ownerMiddleware, authMiddleware } from "@/middleware/auth";
+import { publicErrorMiddleware } from "@/middleware/publicError";
 import { AppService } from "@/server/services/AppService";
 import { AppAccessService } from "@/server/services/AppAccessService";
 import {
@@ -18,7 +19,7 @@ import {
  * Only accessible by owners.
  */
 export const getApps = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .handler(async () => {
     return AppService.getAllWithAccessCounts();
   });
@@ -28,7 +29,7 @@ export const getApps = createServerFn()
  * Only accessible by owners.
  */
 export const createApp = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .inputValidator((app: unknown) => createAppSchema.parse(app))
   .handler(async ({ data: app, context }) => {
     return AppService.create(app, context.user.id);
@@ -39,7 +40,7 @@ export const createApp = createServerFn()
  * Only accessible by owners.
  */
 export const updateApp = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .inputValidator((app: unknown) => updateAppSchema.parse(app))
   .handler(async ({ data: app }) => {
     return AppService.update(app);
@@ -50,7 +51,7 @@ export const updateApp = createServerFn()
  * Only accessible by owners.
  */
 export const deleteApp = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .inputValidator((app: unknown) => deleteAppSchema.parse(app))
   .handler(async ({ data: app }) => {
     return AppService.delete(app.id);
@@ -66,7 +67,7 @@ export const deleteApp = createServerFn()
  * Only accessible by owners.
  */
 export const getAppAccessState = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .inputValidator((data: unknown) =>
     deleteAppSchema.parse(data),
   ) /* reuse schema with id */
@@ -79,7 +80,7 @@ export const getAppAccessState = createServerFn()
  * Only accessible by owners.
  */
 export const updateAppAccess = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .inputValidator((data: unknown) => updateAppAccessSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AppAccessService.updateAccessForApp(
@@ -98,7 +99,7 @@ export const updateAppAccess = createServerFn()
  * Available to all authenticated users.
  */
 export const getMyApps = createServerFn()
-  .middleware([authMiddleware])
+  .middleware([publicErrorMiddleware, authMiddleware])
   .handler(async ({ context }) => {
     return AppAccessService.getAppsForUser(context.user.id);
   });

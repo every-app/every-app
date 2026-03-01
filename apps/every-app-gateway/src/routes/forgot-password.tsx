@@ -4,6 +4,10 @@ import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
+import {
+  getBetterAuthErrorMessage,
+  getServerErrorMessage,
+} from "@/client/errors";
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
@@ -45,7 +49,9 @@ function ForgotPassword() {
       });
 
       if (resetError) {
-        setError(resetError.message || "Failed to send reset email.");
+        setError(
+          getBetterAuthErrorMessage(resetError, "Failed to send reset email."),
+        );
         return true;
       }
       if (hadRetries) {
@@ -60,9 +66,10 @@ function ForgotPassword() {
         return false;
       }
       setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to send reset email. Please try again.",
+        getServerErrorMessage(
+          err,
+          "Failed to send reset email. Please try again.",
+        ),
       );
       return true;
     }

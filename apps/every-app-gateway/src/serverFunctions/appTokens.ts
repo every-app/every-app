@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { ownerMiddleware } from "@/middleware/auth";
+import { publicErrorMiddleware } from "@/middleware/publicError";
 import { AppTokenService } from "@/server/services/AppTokenService";
 import {
   createAppTokenSchema,
@@ -11,7 +12,7 @@ import {
  * Owner-only.
  */
 export const listAppTokens = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .handler(async () => {
     return AppTokenService.list();
   });
@@ -21,7 +22,7 @@ export const listAppTokens = createServerFn()
  * Owner-only.
  */
 export const createAppToken = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .inputValidator((data: unknown) => createAppTokenSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AppTokenService.create(
@@ -39,7 +40,7 @@ export const createAppToken = createServerFn()
  * Owner-only.
  */
 export const revokeAppToken = createServerFn()
-  .middleware([ownerMiddleware])
+  .middleware([publicErrorMiddleware, ownerMiddleware])
   .inputValidator((data: unknown) => revokeAppTokenSchema.parse(data))
   .handler(async ({ data }) => {
     return AppTokenService.revoke(data.tokenId);

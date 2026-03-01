@@ -7,6 +7,7 @@ import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 import { acceptInvitation } from "@/serverFunctions/admin";
+import { getServerErrorMessage } from "@/client/errors";
 
 const searchSchema = z.object({
   token: z.string().optional(),
@@ -64,9 +65,7 @@ function AcceptInvitation() {
         return false;
       }
       setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to set password. Please try again.",
+        getServerErrorMessage(err, "Failed to set password. Please try again."),
       );
       return true;
     }

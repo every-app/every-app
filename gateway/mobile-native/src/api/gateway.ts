@@ -52,8 +52,30 @@ async function parseError(response: Response) {
     const data = (await response.json()) as {
       error?: string;
       message?: string;
+      code?: string;
     };
-    return data.error ?? data.message ?? `Request failed (${response.status})`;
+
+    if (data.error || data.message) {
+      return (
+        data.error ?? data.message ?? `Request failed (${response.status})`
+      );
+    }
+
+    switch (data.code) {
+      case "INVALID_INPUT":
+        return "Invalid request";
+      case "UNAUTHORIZED":
+        return "Unauthorized";
+      case "ORIGIN_NOT_ALLOWED":
+        return "Origin not allowed for this app";
+      case "REQUEST_EXPIRED":
+      case "ACCESS_DENIED":
+        return "Invalid request";
+      case "INTERNAL_ERROR":
+        return "Internal server error";
+      default:
+        return `Request failed (${response.status})`;
+    }
   } catch {
     return `Request failed (${response.status})`;
   }

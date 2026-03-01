@@ -5,6 +5,7 @@ import { Modal } from "../Modal";
 import { FormField } from "../FormField";
 import { DevModeFormSection } from "../DevModeFormSection";
 import { adminAppsCollection } from "@/client/tanstack-db";
+import { getServerErrorMessage } from "@/client/errors";
 import { editAppSchema, type EditAppFormData } from "@/schemas/app";
 import { DEFAULT_DEV_URL } from "@/schemas/user-app";
 import type { AppWithAccessCount } from "@/types/app";
@@ -59,7 +60,7 @@ export function EditAppModal({ open, onClose, app }: EditAppModalProps) {
       handleClose();
     } catch (err) {
       form.setError("root", {
-        message: err instanceof Error ? err.message : "Failed to update app",
+        message: getServerErrorMessage(err, "Failed to update app"),
       });
     } finally {
       setIsPending(false);

@@ -7,6 +7,10 @@ import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 import { getSafeRedirect } from "@/utils/auth";
+import {
+  getBetterAuthErrorMessage,
+  getServerErrorMessage,
+} from "@/client/errors";
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
@@ -55,7 +59,9 @@ function SignIn() {
       );
 
       if (signInError) {
-        setError(signInError.message || "Invalid email or password.");
+        setError(
+          getBetterAuthErrorMessage(signInError, "Invalid email or password."),
+        );
       }
       return true;
     } catch (err) {
@@ -64,9 +70,7 @@ function SignIn() {
         return false;
       }
       setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to sign in. Please try again.",
+        getServerErrorMessage(err, "Failed to sign in. Please try again."),
       );
       return true;
     }

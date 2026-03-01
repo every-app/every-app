@@ -3,6 +3,7 @@ import { AppRepository } from "../repositories/AppRepository";
 import { AppTokenRepository } from "../repositories/AppTokenRepository";
 import { hashAppToken } from "../app-token-hash";
 import { normalizeTokenScope, normalizeTokenScopes } from "../app-token-scopes";
+import { PublicError } from "@/server/errors";
 
 type CreateAppTokenInput = {
   appId: string;
@@ -19,7 +20,7 @@ function validateScopes(scopes: string[]): void {
   for (const scope of scopes) {
     const normalizedScope = normalizeTokenScope(scope);
     if (!normalizedScope) {
-      throw new Error(`Invalid scope: ${scope}`);
+      throw new PublicError("INVALID_TOKEN_SCOPE", `Invalid scope: ${scope}`);
     }
 
     normalizedScopes.push(normalizedScope);
@@ -27,11 +28,17 @@ function validateScopes(scopes: string[]): void {
 
   const uniqueScopes = [...new Set(normalizedScopes)];
   if (uniqueScopes.length === 0) {
-    throw new Error("At least one scope is required");
+    throw new PublicError(
+      "TOKEN_SCOPE_REQUIRED",
+      "At least one scope is required",
+    );
   }
 
   if (uniqueScopes.length > MAX_SCOPES) {
-    throw new Error(`No more than ${MAX_SCOPES} scopes are allowed`);
+    throw new PublicError(
+      "TOKEN_SCOPE_LIMIT_EXCEEDED",
+      `No more than ${MAX_SCOPES} scopes are allowed`,
+    );
   }
 }
 
@@ -42,11 +49,14 @@ function parseExpiresAt(expiresAt: string | null): Date | null {
 
   const parsed = new Date(expiresAt);
   if (Number.isNaN(parsed.getTime())) {
-    throw new Error("Invalid expiration date");
+    throw new PublicError("INVALID_EXPIRATION_DATE", "Invalid expiration date");
   }
 
   if (parsed.getTime() <= Date.now()) {
-    throw new Error("Expiration date must be in the future");
+    throw new PublicError(
+      "EXPIRATION_IN_PAST",
+      "Expiration date must be in the future",
+    );
   }
 
   return parsed;
@@ -86,7 +96,7 @@ async function create(
 ) {
   const app = await AppRepository.findById(data.appId);
   if (!app) {
-    throw new Error("App not found");
+    throw new PublicError("APP_NOT_FOUND", "App not found");
   }
 
   validateScopes(data.scopes);
@@ -123,7 +133,7 @@ async function create(
 async function revoke(tokenId: string) {
   const existing = await AppTokenRepository.findById(tokenId);
   if (!existing) {
-    throw new Error("Token not found");
+    throw new PublicError("TOKEN_NOT_FOUND", "Token not found");
   }
 
   if (existing.revokedAt) {

@@ -8,6 +8,7 @@ import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 import { hasOwner, initializeOwner } from "@/serverFunctions/admin";
 import { getSafeRedirect } from "@/utils/auth";
+import { getServerErrorMessage } from "@/client/errors";
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
@@ -106,9 +107,10 @@ function CreateOwnerForm({ redirect }: { redirect?: string }) {
         return false;
       }
       setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to create account. Please try again.",
+        getServerErrorMessage(
+          err,
+          "Failed to create account. Please try again.",
+        ),
       );
       return true;
     }

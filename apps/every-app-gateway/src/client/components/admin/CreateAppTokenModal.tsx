@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Modal } from "../Modal";
 import type { AppWithAccessCount } from "@/types/app";
+import { getServerErrorMessage } from "@/client/errors";
 
 interface CreateAppTokenModalProps {
   open: boolean;
@@ -73,7 +74,7 @@ export function CreateAppTokenModal({
       });
       handleClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create token");
+      setError(getServerErrorMessage(err, "Failed to create token"));
       setIsPending(false);
     }
   };

@@ -71,7 +71,7 @@ function TokensPage() {
       await createTokenMutation.mutateAsync({ data: input });
       setShowCreateModal(false);
     } catch (err) {
-      throw err instanceof Error ? err : new Error("Failed to create token");
+      throw err;
     }
   };
 

@@ -49,10 +49,7 @@ export const authMiddleware = createMiddleware({
   });
 
   if (!session || !session.user || !session.user.id) {
-    throw new GatewayError(
-      "UNAUTHORIZED",
-      "Unauthorized - missing session, user, or user ID",
-    );
+    throw new GatewayError("UNAUTHORIZED", "Unauthorized");
   }
 
   return next({
@@ -73,10 +70,7 @@ export const ownerMiddleware = createMiddleware({
   .middleware([authMiddleware])
   .server(async ({ next, context }) => {
     if (!isOwner(context.user.role)) {
-      throw new GatewayError(
-        "UNAUTHORIZED",
-        "Unauthorized: Owner access required",
-      );
+      throw new GatewayError("UNAUTHORIZED", "Unauthorized");
     }
 
     return next();

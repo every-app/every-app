@@ -12,10 +12,10 @@ export const Route = createFileRoute("/api/user-apps")({
           return jsonResponse(result);
         } catch (error) {
           if (getGatewayErrorCode(error) === "UNAUTHORIZED") {
-            return jsonResponse({ error: "Unauthorized" }, 401);
+            return jsonResponse({ code: "UNAUTHORIZED" }, 401);
           }
 
-          return jsonResponse({ error: "Internal server error" }, 500);
+          return jsonResponse({ code: "INTERNAL_ERROR" }, 500);
         }
       },
     },

@@ -1,10 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
 import z from "zod";
 import { authMiddleware } from "@/middleware/auth";
+import { publicErrorMiddleware } from "@/middleware/publicError";
 import { OnboardingService } from "@/server/services/OnboardingService";
 
 export const getOnboardingStatus = createServerFn()
-  .middleware([authMiddleware])
+  .middleware([publicErrorMiddleware, authMiddleware])
   .handler(async ({ context }) => {
     return OnboardingService.getStatus(context.user.id);
   });
@@ -20,7 +21,7 @@ const updateOnboardingSchema = z.object({
 });
 
 export const updateOnboardingStatus = createServerFn()
-  .middleware([authMiddleware])
+  .middleware([publicErrorMiddleware, authMiddleware])
   .inputValidator((data: unknown) => updateOnboardingSchema.parse(data))
   .handler(async ({ data, context }) => {
     return OnboardingService.updateStatus(context.user.id, data);

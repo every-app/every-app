@@ -6,33 +6,20 @@ import { ZodError } from "zod";
 
 function toErrorResponse(error: unknown): Response {
   if (error instanceof ZodError) {
-    return jsonResponse(
-      { error: "Invalid request body" },
-      400,
-      SENSITIVE_JSON_HEADERS,
-    );
+    return jsonResponse({ code: "INVALID_INPUT" }, 400, SENSITIVE_JSON_HEADERS);
   }
 
   const code = getGatewayErrorCode(error);
   if (code === "UNAUTHORIZED") {
-    return jsonResponse({ error: "Unauthorized" }, 401, SENSITIVE_JSON_HEADERS);
+    return jsonResponse({ code }, 401, SENSITIVE_JSON_HEADERS);
   }
   if (code === "ORIGIN_NOT_ALLOWED") {
-    return jsonResponse(
-      { error: "Origin not allowed for this app" },
-      403,
-      SENSITIVE_JSON_HEADERS,
-    );
+    return jsonResponse({ code }, 403, SENSITIVE_JSON_HEADERS);
   }
   if (code === "REQUEST_EXPIRED" || code === "ACCESS_DENIED") {
-    const message = error instanceof Error ? error.message : "Invalid request";
-    return jsonResponse({ error: message }, 400, SENSITIVE_JSON_HEADERS);
+    return jsonResponse({ code }, 400, SENSITIVE_JSON_HEADERS);
   }
-  return jsonResponse(
-    { error: "Internal server error" },
-    500,
-    SENSITIVE_JSON_HEADERS,
-  );
+  return jsonResponse({ code: "INTERNAL_ERROR" }, 500, SENSITIVE_JSON_HEADERS);
 }
 
 export const Route = createFileRoute("/api/session-token")({
@@ -44,7 +31,7 @@ export const Route = createFileRoute("/api/session-token")({
           body = await request.json();
         } catch {
           return jsonResponse(
-            { error: "Invalid JSON body" },
+            { code: "INVALID_INPUT" },
             400,
             SENSITIVE_JSON_HEADERS,
           );

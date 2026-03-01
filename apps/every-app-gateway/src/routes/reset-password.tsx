@@ -5,6 +5,7 @@ import { isCpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
 import { resetPassword as resetPasswordFn } from "@/serverFunctions/admin";
+import { getServerErrorMessage } from "@/client/errors";
 
 const searchSchema = z.object({
   token: z.string().default(""),
@@ -68,9 +69,10 @@ function ResetPassword() {
         return false;
       }
       setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to reset password. Please try again.",
+        getServerErrorMessage(
+          err,
+          "Failed to reset password. Please try again.",
+        ),
       );
       return true;
     }
