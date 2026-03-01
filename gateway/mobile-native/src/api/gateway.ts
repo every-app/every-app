@@ -1,5 +1,4 @@
-import { authClient } from "@/src/lib/auth-client";
-import { GATEWAY_API_URL } from "@/src/config";
+import { authClient, getGatewayUrl } from "@/src/lib/auth-client";
 import { z } from "zod";
 import type { AppConfig, SessionTokenResponse } from "@/src/types/gateway";
 
@@ -82,7 +81,7 @@ async function parseError(response: Response) {
 }
 
 export async function fetchUserApps(): Promise<AppConfig[]> {
-  const response = await fetch(`${GATEWAY_API_URL}/api/user-apps`, {
+  const response = await fetch(`${getGatewayUrl()}/api/user-apps`, {
     method: "GET",
     headers: getAuthHeaders(),
   });
@@ -107,7 +106,7 @@ export async function createSessionToken(
     throw new Error("Untrusted app origin");
   }
 
-  const response = await fetch(`${GATEWAY_API_URL}/api/session-token`, {
+  const response = await fetch(`${getGatewayUrl()}/api/session-token`, {
     method: "POST",
     headers: getAuthHeaders(),
     body: JSON.stringify({

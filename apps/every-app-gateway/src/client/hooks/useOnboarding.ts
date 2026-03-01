@@ -65,32 +65,26 @@ export function useOnboarding() {
     const showDeployStep = isOwner && !hasDeployedApp;
     const deployStepComplete = hasDeployedApp;
 
-    // Step 2: PWA install
+    // Step 2: PWA install (disabled from onboarding for now - can still be accessed via /?pwa=true)
     const pwaCompleted = onboarding?.pwaInstallCompleted ?? false;
     const pwaSkippedPermanently =
       onboarding?.pwaInstallSkippedPermanently ?? false;
     const pwaSkipCount = onboarding?.pwaInstallSkipCount ?? 0;
     const pwaSkippedAt = onboarding?.pwaInstallSkippedAt ?? null;
 
-    // Show PWA step if:
-    // - Not completed
-    // - Not skipped permanently
-    // - Not currently in skip cooldown (user recently clicked "skip for now")
-    const shouldShowPWAStep =
-      !pwaCompleted &&
-      !pwaSkippedPermanently &&
-      !isSkipCooldownActive(pwaSkippedAt);
+    // PWA step is disabled from onboarding flow (set to false to hide it)
+    // Users can still access PWA install via /?pwa=true or /pwa route
+    const shouldShowPWAStep = false;
 
     // Should show "Skip permanently" option (on last temporary skip)
     const showSkipPermanently = pwaSkipCount >= MAX_TEMPORARY_SKIPS - 1;
 
     // Show banner if any step needs to be shown
-    const showOnboarding = showDeployStep || shouldShowPWAStep;
+    const showOnboarding = showDeployStep;
 
-    // Calculate progress
-    const totalSteps = isOwner ? 2 : 1;
-    const completedSteps =
-      (isOwner && deployStepComplete ? 1 : 0) + (pwaCompleted ? 1 : 0);
+    // Calculate progress (only counting deploy step now since PWA is disabled)
+    const totalSteps = isOwner ? 1 : 0;
+    const completedSteps = isOwner && deployStepComplete ? 1 : 0;
 
     return {
       showOnboarding,

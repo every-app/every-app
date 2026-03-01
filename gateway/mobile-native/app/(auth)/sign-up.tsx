@@ -7,19 +7,20 @@ import {
   View,
   Linking,
 } from "react-native";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColorScheme } from "@/components/useColorScheme";
 import Colors from "@/constants/Colors";
-import { GATEWAY_API_URL } from "@/src/config";
+import { getGatewayUrl } from "@/src/lib/auth-client";
 
 const logo = require("@/assets/images/transparent-logo.png");
 
 export default function SignUpScreen() {
+  const router = useRouter();
   const colorScheme = useColorScheme() ?? "light";
   const colors = Colors[colorScheme];
-  const signUpUrl = `${GATEWAY_API_URL.replace(/\/$/, "")}/sign-up`;
+  const signUpUrl = `${getGatewayUrl().replace(/\/$/, "")}/sign-up`;
 
   const openSignUpInBrowser = async () => {
     try {
@@ -57,6 +58,27 @@ export default function SignUpScreen() {
           Account creation is only available from the web app. Open the sign-up
           page in your browser, then return here to sign in.
         </Text>
+
+        <Pressable
+          onPress={() => router.push("/connect")}
+          style={[styles.gatewayBadge, { backgroundColor: colors.surface }]}
+        >
+          <Text
+            style={[styles.gatewayBadgeText, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            {(() => {
+              try {
+                return new URL(getGatewayUrl()).host;
+              } catch {
+                return getGatewayUrl();
+              }
+            })()}
+          </Text>
+          <Text style={[styles.gatewayBadgeAction, { color: colors.link }]}>
+            Change
+          </Text>
+        </Pressable>
 
         <Pressable
           onPress={() => void openSignUpInBrowser()}
@@ -147,6 +169,24 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   linkStrong: {
+    fontWeight: "600",
+  },
+  gatewayBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    marginBottom: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    gap: 8,
+  },
+  gatewayBadgeText: {
+    fontSize: 13,
+    flexShrink: 1,
+  },
+  gatewayBadgeAction: {
+    fontSize: 13,
     fontWeight: "600",
   },
 });

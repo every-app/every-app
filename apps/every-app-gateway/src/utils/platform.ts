@@ -47,10 +47,3 @@ export function isPWAStandalone(): boolean {
 
   return isStandalone || isIOSStandalone;
 }
-
-/**
- * Check if the current platform is mobile (iOS or Android).
- */
-export function isMobilePlatform(platform: Platform): boolean {
-  return platform === "ios" || platform === "android";
-}

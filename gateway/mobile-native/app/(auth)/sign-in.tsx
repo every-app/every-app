@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useQueryClient } from "@tanstack/react-query";
 import { useColorScheme } from "@/components/useColorScheme";
 import Colors from "@/constants/Colors";
-import { authClient } from "@/src/lib/auth-client";
+import { authClient, getGatewayUrl } from "@/src/lib/auth-client";
 
 const logo = require("@/assets/images/transparent-logo.png");
 
@@ -76,6 +76,27 @@ export default function SignInScreen() {
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
           Enter your email and password to sign in
         </Text>
+
+        <Pressable
+          onPress={() => router.push("/connect")}
+          style={[styles.gatewayBadge, { backgroundColor: colors.surface }]}
+        >
+          <Text
+            style={[styles.gatewayBadgeText, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            {(() => {
+              try {
+                return new URL(getGatewayUrl()).host;
+              } catch {
+                return getGatewayUrl();
+              }
+            })()}
+          </Text>
+          <Text style={[styles.gatewayBadgeAction, { color: colors.link }]}>
+            Change
+          </Text>
+        </Pressable>
 
         {error ? (
           <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
@@ -232,6 +253,24 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   linkStrong: {
+    fontWeight: "600",
+  },
+  gatewayBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    gap: 8,
+  },
+  gatewayBadgeText: {
+    fontSize: 13,
+    flexShrink: 1,
+  },
+  gatewayBadgeAction: {
+    fontSize: 13,
     fontWeight: "600",
   },
 });

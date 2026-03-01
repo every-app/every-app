@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authClient } from "@/src/lib/auth-client";
 import type { GatewaySession } from "@/src/types/gateway";
 
-export function useSessionQuery() {
+export function useSessionQuery(enabled = true) {
   const queryClient = useQueryClient();
 
   const query = useQuery({
@@ -14,6 +14,7 @@ export function useSessionQuery() {
       }
       return (data as GatewaySession | null) ?? null;
     },
+    enabled,
     retry: 1,
   });
 

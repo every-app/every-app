@@ -1,27 +1,20 @@
 import { useState, useMemo } from "react";
 import { useOnboarding } from "@/client/hooks/useOnboarding";
 import { DeployAppStep } from "./DeployAppStep";
-import { PWAInstallStep } from "./PWAInstallStep";
+import { MobileAppStep } from "./MobileAppStep";
 
 export function OnboardingBanner() {
-  const { showOnboarding, steps, progress, actions, isLoading } =
-    useOnboarding();
+  const { showOnboarding, steps, progress, isLoading } = useOnboarding();
 
   // Compute the default expanded step based on current state
-  const defaultExpandedStep = useMemo((): "deploy" | "pwa" | null => {
+  const defaultExpandedStep = useMemo((): "deploy" | "mobile" | null => {
     if (steps.deployApp.show && !steps.deployApp.complete) return "deploy";
-    if (steps.pwaInstall.show && !steps.pwaInstall.complete) return "pwa";
-    return null;
-  }, [
-    steps.deployApp.show,
-    steps.deployApp.complete,
-    steps.pwaInstall.show,
-    steps.pwaInstall.complete,
-  ]);
+    return "mobile";
+  }, [steps.deployApp.show, steps.deployApp.complete]);
 
   // Track user's manual expansion choice (null means use default)
   const [userExpandedStep, setUserExpandedStep] = useState<
-    "deploy" | "pwa" | null | "none"
+    "deploy" | "mobile" | null | "none"
   >(null);
 
   // Use user's choice if set, otherwise use default
@@ -35,7 +28,7 @@ export function OnboardingBanner() {
     return null;
   }
 
-  const toggleStep = (step: "deploy" | "pwa") => {
+  const toggleStep = (step: "deploy" | "mobile") => {
     setUserExpandedStep((current) => {
       const effectiveCurrent =
         current === "none" ? null : (current ?? defaultExpandedStep);
@@ -49,9 +42,11 @@ export function OnboardingBanner() {
         <div className="flex-1">
           <h2 className="font-bold text-lg">Get started with Every App</h2>
         </div>
-        <div className="text-sm font-medium text-primary">
-          {progress.completed}/{progress.total}
-        </div>
+        {progress.total > 0 && (
+          <div className="text-sm font-medium text-primary">
+            {progress.completed}/{progress.total}
+          </div>
+        )}
       </div>
 
       {/* Steps */}
@@ -63,17 +58,10 @@ export function OnboardingBanner() {
           />
         )}
 
-        {steps.pwaInstall.show && (
-          <PWAInstallStep
-            isExpanded={expandedStep === "pwa"}
-            onToggle={() => toggleStep("pwa")}
-            onComplete={actions.completePWAInstall}
-            onSkip={actions.skipPWAInstall}
-            onSkipPermanently={actions.skipPWAInstallPermanently}
-            showSkipPermanently={steps.pwaInstall.showSkipPermanently}
-            isComplete={steps.pwaInstall.complete}
-          />
-        )}
+        <MobileAppStep
+          isExpanded={expandedStep === "mobile"}
+          onToggle={() => toggleStep("mobile")}
+        />
       </div>
     </div>
   );
