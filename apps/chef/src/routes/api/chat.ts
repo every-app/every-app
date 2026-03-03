@@ -173,10 +173,9 @@ export const Route = createFileRoute("/api/chat")({
           // The gateway authenticates requests via x-every-app-token (set by
           // fetchGateway) and injects the real OpenAI key server-side.
           const openaiProvider = createOpenAI({
-            // @ai-sdk/openai requires apiKey — it throws at request time if
-            // both this and the OPENAI_API_KEY env var are missing. The value
-            // doesn't matter because fetchGateway strips the Authorization
-            // header the SDK generates before the request reaches the gateway.
+            // @ai-sdk/openai requires an apiKey value even when requests are
+            // gateway-authenticated. The placeholder is never used because
+            // fetchGateway strips the Authorization header before forwarding.
             apiKey: "gateway-managed",
             baseURL: `${getGatewayUrl(env)}/api/ai/openai/v1`,
             fetch: (url, init) => fetchGateway({ env, url, init }),

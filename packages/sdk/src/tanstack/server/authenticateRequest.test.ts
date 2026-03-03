@@ -444,4 +444,39 @@ describe("authenticateRequest", () => {
       expect(result).toBeNull();
     });
   });
+
+  describe("error logging", () => {
+    it("omits stack details in production logs", async () => {
+      const originalProd = import.meta.env.PROD;
+      import.meta.env.PROD = true;
+
+      const consoleErrorSpy = vi
+        .spyOn(console, "error")
+        .mockImplementation(() => undefined);
+
+      try {
+        const request = createRequest("Bearer malformed.token");
+        const result = await authenticateRequest(authConfig, request);
+
+        expect(result).toBeNull();
+        expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+
+        const [payload] = consoleErrorSpy.mock.calls[0];
+        expect(typeof payload).toBe("string");
+
+        const parsed = JSON.parse(payload as string) as {
+          stack?: string;
+          message: string;
+          issuer: string;
+          audience: string;
+        };
+        expect(parsed.message).toBe("Error verifying session token");
+        expect(parsed.issuer).toBe(authConfig.issuer);
+        expect(parsed.audience).toBe(authConfig.audience);
+        expect(parsed.stack).toBeUndefined();
+      } finally {
+        import.meta.env.PROD = originalProd;
+      }
+    });
+  });
 });

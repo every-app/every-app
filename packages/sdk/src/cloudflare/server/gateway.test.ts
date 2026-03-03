@@ -56,6 +56,53 @@ describe("gateway server helpers", () => {
     );
   });
 
+  it("throws when absolute URL points to non-gateway origin", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+
+    const env: TestEnv = {
+      GATEWAY_URL: "https://gateway.example.com",
+      GATEWAY_APP_API_TOKEN: "eat_test_token",
+    };
+
+    await expect(
+      fetchGateway({
+        env,
+        url: "https://evil.example.com/api/ai/openai/v1/responses",
+        init: { method: "POST" },
+      }),
+    ).rejects.toThrow(
+      "Refusing to send gateway token to non-gateway origin: https://evil.example.com",
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("allows absolute URL when it matches gateway origin", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+
+    const env: TestEnv = {
+      GATEWAY_URL: "https://gateway.example.com",
+      GATEWAY_APP_API_TOKEN: "eat_test_token",
+    };
+
+    await fetchGateway({
+      env,
+      url: "https://gateway.example.com/api/ai/openai/v1/responses",
+      init: { method: "POST" },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [requestArg] = fetchMock.mock.calls[0];
+    const request = requestArg as Request;
+    expect(request.url).toBe(
+      "https://gateway.example.com/api/ai/openai/v1/responses",
+    );
+  });
+
   it("fetches via service binding when available in production", async () => {
     // Service binding is only used when import.meta.env.PROD is true
     const originalProd = import.meta.env.PROD;

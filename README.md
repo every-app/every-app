@@ -59,6 +59,14 @@ We simplify building apps by standardizing as much as possible and hoisting what
 
 ## Self Hosting
 
+### Docker Runtime Self-Hosting
+
+If you want to self-host with Docker instead of deploying to Cloudflare, use:
+
+- `SELF_HOSTING_DOCKER.md`
+
+This Docker workflow runs the local Cloudflare-compatible runtime stack inside containers for binding compatibility. If you expose ports beyond localhost, you are responsible for hardening access (reverse proxy, firewall rules, VPN/Zero Trust, etc.).
+
 ### Prerequisites
 
 1. Install [Node.js](https://nodejs.org/)

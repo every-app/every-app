@@ -6,8 +6,9 @@
     "src/routes/**/*.{ts,tsx}",
     // Better auth cli entrypoint
     "src/auth/index.ts",
+    "scripts/docker-selfhost-entrypoint.mjs",
   ],
-  "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
+  "project": ["**/*.{js,mjs,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": [
     "src/routeTree.gen.ts",
     "drizzle-prod.config.ts",

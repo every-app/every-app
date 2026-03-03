@@ -61,6 +61,14 @@ export async function fetchGateway({
 }
 
 function applyAppTokenAuth(request: Request, env: GatewayEnv): Request {
+  const gatewayOrigin = new URL(getGatewayUrl(env)).origin;
+  const requestOrigin = new URL(request.url).origin;
+  if (requestOrigin !== gatewayOrigin) {
+    throw new Error(
+      `Refusing to send gateway token to non-gateway origin: ${requestOrigin}`,
+    );
+  }
+
   const appToken = getGatewayAppApiToken(env);
   if (!appToken) {
     throw new Error(

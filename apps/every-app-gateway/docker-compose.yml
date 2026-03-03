@@ -1,0 +1,28 @@
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.selfhost
+    working_dir: /app
+    command:
+      [
+        "sh",
+        "-c",
+        "pnpm install && node ./scripts/docker-selfhost-entrypoint.mjs",
+      ]
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GATEWAY_URL: ${GATEWAY_URL:-http://every-app-gateway.localhost:3000}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-}
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:-}
+      JWT_PUBLIC_KEY: ${JWT_PUBLIC_KEY:-}
+    volumes:
+      - ./:/app
+      - gateway_node_modules:/app/node_modules
+      - gateway_pnpm_store:/pnpm/store
+
+volumes:
+  gateway_node_modules:
+  gateway_pnpm_store:

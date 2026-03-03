@@ -7,3 +7,4 @@ drizzle/
 planning/
 worker-configuration.d.ts
 .wrangler/
+.pnpm-store/

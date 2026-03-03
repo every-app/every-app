@@ -5,9 +5,12 @@ dist/
 **/.output/
 **/.tanstack/
 **/.env*
+!apps/chef/.env.example
+!apps/every-app-gateway/.env.example
 .wrangler
 .dev.vars*
 *.db
 *.db-wal
 *.db-shm
+**/.pnpm-store/
 .env

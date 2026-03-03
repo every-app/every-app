@@ -70,11 +70,17 @@ export async function authenticateRequest(
     const session = await verifySessionToken(token, authConfig);
     return session;
   } catch (error) {
+    const isProd = import.meta.env.PROD === true;
     console.error(
       JSON.stringify({
         message: "Error verifying session token",
         error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
+        stack:
+          isProd === true
+            ? undefined
+            : error instanceof Error
+              ? error.stack
+              : undefined,
         errorType: error instanceof Error ? error.constructor.name : "Unknown",
         issuer: authConfig.issuer,
         audience: authConfig.audience,
