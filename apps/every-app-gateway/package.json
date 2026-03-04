@@ -30,6 +30,7 @@
   "dependencies": {
     "@better-auth/expo": "^1.4.17",
     "@cloudflare/vite-plugin": "^1.17.0",
+    "@every-app/sdk": "^0.1.12",
     "@hookform/resolvers": "^5.2.2",
     "@tanstack/query-core": "^5.90.9",
     "@tanstack/query-db-collection": "^1.0.0",
@@ -66,7 +67,6 @@
     "@vitejs/plugin-react": "^4.6.0",
     "daisyui": "^5.4.7",
     "drizzle-kit": "^0.31.4",
-    "jsonc-parser": "^3.3.1",
     "knip": "^5.66.4",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",

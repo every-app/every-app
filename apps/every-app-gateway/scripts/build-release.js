@@ -70,6 +70,10 @@ async function main() {
     join(GATEWAY_DIR, "drizzle-prod.config.ts"),
     join(RELEASE_DIR, "drizzle-prod.config.ts"),
   );
+  cpSync(
+    join(GATEWAY_DIR, "drizzle.config.ts"),
+    join(RELEASE_DIR, "drizzle.config.ts"),
+  );
 
   // Copy .wrangler/deploy/config.json
   mkdirSync(join(RELEASE_DIR, ".wrangler", "deploy"), { recursive: true });

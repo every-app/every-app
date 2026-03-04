@@ -56,6 +56,7 @@ jobs:
             - `dist/` - Built application
             - `wrangler.jsonc` - Cloudflare configuration
             - `drizzle/` - Database migrations
+            - `drizzle.config.ts` - Local Drizzle migration config
             - `package.json` - Package manifest
 
             ### Usage:
