@@ -6,29 +6,42 @@ import {
   uniqueIndex,
   index,
 } from "drizzle-orm/sqlite-core";
-import { users } from "./auth.schema";
+import { organizations, users } from "./auth.schema";
 
 /**
- * Global app catalog - centrally managed by owners
+ * Organization app catalog - managed per organization
  */
-export const apps = sqliteTable("apps", {
-  id: text("id").primaryKey(),
-  appId: text("app_id").notNull().unique(), // e.g., "todo-app" - unique() creates an index
-  name: text("name").notNull(),
-  description: text("description").notNull(),
-  appUrl: text("app_url").notNull(),
-  devUrl: text("dev_url"),
-  isDefault: integer("is_default", { mode: "boolean" })
-    .default(false)
-    .notNull(), // Auto-grant to new users
-  createdAt: integer("created_at", { mode: "timestamp_ms" })
-    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-    .notNull(),
-  updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-    .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-    .$onUpdate(() => new Date())
-    .notNull(),
-});
+export const apps = sqliteTable(
+  "apps",
+  {
+    id: text("id").primaryKey(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    appId: text("app_id").notNull(), // e.g., "todo-app"
+    name: text("name").notNull(),
+    description: text("description").notNull(),
+    appUrl: text("app_url").notNull(),
+    devUrl: text("dev_url"),
+    isDefault: integer("is_default", { mode: "boolean" })
+      .default(false)
+      .notNull(), // Auto-grant to new users within organization
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
+      .$onUpdate(() => new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("apps_organization_app_id_unique").on(
+      table.organizationId,
+      table.appId,
+    ),
+    index("apps_organization_id_idx").on(table.organizationId),
+  ],
+);
 
 /**
  * Junction table for user app access - controls which users can access which apps
@@ -43,6 +56,9 @@ export const userAppAccess = sqliteTable(
     appId: text("app_id")
       .notNull()
       .references(() => apps.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     grantedAt: integer("granted_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),
@@ -52,9 +68,11 @@ export const userAppAccess = sqliteTable(
   },
   (table) => [
     uniqueIndex("user_app_access_user_app_unique").on(
+      table.organizationId,
       table.userId,
       table.appId,
     ),
+    index("user_app_access_organization_id_idx").on(table.organizationId),
     index("user_app_access_user_id_idx").on(table.userId),
     index("user_app_access_app_id_idx").on(table.appId),
   ],
@@ -71,6 +89,9 @@ export const appTokens = sqliteTable(
     appId: text("app_id")
       .notNull()
       .references(() => apps.id, { onDelete: "cascade" }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     tokenHash: text("token_hash").notNull(),
     tokenPrefix: text("token_prefix").notNull(),
     scopes: text("scopes").notNull().default("[]"),
@@ -90,6 +111,7 @@ export const appTokens = sqliteTable(
   },
   (table) => [
     uniqueIndex("app_tokens_token_hash_unique").on(table.tokenHash),
+    index("app_tokens_organization_id_idx").on(table.organizationId),
     index("app_tokens_app_id_idx").on(table.appId),
     index("app_tokens_token_prefix_idx").on(table.tokenPrefix),
     index("app_tokens_revoked_at_idx").on(table.revokedAt),
