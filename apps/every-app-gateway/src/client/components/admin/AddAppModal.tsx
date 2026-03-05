@@ -60,24 +60,9 @@ export function AddAppModal({ open, onClose }: AddAppModalProps) {
   } = form;
 
   const devUrl = watch("devUrl");
-  const appUrl = watch("appUrl");
 
   const handleDevModeToggle = (enabled: boolean) => {
     setValue("devUrl", enabled ? DEFAULT_DEV_URL : null);
-  };
-
-  const handleAppIdBlur = (
-    e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
-    const appId = e.target.value;
-    if (appId && !appUrl && window.location.hostname !== "localhost") {
-      const urlAppId = appId.startsWith("every-") ? appId : `every-${appId}`;
-      const suggestedUrl = window.location.origin.replace(
-        "every-app-gateway",
-        urlAppId,
-      );
-      setValue("appUrl", suggestedUrl, { shouldDirty: true });
-    }
   };
 
   if (!open) return null;
@@ -114,7 +99,6 @@ export function AddAppModal({ open, onClose }: AddAppModalProps) {
           placeholder="my-app"
           registration={register("appId")}
           error={errors.appId}
-          onBlur={handleAppIdBlur}
         />
         <FormField
           label="App Name"
