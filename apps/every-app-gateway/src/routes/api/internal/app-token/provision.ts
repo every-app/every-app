@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
-import { env } from "cloudflare:workers";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { AppTokenService } from "@/server/services/AppTokenService";
+import {
+  jsonResponse,
+  internalCloudflareAuthMiddleware,
+} from "@/server/internal-cloudflare-auth";
 
 const DEFAULT_TOKEN_SCOPES = ["provider:openai"];
 
@@ -19,107 +22,11 @@ const provisionAppTokenSchema = z.object({
   scopes: z.array(z.string().min(1)).max(20).optional(),
 });
 
-type CloudflareApiResponse<T> = {
-  success: boolean;
-  result: T;
-};
-
-function jsonResponse(payload: unknown, status = 200): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: {
-      "content-type": "application/json",
-    },
-  });
-}
-
-function extractBearerToken(request: Request): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return null;
-  }
-
-  const token = authHeader.slice("Bearer ".length).trim();
-  return token || null;
-}
-
-async function verifyCloudflareAccountAccess(
-  token: string,
-  accountId: string,
-): Promise<boolean> {
-  // TODO: Replace this check with gateway OAuth authorization once the CLI
-  // can authenticate directly with the gateway. At that point, only owner
-  // sessions/tokens should be allowed to provision app credentials.
-  const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}/workers/subdomain`,
-    {
-      method: "GET",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-    },
-  );
-
-  if (!response.ok) {
-    return false;
-  }
-
-  const data = (await response.json()) as CloudflareApiResponse<{
-    subdomain?: string;
-  }>;
-  return Boolean(data.success && data.result && data.result.subdomain);
-}
-
 export const Route = createFileRoute("/api/internal/app-token/provision")({
   server: {
+    middleware: [internalCloudflareAuthMiddleware],
     handlers: {
       POST: async ({ request }) => {
-        const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim();
-        if (!accountId) {
-          return jsonResponse(
-            {
-              error:
-                "Gateway account ID is not configured. Redeploy the gateway with the latest CLI.",
-            },
-            503,
-          );
-        }
-
-        const cloudflareToken = extractBearerToken(request);
-        if (!cloudflareToken) {
-          return jsonResponse(
-            {
-              error: "Missing or invalid Cloudflare bearer token",
-            },
-            401,
-          );
-        }
-
-        try {
-          const hasAccountAccess = await verifyCloudflareAccountAccess(
-            cloudflareToken,
-            accountId,
-          );
-          if (!hasAccountAccess) {
-            return jsonResponse(
-              {
-                error:
-                  "Cloudflare token does not have access to this gateway account",
-              },
-              401,
-            );
-          }
-        } catch (error) {
-          console.error("Failed to verify Cloudflare token:", error);
-          return jsonResponse(
-            {
-              error: "Failed to verify Cloudflare credentials",
-            },
-            502,
-          );
-        }
-
         let rawBody: unknown;
         try {
           rawBody = await request.json();

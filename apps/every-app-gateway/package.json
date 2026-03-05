@@ -1,6 +1,6 @@
 {
   "name": "every-app-gateway",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "private": true,
   "sideEffects": false,
   "type": "module",

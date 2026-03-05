@@ -87,6 +87,7 @@ export async function deployApp(
   await insertUserAppRecords({
     appId,
     appUrl: workerUrl,
+    gatewayUrl,
     verbose,
     appName: config.displayName,
     appDescription: config.description,

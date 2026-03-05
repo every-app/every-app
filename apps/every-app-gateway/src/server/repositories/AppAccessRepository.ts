@@ -122,19 +122,22 @@ async function createMany(
 ) {
   if (records.length === 0) return;
 
-  await db
-    .insert(userAppAccess)
-    .values(
-      records.map((r) => ({
-        id: r.id,
-        userId: r.userId,
-        appId: r.appId,
-        grantedBy: r.grantedBy,
-      })),
-    )
-    .onConflictDoNothing({
-      target: [userAppAccess.userId, userAppAccess.appId],
-    });
+  const insertStatements = records.map((record) =>
+    db
+      .insert(userAppAccess)
+      .values({
+        id: record.id,
+        userId: record.userId,
+        appId: record.appId,
+        grantedBy: record.grantedBy,
+      })
+      .onConflictDoNothing({
+        target: [userAppAccess.userId, userAppAccess.appId],
+      }),
+  );
+
+  const [first, ...rest] = insertStatements;
+  await db.batch([first, ...rest]);
 }
 
 /**

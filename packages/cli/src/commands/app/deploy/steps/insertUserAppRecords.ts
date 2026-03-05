@@ -1,40 +1,90 @@
 import chalk from "chalk";
 import enquirer from "enquirer";
-import {
-  getGatewayDatabase,
-  getAllUsers,
-  getAppCatalogByAppId,
-  upsertAppCatalog,
-  upsertUserAppAccess,
-  type User,
-  type GatewayDbConnection,
-} from "@/lib/gateway-db";
+import { getValidCloudflareToken } from "@/lib/cloudflare";
+import { exitWithUpdateNotice } from "@/lib/version-check";
 
-/**
- * Options for inserting user app records
- */
 interface InsertUserAppOptions {
   appId: string;
   appUrl: string;
+  gatewayUrl: string;
   verbose?: boolean;
   appName?: string;
   appDescription?: string;
   devUrl?: string;
 }
 
-type AccessMode = "all" | "select" | "none" | "owner-only";
+interface GatewayUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string | null;
+}
 
-/**
- * Insert UserApp records for the deployed app
- * This is specific to the app deploy command - it creates records in the
- * every-app-gateway database to register the app for users
- */
+type AccessMode = "all" | "select" | "none";
+
+interface GatewayApiError {
+  error?: string;
+}
+
+interface AppRegistrationState {
+  existingApp: boolean;
+  defaultAccess: boolean;
+}
+
+const GATEWAY_INTERNAL_API_TIMEOUT_MS = 15_000;
+const OUTDATED_GATEWAY_ERROR = "OUTDATED_GATEWAY";
+const GATEWAY_INTERNAL_AUTH_ERROR = "GATEWAY_INTERNAL_AUTH";
+
+async function callGatewayInternalApi<T>(
+  gatewayUrl: string,
+  path: string,
+  cloudflareToken: string,
+  method: "GET" | "POST",
+  body?: unknown,
+): Promise<T> {
+  const response = await fetch(`${gatewayUrl}${path}`, {
+    method,
+    signal: AbortSignal.timeout(GATEWAY_INTERNAL_API_TIMEOUT_MS),
+    headers: {
+      authorization: `Bearer ${cloudflareToken}`,
+      "content-type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (response.status === 404) {
+    throw new Error(OUTDATED_GATEWAY_ERROR);
+  }
+
+  let payload: GatewayApiError & T;
+  try {
+    payload = (await response.json()) as GatewayApiError & T;
+  } catch {
+    if (!response.ok) {
+      throw new Error(`Gateway request failed (${response.status})`);
+    }
+
+    throw new Error("Gateway returned an invalid JSON response");
+  }
+
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(GATEWAY_INTERNAL_AUTH_ERROR);
+    }
+
+    throw new Error(payload.error || `Gateway request failed (${response.status})`);
+  }
+
+  return payload;
+}
+
 export async function insertUserAppRecords(
   options: InsertUserAppOptions,
 ): Promise<void> {
   const {
     appId,
     appUrl,
+    gatewayUrl,
     verbose = false,
     appName,
     appDescription,
@@ -43,144 +93,125 @@ export async function insertUserAppRecords(
 
   try {
     console.log("");
-    if (verbose) console.log("Adding apps to user gateways...");
-
-    const db = await getGatewayDatabase();
-    if (!db) {
-      console.warn(
-        chalk.yellow(
-          "every-app-gateway database not found. Skipping UserApp record creation.\n",
-        ),
-      );
-      return;
+    if (verbose) {
+      console.log("Registering app with gateway control plane...");
     }
 
-    const users = await getAllUsers(db);
-    const ownerUsers = users.filter((user) => user.role === "owner");
-    const nonOwnerUsers = users.filter((user) => user.role !== "owner");
-    const existingApp = await getAppCatalogByAppId(db, appId);
-    const isFirstDeploy = existingApp === null;
-
+    const cloudflareToken = await getValidCloudflareToken();
     const displayName = appName || appId;
     const displayDescription = appDescription || appId;
 
-    if (!isFirstDeploy && verbose) {
-      console.log(
-        chalk.dim(
-          "App already configured in gateway. Skipping access prompts.",
-        ),
-      );
-    }
-
-    const resolvedDefaultAccess = isFirstDeploy
-      ? await promptForDefaultAccess("Add future users by default to this app?")
-      : Boolean(existingApp?.is_default);
-
-    const resolvedAccessMode: AccessMode = isFirstDeploy
-      ? nonOwnerUsers.length === 0
-        ? "owner-only"
-        : await promptForAccessMode()
-      : "none";
-
-    let resolvedUserIds: string[] = ownerUsers.map((user) => user.id);
-    if (nonOwnerUsers.length === 0 && resolvedAccessMode === "select") {
-      throw new Error(
-        "No users found in the database to select from. Please create a user first.",
-      );
-    }
-    if (resolvedAccessMode === "all") {
-      resolvedUserIds = ownerUsers
-        .map((user) => user.id)
-        .concat(nonOwnerUsers.map((user) => user.id));
-    } else if (resolvedAccessMode === "select") {
-      resolvedUserIds = resolvedUserIds.concat(
-        await promptForUserSelection(nonOwnerUsers),
-      );
-    }
-    resolvedUserIds = Array.from(new Set(resolvedUserIds));
-
-    const appRecordId = await upsertAppCatalog(db, {
-      appId,
-      appUrl,
-      name: displayName,
-      description: displayDescription,
-      devUrl,
-      isDefault: resolvedDefaultAccess,
-    });
-
-    const usersToProcess = users.filter((user) =>
-      resolvedUserIds.includes(user.id),
+    const registrationState = await callGatewayInternalApi<AppRegistrationState>(
+      gatewayUrl,
+      `/api/internal/apps/register?appId=${encodeURIComponent(appId)}`,
+      cloudflareToken,
+      "GET",
     );
 
-    if (verbose && usersToProcess.length > 1) {
+    if (registrationState.existingApp && verbose) {
       console.log(
-        chalk.yellow(`Adding app to ${usersToProcess.length} user(s)...\n`),
+        chalk.dim("App already configured in gateway. Skipping access prompts."),
       );
     }
 
-    for (const user of usersToProcess) {
-      await processUserAppRecord(db, user, {
-        appRecordId,
-        verbose,
-      });
+    const defaultAccess = registrationState.existingApp
+      ? registrationState.defaultAccess
+      : await promptForDefaultAccess("Add future users by default to this app?");
+
+    let accessMode: AccessMode = "none";
+    let selectedUserIds: string[] = [];
+
+    if (!registrationState.existingApp) {
+      const usersResponse = await callGatewayInternalApi<{ users: GatewayUser[] }>(
+        gatewayUrl,
+        "/api/internal/apps/users",
+        cloudflareToken,
+        "GET",
+      );
+
+      const users = usersResponse.users;
+      const nonOwnerUsers = users.filter((user) => user.role !== "owner");
+
+      if (nonOwnerUsers.length > 0) {
+        accessMode = await promptForAccessMode();
+      }
+
+      if (accessMode === "all") {
+        selectedUserIds = users.map((user) => user.id);
+      } else if (accessMode === "select") {
+        selectedUserIds = await promptForUserSelection(nonOwnerUsers);
+      }
     }
+
+    const registerResponse = await callGatewayInternalApi<{
+      appId: string;
+      appSlug: string;
+      existingApp: boolean;
+      defaultAccess: boolean;
+      grantedUserCount: number;
+    }>(
+      gatewayUrl,
+      "/api/internal/apps/register",
+      cloudflareToken,
+      "POST",
+      {
+        appId,
+        appUrl,
+        name: displayName,
+        description: displayDescription,
+        devUrl,
+        isDefault: defaultAccess,
+        accessMode,
+        selectedUserIds,
+      },
+    );
 
     if (verbose) {
-      const ownerCount = ownerUsers.length;
-      const nonOwnerGrantedCount = usersToProcess.length - ownerCount;
-      const accessLabel =
-        usersToProcess.length === 0
-          ? "no users"
-          : resolvedAccessMode === "all"
-            ? "all users"
-            : resolvedAccessMode === "select"
-              ? ownerCount > 0
-                ? `${nonOwnerGrantedCount} selected users + owner`
-                : `${nonOwnerGrantedCount} selected users`
-              : ownerCount > 1
-                ? "owner users"
-                : "owner user";
       console.log(
         chalk.dim(
-          `  Default access: ${resolvedDefaultAccess ? "enabled" : "disabled"}`,
+          `  Gateway app: ${registerResponse.appSlug} (${registerResponse.existingApp ? "updated" : "created"})`,
         ),
       );
-      console.log(chalk.dim(`  Access granted to ${accessLabel}\n`));
+      console.log(
+        chalk.dim(
+          `  Default access: ${registerResponse.defaultAccess ? "enabled" : "disabled"}`,
+        ),
+      );
+      console.log(
+        chalk.dim(`  Access granted to ${registerResponse.grantedUserCount} users\n`),
+      );
     }
   } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message === OUTDATED_GATEWAY_ERROR
+    ) {
+      console.log(chalk.yellow("\nGateway out of date\n"));
+      console.log(
+        chalk.dim("  Run: `npx everyapp gateway deploy` to update.\n"),
+      );
+      await exitWithUpdateNotice(1);
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === GATEWAY_INTERNAL_AUTH_ERROR
+    ) {
+      console.log(chalk.yellow("\nGateway authorization failed\n"));
+      console.log(
+        chalk.dim(
+          "  Your Cloudflare token must access the same account as the gateway and allow Workers + D1 APIs.",
+        ),
+      );
+      console.log(chalk.dim("  Re-run `npx everyapp gateway deploy` if this gateway was deployed with older auth checks.\n"));
+      await exitWithUpdateNotice(1);
+    }
+
     console.error(
-      chalk.red("Failed to insert UserApp records:"),
-      error instanceof Error ? error.message : error,
+      chalk.red("\nFailed to insert UserApp records"),
+      error instanceof Error ? `\n   ${error.message}\n` : "",
     );
     throw error;
-  }
-}
-
-/**
- * Process a single user's app record with logging
- */
-async function processUserAppRecord(
-  db: GatewayDbConnection,
-  user: User,
-  options: {
-    appRecordId: string;
-    verbose: boolean;
-  },
-): Promise<void> {
-  const { verbose, appRecordId } = options;
-
-  const result = await upsertUserAppAccess(db, user.id, appRecordId);
-
-  if (result.created) {
-    console.log(
-      `  UserApp record created for user ${user.name} (${user.email})`,
-    );
-  } else if (verbose) {
-    console.log(
-      chalk.dim(
-        `  UserApp record already exists for user ${user.name} (${user.email})`,
-      ),
-    );
   }
 }
 
@@ -195,8 +226,8 @@ async function promptForDefaultAccess(message: string): Promise<boolean> {
   return confirm;
 }
 
-async function promptForAccessMode(): Promise<"all" | "select" | "none"> {
-  const { mode } = await enquirer.prompt<{ mode: "all" | "select" | "none" }>({
+async function promptForAccessMode(): Promise<AccessMode> {
+  const { mode } = await enquirer.prompt<{ mode: AccessMode }>({
     type: "select",
     name: "mode",
     message: "Add existing users now?",
@@ -211,7 +242,7 @@ async function promptForAccessMode(): Promise<"all" | "select" | "none"> {
   return mode;
 }
 
-async function promptForUserSelection(users: User[]): Promise<string[]> {
+async function promptForUserSelection(users: GatewayUser[]): Promise<string[]> {
   const { selected } = await enquirer.prompt<{ selected: string[] }>({
     type: "multiselect",
     name: "selected",
@@ -225,7 +256,7 @@ async function promptForUserSelection(users: User[]): Promise<string[]> {
   return selected;
 }
 
-function formatUserLabel(user: User): string {
+function formatUserLabel(user: GatewayUser): string {
   if (user.name && user.name.trim()) {
     return `${user.name} <${user.email}>`;
   }

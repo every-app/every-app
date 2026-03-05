@@ -31,6 +31,8 @@ import { Route as ApiEmbeddedJwksRouteImport } from './routes/api/embedded/jwks'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAdminHasOwnerRouteImport } from './routes/api/admin/has-owner'
 import { Route as AppsAppIdDevSplatRouteImport } from './routes/apps/$appId_.dev.$'
+import { Route as ApiInternalAppsUsersRouteImport } from './routes/api/internal/apps/users'
+import { Route as ApiInternalAppsRegisterRouteImport } from './routes/api/internal/apps/register'
 import { Route as ApiInternalAppTokenProvisionRouteImport } from './routes/api/internal/app-token/provision'
 import { Route as ApiAiProviderSplatRouteImport } from './routes/api/ai/$provider.$'
 
@@ -144,6 +146,16 @@ const AppsAppIdDevSplatRoute = AppsAppIdDevSplatRouteImport.update({
   path: '/$',
   getParentRoute: () => AppsAppIdDevRoute,
 } as any)
+const ApiInternalAppsUsersRoute = ApiInternalAppsUsersRouteImport.update({
+  id: '/api/internal/apps/users',
+  path: '/api/internal/apps/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiInternalAppsRegisterRoute = ApiInternalAppsRegisterRouteImport.update({
+  id: '/api/internal/apps/register',
+  path: '/api/internal/apps/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiInternalAppTokenProvisionRoute =
   ApiInternalAppTokenProvisionRouteImport.update({
     id: '/api/internal/app-token/provision',
@@ -180,6 +192,8 @@ export interface FileRoutesByFullPath {
   '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
   '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
   '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
+  '/api/internal/apps/register': typeof ApiInternalAppsRegisterRoute
+  '/api/internal/apps/users': typeof ApiInternalAppsUsersRoute
   '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
 }
 export interface FileRoutesByTo {
@@ -205,6 +219,8 @@ export interface FileRoutesByTo {
   '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
   '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
   '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
+  '/api/internal/apps/register': typeof ApiInternalAppsRegisterRoute
+  '/api/internal/apps/users': typeof ApiInternalAppsUsersRoute
   '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
 }
 export interface FileRoutesById {
@@ -232,6 +248,8 @@ export interface FileRoutesById {
   '/apps/$appId_/dev': typeof AppsAppIdDevRouteWithChildren
   '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
   '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
+  '/api/internal/apps/register': typeof ApiInternalAppsRegisterRoute
+  '/api/internal/apps/users': typeof ApiInternalAppsUsersRoute
   '/apps/$appId_/dev/$': typeof AppsAppIdDevSplatRoute
 }
 export interface FileRouteTypes {
@@ -260,6 +278,8 @@ export interface FileRouteTypes {
     | '/apps/$appId/dev'
     | '/api/ai/$provider/$'
     | '/api/internal/app-token/provision'
+    | '/api/internal/apps/register'
+    | '/api/internal/apps/users'
     | '/apps/$appId/dev/$'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -285,6 +305,8 @@ export interface FileRouteTypes {
     | '/apps/$appId/dev'
     | '/api/ai/$provider/$'
     | '/api/internal/app-token/provision'
+    | '/api/internal/apps/register'
+    | '/api/internal/apps/users'
     | '/apps/$appId/dev/$'
   id:
     | '__root__'
@@ -311,6 +333,8 @@ export interface FileRouteTypes {
     | '/apps/$appId_/dev'
     | '/api/ai/$provider/$'
     | '/api/internal/app-token/provision'
+    | '/api/internal/apps/register'
+    | '/api/internal/apps/users'
     | '/apps/$appId_/dev/$'
   fileRoutesById: FileRoutesById
 }
@@ -333,6 +357,8 @@ export interface RootRouteChildren {
   AppsAppIdDevRoute: typeof AppsAppIdDevRouteWithChildren
   ApiAiProviderSplatRoute: typeof ApiAiProviderSplatRoute
   ApiInternalAppTokenProvisionRoute: typeof ApiInternalAppTokenProvisionRoute
+  ApiInternalAppsRegisterRoute: typeof ApiInternalAppsRegisterRoute
+  ApiInternalAppsUsersRoute: typeof ApiInternalAppsUsersRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -491,6 +517,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppsAppIdDevSplatRouteImport
       parentRoute: typeof AppsAppIdDevRoute
     }
+    '/api/internal/apps/users': {
+      id: '/api/internal/apps/users'
+      path: '/api/internal/apps/users'
+      fullPath: '/api/internal/apps/users'
+      preLoaderRoute: typeof ApiInternalAppsUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/apps/register': {
+      id: '/api/internal/apps/register'
+      path: '/api/internal/apps/register'
+      fullPath: '/api/internal/apps/register'
+      preLoaderRoute: typeof ApiInternalAppsRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/internal/app-token/provision': {
       id: '/api/internal/app-token/provision'
       path: '/api/internal/app-token/provision'
@@ -567,6 +607,8 @@ const rootRouteChildren: RootRouteChildren = {
   AppsAppIdDevRoute: AppsAppIdDevRouteWithChildren,
   ApiAiProviderSplatRoute: ApiAiProviderSplatRoute,
   ApiInternalAppTokenProvisionRoute: ApiInternalAppTokenProvisionRoute,
+  ApiInternalAppsRegisterRoute: ApiInternalAppsRegisterRoute,
+  ApiInternalAppsUsersRoute: ApiInternalAppsUsersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

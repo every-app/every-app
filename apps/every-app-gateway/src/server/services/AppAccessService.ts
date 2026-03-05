@@ -80,6 +80,31 @@ async function grantAccess(userId: string, appId: string, grantedBy?: string) {
 }
 
 /**
+ * Grant access to an app for multiple users (additive-only).
+ *
+ * This never revokes existing access. Existing records are ignored.
+ * Use updateAccessForApp when the caller needs full replacement semantics.
+ */
+async function grantAccessBatchAdditive(
+  userIds: string[],
+  appId: string,
+  grantedBy?: string,
+) {
+  if (userIds.length === 0) {
+    return;
+  }
+
+  await AppAccessRepository.createMany(
+    userIds.map((userId) => ({
+      id: crypto.randomUUID(),
+      userId,
+      appId,
+      grantedBy,
+    })),
+  );
+}
+
+/**
  * Revoke access from a user for an app.
  */
 async function revokeAccess(userId: string, appId: string) {
@@ -159,6 +184,7 @@ export const AppAccessService = {
   getAccessStateForApp,
   hasAccess,
   grantAccess,
+  grantAccessBatchAdditive,
   revokeAccess,
   updateAccessForApp,
   grantDefaultAppsToUser,
