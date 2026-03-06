@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("cloudflare:workers", () => ({
   env: {
     CLOUDFLARE_ACCOUNT_ID: "account-123",
+    GATEWAY_DEPLOYMENT_MODE: "self_hosted",
   },
 }));
 
@@ -11,6 +12,7 @@ import { requireInternalCloudflareAuth } from "./internal-cloudflare-auth";
 
 const testEnv = env as {
   CLOUDFLARE_ACCOUNT_ID?: string;
+  GATEWAY_DEPLOYMENT_MODE?: string;
 };
 
 function authedRequest(token = "valid-cf-token"): Request {
@@ -48,6 +50,7 @@ describe("requireInternalCloudflareAuth", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     testEnv.CLOUDFLARE_ACCOUNT_ID = "account-123";
+    testEnv.GATEWAY_DEPLOYMENT_MODE = "self_hosted";
   });
 
   afterEach(() => {
@@ -64,6 +67,47 @@ describe("requireInternalCloudflareAuth", () => {
     expect(response.ok).toBe(false);
     if (!response.ok) {
       expect(response.response.status).toBe(503);
+    }
+  });
+
+  it("returns 404 when deployment mode is hosted", async () => {
+    testEnv.GATEWAY_DEPLOYMENT_MODE = "hosted";
+
+    const response = await requireInternalCloudflareAuth(
+      authedRequest("hosted-mode-token"),
+    );
+
+    expect(response.ok).toBe(false);
+    if (!response.ok) {
+      expect(response.response.status).toBe(404);
+      const payload = (await response.response.json()) as { code?: string };
+      expect(payload.code).toBe("INTERNAL_APIS_DISABLED");
+    }
+  });
+
+  it("returns 404 when deployment mode is missing", async () => {
+    testEnv.GATEWAY_DEPLOYMENT_MODE = undefined;
+
+    const response = await requireInternalCloudflareAuth(
+      authedRequest("missing-mode-token"),
+    );
+
+    expect(response.ok).toBe(false);
+    if (!response.ok) {
+      expect(response.response.status).toBe(404);
+    }
+  });
+
+  it("returns 404 when deployment mode is invalid", async () => {
+    testEnv.GATEWAY_DEPLOYMENT_MODE = "unknown";
+
+    const response = await requireInternalCloudflareAuth(
+      authedRequest("invalid-mode-token"),
+    );
+
+    expect(response.ok).toBe(false);
+    if (!response.ok) {
+      expect(response.response.status).toBe(404);
     }
   });
 

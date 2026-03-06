@@ -13,8 +13,8 @@ describe("app-token-scopes", () => {
 
   it("normalizes individual scopes", () => {
     expect(normalizeTokenScope(" provider:OpenAI ")).toBe("provider:openai");
-    expect(normalizeTokenScope("providers:*")).toBe("provider:*");
-    expect(normalizeTokenScope("provider:*")).toBe("provider:*");
+    expect(normalizeTokenScope("providers:*")).toBeNull();
+    expect(normalizeTokenScope("provider:*")).toBeNull();
     expect(normalizeTokenScope("read:all")).toBeNull();
     expect(normalizeTokenScope("provider:open*ai")).toBeNull();
   });
@@ -24,14 +24,14 @@ describe("app-token-scopes", () => {
       normalizeTokenScopes([
         " provider:OpenAI ",
         "provider:openai",
-        "providers:*",
+        "provider:anthropic",
       ]),
-    ).toEqual(["provider:openai", "provider:*"]);
+    ).toEqual(["provider:openai", "provider:anthropic"]);
   });
 
-  it("matches provider scopes with normalization and wildcard support", () => {
+  it("matches provider scopes with normalization", () => {
     expect(hasProviderScope(["provider:openai"], " openai ")).toBe(true);
-    expect(hasProviderScope(["providers:*"], "anthropic")).toBe(true);
+    expect(hasProviderScope(["provider:openai"], "anthropic")).toBe(false);
     expect(hasProviderScope(["provider:anthropic"], "openai")).toBe(false);
   });
 });

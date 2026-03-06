@@ -15,6 +15,7 @@ async function listOrganizationsFromGateway(options: {
   cloudflareToken: string;
   verbose?: boolean;
 }): Promise<GatewayOrganization[] | null> {
+  // Operator-plane API trust boundary: docs/security-model.md
   const response = await fetch(
     `${options.gatewayUrl}/api/internal/apps/organizations`,
     {
@@ -82,17 +83,17 @@ export async function resolveOrganizationIdForGateway(options: {
     }
 
     if (organizations && organizations.length > 1) {
-      const { organizationId } = await enquirer.prompt<{ organizationId: string }>(
-        {
-          type: "select",
-          name: "organizationId",
-          message: "Select the target organization",
-          choices: organizations.map((organization) => ({
-            name: organization.id,
-            message: `${organization.name} (${organization.slug})`,
-          })),
-        },
-      );
+      const { organizationId } = await enquirer.prompt<{
+        organizationId: string;
+      }>({
+        type: "select",
+        name: "organizationId",
+        message: "Select the target organization",
+        choices: organizations.map((organization) => ({
+          name: organization.id,
+          message: `${organization.name} (${organization.slug})`,
+        })),
+      });
 
       return organizationId;
     }

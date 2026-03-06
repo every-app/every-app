@@ -22,6 +22,7 @@ interface GatewayUser {
 
 interface GatewayErrorPayload {
   error?: string;
+  code?: string;
 }
 
 type AccessMode = "all" | "select" | "none";
@@ -29,6 +30,8 @@ type AccessMode = "all" | "select" | "none";
 const GATEWAY_INTERNAL_API_TIMEOUT_MS = 15_000;
 const OUTDATED_GATEWAY_ERROR = "OUTDATED_GATEWAY";
 const GATEWAY_INTERNAL_AUTH_ERROR = "GATEWAY_INTERNAL_AUTH";
+const GATEWAY_INTERNAL_APIS_DISABLED_ERROR = "GATEWAY_INTERNAL_APIS_DISABLED";
+const INTERNAL_APIS_DISABLED_ERROR_CODE = "INTERNAL_APIS_DISABLED";
 
 async function callGatewayInternalApi<T>(
   gatewayUrl: string,
@@ -37,6 +40,7 @@ async function callGatewayInternalApi<T>(
   method: "GET" | "POST",
   body?: unknown,
 ): Promise<T> {
+  // Operator-plane API trust boundary: docs/security-model.md
   const response = await fetch(`${gatewayUrl}${path}`, {
     method,
     signal: AbortSignal.timeout(GATEWAY_INTERNAL_API_TIMEOUT_MS),
@@ -47,19 +51,25 @@ async function callGatewayInternalApi<T>(
     body: body ? JSON.stringify(body) : undefined,
   });
 
-  if (response.status === 404) {
-    throw new Error(OUTDATED_GATEWAY_ERROR);
+  const responseText = await response.text();
+  let payload: GatewayErrorPayload & T = {} as GatewayErrorPayload & T;
+  if (responseText.trim()) {
+    try {
+      payload = JSON.parse(responseText) as GatewayErrorPayload & T;
+    } catch {
+      if (!response.ok) {
+        throw new Error(`Gateway request failed (${response.status})`);
+      }
+
+      throw new Error("Gateway returned an invalid JSON response");
+    }
   }
 
-  let payload: GatewayErrorPayload & T;
-  try {
-    payload = (await response.json()) as GatewayErrorPayload & T;
-  } catch {
-    if (!response.ok) {
-      throw new Error(`Gateway request failed (${response.status})`);
+  if (response.status === 404) {
+    if (payload.code === INTERNAL_APIS_DISABLED_ERROR_CODE) {
+      throw new Error(GATEWAY_INTERNAL_APIS_DISABLED_ERROR);
     }
-
-    throw new Error("Gateway returned an invalid JSON response");
+    throw new Error(OUTDATED_GATEWAY_ERROR);
   }
 
   if (!response.ok) {
@@ -192,10 +202,7 @@ export async function insertUserAppRecords(
 
     return { organizationId };
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message === OUTDATED_GATEWAY_ERROR
-    ) {
+    if (error instanceof Error && error.message === OUTDATED_GATEWAY_ERROR) {
       console.log(chalk.yellow("\nGateway out of date\n"));
       console.log(
         chalk.dim("  Run: `npx everyapp gateway deploy` to update.\n"),
@@ -216,6 +223,19 @@ export async function insertUserAppRecords(
       console.log(
         chalk.dim(
           "  Re-run `npx everyapp gateway deploy` if this gateway was deployed with older auth checks.\n",
+        ),
+      );
+      await exitWithUpdateNotice(1);
+    }
+
+    if (
+      error instanceof Error &&
+      error.message === GATEWAY_INTERNAL_APIS_DISABLED_ERROR
+    ) {
+      console.log(chalk.yellow("\nGateway internal APIs are disabled\n"));
+      console.log(
+        chalk.dim(
+          "  This gateway is running in hosted mode (or has invalid deployment mode config), so /api/internal/* is intentionally unavailable.\n",
         ),
       );
       await exitWithUpdateNotice(1);
@@ -256,9 +276,7 @@ async function promptForAccessMode(): Promise<AccessMode> {
   return mode;
 }
 
-async function promptForUserSelection(
-  users: GatewayUser[],
-): Promise<string[]> {
+async function promptForUserSelection(users: GatewayUser[]): Promise<string[]> {
   const { selected } = await enquirer.prompt<{ selected: string[] }>({
     type: "multiselect",
     name: "selected",

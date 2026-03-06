@@ -78,7 +78,7 @@ describe("createAiGatewayAuthenticator", () => {
       id: "token-1",
       appId: "chef",
       organizationId: "org-123",
-      scopes: ["provider:*"],
+      scopes: ["provider:openai"],
     });
     const authenticate = createAiGatewayAuthenticator(buildEnv());
 

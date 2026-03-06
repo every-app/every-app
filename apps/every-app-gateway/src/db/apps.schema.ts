@@ -5,6 +5,7 @@ import {
   integer,
   uniqueIndex,
   index,
+  foreignKey,
 } from "drizzle-orm/sqlite-core";
 import { organizations, users } from "./auth.schema";
 
@@ -35,6 +36,10 @@ export const apps = sqliteTable(
       .notNull(),
   },
   (table) => [
+    uniqueIndex("apps_id_organization_unique").on(
+      table.id,
+      table.organizationId,
+    ),
     uniqueIndex("apps_organization_app_id_unique").on(
       table.organizationId,
       table.appId,
@@ -67,6 +72,11 @@ export const userAppAccess = sqliteTable(
     }), // Which owner granted access (null for system/migration)
   },
   (table) => [
+    foreignKey({
+      columns: [table.appId, table.organizationId],
+      foreignColumns: [apps.id, apps.organizationId],
+      name: "user_app_access_app_org_fk",
+    }).onDelete("cascade"),
     uniqueIndex("user_app_access_user_app_unique").on(
       table.organizationId,
       table.userId,
@@ -110,6 +120,11 @@ export const appTokens = sqliteTable(
     lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
   },
   (table) => [
+    foreignKey({
+      columns: [table.appId, table.organizationId],
+      foreignColumns: [apps.id, apps.organizationId],
+      name: "app_tokens_app_org_fk",
+    }).onDelete("cascade"),
     uniqueIndex("app_tokens_token_hash_unique").on(table.tokenHash),
     index("app_tokens_organization_id_idx").on(table.organizationId),
     index("app_tokens_app_id_idx").on(table.appId),

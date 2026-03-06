@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const providerScopeRegex = /^provider:[a-z0-9-]+$|^provider:\*$/;
+const providerScopeRegex = /^provider:[a-z0-9-]+$/;
 
 export const createAppTokenSchema = z.object({
   appId: z.string().uuid("Invalid app ID"),
@@ -9,10 +9,7 @@ export const createAppTokenSchema = z.object({
       z
         .string()
         .min(1, "Scope is required")
-        .regex(
-          providerScopeRegex,
-          'Scope must match "provider:<name>" or "provider:*"',
-        ),
+        .regex(providerScopeRegex, 'Scope must match "provider:<name>"'),
     )
     .min(1, "At least one scope is required")
     .max(20, "No more than 20 scopes are allowed"),

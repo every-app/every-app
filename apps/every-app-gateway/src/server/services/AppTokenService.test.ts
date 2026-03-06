@@ -82,7 +82,7 @@ describe("AppTokenService", () => {
       const result = await AppTokenService.create(
         {
           appId: "app-id",
-          scopes: [" provider:OpenAI ", "provider:openai", "provider:*"],
+          scopes: [" provider:OpenAI ", "provider:openai"],
           expiresAt: null,
         },
         ORG_ID,
@@ -91,7 +91,7 @@ describe("AppTokenService", () => {
 
       expect(result.token.startsWith("eat_")).toBe(true);
       expect(result.tokenPrefix).toBe(result.token.slice(0, 8));
-      expect(result.scopes).toEqual(["provider:openai", "provider:*"]);
+      expect(result.scopes).toEqual(["provider:openai"]);
       expect(mockHashAppToken).toHaveBeenCalledWith(
         result.token,
         "test-secret",
@@ -101,7 +101,7 @@ describe("AppTokenService", () => {
           appId: "app-id",
           tokenHash: "token-hash",
           tokenPrefix: result.tokenPrefix,
-          scopes: ["provider:openai", "provider:*"],
+          scopes: ["provider:openai"],
           createdBy: "owner-id",
         }),
       );

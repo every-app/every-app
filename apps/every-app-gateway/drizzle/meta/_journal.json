@@ -99,6 +99,13 @@
       "when": 1772769005931,
       "tag": "0013_motionless_nitro",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1772830190307,
+      "tag": "0014_lowly_goliath",
+      "breakpoints": true
     }
   ]
 }

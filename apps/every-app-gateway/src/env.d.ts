@@ -9,6 +9,9 @@ declare namespace Cloudflare {
     // Cloudflare account that owns this gateway deployment
     CLOUDFLARE_ACCOUNT_ID?: string;
 
+    // Deployment mode used to gate internal operator APIs
+    GATEWAY_DEPLOYMENT_MODE?: "self_hosted" | "hosted";
+
     // Better Auth configuration
     // Also used as HMAC key material for app token hashing (with domain separation)
     BETTER_AUTH_SECRET: string;

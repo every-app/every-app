@@ -48,6 +48,7 @@ Negative:
 - In `self_hosted` mode, anyone with a valid Cloudflare account token for the gateway account is treated as an internal operator.
 - Compromise or misuse of that Cloudflare token carries account-wide control-plane blast radius.
 - This trust model is intentionally not valid for hosted multi-tenant operations.
+- See also the canonical trust boundary definition in `docs/security-model.md`.
 
 ## Transitional Guardrails
 

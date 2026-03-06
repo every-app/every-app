@@ -14,6 +14,24 @@ type CloudflareD1Database = {
 const GATEWAY_RESOURCE_NAME = "every-app-gateway";
 const d1WriteProbeSql =
   "CREATE TABLE IF NOT EXISTS __every_app_internal_auth_probe (id INTEGER); DROP TABLE IF EXISTS __every_app_internal_auth_probe";
+const INTERNAL_APIS_DISABLED_ERROR_CODE = "INTERNAL_APIS_DISABLED";
+
+type DeploymentMode = "self_hosted" | "hosted";
+
+function resolveDeploymentMode(
+  rawMode: string | undefined,
+): DeploymentMode | "invalid" {
+  const normalized = rawMode?.trim().toLowerCase();
+  if (!normalized) {
+    return "invalid";
+  }
+
+  if (normalized === "self_hosted" || normalized === "hosted") {
+    return normalized;
+  }
+
+  return "invalid";
+}
 
 export function jsonResponse(payload: unknown, status = 200): Response {
   return new Response(JSON.stringify(payload), {
@@ -126,6 +144,22 @@ async function verifyGatewayD1WriteAccess(
 export async function requireInternalCloudflareAuth(
   request: Request,
 ): Promise<{ ok: true } | { ok: false; response: Response }> {
+  // Internal endpoints are operator-plane APIs by design.
+  // See: docs/security-model.md#operator-zone-apiinternal
+  const deploymentMode = resolveDeploymentMode(env.GATEWAY_DEPLOYMENT_MODE);
+  if (deploymentMode === "hosted" || deploymentMode === "invalid") {
+    return {
+      ok: false,
+      response: jsonResponse(
+        {
+          error: "Internal gateway APIs are disabled for this deployment mode.",
+          code: INTERNAL_APIS_DISABLED_ERROR_CODE,
+        },
+        404,
+      ),
+    };
+  }
+
   const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim();
   if (!accountId) {
     return {

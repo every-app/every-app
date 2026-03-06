@@ -50,6 +50,9 @@ export async function setupSecrets({
     const cloudflareAccountIdExists = existingSecrets.has(
       "CLOUDFLARE_ACCOUNT_ID",
     );
+    const gatewayDeploymentModeExists = existingSecrets.has(
+      "GATEWAY_DEPLOYMENT_MODE",
+    );
     const betterAuthSecretExists = existingSecrets.has("BETTER_AUTH_SECRET");
     const privateKeyExists = existingSecrets.has("JWT_PRIVATE_KEY");
     const publicKeyExists = existingSecrets.has("JWT_PUBLIC_KEY");
@@ -92,6 +95,16 @@ export async function setupSecrets({
         cwd: gatewayPath,
         verbose,
         description: `Setting CLOUDFLARE_ACCOUNT_ID to: ${cloudflareAccountId}`,
+      });
+    }
+
+    if (!gatewayDeploymentModeExists) {
+      await uploadSecret({
+        secretName: "GATEWAY_DEPLOYMENT_MODE",
+        secretValue: "self_hosted",
+        cwd: gatewayPath,
+        verbose,
+        description: "Setting GATEWAY_DEPLOYMENT_MODE to: self_hosted",
       });
     }
 

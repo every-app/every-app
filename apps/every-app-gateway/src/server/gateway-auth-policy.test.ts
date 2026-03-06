@@ -47,7 +47,7 @@ describe("authenticateGatewayRequest", () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
       organizationId: "org-123",
-      scopes: ["provider:*"],
+      scopes: ["provider:openai"],
     });
 
     await expect(
@@ -73,7 +73,7 @@ describe("authenticateGatewayRequest", () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
       organizationId: "org-123",
-      scopes: ["provider:*"],
+      scopes: ["provider:openai"],
     });
 
     await expect(
@@ -116,7 +116,7 @@ describe("authenticateGatewayRequest", () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
       organizationId: "",
-      scopes: ["provider:*"],
+      scopes: ["provider:openai"],
     });
 
     await expect(
@@ -130,42 +130,40 @@ describe("authenticateGatewayRequest", () => {
     ).rejects.toEqual(new GatewayAuthError("invalid_app_token"));
   });
 
-  it("accepts app token with wildcard provider scope", async () => {
+  it("rejects app token with wildcard provider scope", async () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
       organizationId: "org-123",
       scopes: ["provider:*"],
     });
 
-    const result = await authenticateGatewayRequest({
-      request: createRequest({
-        [APP_TOKEN_HEADER]: "app-token",
+    await expect(
+      authenticateGatewayRequest({
+        request: createRequest({
+          [APP_TOKEN_HEADER]: "app-token",
+        }),
+        provider: "openai",
+        verifyAppToken,
       }),
-      provider: "openai",
-      verifyAppToken,
-    });
-
-    expect(result.authType).toBe("app");
-    expect(result.appId).toBe("chef");
+    ).rejects.toEqual(new GatewayAuthError("insufficient_scope"));
   });
 
-  it("accepts legacy wildcard scope format", async () => {
+  it("rejects legacy wildcard scope format", async () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
       organizationId: "org-123",
       scopes: ["providers:*"],
     });
 
-    const result = await authenticateGatewayRequest({
-      request: createRequest({
-        [APP_TOKEN_HEADER]: "app-token",
+    await expect(
+      authenticateGatewayRequest({
+        request: createRequest({
+          [APP_TOKEN_HEADER]: "app-token",
+        }),
+        provider: "openai",
+        verifyAppToken,
       }),
-      provider: "openai",
-      verifyAppToken,
-    });
-
-    expect(result.authType).toBe("app");
-    expect(result.appId).toBe("chef");
+    ).rejects.toEqual(new GatewayAuthError("insufficient_scope"));
   });
 
   it("rejects requests with no credentials", async () => {
@@ -184,7 +182,7 @@ describe("authenticateGatewayRequest", () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
       organizationId: "org-123",
-      scopes: ["provider:*"],
+      scopes: ["provider:openai"],
     });
 
     const result = await authenticateGatewayRequest({
@@ -222,7 +220,7 @@ describe("authenticateGatewayRequest", () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
       organizationId: "org-123",
-      scopes: ["provider:*"],
+      scopes: ["provider:openai"],
     });
 
     const result = await authenticateGatewayRequest({

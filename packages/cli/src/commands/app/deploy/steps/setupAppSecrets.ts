@@ -6,6 +6,7 @@ const GATEWAY_APP_API_TOKEN_SECRET_NAME = "GATEWAY_APP_API_TOKEN";
 const EVERY_APP_ORG_ID_SECRET_NAME = "EVERY_APP_ORG_ID";
 const PROVISION_ENDPOINT_PATH = "/api/internal/app-token/provision";
 const DEFAULT_TOKEN_SCOPES = ["provider:openai"];
+const INTERNAL_APIS_DISABLED_ERROR_CODE = "INTERNAL_APIS_DISABLED";
 
 interface SetupAppSecretsOptions {
   gatewayUrl: string;
@@ -44,6 +45,19 @@ function getErrorMessage(payload: unknown): string | null {
   return error;
 }
 
+function getErrorCode(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") {
+    return null;
+  }
+
+  const code = (payload as Record<string, unknown>)["code"];
+  if (typeof code !== "string" || !code.trim()) {
+    return null;
+  }
+
+  return code;
+}
+
 export async function provisionGatewayAppApiToken({
   gatewayUrl,
   appId,
@@ -55,6 +69,7 @@ export async function provisionGatewayAppApiToken({
 }): Promise<string> {
   const cloudflareToken = await getValidCloudflareToken();
 
+  // Operator-plane API trust boundary: docs/security-model.md
   const response = await fetch(`${gatewayUrl}${PROVISION_ENDPOINT_PATH}`, {
     method: "POST",
     headers: {
@@ -83,6 +98,12 @@ export async function provisionGatewayAppApiToken({
     }
 
     if (response.status === 404) {
+      if (getErrorCode(payload) === INTERNAL_APIS_DISABLED_ERROR_CODE) {
+        throw new Error(
+          "Gateway internal APIs are disabled for this deployment mode. Hosted gateways do not expose token provisioning via /api/internal/*.",
+        );
+      }
+
       throw new Error(
         "Gateway does not support token provisioning yet. Redeploy the gateway with `npx everyapp gateway deploy` and try again.",
       );

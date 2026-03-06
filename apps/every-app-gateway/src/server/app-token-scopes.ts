@@ -1,6 +1,4 @@
 const PROVIDER_SCOPE_PREFIX = "provider:";
-const PROVIDER_SCOPE_WILDCARD = "provider:*";
-const LEGACY_PROVIDER_SCOPE_WILDCARD = "providers:*";
 
 export function normalizeProviderName(provider: string): string {
   return provider.trim().toLowerCase();
@@ -10,13 +8,6 @@ export function normalizeTokenScope(scope: string): string | null {
   const normalized = scope.trim().toLowerCase();
   if (!normalized) {
     return null;
-  }
-
-  if (
-    normalized === PROVIDER_SCOPE_WILDCARD ||
-    normalized === LEGACY_PROVIDER_SCOPE_WILDCARD
-  ) {
-    return PROVIDER_SCOPE_WILDCARD;
   }
 
   if (!normalized.startsWith(PROVIDER_SCOPE_PREFIX)) {
@@ -50,8 +41,5 @@ export function hasProviderScope(scopes: string[], provider: string): boolean {
   }
 
   const normalizedScopes = new Set(normalizeTokenScopes(scopes));
-  return (
-    normalizedScopes.has(PROVIDER_SCOPE_WILDCARD) ||
-    normalizedScopes.has(`${PROVIDER_SCOPE_PREFIX}${normalizedProvider}`)
-  );
+  return normalizedScopes.has(`${PROVIDER_SCOPE_PREFIX}${normalizedProvider}`);
 }
