@@ -13,7 +13,7 @@ function parseOrganizationRoles(
     return [];
   }
 
-  if (Array.isArray(value)) {
+  if (typeof value !== "string") {
     return value.filter(isOrganizationRole);
   }
 

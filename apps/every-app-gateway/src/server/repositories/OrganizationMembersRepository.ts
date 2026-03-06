@@ -10,6 +10,8 @@ async function listMembersForOrganization(organizationId: string) {
       email: users.email,
       role: members.role,
       status: users.status,
+      createdAt: users.createdAt,
+      banned: users.banned,
     })
     .from(members)
     .innerJoin(users, eq(members.userId, users.id))

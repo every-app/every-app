@@ -39,10 +39,7 @@ async function getUsersForApp(appId: string, organizationId: string) {
  * Get access state for all users for a specific app.
  * Returns all users with a flag indicating if they have access.
  */
-async function getAccessStateForApp(
-  appId: string,
-  organizationId: string,
-) {
+async function getAccessStateForApp(appId: string, organizationId: string) {
   const [allUsers, accessRecords] = await Promise.all([
     OrganizationMembersRepository.listMembersForOrganization(organizationId),
     AppAccessRepository.findAllByAppId(appId, organizationId),

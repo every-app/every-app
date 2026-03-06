@@ -183,11 +183,7 @@ describe("AdminService", () => {
 
   it("requires organization context for deleteUser", async () => {
     await expect(
-      AdminService.deleteUser(
-        "target-user",
-        "current-user",
-        undefined,
-      ),
+      AdminService.deleteUser("target-user", "current-user", undefined),
     ).rejects.toThrow("Organization context is required");
   });
 

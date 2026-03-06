@@ -7,7 +7,7 @@ import {
   type OrganizationRole,
 } from "@/server/org-roles";
 
-export interface AuthContext {
+interface AuthContext {
   user: Auth["$Infer"]["Session"]["user"];
   session: Auth["$Infer"]["Session"]["session"];
   activeOrganizationId: string | null;

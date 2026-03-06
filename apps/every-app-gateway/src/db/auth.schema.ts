@@ -105,7 +105,7 @@ export const organizations = sqliteTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
-    slug: text("slug").notNull(),
+    slug: text("slug").notNull().unique(),
     logo: text("logo"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     metadata: text("metadata"),
@@ -127,10 +127,6 @@ export const members = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
-    uniqueIndex("members_org_user_unique").on(
-      table.organizationId,
-      table.userId,
-    ),
     index("members_organizationId_idx").on(table.organizationId),
     index("members_userId_idx").on(table.userId),
   ],

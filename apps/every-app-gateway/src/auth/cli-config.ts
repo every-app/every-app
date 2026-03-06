@@ -11,11 +11,7 @@ import { sharedAuthOptions } from "./shared";
  */
 export const auth = betterAuth({
   ...sharedAuthOptions,
-  plugins: [
-    ...sharedAuthOptions.plugins,
-    admin(),
-    organization(),
-  ],
+  plugins: [...sharedAuthOptions.plugins, admin(), organization()],
   database: drizzleAdapter({} as any, {
     provider: "sqlite",
     usePlural: true,

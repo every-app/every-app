@@ -162,7 +162,10 @@ async function deleteUser(
   await db
     .delete(members)
     .where(
-      and(eq(members.userId, userId), eq(members.organizationId, organizationId)),
+      and(
+        eq(members.userId, userId),
+        eq(members.organizationId, organizationId),
+      ),
     );
 
   const [orgCountResult] = await db

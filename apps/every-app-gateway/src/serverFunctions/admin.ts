@@ -1,9 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { env } from "cloudflare:workers";
+import { createAuth } from "@/auth";
 import { organizationOwnerMiddleware } from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
-import { PublicError } from "@/server/errors";
 import { AdminService } from "@/server/services/AdminService";
 
 // ============================================================================
@@ -46,13 +46,13 @@ export const initializeOwner = createServerFn()
 // ============================================================================
 
 /**
- * List all users in the system.
+ * List all users in the active organization.
  * Only accessible by owners.
  */
-export const listUsers = createServerFn()
+export const listMembers = createServerFn()
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
-  .handler(async () => {
-    return AdminService.listUsers();
+  .handler(async ({ context }) => {
+    return AdminService.listMembers(context.activeOrganizationId);
   });
 
 const deleteUserSchema = z.object({
@@ -68,118 +68,56 @@ export const deleteUser = createServerFn()
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
   .inputValidator((data: unknown) => deleteUserSchema.parse(data))
   .handler(async ({ data, context }) => {
-    return AdminService.deleteUser(data.userId, context.user.id);
+    return AdminService.deleteUser(
+      data.userId,
+      context.user.id,
+      context.activeOrganizationId,
+    );
   });
 
 // ============================================================================
 // Invitation Functions
 // ============================================================================
 
-const createInviteLinkSchema = z.object({
+const inviteMemberSchema = z.object({
   email: z.string().email("Invalid email address"),
 });
 
 /**
- * Create an invitation link for a new user.
- * Creates the user with a random password and pending status,
- * then generates a password reset token for them to set their own password.
+ * Create and send an invitation for a new organization member.
  * Only accessible by owners.
  */
-export const createInviteLink = createServerFn()
+export const inviteMember = createServerFn()
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
-  .inputValidator((data: unknown) => createInviteLinkSchema.parse(data))
-  .handler(async ({ data }) => {
-    return AdminService.createInviteLink(data.email);
+  .inputValidator((data: unknown) => inviteMemberSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    const auth = createAuth();
+    const request = getRequest();
+
+    return auth.api.createInvitation({
+      headers: request.headers,
+      body: {
+        email: data.email,
+        role: "member",
+        organizationId: context.activeOrganizationId,
+      },
+    });
   });
 
-const regenerateInviteLinkSchema = z.object({
+const sendPasswordResetEmailSchema = z.object({
   userId: z.string().min(1, "User ID is required"),
 });
 
 /**
- * Regenerate an invitation link for a pending user.
+ * Send a password reset email for an active user in the active organization.
  * Only accessible by owners.
  */
-export const regenerateInviteLink = createServerFn()
+export const sendPasswordResetEmail = createServerFn()
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
-  .inputValidator((data: unknown) => regenerateInviteLinkSchema.parse(data))
-  .handler(async ({ data }) => {
-    return AdminService.regenerateInviteLink(data.userId);
-  });
-
-const createPasswordResetLinkSchema = z.object({
-  userId: z.string().min(1, "User ID is required"),
-});
-
-/**
- * Generate a password reset link for an active user.
- * Only accessible by owners.
- */
-export const createPasswordResetLink = createServerFn()
-  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
-  .inputValidator((data: unknown) => createPasswordResetLinkSchema.parse(data))
-  .handler(async ({ data }) => {
-    return AdminService.createPasswordResetLink(data.userId);
-  });
-
-// ============================================================================
-// Invitation Acceptance
-// ============================================================================
-
-const acceptInvitationSchema = z.object({
-  token: z.string().min(1, "Token is required"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-});
-
-/**
- * Accept an invitation by validating the token, setting the password, and activating the user.
- * This handles the complete invitation flow in one server call.
- * Rate limited per token to prevent brute-force attacks on invitation tokens.
- */
-export const acceptInvitation = createServerFn()
-  .middleware([publicErrorMiddleware])
-  .inputValidator((data: unknown) => acceptInvitationSchema.parse(data))
-  .handler(async ({ data }) => {
-    const { success } = await env.RATE_LIMIT_AUTH_TOKEN.limit({
-      key: data.token,
-    });
-    if (!success) {
-      throw new PublicError(
-        "RATE_LIMITED",
-        "Too many attempts. Please try again later.",
-      );
-    }
-
-    return AdminService.acceptInvitation(data.token, data.password);
-  });
-
-// ============================================================================
-// Password Reset (for active users)
-// ============================================================================
-
-const resetPasswordSchema = z.object({
-  token: z.string().min(1, "Token is required"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-});
-
-/**
- * Reset password for an active user using our custom token system.
- * Similar to acceptInvitation but for existing active users.
- * Rate limited per token to prevent brute-force attacks on reset tokens.
- */
-export const resetPassword = createServerFn()
-  .middleware([publicErrorMiddleware])
-  .inputValidator((data: unknown) => resetPasswordSchema.parse(data))
-  .handler(async ({ data }) => {
-    const { success } = await env.RATE_LIMIT_AUTH_TOKEN.limit({
-      key: data.token,
-    });
-    if (!success) {
-      throw new PublicError(
-        "RATE_LIMITED",
-        "Too many attempts. Please try again later.",
-      );
-    }
-
-    return AdminService.resetPassword(data.token, data.password);
+  .inputValidator((data: unknown) => sendPasswordResetEmailSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    return AdminService.sendPasswordResetEmail(
+      data.userId,
+      context.activeOrganizationId,
+    );
   });

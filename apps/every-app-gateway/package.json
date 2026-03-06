@@ -16,6 +16,7 @@
     "cf-typegen": "wrangler types --env-interface Env",
     "auth:generate": "npx @better-auth/cli@1.4.6 generate --config src/auth/cli-config.ts --output src/db/auth.schema.ts -y",
     "auth:update": "pnpm run auth:generate",
+    "secrets:regenerate": "node regenerate-secrets.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "drizzle-kit migrate",
     "db:migrate:prod": "npx everyapp app remote-d1-shell -- drizzle-kit migrate --config=drizzle-prod.config.ts",

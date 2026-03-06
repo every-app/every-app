@@ -37,7 +37,9 @@ function getInvitationIdFromRequest(request?: Request): string | null {
 }
 
 function normalizeEmail(value: unknown): string {
-  return String(value ?? "").trim().toLowerCase();
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
 }
 
 function getInvitationExpiryMs(invitation: PendingInvitation): number {
@@ -68,7 +70,8 @@ function assertInvitationEmailMatches(
     normalizedRequestedEmail !== normalizedInvitationEmail
   ) {
     throw new APIError("BAD_REQUEST", {
-      message: "This invitation can only be used with the invited email address.",
+      message:
+        "This invitation can only be used with the invited email address.",
     });
   }
 }
