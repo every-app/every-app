@@ -22,6 +22,7 @@ interface DeployAppOptions {
 interface DeployAppResult {
   workerUrl: string;
   gatewayUrl: string;
+  organizationId: string;
 }
 
 /**
@@ -84,7 +85,7 @@ export async function deployApp(
 
   // Register with gateway using unprefixed appId for cleaner URLs
   // (e.g., /apps/todo-app instead of /apps/every-todo-app)
-  await insertUserAppRecords({
+  const { organizationId } = await insertUserAppRecords({
     appId,
     appUrl: workerUrl,
     gatewayUrl,
@@ -96,7 +97,13 @@ export async function deployApp(
 
   // Setup app-level secrets after gateway registration so app token provisioning
   // can resolve this app in the gateway catalog.
-  await setupAppSecrets({ gatewayUrl, appPath: cwd, appId, verbose });
+  await setupAppSecrets({
+    gatewayUrl,
+    appPath: cwd,
+    appId,
+    organizationId,
+    verbose,
+  });
 
-  return { workerUrl, gatewayUrl };
+  return { workerUrl, gatewayUrl, organizationId };
 }

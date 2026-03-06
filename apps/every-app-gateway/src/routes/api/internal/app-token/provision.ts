@@ -10,6 +10,7 @@ import {
 const DEFAULT_TOKEN_SCOPES = ["provider:openai"];
 
 const provisionAppTokenSchema = z.object({
+  organizationId: z.string().trim().min(1, "organizationId is required"),
   appSlug: z
     .string()
     .trim()
@@ -45,7 +46,11 @@ export const Route = createFileRoute("/api/internal/app-token/provision")({
           );
         }
 
-        const app = await AppRepository.findByAppId(parsed.data.appSlug);
+        const app = await AppRepository.findByAppId(
+          parsed.data.appSlug,
+          parsed.data.organizationId,
+        );
+
         if (!app) {
           return jsonResponse(
             {
@@ -64,6 +69,7 @@ export const Route = createFileRoute("/api/internal/app-token/provision")({
               scopes: parsed.data.scopes ?? DEFAULT_TOKEN_SCOPES,
               expiresAt: null,
             },
+            parsed.data.organizationId,
             null,
           );
 

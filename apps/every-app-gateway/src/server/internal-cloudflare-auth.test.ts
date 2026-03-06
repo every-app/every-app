@@ -67,7 +67,7 @@ describe("requireInternalCloudflareAuth", () => {
     }
   });
 
-  it("requires bearer token in self-hosted mode", async () => {
+  it("requires bearer token", async () => {
     const response = await requireInternalCloudflareAuth(
       new Request("https://gateway.example.com/internal"),
     );

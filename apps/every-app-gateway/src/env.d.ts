@@ -19,5 +19,9 @@ declare namespace Cloudflare {
 
     // Provider credentials used by gateway proxy routes
     OPENAI_API_KEY?: string;
+
+    // Email delivery for Better Auth invitation and password-reset flows
+    RESEND_API_KEY?: string;
+    EMAIL_FROM?: string;
   }
 }

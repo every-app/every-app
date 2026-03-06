@@ -3,6 +3,7 @@ import { secretExists, uploadSecret } from "@/lib/secrets";
 
 const GATEWAY_URL_SECRET_NAME = "GATEWAY_URL";
 const GATEWAY_APP_API_TOKEN_SECRET_NAME = "GATEWAY_APP_API_TOKEN";
+const EVERY_APP_ORG_ID_SECRET_NAME = "EVERY_APP_ORG_ID";
 const PROVISION_ENDPOINT_PATH = "/api/internal/app-token/provision";
 const DEFAULT_TOKEN_SCOPES = ["provider:openai"];
 
@@ -10,6 +11,7 @@ interface SetupAppSecretsOptions {
   gatewayUrl: string;
   appPath: string;
   appId: string;
+  organizationId: string;
   verbose?: boolean;
 }
 
@@ -45,9 +47,11 @@ function getErrorMessage(payload: unknown): string | null {
 export async function provisionGatewayAppApiToken({
   gatewayUrl,
   appId,
+  organizationId,
 }: {
   gatewayUrl: string;
   appId: string;
+  organizationId: string;
 }): Promise<string> {
   const cloudflareToken = await getValidCloudflareToken();
 
@@ -58,6 +62,7 @@ export async function provisionGatewayAppApiToken({
       "content-type": "application/json",
     },
     body: JSON.stringify({
+      organizationId,
       appSlug: appId,
       scopes: DEFAULT_TOKEN_SCOPES,
     }),
@@ -108,6 +113,7 @@ export async function setupAppSecrets({
   gatewayUrl,
   appPath,
   appId,
+  organizationId,
   verbose = false,
 }: SetupAppSecretsOptions): Promise<void> {
   if (verbose) console.log("Configuring Secrets...");
@@ -140,7 +146,11 @@ export async function setupAppSecrets({
         console.log("Provisioning gateway app API token...");
       }
 
-      const appToken = await provisionGatewayAppApiToken({ gatewayUrl, appId });
+      const appToken = await provisionGatewayAppApiToken({
+        gatewayUrl,
+        appId,
+        organizationId,
+      });
 
       await uploadSecret({
         secretName: GATEWAY_APP_API_TOKEN_SECRET_NAME,
@@ -148,6 +158,21 @@ export async function setupAppSecrets({
         cwd: appPath,
         verbose,
         description: "Setting GATEWAY_APP_API_TOKEN for gateway requests",
+      });
+    }
+
+    const orgIdSecretExists = await secretExists({
+      secretName: EVERY_APP_ORG_ID_SECRET_NAME,
+      cwd: appPath,
+      verbose,
+    });
+    if (!orgIdSecretExists) {
+      await uploadSecret({
+        secretName: EVERY_APP_ORG_ID_SECRET_NAME,
+        secretValue: organizationId,
+        cwd: appPath,
+        verbose,
+        description: `Setting EVERY_APP_ORG_ID to: ${organizationId}`,
       });
     }
 

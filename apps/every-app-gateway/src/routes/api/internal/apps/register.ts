@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 import { AppRepository } from "@/server/repositories/AppRepository";
-import { UserRepository } from "@/server/repositories/UserRepository";
+import { OrganizationMembersRepository } from "@/server/repositories/OrganizationMembersRepository";
 import { AppAccessService } from "@/server/services/AppAccessService";
 import {
   jsonResponse,
@@ -9,6 +9,7 @@ import {
 } from "@/server/internal-cloudflare-auth";
 
 const registerAppSchema = z.object({
+  organizationId: z.string().trim().min(1, "organizationId is required"),
   appId: z
     .string()
     .trim()
@@ -28,6 +29,7 @@ const registerAppSchema = z.object({
 });
 
 const registerLookupSchema = z.object({
+  organizationId: z.string().trim().min(1, "organizationId is required"),
   appId: z
     .string()
     .trim()
@@ -67,6 +69,7 @@ export const Route = createFileRoute("/api/internal/apps/register")({
       GET: async ({ request }) => {
         const url = new URL(request.url);
         const parsed = registerLookupSchema.safeParse({
+          organizationId: url.searchParams.get("organizationId"),
           appId: url.searchParams.get("appId"),
         });
 
@@ -80,7 +83,10 @@ export const Route = createFileRoute("/api/internal/apps/register")({
           );
         }
 
-        const existingApp = await AppRepository.findByAppId(parsed.data.appId);
+        const existingApp = await AppRepository.findByAppId(
+          parsed.data.appId,
+          parsed.data.organizationId,
+        );
         return jsonResponse({
           existingApp: Boolean(existingApp),
           defaultAccess: Boolean(existingApp?.isDefault),
@@ -108,8 +114,10 @@ export const Route = createFileRoute("/api/internal/apps/register")({
         const payload = parsed.data;
 
         const [allUsers, existingApp] = await Promise.all([
-          UserRepository.findAllForList(),
-          AppRepository.findByAppId(payload.appId),
+          OrganizationMembersRepository.listMembersForOrganization(
+            payload.organizationId,
+          ),
+          AppRepository.findByAppId(payload.appId, payload.organizationId),
         ]);
 
         const ownerUserIds = allUsers
@@ -120,6 +128,7 @@ export const Route = createFileRoute("/api/internal/apps/register")({
 
         if (existingApp) {
           await AppRepository.update(existingApp.id, {
+            organizationId: payload.organizationId,
             name: payload.name,
             description: payload.description,
             appUrl: payload.appUrl,
@@ -129,6 +138,7 @@ export const Route = createFileRoute("/api/internal/apps/register")({
         } else {
           await AppRepository.create({
             id: appId,
+            organizationId: payload.organizationId,
             appId: payload.appId,
             name: payload.name,
             description: payload.description,
@@ -143,18 +153,21 @@ export const Route = createFileRoute("/api/internal/apps/register")({
           payload.selectedUserIds,
           allUsers.map((user) => user.id),
         );
-
         const accessUserIdsWithOwners = Array.from(
           new Set(ownerUserIds.concat(accessUserIds)),
         );
 
-        // Intentionally additive: this endpoint can grant access during
-        // registration/updates, but it does not revoke existing access.
-        // For full replacement semantics, use updateAccessForApp instead.
-        await AppAccessService.grantAccessBatchAdditive(
-          accessUserIdsWithOwners,
-          appId,
-        );
+        if (
+          payload.accessMode !== "none" ||
+          (!existingApp && ownerUserIds.length > 0)
+        ) {
+          await AppAccessService.updateAccessForApp(
+            appId,
+            payload.organizationId,
+            accessUserIdsWithOwners,
+            null,
+          );
+        }
 
         return jsonResponse({
           appId,

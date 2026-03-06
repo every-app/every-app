@@ -1,6 +1,7 @@
 import chalk from "chalk";
 import enquirer from "enquirer";
 import { getValidCloudflareToken } from "@/lib/cloudflare";
+import { resolveOrganizationIdForGateway } from "@/lib/gateway-org";
 import { exitWithUpdateNotice } from "@/lib/version-check";
 
 interface InsertUserAppOptions {
@@ -17,19 +18,13 @@ interface GatewayUser {
   id: string;
   name: string;
   email: string;
-  role: string | null;
 }
 
-type AccessMode = "all" | "select" | "none";
-
-interface GatewayApiError {
+interface GatewayErrorPayload {
   error?: string;
 }
 
-interface AppRegistrationState {
-  existingApp: boolean;
-  defaultAccess: boolean;
-}
+type AccessMode = "all" | "select" | "none";
 
 const GATEWAY_INTERNAL_API_TIMEOUT_MS = 15_000;
 const OUTDATED_GATEWAY_ERROR = "OUTDATED_GATEWAY";
@@ -56,9 +51,9 @@ async function callGatewayInternalApi<T>(
     throw new Error(OUTDATED_GATEWAY_ERROR);
   }
 
-  let payload: GatewayApiError & T;
+  let payload: GatewayErrorPayload & T;
   try {
-    payload = (await response.json()) as GatewayApiError & T;
+    payload = (await response.json()) as GatewayErrorPayload & T;
   } catch {
     if (!response.ok) {
       throw new Error(`Gateway request failed (${response.status})`);
@@ -72,7 +67,9 @@ async function callGatewayInternalApi<T>(
       throw new Error(GATEWAY_INTERNAL_AUTH_ERROR);
     }
 
-    throw new Error(payload.error || `Gateway request failed (${response.status})`);
+    throw new Error(
+      payload.error || `Gateway request failed (${response.status})`,
+    );
   }
 
   return payload;
@@ -80,7 +77,7 @@ async function callGatewayInternalApi<T>(
 
 export async function insertUserAppRecords(
   options: InsertUserAppOptions,
-): Promise<void> {
+): Promise<{ organizationId: string }> {
   const {
     appId,
     appUrl,
@@ -98,48 +95,62 @@ export async function insertUserAppRecords(
     }
 
     const cloudflareToken = await getValidCloudflareToken();
+    const organizationId = await resolveOrganizationIdForGateway({
+      verbose,
+      gatewayUrl,
+      cloudflareToken,
+    });
+
     const displayName = appName || appId;
     const displayDescription = appDescription || appId;
 
-    const registrationState = await callGatewayInternalApi<AppRegistrationState>(
+    const registrationState = await callGatewayInternalApi<{
+      existingApp: boolean;
+      defaultAccess: boolean;
+    }>(
       gatewayUrl,
-      `/api/internal/apps/register?appId=${encodeURIComponent(appId)}`,
+      `/api/internal/apps/register?organizationId=${encodeURIComponent(organizationId)}&appId=${encodeURIComponent(appId)}`,
       cloudflareToken,
       "GET",
     );
 
     if (registrationState.existingApp && verbose) {
       console.log(
-        chalk.dim("App already configured in gateway. Skipping access prompts."),
+        chalk.dim(
+          "App already configured in gateway. Skipping access prompts.",
+        ),
       );
     }
 
     const defaultAccess = registrationState.existingApp
       ? registrationState.defaultAccess
-      : await promptForDefaultAccess("Add future users by default to this app?");
+      : await promptForDefaultAccess(
+          "Add future users by default to this app?",
+        );
 
     let accessMode: AccessMode = "none";
     let selectedUserIds: string[] = [];
 
     if (!registrationState.existingApp) {
-      const usersResponse = await callGatewayInternalApi<{ users: GatewayUser[] }>(
+      const usersResponse = await callGatewayInternalApi<{
+        users: GatewayUser[];
+      }>(
         gatewayUrl,
-        "/api/internal/apps/users",
+        `/api/internal/apps/users?organizationId=${encodeURIComponent(organizationId)}`,
         cloudflareToken,
         "GET",
       );
 
       const users = usersResponse.users;
-      const nonOwnerUsers = users.filter((user) => user.role !== "owner");
 
-      if (nonOwnerUsers.length > 0) {
+      if (users.length > 0) {
         accessMode = await promptForAccessMode();
       }
 
       if (accessMode === "all") {
         selectedUserIds = users.map((user) => user.id);
       } else if (accessMode === "select") {
-        selectedUserIds = await promptForUserSelection(nonOwnerUsers);
+        selectedUserIds = await promptForUserSelection(users);
       }
     }
 
@@ -149,22 +160,17 @@ export async function insertUserAppRecords(
       existingApp: boolean;
       defaultAccess: boolean;
       grantedUserCount: number;
-    }>(
-      gatewayUrl,
-      "/api/internal/apps/register",
-      cloudflareToken,
-      "POST",
-      {
-        appId,
-        appUrl,
-        name: displayName,
-        description: displayDescription,
-        devUrl,
-        isDefault: defaultAccess,
-        accessMode,
-        selectedUserIds,
-      },
-    );
+    }>(gatewayUrl, "/api/internal/apps/register", cloudflareToken, "POST", {
+      appId,
+      organizationId,
+      appUrl,
+      name: displayName,
+      description: displayDescription,
+      devUrl,
+      isDefault: defaultAccess,
+      accessMode,
+      selectedUserIds,
+    });
 
     if (verbose) {
       console.log(
@@ -178,9 +184,13 @@ export async function insertUserAppRecords(
         ),
       );
       console.log(
-        chalk.dim(`  Access granted to ${registerResponse.grantedUserCount} users\n`),
+        chalk.dim(
+          `  Access granted to ${registerResponse.grantedUserCount} users\n`,
+        ),
       );
     }
+
+    return { organizationId };
   } catch (error) {
     if (
       error instanceof Error &&
@@ -203,7 +213,11 @@ export async function insertUserAppRecords(
           "  Your Cloudflare token must access the same account as the gateway and allow Workers + D1 APIs.",
         ),
       );
-      console.log(chalk.dim("  Re-run `npx everyapp gateway deploy` if this gateway was deployed with older auth checks.\n"));
+      console.log(
+        chalk.dim(
+          "  Re-run `npx everyapp gateway deploy` if this gateway was deployed with older auth checks.\n",
+        ),
+      );
       await exitWithUpdateNotice(1);
     }
 
@@ -242,7 +256,9 @@ async function promptForAccessMode(): Promise<AccessMode> {
   return mode;
 }
 
-async function promptForUserSelection(users: GatewayUser[]): Promise<string[]> {
+async function promptForUserSelection(
+  users: GatewayUser[],
+): Promise<string[]> {
   const { selected } = await enquirer.prompt<{ selected: string[] }>({
     type: "multiselect",
     name: "selected",

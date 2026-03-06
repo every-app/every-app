@@ -61,6 +61,8 @@ export async function checkGatewayHasOwner(
   gatewayUrl: string,
 ): Promise<boolean> {
   try {
+    // This endpoint is intentionally public because it is queried before
+    // authentication exists during initial gateway bootstrap.
     const response = await fetch(`${gatewayUrl}/api/admin/has-owner`);
     if (!response.ok) {
       // If endpoint doesn't exist or errors, assume no owner

@@ -81,7 +81,7 @@ export default async function (
     await writeEveryAppConfig(targetDir, { appId });
 
     // Deploy to Cloudflare (creates D1/KV, installs deps, runs prod migrations, deploys)
-    const { workerUrl, gatewayUrl } = await deployApp({
+    const { workerUrl, gatewayUrl, organizationId } = await deployApp({
       cwd: targetDir,
       appId,
       verbose,
@@ -91,6 +91,7 @@ export default async function (
     const localGatewayAppApiToken = await provisionGatewayAppApiToken({
       gatewayUrl,
       appId,
+      organizationId,
     });
 
     // Local setup: create .env.local and run local migrations
