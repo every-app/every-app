@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { env } from "cloudflare:workers";
-import { ownerMiddleware } from "@/middleware/auth";
+import { organizationOwnerMiddleware } from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
 import { PublicError } from "@/server/errors";
 import { AdminService } from "@/server/services/AdminService";
@@ -50,7 +50,7 @@ export const initializeOwner = createServerFn()
  * Only accessible by owners.
  */
 export const listUsers = createServerFn()
-  .middleware([publicErrorMiddleware, ownerMiddleware])
+  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
   .handler(async () => {
     return AdminService.listUsers();
   });
@@ -65,7 +65,7 @@ const deleteUserSchema = z.object({
  * Cannot delete yourself.
  */
 export const deleteUser = createServerFn()
-  .middleware([publicErrorMiddleware, ownerMiddleware])
+  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
   .inputValidator((data: unknown) => deleteUserSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AdminService.deleteUser(data.userId, context.user.id);
@@ -86,7 +86,7 @@ const createInviteLinkSchema = z.object({
  * Only accessible by owners.
  */
 export const createInviteLink = createServerFn()
-  .middleware([publicErrorMiddleware, ownerMiddleware])
+  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
   .inputValidator((data: unknown) => createInviteLinkSchema.parse(data))
   .handler(async ({ data }) => {
     return AdminService.createInviteLink(data.email);
@@ -101,7 +101,7 @@ const regenerateInviteLinkSchema = z.object({
  * Only accessible by owners.
  */
 export const regenerateInviteLink = createServerFn()
-  .middleware([publicErrorMiddleware, ownerMiddleware])
+  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
   .inputValidator((data: unknown) => regenerateInviteLinkSchema.parse(data))
   .handler(async ({ data }) => {
     return AdminService.regenerateInviteLink(data.userId);
@@ -116,7 +116,7 @@ const createPasswordResetLinkSchema = z.object({
  * Only accessible by owners.
  */
 export const createPasswordResetLink = createServerFn()
-  .middleware([publicErrorMiddleware, ownerMiddleware])
+  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
   .inputValidator((data: unknown) => createPasswordResetLinkSchema.parse(data))
   .handler(async ({ data }) => {
     return AdminService.createPasswordResetLink(data.userId);

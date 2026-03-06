@@ -40,16 +40,24 @@ export function isBypassGatewayLocalOnlyServer(): boolean {
   return false;
 }
 
-export function createBypassGatewayLocalOnlySessionPayload(audience: string) {
+export function createBypassGatewayLocalOnlySessionPayload(
+  audience: string,
+  orgId: string,
+) {
   const issuedAt = Math.floor(Date.now() / 1000);
   const expiresAt = issuedAt + 60 * 60;
 
-  return {
+  const payload = {
     sub: BYPASS_GATEWAY_LOCAL_ONLY_USER_ID,
     email: BYPASS_GATEWAY_LOCAL_ONLY_EMAIL,
     iss: "local",
     aud: audience,
     iat: issuedAt,
     exp: expiresAt,
+  };
+
+  return {
+    ...payload,
+    orgId,
   };
 }

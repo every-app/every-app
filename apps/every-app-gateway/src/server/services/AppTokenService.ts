@@ -85,16 +85,17 @@ function tokenPrefix(
   return `${TOKEN_PREFIX_SCHEME}${token.slice(randomStart, randomEnd)}`;
 }
 
-async function list() {
-  const tokens = await AppTokenRepository.findAllForAdmin();
+async function list(organizationId: string) {
+  const tokens = await AppTokenRepository.findAllForAdmin(organizationId);
   return { tokens };
 }
 
 async function create(
   data: CreateAppTokenInput,
+  organizationId: string,
   createdByUserId: string | null,
 ) {
-  const app = await AppRepository.findById(data.appId);
+  const app = await AppRepository.findById(data.appId, organizationId);
   if (!app) {
     throw new PublicError("APP_NOT_FOUND", "App not found");
   }
@@ -111,6 +112,7 @@ async function create(
   await AppTokenRepository.create({
     id,
     appId: app.id,
+    organizationId,
     tokenHash: hash,
     tokenPrefix: tokenPrefixValue,
     scopes,
@@ -130,8 +132,8 @@ async function create(
   };
 }
 
-async function revoke(tokenId: string) {
-  const existing = await AppTokenRepository.findById(tokenId);
+async function revoke(tokenId: string, organizationId: string) {
+  const existing = await AppTokenRepository.findById(tokenId, organizationId);
   if (!existing) {
     throw new PublicError("TOKEN_NOT_FOUND", "Token not found");
   }
@@ -140,7 +142,7 @@ async function revoke(tokenId: string) {
     return { alreadyRevoked: true };
   }
 
-  await AppTokenRepository.revoke(tokenId);
+  await AppTokenRepository.revoke(tokenId, organizationId);
   return { alreadyRevoked: false };
 }
 

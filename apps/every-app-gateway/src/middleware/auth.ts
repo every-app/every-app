@@ -2,38 +2,21 @@ import { createAuth, type Auth } from "@/auth";
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { GatewayError } from "@/server/errors";
-
-type UserRole = "owner" | "user" | "admin";
-
-/**
- * Checks if a user has the owner role.
- * Used by ownerMiddleware to restrict access to owner-only endpoints.
- *
- * @param role - The user's role from their session
- * @returns true if the user is an owner
- */
-function isOwner(role: string | undefined | null): boolean {
-  return role === "owner";
-}
-
-/**
- * Checks if a user has one of the allowed roles.
- *
- * @param role - The user's role from their session
- * @param allowedRoles - Array of roles that are permitted
- * @returns true if the user's role is in the allowed list
- */
-function hasRole(
-  role: string | undefined | null,
-  allowedRoles: UserRole[],
-): boolean {
-  if (!role) return false;
-  return allowedRoles.includes(role as UserRole);
-}
+import {
+  resolvePrimaryOrganizationRole,
+  type OrganizationRole,
+} from "@/server/org-roles";
 
 export interface AuthContext {
   user: Auth["$Infer"]["Session"]["user"];
   session: Auth["$Infer"]["Session"]["session"];
+  activeOrganizationId: string | null;
+  activeOrganizationRole: OrganizationRole | null;
+}
+
+export interface OrganizationContext extends AuthContext {
+  activeOrganizationId: string;
+  activeOrganizationRole: OrganizationRole;
 }
 
 export const authMiddleware = createMiddleware({
@@ -52,26 +35,80 @@ export const authMiddleware = createMiddleware({
     throw new GatewayError("UNAUTHORIZED", "Unauthorized");
   }
 
-  return next({
-    context: {
-      user: session.user,
-      session: session.session,
-    } as AuthContext,
-  });
+  const authContext: AuthContext = {
+    user: session.user,
+    session: session.session,
+    activeOrganizationId: session.session.activeOrganizationId ?? null,
+    activeOrganizationRole: null,
+  };
+
+  return next({ context: authContext });
 });
 
 /**
- * Middleware that requires the user to have the "owner" role.
- * Chains with authMiddleware to inherit the AuthContext type.
+ * Middleware that requires the current user to be a member
+ * of an active organization.
  */
-export const ownerMiddleware = createMiddleware({
+export const organizationMemberMiddleware = createMiddleware({
   type: "function",
 })
   .middleware([authMiddleware])
   .server(async ({ next, context }) => {
-    if (!isOwner(context.user.role)) {
-      throw new GatewayError("UNAUTHORIZED", "Unauthorized");
+    if (!context.activeOrganizationId) {
+      throw new GatewayError(
+        "UNAUTHORIZED",
+        "Unauthorized: Active organization required",
+      );
     }
 
-    return next();
+    const auth = createAuth();
+    const request = getRequest();
+
+    const activeMember = await auth.api.getActiveMember({
+      headers: request.headers,
+    });
+
+    if (!activeMember) {
+      throw new GatewayError(
+        "UNAUTHORIZED",
+        "Unauthorized: Organization membership required",
+      );
+    }
+
+    const activeOrganizationRole = resolvePrimaryOrganizationRole(
+      activeMember.role,
+    );
+
+    if (!activeOrganizationRole) {
+      throw new GatewayError(
+        "UNAUTHORIZED",
+        "Unauthorized: Organization role required",
+      );
+    }
+
+    const organizationContext: OrganizationContext = {
+      ...context,
+      activeOrganizationId: context.activeOrganizationId,
+      activeOrganizationRole,
+    };
+
+    return next({ context: organizationContext });
+  });
+
+/**
+ * Middleware that requires owner access for the active organization.
+ */
+export const organizationOwnerMiddleware = createMiddleware({
+  type: "function",
+})
+  .middleware([organizationMemberMiddleware])
+  .server(async ({ next, context }) => {
+    if (context.activeOrganizationRole !== "owner") {
+      throw new GatewayError(
+        "UNAUTHORIZED",
+        "Unauthorized: Organization owner access required",
+      );
+    }
+
+    return next({ context });
   });

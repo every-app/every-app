@@ -51,6 +51,7 @@ describe("createAiGatewayAuthenticator", () => {
     mockAppTokenRepository.findActiveByTokenHash.mockResolvedValue({
       id: "token-1",
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["provider:openai"],
     });
     const authenticate = createAiGatewayAuthenticator(buildEnv());
@@ -66,12 +67,17 @@ describe("createAiGatewayAuthenticator", () => {
       "plaintext-app-token",
       "test-secret",
     );
+    expect(mockAppTokenRepository.touchLastUsed).toHaveBeenCalledWith(
+      "token-1",
+      "org-123",
+    );
   });
 
   it("rejects requests that include an Authorization header", async () => {
     mockAppTokenRepository.findActiveByTokenHash.mockResolvedValue({
       id: "token-1",
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["provider:*"],
     });
     const authenticate = createAiGatewayAuthenticator(buildEnv());
@@ -111,6 +117,7 @@ describe("createAiGatewayAuthenticator", () => {
     mockAppTokenRepository.findActiveByTokenHash.mockResolvedValue({
       id: "token-1",
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["provider:anthropic"],
     });
     const authenticate = createAiGatewayAuthenticator(buildEnv());

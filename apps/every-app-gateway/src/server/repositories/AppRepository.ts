@@ -1,10 +1,11 @@
 import { db } from "@/db";
 import { apps, userAppAccess } from "@/db/schema";
-import { eq, sql, count } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 
 // Types for repository operations
 type CreateApp = {
   id: string;
+  organizationId: string;
   appId: string;
   name: string;
   description: string;
@@ -14,6 +15,7 @@ type CreateApp = {
 };
 
 type UpdateApp = {
+  organizationId: string;
   name?: string;
   description?: string;
   appUrl?: string;
@@ -24,8 +26,9 @@ type UpdateApp = {
 /**
  * Find all apps in the catalog.
  */
-async function findAll() {
+async function findAll(organizationId: string) {
   return db.query.apps.findMany({
+    where: eq(apps.organizationId, organizationId),
     orderBy: (apps, { asc }) => [asc(apps.name)],
   });
 }
@@ -33,10 +36,11 @@ async function findAll() {
 /**
  * Find all apps with access counts in a single query.
  */
-async function findAllWithAccessCounts() {
+async function findAllWithAccessCounts(organizationId: string) {
   const results = await db
     .select({
       id: apps.id,
+      organizationId: apps.organizationId,
       appId: apps.appId,
       name: apps.name,
       description: apps.description,
@@ -48,7 +52,14 @@ async function findAllWithAccessCounts() {
       accessCount: count(userAppAccess.id),
     })
     .from(apps)
-    .leftJoin(userAppAccess, eq(apps.id, userAppAccess.appId))
+    .leftJoin(
+      userAppAccess,
+      and(
+        eq(apps.id, userAppAccess.appId),
+        eq(apps.organizationId, userAppAccess.organizationId),
+      ),
+    )
+    .where(eq(apps.organizationId, organizationId))
     .groupBy(apps.id)
     .orderBy(apps.name);
 
@@ -58,27 +69,30 @@ async function findAllWithAccessCounts() {
 /**
  * Find an app by its primary key ID.
  */
-async function findById(id: string) {
+async function findById(id: string, organizationId: string) {
   return db.query.apps.findFirst({
-    where: eq(apps.id, id),
+    where: and(eq(apps.id, id), eq(apps.organizationId, organizationId)),
   });
 }
 
 /**
  * Find an app by its appId (slug).
  */
-async function findByAppId(appId: string) {
+async function findByAppId(appId: string, organizationId: string) {
   return db.query.apps.findFirst({
-    where: eq(apps.appId, appId),
+    where: and(eq(apps.appId, appId), eq(apps.organizationId, organizationId)),
   });
 }
 
 /**
  * Find all apps marked as default.
  */
-async function findAllDefault() {
+async function findAllDefault(organizationId: string) {
   return db.query.apps.findMany({
-    where: eq(apps.isDefault, true),
+    where: and(
+      eq(apps.organizationId, organizationId),
+      eq(apps.isDefault, true),
+    ),
   });
 }
 
@@ -88,6 +102,7 @@ async function findAllDefault() {
 async function create(data: CreateApp) {
   await db.insert(apps).values({
     id: data.id,
+    organizationId: data.organizationId,
     appId: data.appId,
     name: data.name,
     description: data.description,
@@ -101,18 +116,22 @@ async function create(data: CreateApp) {
  * Update an app in the catalog.
  */
 async function update(id: string, data: UpdateApp) {
+  const { organizationId, ...changes } = data;
+
   await db
     .update(apps)
-    .set({ ...data, updatedAt: new Date() })
-    .where(eq(apps.id, id));
+    .set({ ...changes, updatedAt: new Date() })
+    .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId)));
 }
 
 /**
  * Delete an app from the catalog.
  * Note: This cascades to user_app_access due to foreign key constraint.
  */
-async function deleteById(id: string) {
-  await db.delete(apps).where(eq(apps.id, id));
+async function deleteById(id: string, organizationId: string) {
+  await db
+    .delete(apps)
+    .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId)));
 }
 
 export const AppRepository = {

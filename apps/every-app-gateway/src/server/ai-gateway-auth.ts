@@ -21,12 +21,16 @@ async function verifyAppToken(
     return null;
   }
 
-  void AppTokenRepository.touchLastUsed(appToken.id).catch((error) => {
+  void AppTokenRepository.touchLastUsed(
+    appToken.id,
+    appToken.organizationId,
+  ).catch((error) => {
     console.error("Failed to update app token last-used timestamp:", error);
   });
 
   return {
     appId: appToken.appId,
+    organizationId: appToken.organizationId,
     scopes: appToken.scopes,
     tokenId: appToken.id,
   };

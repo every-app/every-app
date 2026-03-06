@@ -23,6 +23,7 @@ describe("authenticateGatewayRequest", () => {
   it("authenticates with app token when no Authorization header is present", async () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["provider:openai"],
       tokenId: "token-1",
     });
@@ -37,6 +38,7 @@ describe("authenticateGatewayRequest", () => {
 
     expect(result.authType).toBe("app");
     expect(result.appId).toBe("chef");
+    expect(result.organizationId).toBe("org-123");
     expect(result.appTokenPayload.tokenId).toBe("token-1");
     expect(verifyAppToken).toHaveBeenCalledWith("valid-app-token");
   });
@@ -44,6 +46,7 @@ describe("authenticateGatewayRequest", () => {
   it("rejects requests with an Authorization header", async () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["provider:*"],
     });
 
@@ -69,6 +72,7 @@ describe("authenticateGatewayRequest", () => {
   it("rejects malformed Authorization header without falling back to app token", async () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["provider:*"],
     });
 
@@ -93,6 +97,7 @@ describe("authenticateGatewayRequest", () => {
   it("rejects app token without provider scope", async () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["provider:anthropic"],
     });
 
@@ -107,9 +112,28 @@ describe("authenticateGatewayRequest", () => {
     ).rejects.toEqual(new GatewayAuthError("insufficient_scope"));
   });
 
+  it("rejects app token payloads without organization id", async () => {
+    verifyAppToken.mockResolvedValue({
+      appId: "chef",
+      organizationId: "",
+      scopes: ["provider:*"],
+    });
+
+    await expect(
+      authenticateGatewayRequest({
+        request: createRequest({
+          [APP_TOKEN_HEADER]: "app-token",
+        }),
+        provider: "openai",
+        verifyAppToken,
+      }),
+    ).rejects.toEqual(new GatewayAuthError("invalid_app_token"));
+  });
+
   it("accepts app token with wildcard provider scope", async () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["provider:*"],
     });
 
@@ -128,6 +152,7 @@ describe("authenticateGatewayRequest", () => {
   it("accepts legacy wildcard scope format", async () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["providers:*"],
     });
 
@@ -158,6 +183,7 @@ describe("authenticateGatewayRequest", () => {
   it("supports custom app token header names", async () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["provider:*"],
     });
 
@@ -177,6 +203,7 @@ describe("authenticateGatewayRequest", () => {
   it("normalizes app token scope matching for case and whitespace", async () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["  provider:OpenAI  "],
     });
 
@@ -194,6 +221,7 @@ describe("authenticateGatewayRequest", () => {
   it("does not treat app-supplied user headers as authenticated user identity", async () => {
     verifyAppToken.mockResolvedValue({
       appId: "chef",
+      organizationId: "org-123",
       scopes: ["provider:*"],
     });
 

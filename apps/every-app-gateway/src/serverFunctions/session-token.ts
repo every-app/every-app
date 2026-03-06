@@ -1,6 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { authMiddleware, type AuthContext } from "@/middleware/auth";
+import {
+  organizationMemberMiddleware,
+  type OrganizationContext,
+} from "@/middleware/auth";
 import { AppService } from "@/server/services/AppService";
 import { issueEmbeddedAppToken } from "@/server/jwt-utils";
 import { EMBEDDED_APP_TOKEN_EXPIRY_SECONDS } from "@/server/constants";
@@ -49,10 +52,11 @@ type SessionTokenResponse = {
   expiresAt: string;
   audience: string;
   appId: string;
+  orgId: string;
 };
 
 export const createSessionToken = createServerFn()
-  .middleware([authMiddleware])
+  .middleware([organizationMemberMiddleware])
   .inputValidator((body: unknown) => SessionTokenRequestBodySchema.parse(body))
   .handler(
     async ({
@@ -60,7 +64,7 @@ export const createSessionToken = createServerFn()
       context,
     }: {
       data: ReturnType<typeof SessionTokenRequestBodySchema.parse>;
-      context: AuthContext;
+      context: OrganizationContext;
     }) => {
       const { user } = context;
       const { appId, requestOrigin, timestamp } = requestData;
@@ -78,7 +82,11 @@ export const createSessionToken = createServerFn()
 
       if (appId) {
         // If appId is provided, verify user has access and origin matches
-        app = await AppService.getByAppIdForUser(appId, user.id);
+        app = await AppService.getByAppIdForUser(
+          appId,
+          user.id,
+          context.activeOrganizationId,
+        );
 
         if (!app) {
           throw new GatewayError(
@@ -96,7 +104,11 @@ export const createSessionToken = createServerFn()
         }
       } else {
         // Otherwise, look up app by origin (also verifies user access)
-        app = await AppService.getByOriginForUser(requestOrigin, user.id);
+        app = await AppService.getByOriginForUser(
+          requestOrigin,
+          user.id,
+          context.activeOrganizationId,
+        );
 
         if (!app) {
           throw new GatewayError(
@@ -107,8 +119,10 @@ export const createSessionToken = createServerFn()
       }
 
       // Issue a JWT token for the specific embedded app
-      // The token contains minimal claims: sub (userId), email, aud (appId), iss, exp, iat
-      const token = await issueEmbeddedAppToken(user, app.appId, {});
+      // The token contains minimal claims: sub (userId), email, aud (appId), orgId, iss, exp, iat
+      const token = await issueEmbeddedAppToken(user, app.appId, {
+        orgId: context.activeOrganizationId,
+      });
 
       const response: SessionTokenResponse = {
         token,
@@ -117,6 +131,7 @@ export const createSessionToken = createServerFn()
         ).toISOString(),
         audience: app.appId,
         appId: app.appId,
+        orgId: context.activeOrganizationId,
       };
 
       return response;

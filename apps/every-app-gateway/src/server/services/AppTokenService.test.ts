@@ -33,6 +33,7 @@ import { hashAppToken } from "../app-token-hash";
 const mockAppRepository = vi.mocked(AppRepository);
 const mockAppTokenRepository = vi.mocked(AppTokenRepository);
 const mockHashAppToken = vi.mocked(hashAppToken);
+const ORG_ID = "org-123";
 
 describe("AppTokenService", () => {
   beforeEach(() => {
@@ -62,7 +63,7 @@ describe("AppTokenService", () => {
         },
       ]);
 
-      const result = await AppTokenService.list();
+      const result = await AppTokenService.list(ORG_ID);
       expect(result.tokens).toHaveLength(1);
       expect(result.tokens[0]?.appSlug).toBe("chef");
     });
@@ -84,6 +85,7 @@ describe("AppTokenService", () => {
           scopes: [" provider:OpenAI ", "provider:openai", "provider:*"],
           expiresAt: null,
         },
+        ORG_ID,
         "owner-id",
       );
 
@@ -115,6 +117,7 @@ describe("AppTokenService", () => {
             scopes: ["provider:openai"],
             expiresAt: null,
           },
+          ORG_ID,
           "owner-id",
         ),
       ).rejects.toThrow("App not found");
@@ -135,6 +138,7 @@ describe("AppTokenService", () => {
           scopes: ["provider:openai"],
           expiresAt: null,
         },
+        ORG_ID,
         null,
       );
 
@@ -159,6 +163,7 @@ describe("AppTokenService", () => {
             scopes: ["read:all"],
             expiresAt: null,
           },
+          ORG_ID,
           "owner-id",
         ),
       ).rejects.toThrow("Invalid scope: read:all");
@@ -173,10 +178,13 @@ describe("AppTokenService", () => {
       } as any);
       mockAppTokenRepository.revoke.mockResolvedValue(undefined);
 
-      const result = await AppTokenService.revoke("token-id");
+      const result = await AppTokenService.revoke("token-id", ORG_ID);
 
       expect(result.alreadyRevoked).toBe(false);
-      expect(mockAppTokenRepository.revoke).toHaveBeenCalledWith("token-id");
+      expect(mockAppTokenRepository.revoke).toHaveBeenCalledWith(
+        "token-id",
+        ORG_ID,
+      );
     });
 
     it("returns already revoked when token is revoked", async () => {
@@ -185,7 +193,7 @@ describe("AppTokenService", () => {
         revokedAt: new Date(),
       } as any);
 
-      const result = await AppTokenService.revoke("token-id");
+      const result = await AppTokenService.revoke("token-id", ORG_ID);
 
       expect(result.alreadyRevoked).toBe(true);
       expect(mockAppTokenRepository.revoke).not.toHaveBeenCalled();
@@ -194,9 +202,9 @@ describe("AppTokenService", () => {
     it("throws when token does not exist", async () => {
       mockAppTokenRepository.findById.mockResolvedValue(null);
 
-      await expect(AppTokenService.revoke("missing-token")).rejects.toThrow(
-        "Token not found",
-      );
+      await expect(
+        AppTokenService.revoke("missing-token", ORG_ID),
+      ).rejects.toThrow("Token not found");
     });
   });
 });

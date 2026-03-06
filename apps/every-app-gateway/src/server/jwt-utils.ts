@@ -11,7 +11,9 @@ const JWT_KEY_ID = "embedded-app-key-1";
 
 // JWT additional claims schema - minimal for security
 // appId uses aud claim, permissions/embeddedApp/name removed as unused
-const JWTAdditionalClaimsSchema = z.object({});
+const JWTAdditionalClaimsSchema = z.object({
+  orgId: z.string().min(1),
+});
 
 type JWTAdditionalClaims = z.infer<typeof JWTAdditionalClaimsSchema>;
 

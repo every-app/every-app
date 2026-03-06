@@ -1,6 +1,6 @@
 import { AppRepository } from "../repositories/AppRepository";
 import { AppAccessRepository } from "../repositories/AppAccessRepository";
-import { UserRepository } from "../repositories/UserRepository";
+import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { isValidAppOrigin } from "@/utils/origin-validator";
 import { PublicError } from "@/server/errors";
 
@@ -28,24 +28,24 @@ type UpdateAppInput = {
 /**
  * Get all apps in the catalog.
  */
-async function getAll() {
-  const allApps = await AppRepository.findAll();
+async function getAll(organizationId: string) {
+  const allApps = await AppRepository.findAll(organizationId);
   return { apps: allApps };
 }
 
 /**
  * Get all apps with user access counts.
  */
-async function getAllWithAccessCounts() {
-  const apps = await AppRepository.findAllWithAccessCounts();
+async function getAllWithAccessCounts(organizationId: string) {
+  const apps = await AppRepository.findAllWithAccessCounts(organizationId);
   return { apps };
 }
 
 /**
  * Get a single app by ID.
  */
-async function getById(id: string) {
-  const app = await AppRepository.findById(id);
+async function getById(id: string, organizationId: string) {
+  const app = await AppRepository.findById(id, organizationId);
   if (!app) {
     throw new PublicError("APP_NOT_FOUND", "App not found");
   }
@@ -55,8 +55,8 @@ async function getById(id: string) {
 /**
  * Get a single app by appId (slug).
  */
-async function getByAppId(appId: string) {
-  const app = await AppRepository.findByAppId(appId);
+async function getByAppId(appId: string, organizationId: string) {
+  const app = await AppRepository.findByAppId(appId, organizationId);
   if (!app) {
     return null;
   }
@@ -68,9 +68,16 @@ async function getByAppId(appId: string) {
  * Always grants access to the creating user (owner).
  * Optionally grant access to all existing users.
  */
-async function create(data: CreateAppInput, grantedBy?: string) {
+async function create(
+  data: CreateAppInput,
+  organizationId: string,
+  grantedBy?: string,
+) {
   // Check if app with this appId already exists
-  const existingApp = await AppRepository.findByAppId(data.appId);
+  const existingApp = await AppRepository.findByAppId(
+    data.appId,
+    organizationId,
+  );
   if (existingApp) {
     throw new PublicError(
       "APP_ID_ALREADY_EXISTS",
@@ -83,6 +90,7 @@ async function create(data: CreateAppInput, grantedBy?: string) {
 
   await AppRepository.create({
     id,
+    organizationId,
     appId: data.appId,
     name: data.name,
     description: data.description,
@@ -93,9 +101,13 @@ async function create(data: CreateAppInput, grantedBy?: string) {
 
   // If requested, grant access to all existing users
   if (data.grantToAllExisting) {
-    const allUsers = await UserRepository.findAllForList();
+    const allUsers =
+      await OrganizationMembersRepository.listMembersForOrganization(
+        organizationId,
+      );
     const accessRecords = allUsers.map((user) => ({
       id: crypto.randomUUID(),
+      organizationId,
       userId: user.id,
       appId: id,
       grantedBy,
@@ -106,6 +118,7 @@ async function create(data: CreateAppInput, grantedBy?: string) {
     // Always grant access to the creating owner
     await AppAccessRepository.create({
       id: crypto.randomUUID(),
+      organizationId,
       userId: grantedBy,
       appId: id,
       grantedBy,
@@ -118,13 +131,14 @@ async function create(data: CreateAppInput, grantedBy?: string) {
 /**
  * Update an app in the catalog.
  */
-async function update(data: UpdateAppInput) {
-  const existingApp = await AppRepository.findById(data.id);
+async function update(data: UpdateAppInput, organizationId: string) {
+  const existingApp = await AppRepository.findById(data.id, organizationId);
   if (!existingApp) {
     throw new PublicError("APP_NOT_FOUND", "App not found");
   }
 
   await AppRepository.update(data.id, {
+    organizationId,
     name: data.name,
     description: data.description,
     appUrl: data.appUrl,
@@ -137,13 +151,13 @@ async function update(data: UpdateAppInput) {
  * Delete an app from the catalog.
  * This cascades and removes all user access records.
  */
-async function deleteApp(id: string) {
-  const existingApp = await AppRepository.findById(id);
+async function deleteApp(id: string, organizationId: string) {
+  const existingApp = await AppRepository.findById(id, organizationId);
   if (!existingApp) {
     throw new PublicError("APP_NOT_FOUND", "App not found");
   }
 
-  await AppRepository.delete(id);
+  await AppRepository.delete(id, organizationId);
 }
 
 /**
@@ -162,9 +176,13 @@ type AppConfigForToken = {
 async function getByOriginForUser(
   origin: string,
   userId: string,
+  organizationId: string,
 ): Promise<AppConfigForToken | null> {
   // Get all apps user has access to
-  const userAccessRecords = await AppAccessRepository.findAllByUserId(userId);
+  const userAccessRecords = await AppAccessRepository.findAllByUserId(
+    userId,
+    organizationId,
+  );
 
   // Find app matching the origin
   const matchingAccess = userAccessRecords.find((access) =>
@@ -189,8 +207,13 @@ async function getByOriginForUser(
 async function getByAppIdForUser(
   appId: string,
   userId: string,
+  organizationId: string,
 ): Promise<AppConfigForToken | null> {
-  const access = await AppAccessRepository.findByUserAndAppSlug(userId, appId);
+  const access = await AppAccessRepository.findByUserAndAppSlug(
+    userId,
+    appId,
+    organizationId,
+  );
 
   if (!access) {
     return null;

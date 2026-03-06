@@ -28,6 +28,8 @@ describe("authenticateRequest", () => {
   };
   const workersEnv = env as unknown as {
     BYPASS_GATEWAY_LOCAL_ONLY?: string;
+    APP_TENANCY_MODE?: string;
+    EVERY_APP_ORG_ID?: string;
   };
 
   beforeEach(async () => {
@@ -61,6 +63,8 @@ describe("authenticateRequest", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     delete workersEnv.BYPASS_GATEWAY_LOCAL_ONLY;
+    delete workersEnv.APP_TENANCY_MODE;
+    delete workersEnv.EVERY_APP_ORG_ID;
   });
 
   async function createValidToken(overrides: Record<string, unknown> = {}) {
@@ -125,6 +129,7 @@ describe("authenticateRequest", () => {
   describe("BYPASS_GATEWAY_LOCAL_ONLY mode", () => {
     it("accepts the local bypass token when BYPASS_GATEWAY_LOCAL_ONLY is true", async () => {
       workersEnv.BYPASS_GATEWAY_LOCAL_ONLY = "true";
+      workersEnv.EVERY_APP_ORG_ID = "org-123";
       const request = createRequest("Bearer BYPASS_GATEWAY_LOCAL_ONLY");
 
       const result = await authenticateRequest(authConfig, request);
@@ -134,7 +139,18 @@ describe("authenticateRequest", () => {
         email: "demo-local-user@local",
         iss: "local",
         aud: authConfig.audience,
+        orgId: "org-123",
       });
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it("rejects bypass token when EVERY_APP_ORG_ID is missing", async () => {
+      workersEnv.BYPASS_GATEWAY_LOCAL_ONLY = "true";
+      const request = createRequest("Bearer BYPASS_GATEWAY_LOCAL_ONLY");
+
+      const result = await authenticateRequest(authConfig, request);
+
+      expect(result).toBeNull();
       expect(global.fetch).not.toHaveBeenCalled();
     });
 
@@ -150,8 +166,13 @@ describe("authenticateRequest", () => {
   });
 
   describe("valid token verification", () => {
+    beforeEach(() => {
+      // Default expected mode for hosted apps: single-tenant with pinned org
+      workersEnv.EVERY_APP_ORG_ID = "org-123";
+    });
+
     it("returns payload for valid token with correct issuer and audience", async () => {
-      const token = await createValidToken();
+      const token = await createValidToken({ orgId: "org-123" });
       const request = createRequest(`Bearer ${token}`);
 
       const result = await authenticateRequest(authConfig, request);
@@ -165,7 +186,7 @@ describe("authenticateRequest", () => {
     });
 
     it("includes iat and exp claims in returned payload", async () => {
-      const token = await createValidToken();
+      const token = await createValidToken({ orgId: "org-123" });
       const request = createRequest(`Bearer ${token}`);
 
       const result = await authenticateRequest(authConfig, request);
@@ -174,6 +195,73 @@ describe("authenticateRequest", () => {
       expect(typeof result!.iat).toBe("number");
       expect(typeof result!.exp).toBe("number");
       expect(result!.exp).toBeGreaterThan(result!.iat);
+    });
+
+    it("returns payload with orgId when present in token", async () => {
+      const token = await createValidToken({ orgId: "org-123" });
+      const request = createRequest(`Bearer ${token}`);
+
+      const result = await authenticateRequest(authConfig, request);
+
+      expect(result).not.toBeNull();
+      expect(result!.orgId).toBe("org-123");
+    });
+  });
+
+  describe("organization enforcement", () => {
+    it("defaults to single-tenant mode", async () => {
+      const token = await createValidToken({ orgId: "org-123" });
+      const request = createRequest(`Bearer ${token}`);
+
+      const result = await authenticateRequest(authConfig, request);
+
+      expect(result).toBeNull();
+    });
+
+    it("accepts token in single-tenant mode when EVERY_APP_ORG_ID matches token orgId", async () => {
+      workersEnv.EVERY_APP_ORG_ID = "org-123";
+      const token = await createValidToken({ orgId: "org-123" });
+      const request = createRequest(`Bearer ${token}`);
+
+      const result = await authenticateRequest(authConfig, request);
+
+      expect(result).not.toBeNull();
+      expect(result!.orgId).toBe("org-123");
+    });
+
+    it("rejects token in single-tenant mode when EVERY_APP_ORG_ID differs from token orgId", async () => {
+      workersEnv.EVERY_APP_ORG_ID = "org-123";
+      const token = await createValidToken({ orgId: "org-999" });
+      const request = createRequest(`Bearer ${token}`);
+
+      const result = await authenticateRequest(authConfig, request);
+
+      expect(result).toBeNull();
+    });
+
+    it("rejects token when token has no orgId claim", async () => {
+      workersEnv.EVERY_APP_ORG_ID = "org-123";
+      const token = await createValidToken();
+      const request = createRequest(`Bearer ${token}`);
+
+      const result = await authenticateRequest(authConfig, request);
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe("multi-tenant mode behavior", () => {
+    // Multi-tenant mode is an advanced opt-in. In this mode the SDK skips
+    // org pinning checks and expects the app to enforce organization auth.
+    it("skips org pinning checks when APP_TENANCY_MODE is multi", async () => {
+      workersEnv.APP_TENANCY_MODE = "multi";
+      const token = await createValidToken({ orgId: "org-999" });
+      const request = createRequest(`Bearer ${token}`);
+
+      const result = await authenticateRequest(authConfig, request);
+
+      expect(result).not.toBeNull();
+      expect(result!.orgId).toBe("org-999");
     });
   });
 

@@ -31,7 +31,19 @@ interface SessionTokenPayload {
   iat: number;
   /** User email - used for user provisioning in apps */
   email?: string;
+  /** Organization ID used for org-bound runtime enforcement */
+  orgId?: string;
 }
+
+type GatewayRuntimeEnv = {
+  BYPASS_GATEWAY_LOCAL_ONLY?: string;
+  APP_TENANCY_MODE?: string;
+  EVERY_APP_ORG_ID?: string;
+};
+
+type AppTenancyMode = "single" | "multi";
+
+type OrgValidationSource = "bypass" | "session";
 
 export async function authenticateRequest(
   authConfig: AuthConfig,
@@ -39,13 +51,12 @@ export async function authenticateRequest(
 ): Promise<SessionTokenPayload | null> {
   const request = providedRequest || getRequest();
   const authHeader = request.headers.get("authorization");
+  const expectedOrganizationId = getOptionalEnvValue("EVERY_APP_ORG_ID");
+  const appTenancyMode = getAppTenancyMode();
 
-  const bypassGatewayLocalOnlyEnv = (
-    env as { BYPASS_GATEWAY_LOCAL_ONLY?: string }
-  ).BYPASS_GATEWAY_LOCAL_ONLY;
   const isBypassGatewayLocalOnly =
     import.meta.env.PROD !== true &&
-    (bypassGatewayLocalOnlyEnv === "true" ||
+    (getOptionalEnvValue("BYPASS_GATEWAY_LOCAL_ONLY") === "true" ||
       isBypassGatewayLocalOnlyServer() === true);
 
   if (!authHeader) {
@@ -63,11 +74,53 @@ export async function authenticateRequest(
       return null;
     }
 
-    return createBypassGatewayLocalOnlySessionPayload(authConfig.audience);
+    if (!expectedOrganizationId) {
+      console.error(
+        JSON.stringify({
+          message:
+            "BYPASS_GATEWAY_LOCAL_ONLY requires EVERY_APP_ORG_ID to be set.",
+          audience: authConfig.audience,
+          appTenancyMode,
+        }),
+      );
+      return null;
+    }
+
+    const session = createBypassGatewayLocalOnlySessionPayload(
+      authConfig.audience,
+      expectedOrganizationId,
+    );
+
+    if (
+      !validateOrganizationBinding({
+        session,
+        source: "bypass",
+        audience: authConfig.audience,
+        expectedOrganizationId,
+        appTenancyMode,
+      })
+    ) {
+      return null;
+    }
+
+    return session;
   }
 
   try {
     const session = await verifySessionToken(token, authConfig);
+
+    if (
+      !validateOrganizationBinding({
+        session,
+        source: "session",
+        audience: authConfig.audience,
+        expectedOrganizationId,
+        appTenancyMode,
+      })
+    ) {
+      return null;
+    }
+
     return session;
   } catch (error) {
     const isProd = import.meta.env.PROD === true;
@@ -84,10 +137,17 @@ export async function authenticateRequest(
         errorType: error instanceof Error ? error.constructor.name : "Unknown",
         issuer: authConfig.issuer,
         audience: authConfig.audience,
+        expectedOrganizationId,
+        appTenancyMode,
       }),
     );
     return null;
   }
+}
+
+function getAppTenancyMode(): AppTenancyMode {
+  const mode = getOptionalEnvValue("APP_TENANCY_MODE")?.toLowerCase();
+  return mode === "multi" ? "multi" : "single";
 }
 
 async function verifySessionToken(
@@ -140,4 +200,68 @@ export function extractBearerToken(authHeader: string | null): string | null {
     return null;
   }
   return authHeader.substring(7);
+}
+
+function getOptionalEnvValue(key: keyof GatewayRuntimeEnv): string | null {
+  const value = (env as GatewayRuntimeEnv)[key];
+  const trimmed = value?.trim();
+  return trimmed || null;
+}
+
+function validateOrganizationBinding({
+  session,
+  source,
+  audience,
+  expectedOrganizationId,
+  appTenancyMode,
+}: {
+  session: SessionTokenPayload;
+  source: OrgValidationSource;
+  audience: string;
+  expectedOrganizationId: string | null;
+  appTenancyMode: AppTenancyMode;
+}): boolean {
+  if (!session.orgId) {
+    console.error(
+      JSON.stringify({
+        message:
+          source === "bypass"
+            ? "Bypass mode requires organization claim"
+            : "Session token is missing orgId. SDK v0.2.0 requires org-bound session tokens. Redeploy the app with EVERY_APP_ORG_ID configured and request a fresh session token.",
+        audience,
+        appTenancyMode,
+      }),
+    );
+    return false;
+  }
+
+  if (appTenancyMode === "single" && !expectedOrganizationId) {
+    console.error(
+      JSON.stringify({
+        message:
+          "EVERY_APP_ORG_ID is required when APP_TENANCY_MODE=single. Configure EVERY_APP_ORG_ID in worker secrets (for example via `every app deploy`) and retry.",
+        audience,
+        appTenancyMode,
+      }),
+    );
+    return false;
+  }
+
+  if (appTenancyMode === "single" && session.orgId !== expectedOrganizationId) {
+    console.error(
+      JSON.stringify({
+        message:
+          source === "bypass"
+            ? "Bypass mode organization mismatch"
+            : "Session token organization mismatch",
+        tokenOrgId: session.orgId,
+        expectedOrganizationId,
+        audience,
+        appTenancyMode,
+      }),
+    );
+    return false;
+  }
+
+  return true;
 }

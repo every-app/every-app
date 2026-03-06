@@ -7,12 +7,14 @@ import type { AdminAppToken } from "@/types/app-token";
 type ActiveAppToken = {
   id: string;
   appId: string;
+  organizationId: string;
   scopes: string[];
 };
 
 type CreateAppTokenInput = {
   id: string;
   appId: string;
+  organizationId: string;
   tokenHash: string;
   tokenPrefix: string;
   scopes: string[];
@@ -32,10 +34,17 @@ async function findActiveByTokenHash(
     .select({
       id: appTokens.id,
       appId: apps.appId,
+      organizationId: apps.organizationId,
       scopes: appTokens.scopes,
     })
     .from(appTokens)
-    .innerJoin(apps, eq(appTokens.appId, apps.id))
+    .innerJoin(
+      apps,
+      and(
+        eq(appTokens.appId, apps.id),
+        eq(appTokens.organizationId, apps.organizationId),
+      ),
+    )
     .where(
       and(
         eq(appTokens.tokenHash, tokenHash),
@@ -53,6 +62,7 @@ async function findActiveByTokenHash(
   return {
     id: token.id,
     appId: token.appId,
+    organizationId: token.organizationId,
     scopes: parseScopes(token.scopes),
   };
 }
@@ -60,14 +70,19 @@ async function findActiveByTokenHash(
 /**
  * Update last-used timestamp after successful authentication.
  */
-async function touchLastUsed(id: string): Promise<void> {
+async function touchLastUsed(
+  id: string,
+  organizationId: string,
+): Promise<void> {
   await db
     .update(appTokens)
     .set({
       lastUsedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(appTokens.id, id));
+    .where(
+      and(eq(appTokens.id, id), eq(appTokens.organizationId, organizationId)),
+    );
 }
 
 function parseScopes(rawScopes: string): string[] {
@@ -83,7 +98,10 @@ function parseScopes(rawScopes: string): string[] {
   }
 }
 
-async function findById(id: string): Promise<AdminAppToken | null> {
+async function findById(
+  id: string,
+  organizationId: string,
+): Promise<AdminAppToken | null> {
   const results = await db
     .select({
       id: appTokens.id,
@@ -101,9 +119,17 @@ async function findById(id: string): Promise<AdminAppToken | null> {
       lastUsedAt: appTokens.lastUsedAt,
     })
     .from(appTokens)
-    .innerJoin(apps, eq(appTokens.appId, apps.id))
+    .innerJoin(
+      apps,
+      and(
+        eq(appTokens.appId, apps.id),
+        eq(appTokens.organizationId, apps.organizationId),
+      ),
+    )
     .leftJoin(users, eq(appTokens.createdBy, users.id))
-    .where(eq(appTokens.id, id))
+    .where(
+      and(eq(appTokens.id, id), eq(appTokens.organizationId, organizationId)),
+    )
     .limit(1);
 
   const token = results[0];
@@ -117,7 +143,9 @@ async function findById(id: string): Promise<AdminAppToken | null> {
   };
 }
 
-async function findAllForAdmin(): Promise<AdminAppToken[]> {
+async function findAllForAdmin(
+  organizationId: string,
+): Promise<AdminAppToken[]> {
   const results = await db
     .select({
       id: appTokens.id,
@@ -135,8 +163,15 @@ async function findAllForAdmin(): Promise<AdminAppToken[]> {
       lastUsedAt: appTokens.lastUsedAt,
     })
     .from(appTokens)
-    .innerJoin(apps, eq(appTokens.appId, apps.id))
+    .innerJoin(
+      apps,
+      and(
+        eq(appTokens.appId, apps.id),
+        eq(appTokens.organizationId, apps.organizationId),
+      ),
+    )
     .leftJoin(users, eq(appTokens.createdBy, users.id))
+    .where(eq(appTokens.organizationId, organizationId))
     .orderBy(desc(appTokens.createdAt));
 
   return results.map((token) => ({
@@ -149,6 +184,7 @@ async function create(data: CreateAppTokenInput): Promise<void> {
   await db.insert(appTokens).values({
     id: data.id,
     appId: data.appId,
+    organizationId: data.organizationId,
     tokenHash: data.tokenHash,
     tokenPrefix: data.tokenPrefix,
     scopes: JSON.stringify(data.scopes),
@@ -157,20 +193,25 @@ async function create(data: CreateAppTokenInput): Promise<void> {
   });
 }
 
-async function revoke(id: string): Promise<void> {
+async function revoke(id: string, organizationId: string): Promise<void> {
   await db
     .update(appTokens)
     .set({
       revokedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(appTokens.id, id));
+    .where(
+      and(eq(appTokens.id, id), eq(appTokens.organizationId, organizationId)),
+    );
 }
 
 /**
  * Check whether an app already has at least one active (non-revoked, non-expired) token.
  */
-async function hasActiveTokenForApp(appId: string): Promise<boolean> {
+async function hasActiveTokenForApp(
+  appId: string,
+  organizationId: string,
+): Promise<boolean> {
   const now = new Date();
   const result = await db
     .select({ id: appTokens.id })
@@ -178,6 +219,7 @@ async function hasActiveTokenForApp(appId: string): Promise<boolean> {
     .where(
       and(
         eq(appTokens.appId, appId),
+        eq(appTokens.organizationId, organizationId),
         isNull(appTokens.revokedAt),
         or(isNull(appTokens.expiresAt), gt(appTokens.expiresAt, now)),
       ),

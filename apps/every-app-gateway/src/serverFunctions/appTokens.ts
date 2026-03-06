@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { ownerMiddleware } from "@/middleware/auth";
+import { organizationOwnerMiddleware } from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
 import { AppTokenService } from "@/server/services/AppTokenService";
 import {
@@ -8,21 +8,21 @@ import {
 } from "@/schemas/app-token";
 
 /**
- * List all app tokens for admin management.
- * Owner-only.
+ * List all app tokens for owner management.
+ * Organization-owner only.
  */
 export const listAppTokens = createServerFn()
-  .middleware([publicErrorMiddleware, ownerMiddleware])
-  .handler(async () => {
-    return AppTokenService.list();
+  .middleware([organizationOwnerMiddleware])
+  .handler(async ({ context }) => {
+    return AppTokenService.list(context.activeOrganizationId);
   });
 
 /**
  * Create a new app token.
- * Owner-only.
+ * Organization-owner only.
  */
 export const createAppToken = createServerFn()
-  .middleware([publicErrorMiddleware, ownerMiddleware])
+  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
   .inputValidator((data: unknown) => createAppTokenSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AppTokenService.create(
@@ -31,17 +31,18 @@ export const createAppToken = createServerFn()
         scopes: data.scopes,
         expiresAt: data.expiresAt ?? null,
       },
+      context.activeOrganizationId,
       context.user.id,
     );
   });
 
 /**
  * Revoke an existing app token.
- * Owner-only.
+ * Organization-owner only.
  */
 export const revokeAppToken = createServerFn()
-  .middleware([publicErrorMiddleware, ownerMiddleware])
+  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
   .inputValidator((data: unknown) => revokeAppTokenSchema.parse(data))
-  .handler(async ({ data }) => {
-    return AppTokenService.revoke(data.tokenId);
+  .handler(async ({ data, context }) => {
+    return AppTokenService.revoke(data.tokenId, context.activeOrganizationId);
   });

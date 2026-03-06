@@ -61,7 +61,7 @@ describe("jwt-utils", () => {
     };
 
     // Minimal additional claims - the token now only contains essential fields
-    const additionalClaims = {};
+    const additionalClaims = { orgId: "org-test-123" };
 
     it("issues a valid JWT token with correct structure", async () => {
       const { issueEmbeddedAppToken } = await import("./jwt-utils");
@@ -126,6 +126,7 @@ describe("jwt-utils", () => {
       });
 
       expect(payload.email).toBe("test@example.com");
+      expect(payload.orgId).toBe("org-test-123");
       // name is intentionally excluded to minimize token payload
       expect(payload.name).toBeUndefined();
     });
@@ -349,7 +350,9 @@ describe("jwt-utils", () => {
         banned: false,
       };
 
-      const token = await issueEmbeddedAppToken(mockUser, "test-audience", {});
+      const token = await issueEmbeddedAppToken(mockUser, "test-audience", {
+        orgId: "org-test-123",
+      });
 
       const jwks = await getPublicJWKS();
       const localJWKS = createLocalJWKSet(jwks);
@@ -379,11 +382,9 @@ describe("jwt-utils", () => {
         banned: false,
       };
 
-      const token = await issueEmbeddedAppToken(
-        mockUser,
-        "correct-audience",
-        {},
-      );
+      const token = await issueEmbeddedAppToken(mockUser, "correct-audience", {
+        orgId: "org-test-123",
+      });
 
       const jwks = await getPublicJWKS();
       const localJWKS = createLocalJWKSet(jwks);
@@ -412,7 +413,9 @@ describe("jwt-utils", () => {
         banned: false,
       };
 
-      const token = await issueEmbeddedAppToken(mockUser, "test-audience", {});
+      const token = await issueEmbeddedAppToken(mockUser, "test-audience", {
+        orgId: "org-test-123",
+      });
 
       const jwks = await getPublicJWKS();
       const localJWKS = createLocalJWKSet(jwks);

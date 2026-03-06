@@ -29,6 +29,7 @@ export class GatewayAuthError extends Error {
 
 export interface AppTokenPayload {
   appId: string;
+  organizationId: string;
   scopes: string[];
   tokenId?: string;
 }
@@ -45,6 +46,7 @@ interface AuthenticateGatewayRequestOptions {
 export type GatewayAuthContext = {
   authType: "app";
   appId: string;
+  organizationId: string;
   appToken: string;
   appTokenPayload: AppTokenPayload;
 };
@@ -78,6 +80,7 @@ export async function authenticateGatewayRequest(
   if (
     !appTokenPayload ||
     !appTokenPayload.appId ||
+    !appTokenPayload.organizationId ||
     !Array.isArray(appTokenPayload.scopes)
   ) {
     throw new GatewayAuthError("invalid_app_token");
@@ -90,6 +93,7 @@ export async function authenticateGatewayRequest(
   return {
     authType: "app",
     appId: appTokenPayload.appId,
+    organizationId: appTokenPayload.organizationId,
     appToken,
     appTokenPayload,
   };

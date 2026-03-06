@@ -51,9 +51,11 @@ describe("handleAiProxyRequest", () => {
       .mockResolvedValue({
         authType: "app",
         appId: "chef",
+        organizationId: "org-123",
         appToken: "app-token",
         appTokenPayload: {
           appId: "chef",
+          organizationId: "org-123",
           scopes: ["provider:openai"],
           tokenId: "token-1",
         },
@@ -79,9 +81,11 @@ describe("handleAiProxyRequest", () => {
       .mockResolvedValue({
         authType: "app",
         appId: "chef",
+        organizationId: "org-123",
         appToken: "app-token",
         appTokenPayload: {
           appId: "chef",
+          organizationId: "org-123",
           scopes: ["provider:openai"],
           tokenId: "token-1",
         },
@@ -112,9 +116,11 @@ describe("handleAiProxyRequest", () => {
       .mockResolvedValue({
         authType: "app",
         appId: "chef",
+        organizationId: "org-123",
         appToken: "app-token",
         appTokenPayload: {
           appId: "chef",
+          organizationId: "org-123",
           scopes: ["provider:openai"],
           tokenId: "token-1",
         },
