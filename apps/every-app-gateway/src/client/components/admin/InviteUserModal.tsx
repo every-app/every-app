@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { createInviteLink } from "@/serverFunctions/admin";
+import { inviteMember } from "@/serverFunctions/admin";
 import { getServerErrorMessage } from "@/client/errors";
 import { Modal } from "../Modal";
 
 interface InviteUserModalProps {
   open: boolean;
   onClose: () => void;
-  onSuccess: (inviteUrl: string) => void;
+  onSuccess: () => void;
 }
 
 export function InviteUserModal({
@@ -19,11 +19,11 @@ export function InviteUserModal({
   const [error, setError] = useState("");
 
   const inviteMutation = useMutation({
-    mutationFn: (data: { email: string }) => createInviteLink({ data }),
-    onSuccess: (data) => {
+    mutationFn: (data: { email: string }) => inviteMember({ data }),
+    onSuccess: () => {
       setEmail("");
       setError("");
-      onSuccess(data.inviteUrl);
+      onSuccess();
     },
     onError: (err) => {
       setError(getServerErrorMessage(err, "Failed to create invite"));

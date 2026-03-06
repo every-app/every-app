@@ -1,368 +1,223 @@
-import { UserRepository } from "../repositories/UserRepository";
-import { TokenVerificationRepository } from "../repositories/TokenVerificationRepository";
-import { AccountRepository } from "../repositories/AccountRepository";
-import { SessionRepository } from "../repositories/SessionRepository";
-import { AppAccessService } from "./AppAccessService";
-import { createAuth } from "@/auth";
-import type { UserRole, UserStatus } from "@/auth/shared";
 import { env } from "cloudflare:workers";
-import { hashPassword } from "better-auth/crypto";
-import { APIError } from "better-auth/api";
-import { PublicError } from "@/server/errors";
+import { createAuth } from "@/auth";
+import { db } from "@/db";
+import { invitations, members, users } from "@/db/schema";
+import { and, count, eq } from "drizzle-orm";
+import type { AdminUser } from "@/types/admin-user";
+import { UserRepository } from "../repositories/UserRepository";
+import { resolvePrimaryOrganizationRole } from "../org-roles";
+import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
+import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
+import { AppAccessService } from "./AppAccessService";
 
-// Token expiration time: 7 days for invitations
-const INVITE_TOKEN_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
-// Token expiration time: 1 hour for password resets
-const RESET_TOKEN_EXPIRY_MS = 60 * 60 * 1000;
-
-/**
- * Generate a secure random token (256 bits of entropy).
- */
-function generateSecureToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  return Buffer.from(bytes).toString("hex");
+function slugify(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
 }
 
-/**
- * Validate a verification token exists and is not expired.
- * Cleans up expired tokens automatically.
- *
- * @param token - The verification token to validate
- * @param tokenType - The type of token for error messaging
- * @returns The verification record if valid
- * @throws Error if token is invalid or expired
- */
-async function validateToken(token: string, tokenType: "invitation" | "reset") {
-  const verification = await TokenVerificationRepository.findByToken(token);
-
-  if (!verification) {
-    throw new PublicError(
-      tokenType === "invitation"
-        ? "INVITATION_TOKEN_INVALID"
-        : "RESET_TOKEN_INVALID",
-      `Invalid or expired ${tokenType} token`,
-    );
-  }
-
-  if (new Date() > verification.expiresAt) {
-    await TokenVerificationRepository.delete(verification.id);
-    throw new PublicError(
-      tokenType === "invitation"
-        ? "INVITATION_TOKEN_EXPIRED"
-        : "RESET_TOKEN_EXPIRED",
-      `${tokenType === "invitation" ? "Invitation" : "Reset"} link has expired. Please request a new one.`,
-    );
-  }
-
-  return verification;
+function invitationRow(invitation: any): AdminUser {
+  const createdAt = new Date(invitation.createdAt ?? Date.now());
+  return {
+    id: `invitation:${String(invitation.id)}`,
+    name: String(invitation.email ?? "").split("@")[0] || "",
+    email: String(invitation.email ?? ""),
+    role: String(invitation.role ?? "member"),
+    status: "pending",
+    createdAt: Number.isNaN(createdAt.getTime()) ? new Date() : createdAt,
+    banned: null,
+  };
 }
 
-/**
- * Create a verification token and return the full URL.
- */
-async function createVerificationUrl(
-  email: string,
-  redirectPath: string,
-  expiryMs: number,
-): Promise<string> {
-  const token = generateSecureToken();
-  const expiresAt = new Date(Date.now() + expiryMs);
-
-  await TokenVerificationRepository.create({
-    id: crypto.randomUUID(),
-    identifier: email,
-    value: token,
-    expiresAt,
-  });
-
-  return `${env.GATEWAY_URL}${redirectPath}?token=${token}`;
-}
-
-// ============================================================================
-// Owner Setup
-// ============================================================================
-
-/**
- * Check if an owner exists in the system.
- */
 async function hasOwner() {
-  const owner = await UserRepository.findOwner();
-  return { hasOwner: !!owner };
+  return { hasOwner: await hasAnyOwnerMembership() };
 }
 
-/**
- * Initialize the first user as the owner.
- */
 async function initializeOwner(email: string, password: string) {
-  const existingOwner = await UserRepository.findOwner();
-  if (existingOwner) {
-    throw new PublicError(
-      "OWNER_ALREADY_EXISTS",
-      "Owner already exists. Registration is invite-only.",
-    );
+  const { hasOwner: alreadyHasOwner } = await hasOwner();
+  if (alreadyHasOwner) {
+    throw new Error("Owner already exists. Registration is invite-only.");
   }
 
   const auth = createAuth();
+  let createdUserId: string | null = null;
 
-  const result = await auth.api.signUpEmail({
-    body: {
-      name: "",
-      email,
-      password,
-    },
-  });
-
-  if (!result.user) {
-    throw new PublicError(
-      "ACCOUNT_CREATION_FAILED",
-      "Failed to create owner account",
-    );
-  }
-
-  await UserRepository.update(result.user.id, {
-    role: "owner",
-    status: "active",
-  });
-
-  // Grant default apps to the new owner
-  await AppAccessService.grantDefaultAppsToUser(result.user.id);
-
-  return { userId: result.user.id };
-}
-
-// ============================================================================
-// User Management
-// ============================================================================
-
-/**
- * List all users in the system.
- */
-async function listUsers() {
-  const allUsers = await UserRepository.findAllForList();
-  return { users: allUsers };
-}
-
-/**
- * Delete a user from the system.
- * Verifies the user exists and is not an owner.
- */
-async function deleteUser(userId: string, currentUserId: string) {
-  if (userId === currentUserId) {
-    throw new PublicError(
-      "CANNOT_DELETE_SELF",
-      "Cannot delete your own account",
-    );
-  }
-
-  const userToDelete = await UserRepository.findById(userId);
-
-  if (!userToDelete) {
-    throw new PublicError("USER_NOT_FOUND", "User not found");
-  }
-
-  if (userToDelete.role === "owner") {
-    throw new PublicError(
-      "CANNOT_DELETE_OWNER",
-      "Cannot delete owner accounts",
-    );
-  }
-
-  await UserRepository.delete(userId);
-}
-
-// ============================================================================
-// Invitation Management
-// ============================================================================
-
-/**
- * Create an invitation link for a new user.
- * Creates the user with a random password and pending status.
- */
-async function createInviteLink(email: string) {
-  const auth = createAuth();
-
-  const existingUser = await UserRepository.findByEmail(email);
-
-  if (existingUser) {
-    throw new PublicError(
-      "USER_ALREADY_EXISTS",
-      "A user with this email already exists",
-    );
-  }
-
-  // Random password that will be immediately replaced when user accepts invitation
-  const randomPassword = generateSecureToken();
-
+  // We intentionally accept a tiny first-owner race window here to keep this
+  // bootstrap flow simple. In practice this endpoint is called once during
+  // setup, and we prefer readability over lock/lease complexity.
   try {
     const result = await auth.api.signUpEmail({
       body: {
-        name: email.split("@")[0],
+        name: "",
         email,
-        password: randomPassword,
+        password,
       },
     });
 
     if (!result.user) {
-      throw new PublicError("ACCOUNT_CREATION_FAILED", "Failed to create user");
+      throw new Error("Failed to create owner account");
     }
 
-    await UserRepository.update(result.user.id, {
-      status: "pending" satisfies UserStatus,
-      role: "member" satisfies UserRole,
+    createdUserId = result.user.id;
+
+    const slug =
+      slugify(result.user.name || "") ||
+      slugify(email.split("@")[0] || "org") ||
+      "org";
+
+    const organization = await auth.api.createOrganization({
+      body: {
+        name: result.user.name?.trim() || "My Organization",
+        slug,
+        userId: result.user.id,
+      },
     });
 
-    const inviteUrl = await createVerificationUrl(
-      email,
-      "/accept-invitation",
-      INVITE_TOKEN_EXPIRY_MS,
+    if (!organization) {
+      throw new Error("Failed to create organization");
+    }
+
+    await AppAccessService.grantDefaultAppsToUser(
+      result.user.id,
+      organization.id,
     );
 
-    return {
-      userId: result.user.id,
-      inviteUrl,
-    };
+    return { userId: result.user.id, organizationId: organization.id };
   } catch (error) {
-    if (error instanceof APIError && error.status === 409) {
-      throw new PublicError(
-        "USER_ALREADY_EXISTS",
-        "A user with this email already exists",
-      );
+    if (createdUserId) {
+      await auth.api.removeUser({
+        body: {
+          userId: createdUserId,
+        },
+      });
     }
-    if (
-      error instanceof Error &&
-      /already exists|already registered/i.test(error.message)
-    ) {
-      throw new PublicError(
-        "USER_ALREADY_EXISTS",
-        "A user with this email already exists",
-      );
-    }
+
     throw error;
   }
 }
 
-/**
- * Regenerate an invitation link for a pending user.
- */
-async function regenerateInviteLink(userId: string) {
-  const user = await UserRepository.findById(userId);
+async function listMembers(organizationId: string) {
+  const [memberRows, pendingInvitations] = await Promise.all([
+    OrganizationMembersRepository.listMembersForOrganization(organizationId),
+    db.query.invitations.findMany({
+      columns: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        createdAt: true,
+      },
+      where: and(
+        eq(invitations.organizationId, organizationId),
+        eq(invitations.status, "pending"),
+      ),
+    }),
+  ]);
 
-  if (!user) {
-    throw new PublicError("USER_NOT_FOUND", "User not found");
-  }
+  const invitationRows = pendingInvitations.map(invitationRow);
 
-  if (user.status !== "pending") {
-    throw new PublicError(
-      "INVITATION_REQUIRES_PENDING_USER",
-      "Can only regenerate invite links for pending users",
-    );
-  }
-
-  // Delete any existing verification tokens for this user
-  await TokenVerificationRepository.deleteByIdentifier(user.email);
-
-  const inviteUrl = await createVerificationUrl(
-    user.email,
-    "/accept-invitation",
-    INVITE_TOKEN_EXPIRY_MS,
+  const users = [...memberRows, ...invitationRows].sort(
+    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
   );
 
-  return { inviteUrl };
+  return { users };
 }
 
-/**
- * Accept an invitation by validating the token, setting the password, and activating the user.
- */
-async function acceptInvitation(token: string, password: string) {
-  const verification = await validateToken(token, "invitation");
-  const user = await UserRepository.findByEmail(verification.identifier);
-
-  if (!user) {
-    throw new PublicError("USER_NOT_FOUND", "User not found");
+async function deleteUser(
+  userId: string,
+  currentUserId: string,
+  organizationId: string | undefined,
+) {
+  if (userId === currentUserId) {
+    throw new Error("Cannot delete your own account");
   }
 
-  const hashedPassword = await hashPassword(password);
+  if (!organizationId) {
+    throw new Error("Organization context is required");
+  }
 
-  await AccountRepository.updatePassword(user.id, hashedPassword);
-
-  await UserRepository.update(user.id, {
-    status: "active" satisfies UserStatus,
+  const membership = await db.query.members.findFirst({
+    columns: { id: true, role: true },
+    where: and(
+      eq(members.userId, userId),
+      eq(members.organizationId, organizationId),
+    ),
   });
 
-  // Grant default apps to the newly activated user
-  await AppAccessService.grantDefaultAppsToUser(user.id);
+  if (!membership) {
+    throw new Error("User not found");
+  }
 
-  await TokenVerificationRepository.delete(verification.id);
+  const role = resolvePrimaryOrganizationRole(membership.role);
 
-  return { email: user.email };
+  if (role === "owner") {
+    throw new Error("Cannot delete owner accounts");
+  }
+
+  await db
+    .delete(members)
+    .where(
+      and(eq(members.userId, userId), eq(members.organizationId, organizationId)),
+    );
+
+  const [orgCountResult] = await db
+    .select({ value: count() })
+    .from(members)
+    .where(eq(members.userId, userId));
+
+  if ((orgCountResult?.value ?? 0) === 0) {
+    await db.delete(users).where(eq(users.id, userId));
+  }
 }
 
-// ============================================================================
-// Password Reset
-// ============================================================================
+async function sendPasswordResetEmail(userId: string, organizationId: string) {
+  if (!organizationId) {
+    throw new Error("Organization context is required");
+  }
 
-/**
- * Generate a password reset link for an active user.
- */
-async function createPasswordResetLink(userId: string) {
+  const membership = await db.query.members.findFirst({
+    columns: { id: true },
+    where: and(
+      eq(members.userId, userId),
+      eq(members.organizationId, organizationId),
+    ),
+  });
+
+  if (!membership) {
+    throw new Error("User not found");
+  }
+
   const user = await UserRepository.findById(userId);
 
   if (!user) {
-    throw new PublicError("USER_NOT_FOUND", "User not found");
+    throw new Error("User not found");
   }
 
   if (user.status !== "active") {
-    throw new PublicError(
-      "PASSWORD_RESET_REQUIRES_ACTIVE_USER",
-      "Can only generate password reset links for active users",
-    );
+    throw new Error("Can only send password reset emails for active users");
   }
 
-  const resetUrl = await createVerificationUrl(
-    user.email,
-    "/reset-password",
-    RESET_TOKEN_EXPIRY_MS,
-  );
+  const auth = createAuth();
+  await auth.api.requestPasswordReset({
+    body: {
+      email: user.email,
+      redirectTo: `${env.GATEWAY_URL}/reset-password`,
+    },
+  });
 
-  return { resetUrl };
+  return { success: true };
 }
 
-/**
- * Reset password for an active user using our custom token system.
- */
-async function resetPassword(token: string, password: string) {
-  const verification = await validateToken(token, "reset");
-  const user = await UserRepository.findByEmail(verification.identifier);
-
-  if (!user) {
-    throw new PublicError("USER_NOT_FOUND", "User not found");
-  }
-
-  if (user.status !== "active") {
-    throw new PublicError(
-      "PASSWORD_RESET_REQUIRES_ACTIVE_USER",
-      "Password reset is only available for active users. Please use the invitation link instead.",
-    );
-  }
-
-  const hashedPassword = await hashPassword(password);
-
-  await AccountRepository.updatePassword(user.id, hashedPassword);
-
-  // Revoke all existing sessions for security
-  await SessionRepository.deleteByUserId(user.id);
-
-  await TokenVerificationRepository.delete(verification.id);
-}
-
+// TODO: Split this service once the org migration settles and review overhead drops.
 export const AdminService = {
   hasOwner,
   initializeOwner,
-  listUsers,
+  listMembers,
   deleteUser,
-  createInviteLink,
-  regenerateInviteLink,
-  acceptInvitation,
-  createPasswordResetLink,
-  resetPassword,
+  sendPasswordResetEmail,
 } as const;

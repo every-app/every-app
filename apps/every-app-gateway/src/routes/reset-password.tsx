@@ -1,10 +1,9 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { z } from "zod";
-import { isCpuTimeoutError } from "@/client/auth-client";
+import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
-import { resetPassword as resetPasswordFn } from "@/serverFunctions/admin";
 import { getServerErrorMessage } from "@/client/errors";
 
 const searchSchema = z.object({
@@ -49,7 +48,16 @@ function ResetPassword() {
     executeWithRetry,
   } = useCpuTimeoutRetry(async () => {
     try {
-      await resetPasswordFn({ data: { token, password: newPassword } });
+      const { error: resetError } = await authClient.resetPassword({
+        token,
+        newPassword,
+      });
+
+      if (resetError) {
+        setError(resetError.message || "Failed to reset password.");
+        return true;
+      }
+
       if (hadRetries) {
         setRetrySuccess();
       } else {

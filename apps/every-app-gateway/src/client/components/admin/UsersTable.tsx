@@ -3,20 +3,16 @@ import { UserActionsMenu } from "./UserActionsMenu";
 
 interface UsersTableProps {
   users: AdminUser[];
-  onRegenerateInvite: (userId: string) => void;
-  onCreateResetLink: (userId: string) => void;
+  onSendPasswordResetEmail: (userId: string) => void;
   onDeleteUser: (userId: string) => void;
-  isRegeneratingInvite: boolean;
-  isCreatingResetLink: boolean;
+  isSendingPasswordResetEmail: boolean;
 }
 
 export function UsersTable({
   users,
-  onRegenerateInvite,
-  onCreateResetLink,
+  onSendPasswordResetEmail,
   onDeleteUser,
-  isRegeneratingInvite,
-  isCreatingResetLink,
+  isSendingPasswordResetEmail,
 }: UsersTableProps) {
   if (users.length === 0) {
     return (
@@ -61,11 +57,9 @@ export function UsersTable({
             <td>
               <UserActionsMenu
                 user={user}
-                onRegenerateInvite={onRegenerateInvite}
-                onCreateResetLink={onCreateResetLink}
+                onSendPasswordResetEmail={onSendPasswordResetEmail}
                 onDelete={onDeleteUser}
-                isRegeneratingInvite={isRegeneratingInvite}
-                isCreatingResetLink={isCreatingResetLink}
+                isSendingPasswordResetEmail={isSendingPasswordResetEmail}
               />
             </td>
           </tr>

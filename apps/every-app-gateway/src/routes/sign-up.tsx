@@ -21,6 +21,8 @@ export const Route = createFileRoute("/sign-up")({
 
 function SignUp() {
   const { redirect } = Route.useSearch();
+  const invitationId = extractInvitationIdFromRedirect(redirect);
+  const isInvitationFlow = Boolean(invitationId);
   const [showOwnerForm, setShowOwnerForm] = useState(false);
   const { data: ownerData, isLoading: isCheckingOwner } = useQuery({
     queryKey: ["hasOwner"],
@@ -43,11 +45,202 @@ function SignUp() {
     return null;
   }
 
+  if (isInvitationFlow) {
+    return (
+      <CreateInvitedAccountForm
+        redirect={redirect}
+        invitationId={invitationId!}
+      />
+    );
+  }
+
   if (showOwnerForm || !ownerData?.hasOwner) {
     return <CreateOwnerForm redirect={redirect} />;
   }
 
   return <InvitationRequired redirect={redirect} />;
+}
+
+function CreateInvitedAccountForm({
+  redirect,
+  invitationId,
+}: {
+  redirect?: string;
+  invitationId: string;
+}) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const safeRedirect = getSafeRedirect(redirect);
+
+  const {
+    isRunning,
+    attemptCount,
+    maxRetries,
+    hasExhaustedRetries,
+    secondsUntilRetry,
+    isRetrySuccess,
+    showWarning,
+    hadRetries,
+    setRetrySuccess,
+    executeWithRetry,
+  } = useCpuTimeoutRetry(async () => {
+    try {
+      const { error: signUpError } = await authClient.signUp.email(
+        {
+          email,
+          password,
+          name: email.split("@")[0] || "",
+        },
+        {
+          query: { invitationId },
+        },
+      );
+
+      if (signUpError) {
+        setError(signUpError.message || "Failed to create account.");
+        return true;
+      }
+
+      await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
+      refetchCollectionsAfterAuth();
+
+      if (hadRetries) {
+        setRetrySuccess();
+      } else {
+        navigate({ to: safeRedirect });
+      }
+
+      return true;
+    } catch (err) {
+      if (isCpuTimeoutError(err)) {
+        return false;
+      }
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to create account. Please try again.",
+      );
+      return true;
+    }
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    if (password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    executeWithRetry();
+  };
+
+  if (showWarning || isRetrySuccess) {
+    return (
+      <CpuTimeoutWarning
+        attemptCount={attemptCount}
+        maxRetries={maxRetries}
+        hasExhaustedRetries={hasExhaustedRetries}
+        secondsUntilRetry={secondsUntilRetry}
+        isSuccess={isRetrySuccess}
+        onContinue={() => navigate({ to: safeRedirect })}
+      />
+    );
+  }
+
+  return (
+    <div className="flex h-screen items-center justify-center overflow-hidden">
+      <div className="relative w-full max-w-md">
+        <img
+          src="/transparent-logo.png"
+          alt="Logo"
+          className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
+        />
+        <div className="card auth-card">
+          <div className="card-body">
+            <h2 className="card-title">Create Account</h2>
+            <p>Create your account to join the invited organization</p>
+
+            <form onSubmit={handleSubmit}>
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Email</span>
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  className="input input-bordered w-full"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  disabled={isRunning}
+                />
+              </div>
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Password</span>
+                </label>
+                <input
+                  id="password"
+                  type="password"
+                  placeholder="Create a password"
+                  className="input input-bordered w-full"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  disabled={isRunning}
+                />
+              </div>
+              <div className="form-control">
+                <label className="label">
+                  <span className="label-text">Confirm Password</span>
+                </label>
+                <input
+                  id="confirmPassword"
+                  type="password"
+                  placeholder="Confirm your password"
+                  className="input input-bordered w-full"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={8}
+                  disabled={isRunning}
+                />
+              </div>
+              {error && <div className="text-sm text-error">{error}</div>}
+              <button
+                type="submit"
+                className="btn btn-primary w-full"
+                disabled={isRunning}
+              >
+                {isRunning ? "Creating account..." : "Create Account"}
+              </button>
+            </form>
+
+            <div className="flex justify-center mt-4">
+              <p className="text-sm text-base-content/60">
+                Already have an account?{" "}
+                <Link
+                  to="/sign-in"
+                  search={redirect ? { redirect } : undefined}
+                  className="font-medium text-base-content hover:underline"
+                >
+                  Sign in
+                </Link>
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -258,7 +451,7 @@ function InvitationRequired({ redirect }: { redirect?: string }) {
             <h2 className="card-title justify-center">Invitation Required</h2>
             <p className="text-base-content/70 mt-2">
               This gateway uses invite-only registration. Please contact the
-              administrator to request an invitation link.
+              administrator to request an invitation email.
             </p>
 
             <div className="divider">OR</div>
@@ -278,4 +471,23 @@ function InvitationRequired({ redirect }: { redirect?: string }) {
       </div>
     </div>
   );
+}
+
+function extractInvitationIdFromRedirect(redirect?: string): string | null {
+  if (!redirect || !redirect.startsWith("/accept-invitation")) {
+    return null;
+  }
+
+  const queryIndex = redirect.indexOf("?");
+  if (queryIndex < 0) {
+    return null;
+  }
+
+  const searchParams = new URLSearchParams(redirect.slice(queryIndex + 1));
+  const invitationId = searchParams.get("invitationId");
+  if (!invitationId) {
+    return null;
+  }
+
+  return invitationId;
 }

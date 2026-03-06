@@ -113,10 +113,9 @@ function ForgotPassword() {
 
           {success ? (
             <div className="space-y-4 mt-4">
-              <div className="alert alert-warning text-sm">
-                Email has not been configured for this gateway. Please tail the
-                logs of every-app-gateway in Cloudflare in order to get the
-                password reset link if you've forgotten your email.
+              <div className="alert alert-success text-sm">
+                If an account exists for this email, we sent a password reset
+                link.
               </div>
               <Link
                 to="/sign-in"

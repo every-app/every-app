@@ -2,7 +2,7 @@ import { createCollection } from "@tanstack/react-db";
 import { queryCollectionOptions } from "@tanstack/query-db-collection";
 import { queryClient } from "./queryClient";
 import type { AdminUser } from "@/types/admin-user";
-import { listUsers, deleteUser } from "@/serverFunctions/admin";
+import { listMembers, deleteUser } from "@/serverFunctions/admin";
 import { lazyInitForWorkers } from "@/utils/lazyInitForWorkers";
 
 export const adminUsersCollection = lazyInitForWorkers(() =>
@@ -10,7 +10,7 @@ export const adminUsersCollection = lazyInitForWorkers(() =>
     queryCollectionOptions({
       queryKey: ["admin", "users"],
       queryFn: async () => {
-        const result = await listUsers();
+        const result = await listMembers();
         return result.users;
       },
       queryClient,
@@ -27,9 +27,8 @@ export const adminUsersCollection = lazyInitForWorkers(() =>
         );
       },
 
-      // Note: onInsert is not implemented because user creation happens via
-      // createInviteLink which is a server-side operation that creates both
-      // the user and the invite token. After invite creation, we refetch.
+      // Note: onInsert is not implemented because invitations are created via
+      // server-side Better Auth APIs. After inviting a member, we refetch.
     }),
   ),
 );

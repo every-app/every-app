@@ -3,14 +3,10 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { adminUsersCollection } from "@/client/tanstack-db";
-import {
-  regenerateInviteLink,
-  createPasswordResetLink,
-} from "@/serverFunctions/admin";
+import { sendPasswordResetEmail } from "@/serverFunctions/admin";
 import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { InviteUserModal } from "@/client/components/admin/InviteUserModal";
-import { LinkDisplayModal } from "@/client/components/admin/LinkDisplayModal";
 import { DeleteUserModal } from "@/client/components/admin/DeleteUserModal";
 import { UsersTable } from "@/client/components/admin/UsersTable";
 
@@ -21,9 +17,6 @@ export const Route = createFileRoute("/admin/users")({
 function UsersPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [showLinkModal, setShowLinkModal] = useState(false);
-  const [generatedLink, setGeneratedLink] = useState<string | null>(null);
-  const [linkType, setLinkType] = useState<"invite" | "reset">("invite");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   const { data: users, isError } = useLiveQuery((q) =>
@@ -36,28 +29,14 @@ function UsersPage() {
     setSelectedUserId(null);
   };
 
-  const regenerateInviteMutation = useMutation({
-    mutationFn: (userId: string) => regenerateInviteLink({ data: { userId } }),
-    onSuccess: (data) => {
-      setGeneratedLink(data.inviteUrl);
-      setLinkType("invite");
-      setShowLinkModal(true);
-    },
-    onError: () => {
-      toast.error("Failed to regenerate invite link");
-    },
-  });
-
-  const createResetLinkMutation = useMutation({
+  const sendPasswordResetEmailMutation = useMutation({
     mutationFn: (userId: string) =>
-      createPasswordResetLink({ data: { userId } }),
-    onSuccess: (data) => {
-      setGeneratedLink(data.resetUrl);
-      setLinkType("reset");
-      setShowLinkModal(true);
+      sendPasswordResetEmail({ data: { userId } }),
+    onSuccess: () => {
+      toast.success("Password reset email sent");
     },
     onError: () => {
-      toast.error("Failed to generate password reset link");
+      toast.error("Failed to send password reset email");
     },
   });
 
@@ -90,39 +69,25 @@ function UsersPage() {
       {users && (
         <UsersTable
           users={users}
-          onRegenerateInvite={(userId) =>
-            regenerateInviteMutation.mutate(userId)
+          onSendPasswordResetEmail={(userId) =>
+            sendPasswordResetEmailMutation.mutate(userId)
           }
-          onCreateResetLink={(userId) => createResetLinkMutation.mutate(userId)}
           onDeleteUser={(userId) => {
             setSelectedUserId(userId);
             setShowDeleteModal(true);
           }}
-          isRegeneratingInvite={regenerateInviteMutation.isPending}
-          isCreatingResetLink={createResetLinkMutation.isPending}
+          isSendingPasswordResetEmail={sendPasswordResetEmailMutation.isPending}
         />
       )}
 
       <InviteUserModal
         open={showInviteModal}
         onClose={() => setShowInviteModal(false)}
-        onSuccess={async (inviteUrl) => {
+        onSuccess={async () => {
           setShowInviteModal(false);
-          setGeneratedLink(inviteUrl);
-          setLinkType("invite");
-          setShowLinkModal(true);
+          toast.success("Invitation email sent");
           await adminUsersCollection.utils.refetch();
         }}
-      />
-
-      <LinkDisplayModal
-        open={showLinkModal}
-        onClose={() => {
-          setShowLinkModal(false);
-          setGeneratedLink(null);
-        }}
-        link={generatedLink}
-        type={linkType}
       />
 
       {selectedUser && (

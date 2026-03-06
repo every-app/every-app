@@ -1,24 +1,20 @@
-import { MoreVertical, RefreshCw, Key, Trash2 } from "lucide-react";
+import { MoreVertical, Key, Trash2 } from "lucide-react";
 import type { AdminUser } from "@/types/admin-user";
 
 interface UserActionsMenuProps {
   user: AdminUser;
-  onRegenerateInvite: (userId: string) => void;
-  onCreateResetLink: (userId: string) => void;
+  onSendPasswordResetEmail: (userId: string) => void;
   onDelete: (userId: string) => void;
-  isRegeneratingInvite: boolean;
-  isCreatingResetLink: boolean;
+  isSendingPasswordResetEmail: boolean;
 }
 
 export function UserActionsMenu({
   user,
-  onRegenerateInvite,
-  onCreateResetLink,
+  onSendPasswordResetEmail,
   onDelete,
-  isRegeneratingInvite,
-  isCreatingResetLink,
+  isSendingPasswordResetEmail,
 }: UserActionsMenuProps) {
-  if (user.role === "owner") {
+  if (user.role === "owner" || user.status === "pending") {
     return null;
   }
 
@@ -31,27 +27,15 @@ export function UserActionsMenu({
         tabIndex={0}
         className="dropdown-content menu z-10 w-56 bg-base-100 rounded-box shadow-lg"
       >
-        {user.status === "pending" ? (
-          <li>
-            <button
-              onClick={() => onRegenerateInvite(user.id)}
-              disabled={isRegeneratingInvite}
-            >
-              <RefreshCw className="w-4 h-4" />
-              Regenerate Invite Link
-            </button>
-          </li>
-        ) : (
-          <li>
-            <button
-              onClick={() => onCreateResetLink(user.id)}
-              disabled={isCreatingResetLink}
-            >
-              <Key className="w-4 h-4" />
-              Generate Password Reset
-            </button>
-          </li>
-        )}
+        <li>
+          <button
+            onClick={() => onSendPasswordResetEmail(user.id)}
+            disabled={isSendingPasswordResetEmail}
+          >
+            <Key className="w-4 h-4" />
+            Send Password Reset Email
+          </button>
+        </li>
         <li>
           <button className="text-error" onClick={() => onDelete(user.id)}>
             <Trash2 className="w-4 h-4" />

@@ -1,7 +1,9 @@
-import type { InferSelectModel } from "drizzle-orm";
-import { users } from "@/db/schema";
-
-export type AdminUser = Pick<
-  InferSelectModel<typeof users>,
-  "id" | "name" | "email" | "role" | "status" | "createdAt" | "banned"
->;
+export type AdminUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: "active" | "pending" | string | null;
+  createdAt: Date;
+  banned: boolean | null;
+};
