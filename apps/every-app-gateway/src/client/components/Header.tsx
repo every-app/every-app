@@ -4,10 +4,14 @@ import { authClient } from "@/client/auth-client";
 
 interface HeaderProps {
   email?: string | null;
-  role?: string | null;
 }
 
-export function Header({ email, role }: HeaderProps) {
+export function Header({ email }: HeaderProps) {
+  const { data: activeOrganization } = authClient.useActiveOrganization();
+  const { data: activeMemberRole } = authClient.useActiveMemberRole();
+  const canManageOrganizationApps =
+    activeMemberRole?.role === "owner" || activeMemberRole?.role === "admin";
+
   const handleSignOut = async () => {
     await authClient.signOut();
     // Hard refresh clears all client state (query cache, session, etc.)
@@ -29,7 +33,10 @@ export function Header({ email, role }: HeaderProps) {
           >
             Docs
           </a>
-          {role === "owner" && (
+          <Link to="/organizations" className="link link-hover">
+            {activeOrganization?.name ?? "Organizations"}
+          </Link>
+          {canManageOrganizationApps && (
             <Link to="/admin/users" className="link link-hover">
               Admin
             </Link>

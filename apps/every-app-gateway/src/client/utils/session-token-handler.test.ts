@@ -196,6 +196,7 @@ describe("handleSessionTokenRequest", () => {
   const mockFullUserApps = [
     {
       id: "1",
+      organizationId: "org-123",
       appId: "todo-app",
       name: "Todo App",
       description: "A todo app",
@@ -208,6 +209,7 @@ describe("handleSessionTokenRequest", () => {
     },
     {
       id: "2",
+      organizationId: "org-123",
       appId: "workout-tracker",
       name: "Workout Tracker",
       description: "A workout tracker",
@@ -230,6 +232,7 @@ describe("handleSessionTokenRequest", () => {
       expiresAt: "2024-01-01T00:00:00Z",
       audience: "todo-app",
       appId: "todo-app",
+      orgId: "org-test-123",
     });
 
     const event = createMockEvent(

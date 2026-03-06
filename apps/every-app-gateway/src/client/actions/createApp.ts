@@ -1,5 +1,6 @@
 import { createOptimisticAction } from "@tanstack/react-db";
 import { adminAppsCollection, userAppsCollection } from "@/client/tanstack-db";
+import { queryClient } from "@/client/tanstack-db/queryClient";
 import { createApp } from "@/serverFunctions/apps";
 import type { CreateAppFormData } from "@/schemas/app";
 
@@ -14,10 +15,16 @@ type CreateAppParams = CreateAppFormData & {
 export const createAppAction = createOptimisticAction<CreateAppParams>({
   onMutate: ({ id, appId, name, description, appUrl, devUrl, isDefault }) => {
     const now = new Date();
+    const session = queryClient.getQueryData<{
+      session?: { activeOrganizationId?: string | null };
+    } | null>(["auth", "session"]);
+    const activeOrganizationId =
+      session?.session?.activeOrganizationId ?? "unknown-organization";
 
     // Optimistically add to admin apps collection
     adminAppsCollection.insert({
       id,
+      organizationId: activeOrganizationId,
       appId,
       name,
       description,

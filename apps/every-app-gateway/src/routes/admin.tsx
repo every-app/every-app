@@ -5,6 +5,7 @@ import {
   useLocation,
 } from "@tanstack/react-router";
 import { useSession } from "@/client/hooks/useSession";
+import { authClient } from "@/client/auth-client";
 import { Header } from "@/client/components/Header";
 import { Monitor, Users, AppWindow, KeyRound } from "lucide-react";
 
@@ -20,10 +21,12 @@ const adminTabs = [
 
 function AdminLayout() {
   const { data: session, isPending } = useSession();
+  const { data: activeMemberRole, isPending: isRolePending } =
+    authClient.useActiveMemberRole();
   const location = useLocation();
 
   // Show loading while checking session
-  if (isPending) {
+  if (isPending || isRolePending) {
     return (
       <div className="flex h-screen items-center justify-center">
         <span className="loading loading-spinner loading-lg" />
@@ -31,11 +34,13 @@ function AdminLayout() {
     );
   }
 
-  // Check if user is owner
-  if (!session || session.user.role !== "owner") {
+  const hasAdminAccess =
+    activeMemberRole?.role === "owner" || activeMemberRole?.role === "admin";
+
+  if (!session || !hasAdminAccess) {
     return (
       <div className="bg-base-100 h-screen flex flex-col">
-        <Header email={session?.user.email} role={session?.user.role} />
+        <Header email={session?.user.email} />
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <h1 className="text-2xl font-bold">Access Denied</h1>
@@ -53,7 +58,7 @@ function AdminLayout() {
 
   return (
     <div className="bg-base-100 h-screen flex flex-col overflow-hidden">
-      <Header email={session.user.email} role={session.user.role} />
+      <Header email={session.user.email} />
       {/* Mobile alert - shown on small screens */}
       <div className="sm:hidden flex-1 flex items-center justify-center p-4">
         <div className="alert alert-info max-w-md">

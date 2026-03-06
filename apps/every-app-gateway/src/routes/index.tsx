@@ -11,6 +11,7 @@ import { OnboardingBanner } from "@/client/components/onboarding/OnboardingBanne
 import { AppListItem, DevAppListItem } from "@/client/components/AppListItem";
 import { Header } from "@/client/components/Header";
 import { isSafari } from "@/client/utils/browser";
+import { authClient } from "@/client/auth-client";
 
 const searchSchema = z.object({
   // Handle both boolean (from programmatic navigation) and string (from URL)
@@ -60,7 +61,24 @@ function App() {
   const [showSafariWarning, setShowSafariWarning] = useState(false);
   const navigate = useNavigate();
   const hasStrippedPwaParam = useRef(false);
-  const userIsOwner = session.data?.user.role === "owner";
+  const { data: activeMemberRole } = authClient.useActiveMemberRole();
+  const userCanManageApps =
+    activeMemberRole?.role === "owner" || activeMemberRole?.role === "admin";
+
+  useEffect(() => {
+    if (session.isPending || !session.data?.user) {
+      return;
+    }
+
+    if (!session.data.session.activeOrganizationId) {
+      navigate({ to: "/organizations" });
+    }
+  }, [
+    navigate,
+    session.data?.session.activeOrganizationId,
+    session.data?.user,
+    session.isPending,
+  ]);
 
   // Open PWA modal when ?pwa=true is present, then strip the param
   useEffect(() => {
@@ -82,9 +100,17 @@ function App() {
 
   const hasAnyDevUrls = userApps?.some((app) => app.devUrl) ?? false;
 
+  if (
+    !session.isPending &&
+    session.data?.user &&
+    !session.data.session.activeOrganizationId
+  ) {
+    return null;
+  }
+
   return (
     <div className="bg-base-100 h-full flex flex-col">
-      <Header email={session.data?.user.email} role={session.data?.user.role} />
+      <Header email={session.data?.user.email} />
       <div className="flex-1 min-h-0 animate-fade-in">
         <div className="max-w-4xl mx-auto px-4 py-6 h-full flex flex-col">
           <div className="space-y-6">
@@ -118,7 +144,7 @@ function App() {
                     />
                   </label>
                 )}
-                {userIsOwner && (
+                {userCanManageApps && (
                   <Link
                     to="/admin/apps"
                     className="btn btn-primary hidden sm:flex"
@@ -172,11 +198,11 @@ function App() {
             {!isLoading && userApps && userApps.length === 0 && (
               <div className="text-center py-8">
                 <p className="text-base-content/70">
-                  {userIsOwner
+                  {userCanManageApps
                     ? "No apps yet. Add your first app to get started!"
                     : "No apps available. Contact your administrator to get access."}
                 </p>
-                {userIsOwner && (
+                {userCanManageApps && (
                   <Link to="/admin/apps" className="btn btn-primary mt-4">
                     <Settings className="w-4 h-4" />
                     Manage Apps

@@ -1,6 +1,6 @@
 import { useLiveQuery } from "@tanstack/react-db";
 import { useEffect, useMemo, useRef } from "react";
-import { useSession } from "./useSession";
+import { authClient } from "@/client/auth-client";
 import { userAppsCollection, onboardingCollection } from "@/client/tanstack-db";
 import { isPWAStandalone } from "@/utils/platform";
 
@@ -20,7 +20,7 @@ function isSkipCooldownActive(date: Date | string | number | null): boolean {
 }
 
 export function useOnboarding() {
-  const { data: session } = useSession();
+  const { data: activeMemberRole } = authClient.useActiveMemberRole();
 
   const { data: userApps, isLoading: isLoadingUserApps } = useLiveQuery((q) =>
     q.from({ userApp: userAppsCollection }),
@@ -33,7 +33,7 @@ export function useOnboarding() {
   const isLoading = isLoadingUserApps || isLoadingOnboarding;
 
   const onboarding = onboardingData?.[0];
-  const isOwner = session?.user?.role === "owner";
+  const isOwner = activeMemberRole?.role === "owner";
   const hasDeployedApp = userApps && userApps.length > 0;
   const isPWAInstalled = isPWAStandalone();
 
@@ -107,7 +107,7 @@ export function useOnboarding() {
       },
       onboarding,
     };
-  }, [isOwner, hasDeployedApp, onboarding]);
+  }, [activeMemberRole?.role, hasDeployedApp, isOwner, onboarding]);
 
   // Actions
   const completePWAInstall = () => {

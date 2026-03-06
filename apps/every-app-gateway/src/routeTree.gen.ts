@@ -14,6 +14,7 @@ import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as PwaRouteImport } from './routes/pwa'
+import { Route as OrganizationsRouteImport } from './routes/organizations'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
@@ -33,6 +34,8 @@ import { Route as ApiAdminHasOwnerRouteImport } from './routes/api/admin/has-own
 import { Route as AppsAppIdDevSplatRouteImport } from './routes/apps/$appId_.dev.$'
 import { Route as ApiInternalAppsUsersRouteImport } from './routes/api/internal/apps/users'
 import { Route as ApiInternalAppsRegisterRouteImport } from './routes/api/internal/apps/register'
+import { Route as ApiInternalAppsOrganizationsRouteImport } from './routes/api/internal/apps/organizations'
+import { Route as ApiInternalAppsContextRouteImport } from './routes/api/internal/apps/context'
 import { Route as ApiInternalAppTokenProvisionRouteImport } from './routes/api/internal/app-token/provision'
 import { Route as ApiAiProviderSplatRouteImport } from './routes/api/ai/$provider.$'
 
@@ -59,6 +62,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 const PwaRoute = PwaRouteImport.update({
   id: '/pwa',
   path: '/pwa',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrganizationsRoute = OrganizationsRouteImport.update({
+  id: '/organizations',
+  path: '/organizations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
@@ -156,6 +164,17 @@ const ApiInternalAppsRegisterRoute = ApiInternalAppsRegisterRouteImport.update({
   path: '/api/internal/apps/register',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalAppsOrganizationsRoute =
+  ApiInternalAppsOrganizationsRouteImport.update({
+    id: '/api/internal/apps/organizations',
+    path: '/api/internal/apps/organizations',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiInternalAppsContextRoute = ApiInternalAppsContextRouteImport.update({
+  id: '/api/internal/apps/context',
+  path: '/api/internal/apps/context',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiInternalAppTokenProvisionRoute =
   ApiInternalAppTokenProvisionRouteImport.update({
     id: '/api/internal/app-token/provision',
@@ -173,6 +192,7 @@ export interface FileRoutesByFullPath {
   '/accept-invitation': typeof AcceptInvitationRoute
   '/admin': typeof AdminRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
+  '/organizations': typeof OrganizationsRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
@@ -192,6 +212,8 @@ export interface FileRoutesByFullPath {
   '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
   '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
   '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
+  '/api/internal/apps/context': typeof ApiInternalAppsContextRoute
+  '/api/internal/apps/organizations': typeof ApiInternalAppsOrganizationsRoute
   '/api/internal/apps/register': typeof ApiInternalAppsRegisterRoute
   '/api/internal/apps/users': typeof ApiInternalAppsUsersRoute
   '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
@@ -200,6 +222,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/organizations': typeof OrganizationsRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
@@ -219,6 +242,8 @@ export interface FileRoutesByTo {
   '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
   '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
   '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
+  '/api/internal/apps/context': typeof ApiInternalAppsContextRoute
+  '/api/internal/apps/organizations': typeof ApiInternalAppsOrganizationsRoute
   '/api/internal/apps/register': typeof ApiInternalAppsRegisterRoute
   '/api/internal/apps/users': typeof ApiInternalAppsUsersRoute
   '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
@@ -229,6 +254,7 @@ export interface FileRoutesById {
   '/accept-invitation': typeof AcceptInvitationRoute
   '/admin': typeof AdminRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
+  '/organizations': typeof OrganizationsRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
@@ -248,6 +274,8 @@ export interface FileRoutesById {
   '/apps/$appId_/dev': typeof AppsAppIdDevRouteWithChildren
   '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
   '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
+  '/api/internal/apps/context': typeof ApiInternalAppsContextRoute
+  '/api/internal/apps/organizations': typeof ApiInternalAppsOrganizationsRoute
   '/api/internal/apps/register': typeof ApiInternalAppsRegisterRoute
   '/api/internal/apps/users': typeof ApiInternalAppsUsersRoute
   '/apps/$appId_/dev/$': typeof AppsAppIdDevSplatRoute
@@ -259,6 +287,7 @@ export interface FileRouteTypes {
     | '/accept-invitation'
     | '/admin'
     | '/forgot-password'
+    | '/organizations'
     | '/pwa'
     | '/reset-password'
     | '/sign-in'
@@ -278,6 +307,8 @@ export interface FileRouteTypes {
     | '/apps/$appId/dev'
     | '/api/ai/$provider/$'
     | '/api/internal/app-token/provision'
+    | '/api/internal/apps/context'
+    | '/api/internal/apps/organizations'
     | '/api/internal/apps/register'
     | '/api/internal/apps/users'
     | '/apps/$appId/dev/$'
@@ -286,6 +317,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invitation'
     | '/forgot-password'
+    | '/organizations'
     | '/pwa'
     | '/reset-password'
     | '/sign-in'
@@ -305,6 +337,8 @@ export interface FileRouteTypes {
     | '/apps/$appId/dev'
     | '/api/ai/$provider/$'
     | '/api/internal/app-token/provision'
+    | '/api/internal/apps/context'
+    | '/api/internal/apps/organizations'
     | '/api/internal/apps/register'
     | '/api/internal/apps/users'
     | '/apps/$appId/dev/$'
@@ -314,6 +348,7 @@ export interface FileRouteTypes {
     | '/accept-invitation'
     | '/admin'
     | '/forgot-password'
+    | '/organizations'
     | '/pwa'
     | '/reset-password'
     | '/sign-in'
@@ -333,6 +368,8 @@ export interface FileRouteTypes {
     | '/apps/$appId_/dev'
     | '/api/ai/$provider/$'
     | '/api/internal/app-token/provision'
+    | '/api/internal/apps/context'
+    | '/api/internal/apps/organizations'
     | '/api/internal/apps/register'
     | '/api/internal/apps/users'
     | '/apps/$appId_/dev/$'
@@ -343,6 +380,7 @@ export interface RootRouteChildren {
   AcceptInvitationRoute: typeof AcceptInvitationRoute
   AdminRoute: typeof AdminRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
+  OrganizationsRoute: typeof OrganizationsRoute
   PwaRoute: typeof PwaRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignInRoute: typeof SignInRoute
@@ -357,6 +395,8 @@ export interface RootRouteChildren {
   AppsAppIdDevRoute: typeof AppsAppIdDevRouteWithChildren
   ApiAiProviderSplatRoute: typeof ApiAiProviderSplatRoute
   ApiInternalAppTokenProvisionRoute: typeof ApiInternalAppTokenProvisionRoute
+  ApiInternalAppsContextRoute: typeof ApiInternalAppsContextRoute
+  ApiInternalAppsOrganizationsRoute: typeof ApiInternalAppsOrganizationsRoute
   ApiInternalAppsRegisterRoute: typeof ApiInternalAppsRegisterRoute
   ApiInternalAppsUsersRoute: typeof ApiInternalAppsUsersRoute
 }
@@ -396,6 +436,13 @@ declare module '@tanstack/react-router' {
       path: '/pwa'
       fullPath: '/pwa'
       preLoaderRoute: typeof PwaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/organizations': {
+      id: '/organizations'
+      path: '/organizations'
+      fullPath: '/organizations'
+      preLoaderRoute: typeof OrganizationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/forgot-password': {
@@ -531,6 +578,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalAppsRegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/apps/organizations': {
+      id: '/api/internal/apps/organizations'
+      path: '/api/internal/apps/organizations'
+      fullPath: '/api/internal/apps/organizations'
+      preLoaderRoute: typeof ApiInternalAppsOrganizationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/apps/context': {
+      id: '/api/internal/apps/context'
+      path: '/api/internal/apps/context'
+      fullPath: '/api/internal/apps/context'
+      preLoaderRoute: typeof ApiInternalAppsContextRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/internal/app-token/provision': {
       id: '/api/internal/app-token/provision'
       path: '/api/internal/app-token/provision'
@@ -593,6 +654,7 @@ const rootRouteChildren: RootRouteChildren = {
   AcceptInvitationRoute: AcceptInvitationRoute,
   AdminRoute: AdminRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
+  OrganizationsRoute: OrganizationsRoute,
   PwaRoute: PwaRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignInRoute: SignInRoute,
@@ -607,6 +669,8 @@ const rootRouteChildren: RootRouteChildren = {
   AppsAppIdDevRoute: AppsAppIdDevRouteWithChildren,
   ApiAiProviderSplatRoute: ApiAiProviderSplatRoute,
   ApiInternalAppTokenProvisionRoute: ApiInternalAppTokenProvisionRoute,
+  ApiInternalAppsContextRoute: ApiInternalAppsContextRoute,
+  ApiInternalAppsOrganizationsRoute: ApiInternalAppsOrganizationsRoute,
   ApiInternalAppsRegisterRoute: ApiInternalAppsRegisterRoute,
   ApiInternalAppsUsersRoute: ApiInternalAppsUsersRoute,
 }
