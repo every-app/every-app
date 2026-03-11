@@ -1,6 +1,6 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -27,11 +27,11 @@
   },
   "files": [
     "dist",
-    "src"
+    "README.md"
   ],
   "scripts": {
-    "postinstall": "tsc -p tsconfig.build.json",
     "build": "tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "build:prepublish": "pnpm install --ignore-scripts && npm run types:check && npm run build",
     "prepublishOnly": "npm run build:prepublish",
     "types:check": "tsc --noEmit",
