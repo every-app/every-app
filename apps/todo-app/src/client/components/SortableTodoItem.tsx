@@ -12,12 +12,14 @@ import { MoreHorizontal, Edit, Trash2, CalendarDays, X } from "lucide-react";
 import { toast } from "sonner";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { DayPicker } from "react-day-picker";
 import { todoCollection } from "@/client/tanstack-db";
 import { getTodoItemId, getTodoInlineEditId } from "@/client/lib/element-ids";
 import {
   extractDueDateFromInput,
   formatDueDateBadge,
 } from "@/client/lib/due-date-parser";
+import { formatDateKey } from "@/lib/date-key";
 import { TiptapTodoInput } from "@/client/components/TiptapTodoInput";
 
 interface SortableTodoItemProps {
@@ -37,10 +39,40 @@ export function SortableTodoItem({
 }: SortableTodoItemProps) {
   const [localTitle, setLocalTitle] = useState(todo.title);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDueDatePickerOpen, setIsDueDatePickerOpen] = useState(false);
+  const [selectedDueDate, setSelectedDueDate] = useState<Date | undefined>();
+  const [dueDatePopoverPosition, setDueDatePopoverPosition] = useState({
+    top: 0,
+    left: 0,
+  });
   const containerRef = useRef<HTMLDivElement>(null);
+  const dueDatePopoverRef = useRef<HTMLDivElement>(null);
+  const dueDateTriggerRef = useRef<HTMLButtonElement>(null);
   const dropdownTriggerRef = useRef<HTMLButtonElement>(null);
-  const dueDateInputRef = useRef<HTMLInputElement>(null);
   const skipBlurSaveRef = useRef(false);
+
+  const parseDateKeyToDate = useCallback(
+    (dateKey: string | null | undefined) => {
+      if (!dateKey) return undefined;
+      const [yearText, monthText, dayText] = dateKey.split("-");
+      const year = Number.parseInt(yearText, 10);
+      const month = Number.parseInt(monthText, 10);
+      const day = Number.parseInt(dayText, 10);
+      if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) {
+        return undefined;
+      }
+      const date = new Date(year, month - 1, day);
+      if (
+        date.getFullYear() !== year ||
+        date.getMonth() !== month - 1 ||
+        date.getDate() !== day
+      ) {
+        return undefined;
+      }
+      return date;
+    },
+    [],
+  );
 
   const {
     attributes,
@@ -149,26 +181,56 @@ export function SortableTodoItem({
     setEditingTodoId(todo.id);
   };
 
-  const handleClickChangeDueDate = (anchorElement?: HTMLElement | null) => {
+  const handleClickChangeDueDate = () => {
     if (!isEditable()) return;
 
-    const input = dueDateInputRef.current;
-    const trigger = anchorElement ?? dropdownTriggerRef.current;
-    if (!input || !trigger) return;
-
-    // Position the portal-mounted date input near the trigger so
-    // native picker popovers open next to the dropdown area.
-    const rect = trigger.getBoundingClientRect();
-    input.style.top = `${Math.round(rect.bottom + 6)}px`;
-    input.style.left = `${Math.round(rect.right - 2)}px`;
-
-    input.focus({ preventScroll: true });
-    if (typeof input.showPicker === "function") {
-      input.showPicker();
-    } else {
-      input.click();
-    }
+    setSelectedDueDate(parseDateKeyToDate(todo.dueDate));
+    setIsDueDatePickerOpen(true);
   };
+
+  const handleSelectDueDate = (nextDate: Date | undefined) => {
+    if (!isEditable()) return;
+
+    if (!nextDate) {
+      todoCollection.update(todo.id, (draft) => {
+        draft.dueDate = null;
+      });
+      setIsDueDatePickerOpen(false);
+      return;
+    }
+
+    todoCollection.update(todo.id, (draft) => {
+      draft.dueDate = formatDateKey(nextDate);
+    });
+    setSelectedDueDate(nextDate);
+    setIsDueDatePickerOpen(false);
+  };
+
+  const updateDueDatePopoverPosition = useCallback(() => {
+    const anchorElement =
+      dueDateTriggerRef.current ??
+      dropdownTriggerRef.current ??
+      containerRef.current;
+    if (!anchorElement) return;
+
+    const anchorRect = anchorElement.getBoundingClientRect();
+    const popoverWidth = 320;
+    const viewportPadding = 8;
+    const desiredLeft = anchorRect.left;
+    const maxLeft = window.innerWidth - popoverWidth - viewportPadding;
+    const left = Math.max(viewportPadding, Math.min(desiredLeft, maxLeft));
+
+    const desiredTop = anchorRect.bottom + 8;
+    const estimatedPopoverHeight = 360;
+    const shouldPlaceAbove =
+      desiredTop + estimatedPopoverHeight >
+      window.innerHeight - viewportPadding;
+    const top = shouldPlaceAbove
+      ? Math.max(viewportPadding, anchorRect.top - estimatedPopoverHeight - 8)
+      : desiredTop;
+
+    setDueDatePopoverPosition({ top, left });
+  }, []);
 
   const handleClearDueDate = () => {
     if (!isEditable()) return;
@@ -181,6 +243,70 @@ export function SortableTodoItem({
     if (editingTodoId === todo.id) return;
     setLocalTitle(todo.title);
   }, [editingTodoId, todo.id, todo.title]);
+
+  useEffect(() => {
+    if (!isDueDatePickerOpen) return;
+
+    updateDueDatePopoverPosition();
+
+    const handleOutsidePointerDown = (event: MouseEvent | TouchEvent) => {
+      const target = event.target as Node;
+      const clickedInsidePopover = dueDatePopoverRef.current?.contains(target);
+      const clickedOnTrigger = dueDateTriggerRef.current?.contains(target);
+      if (!clickedInsidePopover && !clickedOnTrigger) {
+        setIsDueDatePickerOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsDueDatePickerOpen(false);
+      }
+    };
+
+    const handleReposition = () => {
+      updateDueDatePopoverPosition();
+    };
+
+    document.addEventListener("mousedown", handleOutsidePointerDown);
+    document.addEventListener("touchstart", handleOutsidePointerDown);
+    document.addEventListener("keydown", handleEscape);
+    window.addEventListener("resize", handleReposition);
+    window.addEventListener("scroll", handleReposition, true);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsidePointerDown);
+      document.removeEventListener("touchstart", handleOutsidePointerDown);
+      document.removeEventListener("keydown", handleEscape);
+      window.removeEventListener("resize", handleReposition);
+      window.removeEventListener("scroll", handleReposition, true);
+    };
+  }, [isDueDatePickerOpen, updateDueDatePopoverPosition]);
+
+  const dayPickerClassNames = useMemo(
+    () => ({
+      month: "space-y-3",
+      caption: "flex items-center justify-between px-1",
+      caption_label: "font-medium text-sm text-base-content",
+      nav: "flex items-center gap-1",
+      button_previous:
+        "btn btn-ghost btn-xs min-h-0 h-7 w-7 p-0 rounded-md text-base-content/70 hover:text-base-content",
+      button_next:
+        "btn btn-ghost btn-xs min-h-0 h-7 w-7 p-0 rounded-md text-base-content/70 hover:text-base-content",
+      chevron: "h-4 w-4 stroke-current",
+      weekdays: "grid grid-cols-7 gap-1",
+      weekday: "text-xs text-base-content/50 text-center py-1",
+      week: "grid grid-cols-7 gap-1",
+      day: "text-center",
+      day_button:
+        "h-8 w-8 rounded-md text-sm transition-colors hover:bg-base-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary text-base-content",
+      selected:
+        "[&>button]:bg-primary [&>button]:text-primary-content [&>button]:hover:bg-primary",
+      today:
+        "[&>button]:border [&>button]:border-primary/40 [&>button]:font-semibold",
+      outside: "[&>button]:text-base-content/35",
+    }),
+    [],
+  );
 
   // !outline-none !ring-0 focus:!ring-0 - Force hide browser default focus styles that cause fat corners
   return (
@@ -275,31 +401,36 @@ export function SortableTodoItem({
                 Due {formatDueDateBadge(todo.dueDate)}
               </span>
             ) : (
-              <div className="group relative inline-flex items-center overflow-hidden rounded-full border border-base-300 bg-base-300/70 text-xs text-base-content/70">
-                <button
-                  type="button"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleClearDueDate();
-                  }}
-                  className="absolute left-1 top-1/2 z-10 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full text-base-content/50 opacity-0 transition-all duration-200 hover:bg-error/10 hover:text-error group-hover:opacity-100 group-focus-within:opacity-100"
-                  aria-label="Clear due date"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleClickChangeDueDate(event.currentTarget);
-                  }}
-                  className="inline-flex items-center px-3 py-0.5 transition-all duration-200 hover:text-primary group-hover:pl-6 group-focus-within:pl-6"
-                  aria-label={`Edit due date, currently ${formatDueDateBadge(todo.dueDate)}`}
-                >
-                  Due {formatDueDateBadge(todo.dueDate)}
-                </button>
+              <div className="group relative inline-flex items-center">
+                <div className="relative inline-flex items-center overflow-hidden rounded-full border border-base-300 bg-base-300/70 text-xs text-base-content/70">
+                  <button
+                    type="button"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleClearDueDate();
+                    }}
+                    className="absolute left-1 top-1/2 z-10 flex h-4 w-4 -translate-y-1/2 items-center justify-center rounded-full text-base-content/50 opacity-0 transition-all duration-200 hover:bg-error/10 hover:text-error group-hover:opacity-100 group-focus-within:opacity-100"
+                    aria-label="Clear due date"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                  <button
+                    ref={dueDateTriggerRef}
+                    type="button"
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedDueDate(parseDateKeyToDate(todo.dueDate));
+                      setIsDueDatePickerOpen((open) => !open);
+                    }}
+                    className="inline-flex items-center px-3 py-0.5 transition-all duration-200 hover:text-primary group-hover:pl-6 group-focus-within:pl-6"
+                    aria-label={`Edit due date, currently ${formatDueDateBadge(todo.dueDate)}`}
+                    aria-expanded={isDueDatePickerOpen}
+                  >
+                    Due {formatDueDateBadge(todo.dueDate)}
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -348,31 +479,6 @@ export function SortableTodoItem({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {typeof document !== "undefined" &&
-        createPortal(
-          <input
-            ref={dueDateInputRef}
-            type="date"
-            value={todo.dueDate ?? ""}
-            onChange={(event) => {
-              todoCollection.update(todo.id, (draft) => {
-                draft.dueDate = event.target.value || null;
-              });
-            }}
-            tabIndex={-1}
-            aria-hidden="true"
-            style={{
-              position: "fixed",
-              top: 0,
-              left: 0,
-              width: 1,
-              height: 1,
-              opacity: 0,
-              pointerEvents: "none",
-            }}
-          />,
-          document.body,
-        )}
 
       <ConfirmationModal
         isOpen={showDeleteModal}
@@ -383,6 +489,53 @@ export function SortableTodoItem({
         confirmText="Delete"
         variant="danger"
       />
+
+      {typeof document !== "undefined" &&
+        isDueDatePickerOpen &&
+        createPortal(
+          <div
+            ref={dueDatePopoverRef}
+            className="fixed z-[80] w-[320px] rounded-lg border border-base-300 bg-base-100 p-3 shadow-2xl"
+            style={{
+              top: dueDatePopoverPosition.top,
+              left: dueDatePopoverPosition.left,
+            }}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <DayPicker
+              mode="single"
+              selected={selectedDueDate}
+              onSelect={handleSelectDueDate}
+              showOutsideDays
+              weekStartsOn={1}
+              className="mx-auto"
+              classNames={dayPickerClassNames}
+            />
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  handleSelectDueDate(undefined);
+                }}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-xs"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsDueDatePickerOpen(false);
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
