@@ -23,27 +23,44 @@ jobs:
         run: |
           VERSION=$(grep '"version"' apps/every-app-gateway/package.json | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Check if version tag already exists
+        id: release_check
+        run: |
+          TAG="gateway-v${{ steps.version.outputs.version }}"
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "should_release=false" >> $GITHUB_OUTPUT
+            echo "Tag $TAG already exists. Skipping release steps."
+          else
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          fi
       - name: Setup pnpm
+        if: steps.release_check.outputs.should_release == 'true'
         uses: pnpm/action-setup@v4
         with:
           version: 10
       - name: Setup Node.js
+        if: steps.release_check.outputs.should_release == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: 'pnpm'
       - name: Install dependencies
+        if: steps.release_check.outputs.should_release == 'true'
         run: pnpm install --ignore-scripts
       - name: Build gateway and create release package
+        if: steps.release_check.outputs.should_release == 'true'
         run: pnpm run build:release
         working-directory: apps/every-app-gateway
       - name: Move tarball to repo root
+        if: steps.release_check.outputs.should_release == 'true'
         run: mv apps/every-app-gateway/every-app-gateway-build.tar.gz .
       - name: Create version tag
+        if: steps.release_check.outputs.should_release == 'true'
         run: |
           git tag -a "gateway-v${{ steps.version.outputs.version }}" -m "Release gateway version ${{ steps.version.outputs.version }}"
           git push origin "gateway-v${{ steps.version.outputs.version }}"
       - name: Create versioned release
+        if: steps.release_check.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: gateway-v${{ steps.version.outputs.version }}
@@ -64,10 +81,12 @@ jobs:
             every gateway deploy
             ```
       - name: Update gateway-latest tag
+        if: steps.release_check.outputs.should_release == 'true'
         run: |
           git tag -f gateway-latest
           git push -f origin gateway-latest
       - name: Update gateway-latest release
+        if: steps.release_check.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: gateway-latest
