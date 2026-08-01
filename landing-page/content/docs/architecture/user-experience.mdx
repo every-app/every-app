@@ -1,0 +1,62 @@
+---
+title: "Gateway: End-User Experience"
+description: What users actually see — from first visit to admin — and what's still half-built
+---
+
+> Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-07-15.
+
+**The experience in one sentence:** you log in once at the gateway, land on a launcher of app links, and every app is just a subdomain click away — no per-app logins, no tokens, no auth UI inside apps. (Declared-public routes are the one exception: apps may run their own API/webhook auth there.)
+
+## The five journeys
+
+### 1. First person ever (the owner)
+
+1. Visit `/` → redirected to `/sign-in` → click **Sign up**.
+2. Because no owner exists yet (`hasOwner()` check), the form is **Create Admin Account** — email + password (8+ chars).
+3. Bootstrap creates the user, an org named "My Organization", and signs them in.
+4. The home page shows the one live onboarding step: **Deploy your first app** — clone the todo template, `npx everyapp app deploy`, refresh. Completion is inferred from "you have ≥1 app".
+
+Once any owner exists, direct sign-up is dead: the UI shows **Invitation Required**, and Better Auth rejects non-invited registrations server-side (gateway-global, not per-org).
+
+### 2. Returning user
+
+- **Email + password only.** No passkeys, social login, magic links, or SSO.
+- If the perimeter bounced you here from an app subdomain, `return_to` sends you back to the full app URL after sign-in (validated: gateway host + subdomains only).
+- Forgot/reset password works end-to-end, with non-enumerating responses; owners can also trigger a reset email for a member from the admin panel.
+- Auth flows share a Cloudflare CPU-timeout recovery screen (retries up to 10× with countdown — password hashing can blow the free-plan CPU budget).
+
+### 3. Everyday use — the launcher
+
+- Home page = header (org name, Admin link for owner/admin, sign out) + your app list for the **active org**.
+- Clicking an active app navigates same-tab to `//<app>.<gateway-host>`. No iframe, no token handoff — the shared cookie does the work.
+- Apps that aren't routable show dimmed with a badge — `needs deploy` when there's no hostname yet, otherwise the raw status (`deploying`, `disabled`).
+- Members with zero granted apps are told to contact their admin; owners see deploy instructions instead.
+- PWA install lives behind `/pwa` (→ `/?pwa=true`): native prompt on Android, manual instructions on iOS, QR code on desktop.
+
+### 4. Invitations
+
+1. Owner enters an email in **Invite User** (role is always `member` — no selector).
+2. Recipient's link → sign in or create account (email must match the invite — case-insensitive, trimmed).
+3. After authenticating, they press **Join Organization** — acceptance is a separate explicit step.
+4. Membership grants all of the org's default apps automatically.
+
+### 5. Admin (`/admin`, desktop only — mobile shows "Coming Soon")
+
+| Tab        | What you can do                                                                                                                                                                                              |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Users      | See members + pending invites in one table; send reset email; delete user (removes membership; deletes the account only if it belongs to no other org).                                                      |
+| Apps       | Apps appear only via `everyapp app deploy` — no manual create. Edit name/description/auto-grant; manage per-user access (can't revoke yourself); delete the registry row (does **not** undeploy the worker). |
+| App Tokens | Create `eat_` app tokens (per-app, provider scopes) and `eak_` deploy tokens (org-wide); one-time reveal modal; revoke.                                                                                      |
+
+**Organizations** (`/organizations`): create an org or switch the active one. It's a workspace switcher, not org management — no rename/delete, no member/role management, no ownership transfer.
+
+**App slugs are organization-scoped:** two organizations can both deploy `todo`. The gateway derives the globally unique routing hostname `<appSlug>-<orgSlug>.<gateway-host>` from the app id and Better Auth organization slug.
+
+## What does NOT exist yet (found while reading)
+
+- **Deploy-time access controls do not exist** — every newly registered app is a default app granted to every current organization member; admins can change access afterward.
+- **No role assignment** — the `admin` role now works (admins get day-to-day management; deletes and tokens stay owner-only), but nothing in the UI promotes someone to `admin` or transfers ownership, so admin must be set out-of-band.
+- **No invite resend** — pending invites can be cancelled, but there's no resend.
+- **No PWA install entry point** — the standalone install modal is reachable only via the `/pwa` URL; there's no button for it (the onboarding step was removed).
+
+_Fixed since these notes were first written: the admin role now functions, the disabled PWA onboarding step was removed, pending invites can be cancelled, and the first-owner bootstrap race is closed._

@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { ClipboardList, History, CalendarClock } from "lucide-react";
-import { useLiveQuery } from "@tanstack/react-db";
-import { todoCollection } from "@/client/tanstack-db";
+import { useTodos } from "@/client/queries/todos";
 import { createPortal } from "react-dom";
 import { useDelayedHover } from "@/client/hooks/useDelayedHover";
+import { gatewayHomeUrl } from "@/client/lib/gatewayHome";
 
 interface SidebarProps {
   currentPath: string;
@@ -11,7 +11,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ currentPath, onShowShortcuts }: SidebarProps) {
-  const { data: todos } = useLiveQuery((q) => q.from({ todo: todoCollection }));
+  const { data: todos } = useTodos();
   const { hoveredItem, tooltipPosition, onMouseEnter, onMouseLeave } =
     useDelayedHover<string>();
 
@@ -49,7 +49,7 @@ export function Sidebar({ currentPath, onShowShortcuts }: SidebarProps) {
       {/* Header */}
       <div className="px-4 py-4 border-b border-base-300">
         <a
-          href={import.meta.env.VITE_GATEWAY_URL}
+          href={gatewayHomeUrl()}
           target="_top"
           className="font-semibold text-base-content hover:text-primary transition-colors"
         >

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { z } from "zod";
-import { getSessionToken } from "@every-app/sdk/core";
-import { queryClient } from "../tanstack-db/queryClient";
+import { queryClient } from "@/client/queryClient";
+import { todosKey } from "@/client/queries/todos";
 
 /**
  * Reconnection backoff configuration.
@@ -11,12 +11,6 @@ import { queryClient } from "../tanstack-db/queryClient";
  */
 const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 30000;
-
-/**
- * Delay before retrying connection when no auth token is available.
- * Shorter than reconnect delay since this is likely a timing issue during page load.
- */
-const TOKEN_RETRY_DELAY_MS = 2000;
 
 /**
  * Events that trigger query invalidation when received via sync.
@@ -52,17 +46,11 @@ export function useSyncEvents() {
       return;
     }
 
-    const connect = async () => {
-      let token: string;
-      try {
-        token = await getSessionToken();
-      } catch {
-        reconnectTimeoutRef.current = setTimeout(connect, TOKEN_RETRY_DELAY_MS);
-        return;
-      }
-
+    const connect = () => {
+      // Same-origin WebSocket through the gateway — the session cookie rides
+      // along and the gateway injects the verified identity. No client token.
       const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-      const url = `${protocol}//${window.location.host}/api/sync?token=${encodeURIComponent(token)}`;
+      const url = `${protocol}//${window.location.host}/api/sync`;
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
@@ -106,6 +94,6 @@ export function useSyncEvents() {
 
 function handleSyncMessage(message: SyncMessage) {
   if (INVALIDATING_SYNC_EVENTS.has(message.event)) {
-    queryClient.invalidateQueries({ queryKey: ["todos"] });
+    queryClient.invalidateQueries({ queryKey: todosKey });
   }
 }

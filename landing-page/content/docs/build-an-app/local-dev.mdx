@@ -1,0 +1,76 @@
+---
+title: Local Development
+description: Run your app locally with real auth
+---
+
+From your app's directory:
+
+```bash
+npx everyapp dev
+```
+
+Then open `http://your-app-id.localhost:8787` (for the todo app, `http://todo.localhost:8787`). Browsers resolve `*.localhost` automatically; nothing to configure.
+
+Pending database migrations are applied on startup, so a freshly cloned app works on the first request. After changing your schema, run `pnpm run db:generate` to write the migration, then restart — or pass `--skip-migrations` if you want to manage them yourself.
+
+## What's running
+
+`everyapp dev` starts two things: your app's normal vite dev server (hot reload intact) and a small local gateway in front of it. The local gateway runs the same security perimeter as production: it checks the session, mints the same kind of signed identity pass, and strips the same headers. You're signed in as a seeded dev user (`dev@everyapp.localhost`) so there's nothing to set up.
+
+This means dev and production share one auth path. If your app works locally, it works deployed; there's no "works on my machine, 401s in prod" class of bug. It also means hitting the app's internal vite port directly (the CLI prints it on startup) returns 401 while the same page through `http://your-app-id.localhost:8787` renders. That's the security model working, not a bug: your app is unreachable except through the front door, locally and in production.
+
+## Advanced
+
+<details className="faq">
+<summary>Mirror mode: real login instead of the seeded dev user</summary>
+<div className="faq-content">
+
+By default (`--mode stub`) you're a seeded dev user, and that's all you need for building apps. If you're developing the Gateway itself or debugging real sessions, orgs, or launcher behavior, mirror mode authenticates against a locally-running Gateway instead.
+
+One-time setup: in the gateway's `apps/every-app-gateway/.dev.vars`, set:
+
+```bash
+EVERYAPP_DEV_COOKIE_DOMAIN=everyapp.localhost
+GATEWAY_URL=http://everyapp.localhost:8787
+```
+
+Then run both:
+
+```bash
+# terminal 1 — run the gateway (requires a local checkout of the Every App monorepo)
+cd apps/every-app-gateway && pnpm dev
+
+# terminal 2 — from your app
+npx everyapp dev --mode mirror --baseHost everyapp.localhost
+```
+
+Open `http://everyapp.localhost:8787`, log in for real, then visit `http://your-app-id.everyapp.localhost:8787`. The two-label base host matters: the session cookie has to travel from the gateway to the app subdomain, which a bare `localhost` can't do. The CLI refuses a one-label base host and prints guidance.
+
+</div>
+</details>
+
+<details className="faq">
+<summary>Several instances at once (git worktrees + portless)</summary>
+<div className="faq-content">
+
+`everyapp dev` honors the `PORT` env var and parses the Host header dynamically (first label = app, remainder = base host). With [portless](https://github.com/vercel-labs/portless), every git worktree gets its own named URL and its own isolated state:
+
+```
+main worktree:       http://todo.everyapp.localhost
+worktree on fix-ui:  http://todo.fix-ui.everyapp.localhost
+```
+
+Each worktree keeps separate local databases and dev keys, so instances never share sessions or data.
+
+</div>
+</details>
+
+<details className="faq">
+<summary>What the CLI writes into your project</summary>
+<div className="faq-content">
+
+- `.everyapp/dev-keys.json` — a persistent local signing keypair, generated on first run and gitignored automatically. Dev identity passes are signed with it, so your app verifies real signatures in dev on the same code path as production. Dev keys are marked as dev-only and can never be mistaken for production credentials.
+- `.dev.vars` — gets `EVERYAPP_IDENTITY_PUBLIC_KEYS` (the dev public key) and `EVERYAPP_DEV=1`, which the Cloudflare vite plugin loads into your worker's environment.
+
+</div>
+</details>

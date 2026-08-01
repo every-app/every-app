@@ -1,40 +1,20 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { useOnboarding } from "@/client/hooks/useOnboarding";
 import { DeployAppStep } from "./DeployAppStep";
-import { MobileAppStep } from "./MobileAppStep";
 
 export function OnboardingBanner() {
   const { showOnboarding, steps, progress, isLoading } = useOnboarding();
 
-  // Compute the default expanded step based on current state
-  const defaultExpandedStep = useMemo((): "deploy" | "mobile" | null => {
-    if (steps.deployApp.show && !steps.deployApp.complete) return "deploy";
-    return "mobile";
-  }, [steps.deployApp.show, steps.deployApp.complete]);
-
-  // Track user's manual expansion choice (null means use default)
-  const [userExpandedStep, setUserExpandedStep] = useState<
-    "deploy" | "mobile" | null | "none"
-  >(null);
-
-  // Use user's choice if set, otherwise use default
-  const expandedStep =
-    userExpandedStep === "none"
-      ? null
-      : (userExpandedStep ?? defaultExpandedStep);
+  // Track user's manual expansion choice (null means use default: expanded
+  // while the deploy step is incomplete)
+  const [userCollapsed, setUserCollapsed] = useState<boolean | null>(null);
+  const isExpanded =
+    userCollapsed === null ? !steps.deployApp.complete : !userCollapsed;
 
   // Don't render anything while loading to prevent flickering
-  if (isLoading || !showOnboarding) {
+  if (isLoading || !showOnboarding || !steps.deployApp.show) {
     return null;
   }
-
-  const toggleStep = (step: "deploy" | "mobile") => {
-    setUserExpandedStep((current) => {
-      const effectiveCurrent =
-        current === "none" ? null : (current ?? defaultExpandedStep);
-      return effectiveCurrent === step ? "none" : step;
-    });
-  };
 
   return (
     <div className="bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20 rounded-xl p-4 sm:p-6">
@@ -51,16 +31,9 @@ export function OnboardingBanner() {
 
       {/* Steps */}
       <div className="space-y-3">
-        {steps.deployApp.show && (
-          <DeployAppStep
-            isExpanded={expandedStep === "deploy"}
-            onToggle={() => toggleStep("deploy")}
-          />
-        )}
-
-        <MobileAppStep
-          isExpanded={expandedStep === "mobile"}
-          onToggle={() => toggleStep("mobile")}
+        <DeployAppStep
+          isExpanded={isExpanded}
+          onToggle={() => setUserCollapsed(isExpanded)}
         />
       </div>
     </div>

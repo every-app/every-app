@@ -2,7 +2,10 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { createAuth } from "@/auth";
-import { organizationOwnerMiddleware } from "@/middleware/auth";
+import {
+  organizationAdminMiddleware,
+  organizationOwnerMiddleware,
+} from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
 import { AdminService } from "@/server/services/AdminService";
 
@@ -47,12 +50,12 @@ export const initializeOwner = createServerFn()
 
 /**
  * List all users in the active organization.
- * Only accessible by owners.
+ * Only accessible by organization admins and owners.
  */
 export const listMembers = createServerFn()
-  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
   .handler(async ({ context }) => {
-    return AdminService.listMembers(context.activeOrganizationId);
+    return AdminService.listMembers(context.org);
   });
 
 const deleteUserSchema = z.object({
@@ -68,11 +71,7 @@ export const deleteUser = createServerFn()
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
   .inputValidator((data: unknown) => deleteUserSchema.parse(data))
   .handler(async ({ data, context }) => {
-    return AdminService.deleteUser(
-      data.userId,
-      context.user.id,
-      context.activeOrganizationId,
-    );
+    return AdminService.deleteUser(context.org, data.userId);
   });
 
 // ============================================================================
@@ -85,10 +84,10 @@ const inviteMemberSchema = z.object({
 
 /**
  * Create and send an invitation for a new organization member.
- * Only accessible by owners.
+ * Only accessible by organization admins and owners.
  */
 export const inviteMember = createServerFn()
-  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
   .inputValidator((data: unknown) => inviteMemberSchema.parse(data))
   .handler(async ({ data, context }) => {
     const auth = createAuth();
@@ -99,9 +98,30 @@ export const inviteMember = createServerFn()
       body: {
         email: data.email,
         role: "member",
-        organizationId: context.activeOrganizationId,
+        organizationId: context.org.orgId,
       },
     });
+  });
+
+const cancelInvitationSchema = z.object({
+  invitationId: z.string().min(1, "Invitation ID is required"),
+});
+
+/**
+ * Cancel a pending invitation in the active organization.
+ * Only accessible by organization admins and owners.
+ */
+export const cancelInvitation = createServerFn()
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
+  .inputValidator((data: unknown) => cancelInvitationSchema.parse(data))
+  .handler(async ({ data, context }) => {
+    const request = getRequest();
+
+    return AdminService.cancelInvitation(
+      context.org,
+      data.invitationId,
+      request.headers,
+    );
   });
 
 const sendPasswordResetEmailSchema = z.object({
@@ -110,14 +130,11 @@ const sendPasswordResetEmailSchema = z.object({
 
 /**
  * Send a password reset email for an active user in the active organization.
- * Only accessible by owners.
+ * Only accessible by organization admins and owners.
  */
 export const sendPasswordResetEmail = createServerFn()
-  .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
   .inputValidator((data: unknown) => sendPasswordResetEmailSchema.parse(data))
   .handler(async ({ data, context }) => {
-    return AdminService.sendPasswordResetEmail(
-      data.userId,
-      context.activeOrganizationId,
-    );
+    return AdminService.sendPasswordResetEmail(context.org, data.userId);
   });

@@ -1,13 +1,14 @@
 const PROVIDER_SCOPE_PREFIX = "provider:";
-
-export function normalizeProviderName(provider: string): string {
-  return provider.trim().toLowerCase();
-}
+const DEPLOY_TOKEN_SCOPES = new Set(["apps:register", "apps:deploy"]);
 
 export function normalizeTokenScope(scope: string): string | null {
   const normalized = scope.trim().toLowerCase();
   if (!normalized) {
     return null;
+  }
+
+  if (DEPLOY_TOKEN_SCOPES.has(normalized)) {
+    return normalized;
   }
 
   if (!normalized.startsWith(PROVIDER_SCOPE_PREFIX)) {
@@ -32,14 +33,4 @@ export function normalizeTokenScopes(scopes: string[]): string[] {
     .filter((scope): scope is string => scope !== null);
 
   return [...new Set(normalizedScopes)];
-}
-
-export function hasProviderScope(scopes: string[], provider: string): boolean {
-  const normalizedProvider = normalizeProviderName(provider);
-  if (!normalizedProvider) {
-    return false;
-  }
-
-  const normalizedScopes = new Set(normalizeTokenScopes(scopes));
-  return normalizedScopes.has(`${PROVIDER_SCOPE_PREFIX}${normalizedProvider}`);
 }

@@ -1,10 +1,7 @@
-import { useLiveQuery } from "@tanstack/react-db";
-import {
-  programsCollection,
-  workoutsCollection,
-  exercisesCollection,
-  exerciseLibraryCollection,
-} from "@/client/tanstack-db";
+import { usePrograms } from "@/client/queries/programs";
+import { useWorkouts } from "@/client/queries/workouts";
+import { useWorkoutExercises } from "@/client/queries/workoutExercises";
+import { useExerciseLibrary } from "@/client/queries/exerciseLibrary";
 import { DEFAULT_PROGRESSION_INCREMENT } from "@/client/lib/constants";
 import type {
   Program,
@@ -70,7 +67,7 @@ function buildWorkoutExercisesWithNames(
 }
 
 /**
- * Build the workout hierarchy for a program from flat collections
+ * Build the workout hierarchy for a program from flat query results
  */
 function buildProgramWorkouts(
   programId: string,
@@ -98,18 +95,12 @@ export function useAllProgramsWithWorkouts(): {
   programs: ProgramWithWorkouts[];
   isLoading: boolean;
 } {
-  const { data: programs, isLoading: programsLoading } = useLiveQuery((q) =>
-    q.from({ program: programsCollection }),
-  );
-  const { data: workouts, isLoading: workoutsLoading } = useLiveQuery((q) =>
-    q.from({ workout: workoutsCollection }),
-  );
-  const { data: workoutExercises, isLoading: exercisesLoading } = useLiveQuery(
-    (q) => q.from({ exercise: exercisesCollection }),
-  );
-  const { data: exerciseLibrary, isLoading: libraryLoading } = useLiveQuery(
-    (q) => q.from({ libraryItem: exerciseLibraryCollection }),
-  );
+  const { data: programs, isLoading: programsLoading } = usePrograms();
+  const { data: workouts, isLoading: workoutsLoading } = useWorkouts();
+  const { data: workoutExercises, isLoading: exercisesLoading } =
+    useWorkoutExercises();
+  const { data: exerciseLibrary, isLoading: libraryLoading } =
+    useExerciseLibrary();
 
   // Data is loading if any of the queries are still loading
   const isLoading =

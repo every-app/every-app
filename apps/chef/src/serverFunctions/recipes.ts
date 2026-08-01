@@ -1,40 +1,82 @@
 import { createServerFn } from "@tanstack/react-start";
+import { and, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { recipes } from "@/db/schema";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
-import { useSessionTokenClientMiddleware } from "@every-app/sdk/tanstack";
-import { RecipeService } from "@/server/services/RecipeService";
 import {
   createRecipeSchema,
   updateRecipeSchema,
   deleteRecipeSchema,
 } from "@/types/schemas/recipes";
 
-// Get all recipes for user
 export const getAllRecipes = createServerFn()
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .middleware([ensureUserMiddleware])
   .handler(async ({ context }) => {
-    return RecipeService.getAll(context!.userId);
+    const userRecipes = await db.query.recipes.findMany({
+      where: eq(recipes.userId, context.userId),
+      orderBy: (recipes, { desc }) => [desc(recipes.updatedAt)],
+    });
+
+    return { recipes: userRecipes };
   });
 
-// Create a new recipe
 export const createRecipe = createServerFn({ method: "POST" })
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .middleware([ensureUserMiddleware])
   .inputValidator((data: unknown) => createRecipeSchema.parse(data))
   .handler(async ({ data, context }) => {
-    return RecipeService.create(context!.userId, data);
+    const now = new Date().toISOString();
+
+    await db.insert(recipes).values({
+      id: data.id,
+      userId: context.userId,
+      title: data.title,
+      content: data.content,
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return { success: true };
   });
 
-// Update a recipe
 export const updateRecipe = createServerFn({ method: "POST" })
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .middleware([ensureUserMiddleware])
   .inputValidator((data: unknown) => updateRecipeSchema.parse(data))
   .handler(async ({ data, context }) => {
-    return RecipeService.update(context!.userId, data);
+    const existingRecipe = await db.query.recipes.findFirst({
+      where: and(eq(recipes.id, data.id), eq(recipes.userId, context.userId)),
+    });
+
+    if (!existingRecipe) {
+      throw new Error("Recipe not found or not authorized");
+    }
+
+    await db
+      .update(recipes)
+      .set({
+        title: data.title ?? existingRecipe.title,
+        content: data.content ?? existingRecipe.content,
+        updatedAt: new Date().toISOString(),
+      })
+      .where(and(eq(recipes.id, data.id), eq(recipes.userId, context.userId)));
+
+    return { success: true };
   });
 
-// Delete a recipe
 export const deleteRecipe = createServerFn({ method: "POST" })
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .middleware([ensureUserMiddleware])
   .inputValidator((data: unknown) => deleteRecipeSchema.parse(data))
   .handler(async ({ data, context }) => {
-    return RecipeService.delete(context!.userId, data.id);
+    const existingRecipe = await db.query.recipes.findFirst({
+      where: and(eq(recipes.id, data.id), eq(recipes.userId, context.userId)),
+    });
+
+    if (!existingRecipe) {
+      throw new Error("Recipe not found or not authorized");
+    }
+
+    await db
+      .delete(recipes)
+      .where(and(eq(recipes.id, data.id), eq(recipes.userId, context.userId)));
+
+    return { success: true };
   });

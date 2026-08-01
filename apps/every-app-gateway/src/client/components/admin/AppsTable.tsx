@@ -8,6 +8,7 @@ interface AppsTableProps {
   onManageAccess: (appId: string) => void;
   onEdit: (app: AppWithAccessCount) => void;
   onDelete: (app: AppWithAccessCount) => void;
+  isOwner: boolean;
 }
 
 export function AppsTable({
@@ -15,6 +16,7 @@ export function AppsTable({
   onManageAccess,
   onEdit,
   onDelete,
+  isOwner,
 }: AppsTableProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -102,6 +104,7 @@ export function AppsTable({
                   onManageAccess={() => onManageAccess(app.id)}
                   onEdit={() => onEdit(app)}
                   onDelete={() => onDelete(app)}
+                  isOwner={isOwner}
                 />
               </td>
             </tr>

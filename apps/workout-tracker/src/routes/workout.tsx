@@ -12,6 +12,7 @@ import { MobileSlideLink } from "@/client/components/MobileSlideLink";
 import {
   Dumbbell,
   ArrowLeft,
+  AlertCircle,
   Check,
   CheckCircle,
   ChevronRight,
@@ -26,7 +27,14 @@ function ActiveWorkout() {
   const navigate = useNavigate();
 
   // Use extracted hooks for session management
-  const { workoutData, sessionId, sessionSetLogs } = useWorkoutSession();
+  const {
+    workoutData,
+    sessionId,
+    sessionSetLogs,
+    sessionError,
+    isSessionInitializing,
+    retrySessionCreation,
+  } = useWorkoutSession();
 
   // Get completion tracking and handlers
   const {
@@ -96,6 +104,24 @@ function ActiveWorkout() {
             {isCompleting ? "Saving..." : "Finish"}
           </Button>
         </div>
+
+        {sessionError && (
+          <div className="alert alert-error mb-6" role="alert">
+            <AlertCircle className="h-5 w-5 shrink-0" />
+            <div className="flex-1">
+              <p className="font-semibold">Could not start this workout</p>
+              <p className="text-sm">{sessionError.message}</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isSessionInitializing}
+              onClick={() => void retrySessionCreation()}
+            >
+              {isSessionInitializing ? "Retrying..." : "Retry"}
+            </Button>
+          </div>
+        )}
 
         {/* Progress */}
         <div className="mb-8">

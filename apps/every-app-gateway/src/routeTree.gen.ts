@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SnakeRouteImport } from './routes/snake'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
@@ -20,30 +19,18 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
-import { Route as AppsAppIdRouteImport } from './routes/apps/$appId'
-import { Route as ApiUserAppsRouteImport } from './routes/api/user-apps'
-import { Route as ApiSessionTokenRouteImport } from './routes/api/session-token'
+import { Route as OauthAuthorizeRouteImport } from './routes/oauth/authorize'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminTokensRouteImport } from './routes/admin/tokens'
 import { Route as AdminAppsRouteImport } from './routes/admin/apps'
-import { Route as AppsAppIdDevRouteImport } from './routes/apps/$appId_.dev'
-import { Route as AppsAppIdSplatRouteImport } from './routes/apps/$appId.$'
-import { Route as ApiEmbeddedJwksRouteImport } from './routes/api/embedded/jwks'
+import { Route as ApiMeAppsRouteImport } from './routes/api/me/apps'
+import { Route as ApiDevIdentityRouteImport } from './routes/api/dev/identity'
+import { Route as ApiDeployWhoamiRouteImport } from './routes/api/deploy/whoami'
+import { Route as ApiDeployRegisterRouteImport } from './routes/api/deploy/register'
+import { Route as ApiDeployIdentityKeysRouteImport } from './routes/api/deploy/identity-keys'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiAdminHasOwnerRouteImport } from './routes/api/admin/has-owner'
-import { Route as AppsAppIdDevSplatRouteImport } from './routes/apps/$appId_.dev.$'
-import { Route as ApiInternalAppsUsersRouteImport } from './routes/api/internal/apps/users'
-import { Route as ApiInternalAppsRegisterRouteImport } from './routes/api/internal/apps/register'
-import { Route as ApiInternalAppsOrganizationsRouteImport } from './routes/api/internal/apps/organizations'
-import { Route as ApiInternalAppsContextRouteImport } from './routes/api/internal/apps/context'
-import { Route as ApiInternalAppTokenProvisionRouteImport } from './routes/api/internal/app-token/provision'
-import { Route as ApiAiProviderSplatRouteImport } from './routes/api/ai/$provider.$'
 
-const SnakeRoute = SnakeRouteImport.update({
-  id: '/snake',
-  path: '/snake',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
   path: '/sign-up',
@@ -94,19 +81,9 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
-const AppsAppIdRoute = AppsAppIdRouteImport.update({
-  id: '/apps/$appId',
-  path: '/apps/$appId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiUserAppsRoute = ApiUserAppsRouteImport.update({
-  id: '/api/user-apps',
-  path: '/api/user-apps',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSessionTokenRoute = ApiSessionTokenRouteImport.update({
-  id: '/api/session-token',
-  path: '/api/session-token',
+const OauthAuthorizeRoute = OauthAuthorizeRouteImport.update({
+  id: '/oauth/authorize',
+  path: '/oauth/authorize',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
@@ -124,19 +101,29 @@ const AdminAppsRoute = AdminAppsRouteImport.update({
   path: '/apps',
   getParentRoute: () => AdminRoute,
 } as any)
-const AppsAppIdDevRoute = AppsAppIdDevRouteImport.update({
-  id: '/apps/$appId_/dev',
-  path: '/apps/$appId/dev',
+const ApiMeAppsRoute = ApiMeAppsRouteImport.update({
+  id: '/api/me/apps',
+  path: '/api/me/apps',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AppsAppIdSplatRoute = AppsAppIdSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
-  getParentRoute: () => AppsAppIdRoute,
+const ApiDevIdentityRoute = ApiDevIdentityRouteImport.update({
+  id: '/api/dev/identity',
+  path: '/api/dev/identity',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const ApiEmbeddedJwksRoute = ApiEmbeddedJwksRouteImport.update({
-  id: '/api/embedded/jwks',
-  path: '/api/embedded/jwks',
+const ApiDeployWhoamiRoute = ApiDeployWhoamiRouteImport.update({
+  id: '/api/deploy/whoami',
+  path: '/api/deploy/whoami',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDeployRegisterRoute = ApiDeployRegisterRouteImport.update({
+  id: '/api/deploy/register',
+  path: '/api/deploy/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDeployIdentityKeysRoute = ApiDeployIdentityKeysRouteImport.update({
+  id: '/api/deploy/identity-keys',
+  path: '/api/deploy/identity-keys',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -147,43 +134,6 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 const ApiAdminHasOwnerRoute = ApiAdminHasOwnerRouteImport.update({
   id: '/api/admin/has-owner',
   path: '/api/admin/has-owner',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AppsAppIdDevSplatRoute = AppsAppIdDevSplatRouteImport.update({
-  id: '/$',
-  path: '/$',
-  getParentRoute: () => AppsAppIdDevRoute,
-} as any)
-const ApiInternalAppsUsersRoute = ApiInternalAppsUsersRouteImport.update({
-  id: '/api/internal/apps/users',
-  path: '/api/internal/apps/users',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiInternalAppsRegisterRoute = ApiInternalAppsRegisterRouteImport.update({
-  id: '/api/internal/apps/register',
-  path: '/api/internal/apps/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiInternalAppsOrganizationsRoute =
-  ApiInternalAppsOrganizationsRouteImport.update({
-    id: '/api/internal/apps/organizations',
-    path: '/api/internal/apps/organizations',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiInternalAppsContextRoute = ApiInternalAppsContextRouteImport.update({
-  id: '/api/internal/apps/context',
-  path: '/api/internal/apps/context',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiInternalAppTokenProvisionRoute =
-  ApiInternalAppTokenProvisionRouteImport.update({
-    id: '/api/internal/app-token/provision',
-    path: '/api/internal/app-token/provision',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiAiProviderSplatRoute = ApiAiProviderSplatRouteImport.update({
-  id: '/api/ai/$provider/$',
-  path: '/api/ai/$provider/$',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -197,26 +147,18 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
-  '/snake': typeof SnakeRoute
   '/admin/apps': typeof AdminAppsRoute
   '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
-  '/api/session-token': typeof ApiSessionTokenRoute
-  '/api/user-apps': typeof ApiUserAppsRoute
-  '/apps/$appId': typeof AppsAppIdRouteWithChildren
+  '/oauth/authorize': typeof OauthAuthorizeRoute
   '/admin/': typeof AdminIndexRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
-  '/apps/$appId/$': typeof AppsAppIdSplatRoute
-  '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
-  '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
-  '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
-  '/api/internal/apps/context': typeof ApiInternalAppsContextRoute
-  '/api/internal/apps/organizations': typeof ApiInternalAppsOrganizationsRoute
-  '/api/internal/apps/register': typeof ApiInternalAppsRegisterRoute
-  '/api/internal/apps/users': typeof ApiInternalAppsUsersRoute
-  '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
+  '/api/deploy/identity-keys': typeof ApiDeployIdentityKeysRoute
+  '/api/deploy/register': typeof ApiDeployRegisterRoute
+  '/api/deploy/whoami': typeof ApiDeployWhoamiRoute
+  '/api/dev/identity': typeof ApiDevIdentityRoute
+  '/api/me/apps': typeof ApiMeAppsRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -227,26 +169,18 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
-  '/snake': typeof SnakeRoute
   '/admin/apps': typeof AdminAppsRoute
   '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
-  '/api/session-token': typeof ApiSessionTokenRoute
-  '/api/user-apps': typeof ApiUserAppsRoute
-  '/apps/$appId': typeof AppsAppIdRouteWithChildren
+  '/oauth/authorize': typeof OauthAuthorizeRoute
   '/admin': typeof AdminIndexRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
-  '/apps/$appId/$': typeof AppsAppIdSplatRoute
-  '/apps/$appId/dev': typeof AppsAppIdDevRouteWithChildren
-  '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
-  '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
-  '/api/internal/apps/context': typeof ApiInternalAppsContextRoute
-  '/api/internal/apps/organizations': typeof ApiInternalAppsOrganizationsRoute
-  '/api/internal/apps/register': typeof ApiInternalAppsRegisterRoute
-  '/api/internal/apps/users': typeof ApiInternalAppsUsersRoute
-  '/apps/$appId/dev/$': typeof AppsAppIdDevSplatRoute
+  '/api/deploy/identity-keys': typeof ApiDeployIdentityKeysRoute
+  '/api/deploy/register': typeof ApiDeployRegisterRoute
+  '/api/deploy/whoami': typeof ApiDeployWhoamiRoute
+  '/api/dev/identity': typeof ApiDevIdentityRoute
+  '/api/me/apps': typeof ApiMeAppsRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -259,26 +193,18 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
-  '/snake': typeof SnakeRoute
   '/admin/apps': typeof AdminAppsRoute
   '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
-  '/api/session-token': typeof ApiSessionTokenRoute
-  '/api/user-apps': typeof ApiUserAppsRoute
-  '/apps/$appId': typeof AppsAppIdRouteWithChildren
+  '/oauth/authorize': typeof OauthAuthorizeRoute
   '/admin/': typeof AdminIndexRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/embedded/jwks': typeof ApiEmbeddedJwksRoute
-  '/apps/$appId/$': typeof AppsAppIdSplatRoute
-  '/apps/$appId_/dev': typeof AppsAppIdDevRouteWithChildren
-  '/api/ai/$provider/$': typeof ApiAiProviderSplatRoute
-  '/api/internal/app-token/provision': typeof ApiInternalAppTokenProvisionRoute
-  '/api/internal/apps/context': typeof ApiInternalAppsContextRoute
-  '/api/internal/apps/organizations': typeof ApiInternalAppsOrganizationsRoute
-  '/api/internal/apps/register': typeof ApiInternalAppsRegisterRoute
-  '/api/internal/apps/users': typeof ApiInternalAppsUsersRoute
-  '/apps/$appId_/dev/$': typeof AppsAppIdDevSplatRoute
+  '/api/deploy/identity-keys': typeof ApiDeployIdentityKeysRoute
+  '/api/deploy/register': typeof ApiDeployRegisterRoute
+  '/api/deploy/whoami': typeof ApiDeployWhoamiRoute
+  '/api/dev/identity': typeof ApiDevIdentityRoute
+  '/api/me/apps': typeof ApiMeAppsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -292,26 +218,18 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/sign-in'
     | '/sign-up'
-    | '/snake'
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/users'
-    | '/api/session-token'
-    | '/api/user-apps'
-    | '/apps/$appId'
+    | '/oauth/authorize'
     | '/admin/'
     | '/api/admin/has-owner'
     | '/api/auth/$'
-    | '/api/embedded/jwks'
-    | '/apps/$appId/$'
-    | '/apps/$appId/dev'
-    | '/api/ai/$provider/$'
-    | '/api/internal/app-token/provision'
-    | '/api/internal/apps/context'
-    | '/api/internal/apps/organizations'
-    | '/api/internal/apps/register'
-    | '/api/internal/apps/users'
-    | '/apps/$appId/dev/$'
+    | '/api/deploy/identity-keys'
+    | '/api/deploy/register'
+    | '/api/deploy/whoami'
+    | '/api/dev/identity'
+    | '/api/me/apps'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -322,26 +240,18 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/sign-in'
     | '/sign-up'
-    | '/snake'
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/users'
-    | '/api/session-token'
-    | '/api/user-apps'
-    | '/apps/$appId'
+    | '/oauth/authorize'
     | '/admin'
     | '/api/admin/has-owner'
     | '/api/auth/$'
-    | '/api/embedded/jwks'
-    | '/apps/$appId/$'
-    | '/apps/$appId/dev'
-    | '/api/ai/$provider/$'
-    | '/api/internal/app-token/provision'
-    | '/api/internal/apps/context'
-    | '/api/internal/apps/organizations'
-    | '/api/internal/apps/register'
-    | '/api/internal/apps/users'
-    | '/apps/$appId/dev/$'
+    | '/api/deploy/identity-keys'
+    | '/api/deploy/register'
+    | '/api/deploy/whoami'
+    | '/api/dev/identity'
+    | '/api/me/apps'
   id:
     | '__root__'
     | '/'
@@ -353,26 +263,18 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/sign-in'
     | '/sign-up'
-    | '/snake'
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/users'
-    | '/api/session-token'
-    | '/api/user-apps'
-    | '/apps/$appId'
+    | '/oauth/authorize'
     | '/admin/'
     | '/api/admin/has-owner'
     | '/api/auth/$'
-    | '/api/embedded/jwks'
-    | '/apps/$appId/$'
-    | '/apps/$appId_/dev'
-    | '/api/ai/$provider/$'
-    | '/api/internal/app-token/provision'
-    | '/api/internal/apps/context'
-    | '/api/internal/apps/organizations'
-    | '/api/internal/apps/register'
-    | '/api/internal/apps/users'
-    | '/apps/$appId_/dev/$'
+    | '/api/deploy/identity-keys'
+    | '/api/deploy/register'
+    | '/api/deploy/whoami'
+    | '/api/dev/identity'
+    | '/api/me/apps'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -385,31 +287,18 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
-  SnakeRoute: typeof SnakeRoute
-  ApiSessionTokenRoute: typeof ApiSessionTokenRoute
-  ApiUserAppsRoute: typeof ApiUserAppsRoute
-  AppsAppIdRoute: typeof AppsAppIdRouteWithChildren
+  OauthAuthorizeRoute: typeof OauthAuthorizeRoute
   ApiAdminHasOwnerRoute: typeof ApiAdminHasOwnerRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiEmbeddedJwksRoute: typeof ApiEmbeddedJwksRoute
-  AppsAppIdDevRoute: typeof AppsAppIdDevRouteWithChildren
-  ApiAiProviderSplatRoute: typeof ApiAiProviderSplatRoute
-  ApiInternalAppTokenProvisionRoute: typeof ApiInternalAppTokenProvisionRoute
-  ApiInternalAppsContextRoute: typeof ApiInternalAppsContextRoute
-  ApiInternalAppsOrganizationsRoute: typeof ApiInternalAppsOrganizationsRoute
-  ApiInternalAppsRegisterRoute: typeof ApiInternalAppsRegisterRoute
-  ApiInternalAppsUsersRoute: typeof ApiInternalAppsUsersRoute
+  ApiDeployIdentityKeysRoute: typeof ApiDeployIdentityKeysRoute
+  ApiDeployRegisterRoute: typeof ApiDeployRegisterRoute
+  ApiDeployWhoamiRoute: typeof ApiDeployWhoamiRoute
+  ApiDevIdentityRoute: typeof ApiDevIdentityRoute
+  ApiMeAppsRoute: typeof ApiMeAppsRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/snake': {
-      id: '/snake'
-      path: '/snake'
-      fullPath: '/snake'
-      preLoaderRoute: typeof SnakeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/sign-up': {
       id: '/sign-up'
       path: '/sign-up'
@@ -480,25 +369,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/apps/$appId': {
-      id: '/apps/$appId'
-      path: '/apps/$appId'
-      fullPath: '/apps/$appId'
-      preLoaderRoute: typeof AppsAppIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/user-apps': {
-      id: '/api/user-apps'
-      path: '/api/user-apps'
-      fullPath: '/api/user-apps'
-      preLoaderRoute: typeof ApiUserAppsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/session-token': {
-      id: '/api/session-token'
-      path: '/api/session-token'
-      fullPath: '/api/session-token'
-      preLoaderRoute: typeof ApiSessionTokenRouteImport
+    '/oauth/authorize': {
+      id: '/oauth/authorize'
+      path: '/oauth/authorize'
+      fullPath: '/oauth/authorize'
+      preLoaderRoute: typeof OauthAuthorizeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/users': {
@@ -522,25 +397,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminAppsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/apps/$appId_/dev': {
-      id: '/apps/$appId_/dev'
-      path: '/apps/$appId/dev'
-      fullPath: '/apps/$appId/dev'
-      preLoaderRoute: typeof AppsAppIdDevRouteImport
+    '/api/me/apps': {
+      id: '/api/me/apps'
+      path: '/api/me/apps'
+      fullPath: '/api/me/apps'
+      preLoaderRoute: typeof ApiMeAppsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/apps/$appId/$': {
-      id: '/apps/$appId/$'
-      path: '/$'
-      fullPath: '/apps/$appId/$'
-      preLoaderRoute: typeof AppsAppIdSplatRouteImport
-      parentRoute: typeof AppsAppIdRoute
+    '/api/dev/identity': {
+      id: '/api/dev/identity'
+      path: '/api/dev/identity'
+      fullPath: '/api/dev/identity'
+      preLoaderRoute: typeof ApiDevIdentityRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/api/embedded/jwks': {
-      id: '/api/embedded/jwks'
-      path: '/api/embedded/jwks'
-      fullPath: '/api/embedded/jwks'
-      preLoaderRoute: typeof ApiEmbeddedJwksRouteImport
+    '/api/deploy/whoami': {
+      id: '/api/deploy/whoami'
+      path: '/api/deploy/whoami'
+      fullPath: '/api/deploy/whoami'
+      preLoaderRoute: typeof ApiDeployWhoamiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/deploy/register': {
+      id: '/api/deploy/register'
+      path: '/api/deploy/register'
+      fullPath: '/api/deploy/register'
+      preLoaderRoute: typeof ApiDeployRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/deploy/identity-keys': {
+      id: '/api/deploy/identity-keys'
+      path: '/api/deploy/identity-keys'
+      fullPath: '/api/deploy/identity-keys'
+      preLoaderRoute: typeof ApiDeployIdentityKeysRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -555,55 +444,6 @@ declare module '@tanstack/react-router' {
       path: '/api/admin/has-owner'
       fullPath: '/api/admin/has-owner'
       preLoaderRoute: typeof ApiAdminHasOwnerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/apps/$appId_/dev/$': {
-      id: '/apps/$appId_/dev/$'
-      path: '/$'
-      fullPath: '/apps/$appId/dev/$'
-      preLoaderRoute: typeof AppsAppIdDevSplatRouteImport
-      parentRoute: typeof AppsAppIdDevRoute
-    }
-    '/api/internal/apps/users': {
-      id: '/api/internal/apps/users'
-      path: '/api/internal/apps/users'
-      fullPath: '/api/internal/apps/users'
-      preLoaderRoute: typeof ApiInternalAppsUsersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/internal/apps/register': {
-      id: '/api/internal/apps/register'
-      path: '/api/internal/apps/register'
-      fullPath: '/api/internal/apps/register'
-      preLoaderRoute: typeof ApiInternalAppsRegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/internal/apps/organizations': {
-      id: '/api/internal/apps/organizations'
-      path: '/api/internal/apps/organizations'
-      fullPath: '/api/internal/apps/organizations'
-      preLoaderRoute: typeof ApiInternalAppsOrganizationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/internal/apps/context': {
-      id: '/api/internal/apps/context'
-      path: '/api/internal/apps/context'
-      fullPath: '/api/internal/apps/context'
-      preLoaderRoute: typeof ApiInternalAppsContextRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/internal/app-token/provision': {
-      id: '/api/internal/app-token/provision'
-      path: '/api/internal/app-token/provision'
-      fullPath: '/api/internal/app-token/provision'
-      preLoaderRoute: typeof ApiInternalAppTokenProvisionRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/ai/$provider/$': {
-      id: '/api/ai/$provider/$'
-      path: '/api/ai/$provider/$'
-      fullPath: '/api/ai/$provider/$'
-      preLoaderRoute: typeof ApiAiProviderSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -625,30 +465,6 @@ const AdminRouteChildren: AdminRouteChildren = {
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 
-interface AppsAppIdRouteChildren {
-  AppsAppIdSplatRoute: typeof AppsAppIdSplatRoute
-}
-
-const AppsAppIdRouteChildren: AppsAppIdRouteChildren = {
-  AppsAppIdSplatRoute: AppsAppIdSplatRoute,
-}
-
-const AppsAppIdRouteWithChildren = AppsAppIdRoute._addFileChildren(
-  AppsAppIdRouteChildren,
-)
-
-interface AppsAppIdDevRouteChildren {
-  AppsAppIdDevSplatRoute: typeof AppsAppIdDevSplatRoute
-}
-
-const AppsAppIdDevRouteChildren: AppsAppIdDevRouteChildren = {
-  AppsAppIdDevSplatRoute: AppsAppIdDevSplatRoute,
-}
-
-const AppsAppIdDevRouteWithChildren = AppsAppIdDevRoute._addFileChildren(
-  AppsAppIdDevRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInvitationRoute: AcceptInvitationRoute,
@@ -659,20 +475,14 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
-  SnakeRoute: SnakeRoute,
-  ApiSessionTokenRoute: ApiSessionTokenRoute,
-  ApiUserAppsRoute: ApiUserAppsRoute,
-  AppsAppIdRoute: AppsAppIdRouteWithChildren,
+  OauthAuthorizeRoute: OauthAuthorizeRoute,
   ApiAdminHasOwnerRoute: ApiAdminHasOwnerRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiEmbeddedJwksRoute: ApiEmbeddedJwksRoute,
-  AppsAppIdDevRoute: AppsAppIdDevRouteWithChildren,
-  ApiAiProviderSplatRoute: ApiAiProviderSplatRoute,
-  ApiInternalAppTokenProvisionRoute: ApiInternalAppTokenProvisionRoute,
-  ApiInternalAppsContextRoute: ApiInternalAppsContextRoute,
-  ApiInternalAppsOrganizationsRoute: ApiInternalAppsOrganizationsRoute,
-  ApiInternalAppsRegisterRoute: ApiInternalAppsRegisterRoute,
-  ApiInternalAppsUsersRoute: ApiInternalAppsUsersRoute,
+  ApiDeployIdentityKeysRoute: ApiDeployIdentityKeysRoute,
+  ApiDeployRegisterRoute: ApiDeployRegisterRoute,
+  ApiDeployWhoamiRoute: ApiDeployWhoamiRoute,
+  ApiDevIdentityRoute: ApiDevIdentityRoute,
+  ApiMeAppsRoute: ApiMeAppsRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -16,11 +16,27 @@
       "custom_domain": true,
     },
   ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "every-app-waitlist",
+      "database_id": "d578d9d3-4d5d-4850-a640-a4dfdd078ab6",
+      "migrations_dir": "migrations",
+    },
+  ],
   "env": {
     "preview": {
       "name": "every-app-landing-page-preview",
       "workers_dev": true,
       "preview_urls": true,
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "every-app-waitlist-preview",
+          "database_id": "1dab436f-dfb7-4865-83f3-209d27de4de5",
+          "migrations_dir": "migrations",
+        },
+      ],
     },
   },
 }

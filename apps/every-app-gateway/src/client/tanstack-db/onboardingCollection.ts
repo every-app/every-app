@@ -2,10 +2,7 @@ import { createCollection } from "@tanstack/react-db";
 import { queryCollectionOptions } from "@tanstack/query-db-collection";
 import { queryClient } from "./queryClient";
 import type { UserOnboarding } from "@/types/onboarding";
-import {
-  getOnboardingStatus,
-  updateOnboardingStatus,
-} from "@/serverFunctions/onboarding";
+import { getOnboardingStatus } from "@/serverFunctions/onboarding";
 import { lazyInitForWorkers } from "@/utils/lazyInitForWorkers";
 
 export const onboardingCollection = lazyInitForWorkers(() =>
@@ -19,26 +16,6 @@ export const onboardingCollection = lazyInitForWorkers(() =>
       },
       queryClient,
       getKey: (item: UserOnboarding) => item.id,
-
-      // Handle update operations
-      onUpdate: async ({ transaction }) => {
-        await Promise.all(
-          transaction.mutations.map((mutation) => {
-            const modified = mutation.modified;
-            return updateOnboardingStatus({
-              data: {
-                pwaInstallCompleted: modified.pwaInstallCompleted,
-                pwaInstallSkipCount: modified.pwaInstallSkipCount,
-                pwaInstallSkippedAt: modified.pwaInstallSkippedAt
-                  ? modified.pwaInstallSkippedAt.toISOString()
-                  : null,
-                pwaInstallSkippedPermanently:
-                  modified.pwaInstallSkippedPermanently,
-              },
-            });
-          }),
-        );
-      },
     }),
   ),
 );

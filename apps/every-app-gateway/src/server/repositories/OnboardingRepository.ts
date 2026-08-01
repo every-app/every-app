@@ -8,13 +8,6 @@ type CreateOnboarding = {
   userId: string;
 };
 
-type UpdateOnboarding = {
-  pwaInstallCompleted?: boolean;
-  pwaInstallSkipCount?: number;
-  pwaInstallSkippedAt?: Date | null;
-  pwaInstallSkippedPermanently?: boolean;
-};
-
 /**
  * Find onboarding record for a user.
  */
@@ -33,27 +26,11 @@ async function create(data: CreateOnboarding) {
   await db.insert(userOnboarding).values({
     id: data.id,
     userId: data.userId,
-    pwaInstallCompleted: false,
-    pwaInstallSkipCount: 0,
-    pwaInstallSkippedAt: null,
-    pwaInstallSkippedPermanently: false,
     createdAt: now,
     updatedAt: now,
   });
 
   return findByUserId(data.userId);
-}
-
-/**
- * Update an onboarding record.
- */
-async function update(userId: string, data: UpdateOnboarding) {
-  await db
-    .update(userOnboarding)
-    .set({ ...data, updatedAt: new Date() })
-    .where(eq(userOnboarding.userId, userId));
-
-  return findByUserId(userId);
 }
 
 /**
@@ -72,6 +49,5 @@ async function getOrCreate(userId: string) {
 export const OnboardingRepository = {
   findByUserId,
   create,
-  update,
   getOrCreate,
 } as const;

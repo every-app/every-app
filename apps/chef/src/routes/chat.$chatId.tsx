@@ -1,7 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useLiveQuery } from "@tanstack/react-db";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 import { ChatWindow } from "@/client/components/chat/ChatWindow";
@@ -10,13 +9,12 @@ import { ActiveRecipesPanel } from "@/client/components/chat/ActiveRecipesPanel"
 import { useChatWithAuth } from "@/client/hooks/useChatWithAuth";
 import { useIsMobile } from "@/client/hooks/use-mobile";
 import { useSortedChats, useCreateChat } from "@/client/hooks/useChats";
-import { getMessages } from "@/serverFunctions/chats";
-import { createRecipe, updateRecipe } from "@/serverFunctions/recipes";
-import { saveToolOutputAction } from "@/client/actions/saveToolOutput";
+import { getMessages, saveToolOutput } from "@/serverFunctions/chats";
+import { useRecipes, useRecipeMutations } from "@/client/queries/recipes";
 import {
-  chatActiveRecipesCollection,
-  recipesCollection,
-} from "@/client/tanstack-db";
+  useChatActiveRecipes,
+  useChatActiveRecipeMutations,
+} from "@/client/queries/chatActiveRecipes";
 import type { UIMessage } from "ai";
 import type { PromptUserWithRecipeUpdateInput } from "@/server/tools/recipeTools";
 
@@ -52,13 +50,10 @@ function ChatPage() {
     }
   }, [chats, chat, navigate]);
 
-  // Get active recipes for this chat
-  const { data: allActiveRecipes } = useLiveQuery((q) =>
-    q.from({ activeRecipe: chatActiveRecipesCollection }),
-  );
-  const { data: allRecipes } = useLiveQuery((q) =>
-    q.from({ recipe: recipesCollection }),
-  );
+  const { data: allActiveRecipes } = useChatActiveRecipes();
+  const { data: allRecipes } = useRecipes();
+  const recipeMutations = useRecipeMutations();
+  const activeRecipeMutations = useChatActiveRecipeMutations();
 
   // Filter and join active recipes for current chat
   const activeRecipes = (allActiveRecipes ?? [])
@@ -76,8 +71,13 @@ function ChatPage() {
       (ar) => ar.chatId === chatId && ar.recipeId === recipeId,
     );
     if (activeRecipe) {
-      chatActiveRecipesCollection.delete(activeRecipe.id);
-      toast("Recipe removed");
+      activeRecipeMutations.remove.mutate(
+        { chatId, recipeId },
+        {
+          onSuccess: () => toast("Recipe removed"),
+          onError: () => toast.error("Failed to remove recipe"),
+        },
+      );
     }
   };
 
@@ -201,34 +201,25 @@ function ChatPage() {
         if (action === "create") {
           // Create a new recipe
           const newRecipeId = crypto.randomUUID();
-          await createRecipe({
-            data: {
-              id: newRecipeId,
-              title: toolInput.title,
-              content: toolInput.content,
-            },
+          await recipeMutations.create.mutateAsync({
+            id: newRecipeId,
+            title: toolInput.title,
+            content: toolInput.content,
           });
 
           // Add to active recipes for this chat
-          const activeRecipeId = crypto.randomUUID();
-          chatActiveRecipesCollection.insert({
-            id: activeRecipeId,
+          await activeRecipeMutations.add.mutateAsync({
             chatId,
             recipeId: newRecipeId,
-            activatedAt: new Date().toISOString(),
           });
-
-          // Invalidate recipes query
-          await queryClient.invalidateQueries({ queryKey: ["recipes"] });
 
           toast.success(`Created "${toolInput.title}"`);
 
           const output = { action: "create" as const };
 
           // Persist the tool output to database
-          await saveToolOutputAction({
-            toolCallId,
-            output,
+          await saveToolOutput({
+            data: { toolCallId, output },
           });
 
           // Send tool output to streaming state (optimistic UI update)
@@ -239,25 +230,19 @@ function ChatPage() {
           });
         } else if (action === "update" && recipeId) {
           // Update existing recipe
-          await updateRecipe({
-            data: {
-              id: recipeId,
-              title: toolInput.title,
-              content: toolInput.content,
-            },
+          await recipeMutations.update.mutateAsync({
+            id: recipeId,
+            title: toolInput.title,
+            content: toolInput.content,
           });
-
-          // Invalidate recipes query
-          await queryClient.invalidateQueries({ queryKey: ["recipes"] });
 
           toast.success(`Updated recipe`);
 
           const output = { action: "update" as const, recipeId };
 
           // Persist the tool output to database
-          await saveToolOutputAction({
-            toolCallId,
-            output,
+          await saveToolOutput({
+            data: { toolCallId, output },
           });
 
           // Send tool output to streaming state (optimistic UI update)
@@ -270,9 +255,8 @@ function ChatPage() {
           const output = { action: "ignore" as const };
 
           // Persist the tool output to database
-          await saveToolOutputAction({
-            toolCallId,
-            output,
+          await saveToolOutput({
+            data: { toolCallId, output },
           });
 
           // Send tool output to streaming state (optimistic UI update)
@@ -292,7 +276,15 @@ function ChatPage() {
         toast.error("Failed to save recipe");
       }
     },
-    [chatId, getToolInput, addToolOutput, queryClient],
+    [
+      chatId,
+      getToolInput,
+      addToolOutput,
+      queryClient,
+      recipeMutations.create,
+      recipeMutations.update,
+      activeRecipeMutations.add,
+    ],
   );
 
   // Don't render chat until messages are loaded

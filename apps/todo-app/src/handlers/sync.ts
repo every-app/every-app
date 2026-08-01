@@ -1,69 +1,28 @@
-import {
-  authenticateRequest,
-  getAuthConfig,
-} from "@every-app/sdk/tanstack/server";
+import type { EveryAppUser } from "@every-app/sdk/server";
 
 const SYNC_DO_WEBSOCKET_URL = "http://durable-object/websocket";
 
 /**
- * Validates WebSocket upgrade header.
- * Returns error response if invalid, null if valid.
+ * WebSocket sync endpoint. Identity was already verified fail-closed by
+ * everyApp() in the worker entry — the gateway injects x-everyapp-identity on
+ * the upgrade request like any other. No token in the URL, no client auth.
  */
-function validateWebSocketUpgrade(request: Request): Response | null {
-  const upgradeHeader = request.headers.get("Upgrade");
-  if (upgradeHeader !== "websocket") {
-    return new Response("Expected WebSocket upgrade", { status: 426 });
-  }
-  return null;
-}
-
-/**
- * Extracts token from request query parameters.
- * Returns null if no token is present.
- */
-function extractTokenFromRequest(request: Request): string | null {
-  const url = new URL(request.url);
-  return url.searchParams.get("token");
-}
-
-/**
- * Authenticates a WebSocket connection using a bearer token.
- * Returns the session if valid, null otherwise.
- */
-async function authenticateWebSocket(token: string) {
-  // Create a synthetic request with the token as Authorization header
-  // since authenticateRequest expects a request object
-  const authRequest = new Request("https://auth-check", {
-    headers: new Headers({
-      Authorization: `Bearer ${token}`,
-    }),
-  });
-
-  const authConfig = getAuthConfig();
-  return authenticateRequest(authConfig, authRequest);
-}
-
 export async function handleSyncWebSocket(
   request: Request,
   env: Env,
+  user: EveryAppUser | null,
 ): Promise<Response> {
-  const upgradeError = validateWebSocketUpgrade(request);
-  if (upgradeError) {
-    return upgradeError;
+  const upgradeHeader = request.headers.get("Upgrade");
+  if ((upgradeHeader ?? "").toLowerCase() !== "websocket") {
+    return new Response("Expected WebSocket upgrade", { status: 426 });
   }
 
-  const token = extractTokenFromRequest(request);
-  if (!token) {
-    return new Response("Unauthorized", { status: 401 });
-  }
-
-  const session = await authenticateWebSocket(token);
-  if (!session) {
+  if (!user) {
     return new Response("Unauthorized", { status: 401 });
   }
 
   // Route to the user's Durable Object
-  const id = env.USER_SYNC.idFromName(session.sub);
+  const id = env.USER_SYNC.idFromName(user.id);
   const stub = env.USER_SYNC.get(id);
 
   return stub.fetch(

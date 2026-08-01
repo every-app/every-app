@@ -1,217 +1,122 @@
 import { describe, expect, it } from "vitest";
 import {
-  getExpoDevTrustedOrigins,
-  isExpoDevModeEnabled,
-  isDevelopmentGatewayUrl,
+  hasDisallowedNativeOrigin,
   normalizeExpoOrigin,
 } from "./expo-origin-normalizer";
 
-describe("isDevelopmentGatewayUrl", () => {
-  it("detects local gateway urls", () => {
-    expect(isDevelopmentGatewayUrl("http://localhost:3000")).toBe(true);
-    expect(isDevelopmentGatewayUrl("http://[::1]:3000")).toBe(true);
-    expect(isDevelopmentGatewayUrl("http://127.0.0.1:3000")).toBe(true);
+function makeRequest(headers: Record<string, string>): Request {
+  return new Request("https://gateway.example.com/api/auth/sign-in", {
+    method: "POST",
+    headers,
   });
-
-  it("rejects non-url values and non-local hosts", () => {
-    expect(isDevelopmentGatewayUrl("gateway-ngrok.example.com")).toBe(false);
-    expect(isDevelopmentGatewayUrl("https://x.trycloudflare.com")).toBe(false);
-    expect(isDevelopmentGatewayUrl("https://foo.ngrok-free.app")).toBe(false);
-    expect(isDevelopmentGatewayUrl("not-a-url")).toBe(false);
-  });
-
-  it("returns false for production host", () => {
-    expect(isDevelopmentGatewayUrl("https://gateway.example.com")).toBe(false);
-  });
-});
-
-describe("isExpoDevModeEnabled", () => {
-  it("requires both vite dev mode and a dev gateway url", () => {
-    expect(
-      isExpoDevModeEnabled({
-        gatewayUrl: "http://localhost:3000",
-        viteDev: true,
-      }),
-    ).toBe(true);
-
-    expect(
-      isExpoDevModeEnabled({
-        gatewayUrl: "http://localhost:3000",
-        viteDev: false,
-      }),
-    ).toBe(false);
-
-    expect(
-      isExpoDevModeEnabled({
-        gatewayUrl: "https://gateway.example.com",
-        viteDev: true,
-      }),
-    ).toBe(false);
-  });
-});
-
-describe("getExpoDevTrustedOrigins", () => {
-  it("returns no exp origins when dev mode is disabled", () => {
-    expect(getExpoDevTrustedOrigins(false)).toEqual([]);
-  });
-
-  it("returns a single broad exp origin pattern in dev mode", () => {
-    expect(getExpoDevTrustedOrigins(true)).toEqual(["exp://**"]);
-  });
-});
+}
 
 describe("normalizeExpoOrigin", () => {
   it("keeps request unchanged when origin is already set", () => {
-    const request = new Request(
-      "https://gateway.example.com/api/auth/sign-in",
-      {
-        method: "POST",
-        headers: {
-          origin: "https://app.example.com",
-          "expo-origin": "everyapp://",
-        },
-      },
-    );
+    const request = makeRequest({
+      origin: "https://app.example.com",
+      "expo-origin": "everyapp://",
+    });
 
-    const normalized = normalizeExpoOrigin(request, { isDevMode: true });
+    const normalized = normalizeExpoOrigin(request);
 
     expect(normalized).toBe(request);
     expect(normalized.headers.get("origin")).toBe("https://app.example.com");
   });
 
-  it("maps expo-origin to origin for everyapp scheme", () => {
-    const request = new Request(
-      "https://gateway.example.com/api/auth/sign-in",
-      {
-        method: "POST",
-        headers: {
-          "expo-origin": "everyapp://",
-        },
-      },
-    );
+  it("promotes the everyapp:// expo-origin to origin", () => {
+    const request = makeRequest({ "expo-origin": "everyapp://" });
 
-    const normalized = normalizeExpoOrigin(request, { isDevMode: false });
+    const normalized = normalizeExpoOrigin(request);
 
-    expect(normalized).not.toBe(request);
     expect(normalized.headers.get("origin")).toBe("everyapp://");
   });
 
-  it("rejects everyapp origins with hostnames", () => {
-    const request = new Request(
-      "https://gateway.example.com/api/auth/sign-in",
-      {
-        method: "POST",
-        headers: {
-          "expo-origin": "everyapp://attacker",
-        },
-      },
-    );
+  it("is case-insensitive for the scheme but preserves the header verbatim", () => {
+    const request = makeRequest({ "expo-origin": "EveryApp://" });
 
-    const normalized = normalizeExpoOrigin(request, { isDevMode: true });
+    const normalized = normalizeExpoOrigin(request);
+
+    expect(normalized.headers.get("origin")).toBe("EveryApp://");
+  });
+
+  it("ignores exp:// dev-client origins", () => {
+    const request = makeRequest({ "expo-origin": "exp://192.168.1.5:8081" });
+
+    const normalized = normalizeExpoOrigin(request);
 
     expect(normalized).toBe(request);
     expect(normalized.headers.get("origin")).toBeNull();
   });
 
-  it("allows exp:// origins only in development", () => {
-    const request = new Request(
-      "https://gateway.example.com/api/auth/sign-in",
-      {
-        method: "POST",
-        headers: {
-          "expo-origin": "exp://10.0.0.123:8081",
-        },
-      },
-    );
-
-    const devNormalized = normalizeExpoOrigin(request, { isDevMode: true });
-    const prodNormalized = normalizeExpoOrigin(request, { isDevMode: false });
-
-    expect(devNormalized.headers.get("origin")).toBe("exp://10.0.0.123:8081");
-    expect(prodNormalized).toBe(request);
-    expect(prodNormalized.headers.get("origin")).toBeNull();
+  it("ignores non-url, credentialed, and decorated origins", () => {
+    for (const value of [
+      "not-a-url",
+      "everyapp://user:pass@host",
+      "everyapp://?q=1",
+      "everyapp://#frag",
+      "https://evil.example.com",
+    ]) {
+      const normalized = normalizeExpoOrigin(
+        makeRequest({ "expo-origin": value }),
+      );
+      expect(normalized.headers.get("origin")).toBeNull();
+    }
   });
 
-  it("allows exp:// IPv6 loopback origins in development", () => {
-    const request = new Request(
-      "https://gateway.example.com/api/auth/sign-in",
-      {
-        method: "POST",
-        headers: {
-          "expo-origin": "exp://[::1]:8081",
-        },
-      },
-    );
+  it("ignores requests without an expo-origin header", () => {
+    const request = makeRequest({});
 
-    const devNormalized = normalizeExpoOrigin(request, { isDevMode: true });
-    const prodNormalized = normalizeExpoOrigin(request, { isDevMode: false });
+    expect(normalizeExpoOrigin(request)).toBe(request);
+  });
+});
 
-    expect(devNormalized.headers.get("origin")).toBe("exp://[::1]:8081");
-    expect(prodNormalized).toBe(request);
-    expect(prodNormalized.headers.get("origin")).toBeNull();
+describe("hasDisallowedNativeOrigin", () => {
+  it("allows web origins, exact everyapp://, and absent headers", () => {
+    expect(hasDisallowedNativeOrigin(makeRequest({}))).toBe(false);
+    expect(
+      hasDisallowedNativeOrigin(
+        makeRequest({ origin: "https://gateway.example.com" }),
+      ),
+    ).toBe(false);
+    expect(
+      hasDisallowedNativeOrigin(makeRequest({ origin: "everyapp://" })),
+    ).toBe(false);
+    expect(
+      hasDisallowedNativeOrigin(
+        makeRequest({
+          "expo-origin": "everyapp://",
+          referer: "https://gateway.example.com/sign-in",
+        }),
+      ),
+    ).toBe(false);
   });
 
-  it("allows non-local exp:// origins in development", () => {
-    const request = new Request(
-      "https://gateway.example.com/api/auth/sign-in",
-      {
-        method: "POST",
-        headers: {
-          "expo-origin": "exp://evil.example.com:8081",
-        },
-      },
-    );
-
-    const normalized = normalizeExpoOrigin(request, { isDevMode: true });
-
-    expect(normalized).not.toBe(request);
-    expect(normalized.headers.get("origin")).toBe(
-      "exp://evil.example.com:8081",
-    );
+  it("rejects prefix-matching abuse of the everyapp scheme", () => {
+    // Better Auth matches non-HTTP trusted origins by prefix; these would
+    // all pass its check against a trusted "everyapp://".
+    for (const value of [
+      "everyapp://evil",
+      "everyapp:///path",
+      "everyapp://?q=1",
+    ]) {
+      expect(hasDisallowedNativeOrigin(makeRequest({ origin: value }))).toBe(
+        true,
+      );
+      expect(hasDisallowedNativeOrigin(makeRequest({ referer: value }))).toBe(
+        true,
+      );
+    }
   });
 
-  it("ignores unknown expo-origin schemes", () => {
-    const request = new Request(
-      "https://gateway.example.com/api/auth/sign-in",
-      {
-        method: "POST",
-        headers: {
-          "expo-origin": "evil://app",
-        },
-      },
-    );
-
-    const normalized = normalizeExpoOrigin(request, { isDevMode: true });
-
-    expect(normalized).toBe(request);
-    expect(normalized.headers.get("origin")).toBeNull();
-  });
-
-  it("ignores malformed or credentialed expo-origin values", () => {
-    const withCreds = new Request(
-      "https://gateway.example.com/api/auth/sign-in",
-      {
-        method: "POST",
-        headers: {
-          "expo-origin": "everyapp://user:pass@app",
-        },
-      },
-    );
-
-    const malformed = new Request(
-      "https://gateway.example.com/api/auth/sign-in",
-      {
-        method: "POST",
-        headers: {
-          "expo-origin": "everyapp://%ZZ",
-        },
-      },
-    );
-
-    const credsResult = normalizeExpoOrigin(withCreds, { isDevMode: true });
-    const malformedResult = normalizeExpoOrigin(malformed, { isDevMode: true });
-
-    expect(credsResult.headers.get("origin")).toBeNull();
-    expect(malformedResult.headers.get("origin")).toBeNull();
+  it("rejects exp:// and other custom schemes outright", () => {
+    expect(
+      hasDisallowedNativeOrigin(
+        makeRequest({ origin: "exp://192.168.1.5:8081" }),
+      ),
+    ).toBe(true);
+    expect(
+      hasDisallowedNativeOrigin(makeRequest({ "expo-origin": "otherapp://" })),
+    ).toBe(true);
   });
 });

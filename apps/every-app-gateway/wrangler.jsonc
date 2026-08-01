@@ -1,37 +1,47 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "every-app-gateway",
-  "main": "@tanstack/react-start/server-entry",
+  // The one-door entry: dispatches app-subdomain requests to the v2 perimeter
+  // and everything else to the TanStack Start control plane.
+  "main": "./src/server.ts",
   "compatibility_date": "2025-09-02",
   "compatibility_flags": ["nodejs_compat"],
+  // One-door routing: the worker must see EVERY request (app subdomains are
+  // proxied to private workers), so assets may never short-circuit it. The
+  // entry serves control-plane assets itself via the ASSETS binding.
+  "assets": {
+    "binding": "ASSETS",
+    "run_worker_first": true,
+  },
   "observability": {
     "enabled": true,
   },
   "kv_namespaces": [
     {
-      "binding": "every-app-gateway",
-      "id": "6d071b25ae8d40c481fc50bc12746753",
+      // Placeholder only; the CLI patches this with the deploying account's
+      // "every-app-gateway" namespace ID before deployment.
+      "binding": "KV",
+      "id": "CLI_PATCHES_KV_AT_DEPLOY",
+    },
+    {
+      // Placeholder only; the CLI patches this with the deploying account's
+      // "every-app-gateway-OAUTH_KV" namespace ID before deployment.
+      "binding": "OAUTH_KV",
+      "id": "CLI_PATCHES_OAUTH_KV_AT_DEPLOY",
     },
   ],
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "every-app-gateway",
-      "database_id": "2ec6dc01-2936-4753-b79b-6ee5625e8831",
+      // Placeholder only; the CLI patches this with the deploying account's
+      // "every-app-gateway" database ID before deployment. Nothing reads the
+      // literal value — remote migrations resolve the database by name.
+      "database_id": "CLI_PATCHES_D1_AT_DEPLOY",
       "migrations_dir": "drizzle",
     },
   ],
-  // Rate limiting for sensitive endpoints
-  // Period must be 10 or 60 seconds (Cloudflare limitation)
-  "ratelimits": [
-    {
-      // Invitation/password reset: 10 attempts per 60 seconds per token
-      "name": "RATE_LIMIT_AUTH_TOKEN",
-      "namespace_id": "1001",
-      "simple": {
-        "limit": 10,
-        "period": 60,
-      },
-    },
-  ],
+  // Email delivery is configured separately from sender identity. Local dev
+  // keeps this binding local so starting the gateway cannot send real email.
+  "send_email": [{ "name": "EMAIL" }],
 }

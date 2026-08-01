@@ -22,3 +22,4 @@ export type UpdateRecipeInput = z.infer<typeof updateRecipeSchema>;
 export const deleteRecipeSchema = z.object({
   id: z.string().uuid("Invalid recipe ID format"),
 });
+export type DeleteRecipeInput = z.infer<typeof deleteRecipeSchema>;

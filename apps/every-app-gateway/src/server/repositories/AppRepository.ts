@@ -6,11 +6,15 @@ import { and, count, eq } from "drizzle-orm";
 type CreateApp = {
   id: string;
   organizationId: string;
-  appId: string;
+  appSlug: string;
   name: string;
   description: string;
-  appUrl: string;
-  devUrl?: string | null;
+  // Perimeter registry columns, written at `everyapp deploy` registration time.
+  hostname: string;
+  workerName: string;
+  manifest: string;
+  tier?: string;
+  status?: string;
   isDefault?: boolean;
 };
 
@@ -18,9 +22,19 @@ type UpdateApp = {
   organizationId: string;
   name?: string;
   description?: string;
-  appUrl?: string;
-  devUrl?: string | null;
+  hostname?: string;
+  workerName?: string;
+  manifest?: string;
+  status?: string;
   isDefault?: boolean;
+};
+
+type CreateInitialAccess = {
+  id: string;
+  organizationId: string;
+  userId: string;
+  appRowId: string;
+  grantedBy?: string | null;
 };
 
 /**
@@ -41,11 +55,14 @@ async function findAllWithAccessCounts(organizationId: string) {
     .select({
       id: apps.id,
       organizationId: apps.organizationId,
-      appId: apps.appId,
+      appId: apps.appSlug,
       name: apps.name,
       description: apps.description,
-      appUrl: apps.appUrl,
-      devUrl: apps.devUrl,
+      hostname: apps.hostname,
+      workerName: apps.workerName,
+      tier: apps.tier,
+      manifest: apps.manifest,
+      status: apps.status,
       isDefault: apps.isDefault,
       createdAt: apps.createdAt,
       updatedAt: apps.updatedAt,
@@ -55,7 +72,7 @@ async function findAllWithAccessCounts(organizationId: string) {
     .leftJoin(
       userAppAccess,
       and(
-        eq(apps.id, userAppAccess.appId),
+        eq(apps.id, userAppAccess.appRowId),
         eq(apps.organizationId, userAppAccess.organizationId),
       ),
     )
@@ -76,11 +93,34 @@ async function findById(id: string, organizationId: string) {
 }
 
 /**
- * Find an app by its appId (slug).
+ * Find an app by its routing slug.
  */
-async function findByAppId(appId: string, organizationId: string) {
+async function findByAppSlug(appSlug: string, organizationId: string) {
   return db.query.apps.findFirst({
-    where: and(eq(apps.appId, appId), eq(apps.organizationId, organizationId)),
+    where: and(
+      eq(apps.appSlug, appSlug),
+      eq(apps.organizationId, organizationId),
+    ),
+  });
+}
+
+/**
+ * Find an app by routing hostname. Hostnames are globally unique across the
+ * gateway (one subdomain namespace), so this deliberately has no org filter.
+ */
+async function findByHostname(hostname: string) {
+  return db.query.apps.findFirst({
+    where: eq(apps.hostname, hostname),
+  });
+}
+
+/**
+ * Find an app by Cloudflare worker script name. Worker names share one
+ * namespace per Cloudflare account, so this deliberately has no org filter.
+ */
+async function findByWorkerName(workerName: string) {
+  return db.query.apps.findFirst({
+    where: eq(apps.workerName, workerName),
   });
 }
 
@@ -97,19 +137,45 @@ async function findAllDefault(organizationId: string) {
 }
 
 /**
- * Create a new app in the catalog.
+ * Create a newly registered app and its initial ACL in one D1 transaction.
  */
-async function create(data: CreateApp) {
-  await db.insert(apps).values({
+async function createWithInitialAccess(
+  data: CreateApp,
+  accessRecords: CreateInitialAccess[],
+) {
+  const appInsert = db.insert(apps).values({
     id: data.id,
     organizationId: data.organizationId,
-    appId: data.appId,
+    appSlug: data.appSlug,
     name: data.name,
     description: data.description,
-    appUrl: data.appUrl,
-    devUrl: data.devUrl,
+    hostname: data.hostname,
+    workerName: data.workerName,
+    manifest: data.manifest,
+    tier: data.tier ?? "service_binding",
+    status: data.status ?? "active",
     isDefault: data.isDefault ?? false,
   });
+  const accessInserts = accessRecords.map((record) =>
+    db
+      .insert(userAppAccess)
+      .values({
+        id: record.id,
+        organizationId: record.organizationId,
+        userId: record.userId,
+        appRowId: record.appRowId,
+        grantedBy: record.grantedBy,
+      })
+      .onConflictDoNothing({
+        target: [
+          userAppAccess.organizationId,
+          userAppAccess.userId,
+          userAppAccess.appRowId,
+        ],
+      }),
+  );
+
+  await db.batch([appInsert, ...accessInserts]);
 }
 
 /**
@@ -138,9 +204,11 @@ export const AppRepository = {
   findAll,
   findAllWithAccessCounts,
   findById,
-  findByAppId,
+  findByAppSlug,
+  findByHostname,
+  findByWorkerName,
   findAllDefault,
-  create,
+  createWithInitialAccess,
   update,
   delete: deleteById,
 } as const;

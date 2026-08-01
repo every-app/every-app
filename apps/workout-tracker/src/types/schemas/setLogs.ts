@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-// === Create Set Log ===
-export const createSetLogSchema = z.object({
+// === Upsert Set Log ===
+export const upsertSetLogSchema = z.object({
   id: z.string(),
   sessionId: z.string(),
   exerciseId: z.string().nullable().optional(),
@@ -13,12 +13,4 @@ export const createSetLogSchema = z.object({
   sortOrder: z.number(),
 });
 
-export type CreateSetLogInput = z.infer<typeof createSetLogSchema>;
-
-// === Update Set Log ===
-export const updateSetLogSchema = z.object({
-  id: z.string(),
-  actualReps: z.number(),
-});
-
-export type UpdateSetLogInput = z.infer<typeof updateSetLogSchema>;
+export type UpsertSetLogInput = z.infer<typeof upsertSetLogSchema>;

@@ -25,3 +25,4 @@ jspm_packages/
 
 *.tsbuildinfo
 dist
+/gateway/

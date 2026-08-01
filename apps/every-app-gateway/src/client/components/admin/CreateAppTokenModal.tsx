@@ -1,15 +1,12 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Modal } from "../Modal";
-import type { AppWithAccessCount } from "@/types/app";
 import { getServerErrorMessage } from "@/client/errors";
 
 interface CreateAppTokenModalProps {
   open: boolean;
   onClose: () => void;
-  apps: AppWithAccessCount[];
   onCreate: (input: {
-    appId: string;
-    scopes: string[];
+    tokenType: "deploy";
     expiresAt: string | null;
   }) => Promise<void>;
 }
@@ -17,24 +14,13 @@ interface CreateAppTokenModalProps {
 export function CreateAppTokenModal({
   open,
   onClose,
-  apps,
   onCreate,
 }: CreateAppTokenModalProps) {
-  const sortedApps = useMemo(
-    () => [...apps].sort((a, b) => a.name.localeCompare(b.name)),
-    [apps],
-  );
-  const defaultAppId = sortedApps[0]?.id ?? "";
-
-  const [appId, setAppId] = useState("");
-  const [scopes, setScopes] = useState("provider:openai");
   const [expiresAt, setExpiresAt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
 
   const reset = () => {
-    setAppId("");
-    setScopes("provider:openai");
     setExpiresAt("");
     setError(null);
     setIsPending(false);
@@ -49,28 +35,14 @@ export function CreateAppTokenModal({
     e.preventDefault();
     setError(null);
 
-    const selectedAppId = appId || defaultAppId;
-    if (!selectedAppId) {
-      setError("Please select an app");
-      return;
-    }
-
-    const parsedScopes = scopes
-      .split(",")
-      .map((scope) => scope.trim().toLowerCase())
-      .filter(Boolean);
-
-    if (parsedScopes.length === 0) {
-      setError("At least one scope is required");
-      return;
-    }
-
     setIsPending(true);
     try {
+      const parsedExpiresAt = expiresAt
+        ? new Date(expiresAt).toISOString()
+        : null;
       await onCreate({
-        appId: selectedAppId,
-        scopes: parsedScopes,
-        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+        tokenType: "deploy",
+        expiresAt: parsedExpiresAt,
       });
       handleClose();
     } catch (err) {
@@ -85,8 +57,8 @@ export function CreateAppTokenModal({
     <Modal
       open={open}
       onClose={handleClose}
-      title="Create App Token"
-      description="Generate a machine token for gateway provider access."
+      title="Create Deploy Token"
+      description="Generate an organization-scoped token for CLI deploys."
       actions={
         <>
           <button type="button" className="btn btn-ghost" onClick={handleClose}>
@@ -96,9 +68,9 @@ export function CreateAppTokenModal({
             type="submit"
             form="create-app-token-form"
             className="btn btn-primary"
-            disabled={isPending || sortedApps.length === 0}
+            disabled={isPending}
           >
-            {isPending ? "Creating..." : "Create Token"}
+            {isPending ? "Creating..." : "Create Deploy Token"}
           </button>
         </>
       }
@@ -108,38 +80,12 @@ export function CreateAppTokenModal({
         className="space-y-4 mt-4"
         onSubmit={handleSubmit}
       >
-        <fieldset className="fieldset">
-          <legend className="fieldset-legend">App</legend>
-          <select
-            className="select w-full"
-            value={appId || defaultAppId}
-            onChange={(e) => setAppId(e.target.value)}
-            disabled={sortedApps.length === 0}
-          >
-            {sortedApps.length === 0 ? (
-              <option value="">No apps available</option>
-            ) : (
-              sortedApps.map((app) => (
-                <option key={app.id} value={app.id}>
-                  {app.name} ({app.appId})
-                </option>
-              ))
-            )}
-          </select>
-        </fieldset>
-
-        <fieldset className="fieldset">
-          <legend className="fieldset-legend">Scopes (comma-separated)</legend>
-          <input
-            className="input w-full"
-            placeholder="provider:openai"
-            value={scopes}
-            onChange={(e) => setScopes(e.target.value)}
-          />
-          <p className="label text-base-content/60">
-            Example: provider:openai, provider:anthropic
+        <div className="rounded-box border border-base-300 bg-base-200/50 p-4">
+          <p className="text-sm text-base-content/70">
+            Deploy tokens are scoped to this organization and can register apps
+            during <code className="text-xs">everyapp deploy</code>.
           </p>
-        </fieldset>
+        </div>
 
         <fieldset className="fieldset">
           <legend className="fieldset-legend">Expiration (optional)</legend>

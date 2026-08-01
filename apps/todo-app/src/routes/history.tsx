@@ -1,10 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo, useCallback, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { Button } from "@/client/components/ui/button";
 import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
-import { todoCollection } from "@/client/tanstack-db";
+import { useTodoMutations, useTodos } from "@/client/queries/todos";
 import { HistoryItem } from "@/client/components/TodoHistoryItem";
 import { AnimatedTodoItem } from "@/client/components/AnimatedTodoItem";
 import { useDelayedAnimation } from "@/client/hooks/useDelayedAnimation";
@@ -17,17 +16,16 @@ export const Route = createFileRoute("/history")({
 });
 
 function History() {
-  // Live query that updates automatically when data changes
-  const {
-    data: todos,
-    isLoading,
-    isError,
-  } = useLiveQuery((q) =>
-    q.from({ todo: todoCollection }).orderBy(({ todo }) => todo.sortKey, "asc"),
-  );
+  const { data: todos, isLoading, isError } = useTodos();
+  const { remove } = useTodoMutations();
 
   const completedTodos = useMemo(
-    () => todos?.filter((todo) => todo.completed) ?? [],
+    () =>
+      todos
+        ?.filter((todo) => todo.completed)
+        .sort((a, b) =>
+          a.sortKey > b.sortKey ? 1 : a.sortKey < b.sortKey ? -1 : 0,
+        ) ?? [],
     [todos],
   );
 
@@ -157,7 +155,7 @@ function History() {
         onClose={() => setDeleteModalTodoId(null)}
         onConfirm={() => {
           if (deleteModalTodoId) {
-            todoCollection.delete(deleteModalTodoId);
+            remove.mutate({ id: deleteModalTodoId });
             setDeleteModalTodoId(null);
           }
         }}

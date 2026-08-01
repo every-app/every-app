@@ -1,7 +1,8 @@
 import { Link, useLocation } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { MessageSquare, BookOpen, ChefHat, ChevronRight } from "lucide-react";
-import { queryClient } from "@/client/tanstack-db";
+import { queryClient } from "@/client/queryClient";
+import { gatewayHomeUrl } from "@/client/lib/gatewayHome";
 import { useSortedChats } from "@/client/hooks/useChats";
 import { ChatItem } from "./ChatItem";
 import { getMessages } from "@/serverFunctions/chats";
@@ -51,7 +52,7 @@ export function SidebarNav({ onNavigate }: SidebarNavProps) {
           <span className="font-semibold text-base-content">Chef</span>
           <span className="text-base-content/40">-</span>
           <a
-            href={import.meta.env.VITE_GATEWAY_URL}
+            href={gatewayHomeUrl()}
             target="_top"
             className="text-base-content/60 hover:text-primary transition-colors text-sm"
           >

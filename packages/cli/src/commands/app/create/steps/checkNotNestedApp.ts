@@ -3,11 +3,11 @@ import path from "node:path";
 import chalk from "chalk";
 import { exitWithUpdateNotice } from "@/lib/version-check";
 
-const CONFIG_FILES = ["every-app.jsonc", "every-app.json"];
+const CONFIG_FILES = ["everyapp.config.ts"];
 
 /**
  * Check if we're already inside an Every App project directory.
- * If an every-app.jsonc or every-app.json file exists in the current directory,
+ * If an everyapp.config.ts file exists in the current directory,
  * exit with an error to prevent creating nested projects.
  */
 export async function checkNotNestedApp(): Promise<void> {

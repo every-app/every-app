@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { useState, useRef, useEffect } from "react";
 import { MoreHorizontal, Pencil, Trash2, Check } from "lucide-react";
 import { toast } from "sonner";
-import { chatsCollection } from "@/client/tanstack-db";
+import { useChatMutations } from "@/client/queries/chats";
 import type { Chat } from "@/db/schema";
 
 interface ChatItemProps {
@@ -15,6 +15,7 @@ export function ChatItem({ chat, isActive, onNavigate }: ChatItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(chat.title);
   const inputRef = useRef<HTMLInputElement>(null);
+  const chatMutations = useChatMutations();
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -26,9 +27,9 @@ export function ChatItem({ chat, isActive, onNavigate }: ChatItemProps) {
   const handleSave = () => {
     const trimmedValue = editValue.trim();
     if (trimmedValue && trimmedValue !== chat.title) {
-      chatsCollection.update(chat.id, (draft) => {
-        draft.title = trimmedValue;
-        draft.updatedAt = new Date().toISOString();
+      chatMutations.update.mutate({
+        id: chat.id,
+        title: trimmedValue,
       });
     } else {
       setEditValue(chat.title);
@@ -51,8 +52,13 @@ export function ChatItem({ chat, isActive, onNavigate }: ChatItemProps) {
   };
 
   const handleDelete = () => {
-    chatsCollection.delete(chat.id);
-    toast("Chat deleted");
+    chatMutations.remove.mutate(
+      { id: chat.id },
+      {
+        onSuccess: () => toast("Chat deleted"),
+        onError: () => toast.error("Failed to delete chat"),
+      },
+    );
   };
 
   const handleRename = () => {

@@ -4,12 +4,14 @@ interface AppActionsMenuProps {
   onManageAccess: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  isOwner: boolean;
 }
 
 export function AppActionsMenu({
   onManageAccess,
   onEdit,
   onDelete,
+  isOwner,
 }: AppActionsMenuProps) {
   return (
     <div className="dropdown dropdown-end">
@@ -32,12 +34,14 @@ export function AppActionsMenu({
             Edit App
           </button>
         </li>
-        <li>
-          <button className="text-error" onClick={onDelete}>
-            <Trash2 className="w-4 h-4" />
-            Delete App
-          </button>
-        </li>
+        {isOwner && (
+          <li>
+            <button className="text-error" onClick={onDelete}>
+              <Trash2 className="w-4 h-4" />
+              Delete App
+            </button>
+          </li>
+        )}
       </ul>
     </div>
   );

@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { nanoid } from "nanoid";
 import { funnel } from "remeda";
-import { setLogsCollection } from "@/client/tanstack-db";
+import { useSetLogMutations } from "@/client/queries/setLogs";
+import type { UpsertSetLogInput } from "@/types/schemas/setLogs";
 import type { WorkoutExerciseWithName } from "./useProgramData";
 import type { WorkoutSetLog } from "@/db/schema";
 
@@ -42,32 +43,26 @@ const calculateNextReps = (
   return targetReps;
 };
 
-const persistSetLog = (
+const persistSetLog = async (
   sessionId: string,
   exercise: WorkoutExerciseWithName,
   exerciseIndex: number,
   setIndex: number,
   reps: number,
   logId: string,
-  existingLog: WorkoutSetLog | undefined,
+  upsertLog: (data: UpsertSetLogInput) => Promise<unknown>,
 ) => {
-  if (existingLog) {
-    setLogsCollection.update(existingLog.id, (draft) => {
-      draft.actualReps = reps;
-    });
-  } else {
-    setLogsCollection.insert({
-      id: logId,
-      sessionId,
-      exerciseId: exercise.exerciseId,
-      exerciseNameSnapshot: exercise.name,
-      setNumber: setIndex + 1,
-      targetReps: exercise.targetReps,
-      actualReps: reps,
-      weight: exercise.weight ?? null,
-      sortOrder: exerciseIndex * SORT_ORDER_SPACING + setIndex,
-    });
-  }
+  await upsertLog({
+    id: logId,
+    sessionId,
+    exerciseId: exercise.exerciseId,
+    exerciseNameSnapshot: exercise.name,
+    setNumber: setIndex + 1,
+    targetReps: exercise.targetReps,
+    actualReps: reps,
+    weight: exercise.weight ?? null,
+    sortOrder: exerciseIndex * SORT_ORDER_SPACING + setIndex,
+  });
 };
 
 // ============================================
@@ -84,15 +79,13 @@ export function useSetLogDebounce(
   sessionSetLogs: WorkoutSetLog[],
 ) {
   const [pendingState, setPendingState] = useState<PendingState>({});
-
-  // Ref for stable access in funnel callbacks (avoids stale closure)
-  const sessionSetLogsRef = useRef(sessionSetLogs);
-  sessionSetLogsRef.current = sessionSetLogs;
+  const { upsert } = useSetLogMutations();
 
   // Per-set funnels for debouncing
   const funnelsRef = useRef<
     Map<SetKey, { call: (reps: number) => void; cancel: () => void }>
   >(new Map());
+  const writeChainsRef = useRef<Map<SetKey, Promise<unknown>>>(new Map());
 
   useEffect(() => {
     return () => funnelsRef.current.forEach((f) => f.cancel());
@@ -128,25 +121,45 @@ export function useSetLogDebounce(
       let setFunnel = funnelsRef.current.get(key);
       if (!setFunnel) {
         setFunnel = funnel(
-          (data: { reps: number; logId: string }) => {
-            const currentLog = findExistingLog(
-              sessionSetLogsRef.current,
-              exercise.exerciseId,
-              setIndex + 1,
-            );
-            persistSetLog(
-              sessionId,
-              exercise,
-              exerciseIndex,
-              setIndex,
-              data.reps,
-              data.logId,
-              currentLog,
-            );
-            setPendingState((prev) => {
-              const { [key]: _, ...rest } = prev;
-              return rest;
-            });
+          async (data: { reps: number; logId: string }) => {
+            const previousWrite =
+              writeChainsRef.current.get(key) ?? Promise.resolve();
+            const write = previousWrite
+              .catch(() => undefined)
+              .then(() =>
+                persistSetLog(
+                  sessionId,
+                  exercise,
+                  exerciseIndex,
+                  setIndex,
+                  data.reps,
+                  data.logId,
+                  upsert.mutateAsync,
+                ),
+              );
+            writeChainsRef.current.set(key, write);
+
+            try {
+              await write;
+            } catch (error) {
+              console.error("Failed to save set log:", error);
+            } finally {
+              if (writeChainsRef.current.get(key) === write) {
+                writeChainsRef.current.delete(key);
+              }
+              setPendingState((prev) => {
+                const pending = prev[key];
+                if (
+                  !pending ||
+                  pending.logId !== data.logId ||
+                  pending.reps !== data.reps
+                ) {
+                  return prev;
+                }
+                const { [key]: _, ...rest } = prev;
+                return rest;
+              });
+            }
           },
           {
             minQuietPeriodMs: DEBOUNCE_MS,
@@ -161,7 +174,7 @@ export function useSetLogDebounce(
 
       setFunnel.call(newReps);
     },
-    [sessionId, exercises, sessionSetLogs, pendingState],
+    [sessionId, exercises, sessionSetLogs, pendingState, upsert],
   );
 
   /**

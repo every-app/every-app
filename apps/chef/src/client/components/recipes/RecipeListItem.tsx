@@ -2,7 +2,7 @@ import type { Recipe } from "@/db/schema";
 import { Link } from "@tanstack/react-router";
 import { Trash2, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
-import { recipesCollection } from "@/client/tanstack-db";
+import { useRecipeMutations } from "@/client/queries/recipes";
 
 interface RecipeListItemProps {
   recipe: Recipe;
@@ -13,6 +13,8 @@ export function RecipeListItem({
   recipe,
   isEditMode = false,
 }: RecipeListItemProps) {
+  const { mutate: deleteRecipe } = useRecipeMutations().remove;
+
   // Count ingredients (lines starting with -)
   const getIngredientCount = (content: string): number => {
     return content.split("\n").filter((line) => line.trim().startsWith("-"))
@@ -31,8 +33,13 @@ export function RecipeListItem({
   const handleDelete = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    recipesCollection.delete(recipe.id);
-    toast("Recipe deleted");
+    deleteRecipe(
+      { id: recipe.id },
+      {
+        onSuccess: () => toast("Recipe deleted"),
+        onError: () => toast.error("Failed to delete recipe"),
+      },
+    );
   };
 
   // Build metadata string

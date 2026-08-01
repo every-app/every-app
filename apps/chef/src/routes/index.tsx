@@ -3,9 +3,9 @@ import { useEffect, useRef } from "react";
 import { Plus } from "lucide-react";
 import { ChatWindow } from "@/client/components/chat/ChatWindow";
 import { MessageInput } from "@/client/components/chat/MessageInput";
-import { createChatAction } from "@/client/actions/createChat";
 import { useIsMobile } from "@/client/hooks/use-mobile";
 import { useSortedChats, useCreateChat } from "@/client/hooks/useChats";
+import { useChatMutations } from "@/client/queries/chats";
 
 export const Route = createFileRoute("/")({
   component: ChatLandingPage,
@@ -17,6 +17,7 @@ function ChatLandingPage() {
   const pendingMessageRef = useRef<string | null>(null);
   const chats = useSortedChats();
   const createNewChat = useCreateChat();
+  const { mutateAsync: createChat } = useChatMutations().create;
 
   // Auto-redirect to most recent chat if one exists
   useEffect(() => {
@@ -34,9 +35,9 @@ function ChatLandingPage() {
     const chatNumber = chats.length + 1;
     const newChatId = crypto.randomUUID();
 
-    // Create the chat (optimistically + server) - must complete before we can send messages
-    await createChatAction({
-      chatId: newChatId,
+    // The chat must exist before the chat route sends the pending message.
+    await createChat({
+      id: newChatId,
       title: `Chat ${chatNumber}`,
     });
 

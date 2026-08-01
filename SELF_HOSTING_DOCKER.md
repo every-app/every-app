@@ -1,12 +1,15 @@
 # Docker Self-Hosting Runtime
 
-This guide shows how to self-host Every App with Docker Compose.
+This guide shows how to self-host the Every App gateway with Docker Compose.
 
-It runs each app in the local Cloudflare-compatible runtime mode (`wrangler`/Vite dev stack) so bindings and request handling behavior stay close to how Workers run, while still running on your own machine or server.
+It runs the gateway in the local Cloudflare-compatible runtime mode (`wrangler`/Vite dev stack) so bindings and request handling behavior stay close to how Workers run, while still running on your own machine or server.
 
-Each app has its own `docker-compose.yml` so deployments stay decoupled:
-- Gateway: `apps/every-app-gateway/docker-compose.yml`
-- Chef app: `apps/chef/docker-compose.yml`
+The gateway compose file is `apps/every-app-gateway/docker-compose.yml`.
+
+> **Chef's standalone Docker self-host is not supported under Every App v2.**
+> The old two-container path does not provision Chef's signed identity or
+> gateway service binding. Deploy Chef with `npx everyapp app deploy`, or use
+> `npx everyapp dev` for local development.
 
 ## Prerequisites
 
@@ -76,6 +79,30 @@ For Docker self-hosting, the entrypoint handles required auth keys this way:
 
 If you want explicit, deterministic values, set them in `.env`.
 
+### Email delivery (optional)
+
+Docker runs the gateway in local Cloudflare emulation. The emulated `EMAIL`
+binding writes messages to local `.eml` files; it does not deliver them. To send
+real password-reset and invitation emails from Docker, use the Cloudflare Email
+Sending REST transport:
+
+1. Onboard the domain used by `EMAIL_FROM` in Cloudflare Email Sending.
+2. Create a Cloudflare API token for the account with **Email Sending**
+   permission.
+3. Set these values in `apps/every-app-gateway/.env`:
+
+```dotenv
+EMAIL_REST_API_TOKEN=<cloudflare-api-token>
+CLOUDFLARE_ACCOUNT_ID=<cloudflare-account-id>
+EMAIL_FROM=noreply@example.com
+EMAIL_FROM_NAME=Every App
+```
+
+Both `EMAIL_REST_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are required to select
+the REST transport. The Docker entrypoint preserves these optional settings in
+`.env` across restarts. See `docs/runbooks/email-sending-setup.md` for domain
+onboarding and verification details.
+
 ## 2) Bootstrap Gateway Admin
 
 Open:
@@ -89,87 +116,3 @@ If you want additional users, add them manually from Gateway admin:
 - Open `/admin/users`
 - Click `Invite User`
 - Send/share the generated invite link
-
-## 3) Register the Chef app in Gateway
-
-In the Gateway admin UI (`/admin/apps`), add an app with:
-
-- `App ID`: `chef`
-- `App URL`: `http://localhost:3001`
-- `Dev URL`: `http://localhost:3001`
-
-Recommended access settings in the Add App modal:
-
-- `Auto-grant to new users`: enabled (new users automatically get access)
-- `Grant to all existing users`: enabled (existing users get access immediately)
-
-If you need to adjust access later, use `Manage Access` from the app row in `/admin/apps`.
-
-Then create an app token in `/admin/tokens` for that app with scope:
-
-- `provider:openai`
-
-Copy the generated token.
-
-## 4) Run the Chef app
-
-In a second terminal:
-
-```bash
-cd apps/chef
-cp .env.example .env
-# Put the token in .env as GATEWAY_APP_API_TOKEN
-docker compose up --build
-```
-
-Chef URL:
-
-- `http://localhost:3001`
-
-### Chef env vars
-
-Runtime requirements:
-
-- `GATEWAY_URL` (default: `http://every-app-gateway.localhost:3000`)
-- `VITE_GATEWAY_URL` (default: `http://every-app-gateway.localhost:3000`)
-- `VITE_APP_ID` (default: `chef`)
-- `GATEWAY_APP_API_TOKEN` (required for gateway-authenticated provider proxy calls in this app)
-
-`GATEWAY_URL` is the canonical gateway URL used for token issuer checks and server-side gateway requests.
-
-The container writes these into `.env` and runs local migrations automatically.
-
-Security note:
-
-- Entrypoints write runtime values (including auth secrets and app tokens) to `.env` inside each app directory.
-- `.env` is gitignored, but treat it as sensitive material.
-- Do not expose these containers directly to the public Internet unless you apply proper network controls.
-
-## Manual multi-host setup (different VPS machines)
-
-This workflow also works when Gateway and app run on different hosts (for example, separate Hetzner VPS instances).
-
-Minimum manual setup:
-
-- Deploy Gateway and make it reachable at a public URL (for example `https://gateway.example.com`).
-- Deploy app and make it reachable at a public URL (for example `https://chef.example.com`).
-- In Gateway `/admin/apps`, add the app with:
-  - `App ID`: `chef`
-  - `App URL`: `https://chef.example.com`
-  - `Dev URL`: optional (only if you want a separate dev origin)
-- In app environment, set:
-  - `GATEWAY_URL=https://gateway.example.com`
-  - `VITE_GATEWAY_URL=https://gateway.example.com`
-  - `VITE_APP_ID=chef`
-  - `GATEWAY_APP_API_TOKEN=<token generated in /admin/tokens>`
-
-Notes:
-
-- This is intentionally manual for now (no CLI automation in this Docker workflow).
-- If app access is not granted automatically, manage it manually in Gateway admin (`/admin/apps` -> `Manage Access`).
-
-## Notes
-
-- Gateway and apps are intentionally independent. You can run as many apps as you want, each with its own compose project.
-- The Chef app talks to Gateway using `GATEWAY_URL` on the server side and `VITE_GATEWAY_URL` on the client side.
-- Chef compose adds an `extra_hosts` mapping so `every-app-gateway.localhost` resolves inside the container.

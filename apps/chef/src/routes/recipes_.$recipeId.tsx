@@ -3,16 +3,10 @@ import { useState } from "react";
 import { RecipeNotFound } from "@/client/components/recipes/RecipeNotFound";
 import { RecipeEditor } from "@/client/components/recipes/RecipeEditor";
 import { RecipeDetail } from "@/client/components/recipes/RecipeDetail";
-import {
-  recipesCollection,
-  chatsCollection,
-  chatActiveRecipesCollection,
-} from "@/client/tanstack-db";
-import { useLiveQuery } from "@tanstack/react-db";
-import {
-  startCooking,
-  type StartCookingParams,
-} from "@/client/actions/startCooking";
+import { useRecipes, useRecipeMutations } from "@/client/queries/recipes";
+import { useChats, useChatMutations } from "@/client/queries/chats";
+import { useChatActiveRecipes } from "@/client/queries/chatActiveRecipes";
+import type { StartCookingInput } from "@/types/schemas/chats";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/recipes_/$recipeId")({
@@ -27,16 +21,11 @@ function RecipeDetailPage() {
   const [editContent, setEditContent] = useState("");
   const [isCookingLoading, setIsCookingLoading] = useState(false);
 
-  // Get data from TanstackDB
-  const { data: recipes } = useLiveQuery((q) =>
-    q.from({ recipe: recipesCollection }),
-  );
-  const { data: chats } = useLiveQuery((q) =>
-    q.from({ chat: chatsCollection }),
-  );
-  const { data: activeRecipes } = useLiveQuery((q) =>
-    q.from({ activeRecipe: chatActiveRecipesCollection }),
-  );
+  const { data: recipes } = useRecipes();
+  const { data: chats } = useChats();
+  const { data: activeRecipes } = useChatActiveRecipes();
+  const { mutateAsync: updateRecipe } = useRecipeMutations().update;
+  const { mutateAsync: startCooking } = useChatMutations().startCooking;
 
   const recipe = (recipes ?? []).find((r) => r.id === recipeId);
 
@@ -47,11 +36,11 @@ function RecipeDetailPage() {
     }
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (recipe) {
-      recipesCollection.update(recipe.id, (draft) => {
-        draft.content = editContent;
-        draft.updatedAt = new Date().toISOString();
+      await updateRecipe({
+        id: recipe.id,
+        content: editContent,
       });
       toast("Changes saved");
       setIsEditing(false);
@@ -85,8 +74,7 @@ function RecipeDetailPage() {
         ? mostRecentChat.id
         : null;
 
-      // Build params and execute action
-      const params: StartCookingParams = {
+      const params: StartCookingInput = {
         chatId: existingChatId ?? crypto.randomUUID(),
         chatTitle: `Cooking: ${recipe.title}`,
         activeRecipeId: crypto.randomUUID(),

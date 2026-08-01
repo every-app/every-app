@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import { getDefaultAccountId } from "./auth";
+import { CloudflareAPIError } from "./auth";
 
 /**
  * Known Cloudflare error codes and their user-friendly messages
@@ -151,8 +152,10 @@ export async function formatCloudflareError(
   options: FormatCloudflareErrorOptions = {},
 ): Promise<FormatCloudflareErrorResult | undefined> {
   const errorOutput = getErrorOutput(error);
-
-  const code = parseCloudflareErrorCode(errorOutput);
+  const code =
+    error instanceof CloudflareAPIError
+      ? error.codes.find((candidate) => getCloudflareErrorInfo(candidate))
+      : parseCloudflareErrorCode(errorOutput);
   if (code === undefined) {
     return undefined;
   }

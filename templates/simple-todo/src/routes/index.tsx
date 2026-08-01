@@ -1,10 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useLiveQuery } from "@tanstack/react-db";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 import { Plus, Info } from "lucide-react";
 import { CreateTodoModal } from "@/client/components/CreateTodoModal";
-import { todoCollection } from "@/client/tanstack-db";
+import { useTodoMutations, useTodos } from "@/client/queries/todos";
 import { TodoItem } from "@/client/components/TodoItem";
 
 export const Route = createFileRoute("/")({
@@ -14,13 +13,9 @@ export const Route = createFileRoute("/")({
 function Home() {
   const [newTodoTitle, setNewTodoTitle] = useState<string>("");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const { create } = useTodoMutations();
 
-  // Live query that updates automatically when data changes
-  const {
-    data: todos,
-    isLoading,
-    isError,
-  } = useLiveQuery((q) => q.from({ todo: todoCollection }));
+  const { data: todos, isLoading, isError } = useTodos();
 
   // Derive active and completed todos from query data
   const activeTodos = useMemo(
@@ -35,7 +30,7 @@ function Home() {
   if (isError) {
     return (
       <div className="p-4">
-        <p className="text-error">Todo live query error.</p>
+        <p className="text-error">Failed to load todos.</p>
       </div>
     );
   }
@@ -70,10 +65,9 @@ function Home() {
           onSubmit={(e) => {
             e.preventDefault();
             if (newTodoTitle.trim()) {
-              todoCollection.insert({
+              create.mutate({
                 id: crypto.randomUUID(),
                 title: newTodoTitle.trim(),
-                completed: false,
               });
               toast("Todo created");
               setNewTodoTitle("");

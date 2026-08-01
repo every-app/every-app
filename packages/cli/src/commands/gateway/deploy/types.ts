@@ -1,13 +1,13 @@
 export interface DeployCommandFlags {
-  repo?: string;
   verbose?: boolean;
   localGateway?: string;
+  domain?: string;
   yes?: boolean;
 }
 
 export interface CloudflareResources {
   d1DatabaseId: string;
-  kvNamespaceId: string;
+  kvNamespaceIds: Record<string, string>;
   accountId: string;
 }
 

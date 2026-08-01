@@ -1,6 +1,8 @@
 {
-  "ignoreBinaries": ["everyapp"],
   "entry": [
+    // Every App manifest and Cloudflare Worker entry point
+    "everyapp.config.ts",
+    "src/entry.worker.ts",
     "src/types/index.ts",
     // Detect Tanstack Start Routes
     "src/router.tsx",
@@ -15,6 +17,9 @@
   // Disable Drizzle plugin - it tries to load drizzle.config.ts which imports cloudflare:workers
   "drizzle": false,
   "ignoreDependencies": [
+    // Runtime Worker entry import; jose fulfills the SDK's required peer dependency.
+    "@every-app/sdk",
+    "jose",
     // Tailwindcss used via @tailwindcss/vite plugin
     "tailwindcss",
     "daisyui",

@@ -1,12 +1,7 @@
 import { useState, useCallback } from "react";
 import { DragEndEvent } from "@dnd-kit/core";
 import { toast } from "sonner";
-import {
-  exercisesCollection,
-  workoutsCollection,
-  exerciseLibraryCollection,
-} from "@/client/tanstack-db";
-import { deleteWorkout as deleteWorkoutAction } from "@/client/actions/deleteWorkout";
+import { useWorkoutMutations } from "@/client/queries/workouts";
 import { DEFAULT_PROGRESSION_INCREMENT } from "@/client/lib/constants";
 import type { WorkoutExerciseWithName, LocalExercise } from "./useProgramData";
 
@@ -34,6 +29,7 @@ export function useExerciseEditor({
   const [localExercises, setLocalExercises] = useState<LocalExercise[]>([]);
   const [localName, setLocalName] = useState("");
   const [localDescription, setLocalDescription] = useState("");
+  const workoutMutations = useWorkoutMutations();
 
   // The exercises to display - use local copy when editing, otherwise use original exercises
   const displayExercises = isEditMode ? localExercises : exercises;
@@ -168,7 +164,7 @@ export function useExerciseEditor({
     return true;
   }, [localExercises]);
 
-  const saveChanges = useCallback((): boolean => {
+  const saveChanges = useCallback(async (): Promise<boolean> => {
     if (!validateExercises()) {
       toast.error("Please enter valid numbers for all fields");
       return false;
@@ -188,50 +184,6 @@ export function useExerciseEditor({
       (original) => !localExercises.find((local) => local.id === original.id),
     );
 
-    // Delete removed exercises
-    deletedExercises.forEach((exercise) => {
-      exercisesCollection.delete(exercise.id);
-    });
-
-    // Insert new exercises
-    newExercises.forEach((exercise) => {
-      exercisesCollection.insert({
-        id: exercise.id,
-        workoutId: exercise.workoutId,
-        exerciseId: exercise.exerciseId,
-        sets: exercise.sets,
-        targetReps: exercise.targetReps,
-        weight: exercise.weight,
-        sortOrder: exercise.sortOrder,
-        createdAt: exercise.createdAt,
-        updatedAt: exercise.updatedAt,
-      });
-    });
-
-    // Update all existing exercises with their current state
-    if (existingExercises.length > 0) {
-      const existingIds = existingExercises.map((e) => e.id);
-      exercisesCollection.update(existingIds, (drafts) => {
-        drafts.forEach((draft) => {
-          const localExercise = existingExercises.find(
-            (e) => e.id === draft.id,
-          );
-          if (localExercise) {
-            draft.sets = localExercise.sets;
-            draft.targetReps = localExercise.targetReps;
-            draft.weight = localExercise.weight;
-            draft.sortOrder = localExercise.sortOrder;
-          }
-        });
-      });
-    }
-
-    // Update workout name and description
-    workoutsCollection.update(workoutId, (draft) => {
-      draft.name = localName.trim();
-      draft.description = localDescription.trim() || null;
-    });
-
     // Update progression increments in exercise library for exercises that changed
     const changedIncrements = localExercises.filter((local) => {
       const original = exercises.find((e) => e.id === local.id);
@@ -240,28 +192,46 @@ export function useExerciseEditor({
       );
     });
 
-    // Batch update exercise library increments for consistency
-    if (changedIncrements.length > 0) {
-      const changedExerciseIds = changedIncrements.map((e) => e.exerciseId);
-      exerciseLibraryCollection.update(changedExerciseIds, (drafts) => {
-        drafts.forEach((draft) => {
-          const local = changedIncrements.find(
-            (e) => e.exerciseId === draft.id,
-          );
-          if (local) {
-            draft.progressionIncrement = local.progressionIncrement;
-          }
-        });
+    try {
+      await workoutMutations.saveEdits.mutateAsync({
+        workout: {
+          id: workoutId,
+          name: localName.trim(),
+          description: localDescription.trim() || null,
+        },
+        create: newExercises.map((exercise) => ({
+          id: exercise.id,
+          workoutId: exercise.workoutId,
+          exerciseId: exercise.exerciseId,
+          sets: exercise.sets,
+          targetReps: exercise.targetReps,
+          weight: exercise.weight,
+          sortOrder: exercise.sortOrder,
+        })),
+        update: existingExercises.map((exercise) => ({
+          id: exercise.id,
+          sets: exercise.sets,
+          targetReps: exercise.targetReps,
+          weight: exercise.weight,
+          sortOrder: exercise.sortOrder,
+        })),
+        remove: deletedExercises.map((exercise) => ({ id: exercise.id })),
+        libraryUpdates: changedIncrements.map((exercise) => ({
+          id: exercise.exerciseId,
+          progressionIncrement: exercise.progressionIncrement,
+        })),
       });
+      setLocalExercises([]);
+      setLocalName("");
+      setLocalDescription("");
+      setIsEditMode(false);
+      toast("Changes saved");
+      return true;
+    } catch (error) {
+      console.error("Failed to save workout:", error);
+      toast.error("Failed to save changes");
+      return false;
     }
-
-    // Exit edit mode
-    setLocalExercises([]);
-    setLocalName("");
-    setLocalDescription("");
-    setIsEditMode(false);
-    toast("Changes saved");
-    return true;
   }, [
     exercises,
     localExercises,
@@ -269,17 +239,17 @@ export function useExerciseEditor({
     localDescription,
     workoutId,
     validateExercises,
+    workoutMutations,
   ]);
 
   const deleteWorkout = useCallback(async () => {
-    // Use atomic action to delete workout and all its exercises
-    await deleteWorkoutAction({
+    await workoutMutations.removeWithExercises.mutateAsync({
       workoutId,
       exerciseIds: exercises.map((e) => e.id),
     });
     setIsEditMode(false);
     toast("Workout deleted");
-  }, [workoutId, exercises]);
+  }, [workoutId, exercises, workoutMutations.removeWithExercises]);
 
   return {
     isEditMode,

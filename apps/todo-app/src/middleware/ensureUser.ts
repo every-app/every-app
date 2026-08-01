@@ -1,31 +1,19 @@
 import { createMiddleware } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import {
-  authenticateRequest,
-  getAuthConfig,
-} from "@every-app/sdk/tanstack/server";
+import { requireEveryAppUser } from "@every-app/sdk/server";
+import { env } from "cloudflare:workers";
 
 export const ensureUserMiddleware = createMiddleware({
   type: "function",
 }).server(async (c) => {
   const { next } = c;
 
-  const authConfig = getAuthConfig();
+  const identityUser = await requireEveryAppUser(getRequest(), env);
 
-  const session = await authenticateRequest(authConfig);
-
-  if (!session) {
-    console.error("No session found, returning 401");
-    throw new Response("Unauthenticated", { status: 401 });
-  }
-
-  if (!session.email) {
-    throw new Error("Email should always be on our session tokens.");
-  }
-
-  const userId = session.sub;
+  const userId = identityUser.id;
 
   // Check if user exists
   const user = await db.query.users.findFirst({
@@ -36,24 +24,24 @@ export const ensureUserMiddleware = createMiddleware({
     try {
       await db.insert(users).values({
         id: userId,
-        email: session.email,
+        email: identityUser.email,
       });
     } catch (error) {
       console.error(
-        { error, userId, email: session.email },
+        { error, userId, email: identityUser.email },
         "Failed to create user",
       );
       throw error;
     }
   }
 
-  const userEmail = user?.email || session.email;
+  const userEmail = user?.email || identityUser.email;
 
   return next({
     context: {
       userId,
       userEmail,
-      session,
+      user: identityUser,
     },
   });
 });

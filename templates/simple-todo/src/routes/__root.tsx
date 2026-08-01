@@ -16,9 +16,9 @@ import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
 import { Sidebar } from "@/client/components/Sidebar";
 import { TabBar } from "@/client/components/TabBar";
-import { EmbeddedAppProvider } from "@every-app/sdk/tanstack";
-import { todoCollection, queryClient, persister } from "@/client/tanstack-db";
-import { useLiveQuery } from "@tanstack/react-db";
+import { persister } from "@/client/persister";
+import { queryClient } from "@/client/queryClient";
+import { useTodos } from "@/client/queries/todos";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -58,7 +58,14 @@ export const Route = createRootRoute({
         sizes: "16x16",
         href: "/favicon-16x16.png",
       },
-      { rel: "manifest", href: "/site.webmanifest", color: "#fffff" },
+      // use-credentials: manifest fetches omit cookies by default, and behind
+      // the gateway perimeter an uncredentialed request is a 401.
+      {
+        rel: "manifest",
+        href: "/site.webmanifest",
+        crossOrigin: "use-credentials",
+        color: "#fffff",
+      },
       { rel: "icon", href: "/favicon.ico" },
     ],
     scripts: [],
@@ -73,7 +80,7 @@ function AppLayout() {
   const location = useLocation();
 
   // Always fetch todos regardless of route so that they are preloaded
-  useLiveQuery((q) => q.from({ todo: todoCollection }));
+  useTodos();
 
   return (
     <div className="flex flex-col md:flex-row h-[100dvh] overflow-hidden bg-base-200">
@@ -107,16 +114,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             client={queryClient}
             persistOptions={{ persister }}
           >
-            <EmbeddedAppProvider appId={import.meta.env.VITE_APP_ID}>
-              <>
-                {children}
-                <Toaster
-                  position="bottom-right"
-                  mobileOffset={{ bottom: 100 }}
-                />
-                <TanStackRouterDevtools position="bottom-right" />
-              </>
-            </EmbeddedAppProvider>
+            <>
+              {children}
+              <Toaster position="bottom-right" mobileOffset={{ bottom: 100 }} />
+              <TanStackRouterDevtools position="bottom-right" />
+            </>
           </PersistQueryClientProvider>
         </ClientOnly>
         <Scripts />

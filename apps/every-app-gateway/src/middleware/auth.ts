@@ -1,29 +1,24 @@
-import { createAuth, type Auth } from "@/auth";
+import { auth, type Auth } from "@/auth";
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { GatewayError } from "@/server/errors";
 import {
-  resolvePrimaryOrganizationRole,
-  type OrganizationRole,
-} from "@/server/org-roles";
+  resolveOrgContext,
+  type OrgContext,
+} from "@/server/organization/orgContext";
 
 interface AuthContext {
   user: Auth["$Infer"]["Session"]["user"];
   session: Auth["$Infer"]["Session"]["session"];
-  activeOrganizationId: string | null;
-  activeOrganizationRole: OrganizationRole | null;
 }
 
-export interface OrganizationContext extends AuthContext {
-  activeOrganizationId: string;
-  activeOrganizationRole: OrganizationRole;
+interface OrganizationContext extends AuthContext {
+  org: OrgContext;
 }
 
 export const authMiddleware = createMiddleware({
   type: "function",
 }).server(async ({ next }) => {
-  const auth = createAuth();
-
   // Get the request object using TanStack Start's helper
   const request = getRequest();
 
@@ -38,8 +33,6 @@ export const authMiddleware = createMiddleware({
   const authContext: AuthContext = {
     user: session.user,
     session: session.session,
-    activeOrganizationId: session.session.activeOrganizationId ?? null,
-    activeOrganizationRole: null,
   };
 
   return next({ context: authContext });
@@ -54,45 +47,42 @@ export const organizationMemberMiddleware = createMiddleware({
 })
   .middleware([authMiddleware])
   .server(async ({ next, context }) => {
-    if (!context.activeOrganizationId) {
-      throw new GatewayError(
-        "UNAUTHORIZED",
-        "Unauthorized: Active organization required",
-      );
-    }
-
-    const auth = createAuth();
-    const request = getRequest();
-
-    const activeMember = await auth.api.getActiveMember({
-      headers: request.headers,
+    const org = await resolveOrgContext({
+      userId: context.user.id,
+      activeOrganizationId: context.session.activeOrganizationId ?? null,
     });
 
-    if (!activeMember) {
+    if (!org) {
       throw new GatewayError(
         "UNAUTHORIZED",
         "Unauthorized: Organization membership required",
       );
     }
 
-    const activeOrganizationRole = resolvePrimaryOrganizationRole(
-      activeMember.role,
-    );
-
-    if (!activeOrganizationRole) {
-      throw new GatewayError(
-        "UNAUTHORIZED",
-        "Unauthorized: Organization role required",
-      );
-    }
-
     const organizationContext: OrganizationContext = {
       ...context,
-      activeOrganizationId: context.activeOrganizationId,
-      activeOrganizationRole,
+      org,
     };
 
     return next({ context: organizationContext });
+  });
+
+/**
+ * Middleware that requires admin access for the active organization.
+ */
+export const organizationAdminMiddleware = createMiddleware({
+  type: "function",
+})
+  .middleware([organizationMemberMiddleware])
+  .server(async ({ next, context }) => {
+    if (context.org.role !== "owner" && context.org.role !== "admin") {
+      throw new GatewayError(
+        "UNAUTHORIZED",
+        "Unauthorized: Organization admin access required",
+      );
+    }
+
+    return next({ context });
   });
 
 /**
@@ -103,7 +93,7 @@ export const organizationOwnerMiddleware = createMiddleware({
 })
   .middleware([organizationMemberMiddleware])
   .server(async ({ next, context }) => {
-    if (context.activeOrganizationRole !== "owner") {
+    if (context.org.role !== "owner") {
       throw new GatewayError(
         "UNAUTHORIZED",
         "Unauthorized: Organization owner access required",

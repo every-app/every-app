@@ -1,0 +1,73 @@
+---
+title: CLI Reference
+description: Every everyapp command and flag on one page
+---
+
+All commands run via `npx everyapp …` (or a local checkout's binary). Global help: `everyapp --help`.
+
+## Gateway
+
+### `everyapp gateway deploy`
+
+Deploys (or updates) your Gateway on your Cloudflare account: creates or links the D1 database and KV store, reconstructs app service bindings from the registry, deploys the worker, sets secrets, and runs database migrations.
+
+| Flag                       | Meaning                                                                                                                                                                                                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--domain <apex>`          | Your custom apex domain (e.g. `you.dev`). Sets up the custom domain, the `*.<apex>` wildcard route for app subdomains, and disables the `workers.dev` alias. Required before apps are reachable; without it the Gateway runs on `workers.dev` for a look around. |
+| `--localGateway <tarball>` | Deploy a locally built gateway tarball instead of the latest release (development).                                                                                                                                                                              |
+| `-y`, `--yes`              | Skip the confirmation prompt.                                                                                                                                                                                                                                    |
+| `--verbose`                | Detailed output.                                                                                                                                                                                                                                                 |
+
+If your Cloudflare login can't create DNS records, the deploy prints the one wildcard CNAME record to add by hand (once), with a direct dashboard link.
+
+## Authentication
+
+### `everyapp login`
+
+Stores a deploy token for your Gateway. Create the token first: **your Gateway → Admin → Tokens → Deploy token** (shown once). The CLI validates it and saves it per-gateway in `~/.everyapp/credentials.json`. Registration and app deploys authenticate with this token.
+
+### `everyapp logout`
+
+Removes the stored token for a gateway.
+
+## Apps
+
+### `everyapp app create <app-id>`
+
+Scaffolds a new app from the starter template (kebab-case id), wires its `everyapp.config.ts`, and offers to deploy. Flags: `-y`, `--verbose`.
+
+### `everyapp app deploy`
+
+Run from an app directory. Generates the wrangler config from `everyapp.config.ts`, provisions D1/KV, runs migrations, builds, deploys the app as a **private worker**, registers it with your Gateway (it goes live at `https://<app-id>.<your-domain>`), and attaches the Gateway's service binding.
+
+| Flag               | Meaning                                                                                                        |
+| ------------------ | -------------------------------------------------------------------------------------------------------------- |
+| `-y`, `--yes`      | Skip prompts (access defaults to all users).                                                                   |
+| `--skip-dns-check` | Skip the pre-flight check that `<app-id>.<your-domain>` resolves (useful right after creating the DNS record). |
+| `--verbose`        | Detailed output.                                                                                               |
+
+### `everyapp app generate-config`
+
+Writes `.everyapp/wrangler.json` from `everyapp.config.ts`. App `dev`/`build` scripts call this automatically; run it manually after editing the manifest if you invoke `vite` directly.
+
+### `everyapp app setup-local`
+
+Prepares an existing app checkout for local development (dependencies, local database, generated config).
+
+### `everyapp app remote-d1-shell -- <command>`
+
+Runs a command (e.g. drizzle-kit) against the app's production D1 database. Used by the `db:migrate:prod` / `db:studio:prod` package scripts.
+
+## Local development
+
+### `everyapp dev`
+
+Runs your app behind a local gateway with the real security perimeter — real identity verification, real public-route policy, hot reload intact. App at `http://<app-id>.localhost:8787`.
+
+| Flag                  | Meaning                                                                                                           |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--port <n>`          | Gateway port (defaults to `$PORT`, then 8787).                                                                    |
+| `--mode stub\|mirror` | `stub` (default): a seeded dev user, zero setup. `mirror`: real login against a separately running local gateway. |
+| `--gateway <url>`     | Mirror mode: the local gateway's URL (default `http://localhost:3000`).                                           |
+| `--baseHost <host>`   | Mirror mode: two-label base host for the session cookie (default `everyapp.localhost`).                           |
+| `--skip-migrations`   | Skip the local migration preflight that normally runs before the dev server starts.                               |

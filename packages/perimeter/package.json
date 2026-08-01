@@ -1,0 +1,41 @@
+{
+  "name": "@every-app/perimeter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./manifest": {
+      "types": "./src/manifest/index.ts",
+      "default": "./src/manifest/index.ts"
+    },
+    "./dev": {
+      "types": "./src/dev/index.ts",
+      "default": "./src/dev/index.ts"
+    }
+  },
+  "scripts": {
+    "types:check": "tsc --noEmit",
+    "format:check": "prettier --check .",
+    "format:write": "prettier . --write",
+    "test": "vitest run --silent",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@every-app/sdk": "workspace:*",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251014.0",
+    "@types/node": "^22.18.13",
+    "jose": "^6.0.12",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.2",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.4"
+  }
+}

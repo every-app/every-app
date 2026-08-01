@@ -1,0 +1,87 @@
+---
+title: "Gateway: CLI & Deployment"
+description: How the CLI provisions, deploys, registers, and runs everything locally
+---
+
+> Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-07-15.
+
+**Deployment in one sentence:** the Cloudflare token (on your laptop) creates infrastructure, the `eak_` deploy token registers apps with the gateway's registry, and the gateway wires routing by reconstructing service bindings from that registry.
+
+Three independent credentials — none substitutes for another:
+
+| Credential                                                      | Lives                                                                         | Authorizes                                                                                                                 |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Cloudflare API token / wrangler OAuth                           | laptop env / wrangler config                                                  | creating D1/KV, deploying workers, patching bindings, DNS (scoped API token only — wrangler OAuth usually lacks DNS write) |
+| `eak_` deploy token (from admin UI, stored by `everyapp login`) | `~/.everyapp/credentials.json` (0600)                                         | the gateway's `/api/deploy/*` registry endpoints                                                                           |
+| `eat_` app token (auto-provisioned per app)                     | app worker secret (`app create` provisions a _separate_ one for `.env.local`) | gateway services (AI proxy) from app code                                                                                  |
+
+## `everyapp gateway deploy`
+
+The CLI deploys a prebuilt gateway: `--localGateway <tarball>` when given, otherwise the release bundled inside the npm package, otherwise (inside the monorepo) a fresh local build. It patches the release's wrangler config, then deploys.
+
+1. Require Cloudflare auth; confirm the target account.
+2. Provision (or reuse, by name) **one D1** (`every-app-gateway`) + **two KV namespaces** (`every-app-gateway`, `every-app-gateway-OAUTH_KV`). No R2.
+3. With `--domain`: verify the apex is a zone you own, write apex custom-domain + `*.<domain>/*` wildcard route, try to create the proxied wildcard CNAME (DNS failure is non-fatal → manual instructions). Without it: workers.dev — control plane works, but **app subdomains require a custom domain**.
+4. **Rebuild app service bindings from D1** — query active registry rows, emit `APP__<worker_name>` bindings into the config (missing tables on first deploy = empty registry).
+5. Download release → install pinned tooling → patch `dist/server/wrangler.json` (D1/KV IDs, routes, bindings) → `wrangler deploy`.
+6. **Secrets after the worker exists**, only if missing (except `GATEWAY_URL`, which `--domain` force-updates): `GATEWAY_URL`, `CLOUDFLARE_ACCOUNT_ID`, `BETTER_AUTH_SECRET`, RSA-2048 `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY` pair (both-or-none enforced), `GATEWAY_DEPLOYMENT_MODE=self_hosted`.
+7. **D1 migrations run last**, remotely via `drizzle-kit migrate`.
+8. Poll TLS, check `/api/admin/has-owner`, point a fresh install at `/sign-up`.
+
+## `everyapp app create`
+
+Not scaffold-only — it **production-deploys as part of create**. Clone template (`templates/simple-todo` from the monorepo) → rewrite ids/deps → run the full `deployApp()` pipeline below → provision a second `eat_` token for `.env.local` → local build + migrations (best-effort: failures warn, don't abort) → `git init` + first commit.
+
+## `everyapp app deploy` — the interesting one
+
+`everyapp.config.ts` is the source of truth; the CLI compiles it to an ephemeral gitignored `.everyapp/wrangler.json` (worker normally `every-<appId>`, `workers_dev: false`, `preview_urls: false`, D1/KV/DO bindings).
+
+```
+ laptop (CF token)                      gateway (eak_ token)
+──────────────────────                 ───────────────────────
+ 1 fetch identity keys  ◄───────────── /api/deploy/identity-keys
+ 2 provision D1/KV (by name, reuse)
+ 3 run remote D1 migrations            (BEFORE the worker deploys)
+ 4 build (manifest cmd | vite | none)
+ 5 wrangler deploy — PRIVATE worker
+ 6 register app         ─────────────► /api/deploy/register
+                                        → registry row: hostname, manifest
+                                          snapshot, active, default,
+                                          granted to all members
+ 7 ensure eat_ token    ─────────────► /api/deploy/app-token/provision
+   (only when the worker secret is missing — never rotated)
+   → upload app secrets: GATEWAY_URL, GATEWAY_APP_API_TOKEN, EVERY_APP_ORG_ID
+ 8 PATCH gateway worker settings: rebuild ALL APP__* service bindings
+   from the registry (non-app bindings preserved via inherit)
+ 9 app is live at <appId>-<orgSlug>.<gateway-host>
+```
+
+Details worth remembering:
+
+- **Identity is baked in at deploy**: `EVERYAPP_IDENTITY_PUBLIC_KEYS` + `EVERYAPP_IDENTITY_ISSUER` + `EVERYAPP_APP_ID` go into the worker config; there's no runtime key fetch.
+- **Migrations before code** (app), but **code before migrations** (gateway) — asymmetric on purpose (app: don't run new code on old schema; gateway: the release tarball carries its own migrations).
+- Only **one D1 binding is migrated** per deploy (`migrations.binding` or the first one); strategies: `drizzle` (default) or `d1-sql`.
+- **Failure window**: register (step 6) succeeds but binding patch (step 8) fails → active registry row with no binding → gateway serves 503 `app_unreachable` for that app until any later app/gateway deploy reconciles.
+- DNS preflight resolves any one-label subdomain (`<appId>.<gateway-host>`) via DNS-over-HTTPS only to verify the existing wildcard; the final `<appId>-<orgSlug>.<gateway-host>` URL comes from the gateway registration response. workers.dev gateways are rejected for app deploys.
+- Existing registry rows adopt the org-scoped hostname on their next `everyapp app deploy`; registration updates the existing `(organizationId, appSlug)` row, so no environment-dependent SQL migration is needed.
+
+## `everyapp dev`
+
+No production gateway involved: the CLI builds a Node **gateway-lite** from `packages/perimeter/src/dev/devGateway.ts` — the _real_ perimeter (CSRF, public routes, header stripping, JWT minting) in front of your Vite dev server, with a local RSA keypair (`.everyapp/dev-keys.json`, gitignored, 0600) and an in-memory one-app registry.
+
+|                | Stub mode (default)                             | Mirror mode                                                                      |
+| -------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
+| Identity       | hardcoded `dev-user` / `dev-org` / role `owner` | your real session, resolved by a locally running gateway via `/api/dev/identity` |
+| Gateway needed | none                                            | `pnpm dev` in `apps/every-app-gateway`                                           |
+| JWT minting    | gateway-lite, dev keypair, dev `kid`            | same (the real gateway only _resolves_ the session; gateway-lite mints)          |
+| Access checks  | n/a                                             | currently always-allow (`hasAppAccess` returns true)                             |
+
+The dev `kid` is accepted by the SDK when `EVERYAPP_DEV` is any non-empty value (or an app opts in with `allowDevIdentities: true`); `/api/dev/identity` hard-404s in production builds, though the route itself still ships. Anonymous behavior is testable via `x-everyapp-dev-anon: 1`.
+
+## What does NOT exist (despite appearing in the v2 plan docs)
+
+- **No dispatch namespaces / Workers for Platforms** — `tier: "dispatch"` exists in types and throws in `getAppFetcher()`. Everything is service bindings.
+- **No device-code login flow** — `everyapp login` = paste a token an owner created in the admin UI.
+- **No R2 provisioning** — a helper exists but nothing reaches it; the manifest has no R2 field.
+- **No `everyapp doctor`** — registry-vs-Cloudflare reconciliation and exposure probing aren't built.
+- **No hosted-tier tenancy machinery** — no per-tenant resources, KEKs, or egress/outbound worker. (Org scoping — registry rows, tokens, access checks — does exist.)

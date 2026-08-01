@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { todoCollection } from "@/client/tanstack-db";
+import { useTodoMutations } from "@/client/queries/todos";
 
 interface TodoItemProps {
   todo: Todo;
@@ -10,6 +10,7 @@ interface TodoItemProps {
 export function TodoItem({ todo }: TodoItemProps) {
   const [localTitle, setLocalTitle] = useState(todo.title);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { update, remove } = useTodoMutations();
 
   const handleTitleChange = (newTitle: string) => {
     if (todo.completed) return;
@@ -27,9 +28,7 @@ export function TodoItem({ todo }: TodoItemProps) {
 
     if (currentValue !== todo.title) {
       if (currentValue) {
-        todoCollection.update(todo.id, (draft) => {
-          draft.title = currentValue;
-        });
+        update.mutate({ ...todo, title: currentValue });
       } else {
         toast.error("Todo title cannot be empty");
         setLocalTitle(todo.title);
@@ -56,9 +55,7 @@ export function TodoItem({ todo }: TodoItemProps) {
         type="checkbox"
         checked={todo.completed}
         onChange={(e) => {
-          todoCollection.update(todo.id, (draft) => {
-            draft.completed = e.target.checked;
-          });
+          update.mutate({ ...todo, completed: e.target.checked });
         }}
         className="checkbox checkbox-sm mt-1.5 flex-shrink-0"
         aria-label={
@@ -101,7 +98,7 @@ export function TodoItem({ todo }: TodoItemProps) {
 
       <button
         onClick={() => {
-          todoCollection.delete(todo.id);
+          remove.mutate(todo);
           toast("Todo deleted");
         }}
         className="btn btn-ghost btn-sm btn-square md:opacity-0 md:group-hover:opacity-100 hover:btn-error"

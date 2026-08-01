@@ -18,61 +18,49 @@ interface WranglerConfig {
     binding: string;
     bucket_name: string;
   }>;
-  [key: string]: any;
+  routes?: Array<Record<string, unknown>>;
+  workers_dev?: boolean;
+  services?: Array<{
+    binding: string;
+    service: string;
+  }>;
+  [key: string]: unknown;
 }
 
 interface UpdateWranglerConfigOptions {
   /**
-   * Path to wrangler.jsonc file (or directory containing it)
-   * If a directory is provided, will look for wrangler.jsonc in that directory
+   * Path to a Wrangler config file. If a directory is provided, wrangler.jsonc
+   * in that directory is updated for gateway release compatibility.
    */
   configPath: string;
-  /**
-   * New app/worker name (updates the "name" field)
-   */
   name?: string;
-  /**
-   * D1 database ID to set (we only support one D1 database per app)
-   */
   d1DatabaseId?: string;
-  /**
-   * D1 database name to set (we only support one D1 database per app)
-   */
   d1DatabaseName?: string;
-  /**
-   * KV namespace ID to set (we only support one KV namespace per app)
-   */
-  kvNamespaceId?: string;
-  /**
-   * R2 bucket name to set (we only support one R2 bucket per app)
-   */
+  kvNamespaceIds?: Record<string, string>;
   r2BucketName?: string;
-  /**
-   * Vars to set in wrangler config (e.g., GATEWAY_URL)
-   */
   vars?: Record<string, string>;
-  /**
-   * Whether to show verbose output
-   */
+  routes?: Array<Record<string, unknown>>;
+  workersDev?: boolean;
+  services?: Array<{
+    binding: string;
+    service: string;
+  }>;
   verbose?: boolean;
 }
 
 /**
- * Unified function to update wrangler.jsonc configuration
- * Supports updating D1 database, KV namespace, and vars in a single operation
- *
- * Enforces the invariant that each app has exactly one D1 database and one KV namespace
+ * Update a Wrangler config. This remains for gateway release deploys, where the
+ * CLI patches the prebuilt gateway config with account-specific resources.
  */
 export async function updateWranglerConfig(
   options: UpdateWranglerConfigOptions,
 ): Promise<void> {
   if (options.verbose) {
     console.log(
-      "Updating wrangler.jsonc with resource IDs and configuration...",
+      "Updating Wrangler config with resource IDs and configuration...",
     );
   }
 
-  // Determine the actual config file path
   let configFilePath = options.configPath;
   const stats = await fs.stat(configFilePath);
   if (stats.isDirectory()) {
@@ -83,46 +71,65 @@ export async function updateWranglerConfig(
   const config: WranglerConfig = jsonc.parse(configContent);
   let edits: jsonc.Edit[] = [];
 
-  // Validate invariants: exactly one D1 database and one KV namespace
   if (config.d1_databases) {
     if (config.d1_databases.length === 0) {
       throw new Error(
-        "No D1 databases found in wrangler.jsonc. Every app must have exactly one D1 database.",
+        "No D1 databases found in Wrangler config. The gateway must have exactly one D1 database.",
       );
     }
     if (config.d1_databases.length > 1) {
       throw new Error(
-        `Found ${config.d1_databases.length} D1 databases in wrangler.jsonc. Every app must have exactly one D1 database.`,
+        `Found ${config.d1_databases.length} D1 databases in Wrangler config. The gateway must have exactly one D1 database.`,
       );
     }
   }
 
-  if (config.kv_namespaces) {
-    if (config.kv_namespaces.length === 0) {
-      throw new Error(
-        "No KV namespaces found in wrangler.jsonc. Every app must have exactly one KV namespace.",
+  if (options.kvNamespaceIds) {
+    const bindingCounts = new Map<string, number>();
+    for (const namespace of config.kv_namespaces ?? []) {
+      bindingCounts.set(
+        namespace.binding,
+        (bindingCounts.get(namespace.binding) ?? 0) + 1,
       );
     }
-    if (config.kv_namespaces.length > 1) {
-      throw new Error(
-        `Found ${config.kv_namespaces.length} KV namespaces in wrangler.jsonc. Every app must have exactly one KV namespace.`,
-      );
+
+    for (const [binding, count] of bindingCounts) {
+      if (count > 1) {
+        throw new Error(
+          `Found ${count} KV namespaces bound to "${binding}" in Wrangler config. Each KV binding must be declared exactly once.`,
+        );
+      }
+      // Object.hasOwn, not a truthy lookup: a binding named after an
+      // Object.prototype member (`constructor`, `toString`) would otherwise
+      // resolve through the prototype chain, pass validation, and ship with
+      // whatever id the config already had — the silent-wrong-id failure this
+      // check exists to prevent.
+      if (!Object.hasOwn(options.kvNamespaceIds, binding)) {
+        throw new Error(
+          `Wrangler config declares KV binding "${binding}", but the CLI did not provision it. Update gateway resource provisioning to include this binding before deploying.`,
+        );
+      }
+    }
+
+    for (const binding of Object.keys(options.kvNamespaceIds)) {
+      if (!bindingCounts.has(binding)) {
+        throw new Error(
+          `The CLI provisioned KV binding "${binding}", but Wrangler config does not declare it. Update the gateway config and resource provisioning so the bindings match.`,
+        );
+      }
     }
   }
 
-  // R2 buckets are optional, but if present must have at most one
   if (config.r2_buckets && config.r2_buckets.length > 1) {
     throw new Error(
-      `Found ${config.r2_buckets.length} R2 buckets in wrangler.jsonc. Every app must have at most one R2 bucket.`,
+      `Found ${config.r2_buckets.length} R2 buckets in Wrangler config. The gateway must have at most one R2 bucket.`,
     );
   }
 
-  // Update name if provided
   if (options.name) {
     edits.push(...jsonc.modify(configContent, ["name"], options.name, {}));
   }
 
-  // Update D1 database ID (index 0 since we enforce exactly one)
   if (options.d1DatabaseId) {
     edits.push(
       ...jsonc.modify(
@@ -134,7 +141,6 @@ export async function updateWranglerConfig(
     );
   }
 
-  // Update D1 database name (index 0 since we enforce exactly one)
   if (options.d1DatabaseName) {
     edits.push(
       ...jsonc.modify(
@@ -146,19 +152,27 @@ export async function updateWranglerConfig(
     );
   }
 
-  // Update KV namespace ID (index 0 since we enforce exactly one)
-  if (options.kvNamespaceId) {
-    edits.push(
-      ...jsonc.modify(
-        configContent,
-        ["kv_namespaces", 0, "id"],
-        options.kvNamespaceId,
-        {},
-      ),
-    );
+  if (options.kvNamespaceIds) {
+    for (const [binding, namespaceId] of Object.entries(
+      options.kvNamespaceIds,
+    )) {
+      const namespaceIndex =
+        config.kv_namespaces?.findIndex(
+          (namespace) => namespace.binding === binding,
+        ) ?? -1;
+      if (namespaceIndex >= 0) {
+        edits.push(
+          ...jsonc.modify(
+            configContent,
+            ["kv_namespaces", namespaceIndex, "id"],
+            namespaceId,
+            {},
+          ),
+        );
+      }
+    }
   }
 
-  // Update R2 bucket name (index 0 since we enforce at most one)
   if (options.r2BucketName && config.r2_buckets?.length) {
     edits.push(
       ...jsonc.modify(
@@ -170,55 +184,53 @@ export async function updateWranglerConfig(
     );
   }
 
-  // Update vars
   if (options.vars) {
     for (const [key, value] of Object.entries(options.vars)) {
       edits.push(...jsonc.modify(configContent, ["vars", key], value, {}));
     }
   }
 
+  if (options.routes) {
+    edits.push(...jsonc.modify(configContent, ["routes"], options.routes, {}));
+  }
+
+  if (typeof options.workersDev === "boolean") {
+    edits.push(
+      ...jsonc.modify(configContent, ["workers_dev"], options.workersDev, {}),
+    );
+  }
+
+  if (options.services) {
+    edits.push(
+      ...jsonc.modify(configContent, ["services"], options.services, {}),
+    );
+  }
+
   const updatedContent = jsonc.applyEdits(configContent, edits);
+  const placeholderIndex = updatedContent.indexOf("CLI_PATCHES_");
+  if (placeholderIndex !== -1) {
+    const leftoverPlaceholder =
+      updatedContent
+        .slice(placeholderIndex)
+        .match(/^CLI_PATCHES_[A-Za-z0-9_]*/)?.[0] ?? "CLI_PATCHES_";
+    throw new Error(
+      `Wrangler config still contains unresolved placeholder "${leftoverPlaceholder}" after CLI patching.`,
+    );
+  }
   await fs.writeFile(configFilePath, updatedContent);
 
   if (options.verbose) {
-    console.log(chalk.dim("  wrangler.jsonc updated successfully\n"));
+    console.log(chalk.dim("  Wrangler config updated successfully\n"));
   }
 }
 
-/**
- * Get worker name from wrangler.jsonc
- * @param configPath - Path to wrangler.jsonc file
- * @returns The worker name
- */
 export async function getWorkerName(configPath: string): Promise<string> {
   const configContent = await fs.readFile(configPath, "utf-8");
   const config: WranglerConfig = jsonc.parse(configContent);
 
   if (!config["name"] || typeof config["name"] !== "string") {
-    throw new Error("Worker name not found in wrangler.jsonc");
+    throw new Error("Worker name not found in Wrangler config");
   }
 
   return config["name"];
-}
-
-/**
- * Read and parse wrangler.jsonc from a directory
- * @param cwd - Directory containing wrangler.jsonc
- * @returns Parsed wrangler configuration
- */
-export async function readWranglerConfig(cwd: string): Promise<WranglerConfig> {
-  const wranglerPath = path.join(cwd, "wrangler.jsonc");
-
-  try {
-    const configContent = await fs.readFile(wranglerPath, "utf-8");
-    const config: WranglerConfig = jsonc.parse(configContent);
-    return config;
-  } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      throw new Error(
-        "wrangler.jsonc not found in current directory. Make sure you're running this command from your app's root directory.",
-      );
-    }
-    throw error;
-  }
 }

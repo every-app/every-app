@@ -1,13 +1,11 @@
-import {
-  APP_TOKEN_HEADER,
-  GatewayAuthError,
-  type GatewayAuthContext,
-} from "./gateway-auth-policy";
+import { IDENTITY_HEADER, PUBLIC_HEADER } from "@every-app/sdk/internal";
 
 const OPENAI_PROVIDER = "openai";
 const OPENAI_UPSTREAM_BASE_URL = "https://api.openai.com";
 const STRIPPED_PROXY_HEADERS = [
-  APP_TOKEN_HEADER,
+  "x-every-app-token",
+  IDENTITY_HEADER,
+  PUBLIC_HEADER,
   "x-user-id",
   "x-user-email",
   "x-user-sub",
@@ -31,46 +29,25 @@ interface AiProxyEnv {
   OPENAI_API_KEY?: string;
 }
 
-interface HandleAiProxyRequestOptions {
+interface HandleAuthenticatedAiProxyRequestOptions {
   request: Request;
   provider: string;
   env: AiProxyEnv;
-  authenticate: (options: {
-    request: Request;
-    provider: string;
-  }) => Promise<GatewayAuthContext>;
   fetchUpstream?: (request: Request) => Promise<Response>;
 }
 
-export async function handleAiProxyRequest({
+/**
+ * Forward a request whose caller has already been authenticated by its
+ * service-binding transport boundary.
+ */
+export async function handleAuthenticatedAiProxyRequest({
   request,
   provider,
   env,
-  authenticate,
   fetchUpstream = fetch,
-}: HandleAiProxyRequestOptions): Promise<Response> {
+}: HandleAuthenticatedAiProxyRequestOptions): Promise<Response> {
   if (provider !== OPENAI_PROVIDER) {
     return jsonResponse({ error: "Provider not supported" }, 404);
-  }
-
-  try {
-    await authenticate({
-      request,
-      provider,
-    });
-  } catch (error) {
-    if (error instanceof GatewayAuthError) {
-      return jsonResponse(
-        {
-          error: error.status === 403 ? "Forbidden" : "Unauthorized",
-          code: error.code,
-        },
-        error.status,
-      );
-    }
-
-    console.error("AI proxy authentication failure:", error);
-    return jsonResponse({ error: "Failed to authenticate request" }, 500);
   }
 
   if (!env.OPENAI_API_KEY?.trim()) {
@@ -86,15 +63,15 @@ export async function handleAiProxyRequest({
   stripProxyHeaders(requestHeaders);
   requestHeaders.set("authorization", `Bearer ${env.OPENAI_API_KEY}`);
 
-  const requestBody = canIncludeBody(request.method)
-    ? await request.clone().arrayBuffer()
-    : undefined;
-
-  const upstreamRequest = new Request(upstreamUrl, {
+  const requestBody = canIncludeBody(request.method) ? request.body : undefined;
+  const requestInit: RequestInit & { duplex?: "half" } = {
     method: request.method,
     headers: requestHeaders,
     body: requestBody,
-  });
+    signal: request.signal,
+    ...(requestBody ? { duplex: "half" } : {}),
+  };
+  const upstreamRequest = new Request(upstreamUrl, requestInit);
 
   try {
     return await fetchUpstream(upstreamRequest);

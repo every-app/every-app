@@ -4,17 +4,20 @@ import { ArrowLeft, Save } from "lucide-react";
 interface RecipeCreationFormProps {
   onCancel: () => void;
   onSubmit: (data: { title: string; content: string }) => void;
+  isSubmitting?: boolean;
 }
 
 export function RecipeCreationForm({
   onCancel,
   onSubmit,
+  isSubmitting = false,
 }: RecipeCreationFormProps) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!title.trim()) return;
     onSubmit({ title: title.trim(), content });
   };
@@ -46,11 +49,11 @@ export function RecipeCreationForm({
           </div>
           <button
             type="submit"
-            disabled={!isValid}
+            disabled={!isValid || isSubmitting}
             className="btn btn-primary btn-sm gap-1"
           >
             <Save size={16} />
-            <span>Save</span>
+            <span>{isSubmitting ? "Saving..." : "Save"}</span>
           </button>
         </div>
 

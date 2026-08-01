@@ -119,14 +119,6 @@ body {
   overflow-y: auto;
 }
 
-.embedded-app-frame {
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
-  box-sizing: border-box;
-  background: transparent;
-}
-
 /* Custom Utility Classes */
 @layer utilities {
   .pb-safe {

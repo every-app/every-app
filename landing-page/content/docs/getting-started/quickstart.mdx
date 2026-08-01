@@ -1,40 +1,126 @@
 ---
 title: Quickstart
-description: Get up and running in 5 minutes
+description: Deploy your Gateway in about five minutes
 ---
 
-## Prerequisites
+import { Callout } from "fumadocs-ui/components/callout";
 
-1. Install [Node.js](https://nodejs.org/) (LTS version recommended)
+Two things happen in this guide: you deploy your Gateway to your own Cloudflare account on your own domain, then you install an example app. Every app gets its own address under your domain — the Gateway at `you.dev`, apps at subdomains like `todo-<your-org>.you.dev` (the suffix is your org slug, created with your account). After that, everything else is building.
 
-   This also installs `npx`, a tool that runs Node packages without installing them globally. You'll see `npx` commands throughout these docs.
+<Callout type="info">
+  You'll need a domain (~$10/year, any registrar — Cloudflare also [sells
+  them](https://developers.cloudflare.com/registrar/)). The Gateway itself can
+  deploy without one for a quick look around, but apps only become reachable
+  once your domain is set up.
+</Callout>
 
-2. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) (free, no credit card required)
+## The fast path: let your agent set you up
 
-   Skip any Cloudflare onboarding like configuring a domain, this is unnecessary for Every App.
+Paste this prompt into your coding agent and follow along. The agent runs the commands; you only step in for the things it can't do alone: creating accounts, clicking a browser login, and one DNS record.
 
-3. Log in to Cloudflare via the [Cloudflare CLI](https://developers.cloudflare.com/workers/wrangler/commands/#login):
+Don't have a coding agent yet? Install [Claude Code](https://claude.com/claude-code) or [Cursor](https://cursor.com), open its chat, and paste the prompt there.
+
+```text
+Help me set up Every App, a self-hosted platform for personal apps on my own
+Cloudflare account and domain. Docs for you: https://everyapp.dev/llms.txt
+
+Do these steps in order. Run the commands yourself. Pause and tell me exactly
+what to do whenever a step needs me (creating an account, clicking a browser
+login, adding a DNS record). If a command needs interactive input you can't
+provide, give me the exact command to run in my own terminal.
+
+1. Ask me where my Every App projects should live, create that folder, and
+   run everything from inside it.
+2. Check Node.js is installed (`node --version`, must be 22+). Help me
+   install it if not.
+3. If I don't have a Cloudflare account, send me to
+   https://dash.cloudflare.com/sign-up and wait. It's free, no credit card.
+4. Ask me which domain I want to use. If it isn't on my Cloudflare account
+   yet, walk me through "Add a domain" at https://dash.cloudflare.com (free
+   plan is fine) and updating the nameservers at my registrar. If I don't own
+   a domain, help me buy one first (Cloudflare Registrar or any registrar).
+5. Run `npx -y wrangler login`. A browser window opens; tell me to click
+   "Allow". If the browser login can't complete (remote or headless machine),
+   walk me through creating an API token at
+   https://dash.cloudflare.com/profile/api-tokens with the "Edit Cloudflare
+   Workers" template plus Zone → DNS → Edit permission, then export
+   CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID before continuing.
+6. Run `npx -y everyapp gateway deploy -y --domain <my domain>`.
+   If it prints instructions for adding a wildcard DNS record (CNAME, name
+   "*", target my domain, proxy ON), pause and walk me through adding it in
+   the Cloudflare dashboard under my domain → DNS.
+7. When it finishes, give me my Gateway URL (https://<my domain>) and tell me
+   to open it and create my account there.
+8. Tell me to create a deploy token: on my Gateway, Admin → Tokens →
+   Deploy token (it's shown once — copy it). Then run
+   `npx -y everyapp login` and I'll paste the token when it asks. This is
+   what lets this machine deploy apps to my Gateway.
+9. Ask if I want an example app installed. If yes:
+   npx -y gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
+   cd every-todo-app && npx -y everyapp app deploy -y
+10. Tell me to refresh my Gateway. The app appears there, live at its own
+    subdomain of my domain.
+
+Keep responses short, one step at a time. If a command fails, show me the
+error and your suggested fix before retrying.
+```
+
+<Callout type="info">
+  If your agent can drive a browser (computer use, or a browser tool like
+  Playwright MCP), you can also paste this add-on: "You may open and drive the
+  browser yourself. On dash.cloudflare.com/sign-up, fill the form but pause and
+  let me type my password; I'll read you the emailed verification code. You may
+  add the domain and the DNS record in the dashboard yourself. On the wrangler
+  login page, click Allow. On my new Gateway URL, the first-visit form creates
+  my owner account — pause and let me type that password too."
+</Callout>
+
+## The manual path
+
+The same steps, if you'd rather run them yourself.
+
+### 1. Prerequisites
+
+1. Install [Node.js](https://nodejs.org/) 22 or newer. This includes `npx`, which runs the commands below.
+2. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) — free, no credit card.
+3. [Add your domain to Cloudflare](https://developers.cloudflare.com/fundamentals/manage-domains/add-site/) (free plan is fine) and update the nameservers at your registrar. Skip this if your domain already lives on Cloudflare.
+4. Log in to Cloudflare from your terminal:
+
    ```bash
    npx wrangler login
    ```
 
-## Self-Host the Gateway
+   Your browser opens; click **Allow**.
 
-The Gateway is your app hub—it handles auth and gives you a single URL for all your apps.
+### 2. Deploy the Gateway
 
 ```bash
-npx everyapp gateway deploy
+npx everyapp gateway deploy --domain you.dev
 ```
 
-Follow the link to create your account.
+This sets up a database and hosting on your Cloudflare account, puts the Gateway live at your domain, and points `*.you.dev` — every future app address — at it.
 
-## Self-Host an App
+That last part needs one DNS record, and the terminal login usually isn't allowed to create DNS records for you. If the deploy prints instructions, add the record once in the dashboard:
 
-Try one of the apps we've built to see how it works:
+> **you.dev → DNS → Add record**: Type **CNAME**, Name **`*`**, Target **`you.dev`**, Proxy **ON** (orange cloud).
+>
+> It means "any subdomain of you.dev goes to the same place as you.dev itself" — your Gateway, which serves the right app for each address. Cloudflare requires an explicit record for [wildcard routing](https://developers.cloudflare.com/workers/configuration/routing/routes/).
 
-### Todo App
+When the deploy finishes, open `https://you.dev` and create your account. You're the owner; signup is invite-only after you.
 
-A simple task manager to get started.
+### 3. Connect your terminal to your Gateway
+
+On your Gateway, go to **Admin → Tokens → Deploy token** and copy the token (it's shown once). Then:
+
+```bash
+npx everyapp login
+```
+
+Paste the token when asked. This is what authorizes app deploys from this machine — revoke it any time from the same page.
+
+### 4. Install an example app
+
+The first command (`gitpick`) just copies the example app's folder from GitHub; the second deploys it.
 
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
@@ -42,9 +128,13 @@ cd every-todo-app
 npx everyapp app deploy
 ```
 
-### Workout Tracker
+Refresh your Gateway and the todo app appears, live at the URL the deploy prints (`https://todo-<your-org>.you.dev`). Open it — you're already logged in.
 
-Track your workouts and programs.
+<details className="faq">
+<summary>More example apps</summary>
+<div className="faq-content">
+
+**Workout Tracker** — track workouts and programs:
 
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/workout-tracker every-workout-tracker
@@ -52,24 +142,28 @@ cd every-workout-tracker
 npx everyapp app deploy
 ```
 
-### Cooking Assistant
-
-An AI Cooking Assistant and Recipe Manager
+**Chef** — an AI cooking assistant and recipe manager:
 
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/chef every-app-chef
 cd every-app-chef
 npx everyapp app deploy
+npx wrangler secret put OPENAI_API_KEY --name every-app-gateway
+# chat needs an OpenAI key; it lives on your Gateway, which proxies AI calls
 ```
 
-This also requires an OpenAI API key since its a chat interface:
+</div>
+</details>
 
-```bash
-npx wrangler secret put OPENAI_API_KEY
-```
+<details className="faq">
+<summary>Trying it out without a domain</summary>
+<div className="faq-content">
 
-Refresh your Gateway and the app will appear.
+`npx everyapp gateway deploy` without `--domain` puts the Gateway on a free `workers.dev` address — enough to see the launcher and create your account. Apps can't be reached this way, though: each app lives at its own subdomain of your domain, and `workers.dev` addresses can't have subdomains. When you're ready, re-run the deploy with `--domain` — your account and data carry over.
 
-## Next Steps
+</div>
+</details>
 
-[Build your own app](/docs/build-an-app/create-app) - Set up your coding agent and start from a template
+## Next
+
+[Build your own app](/docs/build-an-app/create-app) — set up your coding agent and describe what you want.

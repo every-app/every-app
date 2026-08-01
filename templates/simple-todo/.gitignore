@@ -25,3 +25,10 @@ dist/
 /blob-report/
 /playwright/.cache/
 .tanstack
+
+# every app local dev keypair (never commit)
+.everyapp/
+
+# Regenerated on install; would contain link: entries pointing into the
+# monorepo, which are broken for anyone who clones this directory alone.
+pnpm-lock.yaml

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import chalk from "chalk";
-import { getWorkerUrl } from "./cloudflare";
+import { getGatewayPublicUrl } from "./cloudflare";
 
 interface CopyOptions {
   exclude?: string[];
@@ -60,7 +60,6 @@ interface CreateEnvFilesOptions {
   /** The unprefixed app ID (e.g., "todo-app") */
   appId: string;
   gatewayUrl?: string;
-  gatewayAppApiToken?: string;
 }
 
 /**
@@ -70,16 +69,10 @@ export async function createEnvFiles({
   targetDir,
   appId,
   gatewayUrl: providedGatewayUrl,
-  gatewayAppApiToken,
 }: CreateEnvFilesOptions): Promise<void> {
-  const gatewayUrl =
-    providedGatewayUrl ?? (await getWorkerUrl("every-app-gateway"));
+  const gatewayUrl = providedGatewayUrl ?? (await getGatewayPublicUrl());
 
-  const tokenLine = gatewayAppApiToken
-    ? `GATEWAY_APP_API_TOKEN=${gatewayAppApiToken}\n`
-    : "";
-
-  const envLocalContent = `# Vite client-side secrets\nVITE_APP_ID=${appId}\nVITE_GATEWAY_URL=${gatewayUrl}\n# Set Cloudflare secrets locally\nGATEWAY_URL=${gatewayUrl}\n${tokenLine}`;
+  const envLocalContent = `# Vite client-side secrets\nVITE_APP_ID=${appId}\nVITE_GATEWAY_URL=${gatewayUrl}\n# Set Cloudflare secrets locally\nGATEWAY_URL=${gatewayUrl}\n`;
 
   await Promise.all([
     fs.writeFile(path.join(targetDir, ".env.local"), envLocalContent),

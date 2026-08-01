@@ -1,5 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { organizationOwnerMiddleware } from "@/middleware/auth";
+import {
+  organizationAdminMiddleware,
+  organizationOwnerMiddleware,
+} from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
 import { AppTokenService } from "@/server/services/AppTokenService";
 import {
@@ -8,32 +11,28 @@ import {
 } from "@/schemas/app-token";
 
 /**
- * List all app tokens for owner management.
- * Organization-owner only.
+ * List all app tokens for admin visibility.
+ * Organization-admin and owner only.
  */
 export const listAppTokens = createServerFn()
-  .middleware([organizationOwnerMiddleware])
+  .middleware([organizationAdminMiddleware])
   .handler(async ({ context }) => {
-    return AppTokenService.list(context.activeOrganizationId);
+    return AppTokenService.list(context.org.orgId);
   });
 
 /**
- * Create a new app token.
+ * Create a new deploy token.
  * Organization-owner only.
  */
 export const createAppToken = createServerFn()
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
   .inputValidator((data: unknown) => createAppTokenSchema.parse(data))
   .handler(async ({ data, context }) => {
-    return AppTokenService.create(
-      {
-        appId: data.appId,
-        scopes: data.scopes,
-        expiresAt: data.expiresAt ?? null,
-      },
-      context.activeOrganizationId,
-      context.user.id,
-    );
+    return AppTokenService.issueDeployToken({
+      organizationId: context.org.orgId,
+      createdBy: context.user.id,
+      expiresAt: data.expiresAt ?? null,
+    });
   });
 
 /**
@@ -44,5 +43,5 @@ export const revokeAppToken = createServerFn()
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
   .inputValidator((data: unknown) => revokeAppTokenSchema.parse(data))
   .handler(async ({ data, context }) => {
-    return AppTokenService.revoke(data.tokenId, context.activeOrganizationId);
+    return AppTokenService.revoke(data.tokenId, context.org.orgId);
   });

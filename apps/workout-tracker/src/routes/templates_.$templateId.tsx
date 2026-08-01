@@ -6,9 +6,9 @@ import { Button } from "@/client/components/ui/button";
 import { MobileSlideLink } from "@/client/components/MobileSlideLink";
 import { ArrowLeft } from "lucide-react";
 import {
-  startProgramFromTemplate,
-  createStartProgramParams,
-} from "@/client/actions/startProgramFromTemplate";
+  createProgramFromTemplateInput,
+  useProgramMutations,
+} from "@/client/queries/programs";
 import { capitalize } from "@/client/lib/utils";
 import { useIsMobile } from "@/client/hooks/use-mobile";
 
@@ -21,6 +21,7 @@ function TemplatePreviewPage() {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const [isCreating, setIsCreating] = useState(false);
+  const { createFromTemplate } = useProgramMutations();
 
   const template = programTemplates.find((t) => t.id === templateId);
 
@@ -29,12 +30,12 @@ function TemplatePreviewPage() {
     setIsCreating(true);
 
     try {
-      const params = createStartProgramParams(template);
-      await startProgramFromTemplate({ ...params, isActive: setAsActive });
+      const input = createProgramFromTemplateInput(template, setAsActive);
+      await createFromTemplate.mutateAsync(input);
 
       navigate({
         to: "/programs/$programId",
-        params: { programId: params.programId },
+        params: { programId: input.program.id },
         search: { newProgramSource: "template" },
       });
     } catch (error) {

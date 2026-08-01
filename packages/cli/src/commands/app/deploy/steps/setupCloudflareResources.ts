@@ -4,22 +4,28 @@ import {
   getOrCreateKVNamespace,
   getOrCreateR2Bucket,
   getDefaultAccountId,
-  applyResourcePrefix,
   formatCloudflareError,
 } from "@/lib/cloudflare";
+import { resourceNameFor } from "@/lib/generateWranglerConfig";
 import { exitWithUpdateNotice } from "@/lib/version-check";
 
 interface SetupCloudflareResourcesOptions {
   /** The unprefixed app ID (e.g., "todo-app") */
   appId: string;
+  /** D1 binding names declared in everyapp.config.ts */
+  d1Bindings?: string[];
+  /** KV binding names declared in everyapp.config.ts */
+  kvBindings?: string[];
   /** Whether the app needs an R2 bucket */
   needsR2Bucket?: boolean;
   verbose?: boolean;
 }
 
 interface SetupCloudflareResourcesResult {
-  d1DatabaseId: string;
-  kvNamespaceId: string;
+  d1DatabaseId?: string;
+  kvNamespaceId?: string;
+  d1DatabaseIds: Record<string, string>;
+  kvNamespaceIds: Record<string, string>;
   /** The R2 bucket name if configured */
   r2BucketName?: string;
   /** The prefixed resource name used for D1 and KV */
@@ -35,16 +41,22 @@ interface SetupCloudflareResourcesResult {
  */
 export async function setupCloudflareResources({
   appId,
+  d1Bindings = ["DB"],
+  kvBindings = ["KV"],
   needsR2Bucket = false,
   verbose = false,
 }: SetupCloudflareResourcesOptions): Promise<SetupCloudflareResourcesResult> {
-  const resourceTypes = needsR2Bucket
-    ? "D1 Database, KV Store, and R2 Bucket"
-    : "D1 Database and KV Store";
-  console.log(`\nSetting up your Cloudflare ${resourceTypes}...\n`);
+  const resourceTypes = [
+    d1Bindings.length > 0 ? "D1 Database" : null,
+    kvBindings.length > 0 ? "KV Store" : null,
+    needsR2Bucket ? "R2 Bucket" : null,
+  ].filter(Boolean);
+  if (resourceTypes.length > 0) {
+    console.log(`\nSetting up your Cloudflare ${resourceTypes.join(", ")}...\n`);
+  }
 
   const accountId = await getDefaultAccountId();
-  const resourceName = applyResourcePrefix(appId);
+  const resourceName = resourceNameFor(appId);
 
   // Set up R2 first so we don't create D1/KV if R2 is not enabled
   let r2BucketName: string | undefined;
@@ -52,16 +64,31 @@ export async function setupCloudflareResources({
     r2BucketName = await setupR2Bucket(resourceName, accountId, verbose);
   }
 
-  const d1DatabaseId = await setupD1Database(resourceName, accountId, verbose);
-  const kvNamespaceId = await setupKVNamespace(
-    resourceName,
-    accountId,
-    verbose,
-  );
+  const d1DatabaseIds: Record<string, string> = {};
+  for (const binding of d1Bindings) {
+    const databaseName = resourceNameFor(appId, binding);
+    d1DatabaseIds[binding] = await setupD1Database(
+      databaseName,
+      accountId,
+      verbose,
+    );
+  }
+
+  const kvNamespaceIds: Record<string, string> = {};
+  for (const binding of kvBindings) {
+    const namespaceName = resourceNameFor(appId, binding);
+    kvNamespaceIds[binding] = await setupKVNamespace(
+      namespaceName,
+      accountId,
+      verbose,
+    );
+  }
 
   return {
-    d1DatabaseId,
-    kvNamespaceId,
+    d1DatabaseId: d1DatabaseIds["DB"],
+    kvNamespaceId: kvNamespaceIds["KV"],
+    d1DatabaseIds,
+    kvNamespaceIds,
     r2BucketName,
     resourceName,
   };

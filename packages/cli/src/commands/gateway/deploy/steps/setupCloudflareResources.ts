@@ -8,7 +8,10 @@ import type { CloudflareResources } from "@/commands/gateway/deploy/types";
 
 // Constants - gateway uses full name (already has "every-app-" prefix)
 const D1_DATABASE_NAME = "every-app-gateway";
-const KV_NAMESPACE_NAME = "every-app-gateway";
+const KV_NAMESPACE_NAMES = {
+  KV: "every-app-gateway",
+  OAUTH_KV: "every-app-gateway-OAUTH_KV",
+};
 
 interface SetupCloudflareResourcesOptions {
   verbose?: boolean;
@@ -29,18 +32,21 @@ export async function setupCloudflareResources({
     accountId,
     verbose,
   );
-  const kvNamespaceId = await setupKVNamespace(
-    KV_NAMESPACE_NAME,
-    accountId,
-    verbose,
-  );
+  const kvNamespaceIds: Record<string, string> = {};
+  for (const [binding, namespaceName] of Object.entries(KV_NAMESPACE_NAMES)) {
+    kvNamespaceIds[binding] = await setupKVNamespace(
+      namespaceName,
+      accountId,
+      verbose,
+    );
+  }
 
   // new line
   console.log();
 
   return {
     d1DatabaseId,
-    kvNamespaceId,
+    kvNamespaceIds,
     accountId,
   };
 }

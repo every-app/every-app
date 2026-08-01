@@ -38,9 +38,9 @@ export const createCommand = buildCommand({
       "",
       "The command will:",
       "  1. Prompt for app ID (or use provided name)",
-      "  2. Deploy to Cloudflare (D1 database, KV namespace, Worker)",
-      "  3. Configure wrangler.jsonc, package.json, and .env files",
-      "  4. Install dependencies and run local migrations",
+      "  2. Deploy a private Cloudflare Worker from everyapp.config.ts",
+      "  3. Configure package.json and local .env files",
+      "  4. Install dependencies and run local migrations for the starter app",
       "",
       "After creation, run 'pnpm run dev' to start developing.",
     ].join("\n"),
@@ -68,6 +68,18 @@ export const deployCommand = buildCommand({
         brief: "Skip deployment confirmation",
         optional: true,
       },
+      "skip-dns-check": {
+        kind: "boolean",
+        brief: "Skip app subdomain DNS preflight check",
+        optional: true,
+      },
+      domain: {
+        kind: "parsed",
+        parse: String,
+        brief: "Not for this command; configure the gateway domain instead",
+        optional: true,
+        hidden: true,
+      },
     },
     aliases: {
       y: "yes",
@@ -76,14 +88,43 @@ export const deployCommand = buildCommand({
   docs: {
     brief: "Deploy an app to Cloudflare",
     fullDescription: [
-      "Deploys the current app to Cloudflare Workers from the current directory.",
+      "Deploys the current app as a private Cloudflare Worker from everyapp.config.ts.",
       "The deployment process:",
-      "  1. Reads wrangler.jsonc to determine required resources",
-      "  2. Creates or links D1 databases and KV namespaces",
-      "  3. Updates wrangler.jsonc with resource IDs",
-      "  4. Installs dependencies if needed",
-      "  5. Runs database migrations against production D1",
-      "  6. Builds and deploys using wrangler deploy",
+      "  1. Loads and validates everyapp.config.ts",
+      "  2. Verifies the app subdomain can resolve through Cloudflare DNS",
+      "  3. Creates or links declared D1 databases and KV namespaces",
+      "  4. Generates .everyapp/wrangler.json",
+      "  5. Installs dependencies using the manifest install setting or package-manager auto-detection",
+      "  6. Runs the configured database migration strategy against production D1",
+      "  7. Runs the configured build, deploys, registers with the gateway, and ensures the service binding",
+    ].join("\n"),
+  },
+});
+
+export const generateConfigCommand = buildCommand({
+  loader: async () => {
+    const { generateConfig } = await import("./generateConfig");
+    return generateConfig;
+  },
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [],
+    },
+    flags: {
+      verbose: {
+        kind: "boolean",
+        brief: "Show generated config details",
+        optional: true,
+      },
+    },
+  },
+  docs: {
+    brief: "Generate .everyapp/wrangler.json from everyapp.config.ts",
+    fullDescription: [
+      "Loads everyapp.config.ts, validates it, and writes the generated Wrangler config consumed by Vite and Wrangler.",
+      "",
+      "Run this before invoking vite directly.",
     ].join("\n"),
   },
 });
@@ -116,9 +157,9 @@ export const setupLocalCommand = buildCommand({
       "The command will:",
       "  1. Verify the current directory is an Every App project",
       "  2. Verify Cloudflare and gateway setup",
-      "  3. Install dependencies",
+      "  3. Install dependencies using package-manager auto-detection",
       "  4. Create or refresh .env.local",
-      "  5. Generate Cloudflare types and run local database migrations",
+      "  5. Run local setup scripts for template-style apps",
       "",
       "This is useful after cloning an existing Every App repository.",
     ].join("\n"),
@@ -147,7 +188,7 @@ export const remoteD1ShellCommand = buildCommand({
       "",
       "The command will:",
       "  1. Get the Cloudflare account ID",
-      "  2. Look up the database ID from the database name in wrangler.jsonc",
+      "  2. Look up the database ID from the generated Wrangler database name",
       "  3. Get a valid OAuth token",
       "  4. Run the provided command with CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_DATABASE_ID, CLOUDFLARE_API_TOKEN, and MIGRATE_REMOTE set",
       "",
@@ -165,6 +206,7 @@ export const appRoutes = buildRouteMap({
   routes: {
     create: createCommand,
     deploy: deployCommand,
+    "generate-config": generateConfigCommand,
     "setup-local": setupLocalCommand,
     "remote-d1-shell": remoteD1ShellCommand,
   },

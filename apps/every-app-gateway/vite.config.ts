@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import { defineConfig } from "vite";
 import tsConfigPaths from "vite-tsconfig-paths";
@@ -6,13 +7,31 @@ import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
 import { cloudflare } from "@cloudflare/vite-plugin";
 
+// Build stamp shown in the bottom-right badge so a deployed gateway can be
+// matched to a commit. "*" = built from a dirty working tree.
+const gatewayBuild = (() => {
+  try {
+    const sha = execSync("git rev-parse --short HEAD").toString().trim();
+    const dirty = execSync("git status --porcelain").toString().trim()
+      ? "*"
+      : "";
+    const builtAt = new Date().toISOString().slice(0, 16).replace("T", " ");
+    return `${sha}${dirty} · ${builtAt}Z`;
+  } catch {
+    return "unknown";
+  }
+})();
+
 export default defineConfig({
+  define: {
+    __GATEWAY_BUILD__: JSON.stringify(gatewayBuild),
+  },
   server: {
     port: 3000,
   },
   plugins: [
     // Cloudflare plugin must come first - it sets up the SSR environment
-    cloudflare({ viteEnvironment: { name: "ssr" } }),
+    cloudflare({ viteEnvironment: { name: "ssr" }, inspectorPort: false }),
     tsConfigPaths({
       projects: ["./tsconfig.json"],
     }),

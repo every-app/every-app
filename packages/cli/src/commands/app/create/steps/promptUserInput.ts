@@ -12,7 +12,7 @@ function validateAppId(input: string): boolean | string {
     return "App ID must be 64 characters or less";
   }
 
-  const kebabCaseRegex = /^[a-z][a-z0-9-]*$/;
+  const kebabCaseRegex = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 
   if (!kebabCaseRegex.test(input)) {
     return "App ID must be in kebab-case format (lowercase letters, numbers, and hyphens only, starting with a letter)";

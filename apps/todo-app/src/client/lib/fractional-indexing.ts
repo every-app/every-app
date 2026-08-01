@@ -13,27 +13,20 @@
  * - Insert between two keys: find midpoint or extend with middle char
  */
 
-// Counter to ensure uniqueness within the same millisecond
-let counter = 0;
-let lastTimestamp = 0;
+// Last issued key value; keys must be strictly increasing even when several
+// are generated within one millisecond (the old timestamp+counter scheme
+// collided with the real timestamps of the following milliseconds).
+let lastValue = 0;
 
 /**
  * Generate a sort key for new todos that appears at the top of the list.
  * Uses timestamp-based approach to ensure each new todo has a unique, increasing sort key.
  */
 export function generateDefaultSortKey(): string {
-  const timestamp = Date.now();
+  lastValue = Math.max(Date.now(), lastValue + 1);
 
-  // Handle multiple calls within the same millisecond
-  if (timestamp !== lastTimestamp) {
-    counter = 0;
-    lastTimestamp = timestamp;
-  } else {
-    counter++;
-  }
-
-  // Base36 encoding gives lexicographically increasing keys for increasing timestamps
-  return (timestamp + counter).toString(36);
+  // Base36 encoding gives lexicographically increasing keys for increasing values
+  return lastValue.toString(36);
 }
 
 /**

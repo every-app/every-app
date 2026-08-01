@@ -4,16 +4,15 @@ import { and, eq, gt, isNull, or, desc } from "drizzle-orm";
 import { normalizeTokenScopes } from "../app-token-scopes";
 import type { AdminAppToken } from "@/types/app-token";
 
-type ActiveAppToken = {
+type ActiveDeployToken = {
   id: string;
-  appId: string;
   organizationId: string;
   scopes: string[];
 };
 
 type CreateAppTokenInput = {
   id: string;
-  appId: string;
+  appRowId: string | null;
   organizationId: string;
   tokenHash: string;
   tokenPrefix: string;
@@ -22,32 +21,25 @@ type CreateAppTokenInput = {
   expiresAt: Date | null;
 };
 
-/**
- * Find an active app token by its hashed value.
- * A token is active when it is not revoked and not expired.
- */
-async function findActiveByTokenHash(
+type AdminAppTokenRecord = Omit<AdminAppToken, "appId"> & {
+  appRowId: string | null;
+};
+
+async function findActiveDeployByTokenHash(
   tokenHash: string,
-): Promise<ActiveAppToken | null> {
+): Promise<ActiveDeployToken | null> {
   const now = new Date();
   const result = await db
     .select({
       id: appTokens.id,
-      appId: apps.appId,
-      organizationId: apps.organizationId,
+      organizationId: appTokens.organizationId,
       scopes: appTokens.scopes,
     })
     .from(appTokens)
-    .innerJoin(
-      apps,
-      and(
-        eq(appTokens.appId, apps.id),
-        eq(appTokens.organizationId, apps.organizationId),
-      ),
-    )
     .where(
       and(
         eq(appTokens.tokenHash, tokenHash),
+        isNull(appTokens.appRowId),
         isNull(appTokens.revokedAt),
         or(isNull(appTokens.expiresAt), gt(appTokens.expiresAt, now)),
       ),
@@ -61,7 +53,6 @@ async function findActiveByTokenHash(
 
   return {
     id: token.id,
-    appId: token.appId,
     organizationId: token.organizationId,
     scopes: parseScopes(token.scopes),
   };
@@ -101,12 +92,12 @@ function parseScopes(rawScopes: string): string[] {
 async function findById(
   id: string,
   organizationId: string,
-): Promise<AdminAppToken | null> {
+): Promise<AdminAppTokenRecord | null> {
   const results = await db
     .select({
       id: appTokens.id,
-      appId: appTokens.appId,
-      appSlug: apps.appId,
+      appRowId: appTokens.appRowId,
+      appSlug: apps.appSlug,
       appName: apps.name,
       tokenPrefix: appTokens.tokenPrefix,
       scopes: appTokens.scopes,
@@ -119,10 +110,10 @@ async function findById(
       lastUsedAt: appTokens.lastUsedAt,
     })
     .from(appTokens)
-    .innerJoin(
+    .leftJoin(
       apps,
       and(
-        eq(appTokens.appId, apps.id),
+        eq(appTokens.appRowId, apps.id),
         eq(appTokens.organizationId, apps.organizationId),
       ),
     )
@@ -145,12 +136,12 @@ async function findById(
 
 async function findAllForAdmin(
   organizationId: string,
-): Promise<AdminAppToken[]> {
+): Promise<AdminAppTokenRecord[]> {
   const results = await db
     .select({
       id: appTokens.id,
-      appId: appTokens.appId,
-      appSlug: apps.appId,
+      appRowId: appTokens.appRowId,
+      appSlug: apps.appSlug,
       appName: apps.name,
       tokenPrefix: appTokens.tokenPrefix,
       scopes: appTokens.scopes,
@@ -163,10 +154,10 @@ async function findAllForAdmin(
       lastUsedAt: appTokens.lastUsedAt,
     })
     .from(appTokens)
-    .innerJoin(
+    .leftJoin(
       apps,
       and(
-        eq(appTokens.appId, apps.id),
+        eq(appTokens.appRowId, apps.id),
         eq(appTokens.organizationId, apps.organizationId),
       ),
     )
@@ -183,7 +174,7 @@ async function findAllForAdmin(
 async function create(data: CreateAppTokenInput): Promise<void> {
   await db.insert(appTokens).values({
     id: data.id,
-    appId: data.appId,
+    appRowId: data.appRowId,
     organizationId: data.organizationId,
     tokenHash: data.tokenHash,
     tokenPrefix: data.tokenPrefix,
@@ -205,36 +196,11 @@ async function revoke(id: string, organizationId: string): Promise<void> {
     );
 }
 
-/**
- * Check whether an app already has at least one active (non-revoked, non-expired) token.
- */
-async function hasActiveTokenForApp(
-  appId: string,
-  organizationId: string,
-): Promise<boolean> {
-  const now = new Date();
-  const result = await db
-    .select({ id: appTokens.id })
-    .from(appTokens)
-    .where(
-      and(
-        eq(appTokens.appId, appId),
-        eq(appTokens.organizationId, organizationId),
-        isNull(appTokens.revokedAt),
-        or(isNull(appTokens.expiresAt), gt(appTokens.expiresAt, now)),
-      ),
-    )
-    .limit(1);
-
-  return result.length > 0;
-}
-
 export const AppTokenRepository = {
-  findActiveByTokenHash,
+  findActiveDeployByTokenHash,
   touchLastUsed,
   findById,
   findAllForAdmin,
   create,
   revoke,
-  hasActiveTokenForApp,
 } as const;

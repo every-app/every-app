@@ -5,14 +5,22 @@ interface UsersTableProps {
   users: AdminUser[];
   onSendPasswordResetEmail: (userId: string) => void;
   onDeleteUser: (userId: string) => void;
+  onCancelInvitation: (invitationId: string) => void;
   isSendingPasswordResetEmail: boolean;
+  isCancelingInvitation: boolean;
+  canManageInvitations: boolean;
+  isOwner: boolean;
 }
 
 export function UsersTable({
   users,
   onSendPasswordResetEmail,
   onDeleteUser,
+  onCancelInvitation,
   isSendingPasswordResetEmail,
+  isCancelingInvitation,
+  canManageInvitations,
+  isOwner,
 }: UsersTableProps) {
   if (users.length === 0) {
     return (
@@ -59,7 +67,11 @@ export function UsersTable({
                 user={user}
                 onSendPasswordResetEmail={onSendPasswordResetEmail}
                 onDelete={onDeleteUser}
+                onCancelInvitation={onCancelInvitation}
                 isSendingPasswordResetEmail={isSendingPasswordResetEmail}
+                isCancelingInvitation={isCancelingInvitation}
+                canManageInvitations={canManageInvitations}
+                isOwner={isOwner}
               />
             </td>
           </tr>

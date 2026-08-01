@@ -1,71 +1,62 @@
 # Release Process
 
-## Gateway Releases
+## Gateway
 
-The gateway application is released as a prebuilt artifact to speed up deployments via the CLI.
+The gateway is **not** released separately. It ships inside the `everyapp` npm
+package: `prepack` builds the SDK, runs the gateway's `build:release`,
+and copies the tarball into `packages/cli/gateway/`
+(see `packages/cli/scripts/bundle-gateway.js`). `prepack` fires on both
+`npm pack` and `npm publish`, so a pack can't ship a stale or missing bundle.
 
-### Automated Release Process
+So the CLI version and the gateway version are the same thing, and rolling back
+means installing an older CLI.
 
-Releases are **fully automated** when you bump the version and merge to main:
+`everyapp gateway deploy` resolves the gateway in this order:
 
-1. **Make changes** to `apps/every-app-gateway`
-2. **Bump version** in `apps/every-app-gateway/package.json`
-   ```json
-   {
-     "version": "0.0.1"  // Increment this
-   }
-   ```
-3. **Create PR** - CI verifies version was bumped
-4. **Merge to main** - GitHub automatically:
-   - Builds the gateway
-   - Creates tag `gateway-v{version}`
-   - Creates GitHub release with build artifacts
-   - Updates `gateway-latest` release
+1. `--localGateway <tarball>` — a prebuilt tarball passed explicitly
+2. the tarball bundled in the installed CLI package — what a user gets
+3. building from `apps/every-app-gateway`, found by walking up from the current
+   directory — what you get inside this monorepo
 
-**Note:** PRs that modify gateway code will fail CI if the version isn't bumped.
+The tarball is a build artifact, gitignored, and regenerated at publish time.
 
-### Versioning
+## Publishing
 
-Gateway releases follow semantic versioning: `X.Y.Z`
+Publish the SDK first — the cloneable apps and templates depend on
+`@every-app/sdk` by published semver range, so the range must resolve on npm
+before anyone installs a clone that declares it.
 
-- **Major (X)**: Breaking changes
-- **Minor (Y)**: New features, backward compatible
-- **Patch (Z)**: Bug fixes
+```bash
+pnpm --filter @every-app/sdk publish
+pnpm --filter everyapp publish
+```
 
-### Release Contents
+**Order matters beyond the two packages: publish to npm _before_ syncing the
+public repo.** The cloneable packages reference `@every-app/sdk` and `everyapp`
+versions that must exist on npm — a public sync ahead of the publish gives
+cloners a `pnpm install` that fails on unresolvable versions.
 
-Each release includes:
-- `.output/` - Built Cloudflare Worker and assets
-- `wrangler.jsonc` - Cloudflare configuration template
-- `drizzle/` - Database migrations
-- `drizzle-prod.config.ts` - Production migration config
-- `package.json` - Package manifest
+Before publishing the CLI, confirm the package actually contains the gateway:
 
-### CLI Integration
+```bash
+cd packages/cli && npm pack --dry-run
+```
 
-The `every gateway deploy` command automatically:
-1. Fetches the latest gateway release from GitHub
-2. Downloads and extracts the prebuilt artifacts
-3. Configures Cloudflare resources
-4. Deploys to Cloudflare Workers
+`dist/index.js` and `gateway/every-app-gateway-build.tar.gz` must both be
+listed — the deploy resolves the tarball relative to `dist/`, so a package
+missing either one fails for anyone outside this monorepo. Also confirm the
+listing contains **no `.dev.vars` or `.env*` entries** (the gateway build
+fails closed on these, but check).
 
-No build step is required during deployment, making the process much faster.
+## Troubleshooting
 
-### Troubleshooting
+**Build fails during `bundle-gateway.js`:** verify the gateway builds on its own
+first.
 
-**PR check fails - "version not bumped":**
-- Update the `version` field in `apps/every-app-gateway/package.json`
-- Ensure the version is higher than the one in main branch
+```bash
+cd apps/every-app-gateway && pnpm run build:release
+```
 
-**No releases found error:**
-- Ensure at least one gateway release has been created
-- Check that releases exist at github.com/[org]/[repo]/releases
-
-**Build fails in CI:**
-- Check the PR Checks workflow is passing
-- Ensure all dependencies are properly declared
-- Verify the build works locally first:
-  ```bash
-  cd apps/every-app-gateway
-  pnpm run build
-  ```
+**`gateway deploy` says it can't find the gateway source:** you're outside the
+monorepo with a CLI that has no bundled tarball — i.e. a package published
+without `prepublishOnly` running. Re-publish, or pass `--localGateway`.

@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useLiveQuery } from "@tanstack/react-db";
 import {
   useActiveProgram,
   type WorkoutWithExercises,
 } from "@/client/hooks/useProgramData";
-import { sessionsCollection, setLogsCollection } from "@/client/tanstack-db";
+import { useSessions } from "@/client/queries/sessions";
+import { useSetLogs } from "@/client/queries/setLogs";
 import { Button } from "@/client/components/ui/button";
 import { EmptyState } from "@/client/components/ui/empty-state";
 import { WorkoutPreviewModal } from "@/client/components/WorkoutPreviewModal";
@@ -24,15 +24,8 @@ function Home() {
     useState<WorkoutWithExercises | null>(null);
   const [previewWorkoutIndex, setPreviewWorkoutIndex] = useState<number>(0);
 
-  // Live query for sessions to check if workout has been started
-  const { data: sessions } = useLiveQuery((q) =>
-    q.from({ session: sessionsCollection }),
-  );
-
-  // Live query for set logs to check if progress has been tracked
-  const { data: setLogs } = useLiveQuery((q) =>
-    q.from({ setLog: setLogsCollection }),
-  );
+  const { data: sessions } = useSessions();
+  const { data: setLogs } = useSetLogs();
 
   // Current workout and upcoming workouts
   const currentWorkout =

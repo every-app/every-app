@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { authenticatedFetch } from "@every-app/sdk/core";
 
 export function useAuthenticatedImage(imageKey: string | null) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
@@ -22,7 +21,7 @@ export function useAuthenticatedImage(imageKey: string | null) {
       setLoading(true);
       setError(false);
       try {
-        const response = await authenticatedFetch(
+        const response = await fetch(
           `/api/image?key=${encodeURIComponent(imageKey)}`,
         );
 

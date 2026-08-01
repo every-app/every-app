@@ -6,6 +6,7 @@ interface AppTokensTableProps {
   tokens: AdminAppToken[];
   onRevoke: (tokenId: string) => Promise<void>;
   isRevoking: boolean;
+  isOwner: boolean;
 }
 
 function formatDate(date: Date | null): string {
@@ -28,20 +29,29 @@ function statusForToken(token: AdminAppToken): {
   return { label: "Active", className: "badge badge-success badge-sm" };
 }
 
+function scopeLabel(scopes: string[]): string[] {
+  if (scopes.includes("apps:register") && scopes.includes("apps:deploy")) {
+    return ["deploy"];
+  }
+
+  return scopes;
+}
+
 export function AppTokensTable({
   tokens,
   onRevoke,
   isRevoking,
+  isOwner,
 }: AppTokensTableProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredTokens = tokens.filter((token) => {
     const query = searchQuery.toLowerCase();
     return (
-      token.appName.toLowerCase().includes(query) ||
-      token.appSlug.toLowerCase().includes(query) ||
+      (token.appName ?? "").toLowerCase().includes(query) ||
+      (token.appSlug ?? "").toLowerCase().includes(query) ||
       token.tokenPrefix.toLowerCase().includes(query) ||
-      token.scopes.join(",").toLowerCase().includes(query)
+      scopeLabel(token.scopes).join(",").toLowerCase().includes(query)
     );
   });
 
@@ -49,7 +59,9 @@ export function AppTokensTable({
     return (
       <div className="text-center py-8">
         <p className="text-base-content/70">
-          No app tokens yet. Create one to allow app-to-gateway calls.
+          {isOwner
+            ? "No deploy tokens yet. Create one to authorize the CLI to deploy apps."
+            : "No deploy tokens yet."}
         </p>
       </div>
     );
@@ -81,7 +93,7 @@ export function AppTokensTable({
               <th>Status</th>
               <th>Last Used</th>
               <th>Expires</th>
-              <th></th>
+              {isOwner && <th></th>}
             </tr>
           </thead>
           <tbody>
@@ -95,15 +107,17 @@ export function AppTokensTable({
               return (
                 <tr key={token.id}>
                   <td>
-                    <div className="font-medium">{token.appName}</div>
+                    <div className="font-medium">
+                      {token.appName ?? "No app"}
+                    </div>
                     <div className="text-xs text-base-content/50">
-                      {token.appSlug}
+                      {token.appSlug ?? "Organization deploy token"}
                     </div>
                   </td>
                   <td className="font-mono text-xs">{token.tokenPrefix}...</td>
                   <td>
                     <div className="flex flex-wrap gap-1">
-                      {token.scopes.map((scope) => (
+                      {scopeLabel(token.scopes).map((scope) => (
                         <span
                           key={`${token.id}-${scope}`}
                           className="badge badge-ghost badge-sm"
@@ -118,15 +132,17 @@ export function AppTokensTable({
                   </td>
                   <td className="text-sm">{formatDate(token.lastUsedAt)}</td>
                   <td className="text-sm">{formatDate(token.expiresAt)}</td>
-                  <td>
-                    <button
-                      className="btn btn-xs btn-error btn-soft"
-                      disabled={isRevoked || isExpired || isRevoking}
-                      onClick={() => void onRevoke(token.id)}
-                    >
-                      Revoke
-                    </button>
-                  </td>
+                  {isOwner && (
+                    <td>
+                      <button
+                        className="btn btn-xs btn-error btn-soft"
+                        disabled={isRevoked || isExpired || isRevoking}
+                        onClick={() => void onRevoke(token.id)}
+                      >
+                        Revoke
+                      </button>
+                    </td>
+                  )}
                 </tr>
               );
             })}

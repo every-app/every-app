@@ -7,7 +7,7 @@ type CreateAccess = {
   id: string;
   organizationId: string;
   userId: string;
-  appId: string; // References apps.id (not apps.appId)
+  appRowId: string;
   grantedBy?: string | null;
 };
 
@@ -19,17 +19,17 @@ async function findAllByUserId(userId: string, organizationId: string) {
     .select({
       id: userAppAccess.id,
       userId: userAppAccess.userId,
-      appId: userAppAccess.appId,
+      appRowId: userAppAccess.appRowId,
       grantedAt: userAppAccess.grantedAt,
       grantedBy: userAppAccess.grantedBy,
       app: {
         id: apps.id,
         organizationId: apps.organizationId,
-        appId: apps.appId,
+        appId: apps.appSlug,
         name: apps.name,
         description: apps.description,
-        appUrl: apps.appUrl,
-        devUrl: apps.devUrl,
+        hostname: apps.hostname,
+        status: apps.status,
         isDefault: apps.isDefault,
         createdAt: apps.createdAt,
         updatedAt: apps.updatedAt,
@@ -39,7 +39,7 @@ async function findAllByUserId(userId: string, organizationId: string) {
     .innerJoin(
       apps,
       and(
-        eq(userAppAccess.appId, apps.id),
+        eq(userAppAccess.appRowId, apps.id),
         eq(userAppAccess.organizationId, apps.organizationId),
       ),
     )
@@ -54,12 +54,12 @@ async function findAllByUserId(userId: string, organizationId: string) {
 /**
  * Find all users with access to a specific app.
  */
-async function findAllByAppId(appId: string, organizationId: string) {
+async function findAllByAppRowId(appRowId: string, organizationId: string) {
   return db
     .select({
       id: userAppAccess.id,
       userId: userAppAccess.userId,
-      appId: userAppAccess.appId,
+      appRowId: userAppAccess.appRowId,
       grantedAt: userAppAccess.grantedAt,
       grantedBy: userAppAccess.grantedBy,
       user: {
@@ -81,58 +81,35 @@ async function findAllByAppId(appId: string, organizationId: string) {
     )
     .where(
       and(
-        eq(userAppAccess.appId, appId),
+        eq(userAppAccess.appRowId, appRowId),
         eq(userAppAccess.organizationId, organizationId),
       ),
     );
 }
 
 /**
- * Check if a user has access to a specific app.
+ * Check if a user has access to an app by its routing slug.
  */
-async function findByUserAndApp(
-  userId: string,
-  appId: string,
-  organizationId: string,
-) {
-  return db.query.userAppAccess.findFirst({
-    where: and(
-      eq(userAppAccess.userId, userId),
-      eq(userAppAccess.appId, appId),
-      eq(userAppAccess.organizationId, organizationId),
-    ),
-  });
-}
-
-/**
- * Check if a user has access to an app by app slug (appId field in apps table).
- */
-async function findByUserAndAppSlug(
+async function hasAccessByUserAndAppSlug(
   userId: string,
   appSlug: string,
   organizationId: string,
-): Promise<{
-  access: typeof userAppAccess.$inferSelect;
-  app: typeof apps.$inferSelect;
-} | null> {
+): Promise<boolean> {
   const result = await db
-    .select({
-      access: userAppAccess,
-      app: apps,
-    })
+    .select({ id: userAppAccess.id })
     .from(userAppAccess)
-    .innerJoin(apps, eq(userAppAccess.appId, apps.id))
+    .innerJoin(apps, eq(userAppAccess.appRowId, apps.id))
     .where(
       and(
         eq(userAppAccess.userId, userId),
-        eq(apps.appId, appSlug),
+        eq(apps.appSlug, appSlug),
         eq(userAppAccess.organizationId, organizationId),
         eq(apps.organizationId, organizationId),
       ),
     )
     .limit(1);
 
-  return result[0] ?? null;
+  return result.length > 0;
 }
 
 /**
@@ -143,7 +120,7 @@ async function create(data: CreateAccess) {
     id: data.id,
     organizationId: data.organizationId,
     userId: data.userId,
-    appId: data.appId,
+    appRowId: data.appRowId,
     grantedBy: data.grantedBy,
   });
 }
@@ -157,7 +134,7 @@ async function createMany(
     id: string;
     organizationId: string;
     userId: string;
-    appId: string;
+    appRowId: string;
     grantedBy?: string | null;
   }>,
 ) {
@@ -170,14 +147,14 @@ async function createMany(
         id: record.id,
         organizationId: record.organizationId,
         userId: record.userId,
-        appId: record.appId,
+        appRowId: record.appRowId,
         grantedBy: record.grantedBy,
       })
       .onConflictDoNothing({
         target: [
           userAppAccess.organizationId,
           userAppAccess.userId,
-          userAppAccess.appId,
+          userAppAccess.appRowId,
         ],
       }),
   );
@@ -187,29 +164,10 @@ async function createMany(
 }
 
 /**
- * Revoke access from a user for an app.
- */
-async function deleteByUserAndApp(
-  userId: string,
-  appId: string,
-  organizationId: string,
-) {
-  await db
-    .delete(userAppAccess)
-    .where(
-      and(
-        eq(userAppAccess.userId, userId),
-        eq(userAppAccess.appId, appId),
-        eq(userAppAccess.organizationId, organizationId),
-      ),
-    );
-}
-
-/**
  * Revoke access from multiple users for an app.
  */
-async function deleteByAppAndUsers(
-  appId: string,
+async function deleteByAppRowAndUsers(
+  appRowId: string,
   userIds: string[],
   organizationId: string,
 ) {
@@ -219,7 +177,7 @@ async function deleteByAppAndUsers(
     .delete(userAppAccess)
     .where(
       and(
-        eq(userAppAccess.appId, appId),
+        eq(userAppAccess.appRowId, appRowId),
         eq(userAppAccess.organizationId, organizationId),
         inArray(userAppAccess.userId, userIds),
       ),
@@ -242,12 +200,10 @@ async function deleteByOrganizationAndUser(
 
 export const AppAccessRepository = {
   findAllByUserId,
-  findAllByAppId,
-  findByUserAndApp,
-  findByUserAndAppSlug,
+  findAllByAppRowId,
+  hasAccessByUserAndAppSlug,
   create,
   createMany,
-  deleteByUserAndApp,
-  deleteByAppAndUsers,
+  deleteByAppRowAndUsers,
   deleteByOrganizationAndUser,
 } as const;

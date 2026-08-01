@@ -1,5 +1,6 @@
 export type AdminUser = {
   id: string;
+  invitationId?: string;
   name: string;
   email: string;
   role: string;

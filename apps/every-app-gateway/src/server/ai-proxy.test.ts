@@ -1,23 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  GatewayAuthError,
-  type GatewayAuthContext,
-} from "./gateway-auth-policy";
-import { handleAiProxyRequest } from "./ai-proxy";
+import { handleAuthenticatedAiProxyRequest } from "./ai-proxy";
 
 function createRequest(path: string, init?: RequestInit): Request {
   return new Request(`https://gateway.example.com${path}`, init);
 }
 
-describe("handleAiProxyRequest", () => {
+describe("handleAuthenticatedAiProxyRequest", () => {
   it("returns 404 for unknown provider", async () => {
-    const response = await handleAiProxyRequest({
+    const response = await handleAuthenticatedAiProxyRequest({
       request: createRequest("/api/ai/unknown/v1/responses", {
         method: "POST",
       }),
       provider: "unknown",
       env: { OPENAI_API_KEY: "key" },
-      authenticate: vi.fn(),
     });
 
     expect(response.status).toBe(404);
@@ -26,49 +21,13 @@ describe("handleAiProxyRequest", () => {
     });
   });
 
-  it("maps gateway auth errors to HTTP status and JSON response", async () => {
-    const authenticate = vi
-      .fn()
-      .mockRejectedValue(new GatewayAuthError("invalid_app_token"));
-
-    const response = await handleAiProxyRequest({
-      request: createRequest("/api/ai/openai/v1/responses", { method: "POST" }),
-      provider: "openai",
-      env: { OPENAI_API_KEY: "key" },
-      authenticate,
-    });
-
-    expect(response.status).toBe(401);
-    await expect(response.json()).resolves.toMatchObject({
-      error: "Unauthorized",
-      code: "invalid_app_token",
-    });
-  });
-
   it("returns 503 when provider secret is not configured", async () => {
-    const authenticate = vi
-      .fn<() => Promise<GatewayAuthContext>>()
-      .mockResolvedValue({
-        authType: "app",
-        appId: "chef",
-        organizationId: "org-123",
-        appToken: "app-token",
-        appTokenPayload: {
-          appId: "chef",
-          organizationId: "org-123",
-          scopes: ["provider:openai"],
-          tokenId: "token-1",
-        },
-      });
-
-    const response = await handleAiProxyRequest({
+    const response = await handleAuthenticatedAiProxyRequest({
       request: createRequest("/api/ai/openai/v1/responses", { method: "POST" }),
       provider: "openai",
       env: {},
-      authenticate,
     });
 
-    expect(authenticate).toHaveBeenCalled();
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({
       error: "Provider is not configured",
@@ -76,30 +35,14 @@ describe("handleAiProxyRequest", () => {
   });
 
   it("rejects proxy paths that attempt to override upstream host", async () => {
-    const authenticate = vi
-      .fn<() => Promise<GatewayAuthContext>>()
-      .mockResolvedValue({
-        authType: "app",
-        appId: "chef",
-        organizationId: "org-123",
-        appToken: "app-token",
-        appTokenPayload: {
-          appId: "chef",
-          organizationId: "org-123",
-          scopes: ["provider:openai"],
-          tokenId: "token-1",
-        },
-      });
-
     const fetchUpstream = vi.fn();
 
-    const response = await handleAiProxyRequest({
+    const response = await handleAuthenticatedAiProxyRequest({
       request: createRequest("/api/ai/openai//attacker.example/collect", {
         method: "POST",
       }),
       provider: "openai",
       env: { OPENAI_API_KEY: "gateway-secret-key" },
-      authenticate,
       fetchUpstream,
     });
 
@@ -111,21 +54,6 @@ describe("handleAiProxyRequest", () => {
   });
 
   it("forwards request to OpenAI with gateway-managed key and strips internal headers", async () => {
-    const authenticate = vi
-      .fn<() => Promise<GatewayAuthContext>>()
-      .mockResolvedValue({
-        authType: "app",
-        appId: "chef",
-        organizationId: "org-123",
-        appToken: "app-token",
-        appTokenPayload: {
-          appId: "chef",
-          organizationId: "org-123",
-          scopes: ["provider:openai"],
-          tokenId: "token-1",
-        },
-      });
-
     const fetchUpstream = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ id: "ok" }), {
         status: 200,
@@ -133,7 +61,7 @@ describe("handleAiProxyRequest", () => {
       }),
     );
 
-    const response = await handleAiProxyRequest({
+    const response = await handleAuthenticatedAiProxyRequest({
       request: createRequest("/api/ai/openai/v1/responses?stream=true", {
         method: "POST",
         headers: {
@@ -141,6 +69,8 @@ describe("handleAiProxyRequest", () => {
           "x-every-app-token": "app-token",
           "x-user-id": "attacker-user",
           "x-user-email": "attacker@example.com",
+          "x-everyapp-identity": "signed-user-identity",
+          "x-everyapp-public": "signed-public-marker",
           connection: "keep-alive",
           "transfer-encoding": "chunked",
           "x-forwarded-for": "1.2.3.4",
@@ -149,7 +79,6 @@ describe("handleAiProxyRequest", () => {
       }),
       provider: "openai",
       env: { OPENAI_API_KEY: "gateway-secret-key" },
-      authenticate,
       fetchUpstream,
     });
 
@@ -168,8 +97,41 @@ describe("handleAiProxyRequest", () => {
     expect(forwardedRequest.headers.get("x-user-id")).toBeNull();
     expect(forwardedRequest.headers.get("x-user-email")).toBeNull();
     expect(forwardedRequest.headers.get("x-every-app-token")).toBeNull();
+    expect(forwardedRequest.headers.get("x-everyapp-identity")).toBeNull();
+    expect(forwardedRequest.headers.get("x-everyapp-public")).toBeNull();
     expect(forwardedRequest.headers.get("connection")).toBeNull();
     expect(forwardedRequest.headers.get("transfer-encoding")).toBeNull();
     expect(forwardedRequest.headers.get("x-forwarded-for")).toBeNull();
+  });
+
+  it("streams request bodies upstream without waiting for the body to finish", async () => {
+    let closeBody: (() => void) | undefined;
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("streamed"));
+        closeBody = () => controller.close();
+      },
+    });
+    const fetchUpstream = vi.fn<(request: Request) => Promise<Response>>(
+      async (request) => {
+        expect(request.body).not.toBeNull();
+        return Response.json({ accepted: true });
+      },
+    );
+
+    const response = await handleAuthenticatedAiProxyRequest({
+      request: createRequest("/api/ai/openai/v1/files", {
+        method: "POST",
+        body,
+        duplex: "half",
+      } as RequestInit & { duplex: "half" }),
+      provider: "openai",
+      env: { OPENAI_API_KEY: "gateway-secret-key" },
+      fetchUpstream,
+    });
+    closeBody?.();
+
+    expect(response.status).toBe(200);
+    expect(fetchUpstream).toHaveBeenCalledTimes(1);
   });
 });

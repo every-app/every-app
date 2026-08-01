@@ -13,8 +13,8 @@ import { NotFound } from "@/client/components/NotFound";
 import { AppShell } from "@/client/components/AppShell";
 import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
-import { EmbeddedAppProvider } from "@every-app/sdk/tanstack";
-import { queryClient, persister } from "@/client/tanstack-db";
+import { queryClient } from "@/client/queryClient";
+import { persister } from "@/client/persister";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -87,7 +87,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             client={queryClient}
             persistOptions={{ persister }}
           >
-            <EmbeddedAppProvider appId={import.meta.env.VITE_APP_ID}>
+            <>
               {children}
               <Toaster
                 richColors
@@ -99,7 +99,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                 }}
               />
               <TanStackRouterDevtools position="bottom-right" />
-            </EmbeddedAppProvider>
+            </>
           </PersistQueryClientProvider>
         </ClientOnly>
         <Scripts />

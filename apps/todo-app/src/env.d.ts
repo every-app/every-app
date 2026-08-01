@@ -3,13 +3,10 @@
 
 declare namespace Cloudflare {
   interface Env {
-    // Gateway URL
-    GATEWAY_URL: string;
-
-    // Optional machine token used for app-to-gateway requests
-    GATEWAY_APP_API_TOKEN?: string;
-
-    // Legacy alias retained for backwards compatibility
-    APP_TOKEN?: string;
+    EVERYAPP_APP_ID: string;
+    // JSON array of SPKI PEM public keys for identity verification,
+    // injected at deploy time (or written to .dev.vars by `everyapp dev`).
+    EVERYAPP_IDENTITY_PUBLIC_KEYS: string;
+    EVERYAPP_IDENTITY_ISSUER?: string;
   }
 }

@@ -1,7 +1,6 @@
 // Cloudflare utilities - pure functions with no logging
 // Logging is handled at the call site for flexibility
 
-export { applyResourcePrefix } from "./types";
 export type { AccountInfo } from "./types";
 
 export { getOrCreateD1Database, listD1Databases } from "./d1";
@@ -15,6 +14,7 @@ export {
   makeCloudflareAPIRequest,
   requireCloudflareAuth,
 } from "./auth";
+export { getGatewayPublicUrl } from "./gatewayPublicUrl";
 export { formatCloudflareError } from "./errors";
 export {
   getMemberships,
@@ -22,3 +22,13 @@ export {
   resolveAccountFromMemberships,
 } from "./memberships";
 export { ensureWorkersDevSubdomain } from "./subdomain";
+export {
+  computeGatewayServiceBindings,
+  replaceGatewayServiceBindings,
+  type GatewayServiceBinding,
+} from "./serviceBindings";
+export {
+  ensureProxiedWildcardDnsRecord,
+  resolvesThroughCloudflare,
+  verifyZoneOnAccount,
+} from "./domain";

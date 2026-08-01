@@ -2,36 +2,42 @@
 
 ## Trust Zones
 
-- **Public zone**: unauthenticated browser and API traffic.
-- **Org user zone**: authenticated user sessions and embedded session tokens.
-- **Operator zone**: internal control-plane operations for self-hosted deployments.
+- **Client zone:** untrusted browser, API, and webhook traffic.
+- **Gateway zone:** the only public Worker; terminates Better Auth sessions,
+  enforces app access, and injects signed identity.
+- **App zone:** private Workers invoked by the gateway over service bindings.
 
-## Authentication and Authorization Contracts
+## Perimeter Contract
 
-### Org User Zone
+- Routes are private unless the app manifest explicitly declares them public.
+- The gateway strips `Cookie` and every inbound `x-everyapp-*` trust header on
+  both public and private routes. Apps must never trust client-supplied Every
+  App headers.
+- Private routes also strip inbound `Authorization`, require a valid gateway
+  session and app access, then receive a fresh RS256 identity JWT in
+  `x-everyapp-identity`.
+- Public routes forward inbound `Authorization` so the app can implement its
+  own bearer-token API or webhook authentication. The gateway does not
+  interpret that header and never treats it as Every App identity.
+- Anonymous public requests receive a signed public marker. A signed-in member
+  may receive user identity on a public route only after the normal session,
+  organization, app-access, and CSRF checks succeed.
+- Failed CSRF checks deny private state-changing requests. On declared public
+  routes they force anonymous handling so cookies cannot confer member
+  identity to a cross-site request.
 
-- User-facing gateway actions must enforce org membership and role checks in server middleware.
-- Embedded app session tokens are org-bound and validated against deployment org configuration.
-- Cross-organization token usage is denied in runtime auth.
+## App Verification Contract
 
-### Operator Zone (`/api/internal/*`)
+- Apps verify the signature, issuer, audience, token type, and key id before
+  using identity. The production identity key id is `everyapp-identity`.
+- User identity is organization-bound; the gateway denies access when the
+  active session organization does not own the target app.
+- Missing, invalid, expired, or wrong-audience identity fails closed.
 
-- Internal APIs are operator-plane APIs, not tenant-isolation boundaries.
-- In `self_hosted` mode, a Cloudflare bearer token with gateway account capability (worker settings read + D1 write probe) is treated as operator-equivalent.
-- Under this trust model, a qualifying Cloudflare token can act across organizations.
-- This behavior is intentional for self-hosted control-plane compatibility and should not be reported as a tenant-isolation bug.
+## Response Contract
 
-## Deployment Modes
-
-- `self_hosted`: internal operator APIs are enabled.
-- `hosted`: internal operator APIs must be disabled (`404`).
-- Unknown deployment mode values fail closed (`404`) for internal operator APIs.
-
-## Accepted Risks
-
-- Compromise or misuse of an operator-equivalent Cloudflare token has account-wide control-plane blast radius in self-hosted mode.
-
-## Required Hardening Invariants
-
-- DB integrity must enforce app/org consistency for app-access and app-token records.
-- Token scopes are explicit provider scopes only (`provider:<name>`); wildcard scopes are disallowed.
+- The gateway removes `Domain` from app `Set-Cookie` headers so apps cannot set
+  parent-domain cookies.
+- HTML responses receive the perimeter CSP floor (`frame-ancestors 'none'`,
+  `base-uri 'self'`, `object-src 'none'`) without a blanket `default-src`.
+- HSTS, `nosniff`, frame denial, and referrer policy are applied uniformly.

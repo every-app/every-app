@@ -16,17 +16,14 @@ import appCss from "@/client/styles/app.css?url";
 import { Toaster } from "sonner";
 import { Sidebar } from "@/client/components/Sidebar";
 import { TabBar } from "@/client/components/TabBar";
-import { EmbeddedAppProvider } from "@every-app/sdk/tanstack";
-import {
-  programsCollection,
-  workoutsCollection,
-  exercisesCollection,
-  sessionsCollection,
-  setLogsCollection,
-  queryClient,
-  persister,
-} from "@/client/tanstack-db";
-import { useLiveQuery } from "@tanstack/react-db";
+import { queryClient } from "@/client/queryClient";
+import { persister } from "@/client/persister";
+import { usePrograms } from "@/client/queries/programs";
+import { useWorkouts } from "@/client/queries/workouts";
+import { useWorkoutExercises } from "@/client/queries/workoutExercises";
+import { useExerciseLibrary } from "@/client/queries/exerciseLibrary";
+import { useSessions } from "@/client/queries/sessions";
+import { useSetLogs } from "@/client/queries/setLogs";
 
 export const Route = createRootRoute({
   head: () => ({
@@ -106,12 +103,13 @@ function AppLayout() {
   const location = useLocation();
   const hideTabBar = shouldHideTabBar(location.pathname);
 
-  // Preload all workout data into collections
-  useLiveQuery((q) => q.from({ program: programsCollection }));
-  useLiveQuery((q) => q.from({ workout: workoutsCollection }));
-  useLiveQuery((q) => q.from({ exercise: exercisesCollection }));
-  useLiveQuery((q) => q.from({ session: sessionsCollection }));
-  useLiveQuery((q) => q.from({ setLog: setLogsCollection }));
+  // Preload all workout data into the persisted query cache.
+  usePrograms();
+  useWorkouts();
+  useWorkoutExercises();
+  useExerciseLibrary();
+  useSessions();
+  useSetLogs();
 
   // Use CSS-based responsive design to avoid hydration mismatch
   // The same HTML structure is rendered on server and client
@@ -153,21 +151,19 @@ function RootDocument({ children }: { children: ReactNode }) {
             client={queryClient}
             persistOptions={{ persister }}
           >
-            <EmbeddedAppProvider appId={import.meta.env.VITE_APP_ID}>
-              <>
-                {children}
-                <Toaster
-                  richColors
-                  position="bottom-right"
-                  mobileOffset={{ bottom: 100 }}
-                  toastOptions={{
-                    className:
-                      "!bg-base-300 !text-base-content !shadow-lg !border !border-base-content/20",
-                  }}
-                />
-                <TanStackRouterDevtools position="bottom-right" />
-              </>
-            </EmbeddedAppProvider>
+            <>
+              {children}
+              <Toaster
+                richColors
+                position="bottom-right"
+                mobileOffset={{ bottom: 100 }}
+                toastOptions={{
+                  className:
+                    "!bg-base-300 !text-base-content !shadow-lg !border !border-base-content/20",
+                }}
+              />
+              <TanStackRouterDevtools position="bottom-right" />
+            </>
           </PersistQueryClientProvider>
         </ClientOnly>
         <Scripts />

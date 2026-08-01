@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { nanoid } from "nanoid";
-import { exerciseLibraryCollection } from "@/client/tanstack-db";
+import { useExerciseLibraryMutations } from "@/client/queries/exerciseLibrary";
 import { Button } from "@/client/components/ui/button";
-import { DEFAULT_PROGRESSION_INCREMENT } from "@/client/lib/constants";
 import { toast } from "sonner";
 
 type AddExerciseFormProps = {
@@ -32,8 +31,9 @@ export function AddExerciseForm({
   const [sets, setSets] = useState<number | undefined>(3);
   const [targetReps, setTargetReps] = useState<number | undefined>(10);
   const [weight, setWeight] = useState<number | undefined>(undefined);
+  const { create } = useExerciseLibraryMutations();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!name.trim()) {
@@ -48,18 +48,19 @@ export function AddExerciseForm({
 
     const exerciseLibraryId = nanoid();
     const workoutExerciseId = nanoid();
-    const now = new Date().toISOString();
-
-    // Create exercise library entry immediately to avoid race conditions
-    exerciseLibraryCollection.insert({
-      id: exerciseLibraryId,
-      userId: "", // Will be set by server on sync
-      name: name.trim(),
-      notes: null,
-      progressionIncrement: DEFAULT_PROGRESSION_INCREMENT,
-      createdAt: now,
-      updatedAt: now,
-    });
+    try {
+      await create.mutateAsync([
+        {
+          id: exerciseLibraryId,
+          name: name.trim(),
+          notes: null,
+        },
+      ]);
+    } catch (error) {
+      console.error("Failed to create exercise:", error);
+      toast.error("Failed to add exercise");
+      return;
+    }
 
     // Add to local state - will be persisted on save
     onAddExercise({
@@ -146,9 +147,9 @@ export function AddExerciseForm({
           type="submit"
           variant="primary"
           size="sm"
-          disabled={!name.trim() || !sets || !targetReps}
+          disabled={!name.trim() || !sets || !targetReps || create.isPending}
         >
-          Add Exercise
+          {create.isPending ? "Adding..." : "Add Exercise"}
         </Button>
       </div>
     </form>

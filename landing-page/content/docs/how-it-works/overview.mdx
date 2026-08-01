@@ -1,0 +1,88 @@
+---
+title: Architecture
+description: One door — how the Gateway keeps your apps private
+---
+
+You can build apps without reading this page. Read it when you want to know why the platform is shaped the way it is.
+
+## One door
+
+One thing in your Cloudflare account is meant for the internet: the Gateway. Apps refuse everyone else — every request must carry a signed identity pass only the Gateway can mint, so hitting an app worker directly gets a 401. The only way in is through the Gateway, which authenticates you first.
+
+```
+                        INTERNET
+                           │
+        everyapp.you.dev   │   todo.you.dev, chef.you.dev, ...
+                           ▼
+        ┌──────────────────────────────────────┐
+        │            GATEWAY WORKER            │
+        │                                      │
+        │  1. Which app is this? (Host header) │
+        │  2. Who are you? (session cookie)    │
+        │  3. May you use this app?            │
+        │  4. Mint a short-lived signed        │
+        │     identity pass for the app        │
+        └──────────────────┬───────────────────┘
+                           │  private (service binding)
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+          ┌──────┐     ┌──────┐     ┌──────┐
+          │ todo │     │ chef │     │ ...  │   private workers:
+          │ D1 KV│     │ D1 KV│     │      │   reject anything without
+          └──────┘     └──────┘     └──────┘   a Gateway-signed pass
+```
+
+Your browser holds one session cookie, for the Gateway. It never holds an app token. When you open `todo.you.dev`, the Gateway checks your session, strips the cookie, and forwards the request to the todo worker with a fresh identity pass: a signed token, valid for about two minutes, addressed to that one app, saying who you are.
+
+The app verifies the signature and rejects anything else. A request that didn't come through the Gateway has no valid pass and gets a 401 — that is the entire trust model.
+
+## Why this matters for AI-built apps
+
+The classic fear with vibe-coded apps is an unguarded route: the agent forgets an auth check and your data is public. Here, that mistake has nothing to attach to. Unauthenticated traffic never reaches app code, because the app has no public address and the Gateway won't forward without a valid session. Security lives in the perimeter, not in whether each generated route remembered its middleware.
+
+When you _want_ a route to be public (a share link, a health check), you declare it explicitly in your app's manifest, and the declaration is deliberately narrow: catch-all routes like `/*` are rejected outright. Your public surface is a short list you can read.
+
+## What runs where
+
+| Piece                  | What it is                                                         | Where it runs                                             |
+| ---------------------- | ------------------------------------------------------------------ | --------------------------------------------------------- |
+| Gateway                | Login, launcher UI, the security perimeter                         | A Cloudflare Worker in your account (the only public one) |
+| Apps                   | Your apps, one worker each with their own D1 database / KV storage | Private Cloudflare Workers                                |
+| CLI (`everyapp`)       | Deploys the Gateway and apps, provisions resources, runs local dev | Your machine                                              |
+| SDK (`@every-app/sdk`) | One-line server wrapper that verifies identity passes              | Inside each app                                           |
+
+The stack, and why: [TanStack Start](https://tanstack.com/start) (full-stack React, type-safe end to end), [Cloudflare Workers](https://developers.cloudflare.com/workers/) (serverless, scales to zero, so idle apps cost nothing), [D1](https://developers.cloudflare.com/d1/) (SQL database), and [Drizzle ORM](https://orm.drizzle.team/) (type-safe queries). All of it is common enough that coding agents know it well.
+
+## The details
+
+<details className="faq">
+<summary>The identity pass, precisely</summary>
+<div className="faq-content">
+
+It's a JWT, signed RS256 with the Gateway's private key, injected as the `x-everyapp-identity` header on every forwarded request. Claims include the user (`sub`, email), the org, and an `aud` set to the target app's id, so a token for the todo app is useless against any other app. Lifetime is about two minutes.
+
+The SDK's verification is fail-closed and strict: pinned algorithm and key id, `aud` must match the app, `alg: none` and algorithm-confusion tricks are rejected, and a missing or invalid header is a 401. Bare headers are never trusted; the signature is the only source of identity. The Gateway also strips any inbound `Cookie` and `x-everyapp-*` headers before forwarding, so nothing can be smuggled past it.
+
+</div>
+</details>
+
+<details className="faq">
+<summary>What else the perimeter enforces</summary>
+<div className="faq-content">
+
+- **CSRF checks at the edge.** Cross-site form posts are rejected before they reach your app.
+- **Header hygiene.** Inbound cookies and identity headers are stripped; identity is injected fresh per request.
+- **Uniform security headers** on every HTML response (HSTS, content-type protections, frame-ancestors, a CSP floor).
+- **No runtime key fetching.** Apps get the Gateway's public keys as an environment variable at deploy time, so verifying a request requires no network call and no egress hole.
+
+</div>
+</details>
+
+<details className="faq">
+<summary>Limits</summary>
+<div className="faq-content">
+
+The perimeter makes the common failure modes structural rather than best-effort. Apps behind the same Gateway belong to the same trust domain: they share a parent domain, so a fully compromised app (XSS) could fire authenticated GET requests at sibling apps. Fine for the personal and small-team scale this is built for; it's why we still recommend a security review for apps you share beyond yourself.
+
+</div>
+</details>

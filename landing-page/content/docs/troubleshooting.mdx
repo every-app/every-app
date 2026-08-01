@@ -1,0 +1,188 @@
+---
+title: Troubleshooting
+description: What went wrong, and what to do about it
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Find your error message below. Most failures are safe to fix and re-run — `gateway deploy` and `app deploy` are both idempotent, so running them again after fixing the cause picks up where you left off.
+
+## Before anything else
+
+Four things cause most failures. Check them in order:
+
+```bash
+node --version          # must be 22 or newer
+npx wrangler whoami     # must show the account you expect
+```
+
+Then confirm your domain is **active** on that Cloudflare account (dashboard → your domain shows "Active", not "Pending Nameserver Update"), and that you're running the command from the right directory — `app deploy` must run from inside the app folder, next to `everyapp.config.ts`.
+
+## Deploying the Gateway
+
+### "No Cloudflare accounts found"
+
+Wrangler isn't authenticated, or your API token lacks account access.
+
+Run `npx wrangler login` and click **Allow**. If you're on a remote or headless machine, the browser flow can't complete — create an API token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) using the **Edit Cloudflare Workers** template plus **Zone → DNS → Edit**, then export **both**:
+
+```bash
+export CLOUDFLARE_API_TOKEN=...
+export CLOUDFLARE_ACCOUNT_ID=...
+```
+
+`CLOUDFLARE_ACCOUNT_ID` is required alongside the token. Setting only the token fails here.
+
+### The deploy targets the wrong Cloudflare account
+
+`npx wrangler whoami` shows which account is active. If you have several, log out and back in (`npx wrangler logout && npx wrangler login`) or set `CLOUDFLARE_ACCOUNT_ID` explicitly.
+
+### A Cloudflare API error mentioning authentication or permissions
+
+Your API token can't perform the action. Recreate it from the **Edit Cloudflare Workers** template plus **Zone → DNS → Edit**, export both `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and re-run.
+
+### `Cloudflare zone "you.dev" was not found on the authenticated account`
+
+The domain isn't set up as a zone on the Cloudflare account you're authenticated against. Either it was never [added to Cloudflare](https://developers.cloudflare.com/fundamentals/manage-domains/add-site/), it's still pending nameserver verification, or wrangler is logged into a different account than the one holding the zone — `npx wrangler whoami` shows which. Add the zone (free plan is fine), wait for it to show **Active**, and re-run.
+
+### "Failed to create D1 database: no UUID returned" / "Failed to create KV namespace: no ID returned"
+
+A Cloudflare-side hiccup — the API reported success without returning the new resource's id. Re-run — resource creation is get-or-create, so a partial first run is harmless.
+
+### The deploy finished but the domain doesn't load
+
+Two likely causes:
+
+**The certificate isn't issued yet.** Cloudflare provisions a certificate for a newly attached domain. This usually takes a couple of minutes; the CLI waits and tells you if it times out. Wait, then reload.
+
+**Nameservers haven't propagated.** If your domain shows "Pending Nameserver Update" in the Cloudflare dashboard, Cloudflare doesn't control DNS for it yet and nothing will resolve. This can take a few hours after you change nameservers at your registrar.
+
+### "Failed to create subdomain"
+
+You ran `gateway deploy` **without** `--domain`, and claiming a `workers.dev` subdomain for the preview failed. This error is not about your domain's DNS. Re-run with your domain:
+
+```bash
+npx everyapp gateway deploy --domain you.dev
+```
+
+### DNS instructions were printed instead of records being created
+
+The terminal login often isn't permitted to write DNS records. Add the wildcard record yourself, once:
+
+> **your domain → DNS → Add record**: Type **CNAME**, Name **`*`**, Target **your domain**, Proxy **ON** (orange cloud).
+
+This is what makes `todo-<your-org>.you.dev` and every future app address reach your Gateway. Without it the Gateway works but apps 404.
+
+### Someone else has my Gateway's owner account
+
+The first person to reach `/sign-up` on a freshly deployed Gateway becomes the owner, and signup closes after that. **Redeploying does not undo this** — deploys reuse the existing database, so the squatter's owner account survives.
+
+To recover: in the Cloudflare dashboard, delete the Gateway's D1 database (**Storage & Databases → D1 → every-app-gateway**) — this erases all Gateway accounts and app registrations — then re-run `gateway deploy` and claim owner immediately. Your deployed apps are unaffected; re-run `app deploy` on each to re-register them.
+
+## Deploying an app
+
+### "Gateway custom domain required"
+
+Your Gateway is on a `workers.dev` address. Apps live at subdomains of your domain, and `workers.dev` addresses can't have subdomains.
+
+Re-run the Gateway deploy with your domain — your account and data carry over:
+
+```bash
+npx everyapp gateway deploy --domain you.dev
+```
+
+### The CLI asks you to log in
+
+You need a deploy token. On your Gateway: **Admin → App Tokens → Create Deploy Token**, copy it (shown once), then:
+
+```bash
+npx everyapp login
+```
+
+Enter your Gateway URL, then paste the token when prompted. It's stored at `~/.everyapp/credentials.json` with `0600` permissions, scoped per Gateway URL.
+
+### "App subdomain DNS is not ready"
+
+The wildcard DNS record is missing or hasn't propagated. Add it (see above), give it a minute, and re-run.
+
+To verify it yourself (any subdomain works — the record is a wildcard):
+
+```bash
+dig +short anything.you.dev
+```
+
+You want an answer, not an empty response.
+
+### "Failed to register app with gateway"
+
+The worker deployed but the Gateway didn't record it, so it won't appear in your launcher. Common causes: an expired or revoked deploy token, or a Gateway that's mid-deploy.
+
+Re-run `npx everyapp app deploy` after confirming `npx everyapp login` is current. Re-running is safe — registration is an upsert.
+
+### "Not inside an Every App project" / "No everyapp.config.ts found"
+
+`app deploy` must run from inside the app folder, next to `everyapp.config.ts`. `cd` into the app directory and re-run.
+
+### The app deployed but shows 401 or a blank screen
+
+Reach the app through your Gateway at the URL the deploy printed (`https://todo-<your-org>.you.dev`), not through any direct worker URL. Apps are private by design: they're only reachable through the perimeter, which is what attaches your identity. A direct hit returning 401 is the security model working.
+
+## Creating an app
+
+### "Could not find an id field in everyapp.config.ts"
+
+Thrown by `app create` when the fetched template's `everyapp.config.ts` doesn't declare an `id`. Re-fetch the starter — if it persists, the template itself is broken; report it.
+
+## Local development
+
+### "pnpm is required but not installed"
+
+The CLI uses pnpm to install and run app projects. Install it from https://pnpm.io/installation and re-run.
+
+### The first page load crashes with a database error
+
+Your local database has no tables yet. `everyapp dev` applies pending migrations on startup; if you're on an older CLI, or you passed `--skip-migrations`, run them manually:
+
+```bash
+pnpm run db:migrate:local
+```
+
+### Hitting the Vite port directly returns 401
+
+Expected. Use the URL `everyapp dev` prints (`http://your-app-id.localhost:8787`), not the raw Vite port. The local Gateway in front of Vite is what signs you in as the seeded dev user.
+
+### `pnpm install` fails in a copied app
+
+If you copied a directory out of the monorepo, its dependencies may point at workspace packages that only resolve inside it. Use the published starter instead:
+
+```bash
+npx everyapp app create
+```
+
+### Schema changes don't show up
+
+Generate the migration first, then restart:
+
+```bash
+pnpm run db:generate
+```
+
+`db:generate` writes the migration file; it doesn't apply it. Restarting `everyapp dev` applies it locally, and `everyapp app deploy` applies it in production.
+
+## Still stuck
+
+Collect these before asking for help — they identify almost any problem on sight:
+
+```bash
+node --version
+npx everyapp --version
+npx wrangler whoami
+dig +short you.dev
+```
+
+Plus the full command you ran and its complete output, and whether your domain shows **Active** in the Cloudflare dashboard.
+
+<Callout type="info">
+  Re-running a failed deploy is safe. Resources are created get-or-create,
+  migrations are idempotent, and app registration is an upsert.
+</Callout>

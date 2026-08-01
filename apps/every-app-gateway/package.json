@@ -1,6 +1,6 @@
 {
   "name": "every-app-gateway",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -12,7 +12,7 @@
     "build": "vite build && tsc --noEmit",
     "build:debug": "DEBUG_BUILD=true vite build && tsc --noEmit",
     "start": "node .output/server/index.mjs",
-    "deploy": "npm run db:migrate:prod && npm run build && wrangler deploy",
+    "deploy": "echo 'The gateway must be deployed with: everyapp gateway deploy (a bare wrangler deploy would strip the app service bindings)' && exit 1",
     "cf-typegen": "wrangler types --env-interface Env",
     "auth:generate": "npx @better-auth/cli@1.4.6 generate --config src/auth/cli-config.ts --output src/db/auth.schema.ts -y",
     "auth:update": "pnpm run auth:generate",
@@ -26,12 +26,14 @@
     "test": "vitest run --silent",
     "test:watch": "vitest",
     "build:release": "node scripts/build-release.js",
-    "build:release:deploy": "pnpm run build:release && npx everyapp gateway deploy --localGateway \"every-app-gateway-build.tar.gz\""
+    "build:release:deploy": "pnpm run build:release && bun ../../packages/cli/src/bin/cli.ts gateway deploy --localGateway \"every-app-gateway-build.tar.gz\""
   },
   "dependencies": {
-    "@better-auth/expo": "^1.4.17",
-    "@cloudflare/vite-plugin": "^1.17.0",
-    "@every-app/sdk": "^0.1.12",
+    "@better-auth/expo": "1.4.18",
+    "@cloudflare/vite-plugin": "^1.45.0",
+    "@cloudflare/workers-oauth-provider": "0.8.1",
+    "@every-app/perimeter": "workspace:*",
+    "@every-app/sdk": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
     "@tanstack/query-core": "^5.90.9",
     "@tanstack/query-db-collection": "^1.0.0",
@@ -40,12 +42,12 @@
     "@tanstack/react-query": "^5.90.9",
     "@tanstack/react-query-persist-client": "^5.90.14",
     "@tanstack/react-router": "1.140.5",
-    "@tanstack/react-router-devtools": "1.140.5",
     "@tanstack/react-start": "1.140.5",
-    "better-auth": "^1.4.17",
+    "better-auth": "1.4.18",
     "cloudflare": "^5.2.0",
+    "dotenv": "^17.2.3",
     "drizzle-orm": "^0.44.4",
-    "jose": "^6.0.12",
+    "jsonc-parser": "^3.3.1",
     "lucide-react": "^0.540.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.0.0",
@@ -53,13 +55,11 @@
     "react-hook-form": "^7.62.0",
     "sonner": "^2.0.7",
     "tailwindcss": "^4.1.11",
-    "tiny-invariant": "^1.3.3",
     "vite-plugin-pwa": "^1.1.0",
-    "zod": "^3.25.76",
-    "dotenv": "^17.2.3"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20251210.0",
+    "@cloudflare/workers-types": "^5.20260715.1",
     "@libsql/client": "^0.15.15",
     "@tailwindcss/vite": "^4.1.11",
     "@types/node": "^22.5.4",
@@ -74,6 +74,6 @@
     "vite": "^7.2.7",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^3.2.4",
-    "wrangler": "^4.53.0"
+    "wrangler": "^4.111.0"
   }
 }

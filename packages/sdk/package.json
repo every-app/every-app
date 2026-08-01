@@ -1,28 +1,16 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.1.14",
+  "version": "0.2.0",
   "license": "MIT",
   "type": "module",
   "exports": {
-    "./core": {
-      "types": "./dist/core/index.d.ts",
-      "default": "./dist/core/index.js"
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "default": "./dist/server/index.js"
     },
-    "./tanstack": {
-      "types": "./dist/tanstack/index.d.ts",
-      "default": "./dist/tanstack/index.js"
-    },
-    "./tanstack/server": {
-      "types": "./dist/tanstack/server/index.d.ts",
-      "default": "./dist/tanstack/server/index.js"
-    },
-    "./cloudflare": {
-      "types": "./dist/cloudflare/index.d.ts",
-      "default": "./dist/cloudflare/index.js"
-    },
-    "./cloudflare/server": {
-      "types": "./dist/cloudflare/server/index.d.ts",
-      "default": "./dist/cloudflare/server/index.js"
+    "./internal": {
+      "types": "./dist/internal/index.d.ts",
+      "default": "./dist/internal/index.js"
     }
   },
   "files": [
@@ -30,6 +18,7 @@
     "README.md"
   ],
   "scripts": {
+    "prebuild": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "tsc -p tsconfig.build.json",
     "prepack": "npm run build",
     "build:prepublish": "pnpm install --ignore-scripts && npm run types:check && npm run build",
@@ -41,24 +30,14 @@
     "test:watch": "vitest",
     "check:esm-relative-imports": "node ./scripts/check-esm-relative-imports.mjs"
   },
-  "dependencies": {
-    "jsonc-parser": "^3.3.1"
-  },
   "peerDependencies": {
-    "@tanstack/react-router": "^1.0.0",
-    "@tanstack/react-start": "^1.0.0",
-    "jose": "^6.0.0",
-    "react": "^18.0.0 || ^19.0.0"
+    "jose": "^6.0.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251014.0",
-    "@tanstack/react-router": "^1.136.3",
-    "@tanstack/react-start": "^1.136.3",
     "@types/node": "^22.18.13",
-    "@types/react": "^19.0.8",
     "jose": "^6.0.12",
     "prettier": "^3.6.2",
-    "react": "^19.0.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.2",
     "vite-tsconfig-paths": "^5.1.4",

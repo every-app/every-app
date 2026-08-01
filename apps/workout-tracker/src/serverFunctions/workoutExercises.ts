@@ -1,46 +1,20 @@
 import { createServerFn } from "@tanstack/react-start";
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { programs, workoutExercises, workouts } from "@/db/schema";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
-import { useSessionTokenClientMiddleware } from "@every-app/sdk/tanstack";
-import { WorkoutExerciseService } from "@/server/services/WorkoutExerciseService";
-import {
-  batchCreateWorkoutExercisesSchema,
-  batchUpdateWorkoutExercisesSchema,
-  batchDeleteWorkoutExercisesSchema,
-} from "@/types/schemas/workoutExercises";
 
-// Get all workout exercises for user's programs
 export const getAllWorkoutExercises = createServerFn()
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .middleware([ensureUserMiddleware])
   .handler(async ({ context }) => {
-    return WorkoutExerciseService.getAll(context.userId);
-  });
+    const result = await db
+      .select({ workoutExercise: workoutExercises })
+      .from(workoutExercises)
+      .innerJoin(workouts, eq(workoutExercises.workoutId, workouts.id))
+      .innerJoin(programs, eq(workouts.programId, programs.id))
+      .where(eq(programs.userId, context.userId));
 
-// Batch create workout exercises
-export const createWorkoutExercises = createServerFn({ method: "POST" })
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
-  .inputValidator((data: unknown) =>
-    batchCreateWorkoutExercisesSchema.parse(data),
-  )
-  .handler(async ({ data, context }) => {
-    return WorkoutExerciseService.createBatch(context.userId, data);
-  });
-
-// Batch update workout exercises
-export const updateWorkoutExercises = createServerFn({ method: "POST" })
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
-  .inputValidator((data: unknown) =>
-    batchUpdateWorkoutExercisesSchema.parse(data),
-  )
-  .handler(async ({ data, context }) => {
-    return WorkoutExerciseService.updateBatch(context.userId, data);
-  });
-
-// Batch delete workout exercises
-export const deleteWorkoutExercises = createServerFn({ method: "POST" })
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
-  .inputValidator((data: unknown) =>
-    batchDeleteWorkoutExercisesSchema.parse(data),
-  )
-  .handler(async ({ data, context }) => {
-    return WorkoutExerciseService.deleteBatch(context.userId, data);
+    return {
+      workoutExercises: result.map(({ workoutExercise }) => workoutExercise),
+    };
   });

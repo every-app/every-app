@@ -1,6 +1,6 @@
 import type { DifficultyLevel } from "@/db/schema";
 
-export interface ExerciseTemplate {
+interface ExerciseTemplate {
   name: string;
   sets: number;
   targetReps: number;

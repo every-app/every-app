@@ -1,0 +1,119 @@
+---
+title: SDK & App Manifest
+description: The two files that connect your app to the platform
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+Every app touches the platform in exactly two places: a one-line server wrapper (`everyApp()`) and a manifest file (`everyapp.config.ts`). There is no client-side SDK. Your frontend makes normal same-origin `fetch()` calls; the Gateway handles identity before your server ever sees the request.
+
+## `everyApp()` — the server wrapper
+
+Your worker entry exports the app wrapped in `everyApp()`:
+
+```ts
+// src/entry.worker.ts
+import { everyApp } from "@every-app/sdk/server";
+import manifest from "../everyapp.config";
+
+export default everyApp(async (request, env, ctx, user) => {
+  // `user` is the verified user (or null on a declared public route)
+  return handleRequest(request, user);
+}, manifest);
+```
+
+That's the entire auth surface. The wrapper verifies the Gateway's signed identity header on every request, fail-closed: no valid identity means a 401 before your code runs. It also wraps anything with a `.fetch` (a Hono app, another worker export) the same way.
+
+<Callout type="warn">
+  Never read user identity from headers, cookies, or request bodies yourself.
+  The verified user from the SDK is the only trustworthy source. Anything else
+  can be spoofed.
+</Callout>
+
+## Users & auth in your app
+
+The Gateway handles signup, login, and sessions; there is no client-side auth code in an app — no login page, no token storage. Your frontend calls server functions with plain `fetch()`, and identity arrives server-side. Anywhere you have the request, ask the SDK for the verified user:
+
+```ts
+import { getRequest } from "@tanstack/react-start/server";
+import { requireEveryAppUser } from "@every-app/sdk/server";
+import { env } from "cloudflare:workers";
+
+const user = await requireEveryAppUser(getRequest(), env); // throws a 401 Response if absent
+```
+
+Most apps pair this with a tiny middleware that creates a local user row on first visit, so there's somewhere to hang the user's data:
+
+```ts
+// src/middleware/ensureUser.ts
+export const ensureUserMiddleware = createMiddleware({
+  type: "function",
+}).server(async ({ next }) => {
+  const identityUser = await requireEveryAppUser(getRequest(), env);
+
+  // upsert the local row, keyed by the Gateway's user id
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, identityUser.id),
+  });
+  if (!user) {
+    await db.insert(users).values({
+      id: identityUser.id,
+      email: identityUser.email,
+    });
+  }
+
+  return next({ context: { userId: identityUser.id, user: identityUser } });
+});
+```
+
+Two rules keep this safe: the user id always comes from the SDK (never from client input), and every user-scoped query filters by that id.
+
+## `everyapp.config.ts` — the manifest
+
+One file declares everything the platform needs to know about your app. The CLI reads it to provision resources, deploy, and run local dev; the gateway reads it to route requests and decide which routes are public.
+
+```ts
+export default {
+  id: "todo", // kebab-case; becomes todo.<your-gateway-domain>
+  name: "Todos",
+  description: "Minimal todo list with real-time sync.",
+  main: "src/entry.worker.ts", // worker entry (this is the default)
+  resources: {
+    d1: ["DB"], // SQL databases, by binding name
+    kv: ["KV"], // key-value namespaces
+    durableObjects: [{ name: "USER_SYNC", className: "UserSyncDO" }],
+  },
+  build: "npx vite build", // optional; default shown
+  dev: "pnpm exec vite dev --port $PORT --host 127.0.0.1",
+  // optional; custom commands read PORT
+  install: "pnpm install", // optional; false skips install, omitted auto-detects
+  migrations: { engine: "drizzle" },
+  // optional; use { engine: "d1-sql", dir: "migrations" }
+  // for Wrangler SQL migrations
+  public: [], // no public routes — fully private app
+} as const;
+```
+
+You don't hand-edit Cloudflare config: the CLI generates a gitignored `.everyapp/wrangler.json` from the manifest for local dev, builds, and deploys — always with the private-worker settings (no routes, no `workers.dev` URL, no preview URLs). The manifest is the only file you edit.
+
+### Public routes
+
+Everything is private unless listed in `public`. Each entry is a narrow, explicit exception:
+
+```ts
+public: [
+  { path: "/share/*", methods: ["GET"] },   // public share links
+  { path: "/health" },
+],
+```
+
+On a public route, requests skip login and your handler receives `user: null`. The manifest validator rejects anything that would blow the surface open: `/*` and other catch-alls are hard errors, as is anything touching the platform's reserved `/__everyapp` namespace.
+
+<details className="faq">
+<summary>How your app verifies signatures without calling home</summary>
+<div className="faq-content">
+
+Your app holds its id (`EVERYAPP_APP_ID`) and the Gateway's public key set (`EVERYAPP_IDENTITY_PUBLIC_KEYS`) in its environment, so verifying a request is a local audience and signature check — no network call, no JWKS endpoint, nothing your app needs to be allowed to reach. In local dev, `npx everyapp dev` writes a per-project dev keypair into `.dev.vars` automatically; in production, the key set is delivered at deploy time. The verification code path is the same in both.
+
+</div>
+</details>
