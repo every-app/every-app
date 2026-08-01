@@ -53,10 +53,10 @@ export async function deploy(
     return;
   }
 
-  // In workers.dev mode, first-time accounts need to claim a subdomain.
-  if (!domain) {
-    await ensureWorkersDevSubdomain();
-  }
+  // Cloudflare requires the account-level workers.dev namespace to exist
+  // before its first Worker upload, even when this Worker uses only a custom
+  // domain and has workers_dev disabled.
+  await ensureWorkersDevSubdomain();
 
   const resources = await setupCloudflareResources({ verbose });
 

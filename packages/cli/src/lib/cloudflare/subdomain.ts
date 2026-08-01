@@ -74,14 +74,24 @@ export async function ensureWorkersDevSubdomain(): Promise<string> {
   } catch {
     // Subdomain doesn't exist, need to create one
     console.log();
-    console.log(chalk.yellow("  Please claim a Cloudflare subdomain.\n"));
     console.log(
-      chalk.dim("  All your apps will be deployed to this domain.\n"),
+      chalk.yellow("  Cloudflare Workers needs an account subdomain.\n"),
     );
-    console.log(chalk.dim("  You can make it your name or a something fun."));
     console.log(
-      chalk.dim('  E.g. All apps will be deployed to "janedoe.workers.dev"\n'),
+      chalk.dim(
+        "  Cloudflare requires this one-time account setup before its first Worker upload.",
+      ),
     );
+    console.log(
+      chalk.dim(
+        "  Every App keeps private app workers.dev routes disabled; your apps still use",
+      ),
+    );
+    console.log(chalk.dim("  the Gateway's custom domain.\n"));
+    console.log(
+      chalk.dim("  Choose a unique account subdomain, such as your name."),
+    );
+    console.log(chalk.dim('  Example: "janedoe.workers.dev"\n'));
 
     const desiredSubdomain = await promptForSubdomain();
 

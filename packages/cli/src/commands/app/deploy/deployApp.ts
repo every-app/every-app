@@ -1,5 +1,6 @@
 import chalk from "chalk";
 import {
+  ensureWorkersDevSubdomain,
   getDefaultAccountId,
   getGatewayPublicUrl,
   replaceGatewayServiceBindings,
@@ -74,6 +75,11 @@ export async function deployApp(
       skipDnsCheck: options.skipDnsCheck ?? false,
     });
   }
+
+  // Cloudflare rejects the first Worker upload until the account-level
+  // workers.dev namespace has been claimed, including private Workers whose
+  // workers_dev route remains disabled in their generated config.
+  await ensureWorkersDevSubdomain();
 
   const { d1DatabaseIds, kvNamespaceIds } = await setupCloudflareResources({
     appId,
