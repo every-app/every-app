@@ -41,7 +41,7 @@ export CLOUDFLARE_ACCOUNT_ID=...
 
 Your API token can't perform the action. Recreate it from the **Edit Cloudflare Workers** template plus **Zone → DNS → Edit**, export both `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and re-run.
 
-### `Cloudflare zone "you.dev" was not found on the authenticated account`
+### `Cloudflare zone "your-domain.dev" was not found on the authenticated account`
 
 The domain isn't set up as a zone on the Cloudflare account you're authenticated against. Either it was never [added to Cloudflare](https://developers.cloudflare.com/fundamentals/manage-domains/add-site/), it's still pending nameserver verification, or wrangler is logged into a different account than the one holding the zone — `npx wrangler whoami` shows which. Add the zone (free plan is fine), wait for it to show **Active**, and re-run.
 
@@ -62,7 +62,7 @@ Two likely causes:
 You ran `gateway deploy` **without** `--domain`, and claiming a `workers.dev` subdomain for the preview failed. This error is not about your domain's DNS. Re-run with your domain:
 
 ```bash
-npx everyapp gateway deploy --domain you.dev
+npx everyapp gateway deploy --domain your-domain.dev
 ```
 
 ### DNS instructions were printed instead of records being created
@@ -71,7 +71,7 @@ The terminal login often isn't permitted to write DNS records. Add the wildcard 
 
 > **your domain → DNS → Add record**: Type **CNAME**, Name **`*`**, Target **your domain**, Proxy **ON** (orange cloud).
 
-This is what makes `todo-<your-org>.you.dev` and every future app address reach your Gateway. Without it the Gateway works but apps 404.
+This is what makes `todo-<your-org>.your-domain.dev` and every future app address reach your Gateway. Without it the Gateway works but apps 404.
 
 ### Someone else has my Gateway's owner account
 
@@ -88,7 +88,7 @@ Your Gateway is on a `workers.dev` address. Apps live at subdomains of your doma
 Re-run the Gateway deploy with your domain — your account and data carry over:
 
 ```bash
-npx everyapp gateway deploy --domain you.dev
+npx everyapp gateway deploy --domain your-domain.dev
 ```
 
 ### The CLI asks you to log in
@@ -108,7 +108,7 @@ The wildcard DNS record is missing or hasn't propagated. Add it (see above), giv
 To verify it yourself (any subdomain works — the record is a wildcard):
 
 ```bash
-dig +short anything.you.dev
+dig +short anything.your-domain.dev
 ```
 
 You want an answer, not an empty response.
@@ -125,7 +125,7 @@ Re-run `npx everyapp app deploy` after confirming `npx everyapp login` is curren
 
 ### The app deployed but shows 401 or a blank screen
 
-Reach the app through your Gateway at the URL the deploy printed (`https://todo-<your-org>.you.dev`), not through any direct worker URL. Apps are private by design: they're only reachable through the perimeter, which is what attaches your identity. A direct hit returning 401 is the security model working.
+Reach the app through your Gateway at the URL the deploy printed (`https://todo-<your-org>.your-domain.dev`), not through any direct worker URL. Apps are private by design: they're only reachable through the perimeter, which is what attaches your identity. A direct hit returning 401 is the security model working.
 
 ## Creating an app
 
@@ -177,7 +177,7 @@ Collect these before asking for help — they identify almost any problem on sig
 node --version
 npx everyapp --version
 npx wrangler whoami
-dig +short you.dev
+dig +short your-domain.dev
 ```
 
 Plus the full command you ran and its complete output, and whether your domain shows **Active** in the Cloudflare dashboard.

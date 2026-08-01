@@ -3,32 +3,32 @@ title: Introduction
 description: What is Every App?
 ---
 
-Every App is a self-hosted platform for personal web apps. You describe an app to your coding agent, and Every App gives it everything else: hosting, a database, login, and users. Build for yourself, your family, your friends, or your team.
+Every App is a platform for self-hosting apps. You can install popular open-source apps or build your own.
 
-Everything runs on your own Cloudflare account. Hosting starts free, and even with dozens of apps you're unlikely to exceed Cloudflare's $5/month plan.
+Everything runs in your Cloudflare account, so you can run hundreds of apps for about $5 a month.
 
-You don't need to be an engineer. If you can chat with an AI assistant, you can set this up: the [Quickstart](/docs/getting-started/quickstart) includes prompts you paste into your agent so it does the work for you.
+You don't need to be an engineer. The [Quickstart](/docs/getting-started/quickstart) gives you prompts to paste into your coding agent, which handles the setup for you.
 
 ## The Gateway
 
-The Gateway is the front door to all of your apps, and it is the only door.
+The Gateway is where you access all your apps. It sits in front of them, so they are secure by default.
 
 _The Gateway (left) showing your self-hosted apps, and a Workout Tracker app on mobile._
 
 ![Gateway and Workout Tracker](./_assets/gateway-and-workout-tracker.png)
 
-You log into the Gateway once. Every app you install gets its own web address behind it (like `todo.your-gateway.com`), and every request to an app passes through the Gateway first. The Gateway checks who you are, then hands the app a short-lived signed pass that says "this is Ben." Apps never see your password, never store your session, and never implement login.
+You sign in to the Gateway once. Each app gets its own web address, such as `todo.your-domain.dev`, but you use the same account for all of them. The Gateway checks who you are before letting you into an app. Your apps never see your password or need their own login system.
 
-This design is what makes it safe to build apps quickly with AI. An app you vibe-coded last night rejects any request that didn't come through the Gateway, so a forgotten auth check can't expose it to the internet.
+Apps only accept requests that come through the Gateway. If an app is missing an auth check, the Gateway still keeps it from being exposed directly to the internet.
 
 ### What the Gateway gives you
 
-- **One URL** for all your apps, on desktop and mobile.
-- **Users.** Invite family or teammates to your Gateway and they can use your apps.
-- **Mobile.** Add the Gateway to your home screen once; every app benefits.
+- Open all your apps from one place, on desktop or mobile.
+- Sign in once instead of setting up login for every app.
+- Invite teammates and choose which apps they can use.
 
 ## Where to go next
 
-1. [Quickstart](/docs/getting-started/quickstart) — deploy your Gateway in about five minutes.
-2. [Build an App](/docs/build-an-app/create-app) — create your first app with a coding agent.
-3. [How It Works](/docs/how-it-works/overview) — the architecture, for when you want the details.
+1. [Quickstart](/docs/getting-started/quickstart) to deploy your Gateway in about five minutes.
+2. [Build an App](/docs/build-an-app/create-app) to create your first app with a coding agent.
+3. [How It Works](/docs/how-it-works/overview) to learn about the architecture.

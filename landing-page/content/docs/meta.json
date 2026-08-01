@@ -9,6 +9,7 @@
     "build-an-app/local-dev",
     "---How It Works---",
     "how-it-works/overview",
+    "how-it-works/security",
     "how-it-works/sdk",
     "---Reference---",
     "reference/cli",

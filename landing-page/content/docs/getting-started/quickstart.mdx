@@ -5,13 +5,14 @@ description: Deploy your Gateway in about five minutes
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Two things happen in this guide: you deploy your Gateway to your own Cloudflare account on your own domain, then you install an example app. Every app gets its own address under your domain — the Gateway at `you.dev`, apps at subdomains like `todo-<your-org>.you.dev` (the suffix is your org slug, created with your account). After that, everything else is building.
+Two things happen in this guide: you deploy your Gateway to your own Cloudflare account on your own domain, then you install an example app. Every app gets its own address under your domain. Throughout these docs, we use `your-domain.dev` for the Gateway and addresses such as `todo-<your-org>.your-domain.dev` for apps. The suffix is your organization slug, created with your account.
 
 <Callout type="info">
-  You'll need a domain (~$10/year, any registrar — Cloudflare also [sells
-  them](https://developers.cloudflare.com/registrar/)). The Gateway itself can
-  deploy without one for a quick look around, but apps only become reachable
-  once your domain is set up.
+  `your-domain.dev` is a placeholder. Your domain can use any extension. If you
+  don't own one, you can buy one for about $10 a year from any registrar,
+  including [Cloudflare](https://developers.cloudflare.com/registrar/). The
+  Gateway can deploy without a domain for a quick look around, but apps only
+  become reachable once your domain is set up.
 </Callout>
 
 ## The fast path: let your agent set you up
@@ -95,18 +96,18 @@ The same steps, if you'd rather run them yourself.
 ### 2. Deploy the Gateway
 
 ```bash
-npx everyapp gateway deploy --domain you.dev
+npx everyapp gateway deploy --domain your-domain.dev
 ```
 
-This sets up a database and hosting on your Cloudflare account, puts the Gateway live at your domain, and points `*.you.dev` — every future app address — at it.
+This sets up a database and hosting on your Cloudflare account, puts the Gateway live at your domain, and points `*.your-domain.dev`, every future app address, at it.
 
 That last part needs one DNS record, and the terminal login usually isn't allowed to create DNS records for you. If the deploy prints instructions, add the record once in the dashboard:
 
-> **you.dev → DNS → Add record**: Type **CNAME**, Name **`*`**, Target **`you.dev`**, Proxy **ON** (orange cloud).
+> **your-domain.dev → DNS → Add record**: Type **CNAME**, Name **`*`**, Target **`your-domain.dev`**, Proxy **ON** (orange cloud).
 >
-> It means "any subdomain of you.dev goes to the same place as you.dev itself" — your Gateway, which serves the right app for each address. Cloudflare requires an explicit record for [wildcard routing](https://developers.cloudflare.com/workers/configuration/routing/routes/).
+> It means "any subdomain of your-domain.dev goes to the same place as your-domain.dev itself": your Gateway, which serves the right app for each address. Cloudflare requires an explicit record for [wildcard routing](https://developers.cloudflare.com/workers/configuration/routing/routes/).
 
-When the deploy finishes, open `https://you.dev` and create your account. You're the owner; signup is invite-only after you.
+When the deploy finishes, open `https://your-domain.dev` and create your account. You're the owner; signup is invite-only after you.
 
 ### 3. Connect your terminal to your Gateway
 
@@ -128,7 +129,7 @@ cd every-todo-app
 npx everyapp app deploy
 ```
 
-Refresh your Gateway and the todo app appears, live at the URL the deploy prints (`https://todo-<your-org>.you.dev`). Open it — you're already logged in.
+Refresh your Gateway and the todo app appears, live at the URL the deploy prints (`https://todo-<your-org>.your-domain.dev`). Open it and you're already logged in.
 
 <details className="faq">
 <summary>More example apps</summary>

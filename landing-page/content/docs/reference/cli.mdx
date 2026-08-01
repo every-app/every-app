@@ -11,12 +11,12 @@ All commands run via `npx everyapp …` (or a local checkout's binary). Global h
 
 Deploys (or updates) your Gateway on your Cloudflare account: creates or links the D1 database and KV store, reconstructs app service bindings from the registry, deploys the worker, sets secrets, and runs database migrations.
 
-| Flag                       | Meaning                                                                                                                                                                                                                                                          |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--domain <apex>`          | Your custom apex domain (e.g. `you.dev`). Sets up the custom domain, the `*.<apex>` wildcard route for app subdomains, and disables the `workers.dev` alias. Required before apps are reachable; without it the Gateway runs on `workers.dev` for a look around. |
-| `--localGateway <tarball>` | Deploy a locally built gateway tarball instead of the latest release (development).                                                                                                                                                                              |
-| `-y`, `--yes`              | Skip the confirmation prompt.                                                                                                                                                                                                                                    |
-| `--verbose`                | Detailed output.                                                                                                                                                                                                                                                 |
+| Flag                       | Meaning                                                                                                                                                                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--domain <apex>`          | Your custom apex domain (e.g. `your-domain.dev`). Sets up the custom domain, the `*.<apex>` wildcard route for app subdomains, and disables the `workers.dev` alias. Required before apps are reachable; without it the Gateway runs on `workers.dev` for a look around. |
+| `--localGateway <tarball>` | Deploy a locally built gateway tarball instead of the latest release (development).                                                                                                                                                                                      |
+| `-y`, `--yes`              | Skip the confirmation prompt.                                                                                                                                                                                                                                            |
+| `--verbose`                | Detailed output.                                                                                                                                                                                                                                                         |
 
 If your Cloudflare login can't create DNS records, the deploy prints the one wildcard CNAME record to add by hand (once), with a direct dashboard link.
 
@@ -38,13 +38,13 @@ Scaffolds a new app from the starter template (kebab-case id), wires its `everya
 
 ### `everyapp app deploy`
 
-Run from an app directory. Generates the wrangler config from `everyapp.config.ts`, provisions D1/KV, runs migrations, builds, deploys the app as a **private worker**, registers it with your Gateway (it goes live at `https://<app-id>.<your-domain>`), and attaches the Gateway's service binding.
+Run from an app directory. Generates the wrangler config from `everyapp.config.ts`, provisions D1/KV, runs migrations, builds, deploys the app as a **private worker**, registers it with your Gateway (it goes live at `https://<app-id>.your-domain.dev`), and attaches the Gateway's service binding.
 
-| Flag               | Meaning                                                                                                        |
-| ------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `-y`, `--yes`      | Skip prompts (access defaults to all users).                                                                   |
-| `--skip-dns-check` | Skip the pre-flight check that `<app-id>.<your-domain>` resolves (useful right after creating the DNS record). |
-| `--verbose`        | Detailed output.                                                                                               |
+| Flag               | Meaning                                                                                                          |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| `-y`, `--yes`      | Skip prompts (access defaults to all users).                                                                     |
+| `--skip-dns-check` | Skip the pre-flight check that `<app-id>.your-domain.dev` resolves (useful right after creating the DNS record). |
+| `--verbose`        | Detailed output.                                                                                                 |
 
 ### `everyapp app generate-config`
 

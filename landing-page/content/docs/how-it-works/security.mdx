@@ -1,0 +1,75 @@
+---
+title: Security Architecture
+description: How the Gateway keeps your apps private
+---
+
+This page explains the security boundary behind Every App. You do not need these details to set up a Gateway or build an app.
+
+## The Gateway security boundary
+
+The Gateway is the only public Worker in an Every App installation. It handles login, checks app access, and then forwards approved requests to private app workers.
+
+Apps accept requests only when they carry a signed identity pass created by the Gateway. A direct request to an app worker has no valid pass and receives a 401 response.
+
+```
+                        INTERNET
+                           │
+        your-domain.dev    │   todo.your-domain.dev, chef.your-domain.dev, ...
+                           ▼
+        ┌──────────────────────────────────────┐
+        │            GATEWAY WORKER            │
+        │                                      │
+        │  1. Which app is this? (Host header) │
+        │  2. Who are you? (session cookie)    │
+        │  3. May you use this app?            │
+        │  4. Mint a short-lived signed        │
+        │     identity pass for the app        │
+        └──────────────────┬───────────────────┘
+                           │  private (service binding)
+              ┌────────────┼────────────┐
+              ▼            ▼            ▼
+          ┌──────┐     ┌──────┐     ┌──────┐
+          │ todo │     │ chef │     │ ...  │   private workers:
+          │ D1 KV│     │ D1 KV│     │      │   reject anything without
+          └──────┘     └──────┘     └──────┘   a Gateway-signed pass
+```
+
+Your browser stores one session cookie for the Gateway. When you open `todo.your-domain.dev`, the Gateway checks your session, removes the cookie from the forwarded request, and sends the todo worker a signed identity pass. The pass is valid for about two minutes and only for that app.
+
+The app verifies the signature before running its code. Requests without a valid pass receive a 401 response.
+
+## Protection for AI-built apps
+
+An AI-generated app can miss an authentication check. Every App limits the impact of that mistake because unauthenticated traffic cannot reach the private app worker directly. The Gateway requires a valid session before it forwards a request.
+
+Apps can still expose specific public routes for share links, webhooks, or health checks. These routes must be declared in the app manifest. The manifest rejects broad catch-all routes such as `/*`.
+
+## What runs where
+
+| Piece                  | What it does                                                   | Where it runs                       |
+| ---------------------- | -------------------------------------------------------------- | ----------------------------------- |
+| Gateway                | Handles login, app access, and request routing                 | A Cloudflare Worker in your account |
+| Apps                   | Run your app code with their own databases and storage         | Private Cloudflare Workers          |
+| CLI (`everyapp`)       | Deploys apps, provisions resources, and runs local development | Your machine                        |
+| SDK (`@every-app/sdk`) | Verifies the Gateway's signed identity pass                    | Inside each app                     |
+
+Every App uses [TanStack Start](https://tanstack.com/start), [Cloudflare Workers](https://developers.cloudflare.com/workers/), [D1](https://developers.cloudflare.com/d1/), and [Drizzle ORM](https://orm.drizzle.team/).
+
+## Identity pass details
+
+The identity pass is a JWT signed with RS256 and injected as the `x-everyapp-identity` header. Its claims identify the user and organization, and its audience limits it to one app.
+
+The SDK pins the signing algorithm and key ID, verifies the issuer, audience, and expiration, and rejects missing or invalid passes. The Gateway removes inbound `Cookie`, `Authorization`, and `x-everyapp-*` headers before it adds the verified identity pass.
+
+Apps receive the Gateway's public keys during deployment, so signature verification does not require a network call.
+
+## Other protections
+
+- Cross-site form posts are rejected before they reach an app.
+- Every HTML response receives a shared set of security headers.
+- Public routes must be narrow and explicit.
+- Apps have no `workers.dev` or preview URL.
+
+## Limits
+
+Apps behind one Gateway share a parent domain and belong to the same trust boundary. A fully compromised app could make authenticated requests to sibling apps through the browser. Review the security of any app you plan to share beyond your team.
