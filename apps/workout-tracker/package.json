@@ -1,12 +1,6 @@
 {
   "name": "workout-tracker",
   "private": true,
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "workerd"
-    ]
-  },
   "sideEffects": false,
   "type": "module",
   "scripts": {
