@@ -113,12 +113,29 @@ async function main() {
     process.env.OPENAI_API_KEY,
     localEnv.OPENAI_API_KEY,
   );
+  const emailRestApiToken = firstNonEmpty(
+    process.env.EMAIL_REST_API_TOKEN,
+    localEnv.EMAIL_REST_API_TOKEN,
+  );
+  const cloudflareAccountId = firstNonEmpty(
+    process.env.CLOUDFLARE_ACCOUNT_ID,
+    localEnv.CLOUDFLARE_ACCOUNT_ID,
+  );
+  const emailFrom = firstNonEmpty(process.env.EMAIL_FROM, localEnv.EMAIL_FROM);
+  const emailFromName = firstNonEmpty(
+    process.env.EMAIL_FROM_NAME,
+    localEnv.EMAIL_FROM_NAME,
+  );
 
   process.env.GATEWAY_URL = gatewayUrl;
   process.env.BETTER_AUTH_SECRET = betterAuthSecret;
   process.env.JWT_PRIVATE_KEY = jwtPrivateKey;
   process.env.JWT_PUBLIC_KEY = jwtPublicKey;
   process.env.OPENAI_API_KEY = openAiApiKey;
+  process.env.EMAIL_REST_API_TOKEN = emailRestApiToken;
+  process.env.CLOUDFLARE_ACCOUNT_ID = cloudflareAccountId;
+  process.env.EMAIL_FROM = emailFrom;
+  process.env.EMAIL_FROM_NAME = emailFromName;
 
   writeEnvFile([
     "GATEWAY_URL",
@@ -126,6 +143,10 @@ async function main() {
     "JWT_PRIVATE_KEY",
     "JWT_PUBLIC_KEY",
     "OPENAI_API_KEY",
+    "EMAIL_REST_API_TOKEN",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "EMAIL_FROM",
+    "EMAIL_FROM_NAME",
   ]);
 
   chmodSync(".env", 0o600);

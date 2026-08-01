@@ -12,11 +12,14 @@
     "start": "wrangler dev",
     "preview": "vite preview",
     "types:check": "fumadocs-mdx && tsc --noEmit",
+    "cf-typegen": "wrangler types",
+    "db:migrate": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "format:check": "prettier --check .",
     "format:write": "prettier --write .",
-    "deploy": "npm run build && wrangler deploy",
-    "deploy:prod": "npm run build && wrangler deploy",
-    "deploy:preview": "npm run build && wrangler deploy --env preview"
+    "deploy": "npm run build && npm run db:migrate:remote && wrangler deploy",
+    "deploy:prod": "npm run build && npm run db:migrate:remote && wrangler deploy",
+    "deploy:preview": "npm run build && wrangler d1 migrations apply DB --remote --env preview && wrangler deploy --env preview"
   },
   "dependencies": {
     "@tanstack/react-router": "^1.161.3",
@@ -25,9 +28,7 @@
     "fumadocs-core": "^15.5.1",
     "fumadocs-mdx": "^11.6.5",
     "fumadocs-ui": "^15.5.1",
-    "hls.js": "^1.6.15",
     "lucide-react": "^0.563.0",
-    "plyr": "^3.8.4",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "vite": "^7.3.1",

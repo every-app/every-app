@@ -4,15 +4,33 @@ import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
-import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
-import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
+import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import { hasOwner, initializeOwner } from "@/serverFunctions/admin";
-import { getSafeRedirect } from "@/utils/auth";
+import { getSafeRedirect, getSafeReturnTo } from "@/utils/auth";
 import { getServerErrorMessage } from "@/client/errors";
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
+  return_to: z.string().optional(),
 });
+
+function getAuthSearch({
+  redirect,
+  return_to,
+}: {
+  redirect?: string;
+  return_to?: string;
+}) {
+  const search: { redirect?: string; return_to?: string } = {};
+  if (redirect) {
+    search.redirect = redirect;
+  }
+  if (return_to) {
+    search.return_to = return_to;
+  }
+  return redirect || return_to ? search : undefined;
+}
 
 export const Route = createFileRoute("/sign-up")({
   component: SignUp,
@@ -20,7 +38,7 @@ export const Route = createFileRoute("/sign-up")({
 });
 
 function SignUp() {
-  const { redirect } = Route.useSearch();
+  const { redirect, return_to } = Route.useSearch();
   const invitationId = extractInvitationIdFromRedirect(redirect);
   const isInvitationFlow = Boolean(invitationId);
   const [showOwnerForm, setShowOwnerForm] = useState(false);
@@ -49,23 +67,26 @@ function SignUp() {
     return (
       <CreateInvitedAccountForm
         redirect={redirect}
+        return_to={return_to}
         invitationId={invitationId!}
       />
     );
   }
 
   if (showOwnerForm || !ownerData?.hasOwner) {
-    return <CreateOwnerForm redirect={redirect} />;
+    return <CreateOwnerForm redirect={redirect} return_to={return_to} />;
   }
 
-  return <InvitationRequired redirect={redirect} />;
+  return <InvitationRequired redirect={redirect} return_to={return_to} />;
 }
 
 function CreateInvitedAccountForm({
   redirect,
+  return_to,
   invitationId,
 }: {
   redirect?: string;
+  return_to?: string;
   invitationId: string;
 }) {
   const [email, setEmail] = useState("");
@@ -75,6 +96,15 @@ function CreateInvitedAccountForm({
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const safeRedirect = getSafeRedirect(redirect);
+
+  const continueToDestination = () => {
+    const safeReturnTo = getSafeReturnTo(return_to);
+    if (safeReturnTo) {
+      window.location.assign(safeReturnTo);
+    } else {
+      navigate({ to: safeRedirect });
+    }
+  };
 
   const {
     isRunning,
@@ -111,7 +141,7 @@ function CreateInvitedAccountForm({
       if (hadRetries) {
         setRetrySuccess();
       } else {
-        navigate({ to: safeRedirect });
+        continueToDestination();
       }
 
       return true;
@@ -148,7 +178,7 @@ function CreateInvitedAccountForm({
         hasExhaustedRetries={hasExhaustedRetries}
         secondsUntilRetry={secondsUntilRetry}
         isSuccess={isRetrySuccess}
-        onContinue={() => navigate({ to: safeRedirect })}
+        onContinue={continueToDestination}
       />
     );
   }
@@ -229,7 +259,7 @@ function CreateInvitedAccountForm({
                 Already have an account?{" "}
                 <Link
                   to="/sign-in"
-                  search={redirect ? { redirect } : undefined}
+                  search={getAuthSearch({ redirect, return_to })}
                   className="font-medium text-base-content hover:underline"
                 >
                   Sign in
@@ -247,7 +277,13 @@ function CreateInvitedAccountForm({
  * Form for creating the first owner account.
  * Only shown when no owner exists in the system.
  */
-function CreateOwnerForm({ redirect }: { redirect?: string }) {
+function CreateOwnerForm({
+  redirect,
+  return_to,
+}: {
+  redirect?: string;
+  return_to?: string;
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -255,6 +291,15 @@ function CreateOwnerForm({ redirect }: { redirect?: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const safeRedirect = getSafeRedirect(redirect);
+
+  const continueToDestination = () => {
+    const safeReturnTo = getSafeReturnTo(return_to);
+    if (safeReturnTo) {
+      window.location.assign(safeReturnTo);
+    } else {
+      navigate({ to: safeRedirect });
+    }
+  };
 
   const {
     isRunning,
@@ -281,7 +326,7 @@ function CreateOwnerForm({ redirect }: { redirect?: string }) {
               setRetrySuccess();
             } else {
               queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
-              navigate({ to: safeRedirect });
+              continueToDestination();
             }
           },
         },
@@ -291,7 +336,7 @@ function CreateOwnerForm({ redirect }: { redirect?: string }) {
         await queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
         navigate({
           to: "/sign-in",
-          search: redirect ? { redirect } : undefined,
+          search: getAuthSearch({ redirect, return_to }),
         });
       }
       return true;
@@ -332,7 +377,7 @@ function CreateOwnerForm({ redirect }: { redirect?: string }) {
         isSuccess={isRetrySuccess}
         onContinue={() => {
           queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
-          navigate({ to: safeRedirect });
+          continueToDestination();
         }}
       />
     );
@@ -419,7 +464,7 @@ function CreateOwnerForm({ redirect }: { redirect?: string }) {
                 Already have an account?{" "}
                 <Link
                   to="/sign-in"
-                  search={redirect ? { redirect } : undefined}
+                  search={getAuthSearch({ redirect, return_to })}
                   className="font-medium text-base-content hover:underline"
                 >
                   Sign in
@@ -437,7 +482,13 @@ function CreateOwnerForm({ redirect }: { redirect?: string }) {
  * Message shown when an owner already exists.
  * Users must be invited to create an account.
  */
-function InvitationRequired({ redirect }: { redirect?: string }) {
+function InvitationRequired({
+  redirect,
+  return_to,
+}: {
+  redirect?: string;
+  return_to?: string;
+}) {
   return (
     <div className="flex h-screen items-center justify-center overflow-hidden">
       <div className="relative w-full max-w-md">
@@ -460,7 +511,7 @@ function InvitationRequired({ redirect }: { redirect?: string }) {
               Already have an account?{" "}
               <Link
                 to="/sign-in"
-                search={redirect ? { redirect } : undefined}
+                search={getAuthSearch({ redirect, return_to })}
                 className="font-medium text-base-content hover:underline"
               >
                 Sign in

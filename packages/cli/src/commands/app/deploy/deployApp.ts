@@ -1,109 +1,223 @@
+import chalk from "chalk";
 import {
-  updateWranglerConfig,
-  readWranglerConfig,
-} from "@/lib/wrangler-config";
-import { getWorkerUrl } from "@/lib/cloudflare";
+  getDefaultAccountId,
+  getGatewayPublicUrl,
+  replaceGatewayServiceBindings,
+  resolvesThroughCloudflare,
+} from "@/lib/cloudflare";
 import { installDependencies } from "@/lib/package-manager";
 import { setupCloudflareResources } from "@/commands/app/deploy/steps/setupCloudflareResources";
-import { runDrizzleMigrations } from "@/lib/migrations";
+import { runAppMigrations } from "@/lib/migrations";
 import { buildAndDeploy } from "@/commands/app/deploy/steps/buildAndDeploy";
-import { insertUserAppRecords } from "@/commands/app/deploy/steps/insertUserAppRecords";
+import {
+  fetchGatewayIdentityKeys,
+  registerAppWithGateway,
+  resolveGatewayDeploymentInfo,
+} from "@/commands/app/deploy/steps/registerApp";
 import { setupAppSecrets } from "@/commands/app/deploy/steps/setupAppSecrets";
-import { readEveryAppConfig } from "@/lib/everyapp-config";
+import {
+  ensureGeneratedWranglerConfig,
+  loadEveryAppManifest,
+  type EveryAppCliManifest,
+} from "@/lib/generateWranglerConfig";
+import { workerNameFor } from "@every-app/perimeter/manifest";
+import { exitWithUpdateNotice } from "@/lib/version-check";
+import { formatWildcardDnsInstructions } from "@/lib/dnsInstructions";
 
 interface DeployAppOptions {
   cwd: string;
-  /** The unprefixed app ID (e.g., "todo-app", not "every-todo-app") */
-  appId: string;
+  manifest?: EveryAppCliManifest;
   verbose: boolean;
-  devUrl?: string;
+  skipDnsCheck?: boolean;
 }
 
 interface DeployAppResult {
-  workerUrl: string;
+  liveUrl: string;
   gatewayUrl: string;
   organizationId: string;
+  hostname: string;
+}
+
+interface AppHostnameTarget {
+  hostname: string;
+  apex: string;
+  issuerHost: string;
+  isWorkersDev: boolean;
 }
 
 /**
- * Shared deployment logic used by both `app create` and `app deploy` commands.
- *
- * This function handles:
- * 1. Setting up Cloudflare resources (D1, KV, and optionally R2) with "every-" prefix
- * 2. Updating wrangler.jsonc with resource IDs
- * 3. Installing dependencies
- * 4. Running production migrations
- * 5. Building and deploying to Cloudflare Workers
- * 6. Registering the app with the gateway
- * 7. Setting up secrets
+ * Shared deployment logic used by both `app create` and `app deploy`.
  */
 export async function deployApp(
   options: DeployAppOptions,
 ): Promise<DeployAppResult> {
-  const { cwd, appId, verbose, devUrl } = options;
+  const { cwd, verbose } = options;
 
-  // Check if the app needs an R2 bucket by reading wrangler.jsonc
-  const wranglerConfig = await readWranglerConfig(cwd);
-  const needsR2Bucket = Boolean(wranglerConfig.r2_buckets?.length);
+  const manifest = options.manifest ?? (await loadEveryAppManifest(cwd));
+  const appId = manifest.id;
+  const workerName = workerNameFor(appId);
 
-  // Setup Cloudflare resources (D1, KV, and optionally R2) - returns prefixed resource name
-  const { d1DatabaseId, kvNamespaceId, r2BucketName, resourceName } =
-    await setupCloudflareResources({ appId, needsR2Bucket, verbose });
+  const d1Bindings = manifest.resources?.d1 ?? [];
+  const kvBindings = manifest.resources?.kv ?? [];
+  const gatewayUrl = await getGatewayPublicUrl();
+  const gatewayDeployment = await resolveGatewayDeploymentInfo(gatewayUrl);
+  const { organizationId } = gatewayDeployment;
+  const identity = await fetchGatewayIdentityKeys(gatewayUrl);
+  const identityIssuer = identity.issuer ?? "";
+  // This is only a one-label wildcard DNS probe. Registration remains the
+  // authority for the app's final hostname and live URL.
+  const hostnameTarget = deriveAppHostnameFromIssuer(appId, identity.issuer);
 
-  // Update wrangler.jsonc with prefixed worker name and resource IDs
-  await updateWranglerConfig({
-    configPath: cwd,
-    name: resourceName,
-    d1DatabaseId,
-    d1DatabaseName: resourceName,
-    kvNamespaceId,
-    r2BucketName,
+  if (hostnameTarget) {
+    await verifyAppSubdomainCanResolve({
+      ...hostnameTarget,
+      skipDnsCheck: options.skipDnsCheck ?? false,
+    });
+  }
+
+  const { d1DatabaseIds, kvNamespaceIds } = await setupCloudflareResources({
+    appId,
+    d1Bindings,
+    kvBindings,
     verbose,
   });
 
-  const gatewayUrl = await getWorkerUrl("every-app-gateway");
-
-  // Install dependencies
   console.log();
   await installDependencies({
     cwd,
     description: "Installing dependencies for Cloudflare deployment...",
+    install: manifest.install,
     verbose,
   });
 
-  // Run production migrations
-  await runDrizzleMigrations({ cwd, verbose });
+  if (d1Bindings.length > 0) {
+    await runAppMigrations({
+      cwd,
+      workerName,
+      d1Bindings,
+      d1DatabaseIds,
+      migrations: manifest.migrations,
+      verbose,
+    });
+  } else if (verbose) {
+    console.log(chalk.dim("No D1 resources declared; skipping migrations.\n"));
+  }
 
-  // Build and deploy
-  await buildAndDeploy({ cwd, gatewayUrl, appId, verbose });
+  const { configPath: generatedWranglerConfigPath } =
+    await ensureGeneratedWranglerConfig(cwd, {
+      manifest,
+      d1DatabaseIds,
+      kvNamespaceIds,
+      identityPublicKeys: identity.keys,
+      vars: {
+        EVERYAPP_IDENTITY_ISSUER: identityIssuer,
+      },
+      gatewayBinding: gatewayDeployment.gatewayBinding,
+    });
 
-  // Get deployed URL
-  const workerUrl = await getWorkerUrl(resourceName);
-
-  // Read app metadata from every-app.jsonc for display name and description
-  const config = await readEveryAppConfig(cwd);
-
-  // Register with gateway using unprefixed appId for cleaner URLs
-  // (e.g., /apps/todo-app instead of /apps/every-todo-app)
-  const { organizationId } = await insertUserAppRecords({
+  await buildAndDeploy({
+    cwd,
+    buildCommand: manifest.build,
+    gatewayUrl,
     appId,
-    appUrl: workerUrl,
+    generatedWranglerConfigPath,
+    verbose,
+  });
+
+  const { hostname } = await registerAppWithGateway({
+    appId,
+    workerName,
+    manifest,
     gatewayUrl,
     verbose,
-    appName: config.displayName,
-    appDescription: config.description,
-    devUrl,
+    appName: manifest.name,
+    appDescription: manifest.description,
   });
 
-  // Setup app-level secrets after gateway registration so app token provisioning
-  // can resolve this app in the gateway catalog.
   await setupAppSecrets({
     gatewayUrl,
     appPath: cwd,
-    appId,
-    organizationId,
+    workerName,
     verbose,
   });
 
-  return { workerUrl, gatewayUrl, organizationId };
+  const accountId = await getDefaultAccountId();
+  const serviceBindings = await replaceGatewayServiceBindings(accountId);
+  if (verbose) {
+    console.log(
+      chalk.dim(
+        `  Reconciled ${serviceBindings.length} gateway app service binding${serviceBindings.length === 1 ? "" : "s"}`,
+      ),
+    );
+  }
+
+  return {
+    liveUrl: `https://${hostname}`,
+    gatewayUrl,
+    organizationId,
+    hostname,
+  };
+}
+
+export function deriveAppHostnameFromIssuer(
+  appId: string,
+  issuer: string | null | undefined,
+): AppHostnameTarget | null {
+  if (!issuer) {
+    return null;
+  }
+
+  const issuerHost = new URL(issuer).hostname;
+  return {
+    hostname: `${appId}.${issuerHost}`,
+    apex: issuerHost,
+    issuerHost,
+    isWorkersDev: issuerHost.endsWith(".workers.dev"),
+  };
+}
+
+async function verifyAppSubdomainCanResolve({
+  hostname,
+  apex,
+  issuerHost,
+  isWorkersDev,
+  skipDnsCheck,
+}: AppHostnameTarget & { skipDnsCheck: boolean }): Promise<void> {
+  if (isWorkersDev) {
+    console.log(chalk.red("\nGateway custom domain required\n"));
+    console.log(
+      [
+        `  The gateway is currently configured at ${chalk.cyan(issuerHost)}.`,
+        "  App subdomains cannot work on workers.dev domains.",
+        "",
+        `  Run ${chalk.cyan(
+          "everyapp gateway deploy --domain <apex-domain>",
+        )} first, then deploy the app again.`,
+        "",
+      ].join("\n"),
+    );
+    await exitWithUpdateNotice(1);
+  }
+
+  if (skipDnsCheck) {
+    return;
+  }
+
+  if (await resolvesThroughCloudflare(hostname)) {
+    return;
+  }
+
+  console.log(chalk.red("\nApp subdomain DNS is not ready\n"));
+  const accountId = await getDefaultAccountId().catch(() => null);
+  console.log(
+    chalk.yellow(
+      formatWildcardDnsInstructions({
+        domain: apex,
+        accountId,
+        mode: "app-blocking",
+        hostname: chalk.cyan(hostname),
+      }),
+    ),
+  );
+  await exitWithUpdateNotice(1);
 }

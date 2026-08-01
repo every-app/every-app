@@ -4,13 +4,15 @@
   "description": "Every App CLI - Deploy and manage apps.",
   "license": "MIT",
   "type": "module",
-  "version": "0.1.9",
+  "version": "0.2.0",
   "files": [
-    "dist"
+    "dist",
+    "bin",
+    "gateway"
   ],
   "bin": {
-    "everyapp": "./dist/index.js",
-    "__everyapp_bash_complete": "./dist/bash-complete.js"
+    "everyapp": "./bin/everyapp.js",
+    "__everyapp_bash_complete": "./bin/__everyapp_bash_complete.js"
   },
   "engines": {
     "node": ">=22"
@@ -19,9 +21,12 @@
     "types:check": "tsc --noEmit",
     "prebuild": "tsc",
     "build": "tsup --silent",
-    "build:prepublish": "pnpm install --ignore-scripts && npm run types:check && npm run build",
-    "prepublishOnly": "npm run build:prepublish",
-    "knip": "knip"
+    "dev": "tsup --watch",
+    "install:global": "pnpm run build && npm link --ignore-scripts",
+    "build:prepack": "pnpm install --ignore-scripts && npm run types:check && npm run build && node scripts/bundle-gateway.js",
+    "prepack": "npm run build:prepack",
+    "knip": "knip",
+    "test": "vitest run --silent"
   },
   "tsup": {
     "entry": {
@@ -34,7 +39,11 @@
     "tsconfig": "tsconfig.json",
     "clean": true,
     "splitting": true,
-    "minify": true
+    "minify": true,
+    "noExternal": [
+      "@every-app/perimeter",
+      "@every-app/sdk"
+    ]
   },
   "dependencies": {
     "@stricli/auto-complete": "^1.2.4",
@@ -42,14 +51,17 @@
     "chalk": "^5.6.2",
     "enquirer": "^2.4.1",
     "execa": "^9.6.0",
+    "jiti": "^2.6.1",
     "jsonc-parser": "^3.3.1",
     "smol-toml": "^1.4.2",
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@every-app/perimeter": "workspace:*",
     "@types/node": "^22.18.13",
     "knip": "^5.66.4",
     "tsup": "^6.7.0",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "vitest": "^3.2.4"
   }
 }

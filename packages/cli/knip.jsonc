@@ -1,7 +1,19 @@
 {
-	"entry": [
-		// These files export commands used by the stricli framework via dynamic imports
-		"src/commands/app/command.ts",
-		"src/commands/gateway/commands.ts"
-	]
+  "entry": [
+    // Published CLI binaries; their route maps dynamically import commands.
+    "src/bin/*.ts",
+    "src/commands/**/index.ts",
+    "src/commands/app/command.ts",
+    "src/commands/dev/command.ts",
+    "src/commands/gateway/commands.ts",
+    "src/commands/gateway/deploy/**/*.ts",
+  ],
+  "ignoreBinaries": [
+    // Invokes the consuming app's locally installed Vite binary.
+    "vite",
+  ],
+  "ignoreDependencies": [
+    // Workspace source imports are followed by Knip but not credited as package usage.
+    "@every-app/perimeter",
+  ],
 }

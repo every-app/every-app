@@ -1,4 +1,7 @@
 opencodetmp/
+# Root-level extracted-gateway artifact only — an unanchored gateway/ would
+# also swallow new files under packages/cli/src/{lib,commands}/gateway.
+/gateway/
 node_modules/
 dist/
 .claude/settings.local.json
@@ -9,6 +12,7 @@ dist/
 !apps/every-app-gateway/.env.example
 .wrangler
 .dev.vars*
+!apps/chef/.dev.vars.example
 *.db
 *.db-wal
 *.db-shm

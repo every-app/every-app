@@ -1,21 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useState } from "react";
-import { Plus } from "lucide-react";
 import { adminAppsCollection } from "@/client/tanstack-db";
 import { AppsTable } from "@/client/components/admin/AppsTable";
-import { AddAppModal } from "@/client/components/admin/AddAppModal";
 import { EditAppModal } from "@/client/components/admin/EditAppModal";
 import { DeleteAppModal } from "@/client/components/admin/DeleteAppModal";
 import { ManageAppAccessModal } from "@/client/components/admin/ManageAppAccessModal";
 import type { AppWithAccessCount } from "@/types/app";
+import { authClient } from "@/client/auth-client";
 
 export const Route = createFileRoute("/admin/apps")({
   component: AppsPage,
 });
 
 function AppsPage() {
-  const [showAddModal, setShowAddModal] = useState(false);
+  const { data: activeMemberRole } = authClient.useActiveMemberRole();
+  const isOwner = activeMemberRole?.role === "owner";
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showAccessModal, setShowAccessModal] = useState(false);
@@ -61,16 +61,10 @@ function AppsPage() {
         <div>
           <h1 className="text-2xl font-bold">Apps</h1>
           <p className="text-base-content/70 mt-1">
-            Manage the app catalog and user access
+            Manage the app catalog and user access. Apps are added by deploying
+            them with the everyapp CLI.
           </p>
         </div>
-        <button
-          className="btn btn-primary"
-          onClick={() => setShowAddModal(true)}
-        >
-          <Plus className="w-4 h-4 mr-2" />
-          Add App
-        </button>
       </div>
 
       {isError && (
@@ -91,10 +85,9 @@ function AppsPage() {
           onManageAccess={handleManageAccess}
           onEdit={handleEdit}
           onDelete={handleDelete}
+          isOwner={isOwner}
         />
       )}
-
-      <AddAppModal open={showAddModal} onClose={() => setShowAddModal(false)} />
 
       <EditAppModal
         open={showEditModal}
@@ -105,15 +98,17 @@ function AppsPage() {
         app={selectedApp}
       />
 
-      <DeleteAppModal
-        open={showDeleteModal}
-        onClose={() => {
-          setShowDeleteModal(false);
-          setSelectedApp(null);
-        }}
-        onConfirm={confirmDelete}
-        app={selectedApp}
-      />
+      {isOwner && (
+        <DeleteAppModal
+          open={showDeleteModal}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setSelectedApp(null);
+          }}
+          onConfirm={confirmDelete}
+          app={selectedApp}
+        />
+      )}
 
       <ManageAppAccessModal
         open={showAccessModal}

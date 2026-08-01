@@ -1,0 +1,40 @@
+---
+title: Manage Your Gateway
+description: Users, app access, tokens, updates, and domain changes
+---
+
+Everything here happens in your Gateway's web UI (at your domain) unless noted. You're the **owner** — the first account created on a fresh Gateway; signup is invite-only after that.
+
+## Invite people
+
+**Admin → Users → Invite.** They get an email link, create an account, and land in your organization. Apps marked "auto-grant to new users" appear for them immediately; grant the rest per app.
+
+## Control who sees which app
+
+**Admin → Apps.** Each app row shows its access count — click it (or ⋯ → Manage access) to grant or revoke per user. Editing an app changes its display name, description, and whether new users get it automatically. Deploying decides _what exists_; this page decides _who can use it_.
+
+## Deploy tokens
+
+**Admin → Tokens → Deploy token.** A deploy token is what lets a terminal register and deploy apps to your Gateway — it's organization-wide and shown once. Pair it with [`everyapp login`](/docs/reference/cli#everyapp-login) on any machine that deploys. Revoke a token here at any time (deploys from that machine stop working immediately); per-app AI tokens live on the same page.
+
+## Update the Gateway
+
+Re-run the deploy — your data, users, and apps carry over:
+
+```bash
+npx everyapp gateway deploy --domain you.dev
+```
+
+This also re-syncs app service bindings from the registry and applies any pending database migrations. Never run bare `wrangler deploy` against the gateway worker; it would strip the app bindings (the gateway's own package guards against this).
+
+## Remove an app
+
+**Admin → Apps → ⋯ → Delete** removes it from the launcher and revokes everyone's access. The app's worker and database stay on your Cloudflare account until you delete them there (`dash.cloudflare.com → Workers & Pages` and `→ Storage & Databases`) — so deleting in the Gateway is reversible by redeploying.
+
+## Move to a different domain
+
+1. Add the new domain to your Cloudflare account (free plan is fine) and update nameservers.
+2. `npx everyapp gateway deploy --domain new-domain.com` — the Gateway moves; add the wildcard CNAME record when prompted.
+3. Redeploy each app once (`everyapp app deploy` in its directory) so it registers its new `app.new-domain.com` address.
+
+Sessions are per-domain, so everyone signs in again after a move.

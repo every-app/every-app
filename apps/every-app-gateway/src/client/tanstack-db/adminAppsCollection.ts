@@ -30,8 +30,6 @@ export const adminAppsCollection = lazyInitForWorkers(() =>
                 id: app.id,
                 name: app.name,
                 description: app.description,
-                appUrl: app.appUrl,
-                devUrl: app.devUrl,
                 isDefault: app.isDefault,
               },
             });

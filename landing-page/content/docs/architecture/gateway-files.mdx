@@ -1,0 +1,177 @@
+---
+title: "Gateway: File Map"
+description: What each production source file in the v2 gateway and perimeter package does
+---
+
+> Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-07-15.
+
+**The gateway is two programs sharing one worker, picked by Host header:** a control-plane web app (launcher, auth, admin — TanStack Start) on the gateway's own host, and a perimeter proxy (`packages/perimeter`) for every registered app subdomain.
+
+```
+request arrives at the gateway worker
+        │
+        └─ Host == GATEWAY_URL host?
+             ├─ yes → CONTROL PLANE  (TanStack Start: launcher, auth, admin, deploy API)
+             └─ no  → look up Host in D1 registry
+                        ├─ found     → PERIMETER: proxy to app worker
+                        └─ not found → 404  (if a *.gateway-host subdomain —
+                                             control plane must never answer on app origins)
+```
+
+Entry point: `apps/every-app-gateway/src/server.ts`. Hostname lookups are cached per isolate (30s hits, 5s misses, 500 entries max).
+
+## The request lifecycle in nine steps
+
+1. **Host dispatch** (`server.ts`) — own host → control plane; registered host → perimeter; unknown `*.gateway-host` → 404.
+2. **App status** — non-`active` registry rows get 503 before any auth.
+3. **Public/private** (`publicRoutes.ts`) — manifest match, fail-closed canonicalization.
+4. **CSRF** (`csrf.ts`) — private non-GET fails → 403; public fails → downgraded to anonymous.
+5. **Header strip** (`headers.ts`) — `Cookie`, `Authorization`, `x-everyapp-*` all removed (`Authorization` restored for public routes).
+6. **Authenticate + authorize** (`betterAuthAuthenticator.ts`) — session cookie → org context → `user_app_access` check.
+7. **Mint** — 120s RS256 identity JWT (`x-everyapp-identity`), or a signed public marker (`x-everyapp-public`, cached ~60s per app) for anonymous public traffic.
+8. **Proxy** (`getAppFetcher.ts`) — `APP__<workerName>.fetch()`; unreachable → 503, app crash → 502; responses to WebSocket upgrades pass through untouched (any status, skipping step 9).
+9. **Response policy** (`headers.ts`) — strip `Domain` from `Set-Cookie`, stamp HSTS/nosniff/frame-deny/CSP floor on HTML.
+
+## `packages/perimeter` — the proxy engine
+
+Tests (`*.test.ts`) and generated files (`routeTree.gen.ts`) are omitted throughout this map.
+
+The perimeter is deliberately dependency-light (only Zod and the SDK's JWT internals): `gateway.ts` orchestrates, the small files are pure policy, and `registry.ts`/`session.ts` are interfaces the gateway app implements.
+
+| File                                            | What it does                                                                                                                                                                                                                         |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `gateway.ts`                                    | The core: `handleGatewayRequest()` — resolve app/status → public/private → CSRF → strip headers → authenticate/authorize → mint JWT → proxy → stamp security headers. Dependency-injected end to end.                                |
+| `getAppFetcher.ts`                              | The one seam to app workers: resolves service binding `APP__<workerName>` from env. Missing binding → clean 503. The `dispatch` tier throws (reserved for hosted).                                                                   |
+| `host.ts`                                       | Parses Host into `host` / `appLabel` / `baseHost`. No hardcoded domain layout, so prod domains and `*.localhost` dev both work.                                                                                                      |
+| `publicRoutes.ts`                               | Default-private route matching. Canonicalizes paths defensively (encoded separators, traversal, control chars → fail closed private); `/__everyapp` can never be public.                                                             |
+| `csrf.ts`                                       | `evaluateCsrf()`: GET/HEAD/OPTIONS always pass; other methods need `Sec-Fetch-Site: same-origin` or an `Origin` whose host matches the app host (scheme ignored).                                                                    |
+| `headers.ts`                                    | Header hygiene both directions: strips inbound `Cookie`, `Authorization`, and all `x-everyapp-*`; re-adds `Authorization` on public routes only; stamps HSTS/nosniff/CSP floor on responses; removes `Domain` from app `Set-Cookie`. |
+| `session.ts`                                    | The 2-method interface the proxy needs from auth: `authenticate(request)` and `hasAppAccess(session, app)`.                                                                                                                          |
+| `registry.ts`                                   | The `RegisteredApp` model + `AppRegistry` interface; validates manifest snapshots from the DB; in-memory implementation for dev/tests.                                                                                               |
+| `manifest/manifest.ts`                          | The `everyapp.config.ts` schema: strict author-time validation (rejects `/*`, encodings, traversal, `/__everyapp`), tolerant gateway-time validation, derives worker names.                                                          |
+| `dev/devGateway.ts`                             | "Gateway-lite" for `everyapp dev`: real perimeter around an in-memory registry, dev keypair, seeded or mirrored identity.                                                                                                            |
+| `index.ts`, `dev/index.ts`, `manifest/index.ts` | Package entry points / re-exports.                                                                                                                                                                                                   |
+| `test-helpers.ts`                               | Generates RS256 keypairs for tests.                                                                                                                                                                                                  |
+
+## `apps/every-app-gateway/src` — the gateway app
+
+### Top level
+
+| File         | What it does                                                                                                                                                                                                                                                                                        |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server.ts`  | Worker entry ("one door"): Host dispatch per the diagram above; wires D1 registry + Better Auth authenticator + JWT key into `handleGatewayRequest`; converts perimeter crashes to clean 502s. Note: with no/invalid `GATEWAY_URL`, _every_ host serves the control plane (fresh-deploy fail-open). |
+| `router.tsx` | TanStack Router factory with global error/404 components.                                                                                                                                                                                                                                           |
+| `env.d.ts`   | Types the worker env: bindings, secrets, deployment mode.                                                                                                                                                                                                                                           |
+
+### `auth/` — Better Auth configuration
+
+| File            | What it does                                                                                                                                                                                                    |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `config.ts`     | The real Better Auth instance over D1: cross-subdomain cookies (`Domain=<gateway host>`), email/password, organizations, invite-only signup after first owner, reset/invite emails, default-app grants on join. |
+| `shared.ts`     | Options shared between runtime and CLI configs (password auth, cookie behavior, TanStack cookies).                                                                                                              |
+| `cli-config.ts` | Binding-free variant for Better Auth schema generation (inert SQLite adapter).                                                                                                                                  |
+| `index.ts`      | Lazy worker-safe proxy so bindings aren't touched at module load.                                                                                                                                               |
+
+### `perimeter/` — production adapters for the perimeter interfaces
+
+| File                         | What it does                                                                                                                                       |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `betterAuthAuthenticator.ts` | Implements `SessionAuthenticator`: cookie → Better Auth session → verified org context; `hasAppAccess` = same org **and** a `user_app_access` row. |
+| `drizzleAppRegistry.ts`      | Implements `AppRegistry` over the D1 `apps` table; missing routing/manifest columns are treated as corrupt, not partial.                           |
+
+### `db/` — Drizzle schema
+
+| File                     | What it does                                                                                                                      |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `apps.schema.ts`         | App registry (hostname, worker name, tier, manifest snapshot, status), `user_app_access` ACL, `app_tokens` (deploy + app tokens). |
+| `auth.schema.ts`         | Better Auth tables: users, sessions, accounts, orgs, memberships, invitations.                                                    |
+| `onboarding.schema.ts`   | Per-user onboarding/PWA completion + skip state.                                                                                  |
+| `schema.ts` / `index.ts` | Schema aggregation / lazy Drizzle client.                                                                                         |
+| `getLocalD1Url.ts`       | Finds the local Miniflare SQLite file for Drizzle tooling.                                                                        |
+
+### `middleware/` + `server/` — server-function plumbing and services
+
+| File                                                                   | What it does                                                                                                                                                                             |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `middleware/auth.ts`                                                   | Server-function middleware tiers: authenticated user → verified org member → org owner. Attaches session + `OrgContext`.                                                                 |
+| `middleware/publicError.ts`                                            | Masks unexpected errors as `INTERNAL_ERROR`; passes through the safe-error taxonomy.                                                                                                     |
+| `server/errors.ts`                                                     | That taxonomy: internal vs public error codes.                                                                                                                                           |
+| `server/organization/orgContext.ts`                                    | Resolves the verified active org membership (falls back only when exactly one membership exists). Produces the org claims the perimeter trusts.                                          |
+| `server/organization/owner-membership.ts`                              | Deployment-wide "does any owner exist?" check that gates bootstrap and invite-only signup.                                                                                               |
+| `server/org-roles.ts`                                                  | Parses Better Auth role strings; picks strongest of owner/admin/member.                                                                                                                  |
+| `server/app-token-hash.ts`                                             | Domain-separated HMAC-SHA256 of tokens (key: `BETTER_AUTH_SECRET`) — the full token is never stored (an 8-char display prefix is).                                                       |
+| `server/app-token-scopes.ts`                                           | Normalizes/validates `provider:<name>` scopes (wildcards rejected) and deploy scopes.                                                                                                    |
+| `server/deploy-token-auth.ts`                                          | Gates `/api/deploy/*`: only in `self_hosted` mode, bearer `eak_` token, verified + org attached to context.                                                                              |
+| `server/ai-proxy.ts`, `ai-proxy-token-policy.ts`, `ai-gateway-auth.ts` | **Superseded** (planned perimeter LLM gateway will replace it). Legacy OpenAI proxy: authenticates `x-every-app-token` app tokens, swaps in the real provider key, strips trust headers. |
+| `server/email/sendEmail.ts`                                            | Transactional email via Cloudflare binding or REST API.                                                                                                                                  |
+
+**Services** (business logic) and **repositories** (D1 queries):
+
+| File                                 | What it does                                                                                                                                                                                                                                   |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/AdminService.ts`           | First-owner bootstrap, member/invitation listing, org-safe user removal, password-reset emails.                                                                                                                                                |
+| `services/AppRegistrationService.ts` | Validates deploy manifests, fetches the Better Auth organization slug, derives `<appSlug>-<orgSlug>.<gateway host>`, enforces full-hostname uniqueness, and creates/updates registry rows (new apps: active, default, granted to all members). |
+| `services/AppAccessService.ts`       | Launcher app lists, admin ACL views, full-ACL replacement (you can't revoke yourself), default grants for new members.                                                                                                                         |
+| `services/AppService.ts`             | Org-scoped app listing, metadata edits, deletion.                                                                                                                                                                                              |
+| `services/AppTokenService.ts`        | Mints one-time-plaintext `eat_` app tokens and `eak_` deploy tokens; verifies deploy tokens; revocation.                                                                                                                                       |
+| `services/OnboardingService.ts`      | Thin get/update layer over onboarding state.                                                                                                                                                                                                   |
+| `repositories/*.ts`                  | Small D1 query modules: app catalog/access/tokens, organization members and slug lookup, onboarding, and users.                                                                                                                                |
+
+### `serverFunctions/` — TanStack RPC surface for the UI
+
+| File            | What it does                                                                  |
+| --------------- | ----------------------------------------------------------------------------- |
+| `admin.ts`      | Owner bootstrap, member list/delete, invitations, reset emails (owner-gated). |
+| `apps.ts`       | App admin + ACL functions; the one member-accessible launcher query.          |
+| `appTokens.ts`  | Token list/create/revoke (owner-gated).                                       |
+| `onboarding.ts` | Get/update onboarding state.                                                  |
+
+### `routes/` — control-plane pages
+
+| File                                                | What it does                                                                                                              |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `__root.tsx`                                        | Document shell: PWA meta, query persistence, toasts, client-side auth redirect guard.                                     |
+| `index.tsx`                                         | The launcher: app list, onboarding banner, PWA modal; redirects to `/organizations` if no active org.                     |
+| `sign-in.tsx`, `sign-up.tsx`                        | Email/password auth. Sign-up switches between first-owner bootstrap, invited-account creation, and "invitation required". |
+| `forgot-password.tsx`, `reset-password.tsx`         | Better Auth reset flow, non-enumerating responses.                                                                        |
+| `accept-invitation.tsx`                             | Join-org flow (sign in or create invited account first).                                                                  |
+| `organizations.tsx`                                 | Create org / switch active org.                                                                                           |
+| `admin.tsx` + `admin/{index,users,apps,tokens}.tsx` | Admin shell + the three admin tables.                                                                                     |
+| `pwa.tsx`                                           | Redirects `/pwa` → `/?pwa=true`.                                                                                          |
+
+### `routes/api/` — HTTP API endpoints
+
+| File                            | What it does                                                                                                      |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `auth/$.ts`                     | Wildcard pass-through to the Better Auth handler.                                                                 |
+| `admin/has-owner.ts`            | Unauthenticated bootstrap check for the CLI ("does an owner exist?").                                             |
+| `deploy/register.ts`            | Deploy-token-authed app registration → `AppRegistrationService`.                                                  |
+| `deploy/identity-keys.ts`       | Returns issuer + JWT public key so deployed apps can verify identity.                                             |
+| `deploy/whoami.ts`              | Echoes the deploy token's org + scopes.                                                                           |
+| `deploy/app-token/provision.ts` | Mints an `eat_` app token for a registered app.                                                                   |
+| `dev/identity.ts`               | Dev-build-only: resolves a real session for the CLI's mirror-mode local perimeter. Hard-404 in production builds. |
+| `ai/$provider.$.ts`             | Routes to the legacy AI proxy.                                                                                    |
+| `_request-origin.ts`            | Shared JSON/header helpers for API routes.                                                                        |
+
+### `client/` — the launcher/admin frontend
+
+| File                                                                                                          | What it does                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `auth-client.ts`                                                                                              | Browser Better Auth client; detects Cloudflare CPU-timeout responses for retry.                                                                                                             |
+| `errors.ts`                                                                                                   | Maps server error codes to safe user-facing messages.                                                                                                                                       |
+| `tanstack-db/*.ts`                                                                                            | Client data layer: query client (week-long GC), localStorage persistence, collections for user apps / admin apps / admin users / onboarding, post-auth cache refresh.                       |
+| `hooks/useSession.ts`, `useOnboarding.ts`, `usePWAInstall.ts`, `useCpuTimeoutRetry.ts`, `useDialogControl.ts` | Session query, derived onboarding steps (only "deploy first app" is live), PWA install detection, CPU-timeout retry loop, native dialog state.                                              |
+| `components/*.tsx`                                                                                            | Launcher UI: `Header`, `AppListItem` (subdomain link when active), `Modal`, `FormField`, `CodeBlock`, `CpuTimeoutWarning`, `DefaultCatchBoundary`, `NotFound`, PWA install modal + QR code. |
+| `components/admin/*.tsx`                                                                                      | Admin tables (users/apps/tokens) and their modals: invite, edit app, manage access, delete, create token, one-time token reveal.                                                            |
+| `components/onboarding/*.tsx`                                                                                 | The "deploy your first app" banner + terminal instructions.                                                                                                                                 |
+| `styles/app.css`                                                                                              | Tailwind/DaisyUI themes + gateway-wide styling.                                                                                                                                             |
+
+### `types/`, `schemas/`, `utils/`
+
+| File                                     | What it does                                                                                                                                                                                                                     |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `schemas/app.ts`, `schemas/app-token.ts` | Zod validation for admin inputs; keeps deploy-owned routing fields out of admin forms.                                                                                                                                           |
+| `types/*.ts`                             | View models (admin user, app, token metadata — prefix only, never secrets).                                                                                                                                                      |
+| `utils/auth.ts`                          | Validates redirect targets. `getSafeReturnTo()` properly pins to gateway host/subdomains; **watch:** `getSafeRedirect()` only checks leading `/` and no `://`, so protocol-relative `//evil.example` passes — open-redirect gap. |
+| `utils/lazyInitForWorkers.ts`            | Singleton proxy so bindings initialize on first access, not module load.                                                                                                                                                         |
+| `utils/platform.ts`                      | iOS/Android/desktop/standalone detection for the PWA UI.                                                                                                                                                                         |

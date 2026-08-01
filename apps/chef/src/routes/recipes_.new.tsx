@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { RecipeCreationForm } from "@/client/components/recipes/RecipeCreationForm";
-import { recipesCollection } from "@/client/tanstack-db";
+import { useRecipeMutations } from "@/client/queries/recipes";
 
 export const Route = createFileRoute("/recipes_/new")({
   component: NewRecipePage,
@@ -9,26 +9,35 @@ export const Route = createFileRoute("/recipes_/new")({
 
 function NewRecipePage() {
   const navigate = useNavigate();
+  const { mutate: createRecipe, isPending } = useRecipeMutations().create;
 
   const handleCancel = () => {
     navigate({ to: "/recipes", search: {} });
   };
 
   const handleSubmit = (data: { title: string; content: string }) => {
-    const now = new Date().toISOString();
-    const newRecipe = {
-      id: crypto.randomUUID(),
-      userId: "", // Will be set by the server
-      title: data.title,
-      content: data.content,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    recipesCollection.insert(newRecipe);
-    toast("Recipe saved");
-    navigate({ to: "/recipes", search: {} });
+    if (isPending) return;
+    createRecipe(
+      {
+        id: crypto.randomUUID(),
+        title: data.title,
+        content: data.content,
+      },
+      {
+        onSuccess: () => {
+          toast("Recipe saved");
+          navigate({ to: "/recipes", search: {} });
+        },
+        onError: () => toast.error("Failed to save recipe"),
+      },
+    );
   };
 
-  return <RecipeCreationForm onCancel={handleCancel} onSubmit={handleSubmit} />;
+  return (
+    <RecipeCreationForm
+      onCancel={handleCancel}
+      onSubmit={handleSubmit}
+      isSubmitting={isPending}
+    />
+  );
 }

@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { Home, Dumbbell, History } from "lucide-react";
+import { gatewayHomeUrl } from "@/client/lib/gatewayHome";
 
 interface SidebarProps {
   currentPath: string;
@@ -31,7 +32,7 @@ export function Sidebar({ currentPath }: SidebarProps) {
     <div className="sidebar w-64 bg-base-100 border-r border-base-300 h-full">
       <div className="px-4 py-2 border-b border-base-300 mb-2">
         <a
-          href={import.meta.env.VITE_GATEWAY_URL}
+          href={gatewayHomeUrl()}
           target="_top"
           className="text-lg font-semibold text-base-content"
         >

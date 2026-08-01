@@ -1,10 +1,10 @@
 import chalk from "chalk";
-import path from "node:path";
 import {
   makeCloudflareAPIRequest,
   getDefaultAccountId,
 } from "@/lib/cloudflare/auth";
-import { getWorkerName } from "@/lib/wrangler-config";
+import { loadEveryAppManifest } from "@/lib/generateWranglerConfig";
+import { workerNameFor } from "@every-app/perimeter/manifest";
 
 interface SecretInfo {
   name: string;
@@ -19,11 +19,17 @@ interface WorkerContext {
 /**
  * Resolve worker context (account ID and worker name) for secrets operations
  */
-async function resolveWorkerContext(cwd: string): Promise<WorkerContext> {
+async function resolveWorkerContext(
+  cwd: string,
+  workerName?: string,
+): Promise<WorkerContext> {
   const accountId = await getDefaultAccountId();
-  const wranglerConfigPath = path.join(cwd, "wrangler.jsonc");
-  const workerName = await getWorkerName(wranglerConfigPath);
-  return { accountId, workerName };
+  if (workerName) {
+    return { accountId, workerName };
+  }
+  const manifest = await loadEveryAppManifest(cwd);
+  const resolvedWorkerName = workerNameFor(manifest.id);
+  return { accountId, workerName: resolvedWorkerName };
 }
 
 /**
@@ -40,6 +46,7 @@ async function listSecrets(ctx: WorkerContext): Promise<SecretInfo[]> {
 
 interface ListSecretNamesOptions {
   cwd: string;
+  workerName?: string;
 }
 
 /**
@@ -47,8 +54,9 @@ interface ListSecretNamesOptions {
  */
 export async function listSecretNames({
   cwd,
+  workerName,
 }: ListSecretNamesOptions): Promise<string[]> {
-  const ctx = await resolveWorkerContext(cwd);
+  const ctx = await resolveWorkerContext(cwd, workerName);
   const secrets = await listSecrets(ctx);
   return secrets.map((secret) => secret.name);
 }
@@ -56,6 +64,7 @@ export async function listSecretNames({
 interface SecretExistsOptions {
   secretName: string;
   cwd: string;
+  workerName?: string;
   verbose?: boolean;
 }
 
@@ -65,13 +74,14 @@ interface SecretExistsOptions {
 export async function secretExists({
   secretName,
   cwd,
+  workerName,
   verbose = false,
 }: SecretExistsOptions): Promise<boolean> {
   if (verbose) {
     console.log(chalk.dim(`   Checking secret: ${secretName}`));
   }
 
-  const ctx = await resolveWorkerContext(cwd);
+  const ctx = await resolveWorkerContext(cwd, workerName);
   const secrets = await listSecrets(ctx);
   const exists = secrets.some((secret) => secret.name === secretName);
 
@@ -86,6 +96,7 @@ interface UploadSecretOptions {
   secretName: string;
   secretValue: string;
   cwd: string;
+  workerName?: string;
   verbose?: boolean;
   description?: string;
 }
@@ -98,6 +109,7 @@ export async function uploadSecret({
   secretName,
   secretValue,
   cwd,
+  workerName,
   verbose = false,
   description,
 }: UploadSecretOptions): Promise<void> {
@@ -105,7 +117,7 @@ export async function uploadSecret({
     console.log(chalk.dim(`   ${description}\n`));
   }
 
-  const ctx = await resolveWorkerContext(cwd);
+  const ctx = await resolveWorkerContext(cwd, workerName);
 
   await makeCloudflareAPIRequest(
     `/accounts/${ctx.accountId}/workers/scripts/${ctx.workerName}/secrets`,

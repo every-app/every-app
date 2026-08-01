@@ -2,15 +2,33 @@ import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
-import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
-import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
+import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import { getServerErrorMessage } from "@/client/errors";
 
 const searchSchema = z.object({
   token: z.string().default(""),
   error: z.string().default(""),
   redirect: z.string().optional(),
+  return_to: z.string().optional(),
 });
+
+function getAuthSearch({
+  redirect,
+  return_to,
+}: {
+  redirect?: string;
+  return_to?: string;
+}) {
+  const search: { redirect?: string; return_to?: string } = {};
+  if (redirect) {
+    search.redirect = redirect;
+  }
+  if (return_to) {
+    search.return_to = return_to;
+  }
+  return redirect || return_to ? search : undefined;
+}
 
 export const Route = createFileRoute("/reset-password")({
   component: ResetPassword,
@@ -18,7 +36,7 @@ export const Route = createFileRoute("/reset-password")({
 });
 
 function ResetPassword() {
-  const { token, error: urlError, redirect } = Route.useSearch();
+  const { token, error: urlError, redirect, return_to } = Route.useSearch();
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
@@ -66,7 +84,7 @@ function ResetPassword() {
           () =>
             navigate({
               to: "/sign-in",
-              search: redirect ? { redirect } : undefined,
+              search: getAuthSearch({ redirect, return_to }),
             }),
           2000,
         );
@@ -120,7 +138,7 @@ function ResetPassword() {
         onContinue={() =>
           navigate({
             to: "/sign-in",
-            search: redirect ? { redirect } : undefined,
+            search: getAuthSearch({ redirect, return_to }),
           })
         }
       />
@@ -194,7 +212,7 @@ function ResetPassword() {
             <p className="text-sm text-base-content/60">
               <Link
                 to="/sign-in"
-                search={redirect ? { redirect } : undefined}
+                search={getAuthSearch({ redirect, return_to })}
                 className="font-medium text-base-content hover:underline"
               >
                 Back to Sign In

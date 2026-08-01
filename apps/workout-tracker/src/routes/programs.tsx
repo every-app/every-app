@@ -6,9 +6,9 @@ import {
 } from "@/client/hooks/useProgramData";
 import { programTemplates } from "@/data/program-templates";
 import {
-  createCustomProgram,
-  createCustomProgramParams,
-} from "@/client/actions/createCustomProgram";
+  createCustomProgramInput,
+  useProgramMutations,
+} from "@/client/queries/programs";
 import { Button } from "@/client/components/ui/button";
 import { MobileSlideLink } from "@/client/components/MobileSlideLink";
 import { capitalize } from "@/client/lib/utils";
@@ -20,6 +20,7 @@ export const Route = createFileRoute("/programs")({
 function ProgramsListPage() {
   const navigate = useNavigate();
   const [isCreating, setIsCreating] = useState(false);
+  const { createCustom } = useProgramMutations();
 
   const { programs: userPrograms } = useAllProgramsWithWorkouts();
 
@@ -28,12 +29,12 @@ function ProgramsListPage() {
     setIsCreating(true);
 
     try {
-      const params = createCustomProgramParams();
-      await createCustomProgram(params);
+      const input = createCustomProgramInput();
+      await createCustom.mutateAsync(input);
 
       navigate({
         to: "/programs/$programId",
-        params: { programId: params.programId },
+        params: { programId: input.programId },
         search: { newProgramSource: "custom" },
       });
     } catch (error) {

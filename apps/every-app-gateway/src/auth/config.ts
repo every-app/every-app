@@ -7,16 +7,13 @@ import { eq } from "drizzle-orm";
 import { schema } from "../db";
 import { env } from "cloudflare:workers";
 import { sharedAuthOptions } from "./shared";
-import {
-  getExpoDevTrustedOrigins,
-  isExpoDevModeEnabled,
-} from "./expo-origin-normalizer";
 import { sendEmail } from "@/server/email/sendEmail";
 import { AppAccessRepository } from "@/server/repositories/AppAccessRepository";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { AppAccessService } from "@/server/services/AppAccessService";
 import { db } from "@/db";
 import { invitations } from "@/db/schema";
+import { resolveOrgContext } from "@/server/organization/orgContext";
 
 type PendingInvitation = {
   email: string;
@@ -134,24 +131,56 @@ async function grantDefaultAppsForMembership(
 /**
  * Runtime auth configuration - requires Cloudflare bindings.
  */
-export function createAuth() {
-  const isDevMode = isExpoDevModeEnabled({
-    gatewayUrl: env.GATEWAY_URL,
-    viteDev: import.meta.env.DEV,
-  });
+/**
+ * Apps live at subdomains of the gateway host (`todo.example.com` under a
+ * gateway at `example.com`), and the perimeter authenticates them with the
+ * same Better Auth session — so the session cookie must be scoped to the
+ * gateway's own hostname (Domain=<host> covers its subdomains).
+ *
+ * Dev builds use EVERYAPP_DEV_COOKIE_DOMAIN instead (`everyapp dev --mode
+ * mirror` serves the gateway at e.g. everyapp.localhost); bare-localhost dev
+ * keeps host-only cookies since Domain=localhost is unreliable across
+ * browsers.
+ */
+function resolveCookieDomain(): string | null {
+  if (import.meta.env.DEV) {
+    return env.EVERYAPP_DEV_COOKIE_DOMAIN ?? null;
+  }
+  if (!env.GATEWAY_URL) {
+    return null;
+  }
+  try {
+    const hostname = new URL(env.GATEWAY_URL).hostname;
+    return hostname && hostname !== "localhost" ? hostname : null;
+  } catch {
+    return null;
+  }
+}
 
+export function createAuth() {
   // Keep trusted origins intentionally minimal:
   // - gateway URL for normal web traffic
-  // - everyapp:// for native app flows
-  // - exp://** only during local gateway development
+  // - everyapp:// for the native mobile shell (no exp:// dev origins; the
+  //   shell needs a dev-client build, and those use the everyapp:// scheme)
   const trustedOrigins = [
     ...(env.GATEWAY_URL ? [env.GATEWAY_URL] : []),
     "everyapp://",
-    ...getExpoDevTrustedOrigins(isDevMode),
   ];
+
+  const cookieDomain = resolveCookieDomain();
 
   return betterAuth({
     ...sharedAuthOptions,
+    ...(cookieDomain
+      ? {
+          advanced: {
+            crossSubDomainCookies: {
+              enabled: true,
+              domain: cookieDomain,
+            },
+          },
+        }
+      : {}),
     emailAndPassword: {
       ...sharedAuthOptions.emailAndPassword,
       sendResetPassword: async ({ user, url }) => {
@@ -208,6 +237,21 @@ export function createAuth() {
           body: { email: ctx.body?.email },
         });
       }),
+    },
+    databaseHooks: {
+      session: {
+        create: {
+          before: async (session) => {
+            const org = await resolveOrgContext({
+              userId: session.userId,
+              activeOrganizationId: null,
+            });
+            return org
+              ? { data: { ...session, activeOrganizationId: org.orgId } }
+              : undefined;
+          },
+        },
+      },
     },
     database: drizzleAdapter(drizzle(env.DB, { schema, logger: false }), {
       provider: "sqlite",

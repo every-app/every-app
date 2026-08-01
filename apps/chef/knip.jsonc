@@ -1,15 +1,17 @@
 {
-  "ignoreBinaries": ["everyapp"],
   "entry": [
     "src/types/index.ts",
     // Detect Tanstack Start Routes (including API routes)
     "src/router.tsx",
     "src/routes/**/*.{ts,tsx}",
-    "scripts/docker-selfhost-entrypoint.mjs",
+    // v2 manifest consumed by the Every App CLI at build/deploy time
+    "everyapp.config.ts",
   ],
   "project": ["**/*.{js,mjs,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
   "ignoreDependencies": [
+    // Workspace source imports are followed by Knip but not credited as package usage.
+    "@every-app/sdk",
     "tailwindcss",
     // Used via @plugin in CSS
     "daisyui",

@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import chalk from "chalk";
 import type { JwtKeyPair } from "./types";
 import { listSecretNames, uploadSecret } from "@/lib/secrets";
+import path from "node:path";
+import { getWorkerName } from "@/lib/wrangler-config";
 
 /**
  * Generate a secure random secret for Better Auth
@@ -31,6 +33,7 @@ function generateJwtKeyPair(): JwtKeyPair {
 
 interface SetupSecretsOptions {
   gatewayUrl: string;
+  forceGatewayUrl?: boolean;
   cloudflareAccountId: string;
   gatewayPath: string;
   verbose?: boolean;
@@ -38,13 +41,21 @@ interface SetupSecretsOptions {
 
 export async function setupSecrets({
   gatewayUrl,
+  forceGatewayUrl = false,
   cloudflareAccountId,
   gatewayPath,
   verbose = false,
 }: SetupSecretsOptions): Promise<void> {
+  // The gateway is not an app: resolve its worker name from the release's
+  // wrangler.jsonc instead of the app-manifest fallback.
+  const workerName = await getWorkerName(
+    path.join(gatewayPath, "wrangler.jsonc"),
+  );
   try {
     // Fetch all existing secrets in a single API call
-    const existingSecrets = new Set(await listSecretNames({ cwd: gatewayPath }));
+    const existingSecrets = new Set(
+      await listSecretNames({ cwd: gatewayPath, workerName }),
+    );
 
     const gatewayUrlExists = existingSecrets.has("GATEWAY_URL");
     const cloudflareAccountIdExists = existingSecrets.has(
@@ -78,11 +89,12 @@ export async function setupSecrets({
     }
 
     // Setup GATEWAY_URL if needed
-    if (!gatewayUrlExists) {
+    if (forceGatewayUrl || !gatewayUrlExists) {
       await uploadSecret({
         secretName: "GATEWAY_URL",
         secretValue: gatewayUrl,
         cwd: gatewayPath,
+        workerName,
         verbose,
         description: `Setting GATEWAY_URL to: ${gatewayUrl}`,
       });
@@ -93,6 +105,7 @@ export async function setupSecrets({
         secretName: "CLOUDFLARE_ACCOUNT_ID",
         secretValue: cloudflareAccountId,
         cwd: gatewayPath,
+        workerName,
         verbose,
         description: `Setting CLOUDFLARE_ACCOUNT_ID to: ${cloudflareAccountId}`,
       });
@@ -103,6 +116,7 @@ export async function setupSecrets({
         secretName: "GATEWAY_DEPLOYMENT_MODE",
         secretValue: "self_hosted",
         cwd: gatewayPath,
+        workerName,
         verbose,
         description: "Setting GATEWAY_DEPLOYMENT_MODE to: self_hosted",
       });
@@ -115,6 +129,7 @@ export async function setupSecrets({
         secretName: "BETTER_AUTH_SECRET",
         secretValue: betterAuthSecret,
         cwd: gatewayPath,
+        workerName,
         verbose,
         description: "Generating new Better Auth secret...",
       });
@@ -134,12 +149,14 @@ export async function setupSecrets({
         secretName: "JWT_PRIVATE_KEY",
         secretValue: keyPair.privateKey,
         cwd: gatewayPath,
+        workerName,
         verbose,
       });
       await uploadSecret({
         secretName: "JWT_PUBLIC_KEY",
         secretValue: keyPair.publicKey,
         cwd: gatewayPath,
+        workerName,
         verbose,
       });
       if (verbose) {

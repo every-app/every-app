@@ -1,17 +1,15 @@
 ---
 title: FAQ
-description: Common questions and copy-ready prompts for working with Every App
+description: Common questions, with copy-ready prompts for digging deeper
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
 <Callout type="info">
-  The best way to build apps is with coding agents using our starter template
-  and referencing example apps with MCP. Make sure you've [set up your coding
-  agent](/docs/coding-agents) before building.
+  Most of these answers end with a prompt for your coding agent. Set up your
+  agent with the Every App MCP first so it can read the example apps while
+  answering.
 </Callout>
-
-Use these prompts with your coding agent to explore Every App in depth. Click any question to reveal details and a copy-ready prompt.
 
 <details className="faq">
 <summary>
@@ -21,12 +19,13 @@ What does the Every App CLI do?
 </summary>
 <div className="faq-content">
 
-The CLI enables one-command deploys of your entire app. It reads your app config and automatically provisions all the infrastructure you need—databases, storage, KV namespaces—and deploys your code, so you don't have to manage any of this yourself.
+The CLI turns your app's configuration into real infrastructure. It provisions databases, storage, and workers on your Cloudflare account, deploys code, and runs your local dev environment, so you never manage that by hand.
 
 ```bash
-npx everyapp gateway deploy # Deploys the Gateway
-npx everyapp app create    # Sets up local dev enviornment + deploys app (needed for local dev)
-npx everyapp app deploy    # Deploy updates to your app
+npx everyapp gateway deploy   # Deploy the Gateway to your Cloudflare account
+npx everyapp app create       # Scaffold + deploy a new app
+npx everyapp app deploy       # Deploy updates to your app
+npx everyapp dev              # Run your app locally behind a local gateway
 ```
 
 <div className="prompt-block">
@@ -34,11 +33,11 @@ npx everyapp app deploy    # Deploy updates to your app
 **Ask your agent:**
 
 ```text
-Explain what the Every App CLI does. How does it provision infrastructure automatically? What happens when I run `app create` vs `app deploy`? How does it know what infrastructure my app needs?
+Explain what the Every App CLI does. How does it provision infrastructure? What happens on `app create` vs `app deploy` vs `dev`?
 
 Response Guidelines for LLM:
 - Keep responses succinct so I can ask follow-up questions
-- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+- If you don't have access to the Every App MCP, prompt me to add it
 ```
 
 </div>
@@ -49,39 +48,106 @@ Response Guidelines for LLM:
 <details className="faq">
 <summary>
 
-What is the suggested folder structure and organization of apps?
+Is it really safe to deploy apps an AI wrote?
 
 </summary>
 <div className="faq-content">
 
-Here is the folder structure for the example workout-tracker app:
+Yes. Your apps reject any request that doesn't carry a verified identity signed by your Gateway — the SDK checks this at the worker entry, before your code runs, and fails closed. A forgotten auth check in generated code doesn't expose anything, since unauthenticated traffic never reaches app code at all.
+
+The place to stay thoughtful is _within_ your data: making sure one user of your app can't read another user's rows. That's what a security review should check.
+
+Read more: [Architecture](/docs/how-it-works/overview).
+
+</div>
+</details>
+
+<details className="faq">
+<summary>
+
+How does authentication work in apps?
+
+</summary>
+<div className="faq-content">
+
+You log into the Gateway; apps never handle credentials. On every request, the Gateway injects a short-lived signed identity token, and the SDK verifies it server-side (`everyApp()` at the worker entry, `requireEveryAppUser` in middleware). Apps have zero client-side auth code.
+
+Read [SDK & App Manifest](/docs/how-it-works/sdk) for the pattern and what's verified.
+
+<div className="prompt-block">
+
+**Ask your agent:**
+
+```text
+Explain how authentication works in an Every App application, using the todo app as the reference. Cover: how the gateway injects the x-everyapp-identity JWT, how everyApp() in entry.worker.ts verifies it fail-closed, how ensureUserMiddleware provisions a local user row on first request, and why client code has no auth logic at all.
+
+Response Guidelines for LLM:
+- Keep responses succinct so I can ask follow-up questions
+- If you don't have access to the Every App MCP, prompt me to add it
+```
+
+</div>
+
+</div>
+</details>
+
+<details className="faq">
+<summary>
+
+How do I make part of my app public (share links, landing pages)?
+
+</summary>
+<div className="faq-content">
+
+Declare the route in `everyapp.config.ts`:
+
+```ts
+public: [{ path: "/share/*", methods: ["GET"] }],
+```
+
+Public routes skip login and receive `user: null`. Catch-alls like `/*` are rejected when the CLI validates your manifest, so your public surface stays a short, reviewable list.
+
+Read more: [SDK & App Manifest](/docs/how-it-works/sdk).
+
+</div>
+</details>
+
+<details className="faq">
+<summary>
+
+How do I invite other people to my apps?
+
+</summary>
+<div className="faq-content">
+
+Invite them to your Gateway (signup is invite-only after the first account, which is yours). Once they're members, they log into the same Gateway URL and see the apps you've given them access to. Apps create a local user row automatically on first visit; there's nothing per-app to configure.
+
+</div>
+</details>
+
+<details className="faq">
+<summary>
+
+What is the suggested folder structure of an app?
+
+</summary>
+<div className="faq-content">
+
+The example apps follow this general layout (individual apps vary):
 
 ```
+everyapp.config.ts                # App manifest (id, resources, public routes)
 src/
+├── entry.worker.ts               # Worker entry, wrapped in everyApp()
 ├── client/                       # Frontend React code
-│   ├── actions/                  # Complex multi-step actions
-│   │   ├── completeWorkout.ts
-│   │   └── startProgramFromTemplate.ts
 │   ├── components/               # React components
 │   ├── hooks/                    # Custom React hooks
-│   ├── lib/                      # Utility functions
-│   ├── styles/                   # CSS files
-│   └── tanstack-db/              # Client-side data layer
-│       ├── programsCollection.ts
-│       └── workoutsCollection.ts
-├── db/                           # Database schemas (Drizzle)
-│   ├── schema.ts                 # Table definitions
-│   └── migrations/               # Generated migration files
-├── server/                       # Repositories and services
-│   ├── programsRepository.ts     # DB queries for programs
-│   └── workoutsRepository.ts     # DB queries for workouts
+│   └── tanstack-db/              # Client-side data layer (collections)
+├── db/                           # Drizzle schema + migrations
+├── middleware/                   # ensureUser (identity → local user)
+├── server/                       # Services and repositories
 ├── serverFunctions/              # Server functions (RPC endpoints)
-│   ├── programs.ts               # CRUD for programs
-│   └── workouts.ts               # CRUD for workouts
-└── routes/                       # React Router routes
-    ├── index.ts                  # Route definitions
-    ├── programs.$programId.ts    # Programs page route
-    └── templates.ts              # Templates page route
+└── routes/                       # Pages
 ```
 
 <div className="prompt-block">
@@ -89,103 +155,11 @@ src/
 **Ask your agent:**
 
 ```text
-Explain Every App folder structure using workout-tracker as the reference example. Show the complete structure and key patterns with code examples for: database schemas (src/db/), server functions (src/serverFunctions/), repositories/services (src/server/), client collections (src/client/tanstack-db/), types/schemas (src/types/), routes (src/routes/), and middleware (src/middleware/). Include how authentication works: how session tokens are added to requests (useSessionTokenClientMiddleware) and validated on the backend (ensureUserMiddleware). Use the Every App example apps.
+Explain the Every App folder structure using the todo app as the reference example. Show key patterns with code for: the everyapp.config.ts manifest, entry.worker.ts with everyApp(), database schemas (src/db/), server functions, services/repositories (src/server/), client collections (src/client/tanstack-db/), and the ensureUserMiddleware auth pattern. Use the Every App example apps.
 
 Response Guidelines for LLM:
 - Keep responses succinct so I can ask follow-up questions
-- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
-```
-
-</div>
-
-</div>
-</details>
-
-<details className="faq">
-<summary>
-
-How does authentication and users work in apps?
-
-</summary>
-<div className="faq-content">
-
-Read [How Session Tokens Work](/docs/embedded-sdk/overview#how-session-tokens-work) to understand the handshake between the Gateway and your apps.
-
-Other than that, auth is already set up for you if you're using the template apps. Use the below prompt to dig deeper into how that works.
-
-<div className="prompt-block">
-
-**Ask your agent:**
-
-```text
-Explain how authentication and users work in Every App using workout-tracker as the reference. Cover with code examples:
-
-1. **Token flow**: How EmbeddedAppProvider requests session tokens from the Gateway
-2. **Client setup**: Wrapping app with EmbeddedAppProvider and required env vars
-3. **Adding tokens**: How useSessionTokenClientMiddleware attaches Bearer tokens automatically
-4. **Server validation**: How ensureUserMiddleware validates JWTs via authenticateRequest
-5. **User provisioning**: How apps auto-create users on first authenticated request
-6. **Accessing user info**: Using useCurrentUser hook and context.userId in handlers
-
-Show the middleware chain: useSessionTokenClientMiddleware → ensureUserMiddleware → handler. Use Every App example apps.
-
-Response Guidelines:
-- Keep responses succinct so I can ask follow-up questions
-- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
-```
-
-</div>
-
-</div>
-</details>
-
-<details className="faq">
-<summary>
-
-How does auth work in the Gateway?
-
-</summary>
-<div className="faq-content">
-
-The Gateway handles user identity and authorization once, then lets apps trust that session context. Users authenticate at the Gateway, which issues signed session tokens that apps validate. This keeps auth logic centralized, avoids duplicate auth flows in each app, and makes permission boundaries easier to reason about.
-
-<div className="prompt-block">
-
-**Ask your agent:**
-
-```text
-Explain how authentication and user management works in the Every App Gateway. How are users created and managed? How does the Gateway authenticate users and pass that authentication to apps? What are the security considerations?
-
-Response Guidelines for LLM:
-- Keep responses succinct so I can ask follow-up questions
-- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
-```
-
-</div>
-
-</div>
-</details>
-
-<details className="faq">
-<summary>
-
-What do I need to know about the @every-app/sdk?
-
-</summary>
-<div className="faq-content">
-
-`@every-app/sdk` is the bridge between your embedded app and the Gateway. It helps request and refresh session tokens, sync route state, and apply auth middleware to requests. If you're building on the starter template, most of the setup is already wired and you mostly extend the existing patterns.
-
-<div className="prompt-block">
-
-**Ask your agent:**
-
-```text
-Give me a comprehensive overview of the @every-app/sdk package. What functions and utilities does it provide? How do I use it in my app's frontend and backend? Show me common usage patterns and examples.
-
-Response Guidelines for LLM:
-- Keep responses succinct so I can ask follow-up questions
-- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+- If you don't have access to the Every App MCP, prompt me to add it
 ```
 
 </div>
@@ -201,18 +175,18 @@ How do I change my database schema?
 </summary>
 <div className="faq-content">
 
-Update your Drizzle schema first, then generate and run migrations locally. Test reads/writes in local dev, and only then deploy. Keep migrations additive when possible and avoid destructive changes without a backfill plan.
+Update your Drizzle schema, then generate and run migrations locally (`pnpm run db:generate`, `pnpm run db:migrate:local`). Test in local dev, then deploy — `everyapp app deploy` runs pending migrations in production as part of the deploy. Keep migrations additive when possible.
 
 <div className="prompt-block">
 
 **Ask your agent:**
 
 ```text
-Explain the workflow for changing a database schema in an Every App application. How do I add, modify, or remove tables and columns? What tools are used? Walk me through a complete example of making a schema change.
+Walk me through changing a database schema in an Every App application: editing the Drizzle schema, generating migrations, applying them locally, and how they run in production on deploy. What should I be careful about with existing data?
 
 Response Guidelines for LLM:
 - Keep responses succinct so I can ask follow-up questions
-- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+- If you don't have access to the Every App MCP, prompt me to add it
 ```
 
 </div>
@@ -223,53 +197,14 @@ Response Guidelines for LLM:
 <details className="faq">
 <summary>
 
-What should my dev workflow be locally?
+What should my local dev workflow be?
 
 </summary>
 <div className="faq-content">
 
-Run your app in local dev mode, iterate with your coding agent, and test changes against realistic data paths (auth, server functions, DB writes). Use small commits and deploy in thin slices so regressions are easy to isolate.
+Run `npx everyapp dev` from your app directory and open `http://<app-id>.localhost:8787`. You get hot reload, a local database, and the production auth path (a local gateway verifies identity exactly like the real one). Iterate with your agent, keep commits small, and deploy in thin slices so regressions are easy to isolate.
 
-<div className="prompt-block">
-
-**Ask your agent:**
-
-```text
-What is the recommended local development workflow for Every App? How do I start the development server? How do I test my app locally? What commands should I be running? Are there any tips for efficient development?
-
-Response Guidelines for LLM:
-- Keep responses succinct so I can ask follow-up questions
-- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
-```
-
-</div>
-
-</div>
-</details>
-
-<details className="faq">
-<summary>
-
-How do migrations work for deployed apps?
-
-</summary>
-<div className="faq-content">
-
-When you deploy an app with pending migrations, Every App runs them as part of deployment. Treat schema changes as production changes: design for compatibility, avoid risky one-step destructive updates, and verify migration order before release.
-
-<div className="prompt-block">
-
-**Ask your agent:**
-
-```text
-Explain how database migrations work for deployed Every App applications. What happens when I deploy an app with schema changes? How are migrations run in production? What should I be careful about when migrating production data?
-
-Response Guidelines for LLM:
-- Keep responses succinct so I can ask follow-up questions
-- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
-```
-
-</div>
+Details: [Local Development](/docs/build-an-app/local-dev).
 
 </div>
 </details>
@@ -282,18 +217,24 @@ How do I add an environment variable or secret?
 </summary>
 <div className="faq-content">
 
-Use local env files for development and Cloudflare-managed secrets/vars for deployed environments. Keep names consistent between environments and avoid hardcoding fallbacks for secrets in application code.
+Local development reads `.dev.vars`; deployed apps use Cloudflare secrets:
+
+```bash
+npx wrangler secret put OPENAI_API_KEY
+```
+
+Keep names identical in both places, and never hardcode secret fallbacks in app code.
 
 <div className="prompt-block">
 
 **Ask your agent:**
 
 ```text
-How do I add environment variables or secrets to an Every App application? Where are they configured for local development vs production? How do I access them in my code? Show me examples.
+How do I add environment variables and secrets to an Every App application, for local dev (.dev.vars) and production (wrangler secrets)? Show me how to access them in worker code.
 
 Response Guidelines for LLM:
 - Keep responses succinct so I can ask follow-up questions
-- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+- If you don't have access to the Every App MCP, prompt me to add it
 ```
 
 </div>
@@ -309,18 +250,18 @@ How do I debug a failed deployment?
 </summary>
 <div className="faq-content">
 
-Start with deployment logs and identify which phase failed (build, migration, runtime startup, or routing). Reproduce locally when possible, then narrow the issue to a single recent change before redeploying.
+Identify which phase failed: build, migration, or runtime. Build and migration errors print in the CLI output; runtime errors show in the Cloudflare dashboard logs for your worker. Reproduce locally with `everyapp dev` when you can, and narrow to the most recent change before redeploying.
 
 <div className="prompt-block">
 
 **Ask your agent:**
 
 ```text
-How do I debug a failed deployment in Every App? What are common causes of deployment failures? How do I view deployment logs? What troubleshooting steps should I follow? Show me how to diagnose and fix common issues.
+My Every App deployment failed. Here's the output: [paste it]. Diagnose which phase failed (build, migration, runtime), explain the likely cause, and propose a fix. If you need logs, tell me exactly where to get them.
 
 Response Guidelines for LLM:
 - Keep responses succinct so I can ask follow-up questions
-- If you don't have access to the Every App MCP, prompt me to add it and direct me to: https://www.npmjs.com/package/@every-app/mcp
+- If you don't have access to the Every App MCP, prompt me to add it
 ```
 
 </div>

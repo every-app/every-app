@@ -11,12 +11,6 @@ export const deployCommand = buildCommand({
       parameters: [],
     },
     flags: {
-      repo: {
-        kind: "parsed",
-        parse: String,
-        brief: "Git repository URL to deploy",
-        optional: true,
-      },
       verbose: {
         kind: "boolean",
         brief: "Show detailed output during deployment",
@@ -26,6 +20,12 @@ export const deployCommand = buildCommand({
         kind: "parsed",
         parse: String,
         brief: "Path to local gateway tarball (for testing)",
+        optional: true,
+      },
+      domain: {
+        kind: "parsed",
+        parse: String,
+        brief: "Custom apex domain for the gateway and app subdomains",
         optional: true,
       },
       yes: {
@@ -41,13 +41,15 @@ export const deployCommand = buildCommand({
   docs: {
     brief: "Deploy the gateway application to Cloudflare",
     fullDescription: [
-      "Clones the gateway repository, installs dependencies, runs migrations, and deploys to Cloudflare Workers.",
+      "Downloads the gateway release, links Cloudflare resources, reconstructs app service bindings, and deploys to Cloudflare Workers.",
       "The deployment process:",
-      "  1. Clones the repository to a temporary directory",
-      "  2. Installs npm dependencies",
-      "  3. Runs database migrations against production D1",
-      "  4. Runs wrangler deploy",
-      "  5. Cleans up temporary files",
+      "  1. Downloads the gateway release to a temporary directory",
+      "  2. Creates or links gateway D1/KV resources",
+      "  3. Reconstructs service bindings from the registry",
+      "  4. Optionally configures custom-domain routes with --domain",
+      "  5. Runs wrangler deploy",
+      "  6. Runs database migrations against production D1",
+      "  7. Cleans up temporary files",
     ].join("\n"),
   },
 });

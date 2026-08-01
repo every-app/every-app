@@ -1,14 +1,21 @@
 {
   "name": "simple-todo-template",
   "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
+  },
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build && tsc --noEmit",
+    "dev": "npx everyapp dev",
+    "dev:vite": "npx everyapp app generate-config && vite dev",
+    "build": "npx everyapp app generate-config && vite build && tsc --noEmit",
     "preview": "npm run build && vite preview --port 3001",
-    "deploy": "npm run db:migrate:prod && npm run build && wrangler deploy",
-    "cf-typegen": "wrangler types",
+    "deploy": "npx everyapp app deploy",
+    "cf-typegen": "npx everyapp app generate-config && wrangler types -c .everyapp/wrangler.json",
     "types:check": "tsc --noEmit",
     "format:check": "prettier --check .",
     "format:write": "prettier . --write",
@@ -21,11 +28,8 @@
   },
   "dependencies": {
     "daisyui": "^5.5.5",
-    "@every-app/sdk": "^0.1.12",
-    "@tanstack/query-core": "^5.90.9",
-    "@tanstack/query-db-collection": "^1.0.0",
+    "@every-app/sdk": "^0.2.0",
     "@tanstack/query-sync-storage-persister": "^5.90.14",
-    "@tanstack/react-db": "^0.1.44",
     "@tanstack/react-query": "^5.90.9",
     "@tanstack/react-query-persist-client": "^5.90.14",
     "@tanstack/react-router": "^1.136.3",
@@ -34,6 +38,7 @@
     "cloudflare": "^5.2.0",
     "drizzle-orm": "^0.44.4",
     "jose": "^6.0.12",
+    "jsonc-parser": "^3.3.1",
     "lucide-react": "^0.542.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -51,8 +56,9 @@
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.6.0",
     "drizzle-kit": "^0.31.4",
+    "everyapp": "^0.2.0",
     "knip": "^5.66.4",
-    "prettier": "^3.6.2",
+    "prettier": "3.6.2",
     "typescript": "^5.9.3",
     "vite": "^7.1.2",
     "vite-tsconfig-paths": "^5.1.4",

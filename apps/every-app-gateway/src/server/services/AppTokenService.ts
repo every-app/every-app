@@ -1,46 +1,23 @@
 import { env } from "cloudflare:workers";
-import { AppRepository } from "../repositories/AppRepository";
 import { AppTokenRepository } from "../repositories/AppTokenRepository";
 import { hashAppToken } from "../app-token-hash";
-import { normalizeTokenScope, normalizeTokenScopes } from "../app-token-scopes";
+import { normalizeTokenScopes } from "../app-token-scopes";
 import { PublicError } from "@/server/errors";
 
-type CreateAppTokenInput = {
-  appId: string;
-  scopes: string[];
-  expiresAt: string | null;
+type IssueDeployTokenInput = {
+  organizationId: string;
+  createdBy: string | null;
+  expiresAt?: string | null;
 };
 
-const MAX_SCOPES = 20;
-const TOKEN_PREFIX_SCHEME = "eat_";
+type VerifiedDeployToken = {
+  organizationId: string;
+  scopes: string[];
+};
+
+const DEPLOY_TOKEN_PREFIX_SCHEME = "eak_";
 const TOKEN_PREFIX_RANDOM_LENGTH = 4;
-
-function validateScopes(scopes: string[]): void {
-  const normalizedScopes: string[] = [];
-  for (const scope of scopes) {
-    const normalizedScope = normalizeTokenScope(scope);
-    if (!normalizedScope) {
-      throw new PublicError("INVALID_TOKEN_SCOPE", `Invalid scope: ${scope}`);
-    }
-
-    normalizedScopes.push(normalizedScope);
-  }
-
-  const uniqueScopes = [...new Set(normalizedScopes)];
-  if (uniqueScopes.length === 0) {
-    throw new PublicError(
-      "TOKEN_SCOPE_REQUIRED",
-      "At least one scope is required",
-    );
-  }
-
-  if (uniqueScopes.length > MAX_SCOPES) {
-    throw new PublicError(
-      "TOKEN_SCOPE_LIMIT_EXCEEDED",
-      `No more than ${MAX_SCOPES} scopes are allowed`,
-    );
-  }
-}
+const DEPLOY_TOKEN_SCOPES = ["apps:register", "apps:deploy"];
 
 function parseExpiresAt(expiresAt: string | null): Date | null {
   if (!expiresAt) {
@@ -68,67 +45,100 @@ function generateTokenSecret(byteLength = 32): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function generatePlaintextToken(): string {
-  return `eat_${generateTokenSecret()}`;
+function generatePlaintextToken(prefix: string): string {
+  return `${prefix}${generateTokenSecret()}`;
 }
 
 function tokenPrefix(
   token: string,
+  scheme: string,
   randomLength = TOKEN_PREFIX_RANDOM_LENGTH,
 ): string {
-  if (!token.startsWith(TOKEN_PREFIX_SCHEME)) {
+  if (!token.startsWith(scheme)) {
     return token.slice(0, randomLength);
   }
 
-  const randomStart = TOKEN_PREFIX_SCHEME.length;
+  const randomStart = scheme.length;
   const randomEnd = randomStart + randomLength;
-  return `${TOKEN_PREFIX_SCHEME}${token.slice(randomStart, randomEnd)}`;
+  return `${scheme}${token.slice(randomStart, randomEnd)}`;
 }
 
 async function list(organizationId: string) {
-  const tokens = await AppTokenRepository.findAllForAdmin(organizationId);
+  const records = await AppTokenRepository.findAllForAdmin(organizationId);
+  const tokens = records.map(({ appRowId, ...token }) => ({
+    ...token,
+    appId: appRowId,
+  }));
   return { tokens };
 }
 
-async function create(
-  data: CreateAppTokenInput,
-  organizationId: string,
-  createdByUserId: string | null,
-) {
-  const app = await AppRepository.findById(data.appId, organizationId);
-  if (!app) {
-    throw new PublicError("APP_NOT_FOUND", "App not found");
-  }
+async function issueDeployToken(data: IssueDeployTokenInput) {
+  const scopes = normalizeTokenScopes(DEPLOY_TOKEN_SCOPES);
+  const expiresAt = parseExpiresAt(data.expiresAt ?? null);
 
-  validateScopes(data.scopes);
-  const scopes = normalizeTokenScopes(data.scopes);
-  const expiresAt = parseExpiresAt(data.expiresAt);
-
-  const plaintextToken = generatePlaintextToken();
-  const tokenPrefixValue = tokenPrefix(plaintextToken);
+  const plaintextToken = generatePlaintextToken(DEPLOY_TOKEN_PREFIX_SCHEME);
+  const tokenPrefixValue = tokenPrefix(
+    plaintextToken,
+    DEPLOY_TOKEN_PREFIX_SCHEME,
+  );
   const hash = await hashAppToken(plaintextToken, env.BETTER_AUTH_SECRET);
 
   const id = crypto.randomUUID();
   await AppTokenRepository.create({
     id,
-    appId: app.id,
-    organizationId,
+    appRowId: null,
+    organizationId: data.organizationId,
     tokenHash: hash,
     tokenPrefix: tokenPrefixValue,
     scopes,
-    createdBy: createdByUserId,
+    createdBy: data.createdBy,
     expiresAt,
   });
 
   return {
     id,
-    appId: app.id,
-    appSlug: app.appId,
-    appName: app.name,
+    appId: null,
+    appSlug: null,
+    appName: null,
     token: plaintextToken,
     tokenPrefix: tokenPrefixValue,
     scopes,
     expiresAt,
+  };
+}
+
+async function verifyDeployToken(
+  rawToken: string,
+): Promise<VerifiedDeployToken | null> {
+  const token = rawToken.trim();
+  if (!token.startsWith(DEPLOY_TOKEN_PREFIX_SCHEME)) {
+    return null;
+  }
+
+  const hash = await hashAppToken(token, env.BETTER_AUTH_SECRET);
+  const deployToken =
+    await AppTokenRepository.findActiveDeployByTokenHash(hash);
+  if (!deployToken) {
+    return null;
+  }
+
+  const scopes = normalizeTokenScopes(deployToken.scopes);
+  if (
+    !DEPLOY_TOKEN_SCOPES.every((requiredScope) =>
+      scopes.includes(requiredScope),
+    )
+  ) {
+    return null;
+  }
+
+  await AppTokenRepository.touchLastUsed(
+    deployToken.id,
+    deployToken.organizationId,
+  );
+
+  return {
+    organizationId: deployToken.organizationId,
+    scopes,
   };
 }
 
@@ -148,6 +158,7 @@ async function revoke(tokenId: string, organizationId: string) {
 
 export const AppTokenService = {
   list,
-  create,
+  issueDeployToken,
+  verifyDeployToken,
   revoke,
 } as const;

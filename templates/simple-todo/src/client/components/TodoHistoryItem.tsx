@@ -1,21 +1,21 @@
 import { Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { todoCollection } from "@/client/tanstack-db";
+import { useTodoMutations } from "@/client/queries/todos";
 
 interface HistoryItemProps {
   todo: Todo;
 }
 
 export function HistoryItem({ todo }: HistoryItemProps) {
+  const { update, remove } = useTodoMutations();
+
   return (
     <div className="group flex items-center gap-3 p-2 rounded-md hover:bg-base-200 transition-colors">
       <input
         type="checkbox"
         checked={todo.completed}
         onChange={(e) => {
-          todoCollection.update(todo.id, (draft) => {
-            draft.completed = e.target.checked;
-          });
+          update.mutate({ ...todo, completed: e.target.checked });
         }}
         className="checkbox checkbox-sm"
         aria-label={`Mark "${todo.title}" as incomplete`}
@@ -27,7 +27,7 @@ export function HistoryItem({ todo }: HistoryItemProps) {
 
       <button
         onClick={() => {
-          todoCollection.delete(todo.id);
+          remove.mutate(todo);
           toast("Todo deleted");
         }}
         className="btn btn-ghost btn-sm btn-square md:opacity-0 md:group-hover:opacity-100 hover:btn-error"

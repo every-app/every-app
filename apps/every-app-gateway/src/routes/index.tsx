@@ -4,13 +4,11 @@ import { useSession } from "@/client/hooks/useSession";
 import { userAppsCollection } from "@/client/tanstack-db";
 import { useState, useEffect, useRef } from "react";
 import { z } from "zod";
-import { Code, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 import { PWAInstallModal } from "@/client/components/PWAInstallModal";
-import { SafariDevModeWarningModal } from "@/client/components/SafariDevModeWarningModal";
 import { OnboardingBanner } from "@/client/components/onboarding/OnboardingBanner";
-import { AppListItem, DevAppListItem } from "@/client/components/AppListItem";
+import { AppListItem } from "@/client/components/AppListItem";
 import { Header } from "@/client/components/Header";
-import { isSafari } from "@/client/utils/browser";
 import { authClient } from "@/client/auth-client";
 
 const searchSchema = z.object({
@@ -28,37 +26,10 @@ export const Route = createFileRoute("/")({
   component: App,
 });
 
-const SHOW_DEV_URLS_KEY = "gateway-show-dev-urls";
-
-function isMobileScreen() {
-  if (typeof window === "undefined") return false;
-  return window.innerWidth < 640;
-}
-
-function useShowDevUrls() {
-  const [showDevUrls, setShowDevUrls] = useState(() => {
-    if (typeof window === "undefined") return true;
-    const stored = localStorage.getItem(SHOW_DEV_URLS_KEY);
-    if (stored === null) {
-      // Default to false on mobile if not previously set
-      return !isMobileScreen();
-    }
-    return stored === "true";
-  });
-
-  useEffect(() => {
-    localStorage.setItem(SHOW_DEV_URLS_KEY, String(showDevUrls));
-  }, [showDevUrls]);
-
-  return [showDevUrls, setShowDevUrls] as const;
-}
-
 function App() {
   const session = useSession();
   const { pwa: pwaParam } = Route.useSearch();
   const [showPWAInstallModal, setShowPWAInstallModal] = useState(false);
-  const [showDevUrls, setShowDevUrls] = useShowDevUrls();
-  const [showSafariWarning, setShowSafariWarning] = useState(false);
   const navigate = useNavigate();
   const hasStrippedPwaParam = useRef(false);
   const { data: activeMemberRole } = authClient.useActiveMemberRole();
@@ -98,8 +69,6 @@ function App() {
     isError,
   } = useLiveQuery((q) => q.from({ userApp: userAppsCollection }));
 
-  const hasAnyDevUrls = userApps?.some((app) => app.devUrl) ?? false;
-
   if (
     !session.isPending &&
     session.data?.user &&
@@ -116,44 +85,18 @@ function App() {
           <div className="space-y-6">
             <div className="flex justify-between items-start w-full">
               <div>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-2xl font-bold">Gateway</h2>
-                  {hasAnyDevUrls && (
-                    <label className="hidden sm:flex items-center gap-1.5 cursor-pointer">
-                      <Code className="w-4 h-4 text-base-content/50" />
-                      <input
-                        type="checkbox"
-                        className="toggle toggle-xs toggle-primary"
-                        checked={showDevUrls}
-                        onChange={(e) => setShowDevUrls(e.target.checked)}
-                      />
-                    </label>
-                  )}
-                </div>
+                <h2 className="text-2xl font-bold">Gateway</h2>
                 <p className="text-base-content/70 mt-2">Access your apps</p>
               </div>
-              <div className="flex items-center gap-2">
-                {hasAnyDevUrls && (
-                  <label className="flex sm:hidden items-center gap-1.5 cursor-pointer">
-                    <Code className="w-4 h-4 text-base-content/50" />
-                    <input
-                      type="checkbox"
-                      className="toggle toggle-xs toggle-primary"
-                      checked={showDevUrls}
-                      onChange={(e) => setShowDevUrls(e.target.checked)}
-                    />
-                  </label>
-                )}
-                {userCanManageApps && (
-                  <Link
-                    to="/admin/apps"
-                    className="btn btn-primary hidden sm:flex"
-                  >
-                    <Settings className="w-4 h-4" />
-                    Manage Apps
-                  </Link>
-                )}
-              </div>
+              {userCanManageApps && (
+                <Link
+                  to="/admin/apps"
+                  className="btn btn-primary hidden sm:flex"
+                >
+                  <Settings className="w-4 h-4" />
+                  Manage Apps
+                </Link>
+              )}
             </div>
 
             <OnboardingBanner />
@@ -169,37 +112,18 @@ function App() {
             )}
 
             {!isLoading && userApps && userApps.length > 0 && (
-              <div className="w-full space-y-3">
+              <ul className="w-full space-y-3">
                 {userApps.map((app) => (
-                  <ul key={app.id} className="space-y-2">
-                    <AppListItem
-                      app={app}
-                      onNavigate={() => navigate({ to: `/apps/${app.appId}` })}
-                    />
-                    {showDevUrls && app.devUrl && (
-                      <DevAppListItem
-                        app={app}
-                        onNavigate={() => {
-                          if (isSafari()) {
-                            setShowSafariWarning(true);
-                          } else {
-                            navigate({
-                              to: `/apps/${app.appId}/dev`,
-                            });
-                          }
-                        }}
-                      />
-                    )}
-                  </ul>
+                  <AppListItem key={app.id} app={app} />
                 ))}
-              </div>
+              </ul>
             )}
 
             {!isLoading && userApps && userApps.length === 0 && (
               <div className="text-center py-8">
                 <p className="text-base-content/70">
                   {userCanManageApps
-                    ? "No apps yet. Add your first app to get started!"
+                    ? "No apps yet. Deploy your first app with the everyapp CLI to get started!"
                     : "No apps available. Contact your administrator to get access."}
                 </p>
                 {userCanManageApps && (
@@ -215,10 +139,6 @@ function App() {
           <PWAInstallModal
             open={showPWAInstallModal}
             onClose={() => setShowPWAInstallModal(false)}
-          />
-          <SafariDevModeWarningModal
-            open={showSafariWarning}
-            onOpenChange={setShowSafariWarning}
           />
         </div>
       </div>

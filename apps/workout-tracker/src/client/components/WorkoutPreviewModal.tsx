@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { Button } from "./ui/button";
-import { skipToWorkout } from "@/client/actions/skipToWorkout";
+import { useSessionMutations } from "@/client/queries/sessions";
 import type { WorkoutWithExercises } from "@/client/hooks/useProgramData";
 import { useDialogControl } from "@/client/hooks/useDialogControl";
 import { Modal } from "./ui/modal";
@@ -32,6 +32,7 @@ export function WorkoutPreviewModal({
   const dialogRef = useDialogControl(isOpen);
   const navigate = useNavigate();
   const [showConfirmation, setShowConfirmation] = useState(false);
+  const { skipToWorkout } = useSessionMutations();
 
   // Reset confirmation state when modal opens
   useEffect(() => {
@@ -55,7 +56,7 @@ export function WorkoutPreviewModal({
     }
 
     // Skip to the selected workout (abandoning session if needed)
-    await skipToWorkout({
+    await skipToWorkout.mutateAsync({
       programId,
       targetWorkoutIndex,
       sessionIdToAbandon: inProgressSessionId,

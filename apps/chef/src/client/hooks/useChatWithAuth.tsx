@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { authenticatedFetch } from "@every-app/sdk/core";
 import { toast } from "sonner";
 import { fileToDataUrl } from "../utils/file";
 
@@ -29,7 +28,7 @@ export function useChatWithAuth({
     messages: initialMessages,
     transport: new DefaultChatTransport({
       api: "/api/chat",
-      fetch: authenticatedFetch,
+      fetch,
       prepareSendMessagesRequest: ({ messages }: { messages: UIMessage[] }) => {
         // Only send the last message (the new one) to the server
         const newMessage = messages[messages.length - 1];
@@ -107,7 +106,7 @@ export function useChatWithAuth({
           formData.append("file", imageFile);
           formData.append("chatId", selectedChatId);
 
-          const uploadResponse = await authenticatedFetch("/api/upload", {
+          const uploadResponse = await fetch("/api/upload", {
             method: "POST",
             body: formData,
           });

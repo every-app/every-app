@@ -3,18 +3,26 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { adminUsersCollection } from "@/client/tanstack-db";
-import { sendPasswordResetEmail } from "@/serverFunctions/admin";
+import {
+  cancelInvitation,
+  sendPasswordResetEmail,
+} from "@/serverFunctions/admin";
 import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { InviteUserModal } from "@/client/components/admin/InviteUserModal";
 import { DeleteUserModal } from "@/client/components/admin/DeleteUserModal";
 import { UsersTable } from "@/client/components/admin/UsersTable";
+import { authClient } from "@/client/auth-client";
 
 export const Route = createFileRoute("/admin/users")({
   component: UsersPage,
 });
 
 function UsersPage() {
+  const { data: activeMemberRole } = authClient.useActiveMemberRole();
+  const isOwner = activeMemberRole?.role === "owner";
+  const canManageInvitations =
+    activeMemberRole?.role === "owner" || activeMemberRole?.role === "admin";
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -39,6 +47,30 @@ function UsersPage() {
       toast.error("Failed to send password reset email");
     },
   });
+
+  const cancelInvitationMutation = useMutation({
+    mutationFn: (invitationId: string) =>
+      cancelInvitation({ data: { invitationId } }),
+    onSuccess: async () => {
+      await adminUsersCollection.utils.refetch();
+      toast.success("Invitation canceled");
+    },
+    onError: () => {
+      toast.error("Failed to cancel invitation");
+    },
+  });
+
+  const handleCancelInvitation = (invitationId: string) => {
+    const invitation = users?.find(
+      (user) => user.invitationId === invitationId,
+    );
+    const confirmed = window.confirm(
+      `Cancel the invitation${invitation ? ` for ${invitation.email}` : ""}?`,
+    );
+    if (!confirmed) return;
+
+    cancelInvitationMutation.mutate(invitationId);
+  };
 
   const selectedUser = users?.find((u) => u.id === selectedUserId);
 
@@ -76,7 +108,11 @@ function UsersPage() {
             setSelectedUserId(userId);
             setShowDeleteModal(true);
           }}
+          onCancelInvitation={handleCancelInvitation}
           isSendingPasswordResetEmail={sendPasswordResetEmailMutation.isPending}
+          isCancelingInvitation={cancelInvitationMutation.isPending}
+          canManageInvitations={canManageInvitations}
+          isOwner={isOwner}
         />
       )}
 
@@ -90,7 +126,7 @@ function UsersPage() {
         }}
       />
 
-      {selectedUser && (
+      {isOwner && selectedUser && (
         <DeleteUserModal
           open={showDeleteModal}
           onClose={() => {

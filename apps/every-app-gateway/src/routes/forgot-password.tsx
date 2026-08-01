@@ -2,8 +2,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
-import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
-import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
+import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import {
   getBetterAuthErrorMessage,
   getServerErrorMessage,
@@ -11,7 +11,25 @@ import {
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
+  return_to: z.string().optional(),
 });
+
+function getAuthSearch({
+  redirect,
+  return_to,
+}: {
+  redirect?: string;
+  return_to?: string;
+}) {
+  const search: { redirect?: string; return_to?: string } = {};
+  if (redirect) {
+    search.redirect = redirect;
+  }
+  if (return_to) {
+    search.return_to = return_to;
+  }
+  return redirect || return_to ? search : undefined;
+}
 
 export const Route = createFileRoute("/forgot-password")({
   component: ForgotPassword,
@@ -23,7 +41,7 @@ function ForgotPassword() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
-  const { redirect } = Route.useSearch();
+  const { redirect, return_to } = Route.useSearch();
 
   const {
     isRunning,
@@ -38,14 +56,20 @@ function ForgotPassword() {
     executeWithRetry: runForgotPassword,
   } = useCpuTimeoutRetry(async () => {
     try {
-      // Include redirect param in the reset-password URL if present
-      const resetPasswordUrl = redirect
-        ? `${window.location.origin}/reset-password?redirect=${encodeURIComponent(redirect)}`
-        : `${window.location.origin}/reset-password`;
+      const resetPasswordUrl = new URL(
+        "/reset-password",
+        window.location.origin,
+      );
+      if (redirect) {
+        resetPasswordUrl.searchParams.set("redirect", redirect);
+      }
+      if (return_to) {
+        resetPasswordUrl.searchParams.set("return_to", return_to);
+      }
 
       const { error: resetError } = await authClient.requestPasswordReset({
         email,
-        redirectTo: resetPasswordUrl,
+        redirectTo: resetPasswordUrl.toString(),
       });
 
       if (resetError) {
@@ -94,7 +118,7 @@ function ForgotPassword() {
         onContinue={() =>
           navigate({
             to: "/sign-in",
-            search: redirect ? { redirect } : undefined,
+            search: getAuthSearch({ redirect, return_to }),
           })
         }
       />
@@ -119,7 +143,7 @@ function ForgotPassword() {
               </div>
               <Link
                 to="/sign-in"
-                search={redirect ? { redirect } : undefined}
+                search={getAuthSearch({ redirect, return_to })}
                 className="btn btn-primary w-full"
               >
                 Back to Sign In
@@ -159,7 +183,7 @@ function ForgotPassword() {
                 Remember your password?{" "}
                 <Link
                   to="/sign-in"
-                  search={redirect ? { redirect } : undefined}
+                  search={getAuthSearch({ redirect, return_to })}
                   className="font-medium text-base-content hover:underline"
                 >
                   Sign in

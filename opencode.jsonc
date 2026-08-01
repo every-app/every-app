@@ -8,14 +8,6 @@
 				"-y",
 				"@upstash/context7-mcp"
 			]
-		},
-		"every-app": {
-			"type": "local",
-			"command": [
-				"npx",
-				"-y",
-				"@every-app/mcp"
-			]
 		}
 	}
 }

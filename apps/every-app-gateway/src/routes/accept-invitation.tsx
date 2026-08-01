@@ -2,8 +2,8 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
-import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
-import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
+import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import { useSession } from "@/client/hooks/useSession";
 import { getServerErrorMessage } from "@/client/errors";
 

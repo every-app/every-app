@@ -1,6 +1,8 @@
 {
-  "ignoreBinaries": ["everyapp"],
   "entry": [
+    // Every App manifest and Cloudflare Worker entry point
+    "everyapp.config.ts",
+    "src/entry.worker.ts",
     "src/types/index.ts",
     // Detect Tanstack Start Routes
     "src/router.tsx",
@@ -9,14 +11,17 @@
     "src/client/components/ui/**",
     // Drizzle config (plugin disabled due to cloudflare:workers import issues)
     "drizzle.config.ts",
-    // Cloudflare worker entry point with Durable Object exports
-    "src/entry.worker.ts",
+    // DB index re-exports schema for convenience
+    "src/db/index.ts",
   ],
   "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
   // Disable Drizzle plugin - it tries to load drizzle.config.ts which imports cloudflare:workers
   "drizzle": false,
   "ignoreDependencies": [
+    // Runtime Worker entry import; jose fulfills the SDK's required peer dependency.
+    "@every-app/sdk",
+    "jose",
     // Tailwindcss used via @tailwindcss/vite plugin
     "tailwindcss",
     "daisyui",

@@ -2,12 +2,15 @@
 
 ## Development
 
-From your terminal:
+From your terminal, run the app behind the local gateway in stub mode:
 
 ```sh
 pnpm install
 pnpm dev
 ```
+
+Use `pnpm dev:vite` only when you intentionally need the bare Vite server;
+SDK-protected routes require the gateway started by `pnpm dev`.
 
 ## Helpful Resources
 

@@ -1,0 +1,5 @@
+# `everyapp dev` maintains EVERYAPP_DEV and the local identity public keys.
+EVERYAPP_DEV=1
+
+# Direct-provider fallback used only when the gateway binding is unavailable.
+OPENAI_API_KEY=

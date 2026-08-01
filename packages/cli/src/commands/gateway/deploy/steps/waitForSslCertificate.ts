@@ -1,5 +1,10 @@
 import chalk from "chalk";
-import { checkGatewayHasOwner, checkSslReady } from "@/lib/gateway";
+import {
+  checkGatewayHasOwner,
+  checkSslReady,
+  formatGatewayUnreachableError,
+  GatewayUnreachableError,
+} from "@/lib/gateway";
 
 interface WaitForSslCertificateOptions {
   workerUrl: string;
@@ -27,11 +32,43 @@ export async function waitForSslCertificate({
   while (Date.now() - startTime < maxWaitMs) {
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
 
-    if (await checkSslReady(workerUrl)) {
+    let sslReady = false;
+    try {
+      sslReady = await checkSslReady(workerUrl);
+    } catch (error) {
+      if (error instanceof GatewayUnreachableError) {
+        console.log(chalk.yellow("\nGateway unreachable\n"));
+        console.log(formatGatewayUnreachableError(error));
+        console.log(
+          chalk.dim(
+            "  Confirm the gateway URL is correct and reachable, then run this command again.\n",
+          ),
+        );
+        return;
+      }
+      throw error;
+    }
+
+    if (sslReady) {
       console.log(chalk.green("SSL certificate is ready!\n"));
 
       // SSL is ready - check if the gateway has an owner account
-      const hasOwner = await checkGatewayHasOwner(workerUrl);
+      let hasOwner: boolean;
+      try {
+        hasOwner = await checkGatewayHasOwner(workerUrl);
+      } catch (error) {
+        if (error instanceof GatewayUnreachableError) {
+          console.log(chalk.yellow("\nGateway unreachable\n"));
+          console.log(formatGatewayUnreachableError(error));
+          console.log(
+            chalk.dim(
+              "  Confirm the gateway URL is correct and reachable, then run this command again.\n",
+            ),
+          );
+          return;
+        }
+        throw error;
+      }
 
       if (hasOwner) {
         console.log(`Your Gateway is now live at: ${chalk.cyan(workerUrl)}\n`);

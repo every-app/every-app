@@ -1,17 +1,13 @@
 import { useCallback } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { useLiveQuery } from "@tanstack/react-db";
-import { chatsCollection } from "@/client/tanstack-db";
-import { createChatAction } from "@/client/actions/createChat";
+import { useChats, useChatMutations } from "@/client/queries/chats";
 import type { Chat } from "@/db/schema";
 
 /**
  * Hook to get all chats sorted by most recently updated.
  */
 export function useSortedChats() {
-  const { data: chatsData } = useLiveQuery((q) =>
-    q.from({ chat: chatsCollection }),
-  );
+  const { data: chatsData } = useChats();
 
   const chats = [...(chatsData ?? [])].sort(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
@@ -27,17 +23,18 @@ export function useSortedChats() {
 export function useCreateChat() {
   const navigate = useNavigate();
   const chats = useSortedChats();
+  const { mutateAsync: createChat } = useChatMutations().create;
 
   const createNewChat = useCallback(async () => {
     const chatNumber = chats.length + 1;
     const newChatId = crypto.randomUUID();
-    await createChatAction({
-      chatId: newChatId,
+    await createChat({
+      id: newChatId,
       title: `Chat ${chatNumber}`,
     });
     navigate({ to: "/chat/$chatId", params: { chatId: newChatId } });
     return newChatId;
-  }, [chats.length, navigate]);
+  }, [chats.length, createChat, navigate]);
 
   return createNewChat;
 }

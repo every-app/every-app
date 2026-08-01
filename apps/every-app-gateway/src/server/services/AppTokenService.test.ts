@@ -1,17 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../repositories/AppRepository", () => ({
-  AppRepository: {
-    findById: vi.fn(),
-  },
-}));
-
 vi.mock("../repositories/AppTokenRepository", () => ({
   AppTokenRepository: {
     findAllForAdmin: vi.fn(),
+    findActiveDeployByTokenHash: vi.fn(),
     findById: vi.fn(),
     create: vi.fn(),
     revoke: vi.fn(),
+    touchLastUsed: vi.fn(),
   },
 }));
 
@@ -26,11 +22,9 @@ vi.mock("cloudflare:workers", () => ({
 }));
 
 import { AppTokenService } from "./AppTokenService";
-import { AppRepository } from "../repositories/AppRepository";
 import { AppTokenRepository } from "../repositories/AppTokenRepository";
 import { hashAppToken } from "../app-token-hash";
 
-const mockAppRepository = vi.mocked(AppRepository);
 const mockAppTokenRepository = vi.mocked(AppTokenRepository);
 const mockHashAppToken = vi.mocked(hashAppToken);
 const ORG_ID = "org-123";
@@ -48,7 +42,7 @@ describe("AppTokenService", () => {
       mockAppTokenRepository.findAllForAdmin.mockResolvedValue([
         {
           id: "token-id",
-          appId: "app-id",
+          appRowId: "app-id",
           appSlug: "chef",
           appName: "Chef",
           tokenPrefix: "eat_abcd",
@@ -69,104 +63,82 @@ describe("AppTokenService", () => {
     });
   });
 
-  describe("create", () => {
-    it("creates token with normalized scopes and returns plaintext token once", async () => {
-      mockAppRepository.findById.mockResolvedValue({
-        id: "app-id",
-        appId: "chef",
-        name: "Chef",
-      } as any);
-      mockHashAppToken.mockResolvedValue("token-hash");
+  describe("issueDeployToken", () => {
+    it("creates an organization-scoped eak token", async () => {
+      mockHashAppToken.mockResolvedValue("deploy-token-hash");
       mockAppTokenRepository.create.mockResolvedValue(undefined);
 
-      const result = await AppTokenService.create(
-        {
-          appId: "app-id",
-          scopes: [" provider:OpenAI ", "provider:openai"],
-          expiresAt: null,
-        },
-        ORG_ID,
-        "owner-id",
-      );
+      const result = await AppTokenService.issueDeployToken({
+        organizationId: ORG_ID,
+        createdBy: "owner-id",
+        expiresAt: null,
+      });
 
-      expect(result.token.startsWith("eat_")).toBe(true);
+      expect(result.token.startsWith("eak_")).toBe(true);
       expect(result.tokenPrefix).toBe(result.token.slice(0, 8));
-      expect(result.scopes).toEqual(["provider:openai"]);
+      expect(result.appId).toBeNull();
+      expect(result.scopes).toEqual(["apps:register", "apps:deploy"]);
       expect(mockHashAppToken).toHaveBeenCalledWith(
         result.token,
         "test-secret",
       );
       expect(mockAppTokenRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          appId: "app-id",
-          tokenHash: "token-hash",
+          appRowId: null,
+          organizationId: ORG_ID,
+          tokenHash: "deploy-token-hash",
           tokenPrefix: result.tokenPrefix,
-          scopes: ["provider:openai"],
+          scopes: ["apps:register", "apps:deploy"],
           createdBy: "owner-id",
         }),
       );
     });
+  });
 
-    it("rejects unknown app", async () => {
-      mockAppRepository.findById.mockResolvedValue(undefined);
+  describe("verifyDeployToken", () => {
+    it("verifies active deploy tokens and touches last-used", async () => {
+      mockHashAppToken.mockResolvedValue("deploy-token-hash");
+      mockAppTokenRepository.findActiveDeployByTokenHash.mockResolvedValue({
+        id: "token-id",
+        organizationId: ORG_ID,
+        scopes: ["apps:register", "apps:deploy"],
+      });
+      mockAppTokenRepository.touchLastUsed.mockResolvedValue(undefined);
 
-      await expect(
-        AppTokenService.create(
-          {
-            appId: "missing-app",
-            scopes: ["provider:openai"],
-            expiresAt: null,
-          },
-          ORG_ID,
-          "owner-id",
-        ),
-      ).rejects.toThrow("App not found");
+      const result = await AppTokenService.verifyDeployToken("eak_valid");
+
+      expect(result).toEqual({
+        organizationId: ORG_ID,
+        scopes: ["apps:register", "apps:deploy"],
+      });
+      expect(
+        mockAppTokenRepository.findActiveDeployByTokenHash,
+      ).toHaveBeenCalledWith("deploy-token-hash");
+      expect(mockAppTokenRepository.touchLastUsed).toHaveBeenCalledWith(
+        "token-id",
+        ORG_ID,
+      );
     });
 
-    it("allows system-created tokens without a creator user", async () => {
-      mockAppRepository.findById.mockResolvedValue({
-        id: "app-id",
-        appId: "chef",
-        name: "Chef",
-      } as any);
-      mockHashAppToken.mockResolvedValue("token-hash");
-      mockAppTokenRepository.create.mockResolvedValue(undefined);
+    it("rejects per-app tokens presented as deploy tokens", async () => {
+      const result = await AppTokenService.verifyDeployToken("eat_valid");
 
-      await AppTokenService.create(
-        {
-          appId: "app-id",
-          scopes: ["provider:openai"],
-          expiresAt: null,
-        },
-        ORG_ID,
+      expect(result).toBeNull();
+      expect(mockHashAppToken).not.toHaveBeenCalled();
+      expect(
+        mockAppTokenRepository.findActiveDeployByTokenHash,
+      ).not.toHaveBeenCalled();
+    });
+
+    it("rejects hashed tokens that are not org-scoped deploy tokens", async () => {
+      mockHashAppToken.mockResolvedValue("deploy-token-hash");
+      mockAppTokenRepository.findActiveDeployByTokenHash.mockResolvedValue(
         null,
       );
 
-      expect(mockAppTokenRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          createdBy: null,
-        }),
-      );
-    });
-
-    it("rejects invalid scopes", async () => {
-      mockAppRepository.findById.mockResolvedValue({
-        id: "app-id",
-        appId: "chef",
-        name: "Chef",
-      } as any);
-
       await expect(
-        AppTokenService.create(
-          {
-            appId: "app-id",
-            scopes: ["read:all"],
-            expiresAt: null,
-          },
-          ORG_ID,
-          "owner-id",
-        ),
-      ).rejects.toThrow("Invalid scope: read:all");
+        AppTokenService.verifyDeployToken("eak_per_app_hash"),
+      ).resolves.toBeNull();
     });
   });
 

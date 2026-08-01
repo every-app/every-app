@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useLiveQuery } from "@tanstack/react-db";
 import { useState, useMemo, useCallback } from "react";
 import { Button } from "@/client/components/ui/button";
 import { Plus, ClipboardList } from "lucide-react";
@@ -28,7 +27,7 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { todoCollection, insertNewTodo } from "@/client/tanstack-db";
+import { useTodoMutations, useTodos } from "@/client/queries/todos";
 import {
   extractDueDateFromInput,
   isFutureDueDate,
@@ -38,7 +37,10 @@ import {
   getRecentCompletedTodos,
 } from "@/client/lib/todo-list-helpers";
 import { NewTodoComposer } from "@/client/components/NewTodoComposer";
-import { generateSortKeyBetween } from "@/client/lib/fractional-indexing";
+import {
+  generateDefaultSortKey,
+  generateSortKeyBetween,
+} from "@/client/lib/fractional-indexing";
 import { SortableTodoItem } from "@/client/components/SortableTodoItem";
 import { useDelayedAnimation } from "@/client/hooks/useDelayedAnimation";
 import { useKeyboardNavigation } from "@/client/hooks/useKeyboardNavigation";
@@ -72,17 +74,9 @@ function HomeContent() {
   );
 
   const sensors = useDraggableSensors();
+  const { create, update, remove } = useTodoMutations();
 
-  // Live query that updates automatically when data changes
-  const {
-    data: todos,
-    isLoading,
-    isError,
-  } = useLiveQuery((q) =>
-    q
-      .from({ todo: todoCollection })
-      .orderBy(({ todo }) => todo.sortKey, "desc"),
-  );
+  const { data: todos, isLoading, isError } = useTodos();
 
   const today = new Date();
   const todayKey = formatDateKey(today);
@@ -172,9 +166,7 @@ function HomeContent() {
       beforeTodo?.sortKey,
     );
 
-    todoCollection.update(active.id, (draft) => {
-      draft.sortKey = newSortKey;
-    });
+    update.mutate({ id: String(active.id), sortKey: newSortKey });
   };
 
   const handleCreateTodoSubmit = useCallback(
@@ -182,7 +174,12 @@ function HomeContent() {
       event.preventDefault();
       if (!parsedNewTodo.title.trim()) return;
 
-      insertNewTodo(parsedNewTodo.title, parsedNewTodo.dueDate);
+      create.mutate({
+        id: crypto.randomUUID(),
+        title: parsedNewTodo.title.trim(),
+        sortKey: generateDefaultSortKey(),
+        dueDate: parsedNewTodo.dueDate,
+      });
       if (isFutureDueDate(parsedNewTodo.dueDate, today)) {
         toast("Saved to Upcoming Todos");
       }
@@ -336,7 +333,7 @@ function HomeContent() {
         onClose={() => setDeleteModalTodoId(null)}
         onConfirm={() => {
           if (deleteModalTodoId) {
-            todoCollection.delete(deleteModalTodoId);
+            remove.mutate({ id: deleteModalTodoId });
             setDeleteModalTodoId(null);
           }
         }}

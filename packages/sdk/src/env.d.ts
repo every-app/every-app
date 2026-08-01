@@ -1,12 +1,19 @@
-// Type definitions for environment variables expected by the SDK
-// Apps using this SDK should have these defined in their wrangler configuration
+// Environment variables the SDK reads. Apps declare these via the manifest;
+// the CLI/gateway inject them at deploy time.
 
 declare namespace Cloudflare {
   interface Env {
-    GATEWAY_URL: string;
+    // App id used as the expected audience for identity verification.
+    EVERYAPP_APP_ID: string;
+    // JSON array of SPKI PEM public keys (current + next) for identity
+    // verification. Injected by the gateway at deploy — never fetched at runtime.
+    EVERYAPP_IDENTITY_PUBLIC_KEYS?: string;
+    // Private app-to-gateway service binding, omitted by `everyapp dev`.
     EVERY_APP_GATEWAY?: Fetcher;
-    GATEWAY_APP_API_TOKEN?: string;
-    APP_TOKEN?: string;
+    // Explicit local-dev opt-in required before the provider-key fallback.
+    EVERYAPP_DEV?: string;
+    // Developer-owned direct-provider fallback from .dev.vars only.
+    OPENAI_API_KEY?: string;
   }
 }
 

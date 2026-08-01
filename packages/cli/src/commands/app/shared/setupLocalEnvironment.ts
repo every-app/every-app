@@ -1,15 +1,17 @@
+import chalk from "chalk";
 import { createEnvFiles } from "@/lib/file-operations";
 import { installDependencies } from "@/lib/package-manager";
 import { runLocalMigrations } from "@/commands/app/create/steps/runLocalMigrations";
+import type { EveryAppManifest } from "@every-app/perimeter/manifest";
 
 interface SetupLocalEnvironmentOptions {
   targetDir: string;
   /** The unprefixed app ID (e.g., "todo-app") */
   appId: string;
   gatewayUrl?: string;
-  gatewayAppApiToken?: string;
   verbose?: boolean;
   installDeps?: boolean;
+  migrations?: EveryAppManifest["migrations"];
 }
 
 /**
@@ -19,9 +21,9 @@ export async function setupLocalEnvironment({
   targetDir,
   appId,
   gatewayUrl,
-  gatewayAppApiToken,
   verbose = false,
   installDeps = false,
+  migrations,
 }: SetupLocalEnvironmentOptions): Promise<void> {
   if (installDeps) {
     await installDependencies({
@@ -35,7 +37,14 @@ export async function setupLocalEnvironment({
     targetDir,
     appId,
     gatewayUrl,
-    gatewayAppApiToken,
   });
+  if (migrations?.engine === "d1-sql") {
+    console.log(
+      chalk.dim(
+        "Skipping local migration scripts for d1-sql app; manage local D1 state with Wrangler migrations.",
+      ),
+    );
+    return;
+  }
   await runLocalMigrations({ targetDir, verbose });
 }

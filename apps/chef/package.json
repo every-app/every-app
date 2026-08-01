@@ -1,15 +1,23 @@
 {
   "name": "chef",
   "private": true,
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
+  },
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build && tsc --noEmit",
+    "dev": "npx everyapp dev",
+    "dev:vite": "npx everyapp app generate-config && vite dev",
+    "build": "npx everyapp app generate-config && vite build && tsc --noEmit",
     "preview": "npm run build && vite preview --port 3001",
-    "deploy": "npm run db:migrate:prod && npm run build && wrangler deploy",
-    "cf-typegen": "wrangler types",
+    "deploy": "npx everyapp app deploy",
+    "cf-typegen": "npx everyapp app generate-config && wrangler types -c .everyapp/wrangler.json",
     "types:check": "tsc --noEmit",
+    "test": "vitest run",
     "format:check": "prettier --check .",
     "format:write": "prettier . --write",
     "db:generate": "drizzle-kit generate",
@@ -22,11 +30,8 @@
   "dependencies": {
     "@ai-sdk/openai": "^2.0.77",
     "@ai-sdk/react": "^2.0.106",
-    "@every-app/sdk": "^0.1.13",
-    "@tanstack/query-core": "^5.90.9",
-    "@tanstack/query-db-collection": "^1.0.0",
+    "@every-app/sdk": "^0.2.0",
     "@tanstack/query-sync-storage-persister": "^5.90.14",
-    "@tanstack/react-db": "^0.1.44",
     "@tanstack/react-query": "^5.90.9",
     "@tanstack/react-query-persist-client": "^5.90.14",
     "@tanstack/react-router": "^1.136.3",
@@ -36,14 +41,14 @@
     "cloudflare": "^5.2.0",
     "daisyui": "^5.5.5",
     "drizzle-orm": "^0.44.4",
+    "jsonc-parser": "^3.3.1",
     "lucide-react": "^0.542.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sonner": "^2.0.7",
     "react-markdown": "^9.0.1",
     "tailwindcss": "^4.1.16",
-    "zod": "^4.1.12",
-    "dotenv": "^17.2.3"
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.13.18",
@@ -55,11 +60,13 @@
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.6.0",
     "drizzle-kit": "^0.31.4",
+    "everyapp": "^0.2.0",
     "knip": "^5.66.4",
-    "prettier": "^3.6.2",
+    "prettier": "3.6.2",
     "typescript": "^5.9.3",
     "vite": "^7.1.2",
     "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.4",
     "wrangler": "^4.45.3"
   }
 }

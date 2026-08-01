@@ -1,14 +1,15 @@
 import { AppAccessRepository } from "../repositories/AppAccessRepository";
 import { AppRepository } from "../repositories/AppRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
+import type { OrgContext } from "@/server/organization/orgContext";
 
 /**
  * Get all apps a user has access to.
  */
-async function getAppsForUser(userId: string, organizationId: string) {
+async function getAppsForUser(ctx: OrgContext) {
   const accessRecords = await AppAccessRepository.findAllByUserId(
-    userId,
-    organizationId,
+    ctx.userId,
+    ctx.orgId,
   );
   return {
     apps: accessRecords.map((record) => ({
@@ -19,30 +20,13 @@ async function getAppsForUser(userId: string, organizationId: string) {
 }
 
 /**
- * Get all users with access to an app.
- */
-async function getUsersForApp(appId: string, organizationId: string) {
-  const accessRecords = await AppAccessRepository.findAllByAppId(
-    appId,
-    organizationId,
-  );
-  return {
-    users: accessRecords.map((record) => ({
-      ...record.user,
-      grantedAt: record.grantedAt,
-      grantedBy: record.grantedBy,
-    })),
-  };
-}
-
-/**
  * Get access state for all users for a specific app.
  * Returns all users with a flag indicating if they have access.
  */
-async function getAccessStateForApp(appId: string, organizationId: string) {
+async function getAccessStateForApp(ctx: OrgContext, appRowId: string) {
   const [allUsers, accessRecords] = await Promise.all([
-    OrganizationMembersRepository.listMembersForOrganization(organizationId),
-    AppAccessRepository.findAllByAppId(appId, organizationId),
+    OrganizationMembersRepository.listMembersForOrganization(ctx.orgId),
+    AppAccessRepository.findAllByAppRowId(appRowId, ctx.orgId),
   ]);
 
   const accessUserIds = new Set(accessRecords.map((r) => r.userId));
@@ -60,116 +44,31 @@ async function getAccessStateForApp(appId: string, organizationId: string) {
 }
 
 /**
- * Check if a user has access to an app.
- */
-async function hasAccess(
-  userId: string,
-  appId: string,
-  organizationId: string,
-) {
-  const access = await AppAccessRepository.findByUserAndApp(
-    userId,
-    appId,
-    organizationId,
-  );
-  return access !== null && access !== undefined;
-}
-
-/**
- * Grant access to an app for a user.
- */
-async function grantAccess(
-  userId: string,
-  appId: string,
-  organizationId: string,
-  grantedBy?: string,
-) {
-  // Check if already has access
-  const existing = await AppAccessRepository.findByUserAndApp(
-    userId,
-    appId,
-    organizationId,
-  );
-  if (existing) {
-    return; // Already has access, nothing to do
-  }
-
-  await AppAccessRepository.create({
-    id: crypto.randomUUID(),
-    organizationId,
-    userId,
-    appId,
-    grantedBy,
-  });
-}
-
-/**
- * Grant access to an app for multiple users (additive-only).
- *
- * This never revokes existing access. Existing records are ignored.
- * Use updateAccessForApp when the caller needs full replacement semantics.
- */
-async function grantAccessBatchAdditive(
-  userIds: string[],
-  appId: string,
-  organizationId: string,
-  grantedBy?: string,
-) {
-  if (userIds.length === 0) {
-    return;
-  }
-
-  await AppAccessRepository.createMany(
-    userIds.map((userId) => ({
-      id: crypto.randomUUID(),
-      organizationId,
-      userId,
-      appId,
-      grantedBy,
-    })),
-  );
-}
-
-/**
- * Revoke access from a user for an app.
- */
-async function revokeAccess(
-  userId: string,
-  appId: string,
-  organizationId: string,
-) {
-  await AppAccessRepository.deleteByUserAndApp(userId, appId, organizationId);
-}
-
-/**
  * Update access for multiple users for an app.
  * Takes the full list of user IDs who should have access.
  * Prevents owners from revoking their own access.
  */
 async function updateAccessForApp(
-  appId: string,
-  organizationId: string,
+  ctx: OrgContext,
+  appRowId: string,
   userIdsWithAccess: string[],
-  grantedBy: string | null,
 ) {
-  const app = await AppRepository.findById(appId, organizationId);
+  const app = await AppRepository.findById(appRowId, ctx.orgId);
   if (!app) {
     throw new Error("App not found");
   }
 
   const organizationUsers =
-    await OrganizationMembersRepository.listMembersForOrganization(
-      organizationId,
-    );
+    await OrganizationMembersRepository.listMembersForOrganization(ctx.orgId);
   const allowedUserIds = new Set(organizationUsers.map((user) => user.id));
   const validUserIdsWithAccess = userIdsWithAccess.filter((userId) =>
     allowedUserIds.has(userId),
   );
 
   // Get current access state
-  const currentAccess = await AppAccessRepository.findAllByAppId(
-    appId,
-    organizationId,
+  const currentAccess = await AppAccessRepository.findAllByAppRowId(
+    appRowId,
+    ctx.orgId,
   );
   const currentUserIds = new Set(currentAccess.map((r) => r.userId));
   const newUserIds = new Set(validUserIdsWithAccess);
@@ -187,7 +86,7 @@ async function updateAccessForApp(
       return false;
     }
 
-    if (grantedBy && id === grantedBy) {
+    if (id === ctx.userId) {
       return false;
     }
 
@@ -198,20 +97,20 @@ async function updateAccessForApp(
   if (toGrant.length > 0) {
     const accessRecords = toGrant.map((userId) => ({
       id: crypto.randomUUID(),
-      organizationId,
+      organizationId: ctx.orgId,
       userId,
-      appId,
-      grantedBy,
+      appRowId,
+      grantedBy: ctx.userId,
     }));
     await AppAccessRepository.createMany(accessRecords);
   }
 
   // Revoke access from removed users
   if (toRevoke.length > 0) {
-    await AppAccessRepository.deleteByAppAndUsers(
-      appId,
+    await AppAccessRepository.deleteByAppRowAndUsers(
+      appRowId,
       toRevoke,
-      organizationId,
+      ctx.orgId,
     );
   }
 
@@ -240,7 +139,7 @@ async function grantDefaultAppsToUser(userId: string, organizationId?: string) {
     id: crypto.randomUUID(),
     organizationId,
     userId,
-    appId: app.id,
+    appRowId: app.id,
     grantedBy: null,
   }));
 
@@ -249,12 +148,7 @@ async function grantDefaultAppsToUser(userId: string, organizationId?: string) {
 
 export const AppAccessService = {
   getAppsForUser,
-  getUsersForApp,
   getAccessStateForApp,
-  hasAccess,
-  grantAccess,
-  grantAccessBatchAdditive,
-  revokeAccess,
   updateAccessForApp,
   grantDefaultAppsToUser,
 } as const;

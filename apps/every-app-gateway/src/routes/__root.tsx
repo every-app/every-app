@@ -1,5 +1,4 @@
 import { useSession } from "@/client/hooks/useSession";
-import { useSessionTokenHandler } from "@/client/hooks/useSessionTokenHandler";
 import {
   Outlet,
   ClientOnly,
@@ -29,9 +28,6 @@ function AppRouter() {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: session, isPending } = useSession();
-
-  // Set up session token handler for embedded app iframes
-  useSessionTokenHandler();
 
   useEffect(() => {
     const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname);
@@ -126,6 +122,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <ClientOnly>{children}</ClientOnly>
+        <div
+          className="fixed bottom-1.5 right-2 z-50 font-mono text-[10px] opacity-40 pointer-events-none select-none"
+          title="Gateway build"
+        >
+          {__GATEWAY_BUILD__}
+        </div>
         <Scripts />
       </body>
     </html>

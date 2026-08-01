@@ -9,22 +9,6 @@ async function getStatus(userId: string) {
   return onboarding;
 }
 
-/**
- * Update onboarding status (generic update for TanStack DB collection).
- */
-async function updateStatus(
-  userId: string,
-  data: {
-    pwaInstallCompleted?: boolean;
-    pwaInstallSkipCount?: number;
-    pwaInstallSkippedAt?: Date | null;
-    pwaInstallSkippedPermanently?: boolean;
-  },
-) {
-  return OnboardingRepository.update(userId, data);
-}
-
 export const OnboardingService = {
   getStatus,
-  updateStatus,
 } as const;

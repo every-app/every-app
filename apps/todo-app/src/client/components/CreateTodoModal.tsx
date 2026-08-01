@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { Button } from "@/client/components/ui/button";
 import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
-import { insertNewTodo } from "@/client/tanstack-db";
+import { useTodoMutations } from "@/client/queries/todos";
+import { generateDefaultSortKey } from "@/client/lib/fractional-indexing";
 import { NewTodoComposer } from "@/client/components/NewTodoComposer";
 import {
   extractDueDateFromInput,
@@ -19,6 +20,7 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
   const [showDiscardModal, setShowDiscardModal] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const parsedTodo = useMemo(() => extractDueDateFromInput(title), [title]);
+  const { create } = useTodoMutations();
 
   // Open/close modal using native dialog API
   useEffect(() => {
@@ -50,7 +52,12 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (parsedTodo.title.trim()) {
-      insertNewTodo(parsedTodo.title, parsedTodo.dueDate);
+      create.mutate({
+        id: crypto.randomUUID(),
+        title: parsedTodo.title.trim(),
+        sortKey: generateDefaultSortKey(),
+        dueDate: parsedTodo.dueDate,
+      });
       if (isFutureDueDate(parsedTodo.dueDate)) {
         toast("Saved to Upcoming Todos");
       }

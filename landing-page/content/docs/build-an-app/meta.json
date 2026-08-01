@@ -1,4 +1,4 @@
 {
   "title": "Build an App",
-  "pages": ["create-app"]
+  "pages": ["create-app", "local-dev"]
 }

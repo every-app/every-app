@@ -1,0 +1,9 @@
+{
+  "title": "Architecture Notes",
+  "pages": [
+    "gateway-files",
+    "security-boundary",
+    "user-experience",
+    "cli-deployment"
+  ]
+}

@@ -1,6 +1,7 @@
 import useDetectKeyboardOpen from "@/client/hooks/useDetectKeyboardOpen";
 import { Link } from "@tanstack/react-router";
 import { ClipboardList, Dumbbell, History, TreePine } from "lucide-react";
+import { gatewayHomeUrl } from "@/client/lib/gatewayHome";
 
 interface TabBarProps {
   currentPath: string;
@@ -46,7 +47,7 @@ export function TabBar({ currentPath }: TabBarProps) {
           <span className="dock-label">Programs</span>
         </Link>
         <a
-          href={import.meta.env.VITE_GATEWAY_URL}
+          href={gatewayHomeUrl()}
           target="_top"
           className="no-underline"
           aria-label="Navigate to Gateway"

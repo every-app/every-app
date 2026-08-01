@@ -1,7 +1,5 @@
-import {
-  authenticateRequest,
-  getAuthConfig,
-} from "@every-app/sdk/tanstack/server";
+import { requireEveryAppUser } from "@every-app/sdk/server";
+import { env } from "cloudflare:workers";
 
 /**
  * Standard JSON error response
@@ -36,13 +34,14 @@ type AuthenticatedHandler = (ctx: AuthenticatedContext) => Promise<Response>;
  */
 export function withAuth(handler: AuthenticatedHandler) {
   return async ({ request }: { request: Request }): Promise<Response> => {
-    const authConfig = getAuthConfig();
-    const session = await authenticateRequest(authConfig, request);
-
-    if (!session || !session.sub) {
-      return errorResponse("Unauthorized", 401);
+    try {
+      const user = await requireEveryAppUser(request, env);
+      return handler({ request, userId: user.id });
+    } catch (error) {
+      if (error instanceof Response && error.status === 401) {
+        return errorResponse("Unauthorized", 401);
+      }
+      throw error;
     }
-
-    return handler({ request, userId: session.sub });
   };
 }

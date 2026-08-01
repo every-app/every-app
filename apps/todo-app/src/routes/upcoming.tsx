@@ -1,8 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useLiveQuery } from "@tanstack/react-db";
 import { useCallback, useMemo, useState } from "react";
 import { Button } from "@/client/components/ui/button";
-import { todoCollection } from "@/client/tanstack-db";
+import { useTodos } from "@/client/queries/todos";
 import { SortableTodoItem } from "@/client/components/SortableTodoItem";
 import { useTodoActions } from "@/client/hooks/useTodoActions";
 import {
@@ -20,13 +19,7 @@ export const Route = createFileRoute("/upcoming")({
 function Upcoming() {
   const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
 
-  const {
-    data: todos,
-    isLoading,
-    isError,
-  } = useLiveQuery((q) =>
-    q.from({ todo: todoCollection }).orderBy(({ todo }) => todo.dueDate, "asc"),
-  );
+  const { data: todos, isLoading, isError } = useTodos();
 
   const todayKey = formatDateKey(new Date());
 

@@ -1,11 +1,9 @@
 const EVERYAPP_ORIGIN = "everyapp://";
-const EXPO_DEV_TRUSTED_ORIGIN = "exp://**";
 
-// Intentionally simple origin policy:
-// - Always trust native app origin: everyapp://
-// - Trust Expo origin only in local gateway development mode
-// - Do not allow dev tunnels or host-based exceptions
-// This keeps maintenance low and avoids future rule creep.
+// Intentionally simple origin policy: the only native origin we ever trust is
+// the production app scheme everyapp://. No exp:// dev origins, no tunnels,
+// no host-based exceptions — the mobile shell requires a dev-client build
+// (native modules), and dev-client builds use the everyapp:// scheme too.
 
 function parseUrl(value: string): URL | null {
   try {
@@ -15,48 +13,7 @@ function parseUrl(value: string): URL | null {
   }
 }
 
-function normalizeHostname(hostname: string): string {
-  const normalized = hostname.toLowerCase();
-  if (normalized.startsWith("[") && normalized.endsWith("]")) {
-    return normalized.slice(1, -1);
-  }
-  return normalized;
-}
-
-export function isDevelopmentGatewayUrl(
-  gatewayUrl: string | undefined,
-): boolean {
-  if (!gatewayUrl) {
-    return false;
-  }
-
-  const parsed = parseUrl(gatewayUrl);
-  if (!parsed) {
-    return false;
-  }
-
-  const hostname = normalizeHostname(parsed.hostname);
-  return (
-    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
-  );
-}
-
-export function isExpoDevModeEnabled(options: {
-  gatewayUrl: string | undefined;
-  viteDev: boolean;
-}): boolean {
-  return options.viteDev && isDevelopmentGatewayUrl(options.gatewayUrl);
-}
-
-export function getExpoDevTrustedOrigins(isDevMode: boolean): string[] {
-  if (!isDevMode) {
-    return [];
-  }
-
-  return [EXPO_DEV_TRUSTED_ORIGIN];
-}
-
-function isAllowedExpoOrigin(origin: string, isDevMode: boolean): boolean {
+function isAllowedExpoOrigin(origin: string): boolean {
   if (/[\u0000-\u0020]/.test(origin)) {
     return false;
   }
@@ -70,27 +27,49 @@ function isAllowedExpoOrigin(origin: string, isDevMode: boolean): boolean {
     return false;
   }
 
-  if (origin.toLowerCase() === EVERYAPP_ORIGIN) {
-    return true;
-  }
+  return origin.toLowerCase() === EVERYAPP_ORIGIN;
+}
 
-  if (isDevMode && parsed.protocol === "exp:") {
-    return true;
-  }
+function isHttpUrl(value: string): boolean {
+  const parsed = parseUrl(value);
+  return (
+    parsed !== null &&
+    (parsed.protocol === "http:" || parsed.protocol === "https:")
+  );
+}
 
+/**
+ * Better Auth matches non-HTTP trusted origins by prefix, so a trusted
+ * `everyapp://` would also accept `everyapp://evil` — and its Expo plugin
+ * quietly trusts `exp://` under NODE_ENV=development. Enforce our exact
+ * policy before Better Auth sees the request: any custom-scheme origin (or
+ * referer, which Better Auth falls back to) must be exactly `everyapp://`.
+ */
+export function hasDisallowedNativeOrigin(request: Request): boolean {
+  for (const header of ["origin", "expo-origin", "referer"]) {
+    const value = request.headers.get(header);
+    if (!value || value === "null") {
+      continue;
+    }
+    if (!isHttpUrl(value) && value.toLowerCase() !== EVERYAPP_ORIGIN) {
+      return true;
+    }
+  }
   return false;
 }
 
-export function normalizeExpoOrigin(
-  request: Request,
-  options: { isDevMode: boolean },
-): Request {
+/**
+ * The Better Auth Expo client sends the native origin as `expo-origin`
+ * instead of `origin`. Promote it so Better Auth's trusted-origin CSRF check
+ * sees it, but only for the exact production scheme.
+ */
+export function normalizeExpoOrigin(request: Request): Request {
   if (request.headers.get("origin")) {
     return request;
   }
 
   const expoOrigin = request.headers.get("expo-origin");
-  if (!expoOrigin || !isAllowedExpoOrigin(expoOrigin, options.isDevMode)) {
+  if (!expoOrigin || !isAllowedExpoOrigin(expoOrigin)) {
     return request;
   }
 

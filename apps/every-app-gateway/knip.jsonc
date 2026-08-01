@@ -1,12 +1,14 @@
 {
   "ignoreBinaries": ["everyapp"],
   "entry": [
+    // Production Worker entry point
+    "src/server.ts",
     // Detect Tanstack Start Routes
     "src/router.tsx",
     "src/routes/**/*.{ts,tsx}",
     // Better auth cli entrypoint
     "src/auth/index.ts",
-    "scripts/docker-selfhost-entrypoint.mjs",
+    "scripts/*.{js,mjs}",
   ],
   "project": ["**/*.{js,mjs,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": [
@@ -15,7 +17,9 @@
     "src/auth/cli-config.ts",
   ],
   "ignoreDependencies": [
-    "@tanstack/react-router-devtools",
+    // Workspace source imports are followed by Knip but not credited as package usage.
+    "@every-app/perimeter",
+    "@every-app/sdk",
     "daisyui",
     // Used by vite during bundling
     "tailwindcss",

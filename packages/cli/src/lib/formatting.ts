@@ -6,6 +6,7 @@ interface ExecuteCommandWithFormattingOptions {
   verbose?: boolean;
   description?: string;
   logCommandToConsole?: boolean;
+  shell?: boolean;
 }
 /**
  * Wraps execa call to show formatted output for shell commands
@@ -32,6 +33,7 @@ export async function executeCommandWithFormatting(
     const result = await execa(command, args, {
       cwd,
       env,
+      shell: options.shell,
       stdio: "pipe", // Suppress output
     });
 
@@ -39,7 +41,7 @@ export async function executeCommandWithFormatting(
   }
 
   // Non-verbose mode: just show the command being run
-  console.log(`Running: ${command} ${args.join(" ")}`);
+  console.log(`Running: ${formatCommand(command, args)}`);
   if (description) {
     console.log(chalk.dim(`  ${description}`));
   }
@@ -47,6 +49,7 @@ export async function executeCommandWithFormatting(
   const result = await execa(command, args, {
     cwd,
     env,
+    shell: options.shell,
     stdio: "pipe", // Suppress output
   });
 
@@ -56,9 +59,9 @@ export async function executeCommandWithFormatting(
 async function execVerboseCommand(
   command: string,
   args: string[],
-  { description, cwd, env }: ExecuteCommandWithFormattingOptions,
+  { description, cwd, env, shell }: ExecuteCommandWithFormattingOptions,
 ) {
-  console.log(chalk.dim(`  ┌─ Running: ${command} ${args.join(" ")}`));
+  console.log(chalk.dim(`  ┌─ Running: ${formatCommand(command, args)}`));
   if (description) {
     console.log(chalk.dim(`  │ ${description}`));
   }
@@ -66,6 +69,7 @@ async function execVerboseCommand(
   const subprocess = execa(command, args, {
     cwd,
     env,
+    shell,
     stdio: undefined,
     all: true,
   });
@@ -92,4 +96,8 @@ async function execVerboseCommand(
   const result = await subprocess;
   console.log(chalk.dim(`  └─ Complete\n`));
   return result;
+}
+
+function formatCommand(command: string, args: string[]): string {
+  return [command, ...args].join(" ");
 }

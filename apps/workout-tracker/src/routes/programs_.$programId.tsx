@@ -1,11 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useRef } from "react";
-import {
-  useProgramById,
-  useAllProgramsWithWorkouts,
-} from "@/client/hooks/useProgramData";
+import { useProgramById } from "@/client/hooks/useProgramData";
 import { nanoid } from "nanoid";
-import { programsCollection, workoutsCollection } from "@/client/tanstack-db";
+import { useProgramMutations } from "@/client/queries/programs";
+import { useWorkoutMutations } from "@/client/queries/workouts";
 import { Button } from "@/client/components/ui/button";
 import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
 import { InfoModal } from "@/client/components/ui/info-modal";
@@ -37,7 +35,8 @@ function ProgramDetailPage() {
   const navigate = useNavigate();
 
   const { program } = useProgramById(programId);
-  const { programs: allPrograms } = useAllProgramsWithWorkouts();
+  const programMutations = useProgramMutations();
+  const workoutMutations = useWorkoutMutations();
 
   const [isUpdating, setIsUpdating] = useState(false);
   const [showRemoveModal, setShowRemoveModal] = useState(false);
@@ -95,9 +94,10 @@ function ProgramDetailPage() {
     if (!program || !editedName.trim()) return;
     setIsSavingHeader(true);
     try {
-      programsCollection.update(program.id, (draft) => {
-        draft.name = editedName.trim();
-        draft.description = editedDescription.trim();
+      await programMutations.update.mutateAsync({
+        id: program.id,
+        name: editedName.trim(),
+        description: editedDescription.trim(),
       });
       setHasHeaderChanges(false);
       toast("Program updated");
@@ -113,17 +113,9 @@ function ProgramDetailPage() {
     if (!program) return;
     setIsUpdating(true);
     try {
-      // Optimistically deactivate all other programs first
-      for (const p of allPrograms) {
-        if (p.isActive && p.id !== program.id) {
-          programsCollection.update(p.id, (draft) => {
-            draft.isActive = false;
-          });
-        }
-      }
-      // Then activate this one
-      programsCollection.update(program.id, (draft) => {
-        draft.isActive = true;
+      await programMutations.update.mutateAsync({
+        id: program.id,
+        isActive: true,
       });
       toast("Program set as active");
     } catch (error) {
@@ -134,10 +126,10 @@ function ProgramDetailPage() {
     }
   };
 
-  const handleRemoveProgram = () => {
+  const handleRemoveProgram = async () => {
     if (!program) return;
     try {
-      programsCollection.delete(program.id);
+      await programMutations.remove.mutateAsync({ id: program.id });
       toast("Program removed");
       navigate({ to: "/programs" });
     } catch (error) {
@@ -146,22 +138,24 @@ function ProgramDetailPage() {
     }
   };
 
-  const handleAddWorkout = () => {
+  const handleAddWorkout = async () => {
     if (!program) return;
+    // Guard against double-clicks: two in-flight creates would read the same
+    // workouts.length and produce duplicate names/sortOrders.
+    if (workoutMutations.create.isPending) return;
     try {
       const workoutId = nanoid();
-      const now = new Date().toISOString();
       const nextSortOrder = program.workouts.length;
 
-      workoutsCollection.insert({
-        id: workoutId,
-        programId: program.id,
-        name: `Workout ${nextSortOrder + 1}`,
-        description: null,
-        sortOrder: nextSortOrder,
-        createdAt: now,
-        updatedAt: now,
-      });
+      await workoutMutations.create.mutateAsync([
+        {
+          id: workoutId,
+          programId: program.id,
+          name: `Workout ${nextSortOrder + 1}`,
+          description: null,
+          sortOrder: nextSortOrder,
+        },
+      ]);
 
       toast("Workout added");
     } catch (error) {
@@ -287,9 +281,10 @@ function ProgramDetailPage() {
                   name="progressionMode"
                   className="radio radio-primary radio-sm"
                   checked={program.progressionMode === "linear"}
-                  onChange={() => {
-                    programsCollection.update(program.id, (draft) => {
-                      draft.progressionMode = "linear";
+                  onChange={async () => {
+                    await programMutations.update.mutateAsync({
+                      id: program.id,
+                      progressionMode: "linear",
                     });
                     toast("Linear progression enabled");
                   }}
@@ -304,9 +299,10 @@ function ProgramDetailPage() {
                   name="progressionMode"
                   className="radio radio-primary radio-sm"
                   checked={program.progressionMode === "smart"}
-                  onChange={() => {
-                    programsCollection.update(program.id, (draft) => {
-                      draft.progressionMode = "smart";
+                  onChange={async () => {
+                    await programMutations.update.mutateAsync({
+                      id: program.id,
+                      progressionMode: "smart",
                     });
                     toast("Smart progression enabled");
                   }}

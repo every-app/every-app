@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useLiveQuery } from "@tanstack/react-db";
 import { useState } from "react";
-import { sessionsCollection, setLogsCollection } from "@/client/tanstack-db";
+import { useSessionMutations, useSessions } from "@/client/queries/sessions";
+import { useSetLogs } from "@/client/queries/setLogs";
 import { Card, CardTitle } from "@/client/components/ui/card";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
@@ -19,13 +19,8 @@ export const Route = createFileRoute("/history")({
 });
 
 function HistoryPage() {
-  // Live queries
-  const { data: sessions } = useLiveQuery((q) =>
-    q.from({ session: sessionsCollection }),
-  );
-  const { data: setLogs } = useLiveQuery((q) =>
-    q.from({ setLog: setLogsCollection }),
-  );
+  const { data: sessions } = useSessions();
+  const { data: setLogs } = useSetLogs();
 
   // Build sessions with set logs
   const completedSessions = sessions
@@ -87,6 +82,7 @@ function HistoryPage() {
 function SessionCard({ session }: { session: SessionWithSetLogs }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const { remove } = useSessionMutations();
 
   const exerciseGroups = groupSetLogsByExercise(session.setLogs);
   const duration =
@@ -94,13 +90,8 @@ function SessionCard({ session }: { session: SessionWithSetLogs }) {
       ? formatDuration(session.startedAt, session.completedAt)
       : null;
 
-  const handleDeleteSession = () => {
-    // Delete associated set logs from local collection (optimistic)
-    session.setLogs.forEach((log) => {
-      setLogsCollection.delete(log.id);
-    });
-    // Delete session (triggers server delete, which cascades to set logs)
-    sessionsCollection.delete(session.id);
+  const handleDeleteSession = async () => {
+    await remove.mutateAsync({ id: session.id });
   };
 
   return (

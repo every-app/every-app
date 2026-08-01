@@ -10,12 +10,9 @@
   "observability": {
     "enabled": true,
   },
-  "services": [
-    {
-      "binding": "EVERY_APP_GATEWAY",
-      "service": "every-app-gateway",
-    },
-  ],
+  "vars": {
+    "EVERYAPP_APP_ID": "workout-tracker",
+  },
   "kv_namespaces": [
     {
       "binding": "KV",

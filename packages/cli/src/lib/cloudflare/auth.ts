@@ -21,6 +21,41 @@ interface CloudflareAPIResponse<T> {
   result: T;
 }
 
+export class CloudflareAPIError extends Error {
+  status: number;
+  codes: number[];
+  endpoint: string;
+
+  constructor({
+    message,
+    status,
+    codes,
+    endpoint,
+  }: {
+    message: string;
+    status: number;
+    codes: number[];
+    endpoint: string;
+  }) {
+    super(message);
+    this.name = "CloudflareAPIError";
+    this.status = status;
+    this.codes = codes;
+    this.endpoint = endpoint;
+  }
+}
+
+export function isCloudflareAuthError(
+  error: unknown,
+): error is CloudflareAPIError {
+  return (
+    error instanceof CloudflareAPIError &&
+    (error.status === 401 ||
+      error.status === 403 ||
+      error.codes.includes(10000))
+  );
+}
+
 /**
  * Get the path to the wrangler config directory
  * Based on wrangler's implementation for cross-platform support
@@ -262,34 +297,67 @@ export async function makeCloudflareAPIRequest<T>(
 ): Promise<T> {
   const accessToken = await getValidCloudflareToken();
 
+  // FormData bodies (e.g. the script-settings PATCH, which requires
+  // multipart/form-data) must let fetch set the Content-Type itself so the
+  // multipart boundary is included.
+  const isFormData =
+    typeof FormData !== "undefined" && options.body instanceof FormData;
+
   const response = await fetch(
     `https://api.cloudflare.com/client/v4${endpoint}`,
     {
       ...options,
       headers: {
         Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
         ...options.headers,
       },
     },
   );
 
-  const data = (await response.json()) as CloudflareAPIResponse<T>;
+  let data: CloudflareAPIResponse<T>;
+  try {
+    data = (await response.json()) as CloudflareAPIResponse<T>;
+  } catch (error) {
+    if (!response.ok) {
+      throw new CloudflareAPIError({
+        message: `Cloudflare API request failed: ${response.status} ${
+          response.statusText || "Invalid JSON response"
+        }`,
+        status: response.status,
+        codes: [],
+        endpoint,
+      });
+    }
+    throw error;
+  }
+  const errors = Array.isArray(data.errors) ? data.errors : [];
+  const codes = errors
+    .map((error) => error.code)
+    .filter((code): code is number => typeof code === "number");
 
   if (!response.ok) {
-    const errorDetails = data.errors
-      ? data.errors.map((e) => `[${e.code}] ${e.message}`).join(", ")
+    const errorDetails = errors.length
+      ? errors.map((e) => `[${e.code}] ${e.message}`).join(", ")
       : response.statusText;
-    throw new Error(
-      `Cloudflare API request failed: ${response.status} ${errorDetails}`,
-    );
+    throw new CloudflareAPIError({
+      message: `Cloudflare API request failed: ${response.status} ${errorDetails}`,
+      status: response.status,
+      codes,
+      endpoint,
+    });
   }
 
   if (!data.success) {
-    const errorMessage = data.errors
+    const errorMessage = errors
       .map((e) => `[${e.code}] ${e.message}`)
       .join(", ");
-    throw new Error(`Cloudflare API error: ${errorMessage}`);
+    throw new CloudflareAPIError({
+      message: `Cloudflare API error: ${errorMessage}`,
+      status: response.status,
+      codes,
+      endpoint,
+    });
   }
 
   return data.result;

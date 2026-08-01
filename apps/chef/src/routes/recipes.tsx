@@ -3,8 +3,7 @@ import { RecipeListItem } from "@/client/components/recipes/RecipeListItem";
 import { EmptyState } from "@/client/components/ui/empty-state";
 import { useIsMobile } from "@/client/hooks/use-mobile";
 import { BookOpen, Plus, Pencil } from "lucide-react";
-import { recipesCollection } from "@/client/tanstack-db";
-import { useLiveQuery } from "@tanstack/react-db";
+import { useRecipes } from "@/client/queries/recipes";
 
 export const Route = createFileRoute("/recipes")({
   component: RecipesPage,
@@ -27,10 +26,7 @@ function RecipesPage() {
     });
   };
 
-  // Get all recipes from TanstackDB
-  const { data: recipes } = useLiveQuery((q) =>
-    q.from({ recipe: recipesCollection }),
-  );
+  const { data: recipes } = useRecipes();
 
   const recipeList = recipes ?? [];
 

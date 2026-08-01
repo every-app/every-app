@@ -1,5 +1,5 @@
 import { defineConfig } from "drizzle-kit";
-import { getLocalD1Url } from "@every-app/sdk/cloudflare/server";
+import { getLocalD1Url } from "./src/db/getLocalD1Url";
 
 const localUrl = getLocalD1Url();
 

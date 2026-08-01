@@ -3,11 +3,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Modal } from "../Modal";
 import { FormField } from "../FormField";
-import { DevModeFormSection } from "../DevModeFormSection";
 import { adminAppsCollection } from "@/client/tanstack-db";
 import { getServerErrorMessage } from "@/client/errors";
 import { editAppSchema, type EditAppFormData } from "@/schemas/app";
-import { DEFAULT_DEV_URL } from "@/schemas/user-app";
 import type { AppWithAccessCount } from "@/types/app";
 
 interface EditAppModalProps {
@@ -24,8 +22,6 @@ export function EditAppModal({ open, onClose, app }: EditAppModalProps) {
     defaultValues: {
       name: "",
       description: "",
-      appUrl: "",
-      devUrl: null,
       isDefault: false,
     },
   });
@@ -36,8 +32,6 @@ export function EditAppModal({ open, onClose, app }: EditAppModalProps) {
       form.reset({
         name: app.name,
         description: app.description,
-        appUrl: app.appUrl,
-        devUrl: app.devUrl,
         isDefault: app.isDefault,
       });
     }
@@ -52,8 +46,6 @@ export function EditAppModal({ open, onClose, app }: EditAppModalProps) {
       adminAppsCollection.update(app.id, (draft) => {
         draft.name = data.name;
         draft.description = data.description;
-        draft.appUrl = data.appUrl;
-        draft.devUrl = data.devUrl ?? null;
         draft.isDefault = data.isDefault ?? false;
         draft.updatedAt = new Date();
       });
@@ -74,16 +66,8 @@ export function EditAppModal({ open, onClose, app }: EditAppModalProps) {
 
   const {
     register,
-    watch,
-    setValue,
     formState: { errors },
   } = form;
-
-  const devUrl = watch("devUrl");
-
-  const handleDevModeToggle = (enabled: boolean) => {
-    setValue("devUrl", enabled ? DEFAULT_DEV_URL : null);
-  };
 
   if (!open || !app) return null;
 
@@ -127,18 +111,12 @@ export function EditAppModal({ open, onClose, app }: EditAppModalProps) {
           registration={register("description")}
           error={errors.description}
         />
-        <FormField
-          label="App URL"
-          placeholder="https://my-app.[yoursubdomain].workers.dev"
-          registration={register("appUrl")}
-          error={errors.appUrl}
-        />
-        <DevModeFormSection
-          devUrl={devUrl}
-          onToggle={handleDevModeToggle}
-          registration={register("devUrl")}
-          error={errors.devUrl}
-        />
+        {app.hostname && (
+          <div className="text-sm text-base-content/60">
+            Served at <span className="font-mono">{app.hostname}</span> — set by{" "}
+            <span className="font-mono">everyapp deploy</span>
+          </div>
+        )}
 
         <div className="divider"></div>
 

@@ -1,12 +1,31 @@
 import chalk from "chalk";
 import { exitWithUpdateNotice } from "@/lib/version-check";
 import {
-  getWorkerUrl,
+  getGatewayPublicUrl,
   getDefaultAccountId,
   makeCloudflareAPIRequest,
 } from "@/lib/cloudflare";
+import { GatewayClient } from "@/lib/gateway/api";
 
 const GATEWAY_WORKER_NAME = "every-app-gateway";
+
+export class GatewayUnreachableError extends Error {
+  url: string;
+  override cause: unknown;
+
+  constructor(url: string, cause: unknown) {
+    super(`Could not reach your Gateway at ${url} (${reasonForCause(cause)})`);
+    this.name = "GatewayUnreachableError";
+    this.url = url;
+    this.cause = cause;
+  }
+}
+
+export function formatGatewayUnreachableError(
+  error: GatewayUnreachableError,
+): string {
+  return `Could not reach your Gateway at ${error.url} (${reasonForCause(error.cause)})`;
+}
 
 /**
  * Check if SSL certificate is ready for a given URL.
@@ -48,9 +67,7 @@ export async function checkSslReady(url: string): Promise<boolean> {
       return false;
     }
 
-    // For non-SSL errors (network issues, etc.), assume SSL is ready
-    // This prevents blocking on unrelated network problems
-    return true;
+    throw new GatewayUnreachableError(url, error);
   }
 }
 
@@ -60,19 +77,14 @@ export async function checkSslReady(url: string): Promise<boolean> {
 export async function checkGatewayHasOwner(
   gatewayUrl: string,
 ): Promise<boolean> {
+  const client = new GatewayClient({
+    gatewayUrl,
+    getAuthToken: async () => "",
+  });
   try {
-    // This endpoint is intentionally public because it is queried before
-    // authentication exists during initial gateway bootstrap.
-    const response = await fetch(`${gatewayUrl}/api/admin/has-owner`);
-    if (!response.ok) {
-      // If endpoint doesn't exist or errors, assume no owner
-      return false;
-    }
-    const data = (await response.json()) as { hasOwner: boolean };
-    return data.hasOwner;
-  } catch {
-    // Network error or other issue - assume no owner
-    return false;
+    return await client.hasOwner();
+  } catch (error) {
+    throw new GatewayUnreachableError(gatewayUrl, error);
   }
 }
 
@@ -97,7 +109,7 @@ async function checkGatewayDeployed(): Promise<boolean> {
  * Get the gateway URL for the current Cloudflare account
  */
 async function getGatewayUrl(): Promise<string> {
-  return getWorkerUrl(GATEWAY_WORKER_NAME);
+  return getGatewayPublicUrl();
 }
 
 interface GatewayStatus {
@@ -119,7 +131,22 @@ async function checkGatewayStatus(): Promise<GatewayStatus> {
   }
 
   const gatewayUrl = await getGatewayUrl();
-  const hasOwner = await checkGatewayHasOwner(gatewayUrl);
+  let hasOwner: boolean;
+  try {
+    hasOwner = await checkGatewayHasOwner(gatewayUrl);
+  } catch (error) {
+    if (error instanceof GatewayUnreachableError) {
+      console.log(chalk.yellow("\nGateway unreachable\n"));
+      console.log(formatGatewayUnreachableError(error));
+      console.log(
+        chalk.dim(
+          "  Confirm the gateway URL is correct and reachable, then run this command again.\n",
+        ),
+      );
+      await exitWithUpdateNotice(1);
+    }
+    throw error;
+  }
   return { isDeployed: true, hasOwner, gatewayUrl };
 }
 
@@ -155,4 +182,11 @@ export async function requireGatewaySetup(): Promise<string> {
   }
 
   return gatewayUrl;
+}
+
+function reasonForCause(cause: unknown): string {
+  if (cause instanceof Error) {
+    return cause.message;
+  }
+  return String(cause);
 }

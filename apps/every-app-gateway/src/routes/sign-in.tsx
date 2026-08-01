@@ -4,9 +4,9 @@ import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
-import { CpuTimeoutWarning } from "@/components/CpuTimeoutWarning";
-import { useCpuTimeoutRetry } from "@/hooks/useCpuTimeoutRetry";
-import { getSafeRedirect } from "@/utils/auth";
+import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
+import { getSafeRedirect, getSafeReturnTo } from "@/utils/auth";
 import {
   getBetterAuthErrorMessage,
   getServerErrorMessage,
@@ -14,7 +14,27 @@ import {
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
+  // Absolute URL back to an app subdomain, set by the perimeter when it
+  // redirects an unauthenticated navigation to the login page.
+  return_to: z.string().optional(),
 });
+
+function getAuthSearch({
+  redirect,
+  return_to,
+}: {
+  redirect?: string;
+  return_to?: string;
+}) {
+  const search: { redirect?: string; return_to?: string } = {};
+  if (redirect) {
+    search.redirect = redirect;
+  }
+  if (return_to) {
+    search.return_to = return_to;
+  }
+  return redirect || return_to ? search : undefined;
+}
 
 export const Route = createFileRoute("/sign-in")({
   component: SignIn,
@@ -27,8 +47,20 @@ function SignIn() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { redirect } = Route.useSearch();
+  const { redirect, return_to } = Route.useSearch();
   const safeRedirect = getSafeRedirect(redirect);
+
+  // Where to land after login: a validated app-subdomain URL from the
+  // perimeter wins over the internal redirect path. Cross-origin, so it must
+  // be a full browser navigation, not a router transition.
+  const continueToDestination = () => {
+    const safeReturnTo = getSafeReturnTo(return_to);
+    if (safeReturnTo) {
+      window.location.assign(safeReturnTo);
+    } else {
+      navigate({ to: safeRedirect });
+    }
+  };
 
   const {
     isRunning,
@@ -52,7 +84,7 @@ function SignIn() {
             if (hadRetries) {
               setRetrySuccess();
             } else {
-              navigate({ to: safeRedirect });
+              continueToDestination();
             }
           },
         },
@@ -91,7 +123,7 @@ function SignIn() {
         hasExhaustedRetries={hasExhaustedRetries}
         secondsUntilRetry={secondsUntilRetry}
         isSuccess={isRetrySuccess}
-        onContinue={() => navigate({ to: safeRedirect })}
+        onContinue={continueToDestination}
       />
     );
   }
@@ -155,7 +187,7 @@ function SignIn() {
                 Don't have an account?{" "}
                 <Link
                   to="/sign-up"
-                  search={redirect ? { redirect } : undefined}
+                  search={getAuthSearch({ redirect, return_to })}
                   className="font-medium text-base-content hover:underline"
                 >
                   Sign up
@@ -164,7 +196,7 @@ function SignIn() {
               <p className="text-sm text-base-content/60">
                 <Link
                   to="/forgot-password"
-                  search={redirect ? { redirect } : undefined}
+                  search={getAuthSearch({ redirect, return_to })}
                   className="font-medium text-base-content hover:underline"
                 >
                   Forgot password?

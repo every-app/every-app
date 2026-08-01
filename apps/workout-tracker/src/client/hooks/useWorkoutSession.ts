@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useLiveQuery } from "@tanstack/react-db";
 import { nanoid } from "nanoid";
 import { useActiveProgram, type WorkoutWithExercises } from "./useProgramData";
 import { useSetLogDebounce } from "./useSetLogDebounce";
-import { sessionsCollection, setLogsCollection } from "@/client/tanstack-db";
-import { completeWorkout } from "@/client/actions/completeWorkout";
+import { useSessionMutations, useSessions } from "@/client/queries/sessions";
+import { useSetLogs } from "@/client/queries/setLogs";
 import type { WorkoutSetLog } from "@/db/schema";
 
 type WorkoutData = {
@@ -23,13 +22,14 @@ type WorkoutData = {
 export function useWorkoutSession() {
   const { activeProgram } = useActiveProgram();
 
-  // Live queries for sessions and setLogs
-  const { data: sessions } = useLiveQuery((q) =>
-    q.from({ session: sessionsCollection }),
-  );
-  const { data: setLogs } = useLiveQuery((q) =>
-    q.from({ setLog: setLogsCollection }),
-  );
+  const {
+    data: sessions,
+    error: sessionsError,
+    isPending: areSessionsPending,
+    refetch: refetchSessions,
+  } = useSessions();
+  const { data: setLogs } = useSetLogs();
+  const { create } = useSessionMutations();
 
   // Build current workout data from active program
   const currentWorkout = activeProgram
@@ -64,55 +64,89 @@ export function useWorkoutSession() {
 
   // Track the current session ID
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const hasInitialized = useRef(false);
+  const [sessionCreationError, setSessionCreationError] =
+    useState<Error | null>(null);
+  const [retryAttempt, setRetryAttempt] = useState(0);
+  const attemptedWorkoutKey = useRef<string | null>(null);
 
   // Initialize session when workout loads (but NOT setLogs - those are created on first touch)
   useEffect(() => {
     if (
       !workoutData?.workout ||
       !workoutData?.program ||
-      hasInitialized.current
+      areSessionsPending ||
+      sessionsError
     ) {
       return;
     }
+
+    const workoutKey = `${workoutData.program.id}:${workoutData.workout.id}`;
 
     // Check if we already have an in-progress session
     if (existingSession) {
       // Restore from existing session
       setSessionId(existingSession.id);
-      hasInitialized.current = true;
+      setSessionCreationError(null);
+      attemptedWorkoutKey.current = workoutKey;
       return;
     }
 
+    if (attemptedWorkoutKey.current === workoutKey) return;
+
     // No existing session - create new session only (setLogs created on touch)
     const newSessionId = nanoid();
+    attemptedWorkoutKey.current = workoutKey;
     setSessionId(newSessionId);
-    hasInitialized.current = true;
+    setSessionCreationError(null);
 
-    const now = new Date().toISOString();
-
-    try {
-      // Create the session with snapshot names
-      sessionsCollection.insert({
+    void create
+      .mutateAsync({
         id: newSessionId,
-        userId: "", // Will be set by server
         programId: workoutData.program.id,
         workoutId: workoutData.workout.id,
         programNameSnapshot: workoutData.program.name,
         workoutNameSnapshot: workoutData.workout.name,
-        status: "in_progress" as const,
-        startedAt: now,
-        completedAt: null,
+        status: "in_progress",
+      })
+      .catch((error) => {
+        console.error("Failed to create session:", error);
+        setSessionId(null);
+        setSessionCreationError(
+          error instanceof Error
+            ? error
+            : new Error("Failed to create session"),
+        );
       });
-    } catch (error) {
-      console.error("Failed to create session:", error);
-    }
-  }, [workoutData?.workout, workoutData?.program, existingSession, sessions]);
+  }, [
+    workoutData?.workout,
+    workoutData?.program,
+    existingSession,
+    areSessionsPending,
+    sessionsError,
+    create,
+    retryAttempt,
+  ]);
+
+  const retrySessionCreation = useCallback(async () => {
+    const result = await refetchSessions();
+    if (result.error) return;
+
+    attemptedWorkoutKey.current = null;
+    setSessionCreationError(null);
+    setRetryAttempt((attempt) => attempt + 1);
+  }, [refetchSessions]);
+
+  const sessionError =
+    sessionCreationError ??
+    (sessionsError instanceof Error ? sessionsError : null);
 
   return {
     workoutData,
     sessionId,
     sessionSetLogs,
+    sessionError,
+    isSessionInitializing: areSessionsPending || create.isPending,
+    retrySessionCreation,
   };
 }
 
@@ -125,6 +159,7 @@ export function useWorkoutCompletion(
   sessionSetLogs: WorkoutSetLog[],
 ) {
   const [isCompleting, setIsCompleting] = useState(false);
+  const { complete } = useSessionMutations();
 
   // Use extracted debounce hook for rep click handling
   const { handleRepClick, getReps, hasPendingChanges } = useSetLogDebounce(
@@ -147,19 +182,19 @@ export function useWorkoutCompletion(
   // Check if any sets have been logged (enables early finish)
   const hasAnyProgress = sessionSetLogs.length > 0 || hasPendingChanges;
 
-  // Complete workout handler - uses atomic action for session + program update
+  // Complete workout handler - one server function updates session + program.
   const handleCompleteWorkout = useCallback(
     async (onComplete: () => void) => {
       if (!sessionId || !workoutData) return;
 
       setIsCompleting(true);
       try {
-        // Use the atomic action to complete session and advance program
-        await completeWorkout({
+        await complete.mutateAsync({
           sessionId,
           programId: workoutData.program.id,
-          currentWorkoutIndex: workoutData.program.currentWorkoutIndex,
-          workoutsCount: workoutData.program.workoutsCount,
+          nextWorkoutIndex:
+            (workoutData.program.currentWorkoutIndex + 1) %
+            workoutData.program.workoutsCount,
         });
 
         onComplete();
@@ -169,7 +204,7 @@ export function useWorkoutCompletion(
         setIsCompleting(false);
       }
     },
-    [sessionId, workoutData],
+    [complete, sessionId, workoutData],
   );
 
   return {

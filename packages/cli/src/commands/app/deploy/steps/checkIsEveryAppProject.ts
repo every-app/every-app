@@ -3,11 +3,11 @@ import path from "node:path";
 import chalk from "chalk";
 import { exitWithUpdateNotice } from "@/lib/version-check";
 
-const CONFIG_FILES = ["every-app.jsonc", "every-app.json"];
+const CONFIG_FILES = ["everyapp.config.ts"];
 
 /**
  * Check if we're inside an Every App project directory.
- * If no every-app.jsonc or every-app.json file exists, exit with a helpful message.
+ * If no everyapp.config.ts file exists, exit with a helpful message.
  */
 export async function checkIsEveryAppProject(): Promise<void> {
   const cwd = process.cwd();
@@ -23,9 +23,8 @@ export async function checkIsEveryAppProject(): Promise<void> {
     }
   }
 
-  // No config file found
   console.log(chalk.yellow("\nNot inside an Every App project"));
-  console.log(chalk.dim("  No every-app.jsonc found\n"));
+  console.log(chalk.dim("  No everyapp.config.ts found\n"));
   console.log(
     "To create a new app, run the below command from the directory where you store your projects:",
   );

@@ -1,11 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { streamText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { fetchGateway, getGatewayUrl } from "@every-app/sdk/cloudflare/server";
-import {
-  authenticateRequest,
-  getAuthConfig,
-} from "@every-app/sdk/tanstack/server";
+import { createGatewayFetch, requireEveryAppUser } from "@every-app/sdk/server";
 import { env } from "cloudflare:workers";
 import { chatRequestSchema } from "@/server/utils/validation";
 import { MessageService } from "@/server/services/MessageService";
@@ -100,18 +96,8 @@ export const Route = createFileRoute("/api/chat")({
     handlers: {
       POST: async ({ request }) => {
         try {
-          // Authenticate the request
-          const authConfig = getAuthConfig();
-          const session = await authenticateRequest(authConfig, request);
-
-          if (!session || !session.sub) {
-            return new Response(JSON.stringify({ error: "Unauthorized" }), {
-              status: 401,
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-
-          const userId = session.sub;
+          const identityUser = await requireEveryAppUser(request, env);
+          const userId = identityUser.id;
 
           // Parse request body
           const rawData = await request.json();
@@ -169,16 +155,14 @@ export const Route = createFileRoute("/api/chat")({
             userId,
           );
 
-          // Create OpenAI provider instance routed through the Every App gateway.
-          // The gateway authenticates requests via x-every-app-token (set by
-          // fetchGateway) and injects the real OpenAI key server-side.
+          // The custom fetch sends the provider request through the private
+          // EVERY_APP_GATEWAY binding and preserves the streaming body.
           const openaiProvider = createOpenAI({
-            // @ai-sdk/openai requires an apiKey value even when requests are
-            // gateway-authenticated. The placeholder is never used because
-            // fetchGateway strips the Authorization header before forwarding.
+            // @ai-sdk/openai requires a value, but createGatewayFetch removes
+            // this placeholder before the binding receives the request.
             apiKey: "gateway-managed",
-            baseURL: `${getGatewayUrl(env)}/api/ai/openai/v1`,
-            fetch: (url, init) => fetchGateway({ env, url, init }),
+            baseURL: "https://every-app-gateway.invalid/api/ai/openai/v1",
+            fetch: createGatewayFetch({ env, request }),
           });
 
           // Stream text with AI SDK
@@ -240,6 +224,12 @@ export const Route = createFileRoute("/api/chat")({
           // Return streaming response using UI message stream format
           return result.toUIMessageStreamResponse();
         } catch (error) {
+          if (error instanceof Response && error.status === 401) {
+            return new Response(JSON.stringify({ error: "Unauthorized" }), {
+              status: 401,
+              headers: { "Content-Type": "application/json" },
+            });
+          }
           console.error("Chat error:", error);
           return new Response(
             JSON.stringify({ error: "Failed to process chat request" }),

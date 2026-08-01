@@ -24,6 +24,8 @@ jobs:
           cache: 'pnpm'
       - name: Install all dependencies
         run: pnpm install --ignore-scripts
+      - name: Build workspace packages
+        run: pnpm -r --no-bail run build
       - name: Run type checking
         run: pnpm types:check
       - name: Validate SDK relative ESM import extensions
@@ -85,6 +87,8 @@ jobs:
           cache: 'pnpm'
       - name: Install all dependencies
         run: pnpm install --ignore-scripts
+      - name: Build workspace packages
+        run: pnpm -r --no-bail run build
       - name: Run tests
         run: pnpm test
 

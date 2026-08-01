@@ -2,7 +2,6 @@ import type { LocalContext } from "@/context";
 import chalk from "chalk";
 import { cleanupTempDirectory } from "@/lib/file-operations";
 import { confirmDeployment } from "@/lib/deployment";
-import { writeEveryAppConfig } from "@/lib/everyapp-config";
 import { initRepository } from "@/lib/git";
 import { requireCloudflareAuth } from "@/lib/cloudflare";
 import { requireGatewaySetup } from "@/lib/gateway";
@@ -10,11 +9,13 @@ import { checkNotNestedApp } from "@/commands/app/create/steps/checkNotNestedApp
 import { checkPnpm } from "@/commands/app/create/steps/checkPnpm";
 import { promptUserInput } from "@/commands/app/create/steps/promptUserInput";
 import { cloneTemplate } from "@/commands/app/create/steps/cloneTemplate";
-import { updatePackageJson } from "@/commands/app/create/steps/updateConfiguration";
+import {
+  updateEveryappManifestId,
+  updatePackageJson,
+} from "@/commands/app/create/steps/updateConfiguration";
 import { setupLocalEnvironment } from "@/commands/app/shared/setupLocalEnvironment";
 import { printNextSteps } from "@/commands/app/create/steps/printNextSteps";
 import { deployApp } from "@/commands/app/deploy/deployApp";
-import { provisionGatewayAppApiToken } from "@/commands/app/deploy/steps/setupAppSecrets";
 
 interface CreateCommandFlags {
   verbose?: boolean;
@@ -76,22 +77,12 @@ export default async function (
 
     // Update package.json with app name before deployment
     await updatePackageJson({ targetDir, appId });
-
-    // Write every-app.jsonc with the canonical appId
-    await writeEveryAppConfig(targetDir, { appId });
+    await updateEveryappManifestId({ targetDir, appId });
 
     // Deploy to Cloudflare (creates D1/KV, installs deps, runs prod migrations, deploys)
-    const { workerUrl, gatewayUrl, organizationId } = await deployApp({
+    const { liveUrl, gatewayUrl } = await deployApp({
       cwd: targetDir,
-      appId,
       verbose,
-      devUrl: "http://localhost:3001",
-    });
-
-    const localGatewayAppApiToken = await provisionGatewayAppApiToken({
-      gatewayUrl,
-      appId,
-      organizationId,
     });
 
     // Local setup: create .env.local and run local migrations
@@ -100,13 +91,12 @@ export default async function (
       appId,
       verbose,
       gatewayUrl,
-      gatewayAppApiToken: localGatewayAppApiToken,
     });
 
     // Initialize git repository with initial commit
     await initRepository({ targetDir, verbose });
 
-    printNextSteps({ appId, targetDir, gatewayUrl, workerUrl });
+    printNextSteps({ appId, targetDir, gatewayUrl, liveUrl });
   } catch (error) {
     console.error(
       chalk.red("\nFailed to create project:"),
