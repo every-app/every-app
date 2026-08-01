@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { z } from "zod";
 import { queryClient } from "@/client/queryClient";
-import { todosKey } from "@/client/queries/todos";
+import { todosKey, todosMutationKey } from "@/client/queries/todos";
 
 /**
  * Reconnection backoff configuration.
@@ -93,7 +93,10 @@ export function useSyncEvents() {
 }
 
 function handleSyncMessage(message: SyncMessage) {
-  if (INVALIDATING_SYNC_EVENTS.has(message.event)) {
+  if (
+    INVALIDATING_SYNC_EVENTS.has(message.event) &&
+    queryClient.isMutating({ mutationKey: todosMutationKey, exact: true }) === 0
+  ) {
     queryClient.invalidateQueries({ queryKey: todosKey });
   }
 }
