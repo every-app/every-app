@@ -68,7 +68,11 @@ describe("updatePackageJson", () => {
       // a CLI unit test to the template's package.json on every version bump.
       expect(specs).not.toContain("workspace:");
       expect(packageJson.dependencies["@every-app/sdk"]).toMatch(/^\^?\d+\./);
-      expect(packageJson.devDependencies.everyapp).toMatch(/^\^?\d+\./);
+      expect(packageJson.devDependencies.everyapp).toBeUndefined();
+      expect(packageJson.scripts.dev).toBe("npx -y everyapp@latest dev");
+      expect(packageJson.scripts.deploy).toBe(
+        "npx -y everyapp@latest app deploy",
+      );
 
       await fs.writeFile(
         path.join(targetDir, "package.json"),

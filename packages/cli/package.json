@@ -4,7 +4,7 @@
   "description": "Every App CLI - Deploy and manage apps.",
   "license": "MIT",
   "type": "module",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "files": [
     "dist",
     "bin",

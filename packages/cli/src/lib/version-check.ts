@@ -48,7 +48,7 @@ let noticePrinted = false;
 export async function printUpdateNoticeIfAvailable(): Promise<void> {
   if (noticePrinted || !versionCheckPromise) return;
   noticePrinted = true;
-  
+
   const result = await versionCheckPromise;
   printUpdateNoticeSync(result);
 }
@@ -117,10 +117,12 @@ function printUpdateNoticeSync(result: VersionCheckResult): void {
   if (result.updateAvailable && result.latestVersion) {
     console.log();
     console.log(
-      chalk.yellow(`  Update available: ${result.currentVersion} → ${result.latestVersion}`)
+      chalk.yellow(
+        `  Update available: ${result.currentVersion} → ${result.latestVersion}`,
+      ),
     );
     console.log(
-      chalk.dim(`  Update: ${chalk.cyan("npm install -g everyapp@latest")}`)
+      chalk.dim(`  Run latest: ${chalk.cyan("npx -y everyapp@latest")}`),
     );
   }
 }

@@ -5,11 +5,8 @@ CLI for [Every App](https://everyapp.dev) - deploy and manage self-hosted apps o
 ## Installation
 
 ```bash
-# Run directly with npx
-npx everyapp <command>
-
-# Or install globally
-npm install -g everyapp
+# Run the latest CLI directly with npx
+npx -y everyapp@latest <command>
 ```
 
 ## Commands
@@ -19,7 +16,7 @@ npm install -g everyapp
 Deploy the Every App Gateway to your Cloudflare account:
 
 ```bash
-npx everyapp gateway deploy
+npx -y everyapp@latest gateway deploy
 ```
 
 ### Create a new app
@@ -27,10 +24,11 @@ npx everyapp gateway deploy
 Create a new app from the starter template:
 
 ```bash
-npx everyapp app create [name]
+npx -y everyapp@latest app create [name]
 ```
 
 This will:
+
 1. Prompt for an app ID (or use the provided name)
 2. Deploy to Cloudflare (D1 database, KV namespace, Worker)
 3. Configure wrangler.jsonc, package.json, and .env files
@@ -41,7 +39,7 @@ This will:
 Deploy your app to Cloudflare:
 
 ```bash
-npx everyapp app deploy
+npx -y everyapp@latest app deploy
 ```
 
 Run this from your app directory to build and deploy updates.
@@ -51,10 +49,11 @@ Run this from your app directory to build and deploy updates.
 Set up local development for an existing Every App app (for example, after cloning a repo):
 
 ```bash
-npx everyapp app setup-local
+npx -y everyapp@latest app setup-local
 ```
 
 This will:
+
 1. Verify Cloudflare and gateway setup
 2. Install dependencies
 3. Create or refresh `.env.local`
@@ -65,16 +64,17 @@ This will:
 Run commands with access to your production D1 database:
 
 ```bash
-npx everyapp app remote-d1-shell -- <command>
+npx -y everyapp@latest app remote-d1-shell -- <command>
 ```
 
 Examples:
+
 ```bash
 # Run migrations
-npx everyapp app remote-d1-shell -- npx drizzle-kit migrate
+npx -y everyapp@latest app remote-d1-shell -- npx drizzle-kit migrate
 
 # Open Drizzle Studio
-npx everyapp app remote-d1-shell -- npx drizzle-kit studio
+npx -y everyapp@latest app remote-d1-shell -- npx drizzle-kit studio
 ```
 
 ## Documentation

@@ -5,12 +5,12 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "dev": "npx everyapp dev",
-    "dev:vite": "npx everyapp app generate-config && vite dev",
-    "build": "npx everyapp app generate-config && vite build && tsc --noEmit",
+    "dev": "npx -y everyapp@latest dev",
+    "dev:vite": "npx -y everyapp@latest app generate-config && vite dev",
+    "build": "npx -y everyapp@latest app generate-config && vite build && tsc --noEmit",
     "preview": "npm run build && vite preview --port 3001",
-    "deploy": "npx everyapp app deploy",
-    "cf-typegen": "npx everyapp app generate-config && wrangler types -c .everyapp/wrangler.json",
+    "deploy": "npx -y everyapp@latest app deploy",
+    "cf-typegen": "npx -y everyapp@latest app generate-config && wrangler types -c .everyapp/wrangler.json",
     "test": "vitest run --silent",
     "test:watch": "vitest",
     "types:check": "tsc --noEmit",
@@ -18,9 +18,9 @@
     "format:write": "prettier . --write",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "drizzle-kit migrate",
-    "db:migrate:prod": "npx everyapp app remote-d1-shell -- drizzle-kit migrate --config=drizzle-prod.config.ts",
+    "db:migrate:prod": "npx -y everyapp@latest app remote-d1-shell -- drizzle-kit migrate --config=drizzle-prod.config.ts",
     "db:studio:local": "drizzle-kit studio",
-    "db:studio:prod": "npx everyapp app remote-d1-shell -- drizzle-kit studio --config=drizzle-prod.config.ts",
+    "db:studio:prod": "npx -y everyapp@latest app remote-d1-shell -- drizzle-kit studio --config=drizzle-prod.config.ts",
     "knip": "knip"
   },
   "dependencies": {
@@ -56,7 +56,6 @@
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.13.18",
-    "everyapp": "^0.2.0",
     "@cloudflare/workers-types": "^4.20251014.0",
     "@libsql/client": "^0.15.15",
     "@tailwindcss/vite": "^4.1.11",

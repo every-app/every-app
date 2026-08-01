@@ -27,5 +27,5 @@ pnpm run db:migrate:local
 ## Deploy
 
 ```sh
-npx everyapp app deploy
+npx -y everyapp@latest app deploy
 ```

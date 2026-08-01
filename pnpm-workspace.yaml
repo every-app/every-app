@@ -4,8 +4,8 @@ packages:
   - 'packages/*'
   - 'templates/*'
 sharedWorkspaceLockfile: false
-# The cloneable packages depend on `everyapp` / `@every-app/sdk` by published
-# semver range so they can be cloned and installed on their own. Inside the
-# monorepo those ranges must still resolve to the local packages, which is what
-# this does — keep the local versions satisfying the ranges the clones declare.
+# The cloneable packages depend on `@every-app/sdk` by published semver range so
+# they can be cloned and installed on their own. Inside the monorepo that range
+# must still resolve to the local package, which is what this does — keep the
+# local version satisfying the range the clones declare.
 linkWorkspacePackages: true
