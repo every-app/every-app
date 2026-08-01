@@ -24,3 +24,8 @@ yarn.lock
 /blob-report/
 /playwright/.cache/
 .tanstack
+.everyapp/
+
+# Regenerated on install; would contain link: entries pointing into the
+# monorepo, which are broken for anyone who clones this directory alone.
+pnpm-lock.yaml

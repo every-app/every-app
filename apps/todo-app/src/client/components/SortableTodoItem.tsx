@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { DayPicker } from "react-day-picker";
-import { todoCollection } from "@/client/tanstack-db";
+import { useTodoMutations } from "@/client/queries/todos";
 import { getTodoItemId, getTodoInlineEditId } from "@/client/lib/element-ids";
 import {
   extractDueDateFromInput,
@@ -50,6 +50,7 @@ export function SortableTodoItem({
   const dueDateTriggerRef = useRef<HTMLButtonElement>(null);
   const dropdownTriggerRef = useRef<HTMLButtonElement>(null);
   const skipBlurSaveRef = useRef(false);
+  const { update, remove } = useTodoMutations();
 
   const parseDateKeyToDate = useCallback(
     (dateKey: string | null | undefined) => {
@@ -151,10 +152,7 @@ export function SortableTodoItem({
     }
 
     if (nextTitle !== todo.title || nextDueDate !== todo.dueDate) {
-      todoCollection.update(todo.id, (draft) => {
-        draft.title = nextTitle;
-        draft.dueDate = nextDueDate;
-      });
+      update.mutate({ id: todo.id, title: nextTitle, dueDate: nextDueDate });
     }
   };
 
@@ -192,16 +190,12 @@ export function SortableTodoItem({
     if (!isEditable()) return;
 
     if (!nextDate) {
-      todoCollection.update(todo.id, (draft) => {
-        draft.dueDate = null;
-      });
+      update.mutate({ id: todo.id, dueDate: null });
       setIsDueDatePickerOpen(false);
       return;
     }
 
-    todoCollection.update(todo.id, (draft) => {
-      draft.dueDate = formatDateKey(nextDate);
-    });
+    update.mutate({ id: todo.id, dueDate: formatDateKey(nextDate) });
     setSelectedDueDate(nextDate);
     setIsDueDatePickerOpen(false);
   };
@@ -234,9 +228,7 @@ export function SortableTodoItem({
 
   const handleClearDueDate = () => {
     if (!isEditable()) return;
-    todoCollection.update(todo.id, (draft) => {
-      draft.dueDate = null;
-    });
+    update.mutate({ id: todo.id, dueDate: null });
   };
 
   useEffect(() => {
@@ -483,7 +475,7 @@ export function SortableTodoItem({
       <ConfirmationModal
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
-        onConfirm={() => todoCollection.delete(todo.id)}
+        onConfirm={() => remove.mutate({ id: todo.id })}
         title="Delete Todo"
         description="Are you sure you want to delete this todo? This action cannot be undone."
         confirmText="Delete"

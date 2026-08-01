@@ -3,7 +3,7 @@ import { Checkbox } from "@/client/components/ui/checkbox";
 import { ConfirmationModal } from "@/client/components/ui/confirmation-modal";
 import { Trash2 } from "lucide-react";
 import { Button } from "./ui/button";
-import { todoCollection } from "@/client/tanstack-db";
+import { useTodoMutations } from "@/client/queries/todos";
 import { getHistoryItemId } from "@/client/lib/element-ids";
 
 interface HistoryItemProps {
@@ -13,6 +13,7 @@ interface HistoryItemProps {
 
 export function HistoryItem({ todo, onToggleComplete }: HistoryItemProps) {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const { remove } = useTodoMutations();
 
   return (
     <div
@@ -46,7 +47,7 @@ export function HistoryItem({ todo, onToggleComplete }: HistoryItemProps) {
       <ConfirmationModal
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
-        onConfirm={() => todoCollection.delete(todo.id)}
+        onConfirm={() => remove.mutate({ id: todo.id })}
         title="Delete Todo"
         description="Are you sure you want to delete this todo? This action cannot be undone."
         confirmText="Delete"

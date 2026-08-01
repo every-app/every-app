@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useLiveQuery } from "@tanstack/react-db";
 import { useMemo } from "react";
-import { todoCollection } from "@/client/tanstack-db";
+import { useTodos } from "@/client/queries/todos";
 import { HistoryItem } from "@/client/components/TodoHistoryItem";
 
 export const Route = createFileRoute("/history")({
@@ -9,12 +8,7 @@ export const Route = createFileRoute("/history")({
 });
 
 function History() {
-  // Live query that updates automatically when data changes
-  const {
-    data: todos,
-    isLoading,
-    isError,
-  } = useLiveQuery((q) => q.from({ todo: todoCollection }));
+  const { data: todos, isLoading, isError } = useTodos();
 
   const completedTodos = useMemo(
     () => todos?.filter((todo) => todo.completed) ?? [],

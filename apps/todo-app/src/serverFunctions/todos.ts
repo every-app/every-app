@@ -1,45 +1,19 @@
 import { createServerFn } from "@tanstack/react-start";
-import z from "zod";
 import { db, schema } from "@/db";
 import { todos } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
 import { emitSyncEvent } from "@/middleware/emitSyncEvent";
-import { useSessionTokenClientMiddleware } from "@every-app/sdk/tanstack";
-import { DATE_KEY_REGEX, isValidDateKey } from "@/lib/date-key";
-
-const dueDateSchema = z
-  .string()
-  .regex(DATE_KEY_REGEX, "Due date must be in YYYY-MM-DD format")
-  .refine(isValidDateKey, "Due date must be a valid calendar date");
-
-const createTodoSchema = z.object({
-  id: z.string().uuid("Invalid todo ID"),
-  title: z.string().min(1, "Title is required").max(1024, "Title too long"),
-  sortKey: z.string(),
-  dueDate: dueDateSchema.nullable().optional(),
-});
-
-const updateTodoSchema = z.object({
-  id: z.string().uuid("Invalid todo ID"),
-  title: z
-    .string()
-    .min(1, "Title is required")
-    .max(1024, "Title too long")
-    .optional(),
-  completed: z.boolean().optional(),
-  sortKey: z.string().optional(),
-  dueDate: dueDateSchema.nullable().optional(),
-});
-
-const deleteTodoSchema = z.object({
-  id: z.string().uuid("Invalid todo ID"),
-});
+import {
+  createTodoSchema,
+  deleteTodoSchema,
+  updateTodoSchema,
+} from "@/types/schemas/todos";
 
 export const getAllTodos = createServerFn()
   // TODO Global middlewares don't seem to work right now in tanstack-start. We should move to this once this is resolved.
   // https://github.com/TanStack/router/issues/3869
-  .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware])
+  .middleware([ensureUserMiddleware])
   .handler(async ({ context }) => {
     if (!context?.userId) {
       throw new Error("Unauthorized: No user ID in context");
@@ -63,11 +37,7 @@ export const getAllTodos = createServerFn()
   });
 
 export const createTodo = createServerFn()
-  .middleware([
-    useSessionTokenClientMiddleware,
-    ensureUserMiddleware,
-    emitSyncEvent("createTodo"),
-  ])
+  .middleware([ensureUserMiddleware, emitSyncEvent("createTodo")])
   .inputValidator((todo: unknown) => createTodoSchema.parse(todo))
   .handler(async ({ data: todo, context }) => {
     if (!context?.userId) {
@@ -83,14 +53,12 @@ export const createTodo = createServerFn()
         dueDate: todo.dueDate ?? null,
       },
     ]);
+
+    return { success: true };
   });
 
 export const updateTodo = createServerFn()
-  .middleware([
-    useSessionTokenClientMiddleware,
-    ensureUserMiddleware,
-    emitSyncEvent("updateTodo"),
-  ])
+  .middleware([ensureUserMiddleware, emitSyncEvent("updateTodo")])
   .inputValidator((todo: unknown) => updateTodoSchema.parse(todo))
   .handler(async ({ data: todo, context }) => {
     const existingTodo = await db.query.todos.findFirst({
@@ -112,38 +80,34 @@ export const updateTodo = createServerFn()
       );
     }
 
-    // Prepare update data
-    const updateData = {
-      title: todo.title ?? existingTodo.title,
-      completed: todo.completed ?? existingTodo.completed,
-      sortKey: todo.sortKey ?? existingTodo.sortKey,
-      completedAt: existingTodo.completedAt as string | null,
-      dueDate: todo.dueDate !== undefined ? todo.dueDate : existingTodo.dueDate,
-    };
-
-    // Set completedAt timestamp when marking as completed
+    // Only write the fields the caller actually sent, so a concurrent update
+    // from another device (this app syncs live) can't clobber a field it left
+    // untouched.
+    const updateData: Partial<typeof todos.$inferInsert> = {};
+    if (todo.title !== undefined) updateData.title = todo.title;
+    if (todo.sortKey !== undefined) updateData.sortKey = todo.sortKey;
+    if (todo.dueDate !== undefined) updateData.dueDate = todo.dueDate;
     if (todo.completed !== undefined) {
+      updateData.completed = todo.completed;
       if (todo.completed && !existingTodo.completed) {
-        // Marking as completed
         updateData.completedAt = new Date().toISOString();
       } else if (!todo.completed && existingTodo.completed) {
-        // Unmarking as completed
         updateData.completedAt = null;
       }
     }
 
-    await db
-      .update(todos)
-      .set(updateData)
-      .where(and(eq(todos.id, todo.id), eq(todos.userId, context.userId)));
+    if (Object.keys(updateData).length > 0) {
+      await db
+        .update(todos)
+        .set(updateData)
+        .where(and(eq(todos.id, todo.id), eq(todos.userId, context.userId)));
+    }
+
+    return { success: true };
   });
 
 export const deleteTodo = createServerFn()
-  .middleware([
-    useSessionTokenClientMiddleware,
-    ensureUserMiddleware,
-    emitSyncEvent("deleteTodo"),
-  ])
+  .middleware([ensureUserMiddleware, emitSyncEvent("deleteTodo")])
   .inputValidator((todo: unknown) => deleteTodoSchema.parse(todo))
   .handler(async ({ data: todo, context }) => {
     const existingTodo = await db.query.todos.findFirst({
@@ -157,4 +121,6 @@ export const deleteTodo = createServerFn()
     await db
       .delete(todos)
       .where(and(eq(todos.id, todo.id), eq(todos.userId, context.userId)));
+
+    return { success: true };
   });

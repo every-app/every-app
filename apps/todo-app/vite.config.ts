@@ -6,12 +6,15 @@ import tailwindcss from "@tailwindcss/vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
 
 export default defineConfig({
-  envPrefix: ["VITE_", "BYPASS_GATEWAY_LOCAL_ONLY"],
+  envPrefix: ["VITE_"],
   server: {
     port: 3001,
   },
   plugins: [
-    cloudflare({ viteEnvironment: { name: "ssr" } }),
+    cloudflare({
+      configPath: ".everyapp/wrangler.json",
+      viteEnvironment: { name: "ssr" },
+    }),
     tsConfigPaths(),
     tanstackStart(),
     viteReact(),

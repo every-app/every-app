@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
-import { todoCollection } from "@/client/tanstack-db";
+import { useTodoMutations } from "@/client/queries/todos";
 
 interface CreateTodoModalProps {
   isOpen: boolean;
@@ -10,6 +10,7 @@ interface CreateTodoModalProps {
 export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
   const [title, setTitle] = useState("");
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const { create } = useTodoMutations();
 
   // Open/close modal using native dialog API
   useEffect(() => {
@@ -32,10 +33,9 @@ export function CreateTodoModal({ isOpen, onClose }: CreateTodoModalProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (title.trim()) {
-      todoCollection.insert({
+      create.mutate({
         id: crypto.randomUUID(),
         title: title.trim(),
-        completed: false,
       });
       toast("Todo created");
       setTitle("");

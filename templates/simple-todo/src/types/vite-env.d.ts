@@ -6,9 +6,8 @@ interface ViteTypeOptions {
 }
 
 interface ImportMetaEnv {
-  readonly VITE_GATEWAY_URL: string;
-  readonly VITE_APP_ID: string;
-  // more env variables...
+  // App-specific VITE_ vars go here. (The gateway home URL is derived at
+  // runtime from the current host — see client/lib/gatewayHome.ts.)
 }
 
 interface ImportMeta {
