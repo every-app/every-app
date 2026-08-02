@@ -12,6 +12,14 @@ pnpm dev
 Use `pnpm dev:vite` only when you intentionally need the bare Vite server;
 SDK-protected routes require the gateway started by `pnpm dev`.
 
+## MCP
+
+The starter serves a stateless Streamable HTTP MCP endpoint at `/mcp` with
+tools to list, create, update, and delete the authenticated user's todos. Keep
+the route private: Every App verifies identity before any tool runs. The
+platform contract and auth boundary are documented in
+[`docs/todo-mcp-example.md`](https://github.com/every-app/every-app/blob/main/docs/todo-mcp-example.md).
+
 Generate Migration
 
 ```sh
