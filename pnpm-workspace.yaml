@@ -9,3 +9,9 @@ sharedWorkspaceLockfile: false
 # must still resolve to the local package, which is what this does — keep the
 # local version satisfying the range the clones declare.
 linkWorkspacePackages: true
+allowBuilds:
+  "@prisma/client": false
+  better-sqlite3: false
+  esbuild: true
+  sharp: true
+  workerd: true
