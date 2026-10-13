@@ -25,6 +25,15 @@ async function listMembersForOrganization(organizationId: string) {
     .where(eq(members.organizationId, organizationId));
 }
 
+/** The organization `userId` owns (the claim's owner owns exactly one). */
+async function findOwnedOrganizationId(userId: string): Promise<string | null> {
+  const row = await db.query.members.findFirst({
+    columns: { organizationId: true },
+    where: and(eq(members.userId, userId), eq(members.role, "owner")),
+  });
+  return row?.organizationId ?? null;
+}
+
 async function findMembership(userId: string, organizationId: string) {
   return db.query.members.findFirst({
     columns: { id: true, role: true },
@@ -102,6 +111,7 @@ async function removeMember(
 }
 
 export const OrganizationMembersRepository = {
+  findOwnedOrganizationId,
   listMembersForOrganization,
   findMembership,
   updateRole,

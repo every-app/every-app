@@ -8,6 +8,7 @@
     "build-an-app/create-app",
     "build-an-app/local-dev",
     "---How It Works---",
+    "how-it-works/gateway",
     "how-it-works/overview",
     "how-it-works/security",
     "how-it-works/sdk",

@@ -8,8 +8,11 @@ import {
   sqliteD1Script,
   type SqliteD1,
 } from "@/test/sqliteD1";
+import { readPendingClaim } from "./pendingClaims";
 import {
   gatewayHasOwner,
+  maySetupLinkBeShown,
+  mintOperatorSetupLink,
   mintSetupLink,
   setupLinkForDeploy,
 } from "./setup-link";
@@ -85,6 +88,42 @@ describe("mintSetupLink", () => {
   });
 });
 
+describe("mintOperatorSetupLink", () => {
+  it("keeps a CLI secret for `everyapp login --resume`, never in the link", async () => {
+    const link = await mintOperatorSetupLink({
+      db: db(),
+      gatewayUrl: "https://apps.example.com",
+    });
+
+    expect(link.cliSecret).toMatch(/^ecs_[A-Za-z0-9_-]{43}$/);
+    expect(link.url).not.toContain(link.cliSecret!);
+    const [row] = sqlite.all("SELECT cli_secret_hash FROM owner_setup_tokens");
+    expect(row!["cli_secret_hash"]).toBe(
+      createHash("sha256").update(link.cliSecret!).digest("hex"),
+    );
+    await expect(readPendingClaim("apps.example.com")).resolves.toMatchObject({
+      url: link.url,
+      cliSecret: link.cliSecret,
+    });
+  });
+
+  it("mints a plain link on a gateway from before CLI secrets", async () => {
+    const older = createSqliteD1();
+    older.sqlite.exec(
+      "CREATE TABLE owner_setup_tokens (id text PRIMARY KEY, kind text NOT NULL, token_hash text NOT NULL UNIQUE, created_at integer, expires_at integer NOT NULL, consumed_at integer, consumed_by text)",
+    );
+
+    const link = await mintOperatorSetupLink({
+      db: older,
+      gatewayUrl: "https://old.example.com",
+    });
+
+    expect(link.cliSecret).toBeUndefined();
+    expect(older.all("SELECT kind FROM owner_setup_tokens")).toEqual([{ kind: "claim" }]);
+    await expect(readPendingClaim("old.example.com")).resolves.toBeNull();
+  });
+});
+
 describe("gatewayHasOwner", () => {
   it("reads owner memberships from D1", async () => {
     await expect(gatewayHasOwner(db())).resolves.toBe(false);
@@ -95,6 +134,29 @@ describe("gatewayHasOwner", () => {
       INSERT INTO members (id, organization_id, user_id, role, created_at) VALUES ('m', 'org', 'u', 'owner', 0);
     `);
     await expect(gatewayHasOwner(db())).resolves.toBe(true);
+  });
+});
+
+describe("maySetupLinkBeShown", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("shows the link to a terminal or an agent on this machine, never into CI unless asked", () => {
+    vi.stubEnv("CI", "");
+    expect(maySetupLinkBeShown({ terminal: true })).toBe(true);
+    // `setup --json`: an agent hands the link on to the person it works for.
+    expect(maySetupLinkBeShown({ terminal: false, relayed: true })).toBe(true);
+    // Piped to a file or a log.
+    expect(maySetupLinkBeShown({ terminal: false })).toBe(false);
+
+    vi.stubEnv("CI", "true");
+    expect(maySetupLinkBeShown({ terminal: true, relayed: true })).toBe(false);
+    expect(
+      maySetupLinkBeShown({
+        terminal: false,
+        relayed: true,
+        printSetupLink: true,
+      }),
+    ).toBe(true);
   });
 });
 

@@ -21,6 +21,7 @@ import { cfD1Database } from "@/lib/cf/d1";
 import { confirmAtTerminal, type Confirm } from "@/lib/cf/deploy";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
+import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import type { EventSink } from "@/lib/output/events";
 import { GatewayClient, type GatewayStatusResponse } from "./api";
@@ -32,7 +33,12 @@ import {
   type ApplyGatewayResult,
 } from "./apply";
 import { readDesiredState, workerExistence } from "./desiredState";
-import { readInstall, type InstallRecord } from "./install";
+import {
+  assertUpgradedSinceAdopted,
+  readInstall,
+  type InstallRecord,
+  type Routing,
+} from "./install";
 import type { BreakLease } from "./lease";
 import {
   compareReleaseOrder,
@@ -48,6 +54,16 @@ interface ReconcileGatewayOptions {
   out: EventSink;
   accountId: string;
   interactive: boolean;
+  /** Publish new app hosts over DNS records and CAA blocks. */
+  forceDns?: boolean;
+  /**
+   * Deploy with this routing instead of the install's (switching to
+   * per-app domains); recorded only once cf has published every hostname
+   * it brings (lib/gateway/apply.ts record()), so a switch cf stopped
+   * part-way runs again.
+   */
+  routing?: Routing;
+  lookupCaa?: ApplyGatewayOptions["lookupCaa"];
   /** Asks that person whether to redeploy a release it can't be sure is live (tests). */
   confirm?: Confirm;
   cliVersion: string;
@@ -83,15 +99,19 @@ export async function reconcileGateway(
   const db = cfD1Database(cf, databaseId);
   const install = await readInstall(db);
   if (!install) throw notDeployedByEveryapp();
+  assertUpgradedSinceAdopted(install);
   const gatewayUrl = `https://${install.gatewayHost}`;
 
   const readStatus =
     options.readStatus ??
     ((url: string) => new GatewayClient({ gatewayUrl: url }).status());
-  if (!options.force && !options.stagedSecrets) {
+  if (!options.force && !options.stagedSecrets && !options.routing) {
     const live = await readStatus(gatewayUrl).catch(() => null);
     const desired = await readDesiredState(db, workerExistence(cf));
-    if (live?.appBindingsDigest === desired.appBindingsDigest) {
+    if (
+      live?.appBindingsDigest === desired.appBindingsDigest &&
+      publishesHosts(install, desired.appHosts)
+    ) {
       out.emit({
         type: "step",
         step: "gateway.reconcile",
@@ -102,6 +122,8 @@ export async function reconcileGateway(
         versionId: live.versionId,
         firstDeploy: false,
         appWorkers: desired.appWorkers,
+        domains: install.liveDomains,
+        newHosts: [],
         verified: true,
         changed: false,
       };
@@ -139,6 +161,10 @@ export async function reconcileGateway(
         accountId: options.accountId,
         gatewayHost: current.gatewayHost,
         zone: { id: current.zoneId, name: current.zoneName },
+        routing: options.routing ?? current.routing,
+        appBaseDomain: current.appBaseDomain,
+        forceDns: options.forceDns,
+        lookupCaa: options.lookupCaa,
         resources: {
           d1Id: databaseId,
           oauthKvId: current.oauthKvId,
@@ -162,6 +188,19 @@ export async function reconcileGateway(
   } finally {
     await lease?.release();
   }
+}
+
+/**
+ * Whether the install already publishes exactly these app hosts (always,
+ * for an install whose apps reach it through the wildcard route).
+ */
+function publishesHosts(install: InstallRecord, appHosts: readonly string[]): boolean {
+  if (install.routing === "wildcard-route") return true;
+  const live = install.liveDomains.filter((host) => host !== install.gatewayHost);
+  const wanted = appHosts.filter((host) =>
+    isOneLabelBelow(host, install.appBaseDomain),
+  );
+  return [...live].sort().join("\n") === [...wanted].sort().join("\n");
 }
 
 /** The release to redeploy: see the top of this file. */

@@ -1,136 +1,101 @@
 ---
 title: Quickstart
-description: Deploy your Gateway in about five minutes
+description: Set up Every App in your Cloudflare account with one command
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Two things happen in this guide: you deploy your Gateway to your own Cloudflare account on your own domain, then you install an example app. Every app gets its own address under your domain. Throughout these docs, we use `your-domain.dev` for the Gateway and addresses such as `todo-<your-org>.your-domain.dev` for apps. The suffix is your organization slug, created with your account.
+One command takes an empty Cloudflare account to a working Gateway, your owner account, and a starter app you can open. Throughout these docs, `apps.your-domain.dev` stands for the Gateway's address and `todo.apps.your-domain.dev` for an app's.
+
+## What you need
+
+1. **[Node.js](https://nodejs.org/) 22.18 or newer.** It includes `npx`, which runs the commands below. Use Node, not Bun.
+2. **[pnpm](https://pnpm.io/installation)**, which builds the starter app: `npm install -g pnpm`.
+3. **A Cloudflare account on Workers Paid.** It's the one thing you buy: $5 a month, plus usage above generous included amounts ([costs](/docs/how-it-works/gateway#what-it-costs)). [Sign up](https://dash.cloudflare.com/sign-up), then subscribe under **Workers & Pages → Plans**. The Free plan can't run Every App.
+4. **A domain on Cloudflare.** Every App lives at a subdomain of it, such as `apps.your-domain.dev`, with each app one level below that. Nothing else in your domain changes, so a domain your company already uses is fine.
 
 <Callout type="info">
-  `your-domain.dev` is a placeholder. Your domain can use any extension. If you
-  don't own one, you can buy one for about $10 a year from any registrar,
-  including [Cloudflare](https://developers.cloudflare.com/registrar/). The
-  Gateway can deploy without a domain for a quick look around, but apps only
-  become reachable once your domain is set up.
+  **No domain on Cloudflare?** Buy one in the Cloudflare dashboard: **Domains →
+  Buy a domain**. Cloudflare Registrar charges what the registry does, about $10
+  a year for a `.com`, and the domain is ready in minutes with nothing to
+  configure. A domain you already own elsewhere works too: add it to Cloudflare
+  and point its nameservers there (this can take a few hours).
 </Callout>
 
 ## The fast path: let your agent set you up
 
-Paste this prompt into your coding agent and follow along. The agent runs the commands; you only step in for the things it can't do alone: creating accounts, clicking a browser login, and one DNS record.
+Paste this prompt into your coding agent. It runs the command; you step in for the few things only a person can do: approving a login, creating your owner account, paying for a plan.
 
 Don't have a coding agent yet? Install [Claude Code](https://claude.com/claude-code) or [Cursor](https://cursor.com), open its chat, and paste the prompt there.
 
 ```text
-Help me set up Every App, a self-hosted platform for personal apps on my own
-Cloudflare account and domain. Docs for you: https://everyapp.dev/llms.txt
+Help me set up Every App, a self-hosted platform for my company's private
+apps, in my own Cloudflare account. Docs for you: https://everyapp.dev/llms.txt
 
 Do these steps in order. Run the commands yourself. Pause and tell me exactly
-what to do whenever a step needs me (creating an account, clicking a browser
-login, adding a DNS record). If a command needs interactive input you can't
-provide, give me the exact command to run in my own terminal.
+what to do whenever a step needs me.
 
 1. Ask me where my Every App projects should live, create that folder, and
    run everything from inside it.
-2. Check Node.js is installed (`node --version`, must be 22.18 or newer).
-   Help me install it if not.
+2. Check Node.js (`node --version`, 22.18 or newer) and pnpm
+   (`pnpm --version`). Help me install what's missing.
 3. If I don't have a Cloudflare account, send me to
-   https://dash.cloudflare.com/sign-up and wait. It's free, no credit card.
-4. Ask me which domain I want to use. If it isn't on my Cloudflare account
-   yet, walk me through "Add a domain" at https://dash.cloudflare.com (free
-   plan is fine) and updating the nameservers at my registrar. If I don't own
-   a domain, help me buy one first (Cloudflare Registrar or any registrar).
-5. Run `npx -y cf auth login` in my terminal. It prints a link and a
-   one-time code; tell me to open the link, check the code and approve. If
-   that login can't complete, walk me through creating an API token at
-   https://dash.cloudflare.com/profile/api-tokens with the "Edit Cloudflare
-   Workers" template plus Account → D1 → Edit permission, then export
-   CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID before continuing.
-6. Run `npx -y everyapp gateway deploy -y --printSetupLink --domain <my domain>`.
-   If it prints instructions for adding a wildcard DNS record (CNAME, name
-   "*", target my domain, proxy ON), pause and walk me through adding it in
-   the Cloudflare dashboard under my domain → DNS.
-7. When it finishes, give me the one-time setup link it printed
-   (https://<my domain>/setup#token=…) and tell me to open it and create my
-   account there.
-8. Tell me to create a deploy token: on my Gateway, Admin → Tokens →
-   Deploy token (it's shown once — copy it). Then run
-   `npx -y everyapp login` and I'll paste the token when it asks. This is
-   what lets this machine deploy apps to my Gateway.
-9. Ask if I want an example app installed. If yes:
-   npx -y gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
-   cd every-todo-app && npx -y everyapp app deploy -y
-10. Tell me to refresh my Gateway. The app appears there, live at its own
-    subdomain of my domain.
+   https://dash.cloudflare.com/sign-up and wait. Remind me Every App needs the
+   Workers Paid plan ($5/month): Workers & Pages → Plans.
+4. Ask me where the Gateway should live: a subdomain of a domain I have on
+   Cloudflare, such as apps.<my domain>. If I have no domain on Cloudflare,
+   walk me through buying one in the dashboard (Domains → Buy a domain).
+5. Run `npx -y everyapp setup --json --domain <that address>`. It prints one
+   JSON event per line. Whenever an event has "type":"action_required", show
+   me its message, its link (data.url) and code (data.code) at once:
+   "cloudflare_login" means I open the link, check the code and approve;
+   "claim_owner" means I open the link and create my owner account.
+   If the event has "waiting": true, the command keeps running: let it.
+   If the command exits with code 2, run the same command again once I've
+   done what it asked.
+6. When it ends with "type":"done", tell me my Gateway's address and the
+   starter app's, and that this machine can deploy apps now.
 
 Keep responses short, one step at a time. If a command fails, show me the
 error and your suggested fix before retrying.
 ```
 
-<Callout type="info">
-  If your agent can drive a browser (computer use, or a browser tool like
-  Playwright MCP), you can also paste this add-on: "You may open and drive the
-  browser yourself. On dash.cloudflare.com/sign-up, fill the form but pause and
-  let me type my password; I'll read you the emailed verification code. You may
-  add the domain and the DNS record in the dashboard yourself. On Cloudflare's
-  login page, check the code and approve. The setup link's page creates my owner
-  account — pause and let me type that password too."
-</Callout>
-
 ## The manual path
 
-The same steps, if you'd rather run them yourself.
-
-### 1. Prerequisites
-
-1. Install [Node.js](https://nodejs.org/) 22.18 or newer. This includes `npx`, which runs the commands below.
-2. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) — free, no credit card.
-3. [Add your domain to Cloudflare](https://developers.cloudflare.com/fundamentals/manage-domains/add-site/) (free plan is fine) and update the nameservers at your registrar. Skip this if your domain already lives on Cloudflare.
-4. Log in to Cloudflare from your terminal with Cloudflare's CLI:
-
-   ```bash
-   npx cf auth login
-   ```
-
-   It prints a link and a one-time code. Open the link, check the code and approve. (The deploy offers this login too if you skip it.)
-
-### 2. Deploy the Gateway
-
 ```bash
-npx everyapp gateway deploy --domain your-domain.dev
+npx everyapp setup
 ```
 
-This sets up a database and hosting on your Cloudflare account, puts the Gateway live at your domain, and points `*.your-domain.dev`, every future app address, at it.
+It asks where the Gateway should live (it suggests `apps.<your domain>`), then:
 
-That last part needs one DNS record. Add it once in the dashboard (the deploy reminds you if it's missing):
+1. **Logs in to Cloudflare** with Cloudflare's own CLI. It prints a link and a one-time code, so it works over SSH too: open the link, check the code and approve.
+2. **Checks for Workers Paid**, and says so if it can't confirm it.
+3. **Installs the Gateway** at your address: its database and storage, and the Worker on its own Workers Custom Domain. Cloudflare creates the DNS record and issues the certificate, usually within a minute or two; setup waits for it.
+4. **Opens a one-time setup link** in your browser. Create your owner account there. Nobody can sign up before you do, and after you, only people you invite.
+5. **Logs this terminal in** to your Gateway by itself, once your owner account exists, so it can deploy apps.
+6. **Deploys the starter app**, a simple todo list, from `./simple-todo` to `https://simple-todo.apps.your-domain.dev`.
 
-> **your-domain.dev → DNS → Add record**: Type **CNAME**, Name **`*`**, Target **`your-domain.dev`**, Proxy **ON** (orange cloud).
->
-> It means "any subdomain of your-domain.dev goes to the same place as your-domain.dev itself": your Gateway, which serves the right app for each address. Cloudflare requires an explicit record for [wildcard routing](https://developers.cloudflare.com/workers/configuration/routing/routes/).
+Interrupted, or stopped on something you had to do first (a domain to buy, a link you haven't opened yet)? Run `npx everyapp setup` again: it picks up where it stopped, and once everything is there it changes nothing.
 
-When the deploy finishes, it prints (and opens) a one-time setup link, `https://your-domain.dev/setup#token=…`. Open it and create your account: you're the owner, and signup is invite-only after you. Nobody can sign up before you use the link. It expires after 24 hours; `npx everyapp gateway claim-link` makes a new one.
+<details className="faq">
+<summary>Setting up from CI, or with an API token</summary>
+<div className="faq-content">
 
-### 3. Connect your terminal to your Gateway
+Instead of logging in, set **both** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Create the token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) from the **Edit Cloudflare Workers** template, plus **Account → D1 → Edit**, **Zone → Zone → Read** and **Zone → DNS → Read** (the deploy checks that a new address won't replace a DNS record), and **Zone → SSL and Certificates → Edit** if you want `app delete` to remove an app's certificate too.
 
-On your Gateway, go to **Admin → Tokens → Deploy token** and copy the token (it's shown once). Then:
+An unattended setup never prints the owner setup link into a log, with `--json` or without, unless you pass `--printSetupLink`: run `npx everyapp gateway claim-link` on your own machine for it.
+
+</div>
+</details>
+
+## Work on the starter
 
 ```bash
-npx everyapp login
+cd simple-todo
+npx everyapp dev
 ```
 
-Paste the token when asked. This is what authorizes app deploys from this machine — revoke it any time from the same page.
-
-### 4. Install an example app
-
-The first command (`gitpick`) just copies the example app's folder from GitHub; the second deploys it.
-
-```bash
-npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
-cd every-todo-app
-npx everyapp app deploy
-```
-
-Refresh your Gateway and the todo app appears, live at the URL the deploy prints (`https://todo-<your-org>.your-domain.dev`). Open it and you're already logged in.
+`everyapp dev` runs the app behind a local Gateway with the same security perimeter as production, signed in as a seeded dev user. When you're happy, `npx everyapp app deploy` ships it.
 
 <details className="faq">
 <summary>More example apps</summary>
@@ -158,14 +123,23 @@ npx everyapp gateway secret set OPENAI_API_KEY
 </details>
 
 <details className="faq">
-<summary>Why the Gateway needs a domain</summary>
+<summary>Why Every App needs a domain</summary>
 <div className="faq-content">
 
-The Gateway serves at your domain and each app at its own subdomain of it, so `npx everyapp gateway deploy` needs `--domain` the first time (it remembers it after). `workers.dev` addresses can't have subdomains, so they can't host apps. Any domain on your Cloudflare account works, including a cheap one bought just for this.
+The Gateway serves at an address in your domain and each app at its own address one level below it. That keeps apps apart from each other and from the rest of your domain, and lets the sign-in cookie cover exactly the Gateway and its apps. `workers.dev` addresses can't have subdomains of their own, so they can't host apps. Any domain on your Cloudflare account works, including a cheap one bought just for this.
+
+</div>
+</details>
+
+<details className="faq">
+<summary>Already running a Gateway from before setup existed?</summary>
+<div className="faq-content">
+
+Don't run setup over it. [Upgrading an existing install](/docs/reference/manage-your-gateway#upgrading-an-existing-install) adopts it as it is: same address, same app addresses, same users.
 
 </div>
 </details>
 
 ## Next
 
-[Build your own app](/docs/build-an-app/create-app) — set up your coding agent and describe what you want.
+[What the Gateway does](/docs/how-it-works/gateway) — the promises, costs and limits on one page. Then [build your own app](/docs/build-an-app/create-app).

@@ -16,6 +16,8 @@ interface DeployCommandFlags {
   access?: "everyone" | "admins";
   "allow-delete-durable-object-data"?: boolean;
   "break-lease"?: boolean;
+  "force-dns"?: boolean;
+  "no-wait-cert"?: boolean;
 }
 
 export async function deploy(
@@ -58,6 +60,8 @@ export async function deploy(
         verbose: flags.verbose,
         allowDeleteDurableObjectData:
           flags["allow-delete-durable-object-data"],
+        forceDns: flags["force-dns"],
+        waitForCertificate: !flags["no-wait-cert"],
         breakLease: confirmLeaseBreak({
           breakLease: flags["break-lease"],
           yes: flags.yes,

@@ -7,6 +7,7 @@ import { name, version, description } from "../package.json";
 import { appRoutes } from "./commands/app/command";
 import { gatewayRoutes } from "./commands/gateway/commands";
 import { devCommand } from "./commands/dev/command";
+import { setupCommand } from "./commands/setup/command";
 
 const loginCommand = buildCommand({
   loader: async () => {
@@ -18,7 +19,20 @@ const loginCommand = buildCommand({
       kind: "tuple",
       parameters: [],
     },
-    flags: {},
+    flags: {
+      resume: {
+        kind: "boolean",
+        brief:
+          "Finish the login `everyapp setup` was waiting for, once the owner opened its setup link",
+        optional: true,
+      },
+      gateway: {
+        kind: "parsed",
+        parse: String,
+        brief: "Which gateway's setup to finish, when several are waiting (--resume)",
+        optional: true,
+      },
+    },
   },
   docs: {
     brief: "Store a gateway deploy token",
@@ -47,6 +61,7 @@ const routes = buildRouteMap({
     app: appRoutes,
     dev: devCommand,
     gateway: gatewayRoutes,
+    setup: setupCommand,
     login: loginCommand,
     logout: logoutCommand,
     install: buildInstallCommand("everyapp", {

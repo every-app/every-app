@@ -32,6 +32,7 @@ const WORKER_CONFIG = {
       type: "json",
       value: { version: "__EVERYAPP_PATCH__", sha256: "__EVERYAPP_PATCH__" },
     },
+    APP_BASE_DOMAIN: { type: "text", value: "__EVERYAPP_PATCH__" },
   },
   manifest: { type: "partial", mainModule: "index.js", modules: {} },
 };
@@ -157,6 +158,8 @@ describe("stageRelease", () => {
       (c: any) => (c.env.DB.id = "0123"),
       (c: any) =>
         (c.env.EVERYAPP_RELEASE.value = { version: "1", sha256: "x" }),
+      (c: any) => (c.env.APP_BASE_DOMAIN.value = "apps.example.com"),
+      (c: any) => delete c.env.APP_BASE_DOMAIN,
     ]) {
       workerConfig(change);
       expect(() =>

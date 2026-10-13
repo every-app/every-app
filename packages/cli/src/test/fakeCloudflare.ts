@@ -4,7 +4,11 @@
  * against them), KV namespaces hold values, `cf deploy --prebuilt` reads
  * the Build Output it would upload and validates it with @cloudflare/config,
  * and `cf build` builds an app's Worker config with the SDK's real
- * everyAppWorker() from the deploy inputs. Nothing is spawned or sent.
+ * everyAppWorker() from the deploy inputs. Zones hold DNS records, a
+ * deploy publishes its Worker's Custom Domains the way Cloudflare does (the
+ * whole list, taken from other Workers, each with its own certificate pack
+ * that outlives it), and CAA records answer the DNS-over-HTTPS lookups.
+ * Nothing is spawned or sent.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -15,8 +19,9 @@ import {
   appBindingsDigest,
 } from "@every-app/perimeter/manifest";
 import { FakeCf, type FakeCfResponse, type RecordedCfCall } from "@/lib/cf/fakeCf";
+import type { CaaLookup } from "@/lib/domains/caa";
 import type { GatewayStatusResponse } from "@/lib/gateway/api";
-import type { EveryAppCliManifest } from "@/lib/manifest";
+import { loadEveryAppManifest, type EveryAppCliManifest } from "@/lib/manifest";
 import { createSqliteD1, sqliteD1Script, type SqliteD1 } from "./sqliteD1";
 
 export const ACCOUNT_ID = "0123456789abcdef0123456789abcd01";
@@ -36,10 +41,58 @@ interface RecordedDeploy {
   mode: RecordedCfCall["mode"];
 }
 
+interface FakeZone {
+  id: string;
+  name: string;
+  status: string;
+}
+
+interface FakeDnsRecord {
+  zoneId: string;
+  name: string;
+  type: string;
+  content: string;
+}
+
+interface FakeCertificatePack {
+  id: string;
+  zoneId: string;
+  hosts: string[];
+}
+
 const WORKER_CONFIG = ".cloudflare/output/v0/workers/default/worker.config.json";
 
 function cfError(message: string): FakeCfResponse {
   return { exitCode: 1, stderr: `┌ Error\n│ ${message}\n└\n` };
+}
+
+/**
+ * What cf answers (exit 1) when the version went live but its Custom
+ * Domains didn't: at a terminal, a person declined to move one from another
+ * Worker, and cf skips the whole list (cf 1.0.0-beta.14's own wording).
+ */
+export function customDomainsSkipped(
+  workerName: string,
+  domains: readonly string[],
+): FakeCfResponse {
+  const skipped =
+    domains.length === 1
+      ? `Publishing to Custom Domain "${domains[0]}" was skipped, fix conflict and try again`
+      : `Publishing to ${domains.length} Custom Domains was skipped, fix conflicts and try again`;
+  return {
+    exitCode: 1,
+    stderr: [
+      "┌ Error",
+      `│ Trigger configuration for "${workerName}" was only partially updated:`,
+      "│",
+      "│   Custom domains:",
+      `│     - ${skipped}`,
+      "│",
+      "│ Successful trigger changes were not rolled back.",
+      "└",
+      "",
+    ].join("\n"),
+  };
 }
 
 /**
@@ -73,9 +126,31 @@ export class FakeCloudflare {
   declineNextDeploy = false;
   /** Changes what `cf build` writes, as an app's own cloudflare.config.ts could. */
   editBuild: ((config: Record<string, any>) => void) | null = null;
-  /** Runs once a `cf deploy` has uploaded; what it returns is cf's answer instead. */
+  /**
+   * Runs once a `cf deploy` has its version live, before cf publishes the
+   * Worker's Custom Domains: what it returns is cf's answer instead, and
+   * the domains stay as they were (cf stopped, or skipped them all:
+   * customDomainsSkipped).
+   */
   afterUpload: ((workerName: string) => FakeCfResponse | undefined) | null = null;
+  readonly zones: FakeZone[] = [
+    { id: "zone-1", name: "example.com", status: "active" },
+  ];
+  /** Records the operator made; Custom Domains' own aren't listed (unverified). */
+  readonly dnsRecords: FakeDnsRecord[] = [];
+  /** Hostname → the Worker it is a Custom Domain of. */
+  readonly customDomains = new Map<string, string>();
+  readonly certificatePacks: FakeCertificatePack[] = [];
+  /** CAA records by name, as public DNS answers them. */
+  readonly caaRecords = new Map<string, string[]>();
   private counter = 0;
+
+  /** The DNS-over-HTTPS CAA lookup, answered from `caaRecords`. */
+  readonly lookupCaa: CaaLookup = async (name) =>
+    (this.caaRecords.get(name) ?? []).map((data) => {
+      const [flags, tag, ...value] = data.split(" ");
+      return { flags: Number(flags), tag: tag!, value: value.join(" ").replace(/^"|"$/g, "") };
+    });
 
   constructor() {
     const d1 = sqliteD1Script({});
@@ -87,13 +162,49 @@ export class FakeCloudflare {
           accounts: [{ id: ACCOUNT_ID, name: "Acme" }],
         }),
       })
-      .on(["zones", "list"], (call) => ({
+      .on(["zones", "list"], (call) => {
+        const name = flag(call.args, "--name");
+        const page = Number(flag(call.args, "--page") ?? "1");
+        return {
+          stdout: JSON.stringify(
+            name !== undefined
+              ? this.zones.filter((zone) => zone.name === name)
+              : page === 1
+                ? this.zones
+                : [],
+          ),
+        };
+      })
+      .on(["dns", "records", "list"], (call) => ({
         stdout: JSON.stringify(
-          flag(call.args, "--name") === "example.com"
-            ? [{ id: "zone-1", name: "example.com", status: "active" }]
+          this.dnsRecords
+            .filter(
+              (record) =>
+                record.zoneId === flag(call.args, "-z") &&
+                record.name === flag(call.args, "--name-exact"),
+            )
+            .map((record, index) => ({ id: `record-${index}`, ...record })),
+        ),
+      }))
+      .on(["ssl", "certificate-packs", "list"], (call) => ({
+        stdout: JSON.stringify(
+          flag(call.args, "--page") === "1"
+            ? this.certificatePacks
+                .filter((pack) => pack.zoneId === flag(call.args, "-z"))
+                .map(({ id, hosts }) => ({ id, type: "advanced", hosts, status: "active" }))
             : [],
         ),
       }))
+      .on(["ssl", "certificate-packs", "delete"], (call) => {
+        const declined = unconfirmed(call, "This permanently deletes the resource.");
+        if (declined) return declined;
+        const index = this.certificatePacks.findIndex(
+          (pack) => pack.id === call.args[3],
+        );
+        if (index < 0) return cfError("Certificate pack not found [code: 1400]");
+        this.certificatePacks.splice(index, 1);
+        return { stdout: "{}" };
+      })
       .on(["d1", "list"], (call) => ({
         stdout: JSON.stringify(
           [...this.databases]
@@ -205,8 +316,17 @@ export class FakeCloudflare {
       versionId: gateway.versions.at(-1)!,
       appBindingsDigest: await appBindingsDigest(bindings),
       gatewayHost: gateway.config["domains"]?.[0] ?? null,
+      appBaseDomain: gateway.config["env"].APP_BASE_DOMAIN?.value ?? null,
       appBindings: bindings.map((name) => name.slice(APP_BINDING_PREFIX.length)),
     };
+  }
+
+  /** The hostnames the gateway Worker is published under. */
+  gatewayDomains(): string[] {
+    return [...this.customDomains]
+      .filter(([, worker]) => worker === "every-app-gateway")
+      .map(([host]) => host)
+      .sort();
   }
 
   /** The app Workers the live gateway binds. */
@@ -240,10 +360,15 @@ export class FakeCloudflare {
       : { stdout: value };
   }
 
-  /** `cf build`: the app's Worker as everyAppWorker() defines it for production. */
-  private build(call: RecordedCfCall): FakeCfResponse {
+  /**
+   * `cf build`: the app's Worker as everyAppWorker() defines it for
+   * production, from the manifest registered for its directory, or its own
+   * everyapp.config.ts.
+   */
+  private async build(call: RecordedCfCall): Promise<FakeCfResponse> {
     const cwd = call.cwd!;
-    const manifest = this.apps.get(cwd);
+    const manifest =
+      this.apps.get(cwd) ?? (await loadEveryAppManifest(cwd).catch(() => null));
     if (!manifest) return cfError(`no app to build in ${cwd}`);
     let worker;
     try {
@@ -325,6 +450,39 @@ export class FakeCloudflare {
       secrets: { ...existing?.secrets, ...secrets },
     });
     this.deploys.push({ workerName, config, secrets, args: call.args, mode: call.mode });
-    return this.afterUpload?.(workerName) ?? { stdout: `Current Version ID: ${versionId}` };
+    // cf deploys the version first, then publishes its triggers.
+    const answer = this.afterUpload?.(workerName);
+    if (answer) return answer;
+    this.publishDomains(workerName, config["domains"]);
+    return { stdout: `Current Version ID: ${versionId}` };
+  }
+
+  /**
+   * Publish a Worker's Custom Domains as Cloudflare does: only when the
+   * config declares some, as the whole list (its others are removed), one
+   * taken from another Worker when unattended, and a certificate pack per
+   * new hostname that stays when the domain goes.
+   */
+  private publishDomains(workerName: string, domains: unknown): void {
+    if (!Array.isArray(domains) || domains.length === 0) return;
+    for (const [host, worker] of [...this.customDomains]) {
+      if (worker === workerName && !domains.includes(host)) {
+        this.customDomains.delete(host);
+      }
+    }
+    for (const host of domains as string[]) {
+      if (this.customDomains.get(host) === workerName) continue;
+      this.customDomains.set(host, workerName);
+      const zone = [...this.zones]
+        .sort((a, b) => b.name.length - a.name.length)
+        .find((candidate) => host === candidate.name || host.endsWith(`.${candidate.name}`));
+      if (zone && !this.certificatePacks.some((pack) => pack.hosts.join() === host)) {
+        this.certificatePacks.push({
+          id: `pack-${(this.counter += 1)}`,
+          zoneId: zone.id,
+          hosts: [host],
+        });
+      }
+    }
   }
 }

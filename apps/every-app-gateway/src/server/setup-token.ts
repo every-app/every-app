@@ -7,6 +7,13 @@
  */
 export const SETUP_TOKEN_PREFIX = "est_";
 
+/**
+ * The second secret `everyapp setup` keeps for itself (`ecs_` + 32 random
+ * bytes, base64url): never in the link, stored only as its SHA-256, it
+ * retrieves the owner's first deploy token once the link is claimed.
+ */
+export const CLI_SECRET_PREFIX = "ecs_";
+
 export async function hashSetupToken(token: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",

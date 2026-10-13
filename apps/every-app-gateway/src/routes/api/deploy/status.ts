@@ -4,6 +4,7 @@ import {
   APP_BINDING_PREFIX,
   appBindingsDigest,
 } from "@every-app/perimeter/manifest";
+import { appBaseDomain, gatewayHostOf } from "@/server/app-hosts";
 import { requireDeployTokenAuth } from "@/server/deploy-token-auth";
 
 function respond(payload: unknown): Response {
@@ -13,14 +14,6 @@ function respond(payload: unknown): Response {
       "cache-control": "no-store",
     },
   });
-}
-
-function gatewayHost(): string | null {
-  try {
-    return env.GATEWAY_URL ? new URL(env.GATEWAY_URL).host : null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -48,7 +41,8 @@ export const Route = createFileRoute("/api/deploy/status")({
         if (!auth.ok) return auth.response;
         return respond({
           ...status,
-          gatewayHost: gatewayHost(),
+          gatewayHost: gatewayHostOf(env),
+          appBaseDomain: appBaseDomain(env),
           appBindings: bindings.map((name) =>
             name.slice(APP_BINDING_PREFIX.length),
           ),

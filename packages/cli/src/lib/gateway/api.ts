@@ -136,6 +136,8 @@ export interface GatewayWhoamiResponse {
   gateway?: {
     release?: { version: string; sha256: string } | null;
     gatewayHost?: string | null;
+    /** Null when apps reach the gateway through a wildcard route. */
+    appBaseDomain?: string | null;
   };
   minCli?: string;
   minSdk?: string;
@@ -145,12 +147,24 @@ export interface GatewayWhoamiResponse {
   };
 }
 
+/** What `POST /api/setup/deploy-token` answers the CLI that minted the link. */
+type SetupDeployTokenResponse =
+  | { status: "pending" }
+  | {
+      token: string;
+      organizationId: string;
+      organizationName: string;
+      /** Who claimed the link (gateways from before it don't say). */
+      ownerEmail?: string | null;
+    };
+
 export interface GatewayStatusResponse {
   release: { version: string; sha256: string } | null;
   versionId: string | null;
   appBindingsDigest: string;
   /** With a deploy token only. */
   gatewayHost?: string | null;
+  appBaseDomain?: string | null;
   appBindings?: string[];
 }
 
@@ -214,6 +228,19 @@ export class GatewayClient {
     return this.request<GatewayStatusResponse>("/api/deploy/status", {
       method: "GET",
       auth: options.auth ?? false,
+    });
+  }
+
+  /**
+   * The owner's first deploy token, with the secret this CLI kept when it
+   * minted the setup link: `pending` until the link is claimed. A spent,
+   * expired or unknown secret is a 404 (`INVALID_OR_EXPIRED_SETUP_LINK`).
+   */
+  setupDeployToken(cliSecret: string): Promise<SetupDeployTokenResponse> {
+    return this.request<SetupDeployTokenResponse>("/api/setup/deploy-token", {
+      method: "POST",
+      body: { cliSecret },
+      auth: false,
     });
   }
 

@@ -52,7 +52,8 @@ Run a single layer:
 > columns) is **deleted**, and the production worker entry
 > (`apps/every-app-gateway/src/server.ts`) now routes app subdomains through
 > the v2 perimeter; `everyapp app deploy` ships private workers and
-> `everyapp gateway deploy --domain` wires the wildcard routing. Remaining
+> `everyapp gateway deploy --domain` (or `everyapp setup`) publishes the gateway
+> host and each app host as Workers Custom Domains. Remaining
 > follow-up: migrate `apps/workout-tracker`, `apps/chef`, and `templates/*` to
 > the v2 SDK/manifest (todo-app is migrated), per Phase 3 of
 > `docs/architecture-v2-recommendation.md §6`. The v2 model is proven
@@ -250,8 +251,11 @@ production.
 
 ### Deploy checklist
 
-1. **Gateway** owns the wildcard custom domain (`*.example.com` → gateway) and
-   holds the RS256 keypair (`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`, kid
+1. **Gateway** owns a Workers Custom Domain for its own host
+   (`apps.example.com`) and one per app host (`todo.apps.example.com`), the
+   full list on every deploy (an install from before per-app domains: its
+   host plus a `*.<host>/*` route over a wildcard record instead), and holds
+   the RS256 keypair (`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`, kid
    `everyapp-identity`).
 2. **Each app** is deployed PRIVATE from its manifest:
    - `everyapp app deploy` builds the Worker `cloudflare.config.ts` defines

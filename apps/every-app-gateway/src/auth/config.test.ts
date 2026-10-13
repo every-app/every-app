@@ -4,6 +4,7 @@ const workerEnv = vi.hoisted(() => ({
   BETTER_AUTH_SECRET: "test-secret",
   DB: {},
   GATEWAY_URL: "https://gateway.example.com",
+  APP_BASE_DOMAIN: undefined as string | undefined,
   EMAIL: undefined as { send: (message: unknown) => unknown } | undefined,
   EMAIL_FROM: undefined as string | undefined,
 }));
@@ -257,6 +258,20 @@ describe("createAuth Better Auth options", () => {
     const options = createAuthOptions();
     expect(options.rateLimit).toEqual({ enabled: false });
     expect(options.advanced?.useSecureCookies).toBe(false);
+  });
+
+  it("scopes the session cookie to APP_BASE_DOMAIN, the apps' parent, never the zone above it", () => {
+    vi.stubEnv("DEV", false);
+    workerEnv.GATEWAY_URL = "https://apps.example.com";
+    workerEnv.APP_BASE_DOMAIN = "apps.example.com";
+    try {
+      expect(createAuthOptions().advanced?.crossSubDomainCookies).toEqual({
+        enabled: true,
+        domain: "apps.example.com",
+      });
+    } finally {
+      workerEnv.APP_BASE_DOMAIN = undefined;
+    }
   });
 
   it("omits the base URL and cookie domain without GATEWAY_URL", () => {

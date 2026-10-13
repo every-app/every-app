@@ -3,7 +3,7 @@ title: "Gateway: CLI & Deployment"
 description: How the CLI provisions, deploys, registers, and runs everything locally
 ---
 
-> Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-10-12.
+> Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-10-13.
 
 **Deployment in one sentence:** Cloudflare's own CLI, `cf`, does everything in the Cloudflare account with your Cloudflare login; the `eak_` deploy token registers apps with the gateway's registry, which names their Workers and resources; and binding an app is a redeploy of the live gateway release with the registry's full list of apps.
 
@@ -20,19 +20,25 @@ cf runs the first `cloudflare.config.ts` it finds in its working directory or an
 
 Piped `cf` calls run in their own process groups, so Ctrl+C reaches only the CLI. On SIGINT or SIGTERM it forwards the signal to them, waits for them to exit, removes its temp files (secrets files, release copies) and `.everyapp/deploy.json`, frees any deploy lease it holds, and exits with 130 (143 for SIGTERM). A second Ctrl+C exits at once.
 
+## `everyapp setup`
+
+A resumable state machine over the commands below (`commands/setup/runSetup.ts`); each step looks before it acts, so a re-run resumes, and does nothing once everything is there: toolchain (pnpm for the starter) → `cf auth whoami`, then `cf auth login` (inherited at a terminal; piped `--no-browser` under `--json`, its link and code re-emitted as a waited-for `action_required`) → account → Workers Paid (`cf accounts subscriptions get`; a warning, never a stop) → domain (`--domain`, the install row's, or a zone picked at the terminal; none: `action_required add_domain`) → `gateway deploy`/`upgrade` (skipped when the install runs this release or a newer one) → owner link (shown at a terminal or in the `--json` events; in CI only with `--printSetupLink`, else `action_required claim_owner` without it) → automatic login → starter (the template bundled in the npm package, copied to `./simple-todo` as app `simple-todo`, then `app deploy`).
+
+**Automatic login.** The setup link is minted with a second secret, `ecs_…`, that only the CLI keeps (`~/.everyapp/pending-claims/<host>.json`, 0600): its SHA-256 goes into `owner_setup_tokens.cli_secret_hash` with the link's. The CLI polls `POST /api/setup/deploy-token {cliSecret}` every 2 s for 10 minutes: 202 until the link is claimed, then 200 with an `eak_` deploy token for the owner's organization and the email of whoever claimed the link (the CLI prints `Logged in to … as <email> (owner of <organization>)`, so the operator can tell it was them), issued once (guarded `deploy_token_issued_at`) within 30 minutes of the claim, then 404 for everything (the link's own `est_` secret included). Whoever sees the link can't do the same. `everyapp login --resume` finishes an interrupted poll. A resumed setup (or `login --resume`) asks once before it shows the link it kept, and on a 404 with no owner yet (the link expired, or a newer one replaced it) setup mints a new one; a 404 during the wait stops it with `claim_owner` instead, leaving the newer link to whoever has it.
+
 ## `everyapp gateway deploy` / `upgrade` / `reconcile`
 
 The gateway ships prebuilt inside the npm package (`gateway/every-app-gateway-release.tar.gz`, built by `apps/every-app-gateway/scripts/build-release.ts`): the production Build Output from `cf build`, the drizzle migrations, and a `release.json` with the toolchain versions, the migration journal and a SHA-256 of the files, which the CLI checks. Nothing is installed or built at deploy time.
 
-1. `cf auth whoami`; pick the account (flag, `CLOUDFLARE_ACCOUNT_ID`, the remembered install, the only one). Find the zone for `--domain` (the gateway serves at the zone apex for now).
+1. `cf auth whoami`; pick the account (flag, `CLOUDFLARE_ACCOUNT_ID`, the remembered install, the only one). Find the zone for `--domain`: the longest of the hostname and its parents that is a zone in the account (`cf zones list --name` for each). That zone must be active: a pending one (nameservers not pointed at Cloudflare yet) is refused with `ZONE_NOT_ACTIVE`, never passed over for an active parent zone. A new install serves at `--domain`, with `APP_BASE_DOMAIN` the same, and apps one label below it; an install keeps the host and routing its row records. A database drizzle-kit migrated with no install row (wrangler-era) is refused until `gateway adopt`.
 2. Get-or-create by name: D1 `every-app-gateway`, KV `every-app-gateway-OAUTH_KV`, KV `every-app-gateway-deploy` (the release cache). The old `every-app-gateway` KV namespace is no longer bound.
 3. Take the `gateway` lease: a row in the gateway's own D1 (`_everyapp_deploy_lease`, created by the CLI, 10-minute TTL with a heartbeat).
 4. Check what could stop the upload (the release patches into a valid Build Output; the gateway serving is the version the install row recorded, or a person at the terminal agrees to replace it), then bookmark the database (`cf d1 time-travel get-bookmark`), carry drizzle-kit's `__drizzle_migrations` history over to cf's `d1_migrations` once, then `cf d1 migrations apply`. **Migrations run before the code**, and gateway migrations must be expand-only (a test refuses drops and renames from 0027 on).
 5. Cache the release tarball in the deploy KV under `release/<sha256>`.
 6. Read the desired bindings from the registry: apps that are `binding`, `active` or `disabled`, whose Worker name follows the naming rule and whose Worker exists (binding a missing one would fail the whole deploy, so a stale row is skipped with a warning).
-7. Patch a private copy of the Build Output: D1/KV ids, `APP__<worker>` service bindings, the gateway's Custom Domain and `*.<domain>/*` route, `EVERYAPP_RELEASE`, source maps; validate with `@cloudflare/config`'s output schema.
+7. Patch a private copy of the Build Output: D1/KV ids, `APP__<worker>` service bindings, `EVERYAPP_RELEASE`, source maps, and the routing: per-app Custom Domains (`domains` = the gateway host, then every bound app's host one label below `APP_BASE_DOMAIN`, the full list each time since cf replaces the set; `APP_BASE_DOMAIN` set; no route), or for an install still on its wildcard route its host as the one Custom Domain plus the `*.<host>/*` route, with `APP_BASE_DOMAIN` removed. Validate with `@cloudflare/config`'s output schema. Before an upload that adds a hostname (and before migrating, for the hosts a migrated registry lists): no A/AAAA/CNAME/NS record at it (`cf dns records list -z … --name-exact`; `--force-dns` overrides), and a warning when it has none but a `*.<parent>` wildcard answers it, CAA over DNS-over-HTTPS from the closest name that exists up to the top-level domain (RFC 8659's climb, past the zone apex too), allowing only the CAs Cloudflare issues Advanced Certificates from (Let's Encrypt, Google Trust Services, SSL.com; not Sectigo, which only issues its backup certificates), and only warning when they are allowed with `accounturi` or `validationmethods`, and at most 100 Custom Domains in the zone. Unattended cf would replace a record, or take a hostname from another Worker, without asking.
 8. `cf deploy --prebuilt --mode production`; a first deploy sends the generated secrets (`GATEWAY_URL`, `BETTER_AUTH_SECRET`, the RSA-2048 identity keypair, `GATEWAY_DEPLOYMENT_MODE`, `CLOUDFLARE_ACCOUNT_ID`) in the secrets file, so the first version has them.
-9. Record the install in `_everyapp_install` (gateway D1) and `~/.everyapp/installs.json` right after the upload, then poll `/api/deploy/status` until it reports the new release and a digest of the expected bindings. If apps registered meanwhile, deploy again (up to three times).
+9. Record the install in `_everyapp_install` (gateway D1) and `~/.everyapp/installs.json` right after the upload: the version, its release and bindings, and the `routing` and domains once cf has published them. cf puts the version live first and publishes the Custom Domains after it; when it stops part-way (a move from another Worker declined at its prompt, the zone's limit, an API error, Ctrl+C) only the version is recorded, so the next deploy checks those hostnames again and a switch to per-app domains runs again. Then poll `/api/deploy/status` until it reports the new release and a digest of the expected bindings. If apps registered meanwhile, deploy again (up to three times). Once the lease is free, wait up to 10 minutes for each new hostname's certificate (a warning, never a failure).
 10. If D1 has no owner membership, mint a one-time setup link (the SHA-256 of a fresh `est_` secret into `owner_setup_tokens`, earlier unused links expired, in one `cf d1 query`). An unattended deploy (CI, piped output) mints nothing and only says to run `everyapp gateway claim-link`, unless `--printSetupLink` is passed.
 
 `reconcile` skips 2, 4 and 5: it redeploys the release that is live (from the KV cache, checked against its SHA-256; the bundled release only if it is the same), so binding an app never upgrades or downgrades the gateway. It picks that release after taking the lease, when no upgrade can be running: the one the install record names, when the Worker serves the version the record names (`cf workers deployments list`). Otherwise something deployed since: the release the live `/api/deploy/status` reports is reconciled when it is newer and cached (an upgrade stopped before recording itself), but only when the status answers from the very version Cloudflare says serves (an edge that lags a deploy still answers from the version before). Anything else (older, unknown, no answer from that version) stops unattended or asks at a terminal, so a reconcile never puts an older release back unless a person says so. Releases are ordered by their newest migration, then their build time, not by the gateway's version, which builds share; `deploy` and `upgrade` refuse an older one under the lease too, against the install record and, when the Worker serves a version the record doesn't name, against the live release whenever the live gateway can say which it is, unless `--allow-downgrade`. When the account has no workers.dev subdomain, or the Worker serves a version everyapp didn't record (see below), the command stops with `action_required` (exit 2) and says what to do.
@@ -51,8 +57,11 @@ Not scaffold-only — it **production-deploys as part of create**. Clone templat
  1 whoami: org, account ◄────────────── /api/deploy/whoami
  2 register             ─────────────► /api/deploy/register
                                         → names: every-<orgKey>-<appId>, its
-                                          D1/KV, <appId>-<orgSlug>.<host>;
+                                          D1/KV, <appId>[-<orgKey>].<base>
+                                          (<appId>-<orgSlug>.<host> on a
+                                          wildcard-route install);
                                           new apps start `pending` (unbound)
+   a new hostname is checked now (DNS, CAA, zone room), before anything else
  3 app lease, then: its Worker, D1 and KV, used only if recorded as the
    app's own (else created and recorded)
  4 cf build with deploy.json → policy check of the built Worker → source maps
@@ -63,10 +72,11 @@ Not scaffold-only — it **production-deploys as part of create**. Clone templat
  7 deployed             ─────────────► /api/deploy/apps/:id/deployed
                                         → manifest snapshot, version;
                                           pending → binding
- 8 reconcile the gateway, only if it doesn't bind the Worker yet
+ 8 reconcile the gateway, only if it doesn't bind the Worker or publish
+   its hostname yet
  9 activate (retried)   ─────────────► /api/deploy/apps/:id/activate
                                         → probes APP__<worker>; binding → active
-10 app is live at <appId>-<orgSlug>.<gateway-host>
+10 wait for a new hostname's certificate; the app is live at its host
 ```
 
 Details worth remembering:
@@ -95,7 +105,7 @@ The dev `kid` is accepted by the SDK when `EVERYAPP_DEV` is any non-empty value 
 ## What does NOT exist (despite appearing in the v2 plan docs)
 
 - **No dispatch namespaces / Workers for Platforms** — `tier: "dispatch"` exists in types and throws in `getAppFetcher()`. Everything is service bindings.
-- **No device-code login to the gateway** — `everyapp login` = paste a token an owner created in the admin UI.
-- **No per-app Custom Domains yet** — app hosts reach the gateway through the `*.<domain>` route and a wildcard DNS record the operator adds.
+- **No device-code login to the gateway** — `everyapp login` = paste a token an owner created in the admin UI; only `everyapp setup` logs in by itself, once, through its setup link's CLI secret.
+- **No domain moves** — an install keeps the host it was installed at; `APP_BASE_DOMAIN` is always that host (the mobile shell scopes its cookie copy to it, and apps find home by dropping their first label).
 - **No `everyapp doctor`** — `everyapp gateway status` shows release and binding drift, but nothing repairs it automatically.
 - **No hosted-tier tenancy machinery** — no per-tenant resources, KEKs, or egress/outbound worker. (Org scoping — registry rows, Worker and resource names, tokens, access checks — does exist.)

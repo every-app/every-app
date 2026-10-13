@@ -71,6 +71,8 @@ export interface CfCall {
   /** Written to a private temp directory (files 0600) and removed afterwards. */
   files?: Record<string, string | object>;
   env?: Record<string, string | undefined>;
+  /** Sees stdout and stderr as they arrive (piped modes), e.g. a login's code. */
+  onOutput?: (chunk: string) => void;
 }
 
 export interface CfResult {
@@ -162,6 +164,7 @@ export function createCfRunner(options: CfRunnerOptions = {}): CfRunner {
           args,
           cwd,
           env,
+          onOutput: call.onOutput,
           mode: call.mode,
           timeoutMs:
             call.timeoutMs ??
@@ -272,6 +275,7 @@ interface SpawnCfOptions {
   args: string[];
   cwd: string;
   env: NodeJS.ProcessEnv;
+  onOutput?: (chunk: string) => void;
   mode: CfOutputMode;
   timeoutMs?: number;
   watchdogIdleMs?: number;
@@ -335,10 +339,12 @@ function spawnCf(options: SpawnCfOptions): Promise<CfResult> {
 
     child.stdout?.on("data", (chunk: Buffer) => {
       stdout += chunk.toString();
+      options.onOutput?.(chunk.toString());
       watch();
     });
     child.stderr?.on("data", (chunk: Buffer) => {
       stderr += chunk.toString();
+      options.onOutput?.(chunk.toString());
       watch();
     });
 

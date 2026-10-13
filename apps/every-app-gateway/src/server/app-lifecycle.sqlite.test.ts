@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
 
 const testDb = vi.hoisted(() => ({ current: null as TestDb | null }));
-
-vi.mock("cloudflare:workers", () => ({
-  env: { GATEWAY_URL: "https://gateway.example.com" },
+const workerEnv = vi.hoisted(() => ({
+  GATEWAY_URL: "https://gateway.example.com",
+  APP_BASE_DOMAIN: undefined as string | undefined,
 }));
+
+vi.mock("cloudflare:workers", () => ({ env: workerEnv }));
 vi.mock("@/db", async () => {
   const { testDbProxy } = await import("@/test/sqlite-db");
   return { db: testDbProxy(testDb) };
@@ -52,6 +54,8 @@ describe("app deploy lifecycle (SQLite)", () => {
   let registry: DrizzleAppRegistry;
 
   beforeEach(async () => {
+    workerEnv.GATEWAY_URL = "https://gateway.example.com";
+    workerEnv.APP_BASE_DOMAIN = undefined;
     db = await createTestDb();
     testDb.current = db;
     acme = await seedOrganization(db, "acme");
@@ -200,6 +204,63 @@ describe("app deploy lifecycle (SQLite)", () => {
       "todo-acme.gateway.example.com",
     );
     expect(updated?.manifest.public).toEqual([{ path: "/health" }]);
+  });
+
+  describe("with per-app Custom Domains (APP_BASE_DOMAIN)", () => {
+    beforeEach(() => {
+      workerEnv.GATEWAY_URL = "https://apps.example.com";
+      workerEnv.APP_BASE_DOMAIN = "apps.example.com";
+    });
+
+    it("puts the install's own organization's apps one label below the base domain, others with their org key", async () => {
+      // acme is the oldest organization with an owner (the setup claim's):
+      // migration 0012's Default Organization, older still, has no members.
+      await expect(register(acme)).resolves.toMatchObject({
+        workerName: "every-acme-todo",
+        hostname: "todo.apps.example.com",
+      });
+      await expect(register(globex)).resolves.toMatchObject({
+        workerName: "every-globex-todo",
+        hostname: "todo-globex.apps.example.com",
+      });
+      await expect(
+        registry.findByHostname("todo.apps.example.com"),
+      ).resolves.toMatchObject({ organizationId: acme, status: "pending" });
+    });
+
+    it("keeps hostnames assigned before, whatever the base domain says now", async () => {
+      workerEnv.APP_BASE_DOMAIN = undefined;
+      workerEnv.GATEWAY_URL = "https://gateway.example.com";
+      await register(acme);
+
+      workerEnv.APP_BASE_DOMAIN = "gateway.example.com";
+      await expect(register(acme)).resolves.toMatchObject({
+        hostname: "todo-acme.gateway.example.com",
+        existingApp: true,
+      });
+      await expect(
+        register(acme, "notes", { manifest: { id: "notes" } }),
+      ).resolves.toMatchObject({ hostname: "notes.gateway.example.com" });
+    });
+
+    it("refuses a second organization's app whose host is the first's", async () => {
+      // `todo-globex` of the install's organization takes the host globex's
+      // `todo` would get.
+      await register(acme, "todo-globex", {
+        manifest: { id: "todo-globex" },
+      });
+      await expect(register(globex)).rejects.toMatchObject({
+        status: 409,
+        code: "HOSTNAME_TAKEN",
+      });
+    });
+
+    it("refuses an app id too long for a DNS label", async () => {
+      const appSlug = `a${"b".repeat(63)}`;
+      await expect(
+        register(acme, appSlug, { manifest: { id: appSlug } }),
+      ).rejects.toMatchObject({ status: 400 });
+    });
   });
 
   it("names Workers per organization, so two organizations can deploy the same app", async () => {

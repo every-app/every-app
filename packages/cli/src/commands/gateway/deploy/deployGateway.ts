@@ -7,18 +7,28 @@
 import enquirer from "enquirer";
 import { cfD1Database } from "@/lib/cf/d1";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
-import { findZone } from "@/lib/cf/zones";
 import { resolvesThroughCloudflare } from "@/lib/dns";
 import { formatWildcardDnsInstructions } from "@/lib/dnsInstructions";
+import { waitForCertificates } from "@/lib/domains/certWait";
+import { normalizeHostname } from "@/lib/domains/hostnames";
+import { resolveZone, type Zone } from "@/lib/domains/zones";
 import { EveryAppError } from "@/lib/errors";
+import type { D1Database } from "@/lib/cf/d1";
+import type { CfRunner } from "@/lib/cf/runner";
 import {
   applyGateway,
   downgradeRefused,
   notDeployedByEveryapp,
   olderThanInstalled,
+  type ApplyGatewayOptions,
+  type ApplyGatewayResult,
 } from "@/lib/gateway/apply";
-import { waitForCertificate } from "@/lib/gateway/certWait";
-import { readInstall, type InstallRecord } from "@/lib/gateway/install";
+import {
+  migratedByDrizzleKit,
+  readInstall,
+  type InstallRecord,
+  type Routing,
+} from "@/lib/gateway/install";
 import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { compareVersions, type GatewayRelease } from "@/lib/gateway/release";
 import {
@@ -34,7 +44,6 @@ import {
   cliVersion,
   connectToAccount,
   eventSink,
-  normalizeDomain,
   openGatewayRelease,
   rememberedInstall,
   runReported,
@@ -50,6 +59,7 @@ export interface DeployGatewayFlags {
   printSetupLink?: boolean;
   "break-lease"?: boolean;
   "allow-downgrade"?: boolean;
+  "force-dns"?: boolean;
 }
 
 export async function deployGateway(
@@ -67,7 +77,7 @@ async function run(
   reason: "deploy" | "upgrade",
   out: EventSink,
 ): Promise<void> {
-  const requestedDomain = normalizeDomain(flags.domain);
+  const requestedDomain = normalizeHostname(flags.domain);
   const cached = await rememberedInstall(requestedDomain);
   const { cf, account } = await connectToAccount({
     json: flags.json,
@@ -75,23 +85,13 @@ async function run(
     remembered: cached?.accountId,
   });
 
-  const existingDb = await findGatewayDatabase(cf);
-  const install = existingDb
-    ? await readInstall(cfD1Database(cf, existingDb))
-    : null;
+  const { install } = await findInstall(cf);
   if (reason === "upgrade" && !install) throw notDeployedByEveryapp();
-
   const domain = requestedDomain ?? install?.gatewayHost ?? cached?.gatewayHost;
   if (!domain) {
     throw new EveryAppError(
       "DOMAIN_REQUIRED",
-      "Pass --domain <domain>: a Cloudflare zone in this account. The gateway serves at it, and apps at <app>-<org>.<domain>.",
-    );
-  }
-  if (install && install.gatewayHost !== domain) {
-    throw new EveryAppError(
-      "DOMAIN_CHANGE_UNSUPPORTED",
-      `This gateway is installed at ${install.gatewayHost}; moving it to ${domain} isn't supported.`,
+      "Pass --domain <hostname>: the gateway serves there, and each app one label below it (todo.<hostname>). Any hostname in a zone this Cloudflare account has works, e.g. apps.example.com in example.com. Or run `npx everyapp setup`, which helps pick one.",
     );
   }
 
@@ -101,61 +101,36 @@ async function run(
   });
   try {
     if (!checkRelease({ release, install, reason, flags, out })) return;
-
-    const zone = install
-      ? { id: install.zoneId, name: install.zoneName }
-      : await findZone(cf, domain, account.id);
+    const target = await gatewayTarget({
+      cf,
+      accountId: account.id,
+      install,
+      domain,
+      out,
+    });
 
     if (!(await confirm({ flags, release, domain, account }))) {
       out.emit({ type: "done", message: "Deployment cancelled." });
       return;
     }
 
-    const resources = await ensureGatewayResources(cf);
-    out.emit({
-      type: "step",
-      step: "gateway.resources",
-      status: "ok",
-      message: resources.created.length
-        ? `Created ${resources.created.join(", ")}.`
-        : "The gateway's D1 database and KV namespaces are ready.",
-    });
-    const db = cfD1Database(cf, resources.d1Id);
-    const result = await applyGateway({
+    const interactive = canPromptInTerminal(flags.json ?? false);
+    const { result, db, gatewayUrl } = await deployGatewayRelease({
       cf,
       out,
       reason,
       release,
       accountId: account.id,
-      gatewayHost: domain,
-      zone,
-      resources,
-      db,
-      interactive: canPromptInTerminal(flags.json ?? false),
-      cliVersion,
+      target,
+      interactive,
+      forceDns: flags["force-dns"],
       breakLease: confirmLeaseBreak({
         breakLease: flags["break-lease"],
         yes: flags.yes,
-        interactive: canPromptInTerminal(flags.json ?? false),
+        interactive,
       }),
       allowDowngrade: flags["allow-downgrade"],
     });
-
-    const gatewayUrl = `https://${domain}`;
-    if (result.firstDeploy) {
-      await waitForCertificate({ url: gatewayUrl, out, step: "gateway.tls" });
-    }
-    if (!(await resolvesThroughCloudflare(`everyapp-wildcard-check.${domain}`))) {
-      out.emit({
-        type: "warning",
-        code: "WILDCARD_DNS_MISSING",
-        message: formatWildcardDnsInstructions({
-          domain,
-          accountId: account.id,
-          mode: "gateway-warning",
-        }),
-      });
-    }
 
     const setupLink = await setupLinkForDeploy({
       db,
@@ -177,6 +152,7 @@ async function run(
         release: release.manifest.version,
         versionId: result.versionId,
         apps: result.appWorkers,
+        domains: result.domains,
         ...(setupLink && flags.json
           ? {
               setupLink: setupLink.url,
@@ -189,6 +165,172 @@ async function run(
   } finally {
     await release.cleanup();
   }
+}
+
+/**
+ * The account's gateway database and install row. A gateway wrangler
+ * deployed has a database but no install row; it keeps its wildcard route
+ * and app hostnames, which only adopting it records.
+ */
+export async function findInstall(
+  cf: CfRunner,
+): Promise<{ databaseId: string | null; install: InstallRecord | null }> {
+  const databaseId = await findGatewayDatabase(cf);
+  if (!databaseId) return { databaseId, install: null };
+  const db = cfD1Database(cf, databaseId);
+  const install = await readInstall(db);
+  if (!install && (await migratedByDrizzleKit(db))) {
+    throw new EveryAppError(
+      "GATEWAY_NOT_ADOPTED",
+      "This account already runs a gateway deployed before everyapp used cf. Adopt it first, which keeps its domain, wildcard route and app hostnames: `everyapp gateway adopt --domain <its domain>`, then `everyapp gateway upgrade` from a terminal.",
+    );
+  }
+  return { databaseId, install };
+}
+
+/** Where a deploy goes: the install's own settings, or a new install's. */
+interface GatewayTarget {
+  domain: string;
+  zone: Zone;
+  routing: Routing;
+  appBaseDomain: string;
+}
+
+export async function gatewayTarget({
+  cf,
+  accountId,
+  install,
+  domain,
+  out,
+}: {
+  cf: CfRunner;
+  accountId: string;
+  install: InstallRecord | null;
+  domain: string;
+  out: EventSink;
+}): Promise<GatewayTarget> {
+  if (install) {
+    if (install.gatewayHost !== domain) {
+      throw new EveryAppError(
+        "DOMAIN_CHANGE_UNSUPPORTED",
+        `This gateway is installed at ${install.gatewayHost}; moving it to ${domain} isn't supported.`,
+      );
+    }
+    // An install keeps how it was set up until switched
+    // (gateway use-per-app-domains).
+    return {
+      domain,
+      zone: { id: install.zoneId, name: install.zoneName },
+      routing: install.routing,
+      appBaseDomain: install.appBaseDomain,
+    };
+  }
+  const zone = await resolveZone(cf, domain, accountId);
+  warnIfZoneApex(domain, zone, out);
+  // New installs publish each app as its own Custom Domain.
+  return { domain, zone, routing: "custom-domains", appBaseDomain: domain };
+}
+
+/**
+ * Deploy `release` to `target`: the gateway's resources, the deploy pipeline
+ * (lib/gateway/apply.ts), then the new hostnames' certificates.
+ */
+export async function deployGatewayRelease({
+  cf,
+  out,
+  reason,
+  release,
+  accountId,
+  target,
+  interactive,
+  ...options
+}: {
+  cf: CfRunner;
+  out: EventSink;
+  reason: "deploy" | "upgrade";
+  release: GatewayRelease;
+  accountId: string;
+  target: GatewayTarget;
+  interactive: boolean;
+} & Pick<
+  ApplyGatewayOptions,
+  | "forceDns"
+  | "breakLease"
+  | "allowDowngrade"
+  | "confirm"
+  | "readStatus"
+  | "sleep"
+  | "verifyTimeoutMs"
+  | "leaseWaitMs"
+  | "lookupCaa"
+> & {
+    certificates?: Pick<
+      Parameters<typeof waitForCertificates>[0],
+      "isReady" | "sleep" | "maxWaitMs"
+    >;
+  }): Promise<{ result: ApplyGatewayResult; db: D1Database; gatewayUrl: string }> {
+  const { certificates, ...applyOptions } = options;
+  const resources = await ensureGatewayResources(cf);
+  out.emit({
+    type: "step",
+    step: "gateway.resources",
+    status: "ok",
+    message: resources.created.length
+      ? `Created ${resources.created.join(", ")}.`
+      : "The gateway's D1 database and KV namespaces are ready.",
+  });
+  const db = cfD1Database(cf, resources.d1Id);
+  const result = await applyGateway({
+    cf,
+    out,
+    reason,
+    release,
+    accountId,
+    gatewayHost: target.domain,
+    zone: target.zone,
+    routing: target.routing,
+    appBaseDomain: target.appBaseDomain,
+    resources,
+    db,
+    interactive,
+    cliVersion,
+    ...applyOptions,
+  });
+
+  await waitForCertificates({
+    hosts: result.newHosts,
+    out,
+    step: "gateway.tls",
+    ...certificates,
+  });
+  if (
+    target.routing === "wildcard-route" &&
+    !(await resolvesThroughCloudflare(`everyapp-wildcard-check.${target.domain}`))
+  ) {
+    out.emit({
+      type: "warning",
+      code: "WILDCARD_DNS_MISSING",
+      message: formatWildcardDnsInstructions({
+        domain: target.domain,
+        accountId,
+        mode: "gateway-warning",
+      }),
+    });
+  }
+  return { result, db, gatewayUrl: `https://${target.domain}` };
+}
+
+/**
+ * The session cookie covers the app base domain and everything below it:
+ * at a zone's apex, that is every subdomain of the company's domain.
+ */
+function warnIfZoneApex(domain: string, zone: Zone, out: EventSink): void {
+  if (domain !== zone.name) return;
+  out.emit({
+    type: "warning",
+    code: "GATEWAY_AT_ZONE_APEX",
+    message: `The gateway will serve at ${zone.name} itself, so its sign-in cookie covers every subdomain of ${zone.name}, and apps take names directly below it. Unless ${zone.name} is only for Every App, install on a subdomain instead: --domain apps.${zone.name}.`,
+  });
 }
 
 /** False when there is nothing to do (upgrade to the running release). */

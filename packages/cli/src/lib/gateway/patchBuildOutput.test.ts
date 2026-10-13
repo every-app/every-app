@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   GATEWAY_WORKER_CONFIG,
+  gatewayDomains,
   patchGatewayBuildOutput,
   validateWorkerConfig,
 } from "./patchBuildOutput";
@@ -22,7 +23,21 @@ const PATCH = {
   release: { version: "0.2.0", sha256: "a".repeat(64) },
   gatewayHost: "apps.example.com",
   zoneId: "fedcba9876543210fedcba9876543210",
+  routing: "custom-domains" as const,
+  appBaseDomain: "apps.example.com",
   appWorkers: ["every-todo", "every-acme-chef", "every-todo"],
+  appHosts: [
+    "todo.apps.example.com",
+    "chef-acme.apps.example.com",
+    "todo.apps.example.com",
+  ],
+};
+
+/** An install from before per-app domains, served through its wildcard route. */
+const ROUTE_PATCH = {
+  ...PATCH,
+  routing: "wildcard-route" as const,
+  appHosts: [],
 };
 
 let releaseDir: string;
@@ -91,7 +106,7 @@ describe("patchGatewayBuildOutput", () => {
     });
   });
 
-  it("keeps the gateway's other triggers and replaces only its route", async () => {
+  it("publishes the gateway host and each app host as Custom Domains, with no route", async () => {
     const config = JSON.parse(fs.readFileSync(FIXTURE, "utf8"));
     config.triggers = [
       { type: "scheduled", schedule: "17 3 * * *" },
@@ -100,6 +115,31 @@ describe("patchGatewayBuildOutput", () => {
     writeRelease("worker.config.json", JSON.stringify(config));
 
     const patched = await patchGatewayBuildOutput(releaseDir, PATCH);
+    // The full list, every time: cf removes a host left out of it.
+    expect(patched.domains).toEqual([
+      "apps.example.com",
+      "chef-acme.apps.example.com",
+      "todo.apps.example.com",
+    ]);
+    expect(patched.triggers).toEqual([
+      { type: "scheduled", schedule: "17 3 * * *" },
+    ]);
+    expect(patched.env!["APP_BASE_DOMAIN"]).toEqual({
+      type: "text",
+      value: "apps.example.com",
+    });
+  });
+
+  it("keeps an install's wildcard route, its gateway host alone a Custom Domain", async () => {
+    const config = JSON.parse(fs.readFileSync(FIXTURE, "utf8"));
+    config.triggers = [
+      { type: "scheduled", schedule: "17 3 * * *" },
+      { type: "fetch", pattern: "*.old.example.com/*", zone: "old" },
+    ];
+    writeRelease("worker.config.json", JSON.stringify(config));
+
+    const patched = await patchGatewayBuildOutput(releaseDir, ROUTE_PATCH);
+    expect(patched.domains).toEqual(["apps.example.com"]);
     expect(patched.triggers).toEqual([
       { type: "scheduled", schedule: "17 3 * * *" },
       {
@@ -108,6 +148,71 @@ describe("patchGatewayBuildOutput", () => {
         zone: PATCH.zoneId,
       },
     ]);
+    // So the gateway keeps naming apps <app>-<org>.<host>.
+    expect(patched.env!["APP_BASE_DOMAIN"]).toBeUndefined();
+    expect(() => validateWorkerConfig(patched, { requireDomain: true })).not.toThrow();
+  });
+
+  it("refuses to publish a host that isn't one label below the base domain", async () => {
+    for (const host of [
+      "www.example.com",
+      "deep.todo.apps.example.com",
+      "apps.example.com.evil.net",
+    ]) {
+      await expect(
+        patchGatewayBuildOutput(releaseDir, { ...PATCH, appHosts: [host] }),
+      ).rejects.toMatchObject({ code: "INVALID_APP_HOST" });
+    }
+    await expect(
+      patchGatewayBuildOutput(releaseDir, {
+        ...PATCH,
+        gatewayHost: "home.example.com",
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_APP_BASE_DOMAIN" });
+  });
+
+  it("sets APP_BASE_DOMAIN to the gateway host only, never a domain above it", async () => {
+    // The gateway's session cookie is scoped to it: example.com would hand
+    // it to every name in the company's zone.
+    await expect(
+      patchGatewayBuildOutput(releaseDir, {
+        ...PATCH,
+        gatewayHost: "apps.example.com",
+        appBaseDomain: "example.com",
+        appHosts: ["todo.example.com"],
+      }),
+    ).rejects.toMatchObject({
+      code: "INVALID_APP_BASE_DOMAIN",
+      message: expect.stringContaining(
+        "must be apps.example.com, not example.com",
+      ),
+    });
+    // Route mode sets no APP_BASE_DOMAIN, so has nothing to check.
+    await expect(
+      patchGatewayBuildOutput(releaseDir, {
+        ...ROUTE_PATCH,
+        appBaseDomain: "example.com",
+      }),
+    ).resolves.toMatchObject({ domains: ["apps.example.com"] });
+  });
+});
+
+describe("gatewayDomains", () => {
+  it("puts the gateway host first, then each app host once, sorted", () => {
+    expect(
+      gatewayDomains({
+        gatewayHost: "apps.example.com",
+        routing: "custom-domains",
+        appHosts: ["b.apps.example.com", "a.apps.example.com", "b.apps.example.com"],
+      }),
+    ).toEqual(["apps.example.com", "a.apps.example.com", "b.apps.example.com"]);
+    expect(
+      gatewayDomains({
+        gatewayHost: "example.com",
+        routing: "wildcard-route",
+        appHosts: ["todo-acme.example.com"],
+      }),
+    ).toEqual(["example.com"]);
   });
 });
 
@@ -133,6 +238,10 @@ describe("validateWorkerConfig", () => {
     const config = valid();
     config.env.EVERYAPP_RELEASE.value.version = "__EVERYAPP_PATCH__";
     expect(() => validateWorkerConfig(config)).toThrow(/placeholder/);
+    // What a CLI that predates APP_BASE_DOMAIN leaves in the release.
+    const older = valid();
+    older.env.APP_BASE_DOMAIN.value = "__EVERYAPP_PATCH__";
+    expect(() => validateWorkerConfig(older)).toThrow(/placeholder/);
   });
 
   it("refuses a gateway with no domain", () => {

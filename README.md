@@ -2,7 +2,7 @@
 The open source personal software platform.
 - Build exactly what you want.
 - Bring your own AI. No credits, no limits.
-- Self-host on Cloudflare. Free to start, $5/month max.
+- Self-host in your own Cloudflare account, on Workers Paid: $5/month plus usage.
 
 *Demo shows the Every App Gateway, a todo list optimized for keyboard navigation and an AI cooking assistant*
 
@@ -24,8 +24,8 @@ It's built for experienced engineers who want to use their favorite AI tooling t
 
 - We handle the tedious parts like auth, user management, database setup, and hosting so you can focus on your idea.
 - Your agent can reference example apps via our MCP server, with patterns that scale as your codebase grows.
-- Self host on Cloudflare with one CLI command: `npx everyapp gateway deploy`
-- Since apps are built for Cloudflare's serverless platform, hosting scales to zero and starts completely free.
+- Set it up in your own Cloudflare account with one command: `npx everyapp setup`
+- Apps run on Cloudflare's serverless platform, so an idle app costs nothing beyond the $5/month Workers Paid plan.
 
 Start by vibe coding an idea, reimplementing an old side project, or trying the [example prompt](https://everyapp.dev/docs/build-an-app/create-app/#example-prompt). Once you've built something you love, stay in vibe coding mode forever, or dig deeper and build the best project of your life.
 
@@ -56,50 +56,62 @@ We simplify building apps by standardizing as much as possible and hoisting what
 
 ## Deploy Your Gateway
 
-### Prerequisites
+### What you need
 
 1. **Node.js 22.18 or newer** — https://nodejs.org
 
    This also installs `npx`, which runs the commands below without installing anything globally. Run everything with Node/npx — not bun: the Cloudflare CLI the deploy uses can't load the apps' `cloudflare.config.ts` under Bun.
 
-2. **pnpm 9 or newer** — https://pnpm.io/installation — the CLI uses it to install and run app projects.
+2. **pnpm** — https://pnpm.io/installation — builds the starter app (`npm install -g pnpm`).
 
-3. **A Cloudflare account** (free, no credit card) — https://dash.cloudflare.com/sign-up
+3. **A Cloudflare account on Workers Paid** — the one thing you buy: $5 a month, plus usage above generous included amounts ([costs](https://everyapp.dev/docs/how-it-works/gateway#what-it-costs)). [Sign up](https://dash.cloudflare.com/sign-up), then subscribe under **Workers & Pages → Plans**. The Free plan can't run Every App: D1 stops answering for the rest of the day once an account reaches its daily limits (enforced since September 2026), and the Gateway reads D1 on every request; requests also get only 10 ms of CPU.
 
-4. **A domain on Cloudflare.** Your Gateway lives at your domain and each app gets its own subdomain — Gateway at `you.dev`, apps at `todo-<your-org>.you.dev` (your org slug is created with your account). [Add your domain to Cloudflare](https://developers.cloudflare.com/fundamentals/manage-domains/add-site/) (free plan is fine) and update the nameservers at your registrar.
+4. **A domain on Cloudflare.** Every App lives at a subdomain of it: the Gateway at `apps.your-company.com`, each app one level below (`todo.apps.your-company.com`). Nothing else in the domain changes, so one your company already has on Cloudflare is fine.
 
-   Nameserver changes can take a few hours to propagate, so do this first. You can deploy the Gateway without a domain to look around, but apps can't be reached until you have one.
+   No domain on Cloudflare yet? Buy one in the Cloudflare dashboard (**Domains → Buy a domain**; about $10 a year for a `.com`, at cost, ready in minutes), or add one you own and point its nameservers at Cloudflare.
 
-5. **Authenticate with Cloudflare** (choose one):
-   - Log in with Cloudflare's CLI (recommended). The first deploy offers it too; it shows a link and a code, so it works over SSH:
-     ```bash
-     npx cf auth login
-     ```
-   - Or set **both** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token needs the "Edit Cloudflare Workers" template plus Account → D1 → Edit.
-
-### Deploy
+### Set up
 
 ```bash
-npx everyapp gateway deploy --domain you.dev
+npx everyapp setup
 ```
 
-This creates a database and KV storage on your Cloudflare account, migrates the database, deploys the Gateway to your domain, and points `*.you.dev` at it. Running it again later redeploys with the same domain and account; `npx everyapp gateway upgrade` moves an existing Gateway to the release your CLI ships.
+One command, from an empty account to a working Gateway and a live starter app:
 
-Apps reach the Gateway through a wildcard DNS record. Add it once in the Cloudflare dashboard (the deploy tells you if it's missing):
+1. It logs in to Cloudflare with Cloudflare's own CLI (a link and a code, so it works over SSH), or uses `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and checks for Workers Paid.
+2. It asks where the Gateway lives (suggesting `apps.<your domain>`) and deploys it there. Every address is a Workers Custom Domain: Cloudflare creates its DNS record and certificate. No wildcard records, no DNS to edit by hand.
+3. It opens a one-time setup link: create your owner account there. Nobody can sign up before you, and after you only people you invite.
+4. Once your account exists, it logs this terminal in to the Gateway by itself, so it can deploy apps.
+5. It deploys the starter app, a simple todo list, from `./simple-todo` to `https://simple-todo.apps.<your domain>`.
 
-> **you.dev → DNS → Add record**: Type **CNAME**, Name **`*`**, Target **`you.dev`**, Proxy **ON** (orange cloud).
+Stopped half-way (a login to approve, a domain to buy, a link you haven't opened yet)? Run it again: it picks up where it left off, and does nothing once everything is there. Coding agents can drive it with `--json` (NDJSON events; [Quickstart](https://everyapp.dev/docs/getting-started/quickstart) has a prompt).
 
-When it finishes, the CLI prints (and opens) a one-time setup link, `https://you.dev/setup#token=…`. Open it to create the owner account; nobody can sign up on the Gateway before that, and the link works once and expires after 24 hours. Lost it? Run `npx everyapp gateway claim-link` for a new one. Signup is invite-only after you.
+[What the Gateway does](https://everyapp.dev/docs/how-it-works/gateway) explains, on one page, what it promises, what it costs, and its limits today; one to know now: deploying apps takes Cloudflare credentials that can also change the Gateway, so only let trusted admins deploy.
 
-### Connect your terminal
+### Deploy from another machine
 
-App deploys are authorized by a deploy token. On your Gateway, go to **Admin → App Tokens** and click **Create Deploy Token** (it's shown once), then:
+On your Gateway, go to **Admin → Tokens → Deploy token** (it's shown once), then:
 
 ```bash
 npx everyapp login
 ```
 
 Enter your Gateway URL, then paste the token when asked. Revoke it any time from the same page.
+
+### Upgrading an existing install
+
+`npx everyapp gateway upgrade` moves a Gateway to the release your CLI ships, keeping its data, users and apps.
+
+A Gateway deployed before `setup` existed (on its domain's apex, with a wildcard DNS record) keeps its domain and app addresses while it moves to the current CLI. From a terminal:
+
+```bash
+npx everyapp gateway adopt --domain your-domain.dev --dry-run   # look first
+npx everyapp gateway adopt --domain your-domain.dev             # record it as it is
+npx everyapp gateway upgrade                                     # confirm when asked
+npx everyapp gateway status
+```
+
+Later, `npx everyapp gateway use-per-app-domains` gives each app its own Custom Domain, after which the wildcard record can go. Details: [Upgrading an existing install](https://everyapp.dev/docs/reference/manage-your-gateway#upgrading-an-existing-install).
 
 ## Deploy an Example App
 
@@ -113,7 +125,7 @@ cd every-todo-app
 npx everyapp app deploy
 ```
 
-Refresh your Gateway — the app appears, live at the URL the deploy prints (`https://todo-<your-org>.you.dev`). You're already logged in.
+Refresh your Gateway — the app appears, live at the URL the deploy prints (`https://todo.apps.your-company.com`). You're already logged in.
 
 <details>
 <summary><h4>Workout Tracker</h4></summary>

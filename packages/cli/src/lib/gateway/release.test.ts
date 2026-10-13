@@ -47,6 +47,7 @@ function gatewaySource(dir: string): void {
         type: "json",
         value: { version: "__EVERYAPP_PATCH__", sha256: "__EVERYAPP_PATCH__" },
       },
+      APP_BASE_DOMAIN: { type: "text", value: "__EVERYAPP_PATCH__" },
     },
     manifest: { type: "partial", mainModule: "index.js", modules: {} },
   });

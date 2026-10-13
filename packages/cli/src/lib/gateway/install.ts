@@ -1,11 +1,13 @@
 /**
  * `_everyapp_install`: the one row in the gateway's own D1 that records how
- * the CLI deployed it — account, zone, host, resource ids, the live release
- * and what that deploy bound. The Cloudflare account is the source of truth:
- * any machine logged in to it can redeploy or reconcile the gateway from
- * this row, and `~/.everyapp/installs.json` is only a cache of it.
+ * the CLI deployed it — account, zone, host, how app hosts reach it, resource
+ * ids, the live release and what that deploy bound and published. The
+ * Cloudflare account is the source of truth: any machine logged in to it can
+ * redeploy or reconcile the gateway from this row, and
+ * `~/.everyapp/installs.json` is only a cache of it.
  */
 import type { D1Database } from "@/lib/cf/d1";
+import { EveryAppError } from "@/lib/errors";
 import type { ReleaseOrder } from "./release";
 
 const CREATE_INSTALL_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_install (
@@ -26,22 +28,53 @@ const CREATE_INSTALL_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_install (
   updated_at INTEGER NOT NULL,
   updated_by TEXT,
   release_schema INTEGER,
-  release_built_at INTEGER
+  release_built_at INTEGER,
+  routing TEXT
 )`;
 
 // Columns added after the table first shipped, for tables created before.
 const ADDED_COLUMNS = [
   ["release_schema", "INTEGER"],
   ["release_built_at", "INTEGER"],
+  ["routing", "TEXT"],
 ] as const;
+
+/**
+ * How app hosts reach the gateway:
+ *  - `custom-domains`: each app host is a Workers Custom Domain on the
+ *    gateway Worker, one label below the app base domain, published with
+ *    every deploy. No wildcard route or DNS record. New installs use it.
+ *  - `wildcard-route`: a `*.<gateway host>/*` route over a proxied wildcard
+ *    DNS record the operator added; app hosts are `<app>-<org>.<host>`.
+ *    Installs from before per-app domains keep it until switched
+ *    (`everyapp gateway use-per-app-domains`).
+ */
+export type Routing = "custom-domains" | "wildcard-route";
+
+/**
+ * The release an adopted install records (lib/gateway/adopt.ts) until its
+ * first upgrade: none everyapp uploaded, so nothing to redeploy.
+ */
+export const ADOPTED_RELEASE = "legacy";
+
+/** Refuse what needs a release everyapp recorded, on an install only adopted so far. */
+export function assertUpgradedSinceAdopted(install: InstallRecord): void {
+  if (install.releaseSha256 === ADOPTED_RELEASE) {
+    throw new EveryAppError(
+      "UPGRADE_FIRST",
+      "This gateway was adopted but not upgraded yet, so everyapp has no release of it to redeploy. Run `npx everyapp gateway upgrade` from a terminal first.",
+    );
+  }
+}
 
 export interface InstallRecord {
   accountId: string;
   zoneId: string;
   zoneName: string;
   gatewayHost: string;
-  /** Apps live under it: `<app>-<org>.<appBaseDomain>`. */
+  /** Apps live one label below it; the gateway host for now. */
   appBaseDomain: string;
+  routing: Routing;
   oauthKvId: string;
   deployKvId: string;
   releaseVersion: string;
@@ -85,6 +118,10 @@ export async function readInstall(
     zoneName: String(row["zone_name"]),
     gatewayHost: String(row["gateway_host"]),
     appBaseDomain: String(row["app_base_domain"]),
+    // Rows from before the column were written by deploys that routed apps
+    // through the wildcard route.
+    routing:
+      row["routing"] === "custom-domains" ? "custom-domains" : "wildcard-route",
     oauthKvId: String(row["oauth_kv_id"]),
     deployKvId: String(row["deploy_kv_id"]),
     releaseVersion: String(row["release_version"]),
@@ -127,6 +164,7 @@ export async function writeInstall(
     record.updatedBy,
     record.releaseOrder?.schema ?? null,
     record.releaseOrder?.builtAt ?? null,
+    record.routing,
   ];
   await ensureInstallTable(db);
   await db.run([
@@ -134,8 +172,8 @@ export async function writeInstall(
       sql: `INSERT INTO _everyapp_install (id, account_id, zone_id, zone_name, gateway_host,
   app_base_domain, oauth_kv_id, deploy_kv_id, release_version, release_sha256,
   live_version_id, live_domains, live_app_workers, updated_at, updated_by,
-  release_schema, release_built_at)
-VALUES ('install', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+  release_schema, release_built_at, routing)
+VALUES ('install', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
 ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id,
   zone_id = excluded.zone_id, zone_name = excluded.zone_name,
   gateway_host = excluded.gateway_host, app_base_domain = excluded.app_base_domain,
@@ -144,10 +182,24 @@ ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id,
   live_version_id = excluded.live_version_id, live_domains = excluded.live_domains,
   live_app_workers = excluded.live_app_workers, updated_at = excluded.updated_at,
   updated_by = excluded.updated_by, release_schema = excluded.release_schema,
-  release_built_at = excluded.release_built_at`,
+  release_built_at = excluded.release_built_at, routing = excluded.routing`,
       params: values,
     },
   ]);
+}
+
+/**
+ * Whether drizzle-kit migrated this gateway's database: it was deployed
+ * with wrangler, before everyapp deployed gateways with cf, and has no
+ * install row until `everyapp gateway adopt` writes one.
+ */
+export async function migratedByDrizzleKit(db: D1Database): Promise<boolean> {
+  const [tables = []] = await db.run([
+    {
+      sql: "SELECT name FROM sqlite_master WHERE type = 'table' AND name = '__drizzle_migrations'",
+    },
+  ]);
+  return tables.length > 0;
 }
 
 /** The table, with the columns added since it first shipped. */

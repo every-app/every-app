@@ -10,6 +10,7 @@ import { sharedAuthOptions } from "./shared";
 import { sendEmail } from "@/server/email/sendEmail";
 import { passwordResetUrl } from "@/server/email/links";
 import { findPendingInvitationByToken } from "@/server/invitation-token";
+import { appBaseDomain } from "@/server/app-hosts";
 import { AppAccessRepository } from "@/server/repositories/AppAccessRepository";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { AppAccessService } from "@/server/services/AppAccessService";
@@ -154,10 +155,13 @@ const DISABLED_AUTH_PATHS = [
  * Runtime auth configuration - requires Cloudflare bindings.
  */
 /**
- * Apps live at subdomains of the gateway host (`todo.example.com` under a
- * gateway at `example.com`), and the perimeter authenticates them with the
- * same Better Auth session — so the session cookie must be scoped to the
- * gateway's own hostname (Domain=<host> covers its subdomains).
+ * Apps live one label below APP_BASE_DOMAIN (`todo.apps.example.com` under
+ * a gateway at `apps.example.com`), and the perimeter authenticates them
+ * with the same Better Auth session — so the session cookie is scoped to
+ * APP_BASE_DOMAIN (Domain=<base> covers the apps, and nothing else in the
+ * company's zone). A gateway without it (served through a wildcard route)
+ * scopes it to its own hostname, as before; that is the same domain, since
+ * APP_BASE_DOMAIN is the gateway host (server/app-hosts.ts).
  *
  * Dev builds use EVERYAPP_DEV_COOKIE_DOMAIN instead (`everyapp dev --mode
  * mirror` serves the gateway at e.g. everyapp.localhost); bare-localhost dev
@@ -167,6 +171,10 @@ const DISABLED_AUTH_PATHS = [
 function resolveCookieDomain(): string | null {
   if (import.meta.env.DEV) {
     return env.EVERYAPP_DEV_COOKIE_DOMAIN ?? null;
+  }
+  const base = appBaseDomain(env);
+  if (base) {
+    return base;
   }
   if (!env.GATEWAY_URL) {
     return null;

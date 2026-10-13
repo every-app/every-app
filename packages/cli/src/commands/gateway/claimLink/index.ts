@@ -1,19 +1,19 @@
 import type { LocalContext } from "@/context";
 import { cfD1Database } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
+import { normalizeHostname } from "@/lib/domains/hostnames";
 import { EveryAppError } from "@/lib/errors";
 import { readInstall } from "@/lib/gateway/install";
 import { findGatewayDatabase } from "@/lib/gateway/resources";
 import {
   gatewayHasOwner,
-  mintSetupLink,
+  mintOperatorSetupLink,
   presentSetupLink,
   type SetupLink,
 } from "@/lib/gateway/setup-link";
 import {
   connectToAccount,
   eventSink,
-  normalizeDomain,
   rememberedInstall,
   runReported,
 } from "../shared";
@@ -35,7 +35,7 @@ export async function claimLink(
 ): Promise<void> {
   const out = eventSink();
   await runReported(out, async () => {
-    const domain = normalizeDomain(flags.domain);
+    const domain = normalizeHostname(flags.domain);
     const cached = await rememberedInstall(domain);
     const { cf } = await connectToAccount({
       accountId: flags["account-id"],
@@ -73,5 +73,5 @@ export async function mintClaimLink(
       "Which gateway? Pass its domain: npx everyapp gateway claim-link --domain <domain>",
     );
   }
-  return mintSetupLink({ db, gatewayUrl: `https://${gatewayHost}` });
+  return mintOperatorSetupLink({ db, gatewayUrl: `https://${gatewayHost}` });
 }

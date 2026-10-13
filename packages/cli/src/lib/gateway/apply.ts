@@ -12,14 +12,24 @@
  *      drizzle-kit's history over once, `cf d1 migrations apply` — so a
  *      failed migration leaves the gateway that is serving untouched;
  *   2. (deploy, upgrade) cache the release in the deploy KV namespace;
- *   3. read which app Workers the registry says to bind;
+ *   3. read which app Workers the registry says to bind, and their hosts;
  *   4. patch a private copy of the release's Build Output with them and
- *      this install's ids, domain and route, validated with cf's schema;
- *   5. `cf deploy --prebuilt`, with the secrets file on a first deploy,
+ *      this install's ids and domains (each app host a Workers Custom
+ *      Domain, or the wildcard route of an install from before those),
+ *      validated with cf's schema;
+ *   5. check every hostname it adds (lib/domains/preflight.ts: DNS
+ *      records it would replace, CAA, the zone's limit), before the
+ *      database changes when it can, and always before the upload;
+ *   6. `cf deploy --prebuilt`, with the secrets file on a first deploy,
  *      and record the install row as soon as the upload is known (on the
- *      way out of a Ctrl+C too);
- *   6. wait for /api/deploy/status to report the new release and bindings;
- *   7. if the registry changed meanwhile (an app registered), go again.
+ *      way out of a Ctrl+C too). The routing and hostnames are recorded
+ *      only once cf has published them: when it stops after the upload,
+ *      only the version is (record());
+ *   7. wait for /api/deploy/status to report the new release and bindings;
+ *   8. if the registry changed meanwhile (an app registered), go again.
+ *
+ * The caller waits for the new hostnames' certificates once the lease is
+ * free (`newHosts`).
  *
  * Reconcile redeploys exactly the release that is live, fetched from the
  * cache and checked against its SHA-256, so binding a new app never
@@ -36,6 +46,9 @@ import { assertReplaceable, cfDeploy, type Confirm } from "@/lib/cf/deploy";
 import { makeCfTempDir } from "@/lib/cf/privateDir";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
+import type { CaaLookup } from "@/lib/domains/caa";
+import { isOneLabelBelow } from "@/lib/domains/hostnames";
+import { preflightDomains } from "@/lib/domains/preflight";
 import { EveryAppError } from "@/lib/errors";
 import { onInterrupt } from "@/lib/interrupt";
 import { writeCachedInstall } from "@/lib/install/state";
@@ -48,9 +61,14 @@ import {
   workerExistence,
   type DesiredState,
 } from "./desiredState";
-import { readInstall, writeInstall, type InstallRecord } from "./install";
+import {
+  readInstall,
+  writeInstall,
+  type InstallRecord,
+  type Routing,
+} from "./install";
 import { acquireLease, type BreakLease } from "./lease";
-import { patchGatewayBuildOutput } from "./patchBuildOutput";
+import { gatewayDomains, patchGatewayBuildOutput } from "./patchBuildOutput";
 import {
   cacheRelease,
   compareReleaseOrder,
@@ -64,6 +82,9 @@ import type { GatewayResources } from "./resources";
 import { firstDeploySecrets } from "./secretsFile";
 
 type ApplyReason = "deploy" | "upgrade" | "reconcile";
+
+/** How the install row says app hosts reach the gateway, and its hostnames. */
+type Publication = Pick<InstallRecord, "routing" | "liveDomains">;
 
 const MAX_DEPLOYS = 3;
 const VERIFY_TIMEOUT_MS = 120_000;
@@ -79,8 +100,16 @@ export interface ApplyGatewayOptions {
   accountId: string;
   gatewayHost: string;
   zone: { id: string; name: string };
+  /** How app hosts reach the gateway (lib/gateway/install.ts). */
+  routing: Routing;
+  /** Where app hosts live; the gateway host. */
+  appBaseDomain: string;
   resources: GatewayResources;
   db: D1Database;
+  /** Publish new hostnames over DNS records and CAA blocks (--force-dns). */
+  forceDns?: boolean;
+  /** How the domain preflight reads CAA records (tests). */
+  lookupCaa?: CaaLookup;
   /** A person at a terminal answers cf's own prompts. */
   interactive: boolean;
   /** Asks that person before replacing a version everyapp didn't record (tests). */
@@ -107,6 +136,10 @@ export interface ApplyGatewayResult {
   versionId: string | null;
   firstDeploy: boolean;
   appWorkers: string[];
+  /** Every hostname the gateway is published under now. */
+  domains: string[];
+  /** Hostnames this run published for the first time: they wait for certificates. */
+  newHosts: string[];
   /** The live gateway confirmed it serves this release and these bindings. */
   verified: boolean;
   /** cf's binding table, after a dry run. */
@@ -208,6 +241,57 @@ export function downgradeRefused(
   );
 }
 
+/**
+ * The hostnames a deploy checks before publishing them: each one once per
+ * run, and never one the install already serves.
+ */
+class DomainChecks {
+  private readonly checked = new Set<string>();
+  private readonly warned = new Set<string>();
+
+  constructor(
+    private readonly options: ApplyGatewayOptions,
+    readonly liveDomains: readonly string[],
+  ) {}
+
+  /** The domains the gateway publishes for these app hosts. */
+  domainsFor(appHosts: readonly string[]): string[] {
+    const { routing, appBaseDomain, gatewayHost, out } = this.options;
+    const stray = appHosts.filter(
+      (host) => !isOneLabelBelow(host, appBaseDomain),
+    );
+    const unwarned = stray.filter((host) => !this.warned.has(host));
+    if (routing === "custom-domains" && unwarned.length > 0) {
+      out.emit({
+        type: "warning",
+        code: "APP_HOST_OUTSIDE_BASE",
+        message: `Not publishing ${unwarned.join(", ")}: app hosts live one label below ${appBaseDomain}.`,
+      });
+      for (const host of unwarned) this.warned.add(host);
+    }
+    return gatewayDomains({
+      gatewayHost,
+      routing,
+      appHosts: appHosts.filter((host) => !stray.includes(host)),
+    });
+  }
+
+  async check(domains: readonly string[]): Promise<void> {
+    await preflightDomains({
+      cf: this.options.cf,
+      out: this.options.out,
+      step: "gateway.domains",
+      zone: this.options.zone,
+      domains,
+      liveDomains: [...this.liveDomains, ...this.checked],
+      forceDns: this.options.forceDns,
+      interactive: this.options.interactive,
+      lookupCaa: this.options.lookupCaa,
+    });
+    for (const host of domains) this.checked.add(host);
+  }
+}
+
 export async function applyGateway(
   options: ApplyGatewayOptions,
 ): Promise<ApplyGatewayResult> {
@@ -219,9 +303,13 @@ export async function applyGateway(
   try {
     // Only now is the install record the last deploy's for sure: another
     // upgrade may have finished while this one waited for the lease.
-    const install = options.dryRun ? null : await readInstall(db);
+    const install = await readInstall(db).catch((error: unknown) => {
+      if (options.dryRun) return null;
+      throw error;
+    });
     if (
       install &&
+      !options.dryRun &&
       !options.allowDowngrade &&
       olderThanInstalled(release.manifest, install)
     ) {
@@ -230,10 +318,17 @@ export async function applyGateway(
         sha256: install.releaseSha256,
       });
     }
+    const domainChecks = new DomainChecks(options, install?.liveDomains ?? []);
+    const workerExists = workerExistence(cf);
     if (reason !== "reconcile" && !options.dryRun) {
       // Before migrating: the registry's newest columns may not exist yet,
-      // so no app is bound in this check.
-      await withPatchedRelease(options, [], async () => undefined);
+      // so no app is bound in this check, and only the hosts a migrated
+      // registry already lists are checked.
+      await withPatchedRelease(options, { appWorkers: [], appHosts: [] }, async () => undefined);
+      const registered = await readDesiredState(db, workerExists).catch(
+        () => null,
+      );
+      await domainChecks.check(domainChecks.domainsFor(registered?.appHosts ?? []));
       if (install && !options.allowDowngrade) {
         await refuseDowngradeOfServing(options, install);
       }
@@ -256,7 +351,10 @@ export async function applyGateway(
             : `Gateway release ${release.manifest.version} is already cached.`,
       });
     }
-    return await deployUntilSettled(options);
+    return await deployUntilSettled(options, domainChecks, workerExists, {
+      routing: install?.routing ?? options.routing,
+      liveDomains: install?.liveDomains ?? [],
+    });
   } finally {
     await lease?.release();
   }
@@ -300,16 +398,25 @@ async function migrate({
 
 async function deployUntilSettled(
   options: ApplyGatewayOptions,
+  domainChecks: DomainChecks,
+  workerExists: (workerName: string) => Promise<boolean>,
+  /** What the install row records before this run. */
+  recorded: Publication,
 ): Promise<ApplyGatewayResult> {
   const { cf, out, release, db, gatewayHost } = options;
   const gatewayUrl = `https://${gatewayHost}`;
   let firstDeploy =
     (await getWorkerDeployment(cf, GATEWAY_WORKER_NAME)) === null;
   const wasFirstDeploy = firstDeploy;
-  const workerExists = workerExistence(cf);
   let desired = await readDesiredState(db, workerExists);
   let versionId: string | null = null;
   let verified = false;
+  let domains: string[] = [];
+  const published = new Set(domainChecks.liveDomains);
+  const newHosts: string[] = [];
+  // What the last deploy cf finished published: what stays recorded when
+  // cf stops after an upload.
+  let lastPublished = recorded;
 
   for (let attempt = 1; ; attempt += 1) {
     for (const row of desired.skipped) {
@@ -326,14 +433,17 @@ async function deployUntilSettled(
         message: `Not binding app "${row.appId}": its Worker "${row.workerName}" doesn't exist (deleted by hand, or never uploaded). Deploy the app again, or delete it.`,
       });
     }
+    domains = domainChecks.domainsFor(desired.appHosts);
+    await domainChecks.check(domains);
     out.emit({
       type: "step",
       step: "gateway.deploy",
       status: "start",
       message: `${options.dryRun ? "Checking" : "Deploying"} gateway ${release.manifest.version} with ${desired.appWorkers.length} app${desired.appWorkers.length === 1 ? "" : "s"}...`,
-      data: { appWorkers: desired.appWorkers },
+      data: { appWorkers: desired.appWorkers, domains },
     });
-    const deployed = await deployOnce(options, desired, {
+    const deployed = await deployOnce(options, desired, domains, {
+      before: lastPublished,
       secrets: {
         ...(firstDeploy
           ? firstDeploySecrets({ gatewayUrl, accountId: options.accountId })
@@ -346,12 +456,19 @@ async function deployUntilSettled(
         versionId: null,
         firstDeploy,
         appWorkers: desired.appWorkers,
+        domains,
+        newHosts: domains.filter((host) => !published.has(host)),
         verified: false,
         dryRunOutput: deployed.output,
       };
     }
     versionId = deployed.versionId;
     firstDeploy = false;
+    lastPublished = { routing: options.routing, liveDomains: domains };
+    for (const host of domains) {
+      if (!published.has(host)) newHosts.push(host);
+      published.add(host);
+    }
     out.emit({
       type: "step",
       step: "gateway.deploy",
@@ -392,6 +509,10 @@ async function deployUntilSettled(
     versionId,
     firstDeploy: wasFirstDeploy,
     appWorkers: desired.appWorkers,
+    domains,
+    // Published by this run and still published: a host an app gave up
+    // during the loop has no certificate to wait for.
+    newHosts: newHosts.filter((host) => domains.includes(host)),
     verified,
   };
 }
@@ -399,9 +520,17 @@ async function deployUntilSettled(
 function deployOnce(
   options: ApplyGatewayOptions,
   desired: DesiredState,
-  { secrets }: { secrets: Record<string, string> },
+  domains: string[],
+  {
+    before,
+    secrets,
+  }: {
+    /** What stays recorded if cf stops after the upload. */
+    before: Publication;
+    secrets: Record<string, string>;
+  },
 ): Promise<{ versionId: string | null; output: string }> {
-  return withPatchedRelease(options, desired.appWorkers, (workdir) =>
+  return withPatchedRelease(options, desired, (workdir) =>
     cfDeploy({
       cf: options.cf,
       cwd: workdir,
@@ -412,7 +541,15 @@ function deployOnce(
       interactive: options.interactive,
       dryRun: options.dryRun,
       cliCf: true,
-      onUploaded: (versionId) => record(options, desired, versionId),
+      onUploaded: (versionId, finished) =>
+        record(
+          options,
+          desired,
+          versionId,
+          finished
+            ? { routing: options.routing, liveDomains: domains }
+            : before,
+        ),
     }),
   );
 }
@@ -420,7 +557,7 @@ function deployOnce(
 /** A private copy of the release, patched for this install and these apps. */
 async function withPatchedRelease<T>(
   options: ApplyGatewayOptions,
-  appWorkers: readonly string[],
+  apps: Pick<DesiredState, "appWorkers" | "appHosts">,
   use: (workdir: string) => Promise<T>,
 ): Promise<T> {
   // cf runs in this copy, so it lives where no one else can plant a
@@ -440,7 +577,13 @@ async function withPatchedRelease<T>(
       },
       gatewayHost: options.gatewayHost,
       zoneId: options.zone.id,
-      appWorkers,
+      routing: options.routing,
+      appBaseDomain: options.appBaseDomain,
+      appWorkers: apps.appWorkers,
+      // Only hosts one label below the base: see DomainChecks.domainsFor.
+      appHosts: apps.appHosts.filter((host) =>
+        isOneLabelBelow(host, options.appBaseDomain),
+      ),
     });
     return await use(workdir);
   } finally {
@@ -490,10 +633,21 @@ async function waitForStatus(
   }
 }
 
+/**
+ * Record the version that went live: its release and the apps it binds,
+ * and `publication`, the routing and hostnames the gateway is published
+ * under. That is this deploy's once cf finished. When cf stopped after the
+ * upload (it couldn't publish a hostname: a move from another Worker
+ * declined, the zone's limit, an API error; or Ctrl+C), it is what was
+ * recorded before: the next deploy then checks this one's new hostnames
+ * again (DNS records, CAA, who may hold them), and a switch to per-app
+ * domains isn't taken for done.
+ */
 async function record(
   options: ApplyGatewayOptions,
   desired: DesiredState,
   versionId: string | null,
+  publication: Publication,
 ): Promise<void> {
   const updatedAt = Date.now();
   await writeInstall(options.db, {
@@ -501,14 +655,15 @@ async function record(
     zoneId: options.zone.id,
     zoneName: options.zone.name,
     gatewayHost: options.gatewayHost,
-    appBaseDomain: options.gatewayHost,
+    appBaseDomain: options.appBaseDomain,
+    routing: publication.routing,
     oauthKvId: options.resources.oauthKvId,
     deployKvId: options.resources.deployKvId,
     releaseVersion: options.release.manifest.version,
     releaseSha256: options.release.manifest.sha256,
     releaseOrder: releaseOrder(options.release.manifest),
     liveVersionId: versionId,
-    liveDomains: [options.gatewayHost],
+    liveDomains: publication.liveDomains,
     liveAppWorkers: desired.appWorkers,
     updatedAt,
     updatedBy: `everyapp ${options.cliVersion} on ${os.hostname()}`,
@@ -521,6 +676,7 @@ async function record(
     databaseId: options.resources.d1Id,
     oauthKvId: options.resources.oauthKvId,
     deployKvId: options.resources.deployKvId,
+    routing: publication.routing,
     releaseVersion: options.release.manifest.version,
     releaseSha256: options.release.manifest.sha256,
     updatedAt: new Date(updatedAt).toISOString(),

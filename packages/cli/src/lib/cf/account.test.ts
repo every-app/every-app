@@ -35,6 +35,43 @@ describe("ensureCfAuth", () => {
     ]);
   });
 
+  it("hands an agent cf's device link and code, and waits for the approval", async () => {
+    vi.stubEnv("CLOUDFLARE_API_TOKEN", "");
+    let approved = false;
+    const cf = new FakeCf()
+      .on(["auth", "whoami"], () => ({ stdout: approved ? loggedIn() : LOGGED_OUT }))
+      .on(["auth", "login"], () => {
+        approved = true;
+        return {
+          stdout: [
+            "To authorize Cloudflare CLI, please visit:",
+            "",
+            "  https://dash.cloudflare.com/oauth2/device",
+            "",
+            "and enter the code:",
+            "",
+            "  WXYZ-1234",
+            "",
+            "You have 15 minutes to approve this request.",
+          ].join("\n"),
+        };
+      });
+    const logins: unknown[] = [];
+
+    await expect(
+      ensureCfAuth({ cf, interactive: false, onDeviceLogin: (login) => logins.push(login) }),
+    ).resolves.toMatchObject({ authenticated: true });
+
+    expect(logins).toEqual([
+      { url: "https://dash.cloudflare.com/oauth2/device", code: "WXYZ-1234" },
+    ]);
+    expect(cf.calls.map((call) => [call.args.join(" "), call.mode])).toEqual([
+      ["auth whoami", "json"],
+      ["auth login --no-browser", "text"],
+      ["auth whoami", "json"],
+    ]);
+  });
+
   it("asks anyone else to log in, without starting a login", async () => {
     vi.stubEnv("CLOUDFLARE_API_TOKEN", "");
     const cf = new FakeCf().on(["auth", "whoami"], { stdout: LOGGED_OUT });

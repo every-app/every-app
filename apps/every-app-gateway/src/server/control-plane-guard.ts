@@ -25,7 +25,11 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 // Called by programmatic clients with their own credentials, never by a
 // gateway page.
-const TOKEN_AUTHENTICATED_PATHS = ["/oauth/token", "/oauth/register"];
+const TOKEN_AUTHENTICATED_PATHS = [
+  "/oauth/token",
+  "/oauth/register",
+  "/api/setup/deploy-token",
+];
 const TOKEN_AUTHENTICATED_PREFIXES = ["/api/deploy/", "/oauth/userinfo"];
 
 // The native shell's auth client sends this exact app origin (as Origin or

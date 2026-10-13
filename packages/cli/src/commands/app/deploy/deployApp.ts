@@ -13,10 +13,15 @@
  *      the secrets file), so a deploy that can't upload leaves the database
  *      alone;
  *   4. tell the gateway the version is up (`pending` → `binding`), have the
- *      gateway bind the Worker if it doesn't yet (a reconcile of the live
- *      gateway release), and activate once the binding answers.
+ *      gateway bind the Worker and publish the app's hostname as a Workers
+ *      Custom Domain if it doesn't yet (a reconcile of the live gateway
+ *      release), activate once the binding answers, and wait for a new
+ *      hostname's certificate.
  *
- * A redeploy of an app the gateway already binds never touches the gateway.
+ * A new hostname is checked (DNS records it would replace, CAA, the zone's
+ * room) right after registering, before anything is created or uploaded.
+ * A redeploy of an app the gateway already binds and serves never touches
+ * the gateway.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -42,6 +47,10 @@ import {
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { resolvesThroughCloudflare } from "@/lib/dns";
 import { formatWildcardDnsInstructions } from "@/lib/dnsInstructions";
+import type { CaaLookup } from "@/lib/domains/caa";
+import { waitForCertificates } from "@/lib/domains/certWait";
+import { isOneLabelBelow } from "@/lib/domains/hostnames";
+import { preflightDomains } from "@/lib/domains/preflight";
 import { EveryAppError } from "@/lib/errors";
 import {
   explainGatewayError,
@@ -51,6 +60,7 @@ import {
   type GatewayWhoamiResponse,
   type RegisterAppResponse,
 } from "@/lib/gateway/api";
+import { readInstall } from "@/lib/gateway/install";
 import { acquireLease, type BreakLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { bundledReleaseTarball, compareVersions } from "@/lib/gateway/release";
@@ -77,6 +87,10 @@ interface DeployAppOptions {
   allowDeleteDurableObjectData?: boolean;
   /** Asked whether to take the app's lease from a deploy that holds it (`--break-lease`). */
   breakLease?: BreakLease;
+  /** Publish a new hostname over a DNS record or a CAA block (`--force-dns`). */
+  forceDns?: boolean;
+  /** Wait for a new hostname's certificate (default true; `--no-wait-cert`). */
+  waitForCertificate?: boolean;
   /** Seams for tests. */
   interactive?: boolean;
   confirm?: Confirm;
@@ -86,6 +100,7 @@ interface DeployAppOptions {
   checkDns?: (hostname: string) => Promise<boolean>;
   installDeps?: typeof installDependencies;
   reconcile?: ReconcileSeams;
+  certificates?: CertificateSeams;
 }
 
 /** How a reconcile reads the live gateway, and how long it waits (tests). */
@@ -94,6 +109,14 @@ export interface ReconcileSeams {
   sleep?: (ms: number) => Promise<void>;
   verifyTimeoutMs?: number;
   leaseWaitMs?: number;
+  lookupCaa?: CaaLookup;
+}
+
+/** How the certificate wait checks a hostname, sleeps, and how long it waits (tests). */
+interface CertificateSeams {
+  isReady?: (url: string) => Promise<boolean>;
+  sleep?: (ms: number) => Promise<void>;
+  maxWaitMs?: number;
 }
 
 interface DeployAppResult {
@@ -104,6 +127,8 @@ interface DeployAppResult {
   workerName: string;
   versionId: string;
 }
+
+export type DeployApp = typeof deployApp;
 
 export async function deployApp(
   options: DeployAppOptions,
@@ -174,8 +199,43 @@ export async function deployApp(
     });
   }
 
-  // 3. Everything that touches the app's Worker and data, one deploy at a time.
+  // A hostname the gateway doesn't serve yet is checked before anything is
+  // created or uploaded; the reconcile that publishes it checks again. One
+  // that isn't one label below the base is never published, so it is
+  // neither checked nor a reason to redeploy the gateway.
   const registry = cfD1Database(cf, gatewayDb);
+  const install = await readInstall(registry);
+  const perAppDomains = install?.routing === "custom-domains";
+  const outsideBase =
+    perAppDomains &&
+    !isOneLabelBelow(registration.hostname, install.appBaseDomain);
+  const newHost =
+    perAppDomains &&
+    !outsideBase &&
+    !install.liveDomains.includes(registration.hostname);
+  if (install && outsideBase) {
+    out.emit({
+      type: "warning",
+      code: "APP_HOST_OUTSIDE_BASE",
+      step: "app.domain",
+      message: `${registration.hostname} isn't one label below ${install.appBaseDomain}, so the gateway doesn't publish it and ${manifest.id} can't be reached there.`,
+    });
+  }
+  if (install && newHost) {
+    await preflightDomains({
+      cf,
+      out,
+      step: "app.domain",
+      zone: { id: install.zoneId, name: install.zoneName },
+      domains: [...install.liveDomains, registration.hostname],
+      liveDomains: install.liveDomains,
+      forceDns: options.forceDns,
+      interactive,
+      lookupCaa: options.reconcile?.lookupCaa,
+    });
+  }
+
+  // 3. Everything that touches the app's Worker and data, one deploy at a time.
   const lease = await acquireLease({
     db: registry,
     id: `app:${registration.workerName}`,
@@ -311,20 +371,42 @@ export async function deployApp(
     await lease.release();
   }
 
-  // 4. Bind and go live. --break-lease was about the app's lease: the
-  // gateway's is waited for.
-  await bindIfNeeded({
+  // 4. Bind, publish and go live. --break-lease was about the app's lease:
+  // the gateway's is waited for.
+  const published = await bindIfNeeded({
     client,
     cf,
     out,
     accountId,
     workerName: registration.workerName,
+    publishHost: newHost,
     interactive,
+    forceDns: options.forceDns,
     seams: options.reconcile,
   });
   await activate({ client, appId: manifest.id, sleep: options.sleep });
 
-  if (!(await (options.checkDns ?? resolvesThroughCloudflare)(registration.hostname))) {
+  if (install?.routing === "custom-domains") {
+    if (published.includes(registration.hostname)) {
+      if (options.waitForCertificate ?? true) {
+        await waitForCertificates({
+          hosts: [registration.hostname],
+          out,
+          step: "app.tls",
+          ...options.certificates,
+        });
+      } else {
+        out.emit({
+          type: "progress",
+          step: "app.tls",
+          message: `https://${registration.hostname} gets its certificate within a few minutes; \`everyapp gateway status\` shows when.`,
+        });
+      }
+    }
+  } else if (
+    !(await (options.checkDns ?? resolvesThroughCloudflare)(registration.hostname))
+  ) {
+    // An install still served through the wildcard route needs its record.
     out.emit({
       type: "warning",
       code: "WILDCARD_DNS_MISSING",
@@ -504,14 +586,20 @@ async function migrate({
   });
 }
 
-/** Reconcile the gateway when it doesn't bind this app's Worker yet. */
+/**
+ * Reconcile the gateway when it doesn't bind this app's Worker yet, or
+ * doesn't publish its hostname yet. Returns the hostnames that reconcile
+ * published for the first time.
+ */
 async function bindIfNeeded({
   client,
   cf,
   out,
   accountId,
   workerName,
+  publishHost,
   interactive,
+  forceDns,
   seams,
 }: {
   client: GatewayClient;
@@ -519,28 +607,33 @@ async function bindIfNeeded({
   out: EventSink;
   accountId: string;
   workerName: string;
+  /** The app's hostname isn't one of the gateway's Custom Domains yet. */
+  publishHost: boolean;
   interactive: boolean;
+  forceDns?: boolean;
   seams?: ReconcileSeams;
-}): Promise<void> {
+}): Promise<string[]> {
   const live = await client.status({ auth: true }).catch(() => null);
-  if (live?.appBindings?.includes(workerName)) return;
+  if (live?.appBindings?.includes(workerName) && !publishHost) return [];
   out.emit({
     type: "step",
     step: "app.bind",
     status: "start",
-    message: `Binding ${appBindingName(workerName)} on the gateway...`,
+    message: `Binding ${appBindingName(workerName)} on the gateway${publishHost ? " and publishing its hostname" : ""}...`,
   });
   try {
-    await reconcileGateway({
+    const result = await reconcileGateway({
       cf,
       out,
       accountId,
       interactive,
       cliVersion,
       force: true,
+      forceDns,
       bundledTarball: bundledReleaseTarball(),
       ...seams,
     });
+    return result.newHosts;
   } catch (error) {
     if (error instanceof EveryAppError && error.code === "LEASE_HELD") {
       throw new EveryAppError(

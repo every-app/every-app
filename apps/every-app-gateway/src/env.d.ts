@@ -39,6 +39,11 @@ declare namespace Cloudflare {
     EMAIL_FROM?: string;
     EMAIL_FROM_NAME?: string;
 
+    // The domain apps live one label below (src/server/app-hosts.ts). The
+    // deploy sets it on installs with per-app Custom Domains; unset on
+    // gateways still served through a wildcard route.
+    APP_BASE_DOMAIN?: string;
+
     // DEV ONLY (`everyapp dev --mode mirror`): parent domain to scope the
     // session cookie to, so it rides from the gateway base host to sub-app
     // subdomains (e.g. "everyapp.localhost"). Ignored in production builds.

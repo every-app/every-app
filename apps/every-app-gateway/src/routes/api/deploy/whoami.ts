@@ -8,15 +8,8 @@ import {
   jsonResponse,
   type DeployTokenContext,
 } from "@/server/deploy-token-auth";
+import { appBaseDomain, gatewayHostOf } from "@/server/app-hosts";
 import { MIN_CLI_VERSION, MIN_SDK_VERSION } from "@/server/deploy-api";
-
-function gatewayHost(): string | null {
-  try {
-    return env.GATEWAY_URL ? new URL(env.GATEWAY_URL).host : null;
-  } catch {
-    return null;
-  }
-}
 
 export const Route = createFileRoute("/api/deploy/whoami")({
   server: {
@@ -40,7 +33,9 @@ export const Route = createFileRoute("/api/deploy/whoami")({
           accountId: env.CLOUDFLARE_ACCOUNT_ID ?? null,
           gateway: {
             release: env.EVERYAPP_RELEASE ?? null,
-            gatewayHost: gatewayHost(),
+            gatewayHost: gatewayHostOf(env),
+            // Null on a gateway served through a wildcard route.
+            appBaseDomain: appBaseDomain(env),
           },
           minCli: MIN_CLI_VERSION,
           minSdk: MIN_SDK_VERSION,

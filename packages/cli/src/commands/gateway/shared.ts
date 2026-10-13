@@ -61,15 +61,6 @@ export async function rememberedInstall(
   return installs.length === 1 ? installs[0]! : null;
 }
 
-/** `https://apps.example.com/` → `apps.example.com`. */
-export function normalizeDomain(domain: string | undefined): string | undefined {
-  return domain
-    ?.trim()
-    .replace(/^https?:\/\//, "")
-    .replace(/\/.*$/, "")
-    .toLowerCase();
-}
-
 /**
  * The gateway release to deploy: `--release <tarball>`, the one bundled with
  * this CLI, or, inside the Every App monorepo, one built from source.

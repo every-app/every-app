@@ -2,10 +2,12 @@
  * The gateway's deploy API for end-to-end tests, standing in for
  * GatewayClient: the registry lives in the gateway's D1 inside
  * FakeCloudflare, so the CLI's reconcile reads the same rows the
- * registrations write, and activation succeeds only once the deployed
- * gateway binds the app's Worker.
+ * registrations write, activation succeeds only once the deployed gateway
+ * binds the app's Worker, and new hostnames follow the deployed gateway's
+ * APP_BASE_DOMAIN as the real one's do (`<app>.<base>` for the install's
+ * organization; `<app>-<org>.<host>` without one).
  */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { resourceNameFor } from "@every-app/perimeter/manifest";
 import {
   GatewayApiError,
@@ -15,6 +17,8 @@ import type { FakeCloudflare } from "./fakeCloudflare";
 
 export const GATEWAY_URL = "https://example.com";
 const ORG = { id: "org-1", name: "Acme", slug: "acme" };
+/** How long after the claim SetupService hands the CLI its deploy token. */
+const DEPLOY_TOKEN_RETRIEVAL_WINDOW_MS = 30 * 60 * 1000;
 const PUBLIC_KEY =
   "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA\n-----END PUBLIC KEY-----";
 
@@ -30,10 +34,61 @@ interface AppRow {
 }
 
 export class FakeGateway {
-  constructor(private readonly account: FakeCloudflare) {}
+  /** The gateway's clock, for setup links' expiry and the claim's window. */
+  now: () => number = () => Date.now();
+
+  constructor(
+    private readonly account: FakeCloudflare,
+    /** The gateway's own host. */
+    readonly gatewayHost = "example.com",
+  ) {}
+
+  get gatewayUrl(): string {
+    return `https://${this.gatewayHost}`;
+  }
+
+  /** What the deployed gateway's APP_BASE_DOMAIN says, if it has one. */
+  private appBaseDomain(): string | null {
+    return (
+      this.account.workers.get("every-app-gateway")?.config["env"]?.APP_BASE_DOMAIN
+        ?.value ?? null
+    );
+  }
 
   private get db() {
     return this.account.database("every-app-gateway");
+  }
+
+  /**
+   * What a person does on the gateway's /setup page with a setup link, as
+   * SetupService.claimOwner answers: a link that is unspent and unexpired,
+   * while the gateway has no owner, is spent, and its owner, organization
+   * and membership exist. Anything else is refused.
+   */
+  claim(setupUrl: string): void {
+    const token = new URL(setupUrl).hash.replace(/^#token=/, "");
+    const hash = createHash("sha256").update(token).digest("hex");
+    const link = this.db.all(
+      "SELECT id FROM owner_setup_tokens WHERE kind = 'claim' AND token_hash = ? AND consumed_at IS NULL AND expires_at > ?",
+      hash,
+      this.now(),
+    )[0];
+    if (!link) {
+      throw new Error(
+        "INVALID_OR_EXPIRED_SETUP_LINK: that setup link is spent, expired or unknown",
+      );
+    }
+    if (this.db.all("SELECT 1 FROM members WHERE role = 'owner'").length > 0) {
+      throw new Error("ALREADY_CLAIMED: the gateway has an owner");
+    }
+    this.seedOrganization();
+    this.db.sqlite.exec(`
+      INSERT INTO users (id, name, email, email_verified, created_at, updated_at) VALUES ('owner-1', 'Owner', 'owner@example.com', 0, 0, 0);
+      INSERT INTO members (id, organization_id, user_id, role, created_at) VALUES ('member-1', '${ORG.id}', 'owner-1', 'owner', 0);
+    `);
+    this.db.sqlite
+      .prepare("UPDATE owner_setup_tokens SET consumed_at = ?, consumed_by = 'owner-1' WHERE id = ?")
+      .run(this.now(), String(link["id"]));
   }
 
   /** The organization the deploy token belongs to. */
@@ -87,13 +142,60 @@ export class FakeGateway {
       organizationName: ORG.name,
       scopes: ["apps:register", "apps:deploy"],
       accountId: this.account.accountId,
-      gateway: { release: null, gatewayHost: "example.com" },
+      gateway: {
+        release: null,
+        gatewayHost: this.gatewayHost,
+        appBaseDomain: this.appBaseDomain(),
+      },
       minCli: "0.3.0",
       minSdk: "0.3.0",
       capabilities: { appGateway: true, deployProtocol: 2 },
     }),
 
-    getIdentityKeys: async () => ({ issuer: GATEWAY_URL, keys: [PUBLIC_KEY] }),
+    getIdentityKeys: async () => ({ issuer: this.gatewayUrl, keys: [PUBLIC_KEY] }),
+
+    // POST /api/setup/deploy-token, as SetupService.retrieveDeployToken
+    // answers: pending (202) until the link is claimed while it lasts, the
+    // token once within 30 minutes of the claim, else a 404.
+    setupDeployToken: async (cliSecret: string) => {
+      const now = this.now();
+      const hash = createHash("sha256").update(cliSecret).digest("hex");
+      const link = cliSecret.startsWith("ecs_")
+        ? this.db.all(
+            "SELECT id, expires_at, consumed_at, consumed_by FROM owner_setup_tokens WHERE kind = 'claim' AND cli_secret_hash = ? AND deploy_token_issued_at IS NULL",
+            hash,
+          )[0]
+        : undefined;
+      const consumedAt = link?.["consumed_at"];
+      if (link && consumedAt === null && Number(link["expires_at"]) > now) {
+        return { status: "pending" as const };
+      }
+      if (
+        !link ||
+        consumedAt === null ||
+        !link["consumed_by"] ||
+        Number(consumedAt) < now - DEPLOY_TOKEN_RETRIEVAL_WINDOW_MS
+      ) {
+        throw new GatewayApiError({
+          message: "This setup link is invalid, expired or already used.",
+          status: 404,
+          code: "INVALID_OR_EXPIRED_SETUP_LINK",
+        });
+      }
+      this.db.sqlite
+        .prepare("UPDATE owner_setup_tokens SET deploy_token_issued_at = ? WHERE id = ?")
+        .run(now, String(link["id"]));
+      const owner = this.db.all(
+        "SELECT email FROM users WHERE id = ?",
+        String(link["consumed_by"]),
+      )[0];
+      return {
+        token: "eak_from-the-setup-link",
+        organizationId: ORG.id,
+        organizationName: ORG.name,
+        ownerEmail: owner ? String(owner["email"]) : null,
+      };
+    },
 
     registerApp: async (payload: { appId: string; name: string; description: string; manifest: unknown }) => {
       const existing = this.app(payload.appId);
@@ -101,7 +203,11 @@ export class FakeGateway {
       const workerName =
         existing?.worker_name ??
         (legacy ? `every-${payload.appId}` : `every-${this.orgKey()}-${payload.appId}`);
-      const hostname = existing?.hostname ?? `${payload.appId}-${ORG.slug}.example.com`;
+      const base = this.appBaseDomain();
+      // The seeded organization is the install's own.
+      const hostname =
+        existing?.hostname ??
+        (base ? `${payload.appId}.${base}` : `${payload.appId}-${ORG.slug}.${this.gatewayHost}`);
       let status = existing?.status ?? "pending";
       if (!existing) {
         this.db.sqlite

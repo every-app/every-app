@@ -49,7 +49,10 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
           },
           gatewayHost: "apps.example.com",
           zoneId: "fedcba9876543210fedcba9876543210",
+          routing: "custom-domains",
+          appBaseDomain: "apps.example.com",
           appWorkers: ["every-acme-todo", "every-chef"],
+          appHosts: ["todo.apps.example.com", "chef-globex.apps.example.com"],
         });
 
         const { output } = await cfDeploy({
@@ -74,6 +77,7 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
           "env.APP__every-chef (every-chef)",
           "env.AUTH_RATE_LIMIT_ACCOUNT",
           "env.EVERYAPP_RELEASE",
+          "env.APP_BASE_DOMAIN",
           "--dry-run: exiting now.",
         ]) {
           expect(output).toContain(binding);

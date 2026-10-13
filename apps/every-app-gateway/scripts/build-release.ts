@@ -180,8 +180,17 @@ function checkBuildOutput(outputDir: string): void {
       problems.push(`${name} has a resource id`);
     }
   }
-  if (!JSON.stringify(workerConfig.env ?? {}).includes(PATCH_PLACEHOLDER)) {
+  // What the deploy patches in per install. A CLI that doesn't know a
+  // placeholder leaves it, and refuses to upload the release.
+  if (
+    !JSON.stringify(workerConfig.env?.["EVERYAPP_RELEASE"] ?? {}).includes(
+      PATCH_PLACEHOLDER,
+    )
+  ) {
     problems.push("EVERYAPP_RELEASE has no deploy placeholder");
+  }
+  if (workerConfig.env?.["APP_BASE_DOMAIN"]?.value !== PATCH_PLACEHOLDER) {
+    problems.push("APP_BASE_DOMAIN has no deploy placeholder");
   }
   if (problems.length > 0) {
     throw new ReleaseBuildError(

@@ -7,15 +7,22 @@ import {
   hasAnyOwnerMembership,
   releaseOwnerBootstrap,
 } from "@/server/organization/owner-membership";
+import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { OrganizationRepository } from "../repositories/OrganizationRepository";
 import { OwnerSetupTokenRepository } from "../repositories/OwnerSetupTokenRepository";
 import { UserRepository } from "../repositories/UserRepository";
 import {
+  CLI_SECRET_PREFIX,
   SETUP_TOKEN_PREFIX,
   digestsEqual,
   hashSetupToken,
 } from "../setup-token";
 import { AppAccessService } from "./AppAccessService";
+import { AppTokenService } from "./AppTokenService";
+
+// The CLI polls while the owner fills in the setup page; a claim this old
+// without a retrieval means that CLI gave up, and the token stays unissued.
+const DEPLOY_TOKEN_RETRIEVAL_WINDOW_MS = 30 * 60 * 1000;
 
 type SetupErrorCode =
   | "INVALID_OR_EXPIRED_SETUP_LINK"
@@ -195,6 +202,93 @@ async function claimOwner(input: ClaimOwnerInput) {
   }
 }
 
+type DeployTokenRetrieval =
+  | {
+      status: "issued";
+      token: string;
+      organizationId: string;
+      organizationName: string;
+      /** Who claimed the link: the owner the token acts for. */
+      ownerEmail: string | null;
+    }
+  | { status: "pending" }
+  | { status: "invalid" };
+
+/**
+ * Hand the CLI that minted a setup link the owner's first deploy token, once
+ * the link is claimed: `pending` until then, `issued` exactly once (within
+ * 30 minutes of the claim), with who claimed it so the CLI can show whose
+ * token it holds, `invalid` for anything else, the link's own secret
+ * included.
+ */
+async function retrieveDeployToken(
+  cliSecret: string,
+  now = new Date(),
+): Promise<DeployTokenRetrieval> {
+  if (!cliSecret.startsWith(CLI_SECRET_PREFIX)) return { status: "invalid" };
+  const secretHash = await hashSetupToken(cliSecret);
+  let link:
+    | Awaited<
+        ReturnType<
+          typeof OwnerSetupTokenRepository.findClaimsAwaitingDeployToken
+        >
+      >[number]
+    | null = null;
+  for (const candidate of await OwnerSetupTokenRepository.findClaimsAwaitingDeployToken()) {
+    if (
+      candidate.cliSecretHash &&
+      digestsEqual(candidate.cliSecretHash, secretHash)
+    ) {
+      link = candidate;
+    }
+  }
+  if (!link) return { status: "invalid" };
+  if (!link.consumedAt) {
+    return link.expiresAt > now ? { status: "pending" } : { status: "invalid" };
+  }
+  if (
+    !link.consumedBy ||
+    link.consumedAt.getTime() < now.getTime() - DEPLOY_TOKEN_RETRIEVAL_WINDOW_MS
+  ) {
+    return { status: "invalid" };
+  }
+  const organizationId =
+    await OrganizationMembersRepository.findOwnedOrganizationId(
+      link.consumedBy,
+    );
+  if (!organizationId) return { status: "invalid" };
+  if (!(await OwnerSetupTokenRepository.markDeployTokenIssued(link.id, now))) {
+    return { status: "invalid" };
+  }
+
+  try {
+    const issued = await AppTokenService.issueDeployToken({
+      organizationId,
+      createdBy: link.consumedBy,
+    });
+    const [organization, owner] = await Promise.all([
+      OrganizationRepository.findSummaryById(organizationId),
+      UserRepository.findById(link.consumedBy),
+    ]);
+    logEvent("setup.deploy_token_issued", {
+      userId: link.consumedBy,
+      organizationId,
+    });
+    return {
+      status: "issued",
+      token: issued.token,
+      organizationId,
+      organizationName: organization?.name ?? organizationId,
+      ownerEmail: owner?.email ?? null,
+    };
+  } catch (error) {
+    // Not handed out after all: the CLI's retry may have it.
+    await OwnerSetupTokenRepository.unmarkDeployTokenIssued(link.id);
+    throw error;
+  }
+}
+
 export const SetupService = {
   claimOwner,
+  retrieveDeployToken,
 } as const;

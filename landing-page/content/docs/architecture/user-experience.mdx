@@ -11,7 +11,7 @@ description: What users actually see — from first visit to admin — and what'
 
 ### 1. First person ever (the owner)
 
-1. `everyapp gateway deploy` prints a one-time link, `/setup#token=est_…` (24h, single use; only its SHA-256 is stored in D1). `everyapp gateway claim-link` re-mints it.
+1. `everyapp setup` (or `gateway deploy`) prints and opens a one-time link, `/setup#token=est_…` (24h, single use; only its SHA-256 is stored in D1). `everyapp gateway claim-link` re-mints it. Once the claim succeeds, `setup` logs its terminal in by itself (a separate CLI-only secret fetches the first deploy token, once).
 2. `/setup` reads the token from the fragment, clears it from the address bar, and asks for name, email and password (8+ chars), which it POSTs as JSON to `/api/setup/claim`.
 3. The claim creates the user, their org and the owner membership, consumes the link, and the page signs them in.
 4. The home page shows the one live onboarding step: **Deploy your first app** — clone the todo template, `npx everyapp app deploy`, refresh. Completion is inferred from "you have ≥1 app".

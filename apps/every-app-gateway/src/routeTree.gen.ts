@@ -33,6 +33,7 @@ import { Route as ApiDeployWhoamiRouteImport } from './routes/api/deploy/whoami'
 import { Route as ApiDevIdentityRouteImport } from './routes/api/dev/identity'
 import { Route as ApiMeAppsRouteImport } from './routes/api/me/apps'
 import { Route as ApiSetupClaimRouteImport } from './routes/api/setup/claim'
+import { Route as ApiSetupDeployTokenRouteImport } from './routes/api/setup/deploy-token'
 import { Route as ApiDeployAppsAppIdActivateRouteImport } from './routes/api/deploy/apps/$appId/activate'
 import { Route as ApiDeployAppsAppIdDeleteRouteImport } from './routes/api/deploy/apps/$appId/delete'
 import { Route as ApiDeployAppsAppIdDeployedRouteImport } from './routes/api/deploy/apps/$appId/deployed'
@@ -158,6 +159,11 @@ const ApiSetupClaimRoute = ApiSetupClaimRouteImport.update({
   path: '/api/setup/claim',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSetupDeployTokenRoute = ApiSetupDeployTokenRouteImport.update({
+  id: '/api/setup/deploy-token',
+  path: '/api/setup/deploy-token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiDeployAppsAppIdActivateRoute =
   ApiDeployAppsAppIdActivateRouteImport.update({
     id: '/api/deploy/apps/$appId/activate',
@@ -207,6 +213,7 @@ export interface FileRoutesByFullPath {
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
+  '/api/setup/deploy-token': typeof ApiSetupDeployTokenRoute
   '/api/deploy/apps/$appId/activate': typeof ApiDeployAppsAppIdActivateRoute
   '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
   '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
@@ -236,6 +243,7 @@ export interface FileRoutesByTo {
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
+  '/api/setup/deploy-token': typeof ApiSetupDeployTokenRoute
   '/api/deploy/apps/$appId/activate': typeof ApiDeployAppsAppIdActivateRoute
   '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
   '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
@@ -267,6 +275,7 @@ export interface FileRoutesById {
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
+  '/api/setup/deploy-token': typeof ApiSetupDeployTokenRoute
   '/api/deploy/apps/$appId/activate': typeof ApiDeployAppsAppIdActivateRoute
   '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
   '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
@@ -299,6 +308,7 @@ export interface FileRouteTypes {
     | '/api/dev/identity'
     | '/api/me/apps'
     | '/api/setup/claim'
+    | '/api/setup/deploy-token'
     | '/api/deploy/apps/$appId/activate'
     | '/api/deploy/apps/$appId/delete'
     | '/api/deploy/apps/$appId/deployed'
@@ -328,6 +338,7 @@ export interface FileRouteTypes {
     | '/api/dev/identity'
     | '/api/me/apps'
     | '/api/setup/claim'
+    | '/api/setup/deploy-token'
     | '/api/deploy/apps/$appId/activate'
     | '/api/deploy/apps/$appId/delete'
     | '/api/deploy/apps/$appId/deployed'
@@ -358,6 +369,7 @@ export interface FileRouteTypes {
     | '/api/dev/identity'
     | '/api/me/apps'
     | '/api/setup/claim'
+    | '/api/setup/deploy-token'
     | '/api/deploy/apps/$appId/activate'
     | '/api/deploy/apps/$appId/delete'
     | '/api/deploy/apps/$appId/deployed'
@@ -385,6 +397,7 @@ export interface RootRouteChildren {
   ApiDevIdentityRoute: typeof ApiDevIdentityRoute
   ApiMeAppsRoute: typeof ApiMeAppsRoute
   ApiSetupClaimRoute: typeof ApiSetupClaimRoute
+  ApiSetupDeployTokenRoute: typeof ApiSetupDeployTokenRoute
   ApiDeployAppsAppIdActivateRoute: typeof ApiDeployAppsAppIdActivateRoute
   ApiDeployAppsAppIdDeleteRoute: typeof ApiDeployAppsAppIdDeleteRoute
   ApiDeployAppsAppIdDeployedRoute: typeof ApiDeployAppsAppIdDeployedRoute
@@ -561,6 +574,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSetupClaimRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/setup/deploy-token': {
+      id: '/api/setup/deploy-token'
+      path: '/api/setup/deploy-token'
+      fullPath: '/api/setup/deploy-token'
+      preLoaderRoute: typeof ApiSetupDeployTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/deploy/apps/$appId/activate': {
       id: '/api/deploy/apps/$appId/activate'
       path: '/api/deploy/apps/$appId/activate'
@@ -629,6 +649,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiDevIdentityRoute: ApiDevIdentityRoute,
   ApiMeAppsRoute: ApiMeAppsRoute,
   ApiSetupClaimRoute: ApiSetupClaimRoute,
+  ApiSetupDeployTokenRoute: ApiSetupDeployTokenRoute,
   ApiDeployAppsAppIdActivateRoute: ApiDeployAppsAppIdActivateRoute,
   ApiDeployAppsAppIdDeleteRoute: ApiDeployAppsAppIdDeleteRoute,
   ApiDeployAppsAppIdDeployedRoute: ApiDeployAppsAppIdDeployedRoute,

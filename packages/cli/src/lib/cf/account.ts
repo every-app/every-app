@@ -21,17 +21,29 @@ async function cfWhoami(cf: CfRunner): Promise<CfWhoami> {
   );
 }
 
+/** How long a person has to approve cf's device login. */
+const DEVICE_LOGIN_TIMEOUT_MS = 15 * 60 * 1000;
+
+interface DeviceLogin {
+  url: string;
+  code: string;
+}
+
 /**
  * Make sure cf is logged in. A person at a terminal is taken through
- * `cf auth login` (a device code, so it works over SSH too); anyone else is
- * told to log in, or to set CLOUDFLARE_API_TOKEN.
+ * `cf auth login` (a device code, so it works over SSH too). With
+ * `onDeviceLogin`, an unattended run (an agent reading `--json`) does the
+ * same: it hands cf's link and code over and waits for a person to approve.
+ * Anyone else is told to log in, or to set CLOUDFLARE_API_TOKEN.
  */
 export async function ensureCfAuth({
   cf,
   interactive,
+  onDeviceLogin,
 }: {
   cf: CfRunner;
   interactive: boolean;
+  onDeviceLogin?: (login: DeviceLogin) => void;
 }): Promise<CfWhoami> {
   const whoami = await cfWhoami(cf);
   if (whoami.authenticated) return whoami;
@@ -41,13 +53,16 @@ export async function ensureCfAuth({
       "cf can't authenticate with CLOUDFLARE_API_TOKEN. Check the token is valid and has the Workers, D1 and KV permissions.",
     );
   }
-  if (!interactive) {
+  if (interactive) {
+    await cf.run({ plane: "account", mode: "interactive", args: ["auth", "login"] });
+  } else if (onDeviceLogin) {
+    await deviceLogin(cf, onDeviceLogin);
+  } else {
     throw new ActionRequiredError(
       "cloudflare_login",
       "Log in to Cloudflare first: run `npx cf auth login` (or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID), then run this command again.",
     );
   }
-  await cf.run({ plane: "account", mode: "interactive", args: ["auth", "login"] });
   const loggedIn = await cfWhoami(cf);
   if (!loggedIn.authenticated) {
     throw new EveryAppError(
@@ -56,6 +71,41 @@ export async function ensureCfAuth({
     );
   }
   return loggedIn;
+}
+
+/**
+ * `cf auth login --no-browser`, piped: cf prints "please visit: <url> … and
+ * enter the code: <code>", then waits for the approval. The link and code
+ * go to `onDeviceLogin` as soon as both are out.
+ */
+async function deviceLogin(
+  cf: CfRunner,
+  onDeviceLogin: (login: DeviceLogin) => void,
+): Promise<void> {
+  let output = "";
+  let announced = false;
+  try {
+    await cf.run({
+      plane: "account",
+      mode: "text",
+      timeoutMs: DEVICE_LOGIN_TIMEOUT_MS,
+      args: ["auth", "login", "--no-browser"],
+      onOutput: (chunk) => {
+        output += chunk;
+        const url = /please visit:\s*(https?:\/\/\S+)/i.exec(output)?.[1];
+        const code = /enter the code:\s*(\S+)/i.exec(output)?.[1];
+        if (announced || !url || !code) return;
+        announced = true;
+        onDeviceLogin({ url, code });
+      },
+    });
+  } catch (error) {
+    throw new EveryAppError(
+      "CLOUDFLARE_LOGIN_FAILED",
+      `Cloudflare login didn't complete (${error instanceof Error ? error.message : String(error)}). Run \`npx cf auth login\` yourself, or set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID, then run this command again.`,
+      { retryable: true },
+    );
+  }
 }
 
 interface ResolveAccountOptions {

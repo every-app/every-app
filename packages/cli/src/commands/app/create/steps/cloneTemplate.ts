@@ -1,11 +1,8 @@
 import path from "node:path";
 import chalk from "chalk";
+import { copyTemplateFiles, starterTemplateDir } from "@/lib/app/starter";
 import { cloneRepository } from "@/lib/git";
-import {
-  copyDirectory,
-  directoryExists,
-  createTempDirectory,
-} from "@/lib/file-operations";
+import { directoryExists, createTempDirectory } from "@/lib/file-operations";
 
 const EVERY_APP_REPO = "https://github.com/every-app/every-app.git";
 const TEMPLATE_RELATIVE_PATH = "templates/simple-todo";
@@ -17,52 +14,41 @@ interface CloneTemplateOptions {
 }
 
 interface CloneTemplateResult {
-  tempDir: string;
+  /** The clone to remove afterwards; null when the bundled template was used. */
+  tempDir: string | null;
   targetDir: string;
 }
 
 /**
- * Clone the template repository and copy it to the target directory
+ * Copy the starter template to the target directory: the one bundled with
+ * this CLI, or (a CLI built without it) the repository's, cloned.
  */
 export async function cloneTemplate({
   appId,
   verbose = false,
 }: CloneTemplateOptions): Promise<CloneTemplateResult> {
-  if (verbose) {
-    console.log("Cloning template repository...\n");
-  }
-
-  const tempDir = await createTempDirectory("every-app-create-");
-  await cloneRepository({ url: EVERY_APP_REPO, targetDir: tempDir, verbose });
-
-  if (verbose) {
-    console.log("Extracting template...\n");
-  }
-
-  const templatePath = path.join(tempDir, TEMPLATE_RELATIVE_PATH);
   const targetDir = path.join(process.cwd(), appId);
-
   if (await directoryExists(targetDir)) {
     throw new Error(
       `Directory "${appId}" already exists in the current location`,
     );
   }
 
-  await copyDirectory(templatePath, targetDir, {
-    exclude: [
-      "node_modules",
-      ".git",
-      "pnpm-lock.yaml",
-      "package-lock.json",
-      ".env.local",
-      ".env.production",
-      ".dev.vars",
-      // cf's local state and Build Output, and everyapp's deploy inputs.
-      ".cloudflare",
-      ".everyapp",
-      "manual-steps.md",
-    ],
-  });
+  const bundled = starterTemplateDir();
+  let tempDir: string | null = null;
+  let templatePath: string;
+  if (bundled) {
+    templatePath = bundled;
+  } else {
+    if (verbose) {
+      console.log("Cloning template repository...\n");
+    }
+    tempDir = await createTempDirectory("every-app-create-");
+    await cloneRepository({ url: EVERY_APP_REPO, targetDir: tempDir, verbose });
+    templatePath = path.join(tempDir, TEMPLATE_RELATIVE_PATH);
+  }
+
+  await copyTemplateFiles(templatePath, targetDir);
 
   if (verbose) {
     console.log(chalk.dim(`  Template copied to ${targetDir}\n`));

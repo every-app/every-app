@@ -21,29 +21,47 @@ again — and 1 on an error).
 
 ## Commands
 
-### Deploy the Gateway
+### Set up Every App
 
-Deploy the Every App Gateway to your Cloudflare account:
+From an empty Cloudflare account (on Workers Paid, with a domain) to a working
+gateway, its owner, this machine logged in, and the starter app live:
 
 ```bash
-npx -y everyapp@latest gateway deploy --domain you.dev
+npx -y everyapp@latest setup
+```
+
+It asks where the gateway lives (any hostname in a zone the account has, such
+as `apps.example.com`), deploys it there, opens a one-time setup link for the
+owner account, logs this machine in once that account exists, and deploys the
+starter app from `./simple-todo`. Run it again to resume: it does nothing once
+everything is there. `--json` prints NDJSON events for an agent.
+
+### Deploy the Gateway
+
+```bash
+npx -y everyapp@latest gateway deploy --domain apps.example.com
 ```
 
 The gateway ships prebuilt inside the CLI; nothing is installed or built on
 your machine. The deploy migrates the gateway's D1 database before the new
 code goes live (after a Time Travel bookmark it prints, with the command to
-restore it), uploads with `cf deploy`, and remembers the domain and account
-for later runs. Apps are served at `<app>-<org>.you.dev` through a wildcard
-DNS record (`*`, proxied) you add once.
+restore it), uploads with `cf deploy`, and remembers the address and account
+for later runs. The gateway serves at `--domain`, and each app one label below
+it (`todo.apps.example.com`) as its own Workers Custom Domain: Cloudflare
+creates the DNS record and certificate. Before it adds an address, the deploy
+checks for a DNS record it would replace (`--force-dns` replaces it), CAA
+records that would block the certificate, and room in the zone.
 
 Other gateway commands:
 
 ```bash
 npx -y everyapp@latest gateway upgrade        # deploy the release this CLI ships
-npx -y everyapp@latest gateway status         # release, bound apps, owner, certificate
-npx -y everyapp@latest gateway reconcile      # bind exactly the registered apps
+npx -y everyapp@latest gateway status         # release, apps, addresses and certificates, owner
+npx -y everyapp@latest gateway reconcile      # bind and serve exactly the registered apps
 npx -y everyapp@latest gateway claim-link     # a new owner setup link
 npx -y everyapp@latest gateway secret set OPENAI_API_KEY
+npx -y everyapp@latest gateway adopt --domain example.com   # take over a gateway deployed before cf
+npx -y everyapp@latest gateway use-per-app-domains          # move it off its wildcard route
 ```
 
 ### Create a new app
@@ -80,8 +98,9 @@ database, builds with `cf build`, checks the built Worker, uploads it with
 npx -y everyapp@latest app delete [app-id] [--purge]
 ```
 
-Removes the app from the gateway. Its Worker and data stay unless `--purge`,
-which deletes only what the app's deploys recorded creating.
+Removes the app from the gateway, with its address and certificate. Its
+Worker and data stay unless `--purge`, which deletes only what the app's
+deploys recorded creating.
 
 ### Run an app locally
 

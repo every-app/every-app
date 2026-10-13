@@ -22,8 +22,11 @@ import {
 } from "@/lib/cf/resources";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { deleteWorker, getWorkerDeployment } from "@/lib/cf/workers";
+import { deleteHostCertificates } from "@/lib/domains/certificates";
+import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { EveryAppError } from "@/lib/errors";
 import { GatewayClient, type DeletedApp } from "@/lib/gateway/api";
+import { readInstall } from "@/lib/gateway/install";
 import { confirmLeaseBreak, type BreakLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { bundledReleaseTarball } from "@/lib/gateway/release";
@@ -79,10 +82,11 @@ export async function deleteApp(
 
 /**
  * `everyapp app delete`: tombstone the app on the gateway (its names stay
- * reserved to its organization), drop its binding with a reconcile, and with
- * `purge` delete its Worker, D1 databases and KV namespaces: only those the
- * registry recorded as created by the app, never whatever has its names.
- * `purged` says what was deleted and what was kept.
+ * reserved to its organization), drop its binding and its Custom Domain
+ * with a reconcile, delete the certificate Cloudflare keeps for that
+ * hostname, and with `purge` delete its Worker, D1 databases and KV
+ * namespaces: only those the registry recorded as created by the app, never
+ * whatever has its names. `purged` says what was deleted and what was kept.
  */
 export async function removeApp({
   appId,
@@ -127,14 +131,27 @@ export async function removeApp({
     ...reconcile,
   });
 
+  // Cloudflare keeps a removed Custom Domain's certificate. A hostname
+  // outside the base was never the gateway's: whatever has a certificate
+  // for it keeps it.
+  const registry = cfD1Database(cf, gatewayDb);
+  const install = await readInstall(registry);
+  if (
+    install?.routing === "custom-domains" &&
+    isOneLabelBelow(deleted.hostname, install.appBaseDomain) &&
+    !install.liveDomains.includes(deleted.hostname)
+  ) {
+    await deleteHostCertificates({
+      cf,
+      out,
+      step: "app.delete",
+      zoneId: install.zoneId,
+      hostname: deleted.hostname,
+    });
+  }
+
   if (!purge) return deleted;
-  const purged = await purgeApp(
-    cf,
-    cfD1Database(cf, gatewayDb),
-    out,
-    appId,
-    deleted,
-  );
+  const purged = await purgeApp(cf, registry, out, appId, deleted);
   return { ...deleted, purged };
 }
 

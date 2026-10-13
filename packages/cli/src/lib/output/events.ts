@@ -5,7 +5,13 @@
  * (NDJSON), each `{ v: 1, ts, type, … }`. People get the same events as
  * plain lines instead. A run ends with exit code 0 when done, 2 when it
  * stopped on `action_required` (re-run the same command to resume once the
- * action is taken), and 1 after an error.
+ * action is taken), and 1 after an error, whatever came before it.
+ *
+ * An `action_required` with `data.waiting: true` is one the run waits for
+ * (a login to approve, a setup link to open): pass its `url` and `code` to
+ * a person and keep reading. If it is taken in time the run goes on and
+ * ends `done` (exit 0), or with an error (exit 1) like any run; if not, a
+ * last `action_required` ends it (exit 2).
  */
 import chalk from "chalk";
 
@@ -19,13 +25,17 @@ export type RequiredAction =
   | "register_workers_subdomain"
   | "claim_owner"
   | "upgrade_workers_paid"
-  | "rerun_interactive";
+  | "rerun_interactive"
+  | "add_domain"
+  | "create_deploy_token";
 
 interface ActionData extends EventData {
   url?: string;
   /** A one-time code to enter at `url` (device login). */
   code?: string;
   expiresAt?: string;
+  /** The run waits for it, rather than stopping. */
+  waiting?: boolean;
 }
 
 interface EventBase {
@@ -73,7 +83,10 @@ type EventInput<E> = E extends EveryAppEvent ? Omit<E, "v" | "ts"> : never;
 
 export interface EventSink {
   emit(event: EventInput<EveryAppEvent>): void;
-  /** 2 once an action is required, 1 once an error was emitted, else 0. */
+  /**
+   * 1 once an error was emitted; else 2 once the run stopped on an action,
+   * or while it waits for one (until it is done); else 0.
+   */
   readonly exitCode: number;
 }
 
@@ -132,15 +145,23 @@ export function createHumanSink(
 function trackExitCode(
   write: (event: EventInput<EveryAppEvent>) => void,
 ): EventSink {
-  let exitCode = 0;
+  let failed = false;
+  let stopped = false;
+  let waiting = false;
   return {
     emit(event) {
-      if (event.type === "action_required") exitCode = 2;
-      else if (event.type === "error" && exitCode === 0) exitCode = 1;
+      if (event.type === "error") failed = true;
+      else if (event.type === "action_required") {
+        if (event.data?.waiting) waiting = true;
+        else stopped = true;
+      }
+      // Done after the actions it waited for were taken.
+      else if (event.type === "done") waiting = false;
       write(event);
     },
     get exitCode() {
-      return exitCode;
+      if (failed) return 1;
+      return stopped || waiting ? 2 : 0;
     },
   };
 }

@@ -33,9 +33,14 @@ interface CfDeployOptions {
   /**
    * Records the version uploaded, as soon as it is known, so the next
    * unattended deploy knows it was everyapp's (assertReplaceable): also on
-   * the way out of a run interrupted once cf got that far.
+   * the way out of a run interrupted once cf got that far, or one cf failed
+   * after its upload. `finished` is whether cf ran to its end: it publishes
+   * the Worker's routes and Custom Domains after the version goes live, and
+   * stops part-way when it can't publish one (a move from another Worker
+   * declined, the zone's limit, an API error, Ctrl+C), so until it finishes
+   * only the version is known to be live.
    */
-  onUploaded?: (versionId: string) => Promise<void>;
+  onUploaded?: (versionId: string, finished: boolean) => Promise<void>;
 }
 
 interface CfDeployResult {
@@ -75,19 +80,26 @@ export async function cfDeploy(options: CfDeployOptions): Promise<CfDeployResult
   const before = options.dryRun
     ? null
     : await getWorkerDeployment(options.cf, options.workerName);
+  // Whether cf exited cleanly, its routes and Custom Domains published too.
+  let finished = false;
   // Ctrl+C, or a cancelled CI job, while cf uploads: cf is stopped, and
   // with it this run, but what cf got live by then is still recorded.
   const forget =
     options.onUploaded && !options.dryRun
-      ? onInterrupt({ async: () => recordNewVersion(options, before) })
+      ? onInterrupt({
+          async: () => recordNewVersion(options, before, finished),
+        })
       : undefined;
   try {
-    return await deployAndRecord(options, secrets, before);
+    return await deployAndRecord(options, secrets, before, () => {
+      finished = true;
+    });
   } catch (error) {
-    // cf can fail after its upload went live (a step after it, or the
-    // record itself): what went live is recorded all the same.
+    // cf can fail after its upload went live (publishing a Custom Domain,
+    // or the record itself): the version that went live is recorded all
+    // the same.
     if (forget && !isInterrupted()) {
-      await recordNewVersion(options, before).catch(() => undefined);
+      await recordNewVersion(options, before, finished).catch(() => undefined);
     }
     throw error;
   } finally {
@@ -100,10 +112,11 @@ export async function cfDeploy(options: CfDeployOptions): Promise<CfDeployResult
 async function recordNewVersion(
   options: CfDeployOptions,
   before: { versionId: string | null } | null,
+  finished: boolean,
 ): Promise<void> {
   const after = await getWorkerDeployment(options.cf, options.workerName);
   if (after?.versionId && after.versionId !== before?.versionId) {
-    await options.onUploaded?.(after.versionId);
+    await options.onUploaded?.(after.versionId, finished);
   }
 }
 
@@ -111,6 +124,7 @@ async function deployAndRecord(
   options: CfDeployOptions,
   secrets: Record<string, string> | undefined,
   before: { versionId: string | null } | null,
+  onFinished: () => void,
 ): Promise<CfDeployResult> {
   let output: string;
   try {
@@ -136,6 +150,7 @@ async function deployAndRecord(
   } catch (error) {
     throw explainDeployFailure(error, options);
   }
+  onFinished();
   if (options.dryRun) return { versionId: null, output };
 
   // An attached run printed to the terminal; ask Cloudflare what went live.
@@ -151,7 +166,7 @@ async function deployAndRecord(
       `cf finished without uploading a new version of ${options.workerName} (was one of its questions answered no?). The version that was serving still is; if this run migrated a database, it stays migrated. Run the command again to deploy, or roll the database back with the command printed with its bookmark.`,
     );
   }
-  await options.onUploaded?.(deployment.versionId);
+  await options.onUploaded?.(deployment.versionId, true);
   return { versionId: deployment.versionId, output };
 }
 

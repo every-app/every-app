@@ -9,12 +9,12 @@ This page explains the security boundary behind Every App. You do not need these
 
 The Gateway is the only public Worker in an Every App installation. It handles login, checks app access, and then forwards approved requests to private app workers.
 
-Apps accept requests only when they carry a signed identity pass created by the Gateway. A direct request to an app worker has no valid pass and receives a 401 response.
+App code accepts requests only when they carry a signed identity pass created by the Gateway. A direct request to an app worker has no valid pass and receives a 401 response. An app's static files (its built JavaScript, CSS and images) are served before its code runs, so only the Gateway's own check stands in front of them: keep secrets out of them.
 
 ```
                         INTERNET
                            │
-        your-domain.dev    │   todo.your-domain.dev, chef.your-domain.dev, ...
+   apps.your-domain.dev    │   todo.apps.your-domain.dev, chef.apps.your-domain.dev, ...
                            ▼
         ┌──────────────────────────────────────┐
         │            GATEWAY WORKER            │
@@ -34,7 +34,7 @@ Apps accept requests only when they carry a signed identity pass created by the 
           └──────┘     └──────┘     └──────┘   a Gateway-signed pass
 ```
 
-Your browser stores one session cookie for the Gateway. When you open `todo.your-domain.dev`, the Gateway checks your session, removes the cookie from the forwarded request, and sends the todo worker a signed identity pass. The pass is valid for about two minutes and only for that app.
+Your browser stores one session cookie for the Gateway, scoped to its address (`apps.your-domain.dev`) and the apps below it, never to the rest of your domain. When you open `todo.apps.your-domain.dev`, the Gateway checks your session, removes the cookie from the forwarded request, and sends the todo worker a signed identity pass. The pass is valid for about two minutes and only for that app.
 
 The app verifies the signature before running its code. Requests without a valid pass receive a 401 response.
 
@@ -73,3 +73,7 @@ Apps receive the Gateway's public keys during deployment, so signature verificat
 ## Limits
 
 Apps behind one Gateway share a parent domain and belong to the same trust boundary. A fully compromised app could make authenticated requests to sibling apps through the browser. Review the security of any app you plan to share beyond your team.
+
+Installed on a subdomain of your company's domain, the Gateway is "same-site" with the company's other subdomains (`www.company.com`). They can't read its sign-in cookie, which covers only the Gateway's address and the apps below it, and the Gateway refuses changes they ask for. But a compromised one could plant a cookie for the whole domain; per-app sign-in cookies that close this are planned.
+
+[What the Gateway does](/docs/how-it-works/gateway#known-limits) lists the other limits today.

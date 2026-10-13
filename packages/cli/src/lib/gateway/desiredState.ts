@@ -39,6 +39,8 @@ export interface DesiredState {
   apps: BoundApp[];
   /** Sorted, unique. */
   appWorkers: string[];
+  /** The bound apps' hostnames, sorted, unique. */
+  appHosts: string[];
   /** Of the APP__ binding names, as the gateway's status endpoint reports it. */
   appBindingsDigest: string;
   /** Rows not bound because their Worker name breaks the naming rule. */
@@ -104,13 +106,17 @@ export async function readDesiredState(
   return {
     apps,
     appWorkers,
+    appHosts: [...new Set(apps.map((app) => app.hostname.toLowerCase()))].sort(),
     appBindingsDigest: await appBindingsDigest(appWorkers.map(appBindingName)),
     skipped,
     missing,
   };
 }
 
-/** Whether two desired states bind the same Workers. */
+/** Whether two desired states bind the same Workers, at the same hosts. */
 export function sameBindings(a: DesiredState, b: DesiredState): boolean {
-  return a.appBindingsDigest === b.appBindingsDigest;
+  return (
+    a.appBindingsDigest === b.appBindingsDigest &&
+    a.appHosts.join("\n") === b.appHosts.join("\n")
+  );
 }

@@ -213,6 +213,26 @@ describe("gateway-generated errors", () => {
     expectSecurityHeaders(response);
   });
 
+  it("serves registered app hosts below APP_BASE_DOMAIN and 404s the rest there", async () => {
+    vi.stubEnv("DEV", false);
+    mocks.env["APP_BASE_DOMAIN"] = "apps.example.net";
+    try {
+      mocks.findByHostname.mockResolvedValue(null);
+      const response = await server.fetch(
+        new Request("https://missing.apps.example.net/", {
+          headers: { host: "missing.apps.example.net" },
+        }),
+      );
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: "unknown_app_host" });
+      expectSecurityHeaders(response);
+      expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+    } finally {
+      delete mocks.env["APP_BASE_DOMAIN"];
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("treats a failed app lookup as no app and never serves app content", async () => {
     mocks.findByHostname.mockRejectedValue(new Error("no such table: apps"));
 
@@ -470,7 +490,20 @@ describe("gateway host (control plane)", () => {
       }),
     );
     expect(cookielessPost.status).toBe(200);
-    expect(mocks.controlPlaneFetch).toHaveBeenCalledTimes(3);
+
+    // Authenticated by the CLI's own secret, whatever cookie rides along.
+    const deployToken = await server.fetch(
+      gatewayRequest("/api/setup/deploy-token", {
+        method: "POST",
+        headers: {
+          cookie: "session=abc",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+    expect(deployToken.status).toBe(200);
+    expect(mocks.controlPlaneFetch).toHaveBeenCalledTimes(4);
   });
 
   it("keeps the native-app exemption to exact, metadata-free auth calls", async () => {

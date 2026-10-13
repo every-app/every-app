@@ -8,7 +8,11 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { createNdjsonSink } from "@/lib/output/events";
-import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
+import {
+  ACCOUNT_ID,
+  customDomainsSkipped,
+  FakeCloudflare,
+} from "@/test/fakeCloudflare";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
 import { makeTestHome } from "@/test/home";
 import { handleInterrupt, resetInterruptsForTests } from "@/lib/interrupt";
@@ -54,6 +58,8 @@ async function deployGateway(
     accountId: ACCOUNT_ID,
     gatewayHost: "example.com",
     zone: { id: "zone-1", name: "example.com" },
+    routing: "custom-domains",
+    appBaseDomain: options.gatewayHost ?? "example.com",
     resources,
     db: cfD1Database(account.cf, [...account.databases][0]![0]),
     interactive: false,
@@ -62,6 +68,7 @@ async function deployGateway(
     sleep: noSleep,
     verifyTimeoutMs: 0,
     leaseWaitMs: 0,
+    lookupCaa: account.lookupCaa,
     ...options,
   });
 }
@@ -77,6 +84,7 @@ function reconcile(options: Partial<Parameters<typeof reconcileGateway>[0]> = {}
     sleep: noSleep,
     verifyTimeoutMs: 0,
     leaseWaitMs: 0,
+    lookupCaa: account.lookupCaa,
     ...options,
   });
 }
@@ -100,6 +108,8 @@ function seedApps(
     legacy?: boolean;
     /** Its Worker was never uploaded, or was deleted by hand. */
     missing?: boolean;
+    /** Default: `<slug>-acme.example.com`, as gateways name apps without APP_BASE_DOMAIN. */
+    hostname?: string;
   }>,
 ): void {
   const db = gatewayDb().sqlite;
@@ -115,7 +125,7 @@ function seedApps(
       row.slug,
       row.slug,
       row.slug,
-      `${row.slug}-acme.example.com`,
+      row.hostname ?? `${row.slug}-acme.example.com`,
       row.worker,
       JSON.stringify({ id: row.slug }),
       row.status,
@@ -157,10 +167,13 @@ describe("gateway deploy", () => {
         value: { version: "0.2.0", sha256: release.manifest.sha256 },
       },
     });
+    // Its host is a Custom Domain; apps will be too, one label below it.
     expect(deploy!.config["domains"]).toEqual(["example.com"]);
-    expect(deploy!.config["triggers"]).toEqual([
-      { type: "fetch", pattern: "*.example.com/*", zone: "zone-1" },
-    ]);
+    expect(deploy!.config["triggers"]).toBeUndefined();
+    expect(deploy!.config["env"].APP_BASE_DOMAIN).toEqual({
+      type: "text",
+      value: "example.com",
+    });
     expect(account.gatewayBindings()).toEqual([]);
 
     // A first deploy sends the generated secrets in a private file, with the
@@ -183,7 +196,12 @@ describe("gateway deploy", () => {
       expect(deploy!.args.join(" ")).not.toContain(value);
     }
 
-    expect(result).toMatchObject({ firstDeploy: true, appWorkers: [] });
+    expect(result).toMatchObject({
+      firstDeploy: true,
+      appWorkers: [],
+      domains: ["example.com"],
+      newHosts: ["example.com"],
+    });
     const db = gatewayDb();
     expect(db.all("SELECT COUNT(*) AS n FROM d1_migrations")[0]!["n"]).toBe(
       release.manifest.migrations.length,
@@ -194,6 +212,9 @@ describe("gateway deploy", () => {
       accountId: ACCOUNT_ID,
       gatewayHost: "example.com",
       zoneId: "zone-1",
+      routing: "custom-domains",
+      appBaseDomain: "example.com",
+      liveDomains: ["example.com"],
       releaseSha256: release.manifest.sha256,
       liveVersionId: account.workers.get("every-app-gateway")!.versions[0],
     });
@@ -513,6 +534,280 @@ describe("gateway deploy", () => {
 
     expect(result.dryRunOutput).toContain("Dry run: every-app-gateway");
     expect(account.deploys).toHaveLength(1);
+  });
+});
+
+describe("per-app Custom Domains", () => {
+  const GW = "apps.example.com";
+  const deployOnSubdomain = (options: Partial<Parameters<typeof applyGateway>[0]> = {}) =>
+    deployGateway({ gatewayHost: GW, ...options });
+  // The hostnames whose records were read (not the wildcards over them).
+  const hostsChecked = () =>
+    account.cf.calls
+      .filter((call) => call.args.slice(0, 3).join(" ") === "dns records list")
+      .map((call) => call.args[call.args.indexOf("--name-exact") + 1]!)
+      .filter((name) => !name.startsWith("*."));
+
+  it("installs on a subdomain of a zone the account has, leaving the rest of the zone alone", async () => {
+    account.dnsRecords.push({ zoneId: "zone-1", name: "www.example.com", type: "CNAME", content: "site.example.net" });
+
+    const result = await deployOnSubdomain();
+
+    expect(result.newHosts).toEqual([GW]);
+    expect(account.gatewayDomains()).toEqual([GW]);
+    expect(account.deploys[0]!.config["env"].APP_BASE_DOMAIN.value).toBe(GW);
+    expect(account.certificatePacks).toEqual([
+      expect.objectContaining({ zoneId: "zone-1", hosts: [GW] }),
+    ]);
+    expect(account.dnsRecords).toHaveLength(1);
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+      gatewayHost: GW,
+      zoneName: "example.com",
+      appBaseDomain: GW,
+      routing: "custom-domains",
+      liveDomains: [GW],
+    });
+    expect(hostsChecked()).toEqual([GW]);
+  });
+
+  it("publishes every bound app's host with the gateway's, as the whole list, every time", async () => {
+    await deployOnSubdomain();
+    seedApps([
+      { slug: "todo", worker: "every-acme-todo", status: "active", hostname: `todo.${GW}` },
+      { slug: "chef", worker: "every-acme-chef", status: "binding", hostname: `chef.${GW}` },
+      // Not uploaded yet: neither bound nor published.
+      { slug: "notes", worker: "every-acme-notes", status: "pending", hostname: `notes.${GW}` },
+    ]);
+
+    const added = await reconcile();
+    expect(added).toMatchObject({
+      changed: true,
+      domains: [GW, `chef.${GW}`, `todo.${GW}`],
+      newHosts: [`chef.${GW}`, `todo.${GW}`],
+    });
+    expect(account.gatewayDomains()).toEqual([GW, `chef.${GW}`, `todo.${GW}`].sort());
+    expect(account.deploys.at(-1)!.config["domains"]).toEqual([
+      GW,
+      `chef.${GW}`,
+      `todo.${GW}`,
+    ]);
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+      liveDomains: [GW, `chef.${GW}`, `todo.${GW}`],
+    });
+    // Both new hosts were checked before the upload; the live one wasn't.
+    expect(hostsChecked()).toEqual([GW, `chef.${GW}`, `todo.${GW}`]);
+
+    // In sync: nothing to deploy.
+    await expect(reconcile()).resolves.toMatchObject({ changed: false });
+
+    // A deleted app's host goes with the next deploy; its certificate stays
+    // for `app delete` to remove.
+    gatewayDb().sqlite.exec("UPDATE apps SET status = 'deleted' WHERE app_slug = 'chef'");
+    await expect(reconcile()).resolves.toMatchObject({
+      changed: true,
+      domains: [GW, `todo.${GW}`],
+      newHosts: [],
+    });
+    expect(account.gatewayDomains()).toEqual([GW, `todo.${GW}`]);
+    expect(account.certificatePacks.map((pack) => pack.hosts[0])).toContain(
+      `chef.${GW}`,
+    );
+  });
+
+  it("publishes an app's host when its Worker is already bound but its domain isn't", async () => {
+    await deployOnSubdomain();
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active", hostname: `todo.${GW}` }]);
+    await reconcile();
+    // As if the live domains had been dropped (an older CLI's deploy).
+    const install = (await readInstall(gatewayD1()))!;
+    await writeInstall(gatewayD1(), { ...install, liveDomains: [GW] });
+
+    await expect(reconcile()).resolves.toMatchObject({
+      changed: true,
+      newHosts: [`todo.${GW}`],
+    });
+  });
+
+  it("refuses a new host that holds a DNS record, before deploying, unless --force-dns", async () => {
+    await deployOnSubdomain();
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "binding", hostname: `todo.${GW}` }]);
+    account.dnsRecords.push({ zoneId: "zone-1", name: `todo.${GW}`, type: "CNAME", content: "legacy.example.net" });
+    const deploys = account.deploys.length;
+
+    await expect(reconcile()).rejects.toMatchObject({
+      code: "DNS_RECORD_CONFLICT",
+      message: expect.stringContaining(`todo.${GW} (CNAME legacy.example.net)`),
+    });
+    expect(account.deploys).toHaveLength(deploys);
+    expect(account.gatewayBindings()).toEqual([]);
+    expect(gatewayDb().all("SELECT * FROM _everyapp_deploy_lease")).toEqual([]);
+
+    await expect(reconcile({ forceDns: true })).resolves.toMatchObject({
+      newHosts: [`todo.${GW}`],
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "warning", code: "DNS_RECORD_REPLACED" }),
+    );
+  });
+
+  it("checks a new install's own host before it migrates anything", async () => {
+    account.dnsRecords.push({ zoneId: "zone-1", name: GW, type: "A", content: "192.0.2.1" });
+
+    await expect(deployOnSubdomain()).rejects.toMatchObject({ code: "DNS_RECORD_CONFLICT" });
+
+    expect(
+      account.cf.calls.some((call) => call.args.slice(0, 3).join(" ") === "d1 migrations apply"),
+    ).toBe(false);
+    expect(account.deploys).toEqual([]);
+  });
+
+  it("refuses a host whose zone's CAA records allow none of Cloudflare's certificate authorities", async () => {
+    await deployOnSubdomain();
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "binding", hostname: `todo.${GW}` }]);
+    account.caaRecords.set("example.com", ['0 issue "digicert.com"', '0 iodef "mailto:sec@example.com"']);
+
+    await expect(reconcile()).rejects.toMatchObject({
+      code: "CAA_BLOCKS_ISSUANCE",
+      message: expect.stringContaining("CAA at example.com allows digicert.com"),
+    });
+    // Sectigo only issues Cloudflare's backup certificates.
+    account.caaRecords.set("example.com", ['0 issue "sectigo.com"']);
+    await expect(reconcile()).rejects.toMatchObject({ code: "CAA_BLOCKS_ISSUANCE" });
+    expect(account.gatewayDomains()).toEqual([GW]);
+
+    // Allowed only for one validation method: published, with a warning.
+    account.caaRecords.set("example.com", ['0 issue "digicert.com"', '0 issue "letsencrypt.org; validationmethods=dns-01"']);
+    await expect(reconcile()).resolves.toMatchObject({ newHosts: [`todo.${GW}`] });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "warning", code: "CAA_MAY_BLOCK_ISSUANCE", data: { hosts: [`todo.${GW}`] } }),
+    );
+  });
+
+  it("refuses the 101st Custom Domain in a zone and warns from the 95th", async () => {
+    await deployOnSubdomain();
+    const apps = Array.from({ length: 99 }, (_, i) => ({
+      slug: `app${i}`,
+      worker: `every-acme-app${i}`,
+      status: "active",
+      hostname: `app${i}.${GW}`,
+    }));
+    seedApps(apps.slice(0, 93));
+    await reconcile();
+    expect(account.gatewayDomains()).toHaveLength(94);
+    expect(events.some((event) => event["code"] === "ZONE_CUSTOM_DOMAIN_LIMIT_NEAR")).toBe(false);
+
+    seedApps(apps.slice(93));
+    await expect(reconcile()).resolves.toMatchObject({ changed: true });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "warning", code: "ZONE_CUSTOM_DOMAIN_LIMIT_NEAR" }),
+    );
+    expect(account.gatewayDomains()).toHaveLength(100);
+
+    seedApps([{ slug: "one-more", worker: "every-acme-one-more", status: "active", hostname: `one-more.${GW}` }]);
+    await expect(reconcile()).rejects.toMatchObject({ code: "ZONE_CUSTOM_DOMAIN_LIMIT" });
+    expect(account.gatewayDomains()).toHaveLength(100);
+  });
+
+  it("never publishes a registry host that isn't one label below the base domain", async () => {
+    await deployOnSubdomain();
+    seedApps([
+      { slug: "todo", worker: "every-acme-todo", status: "active", hostname: `todo.${GW}` },
+      { slug: "site", worker: "every-acme-site", status: "active", hostname: "www.example.com" },
+    ]);
+
+    await reconcile();
+
+    expect(account.gatewayDomains()).toEqual([GW, `todo.${GW}`]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "warning",
+        code: "APP_HOST_OUTSIDE_BASE",
+        message: expect.stringContaining("www.example.com"),
+      }),
+    );
+  });
+
+  it("warns, unattended, that cf moves a host another Worker serves without asking", async () => {
+    await deployOnSubdomain();
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active", hostname: `todo.${GW}` }]);
+    account.customDomains.set(`todo.${GW}`, "some-other-worker");
+
+    await reconcile();
+
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "warning", code: "CUSTOM_DOMAIN_OWNER_UNCHECKED" }),
+    );
+    expect(account.customDomains.get(`todo.${GW}`)).toBe("every-app-gateway");
+  });
+
+  it("records only the version when cf stops before publishing its hostnames, so the next run checks them again", async () => {
+    await deployOnSubdomain();
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active", hostname: `todo.${GW}` }]);
+    account.customDomains.set(`todo.${GW}`, "marketing-site");
+    const before = (await readInstall(gatewayD1()))!;
+
+    // At a terminal: cf puts the new version live, then asks whether to
+    // move todo.<GW> from marketing-site. No: it skips the domains, exit 1.
+    account.afterUpload = (worker) =>
+      worker === "every-app-gateway"
+        ? customDomainsSkipped(worker, [GW, `todo.${GW}`])
+        : undefined;
+    await expect(reconcile({ interactive: true })).rejects.toThrow(
+      "only partially updated",
+    );
+    account.afterUpload = null;
+
+    // The version that went live is recorded, with the app it binds; the
+    // routing and hostnames stay as the last finished deploy left them.
+    expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
+    expect(account.customDomains.get(`todo.${GW}`)).toBe("marketing-site");
+    await expect(readInstall(gatewayD1())).resolves.toEqual({
+      ...before,
+      liveVersionId: account.workers.get("every-app-gateway")!.versions.at(-1),
+      liveAppWorkers: ["every-acme-todo"],
+      updatedAt: expect.any(Number),
+      updatedBy: expect.any(String),
+    });
+
+    // So the next run, unattended, checks the hostname as a new one again
+    // and says it can't tell which Worker holds it, before moving it.
+    events = [];
+    const checked = hostsChecked().length;
+    await reconcile({ stagedSecrets: { OPENAI_API_KEY: "sk-test" } });
+    expect(hostsChecked().slice(checked)).toEqual([`todo.${GW}`]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "warning",
+        code: "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+        data: { hosts: [`todo.${GW}`] },
+      }),
+    );
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+      liveDomains: [GW, `todo.${GW}`],
+    });
+  });
+
+  it("keeps an install served through its wildcard route on it, untouched", async () => {
+    await deployGateway({ routing: "wildcard-route" });
+    seedApps([{ slug: "todo", worker: "every-todo", status: "active", legacy: true }]);
+    const checked = hostsChecked().length;
+
+    await reconcile();
+
+    const deploy = account.deploys.at(-1)!;
+    expect(deploy.config["domains"]).toEqual(["example.com"]);
+    expect(deploy.config["triggers"]).toEqual([
+      { type: "fetch", pattern: "*.example.com/*", zone: "zone-1" },
+    ]);
+    expect(deploy.config["env"].APP_BASE_DOMAIN).toBeUndefined();
+    expect(account.gatewayBindings()).toEqual(["every-todo"]);
+    // Its app hosts ride the wildcard: none is checked or published.
+    expect(hostsChecked()).toHaveLength(checked);
+    expect(account.gatewayDomains()).toEqual(["example.com"]);
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+      routing: "wildcard-route",
+      liveDomains: ["example.com"],
+    });
   });
 });
 

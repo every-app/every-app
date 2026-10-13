@@ -12,7 +12,8 @@
  *  - a host in the app registry → the perimeter proxy
  *    (`handleGatewayRequest`), which authenticates the Better Auth session,
  *    mints the identity JWT, and proxies to the app's private worker over its
- *    service binding;
+ *    service binding. App hosts reach this Worker as its Workers Custom
+ *    Domains (or, on gateways installed before those, a `*.<host>` route);
  *  - any other host → 404 (local dev serves the control plane there too).
  *
  * When GATEWAY_URL is not set on a fresh deploy (before secrets, local vite
@@ -34,6 +35,7 @@ import {
   handleAppGatewayRequest,
   type AppCallerProps,
 } from "./server/app-gateway-entrypoint";
+import { appHostParent } from "./server/app-hosts";
 import { rateLimitCredentialRequest } from "./server/auth-rate-limit";
 import { serveControlPlane } from "./server/control-plane";
 import {
@@ -207,11 +209,15 @@ export default createServerEntry({
       app = null;
     }
     if (!app) {
-      // Inside the gateway's own wildcard namespace, an unregistered
+      // Below the gateway's own host or the app base domain, an unregistered
       // subdomain is a 404 — serving the control plane (auth/admin UI) on an
       // arbitrary app-shaped origin would let a stale origin or service
       // worker impersonate it, and the session cookie spans these hosts.
-      if (requestHost.endsWith(`.${gatewayHost}`)) {
+      const appParent = appHostParent(env);
+      if (
+        requestHost.endsWith(`.${gatewayHost}`) ||
+        (appParent && requestHost.endsWith(`.${appParent}`))
+      ) {
         return notFound("unknown_app_host");
       }
       // A deployed gateway serves its control plane on its own host only:

@@ -8,7 +8,8 @@
   "files": [
     "dist",
     "bin",
-    "gateway"
+    "gateway",
+    "templates"
   ],
   "bin": {
     "everyapp": "./bin/everyapp.js",
@@ -23,7 +24,7 @@
     "build": "tsup --silent",
     "dev": "tsup --watch",
     "install:global": "pnpm run build && npm link --ignore-scripts",
-    "build:prepack": "pnpm install --ignore-scripts && npm run types:check && npm run build && node scripts/bundle-gateway.js",
+    "build:prepack": "pnpm install --ignore-scripts && npm run types:check && npm run build && node scripts/bundle-gateway.js && node scripts/bundle-templates.js",
     "prepack": "npm run build:prepack",
     "knip": "knip",
     "test": "vitest run --silent"

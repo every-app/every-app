@@ -1,0 +1,78 @@
+---
+title: What the Gateway Does
+description: The one public piece of an Every App install, what it promises, what it costs, and its limits today
+---
+
+Every App runs your company's private business apps in your own Cloudflare account. The **Gateway** is the only part of it the internet can reach: people sign in there once, and it decides, for every request, who is asking and whether they may use that app.
+
+```
+      People: browser, phone
+             │
+   apps.company.com               todo.apps.company.com, crm.apps.company.com, …
+   sign-in, launcher, admin       one Workers Custom Domain per app
+             └───────────────┬───────────────┘
+                             ▼
+ ┌──────────────── GATEWAY: the only public Worker ────────────────┐
+ │ Sign-in: email and password, invitations, roles                 │
+ │ Perimeter: who are you · may you open this app ·                │
+ │   cross-site and header guards · rate limits on sign-in         │
+ │ AI proxy: the provider key stays here                           │
+ └─────────────────────────────┬───────────────────────────────────┘
+                               │ private service binding, with a signed
+                               │ identity pass that lasts about 2 minutes
+                               ▼
+     App Workers: no public URL, each with its own D1, KV and Durable Objects
+```
+
+The Gateway lives at the address you give it, such as `apps.company.com`, and each app one level below it, such as `todo.apps.company.com`. Cloudflare creates each address's DNS record and certificate when the app is deployed. Nothing else in `company.com` changes, and the sign-in cookie only covers `apps.company.com` and the apps below it.
+
+## Four promises
+
+Each is labeled with what is true today. These docs only describe what has shipped.
+
+| Promise                                                              | Today                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Apps have no address of their own.** Only the Gateway is public.   | True. Every app Worker is deployed without a `workers.dev` or preview URL, and the deploy refuses one that would have either, so a request reaches an app only through the Gateway, which checks who is asking first. The app's code also rejects any request without the Gateway's signed identity pass; its static files are served before that code runs (see Known limits). |
+| **Apps hold no keys.** AI and other services go through the Gateway. | True for AI: your OpenAI key lives on the Gateway (`everyapp gateway secret set OPENAI_API_KEY`), and apps call models through it. Email and third-party connections for apps are not there yet.                                                                                                                                                                                |
+| **One fix at the door protects every app.**                          | True. Cross-site request checks, header stripping, security headers and sign-in rate limits run in the Gateway, in front of every app, whatever each app's own code does.                                                                                                                                                                                                       |
+| **Every action is attributable.**                                    | Not yet. An audit log of what people and agents do is planned.                                                                                                                                                                                                                                                                                                                  |
+
+## Before and after
+
+| Each internal app needs…           | Without Every App                    | With Every App                                                     |
+| ---------------------------------- | ------------------------------------ | ------------------------------------------------------------------ |
+| Sign-in, users, invitations, roles | Built and secured again in every app | The Gateway's, once                                                |
+| Who may use it                     | Its own permission code              | **Admin → Apps** on the Gateway                                    |
+| An address, DNS and a certificate  | Set up by hand for each app          | Created by `everyapp app deploy`                                   |
+| AI provider keys                   | Copied into each app                 | Kept on the Gateway only                                           |
+| A database, hosting, deploys       | A pipeline per app                   | `everyapp app deploy`: its own D1 and KV, migrated before the code |
+
+## Why not just Cloudflare Access?
+
+[Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/access-controls/) answers "may this person reach this hostname?". Every App also needs to know which organization they belong to, which of its apps they may open, and what role they have, and Access has no organizations, per-app grants, invitations or personal tokens. Access policies on a Worker also refuse WebSocket upgrades (the todo app's live sync uses one), and the identity Access checks isn't handed to TanStack Start apps or across service bindings. Its free plan stops at 50 users.
+
+They work together rather than compete: signing in to the Gateway through Access, for your company's SSO, is in the works.
+
+## What it costs
+
+Every App runs on Cloudflare's **Workers Paid** plan, the one thing you buy: **$5 a month per account**, plus usage above what it includes. A small team's handful of apps usually stays inside the included amounts.
+
+| What                                    | Included each month                                        | Above that                                             |
+| --------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------ |
+| Worker requests                         | 10 million (requests for static files are free)            | $0.30 per million                                      |
+| Worker CPU time                         | 30 million CPU milliseconds                                | $0.02 per million CPU milliseconds                     |
+| D1 databases                            | 25 billion rows read, 50 million rows written, 5 GB stored | $0.001 per million rows read, $1 per million written   |
+| Logs and traces (from December 1, 2026) | 50 GB ingested, 10 GB-months stored                        | $0.25 per GB ingested, $0.10 per GB-month stored       |
+| A domain from Cloudflare Registrar      | —                                                          | What the registry charges: about $10 a year for a .com |
+
+Custom Domains and their certificates cost nothing. AI models are billed by your provider to the key you set. Cloudflare's [pricing page](https://developers.cloudflare.com/workers/platform/pricing/) has the details; its billing settings can send budget alerts, but there is no hard spending cap.
+
+The Free plan can't run Every App: D1 stops answering for the rest of the day once an account reaches its daily limits (enforced since September 1, 2026), and the Gateway reads D1 on every request; requests get 10 ms of CPU, which password hashing can exceed; and an account gets 10 databases.
+
+## Known limits
+
+- **Deploying apps takes Cloudflare credentials that can also change the Gateway** and its database. Until the Gateway deploys apps itself, only trusted admins should deploy.
+- **An app's static files skip the app's own identity check.** Its built JavaScript, CSS and images are served before the app's code runs. The Gateway still checks who is asking before it passes on any request, but don't put secrets in static files.
+- **Removing someone's access takes up to about 2 minutes** to reach every app: the identity pass an app received lasts that long, and the Gateway caches some lookups briefly.
+- **Your domain must be on Cloudflare.** A company whose DNS is hosted elsewhere can buy a cheap domain for Every App in the Cloudflare dashboard (Domains → Buy a domain).
+- **About 100 apps per domain.** Cloudflare allows 100 Workers Custom Domains in a zone; the Gateway's own address counts as one, and so does any other Worker's in that zone.

@@ -16,6 +16,7 @@ import {
 import { OrganizationKeyRepository } from "@/server/repositories/OrganizationKeyRepository";
 import { OrganizationMembersRepository } from "@/server/repositories/OrganizationMembersRepository";
 import { OrganizationRepository } from "@/server/repositories/OrganizationRepository";
+import { appBaseDomain, gatewayHostOf } from "@/server/app-hosts";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 
 /**
@@ -29,8 +30,11 @@ import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
  * verified service binding. The gateway names everything: the Worker
  * `every-<orgKey>-<appId>` and its D1/KV resources after it
  * (`every-<orgKey>-<appId>--<binding>`), and the hostname, once, at first
- * registration. Which resources an app actually created, and so may adopt
- * or purge, the CLI records itself (`_everyapp_app_resources`).
+ * registration (server/app-hosts.ts: `<appId>.<APP_BASE_DOMAIN>` for the
+ * install's own organization, `<appId>-<orgKey>.<APP_BASE_DOMAIN>` for
+ * others; `<appId>-<orgSlug>.<gateway host>` on gateways still served
+ * through a wildcard route). Which resources an app actually created, and
+ * so may adopt or purge, the CLI records itself (`_everyapp_app_resources`).
  */
 
 type RegisterAppInput = {
@@ -115,7 +119,49 @@ const DNS_LABEL_PATTERN = /^(?=.{1,63}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 const ORG_KEY_MAX_LENGTH = 12;
 const ORG_KEY_ATTEMPTS = 50;
 
-function hostnameFor(appSlug: string, organizationSlug: string): string {
+function appHostLabel(label: string, parts: string): string {
+  const appLabel = label.trim().toLowerCase();
+  if (!DNS_LABEL_PATTERN.test(appLabel)) {
+    throw new AppRegistrationError({
+      status: 400,
+      code: "INVALID_APP_HOSTNAME",
+      message: `${parts} must form a valid DNS label of at most 63 characters; received "${appLabel}".`,
+    });
+  }
+  return appLabel;
+}
+
+/**
+ * A new app's hostname, assigned once. Under APP_BASE_DOMAIN (per-app
+ * Custom Domains), the install's own organization gets `<appId>.<base>`
+ * and any other `<appId>-<orgKey>.<base>`; a gateway still served through
+ * a wildcard route keeps `<appId>-<orgSlug>.<gateway host>`.
+ */
+async function hostnameFor({
+  appSlug,
+  organizationId,
+  organizationSlug,
+  orgKey,
+}: {
+  appSlug: string;
+  organizationId: string;
+  organizationSlug: string;
+  orgKey: () => Promise<string>;
+}): Promise<string> {
+  const base = appBaseDomain(env);
+  if (base) {
+    const installOrganization =
+      await OrganizationRepository.findInstallOrganizationId();
+    const label =
+      installOrganization === organizationId
+        ? appHostLabel(appSlug, "The app id")
+        : appHostLabel(
+            `${appSlug}-${await orgKey()}`,
+            "The app id and organization key",
+          );
+    return `${label}.${base}`;
+  }
+
   if (!env.GATEWAY_URL) {
     throw new AppRegistrationError({
       status: 500,
@@ -123,28 +169,19 @@ function hostnameFor(appSlug: string, organizationSlug: string): string {
         "Gateway has no GATEWAY_URL configured; cannot derive app hostname",
     });
   }
-
-  let gatewayHost: string;
-  try {
-    gatewayHost = new URL(env.GATEWAY_URL).host.toLowerCase();
-  } catch {
+  const gatewayHost = gatewayHostOf(env);
+  if (!gatewayHost) {
     throw new AppRegistrationError({
       status: 500,
       message:
         "Gateway has invalid GATEWAY_URL configured; cannot derive app hostname",
     });
   }
-
-  const appLabel = `${appSlug.trim()}-${organizationSlug.trim()}`.toLowerCase();
-  if (!DNS_LABEL_PATTERN.test(appLabel)) {
-    throw new AppRegistrationError({
-      status: 400,
-      code: "INVALID_APP_HOSTNAME",
-      message: `App id and organization slug must form a valid DNS label of at most 63 characters; received "${appLabel}".`,
-    });
-  }
-
-  return `${appLabel}.${gatewayHost}`;
+  const label = appHostLabel(
+    `${appSlug.trim()}-${organizationSlug.trim()}`,
+    "App id and organization slug",
+  );
+  return `${label}.${gatewayHost}`;
 }
 
 function validateRegistryManifest(
@@ -330,7 +367,14 @@ async function register(data: RegisterAppInput): Promise<RegisterAppResult> {
     existingApp?.workerName ??
     registryWorkerNameFor({ appId: data.appSlug, orgKey, legacyNames });
   const hostname =
-    existingApp?.hostname ?? hostnameFor(data.appSlug, organizationSlug);
+    existingApp?.hostname ??
+    (await hostnameFor({
+      appSlug: data.appSlug,
+      organizationId: data.organizationId,
+      organizationSlug,
+      orgKey: async () =>
+        orgKey ?? orgKeyFor(data.organizationId, organizationSlug),
+    }));
 
   if (
     !isRegistryWorkerName({

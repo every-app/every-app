@@ -86,8 +86,11 @@ const KIND_RULES: Array<
   ["free_plan", (text) => /Workers Paid|paid plan/i.test(text)],
   [
     "auth",
+    // 10000: authentication error (also a token without the permission);
+    // 9109: not allowed to access the resource.
     (text, codes) =>
       codes.includes(10000) ||
+      codes.includes(9109) ||
       /No authentication token found|Not logged in|cf auth login/.test(text),
   ],
   [

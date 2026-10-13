@@ -34,6 +34,7 @@ const OPTIONAL_SECRETS = [
   "GATEWAY_DEPLOYMENT_MODE",
   "MCP_OAUTH_ENABLED",
   "EVERYAPP_DEV_COOKIE_DOMAIN",
+  "APP_BASE_DOMAIN",
 ] as const;
 
 /**
@@ -136,7 +137,15 @@ export default defineConfig(({ mode }) => {
             ? { version: PATCH, sha256: PATCH }
             : { version: "dev", sha256: "dev" },
         ),
-        ...(production ? {} : locallySetSecrets(mode ?? "development")),
+        // The domain apps live one label below, each a Workers Custom
+        // Domain on this Worker (src/server/app-hosts.ts). The deploy sets
+        // it, or removes it for an install still served through a wildcard
+        // route; a CLI that predates it leaves the placeholder and so
+        // refuses to deploy this release, rather than dropping the apps'
+        // domains from it.
+        ...(production
+          ? { APP_BASE_DOMAIN: bindings.text<string>(PATCH) }
+          : locallySetSecrets(mode ?? "development")),
       },
     },
   };

@@ -210,8 +210,27 @@ describe("deploy routes", () => {
       gateway: {
         release: { version: "0.3.0", sha256: "abc" },
         gatewayHost: "gateway.example.com",
+        // Served through a wildcard route: no base domain.
+        appBaseDomain: null,
       },
     });
+
+    workerEnv["APP_BASE_DOMAIN"] = "Gateway.Example.com";
+    try {
+      const withDomains = await handler(
+        WhoamiRoute,
+        "GET",
+      )({
+        request: new Request("https://gateway.example.com/api/deploy/whoami"),
+        params: { appId: "" },
+        context: deployContext,
+      });
+      await expect(withDomains.json()).resolves.toMatchObject({
+        gateway: { appBaseDomain: "gateway.example.com" },
+      });
+    } finally {
+      delete workerEnv["APP_BASE_DOMAIN"];
+    }
   });
 
   it("records an uploaded version with the manifest it was built from", async () => {
@@ -390,6 +409,7 @@ describe("deploy routes", () => {
       const listed = await statusRequest({ authorization: "Bearer eak_good" });
       await expect(listed.json()).resolves.toMatchObject({
         gatewayHost: "gateway.example.com",
+        appBaseDomain: null,
         appBindings: ["every-acme-chef", "every-acme-todo"],
       });
 

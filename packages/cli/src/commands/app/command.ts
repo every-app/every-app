@@ -108,6 +108,17 @@ export const deployCommand = buildCommand({
           "Take the app's deploy lease over from a deploy that died (asks first; unattended, with --yes)",
         optional: true,
       },
+      "force-dns": {
+        kind: "boolean",
+        brief:
+          "Publish the app's new hostname even where a DNS record exists (it is replaced) or CAA records would block its certificate",
+        optional: true,
+      },
+      "no-wait-cert": {
+        kind: "boolean",
+        brief: "Don't wait for a new hostname's certificate",
+        optional: true,
+      },
     },
     aliases: {
       y: "yes",
@@ -117,13 +128,15 @@ export const deployCommand = buildCommand({
     brief: "Deploy an app to Cloudflare",
     fullDescription: [
       "Deploys the current app as a private Cloudflare Worker defined by cloudflare.config.ts, with cf:",
-      "  1. Registers the app with the gateway, which names its Worker and resources",
+      "  1. Registers the app with the gateway, which names its Worker, resources and hostname",
+      "     (a new hostname is checked first: no DNS record it would replace, CAA, room in the zone)",
       "  2. Creates or links the D1 databases and KV namespaces in everyapp.config.ts",
       "  3. Installs dependencies (the manifest's install setting, or auto-detected)",
       "  4. Bookmarks the production D1 database, then applies its migrations",
       "  5. Builds with cf build (or the manifest's build command) and checks the built Worker",
       "  6. Uploads it with cf deploy --prebuilt, its secrets in the same version",
-      "  7. Has the gateway bind the Worker (new apps) and makes the app live",
+      "  7. Has the gateway bind the Worker and publish its hostname (new apps), makes the app",
+      "     live, and waits for a new hostname's certificate",
     ].join("\n"),
   },
 });

@@ -1,4 +1,4 @@
 {
   "title": "How It Works",
-  "pages": ["overview", "security", "sdk"]
+  "pages": ["gateway", "overview", "security", "sdk"]
 }

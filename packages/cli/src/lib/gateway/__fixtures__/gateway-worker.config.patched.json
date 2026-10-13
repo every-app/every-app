@@ -90,6 +90,10 @@
         "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     },
+    "APP_BASE_DOMAIN": {
+      "type": "text",
+      "value": "apps.example.com"
+    },
     "APP__every-acme-chef": {
       "type": "worker",
       "worker": "every-acme-chef"
@@ -112,13 +116,8 @@
     }
   },
   "domains": [
-    "apps.example.com"
-  ],
-  "triggers": [
-    {
-      "type": "fetch",
-      "pattern": "*.apps.example.com/*",
-      "zone": "fedcba9876543210fedcba9876543210"
-    }
+    "apps.example.com",
+    "chef-acme.apps.example.com",
+    "todo.apps.example.com"
   ]
 }

@@ -1,5 +1,6 @@
 import type { LocalContext } from "@/context";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
+import { waitForCertificates } from "@/lib/domains/certWait";
 import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { bundledReleaseTarball } from "@/lib/gateway/release";
@@ -15,6 +16,7 @@ interface ReconcileFlags {
   "account-id"?: string;
   "dry-run"?: boolean;
   force?: boolean;
+  "force-dns"?: boolean;
   "break-lease"?: boolean;
   yes?: boolean;
   json?: boolean;
@@ -47,6 +49,7 @@ export async function reconcile(
         cliVersion,
         dryRun: flags["dry-run"],
         force: flags.force,
+        forceDns: flags["force-dns"],
         breakLease: confirmLeaseBreak({
           breakLease: flags["break-lease"],
           yes: flags.yes,
@@ -57,11 +60,20 @@ export async function reconcile(
       if (result.dryRunOutput !== undefined) {
         out.emit({
           type: "done",
-          message: `Dry run: the gateway would bind ${result.appWorkers.length ? result.appWorkers.join(", ") : "no apps"}.\n${result.dryRunOutput.trim()}`,
-          data: { appWorkers: result.appWorkers },
+          message: `Dry run: the gateway would bind ${result.appWorkers.length ? result.appWorkers.join(", ") : "no apps"} and serve ${result.domains.join(", ")}${result.newHosts.length ? ` (new: ${result.newHosts.join(", ")})` : ""}.\n${result.dryRunOutput.trim()}`,
+          data: {
+            appWorkers: result.appWorkers,
+            domains: result.domains,
+            newHosts: result.newHosts,
+          },
         });
         return;
       }
+      await waitForCertificates({
+        hosts: result.newHosts,
+        out,
+        step: "gateway.tls",
+      });
       out.emit({
         type: "done",
         message: result.changed
@@ -71,6 +83,7 @@ export async function reconcile(
           changed: result.changed,
           versionId: result.versionId,
           appWorkers: result.appWorkers,
+          domains: result.domains,
         },
       });
     },

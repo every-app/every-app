@@ -75,6 +75,26 @@ export const ZoneListOutput = z.array(
   }),
 );
 
+/** `cf dns records list`: the records at a name, whatever their type. */
+export const DnsRecordListOutput = z.array(
+  z.looseObject({
+    id: z.string(),
+    name: z.string(),
+    type: z.string(),
+    content: z.string().nullish(),
+  }),
+);
+
+/** `cf ssl certificate-packs list`. */
+export const CertificatePackListOutput = z.array(
+  z.looseObject({
+    id: z.string(),
+    type: z.string().nullish(),
+    hosts: z.array(z.string()).nullish(),
+    status: z.string().nullish(),
+  }),
+);
+
 /** `cf d1 raw`: one result per statement, rows as arrays. */
 export const D1RawOutput = z.array(
   z.looseObject({

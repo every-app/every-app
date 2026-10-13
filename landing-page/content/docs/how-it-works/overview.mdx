@@ -9,13 +9,13 @@ Every App runs in your Cloudflare account. It gives your apps a secure place to 
 
 ## Set it up once
 
-Deploy Every App to your Cloudflare account and connect a domain you own. Your Gateway becomes the home for your apps at `your-domain.dev`.
+Run `npx everyapp setup` with your Cloudflare account and a domain on it. Your Gateway becomes the home for your apps at an address in that domain, such as `apps.your-domain.dev`; nothing else in the domain changes.
 
 You and your teammates sign in to the Gateway to find and open the apps you can use.
 
 ## Add apps
 
-Install a supported open-source app or build one with a coding agent. Each app gets its own address, such as `todo.your-domain.dev`, and can have its own database and storage.
+Install a supported open-source app or build one with a coding agent. Each app gets its own address, such as `todo.apps.your-domain.dev`, with its own certificate, and can have its own database and storage.
 
 Every App handles deployment and connects the app to your Gateway. You can keep adding apps without setting up a new hosting account or login system for each one.
 

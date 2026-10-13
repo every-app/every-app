@@ -61,6 +61,12 @@ export class FakeCf implements CfRunner {
     return this;
   }
 
+  /** Like `on`, ahead of every script already there. */
+  override(match: Matcher, response: FakeCfScript): this {
+    this.scripts.unshift({ match, response });
+    return this;
+  }
+
   async run(call: CfCall): Promise<CfResult> {
     const files = Object.fromEntries(
       Object.entries(call.files ?? {}).map(([name, content]) => [
@@ -97,6 +103,8 @@ export class FakeCf implements CfRunner {
     const stdout = response.stdout ?? "";
     const stderr = response.stderr ?? "";
     const exitCode = response.exitCode ?? 0;
+    if (stdout) call.onOutput?.(stdout);
+    if (stderr) call.onOutput?.(stderr);
     if (exitCode !== 0) {
       throw new CfError(parseCfStderr(stderr), { exitCode, stderr });
     }

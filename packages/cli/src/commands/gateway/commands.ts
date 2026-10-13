@@ -28,13 +28,19 @@ const yesFlag = {
   brief: "Skip confirmation prompts",
   optional: true,
 } as const;
+const forceDnsFlag = {
+  kind: "boolean",
+  brief:
+    "Publish new hostnames even where a DNS record exists (it is replaced) or CAA records would block the certificate",
+  optional: true,
+} as const;
 
 const deployFlags = {
   domain: {
     kind: "parsed",
     parse: String,
     brief:
-      "Domain the gateway serves at: a Cloudflare zone in the account (remembered after the first deploy)",
+      "Hostname the gateway serves at, in a zone the account has, e.g. apps.example.com (remembered after the first deploy)",
     optional: true,
   },
   "account-id": accountFlag,
@@ -61,6 +67,7 @@ const deployFlags = {
     brief: "Deploy a release older than the one the gateway runs",
     optional: true,
   },
+  "force-dns": forceDnsFlag,
   json: jsonFlag,
   verbose: verboseFlag,
 } as const;
@@ -81,14 +88,20 @@ export const deployCommand = buildCommand({
       "Deploys the gateway release bundled with this CLI with cf, from its prebuilt Build Output (nothing is installed or built on your machine):",
       "  1. Finds or creates the gateway's D1 database and KV namespaces",
       "  2. Takes the deploy lease, so deploys never overlap",
-      "  3. Bookmarks the database, then applies migrations before any code changes",
-      "  4. Binds every registered app and the domain, then uploads with cf deploy",
+      "  3. Checks every new hostname: no DNS record it would replace (unless --force-dns),",
+      "     CAA records that let Cloudflare issue its certificate, room in the zone",
+      "  4. Bookmarks the database, then applies migrations before any code changes",
+      "  5. Binds every registered app, publishes the gateway's domain and each app's as",
+      "     Workers Custom Domains, then uploads with cf deploy",
       "     (a first deploy sends the generated secrets with the upload)",
-      "  5. Waits for the new version to serve and records the install",
-      "  6. Mints a one-time owner setup link if the gateway has no owner yet",
+      "  6. Waits for the new version to serve and records the install, then for new certificates",
+      "  7. Mints a one-time owner setup link if the gateway has no owner yet",
       "     (in CI or with piped output it only says to run claim-link, unless --printSetupLink)",
       "",
-      "Apps are served at <app>-<org>.<domain>, through a *.<domain> route: add a proxied wildcard DNS record (*) for the domain.",
+      "The gateway serves at --domain, any hostname in a zone the account has (apps.example.com in",
+      "example.com), and apps one label below it: todo.apps.example.com. Cloudflare creates their",
+      "DNS records and certificates; nothing else in the zone changes. `everyapp setup` does all of",
+      "this, and the owner login, in one command.",
     ].join("\n"),
   },
 });
@@ -129,6 +142,7 @@ const reconcileCommand = buildCommand({
         brief: "Redeploy even when the live bindings already match",
         optional: true,
       },
+      "force-dns": forceDnsFlag,
       "break-lease": breakLeaseFlag,
       yes: yesFlag,
       json: jsonFlag,
@@ -137,9 +151,9 @@ const reconcileCommand = buildCommand({
     aliases: { y: "yes" },
   },
   docs: {
-    brief: "Bind exactly the apps the gateway's registry lists",
+    brief: "Bind and publish exactly the apps the gateway's registry lists",
     fullDescription:
-      "Redeploys the release the gateway runs (from the account's release cache, checked against its SHA-256) with a service binding for every uploaded app. Never upgrades or downgrades the gateway. `app deploy` and `app delete` run it when the set of apps changes.",
+      "Redeploys the release the gateway runs (from the account's release cache, checked against its SHA-256) with a service binding for every uploaded app, and each app's hostname as a Workers Custom Domain. Never upgrades or downgrades the gateway. `app deploy` and `app delete` run it when the set of apps changes.",
   },
 });
 
@@ -225,12 +239,87 @@ const secretSetCommand = buildCommand({
   },
 });
 
+const adoptCommand = buildCommand({
+  loader: async () => {
+    const { adopt } = await import("./adopt");
+    return adopt;
+  },
+  parameters: {
+    positional: { kind: "tuple", parameters: [] },
+    flags: {
+      domain: {
+        kind: "parsed",
+        parse: String,
+        brief: "The host the gateway serves at (its GATEWAY_URL), e.g. example.com",
+        optional: true,
+      },
+      "account-id": accountFlag,
+      "dry-run": {
+        kind: "boolean",
+        brief: "Only show what it finds and would record",
+        optional: true,
+      },
+      yes: yesFlag,
+      json: jsonFlag,
+      verbose: verboseFlag,
+    },
+    aliases: { y: "yes" },
+  },
+  docs: {
+    brief: "Take over a gateway deployed before everyapp used cf",
+    fullDescription: [
+      "For a gateway deployed with an older everyapp (with wrangler): reads the account (zone, Worker,",
+      "namespaces, DNS, migration history, the registry's apps), checks that --domain serves this",
+      "account's gateway, and records the install as it is, keeping its domain, wildcard route and app",
+      "hostnames. Nothing is deployed or migrated.",
+      "",
+      "Then run `everyapp gateway upgrade` from a terminal (cf asks before replacing a Worker last",
+      "changed outside it), and later, if you like, `everyapp gateway use-per-app-domains`.",
+    ].join("\n"),
+  },
+});
+
+const usePerAppDomainsCommand = buildCommand({
+  loader: async () => {
+    const { usePerAppDomains } = await import("./usePerAppDomains");
+    return usePerAppDomains;
+  },
+  parameters: {
+    positional: { kind: "tuple", parameters: [] },
+    flags: {
+      "account-id": accountFlag,
+      "dry-run": {
+        kind: "boolean",
+        brief: "Check the hostnames and cf's deploy without changing anything",
+        optional: true,
+      },
+      "force-dns": forceDnsFlag,
+      "break-lease": breakLeaseFlag,
+      yes: yesFlag,
+      json: jsonFlag,
+      verbose: verboseFlag,
+    },
+    aliases: { y: "yes" },
+  },
+  docs: {
+    brief: "Publish each app as its own Custom Domain instead of a wildcard route",
+    fullDescription: [
+      "For an install served through a *.<domain> route and wildcard DNS record: publishes every app's",
+      "hostname as a Workers Custom Domain on the gateway (checked first: DNS records, CAA, the zone's",
+      "100-domain limit), and new apps get <app>.<domain>. Hostnames don't change. Remove the wildcard",
+      "record and route afterwards; they keep working until you do.",
+    ].join("\n"),
+  },
+});
+
 export const gatewayRoutes = buildRouteMap({
   routes: {
     deploy: deployCommand,
     upgrade: upgradeCommand,
     reconcile: reconcileCommand,
     status: statusCommand,
+    adopt: adoptCommand,
+    "use-per-app-domains": usePerAppDomainsCommand,
     "claim-link": claimLinkCommand,
     secret: buildRouteMap({
       routes: { set: secretSetCommand },

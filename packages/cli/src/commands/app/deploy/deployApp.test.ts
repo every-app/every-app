@@ -13,6 +13,7 @@ import { queryAppD1 } from "@/commands/app/d1";
 import { readOwnedResources, recordOwnedResource } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
+import { readInstall } from "@/lib/gateway/install";
 import { handleInterrupt, resetInterruptsForTests } from "@/lib/interrupt";
 import { acquireLease, readLease } from "@/lib/gateway/lease";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
@@ -58,7 +59,9 @@ beforeEach(async () => {
   account = new FakeCloudflare();
   gateway = new FakeGateway(account);
 
-  // A gateway this CLI deployed.
+  // A gateway this CLI deployed, installed before per-app domains: apps
+  // reach it through its wildcard route, at <app>-<org>.example.com. (The
+  // per-app Custom Domains of new installs are below.)
   release = await openRelease(await buildGatewayRelease());
   const resources = await ensureGatewayResources(account.cf);
   await applyGateway({
@@ -69,10 +72,13 @@ beforeEach(async () => {
     accountId: ACCOUNT_ID,
     gatewayHost: "example.com",
     zone: { id: "zone-1", name: "example.com" },
+    routing: "wildcard-route",
+    appBaseDomain: "example.com",
     resources,
     db: cfD1Database(account.cf, resources.d1Id),
     interactive: false,
     cliVersion: "0.3.0",
+    lookupCaa: account.lookupCaa,
     ...seams,
   });
   gateway.seedOrganization();
@@ -573,6 +579,260 @@ describe("app deploy", () => {
         createCf: () => account.cf,
       }),
     ).resolves.toEqual([[{ title: "ship it" }]]);
+  });
+});
+
+describe("app deploy and delete with per-app Custom Domains", () => {
+  const GW = "apps.example.com";
+  const certificateChecks: string[] = [];
+  const certificates = {
+    isReady: async (url: string) => {
+      certificateChecks.push(url);
+      return true;
+    },
+    sleep: async () => undefined,
+  };
+
+  /** A new install: the gateway at apps.example.com in zone example.com. */
+  beforeEach(async () => {
+    certificateChecks.length = 0;
+    account = new FakeCloudflare();
+    gateway = new FakeGateway(account, GW);
+    const resources = await ensureGatewayResources(account.cf);
+    await applyGateway({
+      cf: account.cf,
+      out: out(),
+      reason: "deploy",
+      release,
+      accountId: ACCOUNT_ID,
+      gatewayHost: GW,
+      zone: { id: "zone-1", name: "example.com" },
+      routing: "custom-domains",
+      appBaseDomain: GW,
+      resources,
+      db: cfD1Database(account.cf, resources.d1Id),
+      interactive: false,
+      cliVersion: "0.3.0",
+      lookupCaa: account.lookupCaa,
+      ...seams,
+    });
+    gateway.seedOrganization();
+    account.apps.set(appDir, TODO);
+    account.cf.calls.length = 0;
+    events = [];
+  });
+
+  function deployHere(options: Partial<Parameters<typeof deployApp>[0]> = {}) {
+    return deployApp({
+      cwd: appDir,
+      manifest: TODO,
+      gatewayUrl: gateway.gatewayUrl,
+      out: out(),
+      createCf: () => account.cf,
+      client: gateway.client,
+      sleep: async () => undefined,
+      // No wildcard record to look for on these installs.
+      checkDns: async () => {
+        throw new Error("checked for a wildcard DNS record");
+      },
+      installDeps: async () => undefined,
+      reconcile: { ...seams, lookupCaa: account.lookupCaa },
+      certificates,
+      ...options,
+    });
+  }
+
+  const cfCommands = () =>
+    account.cf.calls.map((call) => call.args.slice(0, 3).join(" "));
+
+  it("publishes a new app at <app>.<base> as its own Custom Domain, then waits for its certificate", async () => {
+    const result = await deployHere();
+
+    expect(result).toMatchObject({
+      liveUrl: `https://todo.${GW}`,
+      hostname: `todo.${GW}`,
+      workerName: "every-acme-todo",
+    });
+    expect(account.gatewayDomains()).toEqual([GW, `todo.${GW}`]);
+    expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
+    expect(gateway.app("todo")).toMatchObject({ status: "active" });
+    await expect(readInstall(registry())).resolves.toMatchObject({
+      liveDomains: [GW, `todo.${GW}`],
+    });
+    // Checked before anything was created or uploaded.
+    const commands = cfCommands();
+    const checked = commands.indexOf("dns records list");
+    expect(checked).toBeGreaterThanOrEqual(0);
+    expect(checked).toBeLessThan(commands.indexOf("d1 create --name"));
+    expect(checked).toBeLessThan(commands.indexOf("build"));
+    // Its certificate, once the gateway serves it.
+    expect(certificateChecks).toEqual([`https://todo.${GW}/`]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "progress",
+        step: "app.tls",
+        message: `https://todo.${GW} has its certificate.`,
+      }),
+    );
+  });
+
+  it("redeploys an app's code without touching the gateway or its domains", async () => {
+    await deployHere();
+    const versions = gatewayVersions();
+    account.cf.calls.length = 0;
+
+    await deployHere();
+
+    expect(gatewayVersions()).toBe(versions);
+    expect(cfCommands()).not.toContain("dns records list");
+    expect(certificateChecks).toHaveLength(1);
+  });
+
+  it("never redeploys the gateway for a hostname it doesn't publish, outside the base", async () => {
+    // A registry row from before, at a host that isn't one label below the base.
+    account.database("every-app-gateway").sqlite.exec(`
+      INSERT OR IGNORE INTO organization_keys (organization_id, org_key) VALUES ('org-1', 'acme');
+      INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status, legacy_names)
+        VALUES ('row-todo', 'org-1', 'todo', 'todo', 'todo', 'todo.example.com', 'every-acme-todo', '{}', 'pending', 0);
+    `);
+    await deployHere();
+    expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
+    expect(account.gatewayDomains()).toEqual([GW]);
+    const versions = gatewayVersions();
+    account.cf.calls.length = 0;
+    events = [];
+
+    await deployHere();
+
+    // Bound already, and its host is never published: nothing to redeploy.
+    expect(gatewayVersions()).toBe(versions);
+    expect(cfCommands()).not.toContain("dns records list");
+    expect(certificateChecks).toEqual([]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "warning",
+        code: "APP_HOST_OUTSIDE_BASE",
+        message: expect.stringContaining("todo.example.com isn't one label below apps.example.com"),
+      }),
+    );
+
+    // Deleting it leaves a certificate for that host alone: not the gateway's.
+    account.certificatePacks.push({ id: "pack-site", zoneId: "zone-1", hosts: ["todo.example.com"] });
+    await removeApp({
+      appId: "todo",
+      client: gateway.client,
+      out: out(),
+      interactive: false,
+      purge: false,
+      createCf: () => account.cf,
+      reconcile: { ...seams, lookupCaa: account.lookupCaa },
+    });
+    expect(account.gatewayBindings()).toEqual([]);
+    expect(account.certificatePacks.map((pack) => pack.id)).toContain("pack-site");
+  });
+
+  it("refuses a new hostname that holds a DNS record before creating or uploading anything", async () => {
+    account.dnsRecords.push({
+      zoneId: "zone-1",
+      name: `todo.${GW}`,
+      type: "A",
+      content: "192.0.2.10",
+    });
+
+    await expect(deployHere()).rejects.toMatchObject({
+      code: "DNS_RECORD_CONFLICT",
+      message: expect.stringContaining("--force-dns"),
+    });
+    expect(databaseId("every-acme-todo")).toBeUndefined();
+    expect(account.workers.has("every-acme-todo")).toBe(false);
+    expect(account.gatewayDomains()).toEqual([GW]);
+
+    // The operator says the record may go.
+    await expect(deployHere({ forceDns: true })).resolves.toMatchObject({
+      hostname: `todo.${GW}`,
+    });
+    expect(account.gatewayDomains()).toEqual([GW, `todo.${GW}`]);
+  });
+
+  it("leaves the certificate to come on its own with --no-wait-cert, or after ten minutes", async () => {
+    await deployHere({ waitForCertificate: false });
+    expect(certificateChecks).toEqual([]);
+    expect(events).toContainEqual(
+      expect.objectContaining({ step: "app.tls", type: "progress" }),
+    );
+
+    // Another app whose certificate doesn't come in time: a warning, not a failure.
+    events = [];
+    const notes = { ...TODO, id: "notes", resources: { d1: ["DB"] } };
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-app-"));
+    otherDirs.push(dir);
+    fs.writeFileSync(path.join(dir, "cloudflare.config.ts"), "everyAppWorker\n");
+    account.apps.set(dir, notes);
+    await expect(
+      deployHere({
+        cwd: dir,
+        manifest: notes,
+        certificates: {
+          isReady: async () => false,
+          sleep: async () => undefined,
+          maxWaitMs: 0,
+        },
+      }),
+    ).resolves.toMatchObject({ hostname: `notes.${GW}` });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "warning", code: "CERT_PENDING" }),
+    );
+  });
+
+  it("removes a deleted app's hostname, and the certificate Cloudflare keeps for it", async () => {
+    await deployHere();
+    expect(account.certificatePacks.map((pack) => pack.hosts)).toContainEqual([
+      `todo.${GW}`,
+    ]);
+
+    await removeApp({
+      appId: "todo",
+      client: gateway.client,
+      out: out(),
+      interactive: false,
+      purge: false,
+      createCf: () => account.cf,
+      reconcile: { ...seams, lookupCaa: account.lookupCaa },
+    });
+
+    expect(account.gatewayDomains()).toEqual([GW]);
+    expect(account.gatewayBindings()).toEqual([]);
+    expect(account.certificatePacks.map((pack) => pack.hosts)).toEqual([[GW]]);
+    await expect(readInstall(registry())).resolves.toMatchObject({
+      liveDomains: [GW],
+    });
+    // Unknown hosts get a 404 from the gateway; its own still serves.
+    expect(account.customDomains.has(`todo.${GW}`)).toBe(false);
+    expect(account.customDomains.get(GW)).toBe("every-app-gateway");
+  });
+
+  it("deletes the app when its certificate can't be removed, and says so", async () => {
+    await deployHere();
+    account.cf.override(["ssl", "certificate-packs", "list"], {
+      exitCode: 1,
+      stderr: "┌ Error\n│ Authentication error [code: 10000]\n└\n",
+    });
+
+    await removeApp({
+      appId: "todo",
+      client: gateway.client,
+      out: out(),
+      interactive: false,
+      purge: false,
+      createCf: () => account.cf,
+      reconcile: { ...seams, lookupCaa: account.lookupCaa },
+    });
+
+    expect(gateway.app("todo")).toMatchObject({ status: "deleted" });
+    expect(account.gatewayDomains()).toEqual([GW]);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "warning", code: "CERT_CLEANUP_FAILED" }),
+    );
   });
 });
 

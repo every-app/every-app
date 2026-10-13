@@ -1,9 +1,9 @@
 ---
 title: Manage Your Gateway
-description: Users, app access, tokens, updates, and domain changes
+description: Users, app access, tokens, addresses, updates, and upgrading an older install
 ---
 
-Everything here happens in your Gateway's web UI (at your domain) unless noted. You're the **owner** — the account created with the Gateway's one-time setup link; signup is invite-only after that.
+Everything here happens in your Gateway's web UI (at its address, such as `apps.your-domain.dev`) unless noted. You're the **owner** — the account created with the Gateway's one-time setup link; signup is invite-only after that.
 
 ## Invite people
 
@@ -23,7 +23,21 @@ To change someone's role later, use **⋯ → Change role**. Only owners can cha
 
 ## Deploy tokens
 
-**Admin → Tokens → Deploy token.** A deploy token is what lets a terminal register and deploy apps to your Gateway — it's organization-wide and shown once. Pair it with [`everyapp login`](/docs/reference/cli#everyapp-login) on any machine that deploys. Revoke a token here at any time (deploys from that machine stop working immediately); per-app AI tokens live on the same page. A deploy token acts for the person who created it, so it also stops working when they're deactivated or removed from the organization.
+**Admin → Tokens → Deploy token.** A deploy token is what lets a terminal register and deploy apps to your Gateway — it's organization-wide and shown once. Pair it with [`everyapp login`](/docs/reference/cli#everyapp-login) on any machine that deploys. `everyapp setup` gets the first one by itself, for the machine that set the Gateway up. Revoke a token here at any time (deploys from that machine stop working immediately); per-app AI tokens live on the same page. A deploy token acts for the person who created it, so it also stops working when they're deactivated or removed from the organization.
+
+Deploying an app also takes a Cloudflare login for the Gateway's account, which can change the Gateway itself: for now, only let trusted admins deploy.
+
+## Where apps live
+
+Your Gateway lives at its address (`apps.your-domain.dev`) and each app one level below it: `todo.apps.your-domain.dev` for your own organization's apps, and `todo-<org>.apps.your-domain.dev` for another organization's. An app keeps its address for good once it has one.
+
+Each address is a [Workers Custom Domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) on the Gateway's Worker: deploying a new app creates its DNS record and certificate (usually within five minutes), and `npx everyapp app delete` removes both. An app deleted in **Admin → Apps** instead loses its address with the next `npx everyapp gateway reconcile`, but Cloudflare keeps its certificate: delete that one in the dashboard (your domain → **SSL/TLS → Edge Certificates**). Nothing else in your domain is touched. Before it adds an address, the deploy checks that:
+
+- no DNS record already sits at that name (one would be replaced, along with whatever it served; `--force-dns` replaces it on purpose), and it says so when a wildcard record answers the name now (the address takes that one name from it);
+- your domain's CAA records, if it has any (records at a parent domain count too), let one of Cloudflare's certificate authorities issue its certificate: Let's Encrypt, Google Trust Services or SSL.com;
+- the domain has room: Cloudflare allows 100 Custom Domains in a zone.
+
+`npx everyapp gateway status` lists every address, whether it is served yet, and whether it has its certificate.
 
 ## Update the Gateway
 
@@ -33,16 +47,53 @@ Upgrade to the Gateway release your CLI ships — your data, users, and apps car
 npx everyapp gateway upgrade
 ```
 
-It uses the domain and Cloudflare account the Gateway was deployed with, migrates the database before the new code goes live (after a Time Travel bookmark it prints, with the command that restores it), and keeps every app bound. It refuses to move to an older release unless you pass `--allow-downgrade`. `npx everyapp gateway status` shows the release you run and the one your CLI ships.
+It uses the address and Cloudflare account the Gateway was deployed with, migrates the database before the new code goes live (after a Time Travel bookmark it prints, with the command that restores it), and keeps every app bound and served. It refuses to move to an older release unless you pass `--allow-downgrade`. `npx everyapp gateway status` shows the release you run and the one your CLI ships. Running `npx everyapp setup` again does the same, and checks everything else along the way.
 
 Avoid changing the Gateway's Worker in the Cloudflare dashboard: the next unattended deploy stops and asks you to confirm in a terminal.
 
+## Upgrading an existing install
+
+A Gateway deployed before `everyapp setup` existed (with the wrangler-era CLI) sits at its domain's apex, reaches its apps through a `*.<domain>` route and a wildcard DNS record, and names them `<app>-<org>.<domain>`. It keeps all of that while you move it onto the current CLI; nothing about its users, apps or addresses changes. From a terminal (Cloudflare's CLI asks before it replaces a Worker last changed outside it, the first time):
+
+1. **Look first.** Nothing changes:
+
+   ```bash
+   npx everyapp gateway adopt --domain your-domain.dev --dry-run
+   ```
+
+   It lists what it finds: the Worker and the version it serves, the wildcard record, the database's migration history, the owner, and every app with its address. It also checks that your domain serves this Gateway, and refuses one that doesn't.
+
+2. **Adopt it.** This records the install as it is (domain, wildcard route, app addresses) in the Gateway's own database:
+
+   ```bash
+   npx everyapp gateway adopt --domain your-domain.dev
+   ```
+
+3. **Upgrade it, once, from a terminal.** Answer yes when asked to replace the version that is serving:
+
+   ```bash
+   npx everyapp gateway upgrade
+   ```
+
+   It bookmarks the database, carries its migration history over, migrates, and deploys the current Gateway with the same route and apps. Run it before any `gateway reconcile`: until then the account has no copy of a release to redeploy.
+
+4. **Check it** with `npx everyapp gateway status`. Then deploy each app once from a terminal (`npx everyapp app deploy` in its folder): an app needs a `cloudflare.config.ts` (the deploy shows the few lines it takes) and `@every-app/sdk` 0.3 or newer, and its first deploy with this CLI records its Worker and data as its own, so later deploys can run unattended.
+
+5. **Optionally, give every app its own Custom Domain**, which drops the need for the wildcard record:
+
+   ```bash
+   npx everyapp gateway use-per-app-domains --dry-run
+   npx everyapp gateway use-per-app-domains
+   ```
+
+   Every app keeps its address; each becomes a Custom Domain on the Gateway, checked first like any new one, and apps you deploy after get `<app>.your-domain.dev`. Once every app answers at its address, delete the `*` DNS record (dashboard → your domain → DNS) and the `*.your-domain.dev/*` route (Workers & Pages → every-app-gateway → Settings → Domains & Routes); they keep working until you do.
+
 ## Remove an app
 
-**Admin → Apps → ⋯ → Delete** stops serving it, removes it from the launcher and revokes everyone's access. Its name stays reserved to your organization. The app's worker and database stay on your Cloudflare account, so deleting in the Gateway is reversible by redeploying; run `npx everyapp gateway reconcile` afterwards to drop the Gateway's binding to it.
+**Admin → Apps → ⋯ → Delete** stops serving it, removes it from the launcher and revokes everyone's access. Its name and address stay reserved to your organization. The app's worker and database stay on your Cloudflare account, so deleting in the Gateway is reversible by redeploying; run `npx everyapp gateway reconcile` afterwards to drop the Gateway's binding to it and its address.
 
-From the terminal, `npx everyapp app delete <app-id>` does both, and `--purge` also deletes the app's Worker, D1 database and KV namespace for good.
+From the terminal, `npx everyapp app delete <app-id>` does both, and removes the certificate Cloudflare keeps for the address. `--purge` also deletes the app's Worker, D1 database and KV namespace for good.
 
 ## Move to a different domain
 
-Moving an installed Gateway to a different domain isn't supported yet: `gateway deploy` refuses a domain other than the one it was installed at.
+Moving an installed Gateway to a different address isn't supported yet: `gateway deploy` and `setup` refuse an address other than the one it was installed at.

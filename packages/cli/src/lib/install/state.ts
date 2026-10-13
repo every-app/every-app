@@ -8,6 +8,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { Routing } from "@/lib/gateway/install";
 
 export interface CachedInstall {
   gatewayHost: string;
@@ -17,6 +18,8 @@ export interface CachedInstall {
   databaseId: string;
   oauthKvId: string;
   deployKvId: string;
+  /** How apps reach the gateway; absent in entries older CLIs wrote. */
+  routing?: Routing;
   releaseVersion: string;
   releaseSha256: string;
   updatedAt: string;
