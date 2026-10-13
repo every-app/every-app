@@ -10,7 +10,11 @@ vi.mock("@/src/lib/auth-client", () => ({
   getGatewayUrl: mocks.getGatewayUrl,
 }));
 
-import { fetchUserApps, userAppsResponseSchema } from "./gateway";
+import {
+  fetchSignInMethods,
+  fetchUserApps,
+  userAppsResponseSchema,
+} from "./gateway";
 
 describe("fetchUserApps", () => {
   afterEach(() => {
@@ -74,5 +78,49 @@ describe("userAppsResponseSchema", () => {
     expect(result.apps).toHaveLength(2);
     expect(result.apps[0]).not.toHaveProperty("futureField");
     expect(result).not.toHaveProperty("responseVersion");
+  });
+});
+
+describe("fetchSignInMethods", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reads what the gateway offers", async () => {
+    mocks.getGatewayUrl.mockReturnValue("https://example.com");
+    const fetchMock = vi.fn(async () =>
+      Response.json({
+        emailPassword: false,
+        providers: [{ id: "cloudflare-access", label: "Company SSO" }],
+        accessEmail: null,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchSignInMethods()).resolves.toEqual({
+      emailPassword: false,
+      providers: [{ id: "cloudflare-access", label: "Company SSO" }],
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.com/api/auth/sign-in-methods",
+      { method: "GET", headers: { Accept: "application/json" } },
+    );
+  });
+
+  it("falls back to passwords only when the gateway can't say", async () => {
+    mocks.getGatewayUrl.mockReturnValue("https://example.com");
+    for (const respond of [
+      async () => new Response("not found", { status: 404 }),
+      async () => Response.json({ unexpected: true }),
+      async () => {
+        throw new TypeError("offline");
+      },
+    ]) {
+      vi.stubGlobal("fetch", vi.fn(respond));
+      await expect(fetchSignInMethods()).resolves.toEqual({
+        emailPassword: true,
+        providers: [],
+      });
+    }
   });
 });

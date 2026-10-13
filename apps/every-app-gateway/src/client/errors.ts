@@ -56,6 +56,8 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   OWNER_REQUIRED: "Only an owner can change another admin.",
   USER_IN_OTHER_ORGANIZATION:
     "This user also belongs to another organization, so their account can't be deactivated or reset from here.",
+  PASSWORD_SIGN_IN_DISABLED:
+    "Password sign-in is turned off on this gateway, so a password reset wouldn't work. People sign in with Cloudflare Access.",
 };
 
 const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {

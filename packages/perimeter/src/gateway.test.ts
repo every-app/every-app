@@ -75,6 +75,8 @@ function echoFetcher() {
           cookie: req.headers.get("cookie"),
           authorization: req.headers.get("authorization"),
           spoof: req.headers.get("x-everyapp-anything"),
+          accessAssertion: req.headers.get("cf-access-jwt-assertion"),
+          accessEmail: req.headers.get("cf-access-authenticated-user-email"),
         }),
         { headers: { "content-type": "application/json" } },
       ),
@@ -353,10 +355,12 @@ describe("handleGatewayRequest", () => {
     const res = await handleGatewayRequest(
       req("/tasks", {
         headers: {
-          cookie: "session=secret",
+          cookie: "session=secret; CF_Authorization=access.jwt.value",
           authorization: "Bearer app-secret",
           [IDENTITY_HEADER]: "spoofed",
           "x-everyapp-anything": "evil",
+          "cf-access-jwt-assertion": "access.jwt.value",
+          "cf-access-authenticated-user-email": "ceo@example.com",
         },
       }),
       deps(),
@@ -366,10 +370,15 @@ describe("handleGatewayRequest", () => {
       authorization: string | null;
       spoof: string | null;
       identity: string;
+      accessAssertion: string | null;
+      accessEmail: string | null;
     };
     expect(body.cookie).toBeNull();
     expect(body.authorization).toBeNull();
     expect(body.spoof).toBeNull();
+    // Cloudflare Access's identity reaches the app only as the gateway's JWT.
+    expect(body.accessAssertion).toBeNull();
+    expect(body.accessEmail).toBeNull();
     // identity is the freshly minted one, not the spoofed literal
     expect(body.identity).not.toBe("spoofed");
   });
@@ -436,6 +445,7 @@ describe("handleGatewayRequest", () => {
           cookie: "session=secret",
           [IDENTITY_HEADER]: "spoofed",
           "x-everyapp-anything": "evil",
+          "cf-access-authenticated-user-email": "ceo@example.com",
         },
       }),
       deps({
@@ -452,12 +462,14 @@ describe("handleGatewayRequest", () => {
       identity: string | null;
       publicMarker: string | null;
       spoof: string | null;
+      accessEmail: string | null;
     };
     expect(body.authorization).toBe("Bearer app-secret");
     expect(body.cookie).toBeNull();
     expect(body.identity).toBeNull();
     expect(body.publicMarker).toMatch(/^eyJ/);
     expect(body.spoof).toBeNull();
+    expect(body.accessEmail).toBeNull();
   });
 
   it("preserves public-route passthrough for non-consumed non-epat bearers", async () => {

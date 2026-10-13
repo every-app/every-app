@@ -15,6 +15,7 @@
     "---Reference---",
     "reference/cli",
     "reference/manage-your-gateway",
+    "reference/cloudflare-access",
     "[llms.txt — docs for your coding agent](/llms.txt)",
     "---Help---",
     "troubleshooting",

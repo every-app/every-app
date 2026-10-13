@@ -13,6 +13,17 @@ const captured = vi.hoisted(() => ({
   authOptions: undefined as unknown,
 }));
 
+// What accessConfigFromEnv returns: Access sign-in off unless a test sets it.
+const accessSettings = vi.hoisted(() => ({
+  current: {
+    oidc: null as { label: string } | null,
+    outerRing: null as object | null,
+    autoJoinDomains: [] as string[],
+    passwordSignIn: true,
+    problems: [] as string[],
+  },
+}));
+
 vi.mock("cloudflare:workers", () => ({ env: workerEnv }));
 
 vi.mock("better-auth", () => ({
@@ -23,7 +34,11 @@ vi.mock("better-auth", () => ({
 }));
 
 vi.mock("better-auth/api", () => ({
-  APIError: class APIError extends Error {},
+  APIError: class APIError extends Error {
+    constructor(status: string, body?: { message?: string }) {
+      super(body?.message ?? status);
+    }
+  },
   createAuthMiddleware: (middleware: unknown) => middleware,
 }));
 
@@ -52,6 +67,21 @@ vi.mock("./shared", () => ({
 }));
 
 vi.mock("@/db", () => ({ db: {}, schema: {} }));
+
+vi.mock("./cloudflare-access", () => ({
+  ACCESS_PROVIDER_ID: "cloudflare-access",
+  accessConfigFromEnv: () => accessSettings.current,
+  isAccessSignInConfigured: (config: { oidc: unknown; outerRing: unknown }) =>
+    Boolean(config.oidc || config.outerRing),
+  // The real one also keeps passwords on until an owner has linked Access
+  // (see the SQLite tests).
+  isPasswordSignInOn: async (config: { passwordSignIn: boolean }) =>
+    config.passwordSignIn,
+  cloudflareAccess: (options: unknown) => ({
+    id: "cloudflare-access",
+    options,
+  }),
+}));
 
 vi.mock("@/db/schema", () => ({}));
 
@@ -314,8 +344,50 @@ describe("createAuth Better Auth options", () => {
     expect(createAuthOptions().plugins.map((plugin) => plugin.id)).toEqual([
       "admin",
       "organization",
+      "cloudflare-access",
       "tanstack-start-cookies",
     ]);
+  });
+
+  describe("with Cloudflare Access sign-in", () => {
+    const off = accessSettings.current;
+    afterEach(() => {
+      accessSettings.current = off;
+    });
+
+    it("trusts the Access provider for linking only when Access sign-in is configured", () => {
+      expect(createAuthOptions()).not.toHaveProperty("account");
+
+      accessSettings.current = { ...off, oidc: { label: "Company SSO" } };
+      expect(createAuthOptions()).toMatchObject({
+        account: {
+          accountLinking: {
+            enabled: true,
+            trustedProviders: ["cloudflare-access"],
+          },
+        },
+      });
+      // Better Auth's default (require the existing account's email to be
+      // verified before linking) is left alone.
+      expect(
+        (
+          createAuthOptions() as unknown as {
+            account: { accountLinking: Record<string, unknown> };
+          }
+        ).account.accountLinking,
+      ).not.toHaveProperty("requireLocalEmailVerified");
+    });
+
+    it("hands the plugin its settings and the gateway URL", () => {
+      accessSettings.current = { ...off, outerRing: {} };
+      const plugin = createAuthOptions().plugins.find(
+        (entry) => entry.id === "cloudflare-access",
+      ) as unknown as { options: unknown };
+      expect(plugin.options).toEqual({
+        config: accessSettings.current,
+        gatewayUrl: "https://gateway.example.com",
+      });
+    });
   });
 });
 
@@ -396,6 +468,74 @@ describe("createAuth sign-up and organization hooks", () => {
     await expect(
       before()({ path: "/organization/create" }),
     ).resolves.toBeUndefined();
+  });
+
+  describe("with password sign-in off", () => {
+    const off = accessSettings.current;
+    afterEach(() => {
+      accessSettings.current = off;
+    });
+
+    const passwordPaths = [
+      "/sign-in/email",
+      "/sign-up/email",
+      "/request-password-reset",
+      "/reset-password",
+      "/reset-password/tok_1",
+    ];
+
+    it("refuses password sign-in, sign-up and resets over HTTP", async () => {
+      accessSettings.current = {
+        ...off,
+        oidc: { label: "Company SSO" },
+        passwordSignIn: false,
+      };
+      mockFindInvitation.mockResolvedValue({
+        id: "inv-1",
+        organizationId: "org-1",
+        email: "invitee@example.com",
+        status: "pending",
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      for (const path of passwordPaths) {
+        await expect(
+          before()({
+            path,
+            request: httpRequest(`${path}?invitationToken=einv_secret`),
+            body: { email: "invitee@example.com" },
+          }),
+        ).rejects.toThrow(
+          "Password sign-in is turned off on this gateway. Sign in with Company SSO.",
+        );
+      }
+    });
+
+    it("still lets the setup claim create the owner server-side", async () => {
+      accessSettings.current = {
+        ...off,
+        outerRing: {},
+        passwordSignIn: false,
+      };
+      await expect(
+        before()({
+          path: "/sign-up/email",
+          body: { email: "owner@example.com" },
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("leaves other endpoints alone", async () => {
+      accessSettings.current = {
+        ...off,
+        oidc: { label: "Company SSO" },
+        passwordSignIn: false,
+      };
+      for (const path of ["/sign-in/social", "/get-session", "/sign-out"]) {
+        await expect(
+          before()({ path, request: httpRequest(path) }),
+        ).resolves.toBeUndefined();
+      }
+    });
   });
 
   it("rejects HTTP organization creation until the gateway is claimed", async () => {

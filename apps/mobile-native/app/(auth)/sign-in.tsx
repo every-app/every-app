@@ -12,10 +12,17 @@ import {
 } from "react-native";
 import { Link, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Linking from "expo-linking";
+import * as WebBrowser from "expo-web-browser";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useColorScheme } from "@/components/useColorScheme";
 import Colors from "@/constants/Colors";
+import { fetchSignInMethods } from "@/src/api/gateway";
+import {
+  accessSignInErrorMessage,
+  signInWithAccess,
+} from "@/src/lib/access-sign-in";
 import { authClient, getGatewayUrl } from "@/src/lib/auth-client";
 import { syncSessionCookieToWebView } from "@/src/lib/webview-cookies";
 
@@ -31,6 +38,54 @@ export default function SignInScreen() {
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { data: methods } = useQuery({
+    queryKey: ["auth", "sign-in-methods", getGatewayUrl()],
+    queryFn: fetchSignInMethods,
+  });
+  const accessProvider = methods?.providers[0];
+  const passwordSignIn = methods?.emailPassword ?? true;
+
+  const finishSignIn = async () => {
+    const didSyncCookie = await syncSessionCookieToWebView();
+    if (!didSyncCookie) {
+      setError("Sign in succeeded, but the session cookie was unavailable.");
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
+    router.replace("/(main)");
+  };
+
+  // Cloudflare Access sign-in runs in the system browser, never in a
+  // WebView: the identity provider's page gets the browser's own protections
+  // and saved logins. The gateway hands the session back to the app with a
+  // one-time code (src/lib/access-sign-in.ts).
+  const handleAccessSignIn = async () => {
+    if (!accessProvider) return;
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const result = await signInWithAccess(accessProvider.id, {
+        redirectURL: Linking.createURL("/sign-in"),
+        openAuthSession: (url, redirectURL) =>
+          WebBrowser.openAuthSessionAsync(url, redirectURL),
+      });
+      if (result.status === "canceled") return;
+      if (result.status === "refused") {
+        setError(accessSignInErrorMessage(result.code, accessProvider.label));
+        return;
+      }
+      const session = await authClient.getSession();
+      if (!session.data) {
+        setError(accessSignInErrorMessage("", accessProvider.label));
+        return;
+      }
+      await finishSignIn();
+    } catch {
+      setError("Unable to sign in right now.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSignIn = async () => {
     setError(null);
@@ -52,14 +107,7 @@ export default function SignInScreen() {
         return;
       }
 
-      const didSyncCookie = await syncSessionCookieToWebView();
-      if (!didSyncCookie) {
-        setError("Sign in succeeded, but the session cookie was unavailable.");
-        return;
-      }
-
-      await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
-      router.replace("/(main)");
+      await finishSignIn();
     } catch {
       setError("Unable to sign in right now.");
     } finally {
@@ -81,7 +129,9 @@ export default function SignInScreen() {
 
         <Text style={[styles.title, { color: colors.text }]}>Sign In</Text>
         <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Enter your email and password to sign in
+          {passwordSignIn
+            ? "Enter your email and password to sign in"
+            : `Sign in with ${accessProvider?.label ?? "Cloudflare Access"}`}
         </Text>
 
         <Pressable
@@ -109,68 +159,86 @@ export default function SignInScreen() {
           <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
         ) : null}
 
-        <View style={styles.formSection}>
-          <Text style={[styles.label, { color: colors.textSecondary }]}>
-            Email
-          </Text>
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            style={[
-              styles.input,
-              {
-                borderColor: colors.border,
-                backgroundColor: colors.background,
-                color: colors.text,
-              },
-            ]}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            placeholder="you@example.com"
-            placeholderTextColor={colors.textSecondary}
-            editable={!isSubmitting}
-          />
-
-          <Text style={[styles.label, { color: colors.textSecondary }]}>
-            Password
-          </Text>
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            style={[
-              styles.input,
-              {
-                borderColor: colors.border,
-                backgroundColor: colors.background,
-                color: colors.text,
-              },
-            ]}
-            secureTextEntry
-            placeholder="Enter your password"
-            placeholderTextColor={colors.textSecondary}
-            editable={!isSubmitting}
-          />
-
+        {accessProvider ? (
           <Pressable
-            onPress={() => void handleSignIn()}
+            onPress={() => void handleAccessSignIn()}
             disabled={isSubmitting}
             style={({ pressed }) => [
+              styles.accessButton,
+              { borderColor: colors.border },
               (pressed || isSubmitting) && styles.buttonPressed,
             ]}
           >
-            <LinearGradient
-              colors={["#424242", "#353535", "#2a2a2a"]}
-              locations={[0, 0.5, 1]}
-              style={styles.button}
-            >
-              {isSubmitting ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Text style={styles.buttonText}>Sign In</Text>
-              )}
-            </LinearGradient>
+            <Text style={[styles.accessButtonText, { color: colors.text }]}>
+              Continue with {accessProvider.label}
+            </Text>
           </Pressable>
-        </View>
+        ) : null}
+
+        {passwordSignIn ? (
+          <View style={styles.formSection}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Email
+            </Text>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              style={[
+                styles.input,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: colors.background,
+                  color: colors.text,
+                },
+              ]}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              placeholder="you@example.com"
+              placeholderTextColor={colors.textSecondary}
+              editable={!isSubmitting}
+            />
+
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              Password
+            </Text>
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              style={[
+                styles.input,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: colors.background,
+                  color: colors.text,
+                },
+              ]}
+              secureTextEntry
+              placeholder="Enter your password"
+              placeholderTextColor={colors.textSecondary}
+              editable={!isSubmitting}
+            />
+
+            <Pressable
+              onPress={() => void handleSignIn()}
+              disabled={isSubmitting}
+              style={({ pressed }) => [
+                (pressed || isSubmitting) && styles.buttonPressed,
+              ]}
+            >
+              <LinearGradient
+                colors={["#424242", "#353535", "#2a2a2a"]}
+                locations={[0, 0.5, 1]}
+                style={styles.button}
+              >
+                {isSubmitting ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.buttonText}>Sign In</Text>
+                )}
+              </LinearGradient>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={styles.footerLinks}>
           <Link
@@ -241,6 +309,18 @@ const styles = StyleSheet.create({
   },
   buttonPressed: {
     opacity: 0.86,
+  },
+  accessButton: {
+    marginTop: 20,
+    height: 48,
+    borderRadius: 6,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accessButtonText: {
+    fontWeight: "600",
+    fontSize: 17,
   },
   buttonText: {
     fontWeight: "600",

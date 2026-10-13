@@ -39,6 +39,29 @@ declare namespace Cloudflare {
     // honored only when GATEWAY_URL is http://localhost or 127.0.0.1.
     MCP_ACCESS_TOKEN_TTL?: string;
 
+    // Cloudflare Access sign-in (all optional; set as secrets so deploys keep
+    // them). See src/auth/cloudflare-access/config.ts and
+    // docs/runbooks/cloudflare-access.md.
+    // OIDC sign-in ("Continue with <label>") through an Access for SaaS app:
+    CLOUDFLARE_ACCESS_OIDC_ISSUER?: string;
+    CLOUDFLARE_ACCESS_OIDC_CLIENT_ID?: string;
+    CLOUDFLARE_ACCESS_OIDC_CLIENT_SECRET?: string;
+    CLOUDFLARE_ACCESS_OIDC_LABEL?: string;
+    // The outer ring (Access in front of the gateway's hostnames): the team
+    // domain (<team>.cloudflareaccess.com), the AUD tag(s) of the Access
+    // application on the gateway's own host (the only one whose assertions
+    // sign people in), and those of a separate application on the apps'
+    // hosts (comma separated).
+    CLOUDFLARE_ACCESS_TEAM_DOMAIN?: string;
+    CLOUDFLARE_ACCESS_AUD?: string;
+    CLOUDFLARE_ACCESS_APPS_AUD?: string;
+    // Email domains whose people join as members without an invitation
+    // (comma separated), and "everyone" to let in all the outer ring admits.
+    CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS?: string;
+    CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN?: string;
+    // "false" turns password sign-in off, only while Access sign-in is set up.
+    EMAIL_PASSWORD_SIGN_IN?: string;
+
     // Provider credentials used by gateway proxy routes
     OPENAI_API_KEY?: string;
 

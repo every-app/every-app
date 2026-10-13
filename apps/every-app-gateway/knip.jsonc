@@ -20,9 +20,6 @@
     "@every-app/perimeter",
     "@every-app/sdk",
     "@every-app/toolbus",
-    // Deduped in vite.config.ts so the linked SDK signs identity JWTs with the
-    // gateway's jose, not packages/sdk's devDependency copy.
-    "jose",
     "daisyui",
     // Used by vite during bundling
     "tailwindcss",

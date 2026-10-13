@@ -12,6 +12,14 @@ const mockRequestPasswordReset = vi.fn();
 const mockCancelInvitation = vi.fn();
 const mockListMembersForOrganization = vi.fn();
 
+vi.mock("@/server/password-sign-in", () => ({
+  requirePasswordSignIn: async () => undefined,
+}));
+
+vi.mock("@/server/access-rejoin", () => ({
+  accessWouldLetBackIn: () => false,
+}));
+
 vi.mock("cloudflare:workers", () => ({
   env: {
     GATEWAY_URL: "https://gateway.example.com",

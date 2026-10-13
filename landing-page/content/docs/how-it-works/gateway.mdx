@@ -51,7 +51,7 @@ Each is labeled with what is true today. These docs only describe what has shipp
 
 [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/access-controls/) answers "may this person reach this hostname?". Every App also needs to know which organization they belong to, which of its apps they may open, and what role they have, and Access has no organizations, per-app grants, invitations or personal tokens. Access policies on a Worker also refuse WebSocket upgrades (the todo app's live sync uses one), and the identity Access checks isn't handed to TanStack Start apps or across service bindings. Its free plan stops at 50 users.
 
-They work together rather than compete: signing in to the Gateway through Access, for your company's SSO, is in the works.
+They work together rather than compete: the Gateway can sign people in through Access, with your company's SSO, and Access can also stand in front of the Gateway's hostnames. See [Cloudflare Access](/docs/reference/cloudflare-access).
 
 ## What it costs
 

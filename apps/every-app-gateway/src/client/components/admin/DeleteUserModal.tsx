@@ -36,6 +36,11 @@ export function DeleteUserModal({
         ? Their deploy tokens and personal access tokens for this organization
         stop working. This action cannot be undone.
       </p>
+      <p className="pb-4 text-sm text-base-content/70">
+        If Cloudflare Access would let them straight back in (their email domain
+        joins automatically), they are deactivated instead, which keeps them
+        out.
+      </p>
     </Modal>
   );
 }

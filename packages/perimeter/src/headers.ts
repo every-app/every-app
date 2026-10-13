@@ -16,6 +16,17 @@ export { IDENTITY_HEADER, PUBLIC_HEADER };
 export const EVERYAPP_HEADER_PREFIX = "x-everyapp-";
 
 /**
+ * Cloudflare Access's headers: the signed `Cf-Access-Jwt-Assertion` and the
+ * plain `Cf-Access-Authenticated-User-Email` it adds to requests it lets
+ * through, and the `Cf-Access-Client-Id`/`-Secret` service-token
+ * credentials clients send it. The gateway verifies the assertion itself and
+ * turns it into a session; apps trust only the identity JWT, so none of
+ * these reaches them (a forged email header on a host Access doesn't cover
+ * would otherwise look like one).
+ */
+export const CF_ACCESS_HEADER_PREFIX = "cf-access-";
+
+/**
  * Cloudflare routes a request carrying this header to the named Worker
  * version, so a client could pin its request to an old (unpatched) build of
  * an app. Only the gateway may ever choose an app version.
@@ -24,10 +35,11 @@ export const VERSION_OVERRIDES_HEADER = "cloudflare-workers-version-overrides";
 
 /**
  * Return a new Headers with the inbound Cookie, Authorization, the Worker
- * version override and *all* `x-everyapp-*` headers removed. The app never
- * sees the user's session cookie, a client cannot smuggle a forged
- * `x-everyapp-identity` past the gateway, and a client cannot pick which
- * deployed version of the app answers.
+ * version override, and *all* `x-everyapp-*` and `cf-access-*` headers
+ * removed. The app never sees the user's session cookie (or Access's
+ * `CF_Authorization` cookie), a client cannot smuggle a forged
+ * `x-everyapp-identity` or Access identity past the gateway, and a client
+ * cannot pick which deployed version of the app answers.
  */
 export function stripInboundHeaders(inbound: Headers): Headers {
   const out = new Headers(inbound);
@@ -35,7 +47,11 @@ export function stripInboundHeaders(inbound: Headers): Headers {
   out.delete("authorization");
   out.delete(VERSION_OVERRIDES_HEADER);
   for (const key of [...out.keys()]) {
-    if (key.toLowerCase().startsWith(EVERYAPP_HEADER_PREFIX)) {
+    const name = key.toLowerCase();
+    if (
+      name.startsWith(EVERYAPP_HEADER_PREFIX) ||
+      name.startsWith(CF_ACCESS_HEADER_PREFIX)
+    ) {
       out.delete(key);
     }
   }

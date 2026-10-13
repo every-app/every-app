@@ -13,9 +13,15 @@ Someone locked out without email? **⋯ → Generate Password Reset Link** gives
 
 To change someone's role later, use **⋯ → Change role**. Only owners can change another admin.
 
+## Sign in with Cloudflare Access
+
+Your team can sign in through Cloudflare Access (your company's identity provider, a one-time PIN, MFA) as well as, or instead of, passwords. It stays one account system: invitations, roles, tokens and deactivation work the same. See [Sign In with Cloudflare Access](/docs/reference/cloudflare-access).
+
 ## Deactivate someone
 
 **Admin → Users → ⋯ → Deactivate** locks a person out at once: they're signed out everywhere, can't sign in again, and their personal access tokens and deploy tokens stop working. **Reactivate** lets them sign in again; revoked tokens stay revoked.
+
+This is how to take someone off, also when your team signs in with Cloudflare Access: removing them from your Access policy doesn't end their tokens or AI connections. And if Access lets their email domain join automatically, **Delete** deactivates them instead, since deleting would only let them back in at their next sign-in.
 
 ## Control who sees which app
 

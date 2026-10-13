@@ -73,6 +73,74 @@
   `AI_PROXY_EXTRA_ROUTES` gateway secret, e.g. `/v1/files`) and the app
   manifest's `ai.routes`; `ai.models` can restrict models.
 
+## Sign-in with Cloudflare Access
+
+Optional (`docs/runbooks/cloudflare-access.md`). Better Auth stays the only
+session system: Cloudflare Access, as an OIDC provider or as an outer ring in
+front of the gateway's hostnames, only proves who someone is, and a Better
+Auth plugin (`apps/every-app-gateway/src/auth/cloudflare-access/`) turns that
+into an ordinary Better Auth session. Everything downstream is unchanged.
+
+- Settings are Worker secrets only, never the admin UI.
+- The outer ring's `Cf-Access-Jwt-Assertion` (or `CF_Authorization` cookie)
+  is never trusted as such: it must be an RS256 JWT signed by a key in the
+  team's JWKS (cached ten minutes, refetched for an unknown key id at most
+  every 30 s, never used past its lifetime: a fetch failure signs nobody
+  in; nobody waits on a fetch for more than 5 s, so one stuck in a cancelled
+  request can't hold up the isolate), with the configured issuer and AUD,
+  an expiry (60 s of skew), `type: "app"` and an email (service tokens have
+  none).
+- It signs people in only on the gateway's own host, and only with the
+  gateway application's AUD (`CLOUDFLARE_ACCESS_AUD`); the apps' separate
+  application (`CLOUDFLARE_ACCESS_APPS_AUD`) only vouches for sessions, so an
+  app host's Access cookie is never a gateway login. The runbook asks for
+  HttpOnly and the binding cookie on both.
+- Behind the outer ring a session cookie counts only with a verified
+  assertion for the same person on that request (the header, or the
+  `CF_Authorization` cookie browsers also send on bypassed paths): in the
+  perimeter on app hosts, server functions, the OAuth pages and Better Auth's
+  own endpoints (whose requests have such a session taken out). Sessions are
+  only made for that person (a password or OIDC sign-in as anyone else is
+  refused). So a person taken out of the Access policy loses browser access
+  when their Access session ends. Access bypasses only machine endpoints
+  (`/mcp*`, `/oauth/token`, `/oauth/register`, `/.well-known/*`,
+  `/api/deploy/*`, apps' public routes), never `/oauth/authorize` or the
+  consent pages. Bearer credentials (personal access, OAuth and deploy
+  tokens) never pass through Access: offboarding is deactivation.
+- OIDC sign-in goes through Better Auth's own state and PKCE (S256) with the
+  client secret; the ID token is verified in full (signature by the
+  application's JWKS, issuer, audience = client id, expiry); posted ID tokens
+  are not accepted as a sign-in; only the ID token is stored.
+- Nothing plants OAuth state in a browser but a sign-in that browser
+  started: Better Auth Expo's `/expo-authorization-proxy` (which set the
+  state cookie to any state it was handed, a login CSRF, and redirected
+  anywhere) is in `disabledPaths`. The mobile app signs in through a
+  handoff instead: the gateway starts the sign-in in the system browser
+  from a one-time link, and the callback sends that browser back to
+  `everyapp://` with a one-time code (two minutes) instead of a session;
+  the app trades the code plus a secret it got on its own request (never in
+  the browser) for the session. A link another site led to, or opened on
+  another network than the app's request, asks before starting.
+- Both identify people by the verified email. Linking to an existing account
+  follows Better Auth 1.7's rules: the provider is trusted and its email
+  verified, and the existing account's own email must be verified (or the
+  link is made while signed in to it), so an account registered with
+  someone else's address is never handed over.
+- Membership stays the gateway's: members (never deactivated ones), pending
+  invitations for the verified email (accepted), operator-listed auto-join
+  domains (members with the apps available to everyone, as an invitation
+  gives), and through the outer ring only, anyone Access admits if the
+  operator opts in. Nothing happens before the gateway is claimed. Removing
+  someone from the Access policy is not offboarding (tokens and AI
+  connections don't pass through Access): deactivation is, and for people
+  auto-join covers, "Delete" deactivates instead, since a deleted account
+  would just join again.
+- The perimeter strips every inbound `cf-access-*` header (and, as always,
+  the cookie header), so apps only ever see the identity JWT.
+- `EMAIL_PASSWORD_SIGN_IN=false` closes password sign-in, sign-up and resets
+  over HTTP only while Access sign-in is configured and an owner can sign in
+  with it; deleting the secret reopens them.
+
 ## Agent Tools (MCP)
 
 - Two endpoints serve the same tools: the gateway's own `/mcp`, one

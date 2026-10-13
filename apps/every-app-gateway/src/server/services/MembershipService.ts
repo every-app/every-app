@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { members } from "@/db/schema";
 import { and, eq, ne } from "drizzle-orm";
 import { passwordResetUrl } from "@/server/email/links";
+import { requirePasswordSignIn } from "@/server/password-sign-in";
 import { PublicError } from "@/server/errors";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 import {
@@ -138,6 +139,7 @@ async function reactivate(ctx: OrgContext, targetUserId: string) {
  */
 async function createPasswordResetLink(ctx: OrgContext, targetUserId: string) {
   await requireAccountWideManageable(ctx, targetUserId);
+  await requirePasswordSignIn();
   const user = await UserRepository.findById(targetUserId);
   if (!user || user.status !== "active" || isUserBanned(user)) {
     throw new PublicError(

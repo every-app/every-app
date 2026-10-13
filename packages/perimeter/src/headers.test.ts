@@ -30,6 +30,20 @@ describe("stripInboundHeaders", () => {
     expect(out.get("accept")).toBe("text/html");
   });
 
+  it("removes Cloudflare Access's assertion, email and service-token headers", () => {
+    const out = stripInboundHeaders(
+      new Headers({
+        "Cf-Access-Jwt-Assertion": "header.payload.signature",
+        "Cf-Access-Authenticated-User-Email": "ceo@example.com",
+        "CF-Access-Client-Id": "id.access",
+        "CF-Access-Client-Secret": "cfast_secret",
+        cookie: "CF_Authorization=header.payload.signature",
+        "cf-connecting-ip": "203.0.113.7",
+      }),
+    );
+    expect([...out.keys()]).toEqual(["cf-connecting-ip"]);
+  });
+
   it("removes the Worker version-override header", () => {
     const out = stripInboundHeaders(
       new Headers({

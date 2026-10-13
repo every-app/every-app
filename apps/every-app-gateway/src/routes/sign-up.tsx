@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
+import { useSignInMethods } from "@/client/sign-in-methods";
 import { hasOwner } from "@/serverFunctions/admin";
 import { getSafeRedirect, getSafeReturnTo, isWorkerRoute } from "@/utils/auth";
 
@@ -49,8 +50,18 @@ function SignUp() {
     refetchOnReconnect: false,
   });
 
+  const { data: methods } = useSignInMethods();
+
   if (isCheckingOwner) {
     return null;
+  }
+
+  // With password sign-in off, an invited person signs in with Cloudflare
+  // Access instead; that accepts the invitation for their verified email.
+  if (isInvitationFlow && methods && !methods.emailPassword) {
+    return (
+      <SignInWithAccessInstead redirect={redirect} return_to={return_to} />
+    );
   }
 
   if (isInvitationFlow) {
@@ -310,6 +321,46 @@ function SetupPending({
                 Sign in
               </Link>
             </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Invited, with password sign-in off: Cloudflare Access is the way in. */
+function SignInWithAccessInstead({
+  redirect,
+  return_to,
+}: {
+  redirect?: string;
+  return_to?: string;
+}) {
+  return (
+    <div className="flex h-screen items-center justify-center overflow-hidden">
+      <div className="relative w-full max-w-md">
+        <img
+          src="/transparent-logo.png"
+          alt="Logo"
+          className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
+        />
+        <div className="card auth-card">
+          <div className="card-body text-center">
+            <h2 className="card-title justify-center">Sign in to join</h2>
+            <p className="text-base-content/70 mt-2">
+              This gateway doesn&apos;t use passwords. Sign in with your invited
+              email through Cloudflare Access, and you&apos;ll join
+              automatically.
+            </p>
+            <div className="mt-4">
+              <Link
+                to="/sign-in"
+                search={getAuthSearch({ redirect, return_to })}
+                className="btn btn-primary"
+              >
+                Sign in
+              </Link>
+            </div>
           </div>
         </div>
       </div>

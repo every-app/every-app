@@ -132,6 +132,78 @@ plays an MCP client and its browser through the same flow, and with
 `--conformance` runs the MCP conformance suite's authorization-server
 scenarios. Setup and usage: `docs/runbooks/mcp-oauth.md`, "Test locally".
 
+### Signing in with Cloudflare Access
+
+`apps/every-app-gateway/src/auth/cloudflare-access/` is tested at three
+levels, against a mock Access (`src/test/mock-access.ts`: team keys and
+signed outer-ring assertions, and an Access for SaaS OIDC application that
+checks the client secret, the redirect URI and PKCE):
+
+- `jwt.test.ts`: the JWT verifier on its own: a good token, wrong AUD,
+  wrong issuer, expired (and within the minute of skew), not yet valid, no
+  expiry, `alg: none`, HS256 keyed with the public key, a forged signature
+  under a known key id, a service token, `email_verified: false`, garbage;
+  the JWKS cache (one fetch, refetched after ten minutes, shared by
+  concurrent checks, a fetch that never settles waited on no longer than its
+  timeout and then replaced, a rotated key picked up, unknown key ids
+  refetched at most every 30 s, fetch failures failing closed, keys never
+  used past their lifetime, non-RS256 keys ignored), and where the assertion
+  is read from.
+- `config.test.ts`: the settings, including which URLs are accepted, the
+  gateway's and the apps' AUD tags, and when `EMAIL_PASSWORD_SIGN_IN=false`
+  is ignored.
+- `access-sign-in.sqlite.test.ts`: the real Better Auth configuration on
+  SQLite.
+  - The outer ring's session check: an existing member, an account whose
+    email isn't verified (linked after one password sign-in), an invited
+    person, an auto-join domain and "everyone" (with the apps available to
+    everyone), a stranger, a deactivated member, an unclaimed gateway,
+    someone else's session in the browser, an expired session, assertions it
+    can't verify, sign-in only with the gateway application's AUD and an
+    application token, the JWKS down, other hosts, the sign-in methods
+    endpoint.
+  - A session counts only with Access's word for that person: server-side
+    lookups (header or `CF_Authorization` cookie), the browser's check on
+    any host, Better Auth's own endpoints (`/list-accounts`,
+    `/update-user` refused, `/sign-out` still working); sign-ins as anyone
+    else refused (`ACCESS_EMAIL_MISMATCH`, the owner's documented way out
+    included) or without Access (`ACCESS_REQUIRED`); Delete deactivating
+    someone auto-join would let back in.
+  - OIDC sign-in end to end: the authorization request, state bound to the
+    browser, a planted code refused by PKCE, ID tokens for another client,
+    another issuer or with an unverified email, strangers, deactivated
+    users, an unclaimed gateway, auto-join, linking an existing account only
+    when its email is verified or while signed in, a different email
+    refused, the outer ring's person only, posted ID tokens refused.
+  - Login CSRF: Better Auth Expo's authorization proxy closed, so an
+    attacker's sign-in can't be finished in a victim's browser (the Access
+    endpoint, mobile-state and linking variants included).
+  - The mobile app's handoff: the session goes to the app for a one-time
+    code and its secret, never to the browser; a code without its secret,
+    spent or expired is refused; refusals reach the app; a link the app
+    didn't open asks first (and only the gateway's own form goes on); a link
+    opens once.
+  - An untrusted provider that can't take over an existing account;
+    password sign-in turned off (only once an owner can sign in with
+    Access, the setup claim still working, reset links refused); the
+    membership policy on its own (an invitation used once by racing
+    sign-ins).
+- `outer-ring-perimeter.sqlite.test.ts`: the real worker entry with an app
+  behind its binding: an app host serves the person Access vouches for (the
+  apps' own Access application too), never passes Access's headers or
+  cookie to the app, sends a browser whose session belongs to someone else,
+  or comes without Access's word, back to sign in, takes a cookie session
+  on its bypassed `/mcp` only with the `CF_Authorization` cookie, and a
+  personal access token there as always.
+
+The app's side of the mobile handoff is tested in
+`apps/mobile-native/src/lib/access-sign-in.test.ts`. The perimeter's own
+tests (`packages/perimeter/src/headers.test.ts`, `gateway.test.ts`) check
+that every `cf-access-*` header is stripped.
+To try it by hand against a local gateway, `scripts/access-local.mjs` runs a
+mock Access with an outer-ring proxy: `docs/runbooks/cloudflare-access.md`,
+"Test locally".
+
 ---
 
 ## B. Local testing with `everyapp dev`

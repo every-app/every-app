@@ -67,3 +67,32 @@ export async function fetchUserApps(): Promise<UserApp[]> {
 
   return result.data.apps;
 }
+
+export const signInMethodsSchema = z.object({
+  emailPassword: z.boolean(),
+  providers: z.array(z.object({ id: z.string(), label: z.string() })),
+});
+
+export type SignInMethods = z.infer<typeof signInMethodsSchema>;
+
+/** A gateway that doesn't say (one from before Cloudflare Access sign-in). */
+const PASSWORD_ONLY: SignInMethods = { emailPassword: true, providers: [] };
+
+/**
+ * How the gateway lets people sign in: passwords (unless turned off) and
+ * "Continue with <label>" through Cloudflare Access, which the app runs in
+ * the system browser. Falls back to passwords only if the gateway can't say.
+ */
+export async function fetchSignInMethods(): Promise<SignInMethods> {
+  try {
+    const response = await fetch(
+      `${getGatewayUrl()}/api/auth/sign-in-methods`,
+      { method: "GET", headers: { Accept: "application/json" } },
+    );
+    if (!response.ok) return PASSWORD_ONLY;
+    const result = signInMethodsSchema.safeParse(await response.json());
+    return result.success ? result.data : PASSWORD_ONLY;
+  } catch {
+    return PASSWORD_ONLY;
+  }
+}

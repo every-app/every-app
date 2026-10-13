@@ -1,14 +1,17 @@
 import { env } from "cloudflare:workers";
+import { logEvent } from "@every-app/perimeter";
 import { createAuth } from "@/auth";
 import { db } from "@/db";
 import { invitations, members, users } from "@/db/schema";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, ne } from "drizzle-orm";
 import type { AdminUser } from "@/types/admin-user";
 import { UserRepository } from "../repositories/UserRepository";
 import { resolvePrimaryOrganizationRole } from "../org-roles";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { McpConnectionService } from "./McpConnectionService";
+import { accessWouldLetBackIn } from "@/server/access-rejoin";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
+import { requirePasswordSignIn } from "@/server/password-sign-in";
 import {
   forgetOrgContext,
   type OrgContext,
@@ -64,8 +67,16 @@ async function listMembers(ctx: OrgContext) {
  * belongs to no other one). Their deploy tokens and personal access tokens
  * for this organization are revoked in the same transaction, and the AI apps
  * they connected to it right after.
+ *
+ * Someone Cloudflare Access would let straight back in (an auto-join domain,
+ * or everyone the outer ring admits) isn't kept out by deleting their
+ * account: their next Access sign-in would make a new one and join again.
+ * They are deactivated instead, and stay listed so they can be reactivated.
  */
-async function deleteUser(ctx: OrgContext, targetUserId: string) {
+async function deleteUser(
+  ctx: OrgContext,
+  targetUserId: string,
+): Promise<{ deactivatedInstead: boolean }> {
   if (targetUserId === ctx.userId) {
     throw new Error("Cannot delete your own account");
   }
@@ -88,6 +99,36 @@ async function deleteUser(ctx: OrgContext, targetUserId: string) {
     throw new Error("Cannot delete owner accounts");
   }
 
+  const [otherMemberships] = await db
+    .select({ value: count() })
+    .from(members)
+    .where(
+      and(
+        eq(members.userId, targetUserId),
+        ne(members.organizationId, ctx.orgId),
+      ),
+    );
+  const user = await UserRepository.findById(targetUserId);
+  if (
+    (otherMemberships?.value ?? 0) === 0 &&
+    user &&
+    accessWouldLetBackIn(user.email)
+  ) {
+    await UserRepository.deactivate(
+      targetUserId,
+      `Deleted by ${ctx.userId}; deactivated instead, as Cloudflare Access would let them back in`,
+    );
+    await McpConnectionService.revokeForDeactivatedUser(targetUserId);
+    forgetOrgContext(targetUserId);
+    logEvent("member.deactivated", {
+      organizationId: ctx.orgId,
+      userId: targetUserId,
+      by: ctx.userId,
+      reason: "deleted_with_access_auto_join",
+    });
+    return { deactivatedInstead: true };
+  }
+
   await OrganizationMembersRepository.removeMember(targetUserId, ctx.orgId);
   await McpConnectionService.revokeForRemovedMember(targetUserId, ctx.orgId);
   forgetOrgContext(targetUserId);
@@ -100,6 +141,7 @@ async function deleteUser(ctx: OrgContext, targetUserId: string) {
   if ((orgCountResult?.value ?? 0) === 0) {
     await db.delete(users).where(eq(users.id, targetUserId));
   }
+  return { deactivatedInstead: false };
 }
 
 async function cancelInvitation(
@@ -130,6 +172,7 @@ async function cancelInvitation(
 }
 
 async function sendPasswordResetEmail(ctx: OrgContext, userId: string) {
+  await requirePasswordSignIn();
   const membership = await db.query.members.findFirst({
     columns: { id: true },
     where: and(

@@ -39,6 +39,7 @@ const PUBLIC_ERROR_CODES = [
   "CANNOT_MANAGE_OWNER",
   "OWNER_REQUIRED",
   "USER_IN_OTHER_ORGANIZATION",
+  "PASSWORD_SIGN_IN_DISABLED",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

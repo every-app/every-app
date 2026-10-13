@@ -4,6 +4,8 @@ import { admin, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzle } from "drizzle-orm/d1";
 import * as schema from "../db/schema";
+import { readAccessConfig } from "./cloudflare-access/config";
+import { cloudflareAccess } from "./cloudflare-access/plugin";
 import { sharedAuthOptions } from "./shared";
 
 /**
@@ -18,6 +20,11 @@ export const auth = betterAuth({
     ...sharedAuthOptions.plugins,
     admin(),
     organization(),
+    // No schema of its own; registered so the plugin list matches.
+    cloudflareAccess({
+      config: readAccessConfig({}, { allowLoopback: false }),
+      gatewayUrl: undefined,
+    }),
     tanstackStartCookies(),
   ],
   // A Drizzle instance that carries the schema (no live D1 behind it), so

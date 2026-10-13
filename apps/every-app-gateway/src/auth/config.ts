@@ -7,6 +7,13 @@ import { drizzle } from "drizzle-orm/d1";
 import { schema } from "../db";
 import { env } from "cloudflare:workers";
 import { sharedAuthOptions } from "./shared";
+import {
+  ACCESS_PROVIDER_ID,
+  accessConfigFromEnv,
+  cloudflareAccess,
+  isAccessSignInConfigured,
+  isPasswordSignInOn,
+} from "./cloudflare-access";
 import { sendEmail } from "@/server/email/sendEmail";
 import { passwordResetUrl } from "@/server/email/links";
 import { findPendingInvitationByToken } from "@/server/invitation-token";
@@ -25,6 +32,23 @@ function isSignUpEmailPath(path: string): boolean {
 
 function isCreateOrganizationPath(path: string): boolean {
   return path === "/organization/create";
+}
+
+/**
+ * Better Auth endpoints that sign in with, set or reset a password. With
+ * password sign-in off (EMAIL_PASSWORD_SIGN_IN=false, Access sign-in
+ * configured, and an owner able to sign in with Access) they refuse HTTP
+ * requests; server-side calls such as the setup claim's are unaffected.
+ */
+function isPasswordPath(path: string): boolean {
+  return (
+    path === "/sign-in/email" ||
+    path === "/sign-up/email" ||
+    path === "/request-password-reset" ||
+    path === "/forget-password" ||
+    path === "/reset-password" ||
+    path.startsWith("/reset-password/")
+  );
 }
 
 function getInvitationTokenFromRequest(request: Request): string | null {
@@ -119,7 +143,9 @@ async function grantDefaultAppsForMembership(
 }
 
 /**
- * Better Auth organization endpoints the gateway never calls over HTTP.
+ * Better Auth endpoints the gateway never serves over HTTP: most
+ * organization endpoints, and Expo's authorization proxy (below).
+ *
  * Organizations are created only by the setup claim, and membership changes
  * (invites, accepting them, roles, removal) go through gateway server
  * functions, which apply the gateway's own policy and call auth.api
@@ -149,6 +175,13 @@ const DISABLED_AUTH_PATHS = [
   // member's PATs, deploy tokens and app access would survive and work again
   // on a later re-invite. Members leave by an admin removing them.
   "/organization/leave",
+  // Better Auth Expo's bridge into the system browser: it sets the OAuth
+  // state cookie to whatever state the link carries and redirects to any
+  // https URL, so any site could plant its own sign-in's state in a
+  // visitor's browser and finish it there (a login CSRF), and use it as an
+  // open redirect. The mobile app signs in with the gateway's own handoff
+  // instead (cloudflare-access/mobile-sign-in.ts).
+  "/expo-authorization-proxy",
 ];
 
 /**
@@ -205,8 +238,27 @@ export function createAuth() {
   // production builds, off under `vite dev`.
   const isProductionBuild = !import.meta.env.DEV;
 
+  // Cloudflare Access sign-in (OIDC and the outer ring), from secrets.
+  const access = accessConfigFromEnv();
+
   return betterAuth({
     ...sharedAuthOptions,
+    // An Access identity may be linked to an existing account with the same
+    // email: Access verified that email (the provider is trusted), and
+    // Better Auth also requires the account's own email to be verified
+    // (requireLocalEmailVerified, on by default), so an account registered
+    // with someone else's address is never handed to them. Accounts whose
+    // email isn't verified link while signed in (see cloudflare-access/).
+    ...(isAccessSignInConfigured(access)
+      ? {
+          account: {
+            accountLinking: {
+              enabled: true,
+              trustedProviders: [ACCESS_PROVIDER_ID],
+            },
+          },
+        }
+      : {}),
     // Pin the auth origin to the gateway: perimeter calls arrive on app hosts,
     // and without it Better Auth derives the origin per request.
     ...(env.GATEWAY_URL ? { baseURL: env.GATEWAY_URL } : {}),
@@ -275,6 +327,10 @@ export function createAuth() {
           },
         },
       }),
+      // Before the user-level database hooks: it makes an invited or
+      // auto-joining Access user a member before the session hook below
+      // picks the session's organization.
+      cloudflareAccess({ config: access, gatewayUrl: env.GATEWAY_URL }),
       // Must stay last so it sees the Set-Cookie headers of every plugin's
       // after-hooks when auth runs inside TanStack server functions.
       tanstackStartCookies(),
@@ -286,6 +342,13 @@ export function createAuth() {
       before: createAuthMiddleware(async (ctx) => {
         if (!ctx.request) {
           return;
+        }
+
+        if (isPasswordPath(ctx.path) && !(await isPasswordSignInOn(access))) {
+          throw new APIError("FORBIDDEN", {
+            code: "PASSWORD_SIGN_IN_DISABLED",
+            message: `Password sign-in is turned off on this gateway. Sign in with ${access.oidc?.label ?? "Cloudflare Access"}.`,
+          });
         }
 
         if (isSignUpEmailPath(ctx.path)) {

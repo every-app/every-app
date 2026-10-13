@@ -16,6 +16,7 @@ import {
   type OrgContext,
 } from "@/server/organization/orgContext";
 import { InvitationLinkRepository } from "../repositories/InvitationLinkRepository";
+import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { UserRepository } from "../repositories/UserRepository";
 
 type InviteInput = { email: string; role: "member" | "admin" };
@@ -144,6 +145,21 @@ async function accept(
 ) {
   const invitation = await findPendingInvitationByToken(token);
   if (!invitation) {
+    // Signing in with Cloudflare Access accepts a pending invitation for the
+    // verified email by itself; its link then only confirms it.
+    const used = await InvitationLinkRepository.findInvitationByTokenHash(
+      await hashInvitationToken(token),
+    );
+    if (
+      used?.status === "accepted" &&
+      used.email.trim().toLowerCase() === user.email.trim().toLowerCase() &&
+      (await OrganizationMembersRepository.findMembership(
+        user.id,
+        used.organizationId,
+      ))
+    ) {
+      return { organizationId: used.organizationId };
+    }
     throw new PublicError(
       "INVITATION_TOKEN_INVALID",
       "This invitation link is invalid, expired or already used. Ask the person who invited you for a new one.",
