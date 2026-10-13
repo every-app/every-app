@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   authenticate: vi.fn(),
   controlPlaneFetch: vi.fn(),
   providerFetch: vi.fn(),
+  serveAppHostMcp: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({
@@ -41,6 +42,10 @@ vi.mock("./perimeter/drizzleAppRegistry", () => ({
     hasAnyActiveApp = mocks.hasAnyActiveApp;
     findByHostname = mocks.findByHostname;
   },
+}));
+
+vi.mock("./server/toolbus/app-host-mcp", () => ({
+  serveAppHostMcp: mocks.serveAppHostMcp,
 }));
 
 vi.mock("./perimeter/betterAuthAuthenticator", () => ({
@@ -614,6 +619,45 @@ describe("gateway host (control plane)", () => {
     );
     expect(response.status).toBe(200);
     expect(mocks.providerFetch).toHaveBeenCalledOnce();
+  });
+
+  it("serves an app host's /mcp from the ToolBus for a personal token", async () => {
+    mocks.findByHostname.mockResolvedValue(TODO);
+    mocks.authenticate.mockResolvedValue({
+      sub: "user-1",
+      email: "user@example.com",
+      orgId: "org-1",
+      orgRole: "member",
+      credential: {
+        kind: "pat",
+        channel: "api",
+        actor: "pat:t1",
+        scopes: ["*"],
+      },
+    });
+    mocks.serveAppHostMcp.mockResolvedValue(
+      Response.json({ jsonrpc: "2.0", id: 1, result: { tools: [] } }),
+    );
+
+    const response = await server.fetch(
+      new Request("https://todo.example.com/mcp", {
+        method: "POST",
+        headers: {
+          host: "todo.example.com",
+          authorization: "Bearer epat_x",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ result: { tools: [] } });
+    expect(mocks.serveAppHostMcp).toHaveBeenCalledWith(
+      expect.objectContaining({ app: TODO }),
+    );
+    expectSecurityHeaders(response);
+    mocks.serveAppHostMcp.mockReset();
   });
 
   it("does not advertise OAuth on app hosts while it is off", async () => {

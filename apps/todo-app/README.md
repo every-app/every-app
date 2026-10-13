@@ -19,13 +19,15 @@ The Worker is defined in `cloudflare.config.ts`, which builds it from
 `everyapp.config.ts` (D1, KV and the `UserSyncDO` Durable Object) with
 `everyAppWorker()`. Deploy only with `pnpm run deploy` (`everyapp app deploy`).
 
-## MCP
+## Agent tools (MCP)
 
-The app serves a stateless Streamable HTTP MCP endpoint at `/mcp` with tools to
-list, create, update, and delete the authenticated user's todos. The route stays
-private: the Every App gateway authenticates the caller, and the app receives
-only the verified user identity. See [`docs/todo-mcp-example.md`](../../docs/todo-mcp-example.md)
-for the contract and the planned bearer/OAuth boundary.
+`src/tools.ts` defines the app's agent tools with `defineTools()`: list,
+create and update the user's todos, plus a destructive delete that AI clients
+can't use until the gateway supports approvals. The app doesn't speak MCP
+itself. The gateway serves the tools at `https://<app-host>/mcp` (and
+`pnpm dev` serves them locally at `http://todo.localhost:8787/mcp`), and every
+call reaches the app with the verified user. See
+[`docs/todo-mcp-example.md`](../../docs/todo-mcp-example.md).
 
 ## Helpful Resources
 

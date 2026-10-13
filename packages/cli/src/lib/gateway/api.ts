@@ -37,7 +37,7 @@ export class GatewayApiError extends Error {
   }
 }
 
-class OutdatedGatewayError extends GatewayApiError {
+export class OutdatedGatewayError extends GatewayApiError {
   constructor(message = "OUTDATED_GATEWAY") {
     super({ message, status: 404 });
     this.name = "OutdatedGatewayError";
@@ -62,7 +62,7 @@ class GatewayAuthError extends GatewayApiError {
   }
 }
 
-function isOutdatedGatewayError(
+export function isOutdatedGatewayError(
   error: unknown,
 ): error is OutdatedGatewayError {
   return error instanceof OutdatedGatewayError;
@@ -126,6 +126,16 @@ export interface DeletedApp extends AppDeployState {
   /** Registered before org-scoped names (absent from gateways before it). */
   legacyNames?: boolean;
   resources: AppResources;
+}
+
+export interface SyncAppToolsResponse {
+  appId: string;
+  status: "ok" | "empty" | "unsupported" | "error";
+  toolCount: number;
+  catalogHash: string | null;
+  sdkVersion: string | null;
+  warnings: string[];
+  error?: string;
 }
 
 export interface GatewayWhoamiResponse {
@@ -205,6 +215,14 @@ export class GatewayClient {
   activateApp(appId: string): Promise<AppDeployState> {
     return this.request<AppDeployState>(
       `/api/deploy/apps/${encodeURIComponent(appId)}/activate`,
+      { method: "POST" },
+    );
+  }
+
+  /** Ask the gateway to snapshot an app's agent tools (defineTools). */
+  syncAppTools(appId: string): Promise<SyncAppToolsResponse> {
+    return this.request<SyncAppToolsResponse>(
+      `/api/deploy/apps/${encodeURIComponent(appId)}/tools/sync`,
       { method: "POST" },
     );
   }

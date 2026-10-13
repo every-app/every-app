@@ -1,0 +1,41 @@
+{
+  "name": "@every-app/toolbus",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./dev": {
+      "types": "./src/dev/index.ts",
+      "default": "./src/dev/index.ts"
+    }
+  },
+  "scripts": {
+    "types:check": "tsc --noEmit",
+    "format:check": "prettier --check .",
+    "format:write": "prettier . --write",
+    "knip": "knip",
+    "test": "vitest run --silent",
+    "test:conformance": "vitest run --config vitest.conformance.config.ts",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@every-app/sdk": "workspace:*",
+    "@modelcontextprotocol/server": "2.3.1"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251014.0",
+    "@types/node": "^22.18.13",
+    "jose": "^6.2.12",
+    "knip": "^5.66.4",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.2",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.2.6",
+    "zod": "^4.2.0"
+  }
+}

@@ -38,8 +38,8 @@ importers:
         specifier: ^2.6.1
         version: 2.6.1
       zod:
-        specifier: ^4.1.13
-        version: 4.1.13
+        specifier: ^4.2.0
+        version: 4.6.5
     devDependencies:
       '@every-app/perimeter':
         specifier: workspace:*
@@ -47,6 +47,9 @@ importers:
       '@every-app/sdk':
         specifier: workspace:*
         version: link:../sdk
+      '@every-app/toolbus':
+        specifier: workspace:*
+        version: link:../toolbus
       '@types/node':
         specifier: ^22.18.13
         version: 22.19.1
@@ -1757,9 +1760,6 @@ packages:
   youch@4.1.0-beta.10:
     resolution: {integrity: sha512-rLfVLB4FgQneDr0dv1oddCVZmKjcJ6yX6mS4pU82Mq/Dt9a3cLZQ62pDBL4AUO+uVrCvtWz3ZFUL2HFAFJ/BXQ==}
 
-  zod@4.1.13:
-    resolution: {integrity: sha512-AvvthqfqrAhNH9dnfmrfKzX5upOdjUVJYFqNSlkmGf64gRaTzlPwz99IHYnVs28qYAybvAlBV+H7pn0saFY4Ig==}
-
   zod@4.6.5:
     resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
 
@@ -2694,7 +2694,7 @@ snapshots:
       smol-toml: 1.5.2
       strip-json-comments: 5.0.2
       typescript: 5.9.3
-      zod: 4.1.13
+      zod: 4.6.5
 
   lilconfig@2.1.0: {}
 
@@ -3196,7 +3196,5 @@ snapshots:
       '@speed-highlight/core': 1.2.24
       cookie: 1.1.1
       youch-core: 0.3.3
-
-  zod@4.1.13: {}
 
   zod@4.6.5: {}

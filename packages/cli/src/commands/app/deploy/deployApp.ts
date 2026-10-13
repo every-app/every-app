@@ -27,6 +27,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { version as cliVersion } from "../../../../package.json";
 import { appBindingName } from "@every-app/perimeter/manifest";
+import { syncAppToolsWithGateway } from "@/commands/app/deploy/steps/syncTools";
 import { buildApp } from "@/lib/app/buildApp";
 import {
   MISSING_CLOUDFLARE_CONFIG,
@@ -385,6 +386,18 @@ export async function deployApp(
     seams: options.reconcile,
   });
   await activate({ client, appId: manifest.id, sleep: options.sleep });
+
+  // The gateway reaches the app over the binding just made, so the tools
+  // snapshot comes once the app is active. It never throws: the app is
+  // already live.
+  await syncAppToolsWithGateway({
+    gatewayUrl,
+    appId: manifest.id,
+    mcpUrl: `https://${registration.hostname}/mcp`,
+    out,
+    verbose: options.verbose,
+    client,
+  });
 
   if (install?.routing === "custom-domains") {
     if (published.includes(registration.hostname)) {

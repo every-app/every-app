@@ -207,6 +207,12 @@ export const ManifestSchema = z
     install: InstallSchema.optional(),
     /** Database migration strategy for the app's D1 database. */
     migrations: MigrationsSchema.optional(),
+    /**
+     * Who answers `<app-host>/mcp`. "gateway" (the default) serves it from
+     * the tools the app defines with `defineTools()`; "app" leaves the path
+     * to the app's own MCP server.
+     */
+    mcp: z.enum(["gateway", "app"]).optional(),
   })
   .passthrough();
 export type Manifest = z.infer<typeof ManifestSchema>;
@@ -236,6 +242,16 @@ export type EveryAppManifest = z.infer<typeof ManifestSchemaStrict>;
 
 /** Reserved internal namespace. Nothing under it may ever be public. */
 export const EVERYAPP_INTERNAL_PREFIX = "/__everyapp";
+
+/**
+ * App ids the platform keeps: "everyapp" prefixes the gateway's own MCP tools
+ * (`everyapp_<tool>`), so no app may register under it.
+ */
+const RESERVED_APP_IDS: readonly string[] = ["everyapp"];
+
+export function isReservedAppId(id: string): boolean {
+  return RESERVED_APP_IDS.includes(id);
+}
 
 export class ManifestError extends Error {
   constructor(message: string) {
@@ -282,6 +298,11 @@ export function validateManifestStrict(input: unknown): EveryAppManifest {
     );
   }
   const manifest = parsed.data;
+  if (isReservedAppId(manifest.id)) {
+    throw new ManifestError(
+      `Invalid everyapp.config: id "${manifest.id}" is reserved for the platform.`,
+    );
+  }
 
   for (const route of manifest.public ?? []) {
     assertPublicPathIsSafe(route.path);

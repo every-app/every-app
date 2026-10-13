@@ -13,7 +13,11 @@
  * same instance serves `todo.localhost:8787` and portless's per-worktree
  * `todo.fix-ui.everyapp.localhost` with no hardcoded base host.
  */
-import { handleGatewayRequest, type GatewayDeps } from "../gateway";
+import {
+  handleGatewayRequest,
+  type GatewayDeps,
+  type McpInterceptInput,
+} from "../gateway";
 import { InMemoryAppRegistry, type RegisteredApp } from "../registry";
 import type { ParsedHost } from "../host";
 import type { AuthenticatedSession, SessionAuthenticator } from "../session";
@@ -31,6 +35,7 @@ export type { ParsedHost } from "../host";
 export type { RegisteredApp } from "../registry";
 export type { AppFetcher } from "../getAppFetcher";
 export type { SessionAuthenticator, AuthenticatedSession } from "../session";
+export type { McpInterceptInput } from "../gateway";
 
 /** Issuer for locally-minted dev identity tokens. */
 export const DEV_ISSUER = "https://gateway.dev.localhost";
@@ -60,6 +65,8 @@ export interface DevGatewayConfig {
   authenticator?: SessionAuthenticator;
   /** Seam override for tests; defaults to real service bindings. */
   fetcherFor?(env: Record<string, unknown>, app: RegisteredApp): AppFetcher;
+  /** Serve `<app>.localhost/mcp` from a local ToolBus (see GatewayDeps). */
+  interceptMcp?(input: McpInterceptInput): Promise<Response | null>;
 }
 
 /** Header/cookie that makes the stub authenticator treat a request as anonymous. */
@@ -105,6 +112,7 @@ export function createDevGatewayHandler(config: DevGatewayConfig) {
     resolveApp: async (host: ParsedHost, reg) =>
       host.appLabel ? reg.findByAppId(host.appLabel) : null,
     fetcherFor: config.fetcherFor ?? getAppFetcher,
+    interceptMcp: config.interceptMcp,
   };
 
   return (request: Request): Promise<Response> =>

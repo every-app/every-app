@@ -1,4 +1,8 @@
-export { handleGatewayRequest, type GatewayDeps } from "./gateway";
+export {
+  handleGatewayRequest,
+  type GatewayDeps,
+  type McpInterceptInput,
+} from "./gateway";
 export { parseHost, type ParsedHost } from "./host";
 export {
   evaluateCsrf,
@@ -24,6 +28,7 @@ export {
 } from "./headers";
 export {
   isInternalPath,
+  isReservedToolsPath,
   matchPublicRoute,
   normalizePath,
   type NormalizedPath,

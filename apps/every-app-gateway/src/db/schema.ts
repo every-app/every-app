@@ -6,3 +6,4 @@ export * from "./owner-bootstrap.schema";
 export * from "./owner-setup-tokens.schema";
 export * from "./invitation-link-tokens.schema";
 export * from "./organization-keys.schema";
+export * from "./mcp.schema";

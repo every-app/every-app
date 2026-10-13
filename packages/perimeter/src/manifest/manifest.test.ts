@@ -9,6 +9,7 @@ import {
   isReservedName,
   registryWorkerNameFor,
   resourceNameFor,
+  isReservedAppId,
 } from "./manifest";
 
 describe("validateManifest", () => {
@@ -298,6 +299,36 @@ describe("access, ai and serverFnGuard manifest fields", () => {
     expect(() =>
       validateManifestStrict({ id: "a", ai: { routez: ["/v1/files"] } }),
     ).toThrow(ManifestError);
+  });
+});
+
+describe("mcp manifest field", () => {
+  it("accepts gateway or app in both schemas", () => {
+    for (const mcp of ["gateway", "app"]) {
+      const input = { id: "todo", mcp };
+      expect(validateManifest(input)).toMatchObject(input);
+      expect(validateManifestStrict(input)).toMatchObject(input);
+    }
+    expect(() => validateManifest({ id: "todo", mcp: "both" })).toThrow(
+      ManifestError,
+    );
+  });
+});
+
+describe("reserved app ids", () => {
+  it("refuses the platform's own prefix when an app is authored", () => {
+    expect(isReservedAppId("everyapp")).toBe(true);
+    expect(isReservedAppId("everyapp-notes")).toBe(false);
+    expect(() => validateManifestStrict({ id: "everyapp" })).toThrow(
+      'id "everyapp" is reserved',
+    );
+    expect(validateManifestStrict({ id: "everyapp-notes" }).id).toBe(
+      "everyapp-notes",
+    );
+  });
+
+  it("still reads an already-registered row tolerantly", () => {
+    expect(validateManifest({ id: "everyapp" }).id).toBe("everyapp");
   });
 });
 

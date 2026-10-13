@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   normalizePath,
   isInternalPath,
+  isReservedToolsPath,
   matchPublicRoute,
 } from "./publicRoutes";
 import type { PublicRoute } from "./manifest/manifest";
@@ -71,6 +72,50 @@ describe("isInternalPath", () => {
     expect(isInternalPath("/__everyapp/tools/call")).toBe(true);
     expect(isInternalPath("/__everyappx")).toBe(false);
     expect(isInternalPath("/health")).toBe(false);
+  });
+});
+
+describe("isReservedToolsPath", () => {
+  // Raw paths as they could arrive on the wire, before any URL parser
+  // resolves dot segments (new Request() would normalize most of these).
+  it("finds the tools contract under any spelling", () => {
+    for (const raw of [
+      "/__everyapp/tools",
+      "/__everyapp/tools/",
+      "/__everyapp/tools/call",
+      "/__everyapp/tools/list",
+      "/__EVERYAPP/Tools/CALL",
+      "/__everyapp//tools//call",
+      "/./__everyapp/./tools/list",
+      "/x/../__everyapp/tools/call",
+      "/x/y/../../__everyapp/tools/call",
+      "/../__everyapp/tools/call",
+      "/x/%2e%2e/__everyapp/tools/call",
+      "/x/%2E%2E/__everyapp/tools/call",
+      "/x/..%2f__everyapp/tools/call",
+      "/x/..%2F__everyapp%2Ftools%2Fcall",
+      "/..%5c__everyapp%5ctools%5ccall",
+      "/\\__everyapp\\tools\\call",
+      "/__everyapp/tools%2f",
+      "/__everyapp%2ftools%2fcall",
+      "/__everyapp%252ftools%252fcall",
+      "/%5f%5feveryapp/tools/call",
+      "/__everyapp/tools/call/%zz",
+    ]) {
+      expect(isReservedToolsPath(raw), raw).toBe(true);
+    }
+  });
+
+  it("leaves look-alikes and the rest of the namespace alone", () => {
+    for (const raw of [
+      "/__everyapp/toolsx",
+      "/__everyapp/ping",
+      "/tools/call",
+      "/api/__everyapp/tools",
+      "/x/__everyapp/tools/../../call",
+    ]) {
+      expect(isReservedToolsPath(raw), raw).toBe(false);
+    }
   });
 });
 

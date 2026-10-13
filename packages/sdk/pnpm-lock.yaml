@@ -36,6 +36,9 @@ importers:
       vitest:
         specifier: ^3.2.6
         version: 3.2.7(@types/node@22.19.2)(tsx@4.21.0)
+      zod:
+        specifier: ^4.2.0
+        version: 4.6.7
 
 packages:
   "@cloudflare/workers-types@4.20251210.0":
@@ -1193,6 +1196,12 @@ packages:
     engines: { node: ">=8" }
     hasBin: true
 
+  zod@4.6.7:
+    resolution:
+      {
+        integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==,
+      }
+
 snapshots:
   "@cloudflare/workers-types@4.20251210.0": {}
 
@@ -1770,3 +1779,5 @@ snapshots:
     dependencies:
       siginfo: 2.0.0
       stackback: 0.0.2
+
+  zod@4.6.7: {}

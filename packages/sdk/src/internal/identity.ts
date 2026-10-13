@@ -26,11 +26,14 @@ import {
   PUBLIC_KEYS_ENV,
   PUBLIC_MARKER_SUB,
   assertPublicMarkerClaims,
+  assertSystemClaims,
   identityClaimsToEveryAppUser,
   ProtocolClaimsError,
   type EveryAppUser,
   type IdentityChannel,
   type IdentityTokenType,
+  type SystemClaims,
+  type SystemTokenPurpose,
 } from "./protocol.js";
 
 export {
@@ -148,6 +151,26 @@ export async function verifyIdentityJwt(
 }
 
 /**
+ * Verify the gateway's system token (the value of `x-everyapp-system`)
+ * fail-closed, for exactly one purpose. A user identity or public marker is
+ * never a system token, and a system token is never an identity.
+ */
+export async function verifySystemJwt(
+  token: string,
+  options: VerifyOptions & { purpose: SystemTokenPurpose },
+): Promise<SystemClaims> {
+  const payload = await verifyPinnedJwt(token, options, "system");
+  try {
+    return assertSystemClaims(payload, options.purpose);
+  } catch (error) {
+    if (error instanceof ProtocolClaimsError) {
+      throw new IdentityError(error.message);
+    }
+    throw error;
+  }
+}
+
+/**
  * The shared fail-closed verification core: pinned alg/kid, `none` rejected,
  * `aud` checked, multi-key (current + next). Returns the verified payload.
  */
@@ -178,7 +201,7 @@ async function verifyPinnedJwt(
   if (!header.kid || !allowedKids.includes(header.kid)) {
     throw new IdentityError(`unexpected kid "${header.kid}"`);
   }
-  if (expectedTyp === "user" && !options.issuer) {
+  if (expectedTyp !== "public" && !options.issuer) {
     throw new IdentityError(
       `${ISSUER_ENV} not configured — deploy with the Every App CLI or provide an explicit issuer.`,
     );
@@ -187,7 +210,7 @@ async function verifyPinnedJwt(
   const verifyOpts = {
     algorithms: [IDENTITY_ALG],
     audience: options.audience,
-    requiredClaims: ["exp"],
+    requiredClaims: expectedTyp === "system" ? ["exp", "iat"] : ["exp"],
     ...(options.issuer ? { issuer: options.issuer } : {}),
     ...(options.now ? { currentDate: new Date(options.now) } : {}),
   };
@@ -255,17 +278,13 @@ export interface RequestIdentityOptions {
 }
 
 /**
- * Resolve identity for an incoming proxied request. Public routes carry a
- * gateway-SIGNED marker in `x-everyapp-public` and resolve to
- * `{ user: null, isPublic: true }` only after the marker verifies. Everything
- * else requires a valid identity JWT. Throws {@link IdentityError} on any
- * problem — including a bare/forged public header — so a re-exposed worker
- * fails closed.
+ * The verification options for a request: keys from options or env, the
+ * expected issuer, and the dev-kid opt-in. Throws {@link ConfigurationError}
+ * when no key set is configured.
  */
-export async function getIdentityFromRequest(
-  request: Request,
+export function resolveVerifyOptions(
   options: RequestIdentityOptions,
-): Promise<IdentityResult> {
+): VerifyOptions {
   const publicKeys =
     options.publicKeys ??
     parsePublicKeys(
@@ -278,7 +297,7 @@ export async function getIdentityFromRequest(
     options.allowDevIdentities ??
     (typeof devEnv === "string" &&
       (devEnv === "1" || devEnv.toLowerCase() === "true"));
-  const verifyOptions = {
+  return {
     publicKeys,
     audience: options.audience,
     issuer:
@@ -287,6 +306,21 @@ export async function getIdentityFromRequest(
     allowDevIdentities,
     now: options.now,
   };
+}
+
+/**
+ * Resolve identity for an incoming proxied request. Public routes carry a
+ * gateway-SIGNED marker in `x-everyapp-public` and resolve to
+ * `{ user: null, isPublic: true }` only after the marker verifies. Everything
+ * else requires a valid identity JWT. Throws {@link IdentityError} on any
+ * problem — including a bare/forged public header — so a re-exposed worker
+ * fails closed.
+ */
+export async function getIdentityFromRequest(
+  request: Request,
+  options: RequestIdentityOptions,
+): Promise<IdentityResult> {
+  const verifyOptions = resolveVerifyOptions(options);
 
   const publicMarker = request.headers.get(PUBLIC_HEADER);
   if (publicMarker) {

@@ -94,3 +94,59 @@ describe("createRemoteAuthenticator", () => {
     expect(onHint.mock.calls[0]![0]).toContain("could not reach the gateway");
   });
 });
+
+describe("createRemoteAuthenticator with a personal access token", () => {
+  it("forwards an epat_ bearer instead of the cookie and keeps its credential", async () => {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      expect(init?.headers).toEqual({ authorization: "Bearer epat_abc" });
+      return jsonResponse({
+        session: {
+          sub: "u1",
+          email: "real@x.com",
+          orgId: "org1",
+          orgRole: "owner",
+          credential: {
+            kind: "pat",
+            channel: "api",
+            actor: "pat:tok1",
+            scopes: ["mcp:read"],
+          },
+        },
+        hasAccess: true,
+      });
+    });
+    const auth = createRemoteAuthenticator({
+      gatewayUrl: GATEWAY,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    const session = await auth.authenticate(
+      new Request("http://todo.everyapp.localhost/mcp", {
+        method: "POST",
+        headers: { authorization: "Bearer epat_abc", cookie: "c=1" },
+      }),
+    );
+    expect(session?.credential).toEqual({
+      kind: "pat",
+      channel: "api",
+      actor: "pat:tok1",
+      scopes: ["mcp:read"],
+    });
+  });
+
+  it("never forwards other bearer credentials", async () => {
+    const fetchImpl = vi.fn();
+    const auth = createRemoteAuthenticator({
+      gatewayUrl: GATEWAY,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    expect(
+      await auth.authenticate(
+        new Request("http://todo.everyapp.localhost/mcp", {
+          headers: { authorization: "Bearer sk-live-other" },
+        }),
+      ),
+    ).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+

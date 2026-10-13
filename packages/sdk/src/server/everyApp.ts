@@ -1,7 +1,7 @@
 /**
  * `everyApp()` — the app-side identity boundary.
  *
- *   export default everyApp(handler);
+ *   export default everyApp(handler, { tools });
  *
  * The wrapper verifies the gateway-injected identity before app code runs,
  * stores the result on the original Request, and then delegates to the
@@ -9,6 +9,8 @@
  * `env.EVERYAPP_APP_ID`, which `everyAppWorker()` sets from the manifest, so
  * the Worker never imports `everyapp.config.ts` (the Cloudflare Vite plugin
  * hides every file `cloudflare.config.ts` imports from the Worker in dev).
+ * It also answers the gateway's internal tools contract
+ * (`/__everyapp/tools/*`) for the app's `defineTools()` catalog.
  */
 import {
   APP_ID_ENV,
@@ -20,7 +22,10 @@ import {
   getIdentityFromRequest,
   type EveryAppUser,
   type IdentityResult,
+  type RequestIdentityOptions,
 } from "../internal/index.js";
+import type { ToolSet } from "./tools.js";
+import { handleToolsRequest } from "./toolsEndpoint.js";
 
 export { ConfigurationError, IdentityError };
 export type { EveryAppUser, IdentityResult };
@@ -47,6 +52,11 @@ export interface EveryAppOptions {
    * Never enable this in production.
    */
   allowDevIdentities?: boolean;
+  /**
+   * Agent tools from `defineTools()`. The gateway snapshots them at deploy
+   * and serves them to MCP clients; see `defineTools`.
+   */
+  tools?: ToolSet;
   /** Override for tests. */
   now?: number;
 }
@@ -128,17 +138,17 @@ function misconfigured(message: string): Response {
   return Response.json({ error: "misconfigured", message }, { status: 500 });
 }
 
-async function resolveIdentity(
-  request: Request,
+function identityOptions(
   env: unknown,
   config: VerificationConfig,
-): Promise<IdentityResult> {
+  audience: string,
+): RequestIdentityOptions {
   const devEnv =
     env && typeof env === "object"
       ? (env as Record<string, unknown>)[DEV_ENV]
       : undefined;
-  return getIdentityFromRequest(request, {
-    audience: audienceFor(env, config),
+  return {
+    audience,
     issuer: config.issuer ?? envValue(env, ISSUER_ENV),
     publicKeys: config.publicKeys,
     env: env as Record<string, unknown> | undefined,
@@ -148,7 +158,18 @@ async function resolveIdentity(
       (typeof devEnv === "string" &&
         (devEnv === "1" || devEnv.toLowerCase() === "true")),
     now: config.now,
-  });
+  };
+}
+
+async function resolveIdentity(
+  request: Request,
+  env: unknown,
+  config: VerificationConfig,
+): Promise<IdentityResult> {
+  return getIdentityFromRequest(
+    request,
+    identityOptions(env, config, audienceFor(env, config)),
+  );
 }
 
 function rememberIdentity(request: Request, identity: IdentityResult): void {
@@ -202,24 +223,70 @@ export function hasScope(user: EveryAppUser, scope: string): boolean {
   return user.scopes.includes("*") || user.scopes.includes(scope);
 }
 
+function isManifest(value: unknown): value is EveryAppManifestLike {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { id?: unknown }).id === "string"
+  );
+}
+
+/** Wrap a Worker fetch handler with Every App identity verification. */
+export function everyApp<TEnv = Record<string, unknown>>(
+  handler: EveryAppHandler<TEnv>,
+  options?: EveryAppOptions,
+): EveryAppExport<TEnv>;
 /**
- * Wrap a Worker fetch handler with Every App identity verification.
- *
- * @param manifest Deprecated: the app id now comes from `env.EVERYAPP_APP_ID`.
- *   When passed, it must match that value.
+ * @deprecated Drop the manifest: the app id now comes from
+ *   `env.EVERYAPP_APP_ID`. When passed, it must match that value.
  */
 export function everyApp<TEnv = Record<string, unknown>>(
   handler: EveryAppHandler<TEnv>,
-  manifest?: EveryAppManifestLike,
-  options: EveryAppOptions = {},
+  manifest: EveryAppManifestLike | undefined,
+  options?: EveryAppOptions,
+): EveryAppExport<TEnv>;
+export function everyApp<TEnv = Record<string, unknown>>(
+  handler: EveryAppHandler<TEnv>,
+  manifestOrOptions?: EveryAppManifestLike | EveryAppOptions,
+  legacyOptions: EveryAppOptions = {},
 ): EveryAppExport<TEnv> {
+  const manifest = isManifest(manifestOrOptions)
+    ? manifestOrOptions
+    : undefined;
+  const options =
+    manifest || manifestOrOptions === undefined
+      ? legacyOptions
+      : (manifestOrOptions as EveryAppOptions);
   const config = configFrom(manifest, options);
 
   return {
     async fetch(request: Request, env: TEnv, ctx: ExecutionContextLike) {
+      let audience: string;
+      try {
+        audience = audienceFor(env, config);
+      } catch (err) {
+        if (err instanceof ConfigurationError) {
+          console.error(err);
+          return misconfigured(err.message);
+        }
+        throw err;
+      }
+
+      // The reserved tools contract carries its own gateway-minted tokens and
+      // never reaches the app's handler.
+      const toolsResponse = await handleToolsRequest(request, env, ctx, {
+        toolSet: options.tools,
+        appId: audience,
+        identity: identityOptions(env, config, audience),
+      });
+      if (toolsResponse) return toolsResponse;
+
       let identity: IdentityResult;
       try {
-        identity = await resolveIdentity(request, env, config);
+        identity = await getIdentityFromRequest(
+          request,
+          identityOptions(env, config, audience),
+        );
         rememberIdentity(request, identity);
       } catch (err) {
         if (err instanceof ConfigurationError) {

@@ -7,19 +7,19 @@
  * Auth user + active org and returns it; the dev runner then mints a (dev-kid)
  * identity JWT for that real user. This gives a genuine "log in for real
  * locally" loop without spawning the gateway or mounting the perimeter in it.
+ *
+ * A personal access token (`Authorization: Bearer epat_…`, e.g. from an MCP
+ * client) is forwarded instead of the cookie, and the gateway verifies it
+ * exactly as production does.
  */
+import { extractEveryAppBearer } from "@every-app/perimeter";
 import type {
   SessionAuthenticator,
   AuthenticatedSession,
 } from "@every-app/perimeter/dev";
 
 interface IdentityResponse {
-  session: {
-    sub: string;
-    email: string;
-    orgId: string;
-    orgRole: string;
-  } | null;
+  session: AuthenticatedSession | null;
   hasAccess?: boolean;
   reason?: string | null;
 }
@@ -55,13 +55,19 @@ export function createRemoteAuthenticator(
   return {
     async authenticate(request: Request): Promise<AuthenticatedSession | null> {
       const cookie = request.headers.get("cookie");
-      if (!cookie) {
+      const token = extractEveryAppBearer(request.headers);
+      if (!cookie && !token) {
         hintOnce("no_session");
         return null;
       }
+      // A personal token wins and is never mixed with the cookie, as on the
+      // real perimeter.
+      const headers: Record<string, string> = token
+        ? { authorization: `Bearer ${token}` }
+        : { cookie: cookie! };
       let res: Response;
       try {
-        res = await doFetch(endpoint, { headers: { cookie } });
+        res = await doFetch(endpoint, { headers });
       } catch (err) {
         options.onHint?.(
           `mirror: could not reach the gateway at ${options.gatewayUrl} (${String(

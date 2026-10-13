@@ -1,5 +1,11 @@
 import { db } from "@/db";
-import { apps, userAccessTokens, userAppAccess } from "@/db/schema";
+import {
+  apps,
+  appTools,
+  appToolCatalogs,
+  userAccessTokens,
+  userAppAccess,
+} from "@/db/schema";
 import { and, count, eq, isNull, ne } from "drizzle-orm";
 
 /** Status of a deleted app's tombstone row (see {@link tombstone}). */
@@ -235,7 +241,8 @@ async function update(id: string, data: UpdateApp) {
  * binding, and its slug, hostname and worker name stay reserved to this
  * organization. (Dropping the row would let another org register the same
  * slug, and the old Worker would accept identity tokens minted for it.)
- * Everyone's access and any personal access tokens bound to it go with it.
+ * Everyone's access, any personal access tokens bound to it and its agent
+ * tools snapshot go with it.
  */
 async function tombstone(id: string, organizationId: string) {
   const now = new Date();
@@ -260,6 +267,22 @@ async function tombstone(id: string, organizationId: string) {
           eq(userAccessTokens.appRowId, id),
           eq(userAccessTokens.organizationId, organizationId),
           isNull(userAccessTokens.revokedAt),
+        ),
+      ),
+    db
+      .delete(appTools)
+      .where(
+        and(
+          eq(appTools.appRowId, id),
+          eq(appTools.organizationId, organizationId),
+        ),
+      ),
+    db
+      .delete(appToolCatalogs)
+      .where(
+        and(
+          eq(appToolCatalogs.appRowId, id),
+          eq(appToolCatalogs.organizationId, organizationId),
         ),
       ),
   ]);

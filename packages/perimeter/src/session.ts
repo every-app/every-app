@@ -21,6 +21,21 @@ export interface AuthenticatedSession {
   };
 }
 
+/**
+ * Whether a credential is for MCP only: every one of its scopes is an `mcp:`
+ * scope (a personal token created with `["mcp:read"]`, say). Such a
+ * credential reaches an app's `/mcp` and nothing else, so a read-only token
+ * stays read-only even though apps don't check scopes on their own routes.
+ * Browser sessions carry no credential, and a token created without scopes
+ * holds `*`, full access.
+ */
+export function isMcpOnlyCredential(
+  credential: AuthenticatedSession["credential"],
+): boolean {
+  const scopes = credential?.scopes ?? [];
+  return scopes.length > 0 && scopes.every((scope) => scope.startsWith("mcp:"));
+}
+
 export interface SessionAuthenticator {
   /** Resolve the session from the request cookie, or null if unauthenticated. */
   authenticate(request: Request): Promise<AuthenticatedSession | null>;

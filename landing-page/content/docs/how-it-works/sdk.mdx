@@ -67,6 +67,28 @@ export const ensureUserMiddleware = createMiddleware({
 
 Two rules keep this safe: the user id always comes from the SDK (never from client input), and every user-scoped query filters by that id.
 
+## Agent tools — `defineTools()`
+
+To let AI clients (Claude, Cursor, any MCP client) act in your app, describe the actions with `defineTools()` and pass them to `everyApp()`. Your app never speaks MCP: the Gateway snapshots the tools when you deploy and serves them at `https://<app-host>/mcp`, and each call reaches your handler with the verified user.
+
+```ts
+import { defineTools, everyApp, ToolError } from "@every-app/sdk/server";
+import { z } from "zod"; // zod >= 4.2, or any Standard JSON Schema validator
+
+export const tools = defineTools({
+  list_todos: {
+    description: "List the user's todos.",
+    risk: "read", // read | write | destructive
+    input: z.object({}).strict(),
+    handler: async (_input, { user }) => listTodos(user.id),
+  },
+});
+
+export default everyApp(handler, manifest, { tools });
+```
+
+Destructive tools stay hidden from AI clients until approvals exist, and write tools are hidden from read-only tokens. Throw `ToolError` for messages the model may read; any other error is reported only as an internal error with a reference. MCP clients connect with a personal access token; your app's own pages can also call `/mcp` with the user's session (same-origin only).
+
 ## `everyapp.config.ts` — the manifest
 
 One file declares everything the platform needs to know about your app. The CLI reads it to provision resources, deploy, and run local dev; the gateway reads it to route requests and decide which routes are public.

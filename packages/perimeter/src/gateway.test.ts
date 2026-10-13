@@ -59,7 +59,7 @@ const OAUTH_SESSION: AuthenticatedSession = {
     kind: "oauth",
     channel: "api",
     actor: "oauth:grant_1",
-    scopes: ["mcp:read"],
+    scopes: ["todos:read"],
   },
 };
 
@@ -703,7 +703,7 @@ describe("handleGatewayRequest", () => {
 
   it("(e) /__everyapp/* is never public — 401 from outside without a session", async () => {
     const res = await handleGatewayRequest(
-      req("/__everyapp/tools/call", {
+      req("/__everyapp/ping", {
         method: "POST",
         headers: { "sec-fetch-site": "same-origin" },
       }),
@@ -1256,5 +1256,313 @@ describe("Worker version overrides", () => {
     );
     expect(res.status).toBe(200);
     expect(forwarded).toBeNull();
+  });
+});
+
+describe("internal tools contract", () => {
+  it("404s /__everyapp/tools/* from outside, signed in or not, under any spelling", async () => {
+    const fetcher = vi.fn();
+    // These go through new Request(), which resolves dot segments (so the
+    // "/./" and "/x/../" spellings arrive canonical). The raw, unparsed
+    // spellings are covered by isReservedToolsPath's own tests.
+    const spellings = [
+      "/__everyapp/tools/call",
+      "/__everyapp/tools/list",
+      "/__everyapp/tools",
+      "/__everyapp/tools/",
+      "/__EVERYAPP/Tools/call",
+      "/__everyapp//tools/call",
+      "/__everyapp/./tools/call",
+      "/x/../__everyapp/tools/call",
+      "/x/%2e%2e/__everyapp/tools/call",
+      "/__everyapp%2ftools%2fcall",
+      "/__everyapp%252ftools%252fcall",
+      "/__everyapp%5ctools%5ccall",
+      "/%5f%5feveryapp/tools/call",
+      "/__everyapp/tools/call/%zz",
+    ];
+    for (const session of [SESSION, PAT_SESSION, null]) {
+      for (const path of spellings) {
+        const res = await handleGatewayRequest(
+          req(path, {
+            method: "POST",
+            headers: {
+              "sec-fetch-site": "same-origin",
+              ...(session?.credential
+                ? { authorization: "Bearer epat_x" }
+                : {}),
+            },
+          }),
+          deps({
+            authenticator: {
+              authenticate: async () => session,
+              hasAppAccess: async () => true,
+            },
+            fetcherFor: () => ({ fetch: fetcher }),
+          }),
+        );
+        expect(res.status, path).toBe(404);
+        expectSecurityHeaders(res);
+      }
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("leaves look-alike paths to the app", async () => {
+    for (const path of [
+      "/__everyapp/toolsx",
+      "/tools/call",
+      "/api/__everyapp/tools",
+    ]) {
+      const res = await handleGatewayRequest(
+        req(path, {
+          method: "POST",
+          headers: { "sec-fetch-site": "same-origin" },
+        }),
+        deps(),
+      );
+      expect(res.status, path).toBe(200);
+    }
+  });
+});
+
+describe("ToolBus /mcp interception", () => {
+  const MCP_POST = {
+    method: "POST",
+    headers: {
+      authorization: "Bearer epat_valid",
+      "content-type": "application/json",
+    },
+    body: "{}",
+  } satisfies RequestInit;
+
+  function patDeps(over: Partial<GatewayDeps> = {}): GatewayDeps {
+    return deps({
+      authenticator: {
+        authenticate: async () => PAT_SESSION,
+        hasAppAccess: async () => true,
+      },
+      ...over,
+    });
+  }
+
+  it("hands an authenticated /mcp request to the ToolBus instead of the app", async () => {
+    const fetcher = vi.fn();
+    const interceptMcp = vi.fn(async () =>
+      Response.json({ jsonrpc: "2.0", id: 1, result: {} }),
+    );
+    const res = await handleGatewayRequest(
+      req("/mcp", MCP_POST),
+      patDeps({ interceptMcp, fetcherFor: () => ({ fetch: fetcher }) }),
+    );
+
+    expect(res.status).toBe(200);
+    expectSecurityHeaders(res);
+    expect(interceptMcp).toHaveBeenCalledOnce();
+    expect(interceptMcp).toHaveBeenCalledWith({
+      request: expect.any(Request),
+      app: TODO,
+      session: PAT_SESSION,
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("proxies to the app when the ToolBus declines (no catalog)", async () => {
+    const res = await handleGatewayRequest(
+      req("/mcp", MCP_POST),
+      patDeps({ interceptMcp: async () => null }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { identity: string | null };
+    expect(body.identity).toEqual(expect.any(String));
+  });
+
+  it("challenges and refuses before the ToolBus ever runs", async () => {
+    const interceptMcp = vi.fn(async () => new Response("served"));
+    const unauthenticated = await handleGatewayRequest(
+      req("/mcp", { method: "POST" }),
+      deps({
+        interceptMcp,
+        authenticator: {
+          authenticate: async () => null,
+          hasAppAccess: async () => true,
+        },
+      }),
+    );
+    expect(unauthenticated.status).toBe(401);
+    expect(unauthenticated.headers.get("www-authenticate")).toBe(
+      'Bearer realm="every-app"',
+    );
+
+    const noAccess = await handleGatewayRequest(
+      req("/mcp", MCP_POST),
+      patDeps({
+        interceptMcp,
+        authenticator: {
+          authenticate: async () => PAT_SESSION,
+          hasAppAccess: async () => false,
+        },
+      }),
+    );
+    expect(noAccess.status).toBe(403);
+
+    const crossSiteCookie = await handleGatewayRequest(
+      req("/mcp", {
+        method: "POST",
+        headers: { cookie: "session=abc", origin: "https://evil.example" },
+      }),
+      deps({ interceptMcp }),
+    );
+    expect(crossSiteCookie.status).toBe(403);
+    expect(interceptMcp).not.toHaveBeenCalled();
+  });
+
+  it("serves a same-origin cookie session", async () => {
+    const interceptMcp = vi.fn(async () => new Response("served"));
+    const res = await handleGatewayRequest(
+      req("/mcp", {
+        method: "POST",
+        headers: { cookie: "session=abc", origin: "https://todo.example.com" },
+      }),
+      deps({ interceptMcp }),
+    );
+    expect(res.status).toBe(200);
+    expect(interceptMcp).toHaveBeenCalledWith(
+      expect.objectContaining({ session: SESSION }),
+    );
+  });
+
+  it("leaves /mcp to apps that keep MCP or declare it public, and other paths alone", async () => {
+    const interceptMcp = vi.fn(async () => new Response("served"));
+    const ownMcp: RegisteredApp = {
+      ...TODO,
+      manifest: validateManifest({ id: "todo", mcp: "app" }),
+    };
+    const publicMcp: RegisteredApp = {
+      ...TODO,
+      manifest: validateManifest({
+        id: "todo",
+        public: [{ path: "/mcp", methods: ["POST"] }],
+      }),
+    };
+    for (const app of [ownMcp, publicMcp]) {
+      const res = await handleGatewayRequest(
+        req("/mcp", MCP_POST),
+        patDeps({
+          interceptMcp,
+          registry: new InMemoryAppRegistry([app]),
+        }),
+      );
+      expect(res.status).toBe(200);
+      expect(await res.text()).not.toBe("served");
+    }
+    for (const path of ["/mcp/", "/mcp/x", "/api/mcp", "/MCP"]) {
+      await handleGatewayRequest(
+        req(path, MCP_POST),
+        patDeps({ interceptMcp }),
+      );
+    }
+    expect(interceptMcp).not.toHaveBeenCalled();
+  });
+});
+
+describe("MCP-only tokens", () => {
+  const credential = (scopes: string[], kind: "pat" | "oauth" = "pat") => ({
+    ...SESSION,
+    credential: {
+      kind,
+      channel: "api" as const,
+      actor: `${kind}:token_1`,
+      scopes,
+    },
+  });
+
+  function call(
+    path: string,
+    session: AuthenticatedSession,
+    over: Partial<GatewayDeps> = {},
+    init: RequestInit = {},
+  ) {
+    return handleGatewayRequest(
+      req(path, {
+        ...init,
+        headers: { authorization: "Bearer epat_valid", ...init.headers },
+      }),
+      deps({
+        authenticator: {
+          authenticate: async () => session,
+          hasAppAccess: async () => true,
+        },
+        ...over,
+      }),
+    );
+  }
+
+  it("refuse every app route but /mcp with 403 token_scope", async () => {
+    const fetcher = vi.fn();
+    for (const session of [
+      credential(["mcp:read"]),
+      credential(["mcp:read", "mcp:write"]),
+      credential(["mcp:read"], "oauth"),
+    ]) {
+      for (const [path, init] of [
+        ["/tasks", {}],
+        ["/api/todos", { method: "POST" }],
+        ["/health", {}], // public routes too
+        ["/mcp/", { method: "POST" }],
+        ["/MCP", { method: "POST" }],
+      ] as const) {
+        const res = await call(
+          path,
+          session,
+          {
+            fetcherFor: () => ({ fetch: fetcher }),
+          },
+          init,
+        );
+        expect(res.status, path).toBe(403);
+        expect(await res.json()).toEqual({
+          error: "forbidden",
+          reason: "token_scope",
+        });
+        expectSecurityHeaders(res);
+      }
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("let them through at /mcp, to the ToolBus or to the app's own server", async () => {
+    const session = credential(["mcp:read"]);
+    const interceptMcp = vi.fn(async () => new Response("toolbus"));
+    const served = await call(
+      "/mcp",
+      session,
+      { interceptMcp },
+      {
+        method: "POST",
+      },
+    );
+    expect(await served.text()).toBe("toolbus");
+
+    const proxied = await call(
+      "/mcp",
+      session,
+      { interceptMcp: async () => null },
+      { method: "POST" },
+    );
+    expect(proxied.status).toBe(200);
+    const { identity } = (await proxied.json()) as { identity: string };
+    const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
+    const { payload } = await jwtVerify(identity, pub);
+    expect(payload["scopes"]).toEqual(["mcp:read"]);
+  });
+
+  it("leave full-access and API-scoped tokens on every route", async () => {
+    for (const scopes of [["*"], ["mcp:read", "todos:write"], ["todos:read"]]) {
+      const res = await call("/tasks", credential(scopes));
+      expect(res.status, scopes.join(" ")).toBe(200);
+      const { identity } = (await res.json()) as { identity: string };
+      expect(identity).toBeTruthy();
+    }
   });
 });

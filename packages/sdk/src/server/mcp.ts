@@ -1,6 +1,13 @@
 /**
  * `createMcpHandler()` — a stateless Streamable HTTP MCP server handler.
  *
+ * @deprecated since 0.3.0, removed in 0.4.0. Describe tools with
+ * `defineTools()` and pass them to `everyApp(handler, manifest, { tools })`:
+ * the gateway then serves `/mcp` for the app (both protocol eras, with tool
+ * policy and an audit line per call). Until then the gateway keeps proxying
+ * `/mcp` to an app that defines no tools (or sets `mcp: "app"` in its
+ * manifest), so this handler keeps working.
+ *
  *   const mcp = createMcpHandler({
  *     name: "my-app",
  *     tools: {
@@ -36,6 +43,7 @@ const SUPPORTED_PROTOCOL_VERSIONS = [
 ] as const;
 const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
 
+/** @deprecated Use `defineTools()`; see {@link createMcpHandler}. */
 export interface McpToolContext<TEnv = Record<string, unknown>> {
   user: EveryAppUser;
   env: TEnv;
@@ -43,6 +51,7 @@ export interface McpToolContext<TEnv = Record<string, unknown>> {
   ctx: ExecutionContextLike;
 }
 
+/** @deprecated Use `defineTools()`; see {@link createMcpHandler}. */
 export interface McpToolDefinition<TEnv = Record<string, unknown>> {
   description?: string;
   /** JSON Schema for the tool's arguments. Defaults to an empty object schema. */
@@ -63,6 +72,7 @@ export interface McpToolDefinition<TEnv = Record<string, unknown>> {
   ) => unknown;
 }
 
+/** @deprecated Use `defineTools()`; see {@link createMcpHandler}. */
 export interface CreateMcpHandlerOptions<TEnv = Record<string, unknown>> {
   /** Server name reported to MCP clients. */
   name: string;
@@ -79,7 +89,11 @@ export interface CreateMcpHandlerOptions<TEnv = Record<string, unknown>> {
   tools: Record<string, McpToolDefinition<TEnv>>;
 }
 
-/** Matches the everyApp() handler signature so it can be delegated to directly. */
+/**
+ * Matches the everyApp() handler signature so it can be delegated to directly.
+ *
+ * @deprecated Use `defineTools()`; see {@link createMcpHandler}.
+ */
 export type McpRequestHandler<TEnv = Record<string, unknown>> = (
   request: Request,
   env: TEnv,
@@ -134,6 +148,10 @@ function negotiateProtocolVersion(params: unknown): string {
     : DEFAULT_PROTOCOL_VERSION;
 }
 
+/**
+ * @deprecated since 0.3.0, removed in 0.4.0: describe tools with
+ * `defineTools()` and let the gateway serve `/mcp`.
+ */
 export function createMcpHandler<TEnv = Record<string, unknown>>(
   options: CreateMcpHandlerOptions<TEnv>,
 ): McpRequestHandler<TEnv> {

@@ -1,0 +1,19 @@
+# Checks the ToolBus is expected to fail in the MCP conformance suite
+# (`pnpm test:conformance`, @modelcontextprotocol/conformance). The runner
+# fails on any other failure, and on an entry here that starts passing:
+# delete the entry then.
+server:
+  # Need the suite's diagnostic tools (test_missing_capability,
+  # test_streaming_elicitation, test_logging_tool), which no app catalog has.
+  - server-stateless:sep-2575-server-rejects-undeclared-capability
+  - server-stateless:sep-2575-missing-capability-http-400
+  - server-stateless:sep-2575-http-server-no-independent-requests-on-stream
+  - server-stateless:sep-2575-server-no-log-without-loglevel
+  # Subscriptions are off (maxSubscriptions: 0): a catalog never changes
+  # mid-request.
+  - server-stateless:sep-2575-server-sends-subscription-ack
+  - server-stateless:sep-2575-server-tags-subscription-id
+  # Tools are the only capability: there are no prompts or resources to list.
+  - caching:sep-2549-prompts-list-caching-hints
+  - caching:sep-2549-resources-list-caching-hints
+  - caching:sep-2549-resources-templates-list-caching-hints

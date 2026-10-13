@@ -40,6 +40,7 @@ import {
   setupLinkForDeploy,
 } from "@/lib/gateway/setup-link";
 import type { EventSink } from "@/lib/output/events";
+import { syncGatewayAppTools } from "./steps/syncAppTools";
 import {
   cliVersion,
   connectToAccount,
@@ -130,6 +131,15 @@ async function run(
         interactive,
       }),
       allowDowngrade: flags["allow-downgrade"],
+    });
+
+    // Each app's tools catalog, taken by this gateway version. Never fails
+    // the deploy.
+    await syncGatewayAppTools({
+      gatewayUrl,
+      db,
+      out,
+      verbose: flags.verbose ?? false,
     });
 
     const setupLink = await setupLinkForDeploy({

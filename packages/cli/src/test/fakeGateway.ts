@@ -37,6 +37,9 @@ export class FakeGateway {
   /** The gateway's clock, for setup links' expiry and the claim's window. */
   now: () => number = () => Date.now();
 
+  /** The apps whose agent tools the CLI asked the gateway to sync, in order. */
+  readonly toolSyncs: string[] = [];
+
   constructor(
     private readonly account: FakeCloudflare,
     /** The gateway's own host. */
@@ -259,6 +262,27 @@ export class FakeGateway {
       }
       this.db.sqlite.prepare("UPDATE apps SET status = 'active' WHERE id = ?").run(app.id);
       return { status: "active", workerName: app.worker_name, hostname: app.hostname };
+    },
+
+    syncAppTools: async (appId: string) => {
+      const app = this.app(appId);
+      if (!app || app.status === "deleted") this.notFound(appId);
+      if (!this.account.gatewayBindings().includes(app.worker_name)) {
+        throw new GatewayApiError({
+          message: "binding rolling out",
+          status: 503,
+          code: "BINDING_NOT_READY",
+        });
+      }
+      this.toolSyncs.push(appId);
+      return {
+        appId,
+        status: "ok",
+        toolCount: 2,
+        catalogHash: "sha256:fake",
+        sdkVersion: "0.3.0",
+        warnings: [],
+      };
     },
 
     status: async () => this.account.gatewayStatus(),

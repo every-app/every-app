@@ -30,6 +30,7 @@
     "@cloudflare/workers-oauth-provider": "0.8.1",
     "@every-app/perimeter": "workspace:*",
     "@every-app/sdk": "workspace:*",
+    "@every-app/toolbus": "workspace:*",
     "@hookform/resolvers": "^5.2.2",
     "@tanstack/query-core": "^5.90.9",
     "@tanstack/query-db-collection": "^1.0.0",

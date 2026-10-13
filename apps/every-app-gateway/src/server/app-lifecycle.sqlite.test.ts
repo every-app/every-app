@@ -446,4 +446,18 @@ describe("app deploy lifecycle (SQLite)", () => {
       }),
     ).rejects.toMatchObject({ status: 404 });
   });
+
+  it("keeps the everyapp id for the gateway's own MCP tools", async () => {
+    await expect(
+      AppRegistrationService.register({
+        organizationId: acme,
+        appSlug: "everyapp",
+        name: "Every App",
+        description: "x",
+        workerName: "every-everyapp",
+        manifest: { id: "everyapp" },
+      }),
+    ).rejects.toMatchObject({ status: 400, code: "RESERVED_APP_ID" });
+    expect(await db.select().from(apps)).toEqual([]);
+  });
 });

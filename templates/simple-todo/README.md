@@ -19,12 +19,23 @@ The Worker is defined in `cloudflare.config.ts`, which builds it from
 `everyapp.config.ts` with `everyAppWorker()`. Declare D1 databases, KV
 namespaces and Durable Objects in `everyapp.config.ts`.
 
-## MCP
+## Agent tools (MCP)
 
-The starter serves a stateless Streamable HTTP MCP endpoint at `/mcp` with
-tools to list, create, update, and delete the authenticated user's todos. Keep
-the route private: Every App verifies identity before any tool runs. The
-platform contract and auth boundary are documented in
+`src/tools.ts` defines the starter's agent tools with `defineTools()` from
+`@every-app/sdk/server`: list, create and update the user's todos, and a
+destructive delete that AI clients can't use yet. The app never speaks MCP;
+the Every App gateway serves the tools to Claude, Cursor and other MCP
+clients at `https://<app-host>/mcp`, and `pnpm dev` serves them locally at
+`http://<app-id>.localhost:8787/mcp`. To connect Claude Code to a deployed
+app with a personal access token:
+
+```sh
+claude mcp add --transport http todos https://<app-host>/mcp \
+  --header "Authorization: Bearer $EVERYAPP_TOKEN"
+```
+
+Add a tool by adding an entry to `defineTools()` and redeploying; the deploy
+syncs the gateway's copy. The contract is described in
 [`docs/todo-mcp-example.md`](https://github.com/every-app/every-app/blob/main/docs/todo-mcp-example.md).
 
 Generate Migration

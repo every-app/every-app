@@ -13,7 +13,9 @@
  *    (`handleGatewayRequest`), which authenticates the Better Auth session,
  *    mints the identity JWT, and proxies to the app's private worker over its
  *    service binding. App hosts reach this Worker as its Workers Custom
- *    Domains (or, on gateways installed before those, a `*.<host>` route);
+ *    Domains (or, on gateways installed before those, a `*.<host>` route).
+ *    An app host's `/mcp` is served by the ToolBus from the app's tool
+ *    catalog instead (server/toolbus/app-host-mcp.ts);
  *  - any other host → 404 (local dev serves the control plane there too).
  *
  * When GATEWAY_URL is not set on a fresh deploy (before secrets, local vite
@@ -43,6 +45,7 @@ import {
   withControlPlaneHeaders,
 } from "./server/control-plane-guard";
 import { isMcpOauthEnabled, isOauthPath } from "./server/oauth-flag";
+import { serveAppHostMcp } from "./server/toolbus/app-host-mcp";
 import {
   getOauthProvider,
   syntheticExecutionContext,
@@ -243,6 +246,7 @@ export default createServerEntry({
         resolveApp: async () => app,
         loginUrl: `${env.GATEWAY_URL}/sign-in`,
         oauthDiscovery: isMcpOauthEnabled(env),
+        interceptMcp: serveAppHostMcp,
       });
     } catch (error) {
       // The perimeter must never leak an uncaught exception (Cloudflare's

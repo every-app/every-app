@@ -90,3 +90,53 @@ describe("GatewayClient deploy auth", () => {
     });
   });
 });
+
+describe("GatewayClient tool sync", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    global.fetch = vi.fn();
+    mockRequireGatewayCredentialToken.mockResolvedValue("eak_stored");
+  });
+
+  it("posts to the app's tools sync route", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      Response.json({ appId: "todo", status: "ok", toolCount: 2, warnings: [] }),
+    );
+    const client = new GatewayClient({
+      gatewayUrl: "https://gateway.example.com",
+    });
+    await expect(client.syncAppTools("todo")).resolves.toMatchObject({
+      status: "ok",
+      toolCount: 2,
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      "https://gateway.example.com/api/deploy/apps/todo/tools/sync",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("keeps the code of a 404 the route answered itself", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      Response.json(
+        { error: "App \"todo\" is not registered", code: "APP_NOT_FOUND" },
+        { status: 404 },
+      ),
+    );
+    const client = new GatewayClient({
+      gatewayUrl: "https://gateway.example.com",
+    });
+    await expect(client.syncAppTools("todo")).rejects.toMatchObject({
+      name: "GatewayApiError",
+      status: 404,
+      code: "APP_NOT_FOUND",
+    });
+
+    vi.mocked(fetch).mockResolvedValue(
+      Response.json({ error: "Not found" }, { status: 404 }),
+    );
+    await expect(client.syncAppTools("todo")).rejects.toMatchObject({
+      name: "OutdatedGatewayError",
+    });
+  });
+});
+

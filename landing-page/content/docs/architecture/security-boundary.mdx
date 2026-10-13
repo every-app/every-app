@@ -32,8 +32,9 @@ Registered-host requests go through `handleGatewayRequest()` (`packages/perimete
 3. **CSRF** — before authentication. GET/HEAD/OPTIONS always pass; other methods need `Sec-Fetch-Site: same-origin`, or (if absent) an `Origin` whose host matches the app host (scheme is ignored). Origin-signal policy, no CSRF tokens.
 4. **Header hygiene** — inbound `Cookie`, `Authorization`, and every `x-everyapp-*` header are deleted. Public routes get `Authorization` back (apps may run their own bearer/webhook auth; the gateway never interprets it).
 5. **Authentication** — Better Auth resolves the cookie; org context is verified (active org, or sole membership as fallback).
-6. **Authorization** — session org must equal the app's org, **and** a `user_app_access` row must exist.
-7. **Identity injection** — one of the outcomes below.
+6. **Authorization** — session org must equal the app's org, **and** a `user_app_access` row must exist. A personal token whose scopes are all `mcp:*` is refused (`403 token_scope`) on every path but `/mcp`.
+7. **Agent tools** — `/mcp` of an app with a tool catalog (and no `mcp: "app"` in its manifest) is answered by the gateway's ToolBus instead of the app, for personal tokens and for the user's session on the app's own pages (step 3 keeps every other origin out).
+8. **Identity injection** — one of the outcomes below.
 
 ### What the app receives
 

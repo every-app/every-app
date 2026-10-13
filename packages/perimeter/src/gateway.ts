@@ -1,19 +1,25 @@
 /**
  * The gateway proxy core — `handleGatewayRequest`.
  *
- * Composes the perimeter: resolve app from Host, guard server functions,
- * enforce CSRF (and the WebSocket Origin check), decide public-vs-private,
- * authenticate + authorize, strip inbound trust headers, inject a fresh
- * identity JWT (private requests) or the public marker (public routes), proxy
- * via the `getAppFetcher` seam, and stamp security headers.
+ * Composes the perimeter: resolve app from Host, refuse the internal tools
+ * contract, guard server functions, enforce CSRF (and the WebSocket Origin
+ * check), decide public-vs-private, authenticate + authorize (an MCP-only
+ * token reaches `/mcp` alone), hand `/mcp` to the gateway's ToolBus when it
+ * serves the app's tools, strip inbound trust headers, inject a fresh
+ * identity JWT (private requests) or the public marker (public routes),
+ * proxy via the `getAppFetcher` seam, and stamp security headers.
  *
  * It is dependency-injected end to end so it can be unit-tested in isolation and
  * run for real (D1 registry, Better Auth, service bindings) without changes.
  */
 import { parseHost, type ParsedHost } from "./host";
 import type { AppRegistry, RegisteredApp } from "./registry";
-import type { AuthenticatedSession, SessionAuthenticator } from "./session";
-import { matchPublicRoute } from "./publicRoutes";
+import {
+  isMcpOnlyCredential,
+  type AuthenticatedSession,
+  type SessionAuthenticator,
+} from "./session";
+import { isReservedToolsPath, matchPublicRoute } from "./publicRoutes";
 import {
   evaluateCsrf,
   evaluateWebSocketOrigin,
@@ -39,6 +45,15 @@ import {
   AppUnreachableError,
   type AppFetcher,
 } from "./getAppFetcher";
+
+/** What {@link GatewayDeps.interceptMcp} receives. */
+export interface McpInterceptInput {
+  /** The original request; its body is still unread. */
+  request: Request;
+  app: RegisteredApp;
+  /** The authenticated caller, already checked for access to `app`. */
+  session: AuthenticatedSession;
+}
 
 export interface GatewayDeps {
   /** Worker env (carries service bindings + secrets). */
@@ -69,6 +84,15 @@ export interface GatewayDeps {
    * the gateway's OAuth server is enabled (MCP_OAUTH_ENABLED).
    */
   oauthDiscovery?: boolean;
+  /**
+   * Serve `<app-host>/mcp` from the gateway's ToolBus instead of proxying it.
+   * Called for the exact path `/mcp` once the caller is authenticated and
+   * allowed into the app, unless the manifest keeps MCP in the app
+   * (`mcp: "app"`) or declares `/mcp` public. Return null, without reading
+   * the body, to proxy the request to the app as before (e.g. the app has
+   * no tool catalog).
+   */
+  interceptMcp?(input: McpInterceptInput): Promise<Response | null>;
   now?: number;
 }
 
@@ -205,6 +229,11 @@ export async function handleGatewayRequest(
     response.headers.set("retry-after", "5");
     return response;
   }
+  // The tools contract is for the ToolBus over the service binding only (and
+  // the SDK demands gateway-minted tokens anyway). Refuse it from outside.
+  if (isReservedToolsPath(url.pathname)) {
+    return json(404, { error: "not_found" });
+  }
   const oauthDiscovery = deps.oauthDiscovery ?? false;
   // RFC 9728 metadata is served by the perimeter and never proxied — for the
   // host-level identifier and path-aware variants (…/oauth-protected-resource/mcp
@@ -316,6 +345,19 @@ export async function handleGatewayRequest(
   );
 
   if (session && allowed) {
+    // An MCP-only token answers at /mcp and nowhere else in the app.
+    if (isMcpOnlyCredential(session.credential) && url.pathname !== "/mcp") {
+      return json(403, { error: "forbidden", reason: "token_scope" });
+    }
+    if (
+      deps.interceptMcp &&
+      url.pathname === "/mcp" &&
+      app.manifest.mcp !== "app" &&
+      !publicMatch.public
+    ) {
+      const served = await deps.interceptMcp({ request, app, session });
+      if (served) return withSecurityHeaders(served);
+    }
     const identity = await mintIdentityJwt(deps.privateKeyPem, {
       subject: {
         sub: session.sub,

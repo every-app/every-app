@@ -177,6 +177,24 @@ describe("perimeter end-to-end (gateway + real SDK app)", () => {
     expect(((await res.json()) as { internal: boolean }).internal).toBe(true);
   });
 
+  it("(d3) the internal tools contract is 404 from outside, even signed in", async () => {
+    for (const path of [
+      "/__everyapp/tools/list",
+      "/__everyapp/tools/call",
+      "/p/%2e%2e/__everyapp/tools/call",
+      "/__everyapp%2ftools%2fcall",
+    ]) {
+      const res = await handleGatewayRequest(
+        gwReq(path, {
+          method: "POST",
+          headers: { ...LOGGED_IN, "sec-fetch-site": "same-origin" },
+        }),
+        deps,
+      );
+      expect(res.status, path).toBe(404);
+    }
+  });
+
   it("(e) Cookie and a spoofed x-everyapp-* header are stripped before the app", async () => {
     const res = await handleGatewayRequest(
       gwReq("/tasks", {

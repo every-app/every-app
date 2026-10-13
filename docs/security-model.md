@@ -68,6 +68,54 @@
   `AI_PROXY_EXTRA_ROUTES` gateway secret, e.g. `/v1/files`) and the app
   manifest's `ai.routes`; `ai.models` can restrict models.
 
+## Agent Tools (MCP)
+
+- An app host's `/mcp` is served by the gateway's ToolBus from the app's
+  tool catalog, which the gateway snapshots in D1 at deploy (apps declare it
+  with `defineTools()`). Listing tools never calls the app; each tool call is
+  one call over the app's service binding.
+- `/mcp` needs a personal access token or the user's browser session.
+  Token scopes set access: `*` or `mcp:write` is read & write, `mcp:read` is
+  read only, anything else is refused with `403 token_scope`. A browser
+  session is read & write. Destructive tools are hidden and refused for
+  everyone; write tools are hidden from read-only callers.
+- A browser session reaches `/mcp` only from the app's own pages: it is
+  intended (an app may call its own tools), and the usual CSRF check guards
+  it. A cookie-carrying POST needs `Sec-Fetch-Site: same-origin`, or without
+  that header an `Origin` on the app's host; a sibling app's page
+  (`same-site`) or any other site gets `403 csrf_denied` before a tool runs.
+  Only a POST makes the gateway call the app (to sync a missing catalog), so
+  the GETs a sibling page can send with the cookie never do.
+- A token whose scopes are all `mcp:` scopes is MCP-only: every app route
+  other than `/mcp` (public ones included) answers it `403 token_scope`, so
+  an `mcp:read` token stays read only even though apps don't check scopes on
+  their own routes. Tokens holding `*` (what a token created without scopes
+  gets) or any non-MCP scope keep working on every route.
+- Each call carries a fresh identity minted for that call alone:
+  `chan: "mcp"`, explicit `mcp:*` scopes (never `*`, never
+  `mcp:destructive`), and a `tc` claim naming the tool and call id. The SDK
+  refuses a tool call without it, or whose scopes don't cover the risk the
+  tool declares.
+- The internal tools endpoints (`/__everyapp/tools/list` and `/call`) answer
+  404 to every outside request, however the path is encoded. The catalog
+  endpoint only accepts the gateway's one-minute, one-purpose system token
+  (`x-everyapp-system`), which is never an identity and can't call tools.
+- A browser may call an app's `/mcp` only from the app's own origin; any
+  other `Origin` gets 403. Cross-origin browser clients (MCP Inspector's
+  direct mode, say) aren't served on app hosts: their CORS preflight carries
+  no credentials, so the perimeter answers it 401. `everyapp dev` answers
+  preflights from localhost origins, so the Inspector works locally.
+- The gateway checks a call's arguments against the snapshotted schema
+  before calling the app, in bounded time: it never runs an app's regular
+  expressions (`pattern`, `patternProperties`), and leaves recursive schemas
+  and arguments with more than 1,000 values to the app, whose SDK validates
+  every call with the tool's own schema. Arguments nested more than 64
+  levels deep are refused, JSON-RPC batches are refused, and an app gets 30
+  seconds (headers and body) to answer a call.
+- Each tool call logs one `mcp.tool_call` line with a keyed digest of the
+  arguments, never the arguments or the result, including calls refused for
+  their arguments.
+
 ## App Verification Contract
 
 - Apps verify the signature, issuer, audience, token type, and key id before

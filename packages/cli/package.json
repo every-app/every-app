@@ -43,7 +43,8 @@
     "minify": true,
     "noExternal": [
       "@every-app/perimeter",
-      "@every-app/sdk"
+      "@every-app/sdk",
+      "@every-app/toolbus"
     ]
   },
   "dependencies": {
@@ -55,11 +56,12 @@
     "enquirer": "^2.4.1",
     "execa": "^9.6.0",
     "jiti": "^2.6.1",
-    "zod": "^4.1.13"
+    "zod": "^4.2.0"
   },
   "devDependencies": {
     "@every-app/perimeter": "workspace:*",
     "@every-app/sdk": "workspace:*",
+    "@every-app/toolbus": "workspace:*",
     "@types/node": "^22.18.13",
     "knip": "^5.66.4",
     "tsup": "^6.7.0",

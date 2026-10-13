@@ -25,3 +25,57 @@ For full API reference and usage guides, see the [Embedded SDK documentation](ht
   ```
 
   Production builds read `.everyapp/deploy.json`, which only `everyapp app deploy` writes, so deploy with `everyapp app deploy` rather than `cf deploy`.
+
+## Agent tools
+
+`defineTools()` describes the actions an app offers to AI clients (Claude,
+Cursor, any MCP client). The app never speaks MCP itself: the gateway
+snapshots the catalog when you deploy, serves MCP clients from it, and calls a
+tool over a private, internal contract with a verified identity.
+
+```ts
+import { defineTools, everyApp, ToolError } from "@every-app/sdk/server";
+import { z } from "zod"; // or any Standard Schema + Standard JSON Schema validator
+
+export const tools = defineTools(
+  {
+    list_todos: {
+      description: "List the user's todos.",
+      risk: "read",
+      input: z.object({}).strict(),
+      handler: async (_input, { user }) => listTodos(user.id),
+    },
+    delete_todo: {
+      description: "Permanently delete one todo.",
+      risk: "destructive", // hidden from AI clients until approvals exist
+      input: z.object({ id: z.string() }).strict(),
+      handler: async ({ id }, { user }) => {
+        if (!(await deleteTodo(user.id, id)))
+          throw new ToolError("Todo not found");
+      },
+    },
+  },
+  { instructions: "Never guess todo ids; call list_todos first." },
+);
+
+export default everyApp(handler, { tools });
+```
+
+- `risk` is `read`, `write` or `destructive`. AI clients never see
+  destructive tools yet.
+- `input` (and the optional `output`) take zod >= 4.2 or any validator that
+  implements Standard Schema and Standard JSON Schema; a plain
+  `{ jsonSchema, validate }` pair works too. Both describe objects: a
+  `z.object`, or a union of objects. A tool whose schema can't be described
+  that way is left out of the catalog (the other tools keep working), and
+  `everyapp app deploy` prints why.
+- Throw `ToolError` for messages the model may read. Other errors are logged
+  in the app and reported as "Internal error in <app> (ref <call id>)".
+- A handler's second argument carries `user`, `env` (typed as
+  `Cloudflare.Env`, which `cf` generates from `cloudflare.config.ts`), `ctx`,
+  `request` and `callId`.
+
+`createMcpHandler()` from 0.2 still works in 0.3 but is deprecated and goes
+away in 0.4. The gateway keeps proxying `/mcp` to an app that defines no
+tools (or sets `mcp: "app"` in its manifest), so such an app keeps serving
+its own MCP endpoint until it moves to `defineTools()`.

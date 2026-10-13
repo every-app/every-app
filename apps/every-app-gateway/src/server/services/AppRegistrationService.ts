@@ -1,6 +1,7 @@
 import { env } from "cloudflare:workers";
 import {
   isRegistryWorkerName,
+  isReservedAppId,
   MAX_WORKER_NAME_LENGTH,
   registryWorkerNameFor,
   RESOURCE_SEPARATOR,
@@ -334,6 +335,14 @@ async function initialAccess(
  * keeps its names and status, and its manifest until the new code is up.
  */
 async function register(data: RegisterAppInput): Promise<RegisterAppResult> {
+  if (isReservedAppId(data.appSlug)) {
+    // "everyapp" prefixes the gateway's own MCP tools.
+    throw new AppRegistrationError({
+      status: 400,
+      code: "RESERVED_APP_ID",
+      message: `The app id "${data.appSlug}" is reserved for the platform.`,
+    });
+  }
   const manifest = validateRegistryManifest(data.manifest, data.appSlug);
 
   const organizationSlug = await OrganizationRepository.findSlugById(

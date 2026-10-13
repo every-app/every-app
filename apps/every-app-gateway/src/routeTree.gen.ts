@@ -38,6 +38,7 @@ import { Route as ApiDeployAppsAppIdActivateRouteImport } from './routes/api/dep
 import { Route as ApiDeployAppsAppIdDeleteRouteImport } from './routes/api/deploy/apps/$appId/delete'
 import { Route as ApiDeployAppsAppIdDeployedRouteImport } from './routes/api/deploy/apps/$appId/deployed'
 import { Route as ApiDeployAppsAppIdInfoRouteImport } from './routes/api/deploy/apps/$appId/info'
+import { Route as ApiDeployAppsAppIdToolsSyncRouteImport } from './routes/api/deploy/apps/$appId/tools/sync'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -187,6 +188,12 @@ const ApiDeployAppsAppIdInfoRoute = ApiDeployAppsAppIdInfoRouteImport.update({
   path: '/api/deploy/apps/$appId/info',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDeployAppsAppIdToolsSyncRoute =
+  ApiDeployAppsAppIdToolsSyncRouteImport.update({
+    id: '/api/deploy/apps/$appId/tools/sync',
+    path: '/api/deploy/apps/$appId/tools/sync',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -218,6 +225,7 @@ export interface FileRoutesByFullPath {
   '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
   '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
   '/api/deploy/apps/$appId/info': typeof ApiDeployAppsAppIdInfoRoute
+  '/api/deploy/apps/$appId/tools/sync': typeof ApiDeployAppsAppIdToolsSyncRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -248,6 +256,7 @@ export interface FileRoutesByTo {
   '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
   '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
   '/api/deploy/apps/$appId/info': typeof ApiDeployAppsAppIdInfoRoute
+  '/api/deploy/apps/$appId/tools/sync': typeof ApiDeployAppsAppIdToolsSyncRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -280,6 +289,7 @@ export interface FileRoutesById {
   '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
   '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
   '/api/deploy/apps/$appId/info': typeof ApiDeployAppsAppIdInfoRoute
+  '/api/deploy/apps/$appId/tools/sync': typeof ApiDeployAppsAppIdToolsSyncRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -313,6 +323,7 @@ export interface FileRouteTypes {
     | '/api/deploy/apps/$appId/delete'
     | '/api/deploy/apps/$appId/deployed'
     | '/api/deploy/apps/$appId/info'
+    | '/api/deploy/apps/$appId/tools/sync'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -343,6 +354,7 @@ export interface FileRouteTypes {
     | '/api/deploy/apps/$appId/delete'
     | '/api/deploy/apps/$appId/deployed'
     | '/api/deploy/apps/$appId/info'
+    | '/api/deploy/apps/$appId/tools/sync'
   id:
     | '__root__'
     | '/'
@@ -374,6 +386,7 @@ export interface FileRouteTypes {
     | '/api/deploy/apps/$appId/delete'
     | '/api/deploy/apps/$appId/deployed'
     | '/api/deploy/apps/$appId/info'
+    | '/api/deploy/apps/$appId/tools/sync'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -402,6 +415,7 @@ export interface RootRouteChildren {
   ApiDeployAppsAppIdDeleteRoute: typeof ApiDeployAppsAppIdDeleteRoute
   ApiDeployAppsAppIdDeployedRoute: typeof ApiDeployAppsAppIdDeployedRoute
   ApiDeployAppsAppIdInfoRoute: typeof ApiDeployAppsAppIdInfoRoute
+  ApiDeployAppsAppIdToolsSyncRoute: typeof ApiDeployAppsAppIdToolsSyncRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -609,6 +623,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiDeployAppsAppIdInfoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/deploy/apps/$appId/tools/sync': {
+      id: '/api/deploy/apps/$appId/tools/sync'
+      path: '/api/deploy/apps/$appId/tools/sync'
+      fullPath: '/api/deploy/apps/$appId/tools/sync'
+      preLoaderRoute: typeof ApiDeployAppsAppIdToolsSyncRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -654,6 +675,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiDeployAppsAppIdDeleteRoute: ApiDeployAppsAppIdDeleteRoute,
   ApiDeployAppsAppIdDeployedRoute: ApiDeployAppsAppIdDeployedRoute,
   ApiDeployAppsAppIdInfoRoute: ApiDeployAppsAppIdInfoRoute,
+  ApiDeployAppsAppIdToolsSyncRoute: ApiDeployAppsAppIdToolsSyncRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

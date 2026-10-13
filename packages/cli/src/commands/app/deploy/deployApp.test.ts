@@ -212,7 +212,10 @@ describe("app deploy", () => {
       "app.upload",
       "gateway.deploy",
       "gateway.verify",
+      "app.tools",
     ]);
+    // Once it is live, the gateway snapshots its agent tools.
+    expect(gateway.toolSyncs).toEqual(["todo"]);
     const leases = account.database("every-app-gateway").all(
       "SELECT * FROM _everyapp_deploy_lease",
     );
@@ -228,6 +231,8 @@ describe("app deploy", () => {
     expect(gatewayVersions()).toBe(before);
     expect(account.workers.get("every-acme-todo")!.versions).toHaveLength(2);
     expect(gateway.app("todo")).toMatchObject({ status: "active" });
+    // New code may define other tools: every deploy syncs them.
+    expect(gateway.toolSyncs).toEqual(["todo", "todo"]);
   });
 
   it("keeps a legacy app on its every-<appId> Worker and data", async () => {

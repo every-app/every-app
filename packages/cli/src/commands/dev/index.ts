@@ -14,6 +14,10 @@
  *
  * Honors $PORT (portless assigns one) and parses Host dynamically (first label
  * = app, remainder = base host), so per-worktree portless hosts route freely.
+ *
+ * `<app>.localhost/mcp` is served by a local ToolBus from the app's live
+ * `defineTools()` catalog, with the gateway's policy and identity contract,
+ * so MCP Inspector, Claude Code or curl can call the app's tools locally.
  */
 import fs from "node:fs/promises";
 import http from "node:http";
@@ -22,7 +26,6 @@ import chalk from "chalk";
 import type { LocalContext } from "@/context";
 import { ManifestError } from "@every-app/perimeter/manifest";
 import {
-  createDevGatewayHandler,
   mintDevIdentityJwt,
   mintDevPublicMarkerJwt,
   parseHost,
@@ -55,6 +58,7 @@ import { createCfRunner } from "@/lib/cf/runner";
 import { PINNED_CF_VERSION, resolveCfBinary } from "@/lib/cf/bin";
 import { devLauncherHtml } from "./launcherPage";
 import { registerDevApp } from "./registerDevApp";
+import { createDevAppGateway } from "./devAppGateway";
 import { applyDevMigrations } from "./migrations";
 import { startAppDevServer } from "./appServer";
 import { MISSING_CLOUDFLARE_CONFIG } from "@/lib/app/cloudflareConfig";
@@ -220,14 +224,22 @@ export default async function dev(
     return;
   }
 
+  // Mirror mode routes by <app>.<baseHost>; stub mode by <app>.localhost.
+  const appUrl =
+    mode === "mirror"
+      ? `http://${manifest.id}.${mirrorBaseHost}:${gatewayPort}`
+      : `http://${manifest.id}.localhost:${gatewayPort}`;
+
   // 6. The gateway-lite: the real perimeter with this app registered. In
   //    mirror mode the seeded authenticator is replaced by the RemoteAuthenticator.
+  //    /mcp goes to a local ToolBus serving the app's live tool catalog.
   const app = registerDevApp(manifest);
-  const appFetcher = viteFetcher(appPort);
-  const handleRequest = createDevGatewayHandler({
-    apps: [app],
+  const handleRequest = createDevAppGateway({
+    app,
+    appName: manifest.name,
+    appUrl,
+    appFetcher: viteFetcher(appPort),
     privateKeyPem: keys.privateKeyPem,
-    env: { [`APP__${app.workerName}`]: appFetcher },
     authenticator,
   });
 
@@ -334,17 +346,20 @@ export default async function dev(
     server.listen(gatewayPort, resolve);
   });
 
-  // Mirror mode routes by <app>.<baseHost>; stub mode by <app>.localhost.
-  const appUrl =
-    mode === "mirror"
-      ? `http://${manifest.id}.${mirrorBaseHost}:${gatewayPort}`
-      : `http://${manifest.id}.localhost:${gatewayPort}`;
   console.log("");
   console.log(
     chalk.bold(`  everyapp dev — gateway-lite running (${mode} mode)`),
   );
   console.log("");
   console.log(`  App:       ${chalk.cyan(appUrl)}`);
+  console.log(`  MCP:       ${chalk.cyan(`${appUrl}/mcp`)}`);
+  console.log(
+    chalk.dim(
+      mode === "mirror"
+        ? "             Send Authorization: Bearer <a personal access token from the local gateway>."
+        : "             Send Authorization: Bearer <anything>; MCP clients act as the dev user.",
+    ),
+  );
   if (mode === "mirror") {
     console.log(`  Gateway:   ${chalk.cyan(gatewayUrl)} (real login/launcher)`);
     console.log(

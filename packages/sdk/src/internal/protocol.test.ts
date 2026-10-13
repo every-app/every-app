@@ -1,12 +1,16 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { importSPKI, jwtVerify, decodeProtectedHeader, decodeJwt } from "jose";
 import {
+  identityClaimsToEveryAppUser,
   mintIdentityJwt,
   mintPublicMarkerJwt,
+  mintSystemJwt,
   IDENTITY_KEY_ID,
   IDENTITY_ALG,
   IDENTITY_TTL_SECONDS,
   PUBLIC_MARKER_SUB,
+  SYSTEM_TOKEN_SUB,
+  SYSTEM_TOKEN_TTL_SECONDS,
 } from "./protocol";
 import { generateKeyPair, exportPKCS8, exportSPKI } from "jose";
 
@@ -98,5 +102,96 @@ describe("mintPublicMarkerJwt", () => {
     expect(payload.typ).toBe("public");
     expect(payload.pub).toBe(true);
     expect(payload.sub).toBe(PUBLIC_MARKER_SUB);
+  });
+});
+
+describe("tool-call identities", () => {
+  it("mints the tc claim and surfaces it as user.toolCall", async () => {
+    const jwt = await mintIdentityJwt(privateKeyPem, {
+      subject,
+      audience: "todo",
+      issuer: "iss",
+      channel: "mcp",
+      actor: { sub: "pat:token-x" },
+      scopes: ["mcp:read", "mcp:write"],
+      toolCall: { id: "call_1", name: "create_todo" },
+    });
+    const payload = decodeJwt(jwt);
+    expect(payload.tc).toEqual({ id: "call_1", name: "create_todo" });
+    expect(identityClaimsToEveryAppUser(payload)).toMatchObject({
+      channel: "mcp",
+      toolCall: { id: "call_1", name: "create_todo" },
+    });
+  });
+
+  it("leaves tc off ordinary identities", async () => {
+    const payload = decodeJwt(
+      await mintIdentityJwt(privateKeyPem, {
+        subject,
+        audience: "todo",
+        issuer: "iss",
+      }),
+    );
+    expect(payload).not.toHaveProperty("tc");
+    expect(identityClaimsToEveryAppUser(payload)).not.toHaveProperty(
+      "toolCall",
+    );
+  });
+
+  it("rejects a malformed tc claim", () => {
+    const base = {
+      typ: "user",
+      sub: "user_1",
+      email: "a@b.com",
+      org_id: "org_1",
+      org_role: "member",
+    };
+    for (const tc of [
+      null,
+      "create_todo",
+      { id: "c" },
+      { id: "", name: "x" },
+    ]) {
+      expect(() => identityClaimsToEveryAppUser({ ...base, tc })).toThrow(
+        "malformed tc claim",
+      );
+    }
+  });
+});
+
+describe("mintSystemJwt", () => {
+  it("mints a one-purpose, app-scoped token that expires within a minute", async () => {
+    const now = 1_000_000_000_000;
+    const jwt = await mintSystemJwt(privateKeyPem, {
+      audience: "todo",
+      issuer: "https://home.example.com",
+      purpose: "tools.list",
+      now,
+    });
+    expect(decodeProtectedHeader(jwt)).toMatchObject({
+      alg: IDENTITY_ALG,
+      kid: IDENTITY_KEY_ID,
+    });
+    const payload = decodeJwt(jwt);
+    expect(payload).toMatchObject({
+      typ: "system",
+      purpose: "tools.list",
+      sub: SYSTEM_TOKEN_SUB,
+      aud: "todo",
+      iss: "https://home.example.com",
+    });
+    expect(payload).not.toHaveProperty("email");
+    expect(payload.exp).toBe(Math.floor(now / 1000) + SYSTEM_TOKEN_TTL_SECONDS);
+  });
+
+  it("refuses lifetimes over a minute", async () => {
+    await expect(
+      mintSystemJwt(privateKeyPem, {
+        audience: "todo",
+        issuer: "iss",
+        purpose: "tools.list",
+        ttlSeconds: SYSTEM_TOKEN_TTL_SECONDS + 1,
+      }),
+    ).rejects.toThrow(RangeError);
   });
 });

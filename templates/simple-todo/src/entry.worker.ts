@@ -1,11 +1,9 @@
 import tanstackEntry from "@tanstack/react-start/server-entry";
 import { everyApp } from "@every-app/sdk/server";
-import { todoMcpHandler } from "./mcp/todoMcp";
+import { tools } from "./tools";
 
-export default everyApp<Env>(async (request, env, ctx, user) => {
-  if (new URL(request.url).pathname === "/mcp") {
-    return todoMcpHandler(request, env, ctx, user);
-  }
-
-  return tanstackEntry.fetch(request);
+// The gateway serves the agent tools at /mcp; everyApp() answers its
+// internal tools contract.
+export default everyApp<Env>(async (request) => tanstackEntry.fetch(request), {
+  tools,
 });

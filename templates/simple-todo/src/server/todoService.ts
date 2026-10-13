@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { todos, users } from "@/db/schema";
+import { TodoError } from "@/server/todoErrors";
 import type {
   CreateTodoInput,
   DeleteTodoInput,
@@ -44,14 +45,14 @@ export const TodoService = {
     const existing = await db.query.todos.findFirst({
       where: and(eq(todos.id, input.id), eq(todos.userId, userId)),
     });
-    if (!existing) throw new Error("Todo not found");
+    if (!existing) throw new TodoError("Todo not found");
 
     if (
       existing.completed &&
       input.title !== undefined &&
       input.title !== existing.title
     ) {
-      throw new Error(
+      throw new TodoError(
         "Cannot edit the title of a completed todo. Unmark it as completed first.",
       );
     }
@@ -79,7 +80,7 @@ export const TodoService = {
       where: and(eq(todos.id, input.id), eq(todos.userId, userId)),
       columns: { id: true, title: true, completed: true },
     });
-    if (!existing) throw new Error("Todo not found");
+    if (!existing) throw new TodoError("Todo not found");
 
     await db
       .delete(todos)

@@ -116,4 +116,30 @@ describe("dev gateway-lite", () => {
     );
     expect(res.status).toBe(404);
   });
+
+  it("hands /mcp to the local ToolBus with the dev session", async () => {
+    const seen: unknown[] = [];
+    const handler = createDevGatewayHandler({
+      apps: [todoApp()],
+      privateKeyPem: keys.privateKeyPem,
+      env: {},
+      fetcherFor: () => ({ fetch: async () => new Response("app") }),
+      interceptMcp: async ({ app, session }) => {
+        seen.push([app.appId, session.sub]);
+        return Response.json({ toolbus: true });
+      },
+    });
+    const res = await handler(
+      new Request("http://todo.localhost:8787/mcp", {
+        method: "POST",
+        headers: {
+          host: "todo.localhost:8787",
+          "sec-fetch-site": "same-origin",
+        },
+        body: "{}",
+      }),
+    );
+    expect(await res.json()).toEqual({ toolbus: true });
+    expect(seen).toEqual([["todo", DEV_USER.sub]]);
+  });
 });

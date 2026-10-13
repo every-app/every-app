@@ -8,6 +8,7 @@ import {
 } from "jose";
 import {
   verifyIdentityJwt,
+  verifySystemJwt,
   getIdentityFromRequest,
   parsePublicKeys,
   ConfigurationError,
@@ -21,6 +22,7 @@ import {
   DEV_ENV,
   ISSUER_ENV,
 } from "./identity";
+import { mintIdentityJwt, mintSystemJwt } from "./protocol";
 
 let privatePem: string;
 let publicPem: string;
@@ -486,5 +488,100 @@ describe("getIdentityFromRequest", () => {
       },
     });
     expect(user?.id).toBe("user_1");
+  });
+});
+
+describe("verifySystemJwt — the gateway's catalog token", () => {
+  const options = () => ({
+    publicKeys: [publicPem],
+    audience: "todo",
+    issuer,
+    purpose: "tools.list" as const,
+  });
+  const mintSystem = (overrides: { audience?: string; keyId?: string } = {}) =>
+    mintSystemJwt(privatePem, {
+      audience: overrides.audience ?? "todo",
+      issuer,
+      purpose: "tools.list",
+      keyId: overrides.keyId,
+    });
+
+  it("accepts a system token minted for this app and purpose", async () => {
+    await expect(
+      verifySystemJwt(await mintSystem(), options()),
+    ).resolves.toMatchObject({ typ: "system", purpose: "tools.list" });
+  });
+
+  it("rejects another app's token, a wrong issuer and a missing issuer", async () => {
+    await expect(
+      verifySystemJwt(await mintSystem({ audience: "chef" }), options()),
+    ).rejects.toBeInstanceOf(IdentityError);
+    await expect(
+      verifySystemJwt(await mintSystem(), {
+        ...options(),
+        issuer: "https://evil.example.com",
+      }),
+    ).rejects.toBeInstanceOf(IdentityError);
+    await expect(
+      verifySystemJwt(await mintSystem(), { ...options(), issuer: undefined }),
+    ).rejects.toThrow("EVERYAPP_IDENTITY_ISSUER not configured");
+  });
+
+  it("never accepts a user identity or public marker as a system token", async () => {
+    const identity = await mintIdentityJwt(privatePem, {
+      subject: {
+        sub: "user_1",
+        email: "a@b.com",
+        orgId: "o",
+        orgRole: "owner",
+      },
+      audience: "todo",
+      issuer,
+    });
+    const marker = await mint({ typ: "public", pub: true, sub: "public" });
+    for (const token of [identity, marker]) {
+      await expect(verifySystemJwt(token, options())).rejects.toBeInstanceOf(
+        IdentityError,
+      );
+    }
+  });
+
+  it("never accepts a system token as a user identity", async () => {
+    await expect(
+      verifyIdentityJwt(await mintSystem(), {
+        publicKeys: [publicPem],
+        audience: "todo",
+        issuer,
+      }),
+    ).rejects.toBeInstanceOf(IdentityError);
+  });
+
+  it("rejects another purpose and lifetimes over a minute", async () => {
+    const otherPurpose = await mint({
+      typ: "system",
+      sub: "system",
+      purpose: "tools.call",
+    });
+    await expect(verifySystemJwt(otherPurpose, options())).rejects.toThrow(
+      'purpose "tools.call"',
+    );
+
+    const longLived = await mint(
+      { typ: "system", sub: "system", purpose: "tools.list" },
+      { exp: "120s" },
+    );
+    await expect(verifySystemJwt(longLived, options())).rejects.toThrow(
+      "within 60s",
+    );
+  });
+
+  it("accepts the dev kid only with the dev opt-in", async () => {
+    const devToken = await mintSystem({ keyId: IDENTITY_DEV_KEY_ID });
+    await expect(verifySystemJwt(devToken, options())).rejects.toBeInstanceOf(
+      IdentityError,
+    );
+    await expect(
+      verifySystemJwt(devToken, { ...options(), allowDevIdentities: true }),
+    ).resolves.toMatchObject({ typ: "system" });
   });
 });

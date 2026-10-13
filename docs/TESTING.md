@@ -69,9 +69,32 @@ in-process service binding, and asserts:
 - (b) a request straight to the app worker (no gateway) yields **401**;
 - (c) a declared public route works unauthenticated; everything else 401s;
 - (d) `/__everyapp/*` is unreachable unauthenticated, but reachable *with* a
-  valid identity (the MCP path);
+  valid identity; the internal tools contract (`/__everyapp/tools/*`) is 404
+  from outside under any encoding, signed in or not;
 - (e) the inbound `Cookie` and a spoofed `x-everyapp-identity` are
   stripped/replaced before the app sees the request.
+
+### MCP conformance (the ToolBus)
+
+`packages/toolbus` runs the official MCP conformance suite
+(`@modelcontextprotocol/conformance@0.2.0-alpha.12`) against a local ToolBus:
+the dev ToolBus in front of a real `everyApp()` + `defineTools()` app, on a
+loopback port. It covers both protocol eras: `server-stateless`,
+`http-header-validation`, `caching`, `tools-list` and
+`dns-rebinding-protection` at 2026-07-28, and `server-initialize`, `ping`,
+`tools-list` (and `dns-rebinding-protection`) at 2025-11-25 and 2025-06-18.
+
+```bash
+cd packages/toolbus
+pnpm test:conformance                          # downloads the suite with npx
+CONFORMANCE_PORT=19432 pnpm test:conformance   # pin the port (default: any free one)
+```
+
+`packages/toolbus/conformance-baseline.yml` lists the checks the ToolBus is
+expected to fail, with the reason for each: the suite's diagnostic tools,
+subscriptions (off), and prompts/resources (not served). Any other failure
+fails the run, and so does a baseline entry that starts passing (delete it).
+It needs the network, so it isn't part of `pnpm test` or CI.
 
 ---
 
