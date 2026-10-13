@@ -7,8 +7,6 @@ declare const __GATEWAY_BUILD__: string;
 
 declare namespace Cloudflare {
   interface Env {
-    OAUTH_PROVIDER: import("@cloudflare/workers-oauth-provider").OAuthHelpers;
-
     // The optional settings below are plain secrets on deployed gateways
     // (`everyapp gateway secret set`); in dev cloudflare.config.ts declares
     // the ones that are set locally.
@@ -19,9 +17,27 @@ declare namespace Cloudflare {
     // Deployment mode used to gate internal operator APIs
     GATEWAY_DEPLOYMENT_MODE?: "self_hosted" | "hosted";
 
-    // "true" turns on the OAuth authorization server for MCP clients (set as
-    // a secret so deploys keep it). Off when unset: see server/oauth-flag.ts.
+    // "false" turns off the OAuth authorization server for MCP clients (set
+    // as a secret so deploys keep it). On when unset or "true"; any other
+    // value is off: see server/oauth-flag.ts.
     MCP_OAUTH_ENABLED?: string;
+
+    // "false" turns off dynamic client registration (/oauth/register), so
+    // only clients with a metadata document (CIMD) can connect; Cursor and
+    // other DCR-only clients can't. On when unset or "true"; any other value
+    // is off: see server/oauth-flag.ts.
+    MCP_DCR_ENABLED?: string;
+
+    // Browser origins, besides the gateway's own, allowed to call its /mcp
+    // (comma or space separated), e.g. MCP Inspector's http://localhost:6274.
+    MCP_ALLOWED_ORIGINS?: string;
+
+    // Days of mcp_tool_calls kept by the hourly cron (default 90).
+    MCP_AUDIT_RETENTION_DAYS?: string;
+
+    // LOCAL TESTING ONLY: shorter OAuth access tokens (seconds, at least 60),
+    // honored only when GATEWAY_URL is http://localhost or 127.0.0.1.
+    MCP_ACCESS_TOKEN_TTL?: string;
 
     // Provider credentials used by gateway proxy routes
     OPENAI_API_KEY?: string;

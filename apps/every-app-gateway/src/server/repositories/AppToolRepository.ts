@@ -1,6 +1,12 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
-import { apps, appToolCatalogs, appTools } from "@/db/schema";
+import {
+  apps,
+  appToolCatalogs,
+  appTools,
+  mcpConnectionApps,
+  userAppAccess,
+} from "@/db/schema";
 import type { ToolBusTool } from "@every-app/toolbus";
 
 type CatalogStatus = "ok" | "empty" | "unsupported" | "error";
@@ -29,6 +35,20 @@ type ReplaceCatalogInput = {
 
 // D1 binds at most 100 parameters per statement; app_tools has 10 columns.
 const TOOL_ROWS_PER_INSERT = 9;
+
+/** One app the gateway /mcp serves a caller, with its snapshot. */
+type VisibleCatalog = {
+  appRowId: string;
+  appSlug: string;
+  name: string;
+  description: string;
+  hostname: string;
+  workerName: string;
+  tier: string;
+  catalogHash: string;
+  instructions: string | null;
+  tools: ToolBusTool[];
+};
 
 function parseJson<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
@@ -105,20 +125,136 @@ async function findByOrgApp(
       // Rows are replaced atomically; the hash check only guards a reader
       // that raced a sync between the two selects.
       .filter((row) => row.catalogHash === catalog.catalogHash)
-      .map((row) => ({
-        name: row.name,
-        ...(row.title ? { title: row.title } : {}),
-        description: row.description,
-        risk: row.risk as ToolBusTool["risk"],
-        inputSchema: parseJson(row.inputSchema, {}),
-        ...(row.outputSchema
-          ? { outputSchema: parseJson(row.outputSchema, {}) }
-          : {}),
-        ...(row.annotations
-          ? { annotations: parseJson(row.annotations, {}) }
-          : {}),
-      })),
+      .map(toToolBusTool),
   };
+}
+
+type StoredToolRow = {
+  name: string;
+  title: string | null;
+  description: string;
+  risk: string;
+  inputSchema: string;
+  outputSchema: string | null;
+  annotations: string | null;
+};
+
+function toToolBusTool(row: StoredToolRow): ToolBusTool {
+  return {
+    name: row.name,
+    ...(row.title ? { title: row.title } : {}),
+    description: row.description,
+    risk: row.risk as ToolBusTool["risk"],
+    inputSchema: parseJson(row.inputSchema, {}),
+    ...(row.outputSchema
+      ? { outputSchema: parseJson(row.outputSchema, {}) }
+      : {}),
+    ...(row.annotations ? { annotations: parseJson(row.annotations, {}) } : {}),
+  };
+}
+
+/**
+ * The serving catalogs of every app a caller of the gateway /mcp may use,
+ * read in one D1 batch and never from the apps themselves: the active,
+ * routable apps of the organization the user has access to, narrowed to a
+ * connection's chosen apps or a token's one app. Joins rather than `IN`
+ * lists, since D1 binds at most 100 parameters.
+ */
+async function findVisibleCatalogs(scope: {
+  organizationId: string;
+  userId: string;
+  /** A connection that chose its apps. */
+  connectionId?: string;
+  /** A token bound to one app. */
+  appRowId?: string;
+}): Promise<VisibleCatalog[]> {
+  const visible: SQL[] = [
+    eq(apps.organizationId, scope.organizationId),
+    eq(apps.status, "active"),
+    isNotNull(apps.hostname),
+    isNotNull(apps.workerName),
+    eq(appToolCatalogs.status, "ok"),
+    ...(scope.connectionId
+      ? [
+          inArray(
+            apps.id,
+            db
+              .select({ appRowId: mcpConnectionApps.appRowId })
+              .from(mcpConnectionApps)
+              .where(eq(mcpConnectionApps.connectionId, scope.connectionId)),
+          ),
+        ]
+      : []),
+    ...(scope.appRowId ? [eq(apps.id, scope.appRowId)] : []),
+  ];
+  const access = and(
+    eq(userAppAccess.appRowId, apps.id),
+    eq(userAppAccess.userId, scope.userId),
+    eq(userAppAccess.organizationId, scope.organizationId),
+  );
+  const catalog = and(
+    eq(appToolCatalogs.appRowId, apps.id),
+    eq(appToolCatalogs.organizationId, apps.organizationId),
+  );
+
+  const [appRows, toolRows] = await db.batch([
+    db
+      .select({
+        appRowId: apps.id,
+        appSlug: apps.appSlug,
+        name: apps.name,
+        description: apps.description,
+        hostname: apps.hostname,
+        workerName: apps.workerName,
+        tier: apps.tier,
+        catalogHash: appToolCatalogs.catalogHash,
+        instructions: appToolCatalogs.instructions,
+      })
+      .from(apps)
+      .innerJoin(userAppAccess, access)
+      .innerJoin(appToolCatalogs, catalog)
+      .where(and(...visible))
+      .orderBy(asc(apps.appSlug)),
+    db
+      .select({
+        appRowId: appTools.appRowId,
+        name: appTools.name,
+        title: appTools.title,
+        description: appTools.description,
+        risk: appTools.risk,
+        inputSchema: appTools.inputSchema,
+        outputSchema: appTools.outputSchema,
+        annotations: appTools.annotations,
+        catalogHash: appTools.catalogHash,
+      })
+      .from(appTools)
+      .innerJoin(apps, eq(apps.id, appTools.appRowId))
+      .innerJoin(userAppAccess, access)
+      .innerJoin(appToolCatalogs, catalog)
+      .where(and(...visible))
+      .orderBy(asc(appTools.name)),
+  ]);
+
+  return appRows.flatMap((app) =>
+    app.hostname && app.workerName && app.catalogHash
+      ? [
+          {
+            ...app,
+            hostname: app.hostname,
+            workerName: app.workerName,
+            catalogHash: app.catalogHash,
+            // As in findByOrgApp: rows from another sync are skipped.
+            tools: toolRows
+              .filter(
+                (row) =>
+                  row.appRowId === app.appRowId &&
+                  row.catalogHash === app.catalogHash,
+              )
+              .map(toToolBusTool),
+          },
+        ]
+      : [],
+  );
 }
 
 /** Replace an app's catalog and tools in one D1 transaction. */
@@ -199,6 +335,7 @@ async function recordError(input: {
 
 export const AppToolRepository = {
   findByOrgApp,
+  findVisibleCatalogs,
   replace,
   recordError,
 } as const;

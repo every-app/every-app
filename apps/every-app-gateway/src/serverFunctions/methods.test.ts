@@ -11,9 +11,12 @@ vi.mock("@/middleware/auth", () => ({
   organizationOwnerMiddleware: {},
 }));
 vi.mock("@/middleware/publicError", () => ({ publicErrorMiddleware: {} }));
-vi.mock("@/server/oauth-consent", () => ({
-  buildAccessDeniedRedirect: vi.fn(),
-  resolveAuthorizeRequest: vi.fn(),
+vi.mock("@/server/mcp-auth/config", () => ({ getMcpAuth: vi.fn() }));
+vi.mock("@/server/mcp-auth/consent", () => ({
+  buildConsentContext: vi.fn(),
+}));
+vi.mock("@/server/services/McpConnectionService", () => ({
+  McpConnectionService: {},
 }));
 vi.mock("@/server/services/AdminService", () => ({ AdminService: {} }));
 vi.mock("@/server/services/AppAccessService", () => ({
@@ -48,14 +51,12 @@ const READS = [
   "getActiveOrganization",
   "getAppAccessState",
   "getApps",
-  "getAuthorizeContext",
   "getEmailStatus",
   "getMyApps",
   "getOnboardingStatus",
   "hasOwner",
   "listAppTokens",
   "listMembers",
-  "listMyOauthGrants",
   "listUserTokens",
 ];
 
@@ -83,7 +84,10 @@ describe("gateway server function methods", () => {
         "acceptInvitation",
         "deactivateUser",
         "deleteUser",
+        "getConsentContext",
         "inviteMember",
+        "listMyMcpConnections",
+        "revokeMyMcpConnection",
         "updateMemberRole",
         ...READS,
       ]),

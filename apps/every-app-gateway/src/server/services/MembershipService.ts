@@ -11,6 +11,7 @@ import {
   type OrgContext,
 } from "@/server/organization/orgContext";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
+import { McpConnectionService } from "./McpConnectionService";
 import { UserRepository } from "../repositories/UserRepository";
 import { isUserBanned } from "../user-ban";
 
@@ -98,12 +99,14 @@ async function requireAccountWideManageable(
 
 /**
  * Lock a user out everywhere at once: banned (no new sign-ins), every
- * session ended, their personal access tokens and the deploy tokens they
- * created revoked. The perimeter and deploy API also refuse banned users.
+ * session ended, their personal access tokens, the deploy tokens they
+ * created and their AI app connections revoked. The perimeter, the deploy
+ * API and /mcp also refuse banned users.
  */
 async function deactivate(ctx: OrgContext, targetUserId: string) {
   await requireAccountWideManageable(ctx, targetUserId);
   await UserRepository.deactivate(targetUserId, `Deactivated by ${ctx.userId}`);
+  await McpConnectionService.revokeForDeactivatedUser(targetUserId);
   forgetOrgContext(targetUserId);
   logEvent("member.deactivated", {
     organizationId: ctx.orgId,

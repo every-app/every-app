@@ -169,7 +169,10 @@ describe("gateway deploy", () => {
     });
     // Its host is a Custom Domain; apps will be too, one label below it.
     expect(deploy!.config["domains"]).toEqual(["example.com"]);
-    expect(deploy!.config["triggers"]).toBeUndefined();
+    // No route: only the release's own hourly housekeeping.
+    expect(deploy!.config["triggers"]).toEqual([
+      { type: "scheduled", schedule: "17 * * * *" },
+    ]);
     expect(deploy!.config["env"].APP_BASE_DOMAIN).toEqual({
       type: "text",
       value: "example.com",
@@ -797,6 +800,7 @@ describe("per-app Custom Domains", () => {
     const deploy = account.deploys.at(-1)!;
     expect(deploy.config["domains"]).toEqual(["example.com"]);
     expect(deploy.config["triggers"]).toEqual([
+      { type: "scheduled", schedule: "17 * * * *" },
       { type: "fetch", pattern: "*.example.com/*", zone: "zone-1" },
     ]);
     expect(deploy.config["env"].APP_BASE_DOMAIN).toBeUndefined();

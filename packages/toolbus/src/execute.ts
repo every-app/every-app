@@ -1,12 +1,15 @@
 /**
  * `executeToolCall` — the one path every tool call takes, whichever surface
- * (an app host's /mcp today; the gateway /mcp, approvals and an in-gateway
- * agent later) it arrives on:
+ * (an app host's /mcp, the gateway /mcp; approvals and an in-gateway agent
+ * later) it arrives on:
  *
  *   resolve the name → apply policy → validate the arguments against the
  *   snapshotted schema → mint a `chan: "mcp"` identity bound to this call →
  *   POST /__everyapp/tools/call over the app's binding (one invocation) →
  *   map the answer, notice catalog drift, and emit one audit event.
+ *
+ * The gateway's built-in `everyapp_*` tools are answered here without
+ * calling any app, and audited the same way.
  *
  * Raw arguments and results never reach the audit event, only a keyed
  * digest and a byte count.
@@ -20,11 +23,13 @@ import {
   mintIdentityJwt,
   type ToolCallResultV1,
 } from "@every-app/sdk/internal";
+import { BUILTIN_APP_ID, findBuiltinTool, runBuiltinTool } from "./builtins";
 import { TimeoutError, isPlainObject, readTextCapped, withTimeout } from "./io";
 import {
   MAX_CALLED_NAME_LENGTH,
   displayedToolName,
   resolveToolName,
+  splitNamespacedToolName,
 } from "./names";
 import { evaluateToolPolicy } from "./policy";
 import type {
@@ -67,10 +72,16 @@ export function scopesForAccess(access: McpPrincipal["access"]): string[] {
     : [MCP_READ_SCOPE];
 }
 
+/** `act.sub` on the minted identity: the credential acting for the user. */
 function actorFor(principal: McpPrincipal): string {
-  return principal.credential.kind === "pat"
-    ? `pat:${principal.credential.id}`
-    : principal.userId;
+  switch (principal.credential.kind) {
+    case "pat":
+      return `pat:${principal.credential.id}`;
+    case "oauth":
+      return `oauth:${principal.credential.id}`;
+    default:
+      return principal.userId;
+  }
 }
 
 function errorResult(text: string): ToolCallResultV1 {
@@ -97,6 +108,9 @@ export async function executeToolCall(
       organizationId: principal.organizationId,
       credentialKind: principal.credential.kind,
       credentialId: principal.credential.id,
+      ...(principal.credential.clientName
+        ? { clientName: principal.credential.clientName }
+        : {}),
       ...(call.protocolVersion
         ? { protocolVersion: call.protocolVersion }
         : {}),
@@ -106,10 +120,28 @@ export async function executeToolCall(
     });
 
   // No catalog name is anywhere near this long.
-  const target =
-    call.name.length <= MAX_CALLED_NAME_LENGTH
-      ? resolveToolName(view, call.name)
-      : null;
+  if (call.name.length > MAX_CALLED_NAME_LENGTH) {
+    audit({ decision: "blocked", reason: "unknown_tool", outcome: "not_run" });
+    return { kind: "unknown_tool" };
+  }
+
+  const split =
+    view.surface === "gateway" ? splitNamespacedToolName(call.name) : null;
+  const builtin =
+    split?.appId === BUILTIN_APP_ID ? findBuiltinTool(split.localName) : null;
+  if (builtin) {
+    const result = runBuiltinTool(builtin, view);
+    audit({
+      appId: BUILTIN_APP_ID,
+      risk: builtin.risk,
+      decision: "allowed",
+      outcome: "ok",
+      resultBytes: new TextEncoder().encode(JSON.stringify(result)).length,
+    });
+    return { kind: "result", result, tool: builtin };
+  }
+
+  const target = resolveToolName(view, call.name);
   if (!target) {
     audit({ decision: "blocked", reason: "unknown_tool", outcome: "not_run" });
     return { kind: "unknown_tool" };

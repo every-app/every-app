@@ -18,7 +18,10 @@
   `x-everyapp-identity`.
 - Public routes forward inbound `Authorization` so the app can implement its
   own bearer-token API or webhook authentication. The gateway does not
-  interpret that header and never treats it as Every App identity.
+  interpret that header and never treats it as Every App identity. Every
+  App's own bearers are never forwarded: a personal access token (`epat_…`)
+  or a token of the gateway's OAuth server authenticates, or the request
+  fails closed.
 - Anonymous public requests receive a signed public marker. A signed-in member
   may receive user identity on a public route only after the normal session,
   organization, app-access, and CSRF checks succeed.
@@ -44,11 +47,12 @@
 - The gateway's own host applies the same server-function rule and requires a
   same-origin `Origin`/`Sec-Fetch-Site` on every cookie-carrying
   state-changing request (the native shell's exact `everyapp://` origin and
-  token-authenticated deploy and OAuth endpoints are left to their own
-  checks). Every response gets HSTS for the gateway host alone (no
-  `includeSubDomains`: the gateway often runs on the customer's apex
+  the token-authenticated deploy API, `/mcp`, and OAuth token and
+  registration endpoints are left to their own checks; none of them reads
+  the session cookie). Every response gets HSTS for the gateway host alone
+  (no `includeSubDomains`: the gateway often runs on the customer's apex
   domain), `nosniff`, frame denial, `Referrer-Policy: no-referrer`, and
-  `Cache-Control: no-store` on admin, consent, setup and reset pages.
+  `Cache-Control: no-store` on admin, OAuth, setup and reset pages.
 - A fresh gateway has no owner and accepts no sign-ups or organizations until
   it is claimed with the one-time setup link the deployer's CLI mints into D1.
   Members cannot create organizations; app registration requires the app's
@@ -58,10 +62,11 @@
   just the invitation id. Better Auth's accept, list-invitations and
   get-full-organization endpoints are closed over HTTP, so members are never
   sent pending invitations.
-- The OAuth authorization server is off unless `MCP_OAUTH_ENABLED` is
-  `"true"`: its endpoints and discovery documents return 404 and only
-  personal access tokens (`epat_`) authenticate bearer requests. Turning it
-  on: `docs/runbooks/mcp-oauth.md`.
+- The OAuth authorization server for MCP clients is on unless
+  `MCP_OAUTH_ENABLED` is `"false"`, the kill switch: then its endpoints and
+  discovery documents return 404 and only personal access tokens (`epat_`)
+  authenticate the gateway's `/mcp`. See `docs/runbooks/mcp-oauth.md` and
+  "Connected AI apps (OAuth)" below.
 - The AI proxy only forwards inference endpoints (with `store: false` for
   responses and chat completions). The provider key is shared by every app,
   so anything else needs both the operator's allowlist (the
@@ -70,11 +75,23 @@
 
 ## Agent Tools (MCP)
 
-- An app host's `/mcp` is served by the gateway's ToolBus from the app's
-  tool catalog, which the gateway snapshots in D1 at deploy (apps declare it
-  with `defineTools()`). Listing tools never calls the app; each tool call is
-  one call over the app's service binding.
-- `/mcp` needs a personal access token or the user's browser session.
+- Two endpoints serve the same tools: the gateway's own `/mcp`, one
+  connector for every app a user reaches (tools named `<app>_<tool>`, plus
+  the read-only built-ins `everyapp_whoami` and `everyapp_list_apps`), and
+  each app host's `/mcp`, for that app alone under its tools' own names.
+  Both are served by the gateway's ToolBus from the tool catalogs it
+  snapshots in D1 at deploy (apps declare them with `defineTools()`).
+  Listing tools never calls an app; each tool call is one call over the
+  app's service binding.
+- The gateway's `/mcp` takes an OAuth access token issued by the gateway
+  (see below) or a personal access token, never a cookie. It serves the
+  active apps of the caller's organization they have access to, narrowed to
+  the apps an OAuth connection chose or the one app a token is bound to. A
+  browser may call it only from the gateway's own origin or an origin listed
+  in `MCP_ALLOWED_ORIGINS` (empty by default).
+- An app host's `/mcp` needs a personal access token or the user's browser
+  session; it takes no OAuth token and advertises no authorization server
+  (its protected-resource metadata paths answer 404).
   Token scopes set access: `*` or `mcp:write` is read & write, `mcp:read` is
   read only, anything else is refused with `403 token_scope`. A browser
   session is read & write. Destructive tools are hidden and refused for
@@ -112,9 +129,78 @@
   every call with the tool's own schema. Arguments nested more than 64
   levels deep are refused, JSON-RPC batches are refused, and an app gets 30
   seconds (headers and body) to answer a call.
-- Each tool call logs one `mcp.tool_call` line with a keyed digest of the
-  arguments, never the arguments or the result, including calls refused for
-  their arguments.
+- Each tool call, on either endpoint, logs one `mcp.tool_call` line and
+  writes one `mcp_tool_calls` row with a keyed digest of the arguments,
+  never the arguments or the result, including calls refused for their
+  arguments. An hourly cron deletes rows older than
+  `MCP_AUDIT_RETENTION_DAYS` (90 by default).
+
+## Connected AI apps (OAuth)
+
+- The gateway is an OAuth 2.1 authorization server
+  (`@cloudflare/workers-oauth-provider` 1.2) for exactly one protected
+  resource, `${GATEWAY_URL}/mcp`, whose metadata names that exact URL.
+  Tokens are bound to it and work nowhere else: an app host refuses them,
+  and never forwards one to an app, even on a public route.
+  Every client must use S256 PKCE; redirect URIs must be https or loopback
+  http, and neither a client id nor a redirect URI may be on the gateway's
+  own domain (its host or an app host under it): the authorization
+  endpoint, the consent page and the token endpoint all refuse one before
+  anything is fetched. An invalid authorization request is answered on the
+  gateway's own page, never redirected to the client: registration is open,
+  so a redirect could go anywhere.
+- Clients identify themselves with a Client ID Metadata Document (an https
+  URL on a domain they control, which the consent page shows as verified
+  only when access goes to that domain, a subdomain of it or an app on the
+  user's computer; otherwise it warns that access goes to a different site,
+  since anyone can host a file on some big domains) or register dynamically (their name is shown as unverified, without
+  control characters and clipped). Metadata documents are fetched under the
+  `global_fetch_strictly_public` compatibility flag, which routes every
+  fetch as a request from the internet would go, through Cloudflare's front
+  door, never straight to an origin behind a zone. That doesn't keep a
+  fetch away from the gateway's own zone: its front door is the gateway
+  itself, so a document served from an app's public route would come back
+  as a "verified" client. That is why client ids on the gateway's own
+  domain are refused, not fetched. A dynamic registration that names no
+  token endpoint authentication method is registered as a public client.
+- Dynamic registration is anonymous, and each one is a write to the
+  account's KV, whose writes every namespace shares. So it keeps only what
+  the gateway uses (at most 16 KiB in, the name cleaned and clipped, ten
+  redirect URIs), for 60 days without use, and is limited to 5 a minute
+  per client address in each isolate, 20 a day per address and 200 a day
+  per gateway (counted in D1, where a refused request writes nothing).
+  `MCP_DCR_ENABLED=false` turns it off for gateways whose users only need
+  clients with metadata documents.
+- Consent: `/oauth/authorize` validates the request before anything else
+  and sends a signed-out user to sign in first. The consent transaction is
+  single-use, expires in ten minutes and is bound to the browser that
+  started it by a `__Host-` cookie; the decision is a same-origin form POST
+  from a signed-in user. Consent pages are never cached or framed and send
+  no Referer. The page shows where access will be sent, warns when that is
+  an app on the user's computer, and lets the user choose the organization,
+  all apps (including future ones) or chosen ones, and read & write or read
+  only.
+- Each approval is an `mcp_connections` row; the tokens carry only its id,
+  the user's and the organization's. Every `/mcp` request re-reads the row,
+  the user's membership and role, their ban state and their app access, so
+  revoking a connection, removing or deactivating the member, or removing
+  an app takes effect on the next request; a refresh for a connection that
+  no longer stands fails with `invalid_grant` and revokes the grant. Read
+  only connections never see write tools.
+- Users list and revoke their connections at `/settings/connections`.
+  Removing a member revokes their connections in that organization, and
+  deactivating a user revokes all of theirs, grants included. Connecting
+  the same client again replaces the earlier connection and its grant
+  (for a metadata document client, the same installation's: same redirect
+  URI, a loopback redirect's port not counting).
+- Refresh tokens rotate on every use, but the library accepts the token
+  before the latest one until the latest is used (so a client that lost a
+  refresh response can retry), and it has no reuse detection: a replayed
+  refresh token never revokes its grant. A stolen refresh token can
+  therefore mint access tokens alongside the client for a while.
+  `@cloudflare/workers-oauth-provider` 1.2.3 has no option for stricter
+  rotation. Revoking the connection, removing the member or deactivating
+  the user ends it at once, since every refresh re-checks the connection.
 
 ## App Verification Contract
 

@@ -14,6 +14,7 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/server";
+import { listBuiltinTools } from "./builtins";
 import { executeToolCall } from "./execute";
 import { displayedToolName, exposedToolName } from "./names";
 import { evaluateToolPolicy } from "./policy";
@@ -64,11 +65,12 @@ function toMcpTool(
 }
 
 /**
- * The tools this caller may see, in a stable order: by app id, then name.
- * Reads only the snapshot; never calls an app.
+ * The tools this caller may see, in a stable order: on the gateway surface
+ * the built-in `everyapp_*` tools first, then by app id, then name. Reads
+ * only the snapshot; never calls an app.
  */
 export function listTools(view: ToolBusView): Tool[] {
-  const tools: Tool[] = [];
+  const tools: Tool[] = view.surface === "gateway" ? listBuiltinTools() : [];
   for (const app of [...view.apps].sort(byKey((item) => item.appId))) {
     for (const tool of [...app.tools].sort(byKey((item) => item.name))) {
       if (evaluateToolPolicy(tool, view.principal).action === "allow") {

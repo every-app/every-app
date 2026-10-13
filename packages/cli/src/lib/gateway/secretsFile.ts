@@ -15,6 +15,9 @@ const SETTABLE_GATEWAY_SECRETS = [
   "EMAIL_FROM",
   "EMAIL_FROM_NAME",
   "MCP_OAUTH_ENABLED",
+  "MCP_DCR_ENABLED",
+  "MCP_ALLOWED_ORIGINS",
+  "MCP_AUDIT_RETENTION_DAYS",
 ] as const;
 
 export function firstDeploySecrets({

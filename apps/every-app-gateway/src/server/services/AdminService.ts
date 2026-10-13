@@ -7,6 +7,7 @@ import type { AdminUser } from "@/types/admin-user";
 import { UserRepository } from "../repositories/UserRepository";
 import { resolvePrimaryOrganizationRole } from "../org-roles";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
+import { McpConnectionService } from "./McpConnectionService";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import {
   forgetOrgContext,
@@ -61,7 +62,8 @@ async function listMembers(ctx: OrgContext) {
 /**
  * Remove a user from the organization (and delete the account when it
  * belongs to no other one). Their deploy tokens and personal access tokens
- * for this organization are revoked in the same transaction.
+ * for this organization are revoked in the same transaction, and the AI apps
+ * they connected to it right after.
  */
 async function deleteUser(ctx: OrgContext, targetUserId: string) {
   if (targetUserId === ctx.userId) {
@@ -87,6 +89,7 @@ async function deleteUser(ctx: OrgContext, targetUserId: string) {
   }
 
   await OrganizationMembersRepository.removeMember(targetUserId, ctx.orgId);
+  await McpConnectionService.revokeForRemovedMember(targetUserId, ctx.orgId);
   forgetOrgContext(targetUserId);
 
   const [orgCountResult] = await db

@@ -9,12 +9,14 @@ import type { TestDb } from "@/test/sqlite-db";
 const testDb = vi.hoisted(() => ({ current: null as TestDb | null }));
 const SECRET = "test-secret-0123456789abcdefghijklmnopqrstuv";
 
+const background = vi.hoisted(() => [] as Promise<unknown>[]);
 vi.mock("cloudflare:workers", () => ({
   env: {
     GATEWAY_URL: "https://gateway.example.com",
     BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
     DB: {},
   },
+  waitUntil: (task: Promise<unknown>) => background.push(task),
 }));
 vi.mock("@/db", async () => {
   const { testDbProxy } = await import("@/test/sqlite-db");
@@ -25,13 +27,10 @@ vi.mock("drizzle-orm/d1", () => ({ drizzle: () => testDb.current }));
 vi.mock("better-auth/tanstack-start", () => ({
   tanstackStartCookies: () => ({ id: "tanstack-start-cookies" }),
 }));
-// The OAuth provider library is not needed (only PAT bearers are used).
-vi.mock("@/server/oauth-provider", () => ({
-  getOauthProvider: vi.fn(),
-  syntheticExecutionContext: vi.fn(),
-}));
+// The OAuth grants a removal revokes are covered by the MCP OAuth tests.
+vi.mock("@/server/mcp-auth/config", () => ({ getMcpAuth: () => null }));
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { createAuth } from "@/auth";
 import {
   appTokens,
@@ -371,6 +370,49 @@ describe("user management (SQLite)", () => {
       await expect(
         AppTokenService.verifyDeployToken(OTHER_DEPLOY_TOKEN),
       ).resolves.toMatchObject({ organizationId: other, createdBy: member });
+    });
+
+    it("removes and deactivates even before the AI app connections table exists", async () => {
+      // A gateway whose code shipped before migration 0030 ran: /mcp
+      // refuses removed and banned users anyway, so the connections table
+      // is never what an offboarding hangs on.
+      await seedCredentials();
+      await db.run(sql`DROP TABLE mcp_connection_apps`);
+      await db.run(sql`DROP TABLE mcp_connections`);
+      const warn = vi
+        .spyOn(console, "warn")
+        .mockImplementation(() => undefined);
+      const other = await seedOrganization(db, "other");
+      await db.insert(members).values({
+        id: "member-elsewhere",
+        organizationId: other,
+        userId: member,
+        role: "member",
+        createdAt: new Date(),
+      });
+
+      await AdminService.deleteUser(ctx(owner, "owner"), member);
+      expect(
+        await db.select().from(members).where(eq(members.userId, member)),
+      ).toEqual([expect.objectContaining({ organizationId: other })]);
+      const [pat] = await db.select().from(userAccessTokens);
+      expect(pat?.revokedAt).toBeInstanceOf(Date);
+
+      await MembershipService.deactivate(ctx(owner, "owner"), deployer);
+      const [deactivated] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, deployer));
+      expect(deactivated?.banned).toBe(true);
+
+      const failures = warn.mock.calls
+        .map(([line]) => JSON.parse(String(line)) as Record<string, unknown>)
+        .filter((line) => line["evt"] === "mcp.connection.revoke_failed");
+      expect(failures.map((line) => line["reason"])).toEqual([
+        "member_removed",
+        "user_deactivated",
+      ]);
+      await Promise.all(background.splice(0));
     });
 
     it("refuses a deploy token whose creator left the organization or was deleted", async () => {

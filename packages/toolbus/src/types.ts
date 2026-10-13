@@ -26,6 +26,8 @@ export interface ToolBusApp {
   /** Manifest id: the identity audience and the tool-name prefix. */
   appId: string;
   name: string;
+  /** What the app is for, as `everyapp_list_apps` tells it. */
+  description?: string;
   /** Origin the tools contract is called under, e.g. `https://todo-acme.example.com`. */
   baseUrl: string;
   catalogHash: string;
@@ -40,9 +42,19 @@ export interface McpPrincipal {
   userId: string;
   email: string;
   organizationId: string;
+  /** For `everyapp_whoami` and the gateway's server title. */
+  organizationName?: string;
   orgRole: string;
-  /** How the caller authenticated; `id` is a PAT id, never a secret. */
-  credential: { kind: "pat" | "session" | "dev"; id: string };
+  /**
+   * How the caller authenticated. `id` is a PAT id or an OAuth connection
+   * id, never a secret; `clientName` is the connected AI app's own name
+   * (self-asserted unless its client id is a verified domain), for display.
+   */
+  credential: {
+    kind: "pat" | "session" | "dev" | "oauth";
+    id: string;
+    clientName?: string;
+  };
   access: McpAccess;
 }
 
@@ -60,6 +72,11 @@ export interface ToolBusView {
   instructions?: string;
   /** Correlates the audit line with the edge request (cf-ray). */
   requestId?: string;
+  /**
+   * Cross-origin browser callers allowed besides the endpoint's own origin
+   * (e.g. MCP Inspector's `http://localhost:6274`), as exact origins.
+   */
+  allowedOrigins?: readonly string[];
 }
 
 export type ToolCallOutcome =
@@ -92,6 +109,8 @@ export interface ToolCallAuditEvent {
   organizationId: string;
   credentialKind: McpPrincipal["credential"]["kind"];
   credentialId: string;
+  /** The connected AI app's display name, when the credential has one. */
+  clientName?: string;
 }
 
 /** Signing material for the tokens the ToolBus mints for app calls. */

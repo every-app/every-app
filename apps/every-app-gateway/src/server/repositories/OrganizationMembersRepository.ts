@@ -2,6 +2,7 @@ import { db } from "@/db";
 import {
   appTokens,
   members,
+  organizations,
   userAccessTokens,
   userAppAccess,
   users,
@@ -44,6 +45,33 @@ async function findMembership(userId: string, organizationId: string) {
   });
 }
 
+/**
+ * A membership with what a credential acting for the user re-checks on
+ * every request: the role, the user's ban state and email, and the
+ * organization's name. Null once the user left the organization.
+ */
+async function findMembershipWithUser(userId: string, organizationId: string) {
+  const [row] = await db
+    .select({
+      role: members.role,
+      email: users.email,
+      banned: users.banned,
+      banExpires: users.banExpires,
+      organizationName: organizations.name,
+    })
+    .from(members)
+    .innerJoin(users, eq(users.id, members.userId))
+    .innerJoin(organizations, eq(organizations.id, members.organizationId))
+    .where(
+      and(
+        eq(members.userId, userId),
+        eq(members.organizationId, organizationId),
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
 async function updateRole(
   userId: string,
   organizationId: string,
@@ -64,6 +92,8 @@ async function updateRole(
  * Take a user out of an organization in one D1 transaction: the membership,
  * their app access there, and the deploy tokens they created and personal
  * access tokens they hold for it. Tokens act for the user, so they go too.
+ * (The AI apps they connected are revoked after it, by
+ * McpConnectionService.revokeForRemovedMember.)
  */
 async function removeMember(
   userId: string,
@@ -114,6 +144,7 @@ export const OrganizationMembersRepository = {
   findOwnedOrganizationId,
   listMembersForOrganization,
   findMembership,
+  findMembershipWithUser,
   updateRole,
   removeMember,
 } as const;

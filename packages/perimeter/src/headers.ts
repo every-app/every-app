@@ -43,16 +43,36 @@ export function stripInboundHeaders(inbound: Headers): Headers {
 }
 
 /**
- * Extract a reserved Every App bearer token, or null. This is the single
- * definition of "reserved credential" — the gateway's CSRF exemption, header
- * stripping, and the authenticator's PAT branch must all agree on it, or a
- * token one of them consumes could be forwarded or cookie-authenticated by
- * another. Scheme is case-insensitive per RFC 9110; the `epat_` prefix is
+ * Extract an Every App personal access token (`epat_…`) bearer, or null.
+ * The authenticator's PAT branch reads it and the gateway's reserved
+ * credential check (`hasEveryAppBearer`) builds on it, so a token one of
+ * them consumes is never forwarded or cookie-authenticated by the other.
+ * Scheme is case-insensitive per RFC 9110; the `epat_` prefix is
  * case-sensitive (an `EPAT_…` value is someone else's credential).
  */
 export function extractEveryAppBearer(inbound: Headers): string | null {
   const token = extractBearerCredential(inbound);
   return token?.startsWith("epat_") ? token : null;
+}
+
+const OAUTH_GRANT_ID = /^[A-Za-z0-9_-]{16}$/;
+const OAUTH_TOKEN_SECRET = /^[A-Za-z0-9_-]{32}$/;
+
+/**
+ * Whether a bearer has the shape of a token the gateway's OAuth server
+ * (@cloudflare/workers-oauth-provider) issues: `{userId}:{grantId}:{secret}`,
+ * a 16-character grant id and a 32-character secret, read from the right
+ * (a user id may hold `:`). Those tokens are for the gateway's own /mcp: an
+ * app host accepts none, and forwards none to an app.
+ */
+export function isGatewayOauthToken(token: string): boolean {
+  const parts = token.split(":");
+  if (parts.length < 3) return false;
+  return (
+    parts.slice(0, -2).join(":").length > 0 &&
+    OAUTH_GRANT_ID.test(parts[parts.length - 2]!) &&
+    OAUTH_TOKEN_SECRET.test(parts[parts.length - 1]!)
+  );
 }
 
 export function extractBearerCredential(inbound: Headers): string | null {
@@ -66,8 +86,17 @@ export function extractBearerCredential(inbound: Headers): string | null {
   return token ? token : null;
 }
 
+/**
+ * Whether the request carries a reserved Every App bearer: a personal access
+ * token, or a token of the gateway's OAuth server. A reserved bearer is
+ * never forwarded to an app, even on a public route, and never falls back
+ * to anonymous access: it authenticates, or the request fails closed.
+ */
 export function hasEveryAppBearer(inbound: Headers): boolean {
-  return extractEveryAppBearer(inbound) !== null;
+  const token = extractBearerCredential(inbound);
+  return (
+    token !== null && (token.startsWith("epat_") || isGatewayOauthToken(token))
+  );
 }
 
 export function hasBearerCredential(inbound: Headers): boolean {

@@ -161,11 +161,82 @@ describe("2026-07-28 (modern) era", () => {
       ),
     );
     expect(result.tools.map((tool: { name: string }) => tool.name)).toEqual([
+      "everyapp_list_apps",
+      "everyapp_whoami",
       "chef_create_todo",
       "chef_list_todos",
       "todo_create_todo",
       "todo_list_todos",
     ]);
+    expect(result.tools[0].annotations).toEqual({
+      readOnlyHint: true,
+      idempotentHint: true,
+      openWorldHint: false,
+    });
+  });
+
+  it("answers the built-in tools on the gateway without calling an app", async () => {
+    const { serve, appCalls } = toolBus();
+    const view = gatewayView([todoApp(), chef], {
+      ...PRINCIPAL,
+      organizationName: "Acme",
+      credential: { kind: "oauth", id: "mcpc_1", clientName: "Claude" },
+      access: "read",
+    });
+    const call = async (name: string) =>
+      (
+        await rpcBody(
+          await serve(
+            modernRequest(
+              "tools/call",
+              { name, arguments: {} },
+              {},
+              "https://home.example.com/mcp",
+            ),
+            view,
+          ),
+        )
+      ).result;
+
+    expect((await call("everyapp_whoami")).structuredContent).toEqual({
+      user: { email: "user@example.com", role: "member" },
+      organization: { id: "org_1", name: "Acme" },
+      connection: { kind: "oauth", access: "read only", client: "Claude" },
+      apps: ["todo", "chef"],
+    });
+    const listed = await call("everyapp_list_apps");
+    expect(listed.structuredContent).toEqual({
+      apps: [
+        {
+          id: "todo",
+          name: "Todos",
+          url: "https://todo-acme.example.com",
+          tools: 1,
+        },
+        {
+          id: "chef",
+          name: "Chef",
+          url: "https://chef-acme.example.com",
+          tools: 1,
+        },
+      ],
+    });
+    expect(JSON.parse(listed.content[0].text)).toEqual(
+      listed.structuredContent,
+    );
+    expect(appCalls).toEqual([]);
+
+    // An app host has no built-ins.
+    const onApp = await rpcBody(
+      await serve(
+        modernRequest("tools/call", {
+          name: "everyapp_whoami",
+          arguments: {},
+        }),
+        appView(),
+      ),
+    );
+    expect(onApp.error.code).toBe(-32602);
   });
 
   it("hides write tools from read-only callers", async () => {
@@ -482,6 +553,35 @@ describe("transport guards", () => {
       expect(refused.status, origin).toBe(403);
       expect((await rpcBody(refused)).error.code).toBe(-32000);
     }
+  });
+
+  it("lets the gateway allow more browser origins, exactly", async () => {
+    const { serve } = toolBus();
+    const view = gatewayView([todoApp()], PRINCIPAL, ["http://localhost:6274"]);
+    const list = (origin: string) =>
+      serve(
+        modernRequest(
+          "tools/list",
+          {},
+          { origin },
+          "https://home.example.com/mcp",
+        ),
+        view,
+      );
+
+    const inspector = await list("http://localhost:6274");
+    expect(inspector.status).toBe(200);
+    expect(inspector.headers.get("access-control-allow-origin")).toBe(
+      "http://localhost:6274",
+    );
+    for (const origin of [
+      "http://localhost:6275",
+      "https://localhost:6274",
+      "https://evil.example",
+    ]) {
+      expect((await list(origin)).status, origin).toBe(403);
+    }
+    expect((await list("https://home.example.com")).status).toBe(200);
   });
 
   it("serves only localhost-class hosts and origins in local dev", async () => {

@@ -79,12 +79,6 @@ export interface GatewayDeps {
   /** Optional login URL to 302 to for unauthenticated HTML navigations. */
   loginUrl?: string;
   /**
-   * Advertise the gateway's OAuth authorization server to MCP clients: serve
-   * protected-resource metadata and point the 401 challenge at it. Off unless
-   * the gateway's OAuth server is enabled (MCP_OAUTH_ENABLED).
-   */
-  oauthDiscovery?: boolean;
-  /**
    * Serve `<app-host>/mcp` from the gateway's ToolBus instead of proxying it.
    * Called for the exact path `/mcp` once the caller is authenticated and
    * allowed into the app, unless the manifest keeps MCP in the app
@@ -112,53 +106,31 @@ function json(status: number, body: Record<string, unknown>): Response {
   );
 }
 
-function bearerChallenge(
-  host: string,
-  options: { oauthDiscovery: boolean; bearerPresented: boolean },
-): string {
-  if (options.oauthDiscovery) {
-    return `Bearer resource_metadata="https://${host}/.well-known/oauth-protected-resource"`;
-  }
-  // No resource_metadata while OAuth is off: an MCP client that finds none
-  // fails fast instead of half-registering with a disabled server.
-  return options.bearerPresented
-    ? 'Bearer realm="every-app", error="invalid_token"'
-    : 'Bearer realm="every-app"';
+/**
+ * App hosts advertise no OAuth (no resource_metadata): the gateway's one
+ * OAuth resource is its own `/mcp`, and an app host takes personal access
+ * tokens only. A client presenting another token is told where to go.
+ */
+function bearerChallenge(issuer: string, bearerPresented: boolean): string {
+  if (!bearerPresented) return 'Bearer realm="every-app"';
+  const gatewayMcp = `${issuer.replace(/\/$/, "")}/mcp`.replace(/["\\]/g, "");
+  return `Bearer realm="every-app", error="invalid_token", error_description="Use a personal access token here, or connect ${gatewayMcp}"`;
 }
 
 function bearerJson(
   status: number,
   body: Record<string, unknown>,
-  host: string,
-  options: { oauthDiscovery: boolean; bearerPresented: boolean },
+  issuer: string,
+  bearerPresented: boolean,
 ): Response {
   return withSecurityHeaders(
     new Response(JSON.stringify(body), {
       status,
       headers: {
         "content-type": "application/json",
-        "www-authenticate": bearerChallenge(host, options),
+        "www-authenticate": bearerChallenge(issuer, bearerPresented),
       },
     }),
-  );
-}
-
-function protectedResourceMetadata(
-  host: string,
-  resourcePath: string,
-  issuer: string,
-): Response {
-  return withSecurityHeaders(
-    new Response(
-      JSON.stringify({
-        resource: `https://${host}${resourcePath}`,
-        authorization_servers: [issuer.replace(/\/$/, "")],
-        bearer_methods_supported: ["header"],
-      }),
-      {
-        headers: { "content-type": "application/json" },
-      },
-    ),
   );
 }
 
@@ -234,27 +206,15 @@ export async function handleGatewayRequest(
   if (isReservedToolsPath(url.pathname)) {
     return json(404, { error: "not_found" });
   }
-  const oauthDiscovery = deps.oauthDiscovery ?? false;
-  // RFC 9728 metadata is served by the perimeter and never proxied — for the
-  // host-level identifier and path-aware variants (…/oauth-protected-resource/mcp
-  // describes the resource https://<host>/mcp). Non-GET methods on these paths
-  // must not fall through to a broad public route. While OAuth is off the
-  // paths stay reserved but answer 404.
+  // RFC 9728 metadata paths stay reserved on app hosts and answer 404: an
+  // app host is no OAuth resource (the gateway's own /mcp is the only one),
+  // and an app must not be able to publish metadata pointing elsewhere.
   const metadataBase = "/.well-known/oauth-protected-resource";
   if (
     url.pathname === metadataBase ||
     url.pathname.startsWith(`${metadataBase}/`)
   ) {
-    if (!oauthDiscovery) {
-      return json(404, { error: "not_found" });
-    }
-    if (request.method !== "GET") {
-      return withSecurityHeaders(
-        new Response(null, { status: 405, headers: { allow: "GET" } }),
-      );
-    }
-    const resourcePath = url.pathname.slice(metadataBase.length);
-    return protectedResourceMetadata(parsed.host, resourcePath, deps.issuer);
+    return json(404, { error: "not_found" });
   }
   // Server functions only answer same-origin fetch() calls from TanStack's
   // client, on every method and before any auth (see serverFunctions.ts).
@@ -270,7 +230,6 @@ export async function handleGatewayRequest(
 
   const bearerPresent = hasBearerCredential(request.headers);
   const reservedBearerPresent = hasEveryAppBearer(request.headers);
-  const challenge = { oauthDiscovery, bearerPresented: bearerPresent };
 
   const publicMatch = matchPublicRoute(
     app.manifest.public,
@@ -280,7 +239,7 @@ export async function handleGatewayRequest(
 
   // CSRF forgery needs an ambient credential to ride; a cookieless request
   // has none, and denying it here would turn the 401 + WWW-Authenticate
-  // challenge (how MCP clients discover the authorization server) into an
+  // challenge (how a programmatic client learns it needs a token) into an
   // opaque 403 for every unauthenticated programmatic POST.
   const hasAmbientCookie = request.headers.has("cookie");
 
@@ -388,8 +347,8 @@ export async function handleGatewayRequest(
       return bearerJson(
         401,
         { error: "unauthenticated" },
-        parsed.host,
-        challenge,
+        deps.issuer,
+        bearerPresent,
       );
     }
     return json(403, { error: "forbidden", reason: "no_app_access" });
@@ -413,8 +372,8 @@ export async function handleGatewayRequest(
     return bearerJson(
       401,
       { error: "unauthenticated" },
-      parsed.host,
-      challenge,
+      deps.issuer,
+      bearerPresent,
     );
   } else {
     return json(403, { error: "forbidden", reason: "no_app_access" });

@@ -119,6 +119,9 @@ function expectSecurityHeaders(response: Response): void {
   );
 }
 
+const INVALID_TOKEN_CHALLENGE =
+  'Bearer realm="every-app", error="invalid_token", error_description="Use a personal access token here, or connect https://home.example.com/mcp"';
+
 describe("handleGatewayRequest", () => {
   it("(a) a logged-in request reaches the app with a verified identity JWT", async () => {
     const res = await handleGatewayRequest(req("/tasks"), deps());
@@ -158,66 +161,27 @@ describe("handleGatewayRequest", () => {
     expect(payload.scopes).toEqual(["mcp:read", "api:write"]);
   });
 
-  it("serves OAuth protected-resource metadata on app hosts without proxying", async () => {
+  it("never proxies protected-resource metadata requests, even under a broad public route", async () => {
     const fetcher = vi.fn();
-    const res = await handleGatewayRequest(
-      req("/.well-known/oauth-protected-resource"),
-      deps({
-        oauthDiscovery: true,
-        authenticator: {
-          authenticate: async () => null,
-          hasAppAccess: async () => false,
-        },
-        fetcherFor: () => ({ fetch: fetcher }),
-      }),
-    );
-
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("application/json");
-    await expect(res.json()).resolves.toEqual({
-      resource: "https://todo.example.com",
-      authorization_servers: ["https://home.example.com"],
-      bearer_methods_supported: ["header"],
-    });
-    expect(fetcher).not.toHaveBeenCalled();
-  });
-
-  it("serves path-aware protected-resource metadata (RFC 9728) for /mcp", async () => {
-    const res = await handleGatewayRequest(
-      req("/.well-known/oauth-protected-resource/mcp"),
-      deps({
-        oauthDiscovery: true,
-        authenticator: {
-          authenticate: async () => null,
-          hasAppAccess: async () => false,
-        },
-      }),
-    );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { resource: string };
-    expect(body.resource).toBe("https://todo.example.com/mcp");
-  });
-
-  it("never proxies non-GET protected-resource metadata requests, even under a broad public route", async () => {
-    const fetcher = vi.fn();
-    const res = await handleGatewayRequest(
-      req("/.well-known/oauth-protected-resource", {
-        method: "POST",
-        headers: { "sec-fetch-site": "same-origin" },
-      }),
-      deps({
-        oauthDiscovery: true,
-        resolveApp: async () => ({
-          ...TODO,
-          manifest: validateManifest({
-            id: "todo",
-            public: [{ path: "/.well-known/*", methods: ["GET", "POST"] }],
-          }),
+    for (const method of ["GET", "POST"]) {
+      const res = await handleGatewayRequest(
+        req("/.well-known/oauth-protected-resource/mcp", {
+          method,
+          headers: { "sec-fetch-site": "same-origin" },
         }),
-        fetcherFor: () => ({ fetch: fetcher }),
-      }),
-    );
-    expect(res.status).toBe(405);
+        deps({
+          resolveApp: async () => ({
+            ...TODO,
+            manifest: validateManifest({
+              id: "todo",
+              public: [{ path: "/.well-known/*", methods: ["GET", "POST"] }],
+            }),
+          }),
+          fetcherFor: () => ({ fetch: fetcher }),
+        }),
+      );
+      expect(res.status).toBe(404);
+    }
     expect(fetcher).not.toHaveBeenCalled();
   });
 
@@ -283,9 +247,7 @@ describe("handleGatewayRequest", () => {
     );
 
     expect(res.status).toBe(401);
-    expect(res.headers.get("www-authenticate")).toBe(
-      'Bearer realm="every-app", error="invalid_token"',
-    );
+    expect(res.headers.get("www-authenticate")).toBe(INVALID_TOKEN_CHALLENGE);
     await expect(res.json()).resolves.toEqual({ error: "unauthenticated" });
   });
 
@@ -303,9 +265,30 @@ describe("handleGatewayRequest", () => {
     );
 
     expect(res.status).toBe(401);
-    expect(res.headers.get("www-authenticate")).toBe(
-      'Bearer realm="every-app", error="invalid_token"',
+    expect(res.headers.get("www-authenticate")).toBe(INVALID_TOKEN_CHALLENGE);
+  });
+
+  it("never forwards a gateway OAuth token to the app, even on a public route", async () => {
+    const appFetch = vi.fn();
+    const res = await handleGatewayRequest(
+      req("/health", {
+        headers: {
+          authorization:
+            "Bearer user-1:AbCdEfGhIjKlMn_-:0123456789abcdefghijklmnopqrstuv",
+        },
+      }),
+      deps({
+        authenticator: {
+          authenticate: async () => null,
+          hasAppAccess: async () => true,
+        },
+        fetcherFor: () => ({ fetch: appFetch }),
+      }),
     );
+
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toBe(INVALID_TOKEN_CHALLENGE);
+    expect(appFetch).not.toHaveBeenCalled();
   });
 
   it("invalid non-epat bearer on a private route returns bearer 401 instead of login redirect", async () => {
@@ -326,9 +309,7 @@ describe("handleGatewayRequest", () => {
     );
 
     expect(res.status).toBe(401);
-    expect(res.headers.get("www-authenticate")).toBe(
-      'Bearer realm="every-app", error="invalid_token"',
-    );
+    expect(res.headers.get("www-authenticate")).toBe(INVALID_TOKEN_CHALLENGE);
   });
 
   it("non-epat bearer state-changing requests are CSRF-exempt", async () => {
@@ -966,13 +947,13 @@ describe("handleGatewayRequest", () => {
   });
 });
 
-describe("OAuth discovery (MCP_OAUTH_ENABLED)", () => {
+describe("no OAuth on app hosts", () => {
   const anonymous: SessionAuthenticator = {
     authenticate: async () => null,
     hasAppAccess: async () => false,
   };
 
-  it("404s protected-resource metadata by default and never proxies it", async () => {
+  it("404s protected-resource metadata and never proxies it", async () => {
     const fetcher = vi.fn();
     for (const path of [
       "/.well-known/oauth-protected-resource",
@@ -991,24 +972,26 @@ describe("OAuth discovery (MCP_OAUTH_ENABLED)", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("stops advertising resource_metadata on the /mcp 401 by default", async () => {
-    const res = await handleGatewayRequest(
+  it("challenges /mcp without resource_metadata, pointing other tokens at the gateway", async () => {
+    const missing = await handleGatewayRequest(
       req("/mcp", { method: "POST" }),
       deps({ authenticator: anonymous }),
     );
-    expect(res.status).toBe(401);
-    expect(res.headers.get("www-authenticate")).toBe(
+    expect(missing.status).toBe(401);
+    expect(missing.headers.get("www-authenticate")).toBe(
       'Bearer realm="every-app"',
     );
-  });
 
-  it("points the 401 at the metadata when OAuth is enabled", async () => {
-    const res = await handleGatewayRequest(
-      req("/mcp", { method: "POST" }),
-      deps({ authenticator: anonymous, oauthDiscovery: true }),
+    const foreign = await handleGatewayRequest(
+      req("/mcp", {
+        method: "POST",
+        headers: { authorization: "Bearer user:grant:secret" },
+      }),
+      deps({ authenticator: anonymous }),
     );
-    expect(res.headers.get("www-authenticate")).toBe(
-      'Bearer resource_metadata="https://todo.example.com/.well-known/oauth-protected-resource"',
+    expect(foreign.status).toBe(401);
+    expect(foreign.headers.get("www-authenticate")).toBe(
+      INVALID_TOKEN_CHALLENGE,
     );
   });
 });

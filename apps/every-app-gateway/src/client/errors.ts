@@ -49,6 +49,7 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   INVALID_EXPIRATION_DATE: "Invalid expiration date.",
   EXPIRATION_IN_PAST: "Expiration date must be in the future.",
   OAUTH_DISABLED: "OAuth connections are not enabled on this gateway.",
+  CONNECTION_NOT_FOUND: "That connection doesn't exist or was already revoked.",
   CANNOT_MANAGE_SELF:
     "You cannot change your own role or deactivate your own account.",
   CANNOT_MANAGE_OWNER: "Owner accounts cannot be changed.",

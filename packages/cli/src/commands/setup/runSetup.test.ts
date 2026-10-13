@@ -520,6 +520,7 @@ describe("everyapp setup", () => {
     );
     const last = account.deploys.at(-1)!;
     expect(last.config["triggers"]).toEqual([
+      { type: "scheduled", schedule: "17 * * * *" },
       { type: "fetch", pattern: "*.example.com/*", zone: "zone-1" },
     ]);
     expect(last.config["env"].APP_BASE_DOMAIN).toBeUndefined();

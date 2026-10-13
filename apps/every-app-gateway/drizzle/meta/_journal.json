@@ -211,6 +211,20 @@
       "when": 1791891116814,
       "tag": "0029_mcp_tool_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "6",
+      "when": 1791891176814,
+      "tag": "0030_mcp_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1791891236814,
+      "tag": "0031_rate_limit_counters",
+      "breakpoints": true
     }
   ]
 }

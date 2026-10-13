@@ -4,7 +4,9 @@
  * Apps describe tools with the SDK's `defineTools()`; the gateway snapshots
  * each catalog at deploy and serves MCP clients from the snapshots: tools/list
  * never calls an app, and tools/call makes exactly one call over the app's
- * service binding with an identity minted for that call.
+ * service binding with an identity minted for that call. One app is served
+ * on its own host (`appSurfaceView`); every app the caller reaches, plus the
+ * built-in `everyapp_*` tools, on the gateway (`gatewaySurfaceView`).
  */
 export {
   CATALOG_LIMITS,
@@ -37,7 +39,7 @@ export {
   type SessionLike,
 } from "./principal";
 export { listTools, TOOLBUS_VERSION } from "./server";
-export { appSurfaceView } from "./view";
+export { appSurfaceView, gatewaySurfaceView } from "./view";
 export type {
   JsonObject,
   McpAccess,

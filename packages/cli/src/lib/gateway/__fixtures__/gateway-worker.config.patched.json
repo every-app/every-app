@@ -2,11 +2,18 @@
   "name": "every-app-gateway",
   "compatibilityDate": "2025-09-02",
   "compatibilityFlags": [
-    "nodejs_compat"
+    "nodejs_compat",
+    "global_fetch_strictly_public"
   ],
   "assets": {
     "runWorkerFirst": true
   },
+  "triggers": [
+    {
+      "type": "scheduled",
+      "schedule": "17 * * * *"
+    }
+  ],
   "observability": {
     "enabled": true,
     "headSamplingRate": 1,

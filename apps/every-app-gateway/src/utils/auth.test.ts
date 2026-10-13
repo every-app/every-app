@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getSafeRedirect, getSafeReturnTo } from "./auth";
+import { getSafeRedirect, getSafeReturnTo, isWorkerRoute } from "./auth";
 
 describe("getSafeRedirect", () => {
   it("allows internal paths", () => {
@@ -16,6 +16,19 @@ describe("getSafeRedirect", () => {
     expect(getSafeRedirect("//evil.example")).toBe("/");
     expect(getSafeRedirect("//evil.example/path")).toBe("/");
     expect(getSafeRedirect("/\\evil.example")).toBe("/");
+  });
+});
+
+describe("isWorkerRoute", () => {
+  it("sends the OAuth authorization flow through a full page load", () => {
+    const authorize = getSafeRedirect(
+      "/oauth/authorize?client_id=https%3A%2F%2Fclaude.ai%2Fmeta&state=s",
+    );
+    expect(authorize).not.toBe("/");
+    expect(isWorkerRoute(authorize)).toBe(true);
+    expect(isWorkerRoute("/oauth/consent?handle=h")).toBe(true);
+    expect(isWorkerRoute("/admin")).toBe(false);
+    expect(isWorkerRoute("/accept-invitation?token=t")).toBe(false);
   });
 });
 

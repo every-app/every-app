@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
-import { getSafeRedirect, getSafeReturnTo } from "@/utils/auth";
+import { getSafeRedirect, getSafeReturnTo, isWorkerRoute } from "@/utils/auth";
 import {
   getBetterAuthErrorMessage,
   getServerErrorMessage,
@@ -57,6 +57,8 @@ function SignIn() {
     const safeReturnTo = getSafeReturnTo(return_to);
     if (safeReturnTo) {
       window.location.assign(safeReturnTo);
+    } else if (isWorkerRoute(safeRedirect)) {
+      window.location.assign(safeRedirect);
     } else {
       navigate({ to: safeRedirect });
     }

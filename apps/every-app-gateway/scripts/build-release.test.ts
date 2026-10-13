@@ -19,10 +19,12 @@ const BUILD = {
 const WORKER_CONFIG = {
   name: "every-app-gateway",
   compatibilityDate: "2025-09-02",
-  compatibilityFlags: ["nodejs_compat"],
+  compatibilityFlags: ["nodejs_compat", "global_fetch_strictly_public"],
   assets: { runWorkerFirst: true },
   workersDev: false,
   previewUrls: false,
+  // The hourly MCP housekeeping: the release's own, kept by every deploy.
+  triggers: [{ type: "scheduled", schedule: "17 * * * *" }],
   env: {
     ASSETS: { type: "assets" },
     DB: { type: "d1", name: "every-app-gateway" },
@@ -150,10 +152,12 @@ describe("stageRelease", () => {
     ).not.toBe(first.sha256);
   });
 
-  it("refuses a Build Output that carries an install's bindings or domains", () => {
+  it("refuses a Build Output that carries an install's bindings, domains or routes", () => {
     for (const change of [
       (c: any) => (c.env["APP__every-todo"] = { type: "worker", worker: "x" }),
       (c: any) => (c.domains = ["gateway.example.com"]),
+      (c: any) =>
+        c.triggers.push({ type: "fetch", pattern: "*.gateway.example.com/*" }),
       (c: any) => (c.env.OAUTH_KV.id = "0123"),
       (c: any) => (c.env.DB.id = "0123"),
       (c: any) =>

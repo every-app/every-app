@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   hasBearerCredential,
   hasEveryAppBearer,
+  isGatewayOauthToken,
   stripInboundHeaders,
   withSecurityHeaders,
   IDENTITY_HEADER,
@@ -71,6 +72,31 @@ describe("hasEveryAppBearer", () => {
   it("treats the epat_ prefix as case-sensitive, matching the authenticator", () => {
     expect(hasEveryAppBearer(withAuthorization("Bearer EPAT_abc"))).toBe(false);
     expect(hasEveryAppBearer(withAuthorization("Bearer Epat_abc"))).toBe(false);
+  });
+
+  it("reserves the gateway OAuth server's tokens", () => {
+    const grantId = "AbCdEfGhIjKlMn_-";
+    const secret = "0123456789abcdefghijklmnopqrstuv";
+    for (const token of [
+      `user-1:${grantId}:${secret}`,
+      // A user id may itself hold ":".
+      `org:user:${grantId}:${secret}`,
+    ]) {
+      expect(isGatewayOauthToken(token), token).toBe(true);
+      expect(hasEveryAppBearer(withAuthorization(`Bearer ${token}`))).toBe(
+        true,
+      );
+    }
+    for (const token of [
+      `${grantId}:${secret}`,
+      `:${grantId}:${secret}`,
+      `user-1:${grantId}x:${secret}`,
+      `user-1:${grantId}:${secret}x`,
+      `user-1:${grantId}:${secret.slice(1)}=`,
+      "eyJhbGciOiJIUzI1NiJ9.e30.sig",
+    ]) {
+      expect(isGatewayOauthToken(token), token).toBe(false);
+    }
   });
 });
 

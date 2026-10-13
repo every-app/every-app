@@ -11,8 +11,10 @@
  *    client (same rule the perimeter applies on app hosts);
  *  - a cookie-carrying state-changing request must pass the perimeter's
  *    Origin / Sec-Fetch-Site check. Cookieless requests carry no session to
- *    ride, and token-authenticated routes (deploy API, OAuth token and
- *    registration endpoints) are left to their own bearer checks.
+ *    ride, and token-authenticated routes (deploy API, the MCP connector,
+ *    OAuth token and registration endpoints) are left to their own bearer
+ *    checks: none of them reads the session cookie. The OAuth consent
+ *    decision is a cookie POST and gets the check.
  */
 import {
   evaluateCsrf,
@@ -26,11 +28,12 @@ const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 // Called by programmatic clients with their own credentials, never by a
 // gateway page.
 const TOKEN_AUTHENTICATED_PATHS = [
+  "/mcp",
   "/oauth/token",
   "/oauth/register",
   "/api/setup/deploy-token",
 ];
-const TOKEN_AUTHENTICATED_PREFIXES = ["/api/deploy/", "/oauth/userinfo"];
+const TOKEN_AUTHENTICATED_PREFIXES = ["/api/deploy/"];
 
 // The native shell's auth client sends this exact app origin (as Origin or
 // expo-origin) and no Fetch Metadata. A browser can do neither, and Better
@@ -38,12 +41,7 @@ const TOKEN_AUTHENTICATED_PREFIXES = ["/api/deploy/", "/oauth/userinfo"];
 const NATIVE_APP_ORIGIN = "everyapp://";
 
 // Pages that show secrets, consent or setup state: never cached.
-const NO_STORE_PATHS = [
-  "/admin",
-  "/oauth/authorize",
-  "/setup",
-  "/reset-password",
-];
+const NO_STORE_PATHS = ["/admin", "/oauth", "/setup", "/reset-password"];
 
 function isTokenAuthenticatedPath(pathname: string): boolean {
   return (

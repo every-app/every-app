@@ -96,6 +96,42 @@ subscriptions (off), and prompts/resources (not served). Any other failure
 fails the run, and so does a baseline entry that starts passing (delete it).
 It needs the network, so it isn't part of `pnpm test` or CI.
 
+### The gateway's MCP connector and OAuth
+
+`apps/every-app-gateway/src/server/mcp-auth/gateway-mcp.e2e.sqlite.test.ts`
+runs the gateway's own `/mcp` end to end in process: the real worker entry,
+the real `@cloudflare/workers-oauth-provider` on an in-memory KV, every
+migration on SQLite, and real SDK apps behind their bindings. It covers the
+discovery documents, a DCR client and CIMD clients (their metadata
+documents stubbed: claude.ai, Claude Code on changing loopback ports, and
+a ChatGPT-style client signing its token requests) through authorize →
+consent → token → `tools/list` → `tools/call` → refresh → revocation, the
+authorization endpoint's refusals (errors shown, never redirected; PKCE for
+every client; nothing on the gateway's own domain, at consent and the token
+endpoint too), dynamic registration's limits (what is kept, 16 KiB, per
+address and per gateway per day, `MCP_DCR_ENABLED`), the consent page's
+protections (cross-site, another browser, replay, a double-submitted
+approval, framing, caching), body limits and failures, reconnecting
+replacing the earlier connection (by installation), the per-request
+re-checks (revoked connection, removed member, a member who left and came
+back, deactivated user, app access removed, app deleted), read-only and
+chosen-apps connections, personal tokens, the `MCP_OAUTH_ENABLED` kill
+switch and the hourly housekeeping.
+
+The consent page's form is tested as rendered, with React in happy-dom
+(`apps/every-app-gateway/src/client/components/oauth/ConsentForm.test.tsx`):
+what it posts is parsed with the decision's own parser, Allow arms only
+after the page has been seen for a moment and the user moved, typed or
+touched (a tap included, a mouse press alone not), a second press sends
+nothing, and "Published by" is verified only when access goes to that
+site.
+
+Against a real local gateway (workerd under `vite dev` on
+`http://localhost:<port>`), `apps/every-app-gateway/scripts/mcp-oauth-local.mjs`
+plays an MCP client and its browser through the same flow, and with
+`--conformance` runs the MCP conformance suite's authorization-server
+scenarios. Setup and usage: `docs/runbooks/mcp-oauth.md`, "Test locally".
+
 ---
 
 ## B. Local testing with `everyapp dev`

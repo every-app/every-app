@@ -2,13 +2,16 @@
  * Production worker entry — the "one door".
  *
  * Every request to this worker is dispatched on Host:
- *  - the gateway's own host (from GATEWAY_URL) → the control-plane app
- *    (launcher, auth, admin) served by TanStack Start, with static assets
- *    served explicitly via the ASSETS binding (`run_worker_first` is on so
- *    app-subdomain requests can never be answered by a gateway asset). Its
- *    requests pass the control-plane guard and the credential rate limits
- *    first, and every response gets the control-plane security headers
- *    (server/control-plane-guard.ts, server/auth-rate-limit.ts);
+ *  - the gateway's own host (from GATEWAY_URL) → its MCP connector (`/mcp`)
+ *    and OAuth authorization server (`/oauth/*`, discovery), then the
+ *    control-plane app (launcher, auth, admin) served by TanStack Start, with
+ *    static assets served explicitly via the ASSETS binding
+ *    (`run_worker_first` is on so app-host requests can never be answered by
+ *    a gateway asset). Its requests pass the control-plane guard and the
+ *    credential rate limits first, and every response gets the control-plane
+ *    security headers (server/control-plane-guard.ts,
+ *    server/auth-rate-limit.ts). The MCP and OAuth code loads with the first
+ *    request that needs it (server/mcp-auth/routes.ts);
  *  - a host in the app registry → the perimeter proxy
  *    (`handleGatewayRequest`), which authenticates the Better Auth session,
  *    mints the identity JWT, and proxies to the app's private worker over its
@@ -22,8 +25,10 @@
  * dev), requests fall through to the control plane only while the app registry
  * is empty. Once an active app exists, requests fail closed until the gateway
  * host can be identified again.
+ *
+ * The hourly cron trigger runs the MCP housekeeping: audit retention,
+ * idle connections, and the OAuth storage sweep (server/mcp-auth/maintenance.ts).
  */
-import { createServerEntry } from "@tanstack/react-start/server-entry";
 import { env, WorkerEntrypoint } from "cloudflare:workers";
 import {
   handleGatewayRequest,
@@ -44,12 +49,8 @@ import {
   guardControlPlaneRequest,
   withControlPlaneHeaders,
 } from "./server/control-plane-guard";
-import { isMcpOauthEnabled, isOauthPath } from "./server/oauth-flag";
+import { isOauthPath } from "./server/oauth-flag";
 import { serveAppHostMcp } from "./server/toolbus/app-host-mcp";
-import {
-  getOauthProvider,
-  syntheticExecutionContext,
-} from "./server/oauth-provider";
 
 const HOST_CACHE_MAX_ENTRIES = 500;
 const HOST_CACHE_HIT_TTL_MS = 30_000;
@@ -103,6 +104,23 @@ export async function resolveAppByHostname(
   return app;
 }
 
+/** The gateway's MCP connector and OAuth paths, served before TanStack. */
+function isMcpAuthPath(pathname: string): boolean {
+  return (
+    pathname === "/mcp" || pathname.startsWith("/mcp/") || isOauthPath(pathname)
+  );
+}
+
+/** The gateway host: its MCP and OAuth routes, else the control plane. */
+async function serveGatewayHost(request: Request): Promise<Response> {
+  if (isMcpAuthPath(new URL(request.url).pathname)) {
+    const { serveMcpAuthRoute } = await import("./server/mcp-auth/routes");
+    const served = await serveMcpAuthRoute(request);
+    if (served) return served;
+  }
+  return serveControlPlane(request, env);
+}
+
 /**
  * Serve a control-plane request: guard it, count it against the credential
  * rate limits, then hand it to `serve`, stamping the control-plane security
@@ -145,8 +163,8 @@ export class AppGateway extends WorkerEntrypoint<
   }
 }
 
-export default createServerEntry({
-  async fetch(request) {
+export default {
+  async fetch(request: Request): Promise<Response> {
     const gatewayHost = ownGatewayHost();
     const requestHost = (request.headers.get("host") ?? "")
       .trim()
@@ -156,22 +174,7 @@ export default createServerEntry({
       return serveGuarded(
         request,
         requestHost || new URL(request.url).host,
-        async (guarded) => {
-          if (
-            !isMcpOauthEnabled(env) &&
-            isOauthPath(new URL(guarded.url).pathname)
-          ) {
-            return new Response(JSON.stringify({ error: "oauth_disabled" }), {
-              status: 404,
-              headers: { "content-type": "application/json" },
-            });
-          }
-          return getOauthProvider().fetch(
-            guarded,
-            env,
-            syntheticExecutionContext(),
-          );
-        },
+        serveGatewayHost,
       );
     }
 
@@ -245,7 +248,6 @@ export default createServerEntry({
         issuer: env.GATEWAY_URL,
         resolveApp: async () => app,
         loginUrl: `${env.GATEWAY_URL}/sign-in`,
-        oauthDiscovery: isMcpOauthEnabled(env),
         interceptMcp: serveAppHostMcp,
       });
     } catch (error) {
@@ -263,4 +265,12 @@ export default createServerEntry({
       );
     }
   },
-});
+
+  async scheduled(
+    _controller: ScheduledController,
+    runtimeEnv: Cloudflare.Env,
+  ) {
+    const { runMcpMaintenance } = await import("./server/mcp-auth/maintenance");
+    await runMcpMaintenance(runtimeEnv);
+  },
+} satisfies ExportedHandler<Cloudflare.Env>;

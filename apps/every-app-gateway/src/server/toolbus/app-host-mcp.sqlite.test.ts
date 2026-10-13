@@ -38,11 +38,6 @@ vi.mock("drizzle-orm/d1", () => ({ drizzle: () => hoisted.testDb.current }));
 vi.mock("better-auth/tanstack-start", () => ({
   tanstackStartCookies: () => ({ id: "tanstack-start-cookies" }),
 }));
-// Only personal tokens are used here; the OAuth library stays out.
-vi.mock("@/server/oauth-provider", () => ({
-  getOauthProvider: vi.fn(),
-  syntheticExecutionContext: vi.fn(),
-}));
 
 import { generateKeyPairSync } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
@@ -68,6 +63,7 @@ import {
 import {
   appToolCatalogs,
   appTools,
+  mcpToolCalls,
   userAccessTokens,
   users,
 } from "@/db/schema";
@@ -632,6 +628,34 @@ describe("app-host /mcp with a personal access token", () => {
       proto: "2025-06-18",
     });
     expect(JSON.stringify(audit)).not.toContain("buy milk");
+
+    // And one durable row per call, written after the response.
+    await Promise.all(hoisted.waitUntil.mock.calls.map(([task]) => task));
+    const rows = await db
+      .select()
+      .from(mcpToolCalls)
+      .orderBy(mcpToolCalls.createdAt);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      surface: "app",
+      appRowId,
+      appSlug: "todo",
+      toolName: "create_todo",
+      risk: "write",
+      decision: "allowed",
+      outcome: "ok",
+      credentialKind: "pat",
+      credentialId: patRow!.id,
+      organizationId,
+      userId: ownerId,
+      requestId: "ray-123",
+      protocolVersion: "2026-07-28",
+      argsDigest: audit[0]!["args_digest"],
+      id: audit[0]!["call_id"],
+    });
+    expect(rows[1]).toMatchObject({ outcome: "tool_error" });
+    expect(JSON.stringify(rows)).not.toContain("buy milk");
+    expect(JSON.stringify(rows)).not.toContain("taken");
     consoleLog.mockRestore();
   });
 
@@ -673,7 +697,7 @@ describe("app-host /mcp with a personal access token", () => {
     const response = await mcp("epat_not-a-real-token", "tools/list");
     expect(response.status).toBe(401);
     expect(response.headers.get("www-authenticate")).toBe(
-      'Bearer realm="every-app", error="invalid_token"',
+      'Bearer realm="every-app", error="invalid_token", error_description="Use a personal access token here, or connect https://gateway.example.com/mcp"',
     );
     expect(appRequests).toHaveLength(0);
   });
@@ -705,12 +729,14 @@ describe("app-host /mcp with a personal access token", () => {
     const token = await personalToken();
     await syncAppTools(syncable()); // what the deploy does
     deployApp({ extraTool: true }); // redeployed without a sync
+    appRequests.length = 0;
 
     for (let i = 0; i < 3; i += 1) {
       await mcp(token, "tools/call", { name: "list_todos", arguments: {} });
     }
-    expect(hoisted.waitUntil).toHaveBeenCalledOnce();
-    await hoisted.waitUntil.mock.calls[0]![0];
+    // Three audit rows and one re-sync, all after the responses.
+    await Promise.all(hoisted.waitUntil.mock.calls.map(([task]) => task));
+    expect(listCalls()).toBe(1);
 
     const tools = await db
       .select({ name: appTools.name })
@@ -942,7 +968,7 @@ describe("credentials on app-host /mcp", () => {
       const response = await mcp(token, "tools/list");
       expect(response.status).toBe(401);
       expect(response.headers.get("www-authenticate")).toBe(
-        'Bearer realm="every-app", error="invalid_token"',
+        'Bearer realm="every-app", error="invalid_token", error_description="Use a personal access token here, or connect https://gateway.example.com/mcp"',
       );
     }
 

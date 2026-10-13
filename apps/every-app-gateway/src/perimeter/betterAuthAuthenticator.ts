@@ -27,24 +27,9 @@ import {
   type AuthenticatedSession,
   type SessionAuthenticator,
 } from "@every-app/perimeter";
-import { env } from "cloudflare:workers";
-import { isMcpOauthEnabled } from "@/server/oauth-flag";
-import {
-  getOauthProvider,
-  syntheticExecutionContext,
-} from "@/server/oauth-provider";
 
 type CredentialBoundSession = AuthenticatedSession & {
   credentialAppRowId?: string | null;
-};
-
-type OauthGrantProps = {
-  userId: string;
-  organizationId: string;
-  appRowId: string;
-  appSlug?: string;
-  scopes?: string[];
-  clientId?: string;
 };
 
 /**
@@ -121,12 +106,11 @@ export function createProdAuthenticator(): SessionAuthenticator {
       }
 
       if (bearerCredential) {
-        // With the OAuth server off, no other bearer is ours to validate:
-        // fail closed without calling the provider (the perimeter still
-        // forwards it on public routes, where apps own their bearer auth).
-        if (!isMcpOauthEnabled(env)) return null;
-        const oauth = await authenticateOauthBearer(request, bearerCredential);
-        return oauth;
+        // No other bearer is the gateway's to accept on an app host: OAuth
+        // access tokens are for the gateway's own /mcp only. Fail closed.
+        // (On public routes the perimeter forwards other bearers, which
+        // apps own, but never one shaped like the OAuth server's tokens.)
+        return null;
       }
 
       const session = await auth.api.getSession({ headers: request.headers });
@@ -150,10 +134,7 @@ export function createProdAuthenticator(): SessionAuthenticator {
       // The org the session acts under must be the org the app belongs to —
       // otherwise the minted JWT would carry claims for a different org.
       if (session.orgId !== app.organizationId) return false;
-      if (
-        session.credential?.kind === "pat" ||
-        session.credential?.kind === "oauth"
-      ) {
+      if (session.credential?.kind === "pat") {
         const credentialAppRowId = (session as CredentialBoundSession)
           .credentialAppRowId;
         if (credentialAppRowId) {
@@ -171,84 +152,4 @@ export function createProdAuthenticator(): SessionAuthenticator {
       );
     },
   };
-}
-
-function isOauthGrantProps(value: unknown): value is OauthGrantProps {
-  if (!value || typeof value !== "object") return false;
-  const props = value as Record<string, unknown>;
-  // appRowId is mandatory: every OAuth grant is consented for exactly one
-  // app. A grant without the binding would silently widen to every app the
-  // user can access.
-  return (
-    typeof props.userId === "string" &&
-    typeof props.organizationId === "string" &&
-    typeof props.appRowId === "string" &&
-    props.appRowId.length > 0
-  );
-}
-
-async function authenticateOauthBearer(
-  request: Request,
-  bearerCredential: string,
-): Promise<AuthenticatedSession | null> {
-  const authorization = request.headers.get("authorization");
-  if (!authorization || !env.GATEWAY_URL) return null;
-
-  const response = await getOauthProvider().fetch(
-    new Request(new URL("/oauth/userinfo", env.GATEWAY_URL), {
-      headers: { authorization },
-    }),
-    env,
-    syntheticExecutionContext(),
-  );
-  if (!response.ok) return null;
-
-  const props = (await response.json()) as unknown;
-  if (!isOauthGrantProps(props)) return null;
-
-  const role = await resolveLiveOrgRole(props.userId, props.organizationId);
-  if (!role) return null;
-  const user = await db.query.users.findFirst({
-    where: eq(users.id, props.userId),
-  });
-  if (!user) return null;
-
-  if (
-    Array.isArray(props.scopes) &&
-    props.scopes.some((scope) => typeof scope !== "string")
-  ) {
-    return null;
-  }
-  const scopes =
-    Array.isArray(props.scopes) && props.scopes.length ? props.scopes : ["*"];
-  if (scopes.some((scope) => scope.startsWith("provider:"))) return null;
-
-  let actor = props.clientId ? `oauth:${props.clientId}` : "oauth:unknown";
-  try {
-    const token = await env.OAUTH_PROVIDER?.unwrapToken<{
-      clientId?: string;
-    }>(bearerCredential);
-    if (token?.grantId) {
-      actor = `oauth:${token.grantId}`;
-    } else if (token?.grant.clientId) {
-      actor = `oauth:${token.grant.clientId}`;
-    }
-  } catch {
-    // Userinfo validation already succeeded; grant id is best-effort.
-  }
-
-  const session: CredentialBoundSession = {
-    sub: props.userId,
-    email: user.email,
-    orgId: props.organizationId,
-    orgRole: role,
-    credential: {
-      kind: "oauth",
-      channel: "api",
-      actor,
-      scopes,
-    },
-    credentialAppRowId: props.appRowId,
-  };
-  return session;
 }

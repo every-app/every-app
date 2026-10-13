@@ -12,5 +12,12 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    server: {
+      deps: {
+        // Processed by vitest rather than loaded by node, so a test's
+        // `cloudflare:workers` mock reaches the real OAuth library.
+        inline: ["@cloudflare/workers-oauth-provider"],
+      },
+    },
   },
 });

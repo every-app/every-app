@@ -22,6 +22,9 @@ const PUBLIC_ROUTES = [
   "/forgot-password",
   "/reset-password",
   "/accept-invitation",
+  // Asks the server whether the user is signed in: it is reached by a full
+  // page load straight after sign-in, before the cached session catches up.
+  "/oauth/consent",
 ];
 
 // Inner component that handles routing and session management (must be inside QueryClientProvider)

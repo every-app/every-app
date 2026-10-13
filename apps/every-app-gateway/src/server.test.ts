@@ -12,29 +12,22 @@ const mocks = vi.hoisted(() => ({
   findByHostname: vi.fn(),
   authenticate: vi.fn(),
   controlPlaneFetch: vi.fn(),
-  providerFetch: vi.fn(),
   serveAppHostMcp: vi.fn(),
+  runMcpMaintenance: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({
   env: mocks.env,
+  waitUntil: () => undefined,
   WorkerEntrypoint: class {},
-}));
-
-// The provider library imports cloudflare:workers from node_modules, where
-// vi.mock cannot reach — stub the module, but keep the real control-plane
-// delegation so host-dispatch tests still observe control-plane serving.
-vi.mock("@/server/oauth-provider", () => ({
-  getOauthProvider: vi.fn(() => ({ fetch: mocks.providerFetch })),
-  syntheticExecutionContext: () => ({
-    waitUntil: () => undefined,
-    passThroughOnException: () => undefined,
-  }),
 }));
 
 vi.mock("@tanstack/react-start/server-entry", () => ({
   default: { fetch: mocks.controlPlaneFetch },
-  createServerEntry: (entry: unknown) => entry,
+}));
+
+vi.mock("./server/mcp-auth/maintenance", () => ({
+  runMcpMaintenance: mocks.runMcpMaintenance,
 }));
 
 vi.mock("./perimeter/drizzleAppRegistry", () => ({
@@ -89,16 +82,6 @@ function expectSecurityHeaders(response: Response): void {
 
 afterEach(() => {
   vi.useRealTimers();
-});
-
-beforeEach(() => {
-  mocks.providerFetch.mockReset();
-  mocks.providerFetch.mockImplementation(
-    async (request: Request, env: unknown) => {
-      const { serveControlPlane } = await import("@/server/control-plane");
-      return serveControlPlane(request, env as { ASSETS?: never });
-    },
-  );
 });
 
 describe("hostname app cache", () => {
@@ -358,11 +341,10 @@ describe("gateway host (control plane)", () => {
   });
 
   it("never caches admin, consent or setup pages", async () => {
-    mocks.env.MCP_OAUTH_ENABLED = "true";
     for (const path of [
       "/admin",
       "/admin/users",
-      "/oauth/authorize?client_id=x",
+      "/oauth/consent?handle=x",
       "/setup",
     ]) {
       const response = await server.fetch(gatewayRequest(path));
@@ -592,33 +574,86 @@ describe("gateway host (control plane)", () => {
     expect(keys).toHaveLength(1);
   });
 
-  it("returns 404 for every OAuth endpoint while MCP_OAUTH_ENABLED is unset", async () => {
+  it("returns 404 for every OAuth endpoint while MCP_OAUTH_ENABLED is false", async () => {
+    mocks.env.MCP_OAUTH_ENABLED = "false";
     for (const [method, path] of [
       ["GET", "/.well-known/oauth-authorization-server"],
+      ["GET", "/.well-known/oauth-protected-resource/mcp"],
       ["GET", "/.well-known/oauth-protected-resource"],
       ["GET", "/.well-known/openid-configuration"],
       ["POST", "/oauth/register"],
       ["GET", "/oauth/authorize?client_id=x"],
+      ["GET", "/oauth/consent?handle=x"],
+      ["POST", "/oauth/consent/decision"],
       ["POST", "/oauth/token"],
-      ["GET", "/oauth/userinfo"],
     ] as const) {
       const response = await server.fetch(gatewayRequest(path, { method }));
-      expect(response.status).toBe(404);
+      expect(response.status, path).toBe(404);
       expect(await response.json()).toEqual({ error: "oauth_disabled" });
       expect(response.headers.get("x-content-type-options")).toBe("nosniff");
     }
-    expect(mocks.providerFetch).not.toHaveBeenCalled();
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+
+    // /mcp still takes personal tokens, with a challenge that names no
+    // authorization server.
+    const challenge = await server.fetch(
+      gatewayRequest("/mcp", { method: "POST", body: "{}" }),
+    );
+    expect(challenge.status).toBe(401);
+    expect(challenge.headers.get("www-authenticate")).toBe(
+      'Bearer realm="every-app"',
+    );
   });
 
-  it("routes OAuth endpoints to the provider when MCP_OAUTH_ENABLED is true", async () => {
-    mocks.env.MCP_OAUTH_ENABLED = "true";
-    mocks.providerFetch.mockResolvedValue(Response.json({ issuer: "x" }));
-
-    const response = await server.fetch(
+  it("serves the OAuth discovery documents when MCP_OAUTH_ENABLED is unset", async () => {
+    const metadata = await server.fetch(
       gatewayRequest("/.well-known/oauth-authorization-server"),
     );
-    expect(response.status).toBe(200);
-    expect(mocks.providerFetch).toHaveBeenCalledOnce();
+    expect(metadata.status).toBe(200);
+    expect(await metadata.json()).toMatchObject({
+      issuer: "https://example.com",
+      authorization_endpoint: "https://example.com/oauth/authorize",
+    });
+    // Security headers are stamped on the library's answers too.
+    expect(metadata.headers.get("x-frame-options")).toBe("DENY");
+
+    const challenge = await server.fetch(
+      gatewayRequest("/mcp", { method: "POST", body: "{}" }),
+    );
+    expect(challenge.status).toBe(401);
+    expect(challenge.headers.get("www-authenticate")).toContain(
+      'resource_metadata="https://example.com/.well-known/oauth-protected-resource/mcp"',
+    );
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+  });
+
+  it("serves no aliases under /mcp, and leaves look-alikes to the control plane", async () => {
+    for (const path of ["/mcp/", "/mcp/apps/todo", "/mcp/x"]) {
+      const response = await server.fetch(
+        gatewayRequest(path, { method: "POST", body: "{}" }),
+      );
+      expect(response.status, path).toBe(404);
+    }
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+
+    await server.fetch(gatewayRequest("/mcp-admin"));
+    expect(mocks.controlPlaneFetch).toHaveBeenCalledOnce();
+  });
+
+  it("never reads the session cookie on /mcp, and exempts it from the cookie CSRF check", async () => {
+    const response = await server.fetch(
+      gatewayRequest("/mcp", {
+        method: "POST",
+        headers: {
+          cookie: "session=abc",
+          origin: "https://evil.example.net",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+    // A bearer-only endpoint: no token, no access, whatever the cookie says.
+    expect(response.status).toBe(401);
   });
 
   it("serves an app host's /mcp from the ToolBus for a personal token", async () => {
@@ -660,7 +695,7 @@ describe("gateway host (control plane)", () => {
     mocks.serveAppHostMcp.mockReset();
   });
 
-  it("does not advertise OAuth on app hosts while it is off", async () => {
+  it("never advertises OAuth on app hosts", async () => {
     mocks.findByHostname.mockResolvedValue(TODO);
 
     const metadata = await server.fetch(
@@ -684,5 +719,17 @@ describe("gateway host (control plane)", () => {
     expect(challenge.headers.get("www-authenticate")).toBe(
       'Bearer realm="every-app"',
     );
+  });
+});
+
+describe("scheduled", () => {
+  it("runs the MCP housekeeping with the cron's env", async () => {
+    mocks.runMcpMaintenance.mockResolvedValue(undefined);
+    const runtimeEnv = { GATEWAY_URL: "https://example.com" };
+    await server.scheduled(
+      { cron: "17 * * * *" } as ScheduledController,
+      runtimeEnv as unknown as Cloudflare.Env,
+    );
+    expect(mocks.runMcpMaintenance).toHaveBeenCalledWith(runtimeEnv);
   });
 });

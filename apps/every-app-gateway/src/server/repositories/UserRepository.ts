@@ -55,6 +55,8 @@ async function deleteUnaffiliatedByEmail(
  * Deactivate a user everywhere, in one D1 transaction: ban the account
  * (Better Auth's admin fields, so new sign-ins fail), end every session, and
  * revoke their personal access tokens and the deploy tokens they created.
+ * (The AI apps they connected are revoked after it, by
+ * McpConnectionService.revokeForDeactivatedUser.)
  */
 async function deactivate(userId: string, reason: string): Promise<void> {
   const now = new Date();

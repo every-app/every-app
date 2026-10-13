@@ -165,7 +165,7 @@ function checkBuildOutput(outputDir: string): void {
   ) as {
     name?: string;
     domains?: unknown[];
-    triggers?: unknown[];
+    triggers?: Array<{ type?: string }>;
     env?: Record<string, { type?: string; id?: string; value?: unknown }>;
   };
   const problems: string[] = [];
@@ -173,7 +173,11 @@ function checkBuildOutput(outputDir: string): void {
     problems.push(`its Worker is "${workerConfig.name}"`);
   }
   if (workerConfig.domains?.length) problems.push("it declares domains");
-  if (workerConfig.triggers?.length) problems.push("it declares triggers");
+  // Routes are an install's, patched in by the deploy; a scheduled trigger
+  // (the hourly MCP housekeeping) belongs to the release itself.
+  if (workerConfig.triggers?.some((trigger) => trigger.type !== "scheduled")) {
+    problems.push("it declares routes");
+  }
   for (const [name, binding] of Object.entries(workerConfig.env ?? {})) {
     if (name.startsWith("APP__")) problems.push(`it binds ${name}`);
     if ((binding.type === "kv" || binding.type === "d1") && binding.id) {

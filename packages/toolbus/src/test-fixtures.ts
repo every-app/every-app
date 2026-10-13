@@ -6,7 +6,7 @@ import type {
   ToolBusTool,
   ToolBusView,
 } from "./types";
-import { appSurfaceView } from "./view";
+import { appSurfaceView, gatewaySurfaceView } from "./view";
 
 export const ISSUER = "https://home.example.com";
 
@@ -90,13 +90,12 @@ export function appView(
 export function gatewayView(
   apps: ToolBusApp[],
   principal: McpPrincipal = PRINCIPAL,
+  allowedOrigins?: readonly string[],
 ): ToolBusView {
-  return {
-    surface: "gateway",
-    principal,
-    apps,
-    serverInfo: { name: "every-app", title: "Every App" },
-  };
+  return gatewaySurfaceView(principal, apps, {
+    requestId: "ray_1",
+    ...(allowedOrigins ? { allowedOrigins } : {}),
+  });
 }
 
 const MODERN_META = {

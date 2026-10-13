@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { parseEnv } from "node:util";
-import { bindings, defineConfig } from "cf/config";
+import { bindings, defineConfig, triggers } from "cf/config";
 import { EVERYAPP_OBSERVABILITY } from "@every-app/sdk/cloudflare";
 import * as entrypoint from "./src/server.ts" with { type: "cf-worker" };
 
@@ -33,6 +33,11 @@ const OPTIONAL_SECRETS = [
   "CLOUDFLARE_ACCOUNT_ID",
   "GATEWAY_DEPLOYMENT_MODE",
   "MCP_OAUTH_ENABLED",
+  "MCP_DCR_ENABLED",
+  "MCP_ALLOWED_ORIGINS",
+  "MCP_AUDIT_RETENTION_DAYS",
+  // Local testing only: honored only on a localhost GATEWAY_URL.
+  "MCP_ACCESS_TOKEN_TTL",
   "EVERYAPP_DEV_COOKIE_DOMAIN",
   "APP_BASE_DOMAIN",
 ] as const;
@@ -79,13 +84,25 @@ export default defineConfig(({ mode }) => {
       name: NAME,
       entrypoint,
       compatibilityDate: "2025-09-02",
-      compatibilityFlags: ["nodejs_compat"],
+      // global_fetch_strictly_public: the MCP OAuth server fetches clients'
+      // metadata documents (CIMD, e.g. claude.ai's) as a request from the
+      // internet would go, through Cloudflare's front door, never straight
+      // to an origin behind a zone (SSRF protection). A URL on this
+      // gateway's own domain would still reach this Worker that way, so the
+      // server refuses client ids there before fetching
+      // (src/server/mcp-auth/own-domain.ts). Without the flag the server
+      // doesn't advertise CIMD and claude.ai falls back to DCR.
+      compatibilityFlags: ["nodejs_compat", "global_fetch_strictly_public"],
       // The Worker sees every request: app hosts are proxied to their
       // private Workers, so an asset must never answer one. The control
       // plane serves its own assets through ASSETS.
       assets: { runWorkerFirst: true },
       workersDev: false,
       previewUrls: false,
+      // Hourly MCP housekeeping (src/server/mcp-auth/maintenance.ts): prune
+      // the tool-call audit table, expire idle connections, sweep OAuth
+      // storage. The deploy keeps it next to the domains it publishes.
+      triggers: [triggers.scheduled({ schedule: "17 * * * *" })],
       observability: {
         ...EVERYAPP_OBSERVABILITY,
         logs: { ...EVERYAPP_OBSERVABILITY.logs },
@@ -98,6 +115,8 @@ export default defineConfig(({ mode }) => {
           name: NAME,
           ...(production ? {} : { id: LOCAL_D1_ID }),
         }),
+        // The MCP OAuth server's storage (grants, tokens, clients, consent
+        // transactions), and the hourly sweep's cursor.
         OAUTH_KV: bindings.kv(),
         EMAIL: bindings.sendEmail(),
         CF_VERSION_METADATA: bindings.versionMetadata(),

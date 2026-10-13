@@ -177,6 +177,7 @@ describe("adopting the gateway the wrangler-era CLI deployed", () => {
     expect(result.domains).toEqual([HOST]);
     const upgraded = account.deploys.at(-1)!;
     expect(upgraded.config["triggers"]).toEqual([
+      { type: "scheduled", schedule: "17 * * * *" },
       { type: "fetch", pattern: `*.${HOST}/*`, zone: "zone-tcc" },
     ]);
     expect(upgraded.config["env"].APP_BASE_DOMAIN).toBeUndefined();
@@ -221,7 +222,10 @@ describe("adopting the gateway the wrangler-era CLI deployed", () => {
     );
     expect(account.gatewayDomains()).toEqual([HOST, "chef-default.thecomeup.cc", "todo-default.thecomeup.cc"].sort());
     const last = account.deploys.at(-1)!;
-    expect(last.config["triggers"]).toBeUndefined();
+    // The route is gone; the release's hourly housekeeping stays.
+    expect(last.config["triggers"]).toEqual([
+      { type: "scheduled", schedule: "17 * * * *" },
+    ]);
     expect(last.config["env"].APP_BASE_DOMAIN).toEqual({ type: "text", value: HOST });
     await expect(readInstall(db())).resolves.toMatchObject({
       routing: "custom-domains",

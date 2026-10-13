@@ -69,7 +69,7 @@ Two rules keep this safe: the user id always comes from the SDK (never from clie
 
 ## Agent tools — `defineTools()`
 
-To let AI clients (Claude, Cursor, any MCP client) act in your app, describe the actions with `defineTools()` and pass them to `everyApp()`. Your app never speaks MCP: the Gateway snapshots the tools when you deploy and serves them at `https://<app-host>/mcp`, and each call reaches your handler with the verified user.
+To let AI clients (Claude, Cursor, any MCP client) act in your app, describe the actions with `defineTools()` and pass them to `everyApp()`. Your app never speaks MCP: the Gateway snapshots the tools when you deploy and serves them at `https://<app-host>/mcp`, and, named `<app>_<tool>` next to every other app's, at the Gateway's own `https://<gateway>/mcp`. Each call reaches your handler with the verified user.
 
 ```ts
 import { defineTools, everyApp, ToolError } from "@every-app/sdk/server";
@@ -87,7 +87,7 @@ export const tools = defineTools({
 export default everyApp(handler, manifest, { tools });
 ```
 
-Destructive tools stay hidden from AI clients until approvals exist, and write tools are hidden from read-only tokens. Throw `ToolError` for messages the model may read; any other error is reported only as an internal error with a reference. MCP clients connect with a personal access token; your app's own pages can also call `/mcp` with the user's session (same-origin only).
+Destructive tools stay hidden from AI clients until approvals exist, and write tools are hidden from read-only tokens. Throw `ToolError` for messages the model may read; any other error is reported only as an internal error with a reference. MCP clients connect to the Gateway's `/mcp` with OAuth (claude.ai, ChatGPT, Claude Code, Cursor) or a personal access token, and to your app's `/mcp` with a personal access token; your app's own pages can also call its `/mcp` with the user's session (same-origin only).
 
 ## `everyapp.config.ts` — the manifest
 

@@ -13,6 +13,15 @@ export function getSafeRedirect(redirect?: string): string {
 }
 
 /**
+ * Whether a safe redirect path is served by the worker rather than the
+ * client router (the OAuth authorization endpoint and consent page), so it
+ * must be reached with a full page load, query string intact.
+ */
+export function isWorkerRoute(path: string): boolean {
+  return path.startsWith("/oauth/");
+}
+
+/**
  * Validates a cross-origin return URL from the perimeter's login redirect
  * (`/sign-in?return_to=<app url>`). Apps live at subdomains of the gateway
  * host, so only http(s) URLs on a subdomain of the current host are allowed —

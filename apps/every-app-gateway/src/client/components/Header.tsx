@@ -61,6 +61,9 @@ export function Header({ email }: HeaderProps) {
                   <span className="text-base-content">{email}</span>
                 </li>
                 <li>
+                  <Link to="/settings/connections">Connected AI apps</Link>
+                </li>
+                <li>
                   <a onClick={handleSignOut} className="text-error">
                     Sign Out
                   </a>

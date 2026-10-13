@@ -1,21 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RegisteredApp } from "@every-app/perimeter";
 
-const { mockMemberFindFirst, mockUserFindFirst, mockOauthFetch, workerEnv } =
-  vi.hoisted(() => ({
-    mockMemberFindFirst: vi.fn(),
-    mockUserFindFirst: vi.fn(),
-    mockOauthFetch: vi.fn(),
-    workerEnv: {
-      GATEWAY_URL: "https://gateway.example.com",
-      MCP_OAUTH_ENABLED: undefined as string | undefined,
-      OAUTH_PROVIDER: {
-        unwrapToken: vi.fn(),
-      },
-    },
-  }));
+const { mockMemberFindFirst, mockUserFindFirst } = vi.hoisted(() => ({
+  mockMemberFindFirst: vi.fn(),
+  mockUserFindFirst: vi.fn(),
+}));
 
-vi.mock("cloudflare:workers", () => ({ env: workerEnv }));
+vi.mock("cloudflare:workers", () => ({
+  env: { GATEWAY_URL: "https://gateway.example.com" },
+}));
 
 vi.mock("drizzle-orm", () => ({
   and: vi.fn((...parts: unknown[]) => ({ type: "and", parts })),
@@ -53,16 +46,6 @@ vi.mock("@/db/schema", () => ({
   users: {
     id: "users.id",
   },
-}));
-
-vi.mock("@/server/oauth-provider", () => ({
-  getOauthProvider: () => ({
-    fetch: mockOauthFetch,
-  }),
-  syntheticExecutionContext: () => ({
-    waitUntil: () => undefined,
-    passThroughOnException: () => undefined,
-  }),
 }));
 
 vi.mock("@/auth", () => ({
@@ -150,9 +133,6 @@ describe("createProdAuthenticator PAT branch", () => {
       id: "user-id",
       email: "user@example.com",
     });
-    mockOauthFetch.mockResolvedValue(
-      new Response("unauthorized", { status: 401 }),
-    );
   });
 
   it("authenticates a valid PAT with credential fields", async () => {
@@ -246,155 +226,20 @@ describe("createProdAuthenticator PAT branch", () => {
   });
 });
 
-describe("createProdAuthenticator with the OAuth server off (default)", () => {
+describe("createProdAuthenticator with other bearers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    workerEnv.MCP_OAUTH_ENABLED = undefined;
   });
 
-  it("rejects a non-PAT bearer without calling the OAuth provider", async () => {
-    await expect(
-      createProdAuthenticator().authenticate(request("a:b:c")),
-    ).resolves.toBeNull();
-    expect(mockOauthFetch).not.toHaveBeenCalled();
+  it("accepts no bearer but a personal access token on an app host", async () => {
+    // OAuth access tokens are for the gateway's own /mcp: an app host
+    // refuses them (and anything else) without falling back to the cookie.
+    for (const token of ["user-id:grant-id:secret", "eyJhbGciOi.x.y", "abc"]) {
+      await expect(
+        createProdAuthenticator().authenticate(request(token)),
+      ).resolves.toBeNull();
+    }
+    expect(mockUserPatService.verify).not.toHaveBeenCalled();
     expect(mockAuth.api.getSession).not.toHaveBeenCalled();
-  });
-
-  it("still authenticates personal access tokens", async () => {
-    mockMemberFindFirst.mockResolvedValue({
-      organizationId: "org-id",
-      role: "member",
-    });
-    mockUserPatRepository.touchLastUsed.mockResolvedValue(undefined);
-    mockUserPatService.verify.mockResolvedValue(activePat());
-
-    await expect(
-      createProdAuthenticator().authenticate(request()),
-    ).resolves.toMatchObject({ sub: "user-id", credential: { kind: "pat" } });
-  });
-});
-
-describe("createProdAuthenticator OAuth branch", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    workerEnv.MCP_OAUTH_ENABLED = "true";
-    mockMemberFindFirst.mockResolvedValue({
-      organizationId: "org-id",
-      role: "member",
-    });
-    mockUserFindFirst.mockResolvedValue({
-      id: "user-id",
-      email: "user@example.com",
-    });
-  });
-
-  it("authenticates a valid OAuth bearer with api credential fields", async () => {
-    mockOauthFetch.mockResolvedValue(
-      Response.json({
-        userId: "user-id",
-        organizationId: "org-id",
-        appRowId: "app-row-1",
-        appSlug: "todo",
-        scopes: ["mcp:read"],
-        clientId: "client-1",
-      }),
-    );
-
-    const session = await createProdAuthenticator().authenticate(
-      request("oauth_valid"),
-    );
-
-    expect(session).toMatchObject({
-      sub: "user-id",
-      email: "user@example.com",
-      orgId: "org-id",
-      orgRole: "member",
-      credential: {
-        kind: "oauth",
-        channel: "api",
-        actor: "oauth:client-1",
-        scopes: ["mcp:read"],
-      },
-    });
-    expect(mockAuth.api.getSession).not.toHaveBeenCalled();
-    expect(mockOauthFetch).toHaveBeenCalledOnce();
-  });
-
-  it("returns null for provider 401 without falling through to cookies", async () => {
-    mockOauthFetch.mockResolvedValue(
-      new Response("unauthorized", { status: 401 }),
-    );
-
-    await expect(
-      createProdAuthenticator().authenticate(request("oauth_bad")),
-    ).resolves.toBeNull();
-    expect(mockAuth.api.getSession).not.toHaveBeenCalled();
-  });
-
-  it("returns null when org membership is gone", async () => {
-    mockOauthFetch.mockResolvedValue(
-      Response.json({
-        userId: "user-id",
-        organizationId: "org-id",
-        appRowId: "app-row-1",
-        scopes: ["mcp:read"],
-      }),
-    );
-    mockMemberFindFirst.mockResolvedValue(undefined);
-
-    await expect(
-      createProdAuthenticator().authenticate(request("oauth_valid")),
-    ).resolves.toBeNull();
-  });
-
-  it("returns null for grant props without an app binding", async () => {
-    // Every OAuth grant is consented for exactly one app; props missing the
-    // binding must not degrade to org-wide access.
-    mockOauthFetch.mockResolvedValue(
-      Response.json({
-        userId: "user-id",
-        organizationId: "org-id",
-        scopes: ["mcp:read"],
-      }),
-    );
-
-    await expect(
-      createProdAuthenticator().authenticate(request("oauth_valid")),
-    ).resolves.toBeNull();
-  });
-
-  it("denies app access when an OAuth grant is bound to a different app", async () => {
-    mockOauthFetch.mockResolvedValue(
-      Response.json({
-        userId: "user-id",
-        organizationId: "org-id",
-        appRowId: "app-row-1",
-        scopes: ["mcp:read"],
-      }),
-    );
-    const session = await createProdAuthenticator().authenticate(
-      request("oauth_valid"),
-    );
-    mockAppRepository.findByAppSlug.mockResolvedValue({
-      id: "app-row-2",
-    } as any);
-
-    await expect(
-      createProdAuthenticator().hasAppAccess(session!, APP),
-    ).resolves.toBe(false);
-  });
-
-  it("rejects provider scopes defense-in-depth", async () => {
-    mockOauthFetch.mockResolvedValue(
-      Response.json({
-        userId: "user-id",
-        organizationId: "org-id",
-        scopes: ["provider:openai"],
-      }),
-    );
-
-    await expect(
-      createProdAuthenticator().authenticate(request("oauth_valid")),
-    ).resolves.toBeNull();
   });
 });

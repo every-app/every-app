@@ -108,6 +108,66 @@ describe("executeToolCall", () => {
     expect(JSON.stringify(events)).not.toContain("milk");
   });
 
+  it("acts as the OAuth connection and names its client in the audit", async () => {
+    const { deps, requests, events } = harness(() => ok());
+    await executeToolCall(
+      gatewayView([todoApp()], {
+        ...PRINCIPAL,
+        credential: { kind: "oauth", id: "mcpc_1", clientName: "Claude" },
+      }),
+      { name: "todo_create_todo", arguments: { title: "milk" } },
+      deps,
+    );
+    const claims = decodeJwt(requests[0]!.headers.get(IDENTITY_HEADER)!);
+    expect(claims["act"]).toEqual({ sub: "oauth:mcpc_1" });
+    expect(claims["tc"]).toMatchObject({ name: "create_todo" });
+    expect(events).toEqual([
+      expect.objectContaining({
+        surface: "gateway",
+        tool: "todo_create_todo",
+        appId: "todo",
+        credentialKind: "oauth",
+        credentialId: "mcpc_1",
+        clientName: "Claude",
+        outcome: "ok",
+      }),
+    ]);
+  });
+
+  it("audits the built-in tools, which never call an app", async () => {
+    const { deps, requests, events } = harness(() => ok());
+    const view = gatewayView([todoApp()], { ...PRINCIPAL, access: "read" });
+
+    const resolution = await executeToolCall(
+      view,
+      { name: "everyapp_list_apps", arguments: {} },
+      deps,
+    );
+    expect(resolution).toMatchObject({
+      kind: "result",
+      result: { structuredContent: { apps: [{ id: "todo", tools: 1 }] } },
+    });
+    await expect(
+      executeToolCall(view, { name: "everyapp_nope", arguments: {} }, deps),
+    ).resolves.toEqual({ kind: "unknown_tool" });
+    expect(requests).toEqual([]);
+    expect(events).toEqual([
+      expect.objectContaining({
+        tool: "everyapp_list_apps",
+        appId: "everyapp",
+        risk: "read",
+        decision: "allowed",
+        outcome: "ok",
+        resultBytes: expect.any(Number),
+      }),
+      expect.objectContaining({
+        tool: "everyapp_nope",
+        decision: "blocked",
+        reason: "unknown_tool",
+      }),
+    ]);
+  });
+
   it("mints read-only scopes for read access and the dev kid when asked", async () => {
     const { deps, requests } = harness(() => ok());
     await executeToolCall(

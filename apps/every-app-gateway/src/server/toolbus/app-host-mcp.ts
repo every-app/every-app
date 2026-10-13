@@ -12,18 +12,11 @@
  * request is proxied to the app as before, so apps that still answer /mcp
  * themselves keep working.
  */
-import { env } from "cloudflare:workers";
 import {
-  getAppFetcher,
   logEvent,
   type McpInterceptInput,
   type RegisteredApp,
 } from "@every-app/perimeter";
-import type {
-  ToolBusApp,
-  ToolBusHttpHandler,
-  ToolCallAuditEvent,
-} from "@every-app/toolbus";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import {
   AppToolRepository,
@@ -33,80 +26,16 @@ import {
   BindingNotReadyError,
   claimCatalogSync,
   logToolSync,
-  scheduleCatalogResync,
   syncAppTools,
   type SyncableApp,
 } from "./catalog-sync";
+import { resetToolBusForTests, servedApp, toolBusHttp } from "./runtime";
 
-/** Keyed digest context for argument fingerprints (see createArgumentsDigester). */
-const ARGS_DIGEST_CONTEXT = "every-app-gateway:mcp-args:v1";
 /** A snapshot that isn't serving is retried on use at most this often. */
 const RETRY_UNSERVED_SNAPSHOT_MS = 5 * 60_000;
 
-// Registry facts for the apps a request serves, so the per-isolate ToolBus
-// can reach them over their bindings and re-sync them on drift.
-const servedApps = new WeakMap<ToolBusApp, SyncableApp>();
-
-let toolBus: Promise<ToolBusHttpHandler> | undefined;
-
-function auditLine(event: ToolCallAuditEvent): void {
-  // Never the arguments or result: a keyed digest and a size.
-  logEvent("mcp.tool_call", {
-    surface: event.surface,
-    app: event.appId,
-    tool: event.tool,
-    risk: event.risk,
-    decision: event.decision,
-    reason: event.reason,
-    outcome: event.outcome,
-    ms: event.durationMs,
-    args_digest: event.argsDigest,
-    result_bytes: event.resultBytes,
-    proto: event.protocolVersion,
-    request_id: event.requestId,
-    call_id: event.callId,
-    cred_kind: event.credentialKind,
-    cred_id: event.credentialId,
-    org: event.organizationId,
-    user_id: event.userId,
-  });
-}
-
-function toolBusHttp(): Promise<ToolBusHttpHandler> {
-  // The MCP SDK loads with the first /mcp request, not with every isolate.
-  toolBus ??= import("@every-app/toolbus").then(
-    ({ createArgumentsDigester, createToolBusHttp }) =>
-      createToolBusHttp({
-        get signing() {
-          return {
-            privateKeyPem: env.JWT_PRIVATE_KEY,
-            issuer: env.GATEWAY_URL,
-          };
-        },
-        invokeApp: (target, request) => {
-          const app = servedApps.get(target);
-          if (!app) throw new Error(`no route for app "${target.appId}"`);
-          return getAppFetcher(env as unknown as Record<string, unknown>, {
-            workerName: app.workerName,
-            tier: app.tier === "dispatch" ? "dispatch" : "service_binding",
-          }).fetch(request);
-        },
-        onCatalogDrift: (target) => {
-          const app = servedApps.get(target);
-          if (app) scheduleCatalogResync(app);
-        },
-        audit: auditLine,
-        digestArguments: createArgumentsDigester(
-          env.BETTER_AUTH_SECRET,
-          ARGS_DIGEST_CONTEXT,
-        ),
-      }),
-  );
-  return toolBus;
-}
-
 export function resetAppHostMcpForTests(): void {
-  toolBus = undefined;
+  resetToolBusForTests();
   pendingSyncs.clear();
 }
 
@@ -224,23 +153,25 @@ export async function serveAppHostMcp({
     );
   }
 
-  const toolBusApp: ToolBusApp = {
-    rowId: catalog.appRowId,
-    appId: app.appId,
-    name: app.manifest.name ?? app.appId,
-    baseUrl: `https://${app.hostname}`,
-    catalogHash: catalog.catalogHash,
-    ...(catalog.instructions ? { instructions: catalog.instructions } : {}),
-    tools: catalog.tools,
-  };
-  servedApps.set(toolBusApp, {
-    rowId: catalog.appRowId,
-    organizationId: app.organizationId,
-    appSlug: app.appId,
-    hostname: app.hostname,
-    workerName: app.workerName,
-    tier: app.tier,
-  });
+  const toolBusApp = servedApp(
+    {
+      rowId: catalog.appRowId,
+      appId: app.appId,
+      name: app.manifest.name ?? app.appId,
+      baseUrl: `https://${app.hostname}`,
+      catalogHash: catalog.catalogHash,
+      ...(catalog.instructions ? { instructions: catalog.instructions } : {}),
+      tools: catalog.tools,
+    },
+    {
+      rowId: catalog.appRowId,
+      organizationId: app.organizationId,
+      appSlug: app.appId,
+      hostname: app.hostname,
+      workerName: app.workerName,
+      tier: app.tier,
+    },
+  );
 
   const serve = await toolBusHttp();
   return serve(

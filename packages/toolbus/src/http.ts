@@ -8,11 +8,12 @@
  *    per request, closed before the response returns. No sessions.
  *
  * First it checks Origin (and, in local dev, Host) as the Streamable HTTP
- * spec requires: a browser may call from the endpoint's own origin, and in
- * local dev from any localhost origin (MCP Inspector), whose CORS preflights
- * it answers. On an app host the perimeter authenticates every request
- * first, so a cross-origin preflight (which carries no credentials) never
- * gets here.
+ * spec requires: a browser may call from the endpoint's own origin, from an
+ * origin the view allows (the gateway's MCP_ALLOWED_ORIGINS), and in local
+ * dev from any localhost origin (MCP Inspector), whose CORS preflights it
+ * answers. On an app host the perimeter authenticates every request first,
+ * so a cross-origin preflight (which carries no credentials) never gets
+ * here; on the gateway the OAuth resource server answers preflights.
  */
 import {
   createMcpHandler,
@@ -70,7 +71,7 @@ export function createToolBusHttp(deps: ToolBusDeps): ToolBusHttpHandler {
     ));
 
   return async (request, view) => {
-    const refused = refuseUntrusted(request, deps);
+    const refused = refuseUntrusted(request, deps, view);
     if (refused) return refused;
     const cors = corsHeaders(request);
     if (request.method === "OPTIONS") {
@@ -218,7 +219,11 @@ function isLocalhostHostname(hostname: string): boolean {
   );
 }
 
-function refuseUntrusted(request: Request, deps: ToolBusDeps): Response | null {
+function refuseUntrusted(
+  request: Request,
+  deps: ToolBusDeps,
+  view: ToolBusView,
+): Response | null {
   // Production dispatch has already matched the Host to an app or the
   // gateway. Locally, only localhost-class hosts may reach the ToolBus, so
   // a DNS-rebinding page can't.
@@ -236,7 +241,9 @@ function refuseUntrusted(request: Request, deps: ToolBusDeps): Response | null {
   }
 
   const origin = request.headers.get("origin");
-  if (origin === null || originAllowed(origin, request, deps)) return null;
+  if (origin === null || originAllowed(origin, request, deps, view)) {
+    return null;
+  }
   return jsonRpcError(403, -32000, "Forbidden: origin not allowed.");
 }
 
@@ -244,8 +251,10 @@ function originAllowed(
   origin: string,
   request: Request,
   deps: ToolBusDeps,
+  view: ToolBusView,
 ): boolean {
   if (origin === new URL(request.url).origin) return true;
+  if (view.allowedOrigins?.includes(origin.toLowerCase())) return true;
   if (!deps.localhostOnly) return false;
   try {
     const parsed = new URL(origin);

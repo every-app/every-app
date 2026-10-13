@@ -212,7 +212,7 @@ const secretSetCommand = buildCommand({
       parameters: [
         {
           brief:
-            "OPENAI_API_KEY, AI_PROXY_EXTRA_ROUTES, EMAIL_REST_API_TOKEN, EMAIL_FROM, EMAIL_FROM_NAME or MCP_OAUTH_ENABLED",
+            "OPENAI_API_KEY, AI_PROXY_EXTRA_ROUTES, EMAIL_REST_API_TOKEN, EMAIL_FROM, EMAIL_FROM_NAME, MCP_OAUTH_ENABLED, MCP_DCR_ENABLED, MCP_ALLOWED_ORIGINS or MCP_AUDIT_RETENTION_DAYS",
           parse: String,
         },
       ],

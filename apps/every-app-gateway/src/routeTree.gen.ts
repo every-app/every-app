@@ -23,7 +23,8 @@ import { Route as AdminIndexRouteImport } from './routes/admin/index'
 import { Route as AdminAppsRouteImport } from './routes/admin/apps'
 import { Route as AdminTokensRouteImport } from './routes/admin/tokens'
 import { Route as AdminUsersRouteImport } from './routes/admin/users'
-import { Route as OauthAuthorizeRouteImport } from './routes/oauth/authorize'
+import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
+import { Route as SettingsConnectionsRouteImport } from './routes/settings/connections'
 import { Route as ApiAdminHasOwnerRouteImport } from './routes/api/admin/has-owner'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDeployIdentityKeysRouteImport } from './routes/api/deploy/identity-keys'
@@ -110,9 +111,14 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
   path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
-const OauthAuthorizeRoute = OauthAuthorizeRouteImport.update({
-  id: '/oauth/authorize',
-  path: '/oauth/authorize',
+const OauthConsentRoute = OauthConsentRouteImport.update({
+  id: '/oauth/consent',
+  path: '/oauth/consent',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
+  id: '/settings/connections',
+  path: '/settings/connections',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAdminHasOwnerRoute = ApiAdminHasOwnerRouteImport.update({
@@ -209,7 +215,8 @@ export interface FileRoutesByFullPath {
   '/admin/apps': typeof AdminAppsRoute
   '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
-  '/oauth/authorize': typeof OauthAuthorizeRoute
+  '/oauth/consent': typeof OauthConsentRoute
+  '/settings/connections': typeof SettingsConnectionsRoute
   '/admin/': typeof AdminIndexRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -240,7 +247,8 @@ export interface FileRoutesByTo {
   '/admin/apps': typeof AdminAppsRoute
   '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
-  '/oauth/authorize': typeof OauthAuthorizeRoute
+  '/oauth/consent': typeof OauthConsentRoute
+  '/settings/connections': typeof SettingsConnectionsRoute
   '/admin': typeof AdminIndexRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -273,7 +281,8 @@ export interface FileRoutesById {
   '/admin/apps': typeof AdminAppsRoute
   '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
-  '/oauth/authorize': typeof OauthAuthorizeRoute
+  '/oauth/consent': typeof OauthConsentRoute
+  '/settings/connections': typeof SettingsConnectionsRoute
   '/admin/': typeof AdminIndexRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -307,7 +316,8 @@ export interface FileRouteTypes {
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/users'
-    | '/oauth/authorize'
+    | '/oauth/consent'
+    | '/settings/connections'
     | '/admin/'
     | '/api/admin/has-owner'
     | '/api/auth/$'
@@ -338,7 +348,8 @@ export interface FileRouteTypes {
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/users'
-    | '/oauth/authorize'
+    | '/oauth/consent'
+    | '/settings/connections'
     | '/admin'
     | '/api/admin/has-owner'
     | '/api/auth/$'
@@ -370,7 +381,8 @@ export interface FileRouteTypes {
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/users'
-    | '/oauth/authorize'
+    | '/oauth/consent'
+    | '/settings/connections'
     | '/admin/'
     | '/api/admin/has-owner'
     | '/api/auth/$'
@@ -400,7 +412,8 @@ export interface RootRouteChildren {
   SetupRoute: typeof SetupRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
-  OauthAuthorizeRoute: typeof OauthAuthorizeRoute
+  OauthConsentRoute: typeof OauthConsentRoute
+  SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   ApiAdminHasOwnerRoute: typeof ApiAdminHasOwnerRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDeployIdentityKeysRoute: typeof ApiDeployIdentityKeysRoute
@@ -518,11 +531,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/oauth/authorize': {
-      id: '/oauth/authorize'
-      path: '/oauth/authorize'
-      fullPath: '/oauth/authorize'
-      preLoaderRoute: typeof OauthAuthorizeRouteImport
+    '/oauth/consent': {
+      id: '/oauth/consent'
+      path: '/oauth/consent'
+      fullPath: '/oauth/consent'
+      preLoaderRoute: typeof OauthConsentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/connections': {
+      id: '/settings/connections'
+      path: '/settings/connections'
+      fullPath: '/settings/connections'
+      preLoaderRoute: typeof SettingsConnectionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/admin/has-owner': {
@@ -660,7 +680,8 @@ const rootRouteChildren: RootRouteChildren = {
   SetupRoute: SetupRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
-  OauthAuthorizeRoute: OauthAuthorizeRoute,
+  OauthConsentRoute: OauthConsentRoute,
+  SettingsConnectionsRoute: SettingsConnectionsRoute,
   ApiAdminHasOwnerRoute: ApiAdminHasOwnerRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDeployIdentityKeysRoute: ApiDeployIdentityKeysRoute,

@@ -230,18 +230,23 @@ describe("rateLimitCredentialRequest", () => {
     ]);
   });
 
-  it("counts OAuth registration and token calls only while OAuth is on", async () => {
-    const off = { AUTH_RATE_LIMIT_IP: limiter(0) };
+  it("counts OAuth registration and token calls unless OAuth is off", async () => {
+    const off = { AUTH_RATE_LIMIT_IP: limiter(0), MCP_OAUTH_ENABLED: "false" };
     await expect(
       rateLimitCredentialRequest(post("/oauth/token", {}), off),
     ).resolves.toBeNull();
     expect(off.AUTH_RATE_LIMIT_IP.keys).toEqual([]);
 
-    const on = { AUTH_RATE_LIMIT_IP: limiter(0), MCP_OAUTH_ENABLED: "true" };
-    for (const path of ["/oauth/register", "/oauth/token"]) {
-      expect(
-        (await rateLimitCredentialRequest(post(path, {}), on))?.status,
-      ).toBe(429);
+    // On by default, and when turned on explicitly.
+    for (const on of [
+      { AUTH_RATE_LIMIT_IP: limiter(0) },
+      { AUTH_RATE_LIMIT_IP: limiter(0), MCP_OAUTH_ENABLED: "true" },
+    ]) {
+      for (const path of ["/oauth/register", "/oauth/token"]) {
+        expect(
+          (await rateLimitCredentialRequest(post(path, {}), on))?.status,
+        ).toBe(429);
+      }
     }
   });
 

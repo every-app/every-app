@@ -18,9 +18,12 @@ user's ID.
    gateway fetches it once, over the app's private service binding, and
    stores it in D1. A redeploy re-syncs it; a tool call that reports a
    different catalog re-syncs it in the background.
-3. The gateway serves `https://<todo-app-host>/mcp` from that snapshot.
-   Listing tools never calls the app. Calling a tool makes exactly one call
-   to the app's internal tools endpoint with an identity minted for that call.
+3. The gateway serves the tools from that snapshot twice: at
+   `https://<todo-app-host>/mcp` under their own names, and at the gateway's
+   own `https://<gateway>/mcp`, the one connector for every app, as
+   `todo_list_todos`, `todo_create_todo`… Listing tools never calls the app.
+   Calling a tool makes exactly one call to the app's internal tools endpoint
+   with an identity minted for that call.
 
 The app's own code never sees MCP: protocol versions, headers and JSON-RPC
 stay in the gateway's ToolBus (`@every-app/toolbus`, built on the official
@@ -28,7 +31,10 @@ stay in the gateway's ToolBus (`@every-app/toolbus`, built on the official
 
 ## Endpoint and transport
 
-- Endpoint: `https://<todo-app-host>/mcp`, served by the gateway.
+- Endpoints: `https://<gateway>/mcp` (every app, OAuth or a personal token;
+  what claude.ai, ChatGPT and Claude Code connect to) and
+  `https://<todo-app-host>/mcp` (this app, a personal token or the app's own
+  pages), both served by the gateway.
 - Transport: stateless Streamable HTTP with JSON responses. Both protocol
   eras work: 2026-07-28 (`server/discover`, per-request `_meta`) and the
   2025-06-18 / 2025-11-25 `initialize` handshake. No sessions, no SSE
@@ -80,7 +86,11 @@ interface Todo {
 
 ## Authentication boundary
 
-`/mcp` stays private and is never in the manifest's `public` routes.
+`/mcp` stays private and is never in the manifest's `public` routes. On the
+gateway's `/mcp` the caller is an OAuth connection the user approved (with
+its own organization, apps and read & write or read only choice) or a
+personal access token; the steps below are for the app host's `/mcp`, and
+steps 3 and 4 are the same for both.
 
 1. The perimeter authenticates the caller: a personal access token
    (`Authorization: Bearer epat_…`), or the user's browser session when the
@@ -100,8 +110,8 @@ interface Todo {
    matches the request, and the scope the tool's risk needs, then runs the
    tool with the verified user.
 
-The app never receives the browser cookie, the personal token, or (later) an
-OAuth access token. The internal tools endpoints (`/__everyapp/tools/*`) are
+The app never receives the browser cookie, the personal token, or an OAuth
+access token. The internal tools endpoints (`/__everyapp/tools/*`) are
 refused at the perimeter for every outside request, and the catalog endpoint
 only accepts the gateway's one-minute system token, which can't call tools.
 
@@ -130,7 +140,9 @@ curl -s https://<todo-app-host>/mcp "${H[@]}" -H 'mcp-protocol-version: 2025-11-
   -d '{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"list_todos","arguments":{}}}'
 ```
 
-Claude Code: `claude mcp add --transport http todos https://<todo-app-host>/mcp --header "Authorization: Bearer $EVERYAPP_TOKEN"`.
+Claude Code, every app over OAuth: `claude mcp add --transport http everyapp https://<gateway>/mcp`,
+then `/mcp` → everyapp → Authenticate. This app alone, with a personal token:
+`claude mcp add --transport http todos https://<todo-app-host>/mcp --header "Authorization: Bearer $EVERYAPP_TOKEN"`.
 
 ## Acceptance criteria
 
