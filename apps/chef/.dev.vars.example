@@ -1,5 +1,6 @@
-# `everyapp dev` maintains EVERYAPP_DEV and the local identity public keys.
-EVERYAPP_DEV=1
+# `everyapp dev` writes the local identity keys and issuer to .dev.vars and
+# keeps the rest of the file.
 
-# Direct-provider fallback used only when the gateway binding is unavailable.
+# Your own OpenAI key for local dev, where there is no gateway binding to
+# proxy OpenAI through. Never needed in production.
 OPENAI_API_KEY=

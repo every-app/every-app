@@ -1,13 +1,15 @@
 node_modules
 package-lock.json
 yarn.lock
-.dev.vars
+.dev.vars*
 .DS_Store
 .cache
 .env
 .env.local
 .env.production
 .vercel
+# cf build output, generated types and local dev state
+.cloudflare/
 .output
 .nitro
 /build/

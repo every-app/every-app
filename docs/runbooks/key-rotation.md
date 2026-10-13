@@ -21,9 +21,13 @@ identity verification fails closed until the app is redeployed.
    RS256, 2048-bit. Keys in other encodings — an OpenSSH public key or a
    PKCS#1 (`BEGIN RSA PRIVATE KEY`) private key — deploy without error and
    then fail at runtime. Replace both gateway secrets, `JWT_PRIVATE_KEY` and
-   the matching `JWT_PUBLIC_KEY`; never rotate only one half of the pair.
-3. Redeploy the gateway with its existing domain configuration:
-   `npx everyapp gateway deploy --domain <apex-domain>`.
+   the matching `JWT_PUBLIC_KEY`, in one change: in the Cloudflare dashboard,
+   **Workers & Pages → every-app-gateway → Settings → Variables and
+   Secrets**. Never rotate only one half of the pair.
+3. Because the gateway Worker then changed outside everyapp, its next deploy
+   asks for confirmation: run `npx everyapp gateway reconcile --force` in a
+   terminal and confirm cf's prompt, so later unattended deploys go through
+   again.
 4. From each registered app's directory, run
    `npx everyapp app deploy`. This statically injects the new public key into
    that app.

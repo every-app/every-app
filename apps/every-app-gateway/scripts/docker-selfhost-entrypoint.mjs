@@ -152,16 +152,9 @@ async function main() {
   chmodSync(".env", 0o600);
   console.log("Wrote gateway runtime config to .env");
 
-  await runCommand("npx", [
-    "wrangler",
-    "d1",
-    "execute",
-    "every-app-gateway",
-    "--local",
-    "--command",
-    "SELECT 1;",
-  ]);
-  await runCommand("pnpm", ["run", "db:migrate:local"]);
+  // The Vite plugin reads the secrets above from .env (there is no
+  // .dev.vars here); migrations create the local database on first run.
+  await runCommand("node", ["scripts/cf-local.mjs", "migrate"]);
   // Until the gateway has an owner, print a one-time setup link (find it in
   // `docker compose logs`). Nobody can sign up without it.
   await runCommand("node", ["scripts/setup-link.mjs"]);

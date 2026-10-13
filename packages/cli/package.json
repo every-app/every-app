@@ -4,7 +4,7 @@
   "description": "Every App CLI - Deploy and manage apps.",
   "license": "MIT",
   "type": "module",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "files": [
     "dist",
     "bin",
@@ -15,7 +15,7 @@
     "__everyapp_bash_complete": "./bin/__everyapp_bash_complete.js"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18.0"
   },
   "scripts": {
     "types:check": "tsc --noEmit",
@@ -46,18 +46,19 @@
     ]
   },
   "dependencies": {
+    "@cloudflare/config": "0.24.1",
     "@stricli/auto-complete": "^1.2.4",
     "@stricli/core": "^1.2.4",
+    "cf": "1.0.0-beta.14",
     "chalk": "^5.6.2",
     "enquirer": "^2.4.1",
     "execa": "^9.6.0",
     "jiti": "^2.6.1",
-    "jsonc-parser": "^3.3.1",
-    "smol-toml": "^1.4.2",
     "zod": "^4.1.13"
   },
   "devDependencies": {
     "@every-app/perimeter": "workspace:*",
+    "@every-app/sdk": "workspace:*",
     "@types/node": "^22.18.13",
     "knip": "^5.66.4",
     "tsup": "^6.7.0",

@@ -1,73 +1,79 @@
+import enquirer from "enquirer";
 import type { LocalContext } from "@/context";
-import chalk from "chalk";
-import { confirmDeployment } from "@/lib/deployment";
-import { requireCloudflareAuth } from "@/lib/cloudflare";
-import { requireGatewaySetup } from "@/lib/gateway";
 import { checkIsEveryAppProject } from "@/commands/app/deploy/steps/checkIsEveryAppProject";
 import { deployApp } from "@/commands/app/deploy/deployApp";
-import { loadEveryAppManifest } from "@/lib/generateWranglerConfig";
+import { canPromptInTerminal } from "@/lib/cf/deploy";
+import { confirmLeaseBreak } from "@/lib/gateway/lease";
+import { resolveGatewayUrl } from "@/lib/gateway/resolve";
+import { loadEveryAppManifest } from "@/lib/manifest";
+import { eventSink, runReported } from "@/lib/output/run";
 
 interface DeployCommandFlags {
+  gateway?: string;
   verbose?: boolean;
   yes?: boolean;
-  "skip-dns-check"?: boolean;
-  domain?: string;
+  json?: boolean;
   access?: "everyone" | "admins";
+  "allow-delete-durable-object-data"?: boolean;
+  "break-lease"?: boolean;
 }
 
-/**
- * Main deploy command implementation
- */
 export async function deploy(
   this: LocalContext,
   flags: DeployCommandFlags,
 ): Promise<void> {
-  if (flags.domain !== undefined) {
-    throw new Error(
-      "apps derive their address from the gateway's domain automatically; configure the domain with `everyapp gateway deploy --domain <apex-domain>`.",
-    );
-  }
+  const out = eventSink(flags.json);
+  await runReported(
+    out,
+    async () => {
+      await checkIsEveryAppProject();
+      const cwd = process.cwd();
+      const loaded = await loadEveryAppManifest(cwd);
+      // --access overrides the manifest. Either only matters the first time
+      // the gateway registers the app; after that, access is managed in its UI.
+      const manifest = flags.access
+        ? { ...loaded, access: flags.access }
+        : loaded;
+      const gatewayUrl = await resolveGatewayUrl(flags.gateway);
 
-  await requireCloudflareAuth();
+      if (!flags.yes && canPromptInTerminal(flags.json ?? false)) {
+        const { confirmed } = await enquirer.prompt<{ confirmed: boolean }>({
+          type: "confirm",
+          name: "confirmed",
+          message: `Deploy ${manifest.id} to ${gatewayUrl}?`,
+          initial: false,
+        });
+        if (!confirmed) {
+          out.emit({ type: "done", message: "Deployment cancelled." });
+          return;
+        }
+      }
 
-  // Check gateway is deployed and has an owner account before proceeding
-  await requireGatewaySetup();
-
-  const cwd = process.cwd();
-  const verbose = flags.verbose || false;
-  const skipConfirmation = flags.yes || false;
-  const skipDnsCheck = flags["skip-dns-check"] || false;
-
-  // Check we're inside an Every App project
-  await checkIsEveryAppProject();
-
-  const loadedManifest = await loadEveryAppManifest(cwd);
-  // --access overrides the manifest. Either only matters the first time the
-  // gateway registers the app; after that, access is managed in its UI.
-  const manifest = flags.access
-    ? { ...loadedManifest, access: flags.access }
-    : loadedManifest;
-  const appId = manifest.id;
-
-  console.log(chalk.bold(`\nProject: ${appId}\n`));
-
-  const confirmed = await confirmDeployment("this app", skipConfirmation);
-  if (!confirmed) {
-    console.log(chalk.red("\nDeployment cancelled by user\n"));
-    return;
-  }
-
-  const { liveUrl, gatewayUrl } = await deployApp({
-    cwd,
-    manifest,
-    verbose,
-    skipDnsCheck,
-  });
-
-  console.log(chalk.green("\nDeployment successful!"));
-  console.log(`  App live at: ${chalk.cyan(liveUrl)}`);
-  console.log(
-    chalk.dim("  Gateway routes this app through a service binding."),
+      const result = await deployApp({
+        cwd,
+        manifest,
+        gatewayUrl,
+        out,
+        json: flags.json,
+        verbose: flags.verbose,
+        allowDeleteDurableObjectData:
+          flags["allow-delete-durable-object-data"],
+        breakLease: confirmLeaseBreak({
+          breakLease: flags["break-lease"],
+          yes: flags.yes,
+          interactive: canPromptInTerminal(flags.json ?? false),
+        }),
+      });
+      out.emit({
+        type: "done",
+        message: `${manifest.id} is live at ${result.liveUrl}`,
+        data: {
+          url: result.liveUrl,
+          workerName: result.workerName,
+          versionId: result.versionId,
+        },
+      });
+    },
+    { verbose: flags.verbose },
   );
-  console.log(`  Gateway: ${chalk.cyan(gatewayUrl)}\n`);
 }

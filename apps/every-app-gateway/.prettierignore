@@ -5,6 +5,6 @@ routeTree.gen.ts
 dist/
 drizzle/
 planning/
-worker-configuration.d.ts
+.cloudflare/
 .wrangler/
 .pnpm-store/

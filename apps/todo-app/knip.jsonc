@@ -1,7 +1,8 @@
 {
   "entry": [
-    // Every App manifest and Cloudflare Worker entry point
+    // Every App manifest, Worker config and Worker entry point
     "everyapp.config.ts",
+    "cloudflare.config.ts",
     "src/entry.worker.ts",
     "src/types/index.ts",
     // Detect Tanstack Start Routes
@@ -15,7 +16,7 @@
     "src/db/index.ts",
   ],
   "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
-  "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
+  "ignore": ["src/routeTree.gen.ts"],
   // Disable Drizzle plugin - it tries to load drizzle.config.ts which imports cloudflare:workers
   "drizzle": false,
   "ignoreDependencies": [

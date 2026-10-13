@@ -5,7 +5,10 @@ import {
   assertPublicPathIsSafe,
   ManifestError,
   GATEWAY_WORKER_NAME,
-  isAppWorkerName,
+  isRegistryWorkerName,
+  isReservedName,
+  registryWorkerNameFor,
+  resourceNameFor,
 } from "./manifest";
 
 describe("validateManifest", () => {
@@ -198,6 +201,24 @@ describe("validateManifest", () => {
     ).toThrow(/relative path/);
   });
 
+  it("takes only JavaScript identifiers as D1 and KV bindings in authored manifests", () => {
+    expect(
+      validateManifestStrict({
+        id: "todo",
+        resources: { d1: ["DB", "MY_ARCHIVE"], kv: ["_cache2"] },
+      }).resources,
+    ).toEqual({ d1: ["DB", "MY_ARCHIVE"], kv: ["_cache2"] });
+    for (const binding of ["MY-ARCHIVE", "2DB", "a b", ""]) {
+      expect(() =>
+        validateManifestStrict({ id: "todo", resources: { d1: [binding] } }),
+      ).toThrow(ManifestError);
+    }
+    // The gateway's tolerant schema still takes what older CLIs sent.
+    expect(
+      validateManifest({ id: "todo", resources: { d1: ["MY-ARCHIVE"] } }),
+    ).toBeTruthy();
+  });
+
   it("rejects an empty migrations binding", () => {
     expect(() =>
       validateManifestStrict({
@@ -298,18 +319,114 @@ describe("serverFnBase manifest field", () => {
   });
 });
 
-describe("isAppWorkerName", () => {
-  it("accepts only the Worker everyapp deploy creates for the app", () => {
-    expect(isAppWorkerName("todo", "every-todo")).toBe(true);
-    expect(isAppWorkerName("every-todo", "every-todo")).toBe(true);
-    expect(isAppWorkerName("todo", "every-chef")).toBe(false);
-    expect(isAppWorkerName("todo", "todo")).toBe(false);
+describe("registry Worker names", () => {
+  const legacy = { appId: "todo", orgKey: "acme", legacyNames: true };
+  const scoped = { appId: "todo", orgKey: "acme", legacyNames: false };
+
+  it("assigns every-<orgKey>-<appId>, and every-<appId> to legacy rows", () => {
+    expect(registryWorkerNameFor(scoped)).toBe("every-acme-todo");
+    expect(registryWorkerNameFor(legacy)).toBe("every-todo");
+    expect(() => registryWorkerNameFor({ ...scoped, orgKey: null })).toThrow();
   });
 
-  it("never accepts the gateway's own Worker", () => {
-    expect(isAppWorkerName("app-gateway", GATEWAY_WORKER_NAME)).toBe(false);
-    expect(isAppWorkerName("every-app-gateway", GATEWAY_WORKER_NAME)).toBe(
+  it("accepts only the Worker a row's naming rule gives it", () => {
+    expect(
+      isRegistryWorkerName({ ...scoped, workerName: "every-acme-todo" }),
+    ).toBe(true);
+    expect(isRegistryWorkerName({ ...legacy, workerName: "every-todo" })).toBe(
+      true,
+    );
+    // A legacy name on a scoped row, another org's name, another app's.
+    expect(isRegistryWorkerName({ ...scoped, workerName: "every-todo" })).toBe(
       false,
     );
+    expect(
+      isRegistryWorkerName({ ...scoped, workerName: "every-other-todo" }),
+    ).toBe(false);
+    expect(isRegistryWorkerName({ ...legacy, workerName: "every-chef" })).toBe(
+      false,
+    );
+    expect(
+      isRegistryWorkerName({
+        ...scoped,
+        orgKey: null,
+        workerName: "every-null-todo",
+      }),
+    ).toBe(false);
+  });
+
+  it("never accepts the gateway's own names", () => {
+    for (const row of [
+      { appId: "app-gateway", orgKey: null, legacyNames: true },
+      { appId: "gateway", orgKey: "app", legacyNames: false },
+      { appId: "gateway-deploy", orgKey: "app", legacyNames: false },
+    ]) {
+      expect(
+        isRegistryWorkerName({
+          ...row,
+          workerName: registryWorkerNameFor(row),
+        }),
+      ).toBe(false);
+    }
+    expect(isReservedName(GATEWAY_WORKER_NAME)).toBe(true);
+    expect(isReservedName("every-app-gateway-OAUTH_KV")).toBe(true);
+    expect(isReservedName("every-app-gatewayx")).toBe(false);
+  });
+
+  it("refuses an org-scoped app id with the resource separator in it", () => {
+    expect(
+      isRegistryWorkerName({
+        ...scoped,
+        appId: "notes--archive",
+        workerName: "every-acme-notes--archive",
+      }),
+    ).toBe(false);
+    // A legacy row keeps working.
+    expect(
+      isRegistryWorkerName({
+        ...legacy,
+        appId: "notes--archive",
+        workerName: "every-notes--archive",
+      }),
+    ).toBe(true);
+  });
+
+  it("refuses names longer than Cloudflare allows", () => {
+    const appId = "a".repeat(60);
+    expect(
+      isRegistryWorkerName({
+        ...scoped,
+        appId,
+        workerName: `every-acme-${appId}`,
+      }),
+    ).toBe(false);
+  });
+
+  it("names resources after the Worker", () => {
+    expect(resourceNameFor("every-acme-todo", "DB")).toBe("every-acme-todo");
+    expect(resourceNameFor("every-acme-todo", "KV")).toBe("every-acme-todo");
+    expect(resourceNameFor("every-acme-todo", "CACHE")).toBe(
+      "every-acme-todo--cache",
+    );
+    expect(resourceNameFor("every-acme-todo", "MY_CACHE")).toBe(
+      "every-acme-todo--my-cache",
+    );
+    expect(resourceNameFor("every-todo", "CACHE", { legacyNames: true })).toBe(
+      "every-todo-cache",
+    );
+  });
+
+  it("never gives one app's binding another org-scoped app's name", () => {
+    // App `notes` binding ARCHIVE, and app `notes-archive` in the same org.
+    const notesArchive = registryWorkerNameFor({
+      ...scoped,
+      appId: "notes-archive",
+    });
+    const archive = resourceNameFor(
+      registryWorkerNameFor({ ...scoped, appId: "notes" }),
+      "ARCHIVE",
+    );
+    expect(archive).not.toBe(notesArchive);
+    expect(archive).not.toBe(resourceNameFor(notesArchive, "DB"));
   });
 });

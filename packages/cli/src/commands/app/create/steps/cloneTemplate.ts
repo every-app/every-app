@@ -57,6 +57,9 @@ export async function cloneTemplate({
       ".env.local",
       ".env.production",
       ".dev.vars",
+      // cf's local state and Build Output, and everyapp's deploy inputs.
+      ".cloudflare",
+      ".everyapp",
       "manual-steps.md",
     ],
   });

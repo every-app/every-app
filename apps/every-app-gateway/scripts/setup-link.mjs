@@ -1,5 +1,5 @@
 /**
- * Mint an owner setup link for a LOCAL gateway (vite dev, Docker self-host).
+ * Mint an owner setup link for a LOCAL gateway (`pnpm dev`, Docker self-host).
  *
  * Deployed gateways get their link from `everyapp gateway deploy` (or
  * `everyapp gateway claim-link`). This is the same thing against the local D1
@@ -9,41 +9,29 @@
  *
  * Usage: pnpm setup-link
  */
-import { spawnSync } from "node:child_process";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import dotenv from "dotenv";
+import { LOCAL_D1_ID, runCfLocal } from "./cf-local.mjs";
 
-const DATABASE = "every-app-gateway";
 const LINK_TTL_MS = 24 * 60 * 60 * 1000;
 
-function wranglerD1(command) {
-  const result = spawnSync(
-    "npx",
-    [
-      "wrangler",
-      "d1",
-      "execute",
-      DATABASE,
-      "--local",
-      "--json",
-      "--command",
-      command,
-    ],
-    { encoding: "utf8" },
-  );
-  if (result.status !== 0) {
-    throw new Error(
-      `wrangler d1 execute failed:\n${result.stderr || result.stdout}`,
-    );
-  }
-  return JSON.parse(result.stdout);
+/** Run one statement against the local D1; returns its rows as arrays. */
+async function query(sql, params = []) {
+  const [result] = await runCfLocal([
+    "d1",
+    "raw",
+    LOCAL_D1_ID,
+    "--sql",
+    sql,
+    ...params.flatMap((value) => ["--params", String(value)]),
+  ]);
+  return result?.results?.rows ?? [];
 }
 
 function gatewayUrl() {
-  const localEnv = existsSync(".env")
-    ? dotenv.parse(readFileSync(".env", "utf8"))
-    : {};
+  const local = [".dev.vars", ".env"].find((file) => existsSync(file));
+  const localEnv = local ? dotenv.parse(readFileSync(local, "utf8")) : {};
   return (
     process.env.GATEWAY_URL ||
     localEnv.GATEWAY_URL ||
@@ -51,11 +39,12 @@ function gatewayUrl() {
   ).replace(/\/$/, "");
 }
 
-function main() {
-  const [ownerQuery] = wranglerD1(
-    "SELECT 1 AS found FROM members WHERE role = 'owner' LIMIT 1;",
+async function main() {
+  const owners = await query(
+    "SELECT 1 AS found FROM members WHERE role = ? LIMIT 1",
+    ["owner"],
   );
-  if ((ownerQuery?.results ?? []).length > 0) {
+  if (owners.length > 0) {
     console.log("This gateway already has an owner; no setup link needed.");
     return;
   }
@@ -63,12 +52,13 @@ function main() {
   const token = `est_${randomBytes(32).toString("base64url")}`;
   const tokenHash = createHash("sha256").update(token).digest("hex");
   const now = Date.now();
-  // Every value below is generated here (hex, UUID, integers), never input.
-  wranglerD1(
-    [
-      `UPDATE owner_setup_tokens SET expires_at = ${now} WHERE kind = 'claim' AND consumed_at IS NULL;`,
-      `INSERT INTO owner_setup_tokens (id, kind, token_hash, expires_at) VALUES ('${randomUUID()}', 'claim', '${tokenHash}', ${now + LINK_TTL_MS});`,
-    ].join(" "),
+  await query(
+    "UPDATE owner_setup_tokens SET expires_at = ? WHERE kind = 'claim' AND consumed_at IS NULL",
+    [now],
+  );
+  await query(
+    "INSERT INTO owner_setup_tokens (id, kind, token_hash, expires_at) VALUES (?, 'claim', ?, ?)",
+    [randomUUID(), tokenHash, now + LINK_TTL_MS],
   );
 
   console.log(
@@ -77,4 +67,7 @@ function main() {
   console.log(`  ${gatewayUrl()}/setup#token=${token}\n`);
 }
 
-main();
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
+  process.exit(1);
+});

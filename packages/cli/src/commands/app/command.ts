@@ -14,6 +14,13 @@ export const createCommand = buildCommand({
       ],
     },
     flags: {
+      gateway: {
+        kind: "parsed",
+        parse: String,
+        brief:
+          "Gateway URL (default: EVERYAPP_GATEWAY_URL, or the only gateway you're logged in to)",
+        optional: true,
+      },
       verbose: {
         kind: "boolean",
         brief: "Show detailed output during creation",
@@ -32,13 +39,13 @@ export const createCommand = buildCommand({
   docs: {
     brief: "Create a new app from the starter template",
     fullDescription: [
-      "Copies the simple-todo starter template, deploys to Cloudflare, and configures local development.",
+      "Copies the simple-todo starter template, deploys it through your gateway, and configures local development.",
       "",
       "Usage: every app create [name]",
       "",
       "The command will:",
       "  1. Prompt for app ID (or use provided name)",
-      "  2. Deploy a private Cloudflare Worker from everyapp.config.ts",
+      "  2. Deploy it as a private Cloudflare Worker (see `everyapp app deploy`)",
       "  3. Configure package.json and local .env files",
       "  4. Install dependencies and run local migrations for the starter app",
       "",
@@ -46,6 +53,14 @@ export const createCommand = buildCommand({
     ].join("\n"),
   },
 });
+
+const gatewayFlag = {
+  kind: "parsed",
+  parse: String,
+  brief:
+    "Gateway URL (default: EVERYAPP_GATEWAY_URL, or the only gateway you're logged in to)",
+  optional: true,
+} as const;
 
 export const deployCommand = buildCommand({
   loader: async () => {
@@ -58,6 +73,7 @@ export const deployCommand = buildCommand({
       parameters: [],
     },
     flags: {
+      gateway: gatewayFlag,
       verbose: {
         kind: "boolean",
         brief: "Show detailed output during deployment",
@@ -68,9 +84,9 @@ export const deployCommand = buildCommand({
         brief: "Skip deployment confirmation",
         optional: true,
       },
-      "skip-dns-check": {
+      json: {
         kind: "boolean",
-        brief: "Skip app subdomain DNS preflight check",
+        brief: "Print progress as NDJSON events on stdout",
         optional: true,
       },
       access: {
@@ -80,12 +96,17 @@ export const deployCommand = buildCommand({
           "Who can open a newly registered app (overrides the manifest's access; default admins)",
         optional: true,
       },
-      domain: {
-        kind: "parsed",
-        parse: String,
-        brief: "Not for this command; configure the gateway domain instead",
+      "allow-delete-durable-object-data": {
+        kind: "boolean",
+        brief:
+          "Deploy even though Durable Object classes were removed, deleting their data",
         optional: true,
-        hidden: true,
+      },
+      "break-lease": {
+        kind: "boolean",
+        brief:
+          "Take the app's deploy lease over from a deploy that died (asks first; unattended, with --yes)",
+        optional: true,
       },
     },
     aliases: {
@@ -95,24 +116,78 @@ export const deployCommand = buildCommand({
   docs: {
     brief: "Deploy an app to Cloudflare",
     fullDescription: [
-      "Deploys the current app as a private Cloudflare Worker from everyapp.config.ts.",
-      "The deployment process:",
-      "  1. Loads and validates everyapp.config.ts",
-      "  2. Verifies the app subdomain can resolve through Cloudflare DNS",
-      "  3. Ensures the Cloudflare Workers account is initialized",
-      "  4. Creates or links declared D1 databases and KV namespaces",
-      "  5. Generates .everyapp/wrangler.json",
-      "  6. Installs dependencies using the manifest install setting or package-manager auto-detection",
-      "  7. Runs the configured database migration strategy against production D1",
-      "  8. Runs the configured build, deploys, registers with the gateway, and ensures the service binding",
+      "Deploys the current app as a private Cloudflare Worker defined by cloudflare.config.ts, with cf:",
+      "  1. Registers the app with the gateway, which names its Worker and resources",
+      "  2. Creates or links the D1 databases and KV namespaces in everyapp.config.ts",
+      "  3. Installs dependencies (the manifest's install setting, or auto-detected)",
+      "  4. Bookmarks the production D1 database, then applies its migrations",
+      "  5. Builds with cf build (or the manifest's build command) and checks the built Worker",
+      "  6. Uploads it with cf deploy --prebuilt, its secrets in the same version",
+      "  7. Has the gateway bind the Worker (new apps) and makes the app live",
     ].join("\n"),
   },
 });
 
-export const generateConfigCommand = buildCommand({
+export const deleteCommand = buildCommand({
   loader: async () => {
-    const { generateConfig } = await import("./generateConfig");
-    return generateConfig;
+    const { deleteApp } = await import("./delete");
+    return deleteApp;
+  },
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [
+        {
+          brief: "App id (default: the app in this directory)",
+          parse: String,
+          optional: true,
+        },
+      ],
+    },
+    flags: {
+      gateway: gatewayFlag,
+      purge: {
+        kind: "boolean",
+        brief: "Also delete the app's Worker, D1 databases and KV namespaces",
+        optional: true,
+      },
+      yes: {
+        kind: "boolean",
+        brief: "Skip the confirmation",
+        optional: true,
+      },
+      json: {
+        kind: "boolean",
+        brief: "Print progress as NDJSON events on stdout",
+        optional: true,
+      },
+      verbose: {
+        kind: "boolean",
+        brief: "Show detailed output",
+        optional: true,
+      },
+      "break-lease": {
+        kind: "boolean",
+        brief:
+          "Take the gateway's deploy lease over from a deploy that died (asks first; unattended, with --yes)",
+        optional: true,
+      },
+    },
+    aliases: { y: "yes" },
+  },
+  docs: {
+    brief: "Delete an app from the gateway",
+    fullDescription: [
+      "Deletes the app on the gateway (its name stays reserved to your organization) and removes its gateway binding.",
+      "The app's Worker and data are kept unless --purge, which deletes them for good.",
+    ].join("\n"),
+  },
+});
+
+const d1MigrateCommand = buildCommand({
+  loader: async () => {
+    const { migrate } = await import("./d1");
+    return migrate;
   },
   parameters: {
     positional: {
@@ -120,20 +195,77 @@ export const generateConfigCommand = buildCommand({
       parameters: [],
     },
     flags: {
-      verbose: {
+      local: {
         kind: "boolean",
-        brief: "Show generated config details",
+        brief: "Migrate the local database `everyapp dev` uses",
+        optional: true,
+      },
+      json: {
+        kind: "boolean",
+        brief: "Print progress as NDJSON events on stdout",
         optional: true,
       },
     },
   },
   docs: {
-    brief: "Generate .everyapp/wrangler.json from everyapp.config.ts",
+    brief: "Apply D1 migrations to the app's local database",
     fullDescription: [
-      "Loads everyapp.config.ts, validates it, and writes the generated Wrangler config consumed by Vite and Wrangler.",
+      "Applies the app's D1 migrations (migrations.dir in everyapp.config.ts, default drizzle/)",
+      "to the local database in .cloudflare/state that `cf dev` and `everyapp dev` serve:",
       "",
-      "Run this before invoking vite directly.",
+      "  cf d1 migrations apply <local id> --local --persist-to .cloudflare/state --dir <dir>",
+      "",
+      "Production migrations run as part of `everyapp app deploy`.",
     ].join("\n"),
+  },
+});
+
+const d1QueryCommand = buildCommand({
+  loader: async () => {
+    const { query } = await import("./d1");
+    return query;
+  },
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [{ brief: "SQL to run", parse: String }],
+    },
+    flags: {
+      local: {
+        kind: "boolean",
+        brief: "Query the local database `everyapp dev` uses",
+        optional: true,
+      },
+      binding: {
+        kind: "parsed",
+        parse: String,
+        brief: "D1 binding (default: the migrations binding, or the first)",
+        optional: true,
+      },
+      gateway: gatewayFlag,
+      json: {
+        kind: "boolean",
+        brief: "Print the result as an NDJSON event",
+        optional: true,
+      },
+    },
+  },
+  docs: {
+    brief: "Run SQL against the app's D1 database",
+    fullDescription: [
+      "Runs SQL against the app's production D1 database through cf, with your Cloudflare login in the gateway's account (or, with --local, against the database in .cloudflare/state).",
+      "For anything else, cf works on the database directly: npx cf d1 query <database-id> --sql \"…\"",
+    ].join("\n"),
+  },
+});
+
+const d1Routes = buildRouteMap({
+  routes: {
+    migrate: d1MigrateCommand,
+    query: d1QueryCommand,
+  },
+  docs: {
+    brief: "D1 database commands",
   },
 });
 
@@ -148,6 +280,7 @@ export const setupLocalCommand = buildCommand({
       parameters: [],
     },
     flags: {
+      gateway: gatewayFlag,
       verbose: {
         kind: "boolean",
         brief: "Show detailed output during local setup",
@@ -164,48 +297,12 @@ export const setupLocalCommand = buildCommand({
       "",
       "The command will:",
       "  1. Verify the current directory is an Every App project",
-      "  2. Verify Cloudflare and gateway setup",
+      "  2. Find the gateway and check it has an owner",
       "  3. Install dependencies using package-manager auto-detection",
       "  4. Create or refresh .env.local",
-      "  5. Run local setup scripts for template-style apps",
+      "  5. Generate Worker types and apply local D1 migrations with cf",
       "",
       "This is useful after cloning an existing Every App repository.",
-    ].join("\n"),
-  },
-});
-
-export const remoteD1ShellCommand = buildCommand({
-  loader: async () => {
-    const { remoteD1Shell } = await import("./remoteD1Shell");
-    return remoteD1Shell;
-  },
-  parameters: {
-    flags: {},
-    positional: {
-      kind: "array",
-      parameter: {
-        brief: "Command and arguments to run with environment variables",
-        parse: String,
-      },
-    },
-  },
-  docs: {
-    brief: "Run a command with Cloudflare D1 connection environment variables",
-    fullDescription: [
-      "Sets environment variables needed to connect to remote Cloudflare D1 and runs any command that requires D1 access.",
-      "",
-      "The command will:",
-      "  1. Get the Cloudflare account ID",
-      "  2. Look up the database ID from the generated Wrangler database name",
-      "  3. Get a valid OAuth token",
-      "  4. Run the provided command with CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_DATABASE_ID, CLOUDFLARE_API_TOKEN, and MIGRATE_REMOTE set",
-      "",
-      "Common use cases:",
-      "  - Running Drizzle migrations: npx everyapp app remote-d1-shell -- npx drizzle-kit migrate",
-      "  - Opening Drizzle Studio: npx everyapp app remote-d1-shell -- npx drizzle-kit studio",
-      "  - Pushing schema changes: npx everyapp app remote-d1-shell -- npx drizzle-kit push",
-      "",
-      "This command is useful for any operation that needs direct access to your production D1 database.",
     ].join("\n"),
   },
 });
@@ -214,9 +311,9 @@ export const appRoutes = buildRouteMap({
   routes: {
     create: createCommand,
     deploy: deployCommand,
-    "generate-config": generateConfigCommand,
+    d1: d1Routes,
     "setup-local": setupLocalCommand,
-    "remote-d1-shell": remoteD1ShellCommand,
+    delete: deleteCommand,
   },
   docs: {
     brief: "App management commands",

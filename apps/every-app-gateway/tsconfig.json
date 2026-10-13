@@ -1,5 +1,5 @@
 {
-  "include": ["**/*.ts", "**/*.tsx"],
+  "include": ["**/*.ts", "**/*.tsx", ".cloudflare/types/index.d.ts"],
   "exclude": ["node_modules", "release-package"],
   "compilerOptions": {
     "strict": true,
@@ -19,6 +19,7 @@
       "@/*": ["./src/*"]
     },
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["vite/client"]
   }
 }

@@ -1,38 +1,32 @@
 {
   "name": "every-app-gateway",
-  "version": "0.1.14",
+  "version": "0.2.0",
   "private": true,
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
-    "types:check": "tsc --noEmit",
+    "dev": "cf dev",
+    "types:check": "cf workers types && tsc --noEmit",
     "format:check": "prettier --check .",
     "format:write": "prettier . --write",
-    "build": "vite build && tsc --noEmit",
-    "build:debug": "DEBUG_BUILD=true vite build && tsc --noEmit",
+    "build": "cf build && tsc --noEmit",
+    "build:debug": "DEBUG_BUILD=true cf build && tsc --noEmit",
     "start": "node .output/server/index.mjs",
-    "deploy": "echo 'The gateway must be deployed with: everyapp gateway deploy (a bare wrangler deploy would strip the app service bindings)' && exit 1",
-    "cf-typegen": "wrangler types --env-interface Env",
     "auth:generate": "auth generate --config src/auth/cli-config.ts --output src/db/auth.schema.ts -y",
     "auth:check": "auth check schema --config src/auth/cli-config.ts",
     "auth:update": "pnpm run auth:generate",
     "secrets:regenerate": "node regenerate-secrets.js",
     "db:generate": "drizzle-kit generate",
-    "db:migrate:local": "drizzle-kit migrate",
+    "db:migrate:local": "node scripts/cf-local.mjs migrate",
     "setup-link": "node scripts/setup-link.mjs",
-    "db:migrate:prod": "npx everyapp app remote-d1-shell -- drizzle-kit migrate --config=drizzle-prod.config.ts",
     "db:studio:local": "drizzle-kit studio",
-    "db:studio:prod": "npx everyapp app remote-d1-shell -- drizzle-kit studio --config=drizzle-prod.config.ts",
     "knip": "knip",
     "test": "vitest run --silent",
     "test:watch": "vitest",
-    "build:release": "node scripts/build-release.js",
-    "build:release:deploy": "pnpm run build:release && bun ../../packages/cli/src/bin/cli.ts gateway deploy --localGateway \"every-app-gateway-build.tar.gz\""
+    "build:release": "node scripts/build-release.ts"
   },
   "dependencies": {
     "@better-auth/expo": "1.7.7",
-    "@cloudflare/vite-plugin": "^1.45.0",
     "@cloudflare/workers-oauth-provider": "0.8.1",
     "@every-app/perimeter": "workspace:*",
     "@every-app/sdk": "workspace:*",
@@ -49,7 +43,6 @@
     "dotenv": "^17.2.3",
     "drizzle-orm": "^0.45.3",
     "jose": "^6.2.12",
-    "jsonc-parser": "^3.3.1",
     "lucide-react": "^0.540.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.0.0",
@@ -61,6 +54,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.sha-91c870c02",
     "@cloudflare/workers-types": "^5.20260715.1",
     "@libsql/client": "^0.15.15",
     "@tailwindcss/vite": "^4.1.11",
@@ -69,6 +63,7 @@
     "@types/react-dom": "^19.0.3",
     "@vitejs/plugin-react": "^4.6.0",
     "auth": "1.7.7",
+    "cf": "1.0.0-beta.14",
     "daisyui": "^5.4.7",
     "drizzle-kit": "^0.31.11",
     "knip": "^5.66.4",
@@ -76,7 +71,6 @@
     "typescript": "^5.9.3",
     "vite": "^7.2.7",
     "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^3.2.6",
-    "wrangler": "^4.111.0"
+    "vitest": "^3.2.6"
   }
 }

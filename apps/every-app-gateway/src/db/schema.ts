@@ -5,3 +5,4 @@ export * from "./user-tokens.schema";
 export * from "./owner-bootstrap.schema";
 export * from "./owner-setup-tokens.schema";
 export * from "./invitation-link-tokens.schema";
+export * from "./organization-keys.schema";

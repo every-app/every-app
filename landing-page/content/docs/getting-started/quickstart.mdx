@@ -32,26 +32,27 @@ provide, give me the exact command to run in my own terminal.
 
 1. Ask me where my Every App projects should live, create that folder, and
    run everything from inside it.
-2. Check Node.js is installed (`node --version`, must be 22+). Help me
-   install it if not.
+2. Check Node.js is installed (`node --version`, must be 22.18 or newer).
+   Help me install it if not.
 3. If I don't have a Cloudflare account, send me to
    https://dash.cloudflare.com/sign-up and wait. It's free, no credit card.
 4. Ask me which domain I want to use. If it isn't on my Cloudflare account
    yet, walk me through "Add a domain" at https://dash.cloudflare.com (free
    plan is fine) and updating the nameservers at my registrar. If I don't own
    a domain, help me buy one first (Cloudflare Registrar or any registrar).
-5. Run `npx -y wrangler login`. A browser window opens; tell me to click
-   "Allow". If the browser login can't complete (remote or headless machine),
-   walk me through creating an API token at
+5. Run `npx -y cf auth login` in my terminal. It prints a link and a
+   one-time code; tell me to open the link, check the code and approve. If
+   that login can't complete, walk me through creating an API token at
    https://dash.cloudflare.com/profile/api-tokens with the "Edit Cloudflare
-   Workers" template plus Zone → DNS → Edit permission, then export
+   Workers" template plus Account → D1 → Edit permission, then export
    CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID before continuing.
-6. Run `npx -y everyapp gateway deploy -y --domain <my domain>`.
+6. Run `npx -y everyapp gateway deploy -y --printSetupLink --domain <my domain>`.
    If it prints instructions for adding a wildcard DNS record (CNAME, name
    "*", target my domain, proxy ON), pause and walk me through adding it in
    the Cloudflare dashboard under my domain → DNS.
-7. When it finishes, give me my Gateway URL (https://<my domain>) and tell me
-   to open it and create my account there.
+7. When it finishes, give me the one-time setup link it printed
+   (https://<my domain>/setup#token=…) and tell me to open it and create my
+   account there.
 8. Tell me to create a deploy token: on my Gateway, Admin → Tokens →
    Deploy token (it's shown once — copy it). Then run
    `npx -y everyapp login` and I'll paste the token when it asks. This is
@@ -71,9 +72,9 @@ error and your suggested fix before retrying.
   Playwright MCP), you can also paste this add-on: "You may open and drive the
   browser yourself. On dash.cloudflare.com/sign-up, fill the form but pause and
   let me type my password; I'll read you the emailed verification code. You may
-  add the domain and the DNS record in the dashboard yourself. On the wrangler
-  login page, click Allow. On my new Gateway URL, the first-visit form creates
-  my owner account — pause and let me type that password too."
+  add the domain and the DNS record in the dashboard yourself. On Cloudflare's
+  login page, check the code and approve. The setup link's page creates my owner
+  account — pause and let me type that password too."
 </Callout>
 
 ## The manual path
@@ -82,16 +83,16 @@ The same steps, if you'd rather run them yourself.
 
 ### 1. Prerequisites
 
-1. Install [Node.js](https://nodejs.org/) 22 or newer. This includes `npx`, which runs the commands below.
+1. Install [Node.js](https://nodejs.org/) 22.18 or newer. This includes `npx`, which runs the commands below.
 2. [Create a Cloudflare account](https://dash.cloudflare.com/sign-up) — free, no credit card.
 3. [Add your domain to Cloudflare](https://developers.cloudflare.com/fundamentals/manage-domains/add-site/) (free plan is fine) and update the nameservers at your registrar. Skip this if your domain already lives on Cloudflare.
-4. Log in to Cloudflare from your terminal:
+4. Log in to Cloudflare from your terminal with Cloudflare's CLI:
 
    ```bash
-   npx wrangler login
+   npx cf auth login
    ```
 
-   Your browser opens; click **Allow**.
+   It prints a link and a one-time code. Open the link, check the code and approve. (The deploy offers this login too if you skip it.)
 
 ### 2. Deploy the Gateway
 
@@ -101,7 +102,7 @@ npx everyapp gateway deploy --domain your-domain.dev
 
 This sets up a database and hosting on your Cloudflare account, puts the Gateway live at your domain, and points `*.your-domain.dev`, every future app address, at it.
 
-That last part needs one DNS record, and the terminal login usually isn't allowed to create DNS records for you. If the deploy prints instructions, add the record once in the dashboard:
+That last part needs one DNS record. Add it once in the dashboard (the deploy reminds you if it's missing):
 
 > **your-domain.dev → DNS → Add record**: Type **CNAME**, Name **`*`**, Target **`your-domain.dev`**, Proxy **ON** (orange cloud).
 >
@@ -149,7 +150,7 @@ npx everyapp app deploy
 npx gitpick every-app/every-app/tree/main/apps/chef every-app-chef
 cd every-app-chef
 npx everyapp app deploy
-npx wrangler secret put OPENAI_API_KEY --name every-app-gateway
+npx everyapp gateway secret set OPENAI_API_KEY
 # chat needs an OpenAI key; it lives on your Gateway, which proxies AI calls
 ```
 
@@ -157,10 +158,10 @@ npx wrangler secret put OPENAI_API_KEY --name every-app-gateway
 </details>
 
 <details className="faq">
-<summary>Trying it out without a domain</summary>
+<summary>Why the Gateway needs a domain</summary>
 <div className="faq-content">
 
-`npx everyapp gateway deploy` without `--domain` puts the Gateway on a free `workers.dev` address — enough to see the launcher and create your account with the setup link. Apps can't be reached this way, though: each app lives at its own subdomain of your domain, and `workers.dev` addresses can't have subdomains. When you're ready, re-run the deploy with `--domain` — your account and data carry over.
+The Gateway serves at your domain and each app at its own subdomain of it, so `npx everyapp gateway deploy` needs `--domain` the first time (it remembers it after). `workers.dev` addresses can't have subdomains, so they can't host apps. Any domain on your Cloudflare account works, including a cheap one bought just for this.
 
 </div>
 </details>

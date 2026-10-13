@@ -1,21 +1,17 @@
 {
-  "ignoreBinaries": ["everyapp"],
   "entry": [
-    // Production Worker entry point
+    // Worker config (cf dev, cf build) and the production Worker entry point
+    "cloudflare.config.ts",
     "src/server.ts",
     // Detect Tanstack Start Routes
     "src/router.tsx",
     "src/routes/**/*.{ts,tsx}",
     // Better auth cli entrypoint
     "src/auth/index.ts",
-    "scripts/*.{js,mjs}",
+    "scripts/*.{js,mjs,ts}",
   ],
   "project": ["**/*.{js,mjs,ts,tsx}", "!src/routeTree.gen.ts"],
-  "ignore": [
-    "src/routeTree.gen.ts",
-    "drizzle-prod.config.ts",
-    "src/auth/cli-config.ts",
-  ],
+  "ignore": ["src/routeTree.gen.ts", "src/auth/cli-config.ts"],
   "ignoreDependencies": [
     // `cloudflare:workers` is a Workers runtime module that Knip reads as the
     // (unused) `cloudflare` npm package.

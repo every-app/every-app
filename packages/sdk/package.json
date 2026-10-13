@@ -1,6 +1,6 @@
 {
   "name": "@every-app/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "type": "module",
   "exports": {
@@ -11,6 +11,10 @@
     "./internal": {
       "types": "./dist/internal/index.d.ts",
       "default": "./dist/internal/index.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare/index.d.ts",
+      "default": "./dist/cloudflare/index.js"
     }
   },
   "files": [

@@ -71,13 +71,22 @@ async function writeCredentialsFile(
   credentials: GatewayCredentialsFile,
 ): Promise<void> {
   const credentialsPath = getGatewayCredentialsPath();
-  await fs.mkdir(path.dirname(credentialsPath), { recursive: true });
+  // Private, as everyapp's cf directories under it require (lib/cf/privateDir.ts).
+  await fs.mkdir(path.dirname(credentialsPath), {
+    recursive: true,
+    mode: 0o700,
+  });
   await fs.writeFile(
     credentialsPath,
     `${JSON.stringify(credentials, null, 2)}\n`,
     { encoding: "utf-8", mode: 0o600 },
   );
   await fs.chmod(credentialsPath, 0o600);
+}
+
+/** Every gateway this machine has a deploy token for. */
+export async function listGatewayCredentials(): Promise<GatewayCredential[]> {
+  return Object.values((await readCredentialsFile()).gateways);
 }
 
 export async function readGatewayCredential(

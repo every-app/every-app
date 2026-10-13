@@ -1,3 +1,4 @@
+import { EveryAppError } from "@/lib/errors";
 import {
   formatGatewayCredentialHelp,
   requireGatewayCredentialToken,
@@ -16,7 +17,7 @@ interface GatewayErrorPayload {
   code?: string;
 }
 
-class GatewayApiError extends Error {
+export class GatewayApiError extends Error {
   status: number;
   code?: string;
 
@@ -36,14 +37,14 @@ class GatewayApiError extends Error {
   }
 }
 
-export class OutdatedGatewayError extends GatewayApiError {
+class OutdatedGatewayError extends GatewayApiError {
   constructor(message = "OUTDATED_GATEWAY") {
     super({ message, status: 404 });
     this.name = "OutdatedGatewayError";
   }
 }
 
-export class GatewayInternalApisDisabledError extends GatewayApiError {
+class GatewayInternalApisDisabledError extends GatewayApiError {
   constructor(message = "GATEWAY_INTERNAL_APIS_DISABLED") {
     super({
       message,
@@ -54,26 +55,26 @@ export class GatewayInternalApisDisabledError extends GatewayApiError {
   }
 }
 
-export class GatewayAuthError extends GatewayApiError {
+class GatewayAuthError extends GatewayApiError {
   constructor(status: number, message = "GATEWAY_INTERNAL_AUTH") {
     super({ message, status });
     this.name = "GatewayAuthError";
   }
 }
 
-export function isOutdatedGatewayError(
+function isOutdatedGatewayError(
   error: unknown,
 ): error is OutdatedGatewayError {
   return error instanceof OutdatedGatewayError;
 }
 
-export function isGatewayInternalApisDisabledError(
+function isGatewayInternalApisDisabledError(
   error: unknown,
 ): error is GatewayInternalApisDisabledError {
   return error instanceof GatewayInternalApisDisabledError;
 }
 
-export function isGatewayAuthError(error: unknown): error is GatewayAuthError {
+function isGatewayAuthError(error: unknown): error is GatewayAuthError {
   return error instanceof GatewayAuthError;
 }
 
@@ -86,26 +87,71 @@ interface RegisterAppPayload {
   appId: string;
   name: string;
   description: string;
-  workerName: string;
   manifest: unknown;
+  cliVersion: string;
+  sdkVersion?: string;
 }
 
-interface RegisterAppResponse {
-  appId: string;
+/** The D1 databases and KV namespaces for an app's bindings, by binding. */
+export interface AppResources {
+  d1: Record<string, string>;
+  kv: Record<string, string>;
+}
+
+export interface RegisterAppResponse {
+  appRowId: string;
   appSlug: string;
+  /** pending | binding | active | disabled */
+  status: string;
+  workerName: string;
   hostname: string;
+  legacyNames: boolean;
+  resources: AppResources;
+  previousManifest: unknown;
+  /** The Worker version the last deploy uploaded (absent from older gateways). */
+  versionId?: string | null;
   existingApp: boolean;
   defaultAccess: boolean;
   grantedUserCount: number;
 }
 
-interface GatewayWhoamiResponse {
+interface AppDeployState {
+  status: string;
+  workerName: string;
+  hostname: string;
+}
+
+/** An app's deploy state with the names of its resources. */
+export interface DeletedApp extends AppDeployState {
+  /** Registered before org-scoped names (absent from gateways before it). */
+  legacyNames?: boolean;
+  resources: AppResources;
+}
+
+export interface GatewayWhoamiResponse {
   organizationId: string;
   organizationName: string;
   scopes: string[];
+  accountId?: string | null;
+  gateway?: {
+    release?: { version: string; sha256: string } | null;
+    gatewayHost?: string | null;
+  };
+  minCli?: string;
+  minSdk?: string;
   capabilities?: {
     appGateway?: boolean;
+    deployProtocol?: number;
   };
+}
+
+export interface GatewayStatusResponse {
+  release: { version: string; sha256: string } | null;
+  versionId: string | null;
+  appBindingsDigest: string;
+  /** With a deploy token only. */
+  gatewayHost?: string | null;
+  appBindings?: string[];
 }
 
 export class GatewayClient {
@@ -129,6 +175,45 @@ export class GatewayClient {
     return this.request<RegisterAppResponse>("/api/deploy/register", {
       method: "POST",
       body: payload,
+    });
+  }
+
+  markDeployed(
+    appId: string,
+    payload: { versionId: string; manifest: unknown },
+  ): Promise<AppDeployState> {
+    return this.request<AppDeployState>(
+      `/api/deploy/apps/${encodeURIComponent(appId)}/deployed`,
+      { method: "POST", body: payload },
+    );
+  }
+
+  activateApp(appId: string): Promise<AppDeployState> {
+    return this.request<AppDeployState>(
+      `/api/deploy/apps/${encodeURIComponent(appId)}/activate`,
+      { method: "POST" },
+    );
+  }
+
+  appInfo(appId: string): Promise<DeletedApp> {
+    return this.request<DeletedApp>(
+      `/api/deploy/apps/${encodeURIComponent(appId)}/info`,
+      { method: "GET" },
+    );
+  }
+
+  deleteApp(appId: string): Promise<DeletedApp> {
+    return this.request<DeletedApp>(
+      `/api/deploy/apps/${encodeURIComponent(appId)}/delete`,
+      { method: "POST" },
+    );
+  }
+
+  /** What the live gateway runs; with `auth`, also the apps it binds. */
+  status(options: { auth?: boolean } = {}): Promise<GatewayStatusResponse> {
+    return this.request<GatewayStatusResponse>("/api/deploy/status", {
+      method: "GET",
+      auth: options.auth ?? false,
     });
   }
 
@@ -200,6 +285,15 @@ export class GatewayClient {
       if (payload?.code === INTERNAL_APIS_DISABLED_ERROR_CODE) {
         throw new GatewayInternalApisDisabledError();
       }
+      // A route this gateway has answers with a code; a gateway without the
+      // route doesn't.
+      if (payload?.code) {
+        throw new GatewayApiError({
+          message: payload.error || "Not found",
+          status: 404,
+          code: payload.code,
+        });
+      }
       throw new OutdatedGatewayError();
     }
 
@@ -225,3 +319,29 @@ export class GatewayClient {
     return (payload ?? {}) as T;
   }
 }
+
+/** A gateway API failure as the error a command reports. */
+export function explainGatewayError(error: unknown): unknown {
+  if (isOutdatedGatewayError(error)) {
+    return new EveryAppError(
+      "GATEWAY_OUTDATED",
+      "The gateway is too old for this everyapp. Upgrade it: npx everyapp gateway upgrade",
+    );
+  }
+  if (isGatewayAuthError(error)) {
+    return new EveryAppError("GATEWAY_AUTH", error.message);
+  }
+  if (isGatewayInternalApisDisabledError(error)) {
+    return new EveryAppError(
+      "GATEWAY_APIS_DISABLED",
+      "This gateway runs in hosted mode (or its deployment mode is misconfigured), so its deploy API is off.",
+    );
+  }
+  if (error instanceof GatewayApiError && error.code) {
+    return new EveryAppError(error.code, error.message, {
+      retryable: error.status >= 500,
+    });
+  }
+  return error;
+}
+

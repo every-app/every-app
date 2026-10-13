@@ -24,7 +24,7 @@ pnpm test          # runs `pnpm -r --no-bail run test` across all packages
 | `packages/sdk` | `src/**/*.test.ts` (49) | fail-closed identity verification: alg/kid pinning, `alg:none`, algorithm-confusion (HS256-with-public-key), wrong key, expiry, audience mismatch, missing claims, public-route handling, `everyApp()` handler wrapper |
 | `apps/every-app-gateway` | `src/v2/**/*.test.ts` (70) | public-route glob matching incl. path-traversal + percent-encoding (`/p/%2e%2e/__everyapp/...`), header stripping, security headers, CSRF default-deny, JWT mint, Host parsing, the full `handleGatewayRequest` proxy core, the dev gateway-lite, and an end-to-end perimeter↔real-SDK integration test |
 | `apps/every-app-gateway` | legacy `src/**/*.test.ts` | pre-existing gateway tests (still green) |
-| `packages/cli` | `src/v2/*.test.ts` (7) | manifest validation (catch-all / `/__everyapp` hard errors) and the ephemeral-wrangler compiler (private-worker flags, resource→binding mapping) |
+| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the gateway and app deploy pipelines end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1, Build Outputs validated with cf's schema), the app policy check, leases, migrations backfill |
 
 Run a single layer:
 
@@ -83,15 +83,15 @@ from `every-app-gateway/v2/dev`): real public-route policy, real header
 strip/inject, a real RS256 identity JWT signed by a persistent local dev
 keypair (`.everyapp/dev-keys.json`, gitignored), CSRF rules, security headers,
 and a seeded dev user (`dev@everyapp.localhost`, org `dev-org`, role `owner`).
-Hot reload is untouched — vite runs normally; only ingress goes through the
-perimeter. The dev gateway module is dev-only and excluded from production
+Hot reload is untouched — the app runs under `cf dev` (Vite with the
+Cloudflare plugin); only ingress goes through the perimeter. The dev gateway module is dev-only and excluded from production
 bundles.
 
-On first run the CLI writes `EVERYAPP_IDENTITY_PUBLIC_KEYS` into the app's
-`.everyapp/.dev.vars` next to the generated Wrangler config (single dotenv-safe
-line; PEM newlines are JSON-escaped), which the Cloudflare vite plugin loads
-into the worker env — the SDK verifies real signatures in dev, on the same code
-path as production.
+Before the app starts, the CLI writes `EVERYAPP_IDENTITY_PUBLIC_KEYS` (one
+dotenv-safe line; PEM newlines are JSON-escaped) and `EVERYAPP_IDENTITY_ISSUER`
+into the app's root `.dev.vars`, where the Cloudflare Vite plugin fills the
+secrets `cloudflare.config.ts` declares — the SDK verifies real signatures in
+dev, on the same code path as production.
 
 ### Walkthrough (verified end-to-end on `apps/todo-app`)
 
@@ -105,11 +105,13 @@ path as production.
 
    ```bash
    cd apps/todo-app
-   pnpm exec everyapp dev          # honors $PORT (portless assigns it); --port works too
+   node ../../packages/cli/bin/everyapp.js dev   # honors $PORT (portless assigns it); --port works too
    ```
 
-   First run only: apply local D1 migrations once the dev server is up
-   (`pnpm run db:migrate:local` in a second terminal).
+   (`pnpm dev` runs the published CLI; the line above runs the workspace one.)
+   Local D1 migrations are applied before the app starts, with
+   `cf d1 migrations apply --local`; `pnpm run db:migrate:local` applies new
+   ones without a restart.
 
    The dev gateway parses the Host header dynamically (first label = app,
    remainder = base host), so all of these route to the same app with no
@@ -119,8 +121,9 @@ path as production.
      for curl add `--connect-to todo.localhost:8787:127.0.0.1:8787`)
    - `http://todo.fix-ui.everyapp.localhost/` (portless, per-worktree)
 
-   Each git worktree gets its own `.wrangler` state and dev keypair, so several
-   full gateway+app instances run side by side.
+   Each git worktree gets its own `.cloudflare/state`, dev keypair and dev
+   registry (`.everyapp/registry`), so several full gateway+app instances run
+   side by side.
 
 3. **You are already “logged in”** as the seeded dev user — every proxied
    request carries a freshly-minted identity JWT. The perimeter probes (all
@@ -206,7 +209,7 @@ cd apps/every-app-gateway && pnpm dev          # serves on :3000
 
 # Terminal 2 — your app behind the perimeter, mirror auth
 cd apps/todo-app
-pnpm exec everyapp dev --mode mirror --baseHost everyapp.localhost
+node ../../packages/cli/bin/everyapp.js dev --mode mirror --baseHost everyapp.localhost
 # (--gateway http://localhost:3000 by default; the CLI fails fast with
 #  guidance if the gateway isn't reachable)
 ```
@@ -251,14 +254,18 @@ production.
    holds the RS256 keypair (`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`, kid
    `everyapp-identity`).
 2. **Each app** is deployed PRIVATE from its manifest:
-   - `everyapp deploy` compiles `everyapp.config.ts` → ephemeral wrangler config
-     with `workers_dev:false`, `preview_urls:false`, **no routes**;
+   - `everyapp app deploy` builds the Worker `cloudflare.config.ts` defines
+     from `everyapp.config.ts` (`everyAppWorker()`) with `workersDev:false`,
+     `previewUrls:false`, **no routes**, and refuses a built Worker that
+     differs;
    - the gateway’s public **key set** is injected as
      `EVERYAPP_IDENTITY_PUBLIC_KEYS` (JSON array, current + next);
    - pending D1 migrations auto-apply;
    - the app row is written to the registry (`apps.hostname`, `worker_name`,
      `tier`, `manifest`, `status`) via the `eak_` deploy-token endpoint;
-   - the gateway reconstructs its service bindings **from the registry**.
+   - the gateway binds the app once a reconcile redeploys the live gateway
+     release with the registry's full list of apps; `everyapp gateway status`
+     shows whether the live bindings match.
 
 ### Probes — prove a sub-app is NOT directly reachable
 
@@ -310,10 +317,16 @@ change that can affect every app at once. The proxy core is small and
 slow-changing; recover with Cloudflare’s instant rollback:
 
 ```bash
-# List recent gateway deployments and roll back to the previous good one:
-npx wrangler deployments list  --name every-app-gateway
-npx wrangler rollback <DEPLOYMENT_ID> --name every-app-gateway
+# List recent gateway deployments and send all traffic back to a good version:
+npx cf workers deployments list --worker every-app-gateway
+npx cf workers deployments create --worker every-app-gateway \
+  --strategy percentage --versions '[{"version_id":"<VERSION_ID>","percentage":100}]'
 ```
+
+A deploy also prints a D1 Time Travel bookmark before it migrates, with the
+`cf d1 time-travel restore` command that takes the database back. Gateway
+migrations only add, so the previous version runs against the migrated
+database.
 
 Sub-apps are unaffected by a rollback (their workers and the registry are
 unchanged); only the perimeter reverts. Because identity tokens live ≤120s,

@@ -18,6 +18,11 @@ function validateAppId(input: string): boolean | string {
     return "App ID must be in kebab-case format (lowercase letters, numbers, and hyphens only, starting with a letter)";
   }
 
+  // "--" separates an app's Worker name from its resources' names.
+  if (input.includes("--")) {
+    return "App ID can't contain two hyphens in a row";
+  }
+
   return true;
 }
 

@@ -226,13 +226,44 @@ describe("gateway-generated errors", () => {
       error: "unknown_app_host",
     });
 
+    // Local dev serves the control plane on other hosts (mirror mode calls
+    // the gateway on localhost); it never serves app content there.
     const unrelatedResponse = await server.fetch(
-      new Request("https://prerender.local/", {
-        headers: { host: "prerender.local" },
+      new Request("https://localhost:3000/", {
+        headers: { host: "localhost:3000" },
       }),
     );
     expect(unrelatedResponse.status).toBe(200);
     expect(await unrelatedResponse.text()).toBe("control plane");
+  });
+
+  it("answers any host but its own with 404 in a deployed gateway", async () => {
+    vi.stubEnv("DEV", false);
+    try {
+      mocks.findByHostname.mockResolvedValue(null);
+      for (const host of [
+        "every-app-gateway.acme.workers.dev",
+        "alias.example.net",
+        "localhost:3000",
+      ]) {
+        const response = await server.fetch(
+          new Request(`https://${host}/sign-in`, { headers: { host } }),
+        );
+        expect(response.status, host).toBe(404);
+        expect(await response.json()).toEqual({ error: "unknown_host" });
+        expectSecurityHeaders(response);
+      }
+      expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+
+      const own = await server.fetch(
+        new Request("https://example.com/sign-in", {
+          headers: { host: "example.com" },
+        }),
+      );
+      expect(own.status).toBe(200);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("stamps security headers on a perimeter-error 502", async () => {
@@ -488,6 +519,39 @@ describe("gateway host (control plane)", () => {
       expect(response.status, `${path} ${JSON.stringify(headers)}`).toBe(403);
     }
     expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+  });
+
+  it("rate-limits credential requests before they reach the control plane", async () => {
+    const keys: string[] = [];
+    mocks.env.AUTH_RATE_LIMIT_IP = {
+      limit: async ({ key }: { key: string }) => {
+        keys.push(key);
+        return { success: false };
+      },
+    };
+    const signIn = () =>
+      server.fetch(
+        gatewayRequest("/api/auth/sign-in/email", {
+          method: "POST",
+          headers: {
+            origin: "https://example.com",
+            "cf-connecting-ip": "203.0.113.7",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ email: "owner@example.com" }),
+        }),
+      );
+
+    const response = await signIn();
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("60");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(keys).toEqual(["ip:203.0.113.7"]);
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+
+    // Pages and other routes are never counted.
+    expect((await server.fetch(gatewayRequest("/sign-in"))).status).toBe(200);
+    expect(keys).toHaveLength(1);
   });
 
   it("returns 404 for every OAuth endpoint while MCP_OAUTH_ENABLED is unset", async () => {

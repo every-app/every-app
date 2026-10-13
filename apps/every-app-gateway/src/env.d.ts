@@ -1,5 +1,5 @@
-// Custom environment variable type definitions
-// These extend the auto-generated Env interface from worker-configuration.d.ts
+// Env types beyond the bindings cloudflare.config.ts declares (cf generates
+// those into .cloudflare/types/index.d.ts).
 
 // Build stamp injected by vite `define` (see vite.config.ts); rendered as the
 // bottom-right version badge in __root.tsx.
@@ -7,14 +7,11 @@ declare const __GATEWAY_BUILD__: string;
 
 declare namespace Cloudflare {
   interface Env {
-    OAUTH_KV: KVNamespace;
     OAUTH_PROVIDER: import("@cloudflare/workers-oauth-provider").OAuthHelpers;
 
-    // Gateway URL
-    GATEWAY_URL: string;
-
-    // Static assets (run_worker_first is on; the entry serves these itself)
-    ASSETS?: { fetch(request: Request): Promise<Response> };
+    // The optional settings below are plain secrets on deployed gateways
+    // (`everyapp gateway secret set`); in dev cloudflare.config.ts declares
+    // the ones that are set locally.
 
     // Cloudflare account that owns this gateway deployment
     CLOUDFLARE_ACCOUNT_ID?: string;
@@ -25,16 +22,6 @@ declare namespace Cloudflare {
     // "true" turns on the OAuth authorization server for MCP clients (set as
     // a secret so deploys keep it). Off when unset: see server/oauth-flag.ts.
     MCP_OAUTH_ENABLED?: string;
-
-    // Better Auth configuration
-    // Also used as HMAC key material for app token hashing (with domain separation)
-    BETTER_AUTH_SECRET: string;
-
-    // RS256 keypair for the identity JWTs the perimeter mints per proxied
-    // request (kid "everyapp-identity"; the SDK verifies against the public
-    // key, which `everyapp deploy` injects into app workers).
-    JWT_PRIVATE_KEY: string;
-    JWT_PUBLIC_KEY: string;
 
     // Provider credentials used by gateway proxy routes
     OPENAI_API_KEY?: string;

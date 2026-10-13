@@ -14,7 +14,7 @@
  *   export default everyApp((request, env, ctx, user) => {
  *     if (new URL(request.url).pathname === "/mcp") return mcp(request, env, ctx, user);
  *     ...
- *   }, manifest);
+ *   });
  *
  * The gateway authenticates the caller and injects the identity JWT; this
  * handler only consumes the verified `EveryAppUser`. Each POST carries one

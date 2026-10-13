@@ -217,11 +217,7 @@ How do I add an environment variable or secret?
 </summary>
 <div className="faq-content">
 
-Local development reads `.dev.vars`; deployed apps use Cloudflare secrets:
-
-```bash
-npx wrangler secret put OPENAI_API_KEY
-```
+Local development reads `.dev.vars`, for secrets your `cloudflare.config.ts` declares in development (as Chef does for its OpenAI key). A deployed app reads secrets from its Worker: add them in the Cloudflare dashboard under **Workers & Pages → your app's Worker → Settings → Variables and Secrets** (the deploy prints the Worker's name, `every-<org>-<app>`). Deploys keep them. Because the Worker then changed outside everyapp, the next `everyapp app deploy` asks you to confirm in a terminal.
 
 Keep names identical in both places, and never hardcode secret fallbacks in app code.
 
@@ -230,7 +226,7 @@ Keep names identical in both places, and never hardcode secret fallbacks in app 
 **Ask your agent:**
 
 ```text
-How do I add environment variables and secrets to an Every App application, for local dev (.dev.vars) and production (wrangler secrets)? Show me how to access them in worker code.
+How do I add environment variables and secrets to an Every App application, for local dev (.dev.vars) and production (Worker secrets)? Show me how to access them in worker code.
 
 Response Guidelines for LLM:
 - Keep responses succinct so I can ask follow-up questions

@@ -8,13 +8,20 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 export default defineConfig({
   envPrefix: ["VITE_"],
   server: {
-    port: 3001,
+    // `cf dev` forwards no port flag; `everyapp dev` passes the port in PORT.
+    host: "127.0.0.1",
+    port: Number(process.env.PORT ?? 3001),
+    strictPort: true,
+  },
+  // Source maps for the Worker bundle only: "hidden" leaves no
+  // sourceMappingURL and keeps maps out of the public assets. The deploy
+  // uploads them so Workers logs and Issues point at source lines.
+  environments: {
+    ssr: { build: { sourcemap: "hidden" } },
   },
   plugins: [
-    cloudflare({
-      configPath: ".everyapp/wrangler.json",
-      viteEnvironment: { name: "ssr" },
-    }),
+    // Reads cloudflare.config.ts. Local dev never touches remote resources.
+    cloudflare({ viteEnvironment: { name: "ssr" }, remoteBindings: false }),
     tsConfigPaths(),
     tanstackStart(),
     viteReact(),

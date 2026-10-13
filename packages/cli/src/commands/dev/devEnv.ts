@@ -1,7 +1,7 @@
 /**
  * Dev-environment state for `everyapp dev`: a persistent local RS256 keypair
- * and the generated config's `.dev.vars` entry that delivers the public key
- * set to the app's worker env (the same env var a production deploy injects).
+ * and the `.dev.vars` entries that deliver its public key to the app's Worker
+ * (the same env var a production deploy sets).
  *
  * The keypair lives in `.everyapp/dev-keys.json` (gitignored) so the identity
  * key is stable across restarts — `.dev.vars` never goes stale.
@@ -9,12 +9,16 @@
 import fs from "node:fs";
 import path from "node:path";
 import { generateKeyPairSync } from "node:crypto";
+import { DEV_ISSUER } from "@every-app/perimeter/dev";
+import { ensureGitignored } from "@/lib/gitignore";
 
 export const PUBLIC_KEYS_ENV = "EVERYAPP_IDENTITY_PUBLIC_KEYS";
-/** Opts the SDK into accepting the dev identity kid. Never set in production. */
+const ISSUER_ENV = "EVERYAPP_IDENTITY_ISSUER";
+/** Set by the app's cloudflare.config.ts in development; no longer written here. */
 const DEV_FLAG_ENV = "EVERYAPP_DEV";
 const DEV_DIR = ".everyapp";
 const KEYS_FILE = "dev-keys.json";
+const DEV_VARS_FILE = ".dev.vars";
 
 interface DevKeys {
   privateKeyPem: string;
@@ -51,51 +55,41 @@ export function ensureDevKeys(appDir: string): DevKeys {
 }
 
 /**
- * Write the dev identity vars next to the generated Wrangler config (where the
- * Cloudflare Vite plugin reads `.dev.vars`) and migrate the legacy app-root
- * file when it contains only vars managed by this CLI:
+ * Write the dev identity to the app root's `.dev.vars`, where the Cloudflare
+ * Vite plugin fills the secrets `cloudflare.config.ts` declares:
  *  - EVERYAPP_IDENTITY_PUBLIC_KEYS: JSON array of PEM strings (one dotenv-safe
  *    line; PEM newlines are JSON-escaped).
- *  - EVERYAPP_DEV=1: opts the SDK into trusting the dev identity kid. This var
- *    is never set in production, so dev-kid tokens are rejected there.
+ *  - EVERYAPP_IDENTITY_ISSUER: the issuer the local gateway signs with.
+ * Other lines (e.g. a developer's OPENAI_API_KEY) are kept. Vars left in the
+ * old `.everyapp/.dev.vars` move here.
  */
-export function upsertDevVars(
-  appDir: string,
-  wranglerConfigPath: string,
-  publicKeyPem: string,
-): void {
-  const file = path.join(path.dirname(wranglerConfigPath), ".dev.vars");
-  const content = fs.existsSync(file) ? fs.readFileSync(file, "utf-8") : "";
-  const lines = content.split("\n").filter((l) => l.trim().length > 0);
+export function upsertDevVars(appDir: string, publicKeyPem: string): void {
+  const file = path.join(appDir, DEV_VARS_FILE);
+  const lines = readLines(file);
 
-  upsertLine(lines, PUBLIC_KEYS_ENV, JSON.stringify([publicKeyPem]));
-  upsertLine(lines, DEV_FLAG_ENV, "1");
-
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, lines.join("\n") + "\n");
-  cleanUpLegacyDevVars(appDir, file);
-}
-
-function cleanUpLegacyDevVars(appDir: string, currentFile: string): void {
-  const legacyFile = path.join(appDir, ".dev.vars");
-  if (path.resolve(legacyFile) === path.resolve(currentFile)) return;
-  if (!fs.existsSync(legacyFile)) return;
-
-  const content = fs.readFileSync(legacyFile, "utf-8");
-  const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
-  const containsOnlyManagedVars = lines.every((line) =>
-    [PUBLIC_KEYS_ENV, DEV_FLAG_ENV].some((key) => line.startsWith(`${key}=`)),
-  );
-
-  if (containsOnlyManagedVars) {
-    fs.rmSync(legacyFile);
-    return;
+  const legacyFile = path.join(appDir, DEV_DIR, DEV_VARS_FILE);
+  for (const line of readLines(legacyFile)) {
+    const key = line.split("=", 1)[0]!;
+    if (!lines.some((existing) => existing.startsWith(`${key}=`))) {
+      lines.push(line);
+    }
   }
 
-  console.warn(
-    `Every App left ${legacyFile} in place because it contains user-managed content. ` +
-      `Move any vars still needed by the worker to ${currentFile}.`,
-  );
+  upsertLine(lines, PUBLIC_KEYS_ENV, JSON.stringify([publicKeyPem]));
+  upsertLine(lines, ISSUER_ENV, DEV_ISSUER);
+  const kept = lines.filter((line) => !line.startsWith(`${DEV_FLAG_ENV}=`));
+
+  ensureGitignored(appDir, DEV_VARS_FILE);
+  fs.writeFileSync(file, kept.join("\n") + "\n");
+  fs.rmSync(legacyFile, { force: true });
+}
+
+function readLines(file: string): string[] {
+  if (!fs.existsSync(file)) return [];
+  return fs
+    .readFileSync(file, "utf-8")
+    .split(/\r?\n/)
+    .filter((line) => line.trim().length > 0);
 }
 
 /** Replace the `KEY=...` line in place, or append it. Mutates `lines`. */
@@ -104,19 +98,4 @@ function upsertLine(lines: string[], key: string, value: string): void {
   const idx = lines.findIndex((l) => l.startsWith(`${key}=`));
   if (idx >= 0) lines[idx] = line;
   else lines.push(line);
-}
-
-function ensureGitignored(appDir: string, entry: string): void {
-  const file = path.join(appDir, ".gitignore");
-  if (!fs.existsSync(file)) {
-    fs.writeFileSync(file, entry + "\n");
-    return;
-  }
-  const content = fs.readFileSync(file, "utf-8");
-  const present = content
-    .split("\n")
-    .some((l) => l.trim() === entry || l.trim() === entry.replace(/\/$/, ""));
-  if (!present) {
-    fs.appendFileSync(file, (content.endsWith("\n") ? "" : "\n") + entry + "\n");
-  }
 }

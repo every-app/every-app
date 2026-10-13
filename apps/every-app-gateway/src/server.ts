@@ -6,12 +6,14 @@
  *    (launcher, auth, admin) served by TanStack Start, with static assets
  *    served explicitly via the ASSETS binding (`run_worker_first` is on so
  *    app-subdomain requests can never be answered by a gateway asset). Its
- *    requests pass the control-plane guard first and every response gets the
- *    control-plane security headers (server/control-plane-guard.ts);
- *  - any other host → the perimeter proxy (`handleGatewayRequest`), which
- *    resolves the app from the D1 registry by full hostname, authenticates the
- *    Better Auth session, mints the identity JWT, and proxies to the app's
- *    private worker over its service binding.
+ *    requests pass the control-plane guard and the credential rate limits
+ *    first, and every response gets the control-plane security headers
+ *    (server/control-plane-guard.ts, server/auth-rate-limit.ts);
+ *  - a host in the app registry → the perimeter proxy
+ *    (`handleGatewayRequest`), which authenticates the Better Auth session,
+ *    mints the identity JWT, and proxies to the app's private worker over its
+ *    service binding;
+ *  - any other host → 404 (local dev serves the control plane there too).
  *
  * When GATEWAY_URL is not set on a fresh deploy (before secrets, local vite
  * dev), requests fall through to the control plane only while the app registry
@@ -32,6 +34,7 @@ import {
   handleAppGatewayRequest,
   type AppCallerProps,
 } from "./server/app-gateway-entrypoint";
+import { rateLimitCredentialRequest } from "./server/auth-rate-limit";
 import { serveControlPlane } from "./server/control-plane";
 import {
   guardControlPlaneRequest,
@@ -96,8 +99,9 @@ export async function resolveAppByHostname(
 }
 
 /**
- * Serve a control-plane request: guard it, then hand it to `serve`, stamping
- * the control-plane security headers on whatever comes back.
+ * Serve a control-plane request: guard it, count it against the credential
+ * rate limits, then hand it to `serve`, stamping the control-plane security
+ * headers on whatever comes back.
  */
 async function serveGuarded(
   request: Request,
@@ -105,9 +109,20 @@ async function serveGuarded(
   serve: (request: Request) => Promise<Response>,
 ): Promise<Response> {
   const { pathname } = new URL(request.url);
-  const denied = guardControlPlaneRequest(request, host);
+  const denied =
+    guardControlPlaneRequest(request, host) ??
+    (await rateLimitCredentialRequest(request, env));
   if (denied) return withControlPlaneHeaders(denied, pathname);
   return withControlPlaneHeaders(await serve(request), pathname);
+}
+
+function notFound(error: string): Response {
+  return withSecurityHeaders(
+    new Response(JSON.stringify({ error }), {
+      status: 404,
+      headers: { "content-type": "application/json" },
+    }),
+  );
 }
 
 /** Private app-to-gateway surface, reachable only through a named binding. */
@@ -175,23 +190,16 @@ export default createServerEntry({
         hasActiveApp = false;
       }
       if (hasActiveApp) {
-        return withSecurityHeaders(
-          new Response(JSON.stringify({ error: "gateway_misconfigured" }), {
-            status: 404,
-            headers: { "content-type": "application/json" },
-          }),
-        );
+        return notFound("gateway_misconfigured");
       }
       return serveGuarded(request, requestHost, (guarded) =>
         serveControlPlane(guarded, env),
       );
     }
 
-    // A host other than the gateway's own is an app subdomain — if it's in
-    // the registry. A failed lookup (unmigrated D1 during build-time
-    // prerender, brand-new deploy) is treated as no app: within the wildcard
-    // that 404s and elsewhere it serves the control plane, so app content is
-    // never served on a failure.
+    // A host other than the gateway's own is an app host — if it's in the
+    // registry. A failed lookup (unmigrated D1, brand-new deploy) is treated
+    // as no app, so app content is never served on a failure.
     let app: RegisteredApp | null = null;
     try {
       app = await resolveAppByHostname(registry, requestHost);
@@ -204,16 +212,16 @@ export default createServerEntry({
       // arbitrary app-shaped origin would let a stale origin or service
       // worker impersonate it, and the session cookie spans these hosts.
       if (requestHost.endsWith(`.${gatewayHost}`)) {
-        return withSecurityHeaders(
-          new Response(JSON.stringify({ error: "unknown_app_host" }), {
-            status: 404,
-            headers: { "content-type": "application/json" },
-          }),
-        );
+        return notFound("unknown_app_host");
       }
-      // Hosts unrelated to the gateway domain (build-time prerender, stray
-      // aliases) fall through to the control plane, which never serves app
-      // content.
+      // A deployed gateway serves its control plane on its own host only:
+      // stray aliases, the workers.dev host and leftover routes get a 404.
+      // Local dev (`vite dev`, Docker self-host) keeps serving it on other
+      // hosts, such as mirror-mode `everyapp dev` calling the gateway on
+      // localhost while GATEWAY_URL names the host the browser uses.
+      if (!import.meta.env.DEV) {
+        return notFound("unknown_host");
+      }
       return serveGuarded(request, requestHost, (guarded) =>
         serveControlPlane(guarded, env),
       );

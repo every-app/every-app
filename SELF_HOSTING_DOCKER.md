@@ -2,7 +2,7 @@
 
 This guide shows how to self-host the Every App gateway with Docker Compose.
 
-It runs the gateway in the local Cloudflare-compatible runtime mode (`wrangler`/Vite dev stack) so bindings and request handling behavior stay close to how Workers run, while still running on your own machine or server.
+It runs the gateway in the local Cloudflare-compatible runtime mode (the Cloudflare Vite plugin's dev stack, as `cf dev` runs it) so bindings and request handling behavior stay close to how Workers run, while still running on your own machine or server.
 
 The gateway compose file is `apps/every-app-gateway/docker-compose.yml`.
 

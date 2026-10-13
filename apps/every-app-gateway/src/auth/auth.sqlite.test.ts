@@ -27,16 +27,6 @@ vi.mock("drizzle-orm/d1", () => ({ drizzle: () => testDb.current }));
 vi.mock("better-auth/tanstack-start", () => ({
   tanstackStartCookies: () => ({ id: "tanstack-start-cookies" }),
 }));
-// The CLI writes setup links into the gateway's D1 over the REST API; run its
-// statements against this SQLite database instead.
-vi.mock("../../../../packages/cli/src/lib/cloudflare/gatewayD1", () => ({
-  queryGatewayD1: async (
-    _accountId: string,
-    _databaseId: string,
-    sql: string,
-    params: (string | number | null)[] = [],
-  ) => (await testDb.current!.$client.execute({ sql, args: params })).rows,
-}));
 
 import { createHash } from "node:crypto";
 import { count } from "drizzle-orm";
@@ -154,15 +144,27 @@ describe("Better Auth lockdown (SQLite)", () => {
       /* @vite-ignore */ cliSetupLink
     )) as {
       mintSetupLink(input: {
-        accountId: string;
-        databaseId: string;
+        db: { run(statements: Statement[]): Promise<unknown[][]> };
         gatewayUrl: string;
       }): Promise<{ url: string; expiresAt: Date }>;
     };
+    type Statement = { sql: string; params?: (string | number | null)[] };
+    // The CLI sends its statements to the gateway's D1 with `cf d1 query`;
+    // run them against this SQLite database instead.
+    const gatewayD1 = {
+      run: async (statements: Statement[]) => {
+        const results: unknown[][] = [];
+        for (const { sql, params = [] } of statements) {
+          results.push(
+            (await testDb.current!.$client.execute({ sql, args: params })).rows,
+          );
+        }
+        return results;
+      },
+    };
 
     const link = await mintSetupLink({
-      accountId: "account-id",
-      databaseId: "database-id",
+      db: gatewayD1,
       gatewayUrl: GATEWAY_URL,
     });
     const token = new URL(link.url).hash.replace(/^#token=/, "");

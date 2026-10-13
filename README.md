@@ -58,9 +58,9 @@ We simplify building apps by standardizing as much as possible and hoisting what
 
 ### Prerequisites
 
-1. **Node.js 22 or newer** — https://nodejs.org
+1. **Node.js 22.18 or newer** — https://nodejs.org
 
-   This also installs `npx`, which runs the commands below without installing anything globally. Run everything with Node/npx — not bun, whose child-process handling makes `wrangler deploy` silently skip the upload.
+   This also installs `npx`, which runs the commands below without installing anything globally. Run everything with Node/npx — not bun: the Cloudflare CLI the deploy uses can't load the apps' `cloudflare.config.ts` under Bun.
 
 2. **pnpm 9 or newer** — https://pnpm.io/installation — the CLI uses it to install and run app projects.
 
@@ -71,11 +71,11 @@ We simplify building apps by standardizing as much as possible and hoisting what
    Nameserver changes can take a few hours to propagate, so do this first. You can deploy the Gateway without a domain to look around, but apps can't be reached until you have one.
 
 5. **Authenticate with Cloudflare** (choose one):
-   - Browser login (recommended):
+   - Log in with Cloudflare's CLI (recommended). The first deploy offers it too; it shows a link and a code, so it works over SSH:
      ```bash
-     npx wrangler login
+     npx cf auth login
      ```
-   - Or set **both** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token needs the "Edit Cloudflare Workers" template plus Zone → DNS → Edit.
+   - Or set **both** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. The token needs the "Edit Cloudflare Workers" template plus Account → D1 → Edit.
 
 ### Deploy
 
@@ -83,9 +83,9 @@ We simplify building apps by standardizing as much as possible and hoisting what
 npx everyapp gateway deploy --domain you.dev
 ```
 
-This creates a database and KV storage on your Cloudflare account, deploys the Gateway to your domain, and points `*.you.dev` at it.
+This creates a database and KV storage on your Cloudflare account, migrates the database, deploys the Gateway to your domain, and points `*.you.dev` at it. Running it again later redeploys with the same domain and account; `npx everyapp gateway upgrade` moves an existing Gateway to the release your CLI ships.
 
-That last part needs a wildcard DNS record. The CLI creates it when it can; if it prints instructions instead, add it once in the Cloudflare dashboard:
+Apps reach the Gateway through a wildcard DNS record. Add it once in the Cloudflare dashboard (the deploy tells you if it's missing):
 
 > **you.dev → DNS → Add record**: Type **CNAME**, Name **`*`**, Target **`you.dev`**, Proxy **ON** (orange cloud).
 
@@ -142,7 +142,7 @@ npx everyapp app deploy
 Chat needs an OpenAI key. It goes on your **Gateway**, not the app — the Gateway holds provider keys and proxies AI calls for every app that declares the provider:
 
 ```bash
-npx wrangler secret put OPENAI_API_KEY --name every-app-gateway
+npx everyapp gateway secret set OPENAI_API_KEY
 ```
 
 </details>

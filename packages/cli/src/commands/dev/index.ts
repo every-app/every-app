@@ -2,7 +2,7 @@
  * `everyapp dev` — run the app behind a local gateway-lite that exercises the
  * real perimeter: real public-route policy, real header strip/inject, a
  * real RS256 identity JWT (local dev keypair), CSRF rules, and a session.
- * The app runs under its configured dev server (vite by default; hot reload
+ * The app runs under `cf dev` (or the manifest's `dev` command; hot reload
  * intact); the gateway proxies in front of it, exactly like production.
  *
  * Two session sources (--mode, or EVERYAPP_DEV_MODE; flag wins):
@@ -15,9 +15,10 @@
  * Honors $PORT (portless assigns one) and parses Host dynamically (first label
  * = app, remainder = base host), so per-worktree portless hosts route freely.
  */
+import fs from "node:fs/promises";
 import http from "node:http";
+import path from "node:path";
 import chalk from "chalk";
-import { execa } from "execa";
 import type { LocalContext } from "@/context";
 import { ManifestError } from "@every-app/perimeter/manifest";
 import {
@@ -49,10 +50,15 @@ import {
   type DevMode,
 } from "./mode";
 import { createRemoteAuthenticator } from "./remoteAuth";
-import { ensureGeneratedWranglerConfig } from "@/lib/generateWranglerConfig";
+import { loadEveryAppManifest } from "@/lib/manifest";
+import { createCfRunner } from "@/lib/cf/runner";
+import { PINNED_CF_VERSION, resolveCfBinary } from "@/lib/cf/bin";
 import { devLauncherHtml } from "./launcherPage";
 import { registerDevApp } from "./registerDevApp";
 import { applyDevMigrations } from "./migrations";
+import { startAppDevServer } from "./appServer";
+import { MISSING_CLOUDFLARE_CONFIG } from "@/lib/app/cloudflareConfig";
+import { setExitCode } from "@/lib/exit-code";
 
 interface DevCommandFlags {
   port?: number;
@@ -71,7 +77,7 @@ function startingDevServerMessage(
 ): string {
   return devCommand
     ? `Starting app dev server (internal port ${appPort})...`
-    : `Starting vite dev server (internal port ${appPort})...`;
+    : `Starting cf dev (internal port ${appPort})...`;
 }
 
 export default async function dev(
@@ -86,7 +92,7 @@ export default async function dev(
   } catch (error) {
     if (error instanceof DevModeError) {
       console.error(chalk.red(error.message));
-      process.exitCode = 1;
+      setExitCode(1);
       return;
     }
     throw error;
@@ -97,36 +103,52 @@ export default async function dev(
     const problem = checkMirrorBaseHost(mirrorBaseHost);
     if (problem) {
       console.error(chalk.red(problem));
-      process.exitCode = 1;
+      setExitCode(1);
       return;
     }
   }
 
   let manifest;
-  let configPath;
   try {
-    ({ manifest, configPath } = await ensureGeneratedWranglerConfig(cwd));
+    manifest = await loadEveryAppManifest(cwd);
   } catch (error) {
     if (error instanceof ManifestError) {
       console.error(chalk.red(error.message));
-      process.exitCode = 1;
+      setExitCode(1);
       return;
     }
     throw error;
   }
+  if (
+    !manifest.dev &&
+    !(await fileExists(path.join(cwd, "cloudflare.config.ts")))
+  ) {
+    console.error(chalk.red(MISSING_CLOUDFLARE_CONFIG));
+    setExitCode(1);
+    return;
+  }
 
-  // 2. Stable local keypair + config-relative .dev.vars so the app verifies
-  //    real signatures.
+  const cf = createCfRunner();
+  const cfBinary = await resolveCfBinary(cwd);
+  if (cfBinary.source === "project" && cfBinary.version !== PINNED_CF_VERSION) {
+    console.log(
+      chalk.dim(
+        `  Using the app's cf ${cfBinary.version} (this everyapp is tested with ${PINNED_CF_VERSION}).`,
+      ),
+    );
+  }
+
+  // 2. Stable local keypair + .dev.vars so the app verifies real signatures.
   const keys = ensureDevKeys(cwd);
-  upsertDevVars(cwd, configPath, keys.publicKeyPem);
+  upsertDevVars(cwd, keys.publicKeyPem);
 
-  // 3. Apply pending local migrations before vite starts, so a fresh clone's
-  //    first page load doesn't hit an empty database.
+  // 3. Apply pending local migrations before the app starts, so a fresh
+  //    clone's first page load doesn't hit an empty database.
   if (
     !(await applyDevMigrations({
       cwd,
       manifest,
-      configPath,
+      cf,
       skipMigrations: flags["skip-migrations"] ?? false,
     }))
   ) {
@@ -154,7 +176,7 @@ export default async function dev(
             `(or pass --gateway <url>). See docs/TESTING.md "mirror mode".`,
         ),
       );
-      process.exitCode = 1;
+      setExitCode(1);
       return;
     }
     authenticator = createRemoteAuthenticator({
@@ -163,50 +185,38 @@ export default async function dev(
     });
   }
 
-  // 5. Start the app's own vite dev server on an internal port (hot reload
-  //    intact); the gateway-lite is the only thing you talk to directly.
+  // 5. Start the app's dev server on an internal port (hot reload intact);
+  //    the gateway-lite is the only thing you talk to directly.
   const appPort = await getFreePort();
   console.log(chalk.dim(startingDevServerMessage(manifest.dev, appPort)));
-  const vite = manifest.dev
-    ? execa(manifest.dev, [], {
-        cwd,
-        stdio: "inherit",
-        env: { ...process.env, PORT: String(appPort) },
-        reject: false,
-        shell: true,
-      })
-    : execa(
-        "pnpm",
-        [
-          "exec",
-          "vite",
-          "dev",
-          "--port",
-          String(appPort),
-          "--strictPort",
-          // Deterministic loopback: vite otherwise binds [::1] on some systems.
-          "--host",
-          "127.0.0.1",
-        ],
-        {
-          cwd,
-          stdio: "inherit",
-          env: { ...process.env, ["PORT"]: undefined },
-          reject: false,
-        },
-      );
-  const stop = () => {
-    vite.kill("SIGTERM");
-  };
+  const appServer = await startAppDevServer({
+    cwd,
+    manifest,
+    cf,
+    port: appPort,
+  });
+  const stop = () => appServer.stop();
   process.on("SIGINT", stop);
   process.on("SIGTERM", stop);
+  process.on("exit", stop);
 
-  try {
-    await waitForHttp(appPort);
-  } catch (error) {
-    console.error(chalk.red(String(error)));
+  const startup = await Promise.race([
+    waitForHttp(appPort).then(
+      () => "up" as const,
+      (error: unknown) => error,
+    ),
+    appServer.exited.then(() => "exited" as const),
+  ]);
+  if (startup !== "up") {
+    console.error(
+      chalk.red(
+        startup === "exited"
+          ? "The app's dev server exited before it started listening."
+          : `${String(startup)}\nIs the app's vite.config.ts taking its port from PORT (server.port: Number(process.env.PORT))?`,
+      ),
+    );
     stop();
-    process.exitCode = 1;
+    setExitCode(1);
     return;
   }
 
@@ -363,6 +373,15 @@ export default async function dev(
   );
   console.log("");
 
-  await vite;
+  await appServer.exited;
   server.close();
+}
+
+async function fileExists(file: string): Promise<boolean> {
+  try {
+    await fs.access(file);
+    return true;
+  } catch {
+    return false;
+  }
 }

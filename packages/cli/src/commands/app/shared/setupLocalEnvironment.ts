@@ -1,17 +1,17 @@
 import chalk from "chalk";
 import { createEnvFiles } from "@/lib/file-operations";
 import { installDependencies } from "@/lib/package-manager";
-import { runLocalMigrations } from "@/commands/app/create/steps/runLocalMigrations";
-import type { EveryAppManifest } from "@every-app/perimeter/manifest";
+import { applyLocalMigrations } from "@/lib/app/localD1";
+import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
+import type { EveryAppCliManifest } from "@/lib/manifest";
 
 interface SetupLocalEnvironmentOptions {
   targetDir: string;
-  /** The unprefixed app ID (e.g., "todo-app") */
-  appId: string;
-  gatewayUrl?: string;
+  manifest: EveryAppCliManifest;
+  gatewayUrl: string;
   verbose?: boolean;
   installDeps?: boolean;
-  migrations?: EveryAppManifest["migrations"];
+  cf?: CfRunner;
 }
 
 /**
@@ -19,11 +19,11 @@ interface SetupLocalEnvironmentOptions {
  */
 export async function setupLocalEnvironment({
   targetDir,
-  appId,
+  manifest,
   gatewayUrl,
   verbose = false,
   installDeps = false,
-  migrations,
+  cf = createCfRunner(),
 }: SetupLocalEnvironmentOptions): Promise<void> {
   if (installDeps) {
     await installDependencies({
@@ -35,16 +35,34 @@ export async function setupLocalEnvironment({
 
   await createEnvFiles({
     targetDir,
-    appId,
+    appId: manifest.id,
     gatewayUrl,
   });
-  if (migrations?.engine === "d1-sql") {
-    console.log(
-      chalk.dim(
-        "Skipping local migration scripts for d1-sql app; manage local D1 state with Wrangler migrations.",
+
+  try {
+    console.log(chalk.dim("Setting up Cloudflare for local dev..."));
+    // .cloudflare/types/index.d.ts gives the app its typed Env.
+    await cf.run({
+      args: ["workers", "types"],
+      plane: "project",
+      cwd: targetDir,
+      mode: "text",
+    });
+    const result = await applyLocalMigrations({ cwd: targetDir, manifest, cf });
+    if (result.status === "applied") {
+      console.log(chalk.dim("  Local database migrations complete.\n"));
+    }
+  } catch (error) {
+    if (verbose) {
+      console.warn(
+        chalk.dim(error instanceof Error ? error.message : String(error)),
+      );
+    }
+    console.warn(
+      chalk.yellow(
+        "\nFailed to set up the local database. You can run the migrations manually with:",
       ),
     );
-    return;
+    console.warn(chalk.dim("   pnpm run db:migrate:local\n"));
   }
-  await runLocalMigrations({ targetDir, verbose });
 }

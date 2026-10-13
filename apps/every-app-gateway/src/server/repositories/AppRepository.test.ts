@@ -84,6 +84,7 @@ describe("AppRepository.createWithInitialAccess", () => {
       description: "A todo app",
       hostname: "todo-acme.gateway.example.com",
       workerName: "every-todo",
+      legacyNames: false,
       manifest: JSON.stringify({ id: "todo" }),
       tier: "service_binding",
       status: "active",

@@ -830,6 +830,22 @@ describe("handleGatewayRequest", () => {
     expectSecurityHeaders(res);
   });
 
+  it("answers 'deploying' with Retry-After while an app is pending or binding", async () => {
+    for (const status of ["pending", "binding"] as const) {
+      const res = await handleGatewayRequest(
+        req("/x"),
+        deps({ registry: new InMemoryAppRegistry([{ ...TODO, status }]) }),
+      );
+      expect(res.status).toBe(503);
+      expect(res.headers.get("retry-after")).toBe("5");
+      await expect(res.json()).resolves.toEqual({
+        error: "app_deploying",
+        status,
+      });
+      expectSecurityHeaders(res);
+    }
+  });
+
   it("stamps headers and strips cookie domains from a non-101 response to an upgrade request", async () => {
     const headers = new Headers({ "content-type": "text/plain" });
     headers.append(

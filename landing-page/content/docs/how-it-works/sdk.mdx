@@ -5,7 +5,7 @@ description: The two files that connect your app to the platform
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Every app touches the platform in exactly two places: a one-line server wrapper (`everyApp()`) and a manifest file (`everyapp.config.ts`). There is no client-side SDK. Your frontend makes normal same-origin `fetch()` calls; the Gateway handles identity before your server ever sees the request.
+Every app touches the platform in two places: a one-line server wrapper (`everyApp()`) and a manifest file (`everyapp.config.ts`), plus a short `cloudflare.config.ts` that turns the manifest into the Worker definition. There is no client-side SDK. Your frontend makes normal same-origin `fetch()` calls; the Gateway handles identity before your server ever sees the request.
 
 ## `everyApp()` — the server wrapper
 
@@ -14,15 +14,14 @@ Your worker entry exports the app wrapped in `everyApp()`:
 ```ts
 // src/entry.worker.ts
 import { everyApp } from "@every-app/sdk/server";
-import manifest from "../everyapp.config";
 
 export default everyApp(async (request, env, ctx, user) => {
   // `user` is the verified user (or null on a declared public route)
   return handleRequest(request, user);
-}, manifest);
+});
 ```
 
-That's the entire auth surface. The wrapper verifies the Gateway's signed identity header on every request, fail-closed: no valid identity means a 401 before your code runs. It also wraps anything with a `.fetch` (a Hono app, another worker export) the same way.
+That's the entire auth surface. The wrapper checks that each identity was issued for this app, using the app id the Worker config sets as `EVERYAPP_APP_ID`, so the Worker never imports `everyapp.config.ts` itself. The wrapper verifies the Gateway's signed identity header on every request, fail-closed: no valid identity means a 401 before your code runs. It also wraps anything with a `.fetch` (a Hono app, another worker export) the same way.
 
 <Callout type="warn">
   Never read user identity from headers, cookies, or request bodies yourself.
@@ -77,24 +76,58 @@ export default {
   id: "todo", // kebab-case; becomes todo.your-domain.dev
   name: "Todos",
   description: "Minimal todo list with real-time sync.",
-  main: "src/entry.worker.ts", // worker entry (this is the default)
   resources: {
     d1: ["DB"], // SQL databases, by binding name
     kv: ["KV"], // key-value namespaces
     durableObjects: [{ name: "USER_SYNC", className: "UserSyncDO" }],
   },
-  build: "npx vite build", // optional; default shown
+  build: "pnpm run build:prod", // optional; replaces `cf build` at deploy
   dev: "pnpm exec vite dev --port $PORT --host 127.0.0.1",
-  // optional; custom commands read PORT
+  // optional; replaces `cf dev` in everyapp dev; custom commands read PORT
   install: "pnpm install", // optional; false skips install, omitted auto-detects
   migrations: { engine: "drizzle" },
   // optional; use { engine: "d1-sql", dir: "migrations" }
-  // for Wrangler SQL migrations
+  // for plain SQL migration files
   public: [], // no public routes — fully private app
 } as const;
 ```
 
-You don't hand-edit Cloudflare config: the CLI generates a gitignored `.everyapp/wrangler.json` from the manifest for local dev, builds, and deploys — always with the private-worker settings (no routes, no `workers.dev` URL, no preview URLs). The manifest is the only file you edit.
+## `cloudflare.config.ts` — the Worker
+
+The Cloudflare CLI (`cf`) and its Vite plugin read the Worker definition from `cloudflare.config.ts` at the app root. In an Every App app it is a few lines that build the Worker from the manifest:
+
+```ts
+// cloudflare.config.ts
+import { defineConfig } from "cf/config";
+import { everyAppWorker } from "@every-app/sdk/cloudflare";
+import * as entrypoint from "./src/entry.worker.ts" with { type: "cf-worker" };
+import manifest from "./everyapp.config.ts";
+
+export default defineConfig((ctx) => ({
+  worker: everyAppWorker({ manifest, entrypoint, ctx }),
+}));
+```
+
+`everyAppWorker()` always produces a private Worker (no routes, no `workers.dev` URL, no preview URLs) with the manifest's D1 databases, KV namespaces and Durable Objects, logs, traces and Workers Issues turned on, and the identity settings the SDK checks. `cf` infers the Worker's `Env` type from it. In local dev the identity keys come from `.dev.vars`, which `everyapp dev` writes. A production build needs deploy inputs that only `everyapp app deploy` provides, so `cf build` and `cf deploy` refuse to build for production on their own — deploy with `everyapp app deploy`.
+
+To add a binding the manifest doesn't model, spread the result. Don't import anything here that the Worker also imports: in dev, the Vite plugin hides this file's imports from the Worker.
+
+```ts
+import { bindings, defineConfig } from "cf/config";
+// …the other imports above
+
+export default defineConfig((ctx) => {
+  const worker = everyAppWorker({ manifest, entrypoint, ctx });
+  return {
+    worker: {
+      ...worker,
+      env: { ...worker.env, IMAGES: bindings.r2({ name: worker.name }) },
+    },
+  };
+});
+```
+
+A bucket must be named after the Worker: `worker.name`, or `` `${worker.name}--<suffix>` `` for more than one. The deploy refuses any other R2 bucket, so an app can't bind another app's.
 
 ### Public routes
 

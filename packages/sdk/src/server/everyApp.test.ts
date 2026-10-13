@@ -183,6 +183,71 @@ describe("everyApp", () => {
     expect(await res.json()).toEqual({ userId: "user_1" });
   });
 
+  it("takes the audience from EVERYAPP_APP_ID without a manifest", async () => {
+    const app = everyApp(
+      async (_req, _env, _ctx, user) => Response.json({ userId: user?.id }),
+      undefined,
+      { publicKeys: [publicPem] },
+    );
+    const request = (aud: string) =>
+      mint(aud).then(
+        (token) =>
+          new Request("https://todo.example.com/tasks", {
+            headers: { [IDENTITY_HEADER]: token },
+          }),
+      );
+    const appEnv = { ...env, EVERYAPP_APP_ID: "todo" };
+
+    const ok = await app.fetch(await request("todo"), appEnv, ctx);
+    expect(await ok.json()).toEqual({ userId: "user_1" });
+
+    const otherApp = await app.fetch(await request("chef"), appEnv, ctx);
+    expect(otherApp.status).toBe(401);
+  });
+
+  it("returns 500 when neither EVERYAPP_APP_ID nor a manifest names the app", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const app = everyApp(async () => new Response("ok"), undefined, {
+      publicKeys: [publicPem],
+    });
+    const res = await app.fetch(
+      new Request("https://todo.example.com/tasks", {
+        headers: { [IDENTITY_HEADER]: await mint() },
+      }),
+      env,
+      ctx,
+    );
+    spy.mockRestore();
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({
+      error: "misconfigured",
+      message: expect.stringContaining("EVERYAPP_APP_ID is not set"),
+    });
+  });
+
+  it("returns 500 when EVERYAPP_APP_ID contradicts the manifest", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let handlerRan = false;
+    const app = everyApp(
+      async () => {
+        handlerRan = true;
+        return new Response("ok");
+      },
+      { id: "todo" },
+      { publicKeys: [publicPem] },
+    );
+    const res = await app.fetch(
+      new Request("https://chef.example.com/tasks", {
+        headers: { [IDENTITY_HEADER]: await mint("chef") },
+      }),
+      { ...env, EVERYAPP_APP_ID: "chef" },
+      ctx,
+    );
+    spy.mockRestore();
+    expect(res.status).toBe(500);
+    expect(handlerRan).toBe(false);
+  });
+
   it("returns a resolved Promise from the WeakMap cache", async () => {
     const app = everyApp(
       async (request, handlerEnv) => {

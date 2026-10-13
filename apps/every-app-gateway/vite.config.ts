@@ -22,22 +22,42 @@ const gatewayBuild = (() => {
   }
 })();
 
-export default defineConfig({
+export default defineConfig(({ isPreview }) => ({
   define: {
     __GATEWAY_BUILD__: JSON.stringify(gatewayBuild),
   },
   server: {
-    port: 3000,
+    // `cf dev` forwards no port flag; PORT picks another port.
+    port: Number(process.env.PORT ?? 3000),
   },
+  // Previews, including the build's prerender pass, run the production
+  // Worker the way a fresh deploy starts: without the local .dev.vars or
+  // .env secrets, so no GATEWAY_URL and the bootstrap control plane.
+  ...(isPreview ? { envDir: false as const } : {}),
   // The workspace-linked @every-app/sdk would otherwise resolve jose from
   // packages/sdk/node_modules (its devDependency). Dedupe so identity JWTs
   // use the gateway's own, audited jose.
   resolve: {
     dedupe: ["jose"],
   },
+  // Source maps for the Worker bundle only: "hidden" leaves no
+  // sourceMappingURL and keeps maps out of the public assets. The deploy
+  // uploads them so Workers logs and Issues point at source lines.
+  environments: {
+    ssr: { build: { sourcemap: "hidden" } },
+  },
   plugins: [
-    // Cloudflare plugin must come first - it sets up the SSR environment
-    cloudflare({ viteEnvironment: { name: "ssr" }, inspectorPort: false }),
+    // Cloudflare plugin must come first - it sets up the SSR environment.
+    // Reads cloudflare.config.ts; local dev never touches remote resources.
+    cloudflare({
+      viteEnvironment: { name: "ssr" },
+      inspectorPort: false,
+      remoteBindings: false,
+      // The build prerenders through a preview server running the
+      // production Worker, whose D1 has no local id; keep it from leaving a
+      // second database in .cloudflare/state next to the one `cf dev` uses.
+      persistState: !isPreview,
+    }),
     tsConfigPaths({
       projects: ["./tsconfig.json"],
     }),
@@ -86,4 +106,4 @@ export default defineConfig({
     minify: process.env.DEBUG_BUILD === "true" ? false : "esbuild",
     sourcemap: process.env.DEBUG_BUILD === "true" ? true : false,
   },
-});
+}));

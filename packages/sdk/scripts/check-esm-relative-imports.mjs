@@ -46,8 +46,13 @@ const sourceFiles = walk(srcRoot);
 for (const filePath of sourceFiles) {
   const source = readFileSync(filePath, "utf8");
   const lines = source.split("\n");
+  // Usage examples in doc comments aren't imports. Blank them out, keeping
+  // newlines so reported line numbers still match the file.
+  const code = source.replace(/\/\*[\s\S]*?\*\//g, (comment) =>
+    comment.replace(/[^\n]/g, " "),
+  );
 
-  for (const match of source.matchAll(importExportRegex)) {
+  for (const match of code.matchAll(importExportRegex)) {
     const specifier = match[2];
 
     if (!specifier.startsWith("./") && !specifier.startsWith("../")) {
@@ -59,7 +64,7 @@ for (const filePath of sourceFiles) {
     }
 
     const position = match.index ?? 0;
-    const lineNumber = source.slice(0, position).split("\n").length;
+    const lineNumber = code.slice(0, position).split("\n").length;
 
     failures.push({
       file: relative(sdkRoot, filePath),

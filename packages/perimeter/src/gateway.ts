@@ -195,8 +195,15 @@ export async function handleGatewayRequest(
     // by the control-plane app before reaching here.
     return json(404, { error: "no_app_for_host", host: parsed.host });
   }
-  if (app.status !== "active") {
+  if (app.status === "disabled") {
     return json(503, { error: "app_unavailable", status: app.status });
+  }
+  if (app.status !== "active") {
+    // Registered and mid-deploy: the gateway binds and verifies the new
+    // Worker before the app goes active.
+    const response = json(503, { error: "app_deploying", status: app.status });
+    response.headers.set("retry-after", "5");
+    return response;
   }
   const oauthDiscovery = deps.oauthDiscovery ?? false;
   // RFC 9728 metadata is served by the perimeter and never proxied — for the

@@ -3,11 +3,12 @@
     // Detect Tanstack Start Routes
     "src/router.tsx",
     "src/routes/**/*.tsx",
-    // v2 manifest consumed by the Every App CLI at build/deploy time
+    // Every App manifest and the Worker config built from it
     "everyapp.config.ts",
+    "cloudflare.config.ts",
   ],
   "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
-  "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
+  "ignore": ["src/routeTree.gen.ts"],
   "ignoreDependencies": [
     // `cloudflare:workers` is a Workers runtime module that Knip reads as the
     // (unused) `cloudflare` npm package.

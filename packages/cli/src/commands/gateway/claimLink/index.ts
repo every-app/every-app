@@ -1,17 +1,27 @@
-import chalk from "chalk";
 import type { LocalContext } from "@/context";
-import {
-  getDefaultAccountId,
-  getGatewayPublicUrl,
-  requireCloudflareAuth,
-} from "@/lib/cloudflare";
-import { findGatewayDatabaseId } from "@/lib/cloudflare/gatewayD1";
+import { cfD1Database } from "@/lib/cf/d1";
+import type { CfRunner } from "@/lib/cf/runner";
+import { EveryAppError } from "@/lib/errors";
+import { readInstall } from "@/lib/gateway/install";
+import { findGatewayDatabase } from "@/lib/gateway/resources";
 import {
   gatewayHasOwner,
   mintSetupLink,
   presentSetupLink,
+  type SetupLink,
 } from "@/lib/gateway/setup-link";
-import { exitWithUpdateNotice } from "@/lib/version-check";
+import {
+  connectToAccount,
+  eventSink,
+  normalizeDomain,
+  rememberedInstall,
+  runReported,
+} from "../shared";
+
+interface ClaimLinkFlags {
+  "account-id"?: string;
+  domain?: string;
+}
 
 /**
  * Mint a fresh owner setup link for a gateway that has not been claimed yet
@@ -19,31 +29,49 @@ import { exitWithUpdateNotice } from "@/lib/version-check";
  * gateway's account are the proof of control; the previous unused link stops
  * working.
  */
-export async function claimLink(this: LocalContext): Promise<void> {
-  await requireCloudflareAuth();
-  const accountId = await getDefaultAccountId();
+export async function claimLink(
+  this: LocalContext,
+  flags: ClaimLinkFlags = {},
+): Promise<void> {
+  const out = eventSink();
+  await runReported(out, async () => {
+    const domain = normalizeDomain(flags.domain);
+    const cached = await rememberedInstall(domain);
+    const { cf } = await connectToAccount({
+      accountId: flags["account-id"],
+      remembered: cached?.accountId,
+    });
+    const link = await mintClaimLink(cf, domain ?? cached?.gatewayHost);
+    console.log();
+    await presentSetupLink(link);
+  });
+}
 
-  const databaseId = await findGatewayDatabaseId(accountId);
+/** A new owner setup link for the unclaimed gateway in `cf`'s account. */
+export async function mintClaimLink(
+  cf: CfRunner,
+  fallbackHost: string | undefined,
+): Promise<SetupLink> {
+  const databaseId = await findGatewayDatabase(cf);
   if (!databaseId) {
-    console.log(chalk.yellow("\nGateway not deployed\n"));
-    console.log(chalk.dim("  Run: npx everyapp gateway deploy\n"));
-    await exitWithUpdateNotice(1);
-    return;
-  }
-
-  if (await gatewayHasOwner({ accountId, databaseId })) {
-    console.log(chalk.yellow("\nThis gateway already has an owner\n"));
-    console.log(
-      chalk.dim(
-        "  Setup links only create the first owner. Sign in, or ask an owner or admin to invite you.\n",
-      ),
+    throw new EveryAppError(
+      "GATEWAY_NOT_DEPLOYED",
+      "No gateway is deployed in this Cloudflare account. Run: npx everyapp gateway deploy --domain <domain>",
     );
-    await exitWithUpdateNotice(1);
-    return;
   }
-
-  const gatewayUrl = await getGatewayPublicUrl(accountId);
-  const link = await mintSetupLink({ accountId, databaseId, gatewayUrl });
-  console.log();
-  await presentSetupLink(link);
+  const db = cfD1Database(cf, databaseId);
+  if (await gatewayHasOwner(db)) {
+    throw new EveryAppError(
+      "GATEWAY_CLAIMED",
+      "This gateway already has an owner. Setup links only create the first owner: sign in, or ask an owner or admin to invite you.",
+    );
+  }
+  const gatewayHost = (await readInstall(db))?.gatewayHost ?? fallbackHost;
+  if (!gatewayHost) {
+    throw new EveryAppError(
+      "DOMAIN_REQUIRED",
+      "Which gateway? Pass its domain: npx everyapp gateway claim-link --domain <domain>",
+    );
+  }
+  return mintSetupLink({ db, gatewayUrl: `https://${gatewayHost}` });
 }

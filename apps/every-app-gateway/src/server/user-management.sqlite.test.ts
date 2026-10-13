@@ -74,7 +74,6 @@ describe("user management (SQLite)", () => {
       appSlug: "todo",
       name: "Todo",
       description: "Todos",
-      workerName: "every-todo",
       manifest: { id: "todo", ...manifest },
       deployerUserId: deployer,
     });

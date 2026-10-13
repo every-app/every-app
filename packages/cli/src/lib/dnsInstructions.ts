@@ -1,7 +1,7 @@
 interface FormatWildcardDnsInstructionsOptions {
   domain: string;
   accountId: string | null;
-  mode: "gateway-warning" | "app-blocking";
+  mode: "gateway-warning" | "app";
   hostname?: string;
 }
 
@@ -14,24 +14,24 @@ export function formatWildcardDnsInstructions({
   const dashboardTarget = accountId
     ? `https://dash.cloudflare.com/${accountId}/${domain}/dns/records`
     : `https://dash.cloudflare.com -> ${domain} -> DNS`;
-  const exampleHost = hostname ?? `todo.${domain}`;
+  const exampleHost = hostname ?? `todo-acme.${domain}`;
   const intro =
-    mode === "app-blocking"
+    mode === "app"
       ? [
-          `Each app you deploy will live at [app].${domain} - this app at`,
+          `Each app you deploy lives at [app]-[org].${domain} - this app at`,
           `${exampleHost} - but that address does not resolve yet. To support`,
           `this, you must add the DNS record below:`,
         ]
       : [
-          `Each app you deploy will live at [app].${domain} - for example`,
-          `todo.${domain}. To support this, you must add the DNS record`,
-          `below (the login this CLI uses isn't allowed to add it for you):`,
+          `Each app you deploy will live at [app]-[org].${domain} - for`,
+          `example ${exampleHost}. To support this, you must add the DNS`,
+          `record below:`,
         ];
   const outro =
-    mode === "app-blocking"
+    mode === "app"
       ? [
-          `After DNS propagates, re-run everyapp app deploy.`,
-          `If you know DNS is ready and this check is blocked locally, re-run with --skip-dns-check.`,
+          `The app is deployed; it answers at ${exampleHost} once DNS`,
+          `propagates. You only add this record once.`,
         ]
       : [
           `Continuing the deploy - once you add that record, apps at`,

@@ -1,24 +1,25 @@
-import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 
-interface LocalPackageBin {
-  command: string;
-  argsPrefix: string[];
+interface LocalPackage {
+  version: string;
+  /** Absolute path of the package's `binName` script. */
+  binPath: string;
 }
 
 interface PackageJsonWithBin {
+  version?: string;
   bin?: string | Record<string, string>;
 }
 
-export async function resolveLocalPackageBin(
+/** Find an installed package's version and binary from a project root. */
+export async function resolveLocalPackage(
   projectRoot: string,
   packageName: string,
   binName: string,
-): Promise<LocalPackageBin> {
+): Promise<LocalPackage> {
   const resolvedProjectRoot = path.resolve(projectRoot);
-  const command = resolveNodeCommand();
 
   try {
     const packageJsonPath = await findPackageJsonPath(
@@ -38,30 +39,13 @@ export async function resolveLocalPackageBin(
     }
 
     return {
-      command,
-      argsPrefix: [
-        path.resolve(path.dirname(packageJsonPath), relativeBinPath),
-      ],
+      version: packageJson.version ?? "unknown",
+      binPath: path.resolve(path.dirname(packageJsonPath), relativeBinPath),
     };
   } catch (error) {
     throw new Error(
       `Could not resolve the project-local "${binName}" binary from project root "${resolvedProjectRoot}". Install the project's declared ${packageName} dependency and try again. (If the install skipped devDependencies, include them; Yarn Plug'n'Play projects are not supported — use nodeLinker: node-modules.)`,
       { cause: error },
-    );
-  }
-}
-
-function resolveNodeCommand(): string {
-  if (!process.versions["bun"]) {
-    return process.execPath;
-  }
-
-  try {
-    execFileSync("node", ["--version"], { stdio: "ignore" });
-    return "node";
-  } catch {
-    throw new Error(
-      "Every App CLI must run project binaries under Node.js because Wrangler deploys silently no-op under Bun. Install Node.js and ensure `node` is available on PATH.",
     );
   }
 }

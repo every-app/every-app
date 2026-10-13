@@ -1,14 +1,10 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { localD1Id } from "@every-app/sdk/cloudflare";
+import { FakeCf } from "@/lib/cf/fakeCf";
 import { applyDevMigrations } from "./migrations";
-
-const mocks = vi.hoisted(() => ({
-  runLocalAppMigrations: vi.fn(),
-}));
-
-vi.mock("@/lib/migrations", () => ({
-  runLocalAppMigrations: mocks.runLocalAppMigrations,
-}));
 
 const manifest = {
   id: "todo",
@@ -16,39 +12,69 @@ const manifest = {
   migrations: { engine: "drizzle" as const },
 };
 
-describe("applyDevMigrations", () => {
-  beforeEach(() => {
-    mocks.runLocalAppMigrations.mockReset();
-    process.exitCode = undefined;
-  });
+let cwd: string;
 
-  it("continues after local migrations succeed", async () => {
+beforeEach(async () => {
+  cwd = await fs.mkdtemp(path.join(os.tmpdir(), "everyapp-dev-migrations-"));
+  await fs.mkdir(path.join(cwd, "drizzle"));
+  process.exitCode = undefined;
+  vi.spyOn(console, "log").mockImplementation(() => {});
+});
+
+afterEach(async () => {
+  vi.restoreAllMocks();
+  process.exitCode = undefined;
+  await fs.rm(cwd, { recursive: true, force: true });
+});
+
+describe("applyDevMigrations", () => {
+  it("applies the migrations to the database cf dev serves", async () => {
+    const cf = new FakeCf().on(["d1", "migrations", "apply"], {
+      stdout: '[{"name":"0000_init.sql","status":"✅"}]',
+    });
+
     const result = await applyDevMigrations({
-      cwd: "/app",
+      cwd,
       manifest,
-      configPath: "/app/.everyapp/wrangler.json",
+      cf,
       skipMigrations: false,
     });
 
     expect(result).toBe(true);
-    expect(mocks.runLocalAppMigrations).toHaveBeenCalledWith({
-      cwd: "/app",
-      d1Bindings: ["DB"],
-      migrations: manifest.migrations,
-      configPath: "/app/.everyapp/wrangler.json",
+    expect(cf.calls).toHaveLength(1);
+    expect(cf.calls[0]).toMatchObject({
+      args: [
+        "d1",
+        "migrations",
+        "apply",
+        localD1Id("every-todo", "DB"),
+        "--local",
+        "--persist-to",
+        ".cloudflare/state",
+        "--dir",
+        "drizzle",
+      ],
+      plane: "project",
+      cwd,
+      local: true,
+      env: {
+        CLOUDFLARE_REGISTRY_PATH: path.join(cwd, ".everyapp", "registry"),
+        MINIFLARE_REGISTRY_PATH: path.join(cwd, ".everyapp", "registry"),
+      },
     });
   });
 
   it("aborts dev with an actionable error when migration fails", async () => {
-    mocks.runLocalAppMigrations.mockRejectedValue(
-      new Error("migration 0001 failed"),
-    );
+    const cf = new FakeCf().on(["d1", "migrations", "apply"], {
+      exitCode: 1,
+      stderr: "┌ Error\n│ migration 0001 failed\n└\n",
+    });
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const result = await applyDevMigrations({
-      cwd: "/app",
+      cwd,
       manifest,
-      configPath: "/app/.everyapp/wrangler.json",
+      cf,
       skipMigrations: false,
     });
 
@@ -60,18 +86,19 @@ describe("applyDevMigrations", () => {
     expect(error).toHaveBeenCalledWith(
       "Run manually: pnpm run db:migrate:local",
     );
-    error.mockRestore();
   });
 
   it("--skip-migrations bypasses migration application", async () => {
+    const cf = new FakeCf();
+
     const result = await applyDevMigrations({
-      cwd: "/app",
+      cwd,
       manifest,
-      configPath: path.join("/app", ".everyapp", "wrangler.json"),
+      cf,
       skipMigrations: true,
     });
 
     expect(result).toBe(true);
-    expect(mocks.runLocalAppMigrations).not.toHaveBeenCalled();
+    expect(cf.calls).toHaveLength(0);
   });
 });

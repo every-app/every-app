@@ -14,15 +14,16 @@ describe("formatWildcardDnsInstructions", () => {
     );
   });
 
-  it("formats the app blocking variant with hostname context", () => {
+  it("formats the app variant with hostname context", () => {
     const instructions = formatWildcardDnsInstructions({
       domain: "example.com",
       accountId: null,
-      mode: "app-blocking",
+      mode: "app",
       hostname: "todo.example.com",
     });
 
     expect(instructions).toContain("todo.example.com");
-    expect(instructions).toContain("re-run everyapp app deploy");
+    expect(instructions).toContain("once DNS");
+    expect(instructions).not.toContain("--skip-dns-check");
   });
 });

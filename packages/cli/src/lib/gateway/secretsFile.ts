@@ -1,0 +1,52 @@
+/**
+ * The gateway's secrets. A first deploy generates them and sends them with
+ * the upload (`cf deploy --secrets-file`), so the first version already has
+ * them. Later deploys send only what `everyapp gateway secret set` sets;
+ * everything else stays as it is on the Worker.
+ */
+import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { EveryAppError } from "@/lib/errors";
+
+/** Optional settings `everyapp gateway secret set` may change. */
+const SETTABLE_GATEWAY_SECRETS = [
+  "OPENAI_API_KEY",
+  "AI_PROXY_EXTRA_ROUTES",
+  "EMAIL_REST_API_TOKEN",
+  "EMAIL_FROM",
+  "EMAIL_FROM_NAME",
+  "MCP_OAUTH_ENABLED",
+] as const;
+
+export function firstDeploySecrets({
+  gatewayUrl,
+  accountId,
+}: {
+  gatewayUrl: string;
+  accountId: string;
+}): Record<string, string> {
+  const { privateKey, publicKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    publicKeyEncoding: { type: "spki", format: "pem" },
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+  });
+  return {
+    GATEWAY_URL: gatewayUrl,
+    // Session signing and encryption; HMAC key material for app tokens.
+    BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
+    // Signs the identity JWTs the gateway mints; apps verify with the public key.
+    JWT_PRIVATE_KEY: privateKey,
+    JWT_PUBLIC_KEY: publicKey,
+    GATEWAY_DEPLOYMENT_MODE: "self_hosted",
+    CLOUDFLARE_ACCOUNT_ID: accountId,
+  };
+}
+
+/** Refuse anything but the gateway's optional settings. */
+export function assertSettableSecret(name: string): void {
+  if (!(SETTABLE_GATEWAY_SECRETS as readonly string[]).includes(name)) {
+    throw new EveryAppError(
+      "SECRET_NOT_SETTABLE",
+      `${name} isn't a gateway setting this command changes. It sets: ${SETTABLE_GATEWAY_SECRETS.join(", ")}.`,
+    );
+  }
+}

@@ -9,7 +9,21 @@
 import { validateManifest, type Manifest } from "./manifest/manifest";
 
 export type Tier = "service_binding" | "dispatch";
-export type AppStatus = "active" | "disabled" | "deploying";
+/**
+ * `pending`: registered, its Worker not uploaded yet. `binding`: uploaded,
+ * waiting for the gateway to bind and verify it. Both answer "deploying";
+ * `disabled` is switched off; `deploying` is a legacy value.
+ */
+export type AppStatus =
+  "active" | "disabled" | "deploying" | "pending" | "binding";
+
+const APP_STATUSES: readonly string[] = [
+  "active",
+  "disabled",
+  "deploying",
+  "pending",
+  "binding",
+] satisfies AppStatus[];
 
 export interface RegisteredApp {
   /** Stable app id and first DNS label, e.g. `todo`. */
@@ -47,12 +61,9 @@ export interface AppRegistryRow {
 }
 
 export function rowToRegisteredApp(row: AppRegistryRow): RegisteredApp {
-  const status =
-    row.status === "active" ||
-    row.status === "disabled" ||
-    row.status === "deploying"
-      ? row.status
-      : "disabled";
+  const status = APP_STATUSES.includes(row.status)
+    ? (row.status as AppStatus)
+    : "disabled";
 
   return {
     appId: row.appId,

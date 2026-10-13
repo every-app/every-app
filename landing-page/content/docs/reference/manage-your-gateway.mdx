@@ -27,22 +27,22 @@ To change someone's role later, use **⋯ → Change role**. Only owners can cha
 
 ## Update the Gateway
 
-Re-run the deploy — your data, users, and apps carry over:
+Upgrade to the Gateway release your CLI ships — your data, users, and apps carry over:
 
 ```bash
-npx everyapp gateway deploy --domain your-domain.dev
+npx everyapp gateway upgrade
 ```
 
-This also re-syncs app service bindings from the registry and applies any pending database migrations. Never run bare `wrangler deploy` against the gateway worker; it would strip the app bindings (the gateway's own package guards against this).
+It uses the domain and Cloudflare account the Gateway was deployed with, migrates the database before the new code goes live (after a Time Travel bookmark it prints, with the command that restores it), and keeps every app bound. It refuses to move to an older release unless you pass `--allow-downgrade`. `npx everyapp gateway status` shows the release you run and the one your CLI ships.
+
+Avoid changing the Gateway's Worker in the Cloudflare dashboard: the next unattended deploy stops and asks you to confirm in a terminal.
 
 ## Remove an app
 
-**Admin → Apps → ⋯ → Delete** stops serving it, removes it from the launcher and revokes everyone's access. Its app id stays reserved to your organization, so nobody else can register an app under the same name. The app's worker and database stay on your Cloudflare account until you delete them there (`dash.cloudflare.com → Workers & Pages` and `→ Storage & Databases`) — so deleting in the Gateway is reversible by redeploying.
+**Admin → Apps → ⋯ → Delete** stops serving it, removes it from the launcher and revokes everyone's access. Its name stays reserved to your organization. The app's worker and database stay on your Cloudflare account, so deleting in the Gateway is reversible by redeploying; run `npx everyapp gateway reconcile` afterwards to drop the Gateway's binding to it.
+
+From the terminal, `npx everyapp app delete <app-id>` does both, and `--purge` also deletes the app's Worker, D1 database and KV namespace for good.
 
 ## Move to a different domain
 
-1. Add the new domain to your Cloudflare account (free plan is fine) and update nameservers.
-2. `npx everyapp gateway deploy --domain your-new-domain.dev` — the Gateway moves; add the wildcard CNAME record when prompted.
-3. Redeploy each app once (`everyapp app deploy` in its directory) so it registers its new `app.your-new-domain.dev` address.
-
-Sessions are per-domain, so everyone signs in again after a move.
+Moving an installed Gateway to a different domain isn't supported yet: `gateway deploy` refuses a domain other than the one it was installed at.

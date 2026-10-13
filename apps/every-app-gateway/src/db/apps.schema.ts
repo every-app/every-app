@@ -25,18 +25,34 @@ export const apps = sqliteTable(
     // --- perimeter routing + policy registry columns ---
     // Full routing hostname, e.g. "todo-acme.example.com" (unique per gateway).
     hostname: text("hostname").unique(),
-    // Service-binding / script name, e.g. "every-todo-app". Unique per
+    // Service-binding / script name the gateway assigns at registration,
+    // "every-<orgKey>-<appId>" (legacy rows: "every-<appId>"). Unique per
     // gateway: worker names share one Cloudflare-account namespace, and
     // D1/KV resource names derive from them.
     workerName: text("worker_name").unique(),
+    // Registered before org-scoped names: the row keeps "every-<appId>".
+    // True by default, so a row the gateway code from before this column
+    // writes (an upgrade migrates before its new code is live) is legacy;
+    // registrations write false explicitly.
+    legacyNames: integer("legacy_names", { mode: "boolean" })
+      .default(true)
+      .notNull(),
     // 'service_binding' now; 'dispatch' reserved for the hosted tier.
     tier: text("tier").notNull().default("service_binding"),
-    // JSON snapshot of everyapp.config.ts taken at deploy time.
+    // JSON snapshot of everyapp.config.ts, taken when a deploy uploads the
+    // app's Worker, so a new route policy goes live with the new code.
     manifest: text("manifest"),
-    // 'active' | 'disabled' | 'deploying' | 'deleted'. A deleted app is a
-    // tombstone: unrouted and hidden, but its slug, hostname and worker name
-    // stay reserved to its organization.
+    // The app's deploy state:
+    //  - 'pending': registered, its Worker not uploaded yet (not bound);
+    //  - 'binding': uploaded, waiting for the gateway to bind and verify it;
+    //  - 'active' | 'disabled' (bound, 503 while disabled);
+    //  - 'deleted': a tombstone, unrouted and hidden, but its slug, hostname
+    //    and worker name stay reserved to its organization.
+    // 'deploying' is a legacy value, treated like 'binding'.
     status: text("status").notNull().default("active"),
+    // The Worker version and time of the last upload.
+    versionId: text("version_id"),
+    deployedAt: integer("deployed_at", { mode: "timestamp_ms" }),
     isDefault: integer("is_default", { mode: "boolean" })
       .default(false)
       .notNull(), // Auto-grant to new users within organization

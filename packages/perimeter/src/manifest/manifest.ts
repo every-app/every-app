@@ -3,8 +3,9 @@
  *
  * The manifest is the single source of truth for an app's identity, resources,
  * and public surface. It is authored as `everyapp.config.ts` in an app repo,
- * compiled to an ephemeral wrangler config by the CLI at deploy time, and
- * snapshotted as a JSON column on the gateway `apps` registry row.
+ * turned into the Worker definition by the app's `cloudflare.config.ts`
+ * (`everyAppWorker()` from `@every-app/sdk/cloudflare`), and snapshotted as a
+ * JSON column on the gateway `apps` registry row.
  *
  * This module defines the manifest shape and validators. It is intentionally
  * dependency-light (zod only) so it can be shared by the perimeter package and
@@ -72,7 +73,7 @@ const ScopesSchemaStrict = ScopesSchema;
 export const MigrationsSchema = z
   .object({
     engine: z.enum(["drizzle", "d1-sql"]),
-    /** Directory of Wrangler D1 SQL migration files, relative to the app root. */
+    /** Directory of D1 SQL migration files, relative to the app root. */
     dir: z.string().optional(),
     /** D1 binding to migrate. Defaults to the first declared D1 binding. */
     binding: z.string().min(1).optional(),
@@ -151,7 +152,10 @@ export const ManifestSchema = z
       ),
     name: z.string().min(1).optional(),
     description: z.string().optional(),
-    /** Worker entry module (used by the CLI at deploy time). */
+    /**
+     * Legacy: the Worker entry now comes from `cloudflare.config.ts`. Still
+     * accepted so existing manifests validate.
+     */
     main: z.string().optional(),
     /** Optional Cloudflare Workers compatibility date override. */
     compatibilityDate: CompatibilityDateSchema.optional(),
@@ -190,11 +194,14 @@ export const ManifestSchema = z
         'must be a path such as "/app/_serverFn"',
       )
       .optional(),
-    /** Shell command that builds the app. Default: "npx vite build". */
+    /** Shell command that builds the app for production. Default: `cf build`. */
     build: z.string().min(1).optional(),
-    /** Shell command that starts the app dev server for `everyapp dev`. */
+    /** Shell command that starts the app dev server for `everyapp dev`. Default: `cf dev`. */
     dev: z.string().min(1).optional(),
-    /** Local wrangler dev port written into the generated config. */
+    /**
+     * Legacy: the dev port now comes from the app's vite.config.ts (PORT).
+     * Still accepted so existing manifests validate.
+     */
     devPort: z.number().int().positive().optional(),
     /** Dependency install command; false skips install; omitted auto-detects. */
     install: InstallSchema.optional(),
@@ -205,7 +212,16 @@ export const ManifestSchema = z
 export type Manifest = z.infer<typeof ManifestSchema>;
 
 export const PublicRouteSchemaStrict = PublicRouteSchema.strict();
+/** A D1 or KV binding: the name the Worker reads from `env`. */
+const BindingNameSchema = z
+  .string()
+  .regex(
+    /^[A-Za-z_][A-Za-z0-9_]*$/,
+    "binding names must be JavaScript identifiers",
+  );
 export const ResourcesSchemaStrict = ResourcesSchema.extend({
+  d1: z.array(BindingNameSchema).optional(),
+  kv: z.array(BindingNameSchema).optional(),
   durableObjects: z
     .array(z.object({ name: z.string(), className: z.string() }).strict())
     .optional(),
@@ -278,7 +294,10 @@ export function defineEveryApp(manifest: EveryAppManifest): EveryAppManifest {
   return manifest;
 }
 
-/** Prefixed worker / resource name, e.g. "todo" -> "every-todo". */
+/**
+ * The dev Worker name, and the name apps registered before org-scoped names
+ * keep, e.g. "todo" -> "every-todo".
+ */
 export function workerNameFor(appId: string): string {
   return appId.startsWith("every-") ? appId : `every-${appId}`;
 }
@@ -286,17 +305,92 @@ export function workerNameFor(appId: string): string {
 /** The gateway's own Worker script name. No app may use or bind it. */
 export const GATEWAY_WORKER_NAME = "every-app-gateway";
 
+/** Cloudflare's limit on a Worker's name. */
+export const MAX_WORKER_NAME_LENGTH = 63;
+
 /**
- * Whether `workerName` is the Worker `everyapp deploy` creates for `appId`.
- * Registration and the gateway's service-binding reconcile both require this,
- * so a deploy token can only ever route a hostname to its own app's Worker:
- * never to another Worker in the Cloudflare account, and never to the
- * gateway itself (app id "app-gateway" would otherwise map onto it).
+ * Names the gateway's own resources use: its Worker, D1 database and KV
+ * namespaces (`every-app-gateway`, `every-app-gateway-OAUTH_KV`,
+ * `every-app-gateway-deploy`). No app Worker may take one, and so no app
+ * resource either, since a get-or-create by name would hand the app the
+ * gateway's own.
  */
-export function isAppWorkerName(appId: string, workerName: string): boolean {
+export function isReservedName(name: string): boolean {
+  const lower = name.toLowerCase();
   return (
-    workerName === workerNameFor(appId) && workerName !== GATEWAY_WORKER_NAME
+    lower === GATEWAY_WORKER_NAME || lower.startsWith(`${GATEWAY_WORKER_NAME}-`)
   );
+}
+
+/**
+ * What separates an org-scoped app's Worker name from the suffix of a
+ * resource named after it. Org keys have no hyphens and no org-scoped app id
+ * may contain it, so `every-acme-notes--archive` can only ever be app
+ * `notes`'s ARCHIVE database, never app `notes-archive`'s own.
+ */
+export const RESOURCE_SEPARATOR = "--";
+
+interface RegistryNaming {
+  appId: string;
+  /** The organization's immutable key (`organization_keys.org_key`). */
+  orgKey: string | null;
+  /** Registered before org-scoped names: the row keeps `every-<appId>`. */
+  legacyNames: boolean;
+}
+
+/**
+ * The Worker name the gateway assigns an app at registration,
+ * `every-<orgKey>-<appId>`, so two organizations never share a Worker, D1
+ * database or KV namespace. Apps registered before that keep `every-<appId>`.
+ */
+export function registryWorkerNameFor({
+  appId,
+  orgKey,
+  legacyNames,
+}: RegistryNaming): string {
+  if (legacyNames) return workerNameFor(appId);
+  if (!orgKey) throw new Error("An org-scoped Worker name needs an org key.");
+  return `every-${orgKey}-${appId}`;
+}
+
+/**
+ * Whether a registry row's Worker is the one its naming rule gives it, fits
+ * Cloudflare's limit and isn't the gateway's. The gateway only binds such
+ * rows, so the registry can never route a hostname to another Worker in the
+ * Cloudflare account.
+ */
+export function isRegistryWorkerName(
+  row: RegistryNaming & { workerName: string },
+): boolean {
+  if (
+    isReservedName(row.workerName) ||
+    row.workerName.length > MAX_WORKER_NAME_LENGTH ||
+    (!row.legacyNames &&
+      (!row.orgKey || row.appId.includes(RESOURCE_SEPARATOR)))
+  ) {
+    return false;
+  }
+  return row.workerName === registryWorkerNameFor(row);
+}
+
+/**
+ * The D1 database or KV namespace an app Worker's binding uses: `DB` and
+ * `KV` take the Worker's name, any other binding appends its own after
+ * {@link RESOURCE_SEPARATOR} (`every-acme-notes--archive`). Legacy apps keep
+ * the single hyphen their resources were created with
+ * (`every-notes-archive`), which another app's name can share; the CLI
+ * never adopts or deletes a resource it didn't record as the app's.
+ */
+export function resourceNameFor(
+  workerName: string,
+  binding: string,
+  { legacyNames = false }: { legacyNames?: boolean } = {},
+): string {
+  if (binding === "DB" || binding === "KV") return workerName;
+  const suffix = binding.toLowerCase();
+  return legacyNames
+    ? `${workerName}-${suffix}`
+    : `${workerName}${RESOURCE_SEPARATOR}${suffix.replaceAll("_", "-")}`;
 }
 
 /**

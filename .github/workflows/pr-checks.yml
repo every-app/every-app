@@ -9,6 +9,8 @@ on:
 # Checks only read the repository; nothing here needs a writable token.
 permissions:
   contents: read
+# Node 22.18+ everywhere: the apps' cloudflare.config.ts is loaded by cf and
+# the Cloudflare Vite plugin with Node's built-in TypeScript support.
 jobs:
   type-check:
     name: Type Check
@@ -23,7 +25,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '^22.18.0'
           cache: 'pnpm'
       - name: Install all dependencies
         run: pnpm install --ignore-scripts
@@ -50,7 +52,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '^22.18.0'
       # Every project below commits its own lockfile; the cloneable apps and
       # template don't, so there is nothing stable to audit for them yet.
       - name: Fail on critical advisories in committed lockfiles
@@ -75,7 +77,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '^22.18.0'
           cache: 'pnpm'
       - name: Install all dependencies
         run: pnpm install --ignore-scripts
@@ -94,11 +96,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '^22.18.0'
           cache: 'pnpm'
       - name: Install all dependencies
         run: pnpm install --ignore-scripts
-      - name: Build to init .wrangler directories
+      - name: Build workspace packages
         run: pnpm -r --no-bail run build
       - name: Run knip check
         run: pnpm knip
@@ -115,7 +117,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '^22.18.0'
           cache: 'pnpm'
       - name: Install all dependencies
         run: pnpm install --ignore-scripts

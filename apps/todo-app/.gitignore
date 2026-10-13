@@ -1,7 +1,7 @@
 node_modules
 package-lock.json
 yarn.lock
-.dev.vars
+.dev.vars*
 
 .output/
 .tanstack/
@@ -13,6 +13,8 @@ yarn.lock
 .vercel
 .output
 .wrangler
+# cf build output, generated types and local dev state
+.cloudflare/
 .nitro
 /build/
 /api/
@@ -29,3 +31,4 @@ yarn.lock
 # Regenerated on install; would contain link: entries pointing into the
 # monorepo, which are broken for anyone who clones this directory alone.
 pnpm-lock.yaml
+.dev.vars

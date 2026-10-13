@@ -3,77 +3,90 @@ title: "Gateway: CLI & Deployment"
 description: How the CLI provisions, deploys, registers, and runs everything locally
 ---
 
-> Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-07-15.
+> Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-10-12.
 
-**Deployment in one sentence:** the Cloudflare token (on your laptop) creates infrastructure, the `eak_` deploy token registers apps with the gateway's registry, and the gateway wires routing by reconstructing service bindings from that registry.
+**Deployment in one sentence:** Cloudflare's own CLI, `cf`, does everything in the Cloudflare account with your Cloudflare login; the `eak_` deploy token registers apps with the gateway's registry, which names their Workers and resources; and binding an app is a redeploy of the live gateway release with the registry's full list of apps.
 
-Three independent credentials — none substitutes for another:
+Two independent credentials — neither substitutes for the other:
 
-| Credential                                                      | Lives                                                                         | Authorizes                                                                                                                 |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| Cloudflare API token / wrangler OAuth                           | laptop env / wrangler config                                                  | creating D1/KV, deploying workers, patching bindings, DNS (scoped API token only — wrangler OAuth usually lacks DNS write) |
-| `eak_` deploy token (from admin UI, stored by `everyapp login`) | `~/.everyapp/credentials.json` (0600)                                         | the gateway's `/api/deploy/*` registry endpoints                                                                           |
-| `eat_` app token (auto-provisioned per app)                     | app worker secret (`app create` provisions a _separate_ one for `.env.local`) | gateway services (AI proxy) from app code                                                                                  |
+| Credential                                                      | Lives                                                                            | Authorizes                                              |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Cloudflare login (`cf auth login`) or `CLOUDFLARE_API_TOKEN`    | cf's own encrypted credential store, or the environment (the CLI never reads it) | D1/KV, Worker uploads, D1 queries and migrations, zones |
+| `eak_` deploy token (from admin UI, stored by `everyapp login`) | `~/.everyapp/credentials.json` (0600)                                            | the gateway's `/api/deploy/*` registry endpoints        |
 
-## `everyapp gateway deploy`
+All `cf` calls go through `packages/cli/src/lib/cf`: the CLI's pinned `cf` (or the app's own for local commands), run with this Node and with this Node first on its PATH (cf starts `pnpm vite …`, which would otherwise run on whatever `node` a directory's nvm or volta pin finds), account-plane calls in an empty directory with `CLOUDFLARE_ACCOUNT_ID` set, SQL in private body files (`cf d1 query --body @file`), secrets only in `cf deploy --secrets-file` (a 0600 temp file, removed afterwards).
 
-The CLI deploys a prebuilt gateway: `--localGateway <tarball>` when given, otherwise the release bundled inside the npm package, otherwise (inside the monorepo) a fresh local build. It patches the release's wrangler config, then deploys.
+cf runs the first `cloudflare.config.ts` it finds in its working directory or any parent, up to `/`, even for API commands. So the CLI never runs it in the shared temp directory, where any local user could plant one: the empty directory (`~/.everyapp/cf/neutral`) and every temp file or tree cf reads (`~/.everyapp/cf/tmp`, including the patched gateway release it deploys from) are 0700 directories the CLI owns, checked with `lstat` and recreated when they aren't. The CLI also refuses to run when a directory above them is writable by another user or already holds a `cloudflare.config.ts`.
 
-1. Require Cloudflare auth; confirm the target account.
-2. Provision (or reuse, by name) **one D1** (`every-app-gateway`) + **two KV namespaces** (`every-app-gateway`, `every-app-gateway-OAUTH_KV`). No R2.
-3. With `--domain`: verify the apex is a zone you own, write apex custom-domain + `*.<domain>/*` wildcard route, try to create the proxied wildcard CNAME (DNS failure is non-fatal → manual instructions). Without it: workers.dev — control plane works, but **app subdomains require a custom domain**.
-4. **Rebuild app service bindings from D1** — query active registry rows, emit `APP__<worker_name>` bindings into the config (missing tables on first deploy = empty registry).
-5. Download release → install pinned tooling → patch `dist/server/wrangler.json` (D1/KV IDs, routes, bindings) → `wrangler deploy`.
-6. **Secrets after the worker exists**, only if missing (except `GATEWAY_URL`, which `--domain` force-updates): `GATEWAY_URL`, `CLOUDFLARE_ACCOUNT_ID`, `BETTER_AUTH_SECRET`, RSA-2048 `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY` pair (both-or-none enforced), `GATEWAY_DEPLOYMENT_MODE=self_hosted`.
-7. **D1 migrations run last**, remotely via `drizzle-kit migrate`.
-8. If D1 has no owner membership, mint a one-time setup link: expire unused links, insert the SHA-256 of a fresh `est_` secret (24h expiry) into `owner_setup_tokens` over the D1 REST API, then poll TLS and print/open `https://<gateway>/setup#token=…`. An unattended deploy (CI, piped output) mints nothing and only says to run `everyapp gateway claim-link`, unless `--printSetupLink` is passed. `everyapp gateway claim-link` re-mints it.
+Piped `cf` calls run in their own process groups, so Ctrl+C reaches only the CLI. On SIGINT or SIGTERM it forwards the signal to them, waits for them to exit, removes its temp files (secrets files, release copies) and `.everyapp/deploy.json`, frees any deploy lease it holds, and exits with 130 (143 for SIGTERM). A second Ctrl+C exits at once.
+
+## `everyapp gateway deploy` / `upgrade` / `reconcile`
+
+The gateway ships prebuilt inside the npm package (`gateway/every-app-gateway-release.tar.gz`, built by `apps/every-app-gateway/scripts/build-release.ts`): the production Build Output from `cf build`, the drizzle migrations, and a `release.json` with the toolchain versions, the migration journal and a SHA-256 of the files, which the CLI checks. Nothing is installed or built at deploy time.
+
+1. `cf auth whoami`; pick the account (flag, `CLOUDFLARE_ACCOUNT_ID`, the remembered install, the only one). Find the zone for `--domain` (the gateway serves at the zone apex for now).
+2. Get-or-create by name: D1 `every-app-gateway`, KV `every-app-gateway-OAUTH_KV`, KV `every-app-gateway-deploy` (the release cache). The old `every-app-gateway` KV namespace is no longer bound.
+3. Take the `gateway` lease: a row in the gateway's own D1 (`_everyapp_deploy_lease`, created by the CLI, 10-minute TTL with a heartbeat).
+4. Check what could stop the upload (the release patches into a valid Build Output; the gateway serving is the version the install row recorded, or a person at the terminal agrees to replace it), then bookmark the database (`cf d1 time-travel get-bookmark`), carry drizzle-kit's `__drizzle_migrations` history over to cf's `d1_migrations` once, then `cf d1 migrations apply`. **Migrations run before the code**, and gateway migrations must be expand-only (a test refuses drops and renames from 0027 on).
+5. Cache the release tarball in the deploy KV under `release/<sha256>`.
+6. Read the desired bindings from the registry: apps that are `binding`, `active` or `disabled`, whose Worker name follows the naming rule and whose Worker exists (binding a missing one would fail the whole deploy, so a stale row is skipped with a warning).
+7. Patch a private copy of the Build Output: D1/KV ids, `APP__<worker>` service bindings, the gateway's Custom Domain and `*.<domain>/*` route, `EVERYAPP_RELEASE`, source maps; validate with `@cloudflare/config`'s output schema.
+8. `cf deploy --prebuilt --mode production`; a first deploy sends the generated secrets (`GATEWAY_URL`, `BETTER_AUTH_SECRET`, the RSA-2048 identity keypair, `GATEWAY_DEPLOYMENT_MODE`, `CLOUDFLARE_ACCOUNT_ID`) in the secrets file, so the first version has them.
+9. Record the install in `_everyapp_install` (gateway D1) and `~/.everyapp/installs.json` right after the upload, then poll `/api/deploy/status` until it reports the new release and a digest of the expected bindings. If apps registered meanwhile, deploy again (up to three times).
+10. If D1 has no owner membership, mint a one-time setup link (the SHA-256 of a fresh `est_` secret into `owner_setup_tokens`, earlier unused links expired, in one `cf d1 query`). An unattended deploy (CI, piped output) mints nothing and only says to run `everyapp gateway claim-link`, unless `--printSetupLink` is passed.
+
+`reconcile` skips 2, 4 and 5: it redeploys the release that is live (from the KV cache, checked against its SHA-256; the bundled release only if it is the same), so binding an app never upgrades or downgrades the gateway. It picks that release after taking the lease, when no upgrade can be running: the one the install record names, when the Worker serves the version the record names (`cf workers deployments list`). Otherwise something deployed since: the release the live `/api/deploy/status` reports is reconciled when it is newer and cached (an upgrade stopped before recording itself), but only when the status answers from the very version Cloudflare says serves (an edge that lags a deploy still answers from the version before). Anything else (older, unknown, no answer from that version) stops unattended or asks at a terminal, so a reconcile never puts an older release back unless a person says so. Releases are ordered by their newest migration, then their build time, not by the gateway's version, which builds share; `deploy` and `upgrade` refuse an older one under the lease too, against the install record and, when the Worker serves a version the record doesn't name, against the live release whenever the live gateway can say which it is, unless `--allow-downgrade`. When the account has no workers.dev subdomain, or the Worker serves a version everyapp didn't record (see below), the command stops with `action_required` (exit 2) and says what to do.
 
 ## `everyapp app create`
 
-Not scaffold-only — it **production-deploys as part of create**. Clone template (`templates/simple-todo` from the monorepo) → rewrite ids/deps → run the full `deployApp()` pipeline below → provision a second `eat_` token for `.env.local` → local build + migrations (best-effort: failures warn, don't abort) → `git init` + first commit.
+Not scaffold-only — it **production-deploys as part of create**. Clone template (`templates/simple-todo` from the monorepo) → rewrite ids/deps → run the full `deployApp()` pipeline below → local setup (`.env.local`, Worker types, local migrations; failures warn, don't abort) → `git init` + first commit.
 
 ## `everyapp app deploy` — the interesting one
 
-`everyapp.config.ts` is the source of truth; the CLI compiles it to an ephemeral gitignored `.everyapp/wrangler.json` (worker normally `every-<appId>`, `workers_dev: false`, `preview_urls: false`, D1/KV/DO bindings).
+`everyapp.config.ts` is the source of truth; the app's `cloudflare.config.ts` turns it into the Worker with `everyAppWorker()` from `@every-app/sdk/cloudflare`, reading deploy-time values from a short-lived, gitignored `.everyapp/deploy.json` that the CLI writes for the production build (and the helper throws without it, so a bare `cf deploy` can't ship an identity-less Worker).
 
 ```
- laptop (CF token)                      gateway (eak_ token)
+ laptop (cf login)                      gateway (eak_ token)
 ──────────────────────                 ───────────────────────
- 1 fetch identity keys  ◄───────────── /api/deploy/identity-keys
- 2 provision D1/KV (by name, reuse)
- 3 run remote D1 migrations            (BEFORE the worker deploys)
- 4 build (manifest cmd | vite | none)
- 5 wrangler deploy — PRIVATE worker
- 6 register app         ─────────────► /api/deploy/register
-                                        → registry row: hostname, manifest
-                                          snapshot, active; first registration
-                                          grants the deployer + owners/admins
-                                          (access: everyone → all members)
- 7 ensure eat_ token    ─────────────► /api/deploy/app-token/provision
-   (only when the worker secret is missing — never rotated)
-   → upload app secrets: GATEWAY_URL, GATEWAY_APP_API_TOKEN, EVERY_APP_ORG_ID
- 8 PATCH gateway worker settings: rebuild ALL APP__* service bindings
-   from the registry (non-app bindings preserved via inherit)
- 9 app is live at <appId>-<orgSlug>.<gateway-host>
+ 1 whoami: org, account ◄────────────── /api/deploy/whoami
+ 2 register             ─────────────► /api/deploy/register
+                                        → names: every-<orgKey>-<appId>, its
+                                          D1/KV, <appId>-<orgSlug>.<host>;
+                                          new apps start `pending` (unbound)
+ 3 app lease, then: its Worker, D1 and KV, used only if recorded as the
+   app's own (else created and recorded)
+ 4 cf build with deploy.json → policy check of the built Worker → source maps
+   → unattended, the serving version must be the one everyapp recorded
+ 5 bookmark + backfill + cf d1 migrations apply
+ 6 cf deploy --prebuilt — PRIVATE worker, secrets file: GATEWAY_URL,
+   EVERY_APP_ORG_ID
+ 7 deployed             ─────────────► /api/deploy/apps/:id/deployed
+                                        → manifest snapshot, version;
+                                          pending → binding
+ 8 reconcile the gateway, only if it doesn't bind the Worker yet
+ 9 activate (retried)   ─────────────► /api/deploy/apps/:id/activate
+                                        → probes APP__<worker>; binding → active
+10 app is live at <appId>-<orgSlug>.<gateway-host>
 ```
 
 Details worth remembering:
 
 - **Identity is baked in at deploy**: `EVERYAPP_IDENTITY_PUBLIC_KEYS` + `EVERYAPP_IDENTITY_ISSUER` + `EVERYAPP_APP_ID` go into the worker config; there's no runtime key fetch.
-- **Migrations before code** (app), but **code before migrations** (gateway) — asymmetric on purpose (app: don't run new code on old schema; gateway: the release tarball carries its own migrations).
-- Only **one D1 binding is migrated** per deploy (`migrations.binding` or the first one); strategies: `drizzle` (default) or `d1-sql`.
-- **Failure window**: register (step 6) succeeds but binding patch (step 8) fails → active registry row with no binding → gateway serves 503 `app_unreachable` for that app until any later app/gateway deploy reconciles.
-- DNS preflight resolves any one-label subdomain (`<appId>.<gateway-host>`) via DNS-over-HTTPS only to verify the existing wildcard; the final `<appId>-<orgSlug>.<gateway-host>` URL comes from the gateway registration response. workers.dev gateways are rejected for app deploys.
-- Existing registry rows adopt the org-scoped hostname on their next `everyapp app deploy`; registration updates the existing `(organizationId, appSlug)` row, so no environment-dependent SQL migration is needed.
+- **Migrations before code** for apps and the gateway alike: a failed migration leaves the version that is serving untouched. And nothing is migrated until everything else that could stop the upload has passed: the build and policy check (apps), the patch of the release (gateway), and, unattended, cf's strict mode. cf won't replace a Worker last changed in the dashboard or through the API without a person confirming, and offers no way to ask first, so a deploy goes on only when the version serving is one everyapp recorded uploading (the registry's `version_id`, the app's Worker record, the install row's `live_version_id`, each written right after its upload). Otherwise it stops unattended with `rerun_interactive` before touching the database, and at a terminal asks before migrating (cf may ask again before uploading); a Worker deployed before everyapp used cf needs that one deploy from a terminal. A deploy stopped with Ctrl+C while cf uploads still records what cf got live, on its way out.
+- **The policy check** refuses a built Worker that has another name, workers.dev or preview URLs, domains or routes, missing identity keys, `EVERYAPP_DEV`, a service binding other than the gateway's `AppGateway`, another Worker's Durable Object, D1/KV ids the deploy didn't provision, a bucket not named after the Worker, or any binding type outside text, JSON, secret, version metadata, assets, D1, KV, R2, Durable Object and the gateway binding (queues, Hyperdrive, workflows, dispatch namespaces, private networks, secrets stores, rate limits, Workers AI and the rest reach things outside the app). Its `exports` may delete a Durable Object class only when the deploy dropped it with `--allow-delete-durable-object-data`, and never transfer one's data to or from another Worker.
+- Only **one D1 binding is migrated** per deploy (`migrations.binding` or the first one); `drizzle` (default) and `d1-sql` both run `cf d1 migrations apply`.
+- **Names**: apps registered before org-scoped names (`legacy_names`) keep `every-<appId>`; names starting with `every-app-gateway` are refused. A binding other than `DB`/`KV` gets `every-<orgKey>-<appId>--<binding>` (legacy apps: `every-<appId>-<binding>`); since new app ids can't contain `--`, one app's resource can never be named like another app's. Removing a Durable Object class needs `--allow-delete-durable-object-data`.
+- **Ownership**: a name proves nothing, so the CLI records each Worker, database and namespace an app creates in `_everyapp_app_resources` (gateway D1), before creating it. A deploy uses an existing resource only when it is recorded as the app's, and refuses anything else under the app's names on every attempt, including a retry after a failed first deploy. A legacy app's first deploy with this CLI records the Worker, `DB`/`KV` and the bindings its last manifest declared, never a resource named after another app's Worker (`notes`' `every-notes-archive` is app `notes-archive`'s database). `app delete --purge` deletes only recorded resources, never one named after another app's Worker (with `--force`, after you type the app id), and its last message lists what it deleted and what it kept.
+- A code-only redeploy of a bound app never touches the gateway.
 
 ## `everyapp dev`
 
-No production gateway involved: the CLI builds a Node **gateway-lite** from `packages/perimeter/src/dev/devGateway.ts` — the _real_ perimeter (CSRF, public routes, header stripping, JWT minting) in front of your Vite dev server, with a local RSA keypair (`.everyapp/dev-keys.json`, gitignored, 0600) and an in-memory one-app registry.
+No production gateway involved: the CLI builds a Node **gateway-lite** from `packages/perimeter/src/dev/devGateway.ts` — the _real_ perimeter (CSRF, public routes, header stripping, JWT minting) in front of the app's `cf dev`, with a local RSA keypair (`.everyapp/dev-keys.json`, gitignored, 0600) and an in-memory one-app registry.
 
 |                | Stub mode (default)                             | Mirror mode                                                                      |
 | -------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
 | Identity       | hardcoded `dev-user` / `dev-org` / role `owner` | your real session, resolved by a locally running gateway via `/api/dev/identity` |
-| Gateway needed | none                                            | `pnpm dev` in `apps/every-app-gateway`                                           |
+| Gateway needed | none                                            | `pnpm dev` (`cf dev`) in `apps/every-app-gateway`                                |
 | JWT minting    | gateway-lite, dev keypair, dev `kid`            | same (the real gateway only _resolves_ the session; gateway-lite mints)          |
 | Access checks  | n/a                                             | currently always-allow (`hasAppAccess` returns true)                             |
 
@@ -82,7 +95,7 @@ The dev `kid` is accepted by the SDK when `EVERYAPP_DEV` is any non-empty value 
 ## What does NOT exist (despite appearing in the v2 plan docs)
 
 - **No dispatch namespaces / Workers for Platforms** — `tier: "dispatch"` exists in types and throws in `getAppFetcher()`. Everything is service bindings.
-- **No device-code login flow** — `everyapp login` = paste a token an owner created in the admin UI.
-- **No R2 provisioning** — a helper exists but nothing reaches it; the manifest has no R2 field.
-- **No `everyapp doctor`** — registry-vs-Cloudflare reconciliation and exposure probing aren't built.
-- **No hosted-tier tenancy machinery** — no per-tenant resources, KEKs, or egress/outbound worker. (Org scoping — registry rows, tokens, access checks — does exist.)
+- **No device-code login to the gateway** — `everyapp login` = paste a token an owner created in the admin UI.
+- **No per-app Custom Domains yet** — app hosts reach the gateway through the `*.<domain>` route and a wildcard DNS record the operator adds.
+- **No `everyapp doctor`** — `everyapp gateway status` shows release and binding drift, but nothing repairs it automatically.
+- **No hosted-tier tenancy machinery** — no per-tenant resources, KEKs, or egress/outbound worker. (Org scoping — registry rows, Worker and resource names, tokens, access checks — does exist.)

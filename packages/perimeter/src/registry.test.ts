@@ -23,6 +23,12 @@ describe("rowToRegisteredApp", () => {
     );
   });
 
+  it("keeps the deploy states", () => {
+    for (const status of ["pending", "binding"]) {
+      expect(rowToRegisteredApp({ ...BASE_ROW, status }).status).toBe(status);
+    }
+  });
+
   it("still coerces unknown tiers to service_binding", () => {
     expect(rowToRegisteredApp({ ...BASE_ROW, tier: "other" }).tier).toBe(
       "service_binding",

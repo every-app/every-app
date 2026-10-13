@@ -2,7 +2,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import chalk from "chalk";
-import { getGatewayPublicUrl } from "./cloudflare";
 
 interface CopyOptions {
   exclude?: string[];
@@ -59,7 +58,7 @@ interface CreateEnvFilesOptions {
   targetDir: string;
   /** The unprefixed app ID (e.g., "todo-app") */
   appId: string;
-  gatewayUrl?: string;
+  gatewayUrl: string;
 }
 
 /**
@@ -68,9 +67,8 @@ interface CreateEnvFilesOptions {
 export async function createEnvFiles({
   targetDir,
   appId,
-  gatewayUrl: providedGatewayUrl,
+  gatewayUrl,
 }: CreateEnvFilesOptions): Promise<void> {
-  const gatewayUrl = providedGatewayUrl ?? (await getGatewayPublicUrl());
 
   const envLocalContent = `# Vite client-side secrets\nVITE_APP_ID=${appId}\nVITE_GATEWAY_URL=${gatewayUrl}\n# Set Cloudflare secrets locally\nGATEWAY_URL=${gatewayUrl}\n`;
 

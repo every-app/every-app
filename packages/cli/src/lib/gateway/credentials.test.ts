@@ -43,6 +43,25 @@ describe("gateway credentials", () => {
     expect(stat.mode & 0o777).toBe(0o600);
   });
 
+  it.runIf(process.platform !== "win32")(
+    "creates ~/.everyapp private, whatever the umask",
+    async () => {
+      const umask = process.umask(0o002);
+      try {
+        await writeGatewayCredential({
+          gatewayUrl: "https://gateway.example.com",
+          token: "eak_secret",
+          organizationId: "org-123",
+        });
+      } finally {
+        process.umask(umask);
+      }
+
+      const stat = await fs.stat(path.dirname(getGatewayCredentialsPath()));
+      expect(stat.mode & 0o777).toBe(0o700);
+    },
+  );
+
   it("throws actionable help when a credential is missing", async () => {
     await expect(
       requireGatewayCredentialToken("https://gateway.example.com"),

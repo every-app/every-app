@@ -297,7 +297,7 @@ Two design requirements make this Just Work:
 2. The dev gateway parses Host dynamically — first label = app, remainder =
    base host — never a hardcoded `localhost:8787`.
 
-Each worktree has its own `.wrangler` state (local D1/KV) and its own cookie
+Each worktree has its own `.cloudflare/state` (local D1/KV) and its own cookie
 scope (`Domain=.fix-ui.everyapp.localhost`), so instances are fully isolated —
 no port juggling, no shared sessions. Portless's local CA also gives real
 HTTPS, so `Secure` cookies and the production CSRF rules run locally too.
@@ -308,8 +308,9 @@ HTTPS, so `Secure` cookies and the production CSRF rules run locally too.
 
 `everyapp.config.ts` is the single source of truth in both tiers — app id,
 resources (D1/KV/DO), public routes, tools + proposed risk classes, egress list.
-No `wrangler.jsonc` in app repos (the CLI compiles the manifest to an ephemeral
-wrangler config internally).
+Apps commit a short `cloudflare.config.ts` that builds the Worker from the
+manifest with `everyAppWorker()` (`@every-app/sdk/cloudflare`); there is no
+wrangler config.
 
 ### One-time: CLI auth (both tiers)
 
@@ -327,8 +328,8 @@ wrangler config internally).
  $ everyapp create todo            $ everyapp deploy
       │                                 │
       ▼                                 ▼
- scaffold app +              ① compile everyapp.config.ts
- everyapp.config.ts             → ephemeral wrangler config
+ scaffold app +              ① cf build: cloudflare.config.ts
+ everyapp.config.ts             → everyAppWorker(manifest)
                                         │
                              ② create D1/KV/DO + deploy worker
                                 YOUR CF token (stays on laptop,

@@ -16,28 +16,29 @@ Grants and tokens issued before the server was switched off stay in the
 would bring them back to life, consented under older rules. Delete them
 first. Registered clients (`client:*`) can stay.
 
-1. Find the namespace id:
+1. Find the namespace id (`cf` is Cloudflare's CLI; log in with
+   `npx cf auth login`):
 
    ```sh
-   npx wrangler kv namespace list
+   npx cf kv namespaces list
    ```
 
 2. List what is there. Keys are `grant:<userId>:<grantId>` and
    `token:<userId>:<grantId>:<tokenId>`:
 
    ```sh
-   npx wrangler kv key list --namespace-id <id> --prefix "grant:" --remote
-   npx wrangler kv key list --namespace-id <id> --prefix "token:" --remote
+   npx cf kv keys list --namespace-id <id> --prefix "grant:"
+   npx cf kv keys list --namespace-id <id> --prefix "token:"
    ```
 
-3. Delete them in bulk. `kv bulk delete` takes a JSON array of key names:
+3. Delete them in bulk. `kv bulk delete` takes a JSON array of key names
+   (a list returns up to 1000 keys; repeat until both come back empty):
 
    ```sh
    for prefix in grant token; do
-     npx wrangler kv key list --namespace-id <id> --prefix "$prefix:" --remote \
+     npx cf kv keys list --namespace-id <id> --prefix "$prefix:" \
        | jq '[.[].name]' > "oauth-$prefix-keys.json"
-     npx wrangler kv bulk delete --namespace-id <id> --remote --force \
-       "oauth-$prefix-keys.json"
+     npx cf kv bulk delete <id> --body "@oauth-$prefix-keys.json"
    done
    ```
 
@@ -45,11 +46,11 @@ first. Registered clients (`client:*`) can stay.
 
 ## Turn it on
 
-Set the flag as a secret, not a `vars` entry, so `everyapp gateway deploy`
-keeps it:
+Set the flag as a secret, so every later deploy keeps it. The CLI sends it
+with a redeploy of the live gateway release:
 
 ```sh
-npx wrangler secret put MCP_OAUTH_ENABLED --name every-app-gateway
+npx everyapp gateway secret set MCP_OAUTH_ENABLED
 # enter: true
 ```
 
@@ -66,8 +67,9 @@ Anything but `true` (case-insensitive) keeps it off.
 ## Turn it off again
 
 ```sh
-npx wrangler secret delete MCP_OAUTH_ENABLED --name every-app-gateway
+npx everyapp gateway secret set MCP_OAUTH_ENABLED
+# enter: false
 ```
 
-The endpoints return 404 again on the next request. Clear `grant:` and
+The endpoints return 404 again once the redeploy is live. Clear `grant:` and
 `token:` keys again before any later re-enable.

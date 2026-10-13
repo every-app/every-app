@@ -1,13 +1,7 @@
 import chalk from "chalk";
 import { exitWithUpdateNotice } from "@/lib/version-check";
-import {
-  getGatewayPublicUrl,
-  getDefaultAccountId,
-  makeCloudflareAPIRequest,
-} from "@/lib/cloudflare";
 import { GatewayClient } from "@/lib/gateway/api";
-
-const GATEWAY_WORKER_NAME = "every-app-gateway";
+import { resolveGatewayUrl } from "@/lib/gateway/resolve";
 
 export class GatewayUnreachableError extends Error {
   url: string;
@@ -21,7 +15,7 @@ export class GatewayUnreachableError extends Error {
   }
 }
 
-export function formatGatewayUnreachableError(
+function formatGatewayUnreachableError(
   error: GatewayUnreachableError,
 ): string {
   return `Could not reach your Gateway at ${error.url} (${reasonForCause(error.cause)})`;
@@ -89,48 +83,22 @@ export async function checkGatewayHasOwner(
 }
 
 /**
- * Check if the gateway worker is deployed using the Cloudflare API.
+ * Require a gateway that has been claimed: an app is deployed to, and
+ * developed against, a gateway with an owner. Exits with what to do
+ * otherwise. Returns the gateway's URL.
  */
-async function checkGatewayDeployed(): Promise<boolean> {
+export async function requireGatewaySetup(gatewayFlag?: string): Promise<string> {
+  let gatewayUrl: string;
   try {
-    const accountId = await getDefaultAccountId();
-    // Use the settings endpoint which returns JSON (the script endpoint returns multipart form data)
-    await makeCloudflareAPIRequest(
-      `/accounts/${accountId}/workers/scripts/${GATEWAY_WORKER_NAME}/settings`,
+    gatewayUrl = await resolveGatewayUrl(gatewayFlag);
+  } catch (error) {
+    console.log(chalk.yellow("\nNo gateway found\n"));
+    console.log(
+      chalk.dim(`  ${error instanceof Error ? error.message : String(error)}\n`),
     );
-    return true;
-  } catch {
-    // API error (likely 404) means worker doesn't exist
-    return false;
-  }
-}
-
-/**
- * Get the gateway URL for the current Cloudflare account
- */
-async function getGatewayUrl(): Promise<string> {
-  return getGatewayPublicUrl();
-}
-
-interface GatewayStatus {
-  isDeployed: boolean;
-  hasOwner: boolean;
-  gatewayUrl: string;
-}
-
-/**
- * Check the gateway deployment status and owner account status.
- * Returns the status and gateway URL.
- */
-async function checkGatewayStatus(): Promise<GatewayStatus> {
-  const isDeployed = await checkGatewayDeployed();
-
-  if (!isDeployed) {
-    const gatewayUrl = await getGatewayUrl();
-    return { isDeployed: false, hasOwner: false, gatewayUrl };
+    return exitWithUpdateNotice(1);
   }
 
-  const gatewayUrl = await getGatewayUrl();
   let hasOwner: boolean;
   try {
     hasOwner = await checkGatewayHasOwner(gatewayUrl);
@@ -143,27 +111,9 @@ async function checkGatewayStatus(): Promise<GatewayStatus> {
           "  Confirm the gateway URL is correct and reachable, then run this command again.\n",
         ),
       );
-      await exitWithUpdateNotice(1);
+      return exitWithUpdateNotice(1);
     }
     throw error;
-  }
-  return { isDeployed: true, hasOwner, gatewayUrl };
-}
-
-/**
- * Require the gateway to be deployed and have an owner account.
- * Exits the process with a helpful error message if not set up properly.
- */
-export async function requireGatewaySetup(): Promise<string> {
-  const { isDeployed, hasOwner, gatewayUrl } = await checkGatewayStatus();
-
-  if (!isDeployed) {
-    console.log(chalk.yellow("\nGateway not deployed\n"));
-    console.log(
-      "You need to deploy the Every App Gateway before creating or deploying apps.\n",
-    );
-    console.log(chalk.dim("  Run: npx everyapp gateway deploy\n"));
-    await exitWithUpdateNotice(1);
   }
 
   if (!hasOwner) {
@@ -176,7 +126,7 @@ export async function requireGatewaySetup(): Promise<string> {
         "  Open the setup link printed by `npx everyapp gateway deploy`, or run `npx everyapp gateway claim-link` for a new one, then run this command again.\n",
       ),
     );
-    await exitWithUpdateNotice(1);
+    return exitWithUpdateNotice(1);
   }
 
   return gatewayUrl;

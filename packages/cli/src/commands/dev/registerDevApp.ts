@@ -1,6 +1,6 @@
 import { workerNameFor } from "@every-app/perimeter/manifest";
 import { DEV_USER, type RegisteredApp } from "@every-app/perimeter/dev";
-import type { EveryAppCliManifest } from "@/lib/generateWranglerConfig";
+import type { EveryAppCliManifest } from "@/lib/manifest";
 
 export function registerDevApp(manifest: EveryAppCliManifest): RegisteredApp {
   return {

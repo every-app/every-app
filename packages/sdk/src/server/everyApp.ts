@@ -1,12 +1,14 @@
 /**
  * `everyApp()` — the app-side identity boundary.
  *
- *   import manifest from "../everyapp.config.js";
- *   export default everyApp(handler, manifest);
+ *   export default everyApp(handler);
  *
  * The wrapper verifies the gateway-injected identity before app code runs,
  * stores the result on the original Request, and then delegates to the
- * worker-style handler.
+ * worker-style handler. The expected audience is the app id in
+ * `env.EVERYAPP_APP_ID`, which `everyAppWorker()` sets from the manifest, so
+ * the Worker never imports `everyapp.config.ts` (the Cloudflare Vite plugin
+ * hides every file `cloudflare.config.ts` imports from the Worker in dev).
  */
 import {
   APP_ID_ENV,
@@ -66,7 +68,8 @@ interface EveryAppExport<TEnv> {
 }
 
 interface VerificationConfig {
-  audience: string;
+  /** Expected audience when it can't come from env (legacy manifest argument). */
+  manifestAppId?: string;
   issuer?: string;
   keysEnvVar: string;
   publicKeys?: string[];
@@ -83,17 +86,38 @@ function envValue(env: unknown, key: string): string | undefined {
 }
 
 function configFrom(
-  manifest: EveryAppManifestLike,
+  manifest: EveryAppManifestLike | undefined,
   options: EveryAppOptions = {},
 ): VerificationConfig {
   return {
-    audience: manifest.id,
+    manifestAppId: manifest?.id,
     issuer: options.issuer,
     keysEnvVar: options.keysEnvVar ?? PUBLIC_KEYS_ENV,
     publicKeys: options.publicKeys,
     allowDevIdentities: options.allowDevIdentities,
     now: options.now,
   };
+}
+
+/**
+ * The app id identity tokens must be scoped to. EVERYAPP_APP_ID wins; a
+ * manifest passed to everyApp() is only a fallback for Workers deployed
+ * without it, and must agree with it when both are present.
+ */
+function audienceFor(env: unknown, config: VerificationConfig): string {
+  const fromEnv = envValue(env, APP_ID_ENV);
+  if (fromEnv && config.manifestAppId && fromEnv !== config.manifestAppId) {
+    throw new ConfigurationError(
+      `${APP_ID_ENV} ("${fromEnv}") does not match the manifest id ("${config.manifestAppId}").`,
+    );
+  }
+  const audience = fromEnv ?? config.manifestAppId;
+  if (!audience) {
+    throw new ConfigurationError(
+      `${APP_ID_ENV} is not set — the app's cloudflare.config.ts must declare it (everyAppWorker() does).`,
+    );
+  }
+  return audience;
 }
 
 function unauthorized(message: string): Response {
@@ -114,7 +138,7 @@ async function resolveIdentity(
       ? (env as Record<string, unknown>)[DEV_ENV]
       : undefined;
   return getIdentityFromRequest(request, {
-    audience: config.audience,
+    audience: audienceFor(env, config),
     issuer: config.issuer ?? envValue(env, ISSUER_ENV),
     publicKeys: config.publicKeys,
     env: env as Record<string, unknown> | undefined,
@@ -131,19 +155,6 @@ function rememberIdentity(request: Request, identity: IdentityResult): void {
   requestIdentities.set(request, identity);
 }
 
-function helperConfigFromEnv(env: object): VerificationConfig {
-  const audience = envValue(env, APP_ID_ENV);
-  if (!audience) {
-    throw new ConfigurationError(
-      `${APP_ID_ENV} is not set — the CLI must inject the app id for identity verification.`,
-    );
-  }
-  return {
-    audience,
-    keysEnvVar: PUBLIC_KEYS_ENV,
-  };
-}
-
 /**
  * Return the verified Every App user for this request, or null for a declared
  * public request. Uses the request cache first, then verifies the identity
@@ -156,11 +167,9 @@ export async function getEveryAppUser(
   const cached = requestIdentities.get(request);
   if (cached) return cached.user;
 
-  const identity = await resolveIdentity(
-    request,
-    env,
-    helperConfigFromEnv(env),
-  );
+  const identity = await resolveIdentity(request, env, {
+    keysEnvVar: PUBLIC_KEYS_ENV,
+  });
   rememberIdentity(request, identity);
   return identity.user;
 }
@@ -193,9 +202,15 @@ export function hasScope(user: EveryAppUser, scope: string): boolean {
   return user.scopes.includes("*") || user.scopes.includes(scope);
 }
 
+/**
+ * Wrap a Worker fetch handler with Every App identity verification.
+ *
+ * @param manifest Deprecated: the app id now comes from `env.EVERYAPP_APP_ID`.
+ *   When passed, it must match that value.
+ */
 export function everyApp<TEnv = Record<string, unknown>>(
   handler: EveryAppHandler<TEnv>,
-  manifest: EveryAppManifestLike,
+  manifest?: EveryAppManifestLike,
   options: EveryAppOptions = {},
 ): EveryAppExport<TEnv> {
   const config = configFrom(manifest, options);

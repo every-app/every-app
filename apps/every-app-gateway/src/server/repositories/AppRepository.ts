@@ -17,6 +17,8 @@ type CreateApp = {
   // Perimeter registry columns, written at `everyapp deploy` registration time.
   hostname: string;
   workerName: string;
+  /** Required: the column defaults to true, for rows older code writes. */
+  legacyNames: boolean;
   manifest: string;
   tier?: string;
   status?: string;
@@ -32,6 +34,8 @@ type UpdateApp = {
   manifest?: string;
   status?: string;
   isDefault?: boolean;
+  versionId?: string;
+  deployedAt?: Date;
 };
 
 type CreateInitialAccess = {
@@ -185,6 +189,7 @@ async function createWithInitialAccess(
     description: data.description,
     hostname: data.hostname,
     workerName: data.workerName,
+    legacyNames: data.legacyNames,
     manifest: data.manifest,
     tier: data.tier ?? "service_binding",
     status: data.status ?? "active",

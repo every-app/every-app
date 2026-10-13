@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Build the gateway release tarball and bundle it with the CLI package
+// Build the gateway release (apps/every-app-gateway/scripts/build-release.ts)
+// and bundle it with the CLI package, with its release.json next to it so
+// the CLI can read the bundled version without extracting the tarball.
 // Usage: node scripts/bundle-gateway.js
 
 import { execSync } from "node:child_process";
@@ -11,7 +13,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const CLI_DIR = dirname(__dirname);
 const REPO_ROOT = resolve(CLI_DIR, "..", "..");
 const GATEWAY_DIR = join(REPO_ROOT, "apps", "every-app-gateway");
-const GATEWAY_ASSET_NAME = "every-app-gateway-build.tar.gz";
+const GATEWAY_ASSET_NAME = "every-app-gateway-release.tar.gz";
 const SOURCE_TARBALL = join(GATEWAY_DIR, GATEWAY_ASSET_NAME);
 const BUNDLE_DIR = join(CLI_DIR, "gateway");
 const BUNDLED_TARBALL = join(BUNDLE_DIR, GATEWAY_ASSET_NAME);
@@ -43,6 +45,10 @@ async function main() {
 
   mkdirSync(BUNDLE_DIR, { recursive: true });
   copyFileSync(SOURCE_TARBALL, BUNDLED_TARBALL);
+  exec(
+    `tar -xzf "${BUNDLED_TARBALL}" -C "${BUNDLE_DIR}" ./release.json`,
+    CLI_DIR,
+  );
 
   console.log("\nBundled gateway release:");
   console.log(`  Tarball: ${BUNDLED_TARBALL}`);

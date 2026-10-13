@@ -1,15 +1,12 @@
 import type { LocalContext } from "@/context";
 import chalk from "chalk";
-import { requireCloudflareAuth } from "@/lib/cloudflare";
 import { requireGatewaySetup } from "@/lib/gateway";
 import { checkIsEveryAppProject } from "@/commands/app/deploy/steps/checkIsEveryAppProject";
 import { setupLocalEnvironment } from "@/commands/app/shared/setupLocalEnvironment";
-import {
-  ensureGeneratedWranglerConfig,
-  loadEveryAppManifest,
-} from "@/lib/generateWranglerConfig";
+import { loadEveryAppManifest } from "@/lib/manifest";
 
 interface SetupLocalCommandFlags {
+  gateway?: string;
   verbose?: boolean;
 }
 
@@ -26,24 +23,21 @@ export async function setupLocal(
   // Check we're inside an Every App project
   await checkIsEveryAppProject();
 
-  await requireCloudflareAuth();
-
   // Check gateway is deployed and has an owner account before proceeding
-  const gatewayUrl = await requireGatewaySetup();
+  const gatewayUrl = await requireGatewaySetup(flags.gateway);
 
   const manifest = await loadEveryAppManifest(cwd);
-  const appId = manifest.id;
-  await ensureGeneratedWranglerConfig(cwd, { manifest });
 
-  console.log(chalk.bold(`\nSetting up local environment for ${appId}\n`));
+  console.log(
+    chalk.bold(`\nSetting up local environment for ${manifest.id}\n`),
+  );
 
   await setupLocalEnvironment({
     targetDir: cwd,
-    appId,
+    manifest,
     gatewayUrl,
     verbose,
     installDeps: true,
-    migrations: manifest.migrations,
   });
 
   console.log(chalk.green("Local setup complete!\n"));

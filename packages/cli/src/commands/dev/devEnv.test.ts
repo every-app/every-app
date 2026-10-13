@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -30,17 +30,14 @@ describe("ensureDevKeys", () => {
 });
 
 describe("upsertDevVars", () => {
-  const configPath = () => path.join(dir, ".everyapp", "wrangler.json");
+  const devVars = () => path.join(dir, ".dev.vars");
+  const read = () => fs.readFileSync(devVars(), "utf-8");
 
   it("writes a single-line JSON array the SDK can parse", () => {
     const { publicKeyPem } = ensureDevKeys(dir);
-    upsertDevVars(dir, configPath(), publicKeyPem);
+    upsertDevVars(dir, publicKeyPem);
 
-    const content = fs.readFileSync(
-      path.join(dir, ".everyapp", ".dev.vars"),
-      "utf-8",
-    );
-    const line = content
+    const line = read()
       .split("\n")
       .find((l) => l.startsWith(`${PUBLIC_KEYS_ENV}=`));
     expect(line).toBeDefined();
@@ -51,58 +48,60 @@ describe("upsertDevVars", () => {
     expect(parsed[0]).toBe(publicKeyPem);
   });
 
-  it("preserves other vars and replaces its own line idempotently", () => {
-    const file = path.join(dir, ".everyapp", ".dev.vars");
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, "OTHER_VAR=keep-me\n");
+  it("sets the issuer the local gateway signs with", () => {
+    upsertDevVars(dir, "key");
+    expect(read()).toContain(
+      "EVERYAPP_IDENTITY_ISSUER=https://gateway.dev.localhost",
+    );
+  });
+
+  it("preserves other vars and replaces its own lines idempotently", () => {
+    fs.writeFileSync(devVars(), "OTHER_VAR=keep-me\nEVERYAPP_DEV=1\n");
     upsertDevVars(
       dir,
-      configPath(),
       "-----BEGIN PUBLIC KEY-----\nold\n-----END PUBLIC KEY-----\n",
     );
     upsertDevVars(
       dir,
-      configPath(),
       "-----BEGIN PUBLIC KEY-----\nnew\n-----END PUBLIC KEY-----\n",
     );
 
-    const content = fs.readFileSync(file, "utf-8");
+    const content = read();
     expect(content).toContain("OTHER_VAR=keep-me");
     expect(content).toContain("new");
     expect(content).not.toContain("old");
+    // cloudflare.config.ts sets EVERYAPP_DEV now.
+    expect(content).not.toContain("EVERYAPP_DEV=");
     const occurrences = content
       .split("\n")
       .filter((l) => l.startsWith(`${PUBLIC_KEYS_ENV}=`));
     expect(occurrences).toHaveLength(1);
   });
 
-  it("removes a legacy app-root file containing only CLI-managed vars", () => {
-    const legacyFile = path.join(dir, ".dev.vars");
+  it("moves vars from the old .everyapp/.dev.vars and removes it", () => {
+    const legacyFile = path.join(dir, ".everyapp", ".dev.vars");
+    fs.mkdirSync(path.dirname(legacyFile), { recursive: true });
     fs.writeFileSync(
       legacyFile,
-      `${PUBLIC_KEYS_ENV}=["old-key"]\nEVERYAPP_DEV=1\n`,
+      `${PUBLIC_KEYS_ENV}=["old-key"]\nEVERYAPP_DEV=1\nOPENAI_API_KEY=sk-legacy\n`,
     );
+    fs.writeFileSync(devVars(), "OPENAI_API_KEY=sk-current\n");
 
-    upsertDevVars(dir, configPath(), "new-key");
+    upsertDevVars(dir, "new-key");
 
     expect(fs.existsSync(legacyFile)).toBe(false);
-    expect(
-      fs.readFileSync(path.join(dir, ".everyapp", ".dev.vars"), "utf-8"),
-    ).toContain(`${PUBLIC_KEYS_ENV}=["new-key"]`);
+    const content = read();
+    expect(content).toContain(`${PUBLIC_KEYS_ENV}=["new-key"]`);
+    // The root file's own value wins over the legacy one.
+    expect(content).toContain("OPENAI_API_KEY=sk-current");
+    expect(content).not.toContain("sk-legacy");
+    expect(content).not.toContain("EVERYAPP_DEV=");
   });
 
-  it("keeps and warns about a legacy app-root file with user content", () => {
-    const legacyFile = path.join(dir, ".dev.vars");
-    const legacyContent = `${PUBLIC_KEYS_ENV}=["old-key"]\nUSER_SECRET=keep-me\n`;
-    fs.writeFileSync(legacyFile, legacyContent);
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-
-    upsertDevVars(dir, configPath(), "new-key");
-
-    expect(fs.readFileSync(legacyFile, "utf-8")).toBe(legacyContent);
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("contains user-managed content"),
+  it("gitignores .dev.vars", () => {
+    upsertDevVars(dir, "key");
+    expect(fs.readFileSync(path.join(dir, ".gitignore"), "utf-8")).toContain(
+      ".dev.vars",
     );
-    warn.mockRestore();
   });
 });

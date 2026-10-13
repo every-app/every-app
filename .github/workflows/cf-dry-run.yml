@@ -1,0 +1,42 @@
+name: cf Dry Run
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+# `cf deploy --prebuilt --dry-run` with the real cf, of the gateway release
+# (patched as for an install) and the starter template (built with deploy
+# inputs and checked against the app policy): packages/cli/src/lib/cfDryRun.test.ts.
+# A dry run reads the Build Output and prints its bindings; it needs no
+# Cloudflare account, credentials or network, so a cf or Vite plugin bump
+# that changes the Build Output fails here instead of in a live deploy.
+jobs:
+  cf-dry-run:
+    name: cf deploy --dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '^22.18.0'
+          cache: 'pnpm'
+      - name: Install all dependencies
+        run: pnpm install --ignore-scripts
+      - name: Build the SDK
+        run: pnpm -C packages/sdk build
+      - name: Build the gateway release
+        run: pnpm -C apps/every-app-gateway build:release
+      - name: Dry-run the gateway release and the template
+        run: pnpm -C packages/cli exec vitest run src/lib/cfDryRun.test.ts
+        env:
+          EVERYAPP_CF_DRY_RUN: '1'

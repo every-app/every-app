@@ -7,7 +7,11 @@ import { apps } from "@/db/schema";
  * status). Apps are registered by `everyapp deploy`, never created by hand.
  */
 type AppRow = InferSelectModel<typeof apps>;
-type App = Omit<AppRow, "appSlug"> & { appId: AppRow["appSlug"] };
+// Deploy bookkeeping (naming rule, uploaded version) stays server-side.
+type App = Omit<
+  AppRow,
+  "appSlug" | "legacyNames" | "versionId" | "deployedAt"
+> & { appId: AppRow["appSlug"] };
 
 /**
  * App with access count for admin views.

@@ -1,7 +1,7 @@
 import type { LocalContext } from "@/context";
 import chalk from "chalk";
 import enquirer from "enquirer";
-import { getGatewayPublicUrl } from "@/lib/cloudflare";
+import { findGatewayUrl } from "@/lib/gateway/resolve";
 import { GatewayClient } from "@/lib/gateway/api";
 import {
   normalizeGatewayUrl,
@@ -10,7 +10,7 @@ import {
 
 async function getDefaultGatewayUrl(): Promise<string> {
   try {
-    return await getGatewayPublicUrl();
+    return (await findGatewayUrl()) ?? "";
   } catch {
     return "";
   }

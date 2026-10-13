@@ -1,73 +1,87 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
+import { FakeCf } from "@/lib/cf/fakeCf";
+import { writeInstall } from "@/lib/gateway/install";
+import {
+  createSqliteD1,
+  GATEWAY_MIGRATIONS_DIR,
+  sqliteD1Script,
+  type SqliteD1,
+} from "@/test/sqliteD1";
+import { mintClaimLink } from "./index";
 
-const mocks = vi.hoisted(() => ({
-  findGatewayDatabaseId: vi.fn(),
-  gatewayHasOwner: vi.fn(),
-  mintSetupLink: vi.fn(),
-  presentSetupLink: vi.fn(),
-  exitWithUpdateNotice: vi.fn(),
-}));
-
-vi.mock("@/lib/cloudflare", () => ({
-  requireCloudflareAuth: vi.fn(async () => undefined),
-  getDefaultAccountId: vi.fn(async () => "account-id"),
-  getGatewayPublicUrl: vi.fn(async () => "https://gateway.example.com"),
-}));
-vi.mock("@/lib/cloudflare/gatewayD1", () => ({
-  findGatewayDatabaseId: mocks.findGatewayDatabaseId,
-}));
-vi.mock("@/lib/gateway/setup-link", () => ({
-  gatewayHasOwner: mocks.gatewayHasOwner,
-  mintSetupLink: mocks.mintSetupLink,
-  presentSetupLink: mocks.presentSetupLink,
-}));
-vi.mock("@/lib/version-check", () => ({
-  exitWithUpdateNotice: mocks.exitWithUpdateNotice,
-}));
-
-import type { LocalContext } from "@/context";
-import { claimLink } from "./index";
-
-const context = {} as LocalContext;
+const DB_ID = "0123456789abcdef0123456789abcdef";
 
 describe("everyapp gateway claim-link", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    vi.spyOn(console, "log").mockImplementation(() => undefined);
-    mocks.findGatewayDatabaseId.mockResolvedValue("database-id");
-    mocks.gatewayHasOwner.mockResolvedValue(false);
-    mocks.mintSetupLink.mockResolvedValue({
-      url: "https://gateway.example.com/setup#token=est_x",
-      expiresAt: new Date(),
+  let db: SqliteD1;
+  let cf: FakeCf;
+
+  beforeEach(async () => {
+    db = createSqliteD1();
+    cf = new FakeCf()
+      .on(["d1", "list"], {
+        stdout: JSON.stringify([{ uuid: DB_ID, name: "every-app-gateway" }]),
+      })
+      .on(["d1"], sqliteD1Script({ [DB_ID]: db }));
+    await cf.run({
+      plane: "account",
+      mode: "json",
+      args: ["d1", "migrations", "apply", DB_ID, "--dir", GATEWAY_MIGRATIONS_DIR],
     });
   });
 
-  it("mints and presents a new link for an unclaimed gateway", async () => {
-    await claimLink.call(context);
-
-    expect(mocks.mintSetupLink).toHaveBeenCalledWith({
-      accountId: "account-id",
-      databaseId: "database-id",
-      gatewayUrl: "https://gateway.example.com",
+  it("mints a link for an unclaimed gateway at its recorded host", async () => {
+    await writeInstall(db, {
+      accountId: "acct",
+      zoneId: "zone",
+      zoneName: "example.com",
+      gatewayHost: "example.com",
+      appBaseDomain: "example.com",
+      oauthKvId: "kv1",
+      deployKvId: "kv2",
+      releaseVersion: "0.2.0",
+      releaseSha256: "a".repeat(64),
+      releaseOrder: { schema: 1, builtAt: 0 },
+      liveVersionId: null,
+      liveDomains: ["example.com"],
+      liveAppWorkers: [],
+      updatedAt: 0,
+      updatedBy: null,
     });
-    expect(mocks.presentSetupLink).toHaveBeenCalledOnce();
+
+    const link = await mintClaimLink(cf, "ignored.example.net");
+
+    expect(link.url).toMatch(/^https:\/\/example\.com\/setup#token=est_/);
+    expect(db.all("SELECT kind FROM owner_setup_tokens")).toEqual([
+      { kind: "claim" },
+    ]);
   });
 
   it("refuses once the gateway has an owner", async () => {
-    mocks.gatewayHasOwner.mockResolvedValue(true);
+    db.sqlite.exec(`
+      INSERT INTO organizations (id, name, slug, created_at) VALUES ('org', 'Org', 'org', 0);
+      INSERT INTO users (id, name, email, email_verified, created_at, updated_at) VALUES ('u', 'U', 'u@x.co', 0, 0, 0);
+      INSERT INTO members (id, organization_id, user_id, role, created_at) VALUES ('m', 'org', 'u', 'owner', 0);
+    `);
 
-    await claimLink.call(context);
-
-    expect(mocks.mintSetupLink).not.toHaveBeenCalled();
-    expect(mocks.exitWithUpdateNotice).toHaveBeenCalledWith(1);
+    await expect(mintClaimLink(cf, "example.com")).rejects.toMatchObject({
+      code: "GATEWAY_CLAIMED",
+    });
+    expect(db.all("SELECT kind FROM owner_setup_tokens")).toEqual([]);
   });
 
   it("explains when no gateway is deployed", async () => {
-    mocks.findGatewayDatabaseId.mockResolvedValue(null);
+    cf = new FakeCf().on(["d1", "list"], { stdout: "[]" });
+    await expect(mintClaimLink(cf, "example.com")).rejects.toMatchObject({
+      code: "GATEWAY_NOT_DEPLOYED",
+    });
+  });
 
-    await claimLink.call(context);
-
-    expect(mocks.gatewayHasOwner).not.toHaveBeenCalled();
-    expect(mocks.exitWithUpdateNotice).toHaveBeenCalledWith(1);
+  it("needs the domain when the gateway predates install records", async () => {
+    await expect(mintClaimLink(cf, undefined)).rejects.toMatchObject({
+      code: "DOMAIN_REQUIRED",
+    });
+    await expect(mintClaimLink(cf, "example.com")).resolves.toMatchObject({
+      url: expect.stringMatching(/^https:\/\/example\.com\/setup#token=/),
+    });
   });
 });
