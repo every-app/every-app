@@ -9,12 +9,22 @@
  * have access to, narrowed to the connection's chosen apps or the token's
  * app. It never asks an app for its tools; `tools/call` reaches exactly one
  * app over its service binding, with an identity minted for that call.
+ *
+ * Apps it reaches with no snapshot yet (deployed before the gateway took
+ * them, or whose deploy-time sync didn't happen) are synced in the
+ * background when a client uses the tools (a POST), a few per request, and
+ * listed from the next request on. One that failed is retried after five
+ * minutes.
  */
 import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
 import type { McpCaller } from "@/server/mcp-auth/validate";
+import { scheduleCatalogResync } from "./catalog-sync";
 import { servedApp, toolBusHttp } from "./runtime";
+
+const FIRST_USE_SYNCS_PER_REQUEST = 3;
+const RETRY_FAILED_SYNC_MS = 5 * 60_000;
 
 /**
  * Browser origins allowed to call the gateway's /mcp besides its own:
@@ -74,6 +84,14 @@ export async function serveGatewayMcp(
     );
   }
 
+  if (request.method === "POST") {
+    await syncUnsyncedApps({
+      organizationId: principal.organizationId,
+      userId: principal.userId,
+      ...caller.apps,
+    });
+  }
+
   const apps = catalogs.map((catalog) =>
     servedApp(
       {
@@ -108,4 +126,30 @@ export async function serveGatewayMcp(
       allowedOrigins: allowedOrigins(),
     }),
   );
+}
+
+/**
+ * Schedule background syncs for reachable apps with no snapshot yet. Never
+ * fails the request: a sync it misses happens on a later one.
+ */
+async function syncUnsyncedApps(
+  scope: Parameters<typeof AppToolRepository.findVisibleUnsyncedApps>[0],
+): Promise<void> {
+  try {
+    const unsynced = await AppToolRepository.findVisibleUnsyncedApps(scope, {
+      failedBefore: new Date(Date.now() - RETRY_FAILED_SYNC_MS),
+      limit: FIRST_USE_SYNCS_PER_REQUEST,
+    });
+    for (const app of unsynced) scheduleCatalogResync(app, "first_use");
+  } catch (error) {
+    logEvent(
+      "mcp.catalog.unavailable",
+      {
+        surface: "gateway",
+        org: scope.organizationId,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "warn",
+    );
+  }
 }

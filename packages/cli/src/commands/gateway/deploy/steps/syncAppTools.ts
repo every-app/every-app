@@ -22,12 +22,19 @@ const STEP = "gateway.tools";
 interface ActiveApp {
   appSlug: string;
   hostname: string;
+  workerName: string;
 }
 
 interface SyncGatewayAppToolsOptions {
   gatewayUrl: string;
   /** The gateway's D1 database, which lists the organization's apps. */
   db: D1Database;
+  /**
+   * The app Workers the deployed version binds. Others (a Worker deleted by
+   * hand, a name the gateway won't bind) can't be reached, so they're left
+   * out rather than waited on.
+   */
+  boundWorkers?: readonly string[];
   out: EventSink;
   verbose: boolean;
   readCredential?: typeof readGatewayCredential;
@@ -40,13 +47,21 @@ async function listActiveApps(
 ): Promise<ActiveApp[]> {
   const [rows = []] = await db.run([
     {
-      sql: "SELECT app_slug, hostname FROM apps WHERE organization_id = ? AND status = 'active' AND hostname IS NOT NULL AND worker_name IS NOT NULL ORDER BY app_slug",
+      sql: "SELECT app_slug, hostname, worker_name FROM apps WHERE organization_id = ? AND status = 'active' AND hostname IS NOT NULL AND worker_name IS NOT NULL ORDER BY app_slug",
       params: [organizationId],
     },
   ]);
   return rows.flatMap((row) =>
-    typeof row["app_slug"] === "string" && typeof row["hostname"] === "string"
-      ? [{ appSlug: row["app_slug"], hostname: row["hostname"] }]
+    typeof row["app_slug"] === "string" &&
+    typeof row["hostname"] === "string" &&
+    typeof row["worker_name"] === "string"
+      ? [
+          {
+            appSlug: row["app_slug"],
+            hostname: row["hostname"],
+            workerName: row["worker_name"],
+          },
+        ]
       : [],
   );
 }
@@ -71,7 +86,10 @@ export async function syncGatewayAppTools(
       }
       return;
     }
-    const apps = await listActiveApps(options.db, credential.organizationId);
+    const bound = options.boundWorkers && new Set(options.boundWorkers);
+    const apps = (
+      await listActiveApps(options.db, credential.organizationId)
+    ).filter((app) => !bound || bound.has(app.workerName));
     if (apps.length === 0) return;
 
     out.emit({

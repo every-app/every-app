@@ -222,6 +222,41 @@ describe("app deploy", () => {
     expect(leases).toEqual([]);
   });
 
+  it("sends the app's own secrets with the version, and later deploys keep them", async () => {
+    await deploy(TODO, { secrets: { GITHUB_TOKEN: "ghp_test" } });
+
+    const uploads = account.deploys.filter((d) => d.workerName === "every-acme-todo");
+    expect(uploads.at(-1)!.secrets).toEqual({
+      GITHUB_TOKEN: "ghp_test",
+      GATEWAY_URL,
+      EVERY_APP_ORG_ID: "org-1",
+    });
+    // A plain redeploy doesn't send it again; the Worker keeps it.
+    await deploy();
+    expect(account.deploys.filter((d) => d.workerName === "every-acme-todo").at(-1)!.secrets).toEqual({
+      GATEWAY_URL,
+      EVERY_APP_ORG_ID: "org-1",
+    });
+  });
+
+  it("refuses a secret named like one everyapp sets, before anything happens", async () => {
+    await expect(
+      deploy(TODO, { secrets: { GATEWAY_URL: "https://evil.example" } }),
+    ).rejects.toMatchObject({ code: "SECRET_NAME_RESERVED" });
+    await expect(
+      deploy(TODO, { secrets: { EVERYAPP_DEV: "1" } }),
+    ).rejects.toMatchObject({ code: "SECRET_NAME_RESERVED" });
+    expect(gateway.app("todo")).toBeUndefined();
+    expect(account.deploys.filter((d) => d.workerName === "every-acme-todo")).toEqual([]);
+  });
+
+  it("refuses a secret named like one of the app's bindings, before anything happens", async () => {
+    await expect(
+      deploy(TODO, { secrets: { DB: "not-a-database" } }),
+    ).rejects.toMatchObject({ code: "SECRET_NAME_TAKEN" });
+    expect(gateway.app("todo")).toBeUndefined();
+  });
+
   it("redeploys an app's code without touching the gateway", async () => {
     await deploy();
     const before = gatewayVersions();

@@ -360,6 +360,13 @@ export default async function dev(
         : "             Send Authorization: Bearer <anything>; MCP clients act as the dev user.",
     ),
   );
+  // Crons (everyAppWorker's `crons`) run on demand through the Vite plugin's
+  // local explorer, on the app's own dev server.
+  console.log(
+    chalk.dim(
+      `  Cron:      curl -X POST "http://127.0.0.1:${appPort}/cdn-cgi/local/explorer/api/local/scheduled?worker=${app.workerName}" -H 'content-type: application/json' -d '{"cron":"<schedule>"}'`,
+    ),
+  );
   if (mode === "mirror") {
     console.log(`  Gateway:   ${chalk.cyan(gatewayUrl)} (real login/launcher)`);
     console.log(

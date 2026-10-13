@@ -140,6 +140,7 @@ async function run(
       db,
       out,
       verbose: flags.verbose ?? false,
+      boundWorkers: result.appWorkers,
     });
 
     const setupLink = await setupLinkForDeploy({

@@ -1,8 +1,8 @@
 name: cf Dry Run
 on:
+  # Every pull request, not only ones into main: stacked PRs target the PR
+  # below them and still need the dry run.
   pull_request:
-    branches:
-      - main
   push:
     branches:
       - main

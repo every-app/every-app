@@ -1,12 +1,13 @@
 import { db } from "@/db";
 import {
   apps,
-  appTools,
   appToolCatalogs,
+  appTools,
+  mcpConnectionApps,
   userAccessTokens,
   userAppAccess,
 } from "@/db/schema";
-import { and, count, eq, isNull, ne } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, ne } from "drizzle-orm";
 
 /** Status of a deleted app's tombstone row (see {@link tombstone}). */
 export const DELETED_APP_STATUS = "deleted";
@@ -241,8 +242,8 @@ async function update(id: string, data: UpdateApp) {
  * binding, and its slug, hostname and worker name stay reserved to this
  * organization. (Dropping the row would let another org register the same
  * slug, and the old Worker would accept identity tokens minted for it.)
- * Everyone's access, any personal access tokens bound to it and its agent
- * tools snapshot go with it.
+ * Everyone's access, any personal access tokens bound to it, its agent
+ * tools snapshot and its place in AI connections go with it.
  */
 async function tombstone(id: string, organizationId: string) {
   const now = new Date();
@@ -285,6 +286,17 @@ async function tombstone(id: string, organizationId: string) {
           eq(appToolCatalogs.organizationId, organizationId),
         ),
       ),
+    // Out of every AI connection that chose it: a later deploy brings the
+    // same row back, and must not bring it back into those connections.
+    db.delete(mcpConnectionApps).where(
+      inArray(
+        mcpConnectionApps.appRowId,
+        db
+          .select({ id: apps.id })
+          .from(apps)
+          .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId))),
+      ),
+    ),
   ]);
 }
 

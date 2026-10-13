@@ -176,17 +176,20 @@ export function clearCatalogSyncClaimsForTests(): void {
 }
 
 /** Re-sync in the background after the response, unless one just ran. */
-export function scheduleCatalogResync(app: SyncableApp): void {
+export function scheduleCatalogResync(
+  app: SyncableApp,
+  trigger: "drift" | "first_use" = "drift",
+): void {
   if (!claimCatalogSync(app.rowId)) return;
   waitUntil(
     syncAppTools(app)
-      .then((result) => logToolSync(app, result, "drift"))
+      .then((result) => logToolSync(app, result, trigger))
       .catch((error: unknown) =>
         logEvent(
           "mcp.catalog.sync_failed",
           {
             app: app.appSlug,
-            trigger: "drift",
+            trigger,
             message: error instanceof Error ? error.message : String(error),
           },
           "warn",

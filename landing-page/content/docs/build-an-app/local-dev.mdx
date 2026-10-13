@@ -66,11 +66,27 @@ Each worktree keeps separate local databases and dev keys, so instances never sh
 </details>
 
 <details className="faq">
+<summary>Running a cron on demand</summary>
+<div className="faq-content">
+
+An app's crons (`everyAppWorker({ crons })` in `cloudflare.config.ts`) don't fire on their own in dev. `everyapp dev` prints the command that runs one, through the Cloudflare Vite plugin's local explorer on the app's internal port:
+
+```bash
+curl -X POST "http://127.0.0.1:<internal port>/cdn-cgi/local/explorer/api/local/scheduled?worker=every-<app-id>" \
+  -H 'content-type: application/json' -d '{"cron":"17 */6 * * *"}'
+```
+
+It answers `{"result":{"outcome":"ok"}}` once the `scheduled` handler has run. A scheduled run has no user, locally and in production.
+
+</div>
+</details>
+
+<details className="faq">
 <summary>What the CLI writes into your project</summary>
 <div className="faq-content">
 
 - `.everyapp/dev-keys.json` — a persistent local signing keypair, generated on first run and gitignored automatically. Dev identity passes are signed with it, so your app verifies real signatures in dev on the same code path as production. Dev keys are marked as dev-only and can never be mistaken for production credentials.
-- `.dev.vars` — gets `EVERYAPP_IDENTITY_PUBLIC_KEYS` (the dev public key) and `EVERYAPP_DEV=1`, which the Cloudflare vite plugin loads into your worker's environment.
+- `.dev.vars` — gets `EVERYAPP_IDENTITY_PUBLIC_KEYS` (the dev public key) and `EVERYAPP_IDENTITY_ISSUER`, which the Cloudflare vite plugin loads into your worker's environment. Your own lines (an API key, say) are kept. `EVERYAPP_DEV=1` comes from `everyAppWorker()`, in development builds only.
 
 </div>
 </details>

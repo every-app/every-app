@@ -46,9 +46,9 @@ function run(
 describe("syncGatewayAppTools", () => {
   it("syncs each active app of the deploy token's organization, one request each", async () => {
     const { done, syncApp, lines, queries } = run({}, async () => [
-      { app_slug: "chef", hostname: "chef.apps.example.com" },
-      { app_slug: "todo", hostname: "todo.apps.example.com" },
-      { app_slug: "broken", hostname: null },
+      { app_slug: "chef", hostname: "chef.apps.example.com", worker_name: "every-acme-chef" },
+      { app_slug: "todo", hostname: "todo.apps.example.com", worker_name: "every-acme-todo" },
+      { app_slug: "broken", hostname: null, worker_name: "every-acme-broken" },
     ]);
     await expect(done).resolves.toBeUndefined();
 
@@ -74,6 +74,15 @@ describe("syncGatewayAppTools", () => {
       }),
     ]);
     expect(lines).toContain("Syncing agent tools...");
+  });
+
+  it("leaves out apps the deployed version doesn't bind", async () => {
+    const { done, syncApp } = run({ boundWorkers: ["every-acme-todo"] }, async () => [
+      { app_slug: "chef", hostname: "chef.apps.example.com", worker_name: "every-acme-chef" },
+      { app_slug: "todo", hostname: "todo.apps.example.com", worker_name: "every-acme-todo" },
+    ]);
+    await done;
+    expect(syncApp.mock.calls.map(([options]) => options.appId)).toEqual(["todo"]);
   });
 
   it("does nothing without a deploy token for the gateway", async () => {

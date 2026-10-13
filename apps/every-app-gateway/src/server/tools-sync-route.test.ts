@@ -88,6 +88,14 @@ describe("POST /api/deploy/apps/$appId/tools/sync", () => {
     expect(mocks.syncAppTools).not.toHaveBeenCalled();
   });
 
+  it("refuses an app that has no uploaded Worker yet, as activate does", async () => {
+    mocks.findByAppSlug.mockResolvedValue({ ...ROW, status: "pending" });
+    const response = await post("todo");
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ code: "NOT_DEPLOYED" });
+    expect(mocks.syncAppTools).not.toHaveBeenCalled();
+  });
+
   it("answers 503 while the app's binding is rolling out", async () => {
     mocks.findByAppSlug.mockResolvedValue(ROW);
     mocks.syncAppTools.mockRejectedValue(

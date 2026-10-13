@@ -91,6 +91,47 @@ describe("GatewayClient deploy auth", () => {
   });
 });
 
+describe("GatewayClient behind something that redirects", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    global.fetch = vi.fn();
+  });
+
+  it("names Cloudflare Access when it answers with its login page", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(null, {
+        status: 302,
+        headers: {
+          location:
+            "https://acme.cloudflareaccess.com/cdn-cgi/access/login/apps.example.com",
+        },
+      }),
+    );
+    const client = new GatewayClient({ gatewayUrl: "https://apps.example.com" });
+    await expect(client.setupDeployToken("ecs_secret")).rejects.toMatchObject({
+      code: "ACCESS_IN_FRONT",
+      message: expect.stringContaining("/api/setup/deploy-token"),
+    });
+    expect(fetch).toHaveBeenCalledWith(
+      "https://apps.example.com/api/setup/deploy-token",
+      expect.objectContaining({ redirect: "manual" }),
+    );
+  });
+
+  it("never follows any other redirect", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response(null, {
+        status: 301,
+        headers: { location: "https://elsewhere.example.com/" },
+      }),
+    );
+    const client = new GatewayClient({ gatewayUrl: "https://apps.example.com" });
+    await expect(client.hasOwner()).rejects.toMatchObject({
+      code: "GATEWAY_REDIRECTED",
+    });
+  });
+});
+
 describe("GatewayClient tool sync", () => {
   beforeEach(() => {
     vi.clearAllMocks();

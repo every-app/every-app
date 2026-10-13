@@ -13,10 +13,10 @@ means installing an older CLI.
 
 `everyapp gateway deploy` resolves the gateway in this order:
 
-1. `--localGateway <tarball>` — a prebuilt tarball passed explicitly
+1. `--release <tarball>` — a prebuilt release tarball passed explicitly
 2. the tarball bundled in the installed CLI package — what a user gets
-3. building from `apps/every-app-gateway`, found by walking up from the current
-   directory — what you get inside this monorepo
+3. building one from `apps/every-app-gateway` (`build:release`), found by
+   walking up from the current directory — what you get inside this monorepo
 
 The tarball is a build artifact, gitignored, and regenerated at publish time.
 
@@ -42,8 +42,8 @@ Before publishing the CLI, confirm the package actually contains the gateway:
 cd packages/cli && npm pack --dry-run
 ```
 
-`dist/index.js` and `gateway/every-app-gateway-build.tar.gz` must both be
-listed — the deploy resolves the tarball relative to `dist/`, so a package
+`dist/index.js`, `gateway/every-app-gateway-release.tar.gz` and
+`gateway/release.json` must all be listed — the deploy resolves the tarball relative to `dist/`, so a package
 missing either one fails for anyone outside this monorepo. Also confirm the
 listing contains **no `.dev.vars` or `.env*` entries** (the gateway build
 fails closed on these, but check).
@@ -57,6 +57,7 @@ first.
 cd apps/every-app-gateway && pnpm run build:release
 ```
 
-**`gateway deploy` says it can't find the gateway source:** you're outside the
+**`gateway deploy` says this everyapp has no bundled gateway release
+(`RELEASE_MISSING`):** you're outside the
 monorepo with a CLI that has no bundled tarball — i.e. a package published
-without `prepublishOnly` running. Re-publish, or pass `--localGateway`.
+without `prepack` running. Re-publish, or pass `--release <tarball>`.

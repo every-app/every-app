@@ -36,7 +36,7 @@ stolen admin session can't add a way in or change who it lets in.
 Use **OIDC sign-in** unless a security team requires Access in front of
 everything. The **outer ring** suits installs where nothing may be reachable
 without passing Access first (deny-by-default zones, device posture on every
-request). Both can be on at once.
+request). Both can be on at once, though the mobile app then can't sign in.
 
 ## Who gets in
 
@@ -245,6 +245,8 @@ credentials:
 | `/oauth/token`, `/oauth/register` | gateway           | The OAuth server's token, revocation and registration  |
 | `/.well-known/*`                  | gateway           | OAuth discovery documents                              |
 | `/api/deploy/*`                   | gateway           | The CLI's deploy and registration API (deploy tokens)  |
+| `/api/setup/deploy-token`         | gateway           | The CLI's login after a setup link (its own secret)    |
+| `/api/admin/has-owner`            | gateway           | The CLI's check whether the gateway is claimed         |
 | Each app's public routes          | that app's host   | Whatever its `everyapp.config.ts` declares as `public` |
 
 Keep everything else behind Access, `/oauth/authorize` and the consent pages
@@ -269,7 +271,9 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
       {"path_pattern": "/oauth/token", "behavior": "public"},
       {"path_pattern": "/oauth/register", "behavior": "public"},
       {"path_pattern": "/.well-known/*", "behavior": "public"},
-      {"path_pattern": "/api/deploy/*", "behavior": "public"}
+      {"path_pattern": "/api/deploy/*", "behavior": "public"},
+      {"path_pattern": "/api/setup/deploy-token", "behavior": "public"},
+      {"path_pattern": "/api/admin/has-owner", "behavior": "public"}
     ]}
   ],
   "policies": ["<policy id>"],
@@ -318,16 +322,20 @@ app host's Access cookie is then a gateway login too.
 ```sh
 npx everyapp gateway secret set CLOUDFLARE_ACCESS_TEAM_DOMAIN
 # acme.cloudflareaccess.com
-npx everyapp gateway secret set CLOUDFLARE_ACCESS_AUD
-# the gateway application's AUD tag
 npx everyapp gateway secret set CLOUDFLARE_ACCESS_APPS_AUD
 # the apps application's AUD tag (several: comma separated)
+npx everyapp gateway secret set CLOUDFLARE_ACCESS_AUD
+# the gateway application's AUD tag
 ```
+
+Set `CLOUDFLARE_ACCESS_AUD` last. Each setting is a redeploy, and the outer
+ring starts with it, so the apps' tag must already be there, or app hosts
+send people back to sign in until it is.
 
 Open the gateway: Access asks who you are, and you land signed in. The
 first time, an existing account signs in with its password once (see
 "Existing accounts"). If you ever take Access off the gateway's hostnames,
-delete `CLOUDFLARE_ACCESS_AUD` first (see "Locked out" below for how): with
+delete `CLOUDFLARE_ACCESS_AUD` first (see "Troubleshooting" for how): with
 the outer ring set, no session counts without Access's word for it.
 
 ### How the gateway treats the assertion
@@ -452,8 +460,8 @@ The automated tests cover the same ground without a browser:
   with the password through Access once to connect it:
 
   ```sh
-  npx cf d1 list --name every-app-gateway   # its id
-  npx cf d1 query <id> \
+  npx cf@1.0.0-beta.14 d1 list --name every-app-gateway   # its id
+  npx cf@1.0.0-beta.14 d1 query <id> \
     --sql "UPDATE users SET email = 'x@acme.com' WHERE email = 'y@acme.com'"
   ```
 
@@ -464,7 +472,7 @@ The automated tests cover the same ground without a browser:
   version it didn't upload.)
 
   ```sh
-  npx cf workers secrets delete CLOUDFLARE_ACCESS_AUD --worker every-app-gateway
+  npx cf@1.0.0-beta.14 workers secrets delete CLOUDFLARE_ACCESS_AUD --worker every-app-gateway
   ```
 
 - **"This gateway signs people in through Cloudflare Access, and this

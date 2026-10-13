@@ -105,6 +105,7 @@ Put two **hostname-based** self-hosted Access applications in front: one for you
 - `/mcp` and `/mcp/*` (Gateway and apps): MCP clients;
 - `/oauth/token`, `/oauth/register` and `/.well-known/*` (Gateway): the OAuth server MCP clients connect through. Keep `/oauth/authorize` and the consent pages behind Access: they're for people;
 - `/api/deploy/*` (Gateway): the CLI's deploys, with your deploy token;
+- `/api/setup/deploy-token` and `/api/admin/has-owner` (Gateway): the CLI's login after a setup link, with its own secret, and its check whether the Gateway is claimed;
 - each app's public routes (its `everyapp.config.ts` `public` list), on that app's host.
 
 Keep Access's cookie **HttpOnly** (the default) and turn on its **binding cookie** on both.
@@ -121,7 +122,9 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
       {"path_pattern": "/oauth/token", "behavior": "public"},
       {"path_pattern": "/oauth/register", "behavior": "public"},
       {"path_pattern": "/.well-known/*", "behavior": "public"},
-      {"path_pattern": "/api/deploy/*", "behavior": "public"}
+      {"path_pattern": "/api/deploy/*", "behavior": "public"},
+      {"path_pattern": "/api/setup/deploy-token", "behavior": "public"},
+      {"path_pattern": "/api/admin/has-owner", "behavior": "public"}
     ]}
   ],
   "policies": ["<policy id>"],
@@ -155,9 +158,11 @@ Give the Gateway your team domain and the two AUD tags (`aud` in each response, 
 
 ```bash
 npx everyapp gateway secret set CLOUDFLARE_ACCESS_TEAM_DOMAIN   # acme.cloudflareaccess.com
-npx everyapp gateway secret set CLOUDFLARE_ACCESS_AUD           # the Gateway application's
 npx everyapp gateway secret set CLOUDFLARE_ACCESS_APPS_AUD      # the apps application's
+npx everyapp gateway secret set CLOUDFLARE_ACCESS_AUD           # the Gateway application's: last
 ```
+
+Set `CLOUDFLARE_ACCESS_AUD` last: the outer ring starts with it, so the apps' tag must already be there.
 
 Your Gateway verifies the token Access adds to every request itself (signature, team, AUD tag, expiry) and never trusts the header on its own. A Gateway session only counts with Access's word for that same person on the request, so when someone's Access session ends, so does their Gateway session in the browser. Apps never see Access's headers or cookies: they get only the Gateway's identity pass. Signing out of the Gateway signs out of Access too.
 
@@ -173,7 +178,7 @@ It takes effect once Access sign-in is configured and you (an owner) have connec
 
 - **No "Continue with" button:** the Worker's logs show `access.config_problem` for a missing or malformed setting.
 - **"An account with this email already exists":** sign in with the password once to connect Access.
-- **"You're signed in to Cloudflare Access as X, but this account is Y":** behind the outer ring an account's email must be the one Access asserts, so claim the Gateway and invite people with the addresses Access knows them by. Sign out of Access and sign in there as Y, or have an admin invite X. For the owner's account, change its email to X in the Gateway's database (`npx cf d1 query <id> --sql "UPDATE users SET email = 'x@acme.com' WHERE email = 'y@acme.com'"`, with the id from `npx cf d1 list --name every-app-gateway`), then sign in with the password through Access once.
+- **"You're signed in to Cloudflare Access as X, but this account is Y":** behind the outer ring an account's email must be the one Access asserts, so claim the Gateway and invite people with the addresses Access knows them by. Sign out of Access and sign in there as Y, or have an admin invite X. For the owner's account, change its email to X in the Gateway's database (`npx cf@1.0.0-beta.14 d1 query <id> --sql "UPDATE users SET email = 'x@acme.com' WHERE email = 'y@acme.com'"`, with the id from `npx cf@1.0.0-beta.14 d1 list --name every-app-gateway`), then sign in with the password through Access once.
 - **Teammates can't log in at Access:** add the one-time PIN identity provider.
 - **MCP clients or deploys get an HTML login page:** a bypass path is missing.
 - **The mobile app can't sign in behind the outer ring:** use OIDC sign-in for teams on the app.

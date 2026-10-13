@@ -2,7 +2,7 @@
  * `createMcpHandler()` — a stateless Streamable HTTP MCP server handler.
  *
  * @deprecated since 0.3.0, removed in 0.4.0. Describe tools with
- * `defineTools()` and pass them to `everyApp(handler, manifest, { tools })`:
+ * `defineTools()` and pass them to `everyApp(handler, { tools })`:
  * the gateway then serves `/mcp` for the app (both protocol eras, with tool
  * policy and an audit line per call). Until then the gateway keeps proxying
  * `/mcp` to an app that defines no tools (or sets `mcp: "app"` in its

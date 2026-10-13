@@ -39,6 +39,11 @@ const CREATE_D1_MIGRATIONS = `CREATE TABLE IF NOT EXISTS "d1_migrations"(
  * drizzle's own rule: every journal entry generated no later than the newest
  * one it recorded. Does nothing once `d1_migrations` has rows. Returns the
  * names marked.
+ *
+ * Refuses when drizzle recorded a different number of migrations than the
+ * rule marks: the database then ran migrations this release doesn't date
+ * the same way (an unreleased branch), and marking by date would skip ones
+ * that never ran.
  */
 export async function backfillD1Migrations({
   db,
@@ -65,7 +70,9 @@ export async function backfillD1Migrations({
   }
 
   const [[newest] = []] = await db.run([
-    { sql: "SELECT MAX(created_at) AS latest FROM __drizzle_migrations" },
+    {
+      sql: "SELECT MAX(created_at) AS latest, COUNT(*) AS count FROM __drizzle_migrations",
+    },
   ]);
   const latest = Number(newest?.["latest"]);
   if (newest?.["latest"] === null || !Number.isFinite(latest)) return [];
@@ -73,6 +80,13 @@ export async function backfillD1Migrations({
   const applied = journal
     .filter((entry) => entry.when <= latest)
     .map((entry) => nameFor(entry.tag));
+  const recorded = Number(newest?.["count"] ?? 0);
+  if (recorded !== applied.length) {
+    throw new EveryAppError(
+      "MIGRATION_HISTORY_MISMATCH",
+      `drizzle-kit recorded ${recorded} migrations on this database, but ${applied.length} of this release's are dated before its newest. It ran migrations this release doesn't know, so which ran can't be told by date. Record the ones that ran in d1_migrations by hand (one row per file name, with cf d1 query), then deploy again.`,
+    );
+  }
   if (applied.length === 0) return [];
   await db.run([
     { sql: CREATE_D1_MIGRATIONS },

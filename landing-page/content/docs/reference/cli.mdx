@@ -115,9 +115,13 @@ Run from an app directory. Registers the app with your Gateway, which names its 
 | `--no-wait-cert`                       | Don't wait for a new address's certificate (it comes within minutes anyway).                                      |
 | `--break-lease`, `--json`, `--verbose` | Take over the app's lease from a dead deploy; NDJSON events; detailed output.                                     |
 
+### `everyapp app secret set <NAME>`
+
+Run from an app directory. Sets one of the app's own secrets (an API key its Worker calls out with, say) from a hidden prompt or `--from-env <VAR>`, never the command line, and deploys the app with the secret in the same version, as `everyapp app deploy` does: its code and pending migrations go too, so at a terminal it asks first (`-y` skips that). Later deploys keep it. Setting a secret with `cf` directly makes a version everyapp didn't upload, which the next unattended deploy stops on; this doesn't. Names everyapp sets itself are refused (`GATEWAY_URL`, and the `EVERYAPP_*`, `EVERY_APP_*` and `APP__*` names), as are the app's own binding names. Flags: `-y`, `--from-env`, `--gateway`, `--break-lease`, `--json`, `--verbose`.
+
 ### `everyapp app delete [app-id]`
 
-Removes the app from your Gateway (its name and address stay reserved to your organization), drops the Gateway's binding to it and its address, and deletes the certificate Cloudflare keeps for that address. Its Worker and data are kept unless `--purge`, which asks you to type the app id and deletes only the Worker, databases and namespaces its deploys recorded creating; anything else with its names is kept and listed. Flags: `-y`, `--purge`, `--gateway`, `--json`.
+Removes the app from your Gateway (its name and address stay reserved to your organization), drops the Gateway's binding to it and its address, and deletes the certificate Cloudflare keeps for that address. Its Worker and data, and any cron schedules the Worker runs, are kept unless `--purge`, which asks you to type the app id and deletes only the Worker, databases and namespaces its deploys recorded creating; anything else with its names is kept and listed. Flags: `-y`, `--purge`, `--gateway`, `--json`.
 
 ### `everyapp app d1 query "<sql>"`
 

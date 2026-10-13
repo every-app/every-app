@@ -84,10 +84,26 @@ export const tools = defineTools({
   },
 });
 
-export default everyApp(handler, manifest, { tools });
+export default everyApp(handler, { tools });
 ```
 
 Destructive tools stay hidden from AI clients until approvals exist, and write tools are hidden from read-only tokens. Throw `ToolError` for messages the model may read; any other error is reported only as an internal error with a reference. MCP clients connect to the Gateway's `/mcp` with OAuth (claude.ai, ChatGPT, Claude Code, Cursor) or a personal access token, and to your app's `/mcp` with a personal access token; your app's own pages can also call its `/mcp` with the user's session (same-origin only).
+
+## Scheduled work and secrets
+
+`everyAppWorker()` in `cloudflare.config.ts` also takes cron schedules, which run the Worker's `scheduled` handler, and the app's own secrets:
+
+```ts
+everyAppWorker({
+  manifest,
+  entrypoint,
+  ctx,
+  crons: ["17 */6 * * *"],
+  secrets: ["GITHUB_TOKEN"],
+});
+```
+
+Export `scheduled` next to `everyApp()`'s `fetch` (`export default { ...everyApp(handler, { tools }), scheduled }`). A scheduled run has no user. Set a secret on the deployed app with `npx everyapp app secret set GITHUB_TOKEN`, which deploys it with the secret and later deploys keep it. Locally, put it in `.dev.vars`: it is declared only when set there, so type it as optional in `src/env.d.ts`.
 
 ## `everyapp.config.ts` — the manifest
 

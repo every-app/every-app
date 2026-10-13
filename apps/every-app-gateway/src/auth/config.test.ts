@@ -233,7 +233,7 @@ describe("createAuth email configuration", () => {
 
 type CapturedOptions = {
   baseURL?: string;
-  rateLimit?: { enabled?: boolean };
+  rateLimit?: { enabled?: boolean; customRules?: Record<string, unknown> };
   advanced?: {
     useSecureCookies?: boolean;
     ipAddress?: unknown;
@@ -270,7 +270,7 @@ describe("createAuth Better Auth options", () => {
     vi.stubEnv("DEV", false);
 
     expect(createAuthOptions()).toMatchObject({
-      rateLimit: { enabled: true },
+      rateLimit: { enabled: true, customRules: { "/sign-in-methods": false } },
       advanced: {
         useSecureCookies: true,
         ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
@@ -286,7 +286,7 @@ describe("createAuth Better Auth options", () => {
     vi.stubEnv("DEV", true);
 
     const options = createAuthOptions();
-    expect(options.rateLimit).toEqual({ enabled: false });
+    expect(options.rateLimit).toMatchObject({ enabled: false });
     expect(options.advanced?.useSecureCookies).toBe(false);
   });
 
@@ -311,7 +311,7 @@ describe("createAuth Better Auth options", () => {
     const options = createAuthOptions();
     expect(options).not.toHaveProperty("baseURL");
     expect(options.advanced).not.toHaveProperty("crossSubDomainCookies");
-    expect(options.rateLimit).toEqual({ enabled: true });
+    expect(options.rateLimit).toMatchObject({ enabled: true });
   });
 
   it("only lets the setup claim create organizations and closes unused org endpoints", () => {

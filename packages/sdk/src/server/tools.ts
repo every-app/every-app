@@ -13,7 +13,7 @@
  *     },
  *     { instructions: "Never guess todo ids; call list_todos first." },
  *   );
- *   export default everyApp(handler, manifest, { tools });
+ *   export default everyApp(handler, { tools });
  *
  * Apps never speak MCP. The gateway snapshots this catalog at deploy, serves
  * MCP clients from the snapshot, and calls a tool over the internal tools

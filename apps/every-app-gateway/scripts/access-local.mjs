@@ -251,6 +251,8 @@ const GATEWAY_BYPASS = [
   /^\/oauth\/(token|register)$/,
   /^\/\.well-known\//,
   /^\/api\/deploy\//,
+  /^\/api\/setup\/deploy-token$/,
+  /^\/api\/admin\/has-owner$/,
 ];
 const APP_BYPASS = [/^\/mcp(\/|$)/];
 const COOKIE = "mock_access_email";

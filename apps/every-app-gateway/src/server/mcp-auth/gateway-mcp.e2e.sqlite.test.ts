@@ -92,6 +92,8 @@ import {
   type PlainToolSchema,
 } from "@every-app/sdk/server";
 import {
+  appToolCatalogs,
+  appTools,
   mcpConnectionApps,
   mcpConnections,
   mcpToolCalls,
@@ -101,6 +103,7 @@ import {
 } from "@/db/schema";
 import server from "@/server";
 import { AdminService } from "@/server/services/AdminService";
+import { AppRepository } from "@/server/repositories/AppRepository";
 import { AppAccessService } from "@/server/services/AppAccessService";
 import { AppRegistrationService } from "@/server/services/AppRegistrationService";
 import { AppService } from "@/server/services/AppService";
@@ -109,7 +112,10 @@ import { McpToolCallRepository } from "@/server/repositories/McpToolCallReposito
 import { McpConnectionService } from "@/server/services/McpConnectionService";
 import { MembershipService } from "@/server/services/MembershipService";
 import { UserPatService } from "@/server/services/UserPatService";
-import { syncAppTools } from "@/server/toolbus/catalog-sync";
+import {
+  clearCatalogSyncClaimsForTests,
+  syncAppTools,
+} from "@/server/toolbus/catalog-sync";
 import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
 import { createKvFake } from "@/test/kv-fake";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
@@ -2322,6 +2328,66 @@ describe("personal access tokens on the gateway's /mcp", () => {
       error: "forbidden",
       reason: "token_scope",
     });
+  });
+});
+
+describe("apps with no tool snapshot yet", () => {
+  it("syncs them in the background when a client uses the tools, and lists them next time", async () => {
+    clearCatalogSyncClaimsForTests();
+    // As for an app deployed before the gateway took snapshots.
+    await db.delete(appTools).where(eq(appTools.appRowId, todoRowId));
+    await db
+      .delete(appToolCatalogs)
+      .where(eq(appToolCatalogs.appRowId, todoRowId));
+    const { plaintext: token } = await UserPatService.create({
+      userId: ownerId,
+      organizationId: orgId,
+      name: "claude code",
+    });
+
+    expect(await toolNames(token)).toEqual([
+      "everyapp_list_apps",
+      "everyapp_whoami",
+      "notes_add_note",
+      "notes_list_notes",
+    ]);
+    // The first request's background sync has run by now.
+    expect(await toolNames(token)).toEqual([
+      "everyapp_list_apps",
+      "everyapp_whoami",
+      "notes_add_note",
+      "notes_list_notes",
+      "todo_create_todo",
+      "todo_list_todos",
+    ]);
+  });
+});
+
+describe("a deleted app", () => {
+  it("leaves the connections that chose it, so a later deploy can't rejoin them", async () => {
+    await McpConnectionRepository.create({
+      id: "mcpc_chosen",
+      userId: ownerId,
+      organizationId: orgId,
+      clientId: "https://claude.ai/oauth/mcp-oauth-client-metadata",
+      clientName: "Claude",
+      clientDomain: "claude.ai",
+      redirectUri: "https://claude.ai/api/mcp/auth_callback",
+      redirectHost: "claude.ai",
+      appScope: "selected",
+      appRowIds: [todoRowId, notesRowId],
+      access: "write",
+      createdAt: new Date(),
+    });
+
+    await AppRepository.tombstone(todoRowId, orgId);
+
+    expect(
+      await db
+        .select({ appRowId: mcpConnectionApps.appRowId })
+        .from(mcpConnectionApps)
+        .where(eq(mcpConnectionApps.connectionId, "mcpc_chosen")),
+    ).toEqual([{ appRowId: notesRowId }]);
   });
 });
 

@@ -428,7 +428,7 @@ curl -s -o /dev/null -w '%{http_code}\n' https://todo.example.com/health
 # 5. The internal namespace is never public:
 curl -s -o /dev/null -w '%{http_code}\n' \
   -X POST https://todo.example.com/__everyapp/tools/call
-# => 401
+# => 404 (the perimeter refuses the tools contract from outside)
 
 # 6. Uniform security headers are stamped on HTML:
 curl -sI https://todo.example.com/ | grep -iE \

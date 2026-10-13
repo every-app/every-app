@@ -451,7 +451,7 @@ async function linkSignedInAccount(
     await adapter.linkAccount({ ...key, userId: user.id });
   } catch (error) {
     // Another request linked it first (one row per identity: migration
-    // 0030). The session stands either way.
+    // 0032). The session stands either way.
     logEvent("access.account_link_skipped", {
       userId: user.id,
       reason: error instanceof Error ? error.message.slice(0, 120) : "unknown",

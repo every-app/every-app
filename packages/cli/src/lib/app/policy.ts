@@ -79,8 +79,16 @@ export function appPolicyProblems(
   if (config.domains?.length) {
     problems.push("it declares domains (apps are served through the gateway)");
   }
-  if (config.triggers?.some((trigger) => trigger.type === "fetch")) {
-    problems.push("it declares routes (apps are served through the gateway)");
+  // Only cron schedules: routes would serve the app around the gateway, a
+  // queue consumer could take another app's queue by name, and an email
+  // trigger could claim the account's Email Routing addresses.
+  for (const trigger of config.triggers ?? []) {
+    if (trigger.type === "scheduled") continue;
+    problems.push(
+      trigger.type === "fetch"
+        ? "it declares routes (apps are served through the gateway)"
+        : `it declares a trigger of type "${String(trigger.type)}" (apps may only declare cron schedules)`,
+    );
   }
 
   const env = config.env ?? {};

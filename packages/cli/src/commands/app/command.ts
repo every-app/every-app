@@ -320,10 +320,73 @@ export const setupLocalCommand = buildCommand({
   },
 });
 
+const secretSetCommand = buildCommand({
+  loader: async () => {
+    const { set } = await import("./secret");
+    return set;
+  },
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [{ brief: "The secret's name, e.g. GITHUB_TOKEN", parse: String }],
+    },
+    flags: {
+      "from-env": {
+        kind: "parsed",
+        parse: String,
+        brief: "Read the value from this environment variable instead of a prompt",
+        optional: true,
+      },
+      gateway: gatewayFlag,
+      "break-lease": {
+        kind: "boolean",
+        brief:
+          "Take the app's deploy lease over from a deploy that died (asks first; unattended, with --yes)",
+        optional: true,
+      },
+      yes: {
+        kind: "boolean",
+        brief:
+          "Skip the confirmation (and, with --break-lease, take the lease over without asking)",
+        optional: true,
+      },
+      json: {
+        kind: "boolean",
+        brief: "Print progress as NDJSON events on stdout",
+        optional: true,
+      },
+      verbose: {
+        kind: "boolean",
+        brief: "Show detailed output during the deploy",
+        optional: true,
+      },
+    },
+    aliases: { y: "yes" },
+  },
+  docs: {
+    brief: "Set one of the app's secrets, with a deploy",
+    fullDescription: [
+      "Sets a secret the app's Worker reads from env (an API key it calls out with, say), from a hidden prompt or --from-env <VAR>, never the command line.",
+      "It deploys the app in this directory, code and pending migrations included, with the secret in the same version (see `everyapp app deploy`); at a terminal it asks first. Later deploys keep it.",
+      "Names everyapp sets itself are refused: GATEWAY_URL and the EVERYAPP_*, EVERY_APP_* and APP__* names.",
+    ].join("\n"),
+  },
+});
+
+const secretRoutes = buildRouteMap({
+  routes: {
+    set: secretSetCommand,
+  },
+  docs: {
+    brief: "App secret commands",
+  },
+});
+
 export const appRoutes = buildRouteMap({
   routes: {
     create: createCommand,
     deploy: deployCommand,
+    secret: secretRoutes,
     d1: d1Routes,
     "setup-local": setupLocalCommand,
     delete: deleteCommand,

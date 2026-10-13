@@ -244,6 +244,118 @@ describe("everyAppWorker in production", () => {
   });
 });
 
+describe("everyAppWorker crons and app secrets", () => {
+  it("runs the scheduled handler on the given crons, in dev and production", () => {
+    const crons = ["17 */6 * * *"];
+    expect(
+      everyAppWorker({
+        manifest,
+        entrypoint,
+        ctx: { mode: "development" },
+        root,
+        crons,
+      }).triggers,
+    ).toEqual([{ type: "scheduled", schedule: "17 */6 * * *" }]);
+    writeDeployInputs();
+    expect(
+      everyAppWorker({
+        manifest,
+        entrypoint,
+        ctx: { mode: "production" },
+        root,
+        crons,
+      }).triggers,
+    ).toEqual([{ type: "scheduled", schedule: "17 */6 * * *" }]);
+    expect(
+      everyAppWorker({
+        manifest,
+        entrypoint,
+        ctx: { mode: "production" },
+        root,
+      }).triggers,
+    ).toBeUndefined();
+  });
+
+  it("refuses a schedule that isn't a cron", () => {
+    for (const schedule of ["", "hourly", "* * * *"]) {
+      expect(() =>
+        everyAppWorker({
+          manifest,
+          entrypoint,
+          ctx: { mode: "development" },
+          root,
+          crons: [schedule],
+        }),
+      ).toThrow(/five-field cron schedule/);
+    }
+  });
+
+  it("declares an app secret in development only once it is set locally", () => {
+    const env = (mode: "development" | "production") =>
+      everyAppWorker({
+        manifest,
+        entrypoint,
+        ctx: { mode },
+        root,
+        secrets: ["SDK_TEST_API_KEY", "STRIPE_KEY"],
+      }).env as Record<string, unknown>;
+
+    expect(env("development")["SDK_TEST_API_KEY"]).toBeUndefined();
+
+    fs.writeFileSync(
+      path.join(root, ".dev.vars"),
+      "SDK_TEST_API_KEY=dev-value\n",
+    );
+    expect(env("development")["SDK_TEST_API_KEY"]).toEqual({ type: "secret" });
+    expect(env("development")["STRIPE_KEY"]).toBeUndefined();
+
+    // A deployed Worker keeps the secret `everyapp app secret set` sent.
+    writeDeployInputs();
+    expect(env("production")["SDK_TEST_API_KEY"]).toBeUndefined();
+  });
+
+  it("reads .env files and the environment when there is no .dev.vars", () => {
+    fs.writeFileSync(
+      path.join(root, ".env.local"),
+      "SDK_TEST_API_KEY=env-value\n",
+    );
+    const worker = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+      secrets: ["SDK_TEST_API_KEY"],
+    });
+    expect((worker.env as Record<string, unknown>)["SDK_TEST_API_KEY"]).toEqual(
+      {
+        type: "secret",
+      },
+    );
+  });
+
+  it("refuses a secret named like a binding it builds or one the deploy sets", () => {
+    for (const secret of [
+      "DB",
+      "EVERYAPP_DEV",
+      "GATEWAY_URL",
+      "every_app_org_id",
+      "BAD-NAME",
+    ]) {
+      expect(
+        () =>
+          everyAppWorker({
+            manifest,
+            entrypoint,
+            ctx: { mode: "development" },
+            root,
+            secrets: [secret],
+          }),
+        secret,
+      ).toThrow(/secrets:/);
+    }
+  });
+});
+
 describe("everyAppWorker guards", () => {
   it("rejects modes other than development and production", () => {
     expect(() =>

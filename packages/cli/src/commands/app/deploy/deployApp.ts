@@ -35,6 +35,7 @@ import {
 } from "@/lib/app/cloudflareConfig";
 import type { DeployInputs } from "@/lib/app/deployInputs";
 import { prepareAppBuildOutput } from "@/lib/app/policy";
+import { assertAppSecretName } from "@/lib/app/secrets";
 import { readOwnedResources, recordUploadedVersion } from "@/lib/app/ownership";
 import { claimAppWorker, provisionAppResources } from "@/lib/app/resources";
 import { ensureCfAuth } from "@/lib/cf/account";
@@ -92,6 +93,11 @@ interface DeployAppOptions {
   forceDns?: boolean;
   /** Wait for a new hostname's certificate (default true; `--no-wait-cert`). */
   waitForCertificate?: boolean;
+  /**
+   * The app's own secrets to send with this version (`app secret set`).
+   * They stay on the Worker through later deploys, which don't send them.
+   */
+  secrets?: Record<string, string>;
   /** Seams for tests. */
   interactive?: boolean;
   confirm?: Confirm;
@@ -141,6 +147,23 @@ export async function deployApp(
     options.interactive ?? canPromptInTerminal(options.json ?? false);
 
   const manifest = options.manifest ?? (await loadEveryAppManifest(cwd));
+  // Before anything is created, migrated or uploaded: a secret named like
+  // one of the app's bindings would only fail at upload.
+  const bindings = new Set([
+    ...(manifest.resources?.d1 ?? []),
+    ...(manifest.resources?.kv ?? []),
+    ...(manifest.resources?.durableObjects ?? []).map((d) => d.name),
+    "ASSETS",
+  ]);
+  for (const name of Object.keys(options.secrets ?? {})) {
+    assertAppSecretName(name);
+    if (bindings.has(name)) {
+      throw new EveryAppError(
+        "SECRET_NAME_TAKEN",
+        `${name} is one of ${manifest.id}'s bindings; pick another name for the secret.`,
+      );
+    }
+  }
   const cloudflareConfig = await readCloudflareConfig(cwd);
   if (!cloudflareConfig) {
     throw new EveryAppError("MISSING_CLOUDFLARE_CONFIG", MISSING_CLOUDFLARE_CONFIG);
@@ -342,6 +365,7 @@ export async function deployApp(
       accountId,
       message: `everyapp ${cliVersion} ${manifest.id}`,
       secrets: {
+        ...options.secrets,
         GATEWAY_URL: gatewayUrl,
         EVERY_APP_ORG_ID: whoami.organizationId,
       },

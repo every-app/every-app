@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { parseEnv } from "node:util";
 import {
   DEPLOY_INPUTS_FILE,
   readDeployInputs,
@@ -36,6 +39,22 @@ export interface EveryAppWorkerOptions<
   ctx: EveryAppConfigContext;
   /** App root holding `.everyapp/deploy.json`. Defaults to the working directory. */
   root?: string;
+  /**
+   * Cron schedules (UTC) that run the Worker's `scheduled` handler, e.g.
+   * `"0 6 * * *"` (daily at 06:00). Deploys keep them; an app can't declare
+   * routes.
+   */
+  crons?: readonly string[];
+  /**
+   * The app's own secrets, e.g. an API key it calls out with. A deployed
+   * Worker gets them from `everyapp app secret set`, and later deploys keep
+   * them, so production builds don't declare them. In development each one
+   * that is set locally is declared, read as the Vite plugin reads secrets
+   * (`.dev.vars[.<mode>]` alone when present, otherwise the `.env` files
+   * and the environment), so the plugin passes it through. Type them as
+   * optional in `src/env.d.ts`.
+   */
+  secrets?: readonly string[];
 }
 
 // Structural copies of the `cf/config` binding and export shapes this helper
@@ -151,6 +170,12 @@ export interface EveryAppObservability {
   issues: { enabled: boolean };
 }
 
+/** Structural copy of cf's scheduled (cron) trigger. */
+export interface ScheduledTrigger {
+  type: "scheduled";
+  schedule: string;
+}
+
 export interface EveryAppWorkerConfig<M, TEntrypoint> {
   name: string;
   entrypoint: TEntrypoint;
@@ -158,6 +183,8 @@ export interface EveryAppWorkerConfig<M, TEntrypoint> {
   compatibilityFlags: string[];
   workersDev: false;
   previewUrls: false;
+  /** The `crons` option's schedules; absent without any. */
+  triggers?: ScheduledTrigger[];
   observability: EveryAppObservability;
   /** Either branch, so `Env` marks dev-only and deploy-only bindings optional. */
   env: EveryAppDevEnv<M> | EveryAppDeployEnv<M>;
@@ -189,6 +216,9 @@ export const EVERYAPP_OBSERVABILITY: Readonly<EveryAppObservability> =
   });
 
 const DEFAULT_COMPATIBILITY_DATE = "2026-06-01";
+/** Names the deploy sets itself (as `everyapp app secret set` refuses). */
+const RESERVED_SECRET_NAME =
+  /^(GATEWAY_URL|CF_VERSION_METADATA|EVERYAPP_\w*|EVERY_APP_\w*|APP__\w*)$/i;
 const GATEWAY_WORKER_NAME = "every-app-gateway";
 const GATEWAY_ENTRYPOINT = "AppGateway";
 
@@ -318,6 +348,35 @@ export function everyAppWorker<
     exports[className] = { type: "durable-object", state: "deleted" };
   }
 
+  for (const secret of options.secrets ?? []) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(secret)) {
+      throw new Error(`secrets: "${secret}" isn't a valid binding name.`);
+    }
+    if (env[secret] || RESERVED_SECRET_NAME.test(secret)) {
+      throw new Error(
+        `secrets: ${secret} is a name the deploy sets or a binding it builds.`,
+      );
+    }
+  }
+  if (!deploy) {
+    for (const secret of locallySetSecrets(
+      options.root ?? process.cwd(),
+      ctx.mode ?? "development",
+      options.secrets ?? [],
+    )) {
+      env[secret] = { type: "secret" };
+    }
+  }
+
+  const triggers = (options.crons ?? []).map((schedule): ScheduledTrigger => {
+    if (!/^\S+( \S+){4}$/.test(schedule)) {
+      throw new Error(
+        `crons: "${schedule}" isn't a five-field cron schedule, e.g. "0 6 * * *".`,
+      );
+    }
+    return { type: "scheduled", schedule };
+  });
+
   return {
     name,
     entrypoint: options.entrypoint,
@@ -325,6 +384,7 @@ export function everyAppWorker<
     compatibilityFlags: ["nodejs_compat"],
     workersDev: false,
     previewUrls: false,
+    ...(triggers.length ? { triggers } : {}),
     observability: {
       ...EVERYAPP_OBSERVABILITY,
       logs: { ...EVERYAPP_OBSERVABILITY.logs },
@@ -346,6 +406,36 @@ export function localD1Id(workerName: string, binding: string): string {
     .update(`${workerName}:${binding}`)
     .digest("hex")
     .slice(0, 32);
+}
+
+/**
+ * The `secrets` set for local dev, read the way the Vite plugin reads them:
+ * `.dev.vars[.<mode>]` alone when present, otherwise `.env` files and the
+ * process environment.
+ */
+function locallySetSecrets(
+  root: string,
+  mode: string,
+  names: readonly string[],
+): string[] {
+  if (names.length === 0) return [];
+  const read = (name: string): Record<string, string | undefined> => {
+    const file = path.join(root, name);
+    return fs.existsSync(file) ? parseEnv(fs.readFileSync(file, "utf8")) : {};
+  };
+  const devVars = [`.dev.vars.${mode}`, ".dev.vars"].find((name) =>
+    fs.existsSync(path.join(root, name)),
+  );
+  const values: Record<string, string | undefined> = devVars
+    ? read(devVars)
+    : {
+        ...read(".env"),
+        ...read(".env.local"),
+        ...read(`.env.${mode}`),
+        ...read(`.env.${mode}.local`),
+        ...process.env,
+      };
+  return names.filter((name) => values[name]);
 }
 
 /** The dev Worker name, e.g. "todo" -> "every-todo". */

@@ -104,7 +104,8 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   refused). So a person taken out of the Access policy loses browser access
   when their Access session ends. Access bypasses only machine endpoints
   (`/mcp*`, `/oauth/token`, `/oauth/register`, `/.well-known/*`,
-  `/api/deploy/*`, apps' public routes), never `/oauth/authorize` or the
+  `/api/deploy/*`, `/api/setup/deploy-token`, `/api/admin/has-owner`, apps'
+  public routes), never `/oauth/authorize` or the
   consent pages. Bearer credentials (personal access, OAuth and deploy
   tokens) never pass through Access: offboarding is deactivation.
 - OIDC sign-in goes through Better Auth's own state and PKCE (S256) with the
@@ -139,7 +140,7 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   the cookie header), so apps only ever see the identity JWT.
 - `EMAIL_PASSWORD_SIGN_IN=false` closes password sign-in, sign-up and resets
   over HTTP only while Access sign-in is configured and an owner can sign in
-  with it; deleting the secret reopens them.
+  with it; setting it back to `true` reopens them.
 
 ## Agent Tools (MCP)
 

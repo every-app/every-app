@@ -166,7 +166,7 @@ export function deletionSummary(
   { workerName, purged }: DeletedApp & { purged?: PurgeResult },
 ): { message: string; data: Record<string, unknown> } {
   const message = !purged
-    ? `Deleted ${appId}. Its Worker and data are kept; \`everyapp app delete ${appId} --purge\` removes them.`
+    ? `Deleted ${appId}. Its Worker and data are kept, and the Worker's cron schedules, if it has any, keep running; \`everyapp app delete ${appId} --purge\` removes them.`
     : purged.kept.length > 0
       ? `Deleted ${appId}${purged.removed.length > 0 ? ` and ${purged.removed.join(", ")}` : ""}; kept ${purged.kept.join(", ")} (see above).`
       : purged.removed.length > 0

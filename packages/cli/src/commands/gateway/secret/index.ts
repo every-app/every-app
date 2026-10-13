@@ -1,11 +1,10 @@
-import enquirer from "enquirer";
 import type { LocalContext } from "@/context";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
-import { EveryAppError } from "@/lib/errors";
 import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { bundledReleaseTarball } from "@/lib/gateway/release";
 import { assertSettableSecret } from "@/lib/gateway/secretsFile";
+import { readSecretValue } from "@/lib/secretValue";
 import {
   cliVersion,
   connectToAccount,
@@ -39,7 +38,10 @@ export async function set(
     out,
     async () => {
       assertSettableSecret(name);
-      const value = await readValue(name, flags);
+      const value = await readSecretValue(name, {
+        fromEnv: flags["from-env"],
+        json: flags.json,
+      });
       const cached = await rememberedInstall();
       const { cf, account } = await connectToAccount({
         json: flags.json,
@@ -69,31 +71,4 @@ export async function set(
     },
     { verbose: flags.verbose },
   );
-}
-
-async function readValue(name: string, flags: SecretSetFlags): Promise<string> {
-  const variable = flags["from-env"];
-  if (variable) {
-    const value = process.env[variable];
-    if (!value) {
-      throw new EveryAppError(
-        "SECRET_EMPTY",
-        `${variable} is empty or unset in this environment.`,
-      );
-    }
-    return value;
-  }
-  if (!canPromptInTerminal(flags.json ?? false)) {
-    throw new EveryAppError(
-      "SECRET_VALUE_REQUIRED",
-      `Pass the value through an environment variable: --from-env <VAR>.`,
-    );
-  }
-  const { value } = await enquirer.prompt<{ value: string }>({
-    type: "password",
-    name: "value",
-    message: `${name}`,
-    validate: (input: string) => (input.trim() ? true : "Enter a value"),
-  });
-  return value.trim();
 }

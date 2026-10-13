@@ -76,6 +76,12 @@ describe("appPolicyProblems", () => {
     expect(appPolicyProblems(await builtConfig(), INPUTS)).toEqual([]);
   });
 
+  it("accepts cron schedules", async () => {
+    const config = await builtConfig();
+    config["triggers"] = [{ type: "scheduled", schedule: "17 */6 * * *" }];
+    expect(appPolicyProblems(config, INPUTS)).toEqual([]);
+  });
+
   it.each([
     ["another name", (c: any) => (c.name = "every-other-todo"), /its name is "every-other-todo"/],
     ["workers.dev", (c: any) => (c.workersDev = true), /workersDev/],
@@ -85,6 +91,16 @@ describe("appPolicyProblems", () => {
       "a route",
       (c: any) => (c.triggers = [{ type: "fetch", pattern: "todo.example.com/*" }]),
       /declares routes/,
+    ],
+    [
+      "a queue consumer",
+      (c: any) => (c.triggers = [{ type: "queue", queue: "every-acme-billing-jobs" }]),
+      /declares a trigger of type "queue"/,
+    ],
+    [
+      "an email trigger",
+      (c: any) => (c.triggers = [{ type: "email", addresses: ["*@example.com"] }]),
+      /declares a trigger of type "email"/,
     ],
     ["dev mode", (c: any) => (c.env.EVERYAPP_DEV = { type: "text", value: "1" }), /EVERYAPP_DEV/],
     [

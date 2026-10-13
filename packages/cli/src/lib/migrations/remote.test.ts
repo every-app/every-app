@@ -57,6 +57,22 @@ describe("backfillD1Migrations", () => {
     ]);
   });
 
+  it("refuses a history that ran migrations this release dates differently", async () => {
+    // As on a database an unreleased branch migrated: its own migrations
+    // carry dates between this release's, so fewer rows than dated entries.
+    migrateGatewayWithDrizzle(db, 20);
+    db.sqlite.exec(
+      `DELETE FROM __drizzle_migrations WHERE created_at = ${journal[18]!.when}`,
+    );
+
+    await expect(
+      backfillD1Migrations({ db, journal, nameFor: (t) => `${t}.sql` }),
+    ).rejects.toMatchObject({ code: "MIGRATION_HISTORY_MISMATCH" });
+    expect(
+      db.all("SELECT name FROM sqlite_master WHERE name = 'd1_migrations'"),
+    ).toEqual([]);
+  });
+
   it("does nothing for a database drizzle never migrated", async () => {
     await expect(
       backfillD1Migrations({ db, journal, nameFor: (t) => `${t}.sql` }),

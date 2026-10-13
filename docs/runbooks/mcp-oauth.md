@@ -114,7 +114,7 @@ Optional settings (`npx everyapp gateway secret set <name>`; locally, in
 | `MCP_DCR_ENABLED`          | on      | `false` turns dynamic client registration off: only clients with a metadata document connect (above).                                                                                           |
 | `MCP_ALLOWED_ORIGINS`      | none    | Browser origins, besides the gateway's, that may call `/mcp` (comma or space separated), e.g. `http://localhost:6274` for MCP Inspector's direct mode. AI apps call from servers and need none. |
 | `MCP_AUDIT_RETENTION_DAYS` | 90      | Days of `mcp_tool_calls` the cron keeps.                                                                                                                                                        |
-| `MCP_ACCESS_TOKEN_TTL`     | 3600    | Local testing only: shorter access tokens, at least 60 seconds, honored only when `GATEWAY_URL` is `http://localhost` or `http://127.0.0.1`.                                                    |
+| `MCP_ACCESS_TOKEN_TTL`     | 3600    | Local testing only, in `.dev.vars` (`gateway secret set` refuses it): shorter access tokens, at least 60 seconds, honored only when `GATEWAY_URL` is `http://localhost` or `http://127.0.0.1`. |
 
 ## Upgrading from the 0.8.1 server
 
@@ -239,9 +239,14 @@ OAuth needs an issuer on `https`, or `http` on exactly `localhost` or
    Use Chrome or Firefox for the consent page: its binding cookie is a
    `__Host-` (Secure) cookie, which they accept on `http://localhost`.
 
-6. Run the hourly housekeeping on demand:
-   `curl "http://localhost:19300/cdn-cgi/handler/scheduled?cron=17+*+*+*+*"`,
-   then look for the `mcp.maintenance` line in the dev server's output.
+6. Run the hourly housekeeping on demand, through the Vite plugin's local
+   explorer, then look for the `mcp.maintenance` line in the dev server's
+   output:
+
+   ```sh
+   curl -X POST "http://localhost:19300/cdn-cgi/local/explorer/api/local/scheduled?worker=every-app-gateway" \
+     -H 'content-type: application/json' -d '{"cron":"17 * * * *"}'
+   ```
 
 A gateway running under `vite dev` has no service bindings to apps, so it
 lists only the built-in tools. App tools are covered end to end by the

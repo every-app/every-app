@@ -44,6 +44,17 @@ export const Route = createFileRoute("/api/deploy/apps/$appId/tools/sync")({
           );
         }
 
+        if (row.status === "pending") {
+          // Registered, but no version is up yet: nothing has its tools.
+          return jsonResponse(
+            {
+              error: `App "${params.appId}" has no uploaded Worker yet.`,
+              code: "NOT_DEPLOYED",
+            },
+            409,
+          );
+        }
+
         const app = {
           rowId: row.id,
           organizationId: row.organizationId,

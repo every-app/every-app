@@ -26,6 +26,36 @@ For full API reference and usage guides, see the [Embedded SDK documentation](ht
 
   Production builds read `.everyapp/deploy.json`, which only `everyapp app deploy` writes, so deploy with `everyapp app deploy` rather than `cf deploy`.
 
+## Scheduled work and secrets
+
+`everyAppWorker()` also takes cron schedules and the app's own secrets:
+
+```ts
+export default defineConfig((ctx) => ({
+  worker: everyAppWorker({
+    manifest,
+    entrypoint,
+    ctx,
+    // Runs the Worker's scheduled handler every six hours (UTC).
+    crons: ["17 */6 * * *"],
+    // The app's own secrets: in dev, declared when .dev.vars sets them.
+    secrets: ["GITHUB_TOKEN"],
+  }),
+}));
+```
+
+- **Crons.** Export a `scheduled` handler next to `everyApp()`'s `fetch`:
+  `export default { ...everyApp(handler, { tools }), scheduled }`. A
+  scheduled run has no user (identity is per request). Deploys keep the
+  triggers; an app can't declare routes or domains.
+- **Secrets.** `npx everyapp app secret set GITHUB_TOKEN` deploys the app
+  with the secret in the same version, and later deploys keep it, so
+  production builds don't declare it. In dev, put it in `.dev.vars`:
+  `everyAppWorker()` declares it only when it is set there, since the Vite
+  plugin passes a `.dev.vars` value through only for a declared secret.
+  Type it as optional in `src/env.d.ts` (`GITHUB_TOKEN?: string` in
+  `Cloudflare.Env`).
+
 ## Agent tools
 
 `defineTools()` describes the actions an app offers to AI clients (Claude,

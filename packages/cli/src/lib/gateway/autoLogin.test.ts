@@ -132,6 +132,22 @@ describe("checkSetupLink", () => {
     await expect(checkSetupLink({ claim: CLAIM, client })).resolves.toEqual({ status: "gone" });
     await expect(listPendingClaims()).resolves.toEqual([]);
   });
+
+  it("stops at once, keeping the claim, when Cloudflare Access answers instead", async () => {
+    const accessInFront = new GatewayApiError({
+      message: "Cloudflare Access answered /api/setup/deploy-token with its login page.",
+      status: 302,
+      code: "ACCESS_IN_FRONT",
+    });
+    const client = {
+      setupDeployToken: async () => {
+        throw accessInFront;
+      },
+    };
+    await expect(checkSetupLink({ claim: CLAIM, client })).rejects.toBe(accessInFront);
+    // Once the path is let through, `everyapp login --resume` finishes it.
+    await expect(listPendingClaims()).resolves.toEqual([CLAIM]);
+  });
 });
 
 describe("setupLinkGone", () => {

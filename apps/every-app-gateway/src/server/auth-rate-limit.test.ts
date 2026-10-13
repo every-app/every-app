@@ -250,6 +250,33 @@ describe("rateLimitCredentialRequest", () => {
     }
   });
 
+  it("counts single sign-on starts and the mobile app's handoff", async () => {
+    for (const path of [
+      "/api/auth/sign-in/social",
+      "/api/auth/mobile-sign-in/start",
+      "/api/auth/mobile-sign-in/finish",
+    ]) {
+      const env = { AUTH_RATE_LIMIT_IP: limiter(0) };
+      expect(
+        (await rateLimitCredentialRequest(post(path, {}), env))?.status,
+        path,
+      ).toBe(429);
+    }
+  });
+
+  it("never reads an OAuth request's body, which its route caps", async () => {
+    const env = {
+      AUTH_RATE_LIMIT_IP: limiter(10),
+      AUTH_RATE_LIMIT_EMAIL: limiter(0),
+      AUTH_RATE_LIMIT_ACCOUNT: limiter(0),
+    };
+    const request = post("/oauth/register", { email: "a@b.co" });
+    await expect(rateLimitCredentialRequest(request, env)).resolves.toBeNull();
+    expect(env.AUTH_RATE_LIMIT_EMAIL.keys).toEqual([]);
+    expect(env.AUTH_RATE_LIMIT_ACCOUNT.keys).toEqual([]);
+    expect(request.bodyUsed).toBe(false);
+  });
+
   it("leaves other requests alone, and leaves the body readable", async () => {
     const env = {
       AUTH_RATE_LIMIT_IP: limiter(0),

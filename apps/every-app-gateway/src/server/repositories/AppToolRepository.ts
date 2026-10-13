@@ -1,4 +1,15 @@
-import { and, asc, eq, inArray, isNotNull, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { db } from "@/db";
 import {
   apps,
@@ -153,27 +164,22 @@ function toToolBusTool(row: StoredToolRow): ToolBusTool {
   };
 }
 
-/**
- * The serving catalogs of every app a caller of the gateway /mcp may use,
- * read in one D1 batch and never from the apps themselves: the active,
- * routable apps of the organization the user has access to, narrowed to a
- * connection's chosen apps or a token's one app. Joins rather than `IN`
- * lists, since D1 binds at most 100 parameters.
- */
-async function findVisibleCatalogs(scope: {
+type VisibilityScope = {
   organizationId: string;
   userId: string;
   /** A connection that chose its apps. */
   connectionId?: string;
   /** A token bound to one app. */
   appRowId?: string;
-}): Promise<VisibleCatalog[]> {
-  const visible: SQL[] = [
+};
+
+/** The active apps a caller reaches: org, access, and the scope's choice. */
+function reachableApps(scope: VisibilityScope): SQL[] {
+  return [
     eq(apps.organizationId, scope.organizationId),
     eq(apps.status, "active"),
     isNotNull(apps.hostname),
     isNotNull(apps.workerName),
-    eq(appToolCatalogs.status, "ok"),
     ...(scope.connectionId
       ? [
           inArray(
@@ -187,15 +193,37 @@ async function findVisibleCatalogs(scope: {
       : []),
     ...(scope.appRowId ? [eq(apps.id, scope.appRowId)] : []),
   ];
-  const access = and(
+}
+
+function accessFor(scope: VisibilityScope) {
+  return and(
     eq(userAppAccess.appRowId, apps.id),
     eq(userAppAccess.userId, scope.userId),
     eq(userAppAccess.organizationId, scope.organizationId),
   );
-  const catalog = and(
-    eq(appToolCatalogs.appRowId, apps.id),
-    eq(appToolCatalogs.organizationId, apps.organizationId),
-  );
+}
+
+const catalogOfApp = and(
+  eq(appToolCatalogs.appRowId, apps.id),
+  eq(appToolCatalogs.organizationId, apps.organizationId),
+);
+
+/**
+ * The serving catalogs of every app a caller of the gateway /mcp may use,
+ * read in one D1 batch and never from the apps themselves: the active,
+ * routable apps of the organization the user has access to, narrowed to a
+ * connection's chosen apps or a token's one app. Joins rather than `IN`
+ * lists, since D1 binds at most 100 parameters.
+ */
+async function findVisibleCatalogs(
+  scope: VisibilityScope,
+): Promise<VisibleCatalog[]> {
+  const visible: SQL[] = [
+    ...reachableApps(scope),
+    eq(appToolCatalogs.status, "ok"),
+  ];
+  const access = accessFor(scope);
+  const catalog = catalogOfApp;
 
   const [appRows, toolRows] = await db.batch([
     db
@@ -333,9 +361,61 @@ async function recordError(input: {
     });
 }
 
+/**
+ * Apps a caller of the gateway /mcp reaches whose tools aren't snapshotted:
+ * never synced, or last tried and failed before `failedBefore`. An app that
+ * has no tools, or doesn't serve them, stays as its deploy recorded it.
+ */
+async function findVisibleUnsyncedApps(
+  scope: VisibilityScope,
+  { failedBefore, limit }: { failedBefore: Date; limit: number },
+): Promise<
+  {
+    rowId: string;
+    organizationId: string;
+    appSlug: string;
+    hostname: string;
+    workerName: string;
+    tier: string;
+  }[]
+> {
+  const rows = await db
+    .select({
+      rowId: apps.id,
+      organizationId: apps.organizationId,
+      appSlug: apps.appSlug,
+      hostname: apps.hostname,
+      workerName: apps.workerName,
+      tier: apps.tier,
+    })
+    .from(apps)
+    .innerJoin(userAppAccess, accessFor(scope))
+    .leftJoin(appToolCatalogs, catalogOfApp)
+    .where(
+      and(
+        ...reachableApps(scope),
+        or(
+          isNull(appToolCatalogs.appRowId),
+          and(
+            eq(appToolCatalogs.status, "error"),
+            lt(appToolCatalogs.fetchedAt, failedBefore),
+          ),
+        ),
+      ),
+    )
+    .orderBy(asc(apps.appSlug))
+    .limit(limit);
+  return rows.flatMap((row) =>
+    row.hostname && row.workerName
+      ? [{ ...row, hostname: row.hostname, workerName: row.workerName }]
+      : [],
+  );
+}
+
 export const AppToolRepository = {
   findByOrgApp,
   findVisibleCatalogs,
+  findVisibleUnsyncedApps,
   replace,
   recordError,
 } as const;

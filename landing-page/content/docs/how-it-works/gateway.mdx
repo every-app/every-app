@@ -75,4 +75,6 @@ The Free plan can't run Every App: D1 stops answering for the rest of the day on
 - **An app's static files skip the app's own identity check.** Its built JavaScript, CSS and images are served before the app's code runs. The Gateway still checks who is asking before it passes on any request, but don't put secrets in static files.
 - **Removing someone's access takes up to about 2 minutes** to reach every app: the identity pass an app received lasts that long, and the Gateway caches some lookups briefly.
 - **Your domain must be on Cloudflare.** A company whose DNS is hosted elsewhere can buy a cheap domain for Every App in the Cloudflare dashboard (Domains → Buy a domain).
+- **The Gateway uses one of the account's cron triggers** (its hourly MCP housekeeping), and an app with a schedule uses its own. Cloudflare limits cron triggers per account; on an account at the limit, a Gateway upgrade stops at upload, after migrating.
+- **Deleting an app keeps its Worker**, and with it any cron schedules, which keep running, until `everyapp app delete <app> --purge`.
 - **About 100 apps per domain.** Cloudflare allows 100 Workers Custom Domains in a zone; the Gateway's own address counts as one, and so does any other Worker's in that zone.

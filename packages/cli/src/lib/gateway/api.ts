@@ -17,6 +17,23 @@ interface GatewayErrorPayload {
   code?: string;
 }
 
+/** Something in front of the gateway answered with a redirect. */
+function redirectedAway(path: string, response: Response): GatewayApiError {
+  const location = response.headers.get("location") ?? "";
+  if (/cloudflareaccess\.com|\/cdn-cgi\/access\//.test(location)) {
+    return new GatewayApiError({
+      message: `Cloudflare Access answered ${path} with its login page. Let the CLI's paths through Access: /api/deploy/*, /api/setup/deploy-token and /api/admin/has-owner (the "Outer ring" section of the Cloudflare Access guide).`,
+      status: response.status,
+      code: "ACCESS_IN_FRONT",
+    });
+  }
+  return new GatewayApiError({
+    message: `${path} was redirected to ${location || "another address"}; the gateway's API never redirects. Check the gateway URL (--gateway or EVERYAPP_GATEWAY_URL).`,
+    status: response.status,
+    code: "GATEWAY_REDIRECTED",
+  });
+}
+
 export class GatewayApiError extends Error {
   status: number;
   code?: string;
@@ -304,7 +321,13 @@ export class GatewayClient {
       signal: AbortSignal.timeout(GATEWAY_API_TIMEOUT_MS),
       headers,
       body: options.body ? JSON.stringify(options.body) : undefined,
+      // The gateway's API never redirects: a redirect comes from something
+      // in front of it, usually Cloudflare Access sending to its login page.
+      redirect: "manual",
     });
+    if (response.status >= 300 && response.status < 400) {
+      throw redirectedAway(path, response);
+    }
 
     const responseText = await response.text();
     let payload: (GatewayErrorPayload & T) | null = null;

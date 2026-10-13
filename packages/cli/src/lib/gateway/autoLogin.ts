@@ -66,6 +66,14 @@ export async function checkSetupLink({
       await deletePendingClaim(host);
       return { status: "gone" };
     }
+    // Something in front of the gateway answers instead (Cloudflare Access
+    // sending to its login page): waiting won't change that.
+    if (
+      error instanceof GatewayApiError &&
+      (error.code === "ACCESS_IN_FRONT" || error.code === "GATEWAY_REDIRECTED")
+    ) {
+      throw error;
+    }
     // Not reachable yet (no certificate, or DNS still on its way): wait.
     return { status: "waiting" };
   }

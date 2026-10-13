@@ -38,6 +38,8 @@ import { rememberedInstall } from "@/commands/gateway/shared";
 import { copyStarter } from "@/lib/app/starter";
 import { ensureCfAuth, resolveAccount } from "@/lib/cf/account";
 import { PINNED_CF_VERSION } from "@/lib/cf/bin";
+import { syncAppToolsWithGateway } from "@/commands/app/deploy/steps/syncTools";
+import { syncGatewayAppTools } from "@/commands/gateway/deploy/steps/syncAppTools";
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
 import { hasWorkersPaid } from "@/lib/cf/plan";
 import type { CfRunner } from "@/lib/cf/runner";
@@ -453,6 +455,23 @@ async function deployOrSkipGateway({
       message: `Gateway ${manifest.version} is live at https://${target.domain}.`,
       data: { versionId: result.versionId, release: manifest.version },
     });
+    if (install) {
+      // An upgrade: each app's tools catalog, taken by this gateway version,
+      // as `gateway upgrade` does. A new install has no apps yet.
+      const gatewayUrl = `https://${target.domain}`;
+      await syncGatewayAppTools({
+        gatewayUrl,
+        db,
+        out,
+        verbose: flags.verbose ?? false,
+        boundWorkers: result.appWorkers,
+        syncApp: (options) =>
+          syncAppToolsWithGateway({
+            ...options,
+            client: deps.gatewayClient(gatewayUrl),
+          }),
+      });
+    }
     return db;
   } finally {
     await release.cleanup();

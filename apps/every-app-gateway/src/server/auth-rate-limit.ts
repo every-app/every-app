@@ -34,6 +34,12 @@ const CREDENTIAL_PATHS = new Set([
   "/api/auth/forget-password",
   "/api/auth/reset-password",
   "/api/setup/claim",
+  // Starting a single sign-on (Cloudflare Access) writes a verification
+  // row, and so does the mobile app's handoff; Better Auth's own limiter
+  // counts them per isolate only.
+  "/api/auth/sign-in/social",
+  "/api/auth/mobile-sign-in/start",
+  "/api/auth/mobile-sign-in/finish",
 ]);
 
 // Only while the OAuth server is on; otherwise these paths answer 404.
@@ -171,8 +177,11 @@ export async function rateLimitCredentialRequest(
     if (!success) return tooManyRequests();
   }
 
+  // OAuth requests carry no email, and their routes cap the body before
+  // reading it (mcp-auth/body.ts); reading it here would undo the cap.
   const email =
-    env.AUTH_RATE_LIMIT_EMAIL || env.AUTH_RATE_LIMIT_ACCOUNT
+    !OAUTH_CREDENTIAL_PATHS.has(pathname) &&
+    (env.AUTH_RATE_LIMIT_EMAIL || env.AUTH_RATE_LIMIT_ACCOUNT)
       ? await emailFromBody(request)
       : null;
   if (!email) return null;

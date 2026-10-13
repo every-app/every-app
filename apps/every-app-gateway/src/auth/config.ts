@@ -263,8 +263,14 @@ export function createAuth() {
     // and without it Better Auth derives the origin per request.
     ...(env.GATEWAY_URL ? { baseURL: env.GATEWAY_URL } : {}),
     // Default rules, per client IP: sign-in and sign-up 3 per 10 s, password
-    // reset requests 3 per minute, everything else 100 per 10 s.
-    rateLimit: { enabled: isProductionBuild },
+    // reset requests 3 per minute, everything else 100 per 10 s. The sign-in
+    // pages' read of the methods on offer would match the sign-in rule by
+    // its prefix, and an office behind one address would lose the SSO
+    // button, so it has none.
+    rateLimit: {
+      enabled: isProductionBuild,
+      customRules: { "/sign-in-methods": false },
+    },
     advanced: {
       useSecureCookies: isProductionBuild,
       // Better Auth only trusts a single-hop X-Forwarded-For, and when it
