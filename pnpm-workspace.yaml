@@ -15,3 +15,15 @@ allowBuilds:
   esbuild: true
   sharp: true
   workerd: true
+# Security floors for transitive dependencies, applied to every per-project
+# lockfile: jose 6.2.5 fixes JWT claim validation, and seroval 1.6.7 clears the
+# deserialization advisories (CVE-2026-59940, CVE-2026-23736) that TanStack
+# Start's server-function handler is exposed to. tinypool 2.1.2 clears the
+# critical prototype-pollution advisories (GHSA-5gmw-xhrv-c9v3,
+# GHSA-85c8-ppgw-ccpr) in vitest 3's worker pool; vitest 3 only asks for
+# tinypool 1.x, which has no fixed release. Standalone clones of the apps
+# don't see these and rely on their own package.json floors.
+overrides:
+  jose: ^6.2.5
+  seroval: ^1.6.7
+  tinypool: ^2.1.2

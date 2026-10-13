@@ -29,6 +29,12 @@ export default defineConfig({
   server: {
     port: 3000,
   },
+  // The workspace-linked @every-app/sdk would otherwise resolve jose from
+  // packages/sdk/node_modules (its devDependency). Dedupe so identity JWTs
+  // use the gateway's own, audited jose.
+  resolve: {
+    dedupe: ["jose"],
+  },
   plugins: [
     // Cloudflare plugin must come first - it sets up the SSR environment
     cloudflare({ viteEnvironment: { name: "ssr" }, inspectorPort: false }),

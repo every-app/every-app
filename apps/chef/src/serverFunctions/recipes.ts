@@ -22,7 +22,7 @@ export const getAllRecipes = createServerFn()
 
 export const createRecipe = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => createRecipeSchema.parse(data))
+  .validator((data: unknown) => createRecipeSchema.parse(data))
   .handler(async ({ data, context }) => {
     const now = new Date().toISOString();
 
@@ -40,7 +40,7 @@ export const createRecipe = createServerFn({ method: "POST" })
 
 export const updateRecipe = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => updateRecipeSchema.parse(data))
+  .validator((data: unknown) => updateRecipeSchema.parse(data))
   .handler(async ({ data, context }) => {
     const existingRecipe = await db.query.recipes.findFirst({
       where: and(eq(recipes.id, data.id), eq(recipes.userId, context.userId)),
@@ -64,7 +64,7 @@ export const updateRecipe = createServerFn({ method: "POST" })
 
 export const deleteRecipe = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => deleteRecipeSchema.parse(data))
+  .validator((data: unknown) => deleteRecipeSchema.parse(data))
   .handler(async ({ data, context }) => {
     const existingRecipe = await db.query.recipes.findFirst({
       where: and(eq(recipes.id, data.id), eq(recipes.userId, context.userId)),

@@ -43,7 +43,7 @@ export function parseCookieHeader(cookieHeader: string): ParsedCookie[] {
 }
 
 export async function syncSessionCookieToWebView(): Promise<boolean> {
-  const cookieHeader = authClient.getCookie();
+  const cookieHeader = await authClient.getCookie();
   if (!cookieHeader) {
     return false;
   }

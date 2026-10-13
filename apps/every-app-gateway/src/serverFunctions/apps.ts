@@ -31,9 +31,9 @@ export const getApps = createServerFn()
  * Update an existing app in the catalog.
  * Only accessible by organization admins and owners.
  */
-export const updateApp = createServerFn()
+export const updateApp = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
-  .inputValidator((app: unknown) => updateAppSchema.parse(app))
+  .validator((app: unknown) => updateAppSchema.parse(app))
   .handler(async ({ data: app, context }) => {
     return AppService.update(context.org, app);
   });
@@ -42,9 +42,9 @@ export const updateApp = createServerFn()
  * Delete an app from the catalog.
  * Only accessible by organization owner.
  */
-export const deleteApp = createServerFn()
+export const deleteApp = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
-  .inputValidator((app: unknown) => deleteAppSchema.parse(app))
+  .validator((app: unknown) => deleteAppSchema.parse(app))
   .handler(async ({ data: app, context }) => {
     return AppService.delete(context.org, app.id);
   });
@@ -60,7 +60,7 @@ export const deleteApp = createServerFn()
  */
 export const getAppAccessState = createServerFn()
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
-  .inputValidator((data: unknown) =>
+  .validator((data: unknown) =>
     deleteAppSchema.parse(data),
   ) /* reuse schema with id */
   .handler(async ({ data, context }) => {
@@ -71,9 +71,9 @@ export const getAppAccessState = createServerFn()
  * Update which users have access to an app.
  * Only accessible by organization admins and owners.
  */
-export const updateAppAccess = createServerFn()
+export const updateAppAccess = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
-  .inputValidator((data: unknown) => updateAppAccessSchema.parse(data))
+  .validator((data: unknown) => updateAppAccessSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AppAccessService.updateAccessForApp(
       context.org,

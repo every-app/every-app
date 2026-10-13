@@ -20,9 +20,9 @@ export const getAllTodos = createServerFn()
     return { todos: await TodoService.list(context.userId) };
   });
 
-export const createTodo = createServerFn()
+export const createTodo = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware, emitSyncEvent("createTodo")])
-  .inputValidator((todo: unknown) => createTodoSchema.parse(todo))
+  .validator((todo: unknown) => createTodoSchema.parse(todo))
   .handler(async ({ data: todo, context }) => {
     if (!context?.userId) {
       throw new Error("Unauthorized: No user ID in context");
@@ -33,18 +33,18 @@ export const createTodo = createServerFn()
     return { success: true };
   });
 
-export const updateTodo = createServerFn()
+export const updateTodo = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware, emitSyncEvent("updateTodo")])
-  .inputValidator((todo: unknown) => updateTodoSchema.parse(todo))
+  .validator((todo: unknown) => updateTodoSchema.parse(todo))
   .handler(async ({ data: todo, context }) => {
     await TodoService.update(context.userId, todo);
 
     return { success: true };
   });
 
-export const deleteTodo = createServerFn()
+export const deleteTodo = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware, emitSyncEvent("deleteTodo")])
-  .inputValidator((todo: unknown) => deleteTodoSchema.parse(todo))
+  .validator((todo: unknown) => deleteTodoSchema.parse(todo))
   .handler(async ({ data: todo, context }) => {
     await TodoService.delete(context.userId, todo);
 

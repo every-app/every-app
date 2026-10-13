@@ -2,6 +2,7 @@ import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, organization } from "better-auth/plugins";
+import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzle } from "drizzle-orm/d1";
 import { eq } from "drizzle-orm";
 import { schema } from "../db";
@@ -169,18 +170,35 @@ export function createAuth() {
 
   const cookieDomain = resolveCookieDomain();
 
+  // Better Auth decides it is in production from NODE_ENV at runtime, which
+  // the deployed Worker never sets, so the defaults that follow it (rate
+  // limiting, __Secure- cookies) are pinned to the build mode instead: on in
+  // production builds, off under `vite dev`.
+  const isProductionBuild = !import.meta.env.DEV;
+
   return betterAuth({
     ...sharedAuthOptions,
-    ...(cookieDomain
-      ? {
-          advanced: {
+    // Pin the auth origin to the gateway: perimeter calls arrive on app hosts,
+    // and without it Better Auth derives the origin per request.
+    ...(env.GATEWAY_URL ? { baseURL: env.GATEWAY_URL } : {}),
+    // Default rules, per client IP: sign-in and sign-up 3 per 10 s, password
+    // reset requests 3 per minute, everything else 100 per 10 s.
+    rateLimit: { enabled: isProductionBuild },
+    advanced: {
+      useSecureCookies: isProductionBuild,
+      // Better Auth only trusts a single-hop X-Forwarded-For, and when it
+      // cannot resolve a client IP it rate-limits everyone in one shared
+      // bucket. Cloudflare sets CF-Connecting-IP.
+      ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
+      ...(cookieDomain
+        ? {
             crossSubDomainCookies: {
               enabled: true,
               domain: cookieDomain,
             },
-          },
-        }
-      : {}),
+          }
+        : {}),
+    },
     emailAndPassword: {
       ...sharedAuthOptions.emailAndPassword,
       sendResetPassword: async ({ user, url }) => {
@@ -225,6 +243,9 @@ export function createAuth() {
           },
         },
       }),
+      // Must stay last so it sees the Set-Cookie headers of every plugin's
+      // after-hooks when auth runs inside TanStack server functions.
+      tanstackStartCookies(),
     ],
     hooks: {
       before: createAuthMiddleware(async (ctx) => {

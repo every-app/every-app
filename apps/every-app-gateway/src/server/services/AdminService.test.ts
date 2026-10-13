@@ -129,6 +129,11 @@ describe("AdminService", () => {
     mockSignUpEmail.mockResolvedValue({
       user: { id: "user-1", email: "owner@example.com", name: "Owner" },
     });
+    mockUserRepository.findById.mockResolvedValue({
+      id: "user-1",
+      email: "owner@example.com",
+      status: "active",
+    } as any);
     mockCreateOrganization.mockResolvedValue({ id: "org-1" });
     mockClaimOwnerBootstrap.mockResolvedValue(true);
     mockReleaseOwnerBootstrap.mockResolvedValue(undefined);
@@ -196,6 +201,29 @@ describe("AdminService", () => {
     expect(mockSignUpEmail).toHaveBeenCalledTimes(1);
     expect(mockCreateOrganization).toHaveBeenCalledTimes(1);
     expect(mockGrantDefaultAppsToUser).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects owner initialization for an email that already has an account", async () => {
+    mockHasAnyOwnerMembership.mockResolvedValue(false);
+    // Better Auth's duplicate-email sign-up: a synthetic user that was never
+    // written to the database.
+    mockSignUpEmail.mockResolvedValue({
+      token: null,
+      user: { id: "synthetic-id", email: "owner@example.com", name: "" },
+    });
+    mockUserRepository.findById.mockResolvedValue(undefined);
+
+    await expect(
+      AdminService.initializeOwner("owner@example.com", "password123"),
+    ).rejects.toMatchObject({
+      code: "USER_ALREADY_EXISTS",
+      message: "An account with this email already exists.",
+    });
+
+    expect(mockUserRepository.findById).toHaveBeenCalledWith("synthetic-id");
+    expect(mockCreateOrganization).not.toHaveBeenCalled();
+    expect(mockRemoveUser).not.toHaveBeenCalled();
+    expect(mockReleaseOwnerBootstrap).toHaveBeenCalledOnce();
   });
 
   it("releases the bootstrap claim after a failed initialization", async () => {

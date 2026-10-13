@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  jose: ^6.2.5
+  seroval: ^1.6.7
+  tinypool: ^2.1.2
+
 importers:
 
   .: {}

@@ -21,9 +21,7 @@ export const getAllExerciseLibrary = createServerFn()
 
 export const createExerciseLibraryItems = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) =>
-    batchCreateExerciseLibrarySchema.parse(data),
-  )
+  .validator((data: unknown) => batchCreateExerciseLibrarySchema.parse(data))
   .handler(async ({ data, context }) => {
     if (data.length === 0) return { success: true };
 
@@ -46,9 +44,7 @@ export const createExerciseLibraryItems = createServerFn({ method: "POST" })
 
 export const updateExerciseLibraryItems = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) =>
-    batchUpdateExerciseLibrarySchema.parse(data),
-  )
+  .validator((data: unknown) => batchUpdateExerciseLibrarySchema.parse(data))
   .handler(async ({ data, context }) => {
     if (data.length === 0) return { success: true };
 
@@ -84,9 +80,7 @@ export const updateExerciseLibraryItems = createServerFn({ method: "POST" })
 
 export const deleteExerciseLibraryItems = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) =>
-    batchDeleteExerciseLibrarySchema.parse(data),
-  )
+  .validator((data: unknown) => batchDeleteExerciseLibrarySchema.parse(data))
   .handler(async ({ data, context }) => {
     if (data.length === 0) return { success: true };
 

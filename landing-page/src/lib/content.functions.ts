@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { blogSource, source } from "@/lib/source";
 
 export const getDocsPage = createServerFn({ method: "GET" })
-  .inputValidator((slugs: string[]) => slugs)
+  .validator((slugs: string[]) => slugs)
   .handler(async ({ data: slugs }) => {
     const page = source.getPage(slugs);
     if (!page) throw notFound();
@@ -18,7 +18,7 @@ export const getDocsPage = createServerFn({ method: "GET" })
   });
 
 export const getBlogPost = createServerFn({ method: "GET" })
-  .inputValidator((slugs: string[]) => slugs)
+  .validator((slugs: string[]) => slugs)
   .handler(async ({ data: slugs }) => {
     const page = blogSource.getPage(slugs);
     if (!page) throw notFound();

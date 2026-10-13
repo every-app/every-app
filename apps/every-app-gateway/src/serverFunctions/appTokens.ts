@@ -24,9 +24,9 @@ export const listAppTokens = createServerFn()
  * Create a new deploy token.
  * Organization-owner only.
  */
-export const createAppToken = createServerFn()
+export const createAppToken = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
-  .inputValidator((data: unknown) => createAppTokenSchema.parse(data))
+  .validator((data: unknown) => createAppTokenSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AppTokenService.issueDeployToken({
       organizationId: context.org.orgId,
@@ -39,9 +39,9 @@ export const createAppToken = createServerFn()
  * Revoke an existing app token.
  * Organization-owner only.
  */
-export const revokeAppToken = createServerFn()
+export const revokeAppToken = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
-  .inputValidator((data: unknown) => revokeAppTokenSchema.parse(data))
+  .validator((data: unknown) => revokeAppTokenSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AppTokenService.revoke(data.tokenId, context.org.orgId);
   });

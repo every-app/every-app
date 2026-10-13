@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export const joinWaitlist = createServerFn({ method: "POST" })
-  .inputValidator((email: string) => {
+  .validator((email: string) => {
     const normalized = email.trim().toLowerCase();
     if (!emailPattern.test(normalized) || normalized.length > 254) {
       throw new Error("Please enter a valid email address.");

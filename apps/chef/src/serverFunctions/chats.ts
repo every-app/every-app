@@ -26,7 +26,7 @@ export const getChats = createServerFn()
 
 export const createChat = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator(createChatSchema)
+  .validator(createChatSchema)
   .handler(async ({ data, context }) => {
     const now = new Date().toISOString();
     const chat = {
@@ -41,9 +41,9 @@ export const createChat = createServerFn({ method: "POST" })
     return chat;
   });
 
-export const updateChat = createServerFn()
+export const updateChat = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator(updateChatSchema)
+  .validator(updateChatSchema)
   .handler(async ({ data, context }) => {
     const updatedChats = await db
       .update(chats)
@@ -58,9 +58,9 @@ export const updateChat = createServerFn()
     return updatedChats[0];
   });
 
-export const deleteChat = createServerFn()
+export const deleteChat = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator(deleteChatSchema)
+  .validator(deleteChatSchema)
   .handler(async ({ data, context }) => {
     const deletedChats = await db
       .delete(chats)
@@ -76,7 +76,7 @@ export const deleteChat = createServerFn()
 
 export const getMessages = createServerFn()
   .middleware([ensureUserMiddleware])
-  .inputValidator(getMessagesSchema)
+  .validator(getMessagesSchema)
   .handler(async ({ data, context }) => {
     const messages = await MessageService.getMessagesForChat(
       data.chatId,
@@ -102,9 +102,9 @@ export const getAllActiveRecipes = createServerFn()
       .where(eq(chats.userId, context.userId));
   });
 
-export const addActiveRecipe = createServerFn()
+export const addActiveRecipe = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator(activeRecipeSchema)
+  .validator(activeRecipeSchema)
   .handler(async ({ data, context }) => {
     const ownedChat = await db.query.chats.findFirst({
       where: and(eq(chats.id, data.chatId), eq(chats.userId, context.userId)),
@@ -135,9 +135,9 @@ export const addActiveRecipe = createServerFn()
     return activeRecipe;
   });
 
-export const removeActiveRecipe = createServerFn()
+export const removeActiveRecipe = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator(activeRecipeSchema)
+  .validator(activeRecipeSchema)
   .handler(async ({ data, context }) => {
     const ownedChat = await db.query.chats.findFirst({
       where: and(eq(chats.id, data.chatId), eq(chats.userId, context.userId)),
@@ -166,7 +166,7 @@ export const removeActiveRecipe = createServerFn()
 
 export const saveToolOutput = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator(saveToolOutputSchema)
+  .validator(saveToolOutputSchema)
   .handler(async ({ data, context }) => {
     // Defense-in-depth: verify the tool call belongs to a chat owned by this user
     const isOwned = await MessageService.verifyToolCallOwnership(
@@ -186,7 +186,7 @@ export const saveToolOutput = createServerFn({ method: "POST" })
 
 export const startCookingWithRecipe = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator(startCookingSchema)
+  .validator(startCookingSchema)
   .handler(async ({ data, context }) => {
     if (data.isNewChat) {
       const now = new Date().toISOString();

@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS `organizations_slug_uidx`;

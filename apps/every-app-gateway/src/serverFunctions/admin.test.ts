@@ -15,8 +15,8 @@ vi.mock("@tanstack/react-start", () => ({
       builder.middlewares = middlewares;
       return builder;
     });
-    builder.inputValidator = vi.fn((validator: (data: unknown) => unknown) => {
-      builder.validator = validator;
+    builder.validator = vi.fn((validator: (data: unknown) => unknown) => {
+      builder.validatorFn = validator;
       return builder;
     });
     builder.handler = vi.fn((handler: (input: unknown) => unknown) => {
@@ -59,7 +59,7 @@ import { cancelInvitation } from "./admin";
 
 type ServerFnBuilder = {
   middlewares: unknown[];
-  validator: (data: unknown) => unknown;
+  validatorFn: (data: unknown) => unknown;
   serverHandler: (input: {
     data: { invitationId: string };
     context: { org: Record<string, unknown> };
@@ -86,7 +86,7 @@ describe("cancelInvitation server function", () => {
 
   it("validates the invitation id", () => {
     expect(() =>
-      cancelInvitationServerFn.validator({ invitationId: "" }),
+      cancelInvitationServerFn.validatorFn({ invitationId: "" }),
     ).toThrow("Invitation ID is required");
   });
 

@@ -1,11 +1,5 @@
 import { relations, sql } from "drizzle-orm";
-import {
-  sqliteTable,
-  text,
-  integer,
-  index,
-  uniqueIndex,
-} from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -100,18 +94,14 @@ export const verifications = sqliteTable(
   (table) => [index("verifications_identifier_idx").on(table.identifier)],
 );
 
-export const organizations = sqliteTable(
-  "organizations",
-  {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    slug: text("slug").notNull().unique(),
-    logo: text("logo"),
-    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
-    metadata: text("metadata"),
-  },
-  (table) => [uniqueIndex("organizations_slug_uidx").on(table.slug)],
-);
+export const organizations = sqliteTable("organizations", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  logo: text("logo"),
+  createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  metadata: text("metadata"),
+});
 
 export const members = sqliteTable(
   "members",
@@ -164,14 +154,14 @@ export const usersRelations = relations(users, ({ many }) => ({
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
-  users: one(users, {
+  user: one(users, {
     fields: [sessions.userId],
     references: [users.id],
   }),
 }));
 
 export const accountsRelations = relations(accounts, ({ one }) => ({
-  users: one(users, {
+  user: one(users, {
     fields: [accounts.userId],
     references: [users.id],
   }),
@@ -183,22 +173,22 @@ export const organizationsRelations = relations(organizations, ({ many }) => ({
 }));
 
 export const membersRelations = relations(members, ({ one }) => ({
-  organizations: one(organizations, {
+  organization: one(organizations, {
     fields: [members.organizationId],
     references: [organizations.id],
   }),
-  users: one(users, {
+  user: one(users, {
     fields: [members.userId],
     references: [users.id],
   }),
 }));
 
 export const invitationsRelations = relations(invitations, ({ one }) => ({
-  organizations: one(organizations, {
+  organization: one(organizations, {
     fields: [invitations.organizationId],
     references: [organizations.id],
   }),
-  users: one(users, {
+  user: one(users, {
     fields: [invitations.inviterId],
     references: [users.id],
   }),

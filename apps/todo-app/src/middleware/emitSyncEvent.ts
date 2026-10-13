@@ -8,7 +8,7 @@ const SYNC_DO_EMIT_URL = "http://durable-object/emit";
  *
  * Usage:
  * ```ts
- * export const createTodo = createServerFn()
+ * export const createTodo = createServerFn({ method: "POST" })
  *   .middleware([useSessionTokenClientMiddleware, ensureUserMiddleware, emitSyncEvent("createTodo")])
  *   .handler(...)
  * ```

@@ -152,7 +152,7 @@ export const getAllSessions = createServerFn()
 
 export const createSession = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => createSessionSchema.parse(data))
+  .validator((data: unknown) => createSessionSchema.parse(data))
   .handler(async ({ data, context }) => {
     if (data.status === "in_progress") {
       const activeSession = await db.query.workoutSessions.findFirst({
@@ -192,7 +192,7 @@ export const createSession = createServerFn({ method: "POST" })
 
 export const updateSession = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => updateSessionSchema.parse(data))
+  .validator((data: unknown) => updateSessionSchema.parse(data))
   .handler(async ({ data, context }) => {
     const existing = await db.query.workoutSessions.findFirst({
       where: and(
@@ -218,7 +218,7 @@ export const updateSession = createServerFn({ method: "POST" })
 
 export const completeWorkoutSession = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => completeSessionSchema.parse(data))
+  .validator((data: unknown) => completeSessionSchema.parse(data))
   .handler(async ({ data, context }) => {
     const session = await db.query.workoutSessions.findFirst({
       where: and(
@@ -272,7 +272,7 @@ export const completeWorkoutSession = createServerFn({ method: "POST" })
 
 export const deleteSession = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => z.object({ id: z.string() }).parse(data))
+  .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
   .handler(async ({ data, context }) => {
     const existing = await db.query.workoutSessions.findFirst({
       where: and(
@@ -296,7 +296,7 @@ export const deleteSession = createServerFn({ method: "POST" })
 
 export const skipToWorkout = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => skipToWorkoutSchema.parse(data))
+  .validator((data: unknown) => skipToWorkoutSchema.parse(data))
   .handler(async ({ data, context }) => {
     const program = await db.query.programs.findFirst({
       where: and(

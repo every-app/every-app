@@ -23,7 +23,7 @@ export const getAllSetLogs = createServerFn()
 
 export const upsertSetLog = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => upsertSetLogSchema.parse(data))
+  .validator((data: unknown) => upsertSetLogSchema.parse(data))
   .handler(async ({ data, context }) => {
     const session = await db.query.workoutSessions.findFirst({
       where: and(
@@ -68,7 +68,7 @@ export const upsertSetLog = createServerFn({ method: "POST" })
 
 export const deleteSetLog = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => z.object({ id: z.string() }).parse(data))
+  .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
   .handler(async ({ data, context }) => {
     const existing = await db.query.workoutSetLogs.findFirst({
       where: eq(workoutSetLogs.id, data.id),

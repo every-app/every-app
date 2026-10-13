@@ -62,8 +62,8 @@ export const getAuthorizeContext = createServerFn().handler(async () => {
   });
 });
 
-export const approveAuthorization = createServerFn()
-  .inputValidator((data: unknown) => authorizeActionSchema.parse(data))
+export const approveAuthorization = createServerFn({ method: "POST" })
+  .validator((data: unknown) => authorizeActionSchema.parse(data))
   .handler(async ({ data }) => {
     const session = await requireSession();
     if (!session?.user?.id) {
@@ -107,8 +107,8 @@ export const approveAuthorization = createServerFn()
     return { redirectTo };
   });
 
-export const denyAuthorization = createServerFn()
-  .inputValidator((data: unknown) => authorizeActionSchema.parse(data))
+export const denyAuthorization = createServerFn({ method: "POST" })
+  .validator((data: unknown) => authorizeActionSchema.parse(data))
   .handler(async ({ data }) => {
     const request = authorizeRequestFromQuery(data.query);
     const oauthRequest = await env.OAUTH_PROVIDER.parseAuthRequest(request);

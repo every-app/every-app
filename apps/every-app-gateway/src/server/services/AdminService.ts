@@ -14,6 +14,7 @@ import {
 } from "@/server/organization/owner-membership";
 import { AppAccessService } from "./AppAccessService";
 import type { OrgContext } from "@/server/organization/orgContext";
+import { PublicError } from "@/server/errors";
 
 function slugify(name: string): string {
   return name
@@ -72,6 +73,16 @@ async function initializeOwner(email: string, password: string) {
 
     if (!result.user) {
       throw new Error("Failed to create owner account");
+    }
+
+    // With autoSignIn off, Better Auth answers a sign-up for an email that
+    // already has an account with a synthetic user (random id, nothing
+    // written) instead of an error, so confirm the row really exists.
+    if (!(await UserRepository.findById(result.user.id))) {
+      throw new PublicError(
+        "USER_ALREADY_EXISTS",
+        "An account with this email already exists.",
+      );
     }
 
     createdUserId = result.user.id;

@@ -13,9 +13,9 @@ export const listUserTokens = createServerFn()
     return UserPatService.listForUser(context.user.id, context.org.orgId);
   });
 
-export const createUserToken = createServerFn()
+export const createUserToken = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationMemberMiddleware])
-  .inputValidator((data: unknown) => createUserTokenSchema.parse(data))
+  .validator((data: unknown) => createUserTokenSchema.parse(data))
   .handler(async ({ data, context }) => {
     return UserPatService.create({
       userId: context.user.id,
@@ -27,9 +27,9 @@ export const createUserToken = createServerFn()
     });
   });
 
-export const revokeUserToken = createServerFn()
+export const revokeUserToken = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationMemberMiddleware])
-  .inputValidator((data: unknown) => revokeUserTokenSchema.parse(data))
+  .validator((data: unknown) => revokeUserTokenSchema.parse(data))
   .handler(async ({ data, context }) => {
     return UserPatService.revoke(data.tokenId, context.user.id);
   });

@@ -9,61 +9,31 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SignUpRouteImport } from './routes/sign-up'
-import { Route as SignInRouteImport } from './routes/sign-in'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as PwaRouteImport } from './routes/pwa'
-import { Route as OrganizationsRouteImport } from './routes/organizations'
-import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
-import { Route as AdminRouteImport } from './routes/admin'
-import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as OrganizationsRouteImport } from './routes/organizations'
+import { Route as PwaRouteImport } from './routes/pwa'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SignInRouteImport } from './routes/sign-in'
+import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
-import { Route as OauthAuthorizeRouteImport } from './routes/oauth/authorize'
-import { Route as AdminUsersRouteImport } from './routes/admin/users'
-import { Route as AdminTokensRouteImport } from './routes/admin/tokens'
 import { Route as AdminAppsRouteImport } from './routes/admin/apps'
-import { Route as ApiMeAppsRouteImport } from './routes/api/me/apps'
-import { Route as ApiDevIdentityRouteImport } from './routes/api/dev/identity'
-import { Route as ApiDeployWhoamiRouteImport } from './routes/api/deploy/whoami'
-import { Route as ApiDeployRegisterRouteImport } from './routes/api/deploy/register'
-import { Route as ApiDeployIdentityKeysRouteImport } from './routes/api/deploy/identity-keys'
-import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AdminTokensRouteImport } from './routes/admin/tokens'
+import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as OauthAuthorizeRouteImport } from './routes/oauth/authorize'
 import { Route as ApiAdminHasOwnerRouteImport } from './routes/api/admin/has-owner'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as ApiDeployIdentityKeysRouteImport } from './routes/api/deploy/identity-keys'
+import { Route as ApiDeployRegisterRouteImport } from './routes/api/deploy/register'
+import { Route as ApiDeployWhoamiRouteImport } from './routes/api/deploy/whoami'
+import { Route as ApiDevIdentityRouteImport } from './routes/api/dev/identity'
+import { Route as ApiMeAppsRouteImport } from './routes/api/me/apps'
 
-const SignUpRoute = SignUpRouteImport.update({
-  id: '/sign-up',
-  path: '/sign-up',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SignInRoute = SignInRouteImport.update({
-  id: '/sign-in',
-  path: '/sign-in',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PwaRoute = PwaRouteImport.update({
-  id: '/pwa',
-  path: '/pwa',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OrganizationsRoute = OrganizationsRouteImport.update({
-  id: '/organizations',
-  path: '/organizations',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
-  id: '/forgot-password',
-  path: '/forgot-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
@@ -71,9 +41,39 @@ const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
   path: '/accept-invitation',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrganizationsRoute = OrganizationsRouteImport.update({
+  id: '/organizations',
+  path: '/organizations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PwaRoute = PwaRouteImport.update({
+  id: '/pwa',
+  path: '/pwa',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignInRoute = SignInRouteImport.update({
+  id: '/sign-in',
+  path: '/sign-in',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignUpRoute = SignUpRouteImport.update({
+  id: '/sign-up',
+  path: '/sign-up',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminIndexRoute = AdminIndexRouteImport.update({
@@ -81,14 +81,9 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
-const OauthAuthorizeRoute = OauthAuthorizeRouteImport.update({
-  id: '/oauth/authorize',
-  path: '/oauth/authorize',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AdminUsersRoute = AdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
+const AdminAppsRoute = AdminAppsRouteImport.update({
+  id: '/apps',
+  path: '/apps',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminTokensRoute = AdminTokensRouteImport.update({
@@ -96,34 +91,19 @@ const AdminTokensRoute = AdminTokensRouteImport.update({
   path: '/tokens',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminAppsRoute = AdminAppsRouteImport.update({
-  id: '/apps',
-  path: '/apps',
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
   getParentRoute: () => AdminRoute,
 } as any)
-const ApiMeAppsRoute = ApiMeAppsRouteImport.update({
-  id: '/api/me/apps',
-  path: '/api/me/apps',
+const OauthAuthorizeRoute = OauthAuthorizeRouteImport.update({
+  id: '/oauth/authorize',
+  path: '/oauth/authorize',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiDevIdentityRoute = ApiDevIdentityRouteImport.update({
-  id: '/api/dev/identity',
-  path: '/api/dev/identity',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDeployWhoamiRoute = ApiDeployWhoamiRouteImport.update({
-  id: '/api/deploy/whoami',
-  path: '/api/deploy/whoami',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDeployRegisterRoute = ApiDeployRegisterRouteImport.update({
-  id: '/api/deploy/register',
-  path: '/api/deploy/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDeployIdentityKeysRoute = ApiDeployIdentityKeysRouteImport.update({
-  id: '/api/deploy/identity-keys',
-  path: '/api/deploy/identity-keys',
+const ApiAdminHasOwnerRoute = ApiAdminHasOwnerRouteImport.update({
+  id: '/api/admin/has-owner',
+  path: '/api/admin/has-owner',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
@@ -131,9 +111,29 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiAdminHasOwnerRoute = ApiAdminHasOwnerRouteImport.update({
-  id: '/api/admin/has-owner',
-  path: '/api/admin/has-owner',
+const ApiDeployIdentityKeysRoute = ApiDeployIdentityKeysRouteImport.update({
+  id: '/api/deploy/identity-keys',
+  path: '/api/deploy/identity-keys',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDeployRegisterRoute = ApiDeployRegisterRouteImport.update({
+  id: '/api/deploy/register',
+  path: '/api/deploy/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDeployWhoamiRoute = ApiDeployWhoamiRouteImport.update({
+  id: '/api/deploy/whoami',
+  path: '/api/deploy/whoami',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiDevIdentityRoute = ApiDevIdentityRouteImport.update({
+  id: '/api/dev/identity',
+  path: '/api/dev/identity',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMeAppsRoute = ApiMeAppsRouteImport.update({
+  id: '/api/me/apps',
+  path: '/api/me/apps',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -299,53 +299,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/sign-up': {
-      id: '/sign-up'
-      path: '/sign-up'
-      fullPath: '/sign-up'
-      preLoaderRoute: typeof SignUpRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sign-in': {
-      id: '/sign-in'
-      path: '/sign-in'
-      fullPath: '/sign-in'
-      preLoaderRoute: typeof SignInRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pwa': {
-      id: '/pwa'
-      path: '/pwa'
-      fullPath: '/pwa'
-      preLoaderRoute: typeof PwaRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/organizations': {
-      id: '/organizations'
-      path: '/organizations'
-      fullPath: '/organizations'
-      preLoaderRoute: typeof OrganizationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/forgot-password': {
-      id: '/forgot-password'
-      path: '/forgot-password'
-      fullPath: '/forgot-password'
-      preLoaderRoute: typeof ForgotPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/accept-invitation': {
@@ -355,11 +313,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AcceptInvitationRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/organizations': {
+      id: '/organizations'
+      path: '/organizations'
+      fullPath: '/organizations'
+      preLoaderRoute: typeof OrganizationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pwa': {
+      id: '/pwa'
+      path: '/pwa'
+      fullPath: '/pwa'
+      preLoaderRoute: typeof PwaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign-in': {
+      id: '/sign-in'
+      path: '/sign-in'
+      fullPath: '/sign-in'
+      preLoaderRoute: typeof SignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sign-up': {
+      id: '/sign-up'
+      path: '/sign-up'
+      fullPath: '/sign-up'
+      preLoaderRoute: typeof SignUpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/': {
@@ -369,18 +369,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/oauth/authorize': {
-      id: '/oauth/authorize'
-      path: '/oauth/authorize'
-      fullPath: '/oauth/authorize'
-      preLoaderRoute: typeof OauthAuthorizeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/admin/users': {
-      id: '/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof AdminUsersRouteImport
+    '/admin/apps': {
+      id: '/admin/apps'
+      path: '/apps'
+      fullPath: '/admin/apps'
+      preLoaderRoute: typeof AdminAppsRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/tokens': {
@@ -390,46 +383,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminTokensRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/apps': {
-      id: '/admin/apps'
-      path: '/apps'
-      fullPath: '/admin/apps'
-      preLoaderRoute: typeof AdminAppsRouteImport
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/api/me/apps': {
-      id: '/api/me/apps'
-      path: '/api/me/apps'
-      fullPath: '/api/me/apps'
-      preLoaderRoute: typeof ApiMeAppsRouteImport
+    '/oauth/authorize': {
+      id: '/oauth/authorize'
+      path: '/oauth/authorize'
+      fullPath: '/oauth/authorize'
+      preLoaderRoute: typeof OauthAuthorizeRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/dev/identity': {
-      id: '/api/dev/identity'
-      path: '/api/dev/identity'
-      fullPath: '/api/dev/identity'
-      preLoaderRoute: typeof ApiDevIdentityRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/deploy/whoami': {
-      id: '/api/deploy/whoami'
-      path: '/api/deploy/whoami'
-      fullPath: '/api/deploy/whoami'
-      preLoaderRoute: typeof ApiDeployWhoamiRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/deploy/register': {
-      id: '/api/deploy/register'
-      path: '/api/deploy/register'
-      fullPath: '/api/deploy/register'
-      preLoaderRoute: typeof ApiDeployRegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/deploy/identity-keys': {
-      id: '/api/deploy/identity-keys'
-      path: '/api/deploy/identity-keys'
-      fullPath: '/api/deploy/identity-keys'
-      preLoaderRoute: typeof ApiDeployIdentityKeysRouteImport
+    '/api/admin/has-owner': {
+      id: '/api/admin/has-owner'
+      path: '/api/admin/has-owner'
+      fullPath: '/api/admin/has-owner'
+      preLoaderRoute: typeof ApiAdminHasOwnerRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/auth/$': {
@@ -439,11 +411,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/admin/has-owner': {
-      id: '/api/admin/has-owner'
-      path: '/api/admin/has-owner'
-      fullPath: '/api/admin/has-owner'
-      preLoaderRoute: typeof ApiAdminHasOwnerRouteImport
+    '/api/deploy/identity-keys': {
+      id: '/api/deploy/identity-keys'
+      path: '/api/deploy/identity-keys'
+      fullPath: '/api/deploy/identity-keys'
+      preLoaderRoute: typeof ApiDeployIdentityKeysRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/deploy/register': {
+      id: '/api/deploy/register'
+      path: '/api/deploy/register'
+      fullPath: '/api/deploy/register'
+      preLoaderRoute: typeof ApiDeployRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/deploy/whoami': {
+      id: '/api/deploy/whoami'
+      path: '/api/deploy/whoami'
+      fullPath: '/api/deploy/whoami'
+      preLoaderRoute: typeof ApiDeployWhoamiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/dev/identity': {
+      id: '/api/dev/identity'
+      path: '/api/dev/identity'
+      fullPath: '/api/dev/identity'
+      preLoaderRoute: typeof ApiDevIdentityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/me/apps': {
+      id: '/api/me/apps'
+      path: '/api/me/apps'
+      fullPath: '/api/me/apps'
+      preLoaderRoute: typeof ApiMeAppsRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -489,10 +489,11 @@ export const routeTree = rootRouteImport
   ._addFileTypes<FileRouteTypes>()
 
 import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
+import type { startInstance } from './start.ts'
 declare module '@tanstack/react-start' {
   interface Register {
     ssr: true
     router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
   }
 }

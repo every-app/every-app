@@ -9,26 +9,21 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SupportRouteImport } from './routes/support'
-import { Route as PrivacyRouteImport } from './routes/privacy'
-import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as DocsIndexRouteImport } from './routes/docs/index'
-import { Route as BlogsIndexRouteImport } from './routes/blogs/index'
-import { Route as DocsQuickstartRouteImport } from './routes/docs/quickstart'
-import { Route as DocsBuildAnAppRouteImport } from './routes/docs/build-an-app'
-import { Route as DocsSplatRouteImport } from './routes/docs/$'
-import { Route as BlogsSplatRouteImport } from './routes/blogs/$'
+import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
+import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as SupportRouteImport } from './routes/support'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
+import { Route as BlogsIndexRouteImport } from './routes/blogs/index'
+import { Route as BlogsSplatRouteImport } from './routes/blogs/$'
+import { Route as DocsIndexRouteImport } from './routes/docs/index'
+import { Route as DocsSplatRouteImport } from './routes/docs/$'
+import { Route as DocsBuildAnAppRouteImport } from './routes/docs/build-an-app'
+import { Route as DocsQuickstartRouteImport } from './routes/docs/quickstart'
 
-const SupportRoute = SupportRouteImport.update({
-  id: '/support',
-  path: '/support',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PrivacyRoute = PrivacyRouteImport.update({
-  id: '/privacy',
-  path: '/privacy',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
@@ -36,14 +31,19 @@ const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
   path: '/llms.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DocsIndexRoute = DocsIndexRouteImport.update({
-  id: '/docs/',
-  path: '/docs/',
+const SupportRoute = SupportRouteImport.update({
+  id: '/support',
+  path: '/support',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSearchRoute = ApiSearchRouteImport.update({
+  id: '/api/search',
+  path: '/api/search',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BlogsIndexRoute = BlogsIndexRouteImport.update({
@@ -51,14 +51,14 @@ const BlogsIndexRoute = BlogsIndexRouteImport.update({
   path: '/blogs/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DocsQuickstartRoute = DocsQuickstartRouteImport.update({
-  id: '/docs/quickstart',
-  path: '/docs/quickstart',
+const BlogsSplatRoute = BlogsSplatRouteImport.update({
+  id: '/blogs/$',
+  path: '/blogs/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DocsBuildAnAppRoute = DocsBuildAnAppRouteImport.update({
-  id: '/docs/build-an-app',
-  path: '/docs/build-an-app',
+const DocsIndexRoute = DocsIndexRouteImport.update({
+  id: '/docs/',
+  path: '/docs/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsSplatRoute = DocsSplatRouteImport.update({
@@ -66,14 +66,14 @@ const DocsSplatRoute = DocsSplatRouteImport.update({
   path: '/docs/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BlogsSplatRoute = BlogsSplatRouteImport.update({
-  id: '/blogs/$',
-  path: '/blogs/$',
+const DocsBuildAnAppRoute = DocsBuildAnAppRouteImport.update({
+  id: '/docs/build-an-app',
+  path: '/docs/build-an-app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiSearchRoute = ApiSearchRouteImport.update({
-  id: '/api/search',
-  path: '/api/search',
+const DocsQuickstartRoute = DocsQuickstartRouteImport.update({
+  id: '/docs/quickstart',
+  path: '/docs/quickstart',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -175,18 +175,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/support': {
-      id: '/support'
-      path: '/support'
-      fullPath: '/support'
-      preLoaderRoute: typeof SupportRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/privacy': {
-      id: '/privacy'
-      path: '/privacy'
-      fullPath: '/privacy'
-      preLoaderRoute: typeof PrivacyRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/llms.txt': {
@@ -196,18 +189,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LlmsDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/docs/': {
-      id: '/docs/'
-      path: '/docs'
-      fullPath: '/docs/'
-      preLoaderRoute: typeof DocsIndexRouteImport
+    '/support': {
+      id: '/support'
+      path: '/support'
+      fullPath: '/support'
+      preLoaderRoute: typeof SupportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/search': {
+      id: '/api/search'
+      path: '/api/search'
+      fullPath: '/api/search'
+      preLoaderRoute: typeof ApiSearchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/blogs/': {
@@ -217,18 +217,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BlogsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/docs/quickstart': {
-      id: '/docs/quickstart'
-      path: '/docs/quickstart'
-      fullPath: '/docs/quickstart'
-      preLoaderRoute: typeof DocsQuickstartRouteImport
+    '/blogs/$': {
+      id: '/blogs/$'
+      path: '/blogs/$'
+      fullPath: '/blogs/$'
+      preLoaderRoute: typeof BlogsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/docs/build-an-app': {
-      id: '/docs/build-an-app'
-      path: '/docs/build-an-app'
-      fullPath: '/docs/build-an-app'
-      preLoaderRoute: typeof DocsBuildAnAppRouteImport
+    '/docs/': {
+      id: '/docs/'
+      path: '/docs'
+      fullPath: '/docs/'
+      preLoaderRoute: typeof DocsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs/$': {
@@ -238,18 +238,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/blogs/$': {
-      id: '/blogs/$'
-      path: '/blogs/$'
-      fullPath: '/blogs/$'
-      preLoaderRoute: typeof BlogsSplatRouteImport
+    '/docs/build-an-app': {
+      id: '/docs/build-an-app'
+      path: '/docs/build-an-app'
+      fullPath: '/docs/build-an-app'
+      preLoaderRoute: typeof DocsBuildAnAppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/search': {
-      id: '/api/search'
-      path: '/api/search'
-      fullPath: '/api/search'
-      preLoaderRoute: typeof ApiSearchRouteImport
+    '/docs/quickstart': {
+      id: '/docs/quickstart'
+      path: '/docs/quickstart'
+      fullPath: '/docs/quickstart'
+      preLoaderRoute: typeof DocsQuickstartRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

@@ -17,6 +17,9 @@
   // Disable Drizzle plugin - it tries to load drizzle.config.ts which imports cloudflare:workers
   "drizzle": false,
   "ignoreDependencies": [
+    // `cloudflare:workers` is a Workers runtime module that Knip reads as the
+    // (unused) `cloudflare` npm package.
+    "cloudflare",
     // Runtime Worker entry import; jose fulfills the SDK's required peer dependency.
     "@every-app/sdk",
     "jose",

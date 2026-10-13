@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const workerEnv = vi.hoisted(() => ({
   BETTER_AUTH_SECRET: "test-secret",
@@ -29,8 +29,8 @@ vi.mock("better-auth/adapters/drizzle", () => ({
 }));
 
 vi.mock("better-auth/plugins", () => ({
-  admin: () => ({ plugin: "admin" }),
-  organization: (options: unknown) => ({ plugin: "organization", options }),
+  admin: () => ({ id: "admin" }),
+  organization: (options: unknown) => ({ id: "organization", options }),
 }));
 
 vi.mock("drizzle-orm/d1", () => ({
@@ -112,5 +112,83 @@ describe("createAuth email configuration", () => {
         code: "EMAIL_BINDING_UNAVAILABLE",
       }),
     );
+  });
+});
+
+type CapturedOptions = {
+  baseURL?: string;
+  rateLimit?: { enabled?: boolean };
+  advanced?: {
+    useSecureCookies?: boolean;
+    ipAddress?: unknown;
+    crossSubDomainCookies?: unknown;
+  };
+  plugins: { id: string }[];
+};
+
+function createAuthOptions(): CapturedOptions {
+  createAuth();
+  return captured.authOptions as CapturedOptions;
+}
+
+describe("createAuth Better Auth options", () => {
+  const gatewayUrl = workerEnv.GATEWAY_URL;
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    workerEnv.GATEWAY_URL = gatewayUrl;
+  });
+
+  it("pins the base URL to the gateway and reads the client IP from Cloudflare", () => {
+    const options = createAuthOptions();
+
+    expect(options.baseURL).toBe("https://gateway.example.com");
+    expect(options.advanced?.ipAddress).toEqual({
+      ipAddressHeaders: ["cf-connecting-ip"],
+    });
+  });
+
+  // Better Auth 1.7 reads NODE_ENV at runtime, which the deployed Worker
+  // never sets, so these must not be left to its defaults.
+  it("enables rate limiting, secure cookies and app-subdomain cookies in production builds", () => {
+    vi.stubEnv("DEV", false);
+
+    expect(createAuthOptions()).toMatchObject({
+      rateLimit: { enabled: true },
+      advanced: {
+        useSecureCookies: true,
+        ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
+        crossSubDomainCookies: {
+          enabled: true,
+          domain: "gateway.example.com",
+        },
+      },
+    });
+  });
+
+  it("disables rate limiting and secure cookies under vite dev", () => {
+    vi.stubEnv("DEV", true);
+
+    const options = createAuthOptions();
+    expect(options.rateLimit).toEqual({ enabled: false });
+    expect(options.advanced?.useSecureCookies).toBe(false);
+  });
+
+  it("omits the base URL and cookie domain without GATEWAY_URL", () => {
+    vi.stubEnv("DEV", false);
+    workerEnv.GATEWAY_URL = undefined as unknown as string;
+
+    const options = createAuthOptions();
+    expect(options).not.toHaveProperty("baseURL");
+    expect(options.advanced).not.toHaveProperty("crossSubDomainCookies");
+    expect(options.rateLimit).toEqual({ enabled: true });
+  });
+
+  it("registers tanstackStartCookies last", () => {
+    expect(createAuthOptions().plugins.map((plugin) => plugin.id)).toEqual([
+      "admin",
+      "organization",
+      "tanstack-start-cookies",
+    ]);
   });
 });

@@ -22,8 +22,8 @@ export const userAppsResponseSchema = z.object({
   apps: z.array(userAppSchema),
 });
 
-function getAuthHeaders(extraHeaders?: Record<string, string>) {
-  const cookie = authClient.getCookie();
+async function getAuthHeaders(extraHeaders?: Record<string, string>) {
+  const cookie = await authClient.getCookie();
   return {
     "Content-Type": "application/json",
     ...(cookie ? { Cookie: cookie } : {}),
@@ -53,7 +53,7 @@ async function parseError(response: Response) {
 export async function fetchUserApps(): Promise<UserApp[]> {
   const response = await fetch(`${getGatewayUrl()}/api/me/apps`, {
     method: "GET",
-    headers: getAuthHeaders(),
+    headers: await getAuthHeaders(),
   });
 
   if (!response.ok) {

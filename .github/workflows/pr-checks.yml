@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - main
+# Checks only read the repository; nothing here needs a writable token.
+permissions:
+  contents: read
 jobs:
   type-check:
     name: Type Check
@@ -28,8 +31,37 @@ jobs:
         run: pnpm -r --no-bail run build
       - name: Run type checking
         run: pnpm types:check
+      # Better Auth validates the Drizzle schema at init and fails every auth
+      # request on a mismatch, so a stale auth.schema.ts must not merge.
+      - name: Check gateway Better Auth schema
+        run: pnpm -C apps/every-app-gateway auth:check
       - name: Validate SDK relative ESM import extensions
         run: pnpm -C packages/sdk check:esm-relative-imports
+  dependency-audit:
+    name: Dependency Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Every project below commits its own lockfile; the cloneable apps and
+      # template don't, so there is nothing stable to audit for them yet.
+      - name: Fail on critical advisories in committed lockfiles
+        run: |
+          failed=0
+          for project in apps/every-app-gateway apps/mobile-native landing-page packages/cli packages/perimeter packages/sdk; do
+            echo "::group::$project"
+            pnpm -C "$project" audit --audit-level critical || failed=1
+            echo "::endgroup::"
+          done
+          exit $failed
   prettier-check:
     name: Prettier Check
     runs-on: ubuntu-latest

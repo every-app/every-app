@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  jose: ^6.2.5
+  seroval: ^1.6.7
+  tinypool: ^2.1.2
+
 importers:
   .:
     dependencies:
@@ -21,8 +26,8 @@ importers:
         specifier: ^22.18.13
         version: 22.20.0
       jose:
-        specifier: ^6.0.12
-        version: 6.2.3
+        specifier: ^6.2.5
+        version: 6.2.12
       prettier:
         specifier: ^3.6.2
         version: 3.9.4
@@ -36,7 +41,7 @@ importers:
         specifier: ^5.1.4
         version: 5.1.4(typescript@5.9.3)(vite@7.3.6(@types/node@22.20.0))
       vitest:
-        specifier: ^3.2.4
+        specifier: ^3.2.6
         version: 3.2.7(@types/node@22.20.0)
 
 packages:
@@ -673,10 +678,10 @@ packages:
         integrity: sha512-uHJgbwAMwNFf5mLst7IWLNg14x1CkeqglJb/K3doi4dw6q2IvAAmM/Y81kevy83wP+Sst+nutFTYOGg3d1lsxg==,
       }
 
-  jose@6.2.3:
+  jose@6.2.12:
     resolution:
       {
-        integrity: sha512-YYVDInQKFJfR/xa3ojUTl8c2KoTwiL1R5Wg9YCydwH0x0B9grbzlg5HC7mMjCtUJjbQ/YnGEZIhI5tCgfTb4Hw==,
+        integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==,
       }
 
   js-tokens@9.0.1:
@@ -810,12 +815,12 @@ packages:
       }
     engines: { node: ">=12.0.0" }
 
-  tinypool@1.1.1:
+  tinypool@2.2.0:
     resolution:
       {
-        integrity: sha512-Zba82s87IFq9A9XmjiX5uZA/ARWDrB03OHlq+Vw1fSdt0I+4/Kutwy8BP4Y/y/aORMo61FQ0vIb5j44vSo5Pkg==,
+        integrity: sha512-jBrmx4lYmaC9k/mgPbylxs7kBUxHtD8256up+HjLaDFfXScKJQyil+SWXSvhAtT7XHo+yTVlpB81PGmHP8oLSQ==,
       }
-    engines: { node: ^18.0.0 || >=20.0.0 }
+    engines: { node: ^20.0.0 || >=22.0.0 }
 
   tinyrainbow@2.0.0:
     resolution:
@@ -1245,7 +1250,7 @@ snapshots:
 
   globrex@0.1.2: {}
 
-  jose@6.2.3: {}
+  jose@6.2.12: {}
 
   js-tokens@9.0.1: {}
 
@@ -1327,7 +1332,7 @@ snapshots:
       fdir: 6.5.0(picomatch@4.0.5)
       picomatch: 4.0.5
 
-  tinypool@1.1.1: {}
+  tinypool@2.2.0: {}
 
   tinyrainbow@2.0.0: {}
 
@@ -1405,7 +1410,7 @@ snapshots:
       tinybench: 2.9.0
       tinyexec: 0.3.2
       tinyglobby: 0.2.17
-      tinypool: 1.1.1
+      tinypool: 2.2.0
       tinyrainbow: 2.0.0
       vite: 7.3.6(@types/node@22.20.0)
       vite-node: 3.2.4(@types/node@22.20.0)

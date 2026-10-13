@@ -37,9 +37,9 @@ const initializeOwnerSchema = z.object({
  * Note: No rate limiting needed here - the endpoint can only succeed once
  * (service checks for existing owner), and better-auth handles signup protections.
  */
-export const initializeOwner = createServerFn()
+export const initializeOwner = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware])
-  .inputValidator((data: unknown) => initializeOwnerSchema.parse(data))
+  .validator((data: unknown) => initializeOwnerSchema.parse(data))
   .handler(async ({ data }) => {
     return AdminService.initializeOwner(data.email, data.password);
   });
@@ -67,9 +67,9 @@ const deleteUserSchema = z.object({
  * Only accessible by owners.
  * Cannot delete yourself.
  */
-export const deleteUser = createServerFn()
+export const deleteUser = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationOwnerMiddleware])
-  .inputValidator((data: unknown) => deleteUserSchema.parse(data))
+  .validator((data: unknown) => deleteUserSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AdminService.deleteUser(context.org, data.userId);
   });
@@ -86,9 +86,9 @@ const inviteMemberSchema = z.object({
  * Create and send an invitation for a new organization member.
  * Only accessible by organization admins and owners.
  */
-export const inviteMember = createServerFn()
+export const inviteMember = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
-  .inputValidator((data: unknown) => inviteMemberSchema.parse(data))
+  .validator((data: unknown) => inviteMemberSchema.parse(data))
   .handler(async ({ data, context }) => {
     const auth = createAuth();
     const request = getRequest();
@@ -111,9 +111,9 @@ const cancelInvitationSchema = z.object({
  * Cancel a pending invitation in the active organization.
  * Only accessible by organization admins and owners.
  */
-export const cancelInvitation = createServerFn()
+export const cancelInvitation = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
-  .inputValidator((data: unknown) => cancelInvitationSchema.parse(data))
+  .validator((data: unknown) => cancelInvitationSchema.parse(data))
   .handler(async ({ data, context }) => {
     const request = getRequest();
 
@@ -132,9 +132,9 @@ const sendPasswordResetEmailSchema = z.object({
  * Send a password reset email for an active user in the active organization.
  * Only accessible by organization admins and owners.
  */
-export const sendPasswordResetEmail = createServerFn()
+export const sendPasswordResetEmail = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationAdminMiddleware])
-  .inputValidator((data: unknown) => sendPasswordResetEmailSchema.parse(data))
+  .validator((data: unknown) => sendPasswordResetEmailSchema.parse(data))
   .handler(async ({ data, context }) => {
     return AdminService.sendPasswordResetEmail(context.org, data.userId);
   });

@@ -15,27 +15,27 @@ export const getAllTodos = createServerFn()
     return { todos: await TodoService.list(context.userId) };
   });
 
-export const createTodo = createServerFn()
+export const createTodo = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => createTodoSchema.parse(data))
+  .validator((data: unknown) => createTodoSchema.parse(data))
   .handler(async ({ data, context }) => {
     await TodoService.create(context.user, data);
 
     return { success: true };
   });
 
-export const updateTodo = createServerFn()
+export const updateTodo = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => updateTodoSchema.parse(data))
+  .validator((data: unknown) => updateTodoSchema.parse(data))
   .handler(async ({ data, context }) => {
     await TodoService.update(context.userId, data);
 
     return { success: true };
   });
 
-export const deleteTodo = createServerFn()
+export const deleteTodo = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => deleteTodoSchema.parse(data))
+  .validator((data: unknown) => deleteTodoSchema.parse(data))
   .handler(async ({ data, context }) => {
     await TodoService.delete(context.userId, data);
 

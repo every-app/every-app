@@ -34,7 +34,7 @@ describe("WebView cookie synchronization", () => {
   });
 
   it("parses and sets every cookie for gateway subdomains", async () => {
-    mocks.getCookie.mockReturnValue(
+    mocks.getCookie.mockResolvedValue(
       "__Secure-better-auth.session=abc=123; better-auth.session_data=xyz",
     );
     mocks.getGatewayUrl.mockReturnValue("https://example.com");
@@ -70,7 +70,7 @@ describe("WebView cookie synchronization", () => {
   });
 
   it("uses a non-secure host-only cookie for local HTTP gateways", async () => {
-    mocks.getCookie.mockReturnValue("better-auth.session=local");
+    mocks.getCookie.mockResolvedValue("better-auth.session=local");
     mocks.getGatewayUrl.mockReturnValue("http://localhost:8787");
 
     await expect(syncSessionCookieToWebView()).resolves.toBe(true);
@@ -89,14 +89,14 @@ describe("WebView cookie synchronization", () => {
   });
 
   it("returns false without a cookie header", async () => {
-    mocks.getCookie.mockReturnValue("");
+    mocks.getCookie.mockResolvedValue("");
 
     await expect(syncSessionCookieToWebView()).resolves.toBe(false);
     expect(mocks.set).not.toHaveBeenCalled();
   });
 
   it("only syncs Better Auth cookies", async () => {
-    mocks.getCookie.mockReturnValue(
+    mocks.getCookie.mockResolvedValue(
       "better-auth.session_token=abc; analytics_id=tracker; __Secure-other=x",
     );
     mocks.getGatewayUrl.mockReturnValue("https://example.com");

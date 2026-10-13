@@ -22,9 +22,26 @@ describe("getSafeRedirect", () => {
 describe("getSafeReturnTo", () => {
   const HOST = "example.com";
 
-  it("allows the gateway host itself", () => {
-    expect(getSafeReturnTo("https://example.com/settings", HOST)).toBe(
-      "https://example.com/settings",
+  it("rejects the gateway host itself", () => {
+    expect(getSafeReturnTo("https://example.com/settings", HOST)).toBeNull();
+    expect(getSafeReturnTo("https://EXAMPLE.com/", HOST)).toBeNull();
+  });
+
+  it("rejects server-function URLs on any host", () => {
+    expect(
+      getSafeReturnTo("https://example.com/_serverFn/abc?payload=%7B%7D", HOST),
+    ).toBeNull();
+    expect(
+      getSafeReturnTo("https://todo.example.com/_serverFn/abc?payload=1", HOST),
+    ).toBeNull();
+    expect(
+      getSafeReturnTo("https://todo.example.com/_serverFn", HOST),
+    ).toBeNull();
+    expect(
+      getSafeReturnTo("https://todo.example.com/./_serverFn/abc", HOST),
+    ).toBeNull();
+    expect(getSafeReturnTo("https://todo.example.com/_serverFnx", HOST)).toBe(
+      "https://todo.example.com/_serverFnx",
     );
   });
 

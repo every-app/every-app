@@ -169,6 +169,13 @@
       "when": 1785466601456,
       "tag": "0023_worker_name_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "6",
+      "when": 1791243230419,
+      "tag": "0024_better_auth_1_7",
+      "breakpoints": true
     }
   ]
 }

@@ -10,8 +10,13 @@
   "project": ["**/*.{js,mjs,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "drizzle-prod.config.ts"],
   "ignoreDependencies": [
+    // `cloudflare:workers` is a Workers runtime module that Knip reads as the
+    // (unused) `cloudflare` npm package.
+    "cloudflare",
     // Workspace source imports are followed by Knip but not credited as package usage.
     "@every-app/sdk",
+    // Fulfills the SDK's required peer dependency.
+    "jose",
     "tailwindcss",
     // Used via @plugin in CSS
     "daisyui",

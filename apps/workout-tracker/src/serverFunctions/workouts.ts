@@ -30,7 +30,7 @@ export const getAllWorkouts = createServerFn()
 
 export const createWorkouts = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => batchCreateWorkoutsSchema.parse(data))
+  .validator((data: unknown) => batchCreateWorkoutsSchema.parse(data))
   .handler(async ({ data, context }) => {
     if (data.length === 0) return { success: true };
 
@@ -66,7 +66,7 @@ export const createWorkouts = createServerFn({ method: "POST" })
 
 export const updateWorkout = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => updateWorkoutSchema.parse(data))
+  .validator((data: unknown) => updateWorkoutSchema.parse(data))
   .handler(async ({ data, context }) => {
     const existing = await db.query.workouts.findFirst({
       where: eq(workouts.id, data.id),
@@ -89,7 +89,7 @@ export const updateWorkout = createServerFn({ method: "POST" })
 
 export const saveWorkoutEdits = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => saveWorkoutEditsSchema.parse(data))
+  .validator((data: unknown) => saveWorkoutEditsSchema.parse(data))
   .handler(async ({ data, context }) => {
     const ownedWorkout = await db
       .select({ id: workouts.id, programId: workouts.programId })
@@ -249,7 +249,7 @@ export const saveWorkoutEdits = createServerFn({ method: "POST" })
 
 export const deleteWorkout = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => z.object({ id: z.string() }).parse(data))
+  .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
   .handler(async ({ data, context }) => {
     const existing = await db.query.workouts.findFirst({
       where: eq(workouts.id, data.id),
@@ -273,9 +273,7 @@ export const deleteWorkout = createServerFn({ method: "POST" })
 
 export const deleteWorkoutWithExercises = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) =>
-    deleteWorkoutWithExercisesSchema.parse(data),
-  )
+  .validator((data: unknown) => deleteWorkoutWithExercisesSchema.parse(data))
   .handler(async ({ data, context }) => {
     const existing = await db.query.workouts.findFirst({
       where: eq(workouts.id, data.workoutId),

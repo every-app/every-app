@@ -49,9 +49,9 @@ export const listMyOauthGrants = createServerFn()
     };
   });
 
-export const revokeMyOauthGrant = createServerFn()
+export const revokeMyOauthGrant = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationMemberMiddleware])
-  .inputValidator((data: unknown) => revokeOauthGrantSchema.parse(data))
+  .validator((data: unknown) => revokeOauthGrantSchema.parse(data))
   .handler(async ({ data, context }) => {
     await env.OAUTH_PROVIDER.revokeGrant(data.grantId, context.user.id);
     return { ok: true };

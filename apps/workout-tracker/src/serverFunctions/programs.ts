@@ -28,7 +28,7 @@ export const getAllPrograms = createServerFn()
 
 export const createProgram = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => createProgramSchema.parse(data))
+  .validator((data: unknown) => createProgramSchema.parse(data))
   .handler(async ({ data, context }) => {
     const now = new Date().toISOString();
     await db.insert(programs).values({
@@ -49,7 +49,7 @@ export const createProgram = createServerFn({ method: "POST" })
 
 export const updateProgram = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => updateProgramSchema.parse(data))
+  .validator((data: unknown) => updateProgramSchema.parse(data))
   .handler(async ({ data, context }) => {
     const existing = await db.query.programs.findFirst({
       where: and(eq(programs.id, data.id), eq(programs.userId, context.userId)),
@@ -74,7 +74,7 @@ export const updateProgram = createServerFn({ method: "POST" })
 
 export const deleteProgram = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => z.object({ id: z.string() }).parse(data))
+  .validator((data: unknown) => z.object({ id: z.string() }).parse(data))
   .handler(async ({ data, context }) => {
     const existing = await db.query.programs.findFirst({
       where: and(eq(programs.id, data.id), eq(programs.userId, context.userId)),
@@ -92,9 +92,7 @@ export const deleteProgram = createServerFn({ method: "POST" })
 
 export const createProgramFromTemplate = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) =>
-    createProgramFromTemplateSchema.parse(data),
-  )
+  .validator((data: unknown) => createProgramFromTemplateSchema.parse(data))
   .handler(async ({ data, context }) => {
     const now = new Date().toISOString();
 
@@ -167,7 +165,7 @@ export const createProgramFromTemplate = createServerFn({ method: "POST" })
 
 export const createCustomProgram = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .inputValidator((data: unknown) => createCustomProgramSchema.parse(data))
+  .validator((data: unknown) => createCustomProgramSchema.parse(data))
   .handler(async ({ data, context }) => {
     const now = new Date().toISOString();
     await db.batch([

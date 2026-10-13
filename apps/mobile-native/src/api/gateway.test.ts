@@ -1,11 +1,40 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/src/lib/auth-client", () => ({
-  authClient: { getCookie: vi.fn() },
+const mocks = vi.hoisted(() => ({
+  getCookie: vi.fn(),
   getGatewayUrl: vi.fn(),
 }));
 
-import { userAppsResponseSchema } from "./gateway";
+vi.mock("@/src/lib/auth-client", () => ({
+  authClient: { getCookie: mocks.getCookie },
+  getGatewayUrl: mocks.getGatewayUrl,
+}));
+
+import { fetchUserApps, userAppsResponseSchema } from "./gateway";
+
+describe("fetchUserApps", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends the stored session cookie to the gateway", async () => {
+    // @better-auth/expo reads the cookie from SecureStore asynchronously.
+    mocks.getCookie.mockResolvedValue("better-auth.session_token=abc");
+    mocks.getGatewayUrl.mockReturnValue("https://example.com");
+    const fetchMock = vi.fn(async () => Response.json({ apps: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(fetchUserApps()).resolves.toEqual([]);
+
+    expect(fetchMock).toHaveBeenCalledWith("https://example.com/api/me/apps", {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Cookie: "better-auth.session_token=abc",
+      },
+    });
+  });
+});
 
 describe("userAppsResponseSchema", () => {
   it("accepts string and numeric timestamps and tolerates extra fields", () => {
