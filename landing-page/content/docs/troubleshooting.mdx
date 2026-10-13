@@ -73,11 +73,15 @@ The terminal login often isn't permitted to write DNS records. Add the wildcard 
 
 This is what makes `todo-<your-org>.your-domain.dev` and every future app address reach your Gateway. Without it the Gateway works but apps 404.
 
-### Someone else has my Gateway's owner account
+### I lost the setup link, or it expired
 
-The first person to reach `/sign-up` on a freshly deployed Gateway becomes the owner, and signup closes after that. **Redeploying does not undo this** — deploys reuse the existing database, so the squatter's owner account survives.
+A new Gateway has no owner and accepts no sign-ups until someone opens the one-time setup link that `gateway deploy` printed. Each link works once and expires after 24 hours. To get a new one, run this on a machine logged in to the Gateway's Cloudflare account:
 
-To recover: in the Cloudflare dashboard, delete the Gateway's D1 database (**Storage & Databases → D1 → every-app-gateway**) — this erases all Gateway accounts and app registrations — then re-run `gateway deploy` and claim owner immediately. Your deployed apps are unaffected; re-run `app deploy` on each to re-register them.
+```bash
+npx everyapp gateway claim-link
+```
+
+Any earlier unused link stops working. Once the Gateway has an owner, `claim-link` refuses: sign in instead, or ask an owner or admin to invite you.
 
 ## Deploying an app
 

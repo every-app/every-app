@@ -1,5 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { deriveAppHostnameFromIssuer } from "./deployApp";
+import { appWorkerName, deriveAppHostnameFromIssuer } from "./deployApp";
+
+describe("appWorkerName", () => {
+  it("names the app's Worker", () => {
+    expect(appWorkerName("todo")).toBe("every-todo");
+  });
+
+  it("refuses an app id that would deploy over the gateway", () => {
+    expect(() => appWorkerName("app-gateway")).toThrow(/reserved/);
+    expect(() => appWorkerName("every-app-gateway")).toThrow(/reserved/);
+  });
+});
 
 describe("deriveAppHostnameFromIssuer", () => {
   it("derives the app hostname from the manifest id and issuer hostname", () => {

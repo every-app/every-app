@@ -16,6 +16,7 @@ import { queryClient, persister, CACHE_BUSTER } from "@/client/tanstack-db";
 import { Toaster } from "sonner";
 
 const PUBLIC_ROUTES = [
+  "/setup",
   "/sign-in",
   "/sign-up",
   "/forgot-password",

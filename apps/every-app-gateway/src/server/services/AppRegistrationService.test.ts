@@ -5,11 +5,13 @@ vi.mock("cloudflare:workers", () => ({
 }));
 
 vi.mock("@/server/repositories/AppRepository", () => ({
+  DELETED_APP_STATUS: "deleted",
   AppRepository: {
     findByAppSlug: vi.fn(),
     findByHostname: vi.fn(),
     findByWorkerName: vi.fn(),
     createWithInitialAccess: vi.fn(),
+    restoreWithInitialAccess: vi.fn(),
     update: vi.fn(),
   },
 }));
@@ -55,34 +57,33 @@ describe("AppRegistrationService", () => {
     mockOrganizationRepository.findSlugById.mockResolvedValue("acme");
   });
 
-  it("makes a new app default and grants every current org member", async () => {
+  it("makes a new app private: the deployer, owners and admins only", async () => {
     mockMembersRepository.listMembersForOrganization.mockResolvedValue([
-      { id: "owner-1" },
-      { id: "member-1" },
+      { id: "owner-1", role: "owner" },
+      { id: "admin-1", role: "admin" },
+      { id: "deployer-1", role: "member" },
+      { id: "member-1", role: "member" },
     ] as any);
 
-    const result = await AppRegistrationService.register(input);
+    const result = await AppRegistrationService.register({
+      ...input,
+      deployerUserId: "deployer-1",
+    });
 
     expect(mockAppRepository.createWithInitialAccess).toHaveBeenCalledWith(
       expect.objectContaining({
         organizationId: "org-1",
         appSlug: "todo",
-        isDefault: true,
+        isDefault: false,
       }),
-      [
+      ["owner-1", "admin-1", "deployer-1"].map((userId) =>
         expect.objectContaining({
           organizationId: "org-1",
-          userId: "owner-1",
+          userId,
           appRowId: expect.any(String),
           grantedBy: null,
         }),
-        expect.objectContaining({
-          organizationId: "org-1",
-          userId: "member-1",
-          appRowId: expect.any(String),
-          grantedBy: null,
-        }),
-      ],
+      ),
     );
     const [createdApp, initialAccess] =
       mockAppRepository.createWithInitialAccess.mock.calls[0] ?? [];
@@ -92,15 +93,36 @@ describe("AppRegistrationService", () => {
     expect(result).toMatchObject({
       hostname: "todo-acme.gateway.example.com",
       existingApp: false,
-      defaultAccess: true,
-      grantedUserCount: 2,
+      defaultAccess: false,
+      grantedUserCount: 3,
     });
+  });
+
+  it('grants every member and future members with access: "everyone"', async () => {
+    mockMembersRepository.listMembersForOrganization.mockResolvedValue([
+      { id: "owner-1", role: "owner" },
+      { id: "member-1", role: "member" },
+    ] as any);
+
+    const result = await AppRegistrationService.register({
+      ...input,
+      manifest: { id: "todo", access: "everyone" },
+    });
+
+    expect(mockAppRepository.createWithInitialAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ isDefault: true }),
+      [
+        expect.objectContaining({ userId: "owner-1" }),
+        expect.objectContaining({ userId: "member-1" }),
+      ],
+    );
+    expect(result).toMatchObject({ defaultAccess: true, grantedUserCount: 2 });
   });
 
   it("retries a failed atomic registration as a new app", async () => {
     mockMembersRepository.listMembersForOrganization.mockResolvedValue([
-      { id: "owner-1" },
-      { id: "member-1" },
+      { id: "owner-1", role: "owner" },
+      { id: "member-1", role: "member" },
     ] as any);
     mockAppRepository.createWithInitialAccess.mockRejectedValueOnce(
       new Error("simulated initial ACL insert failure"),
@@ -116,8 +138,8 @@ describe("AppRegistrationService", () => {
     expect(mockAppRepository.createWithInitialAccess).toHaveBeenCalledTimes(2);
     expect(retryResult).toMatchObject({
       existingApp: false,
-      defaultAccess: true,
-      grantedUserCount: 2,
+      defaultAccess: false,
+      grantedUserCount: 1,
     });
   });
 
@@ -152,31 +174,76 @@ describe("AppRegistrationService", () => {
     });
   });
 
-  it("lets two organizations register the same app slug under distinct worker names", async () => {
-    mockOrganizationRepository.findSlugById.mockImplementation(
-      async (organizationId) =>
-        organizationId === "org-1" ? "acme" : "globex",
-    );
-    mockMembersRepository.listMembersForOrganization.mockResolvedValue([]);
+  it("rejects a worker name that is not the app's own Worker", async () => {
+    for (const workerName of ["every-todo-globex", "billing-worker", "todo"]) {
+      await expect(
+        AppRegistrationService.register({ ...input, workerName }),
+      ).rejects.toMatchObject({ status: 400, code: "INVALID_WORKER_NAME" });
+    }
+    expect(mockAppRepository.createWithInitialAccess).not.toHaveBeenCalled();
+    expect(mockAppRepository.update).not.toHaveBeenCalled();
+  });
 
-    const acme = await AppRegistrationService.register(input);
-    const globex = await AppRegistrationService.register({
-      ...input,
-      organizationId: "org-2",
-      workerName: "every-todo-globex",
-    });
+  it("rejects the gateway's own Worker", async () => {
+    await expect(
+      AppRegistrationService.register({
+        ...input,
+        appSlug: "app-gateway",
+        workerName: "every-app-gateway",
+        manifest: { id: "app-gateway" },
+      }),
+    ).rejects.toMatchObject({ status: 400, code: "INVALID_WORKER_NAME" });
+  });
 
-    expect(acme.hostname).toBe("todo-acme.gateway.example.com");
-    expect(globex.hostname).toBe("todo-globex.gateway.example.com");
-    expect(mockAppRepository.findByHostname).toHaveBeenNthCalledWith(
-      1,
-      "todo-acme.gateway.example.com",
+  it("rejects a second organization registering the same app id", async () => {
+    mockOrganizationRepository.findSlugById.mockResolvedValue("globex");
+    mockAppRepository.findByWorkerName.mockResolvedValue({
+      organizationId: "org-1",
+      appSlug: "todo",
+      status: "active",
+    } as any);
+
+    await expect(
+      AppRegistrationService.register({ ...input, organizationId: "org-2" }),
+    ).rejects.toMatchObject({ status: 409, code: "WORKER_NAME_TAKEN" });
+  });
+
+  it("keeps a deleted app's id reserved to its organization", async () => {
+    mockOrganizationRepository.findSlugById.mockResolvedValue("globex");
+    mockAppRepository.findByWorkerName.mockResolvedValue({
+      organizationId: "org-1",
+      appSlug: "todo",
+      status: "deleted",
+    } as any);
+
+    await expect(
+      AppRegistrationService.register({ ...input, organizationId: "org-2" }),
+    ).rejects.toMatchObject({ status: 409, code: "WORKER_NAME_TAKEN" });
+  });
+
+  it("restores a deleted app on redeploy by its own organization", async () => {
+    const tombstone = {
+      id: "app-row-1",
+      organizationId: "org-1",
+      appSlug: "todo",
+      status: "deleted",
+      isDefault: false,
+    };
+    mockAppRepository.findByAppSlug.mockResolvedValue(tombstone as any);
+    mockAppRepository.findByWorkerName.mockResolvedValue(tombstone as any);
+    mockMembersRepository.listMembersForOrganization.mockResolvedValue([
+      { id: "owner-1", role: "owner" },
+    ] as any);
+
+    const result = await AppRegistrationService.register(input);
+
+    expect(mockAppRepository.restoreWithInitialAccess).toHaveBeenCalledWith(
+      "app-row-1",
+      expect.objectContaining({ status: "active" }),
+      [expect.objectContaining({ userId: "owner-1", appRowId: "app-row-1" })],
     );
-    expect(mockAppRepository.findByHostname).toHaveBeenNthCalledWith(
-      2,
-      "todo-globex.gateway.example.com",
-    );
-    expect(mockAppRepository.createWithInitialAccess).toHaveBeenCalledTimes(2);
+    expect(mockAppRepository.update).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ existingApp: true, grantedUserCount: 1 });
   });
 
   it("rejects a worker name already registered to another app", async () => {

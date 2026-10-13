@@ -1,27 +1,20 @@
 import type { AdminUser } from "@/types/admin-user";
-import { UserActionsMenu } from "./UserActionsMenu";
+import { UserActionsMenu, type UserActions } from "./UserActionsMenu";
 
-interface UsersTableProps {
+interface UsersTableProps extends UserActions {
   users: AdminUser[];
-  onSendPasswordResetEmail: (userId: string) => void;
-  onDeleteUser: (userId: string) => void;
-  onCancelInvitation: (invitationId: string) => void;
-  isSendingPasswordResetEmail: boolean;
-  isCancelingInvitation: boolean;
+  emailConfigured: boolean;
   canManageInvitations: boolean;
   isOwner: boolean;
+  currentUserId: string | undefined;
 }
 
-export function UsersTable({
-  users,
-  onSendPasswordResetEmail,
-  onDeleteUser,
-  onCancelInvitation,
-  isSendingPasswordResetEmail,
-  isCancelingInvitation,
-  canManageInvitations,
-  isOwner,
-}: UsersTableProps) {
+function statusLabel(user: AdminUser): string {
+  if (user.banned) return "deactivated";
+  return user.status || "active";
+}
+
+export function UsersTable({ users, ...actions }: UsersTableProps) {
   if (users.length === 0) {
     return (
       <div className="text-center py-8">
@@ -51,10 +44,14 @@ export function UsersTable({
             <td>
               <span
                 className={`badge rounded w-full capitalize ${
-                  user.status === "active" ? "badge-neutral" : "badge-warning"
+                  user.banned
+                    ? "badge-error"
+                    : user.status === "active"
+                      ? "badge-neutral"
+                      : "badge-warning"
                 }`}
               >
-                {user.status || "active"}
+                {statusLabel(user)}
               </span>
             </td>
             <td className="text-base-content/70">
@@ -63,16 +60,7 @@ export function UsersTable({
                 : "-"}
             </td>
             <td>
-              <UserActionsMenu
-                user={user}
-                onSendPasswordResetEmail={onSendPasswordResetEmail}
-                onDelete={onDeleteUser}
-                onCancelInvitation={onCancelInvitation}
-                isSendingPasswordResetEmail={isSendingPasswordResetEmail}
-                isCancelingInvitation={isCancelingInvitation}
-                canManageInvitations={canManageInvitations}
-                isOwner={isOwner}
-              />
+              <UserActionsMenu user={user} {...actions} />
             </td>
           </tr>
         ))}

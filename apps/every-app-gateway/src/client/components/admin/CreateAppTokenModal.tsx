@@ -88,7 +88,9 @@ export function CreateAppTokenModal({
         </div>
 
         <fieldset className="fieldset">
-          <legend className="fieldset-legend">Expiration (optional)</legend>
+          <legend className="fieldset-legend">
+            Expiration (optional, defaults to 90 days)
+          </legend>
           <input
             type="datetime-local"
             className="input w-full"

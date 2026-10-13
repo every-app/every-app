@@ -30,6 +30,8 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
     "Invalid invitation link. Please request a new invitation.",
   INVITATION_TOKEN_EXPIRED:
     "Invitation link has expired. Please request a new invitation.",
+  INVITATION_EMAIL_MISMATCH:
+    "This invitation is for a different email address. Sign in with the invited email to accept it.",
   INVITATION_REQUIRES_PENDING_USER:
     "This user is no longer pending and cannot be re-invited.",
   RESET_TOKEN_INVALID:
@@ -46,6 +48,13 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   TOKEN_SCOPE_LIMIT_EXCEEDED: "Too many scopes were provided.",
   INVALID_EXPIRATION_DATE: "Invalid expiration date.",
   EXPIRATION_IN_PAST: "Expiration date must be in the future.",
+  OAUTH_DISABLED: "OAuth connections are not enabled on this gateway.",
+  CANNOT_MANAGE_SELF:
+    "You cannot change your own role or deactivate your own account.",
+  CANNOT_MANAGE_OWNER: "Owner accounts cannot be changed.",
+  OWNER_REQUIRED: "Only an owner can change another admin.",
+  USER_IN_OTHER_ORGANIZATION:
+    "This user also belongs to another organization, so their account can't be deactivated or reset from here.",
 };
 
 const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {

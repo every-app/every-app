@@ -4,6 +4,8 @@ import {
   validateManifestStrict,
   assertPublicPathIsSafe,
   ManifestError,
+  GATEWAY_WORKER_NAME,
+  isAppWorkerName,
 } from "./manifest";
 
 describe("validateManifest", () => {
@@ -250,5 +252,64 @@ describe("assertPublicPathIsSafe", () => {
     expect(() =>
       validateManifest({ id: "todo", public: [{ path: "/*" }] }),
     ).toThrow(ManifestError);
+  });
+});
+
+describe("access, ai and serverFnGuard manifest fields", () => {
+  it("accepts them in both the tolerant and strict schemas", () => {
+    const input = {
+      id: "chef",
+      access: "everyone",
+      serverFnGuard: false,
+      ai: { models: ["gpt-5.2"], routes: ["/v1/files"] },
+    };
+    expect(validateManifest(input)).toMatchObject(input);
+    expect(validateManifestStrict(input)).toMatchObject(input);
+  });
+
+  it("rejects unknown access levels and non-API AI routes", () => {
+    expect(() => validateManifest({ id: "a", access: "public" })).toThrow(
+      ManifestError,
+    );
+    expect(() =>
+      validateManifest({ id: "a", ai: { routes: ["/v1/../admin"] } }),
+    ).toThrow(ManifestError);
+    expect(() =>
+      validateManifestStrict({ id: "a", ai: { routez: ["/v1/files"] } }),
+    ).toThrow(ManifestError);
+  });
+});
+
+describe("serverFnBase manifest field", () => {
+  it("accepts a plain path in both schemas", () => {
+    for (const serverFnBase of ["/app/_serverFn", "/api/fn/", "/_rpc"]) {
+      const input = { id: "todo", serverFnBase };
+      expect(validateManifest(input)).toMatchObject(input);
+      expect(validateManifestStrict(input)).toMatchObject(input);
+    }
+  });
+
+  it("rejects the root, relative paths and dot segments", () => {
+    for (const serverFnBase of ["/", "_serverFn", "/a/../b", "/a/./b", ""]) {
+      expect(() => validateManifest({ id: "todo", serverFnBase })).toThrow(
+        ManifestError,
+      );
+    }
+  });
+});
+
+describe("isAppWorkerName", () => {
+  it("accepts only the Worker everyapp deploy creates for the app", () => {
+    expect(isAppWorkerName("todo", "every-todo")).toBe(true);
+    expect(isAppWorkerName("every-todo", "every-todo")).toBe(true);
+    expect(isAppWorkerName("todo", "every-chef")).toBe(false);
+    expect(isAppWorkerName("todo", "todo")).toBe(false);
+  });
+
+  it("never accepts the gateway's own Worker", () => {
+    expect(isAppWorkerName("app-gateway", GATEWAY_WORKER_NAME)).toBe(false);
+    expect(isAppWorkerName("every-app-gateway", GATEWAY_WORKER_NAME)).toBe(
+      false,
+    );
   });
 });

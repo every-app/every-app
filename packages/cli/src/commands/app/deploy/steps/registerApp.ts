@@ -103,12 +103,21 @@ export async function registerAppWithGateway(
       );
       console.log(
         chalk.dim(
-          `  Default access: ${registerResponse.defaultAccess ? "enabled" : "disabled"}`,
+          `  Available to: ${registerResponse.defaultAccess ? "everyone" : "selected people"}`,
         ),
       );
+      if (!registerResponse.existingApp) {
+        console.log(
+          chalk.dim(
+            `  Access granted to ${registerResponse.grantedUserCount} users\n`,
+          ),
+        );
+      }
+    }
+    if (!registerResponse.existingApp && !registerResponse.defaultAccess) {
       console.log(
         chalk.dim(
-          `  Access granted to ${registerResponse.grantedUserCount} users\n`,
+          "  New apps are private: only you and the organization's owners and admins can open it. Grant others in Admin → Apps, or deploy with --access everyone.",
         ),
       );
     }

@@ -201,6 +201,30 @@ describe("AppGateway caller authorization", () => {
 });
 
 describe("AppGateway proxy and attribution", () => {
+  it("applies the calling app's manifest AI policy", async () => {
+    const restricted = {
+      ...app(),
+      manifest: validateManifest({
+        id: "chef",
+        providers: ["openai"],
+        ai: { models: ["gpt-5-mini"] },
+      }),
+    };
+
+    await expectError(
+      call({ registeredApps: [restricted] }),
+      403,
+      "model_not_allowed",
+    );
+    await expectError(
+      call({
+        inbound: new Request("https://gateway.internal/api/ai/openai/v1/files"),
+      }),
+      403,
+      "ai_route_not_allowed",
+    );
+  });
+
   it("ignores app-supplied Authorization and injects the gateway provider key", async () => {
     const fetchUpstream = vi.fn<(request: Request) => Promise<Response>>(
       async () => Response.json({ ok: true }),

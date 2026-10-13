@@ -12,6 +12,7 @@ interface DeployCommandFlags {
   yes?: boolean;
   "skip-dns-check"?: boolean;
   domain?: string;
+  access?: "everyone" | "admins";
 }
 
 /**
@@ -40,7 +41,12 @@ export async function deploy(
   // Check we're inside an Every App project
   await checkIsEveryAppProject();
 
-  const manifest = await loadEveryAppManifest(cwd);
+  const loadedManifest = await loadEveryAppManifest(cwd);
+  // --access overrides the manifest. Either only matters the first time the
+  // gateway registers the app; after that, access is managed in its UI.
+  const manifest = flags.access
+    ? { ...loadedManifest, access: flags.access }
+    : loadedManifest;
   const appId = manifest.id;
 
   console.log(chalk.bold(`\nProject: ${appId}\n`));

@@ -3,6 +3,7 @@ export interface DeployCommandFlags {
   localGateway?: string;
   domain?: string;
   yes?: boolean;
+  printSetupLink?: boolean;
 }
 
 export interface CloudflareResources {

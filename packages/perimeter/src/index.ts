@@ -1,6 +1,13 @@
 export { handleGatewayRequest, type GatewayDeps } from "./gateway";
 export { parseHost, type ParsedHost } from "./host";
-export { evaluateCsrf, type CsrfDecision } from "./csrf";
+export {
+  evaluateCsrf,
+  evaluateWebSocketOrigin,
+  isWebSocketUpgrade,
+  type CsrfDecision,
+} from "./csrf";
+export { evaluateServerFnRequest, isServerFnPath } from "./serverFunctions";
+export { logEvent, redactLogFields, REDACTED } from "./log";
 export {
   EVERYAPP_HEADER_PREFIX,
   IDENTITY_HEADER,
@@ -12,6 +19,8 @@ export {
   stripInboundHeaders,
   withSecurityHeaders,
   enforceCspFloor,
+  VERSION_OVERRIDES_HEADER,
+  type SecurityHeaderOptions,
 } from "./headers";
 export {
   isInternalPath,

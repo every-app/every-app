@@ -1,22 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RegisteredApp } from "@every-app/perimeter";
 
-const { mockMemberFindFirst, mockUserFindFirst, mockOauthFetch } = vi.hoisted(
-  () => ({
+const { mockMemberFindFirst, mockUserFindFirst, mockOauthFetch, workerEnv } =
+  vi.hoisted(() => ({
     mockMemberFindFirst: vi.fn(),
     mockUserFindFirst: vi.fn(),
     mockOauthFetch: vi.fn(),
-  }),
-);
-
-vi.mock("cloudflare:workers", () => ({
-  env: {
-    GATEWAY_URL: "https://gateway.example.com",
-    OAUTH_PROVIDER: {
-      unwrapToken: vi.fn(),
+    workerEnv: {
+      GATEWAY_URL: "https://gateway.example.com",
+      MCP_OAUTH_ENABLED: undefined as string | undefined,
+      OAUTH_PROVIDER: {
+        unwrapToken: vi.fn(),
+      },
     },
-  },
-}));
+  }));
+
+vi.mock("cloudflare:workers", () => ({ env: workerEnv }));
 
 vi.mock("drizzle-orm", () => ({
   and: vi.fn((...parts: unknown[]) => ({ type: "and", parts })),
@@ -26,13 +25,23 @@ vi.mock("drizzle-orm", () => ({
 vi.mock("@/db", () => ({
   db: {
     query: {
-      members: {
-        findFirst: mockMemberFindFirst,
-      },
       users: {
         findFirst: mockUserFindFirst,
       },
     },
+    // resolveLiveOrgRole: the membership joined with the user's ban state.
+    select: () => ({
+      from: () => ({
+        innerJoin: () => ({
+          where: () => ({
+            limit: async () => {
+              const row = await mockMemberFindFirst();
+              return row ? [{ banned: false, banExpires: null, ...row }] : [];
+            },
+          }),
+        }),
+      }),
+    }),
   },
 }));
 
@@ -182,6 +191,19 @@ describe("createProdAuthenticator PAT branch", () => {
     },
   );
 
+  it("rejects the PAT of a deactivated (banned) user", async () => {
+    mockUserPatService.verify.mockResolvedValue(activePat());
+    mockMemberFindFirst.mockResolvedValue({
+      organizationId: "org-id",
+      role: "member",
+      banned: true,
+    });
+
+    await expect(
+      createProdAuthenticator().authenticate(request()),
+    ).resolves.toBeNull();
+  });
+
   it("returns null when the token user is no longer a member of the token org", async () => {
     mockUserPatService.verify.mockResolvedValue(activePat());
     mockMemberFindFirst.mockResolvedValue(undefined);
@@ -224,9 +246,38 @@ describe("createProdAuthenticator PAT branch", () => {
   });
 });
 
+describe("createProdAuthenticator with the OAuth server off (default)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    workerEnv.MCP_OAUTH_ENABLED = undefined;
+  });
+
+  it("rejects a non-PAT bearer without calling the OAuth provider", async () => {
+    await expect(
+      createProdAuthenticator().authenticate(request("a:b:c")),
+    ).resolves.toBeNull();
+    expect(mockOauthFetch).not.toHaveBeenCalled();
+    expect(mockAuth.api.getSession).not.toHaveBeenCalled();
+  });
+
+  it("still authenticates personal access tokens", async () => {
+    mockMemberFindFirst.mockResolvedValue({
+      organizationId: "org-id",
+      role: "member",
+    });
+    mockUserPatRepository.touchLastUsed.mockResolvedValue(undefined);
+    mockUserPatService.verify.mockResolvedValue(activePat());
+
+    await expect(
+      createProdAuthenticator().authenticate(request()),
+    ).resolves.toMatchObject({ sub: "user-id", credential: { kind: "pat" } });
+  });
+});
+
 describe("createProdAuthenticator OAuth branch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    workerEnv.MCP_OAUTH_ENABLED = "true";
     mockMemberFindFirst.mockResolvedValue({
       organizationId: "org-id",
       role: "member",

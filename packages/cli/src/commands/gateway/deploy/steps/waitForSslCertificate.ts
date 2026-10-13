@@ -1,13 +1,15 @@
 import chalk from "chalk";
 import {
-  checkGatewayHasOwner,
   checkSslReady,
   formatGatewayUnreachableError,
   GatewayUnreachableError,
 } from "@/lib/gateway";
+import { presentSetupLink, type SetupLink } from "@/lib/gateway/setup-link";
 
 interface WaitForSslCertificateOptions {
   workerUrl: string;
+  /** Present when the gateway has no owner yet. */
+  setupLink: SetupLink | null;
   maxWaitMs?: number;
   pollIntervalMs?: number;
 }
@@ -18,13 +20,12 @@ interface WaitForSslCertificateOptions {
  */
 export async function waitForSslCertificate({
   workerUrl,
+  setupLink,
   maxWaitMs = 120000,
   pollIntervalMs = 3000,
 }: WaitForSslCertificateOptions): Promise<void> {
-  const signUpUrl = `${workerUrl}/sign-up`;
-
   console.log(chalk.green("\nGateway deployment successful!\n"));
-  console.log(`Your Gateway will be available at: ${chalk.cyan(signUpUrl)}\n`);
+  console.log(`Your Gateway will be available at: ${chalk.cyan(workerUrl)}\n`);
   console.log(chalk.dim("Waiting for SSL certificate to be provisioned..."));
 
   const startTime = Date.now();
@@ -44,6 +45,7 @@ export async function waitForSslCertificate({
             "  Confirm the gateway URL is correct and reachable, then run this command again.\n",
           ),
         );
+        if (setupLink) await presentSetupLink(setupLink);
         return;
       }
       throw error;
@@ -51,35 +53,8 @@ export async function waitForSslCertificate({
 
     if (sslReady) {
       console.log(chalk.green("SSL certificate is ready!\n"));
-
-      // SSL is ready - check if the gateway has an owner account
-      let hasOwner: boolean;
-      try {
-        hasOwner = await checkGatewayHasOwner(workerUrl);
-      } catch (error) {
-        if (error instanceof GatewayUnreachableError) {
-          console.log(chalk.yellow("\nGateway unreachable\n"));
-          console.log(formatGatewayUnreachableError(error));
-          console.log(
-            chalk.dim(
-              "  Confirm the gateway URL is correct and reachable, then run this command again.\n",
-            ),
-          );
-          return;
-        }
-        throw error;
-      }
-
-      if (hasOwner) {
-        console.log(`Your Gateway is now live at: ${chalk.cyan(workerUrl)}\n`);
-      } else {
-        console.log(`Your Gateway is now live at: ${chalk.cyan(signUpUrl)}\n`);
-        console.log(
-          chalk.dim(
-            "  Create an owner account to get started with your Gateway.\n",
-          ),
-        );
-      }
+      console.log(`Your Gateway is now live at: ${chalk.cyan(workerUrl)}\n`);
+      if (setupLink) await presentSetupLink(setupLink);
       return;
     }
   }
@@ -95,7 +70,5 @@ export async function waitForSslCertificate({
       "  The URL above will be accessible once the SSL certificate is ready.\n",
     ),
   );
-  console.log(
-    chalk.dim("  Create an owner account to get started with your Gateway.\n"),
-  );
+  if (setupLink) await presentSetupLink(setupLink);
 }

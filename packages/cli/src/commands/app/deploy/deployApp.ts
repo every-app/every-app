@@ -21,7 +21,11 @@ import {
   loadEveryAppManifest,
   type EveryAppCliManifest,
 } from "@/lib/generateWranglerConfig";
-import { workerNameFor } from "@every-app/perimeter/manifest";
+import {
+  GATEWAY_WORKER_NAME,
+  isAppWorkerName,
+  workerNameFor,
+} from "@every-app/perimeter/manifest";
 import { exitWithUpdateNotice } from "@/lib/version-check";
 import { formatWildcardDnsInstructions } from "@/lib/dnsInstructions";
 
@@ -56,7 +60,7 @@ export async function deployApp(
 
   const manifest = options.manifest ?? (await loadEveryAppManifest(cwd));
   const appId = manifest.id;
-  const workerName = workerNameFor(appId);
+  const workerName = appWorkerName(appId);
 
   const d1Bindings = manifest.resources?.d1 ?? [];
   const kvBindings = manifest.resources?.kv ?? [];
@@ -163,6 +167,20 @@ export async function deployApp(
     organizationId,
     hostname,
   };
+}
+
+/**
+ * The Worker an app deploys to. Refuses app ids whose Worker would be the
+ * gateway's own (e.g. "app-gateway"): the upload would replace the gateway.
+ */
+export function appWorkerName(appId: string): string {
+  const workerName = workerNameFor(appId);
+  if (!isAppWorkerName(appId, workerName)) {
+    throw new Error(
+      `App id "${appId}" is reserved: its Worker would be the gateway's own (${GATEWAY_WORKER_NAME}). Choose a different id in everyapp.config.ts.`,
+    );
+  }
+  return workerName;
 }
 
 export function deriveAppHostnameFromIssuer(

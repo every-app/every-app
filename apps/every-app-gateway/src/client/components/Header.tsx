@@ -1,13 +1,16 @@
 import { Link } from "@tanstack/react-router";
 import { User } from "lucide-react";
 import { authClient } from "@/client/auth-client";
+import { useActiveOrganization } from "@/client/hooks/useActiveOrganization";
 
 interface HeaderProps {
   email?: string | null;
 }
 
 export function Header({ email }: HeaderProps) {
-  const { data: activeOrganization } = authClient.useActiveOrganization();
+  const { data: activeOrganization } = useActiveOrganization({
+    enabled: Boolean(email),
+  });
   const { data: activeMemberRole } = authClient.useActiveMemberRole();
   const canManageOrganizationApps =
     activeMemberRole?.role === "owner" || activeMemberRole?.role === "admin";

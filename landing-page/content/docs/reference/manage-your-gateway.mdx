@@ -3,19 +3,27 @@ title: Manage Your Gateway
 description: Users, app access, tokens, updates, and domain changes
 ---
 
-Everything here happens in your Gateway's web UI (at your domain) unless noted. You're the **owner** — the first account created on a fresh Gateway; signup is invite-only after that.
+Everything here happens in your Gateway's web UI (at your domain) unless noted. You're the **owner** — the account created with the Gateway's one-time setup link; signup is invite-only after that.
 
 ## Invite people
 
-**Admin → Users → Invite.** They get an email link, create an account, and land in your organization. Apps marked "auto-grant to new users" appear for them immediately; grant the rest per app.
+**Admin → Users → Invite.** Pick their role: **member** (opens the apps they're given) or **admin** (also manages users and apps). They get an email link, create an account, and land in your organization. Email is optional: if your Gateway can't send it, you get a **Copy invite link** to send yourself instead (also under ⋯ for any pending invite). Invite links work once, for 72 hours, and only for an account with the invited email.
+
+Someone locked out without email? **⋯ → Generate Password Reset Link** gives you a one-hour, single-use link to send them. Apps marked "Available to everyone" appear for them immediately; grant the rest per app.
+
+To change someone's role later, use **⋯ → Change role**. Only owners can change another admin.
+
+## Deactivate someone
+
+**Admin → Users → ⋯ → Deactivate** locks a person out at once: they're signed out everywhere, can't sign in again, and their personal access tokens and deploy tokens stop working. **Reactivate** lets them sign in again; revoked tokens stay revoked.
 
 ## Control who sees which app
 
-**Admin → Apps.** Each app row shows its access count — click it (or ⋯ → Manage access) to grant or revoke per user. Editing an app changes its display name, description, and whether new users get it automatically. Deploying decides _what exists_; this page decides _who can use it_.
+**Admin → Apps.** A newly deployed app is private: only whoever deployed it and your owners and admins can open it. Each app row shows its access count — click it (or ⋯ → Manage access) to grant or revoke per user. Editing an app changes its display name, description, and **Available to everyone** (every current and future member gets it). To make an app available to everyone from the start, set `access: "everyone"` in its `everyapp.config.ts` or deploy with `everyapp app deploy --access everyone`. Deploying decides _what exists_; this page decides _who can use it_.
 
 ## Deploy tokens
 
-**Admin → Tokens → Deploy token.** A deploy token is what lets a terminal register and deploy apps to your Gateway — it's organization-wide and shown once. Pair it with [`everyapp login`](/docs/reference/cli#everyapp-login) on any machine that deploys. Revoke a token here at any time (deploys from that machine stop working immediately); per-app AI tokens live on the same page.
+**Admin → Tokens → Deploy token.** A deploy token is what lets a terminal register and deploy apps to your Gateway — it's organization-wide and shown once. Pair it with [`everyapp login`](/docs/reference/cli#everyapp-login) on any machine that deploys. Revoke a token here at any time (deploys from that machine stop working immediately); per-app AI tokens live on the same page. A deploy token acts for the person who created it, so it also stops working when they're deactivated or removed from the organization.
 
 ## Update the Gateway
 
@@ -29,7 +37,7 @@ This also re-syncs app service bindings from the registry and applies any pendin
 
 ## Remove an app
 
-**Admin → Apps → ⋯ → Delete** removes it from the launcher and revokes everyone's access. The app's worker and database stay on your Cloudflare account until you delete them there (`dash.cloudflare.com → Workers & Pages` and `→ Storage & Databases`) — so deleting in the Gateway is reversible by redeploying.
+**Admin → Apps → ⋯ → Delete** stops serving it, removes it from the launcher and revokes everyone's access. Its app id stays reserved to your organization, so nobody else can register an app under the same name. The app's worker and database stay on your Cloudflare account until you delete them there (`dash.cloudflare.com → Workers & Pages` and `→ Storage & Databases`) — so deleting in the Gateway is reversible by redeploying.
 
 ## Move to a different domain
 

@@ -2,6 +2,7 @@ import { auth, type Auth } from "@/auth";
 import { createMiddleware } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { GatewayError } from "@/server/errors";
+import { isUserBanned } from "@/server/user-ban";
 import {
   resolveOrgContext,
   type OrgContext,
@@ -27,6 +28,10 @@ export const authMiddleware = createMiddleware({
   });
 
   if (!session || !session.user || !session.user.id) {
+    throw new GatewayError("UNAUTHORIZED", "Unauthorized");
+  }
+  // Deactivation deletes sessions; this covers one created in the race.
+  if (isUserBanned(session.user)) {
     throw new GatewayError("UNAUTHORIZED", "Unauthorized");
   }
 

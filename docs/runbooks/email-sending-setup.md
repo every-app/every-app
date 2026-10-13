@@ -11,6 +11,12 @@ Service. It supports two transports:
   `CLOUDFLARE_ACCOUNT_ID` to select REST explicitly. When both are present, REST
   takes precedence over the binding.
 
+Email is optional. Without a sender and a transport, or when a send fails,
+inviting someone still creates the invitation and the admin gets a **Copy invite
+link** instead (single use, 72 hours, only for the invited email), and
+**Generate Password Reset Link** gives a one-hour, single-use reset link. The
+Users page shows "Email is not configured" until it is.
+
 ## One-time domain onboarding
 
 Ben must onboard the domain used by `EMAIL_FROM` before production sends will

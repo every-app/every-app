@@ -8,6 +8,8 @@ type DeploymentMode = "self_hosted" | "hosted";
 
 export type DeployTokenContext = {
   organizationId: string;
+  /** The user who created the deploy token. */
+  createdBy: string | null;
   scopes: string[];
 };
 

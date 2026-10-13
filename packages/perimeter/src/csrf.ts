@@ -63,3 +63,37 @@ export function evaluateCsrf(
     reason: `origin ${originHost} != ${expectedHost}`,
   };
 }
+
+/** Whether the request asks to upgrade to a WebSocket. */
+export function isWebSocketUpgrade(headers: Headers): boolean {
+  return headers.get("upgrade")?.trim().toLowerCase() === "websocket";
+}
+
+/**
+ * Cross-site WebSocket hijacking defense. A WebSocket handshake is a GET, so
+ * {@link evaluateCsrf} lets it through, but browsers attach the session cookie
+ * to cross-origin handshakes and the page that opened the socket can then read
+ * everything sent on it. Browsers always send Origin on a WebSocket handshake;
+ * it must be the app's own host.
+ */
+export function evaluateWebSocketOrigin(
+  expectedHost: string,
+  origin: string | null,
+): CsrfDecision {
+  if (origin === null) {
+    return { allowed: false, reason: "websocket upgrade without origin" };
+  }
+  let originHost: string;
+  try {
+    originHost = new URL(origin).host;
+  } catch {
+    return { allowed: false, reason: "malformed origin" };
+  }
+  if (originHost === expectedHost) {
+    return { allowed: true, reason: "websocket origin matches app host" };
+  }
+  return {
+    allowed: false,
+    reason: `websocket origin ${originHost} != ${expectedHost}`,
+  };
+}

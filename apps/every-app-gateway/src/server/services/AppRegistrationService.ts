@@ -1,12 +1,18 @@
 import { env } from "cloudflare:workers";
 import {
+  isAppWorkerName,
   validateManifest,
   ManifestError,
+  workerNameFor,
   type EveryAppManifest,
 } from "@every-app/perimeter/manifest";
-import { AppRepository } from "@/server/repositories/AppRepository";
+import {
+  AppRepository,
+  DELETED_APP_STATUS,
+} from "@/server/repositories/AppRepository";
 import { OrganizationMembersRepository } from "@/server/repositories/OrganizationMembersRepository";
 import { OrganizationRepository } from "@/server/repositories/OrganizationRepository";
+import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 
 type RegisterAppInput = {
   organizationId: string;
@@ -15,6 +21,8 @@ type RegisterAppInput = {
   description: string;
   workerName: string;
   manifest: unknown;
+  /** The user whose deploy token registers the app. */
+  deployerUserId?: string | null;
 };
 
 type RegisterAppResult = {
@@ -106,18 +114,59 @@ function validateRegistryManifest(
   }
 }
 
-function validateWorkerName(workerName: string): void {
-  if (!/^[a-z0-9-]+$/.test(workerName)) {
+/**
+ * A deploy token may only point an app's hostname at that app's own Worker,
+ * named by the `everyapp deploy` convention. Otherwise any org owner could
+ * route a hostname they control to any other Worker in the Cloudflare
+ * account (the binding reconcile binds every registered worker name), or to
+ * the gateway itself.
+ */
+function validateWorkerName(appSlug: string, workerName: string): void {
+  if (!isAppWorkerName(appSlug, workerName)) {
     throw new AppRegistrationError({
       status: 400,
-      message: "workerName must be a valid worker script name",
+      code: "INVALID_WORKER_NAME",
+      message: `workerName for app "${appSlug}" must be "${workerNameFor(appSlug)}" (and not the gateway's own Worker); received "${workerName}".`,
     });
   }
 }
 
+/**
+ * Who gets a newly registered app. Apps are private by default: the deployer
+ * and the org's owners and admins, nobody added later. A manifest with
+ * `access: "everyone"` grants every member and every future member instead.
+ * Redeploys never change access; admins manage it in the gateway UI.
+ */
+async function initialAccess(
+  data: RegisterAppInput,
+  manifest: EveryAppManifest,
+  appRowId: string,
+) {
+  const everyone = manifest.access === "everyone";
+  const orgMembers =
+    await OrganizationMembersRepository.listMembersForOrganization(
+      data.organizationId,
+    );
+  const grantees = orgMembers.filter((member) => {
+    if (everyone || member.id === data.deployerUserId) return true;
+    const role = resolvePrimaryOrganizationRole(member.role);
+    return role === "owner" || role === "admin";
+  });
+  return {
+    isDefault: everyone,
+    grants: grantees.map((member) => ({
+      id: crypto.randomUUID(),
+      organizationId: data.organizationId,
+      userId: member.id,
+      appRowId,
+      grantedBy: null,
+    })),
+  };
+}
+
 async function register(data: RegisterAppInput): Promise<RegisterAppResult> {
   const manifest = validateRegistryManifest(data.manifest, data.appSlug);
-  validateWorkerName(data.workerName);
+  validateWorkerName(data.appSlug, data.workerName);
 
   const organizationSlug = await OrganizationRepository.findSlugById(
     data.organizationId,
@@ -153,6 +202,8 @@ async function register(data: RegisterAppInput): Promise<RegisterAppResult> {
   // app register the same workerName would route both hostnames to whichever
   // worker deployed last — and merge their D1/KV, since resource names derive
   // from the worker name. Fail closed until resource names are org-scoped.
+  // Deleted apps keep their row (a tombstone), so their worker name stays
+  // taken and another org can never re-register the app id.
   if (
     workerNameOwner &&
     (workerNameOwner.organizationId !== data.organizationId ||
@@ -168,7 +219,7 @@ async function register(data: RegisterAppInput): Promise<RegisterAppResult> {
   const appRowId = existingApp?.id ?? crypto.randomUUID();
   const manifestJson = JSON.stringify(manifest);
 
-  if (existingApp) {
+  if (existingApp && existingApp.status !== DELETED_APP_STATUS) {
     await AppRepository.update(existingApp.id, {
       organizationId: data.organizationId,
       name: data.name,
@@ -178,19 +229,36 @@ async function register(data: RegisterAppInput): Promise<RegisterAppResult> {
       manifest: manifestJson,
       status: "active",
     });
-  } else {
-    const allUsers =
-      await OrganizationMembersRepository.listMembersForOrganization(
-        data.organizationId,
-      );
-    const initialAccess = allUsers.map((user) => ({
-      id: crypto.randomUUID(),
-      organizationId: data.organizationId,
-      userId: user.id,
-      appRowId,
-      grantedBy: null,
-    }));
 
+    return {
+      appId: appRowId,
+      appSlug: data.appSlug,
+      hostname,
+      existingApp: true,
+      defaultAccess: existingApp.isDefault,
+      grantedUserCount: 0,
+    };
+  }
+
+  const { isDefault, grants } = await initialAccess(data, manifest, appRowId);
+
+  if (existingApp) {
+    // Redeploying a deleted app restores its tombstone like a new app.
+    await AppRepository.restoreWithInitialAccess(
+      existingApp.id,
+      {
+        organizationId: data.organizationId,
+        name: data.name,
+        description: data.description,
+        hostname,
+        workerName: data.workerName,
+        manifest: manifestJson,
+        status: "active",
+        isDefault,
+      },
+      grants,
+    );
+  } else {
     try {
       await AppRepository.createWithInitialAccess(
         {
@@ -204,9 +272,9 @@ async function register(data: RegisterAppInput): Promise<RegisterAppResult> {
           manifest: manifestJson,
           tier: "service_binding",
           status: "active",
-          isDefault: true,
+          isDefault,
         },
-        initialAccess,
+        grants,
       );
     } catch (error) {
       // Two concurrent registrations can both pass the read-side checks; the
@@ -224,24 +292,15 @@ async function register(data: RegisterAppInput): Promise<RegisterAppResult> {
       }
       throw error;
     }
-
-    return {
-      appId: appRowId,
-      appSlug: data.appSlug,
-      hostname,
-      existingApp: false,
-      defaultAccess: true,
-      grantedUserCount: allUsers.length,
-    };
   }
 
   return {
     appId: appRowId,
     appSlug: data.appSlug,
     hostname,
-    existingApp: true,
-    defaultAccess: existingApp.isDefault,
-    grantedUserCount: 0,
+    existingApp: Boolean(existingApp),
+    defaultAccess: isDefault,
+    grantedUserCount: grants.length,
   };
 }
 

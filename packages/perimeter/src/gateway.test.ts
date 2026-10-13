@@ -163,6 +163,7 @@ describe("handleGatewayRequest", () => {
     const res = await handleGatewayRequest(
       req("/.well-known/oauth-protected-resource"),
       deps({
+        oauthDiscovery: true,
         authenticator: {
           authenticate: async () => null,
           hasAppAccess: async () => false,
@@ -185,6 +186,7 @@ describe("handleGatewayRequest", () => {
     const res = await handleGatewayRequest(
       req("/.well-known/oauth-protected-resource/mcp"),
       deps({
+        oauthDiscovery: true,
         authenticator: {
           authenticate: async () => null,
           hasAppAccess: async () => false,
@@ -204,6 +206,7 @@ describe("handleGatewayRequest", () => {
         headers: { "sec-fetch-site": "same-origin" },
       }),
       deps({
+        oauthDiscovery: true,
         resolveApp: async () => ({
           ...TODO,
           manifest: validateManifest({
@@ -281,7 +284,7 @@ describe("handleGatewayRequest", () => {
 
     expect(res.status).toBe(401);
     expect(res.headers.get("www-authenticate")).toBe(
-      'Bearer resource_metadata="https://todo.example.com/.well-known/oauth-protected-resource"',
+      'Bearer realm="every-app", error="invalid_token"',
     );
     await expect(res.json()).resolves.toEqual({ error: "unauthenticated" });
   });
@@ -301,7 +304,7 @@ describe("handleGatewayRequest", () => {
 
     expect(res.status).toBe(401);
     expect(res.headers.get("www-authenticate")).toBe(
-      'Bearer resource_metadata="https://todo.example.com/.well-known/oauth-protected-resource"',
+      'Bearer realm="every-app", error="invalid_token"',
     );
   });
 
@@ -324,7 +327,7 @@ describe("handleGatewayRequest", () => {
 
     expect(res.status).toBe(401);
     expect(res.headers.get("www-authenticate")).toBe(
-      'Bearer resource_metadata="https://todo.example.com/.well-known/oauth-protected-resource"',
+      'Bearer realm="every-app", error="invalid_token"',
     );
   });
 
@@ -713,7 +716,7 @@ describe("handleGatewayRequest", () => {
     );
     expect(res.status).toBe(401);
     expect(res.headers.get("www-authenticate")).toBe(
-      'Bearer resource_metadata="https://todo.example.com/.well-known/oauth-protected-resource"',
+      'Bearer realm="every-app"',
     );
   });
 
@@ -742,7 +745,7 @@ describe("handleGatewayRequest", () => {
     );
     expect(res.status).toBe(401);
     expect(res.headers.get("www-authenticate")).toBe(
-      'Bearer resource_metadata="https://todo.example.com/.well-known/oauth-protected-resource"',
+      'Bearer realm="every-app"',
     );
   });
 
@@ -944,5 +947,298 @@ describe("handleGatewayRequest", () => {
     expect(entry.ms).toEqual(expect.any(Number));
     expect(entry).not.toHaveProperty("path");
     consoleLog.mockRestore();
+  });
+});
+
+describe("OAuth discovery (MCP_OAUTH_ENABLED)", () => {
+  const anonymous: SessionAuthenticator = {
+    authenticate: async () => null,
+    hasAppAccess: async () => false,
+  };
+
+  it("404s protected-resource metadata by default and never proxies it", async () => {
+    const fetcher = vi.fn();
+    for (const path of [
+      "/.well-known/oauth-protected-resource",
+      "/.well-known/oauth-protected-resource/mcp",
+    ]) {
+      const res = await handleGatewayRequest(
+        req(path),
+        deps({
+          authenticator: anonymous,
+          fetcherFor: () => ({ fetch: fetcher }),
+        }),
+      );
+      expect(res.status).toBe(404);
+      expectSecurityHeaders(res);
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("stops advertising resource_metadata on the /mcp 401 by default", async () => {
+    const res = await handleGatewayRequest(
+      req("/mcp", { method: "POST" }),
+      deps({ authenticator: anonymous }),
+    );
+    expect(res.status).toBe(401);
+    expect(res.headers.get("www-authenticate")).toBe(
+      'Bearer realm="every-app"',
+    );
+  });
+
+  it("points the 401 at the metadata when OAuth is enabled", async () => {
+    const res = await handleGatewayRequest(
+      req("/mcp", { method: "POST" }),
+      deps({ authenticator: anonymous, oauthDiscovery: true }),
+    );
+    expect(res.headers.get("www-authenticate")).toBe(
+      'Bearer resource_metadata="https://todo.example.com/.well-known/oauth-protected-resource"',
+    );
+  });
+});
+
+describe("server-function guard", () => {
+  const SERVER_FN = "/_serverFn/abc123";
+
+  async function call(
+    path: string,
+    headers: Record<string, string>,
+    init: RequestInit & { app?: RegisteredApp } = {},
+  ) {
+    const fetcher = vi.fn(async () => new Response("ok"));
+    const { app, ...rest } = init;
+    const res = await handleGatewayRequest(
+      req(path, { ...rest, headers: { cookie: "session=abc", ...headers } }),
+      deps({
+        fetcherFor: () => ({ fetch: fetcher }),
+        ...(app ? { resolveApp: async () => app } : {}),
+      }),
+    );
+    return { res, fetcher };
+  }
+
+  it("rejects a GET mutation reached by navigation (link or redirect)", async () => {
+    const { res, fetcher } = await call(
+      `${SERVER_FN}?createServerFn&payload=%7B%7D`,
+      {
+        "sec-fetch-mode": "navigate",
+        "sec-fetch-dest": "document",
+        "sec-fetch-site": "same-origin",
+      },
+    );
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toMatchObject({
+      error: "server_fn_denied",
+    });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("rejects an HTML request without Fetch Metadata", async () => {
+    const { res } = await call(`${SERVER_FN}?payload=x`, {
+      accept: "text/html,application/xhtml+xml",
+      "x-tsr-serverfn": "true",
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects cross-site and same-site (sibling app) calls on every method", async () => {
+    for (const site of ["cross-site", "same-site", "none"]) {
+      for (const method of ["GET", "POST"]) {
+        const { res, fetcher } = await call(
+          SERVER_FN,
+          { "sec-fetch-site": site, "x-tsr-serverfn": "true" },
+          { method },
+        );
+        expect(res.status).toBe(403);
+        expect(fetcher).not.toHaveBeenCalled();
+      }
+    }
+  });
+
+  it("rejects a same-origin call without the TanStack client header", async () => {
+    const { res } = await call(
+      SERVER_FN,
+      { "sec-fetch-site": "same-origin" },
+      { method: "POST" },
+    );
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toMatchObject({
+      reason: "missing server function client header",
+    });
+  });
+
+  it("lets same-origin calls from current and 1.140-era clients through", async () => {
+    const clientHeaders: Record<string, string>[] = [
+      { "x-tsr-serverfn": "true" },
+      { "x-tsr-redirect": "manual" },
+    ];
+    for (const header of clientHeaders) {
+      const { res, fetcher } = await call(
+        SERVER_FN,
+        {
+          "sec-fetch-site": "same-origin",
+          "sec-fetch-mode": "cors",
+          ...header,
+        },
+        { method: "POST" },
+      );
+      expect(res.status).toBe(200);
+      expect(fetcher).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("guards encoded and dot-segment spellings of the server-function path", async () => {
+    for (const path of [
+      "/%5FserverFn/abc123",
+      "/x/%2e%2e/_serverFn/abc123",
+      // A malformed escape elsewhere must not stop the %5F from decoding.
+      "/%5FserverFn/abc123/%ZZ",
+      "/%5FserverFn/abc123/%E0",
+    ]) {
+      const { res, fetcher } = await call(path, {
+        "sec-fetch-site": "cross-site",
+      });
+      expect(res.status).toBe(403);
+      expect(fetcher).not.toHaveBeenCalled();
+    }
+  });
+
+  it("guards the server-function base an app declares in its manifest", async () => {
+    const app = {
+      ...TODO,
+      manifest: validateManifest({
+        id: "todo",
+        serverFnBase: "/app/_serverFn",
+      }),
+    };
+    const { res, fetcher } = await call(
+      "/app/_serverFn/abc123",
+      { "sec-fetch-site": "cross-site" },
+      { app },
+    );
+    expect(res.status).toBe(403);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("leaves other paths alone", async () => {
+    const { res } = await call("/tasks", {
+      "sec-fetch-mode": "navigate",
+      "sec-fetch-site": "none",
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("can be turned off per app in the manifest", async () => {
+    const { res } = await call(
+      SERVER_FN,
+      { "sec-fetch-mode": "navigate", "sec-fetch-site": "same-origin" },
+      {
+        app: {
+          ...TODO,
+          manifest: validateManifest({ id: "todo", serverFnGuard: false }),
+        },
+      },
+    );
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("WebSocket Origin check", () => {
+  function upgrade(headers: Record<string, string>): Request {
+    return req("/sync", { headers: { upgrade: "websocket", ...headers } });
+  }
+
+  it("rejects a cookie-authenticated upgrade from another origin", async () => {
+    const fetcher = vi.fn();
+    for (const origin of [
+      "https://evil.example.net",
+      "https://notes.example.com",
+    ]) {
+      const res = await handleGatewayRequest(
+        upgrade({ cookie: "session=abc", origin }),
+        deps({ fetcherFor: () => ({ fetch: fetcher }) }),
+      );
+      expect(res.status).toBe(403);
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("rejects a cookie-authenticated upgrade with no Origin", async () => {
+    const res = await handleGatewayRequest(
+      upgrade({ cookie: "session=abc" }),
+      deps(),
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("lets a same-origin upgrade through with the member's identity", async () => {
+    const res = await handleGatewayRequest(
+      upgrade({ cookie: "session=abc", origin: "https://todo.example.com" }),
+      deps(),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { identity: string | null };
+    expect(body.identity).toEqual(expect.any(String));
+  });
+
+  it("exempts bearer-only upgrades", async () => {
+    const res = await handleGatewayRequest(
+      upgrade({ authorization: "Bearer epat_valid" }),
+      deps({
+        authenticator: {
+          authenticate: async () => PAT_SESSION,
+          hasAppAccess: async () => true,
+        },
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  it("downgrades a cross-origin upgrade on a public route to anonymous", async () => {
+    const authenticate = vi.fn(async () => SESSION);
+    const res = await handleGatewayRequest(
+      req("/blog/live", {
+        headers: {
+          upgrade: "websocket",
+          cookie: "session=abc",
+          origin: "https://evil.example.net",
+        },
+      }),
+      deps({ authenticator: { authenticate, hasAppAccess: async () => true } }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      identity: string | null;
+      publicMarker: string | null;
+    };
+    expect(body.identity).toBeNull();
+    expect(body.publicMarker).toEqual(expect.any(String));
+    expect(authenticate).not.toHaveBeenCalled();
+  });
+});
+
+describe("Worker version overrides", () => {
+  it("never forwards an inbound version-override header to the app", async () => {
+    let forwarded: string | null = "unset";
+    const res = await handleGatewayRequest(
+      req("/tasks", {
+        headers: {
+          "cloudflare-workers-version-overrides":
+            'every-todo="10000000-0000-0000-0000-000000000000"',
+        },
+      }),
+      deps({
+        fetcherFor: () => ({
+          fetch: async (outbound: Request) => {
+            forwarded = outbound.headers.get(
+              "cloudflare-workers-version-overrides",
+            );
+            return new Response("ok");
+          },
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(forwarded).toBeNull();
   });
 });

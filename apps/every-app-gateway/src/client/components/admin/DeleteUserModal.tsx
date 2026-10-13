@@ -33,7 +33,8 @@ export function DeleteUserModal({
     >
       <p className="py-4">
         Are you sure you want to delete <strong>{userName || userEmail}</strong>
-        ? This action cannot be undone.
+        ? Their deploy tokens and personal access tokens for this organization
+        stop working. This action cannot be undone.
       </p>
     </Modal>
   );

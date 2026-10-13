@@ -25,11 +25,15 @@ import {
   extractLocalGatewayTarball,
 } from "@/lib/gateway-release";
 import {
-  checkGatewayHasOwner,
   checkSslReady,
   formatGatewayUnreachableError,
   GatewayUnreachableError,
 } from "@/lib/gateway";
+import {
+  presentSetupLink,
+  setupLinkForDeploy,
+  type SetupLink,
+} from "@/lib/gateway/setup-link";
 import { waitForSslCertificate } from "@/commands/gateway/deploy/steps/waitForSslCertificate";
 import { installDependencies } from "@/lib/package-manager";
 import { formatWildcardDnsInstructions } from "@/lib/dnsInstructions";
@@ -116,6 +120,7 @@ export async function deploy(
   }
 
   let workerUrl = null;
+  let setupLink: SetupLink | null = null;
   try {
     let gatewayPath: string | null;
     if (localGateway) {
@@ -165,6 +170,16 @@ export async function deploy(
       d1DatabaseId: resources.d1DatabaseId,
       verbose,
     });
+
+    // An unclaimed gateway accepts no sign-ups; its owner is created from a
+    // one-time link minted here, straight into D1, before anyone else could
+    // reach it (unattended deploys only say how to get one).
+    setupLink = await setupLinkForDeploy({
+      accountId: resources.accountId,
+      databaseId: resources.d1DatabaseId,
+      gatewayUrl: workerUrl,
+      printSetupLink: flags.printSetupLink,
+    });
   } catch (error) {
     // Check if this is a known Cloudflare error with a user-friendly message
     const cloudflareError = await formatCloudflareError(error);
@@ -199,6 +214,7 @@ export async function deploy(
           "  Confirm the gateway URL is correct and reachable, then run this command again.\n",
         ),
       );
+      if (setupLink) await presentSetupLink(setupLink);
       return;
     }
     throw error;
@@ -206,39 +222,13 @@ export async function deploy(
 
   if (!sslReady) {
     // SSL not ready - hand off to step that handles waiting and final messaging
-    await waitForSslCertificate({ workerUrl });
+    await waitForSslCertificate({ workerUrl, setupLink });
     return;
   }
 
   console.log(chalk.green("\nGateway deployment successful!\n"));
-
-  // SSL is ready - check if the gateway has an owner account
-  let hasOwner: boolean;
-  try {
-    hasOwner = await checkGatewayHasOwner(workerUrl);
-  } catch (error) {
-    if (error instanceof GatewayUnreachableError) {
-      console.log(chalk.yellow("\nGateway unreachable\n"));
-      console.log(formatGatewayUnreachableError(error));
-      console.log(
-        chalk.dim(
-          "  Confirm the gateway URL is correct and reachable, then run this command again.\n",
-        ),
-      );
-      return;
-    }
-    throw error;
-  }
-
-  if (hasOwner) {
-    console.log(`Your Gateway is now live at: ${chalk.cyan(workerUrl)}\n`);
-  } else {
-    const signUpUrl = `${workerUrl}/sign-up`;
-    console.log(`Your Gateway is now live at: ${chalk.cyan(signUpUrl)}\n`);
-    console.log(
-      chalk.dim(
-        "  Create an owner account to get started with your Gateway.\n",
-      ),
-    );
+  console.log(`Your Gateway is now live at: ${chalk.cyan(workerUrl)}\n`);
+  if (setupLink) {
+    await presentSetupLink(setupLink);
   }
 }

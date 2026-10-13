@@ -56,6 +56,7 @@ describe("deploy token auth", () => {
   it("returns deploy context for valid eak tokens", async () => {
     mockAppTokenService.verifyDeployToken.mockResolvedValue({
       organizationId: "org-123",
+      createdBy: "owner-1",
       scopes: ["apps:register", "apps:deploy"],
     });
 
@@ -65,6 +66,7 @@ describe("deploy token auth", () => {
     if (result.ok) {
       expect(result.context).toEqual({
         organizationId: "org-123",
+        createdBy: "owner-1",
         scopes: ["apps:register", "apps:deploy"],
       });
     }

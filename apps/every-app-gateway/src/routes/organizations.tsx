@@ -1,34 +1,24 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { authClient } from "@/client/auth-client";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
+import { useActiveOrganization } from "@/client/hooks/useActiveOrganization";
 import { useSession } from "@/client/hooks/useSession";
 
 export const Route = createFileRoute("/organizations")({
   component: OrganizationsPage,
 });
 
-function slugifyOrganizationName(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 48);
-}
-
 function OrganizationsPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const session = useSession();
   const { data: organizations } = authClient.useListOrganizations();
-  const { data: activeOrganization } = authClient.useActiveOrganization();
+  const { data: activeOrganization } = useActiveOrganization({
+    enabled: Boolean(session.data?.user),
+  });
 
-  const [name, setName] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const hasOrganizations = (organizations?.length ?? 0) > 0;
@@ -38,48 +28,6 @@ function OrganizationsPage() {
       void navigate({ to: "/sign-in" });
     }
   }, [navigate, session.data?.user, session.isPending]);
-
-  const suggestedSlug = useMemo(() => {
-    const baseSlug = slugifyOrganizationName(name);
-    if (!baseSlug) return "";
-    return `${baseSlug}-${Date.now().toString().slice(-4)}`;
-  }, [name]);
-
-  const handleCreateOrganization = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim()) return;
-    if (!suggestedSlug) {
-      setError("Please choose a valid organization name.");
-      return;
-    }
-
-    setError(null);
-    setIsSaving(true);
-    try {
-      const createResult = await authClient.organization.create({
-        name: name.trim(),
-        slug: suggestedSlug,
-      });
-
-      if (createResult.error) {
-        setError(
-          createResult.error.message ?? "Failed to create organization.",
-        );
-        return;
-      }
-
-      setName("");
-      await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
-      await refetchCollectionsAfterAuth();
-      await navigate({ to: "/" });
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to create organization.",
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  };
 
   const handleSetActiveOrganization = async (organizationId: string) => {
     setError(null);
@@ -115,31 +63,20 @@ function OrganizationsPage() {
         <div>
           <h1 className="text-2xl font-bold">Organizations</h1>
           <p className="text-base-content/70 mt-2">
-            Create an organization or pick your active workspace.
+            Pick your active workspace.
           </p>
         </div>
 
         {error && <div className="alert alert-error">{error}</div>}
 
-        <div className="card bg-base-200">
-          <div className="card-body">
-            <h2 className="card-title">Create Organization</h2>
-            <form className="space-y-3" onSubmit={handleCreateOrganization}>
-              <input
-                type="text"
-                placeholder="Acme"
-                className="input input-bordered w-full"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={isSaving}
-                required
-              />
-              <button className="btn btn-primary" disabled={isSaving}>
-                {isSaving ? "Creating..." : "Create and Continue"}
-              </button>
-            </form>
+        {!hasOrganizations && (
+          <div className="alert">
+            <span>
+              You are not a member of any organization yet. Ask an owner or
+              admin to invite you.
+            </span>
           </div>
-        </div>
+        )}
 
         {hasOrganizations && (
           <div className="card bg-base-200">

@@ -107,7 +107,7 @@ That last part needs one DNS record, and the terminal login usually isn't allowe
 >
 > It means "any subdomain of your-domain.dev goes to the same place as your-domain.dev itself": your Gateway, which serves the right app for each address. Cloudflare requires an explicit record for [wildcard routing](https://developers.cloudflare.com/workers/configuration/routing/routes/).
 
-When the deploy finishes, open `https://your-domain.dev` and create your account. You're the owner; signup is invite-only after you.
+When the deploy finishes, it prints (and opens) a one-time setup link, `https://your-domain.dev/setup#token=…`. Open it and create your account: you're the owner, and signup is invite-only after you. Nobody can sign up before you use the link. It expires after 24 hours; `npx everyapp gateway claim-link` makes a new one.
 
 ### 3. Connect your terminal to your Gateway
 
@@ -160,7 +160,7 @@ npx wrangler secret put OPENAI_API_KEY --name every-app-gateway
 <summary>Trying it out without a domain</summary>
 <div className="faq-content">
 
-`npx everyapp gateway deploy` without `--domain` puts the Gateway on a free `workers.dev` address — enough to see the launcher and create your account. Apps can't be reached this way, though: each app lives at its own subdomain of your domain, and `workers.dev` addresses can't have subdomains. When you're ready, re-run the deploy with `--domain` — your account and data carry over.
+`npx everyapp gateway deploy` without `--domain` puts the Gateway on a free `workers.dev` address — enough to see the launcher and create your account with the setup link. Apps can't be reached this way, though: each app lives at its own subdomain of your domain, and `workers.dev` addresses can't have subdomains. When you're ready, re-run the deploy with `--domain` — your account and data carry over.
 
 </div>
 </details>

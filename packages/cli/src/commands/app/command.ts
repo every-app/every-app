@@ -73,6 +73,13 @@ export const deployCommand = buildCommand({
         brief: "Skip app subdomain DNS preflight check",
         optional: true,
       },
+      access: {
+        kind: "enum",
+        values: ["everyone", "admins"],
+        brief:
+          "Who can open a newly registered app (overrides the manifest's access; default admins)",
+        optional: true,
+      },
       domain: {
         kind: "parsed",
         parse: String,

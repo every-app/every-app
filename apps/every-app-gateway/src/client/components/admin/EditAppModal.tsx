@@ -129,10 +129,11 @@ export function EditAppModal({ open, onClose, app }: EditAppModalProps) {
             />
             <div>
               <span className="label-text font-medium">
-                Auto-grant to new users
+                Available to everyone
               </span>
               <p className="text-xs text-base-content/60">
-                New users will automatically have access to this app
+                Every current and future member can open this app. Turning this
+                off keeps existing access; use Manage Access to remove people.
               </p>
             </div>
           </label>

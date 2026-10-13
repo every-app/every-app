@@ -33,10 +33,10 @@ describe("computeGatewayServiceBindings", () => {
   it("returns the full desired service binding list with APP__ prefixes", async () => {
     makeCloudflareAPIRequest.mockResolvedValueOnce({
       results: [
-        { worker_name: "every-zebra" },
-        { worker_name: "every-todo" },
-        { worker_name: "every-todo" },
-        { worker_name: null },
+        { app_slug: "zebra", worker_name: "every-zebra" },
+        { app_slug: "todo", worker_name: "every-todo" },
+        { app_slug: "todo", worker_name: "every-todo" },
+        { app_slug: "empty", worker_name: null },
       ],
     });
 
@@ -46,6 +46,24 @@ describe("computeGatewayServiceBindings", () => {
       { binding: "APP__every-todo", service: "every-todo" },
       { binding: "APP__every-zebra", service: "every-zebra" },
     ]);
+  });
+
+  it("binds only Workers named for their app, never a foreign Worker or the gateway", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    makeCloudflareAPIRequest.mockResolvedValueOnce({
+      results: [
+        { app_slug: "todo", worker_name: "every-todo" },
+        { app_slug: "notes", worker_name: "billing-worker" },
+        { app_slug: "app-gateway", worker_name: "every-app-gateway" },
+        { app_slug: null, worker_name: "every-orphan" },
+      ],
+    });
+
+    await expect(
+      computeGatewayServiceBindings("account-id"),
+    ).resolves.toEqual([{ binding: "APP__every-todo", service: "every-todo" }]);
+    expect(warn).toHaveBeenCalledTimes(3);
+    warn.mockRestore();
   });
 
   it("returns no bindings when the registry table does not exist yet", async () => {
@@ -84,8 +102,8 @@ describe("replaceGatewayServiceBindings", () => {
       })
       .mockResolvedValueOnce({
         results: [
-          { worker_name: "every-todo" },
-          { worker_name: "every-notes" },
+          { app_slug: "todo", worker_name: "every-todo" },
+          { app_slug: "notes", worker_name: "every-notes" },
         ],
       })
       .mockResolvedValueOnce(undefined);

@@ -1,4 +1,4 @@
-import { and, eq, type SQL } from "drizzle-orm";
+import { and, eq, ne, type SQL } from "drizzle-orm";
 import { drizzle, type DrizzleD1Database } from "drizzle-orm/d1";
 import {
   rowToRegisteredApp,
@@ -36,10 +36,11 @@ export class DrizzleAppRegistry implements AppRegistry {
   }
 
   private async query(where: SQL): Promise<RegisteredApp | null> {
+    // A deleted app's tombstone is never routed: it is "no app" here.
     const [row] = await this.db
       .select(registryColumns)
       .from(apps)
-      .where(where)
+      .where(and(where, ne(apps.status, "deleted")))
       .limit(1);
     if (!row) return null;
     return rowToRegisteredApp(toRegistryRow(row));

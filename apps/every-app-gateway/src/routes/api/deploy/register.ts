@@ -37,7 +37,7 @@ export const Route = createFileRoute("/api/deploy/register")({
     middleware: [deployTokenAuthMiddleware],
     handlers: {
       POST: async ({ request, context }) => {
-        const { organizationId } = context as DeployTokenContext;
+        const { organizationId, createdBy } = context as DeployTokenContext;
         let rawBody: unknown;
         try {
           rawBody = await request.json();
@@ -64,6 +64,7 @@ export const Route = createFileRoute("/api/deploy/register")({
             description: parsed.data.description,
             workerName: parsed.data.workerName,
             manifest: parsed.data.manifest,
+            deployerUserId: createdBy,
           });
           return jsonResponse(result);
         } catch (error) {

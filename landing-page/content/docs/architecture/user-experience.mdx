@@ -11,18 +11,18 @@ description: What users actually see — from first visit to admin — and what'
 
 ### 1. First person ever (the owner)
 
-1. Visit `/` → redirected to `/sign-in` → click **Sign up**.
-2. Because no owner exists yet (`hasOwner()` check), the form is **Create Admin Account** — email + password (8+ chars).
-3. Bootstrap creates the user, an org named "My Organization", and signs them in.
+1. `everyapp gateway deploy` prints a one-time link, `/setup#token=est_…` (24h, single use; only its SHA-256 is stored in D1). `everyapp gateway claim-link` re-mints it.
+2. `/setup` reads the token from the fragment, clears it from the address bar, and asks for name, email and password (8+ chars), which it POSTs as JSON to `/api/setup/claim`.
+3. The claim creates the user, their org and the owner membership, consumes the link, and the page signs them in.
 4. The home page shows the one live onboarding step: **Deploy your first app** — clone the todo template, `npx everyapp app deploy`, refresh. Completion is inferred from "you have ≥1 app".
 
-Once any owner exists, direct sign-up is dead: the UI shows **Invitation Required**, and Better Auth rejects non-invited registrations server-side (gateway-global, not per-org).
+Direct sign-up never works: before the claim `/sign-up` shows **Setup pending**, afterwards **Invitation Required**, and Better Auth rejects any HTTP sign-up without a matching invitation server-side (gateway-global, not per-org). Organization creation over HTTP is closed too.
 
 ### 2. Returning user
 
 - **Email + password only.** No passkeys, social login, magic links, or SSO.
 - If the perimeter bounced you here from an app subdomain, `return_to` sends you back to the full app URL after sign-in (validated: gateway host + subdomains only).
-- Forgot/reset password works end-to-end, with non-enumerating responses; owners can also trigger a reset email for a member from the admin panel.
+- Forgot/reset password works end-to-end, with non-enumerating responses; owners and admins can also trigger a reset email for a member, or, without email, generate a one-hour single-use reset link to hand over (never for owners, themselves, or anyone who also belongs to another organization, since a password covers every organization; only owners for admins). Reset links point at `/reset-password?token=…`, not a token in the path.
 - Auth flows share a Cloudflare CPU-timeout recovery screen (retries up to 10× with countdown — password hashing can blow the free-plan CPU budget).
 
 ### 3. Everyday use — the launcher
@@ -35,27 +35,28 @@ Once any owner exists, direct sign-up is dead: the UI shows **Invitation Require
 
 ### 4. Invitations
 
-1. Owner enters an email in **Invite User** (role is always `member` — no selector).
-2. Recipient's link → sign in or create account (email must match the invite — case-insensitive, trimmed).
-3. After authenticating, they press **Join Organization** — acceptance is a separate explicit step.
-4. Membership grants all of the org's default apps automatically.
+1. An owner or admin enters an email in **Invite User** and picks the role (`member` or `admin`).
+2. The invitation is always created. It's emailed when email is configured; otherwise (or if sending fails) the admin gets a **Copy invite link** (single use, 72 hours) and the Users page shows an "Email not configured" banner.
+3. Recipient's link → sign in or create account (email must match the invite — case-insensitive, trimmed).
+4. After authenticating, they press **Join Organization** — acceptance is a separate explicit step.
+5. Membership grants the org's "Available to everyone" apps automatically.
 
 ### 5. Admin (`/admin`, desktop only — mobile shows "Coming Soon")
 
-| Tab        | What you can do                                                                                                                                                                                              |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Users      | See members + pending invites in one table; send reset email; delete user (removes membership; deletes the account only if it belongs to no other org).                                                      |
-| Apps       | Apps appear only via `everyapp app deploy` — no manual create. Edit name/description/auto-grant; manage per-user access (can't revoke yourself); delete the registry row (does **not** undeploy the worker). |
-| App Tokens | Create `eat_` app tokens (per-app, provider scopes) and `eak_` deploy tokens (org-wide); one-time reveal modal; revoke.                                                                                      |
+| Tab        | What you can do                                                                                                                                                                                                                                                                                                                                                         |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Users      | See members + pending invites in one table; send reset email; change role (member ↔ admin; only owners change admins); deactivate/reactivate (bans the account, ends its sessions, revokes its PATs and deploy tokens); delete user (removes membership and revokes their deploy tokens and PATs for this org; deletes the account only if it belongs to no other org). |
+| Apps       | Apps appear only via `everyapp app deploy` — no manual create. Edit name/description/"Available to everyone"; manage per-user access (can't revoke yourself); delete leaves a tombstone that keeps the app id reserved to the org (does **not** undeploy the worker).                                                                                                   |
+| App Tokens | Create `eat_` app tokens (per-app, provider scopes) and `eak_` deploy tokens (org-wide); one-time reveal modal; revoke.                                                                                                                                                                                                                                                 |
 
-**Organizations** (`/organizations`): create an org or switch the active one. It's a workspace switcher, not org management — no rename/delete, no member/role management, no ownership transfer.
+**Organizations** (`/organizations`): switch the active org. It's a workspace switcher, not org management — nobody can create, rename or delete orgs (the only org-creating path is the setup claim), and there's no ownership transfer.
 
 **App slugs are organization-scoped:** two organizations can both deploy `todo`. The gateway derives the globally unique routing hostname `<appSlug>-<orgSlug>.<gateway-host>` from the app id and Better Auth organization slug.
 
 ## What does NOT exist yet (found while reading)
 
-- **Deploy-time access controls do not exist** — every newly registered app is a default app granted to every current organization member; admins can change access afterward.
-- **No role assignment** — the `admin` role now works (admins get day-to-day management; deletes and tokens stay owner-only), but nothing in the UI promotes someone to `admin` or transfers ownership, so admin must be set out-of-band.
+- **New apps are private** — a first registration grants only the deployer and the org's owners and admins; `access: "everyone"` in the manifest (or `everyapp app deploy --access everyone`) grants every member, and admins can flip "Available to everyone" later.
+- **No ownership transfer** — owners and admins can promote members to `admin` (only owners demote admins), but ownership can't move.
 - **No invite resend** — pending invites can be cancelled, but there's no resend.
 - **No PWA install entry point** — the standalone install modal is reachable only via the `/pwa` URL; there's no button for it (the onboarding step was removed).
 

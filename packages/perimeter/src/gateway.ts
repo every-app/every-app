@@ -1,10 +1,11 @@
 /**
  * The gateway proxy core — `handleGatewayRequest`.
  *
- * Composes the perimeter: resolve app from Host, enforce CSRF, decide
- * public-vs-private, authenticate + authorize, strip inbound trust headers,
- * inject a fresh identity JWT (private requests) or the public marker (public
- * routes), proxy via the `getAppFetcher` seam, and stamp security headers.
+ * Composes the perimeter: resolve app from Host, guard server functions,
+ * enforce CSRF (and the WebSocket Origin check), decide public-vs-private,
+ * authenticate + authorize, strip inbound trust headers, inject a fresh
+ * identity JWT (private requests) or the public marker (public routes), proxy
+ * via the `getAppFetcher` seam, and stamp security headers.
  *
  * It is dependency-injected end to end so it can be unit-tested in isolation and
  * run for real (D1 registry, Better Auth, service bindings) without changes.
@@ -13,7 +14,13 @@ import { parseHost, type ParsedHost } from "./host";
 import type { AppRegistry, RegisteredApp } from "./registry";
 import type { AuthenticatedSession, SessionAuthenticator } from "./session";
 import { matchPublicRoute } from "./publicRoutes";
-import { evaluateCsrf } from "./csrf";
+import {
+  evaluateCsrf,
+  evaluateWebSocketOrigin,
+  isWebSocketUpgrade,
+} from "./csrf";
+import { evaluateServerFnRequest, isServerFnPath } from "./serverFunctions";
+import { logEvent } from "./log";
 import {
   hasBearerCredential,
   hasEveryAppBearer,
@@ -56,6 +63,12 @@ export interface GatewayDeps {
   fetcherFor?(env: Record<string, unknown>, app: RegisteredApp): AppFetcher;
   /** Optional login URL to 302 to for unauthenticated HTML navigations. */
   loginUrl?: string;
+  /**
+   * Advertise the gateway's OAuth authorization server to MCP clients: serve
+   * protected-resource metadata and point the 401 challenge at it. Off unless
+   * the gateway's OAuth server is enabled (MCP_OAUTH_ENABLED).
+   */
+  oauthDiscovery?: boolean;
   now?: number;
 }
 
@@ -75,21 +88,32 @@ function json(status: number, body: Record<string, unknown>): Response {
   );
 }
 
-function bearerChallenge(host: string): string {
-  return `Bearer resource_metadata="https://${host}/.well-known/oauth-protected-resource"`;
+function bearerChallenge(
+  host: string,
+  options: { oauthDiscovery: boolean; bearerPresented: boolean },
+): string {
+  if (options.oauthDiscovery) {
+    return `Bearer resource_metadata="https://${host}/.well-known/oauth-protected-resource"`;
+  }
+  // No resource_metadata while OAuth is off: an MCP client that finds none
+  // fails fast instead of half-registering with a disabled server.
+  return options.bearerPresented
+    ? 'Bearer realm="every-app", error="invalid_token"'
+    : 'Bearer realm="every-app"';
 }
 
 function bearerJson(
   status: number,
   body: Record<string, unknown>,
   host: string,
+  options: { oauthDiscovery: boolean; bearerPresented: boolean },
 ): Response {
   return withSecurityHeaders(
     new Response(JSON.stringify(body), {
       status,
       headers: {
         "content-type": "application/json",
-        "www-authenticate": bearerChallenge(host),
+        "www-authenticate": bearerChallenge(host, options),
       },
     }),
   );
@@ -146,16 +170,13 @@ function logProxy(options: {
   startedAtMs: number;
   mode: "public" | "user";
 }): void {
-  console.log(
-    JSON.stringify({
-      evt: "proxy",
-      app: options.app.appId,
-      method: options.method,
-      status: options.status,
-      ms: Date.now() - options.startedAtMs,
-      mode: options.mode,
-    }),
-  );
+  logEvent("proxy", {
+    app: options.app.appId,
+    method: options.method,
+    status: options.status,
+    ms: Date.now() - options.startedAtMs,
+    mode: options.mode,
+  });
 }
 
 export async function handleGatewayRequest(
@@ -177,15 +198,20 @@ export async function handleGatewayRequest(
   if (app.status !== "active") {
     return json(503, { error: "app_unavailable", status: app.status });
   }
+  const oauthDiscovery = deps.oauthDiscovery ?? false;
   // RFC 9728 metadata is served by the perimeter and never proxied — for the
   // host-level identifier and path-aware variants (…/oauth-protected-resource/mcp
   // describes the resource https://<host>/mcp). Non-GET methods on these paths
-  // must not fall through to a broad public route.
+  // must not fall through to a broad public route. While OAuth is off the
+  // paths stay reserved but answer 404.
   const metadataBase = "/.well-known/oauth-protected-resource";
   if (
     url.pathname === metadataBase ||
     url.pathname.startsWith(`${metadataBase}/`)
   ) {
+    if (!oauthDiscovery) {
+      return json(404, { error: "not_found" });
+    }
     if (request.method !== "GET") {
       return withSecurityHeaders(
         new Response(null, { status: 405, headers: { allow: "GET" } }),
@@ -194,8 +220,21 @@ export async function handleGatewayRequest(
     const resourcePath = url.pathname.slice(metadataBase.length);
     return protectedResourceMetadata(parsed.host, resourcePath, deps.issuer);
   }
+  // Server functions only answer same-origin fetch() calls from TanStack's
+  // client, on every method and before any auth (see serverFunctions.ts).
+  if (
+    app.manifest.serverFnGuard !== false &&
+    isServerFnPath(url.pathname, app.manifest.serverFnBase)
+  ) {
+    const decision = evaluateServerFnRequest(request.headers);
+    if (!decision.allowed) {
+      return json(403, { error: "server_fn_denied", reason: decision.reason });
+    }
+  }
+
   const bearerPresent = hasBearerCredential(request.headers);
   const reservedBearerPresent = hasEveryAppBearer(request.headers);
+  const challenge = { oauthDiscovery, bearerPresented: bearerPresent };
 
   const publicMatch = matchPublicRoute(
     app.manifest.public,
@@ -203,21 +242,27 @@ export async function handleGatewayRequest(
     url.pathname,
   );
 
-  // Private state-changing routes fail closed. Public routes also evaluate
-  // CSRF, but a failure downgrades the request to anonymous below: this lets
-  // webhooks and other programmatic clients through without ever forwarding a
-  // cookie-authenticated member identity.
-  const csrf = evaluateCsrf(
-    request.method,
-    parsed.host,
-    request.headers.get("origin"),
-    request.headers.get("sec-fetch-site"),
-  );
   // CSRF forgery needs an ambient credential to ride; a cookieless request
   // has none, and denying it here would turn the 401 + WWW-Authenticate
   // challenge (how MCP clients discover the authorization server) into an
   // opaque 403 for every unauthenticated programmatic POST.
   const hasAmbientCookie = request.headers.has("cookie");
+
+  // Private state-changing routes fail closed. Public routes also evaluate
+  // CSRF, but a failure downgrades the request to anonymous below: this lets
+  // webhooks and other programmatic clients through without ever forwarding a
+  // cookie-authenticated member identity. A WebSocket handshake is a GET, but
+  // browsers send the cookie on cross-origin handshakes too, so a
+  // cookie-authenticated upgrade must come from the app's own Origin.
+  const csrf =
+    isWebSocketUpgrade(request.headers) && hasAmbientCookie && !bearerPresent
+      ? evaluateWebSocketOrigin(parsed.host, request.headers.get("origin"))
+      : evaluateCsrf(
+          request.method,
+          parsed.host,
+          request.headers.get("origin"),
+          request.headers.get("sec-fetch-site"),
+        );
   if (
     !bearerPresent &&
     !csrf.allowed &&
@@ -291,7 +336,12 @@ export async function handleGatewayRequest(
     // closed on every route — downgrading it to anonymous public access would
     // mask revoked grants and mis-bound tokens.
     if (!session) {
-      return bearerJson(401, { error: "unauthenticated" }, parsed.host);
+      return bearerJson(
+        401,
+        { error: "unauthenticated" },
+        parsed.host,
+        challenge,
+      );
     }
     return json(403, { error: "forbidden", reason: "no_app_access" });
   } else if (publicMatch.public) {
@@ -311,7 +361,12 @@ export async function handleGatewayRequest(
         }),
       );
     }
-    return bearerJson(401, { error: "unauthenticated" }, parsed.host);
+    return bearerJson(
+      401,
+      { error: "unauthenticated" },
+      parsed.host,
+      challenge,
+    );
   } else {
     return json(403, { error: "forbidden", reason: "no_app_access" });
   }

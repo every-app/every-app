@@ -1,9 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockHasAnyOwnerMembership = vi.fn();
-const mockClaimOwnerBootstrap = vi.fn();
-const mockReleaseOwnerBootstrap = vi.fn();
-const mockGrantDefaultAppsToUser = vi.fn();
 
 const mockMembersFindFirst = vi.fn();
 const mockInvitationsFindFirst = vi.fn();
@@ -11,9 +8,6 @@ const mockInvitationsFindMany = vi.fn();
 const mockDeleteWhere = vi.fn();
 const mockSelectWhere = vi.fn();
 
-const mockSignUpEmail = vi.fn();
-const mockCreateOrganization = vi.fn();
-const mockRemoveUser = vi.fn();
 const mockRequestPasswordReset = vi.fn();
 const mockCancelInvitation = vi.fn();
 const mockListMembersForOrganization = vi.fn();
@@ -69,22 +63,11 @@ vi.mock("drizzle-orm", () => ({
 vi.mock("@/auth", () => ({
   createAuth: () => ({
     api: {
-      signUpEmail: (...args: unknown[]) => mockSignUpEmail(...args),
-      createOrganization: (...args: unknown[]) =>
-        mockCreateOrganization(...args),
-      removeUser: (...args: unknown[]) => mockRemoveUser(...args),
       requestPasswordReset: (...args: unknown[]) =>
         mockRequestPasswordReset(...args),
       cancelInvitation: (...args: unknown[]) => mockCancelInvitation(...args),
     },
   }),
-}));
-
-vi.mock("./AppAccessService", () => ({
-  AppAccessService: {
-    grantDefaultAppsToUser: (...args: unknown[]) =>
-      mockGrantDefaultAppsToUser(...args),
-  },
 }));
 
 vi.mock("../repositories/OrganizationMembersRepository", () => ({
@@ -97,9 +80,6 @@ vi.mock("../repositories/OrganizationMembersRepository", () => ({
 vi.mock("@/server/organization/owner-membership", () => ({
   hasAnyOwnerMembership: (...args: unknown[]) =>
     mockHasAnyOwnerMembership(...args),
-  claimOwnerBootstrap: (...args: unknown[]) => mockClaimOwnerBootstrap(...args),
-  releaseOwnerBootstrap: (...args: unknown[]) =>
-    mockReleaseOwnerBootstrap(...args),
 }));
 
 vi.mock("../repositories/UserRepository", () => ({
@@ -126,19 +106,11 @@ describe("AdminService", () => {
     mockInvitationsFindMany.mockResolvedValue([]);
     mockDeleteWhere.mockResolvedValue(undefined);
     mockSelectWhere.mockResolvedValue([{ value: 1 }]);
-    mockSignUpEmail.mockResolvedValue({
-      user: { id: "user-1", email: "owner@example.com", name: "Owner" },
-    });
     mockUserRepository.findById.mockResolvedValue({
       id: "user-1",
       email: "owner@example.com",
       status: "active",
     } as any);
-    mockCreateOrganization.mockResolvedValue({ id: "org-1" });
-    mockClaimOwnerBootstrap.mockResolvedValue(true);
-    mockReleaseOwnerBootstrap.mockResolvedValue(undefined);
-    mockGrantDefaultAppsToUser.mockResolvedValue(undefined);
-    mockRemoveUser.mockResolvedValue(undefined);
     mockListMembersForOrganization.mockResolvedValue([]);
     mockRequestPasswordReset.mockResolvedValue(undefined);
     mockCancelInvitation.mockResolvedValue({
@@ -157,87 +129,6 @@ describe("AdminService", () => {
     mockHasAnyOwnerMembership.mockResolvedValue(false);
 
     await expect(AdminService.hasOwner()).resolves.toEqual({ hasOwner: false });
-  });
-
-  it("rejects owner initialization when owner already exists", async () => {
-    mockHasAnyOwnerMembership.mockResolvedValue(true);
-
-    await expect(
-      AdminService.initializeOwner("owner@example.com", "password123"),
-    ).rejects.toThrow("Owner already exists. Registration is invite-only.");
-  });
-
-  it("creates first owner successfully when no owner exists", async () => {
-    mockHasAnyOwnerMembership.mockResolvedValue(false);
-
-    const result = await AdminService.initializeOwner(
-      "owner@example.com",
-      "password123",
-    );
-
-    expect(result).toEqual({ userId: "user-1", organizationId: "org-1" });
-    expect(mockGrantDefaultAppsToUser).toHaveBeenCalledWith("user-1", "org-1");
-  });
-
-  it("allows only one owner initialization when both requests observe no owner", async () => {
-    mockHasAnyOwnerMembership.mockResolvedValue(false);
-    mockClaimOwnerBootstrap
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false);
-
-    const results = await Promise.allSettled([
-      AdminService.initializeOwner("first@example.com", "password123"),
-      AdminService.initializeOwner("second@example.com", "password123"),
-    ]);
-
-    expect(results[0]).toEqual({
-      status: "fulfilled",
-      value: { userId: "user-1", organizationId: "org-1" },
-    });
-    expect(results[1]).toMatchObject({
-      status: "rejected",
-      reason: new Error("Owner already exists. Registration is invite-only."),
-    });
-    expect(mockSignUpEmail).toHaveBeenCalledTimes(1);
-    expect(mockCreateOrganization).toHaveBeenCalledTimes(1);
-    expect(mockGrantDefaultAppsToUser).toHaveBeenCalledTimes(1);
-  });
-
-  it("rejects owner initialization for an email that already has an account", async () => {
-    mockHasAnyOwnerMembership.mockResolvedValue(false);
-    // Better Auth's duplicate-email sign-up: a synthetic user that was never
-    // written to the database.
-    mockSignUpEmail.mockResolvedValue({
-      token: null,
-      user: { id: "synthetic-id", email: "owner@example.com", name: "" },
-    });
-    mockUserRepository.findById.mockResolvedValue(undefined);
-
-    await expect(
-      AdminService.initializeOwner("owner@example.com", "password123"),
-    ).rejects.toMatchObject({
-      code: "USER_ALREADY_EXISTS",
-      message: "An account with this email already exists.",
-    });
-
-    expect(mockUserRepository.findById).toHaveBeenCalledWith("synthetic-id");
-    expect(mockCreateOrganization).not.toHaveBeenCalled();
-    expect(mockRemoveUser).not.toHaveBeenCalled();
-    expect(mockReleaseOwnerBootstrap).toHaveBeenCalledOnce();
-  });
-
-  it("releases the bootstrap claim after a failed initialization", async () => {
-    mockHasAnyOwnerMembership.mockResolvedValue(false);
-    mockCreateOrganization.mockRejectedValue(new Error("organization failed"));
-
-    await expect(
-      AdminService.initializeOwner("owner@example.com", "password123"),
-    ).rejects.toThrow("organization failed");
-
-    expect(mockRemoveUser).toHaveBeenCalledWith({
-      body: { userId: "user-1" },
-    });
-    expect(mockReleaseOwnerBootstrap).toHaveBeenCalledOnce();
   });
 
   it("lists active members and pending invitations", async () => {

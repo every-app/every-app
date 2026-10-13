@@ -69,6 +69,7 @@ const mockAppRegistrationService = vi.mocked(AppRegistrationService);
 
 const deployContext = {
   organizationId: "org-123",
+  createdBy: "user-1",
   scopes: ["apps:register", "apps:deploy"],
 };
 
@@ -119,6 +120,7 @@ describe("deploy routes", () => {
       description: "A todo app",
       workerName: "every-todo",
       manifest: { id: "todo-app" },
+      deployerUserId: "user-1",
     });
   });
 

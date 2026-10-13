@@ -1,3 +1,4 @@
+import { ACTIVE_ORGANIZATION_QUERY_KEY } from "@/client/hooks/useActiveOrganization";
 import { queryClient } from "./queryClient";
 import { userAppsCollection } from "./userAppsCollection";
 import { onboardingCollection } from "./onboardingCollection";
@@ -29,5 +30,6 @@ export async function refetchCollectionsAfterAuth() {
     queryClient.refetchQueries({ queryKey: ["admin", "users"] }),
     queryClient.refetchQueries({ queryKey: ["admin", "apps"] }),
     queryClient.refetchQueries({ queryKey: ["onboarding"] }),
+    queryClient.invalidateQueries({ queryKey: ACTIVE_ORGANIZATION_QUERY_KEY }),
   ]);
 }

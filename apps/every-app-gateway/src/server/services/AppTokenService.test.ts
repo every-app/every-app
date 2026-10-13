@@ -93,6 +93,26 @@ describe("AppTokenService", () => {
         }),
       );
     });
+
+    it("expires new deploy tokens after 90 days unless told otherwise", async () => {
+      mockHashAppToken.mockResolvedValue("deploy-token-hash");
+      mockAppTokenRepository.create.mockResolvedValue(undefined);
+      const before = Date.now();
+
+      const result = await AppTokenService.issueDeployToken({
+        organizationId: ORG_ID,
+        createdBy: "owner-id",
+        expiresAt: null,
+      });
+
+      const ninetyDays = 90 * 24 * 60 * 60 * 1000;
+      expect(result.expiresAt.getTime()).toBeGreaterThanOrEqual(
+        before + ninetyDays,
+      );
+      expect(result.expiresAt.getTime()).toBeLessThanOrEqual(
+        Date.now() + ninetyDays,
+      );
+    });
   });
 
   describe("verifyDeployToken", () => {
@@ -101,6 +121,7 @@ describe("AppTokenService", () => {
       mockAppTokenRepository.findActiveDeployByTokenHash.mockResolvedValue({
         id: "token-id",
         organizationId: ORG_ID,
+        createdBy: "owner-id",
         scopes: ["apps:register", "apps:deploy"],
       });
       mockAppTokenRepository.touchLastUsed.mockResolvedValue(undefined);
@@ -109,6 +130,7 @@ describe("AppTokenService", () => {
 
       expect(result).toEqual({
         organizationId: ORG_ID,
+        createdBy: "owner-id",
         scopes: ["apps:register", "apps:deploy"],
       });
       expect(

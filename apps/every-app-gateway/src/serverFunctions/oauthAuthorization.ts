@@ -7,6 +7,7 @@ import {
   resolveAuthorizeRequest,
 } from "@/server/oauth-consent";
 import { z } from "zod";
+import { isMcpOauthEnabled } from "@/server/oauth-flag";
 
 const authorizeActionSchema = z.object({
   query: z.string(),
@@ -20,6 +21,11 @@ function authorizeRequestFromQuery(query: string): Request {
 }
 
 async function requireSession() {
+  // The /oauth/authorize page 404s while OAuth is off; refuse its server
+  // functions too, so a grant can never be created behind the switch.
+  if (!isMcpOauthEnabled(env)) {
+    throw new Error("OAuth is not enabled");
+  }
   const request = getRequest();
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user?.id) {
@@ -110,6 +116,9 @@ export const approveAuthorization = createServerFn({ method: "POST" })
 export const denyAuthorization = createServerFn({ method: "POST" })
   .validator((data: unknown) => authorizeActionSchema.parse(data))
   .handler(async ({ data }) => {
+    if (!isMcpOauthEnabled(env)) {
+      throw new Error("OAuth is not enabled");
+    }
     const request = authorizeRequestFromQuery(data.query);
     const oauthRequest = await env.OAUTH_PROVIDER.parseAuthRequest(request);
     return { redirectTo: buildAccessDeniedRedirect(oauthRequest) };

@@ -20,6 +20,7 @@ import { AppRepository } from "@/server/repositories/AppRepository";
 import { UserPatRepository } from "@/server/repositories/UserPatRepository";
 import { UserPatService } from "@/server/services/UserPatService";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
+import { isUserBanned } from "@/server/user-ban";
 import {
   extractBearerCredential,
   extractEveryAppBearer,
@@ -27,6 +28,7 @@ import {
   type SessionAuthenticator,
 } from "@every-app/perimeter";
 import { env } from "cloudflare:workers";
+import { isMcpOauthEnabled } from "@/server/oauth-flag";
 import {
   getOauthProvider,
   syntheticExecutionContext,
@@ -45,17 +47,31 @@ type OauthGrantProps = {
   clientId?: string;
 };
 
+/**
+ * The role a token's user holds in the token's org right now, or null when
+ * they are no longer a member or have been deactivated (banned): tokens
+ * outlive sessions, so both are checked on every request.
+ */
 async function resolveLiveOrgRole(
   userId: string,
   organizationId: string,
 ): Promise<string | null> {
-  const row = await db.query.members.findFirst({
-    where: and(
-      eq(members.userId, userId),
-      eq(members.organizationId, organizationId),
-    ),
-  });
-  if (!row) return null;
+  const [row] = await db
+    .select({
+      role: members.role,
+      banned: users.banned,
+      banExpires: users.banExpires,
+    })
+    .from(members)
+    .innerJoin(users, eq(members.userId, users.id))
+    .where(
+      and(
+        eq(members.userId, userId),
+        eq(members.organizationId, organizationId),
+      ),
+    )
+    .limit(1);
+  if (!row || isUserBanned(row)) return null;
   return resolvePrimaryOrganizationRole(row.role);
 }
 
@@ -105,12 +121,16 @@ export function createProdAuthenticator(): SessionAuthenticator {
       }
 
       if (bearerCredential) {
+        // With the OAuth server off, no other bearer is ours to validate:
+        // fail closed without calling the provider (the perimeter still
+        // forwards it on public routes, where apps own their bearer auth).
+        if (!isMcpOauthEnabled(env)) return null;
         const oauth = await authenticateOauthBearer(request, bearerCredential);
         return oauth;
       }
 
       const session = await auth.api.getSession({ headers: request.headers });
-      if (!session?.user?.id) return null;
+      if (!session?.user?.id || isUserBanned(session.user)) return null;
 
       const org = await resolveOrgContext({
         userId: session.user.id,

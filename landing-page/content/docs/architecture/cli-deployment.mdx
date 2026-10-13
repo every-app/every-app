@@ -26,7 +26,7 @@ The CLI deploys a prebuilt gateway: `--localGateway <tarball>` when given, other
 5. Download release → install pinned tooling → patch `dist/server/wrangler.json` (D1/KV IDs, routes, bindings) → `wrangler deploy`.
 6. **Secrets after the worker exists**, only if missing (except `GATEWAY_URL`, which `--domain` force-updates): `GATEWAY_URL`, `CLOUDFLARE_ACCOUNT_ID`, `BETTER_AUTH_SECRET`, RSA-2048 `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY` pair (both-or-none enforced), `GATEWAY_DEPLOYMENT_MODE=self_hosted`.
 7. **D1 migrations run last**, remotely via `drizzle-kit migrate`.
-8. Poll TLS, check `/api/admin/has-owner`, point a fresh install at `/sign-up`.
+8. If D1 has no owner membership, mint a one-time setup link: expire unused links, insert the SHA-256 of a fresh `est_` secret (24h expiry) into `owner_setup_tokens` over the D1 REST API, then poll TLS and print/open `https://<gateway>/setup#token=…`. An unattended deploy (CI, piped output) mints nothing and only says to run `everyapp gateway claim-link`, unless `--printSetupLink` is passed. `everyapp gateway claim-link` re-mints it.
 
 ## `everyapp app create`
 
@@ -46,8 +46,9 @@ Not scaffold-only — it **production-deploys as part of create**. Clone templat
  5 wrangler deploy — PRIVATE worker
  6 register app         ─────────────► /api/deploy/register
                                         → registry row: hostname, manifest
-                                          snapshot, active, default,
-                                          granted to all members
+                                          snapshot, active; first registration
+                                          grants the deployer + owners/admins
+                                          (access: everyone → all members)
  7 ensure eat_ token    ─────────────► /api/deploy/app-token/provision
    (only when the worker secret is missing — never rotated)
    → upload app secrets: GATEWAY_URL, GATEWAY_APP_API_TOKEN, EVERY_APP_ORG_ID

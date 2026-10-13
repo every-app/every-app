@@ -1,12 +1,14 @@
 import { db } from "@/db";
-import { appTokens, apps, users } from "@/db/schema";
+import { appTokens, apps, members, users } from "@/db/schema";
 import { and, eq, gt, isNull, or, desc } from "drizzle-orm";
 import { normalizeTokenScopes } from "../app-token-scopes";
+import { isUserBanned } from "../user-ban";
 import type { AdminAppToken } from "@/types/app-token";
 
 type ActiveDeployToken = {
   id: string;
   organizationId: string;
+  createdBy: string | null;
   scopes: string[];
 };
 
@@ -25,6 +27,12 @@ type AdminAppTokenRecord = Omit<AdminAppToken, "appId"> & {
   appRowId: string | null;
 };
 
+/**
+ * An unrevoked, unexpired deploy token whose creator is still a member of the
+ * token's organization and not deactivated: a deploy token acts for its
+ * creator. A token whose creator was deleted (created_by is then null) never
+ * works again.
+ */
 async function findActiveDeployByTokenHash(
   tokenHash: string,
 ): Promise<ActiveDeployToken | null> {
@@ -33,9 +41,20 @@ async function findActiveDeployByTokenHash(
     .select({
       id: appTokens.id,
       organizationId: appTokens.organizationId,
+      createdBy: appTokens.createdBy,
       scopes: appTokens.scopes,
+      creatorBanned: users.banned,
+      creatorBanExpires: users.banExpires,
     })
     .from(appTokens)
+    .innerJoin(users, eq(appTokens.createdBy, users.id))
+    .innerJoin(
+      members,
+      and(
+        eq(members.userId, appTokens.createdBy),
+        eq(members.organizationId, appTokens.organizationId),
+      ),
+    )
     .where(
       and(
         eq(appTokens.tokenHash, tokenHash),
@@ -47,13 +66,20 @@ async function findActiveDeployByTokenHash(
     .limit(1);
 
   const token = result[0];
-  if (!token) {
+  if (
+    !token ||
+    isUserBanned({
+      banned: token.creatorBanned,
+      banExpires: token.creatorBanExpires,
+    })
+  ) {
     return null;
   }
 
   return {
     id: token.id,
     organizationId: token.organizationId,
+    createdBy: token.createdBy,
     scopes: parseScopes(token.scopes),
   };
 }

@@ -5,7 +5,9 @@
  *  - the gateway's own host (from GATEWAY_URL) → the control-plane app
  *    (launcher, auth, admin) served by TanStack Start, with static assets
  *    served explicitly via the ASSETS binding (`run_worker_first` is on so
- *    app-subdomain requests can never be answered by a gateway asset);
+ *    app-subdomain requests can never be answered by a gateway asset). Its
+ *    requests pass the control-plane guard first and every response gets the
+ *    control-plane security headers (server/control-plane-guard.ts);
  *  - any other host → the perimeter proxy (`handleGatewayRequest`), which
  *    resolves the app from the D1 registry by full hostname, authenticates the
  *    Better Auth session, mints the identity JWT, and proxies to the app's
@@ -31,6 +33,11 @@ import {
   type AppCallerProps,
 } from "./server/app-gateway-entrypoint";
 import { serveControlPlane } from "./server/control-plane";
+import {
+  guardControlPlaneRequest,
+  withControlPlaneHeaders,
+} from "./server/control-plane-guard";
+import { isMcpOauthEnabled, isOauthPath } from "./server/oauth-flag";
 import {
   getOauthProvider,
   syntheticExecutionContext,
@@ -88,6 +95,21 @@ export async function resolveAppByHostname(
   return app;
 }
 
+/**
+ * Serve a control-plane request: guard it, then hand it to `serve`, stamping
+ * the control-plane security headers on whatever comes back.
+ */
+async function serveGuarded(
+  request: Request,
+  host: string,
+  serve: (request: Request) => Promise<Response>,
+): Promise<Response> {
+  const { pathname } = new URL(request.url);
+  const denied = guardControlPlaneRequest(request, host);
+  if (denied) return withControlPlaneHeaders(denied, pathname);
+  return withControlPlaneHeaders(await serve(request), pathname);
+}
+
 /** Private app-to-gateway surface, reachable only through a named binding. */
 export class AppGateway extends WorkerEntrypoint<
   Cloudflare.Env,
@@ -111,10 +133,25 @@ export default createServerEntry({
       .toLowerCase();
 
     if (!requestHost || requestHost === gatewayHost) {
-      return getOauthProvider().fetch(
+      return serveGuarded(
         request,
-        env,
-        syntheticExecutionContext(),
+        requestHost || new URL(request.url).host,
+        async (guarded) => {
+          if (
+            !isMcpOauthEnabled(env) &&
+            isOauthPath(new URL(guarded.url).pathname)
+          ) {
+            return new Response(JSON.stringify({ error: "oauth_disabled" }), {
+              status: 404,
+              headers: { "content-type": "application/json" },
+            });
+          }
+          return getOauthProvider().fetch(
+            guarded,
+            env,
+            syntheticExecutionContext(),
+          );
+        },
       );
     }
 
@@ -145,7 +182,9 @@ export default createServerEntry({
           }),
         );
       }
-      return serveControlPlane(request, env);
+      return serveGuarded(request, requestHost, (guarded) =>
+        serveControlPlane(guarded, env),
+      );
     }
 
     // A host other than the gateway's own is an app subdomain — if it's in
@@ -175,7 +214,9 @@ export default createServerEntry({
       // Hosts unrelated to the gateway domain (build-time prerender, stray
       // aliases) fall through to the control plane, which never serves app
       // content.
-      return serveControlPlane(request, env);
+      return serveGuarded(request, requestHost, (guarded) =>
+        serveControlPlane(guarded, env),
+      );
     }
 
     try {
@@ -187,6 +228,7 @@ export default createServerEntry({
         issuer: env.GATEWAY_URL,
         resolveApp: async () => app,
         loginUrl: `${env.GATEWAY_URL}/sign-in`,
+        oauthDiscovery: isMcpOauthEnabled(env),
       });
     } catch (error) {
       // The perimeter must never leak an uncaught exception (Cloudflare's

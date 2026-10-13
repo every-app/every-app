@@ -22,6 +22,10 @@ declare namespace Cloudflare {
     // Deployment mode used to gate internal operator APIs
     GATEWAY_DEPLOYMENT_MODE?: "self_hosted" | "hosted";
 
+    // "true" turns on the OAuth authorization server for MCP clients (set as
+    // a secret so deploys keep it). Off when unset: see server/oauth-flag.ts.
+    MCP_OAUTH_ENABLED?: string;
+
     // Better Auth configuration
     // Also used as HMAC key material for app token hashing (with domain separation)
     BETTER_AUTH_SECRET: string;
@@ -34,6 +38,11 @@ declare namespace Cloudflare {
 
     // Provider credentials used by gateway proxy routes
     OPENAI_API_KEY?: string;
+
+    // OpenAI paths beyond inference that apps may opt into with their
+    // manifest's `ai.routes` (comma or space separated, e.g. "/v1/files").
+    // Unset: inference only. Set as a secret so deploys keep it.
+    AI_PROXY_EXTRA_ROUTES?: string;
 
     // Optional REST transport for email delivery outside deployed Workers.
     EMAIL_REST_API_TOKEN?: string;

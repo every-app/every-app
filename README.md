@@ -89,7 +89,7 @@ That last part needs a wildcard DNS record. The CLI creates it when it can; if i
 
 > **you.dev → DNS → Add record**: Type **CNAME**, Name **`*`**, Target **`you.dev`**, Proxy **ON** (orange cloud).
 
-When it finishes, open `https://you.dev` and create your account. **Do this promptly** — the first person to reach the signup page becomes the owner. Signup is invite-only after you.
+When it finishes, the CLI prints (and opens) a one-time setup link, `https://you.dev/setup#token=…`. Open it to create the owner account; nobody can sign up on the Gateway before that, and the link works once and expires after 24 hours. Lost it? Run `npx everyapp gateway claim-link` for a new one. Signup is invite-only after you.
 
 ### Connect your terminal
 

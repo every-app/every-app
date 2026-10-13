@@ -58,7 +58,7 @@ export function AppsTable({
         <thead>
           <tr>
             <th className="w-full">App</th>
-            <th>New Users</th>
+            <th>Available to</th>
             <th>Access</th>
             <th></th>
           </tr>
@@ -83,11 +83,11 @@ export function AppsTable({
               <td className="whitespace-nowrap">
                 {app.isDefault ? (
                   <span className="badge badge-soft badge-success badge-sm rounded-full">
-                    Auto-grant
+                    Everyone
                   </span>
                 ) : (
                   <span className="badge badge-ghost badge-sm rounded-full">
-                    Manual
+                    Selected people
                   </span>
                 )}
               </td>

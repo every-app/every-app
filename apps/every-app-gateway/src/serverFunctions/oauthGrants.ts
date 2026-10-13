@@ -3,6 +3,8 @@ import { env } from "cloudflare:workers";
 import { z } from "zod";
 import { organizationMemberMiddleware } from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
+import { PublicError } from "@/server/errors";
+import { isMcpOauthEnabled } from "@/server/oauth-flag";
 
 const revokeOauthGrantSchema = z.object({
   grantId: z.string().min(1),
@@ -28,8 +30,12 @@ function metadata(value: unknown): GrantMetadata {
 export const listMyOauthGrants = createServerFn()
   .middleware([organizationMemberMiddleware])
   .handler(async ({ context }) => {
+    if (!isMcpOauthEnabled(env)) {
+      return { enabled: false, grants: [], cursor: undefined };
+    }
     const grants = await env.OAUTH_PROVIDER.listUserGrants(context.user.id);
     return {
+      enabled: true,
       grants: grants.items.map((grant) => {
         const meta = metadata(grant.metadata);
         return {
@@ -53,6 +59,9 @@ export const revokeMyOauthGrant = createServerFn({ method: "POST" })
   .middleware([publicErrorMiddleware, organizationMemberMiddleware])
   .validator((data: unknown) => revokeOauthGrantSchema.parse(data))
   .handler(async ({ data, context }) => {
+    if (!isMcpOauthEnabled(env)) {
+      throw new PublicError("OAUTH_DISABLED", "OAuth is not enabled");
+    }
     await env.OAUTH_PROVIDER.revokeGrant(data.grantId, context.user.id);
     return { ok: true };
   });

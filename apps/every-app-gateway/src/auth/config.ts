@@ -4,34 +4,30 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, organization } from "better-auth/plugins";
 import { tanstackStartCookies } from "better-auth/tanstack-start";
 import { drizzle } from "drizzle-orm/d1";
-import { eq } from "drizzle-orm";
 import { schema } from "../db";
 import { env } from "cloudflare:workers";
 import { sharedAuthOptions } from "./shared";
 import { sendEmail } from "@/server/email/sendEmail";
+import { passwordResetUrl } from "@/server/email/links";
+import { findPendingInvitationByToken } from "@/server/invitation-token";
 import { AppAccessRepository } from "@/server/repositories/AppAccessRepository";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { AppAccessService } from "@/server/services/AppAccessService";
-import { db } from "@/db";
-import { invitations } from "@/db/schema";
 import { resolveOrgContext } from "@/server/organization/orgContext";
 
-type PendingInvitation = {
-  email: string;
-  status: string;
-  expiresAt: Date | number | string;
-};
+// Invitation links work once, for this long (Better Auth's default is 48h).
+const INVITATION_TTL_SECONDS = 72 * 60 * 60;
 
 function isSignUpEmailPath(path: string): boolean {
   return path === "/sign-up/email";
 }
 
-function getInvitationIdFromRequest(request?: Request): string | null {
-  if (!request?.url) {
-    return null;
-  }
+function isCreateOrganizationPath(path: string): boolean {
+  return path === "/organization/create";
+}
 
-  return new URL(request.url).searchParams.get("invitationId");
+function getInvitationTokenFromRequest(request: Request): string | null {
+  return new URL(request.url).searchParams.get("invitationToken");
 }
 
 function normalizeEmail(value: unknown): string {
@@ -40,24 +36,8 @@ function normalizeEmail(value: unknown): string {
     .toLowerCase();
 }
 
-function getInvitationExpiryMs(invitation: PendingInvitation): number {
-  return invitation.expiresAt instanceof Date
-    ? invitation.expiresAt.getTime()
-    : Number(invitation.expiresAt);
-}
-
-function assertInvitationNotExpired(invitation: PendingInvitation): void {
-  const expiresAtMs = getInvitationExpiryMs(invitation);
-
-  if (!Number.isFinite(expiresAtMs) || expiresAtMs < Date.now()) {
-    throw new APIError("BAD_REQUEST", {
-      message: "Invitation has expired.",
-    });
-  }
-}
-
 function assertInvitationEmailMatches(
-  invitation: PendingInvitation,
+  invitation: { email: string },
   requestedEmail: unknown,
 ): void {
   const normalizedRequestedEmail = normalizeEmail(requestedEmail);
@@ -67,59 +47,67 @@ function assertInvitationEmailMatches(
     !normalizedRequestedEmail ||
     normalizedRequestedEmail !== normalizedInvitationEmail
   ) {
-    throw new APIError("BAD_REQUEST", {
+    throw new APIError("FORBIDDEN", {
       message:
         "This invitation can only be used with the invited email address.",
     });
   }
 }
 
-async function findPendingInvitation(
-  invitationId: string,
-): Promise<PendingInvitation | null> {
-  const invitation = await db.query.invitations.findFirst({
-    columns: {
-      email: true,
-      status: true,
-      expiresAt: true,
-    },
-    where: eq(invitations.id, invitationId),
-  });
-
-  if (!invitation || invitation.status !== "pending") {
-    return null;
-  }
-
-  return invitation;
-}
-
+/**
+ * Sign-up over HTTP always needs a live invite link for the same email,
+ * before and after the gateway has an owner: the first owner is created
+ * server-side from the deployer's setup link (SetupService), never by
+ * signing up. The link's token is the credential, never the invitation id,
+ * which is not a secret.
+ */
 async function enforceInviteOnlySignUp(ctx: {
-  request?: Request;
+  request: Request;
   body?: { email?: unknown };
 }): Promise<void> {
-  // Intentionally global: once any owner exists for this gateway deployment,
-  // direct sign-up is disabled and invitation flow is required.
-  const hasOwner = await hasAnyOwnerMembership();
-  if (!hasOwner) {
-    return;
-  }
-
-  const invitationId = getInvitationIdFromRequest(ctx.request);
-  if (!invitationId) {
-    throw new APIError("BAD_REQUEST", {
-      message: "Sign up is invite-only. Please use the invitation email link.",
+  const token = getInvitationTokenFromRequest(ctx.request);
+  if (!token) {
+    throw new APIError("FORBIDDEN", {
+      message: "Sign up is invite-only. Please use the invitation link.",
     });
   }
 
-  const invitation = await findPendingInvitation(invitationId);
+  const invitation = await findPendingInvitationByToken(token);
   if (!invitation) {
-    throw new APIError("BAD_REQUEST", {
-      message: "Invitation is invalid or no longer active.",
+    throw new APIError("FORBIDDEN", {
+      message: "This invitation link is invalid, expired or already used.",
     });
   }
 
-  assertInvitationNotExpired(invitation);
   assertInvitationEmailMatches(invitation, ctx.body?.email);
+}
+
+/**
+ * Where a reset email links to: the gateway's /reset-password page with the
+ * token in the query string, never in a path segment (log redaction only
+ * covers query strings). Better Auth's own url points at its
+ * /reset-password/<token> endpoint and carries the page to come back to as
+ * callbackURL; when that is the gateway's reset page (forgot-password adds
+ * redirect and return_to to it), the link keeps it.
+ */
+function resetPasswordLink(betterAuthUrl: string, token: string): string {
+  try {
+    const callbackURL = new URL(betterAuthUrl).searchParams.get("callbackURL");
+    if (callbackURL && env.GATEWAY_URL) {
+      const target = new URL(callbackURL, env.GATEWAY_URL);
+      if (
+        target.origin === new URL(env.GATEWAY_URL).origin &&
+        target.pathname === "/reset-password"
+      ) {
+        target.searchParams.set("token", token);
+        target.hash = "";
+        return target.toString();
+      }
+    }
+  } catch {
+    // An unparseable url: the plain reset page below.
+  }
+  return passwordResetUrl(token);
 }
 
 async function grantDefaultAppsForMembership(
@@ -128,6 +116,39 @@ async function grantDefaultAppsForMembership(
 ): Promise<void> {
   await AppAccessService.grantDefaultAppsToUser(userId, organizationId);
 }
+
+/**
+ * Better Auth organization endpoints the gateway never calls over HTTP.
+ * Organizations are created only by the setup claim, and membership changes
+ * (invites, accepting them, roles, removal) go through gateway server
+ * functions, which apply the gateway's own policy and call auth.api
+ * server-side (disabledPaths only closes the HTTP routes). add-member is
+ * server-only in Better Auth 1.7.7; it is listed so a version that exposes it
+ * stays closed.
+ *
+ * Accepting over HTTP needs only the invitation id, and list-invitations and
+ * get-full-organization hand every pending invitation id to any member, so
+ * all three are closed: invite links carry their own secret (see
+ * server/invitation-token.ts), and the UI reads the active organization from
+ * a gateway server function that returns no invitations.
+ */
+const DISABLED_AUTH_PATHS = [
+  "/organization/create",
+  "/organization/update",
+  "/organization/delete",
+  "/organization/invite-member",
+  "/organization/cancel-invitation",
+  "/organization/accept-invitation",
+  "/organization/list-invitations",
+  "/organization/get-full-organization",
+  "/organization/remove-member",
+  "/organization/update-member-role",
+  "/organization/add-member",
+  // Leaving drops the membership without the gateway's cleanup, so the
+  // member's PATs, deploy tokens and app access would survive and work again
+  // on a later re-invite. Members leave by an admin removing them.
+  "/organization/leave",
+];
 
 /**
  * Runtime auth configuration - requires Cloudflare bindings.
@@ -201,7 +222,11 @@ export function createAuth() {
     },
     emailAndPassword: {
       ...sharedAuthOptions.emailAndPassword,
-      sendResetPassword: async ({ user, url }) => {
+      // The link goes to the gateway's reset page with the token in the query
+      // string, not to Better Auth's /reset-password/<token> path, so it never
+      // sits in a URL path where log redaction can't reach it.
+      sendResetPassword: async ({ user, url: betterAuthUrl, token }) => {
+        const url = resetPasswordLink(betterAuthUrl, token);
         await sendEmail({
           to: user.email,
           subject: "Reset your Every App password",
@@ -212,20 +237,19 @@ export function createAuth() {
     },
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins,
+    disabledPaths: DISABLED_AUTH_PATHS,
     plugins: [
       ...sharedAuthOptions.plugins,
       admin(),
       organization({
-        async sendInvitationEmail(data) {
-          const invitationUrl = `${env.GATEWAY_URL}/accept-invitation?invitationId=${encodeURIComponent(data.id)}`;
-
-          await sendEmail({
-            to: data.email,
-            subject: `You have been invited to ${data.organization.name}`,
-            text: `${data.inviter.user.email} invited you to join ${data.organization.name}. Accept the invitation: ${invitationUrl}`,
-            html: `<p>${data.inviter.user.email} invited you to join ${data.organization.name}.</p><p><a href="${invitationUrl}">Accept invitation</a></p>`,
-          });
-        },
+        // Only the setup claim creates an organization (a server-side system
+        // action, which this does not block). Anyone else who could create
+        // one would own it: mint deploy tokens, register apps and invite
+        // outsiders past invite-only sign-up.
+        allowUserToCreateOrganization: false,
+        // Invitations are emailed (or handed to the admin as a link when
+        // email isn't set up) by InvitationService, not by Better Auth.
+        invitationExpiresIn: INVITATION_TTL_SECONDS,
         organizationHooks: {
           afterAcceptInvitation: async ({ user, organization }) => {
             await grantDefaultAppsForMembership(user.id, organization.id);
@@ -248,15 +272,32 @@ export function createAuth() {
       tanstackStartCookies(),
     ],
     hooks: {
+      // These hooks also run for server-side auth.api.* calls, which carry
+      // no request: those come from gateway code (the setup claim), not from
+      // a client, and are allowed.
       before: createAuthMiddleware(async (ctx) => {
-        if (!isSignUpEmailPath(ctx.path)) {
+        if (!ctx.request) {
           return;
         }
 
-        await enforceInviteOnlySignUp({
-          request: ctx.request,
-          body: { email: ctx.body?.email },
-        });
+        if (isSignUpEmailPath(ctx.path)) {
+          await enforceInviteOnlySignUp({
+            request: ctx.request,
+            body: { email: ctx.body?.email },
+          });
+          return;
+        }
+
+        // Fail closed until the gateway is claimed: an organization created
+        // before then would make its creator an owner of the gateway.
+        if (
+          isCreateOrganizationPath(ctx.path) &&
+          !(await hasAnyOwnerMembership())
+        ) {
+          throw new APIError("FORBIDDEN", {
+            message: "This gateway has not been set up yet.",
+          });
+        }
       }),
     },
     databaseHooks: {

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   findByHostname: vi.fn(),
   authenticate: vi.fn(),
   controlPlaneFetch: vi.fn(),
+  providerFetch: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({
@@ -20,17 +21,10 @@ vi.mock("cloudflare:workers", () => ({
 }));
 
 // The provider library imports cloudflare:workers from node_modules, where
-// the vi.mock above cannot reach — keep it out of the module graph entirely.
-// The provider library imports cloudflare:workers from node_modules, where
 // vi.mock cannot reach — stub the module, but keep the real control-plane
 // delegation so host-dispatch tests still observe control-plane serving.
 vi.mock("@/server/oauth-provider", () => ({
-  getOauthProvider: vi.fn(() => ({
-    fetch: async (request: Request, env: unknown) => {
-      const { serveControlPlane } = await import("@/server/control-plane");
-      return serveControlPlane(request, env as { ASSETS?: never });
-    },
-  })),
+  getOauthProvider: vi.fn(() => ({ fetch: mocks.providerFetch })),
   syntheticExecutionContext: () => ({
     waitUntil: () => undefined,
     passThroughOnException: () => undefined,
@@ -90,6 +84,16 @@ function expectSecurityHeaders(response: Response): void {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+beforeEach(() => {
+  mocks.providerFetch.mockReset();
+  mocks.providerFetch.mockImplementation(
+    async (request: Request, env: unknown) => {
+      const { serveControlPlane } = await import("@/server/control-plane");
+      return serveControlPlane(request, env as { ASSETS?: never });
+    },
+  );
 });
 
 describe("hostname app cache", () => {
@@ -248,5 +252,296 @@ describe("gateway-generated errors", () => {
     expect(await response.json()).toEqual({ error: "gateway_error" });
     expectSecurityHeaders(response);
     consoleError.mockRestore();
+  });
+});
+
+describe("gateway host (control plane)", () => {
+  beforeEach(() => {
+    clearHostnameCacheForTests();
+    mocks.controlPlaneFetch.mockReset();
+    mocks.controlPlaneFetch.mockResolvedValue(
+      new Response("<html></html>", {
+        headers: {
+          "content-type": "text/html",
+          "set-cookie": "session=abc; Domain=example.com; Path=/; HttpOnly",
+        },
+      }),
+    );
+    for (const key of Object.keys(mocks.env)) delete mocks.env[key];
+    Object.assign(mocks.env, {
+      DB: {},
+      GATEWAY_URL: "https://example.com",
+      JWT_PRIVATE_KEY: "unused in these tests",
+    });
+  });
+
+  function gatewayRequest(path: string, init: RequestInit = {}): Request {
+    const headers = new Headers(init.headers);
+    headers.set("host", "example.com");
+    return new Request(`https://example.com${path}`, { ...init, headers });
+  }
+
+  it("stamps control-plane security headers and keeps the session cookie domain", async () => {
+    const response = await server.fetch(gatewayRequest("/"));
+
+    expect(response.status).toBe(200);
+    // The gateway host is often the customer's apex: HSTS covers it alone.
+    expect(response.headers.get("strict-transport-security")).toBe(
+      "max-age=63072000",
+    );
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(response.headers.get("content-security-policy")).toContain(
+      "frame-ancestors 'none'",
+    );
+    expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(response.headers.get("cache-control")).toBeNull();
+    expect(response.headers.getSetCookie()).toEqual([
+      "session=abc; Domain=example.com; Path=/; HttpOnly",
+    ]);
+  });
+
+  it("never caches admin, consent or setup pages", async () => {
+    mocks.env.MCP_OAUTH_ENABLED = "true";
+    for (const path of [
+      "/admin",
+      "/admin/users",
+      "/oauth/authorize?client_id=x",
+      "/setup",
+    ]) {
+      const response = await server.fetch(gatewayRequest(path));
+      expect(response.headers.get("cache-control")).toBe("no-store");
+    }
+  });
+
+  it("rejects a server-function GET reached by navigation", async () => {
+    const response = await server.fetch(
+      gatewayRequest("/_serverFn/abc?createServerFn&payload=%7B%7D", {
+        headers: {
+          cookie: "session=abc",
+          "sec-fetch-site": "same-origin",
+          "sec-fetch-mode": "navigate",
+          "sec-fetch-dest": "document",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: "server_fn_denied" });
+    expect(response.headers.get("x-frame-options")).toBe("DENY");
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects cross-site and sibling-app server-function calls", async () => {
+    for (const site of ["cross-site", "same-site"]) {
+      const response = await server.fetch(
+        gatewayRequest("/_serverFn/abc", {
+          method: "POST",
+          headers: {
+            cookie: "session=abc",
+            "sec-fetch-site": site,
+            "x-tsr-serverfn": "true",
+            "content-type": "application/json",
+          },
+          body: "{}",
+        }),
+      );
+      expect(response.status).toBe(403);
+    }
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+  });
+
+  it("guards a server-function path whose other escapes are malformed", async () => {
+    const response = await server.fetch(
+      gatewayRequest("/%5FserverFn/abc/%ZZ", {
+        method: "POST",
+        headers: {
+          cookie: "session=abc",
+          "sec-fetch-site": "same-site",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: "server_fn_denied" });
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+  });
+
+  it("serves same-origin server-function calls", async () => {
+    const response = await server.fetch(
+      gatewayRequest("/_serverFn/abc", {
+        method: "POST",
+        headers: {
+          cookie: "session=abc",
+          origin: "https://example.com",
+          "sec-fetch-site": "same-origin",
+          "sec-fetch-mode": "cors",
+          "x-tsr-serverfn": "true",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.controlPlaneFetch).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a cookie-carrying cross-site POST to any control-plane route", async () => {
+    const response = await server.fetch(
+      gatewayRequest("/api/auth/organization/invite-member", {
+        method: "POST",
+        headers: {
+          cookie: "session=abc",
+          origin: "https://evil.example.net",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: "csrf_denied" });
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+  });
+
+  it("lets the native app's auth calls and token-authenticated routes through", async () => {
+    const nativeSignIn = await server.fetch(
+      gatewayRequest("/api/auth/sign-in/email", {
+        method: "POST",
+        headers: {
+          cookie: "session=abc",
+          "expo-origin": "everyapp://",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+    expect(nativeSignIn.status).toBe(200);
+
+    const deployRegister = await server.fetch(
+      gatewayRequest("/api/deploy/register", {
+        method: "POST",
+        headers: {
+          cookie: "session=abc",
+          authorization: "Bearer eak_x",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+    expect(deployRegister.status).toBe(200);
+
+    const cookielessPost = await server.fetch(
+      gatewayRequest("/api/setup/claim", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+    );
+    expect(cookielessPost.status).toBe(200);
+    expect(mocks.controlPlaneFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps the native-app exemption to exact, metadata-free auth calls", async () => {
+    const post = (path: string, headers: Record<string, string>) =>
+      server.fetch(
+        gatewayRequest(path, {
+          method: "POST",
+          headers: {
+            cookie: "session=abc",
+            "content-type": "application/json",
+            ...headers,
+          },
+          body: "{}",
+        }),
+      );
+
+    const denied: [string, Record<string, string>][] = [
+      // A browser always sends Fetch Metadata: same-site is a sibling app.
+      [
+        "/api/auth/sign-out",
+        { "expo-origin": "everyapp://", "sec-fetch-site": "same-site" },
+      ],
+      [
+        "/api/auth/sign-out",
+        { origin: "everyapp://", "sec-fetch-site": "same-site" },
+      ],
+      // A real Origin wins over expo-origin.
+      [
+        "/api/auth/sign-out",
+        { origin: "https://todo.example.com", "expo-origin": "everyapp://" },
+      ],
+      // The exemption covers Better Auth's routes only.
+      [
+        "/_serverFn/abc",
+        { "expo-origin": "everyapp://", "x-tsr-serverfn": "true" },
+      ],
+      ["/api/setup/claim", { "expo-origin": "everyapp://" }],
+      ["/api/setup/claim", { origin: "everyapp://" }],
+      // A cookie POST with neither Origin nor Sec-Fetch-Site.
+      ["/api/auth/sign-out", {}],
+      ["/api/setup/claim", {}],
+      ["/_serverFn/abc", { "x-tsr-serverfn": "true" }],
+    ];
+    for (const [path, headers] of denied) {
+      const response = await post(path, headers);
+      expect(response.status, `${path} ${JSON.stringify(headers)}`).toBe(403);
+    }
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 for every OAuth endpoint while MCP_OAUTH_ENABLED is unset", async () => {
+    for (const [method, path] of [
+      ["GET", "/.well-known/oauth-authorization-server"],
+      ["GET", "/.well-known/oauth-protected-resource"],
+      ["GET", "/.well-known/openid-configuration"],
+      ["POST", "/oauth/register"],
+      ["GET", "/oauth/authorize?client_id=x"],
+      ["POST", "/oauth/token"],
+      ["GET", "/oauth/userinfo"],
+    ] as const) {
+      const response = await server.fetch(gatewayRequest(path, { method }));
+      expect(response.status).toBe(404);
+      expect(await response.json()).toEqual({ error: "oauth_disabled" });
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    }
+    expect(mocks.providerFetch).not.toHaveBeenCalled();
+  });
+
+  it("routes OAuth endpoints to the provider when MCP_OAUTH_ENABLED is true", async () => {
+    mocks.env.MCP_OAUTH_ENABLED = "true";
+    mocks.providerFetch.mockResolvedValue(Response.json({ issuer: "x" }));
+
+    const response = await server.fetch(
+      gatewayRequest("/.well-known/oauth-authorization-server"),
+    );
+    expect(response.status).toBe(200);
+    expect(mocks.providerFetch).toHaveBeenCalledOnce();
+  });
+
+  it("does not advertise OAuth on app hosts while it is off", async () => {
+    mocks.findByHostname.mockResolvedValue(TODO);
+
+    const metadata = await server.fetch(
+      new Request(
+        "https://todo.example.com/.well-known/oauth-protected-resource",
+        {
+          headers: { host: "todo.example.com" },
+        },
+      ),
+    );
+    expect(metadata.status).toBe(404);
+
+    mocks.authenticate.mockResolvedValue(null);
+    const challenge = await server.fetch(
+      new Request("https://todo.example.com/mcp", {
+        method: "POST",
+        headers: { host: "todo.example.com" },
+      }),
+    );
+    expect(challenge.status).toBe(401);
+    expect(challenge.headers.get("www-authenticate")).toBe(
+      'Bearer realm="every-app"',
+    );
   });
 });

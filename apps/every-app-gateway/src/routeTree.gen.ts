@@ -16,6 +16,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as OrganizationsRouteImport } from './routes/organizations'
 import { Route as PwaRouteImport } from './routes/pwa'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
 import { Route as AdminIndexRouteImport } from './routes/admin/index'
@@ -30,6 +31,7 @@ import { Route as ApiDeployRegisterRouteImport } from './routes/api/deploy/regis
 import { Route as ApiDeployWhoamiRouteImport } from './routes/api/deploy/whoami'
 import { Route as ApiDevIdentityRouteImport } from './routes/api/dev/identity'
 import { Route as ApiMeAppsRouteImport } from './routes/api/me/apps'
+import { Route as ApiSetupClaimRouteImport } from './routes/api/setup/claim'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -64,6 +66,11 @@ const PwaRoute = PwaRouteImport.update({
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -136,6 +143,11 @@ const ApiMeAppsRoute = ApiMeAppsRouteImport.update({
   path: '/api/me/apps',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSetupClaimRoute = ApiSetupClaimRouteImport.update({
+  id: '/api/setup/claim',
+  path: '/api/setup/claim',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -145,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/organizations': typeof OrganizationsRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/admin/apps': typeof AdminAppsRoute
@@ -159,6 +172,7 @@ export interface FileRoutesByFullPath {
   '/api/deploy/whoami': typeof ApiDeployWhoamiRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
+  '/api/setup/claim': typeof ApiSetupClaimRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -167,6 +181,7 @@ export interface FileRoutesByTo {
   '/organizations': typeof OrganizationsRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/admin/apps': typeof AdminAppsRoute
@@ -181,6 +196,7 @@ export interface FileRoutesByTo {
   '/api/deploy/whoami': typeof ApiDeployWhoamiRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
+  '/api/setup/claim': typeof ApiSetupClaimRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -191,6 +207,7 @@ export interface FileRoutesById {
   '/organizations': typeof OrganizationsRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/admin/apps': typeof AdminAppsRoute
@@ -205,6 +222,7 @@ export interface FileRoutesById {
   '/api/deploy/whoami': typeof ApiDeployWhoamiRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
+  '/api/setup/claim': typeof ApiSetupClaimRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -216,6 +234,7 @@ export interface FileRouteTypes {
     | '/organizations'
     | '/pwa'
     | '/reset-password'
+    | '/setup'
     | '/sign-in'
     | '/sign-up'
     | '/admin/apps'
@@ -230,6 +249,7 @@ export interface FileRouteTypes {
     | '/api/deploy/whoami'
     | '/api/dev/identity'
     | '/api/me/apps'
+    | '/api/setup/claim'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -238,6 +258,7 @@ export interface FileRouteTypes {
     | '/organizations'
     | '/pwa'
     | '/reset-password'
+    | '/setup'
     | '/sign-in'
     | '/sign-up'
     | '/admin/apps'
@@ -252,6 +273,7 @@ export interface FileRouteTypes {
     | '/api/deploy/whoami'
     | '/api/dev/identity'
     | '/api/me/apps'
+    | '/api/setup/claim'
   id:
     | '__root__'
     | '/'
@@ -261,6 +283,7 @@ export interface FileRouteTypes {
     | '/organizations'
     | '/pwa'
     | '/reset-password'
+    | '/setup'
     | '/sign-in'
     | '/sign-up'
     | '/admin/apps'
@@ -275,6 +298,7 @@ export interface FileRouteTypes {
     | '/api/deploy/whoami'
     | '/api/dev/identity'
     | '/api/me/apps'
+    | '/api/setup/claim'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -285,6 +309,7 @@ export interface RootRouteChildren {
   OrganizationsRoute: typeof OrganizationsRoute
   PwaRoute: typeof PwaRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  SetupRoute: typeof SetupRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   OauthAuthorizeRoute: typeof OauthAuthorizeRoute
@@ -295,6 +320,7 @@ export interface RootRouteChildren {
   ApiDeployWhoamiRoute: typeof ApiDeployWhoamiRoute
   ApiDevIdentityRoute: typeof ApiDevIdentityRoute
   ApiMeAppsRoute: typeof ApiMeAppsRoute
+  ApiSetupClaimRoute: typeof ApiSetupClaimRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -346,6 +372,13 @@ declare module '@tanstack/react-router' {
       path: '/reset-password'
       fullPath: '/reset-password'
       preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -446,6 +479,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMeAppsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/setup/claim': {
+      id: '/api/setup/claim'
+      path: '/api/setup/claim'
+      fullPath: '/api/setup/claim'
+      preLoaderRoute: typeof ApiSetupClaimRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -473,6 +513,7 @@ const rootRouteChildren: RootRouteChildren = {
   OrganizationsRoute: OrganizationsRoute,
   PwaRoute: PwaRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  SetupRoute: SetupRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   OauthAuthorizeRoute: OauthAuthorizeRoute,
@@ -483,6 +524,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiDeployWhoamiRoute: ApiDeployWhoamiRoute,
   ApiDevIdentityRoute: ApiDevIdentityRoute,
   ApiMeAppsRoute: ApiMeAppsRoute,
+  ApiSetupClaimRoute: ApiSetupClaimRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

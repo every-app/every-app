@@ -25,6 +25,16 @@ export function clearOrgContextCacheForTests(): void {
 }
 
 /**
+ * Drop this isolate's cached memberships for a user after changing their
+ * role or deactivating them (other isolates catch up within the TTL).
+ */
+export function forgetOrgContext(userId: string): void {
+  for (const key of orgContextCache.keys()) {
+    if (key.startsWith(`${userId}\0`)) orgContextCache.delete(key);
+  }
+}
+
+/**
  * Resolve the verified organization membership a session is acting under.
  * Falls back only when the user belongs to exactly one organization.
  */

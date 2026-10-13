@@ -16,14 +16,24 @@ export { IDENTITY_HEADER, PUBLIC_HEADER };
 export const EVERYAPP_HEADER_PREFIX = "x-everyapp-";
 
 /**
- * Return a new Headers with the inbound Cookie and *all* `x-everyapp-*` headers
- * removed. The app never sees the user's session cookie, and a client cannot
- * smuggle a forged `x-everyapp-identity` past the gateway.
+ * Cloudflare routes a request carrying this header to the named Worker
+ * version, so a client could pin its request to an old (unpatched) build of
+ * an app. Only the gateway may ever choose an app version.
+ */
+export const VERSION_OVERRIDES_HEADER = "cloudflare-workers-version-overrides";
+
+/**
+ * Return a new Headers with the inbound Cookie, Authorization, the Worker
+ * version override and *all* `x-everyapp-*` headers removed. The app never
+ * sees the user's session cookie, a client cannot smuggle a forged
+ * `x-everyapp-identity` past the gateway, and a client cannot pick which
+ * deployed version of the app answers.
  */
 export function stripInboundHeaders(inbound: Headers): Headers {
   const out = new Headers(inbound);
   out.delete("cookie");
   out.delete("authorization");
+  out.delete(VERSION_OVERRIDES_HEADER);
   for (const key of [...out.keys()]) {
     if (key.toLowerCase().startsWith(EVERYAPP_HEADER_PREFIX)) {
       out.delete(key);
@@ -131,25 +141,58 @@ export function stripSetCookieDomains(headers: Headers): void {
   }
 }
 
+// Two years, every subdomain, preload-eligible: right for an app host, whose
+// subdomains are its own.
+const DEFAULT_HSTS = "max-age=63072000; includeSubDomains; preload";
+
+export interface SecurityHeaderOptions {
+  /** Defaults to `strict-origin-when-cross-origin`. */
+  referrerPolicy?: string;
+  /**
+   * The Strict-Transport-Security value. Defaults to two years with
+   * `includeSubDomains; preload`. The control plane sends a plain `max-age`:
+   * the gateway's host is often the customer's apex domain, and
+   * includeSubDomains there would force HTTPS on every subdomain of it.
+   */
+  hsts?: string;
+  /**
+   * Strip `Domain=` from Set-Cookie (the default), so an app can never set a
+   * cookie its sibling apps or the gateway would receive. The control plane
+   * turns this off: it owns the session cookie, whose domain must span the
+   * app subdomains.
+   */
+  stripCookieDomains?: boolean;
+  /** Add `Cache-Control: no-store` (pages showing secrets or consent). */
+  noStore?: boolean;
+}
+
 /**
  * Uniform security headers stamped on HTML responses. Apps may tighten the CSP
  * but the gateway guarantees this floor. Non-HTML responses (JSON/assets) get
  * the non-framing headers but not the HTML CSP.
  */
-export function withSecurityHeaders(response: Response): Response {
+export function withSecurityHeaders(
+  response: Response,
+  options: SecurityHeaderOptions = {},
+): Response {
   const contentType = response.headers.get("content-type") ?? "";
   const isHtml = contentType.includes("text/html");
 
   // Response headers are immutable on some platforms; clone to mutate safely.
   const headers = new Headers(response.headers);
-  stripSetCookieDomains(headers);
-  headers.set(
-    "Strict-Transport-Security",
-    "max-age=63072000; includeSubDomains; preload",
-  );
+  if (options.stripCookieDomains !== false) {
+    stripSetCookieDomains(headers);
+  }
+  headers.set("Strict-Transport-Security", options.hsts ?? DEFAULT_HSTS);
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");
-  headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  headers.set(
+    "Referrer-Policy",
+    options.referrerPolicy ?? "strict-origin-when-cross-origin",
+  );
+  if (options.noStore) {
+    headers.set("Cache-Control", "no-store");
+  }
 
   if (isHtml) {
     const appCsp = headers.get("content-security-policy");

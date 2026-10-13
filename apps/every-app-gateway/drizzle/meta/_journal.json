@@ -176,6 +176,20 @@
       "when": 1791243230419,
       "tag": "0024_better_auth_1_7",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "6",
+      "when": 1791247919495,
+      "tag": "0025_owner_setup_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "6",
+      "when": 1791836801630,
+      "tag": "0026_invitation_link_tokens",
+      "breakpoints": true
     }
   ]
 }

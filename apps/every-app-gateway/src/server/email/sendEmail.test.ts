@@ -10,7 +10,7 @@ const workerEnv = vi.hoisted(() => ({
 
 vi.mock("cloudflare:workers", () => ({ env: workerEnv }));
 
-import { sendEmail } from "./sendEmail";
+import { isEmailConfigured, sendEmail } from "./sendEmail";
 
 describe("sendEmail", () => {
   beforeEach(() => {
@@ -265,5 +265,36 @@ describe("sendEmail", () => {
         providerCode: "E_SENDER_NOT_VERIFIED",
       }),
     );
+  });
+});
+
+describe("isEmailConfigured", () => {
+  beforeEach(() => {
+    workerEnv.EMAIL = undefined;
+    workerEnv.EMAIL_REST_API_TOKEN = undefined;
+    workerEnv.CLOUDFLARE_ACCOUNT_ID = undefined;
+    workerEnv.EMAIL_FROM = undefined;
+    workerEnv.EMAIL_FROM_NAME = undefined;
+  });
+
+  it("is false without a sender, even with a transport", () => {
+    workerEnv.EMAIL = { send: vi.fn() };
+    expect(isEmailConfigured()).toBe(false);
+  });
+
+  it("is false with a sender but no transport", () => {
+    workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+    expect(isEmailConfigured()).toBe(false);
+  });
+
+  it("is true with a sender and the binding or the REST API", () => {
+    workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+    workerEnv.EMAIL = { send: vi.fn() };
+    expect(isEmailConfigured()).toBe(true);
+
+    workerEnv.EMAIL = undefined;
+    workerEnv.EMAIL_REST_API_TOKEN = "token";
+    workerEnv.CLOUDFLARE_ACCOUNT_ID = "account";
+    expect(isEmailConfigured()).toBe(true);
   });
 });

@@ -12,16 +12,21 @@ type IssueDeployTokenInput = {
 
 type VerifiedDeployToken = {
   organizationId: string;
+  /** The user who created the token: the deployer of what it registers. */
+  createdBy: string | null;
   scopes: string[];
 };
 
 const DEPLOY_TOKEN_PREFIX_SCHEME = "eak_";
 const TOKEN_PREFIX_RANDOM_LENGTH = 4;
 const DEPLOY_TOKEN_SCOPES = ["apps:register", "apps:deploy"];
+// Deploy tokens register apps for the whole organization, so a forgotten one
+// should not live forever. Tokens created before this default keep theirs.
+const DEFAULT_DEPLOY_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
-function parseExpiresAt(expiresAt: string | null): Date | null {
+function parseExpiresAt(expiresAt: string | null): Date {
   if (!expiresAt) {
-    return null;
+    return new Date(Date.now() + DEFAULT_DEPLOY_TOKEN_TTL_MS);
   }
 
   const parsed = new Date(expiresAt);
@@ -138,6 +143,7 @@ async function verifyDeployToken(
 
   return {
     organizationId: deployToken.organizationId,
+    createdBy: deployToken.createdBy,
     scopes,
   };
 }

@@ -170,6 +170,23 @@ async function sendWithRest(
   }
 }
 
+/**
+ * Whether the gateway can attempt to send email at all: a sender is set and
+ * there is a transport (the REST API or the EMAIL binding). Email is
+ * optional; without it, invitations and password resets hand the admin a
+ * link to share instead.
+ */
+export function isEmailConfigured(): boolean {
+  try {
+    parseConfiguredSender();
+  } catch {
+    return false;
+  }
+  if (getRestConfiguration()) return true;
+  const binding = env.EMAIL as SendEmail | undefined;
+  return Boolean(binding && typeof binding.send === "function");
+}
+
 export async function sendEmail(options: SendEmailOptions): Promise<void> {
   try {
     const restConfiguration = getRestConfiguration();

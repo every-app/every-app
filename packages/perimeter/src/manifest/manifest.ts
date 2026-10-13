@@ -113,6 +113,32 @@ export const ProvidersSchema = z
     "duplicate provider",
   );
 
+export const AppAccessSchema = z.enum(["everyone", "admins"]);
+export type AppAccess = z.infer<typeof AppAccessSchema>;
+
+// Extra OpenAI API paths an app may opt into beyond the inference routes,
+// e.g. "/v1/files". Each also covers its sub-paths.
+const AiRouteSchema = z
+  .string()
+  .regex(
+    /^\/v1(\/[a-z0-9_-]+)+$/,
+    'must be an OpenAI API path such as "/v1/files"',
+  );
+
+export const AiPolicySchema = z
+  .object({
+    /** Model ids the app may request from inference endpoints. Omitted: any. */
+    models: z.array(z.string().min(1).max(200)).optional(),
+    /**
+     * Provider paths the app needs beyond inference. Only honored within the
+     * gateway operator's allowlist (AI_PROXY_EXTRA_ROUTES), since the
+     * provider key is shared. Omitted: inference only.
+     */
+    routes: z.array(AiRouteSchema).optional(),
+  })
+  .passthrough();
+export type AiPolicy = z.infer<typeof AiPolicySchema>;
+
 export const ManifestSchema = z
   .object({
     /** Stable app id, kebab-case. Used in the app hostname's first DNS label. */
@@ -137,6 +163,33 @@ export const ManifestSchema = z
     providers: ProvidersSchema.optional(),
     /** Opaque app-domain scopes that PATs may request. */
     scopes: ScopesSchema.optional(),
+    /** Limits on what the app may do through the gateway's AI proxy. */
+    ai: AiPolicySchema.optional(),
+    /**
+     * Who can open the app once it is first registered. "admins" (the
+     * default) grants the deployer and the organization's owners and admins;
+     * "everyone" grants every member, including future ones. Redeploys never
+     * change access; admins manage it in the gateway UI afterwards.
+     */
+    access: AppAccessSchema.optional(),
+    /**
+     * The perimeter only lets same-origin fetch() calls from TanStack's client
+     * reach `/_serverFn/*`. Set false for an app whose server functions must
+     * be reachable some other way. Default: true.
+     */
+    serverFnGuard: z.boolean().optional(),
+    /**
+     * Where the app's TanStack Start server functions live, when that is not
+     * `/_serverFn`: an app with a router basepath or its own `serverFns.base`
+     * sets it (e.g. "/app/_serverFn") so the perimeter guards that path.
+     */
+    serverFnBase: z
+      .string()
+      .regex(
+        /^(\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)+\/?$/,
+        'must be a path such as "/app/_serverFn"',
+      )
+      .optional(),
     /** Shell command that builds the app. Default: "npx vite build". */
     build: z.string().min(1).optional(),
     /** Shell command that starts the app dev server for `everyapp dev`. */
@@ -161,6 +214,7 @@ export const ManifestSchemaStrict = ManifestSchema.extend({
   resources: ResourcesSchemaStrict.optional(),
   public: z.array(PublicRouteSchemaStrict).optional(),
   scopes: ScopesSchemaStrict.optional(),
+  ai: AiPolicySchema.strict().optional(),
 }).strict();
 export type EveryAppManifest = z.infer<typeof ManifestSchemaStrict>;
 
@@ -227,6 +281,22 @@ export function defineEveryApp(manifest: EveryAppManifest): EveryAppManifest {
 /** Prefixed worker / resource name, e.g. "todo" -> "every-todo". */
 export function workerNameFor(appId: string): string {
   return appId.startsWith("every-") ? appId : `every-${appId}`;
+}
+
+/** The gateway's own Worker script name. No app may use or bind it. */
+export const GATEWAY_WORKER_NAME = "every-app-gateway";
+
+/**
+ * Whether `workerName` is the Worker `everyapp deploy` creates for `appId`.
+ * Registration and the gateway's service-binding reconcile both require this,
+ * so a deploy token can only ever route a hostname to its own app's Worker:
+ * never to another Worker in the Cloudflare account, and never to the
+ * gateway itself (app id "app-gateway" would otherwise map onto it).
+ */
+export function isAppWorkerName(appId: string, workerName: string): boolean {
+  return (
+    workerName === workerNameFor(appId) && workerName !== GATEWAY_WORKER_NAME
+  );
 }
 
 /**

@@ -1,13 +1,18 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { z } from "zod";
-import { authClient, isCpuTimeoutError } from "@/client/auth-client";
+import { isCpuTimeoutError } from "@/client/auth-client";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import { useSession } from "@/client/hooks/useSession";
 import { getServerErrorMessage } from "@/client/errors";
+import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
+import { acceptInvitation } from "@/serverFunctions/organizations";
 
 const searchSchema = z.object({
+  token: z.string().optional(),
+  // Links from before invite links had their own secret carry only this.
   invitationId: z.string().optional(),
 });
 
@@ -17,13 +22,14 @@ export const Route = createFileRoute("/accept-invitation")({
 });
 
 function AcceptInvitation() {
-  const { invitationId } = Route.useSearch();
+  const { token, invitationId } = Route.useSearch();
   const session = useSession();
+  const queryClient = useQueryClient();
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
-  const redirectTo = invitationId
-    ? `/accept-invitation?invitationId=${encodeURIComponent(invitationId)}`
+  const redirectTo = token
+    ? `/accept-invitation?token=${encodeURIComponent(token)}`
     : "/accept-invitation";
 
   const {
@@ -39,20 +45,14 @@ function AcceptInvitation() {
     executeWithRetry,
   } = useCpuTimeoutRetry(async () => {
     try {
-      if (!invitationId) {
-        setError("Missing invitation ID.");
+      if (!token) {
+        setError("Missing invitation link.");
         return true;
       }
 
-      const { error: acceptError } =
-        await authClient.organization.acceptInvitation({
-          invitationId,
-        });
-
-      if (acceptError) {
-        setError(acceptError.message || "Failed to accept invitation.");
-        return true;
-      }
+      await acceptInvitation({ data: { token } });
+      await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
+      void refetchCollectionsAfterAuth();
 
       if (hadRetries) {
         setRetrySuccess();
@@ -67,14 +67,18 @@ function AcceptInvitation() {
       setError(
         getServerErrorMessage(
           err,
-          "Failed to accept invitation. Please try again.",
+          // A server function sends the client only its error's message, and
+          // publicErrorMiddleware lets only public messages through.
+          err instanceof Error && err.message
+            ? err.message
+            : "Failed to accept invitation. Please try again.",
         ),
       );
       return true;
     }
   });
 
-  if (!invitationId) {
+  if (!token) {
     return (
       <div className="flex h-screen items-center justify-center overflow-hidden">
         <div className="relative w-full max-w-md">
@@ -87,8 +91,9 @@ function AcceptInvitation() {
             <div className="card-body text-center">
               <h2 className="card-title justify-center">Invalid Invitation</h2>
               <p className="text-base-content/70 mt-2">
-                This invitation link is invalid or missing an invitation ID.
-                Please request a new invitation from the administrator.
+                {invitationId
+                  ? "This invitation link no longer works: invite links changed in a gateway update. Ask the person who invited you to send you a new link."
+                  : "This invitation link is invalid or incomplete. Please request a new invitation from the administrator."}
               </p>
               <div className="mt-4">
                 <Link to="/sign-in" className="btn btn-primary">

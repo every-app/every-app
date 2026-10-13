@@ -21,8 +21,18 @@ vi.mock("@/server/services/AppAccessService", () => ({
 }));
 vi.mock("@/server/services/AppService", () => ({ AppService: {} }));
 vi.mock("@/server/services/AppTokenService", () => ({ AppTokenService: {} }));
+vi.mock("@/server/services/MembershipService", () => ({
+  MembershipService: {},
+}));
+vi.mock("@/server/services/InvitationService", () => ({
+  InvitationService: {},
+}));
+vi.mock("@/server/email/sendEmail", () => ({ isEmailConfigured: vi.fn() }));
 vi.mock("@/server/services/OnboardingService", () => ({
   OnboardingService: {},
+}));
+vi.mock("@/server/services/OrganizationService", () => ({
+  OrganizationService: {},
 }));
 vi.mock("@/server/services/UserPatService", () => ({ UserPatService: {} }));
 
@@ -35,9 +45,11 @@ vi.mock("@/server/services/UserPatService", () => ({ UserPatService: {} }));
  * link or redirect can never send.
  */
 const READS = [
+  "getActiveOrganization",
   "getAppAccessState",
   "getApps",
   "getAuthorizeContext",
+  "getEmailStatus",
   "getMyApps",
   "getOnboardingStatus",
   "hasOwner",
@@ -67,7 +79,14 @@ const serverFnMethods = Object.fromEntries(
 describe("gateway server function methods", () => {
   it("finds the server functions", () => {
     expect(Object.keys(serverFnMethods)).toEqual(
-      expect.arrayContaining(["deleteUser", "inviteMember", ...READS]),
+      expect.arrayContaining([
+        "acceptInvitation",
+        "deactivateUser",
+        "deleteUser",
+        "inviteMember",
+        "updateMemberRole",
+        ...READS,
+      ]),
     );
   });
 

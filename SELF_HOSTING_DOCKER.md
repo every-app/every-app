@@ -105,14 +105,18 @@ onboarding and verification details.
 
 ## 2) Bootstrap Gateway Admin
 
-Open:
+Until the gateway has an owner, the container prints a one-time setup link on
+startup. Find it with `docker compose logs`:
 
-- `http://every-app-gateway.localhost:3000/sign-up`
+- `http://every-app-gateway.localhost:3000/setup#token=est_…`
 
-Create your owner account.
+Open it to create your owner account. Nobody can sign up before that. The link
+works once and expires after 24 hours; restart the container (or run
+`pnpm setup-link` inside it) for a new one.
 
 If you want additional users, add them manually from Gateway admin:
 
 - Open `/admin/users`
 - Click `Invite User`
-- Send/share the generated invite link
+- Without email configured, copy the invite link it shows and send it
+  yourself (it works once, for 72 hours)

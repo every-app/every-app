@@ -29,6 +29,15 @@ describe("stripInboundHeaders", () => {
     expect(out.get("accept")).toBe("text/html");
   });
 
+  it("removes the Worker version-override header", () => {
+    const out = stripInboundHeaders(
+      new Headers({
+        "Cloudflare-Workers-Version-Overrides": 'every-todo="old-version"',
+      }),
+    );
+    expect(out.get("cloudflare-workers-version-overrides")).toBeNull();
+  });
+
   it("does not mutate the original headers", () => {
     const inbound = new Headers({ cookie: "x=1" });
     stripInboundHeaders(inbound);
@@ -93,7 +102,9 @@ describe("withSecurityHeaders", () => {
         headers: { "content-type": "text/html; charset=utf-8" },
       }),
     );
-    expect(res.headers.get("strict-transport-security")).toContain("max-age=");
+    expect(res.headers.get("strict-transport-security")).toBe(
+      "max-age=63072000; includeSubDomains; preload",
+    );
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("x-frame-options")).toBe("DENY");
     expect(res.headers.get("content-security-policy")).toContain(
@@ -172,5 +183,37 @@ describe("withSecurityHeaders", () => {
       "theme=dark; SameSite=Lax",
       "host=only; Path=/app",
     ]);
+  });
+});
+
+describe("withSecurityHeaders options (control plane)", () => {
+  it("can send HSTS for the host alone", () => {
+    const res = withSecurityHeaders(new Response("ok"), {
+      hsts: "max-age=63072000",
+    });
+    expect(res.headers.get("strict-transport-security")).toBe(
+      "max-age=63072000",
+    );
+  });
+
+  it("keeps cookie domains, sets the referrer policy and no-store", () => {
+    const headers = new Headers({ "content-type": "text/html" });
+    headers.append("set-cookie", "session=abc; Domain=example.com; Path=/");
+    const res = withSecurityHeaders(
+      new Response("<html></html>", { headers }),
+      {
+        referrerPolicy: "no-referrer",
+        stripCookieDomains: false,
+        noStore: true,
+      },
+    );
+    expect(res.headers.getSetCookie()).toEqual([
+      "session=abc; Domain=example.com; Path=/",
+    ]);
+    expect(res.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(res.headers.get("content-security-policy")).toContain(
+      "frame-ancestors 'none'",
+    );
   });
 });

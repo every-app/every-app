@@ -162,6 +162,9 @@ async function main() {
     "SELECT 1;",
   ]);
   await runCommand("pnpm", ["run", "db:migrate:local"]);
+  // Until the gateway has an owner, print a one-time setup link (find it in
+  // `docker compose logs`). Nobody can sign up without it.
+  await runCommand("node", ["scripts/setup-link.mjs"]);
   await runCommand("pnpm", [
     "exec",
     "vite",

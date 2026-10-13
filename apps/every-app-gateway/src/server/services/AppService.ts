@@ -1,4 +1,6 @@
 import { AppRepository } from "../repositories/AppRepository";
+import { AppAccessRepository } from "../repositories/AppAccessRepository";
+import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { PublicError } from "@/server/errors";
 import type { OrgContext } from "@/server/organization/orgContext";
 
@@ -21,7 +23,10 @@ async function getAllWithAccessCounts(ctx: OrgContext) {
 }
 
 /**
- * Update an app's catalog metadata.
+ * Update an app's catalog metadata. `isDefault` is "Available to everyone":
+ * turning it on grants every current member now and every future member on
+ * joining; turning it off keeps existing access (remove people with Manage
+ * Access).
  */
 async function update(ctx: OrgContext, data: UpdateAppInput) {
   const existingApp = await AppRepository.findById(data.id, ctx.orgId);
@@ -35,11 +40,26 @@ async function update(ctx: OrgContext, data: UpdateAppInput) {
     description: data.description,
     isDefault: data.isDefault,
   });
+
+  if (data.isDefault && !existingApp.isDefault) {
+    const orgMembers =
+      await OrganizationMembersRepository.listMembersForOrganization(ctx.orgId);
+    await AppAccessRepository.createMany(
+      orgMembers.map((member) => ({
+        id: crypto.randomUUID(),
+        organizationId: ctx.orgId,
+        userId: member.id,
+        appRowId: existingApp.id,
+        grantedBy: ctx.userId,
+      })),
+    );
+  }
 }
 
 /**
- * Delete an app from the catalog.
- * This cascades and removes all user access records.
+ * Delete an app from the catalog: it stops being served and disappears from
+ * every list, but its tombstone keeps the slug and worker name reserved to
+ * this organization (see AppRepository.tombstone).
  */
 async function deleteApp(ctx: OrgContext, id: string) {
   const existingApp = await AppRepository.findById(id, ctx.orgId);
@@ -47,7 +67,7 @@ async function deleteApp(ctx: OrgContext, id: string) {
     throw new PublicError("APP_NOT_FOUND", "App not found");
   }
 
-  await AppRepository.delete(id, ctx.orgId);
+  await AppRepository.tombstone(id, ctx.orgId);
 }
 
 export const AppService = {

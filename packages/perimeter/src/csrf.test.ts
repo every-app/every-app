@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { evaluateCsrf } from "./csrf";
+import {
+  evaluateCsrf,
+  evaluateWebSocketOrigin,
+  isWebSocketUpgrade,
+} from "./csrf";
 
 const HOST = "todo.example.com";
 
@@ -50,5 +54,31 @@ describe("evaluateCsrf", () => {
       evaluateCsrf("POST", HOST, "https://todo.example.com", "cross-site")
         .allowed,
     ).toBe(false);
+  });
+});
+
+describe("evaluateWebSocketOrigin", () => {
+  it("allows only the app's own origin", () => {
+    expect(
+      evaluateWebSocketOrigin("todo.example.com", "https://todo.example.com")
+        .allowed,
+    ).toBe(true);
+    expect(
+      evaluateWebSocketOrigin("todo.example.com", "https://chef.example.com")
+        .allowed,
+    ).toBe(false);
+    expect(evaluateWebSocketOrigin("todo.example.com", null).allowed).toBe(
+      false,
+    );
+    expect(evaluateWebSocketOrigin("todo.example.com", "null").allowed).toBe(
+      false,
+    );
+  });
+
+  it("detects upgrade requests", () => {
+    expect(isWebSocketUpgrade(new Headers({ upgrade: "WebSocket" }))).toBe(
+      true,
+    );
+    expect(isWebSocketUpgrade(new Headers())).toBe(false);
   });
 });

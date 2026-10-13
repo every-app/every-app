@@ -4,6 +4,8 @@ const workerEnv = vi.hoisted(() => ({
   BETTER_AUTH_SECRET: "test-secret",
   DB: {},
   GATEWAY_URL: "https://gateway.example.com",
+  EMAIL: undefined as { send: (message: unknown) => unknown } | undefined,
+  EMAIL_FROM: undefined as string | undefined,
 }));
 
 const captured = vi.hoisted(() => ({
@@ -48,15 +50,12 @@ vi.mock("./shared", () => ({
   },
 }));
 
-vi.mock("@/db", () => ({
-  db: {
-    query: { invitations: { findFirst: vi.fn() } },
-  },
-  schema: {},
-}));
+vi.mock("@/db", () => ({ db: {}, schema: {} }));
 
-vi.mock("@/db/schema", () => ({
-  invitations: { id: "id" },
+vi.mock("@/db/schema", () => ({}));
+
+vi.mock("@/server/invitation-token", () => ({
+  findPendingInvitationByToken: vi.fn(),
 }));
 
 vi.mock("@/server/repositories/AppAccessRepository", () => ({
@@ -71,6 +70,8 @@ vi.mock("@/server/services/AppAccessService", () => ({
   AppAccessService: { grantDefaultAppsToUser: vi.fn() },
 }));
 
+import { findPendingInvitationByToken } from "@/server/invitation-token";
+import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { createAuth } from "./config";
 
 type AuthOptions = {
@@ -78,6 +79,7 @@ type AuthOptions = {
     sendResetPassword: (input: {
       user: { email: string };
       url: string;
+      token: string;
     }) => Promise<void>;
   };
 };
@@ -99,7 +101,8 @@ describe("createAuth email configuration", () => {
     await expect(
       options.emailAndPassword.sendResetPassword({
         user: { email: "user@example.net" },
-        url: "https://gateway.example.com/reset-password?token=test",
+        url: "https://gateway.example.com/api/auth/reset-password/test",
+        token: "test",
       }),
     ).rejects.toMatchObject({
       code: "EMAIL_BINDING_UNAVAILABLE",
@@ -112,6 +115,88 @@ describe("createAuth email configuration", () => {
         code: "EMAIL_BINDING_UNAVAILABLE",
       }),
     );
+  });
+
+  it("emails a reset link with the token in the query string, not the path", async () => {
+    const send = vi.fn(async () => ({ messageId: "m-1" }));
+    workerEnv.EMAIL = { send };
+    workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+    try {
+      createAuth();
+      await (
+        captured.authOptions as AuthOptions
+      ).emailAndPassword.sendResetPassword({
+        user: { email: "user@example.net" },
+        url: "https://gateway.example.com/api/auth/reset-password/tok_1?callbackURL=x",
+        token: "tok_1",
+      });
+
+      const [message] = send.mock.calls[0] as unknown as [{ text: string }];
+      expect(message.text).toContain(
+        "https://gateway.example.com/reset-password?token=tok_1",
+      );
+      expect(message.text).not.toContain("/api/auth/reset-password/");
+    } finally {
+      workerEnv.EMAIL = undefined;
+      workerEnv.EMAIL_FROM = undefined;
+    }
+  });
+
+  describe("reset link destination", () => {
+    async function resetLinkFor(callbackURL: string): Promise<string> {
+      const send = vi.fn(async (_message: unknown) => ({
+        messageId: "m-1",
+      }));
+      workerEnv.EMAIL = { send };
+      workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+      try {
+        createAuth();
+        await (
+          captured.authOptions as AuthOptions
+        ).emailAndPassword.sendResetPassword({
+          user: { email: "user@example.net" },
+          // What Better Auth builds from the requested redirectTo.
+          url: `https://gateway.example.com/api/auth/reset-password/tok_1?callbackURL=${encodeURIComponent(callbackURL)}`,
+          token: "tok_1",
+        });
+        const { text } = send.mock.calls[0]![0] as { text: string };
+        return text.slice(text.indexOf("https://"));
+      } finally {
+        workerEnv.EMAIL = undefined;
+        workerEnv.EMAIL_FROM = undefined;
+      }
+    }
+
+    it("keeps the redirect and return_to forgot-password asked for", async () => {
+      const link = new URL(
+        await resetLinkFor(
+          "https://gateway.example.com/reset-password?redirect=%2Fadmin%2Fusers&return_to=https%3A%2F%2Ftodo.gateway.example.com%2Flists",
+        ),
+      );
+
+      expect(`${link.origin}${link.pathname}`).toBe(
+        "https://gateway.example.com/reset-password",
+      );
+      expect(Object.fromEntries(link.searchParams)).toEqual({
+        redirect: "/admin/users",
+        return_to: "https://todo.gateway.example.com/lists",
+        token: "tok_1",
+      });
+    });
+
+    it("falls back to the plain reset page for any other destination", async () => {
+      for (const callbackURL of [
+        "https://evil.example.net/reset-password?redirect=%2F",
+        "https://todo.gateway.example.com/reset-password",
+        "https://gateway.example.com/sign-in?redirect=%2F",
+        "everyapp://reset-password",
+        "",
+      ]) {
+        expect(await resetLinkFor(callbackURL)).toBe(
+          "https://gateway.example.com/reset-password?token=tok_1",
+        );
+      }
+    });
   });
 });
 
@@ -184,11 +269,127 @@ describe("createAuth Better Auth options", () => {
     expect(options.rateLimit).toEqual({ enabled: true });
   });
 
+  it("only lets the setup claim create organizations and closes unused org endpoints", () => {
+    const options = createAuthOptions() as CapturedOptions & {
+      disabledPaths?: string[];
+    };
+    const organization = (
+      options.plugins as { id: string; options?: Record<string, unknown> }[]
+    ).find((plugin) => plugin.id === "organization");
+    expect(organization?.options?.allowUserToCreateOrganization).toBe(false);
+    expect(organization?.options?.invitationExpiresIn).toBe(72 * 60 * 60);
+    expect(organization?.options).not.toHaveProperty("sendInvitationEmail");
+    expect(options.disabledPaths).toEqual(
+      expect.arrayContaining([
+        "/organization/create",
+        "/organization/delete",
+        "/organization/update-member-role",
+        "/organization/add-member",
+        "/organization/leave",
+        // Accepting by invitation id, and the endpoints that list every
+        // pending invitation id to any member.
+        "/organization/accept-invitation",
+        "/organization/list-invitations",
+        "/organization/get-full-organization",
+      ]),
+    );
+  });
+
   it("registers tanstackStartCookies last", () => {
     expect(createAuthOptions().plugins.map((plugin) => plugin.id)).toEqual([
       "admin",
       "organization",
       "tanstack-start-cookies",
     ]);
+  });
+});
+
+type BeforeHook = (ctx: {
+  path: string;
+  request?: Request;
+  body?: { email?: string };
+}) => Promise<void>;
+
+describe("createAuth sign-up and organization hooks", () => {
+  const before = () =>
+    (createAuth() as unknown as { options: { hooks: { before: BeforeHook } } })
+      .options.hooks.before;
+  const mockHasOwner = vi.mocked(hasAnyOwnerMembership);
+  const mockFindInvitation = vi.mocked(findPendingInvitationByToken);
+
+  function httpRequest(path: string): Request {
+    return new Request(`https://gateway.example.com/api/auth${path}`, {
+      method: "POST",
+    });
+  }
+
+  beforeEach(() => {
+    mockHasOwner.mockReset();
+    mockFindInvitation.mockReset();
+  });
+
+  it("rejects HTTP sign-up without an invitation, before and after an owner exists", async () => {
+    for (const hasOwner of [false, true]) {
+      mockHasOwner.mockResolvedValue(hasOwner);
+      await expect(
+        before()({
+          path: "/sign-up/email",
+          request: httpRequest("/sign-up/email"),
+          body: { email: "squatter@example.com" },
+        }),
+      ).rejects.toThrow();
+    }
+  });
+
+  it("accepts HTTP sign-up with a live invite link for the same email", async () => {
+    mockFindInvitation.mockResolvedValue({
+      id: "inv-1",
+      organizationId: "org-1",
+      email: "invitee@example.com",
+      status: "pending",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+
+    await expect(
+      before()({
+        path: "/sign-up/email",
+        request: httpRequest("/sign-up/email?invitationToken=einv_secret"),
+        body: { email: "Invitee@Example.com" },
+      }),
+    ).resolves.toBeUndefined();
+    expect(mockFindInvitation).toHaveBeenCalledWith("einv_secret");
+  });
+
+  it("never looks an invitation up by its id", async () => {
+    await expect(
+      before()({
+        path: "/sign-up/email",
+        request: httpRequest("/sign-up/email?invitationId=inv-1"),
+        body: { email: "invitee@example.com" },
+      }),
+    ).rejects.toThrow();
+    expect(mockFindInvitation).not.toHaveBeenCalled();
+  });
+
+  it("lets server-side calls through (the setup claim signs up the owner)", async () => {
+    await expect(
+      before()({
+        path: "/sign-up/email",
+        body: { email: "owner@example.com" },
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      before()({ path: "/organization/create" }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects HTTP organization creation until the gateway is claimed", async () => {
+    mockHasOwner.mockResolvedValue(false);
+    await expect(
+      before()({
+        path: "/organization/create",
+        request: httpRequest("/organization/create"),
+      }),
+    ).rejects.toThrow();
   });
 });

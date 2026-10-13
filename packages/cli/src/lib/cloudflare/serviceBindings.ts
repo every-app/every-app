@@ -1,12 +1,18 @@
+import chalk from "chalk";
+import {
+  GATEWAY_WORKER_NAME,
+  isAppWorkerName,
+} from "@every-app/perimeter/manifest";
 import {
   CloudflareAPIError,
   getDefaultAccountId,
   makeCloudflareAPIRequest,
 } from "@/lib/cloudflare/auth";
-import { listD1Databases } from "@/lib/cloudflare/d1";
+import {
+  findGatewayDatabaseId,
+  queryGatewayD1,
+} from "@/lib/cloudflare/gatewayD1";
 
-const GATEWAY_WORKER_NAME = "every-app-gateway";
-const GATEWAY_D1_DATABASE_NAME = "every-app-gateway";
 const APP_SERVICE_BINDING_PREFIX = "APP__";
 
 interface CloudflareBinding {
@@ -16,34 +22,34 @@ interface CloudflareBinding {
   [key: string]: unknown;
 }
 
-interface D1QueryResponse {
-  results?: Array<Record<string, unknown>>;
-  result?: Array<Record<string, unknown>>;
-}
-
 export interface GatewayServiceBinding {
   binding: string;
   service: string;
 }
 
+/**
+ * The app service bindings the gateway should have: one per active
+ * registered app. A row is bound only if its worker name is the one
+ * `everyapp deploy` gives that app id (never another Worker in the account,
+ * never the gateway itself); anything else is skipped with a warning
+ * instead of failing the whole reconcile.
+ */
 export async function computeGatewayServiceBindings(
   accountId?: string,
 ): Promise<GatewayServiceBinding[]> {
   const resolvedAccountId = accountId ?? (await getDefaultAccountId());
-  const databases = await listD1Databases(resolvedAccountId);
-  const gatewayDatabase = databases.find(
-    (database) => database.name === GATEWAY_D1_DATABASE_NAME,
-  );
+  const databaseId = await findGatewayDatabaseId(resolvedAccountId);
 
-  if (!gatewayDatabase) {
+  if (!databaseId) {
     return [];
   }
 
   let rows: Array<Record<string, unknown>>;
   try {
-    rows = await queryGatewayD1WorkerNames(
+    rows = await queryGatewayD1(
       resolvedAccountId,
-      gatewayDatabase.uuid,
+      databaseId,
+      "SELECT app_slug, worker_name FROM apps WHERE status = 'active' AND worker_name IS NOT NULL AND hostname IS NOT NULL",
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -58,12 +64,21 @@ export async function computeGatewayServiceBindings(
     throw error;
   }
 
-  const workerNames = rows
-    .map((row) => row["worker_name"])
-    .filter(
-      (value): value is string =>
-        typeof value === "string" && value.length > 0,
-    );
+  const workerNames: string[] = [];
+  for (const row of rows) {
+    const appSlug = row["app_slug"];
+    const workerName = row["worker_name"];
+    if (typeof workerName !== "string" || workerName.length === 0) continue;
+    if (typeof appSlug !== "string" || !isAppWorkerName(appSlug, workerName)) {
+      console.warn(
+        chalk.yellow(
+          `Skipping the service binding for "${workerName}": it is not the Worker name for app "${String(appSlug)}".`,
+        ),
+      );
+      continue;
+    }
+    workerNames.push(workerName);
+  }
 
   return [...new Set(workerNames)]
     .sort()
@@ -147,22 +162,4 @@ function assertReservedAppBindingIsService(
       `Gateway binding "${binding.name}" uses the reserved ${APP_SERVICE_BINDING_PREFIX} namespace but is not a service binding.`,
     );
   }
-}
-
-async function queryGatewayD1WorkerNames(
-  accountId: string,
-  databaseId: string,
-): Promise<Array<Record<string, unknown>>> {
-  const response = await makeCloudflareAPIRequest<
-    D1QueryResponse | D1QueryResponse[]
-  >(`/accounts/${accountId}/d1/database/${databaseId}/query`, {
-    method: "POST",
-    body: JSON.stringify({
-      sql:
-        "SELECT worker_name FROM apps WHERE status = 'active' AND worker_name IS NOT NULL AND hostname IS NOT NULL",
-    }),
-  });
-
-  const first = Array.isArray(response) ? response[0] : response;
-  return first?.results ?? first?.result ?? [];
 }

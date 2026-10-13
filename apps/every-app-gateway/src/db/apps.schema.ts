@@ -33,7 +33,9 @@ export const apps = sqliteTable(
     tier: text("tier").notNull().default("service_binding"),
     // JSON snapshot of everyapp.config.ts taken at deploy time.
     manifest: text("manifest"),
-    // 'active' | 'disabled' | 'deploying'
+    // 'active' | 'disabled' | 'deploying' | 'deleted'. A deleted app is a
+    // tombstone: unrouted and hidden, but its slug, hostname and worker name
+    // stay reserved to its organization.
     status: text("status").notNull().default("active"),
     isDefault: integer("is_default", { mode: "boolean" })
       .default(false)

@@ -1,14 +1,13 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { z } from "zod";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
-import { hasOwner, initializeOwner } from "@/serverFunctions/admin";
+import { hasOwner } from "@/serverFunctions/admin";
 import { getSafeRedirect, getSafeReturnTo } from "@/utils/auth";
-import { getServerErrorMessage } from "@/client/errors";
 
 const searchSchema = z.object({
   redirect: z.string().optional(),
@@ -39,9 +38,8 @@ export const Route = createFileRoute("/sign-up")({
 
 function SignUp() {
   const { redirect, return_to } = Route.useSearch();
-  const invitationId = extractInvitationIdFromRedirect(redirect);
-  const isInvitationFlow = Boolean(invitationId);
-  const [showOwnerForm, setShowOwnerForm] = useState(false);
+  const invitationToken = extractInvitationTokenFromRedirect(redirect);
+  const isInvitationFlow = Boolean(invitationToken);
   const { data: ownerData, isLoading: isCheckingOwner } = useQuery({
     queryKey: ["hasOwner"],
     queryFn: () => hasOwner(),
@@ -50,14 +48,6 @@ function SignUp() {
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
   });
-
-  // Once we show the owner form, keep showing it (prevents switching to InvitationRequired
-  // if hasOwner query refetches in the background during retry success screen)
-  useEffect(() => {
-    if (!isCheckingOwner && !ownerData?.hasOwner) {
-      setShowOwnerForm(true);
-    }
-  }, [isCheckingOwner, ownerData?.hasOwner]);
 
   if (isCheckingOwner) {
     return null;
@@ -68,13 +58,13 @@ function SignUp() {
       <CreateInvitedAccountForm
         redirect={redirect}
         return_to={return_to}
-        invitationId={invitationId!}
+        invitationToken={invitationToken!}
       />
     );
   }
 
-  if (showOwnerForm || !ownerData?.hasOwner) {
-    return <CreateOwnerForm redirect={redirect} return_to={return_to} />;
+  if (!ownerData?.hasOwner) {
+    return <SetupPending redirect={redirect} return_to={return_to} />;
   }
 
   return <InvitationRequired redirect={redirect} return_to={return_to} />;
@@ -83,11 +73,11 @@ function SignUp() {
 function CreateInvitedAccountForm({
   redirect,
   return_to,
-  invitationId,
+  invitationToken,
 }: {
   redirect?: string;
   return_to?: string;
-  invitationId: string;
+  invitationToken: string;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -126,7 +116,8 @@ function CreateInvitedAccountForm({
           name: email.split("@")[0] || "",
         },
         {
-          query: { invitationId },
+          // The invite link's secret: sign-up is refused without it.
+          query: { invitationToken },
         },
       );
 
@@ -274,115 +265,17 @@ function CreateInvitedAccountForm({
 }
 
 /**
- * Form for creating the first owner account.
- * Only shown when no owner exists in the system.
+ * Shown until the gateway has an owner. Nobody can sign up on an unclaimed
+ * gateway: its owner is created from the one-time setup link the deployer's
+ * CLI printed.
  */
-function CreateOwnerForm({
+function SetupPending({
   redirect,
   return_to,
 }: {
   redirect?: string;
   return_to?: string;
 }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState("");
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const safeRedirect = getSafeRedirect(redirect);
-
-  const continueToDestination = () => {
-    const safeReturnTo = getSafeReturnTo(return_to);
-    if (safeReturnTo) {
-      window.location.assign(safeReturnTo);
-    } else {
-      navigate({ to: safeRedirect });
-    }
-  };
-
-  const {
-    isRunning,
-    attemptCount,
-    maxRetries,
-    hasExhaustedRetries,
-    secondsUntilRetry,
-    isRetrySuccess,
-    showWarning,
-    hadRetries,
-    setRetrySuccess,
-    executeWithRetry,
-  } = useCpuTimeoutRetry(async () => {
-    try {
-      await initializeOwner({ data: { email, password } });
-
-      const { error: signInError } = await authClient.signIn.email(
-        { email, password },
-        {
-          onSuccess: async () => {
-            await queryClient.refetchQueries({ queryKey: ["auth", "session"] });
-            refetchCollectionsAfterAuth();
-            if (hadRetries) {
-              setRetrySuccess();
-            } else {
-              queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
-              continueToDestination();
-            }
-          },
-        },
-      );
-
-      if (signInError) {
-        await queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
-        navigate({
-          to: "/sign-in",
-          search: getAuthSearch({ redirect, return_to }),
-        });
-      }
-      return true;
-    } catch (err) {
-      if (isCpuTimeoutError(err)) {
-        return false;
-      }
-      setError(
-        getServerErrorMessage(
-          err,
-          "Failed to create account. Please try again.",
-        ),
-      );
-      return true;
-    }
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-
-    executeWithRetry();
-  };
-
-  // Show the game when retrying or when retries are exhausted
-  if (showWarning || isRetrySuccess) {
-    return (
-      <CpuTimeoutWarning
-        attemptCount={attemptCount}
-        maxRetries={maxRetries}
-        hasExhaustedRetries={hasExhaustedRetries}
-        secondsUntilRetry={secondsUntilRetry}
-        isSuccess={isRetrySuccess}
-        onContinue={() => {
-          queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
-          continueToDestination();
-        }}
-      />
-    );
-  }
-
   return (
     <div className="flex h-screen items-center justify-center overflow-hidden">
       <div className="relative w-full max-w-md">
@@ -392,85 +285,29 @@ function CreateOwnerForm({
           className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
         />
         <div className="card auth-card">
-          <div className="card-body">
-            <h2 className="card-title">Create Admin Account</h2>
-            <p>Set up the first administrator account for your gateway</p>
+          <div className="card-body text-center">
+            <h2 className="card-title justify-center">Setup pending</h2>
+            <p className="text-base-content/70 mt-2">
+              This gateway hasn&apos;t been claimed yet. Open the setup link
+              that was printed when it was deployed, or create a new one on the
+              machine that deployed it:
+            </p>
+            <code className="block mt-3 text-sm">
+              npx everyapp gateway claim-link
+            </code>
 
-            <form onSubmit={handleSubmit}>
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Email</span>
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  className="input input-bordered w-full"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={isRunning}
-                />
-              </div>
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Password</span>
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  placeholder="Create a password"
-                  className="input input-bordered w-full"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  minLength={8}
-                  disabled={isRunning}
-                />
-                <label className="label">
-                  <span className="label-text-alt text-base-content/60">
-                    Password must be at least 8 characters
-                  </span>
-                </label>
-              </div>
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Confirm Password</span>
-                </label>
-                <input
-                  id="confirmPassword"
-                  type="password"
-                  placeholder="Confirm your password"
-                  className="input input-bordered w-full"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  minLength={8}
-                  disabled={isRunning}
-                />
-              </div>
-              {error && <div className="text-sm text-error">{error}</div>}
-              <button
-                type="submit"
-                className="btn btn-primary w-full"
-                disabled={isRunning}
+            <div className="divider">OR</div>
+
+            <p className="text-sm text-base-content/60">
+              Already have an account?{" "}
+              <Link
+                to="/sign-in"
+                search={getAuthSearch({ redirect, return_to })}
+                className="font-medium text-base-content hover:underline"
               >
-                {isRunning ? "Creating account..." : "Create Admin Account"}
-              </button>
-            </form>
-
-            <div className="flex justify-center mt-4">
-              <p className="text-sm text-base-content/60">
-                Already have an account?{" "}
-                <Link
-                  to="/sign-in"
-                  search={getAuthSearch({ redirect, return_to })}
-                  className="font-medium text-base-content hover:underline"
-                >
-                  Sign in
-                </Link>
-              </p>
-            </div>
+                Sign in
+              </Link>
+            </p>
           </div>
         </div>
       </div>
@@ -524,7 +361,7 @@ function InvitationRequired({
   );
 }
 
-function extractInvitationIdFromRedirect(redirect?: string): string | null {
+function extractInvitationTokenFromRedirect(redirect?: string): string | null {
   if (!redirect || !redirect.startsWith("/accept-invitation")) {
     return null;
   }
@@ -535,10 +372,5 @@ function extractInvitationIdFromRedirect(redirect?: string): string | null {
   }
 
   const searchParams = new URLSearchParams(redirect.slice(queryIndex + 1));
-  const invitationId = searchParams.get("invitationId");
-  if (!invitationId) {
-    return null;
-  }
-
-  return invitationId;
+  return searchParams.get("token") || null;
 }

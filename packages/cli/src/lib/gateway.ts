@@ -167,15 +167,13 @@ export async function requireGatewaySetup(): Promise<string> {
   }
 
   if (!hasOwner) {
-    const signUpUrl = `${gatewayUrl}/sign-up`;
     console.log(chalk.yellow("\nOwner account required\n"));
     console.log(
-      "You need to create an owner account on your Gateway before deploying apps.\n",
+      `Your Gateway at ${chalk.cyan(gatewayUrl)} has not been claimed yet.\n`,
     );
-    console.log(`  ${chalk.cyan(signUpUrl)}\n`);
     console.log(
       chalk.dim(
-        "  Visit the URL above to create your owner account, then run this command again.\n",
+        "  Open the setup link printed by `npx everyapp gateway deploy`, or run `npx everyapp gateway claim-link` for a new one, then run this command again.\n",
       ),
     );
     await exitWithUpdateNotice(1);

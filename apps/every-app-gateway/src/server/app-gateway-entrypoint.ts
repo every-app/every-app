@@ -20,6 +20,7 @@ interface AppGatewayEnv {
   GATEWAY_URL?: string;
   JWT_PUBLIC_KEY?: string;
   OPENAI_API_KEY?: string;
+  AI_PROXY_EXTRA_ROUTES?: string;
 }
 
 interface HandleAppGatewayRequestOptions {
@@ -133,6 +134,8 @@ export async function handleAppGatewayRequest({
       request,
       provider,
       env,
+      policy: app.manifest.ai,
+      caller: { organizationId: props.organizationId, appId: props.appId },
       fetchUpstream,
     });
   } catch (error) {

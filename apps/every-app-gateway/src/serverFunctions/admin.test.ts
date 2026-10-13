@@ -47,13 +47,22 @@ vi.mock("@/middleware/publicError", () => ({
 vi.mock("@/server/services/AdminService", () => ({
   AdminService: {
     hasOwner: vi.fn(),
-    initializeOwner: vi.fn(),
     listMembers: vi.fn(),
     deleteUser: vi.fn(),
     cancelInvitation: (...args: unknown[]) => mocks.cancelInvitation(...args),
     sendPasswordResetEmail: vi.fn(),
   },
 }));
+
+vi.mock("@/server/services/MembershipService", () => ({
+  MembershipService: {},
+}));
+
+vi.mock("@/server/services/InvitationService", () => ({
+  InvitationService: {},
+}));
+
+vi.mock("@/server/email/sendEmail", () => ({ isEmailConfigured: vi.fn() }));
 
 import { cancelInvitation } from "./admin";
 
