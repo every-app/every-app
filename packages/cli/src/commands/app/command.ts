@@ -102,6 +102,12 @@ export const deployCommand = buildCommand({
           "Deploy even though Durable Object classes were removed, deleting their data",
         optional: true,
       },
+      "allow-delete-workflows": {
+        kind: "boolean",
+        brief:
+          "Deploy even though Workflows were removed, deleting them and their instances",
+        optional: true,
+      },
       "break-lease": {
         kind: "boolean",
         brief:
@@ -134,7 +140,8 @@ export const deployCommand = buildCommand({
       "  3. Installs dependencies (the manifest's install setting, or auto-detected)",
       "  4. Bookmarks the production D1 database, then applies its migrations",
       "  5. Builds with cf build (or the manifest's build command) and checks the built Worker",
-      "  6. Uploads it with cf deploy --prebuilt, its secrets in the same version",
+      "  6. Uploads it with cf deploy --prebuilt, its secrets in the same version, and",
+      "     creates or updates its Workflows (refused if another Worker runs one of their names)",
       "  7. Has the gateway bind the Worker and publish its hostname (new apps), makes the app",
       "     live, and waits for a new hostname's certificate",
     ].join("\n"),
@@ -161,7 +168,8 @@ export const deleteCommand = buildCommand({
       gateway: gatewayFlag,
       purge: {
         kind: "boolean",
-        brief: "Also delete the app's Worker, D1 databases and KV namespaces",
+        brief:
+          "Also delete the app's Worker, D1 databases, KV namespaces and Workflows",
         optional: true,
       },
       yes: {
@@ -382,12 +390,186 @@ const secretRoutes = buildRouteMap({
   },
 });
 
+const workflowArgument = {
+  brief: "The Workflow: its binding in everyapp.config.ts, its class or its name",
+  parse: String,
+  placeholder: "workflow",
+};
+const instanceArgument = {
+  brief: "The instance id",
+  parse: String,
+  placeholder: "instance-id",
+};
+const workflowFlags = {
+  gateway: gatewayFlag,
+  json: {
+    kind: "boolean",
+    brief: "Print the result as an NDJSON event",
+    optional: true,
+  },
+} as const;
+
+const workflowsListCommand = buildCommand({
+  loader: async () => {
+    const { list } = await import("./workflows");
+    return list;
+  },
+  parameters: {
+    positional: { kind: "tuple", parameters: [] },
+    flags: workflowFlags,
+  },
+  docs: {
+    brief: "List the app's Workflows and how many instances each has, by status",
+  },
+});
+
+const workflowsInstancesCommand = buildCommand({
+  loader: async () => {
+    const { instances } = await import("./workflows");
+    return instances;
+  },
+  parameters: {
+    positional: { kind: "tuple", parameters: [workflowArgument] },
+    flags: {
+      ...workflowFlags,
+      status: {
+        kind: "enum",
+        values: [
+          "queued",
+          "running",
+          "paused",
+          "waiting",
+          "waitingForPause",
+          "errored",
+          "terminated",
+          "complete",
+          "rollingBack",
+        ],
+        brief: "Only instances with this status",
+        optional: true,
+      },
+      limit: {
+        kind: "parsed",
+        parse: (value: string) => {
+          const limit = Number(value);
+          if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+            throw new Error("--limit must be a whole number from 1 to 100");
+          }
+          return limit;
+        },
+        brief: "How many to list (1-100, default 25)",
+        optional: true,
+      },
+    },
+  },
+  docs: { brief: "List a Workflow's instances" },
+});
+
+const workflowsGetCommand = buildCommand({
+  loader: async () => {
+    const { get } = await import("./workflows");
+    return get;
+  },
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [workflowArgument, instanceArgument],
+    },
+    flags: workflowFlags,
+  },
+  docs: {
+    brief: "Show an instance: its status, params, steps, output and error",
+  },
+});
+
+const workflowsStartCommand = buildCommand({
+  loader: async () => {
+    const { start } = await import("./workflows");
+    return start;
+  },
+  parameters: {
+    positional: { kind: "tuple", parameters: [workflowArgument] },
+    flags: {
+      ...workflowFlags,
+      params: {
+        kind: "parsed",
+        parse: String,
+        brief: "The instance's params, as JSON",
+        optional: true,
+      },
+      id: {
+        kind: "parsed",
+        parse: String,
+        brief: "The instance id (default: one Cloudflare picks)",
+        optional: true,
+      },
+    },
+  },
+  docs: { brief: "Start an instance of a Workflow" },
+});
+
+function workflowsStatusCommand(
+  status: "pause" | "resume" | "restart",
+  brief: string,
+) {
+  return buildCommand({
+    loader: async () => (await import("./workflows"))[status],
+    parameters: {
+      positional: {
+        kind: "tuple",
+        parameters: [workflowArgument, instanceArgument],
+      },
+      flags: workflowFlags,
+    },
+    docs: { brief },
+  });
+}
+
+const workflowsTerminateCommand = buildCommand({
+  loader: async () => {
+    const { terminate } = await import("./workflows");
+    return terminate;
+  },
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [workflowArgument, instanceArgument],
+    },
+    flags: {
+      ...workflowFlags,
+      yes: { kind: "boolean", brief: "Skip the confirmation", optional: true },
+    },
+    aliases: { y: "yes" },
+  },
+  docs: { brief: "Stop an instance for good (asks first)" },
+});
+
+const workflowsRoutes = buildRouteMap({
+  routes: {
+    list: workflowsListCommand,
+    instances: workflowsInstancesCommand,
+    get: workflowsGetCommand,
+    start: workflowsStartCommand,
+    pause: workflowsStatusCommand("pause", "Pause an instance"),
+    resume: workflowsStatusCommand("resume", "Resume a paused instance"),
+    terminate: workflowsTerminateCommand,
+    restart: workflowsStatusCommand(
+      "restart",
+      "Run an instance again from the start",
+    ),
+  },
+  docs: {
+    brief: "The deployed app's Workflows, through cf in the gateway's account",
+  },
+});
+
 export const appRoutes = buildRouteMap({
   routes: {
     create: createCommand,
     deploy: deployCommand,
     secret: secretRoutes,
     d1: d1Routes,
+    workflows: workflowsRoutes,
     "setup-local": setupLocalCommand,
     delete: deleteCommand,
   },

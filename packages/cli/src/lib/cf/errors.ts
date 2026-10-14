@@ -8,9 +8,11 @@
  *   │ binding names are not accepted.
  *   └
  *
- * Cloudflare API failures end in `[code: N]`. The kinds below are what callers
- * branch on; the matching strings come from cf's own output and source, and
- * the plan and subdomain ones are unverified until a live account run.
+ * Cloudflare API failures come in an `APIError` box that starts with the
+ * code, `[10200] workflows.api.error.workflow.not_found`, or end in
+ * `[code: N]`. The kinds below are what callers branch on; the matching
+ * strings come from cf's own output and source, and the plan and subdomain
+ * ones are unverified until a live account run.
  */
 type CfErrorKind =
   | "auth"
@@ -103,11 +105,12 @@ const KIND_RULES: Array<
   ],
   [
     "not_found",
-    // 10007: Worker, 10009: KV key, 7404: D1 database.
+    // 10007: Worker, 10009: KV key, 7404: D1 database, 10200: Workflow.
     (text, codes) =>
       codes.includes(10007) ||
       codes.includes(10009) ||
       codes.includes(7404) ||
+      codes.includes(10200) ||
       /\bnot found\b|does not exist/i.test(text),
   ],
 ];
@@ -133,8 +136,8 @@ export function abortedCfError(command: string, stderr: string): CfError | null 
 /** Pull the message, API codes and kind out of cf's stderr. */
 export function parseCfStderr(stderr: string): ParsedCfError {
   const message = boxedMessage(stderr) ?? lastLines(stderr);
-  const apiCodes = [...message.matchAll(/\[code: (\d+)\]/g)].map((match) =>
-    Number(match[1]),
+  const apiCodes = [...message.matchAll(/\[(?:code: )?(\d{4,})\]/g)].map(
+    (match) => Number(match[1]),
   );
   const kind =
     KIND_RULES.find(([, matches]) => matches(message, apiCodes))?.[0] ??
@@ -144,7 +147,7 @@ export function parseCfStderr(stderr: string): ParsedCfError {
 
 function boxedMessage(stderr: string): string | undefined {
   const lines = stderr.split(/\r?\n/);
-  const start = lines.findIndex((line) => /^┌\s*Error/.test(line.trim()));
+  const start = lines.findIndex((line) => /^┌\s*(API)?Error/.test(line.trim()));
   if (start < 0) return undefined;
   const body: string[] = [];
   for (const line of lines.slice(start + 1)) {

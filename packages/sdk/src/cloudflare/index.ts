@@ -20,6 +20,7 @@ export {
   EVERYAPP_OBSERVABILITY,
   everyAppWorker,
   localD1Id,
+  workflowNameFor,
   type D1Binding,
   type DurableObjectBinding,
   type DurableObjectExport,
@@ -37,6 +38,8 @@ export {
   type SecretBinding,
   type TextBinding,
   type VersionMetadataBinding,
+  type WorkflowBinding,
+  type WorkflowExport,
 } from "./worker.js";
 export {
   DEPLOY_INPUTS_FILE,

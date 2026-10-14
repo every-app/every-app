@@ -39,6 +39,13 @@ export const ResourcesSchema = z
     durableObjects: z
       .array(z.object({ name: z.string(), className: z.string() }))
       .optional(),
+    /**
+     * Workflows the worker defines (binding name + class). Each is named
+     * after the app's Worker in the account, `<worker>--<binding>`.
+     */
+    workflows: z
+      .array(z.object({ name: z.string(), className: z.string() }))
+      .optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -218,7 +225,7 @@ export const ManifestSchema = z
 export type Manifest = z.infer<typeof ManifestSchema>;
 
 export const PublicRouteSchemaStrict = PublicRouteSchema.strict();
-/** A D1 or KV binding: the name the Worker reads from `env`. */
+/** A D1, KV or Workflow binding: the name the Worker reads from `env`. */
 const BindingNameSchema = z
   .string()
   .regex(
@@ -230,6 +237,11 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
   kv: z.array(BindingNameSchema).optional(),
   durableObjects: z
     .array(z.object({ name: z.string(), className: z.string() }).strict())
+    .optional(),
+  workflows: z
+    .array(
+      z.object({ name: BindingNameSchema, className: z.string() }).strict(),
+    )
     .optional(),
 }).strict();
 export const ManifestSchemaStrict = ManifestSchema.extend({

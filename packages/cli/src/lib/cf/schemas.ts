@@ -95,6 +95,42 @@ export const CertificatePackListOutput = z.array(
   }),
 );
 
+/**
+ * `cf workflows get`, and each entry of `cf workflows list`: which Worker
+ * runs the Workflow, and (get only) its instances' counts by status.
+ */
+export const WorkflowOutput = z.looseObject({
+  name: z.string(),
+  script_name: z.string().nullish(),
+  class_name: z.string().nullish(),
+  instances: z.record(z.string(), z.number()).nullish(),
+});
+export type Workflow = z.infer<typeof WorkflowOutput>;
+export const WorkflowListOutput = z.array(WorkflowOutput);
+
+/** `cf workflows instances list`. */
+export const WorkflowInstanceListOutput = z.array(
+  z.looseObject({
+    id: z.string(),
+    status: z.string().nullish(),
+    created_on: z.string().nullish(),
+  }),
+);
+
+/** `cf workflows instances get`: status, params, steps, output and error. */
+export const WorkflowInstanceOutput = z.looseObject({ status: z.string() });
+
+/** `cf workflows instances create`. */
+export const WorkflowInstanceCreatedOutput = z.looseObject({
+  id: z.string(),
+  status: z.string().nullish(),
+});
+
+/** `cf workflows instances pause|resume|terminate|restart`: the new status. */
+export const WorkflowStatusOutput = z.looseObject({
+  status: z.string().nullish(),
+});
+
 /** `cf d1 raw`: one result per statement, rows as arrays. */
 export const D1RawOutput = z.array(
   z.looseObject({

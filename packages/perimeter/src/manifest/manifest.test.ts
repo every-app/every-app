@@ -202,16 +202,23 @@ describe("validateManifest", () => {
     ).toThrow(/relative path/);
   });
 
-  it("takes only JavaScript identifiers as D1 and KV bindings in authored manifests", () => {
+  it("takes only JavaScript identifiers as D1, KV and Workflow bindings in authored manifests", () => {
+    const workflows = [{ name: "RANK_CHECK", className: "RankCheckWorkflow" }];
     expect(
       validateManifestStrict({
         id: "todo",
-        resources: { d1: ["DB", "MY_ARCHIVE"], kv: ["_cache2"] },
+        resources: { d1: ["DB", "MY_ARCHIVE"], kv: ["_cache2"], workflows },
       }).resources,
-    ).toEqual({ d1: ["DB", "MY_ARCHIVE"], kv: ["_cache2"] });
+    ).toEqual({ d1: ["DB", "MY_ARCHIVE"], kv: ["_cache2"], workflows });
     for (const binding of ["MY-ARCHIVE", "2DB", "a b", ""]) {
       expect(() =>
         validateManifestStrict({ id: "todo", resources: { d1: [binding] } }),
+      ).toThrow(ManifestError);
+      expect(() =>
+        validateManifestStrict({
+          id: "todo",
+          resources: { workflows: [{ name: binding, className: "Flow" }] },
+        }),
       ).toThrow(ManifestError);
     }
     // The gateway's tolerant schema still takes what older CLIs sent.

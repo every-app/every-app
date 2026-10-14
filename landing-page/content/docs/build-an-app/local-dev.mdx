@@ -82,6 +82,15 @@ It answers `{"result":{"outcome":"ok"}}` once the `scheduled` handler has run. A
 </details>
 
 <details className="faq">
+<summary>Running a Workflow locally</summary>
+<div className="faq-content">
+
+`cf dev` runs the app's Workflows (`resources.workflows` in `everyapp.config.ts`) on your machine, named after the dev Worker: `every-<app-id>--<binding>`. Your code starts one as in production, with `env.<BINDING>.create({ params })`. When the app has Workflows, `everyapp dev` also prints a link to the Local Explorer on the app's internal port, `http://127.0.0.1:<internal port>/cdn-cgi/local/explorer`, which lists each Workflow's instances, starts new ones, and pauses, restarts or deletes them.
+
+</div>
+</details>
+
+<details className="faq">
 <summary>What the CLI writes into your project</summary>
 <div className="faq-content">
 

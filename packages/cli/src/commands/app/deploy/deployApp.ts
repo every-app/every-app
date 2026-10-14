@@ -6,12 +6,14 @@
  *      (a new app starts `pending`, unbound);
  *   3. under the app's deploy lease: find or create its D1 and KV (only
  *      ever the app's own), `cf build` with the deploy inputs and check the
- *      built Worker against the app policy, make sure an unattended run may
- *      replace the Worker, and only then migrate D1 (bookmark, drizzle
- *      history carried over once, `cf d1 migrations apply`) and upload it
+ *      built Worker against the app policy and its Workflows' names (each
+ *      new or already the app's), make sure an unattended run may replace
+ *      the Worker, and only then migrate D1 (bookmark, drizzle history
+ *      carried over once, `cf d1 migrations apply`) and upload it
  *      (`cf deploy --prebuilt`, with GATEWAY_URL and EVERY_APP_ORG_ID in
- *      the secrets file), so a deploy that can't upload leaves the database
- *      alone;
+ *      the secrets file; cf creates or updates its Workflows), so a deploy
+ *      that can't upload leaves the database alone. Workflows the app
+ *      dropped (with --allow-delete-workflows) go once the upload is live;
  *   4. tell the gateway the version is up (`pending` → `binding`), have the
  *      gateway bind the Worker and publish the app's hostname as a Workers
  *      Custom Domain if it doesn't yet (a reconcile of the live gateway
@@ -38,6 +40,12 @@ import { prepareAppBuildOutput } from "@/lib/app/policy";
 import { assertAppSecretName } from "@/lib/app/secrets";
 import { readOwnedResources, recordUploadedVersion } from "@/lib/app/ownership";
 import { claimAppWorker, provisionAppResources } from "@/lib/app/resources";
+import {
+  appWorkflows,
+  assertOwnWorkflows,
+  droppedWorkflows,
+  type AppWorkflow,
+} from "@/lib/app/workflows";
 import { ensureCfAuth } from "@/lib/cf/account";
 import { cfD1Database } from "@/lib/cf/d1";
 import {
@@ -46,7 +54,9 @@ import {
   cfDeploy,
   type Confirm,
 } from "@/lib/cf/deploy";
+import { CfError } from "@/lib/cf/errors";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
+import { deleteWorkflow } from "@/lib/cf/workflows";
 import { resolvesThroughCloudflare } from "@/lib/dns";
 import { formatWildcardDnsInstructions } from "@/lib/dnsInstructions";
 import type { CaaLookup } from "@/lib/domains/caa";
@@ -87,6 +97,8 @@ interface DeployAppOptions {
   json?: boolean;
   verbose?: boolean;
   allowDeleteDurableObjectData?: boolean;
+  /** Delete the Workflows the app dropped, with their instances (`--allow-delete-workflows`). */
+  allowDeleteWorkflows?: boolean;
   /** Asked whether to take the app's lease from a deploy that holds it (`--break-lease`). */
   breakLease?: BreakLease;
   /** Publish a new hostname over a DNS record or a CAA block (`--force-dns`). */
@@ -151,6 +163,7 @@ export async function deployApp(
     ...(manifest.resources?.d1 ?? []),
     ...(manifest.resources?.kv ?? []),
     ...(manifest.resources?.durableObjects ?? []).map((d) => d.name),
+    ...(manifest.resources?.workflows ?? []).map((w) => w.name),
     "ASSETS",
   ]);
   for (const name of Object.keys(options.secrets ?? {})) {
@@ -279,6 +292,12 @@ export async function deployApp(
       manifest,
       options.allowDeleteDurableObjectData ?? false,
     );
+    const deletedWorkflows = await checkWorkflows({
+      cf,
+      registration,
+      manifest,
+      allowDelete: options.allowDeleteWorkflows ?? false,
+    });
     // Only what this app created (and recorded as its own) is used; a
     // name that's taken by anything else is refused, on every attempt.
     const ownership = {
@@ -335,7 +354,12 @@ export async function deployApp(
       },
       verbose: options.verbose ?? false,
     });
-    await prepareAppBuildOutput({ cwd, inputs });
+    const { workflows } = await prepareAppBuildOutput({ cwd, inputs });
+    await assertOwnWorkflows({
+      cf,
+      workerName: registration.workerName,
+      names: workflows,
+    });
 
     // The database changes only once nothing else can stop the upload.
     const workerRecord = (
@@ -387,6 +411,20 @@ export async function deployApp(
       message: `Uploaded version ${versionId}.`,
       data: { versionId },
     });
+    // The live version no longer defines them. Before the gateway records
+    // the new manifest, so a retry after a failed delete deletes them still.
+    for (const workflow of deletedWorkflows) {
+      try {
+        await deleteWorkflow(cf, workflow.name);
+      } catch (error) {
+        if (!(error instanceof CfError && error.kind === "not_found")) throw error;
+      }
+      out.emit({
+        type: "progress",
+        step: "app.upload",
+        message: `Deleted the Workflow ${workflow.binding} (${workflow.name}) with its instances.`,
+      });
+    }
     await gatewayCall(() =>
       client.markDeployed(manifest.id, { versionId, manifest }),
     );
@@ -556,6 +594,40 @@ function checkDurableObjects(
     throw new EveryAppError(
       "DURABLE_OBJECT_REMOVED",
       `everyapp.config.ts no longer declares the Durable Object class${removed.length === 1 ? "" : "es"} ${removed.join(", ")}. Deploying deletes ${removed.length === 1 ? "its" : "their"} data for good; pass --allow-delete-durable-object-data if that's what you want.`,
+    );
+  }
+  return removed;
+}
+
+/**
+ * Workflows the last deploy had that this one drops, among those that run
+ * on the app's Worker: like a Durable Object class, deleting one deletes
+ * its instances, so only with --allow-delete-workflows.
+ */
+async function checkWorkflows({
+  cf,
+  registration,
+  manifest,
+  allowDelete,
+}: {
+  cf: CfRunner;
+  registration: RegisterAppResponse;
+  manifest: EveryAppCliManifest;
+  allowDelete: boolean;
+}): Promise<AppWorkflow[]> {
+  const removed = await droppedWorkflows({
+    cf,
+    workerName: registration.workerName,
+    previousManifest: registration.previousManifest,
+    names: appWorkflows(registration.workerName, manifest).map(
+      (workflow) => workflow.name,
+    ),
+  });
+  if (removed.length > 0 && !allowDelete) {
+    const one = removed.length === 1;
+    throw new EveryAppError(
+      "WORKFLOW_REMOVED",
+      `everyapp.config.ts no longer declares the Workflow${one ? "" : "s"} ${removed.map((workflow) => workflow.binding).join(", ")} (renaming a binding renames its Workflow). Deploying deletes ${one ? "it" : "them"} with ${one ? "its" : "their"} instances for good; pass --allow-delete-workflows if that's what you want.`,
     );
   }
   return removed;

@@ -7,7 +7,8 @@
  * everyAppWorker() from the deploy inputs. Zones hold DNS records, a
  * deploy publishes its Worker's Custom Domains the way Cloudflare does (the
  * whole list, taken from other Workers, each with its own certificate pack
- * that outlives it), and CAA records answer the DNS-over-HTTPS lookups.
+ * that outlives it) and creates or takes over the Workflows the Worker
+ * defines, and CAA records answer the DNS-over-HTTPS lookups.
  * Nothing is spawned or sent.
  */
 import fs from "node:fs";
@@ -60,10 +61,32 @@ interface FakeCertificatePack {
   hosts: string[];
 }
 
+interface FakeWorkflow {
+  scriptName: string;
+  className: string;
+  instances: Map<string, { status: string; params?: unknown }>;
+}
+
+/** What each `cf workflows instances <action>` makes of an instance. */
+const INSTANCE_STATUS: Record<string, string> = {
+  pause: "paused",
+  resume: "running",
+  terminate: "terminated",
+  restart: "queued",
+};
+
 const WORKER_CONFIG = ".cloudflare/output/v0/workers/default/worker.config.json";
 
 function cfError(message: string): FakeCfResponse {
   return { exitCode: 1, stderr: `┌ Error\n│ ${message}\n└\n` };
+}
+
+/** A missing Workflow, as cf 1.0.0-beta.14 prints the API's answer. */
+function workflowNotFound(path: string): FakeCfResponse {
+  return {
+    exitCode: 1,
+    stderr: `\n┌ APIError\n│ [10200] workflows.api.error.workflow.not_found\n│ 404 Not Found · HTTP /accounts/${ACCOUNT_ID}/workflows/${path}\n└\n`,
+  };
 }
 
 /**
@@ -117,6 +140,8 @@ export class FakeCloudflare {
   readonly databases = new Map<string, { name: string; db: SqliteD1 }>();
   readonly namespaces = new Map<string, { title: string; keys: Map<string, string> }>();
   readonly workers = new Map<string, DeployedWorker>();
+  /** Workflows by name: `cf deploy` creates or takes over a Worker's own. */
+  readonly workflows = new Map<string, FakeWorkflow>();
   readonly deploys: RecordedDeploy[] = [];
   /** Apps `cf build` can build, by app root. */
   readonly apps = new Map<string, EveryAppCliManifest>();
@@ -277,6 +302,44 @@ export class FakeCloudflare {
         this.workers.delete(call.args[2]!);
         return { stdout: "{}" };
       })
+      .on(["workflows", "get"], (call) => {
+        const workflow = this.workflows.get(call.args[2]!);
+        if (!workflow) return workflowNotFound(call.args[2]!);
+        const instances: Record<string, number> = {};
+        for (const instance of workflow.instances.values()) {
+          instances[instance.status] = (instances[instance.status] ?? 0) + 1;
+        }
+        return {
+          stdout: JSON.stringify({
+            name: call.args[2],
+            class_name: workflow.className,
+            script_name: workflow.scriptName,
+            instances,
+          }),
+        };
+      })
+      .on(["workflows", "list"], (call) => ({
+        stdout: JSON.stringify(
+          flag(call.args, "--page") === "1"
+            ? [...this.workflows]
+                .filter(([name]) => name.includes(flag(call.args, "--search") ?? ""))
+                .map(([name, workflow]) => ({
+                  name,
+                  class_name: workflow.className,
+                  script_name: workflow.scriptName,
+                }))
+            : [],
+        ),
+      }))
+      .on(["workflows", "delete"], (call) => {
+        const declined = unconfirmed(call, "This operation permanently deletes the Workflow.");
+        if (declined) return declined;
+        if (!this.workflows.delete(call.args[2]!)) {
+          return workflowNotFound(call.args[2]!);
+        }
+        return { stdout: JSON.stringify({ status: "ok", success: true }) };
+      })
+      .on(["workflows", "instances"], (call) => this.workflowInstances(call))
       .on(["build"], (call) => this.build(call))
       .on(["deploy"], (call) => this.deploy(call));
   }
@@ -336,6 +399,44 @@ export class FakeCloudflare {
       .filter((name) => name.startsWith(APP_BINDING_PREFIX))
       .map((name) => name.slice(APP_BINDING_PREFIX.length))
       .sort();
+  }
+
+  /** `cf workflows instances create|list|get|<status change>`. */
+  private workflowInstances(call: RecordedCfCall): FakeCfResponse {
+    const action = call.args[2]!;
+    const name =
+      action === "create" ? call.args[3]! : flag(call.args, "--workflow-name")!;
+    const workflow = this.workflows.get(name);
+    if (!workflow) return workflowNotFound(name);
+    if (action === "create") {
+      const id = flag(call.args, "--instance-id") ?? `instance-${(this.counter += 1)}`;
+      const params = flag(call.args, "--params");
+      workflow.instances.set(id, {
+        status: "queued",
+        ...(params ? { params: JSON.parse(params) } : {}),
+      });
+      return { stdout: JSON.stringify({ id, status: "queued" }) };
+    }
+    if (action === "list") {
+      const status = flag(call.args, "--status");
+      return {
+        stdout: JSON.stringify(
+          [...workflow.instances]
+            .filter(([, instance]) => !status || instance.status === status)
+            .slice(0, Number(flag(call.args, "--per-page") ?? "25"))
+            .map(([id, instance]) => ({ id, status: instance.status })),
+        ),
+      };
+    }
+    const instance = workflow.instances.get(call.args[3]!);
+    if (!instance) return cfError(`Instance ${call.args[3]} not found`);
+    if (action === "get") return { stdout: JSON.stringify(instance) };
+    if (action === "terminate") {
+      const declined = unconfirmed(call, "This operation terminates the running Workflow instance.");
+      if (declined) return declined;
+    }
+    instance.status = INSTANCE_STATUS[flag(call.args, "--status")!]!;
+    return { stdout: JSON.stringify({ status: instance.status }) };
   }
 
   private kvKeys(call: RecordedCfCall): FakeCfResponse {
@@ -454,7 +555,32 @@ export class FakeCloudflare {
     const answer = this.afterUpload?.(workerName);
     if (answer) return answer;
     this.publishDomains(workerName, config["domains"]);
+    this.putWorkflows(workerName, config);
     return { stdout: `Current Version ID: ${versionId}` };
+  }
+
+  /**
+   * Create or update the Workflows the Worker defines, as cf does: a PUT
+   * per name, which takes a Workflow over from another Worker.
+   */
+  private putWorkflows(workerName: string, config: Record<string, any>): void {
+    const defined = [
+      ...Object.entries(config["exports"] ?? {})
+        .filter(([, entry]) => (entry as { type: string }).type === "workflow")
+        .map(([className, entry]) => [(entry as { name: string }).name, className]),
+      ...Object.values(config["env"] ?? {})
+        .filter(
+          (binding: any) => binding.type === "workflow" && binding.worker === workerName,
+        )
+        .map((binding: any) => [binding.name, binding.exportName]),
+    ] as Array<[string, string]>;
+    for (const [name, className] of defined) {
+      this.workflows.set(name, {
+        scriptName: workerName,
+        className,
+        instances: this.workflows.get(name)?.instances ?? new Map(),
+      });
+    }
   }
 
   /**

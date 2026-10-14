@@ -19,6 +19,8 @@ import {
   type DurableObjectExport,
   type EveryAppDeployInputs,
   type KvBinding,
+  type WorkflowBinding,
+  type WorkflowExport,
 } from "./index";
 
 const PUBLIC_KEY =
@@ -241,6 +243,86 @@ describe("everyAppWorker in production", () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, "{not json");
     expect(worker).toThrow(/not valid JSON/);
+  });
+});
+
+describe("everyAppWorker Workflows", () => {
+  const withWorkflow = {
+    ...manifest,
+    resources: {
+      ...manifest.resources,
+      workflows: [{ name: "RANK_CHECK", className: "RankCheckWorkflow" }],
+    },
+  } as const;
+
+  it("defines and binds each Workflow, named after the Worker, in dev and production", () => {
+    const dev = everyAppWorker({
+      manifest: withWorkflow,
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    });
+    expect(dev.env.RANK_CHECK).toEqual({
+      type: "workflow",
+      name: "every-todo--rank-check",
+      worker: "every-todo",
+      exportName: "RankCheckWorkflow",
+    });
+    expect(dev.exports.RankCheckWorkflow).toEqual({
+      type: "workflow",
+      name: "every-todo--rank-check",
+    });
+    expectTypeOf(dev.env.RANK_CHECK).toEqualTypeOf<WorkflowBinding>();
+    expectTypeOf(dev.exports).toEqualTypeOf<{
+      UserSyncDO: DurableObjectExport;
+      RankCheckWorkflow: WorkflowExport;
+    }>();
+
+    writeDeployInputs();
+    const deployed = everyAppWorker({
+      manifest: withWorkflow,
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    expect(deployed.env.RANK_CHECK).toMatchObject({
+      name: "every-acme-todo--rank-check",
+      worker: "every-acme-todo",
+    });
+    expect(deployed.exports.RankCheckWorkflow).toEqual({
+      type: "workflow",
+      name: "every-acme-todo--rank-check",
+    });
+  });
+
+  it.each([
+    [
+      "a binding the Worker has",
+      { name: "DB", className: "DbWorkflow" },
+      /reuses/,
+    ],
+    [
+      "a Durable Object's class",
+      { name: "SYNC", className: "UserSyncDO" },
+      /reuses/,
+    ],
+    [
+      "a name over Cloudflare's limit",
+      { name: "A".repeat(60), className: "LongWorkflow" },
+      /longer than Cloudflare's 64 characters/,
+    ],
+  ])("refuses a Workflow with %s", (_case, workflow, error) => {
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          ...manifest,
+          resources: { ...manifest.resources, workflows: [workflow] },
+        },
+        entrypoint,
+        ctx: { mode: "development" },
+        root,
+      }),
+    ).toThrow(error);
   });
 });
 

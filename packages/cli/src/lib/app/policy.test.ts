@@ -27,6 +27,7 @@ const MANIFEST = {
     d1: ["DB"],
     kv: ["KV"],
     durableObjects: [{ name: "USER_SYNC", className: "UserSyncDO" }],
+    workflows: [{ name: "RANK_CHECK", className: "RankCheckWorkflow" }],
   },
 } as const;
 
@@ -150,15 +151,21 @@ describe("appPolicyProblems", () => {
       /R2 is bucket "every-acme-todo-archive"/,
     ],
     [
-      "a binding type it doesn't model (another Worker's workflow)",
+      "another Worker's Workflow",
       (c: any) =>
         (c.env.FLOW = {
           type: "workflow",
           name: "billing-run",
-          className: "Run",
-          scriptName: "billing-api",
+          worker: "billing-api",
+          exportName: "Run",
         }),
-      /FLOW is a workflow binding/,
+      /FLOW binds Workflow "billing-run" of Worker "billing-api"/,
+    ],
+    [
+      // App `todo-archive`'s name, though the Worker would define it.
+      "a Workflow binding named like another app's",
+      (c: any) => (c.env.RANK_CHECK.name = "every-acme-todo-archive--rank-check"),
+      /RANK_CHECK binds Workflow "every-acme-todo-archive--rank-check"/,
     ],
     [
       "deleting a Durable Object's data it didn't drop",
@@ -187,9 +194,9 @@ describe("appPolicyProblems", () => {
       /Stolen would take the data of Worker "every-other-todo"/,
     ],
     [
-      "a workflow export",
+      "a Workflow export not named after it",
       (c: any) => (c.exports.Billing = { type: "workflow", name: "billing" }),
-      /export Billing is a workflow/,
+      /Workflow Billing is named "billing"/,
     ],
   ])("refuses %s", async (_case, change, problem) => {
     const config = await builtConfig();
@@ -235,7 +242,10 @@ describe("prepareAppBuildOutput", () => {
   it("lists every source map for upload and keeps the config valid", async () => {
     writeOutput(await builtConfig());
 
-    await prepareAppBuildOutput({ cwd: appDir, inputs: INPUTS });
+    // The Workflows cf will create or update for the Worker.
+    await expect(
+      prepareAppBuildOutput({ cwd: appDir, inputs: INPUTS }),
+    ).resolves.toEqual({ workflows: ["every-acme-todo--rank-check"] });
 
     const written = JSON.parse(
       fs.readFileSync(

@@ -24,7 +24,7 @@ const KV_PAGE_SIZE = 100;
 const MAX_PAGES = 50;
 
 /** Every page of a list command, `perPage` at a time. */
-async function listAll<T>(
+export async function listAll<T>(
   cf: CfRunner,
   args: readonly string[],
   schema: z.ZodType<T[]>,

@@ -56,6 +56,17 @@ export default defineConfig((ctx) => ({
   Type it as optional in `src/env.d.ts` (`GITHUB_TOKEN?: string` in
   `Cloudflare.Env`).
 
+## Workflows
+
+Declare a [Workflow](https://developers.cloudflare.com/workflows/) in
+`everyapp.config.ts` by binding and class,
+`resources: { workflows: [{ name: "RANK_CHECK", className: "RankCheckWorkflow" }] }`,
+and export the `WorkflowEntrypoint` class from the Worker entry.
+`everyAppWorker()` defines and binds it under a name after the Worker
+(`every-acme-seo--rank-check`, from `workflowNameFor()`), because Workflow
+names are shared by the whole Cloudflare account. Start one with
+`env.RANK_CHECK.create({ params })`; a run has no user.
+
 ## Agent tools
 
 `defineTools()` describes the actions an app offers to AI clients (Claude,

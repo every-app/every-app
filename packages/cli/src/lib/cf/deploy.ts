@@ -228,7 +228,7 @@ function explainDeployFailure(
   if (error.kind === "subdomain_missing") {
     return new ActionRequiredError(
       "register_workers_subdomain",
-      "This Cloudflare account has no workers.dev subdomain yet, and Cloudflare wants one before the first Worker upload. Pick one in the dashboard (apps stay private; they never use it), then run this command again.",
+      "This Cloudflare account has no workers.dev subdomain yet, and Cloudflare wants one before the first Worker upload and for Workflows. Pick one in the dashboard (apps stay private; they never use it), then run this command again.",
       error.message.match(/https:\/\/dash\.cloudflare\.com\/\S+/)?.[0] ??
         `https://dash.cloudflare.com/${accountId}/workers/onboarding`,
     );

@@ -10,6 +10,12 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deletionSummary, removeApp } from "@/commands/app/delete";
 import { queryAppD1 } from "@/commands/app/d1";
+import {
+  changeInstanceStatus,
+  listAppWorkflows,
+  listInstances,
+  startInstance,
+} from "@/commands/app/workflows";
 import { readOwnedResources, recordOwnedResource } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
@@ -33,6 +39,14 @@ const TODO: EveryAppCliManifest = {
     d1: ["DB"],
     kv: ["KV"],
     durableObjects: [{ name: "USER_SYNC", className: "UserSyncDO" }],
+  },
+};
+
+const WITH_WORKFLOW: EveryAppCliManifest = {
+  ...TODO,
+  resources: {
+    ...TODO.resources,
+    workflows: [{ name: "RANK_CHECK", className: "RankCheckWorkflow" }],
   },
 };
 
@@ -584,6 +598,57 @@ describe("app deploy", () => {
     });
   });
 
+  it("refuses a Workflow name another Worker runs, before migrating or uploading", async () => {
+    account.workflows.set("every-acme-todo--rank-check", {
+      scriptName: "billing-api",
+      className: "Run",
+      instances: new Map(),
+    });
+
+    await expect(deploy(WITH_WORKFLOW)).rejects.toMatchObject({
+      code: "WORKFLOW_NAME_TAKEN",
+    });
+    expect(account.workflows.get("every-acme-todo--rank-check")!.scriptName).toBe(
+      "billing-api",
+    );
+    expect(
+      account
+        .database("every-acme-todo")
+        .all("SELECT name FROM sqlite_master WHERE name = 'd1_migrations'"),
+    ).toEqual([]);
+    expect(account.workers.has("every-acme-todo")).toBe(false);
+
+    // Deployed without it, the app neither counts that Workflow as its own
+    // nor touches it.
+    await deploy();
+    expect(account.workflows.get("every-acme-todo--rank-check")!.scriptName).toBe(
+      "billing-api",
+    );
+
+    // Once the name is free, cf creates it for the app's Worker.
+    account.workflows.delete("every-acme-todo--rank-check");
+    await deploy(WITH_WORKFLOW);
+    expect(account.workflows.get("every-acme-todo--rank-check")).toMatchObject({
+      scriptName: "every-acme-todo",
+      className: "RankCheckWorkflow",
+    });
+  });
+
+  it("refuses to drop a Workflow without the flag, then deletes it once the upload is live", async () => {
+    await deploy(WITH_WORKFLOW);
+
+    await expect(deploy()).rejects.toMatchObject({ code: "WORKFLOW_REMOVED" });
+    expect(account.workers.get("every-acme-todo")!.versions).toHaveLength(1);
+    expect(account.workflows.has("every-acme-todo--rank-check")).toBe(true);
+
+    await deploy(TODO, { allowDeleteWorkflows: true });
+    expect(account.workflows.has("every-acme-todo--rank-check")).toBe(false);
+    const calls = account.cf.calls.map((call) => call.args.slice(0, 2).join(" "));
+    expect(calls.lastIndexOf("workflows delete")).toBeGreaterThan(
+      calls.lastIndexOf("deploy --prebuilt"),
+    );
+  });
+
   it("stops before uploading when the account has no workers.dev subdomain", async () => {
     account.failNextDeploy = `Register a workers.dev subdomain: https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`;
 
@@ -619,6 +684,70 @@ describe("app deploy", () => {
         createCf: () => account.cf,
       }),
     ).resolves.toEqual([[{ title: "ship it" }]]);
+  });
+});
+
+describe("app workflows", () => {
+  const options = () => ({
+    cwd: appDir,
+    gatewayUrl: GATEWAY_URL,
+    interactive: false,
+    client: gateway.client,
+    createCf: () => account.cf,
+  });
+
+  beforeEach(async () => {
+    await deploy(WITH_WORKFLOW);
+    fs.writeFileSync(
+      path.join(appDir, "everyapp.config.ts"),
+      `export default ${JSON.stringify(WITH_WORKFLOW)};\n`,
+    );
+  });
+
+  it("starts, lists and controls the app's Workflow instances by binding", async () => {
+    await expect(
+      startInstance({ ...options(), workflow: "RANK_CHECK", params: '{"site":"a"}', instanceId: "run-1" }),
+    ).resolves.toMatchObject({ instance: { id: "run-1", status: "queued" } });
+    expect(
+      account.workflows.get("every-acme-todo--rank-check")!.instances.get("run-1"),
+    ).toEqual({ status: "queued", params: { site: "a" } });
+
+    await changeInstanceStatus({ ...options(), workflow: "RANK_CHECK", instanceId: "run-1", status: "pause" });
+    await expect(
+      listInstances({ ...options(), workflow: "every-acme-todo--rank-check", status: "paused" }),
+    ).resolves.toEqual([{ id: "run-1", status: "paused" }]);
+
+    // Terminating is for good: unattended, only with --yes.
+    await expect(
+      changeInstanceStatus({ ...options(), workflow: "RANK_CHECK", instanceId: "run-1", status: "terminate" }),
+    ).rejects.toMatchObject({ code: "CONFIRMATION_REQUIRED" });
+    await changeInstanceStatus({
+      ...options(),
+      workflow: "RankCheckWorkflow",
+      instanceId: "run-1",
+      status: "terminate",
+      yes: true,
+    });
+    await expect(listAppWorkflows(options())).resolves.toEqual([
+      expect.objectContaining({
+        binding: "RANK_CHECK",
+        name: "every-acme-todo--rank-check",
+        deployed: true,
+        instances: { terminated: 1 },
+      }),
+    ]);
+  });
+
+  it("touches only Workflows the app declares and its Worker runs", async () => {
+    await expect(
+      startInstance({ ...options(), workflow: "BILLING" }),
+    ).rejects.toMatchObject({ code: "WORKFLOW_NOT_FOUND" });
+
+    account.workflows.get("every-acme-todo--rank-check")!.scriptName = "billing-api";
+    await expect(
+      startInstance({ ...options(), workflow: "RANK_CHECK" }),
+    ).rejects.toMatchObject({ code: "WORKFLOW_NOT_DEPLOYED" });
+    expect(account.workflows.get("every-acme-todo--rank-check")!.instances.size).toBe(0);
   });
 });
 
@@ -973,6 +1102,41 @@ describe("app delete", () => {
     expect(events).toContainEqual(
       expect.objectContaining({ type: "warning", code: "RESOURCES_KEPT" }),
     );
+  });
+
+  it("purges the Workflows that run on the app's Worker, and no others", async () => {
+    await deploy(WITH_WORKFLOW);
+    // Named with this app's Worker name as a prefix, but app todo-archive's.
+    account.workflows.set("every-acme-todo-archive--sync", {
+      scriptName: "every-acme-todo-archive",
+      className: "Sync",
+      instances: new Map(),
+    });
+    // Named like the app's, but another Worker runs it.
+    account.workflows.set("every-acme-todo--import", {
+      scriptName: "billing-api",
+      className: "Import",
+      instances: new Map(),
+    });
+
+    const result = await removeApp({
+      appId: "todo",
+      client: gateway.client,
+      out: out(),
+      interactive: false,
+      purge: true,
+      createCf: () => account.cf,
+      reconcile: seams,
+    });
+
+    expect([...account.workflows.keys()].sort()).toEqual([
+      "every-acme-todo--import",
+      "every-acme-todo-archive--sync",
+    ]);
+    expect(result.purged?.removed).toContain('Workflow "every-acme-todo--rank-check"');
+    expect(result.purged?.kept).toEqual([
+      `Workflow "every-acme-todo--import" (Worker billing-api's)`,
+    ]);
   });
 
   it("purges the Worker, database and namespace on request", async () => {

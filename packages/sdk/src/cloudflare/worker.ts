@@ -19,6 +19,10 @@ export interface EveryAppWorkerManifest {
       readonly name: string;
       readonly className: string;
     }[];
+    workflows?: readonly {
+      readonly name: string;
+      readonly className: string;
+    }[];
   };
 }
 
@@ -82,6 +86,12 @@ export interface DurableObjectBinding {
   worker: string;
   exportName: string;
 }
+export interface WorkflowBinding {
+  type: "workflow";
+  name: string;
+  worker: string;
+  exportName: string;
+}
 export interface GatewayBinding {
   type: "worker";
   worker: string;
@@ -97,12 +107,18 @@ export type EveryAppBinding =
   | D1Binding
   | KvBinding
   | DurableObjectBinding
+  | WorkflowBinding
   | GatewayBinding
   | VersionMetadataBinding;
 
 export interface DurableObjectExport {
   type: "durable-object";
   storage: "sqlite";
+}
+
+export interface WorkflowExport {
+  type: "workflow";
+  name: string;
 }
 
 type D1Names<M> = M extends { resources: { d1: readonly (infer B)[] } }
@@ -116,6 +132,11 @@ type DurableObjects<M> = M extends {
 }
   ? D
   : never;
+type Workflows<M> = M extends {
+  resources: { workflows: readonly (infer W)[] };
+}
+  ? W
+  : never;
 
 type ResourceEnv<M> = { [B in D1Names<M>]: D1Binding } & {
   [B in KvNames<M>]: KvBinding;
@@ -123,6 +144,10 @@ type ResourceEnv<M> = { [B in D1Names<M>]: D1Binding } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
     : never]: DurableObjectBinding;
+} & {
+  [W in Workflows<M> as W extends { name: infer N extends string }
+    ? N
+    : never]: WorkflowBinding;
 };
 
 // Object type aliases rather than interfaces: cf's `env` is a
@@ -151,9 +176,11 @@ export type EveryAppDeployEnv<M> = ResourceEnv<M> &
   };
 
 export type EveryAppExports<M> = {
-  [D in DurableObjects<M> as D extends { className: infer C extends string }
+  [E in DurableObjects<M> | Workflows<M> as E extends {
+    className: infer C extends string;
+  }
     ? C
-    : never]: DurableObjectExport;
+    : never]: E extends Workflows<M> ? WorkflowExport : DurableObjectExport;
 };
 
 export interface EveryAppObservability {
@@ -221,6 +248,8 @@ const RESERVED_SECRET_NAME =
   /^(GATEWAY_URL|CF_VERSION_METADATA|EVERYAPP_\w*|EVERY_APP_\w*|APP__\w*)$/i;
 const GATEWAY_WORKER_NAME = "every-app-gateway";
 const GATEWAY_ENTRYPOINT = "AppGateway";
+/** Cloudflare's limit on a Workflow's name. */
+const MAX_WORKFLOW_NAME_LENGTH = 64;
 
 /**
  * Build the Worker definition for an Every App app from its manifest.
@@ -326,7 +355,9 @@ export function everyAppWorker<
   // nothing, so the exports type only names the live classes.
   const exports: Record<
     string,
-    DurableObjectExport | { type: "durable-object"; state: "deleted" }
+    | DurableObjectExport
+    | WorkflowExport
+    | { type: "durable-object"; state: "deleted" }
   > = {};
   for (const durableObject of resources.durableObjects ?? []) {
     env[durableObject.name] = {
@@ -338,6 +369,29 @@ export function everyAppWorker<
       type: "durable-object",
       storage: "sqlite",
     };
+  }
+  // The Worker defines each Workflow (the export), and binds it to start
+  // and look up its instances. Workflow names are account-wide, so each is
+  // named after the Worker.
+  for (const workflow of resources.workflows ?? []) {
+    if (env[workflow.name] || exports[workflow.className]) {
+      throw new Error(
+        `workflows: ${workflow.name} (${workflow.className}) reuses a binding or class name the Worker already has.`,
+      );
+    }
+    const workflowName = workflowNameFor(name, workflow.name);
+    if (workflowName.length > MAX_WORKFLOW_NAME_LENGTH) {
+      throw new Error(
+        `workflows: ${workflow.name} would be the Workflow "${workflowName}", longer than Cloudflare's ${MAX_WORKFLOW_NAME_LENGTH} characters; shorten the binding name.`,
+      );
+    }
+    env[workflow.name] = {
+      type: "workflow",
+      name: workflowName,
+      worker: name,
+      exportName: workflow.className,
+    };
+    exports[workflow.className] = { type: "workflow", name: workflowName };
   }
   for (const className of deploy?.deletedDurableObjects ?? []) {
     if (exports[className]) {
@@ -394,6 +448,16 @@ export function everyAppWorker<
     env: env as EveryAppDevEnv<M> | EveryAppDeployEnv<M>,
     exports: exports as EveryAppExports<M>,
   };
+}
+
+/**
+ * The Workflow a binding defines, named after the app's Worker:
+ * `every-acme-seo` and `RANK_CHECK` → `every-acme-seo--rank-check`.
+ * Workflow names are unique in the account, and new app ids can't contain
+ * `--`, so one app's Workflow is never named like another app's.
+ */
+export function workflowNameFor(workerName: string, binding: string): string {
+  return `${workerName}--${binding.toLowerCase().replaceAll("_", "-")}`;
 }
 
 /**

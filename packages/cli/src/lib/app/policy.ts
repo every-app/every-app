@@ -4,8 +4,9 @@
  * app author's code; this keeps it from shipping a Worker the gateway's
  * model doesn't allow: public on workers.dev or a domain of its own,
  * without its identity keys or in dev mode, bound to another Worker or to
- * resources the deploy didn't provision for it, with a binding type the
- * model doesn't know, or giving away or deleting Durable Object data.
+ * resources the deploy didn't provision for it or that aren't named after
+ * it, with a binding type the model doesn't know, or giving away or
+ * deleting Durable Object data.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -30,8 +31,9 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
  * The binding types an app may use. Everything else is refused until the
  * model covers it: most reach account-wide resources by id or name (another
  * app's queue, Hyperdrive config, dispatch namespace, private network,
- * workflow, secrets store, rate-limit counters, …), or account-wide
- * capabilities the gateway is meant to broker (Workers AI, email).
+ * secrets store, rate-limit counters, …), or account-wide capabilities the
+ * gateway is meant to broker (Workers AI, email). Buckets and Workflows are
+ * allowed only under the app's own names.
  */
 const ALLOWED_BINDINGS = new Set([
   "text",
@@ -43,8 +45,21 @@ const ALLOWED_BINDINGS = new Set([
   "kv",
   "r2",
   "durable-object",
+  "workflow",
   "worker",
 ]);
+
+/**
+ * Account-wide names an app owns: exactly its Worker's name, or it with the
+ * resource separator. `every-acme-notes-archive` is app `notes-archive`'s
+ * Worker, not one of app `notes`'s resources.
+ */
+function isOwnResourceName(resource: string, workerName: string): boolean {
+  return (
+    resource === workerName ||
+    resource.startsWith(`${workerName}${RESOURCE_SEPARATOR}`)
+  );
+}
 
 interface BuiltWorkerConfig extends Record<string, unknown> {
   name?: string;
@@ -138,22 +153,33 @@ export function appPolicyProblems(
         }
         break;
       case "r2": {
-        // Exactly the Worker's name, or it with the resource separator:
-        // `every-acme-notes-archive` is app `notes-archive`'s, not `notes`'s.
         const bucket = String(binding["name"] ?? "");
-        if (
-          bucket !== workerName &&
-          !bucket.startsWith(`${workerName}${RESOURCE_SEPARATOR}`)
-        ) {
+        if (!isOwnResourceName(bucket, workerName)) {
           problems.push(
             `${name} is bucket "${bucket}"; an app's buckets are named after its Worker (${workerName} or ${workerName}${RESOURCE_SEPARATOR}<name>)`,
           );
         }
         break;
       }
+      case "workflow": {
+        // A Workflow runs on the Worker that defines it: an app binds only
+        // its own, under its own names.
+        const workflow = String(binding["name"] ?? "");
+        if (
+          binding["worker"] !== workerName ||
+          !isOwnResourceName(workflow, workerName)
+        ) {
+          problems.push(
+            `${name} binds Workflow "${workflow}" of Worker "${String(binding["worker"])}"; an app binds only its own Workflows, named after its Worker (${workerName}${RESOURCE_SEPARATOR}<name>)`,
+          );
+        }
+        break;
+      }
     }
   }
-  problems.push(...exportProblems(config.exports ?? {}, deletedDurableObjects));
+  problems.push(
+    ...exportProblems(config.exports ?? {}, deletedDurableObjects, workerName),
+  );
   return problems;
 }
 
@@ -161,15 +187,26 @@ export function appPolicyProblems(
  * Durable Object exports may create, rename or keep classes. Deleting one
  * deletes its data, so only the classes the deploy dropped with
  * --allow-delete-durable-object-data may be; moving one's data to another
- * Worker, or taking another Worker's, never.
+ * Worker, or taking another Worker's, never. Workflows are named after the
+ * app's Worker.
  */
 function exportProblems(
   exports: Record<string, Export>,
   deletedDurableObjects: readonly string[],
+  workerName: string,
 ): string[] {
   const problems: string[] = [];
   for (const [name, entry] of Object.entries(exports)) {
     if (entry.type === "worker") continue;
+    if (entry.type === "workflow") {
+      const workflow = String(entry["name"] ?? "");
+      if (!isOwnResourceName(workflow, workerName)) {
+        problems.push(
+          `Workflow ${name} is named "${workflow}"; an app's Workflows are named after its Worker (${workerName}${RESOURCE_SEPARATOR}<name>)`,
+        );
+      }
+      continue;
+    }
     if (entry.type !== "durable-object") {
       problems.push(
         `export ${name} is a ${String(entry.type)}, which Every App apps can't declare`,
@@ -209,7 +246,8 @@ function exportProblems(
 /**
  * Check the app's Build Output against the policy, list its source maps for
  * upload, and validate it with cf's schema. Throws APP_POLICY with every
- * problem.
+ * problem. Returns the Workflows the Worker defines, which cf creates or
+ * updates as it deploys it.
  */
 export async function prepareAppBuildOutput({
   cwd,
@@ -220,7 +258,7 @@ export async function prepareAppBuildOutput({
     DeployInputs,
     "workerName" | "resources" | "deletedDurableObjects"
   >;
-}): Promise<void> {
+}): Promise<{ workflows: string[] }> {
   const rootConfig = JSON.parse(
     await fs.readFile(path.join(cwd, OUTPUT_DIR, "config.json"), "utf8"),
   ) as { buildContext?: { mode?: string; isPreview?: boolean } };
@@ -256,4 +294,27 @@ export async function prepareAppBuildOutput({
   }
   validateWorkerConfig(config);
   await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
+  return { workflows: definedWorkflows(config, inputs.workerName) };
+}
+
+/**
+ * The Workflows cf creates or updates for this Worker: its workflow
+ * exports, and any workflow binding to itself.
+ */
+function definedWorkflows(
+  config: BuiltWorkerConfig,
+  workerName: string,
+): string[] {
+  const names = [
+    ...Object.values(config.exports ?? {})
+      .filter((entry) => entry.type === "workflow")
+      .map((entry) => String(entry["name"])),
+    ...Object.values(config.env ?? {})
+      .filter(
+        (binding) =>
+          binding.type === "workflow" && binding["worker"] === workerName,
+      )
+      .map((binding) => String(binding["name"])),
+  ];
+  return [...new Set(names)];
 }

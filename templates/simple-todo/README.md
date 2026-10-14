@@ -17,7 +17,7 @@ gateway started by `pnpm dev`.
 
 The Worker is defined in `cloudflare.config.ts`, which builds it from
 `everyapp.config.ts` with `everyAppWorker()`. Declare D1 databases, KV
-namespaces and Durable Objects in `everyapp.config.ts`.
+namespaces, Durable Objects and Workflows in `everyapp.config.ts`.
 
 ## Agent tools (MCP)
 

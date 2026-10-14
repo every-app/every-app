@@ -22,6 +22,7 @@ import {
 } from "@/lib/cf/resources";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { deleteWorker, getWorkerDeployment } from "@/lib/cf/workers";
+import { deleteWorkflow, listWorkflows } from "@/lib/cf/workflows";
 import { deleteHostCertificates } from "@/lib/domains/certificates";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { EveryAppError } from "@/lib/errors";
@@ -85,7 +86,8 @@ export async function deleteApp(
  * with a reconcile, delete the certificate Cloudflare keeps for that
  * hostname, and with `purge` delete its Worker, D1 databases and KV
  * namespaces: only those the registry recorded as created by the app, never
- * whatever has its names. `purged` says what was deleted and what was kept.
+ * whatever has its names; and the Workflows that run on its Worker.
+ * `purged` says what was deleted and what was kept.
  */
 export async function removeApp({
   appId,
@@ -164,7 +166,7 @@ export function deletionSummary(
   { workerName, purged }: DeletedApp & { purged?: PurgeResult },
 ): { message: string; data: Record<string, unknown> } {
   const message = !purged
-    ? `Deleted ${appId}. Its Worker and data are kept, and the Worker's cron schedules, if it has any, keep running; \`everyapp app delete ${appId} --purge\` removes them.`
+    ? `Deleted ${appId}. Its Worker and data are kept, and the Worker's cron schedules and Workflows, if it has any, keep running; \`everyapp app delete ${appId} --purge\` removes them.`
     : purged.kept.length > 0
       ? `Deleted ${appId}${purged.removed.length > 0 ? ` and ${purged.removed.join(", ")}` : ""}; kept ${purged.kept.join(", ")} (see above).`
       : purged.removed.length > 0
@@ -198,7 +200,29 @@ async function purgeApp(
       : appWithWorkerNamed(registry, name);
   const removed: string[] = [];
   const othersKept: string[] = [];
-  // The Worker first: it binds the databases and namespaces.
+  const workflowsKept: string[] = [];
+  // Its Workflows before the Worker they run on; a Worker the app didn't
+  // record creating keeps its own.
+  if (owned.some((resource) => resource.kind === "worker" && resource.resourceId)) {
+    for (const workflow of await listWorkflows(cf, deleted.workerName)) {
+      if (workflow.script_name !== deleted.workerName) {
+        // Named like the app's, but another Worker runs it.
+        if (workflow.name.startsWith(`${deleted.workerName}--`)) {
+          workflowsKept.push(
+            `Workflow "${workflow.name}" (Worker ${workflow.script_name ?? "unknown"}'s)`,
+          );
+        }
+        continue;
+      }
+      try {
+        await deleteWorkflow(cf, workflow.name);
+        removed.push(`Workflow "${workflow.name}"`);
+      } catch (error) {
+        if (!(error instanceof CfError && error.kind === "not_found")) throw error;
+      }
+    }
+  }
+  // The Worker next: it binds the databases and namespaces.
   for (const resource of owned.sort((a, b) =>
     a.kind === "worker" ? -1 : b.kind === "worker" ? 1 : 0,
   )) {
@@ -225,7 +249,10 @@ async function purgeApp(
   }
   await forgetOwnedResources(registry, deleted.workerName);
 
-  const unrecorded = await unrecordedResources(cf, deleted, owned, othersApp);
+  const unrecorded = [
+    ...(await unrecordedResources(cf, deleted, owned, othersApp)),
+    ...workflowsKept,
+  ];
   if (othersKept.length > 0) {
     out.emit({
       type: "warning",

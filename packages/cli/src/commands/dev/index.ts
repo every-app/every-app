@@ -367,6 +367,13 @@ export default async function dev(
       `  Cron:      curl -X POST "http://127.0.0.1:${appPort}/cdn-cgi/local/explorer/api/local/scheduled?worker=${app.workerName}" -H 'content-type: application/json' -d '{"cron":"<schedule>"}'`,
     ),
   );
+  // Workflows run under cf dev too; the explorer starts, inspects, pauses
+  // and restarts their instances.
+  if (manifest.resources?.workflows?.length) {
+    console.log(
+      `  Workflows: ${chalk.cyan(`http://127.0.0.1:${appPort}/cdn-cgi/local/explorer`)}`,
+    );
+  }
   if (mode === "mirror") {
     console.log(`  Gateway:   ${chalk.cyan(gatewayUrl)} (real login/launcher)`);
     console.log(

@@ -21,6 +21,14 @@ const NOT_LOGGED_IN = `
 └
 `;
 
+// Captured from cf 1.0.0-beta.14 against the API (account id shortened).
+const WORKFLOW_NOT_FOUND = `
+┌ APIError
+│ [10200] workflows.api.error.workflow.not_found
+│ 404 Not Found · HTTP /accounts/0123/workflows/every-acme-todo--rank-check
+└
+`;
+
 // Message text from cf's source; the API renders codes as "[code: N]".
 const box = (message: string) => `┌ Error\n│ ${message}\n└\n`;
 
@@ -85,6 +93,15 @@ describe("parseCfStderr", () => {
     ["unknown", "Something else went wrong"],
   ] as const)("classifies %s", (kind, message) => {
     expect(parseCfStderr(box(message)).kind).toBe(kind);
+  });
+
+  it("reads an API error's box and code", () => {
+    expect(parseCfStderr(WORKFLOW_NOT_FOUND)).toEqual({
+      message:
+        "[10200] workflows.api.error.workflow.not_found 404 Not Found · HTTP /accounts/0123/workflows/every-acme-todo--rank-check",
+      apiCodes: [10200],
+      kind: "not_found",
+    });
   });
 
   it("collects every API error code", () => {
