@@ -22,7 +22,6 @@ const CONTEXT: Context = {
     domain: null,
     redirectUri: "http://localhost:1455/auth/callback",
     redirectHost: "localhost",
-    redirectIsLoopback: true,
   },
   email: "owner@example.com",
   organizations: [
@@ -325,7 +324,6 @@ describe("who the page says the client is", () => {
         domain: "claude.ai",
         redirectUri,
         redirectHost: url.hostname,
-        redirectIsLoopback: ["localhost", "127.0.0.1"].includes(url.hostname),
       },
     };
   };
@@ -335,13 +333,12 @@ describe("who the page says the client is", () => {
     render(cimd("https://claude.ai/api/mcp/auth_callback"));
     expect(text()).toContain("Published by claude.ai");
     expect(text()).not.toContain("a different site");
-    expect(text()).not.toContain("an app on your computer");
   });
 
-  it("verifies one that sends access to an app on this computer, and warns", () => {
+  it("verifies one that sends access to an app on this computer, and names localhost", () => {
     render(cimd("http://localhost:51001/callback"));
     expect(text()).toContain("Published by claude.ai");
-    expect(text()).toContain("This sends access to an app on your computer");
+    expect(text()).toContain("Access will be sent to localhost.");
   });
 
   it("never verifies one that sends access to another site", () => {

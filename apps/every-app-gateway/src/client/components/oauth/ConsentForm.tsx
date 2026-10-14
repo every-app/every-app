@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { BadgeCheck, Laptop, ShieldAlert } from "lucide-react";
+import { BadgeCheck, ShieldAlert } from "lucide-react";
 import { CONSENT_FIELDS } from "@/schemas/consent-decision";
 import type { ConsentContext } from "@/server/mcp-auth/consent";
 import { domainCoversRedirect } from "./clientSite";
@@ -117,15 +117,6 @@ export function ConsentForm({
           <p>
             Access will be sent to <strong>{client.redirectHost}</strong>.
           </p>
-          {client.redirectIsLoopback && (
-            <p className="flex items-start gap-2 text-warning">
-              <Laptop className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>
-                This sends access to an app on your computer. Continue only if
-                you just started connecting from it.
-              </span>
-            </p>
-          )}
           <p className="text-base-content/70">
             Signed in as <strong>{context.email}</strong>.{" "}
             <button type="button" className="link" onClick={onSwitchAccount}>

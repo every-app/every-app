@@ -38,7 +38,6 @@ export type ConsentContext =
         domain: string | null;
         redirectUri: string;
         redirectHost: string;
-        redirectIsLoopback: boolean;
       };
       email: string;
       organizations: ConsentOrganization[];
@@ -161,7 +160,6 @@ export async function buildConsentContext(
       domain: details.clientDomain ?? null,
       redirectUri: details.redirectUri,
       redirectHost: details.redirectHost,
-      redirectIsLoopback: details.redirectIsLoopback,
     },
     email: user.email,
     organizations,

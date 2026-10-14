@@ -709,7 +709,6 @@ describe("a DCR client (Codex-style)", () => {
         name: "Codex",
         domain: null,
         redirectHost: "localhost",
-        redirectIsLoopback: true,
       },
       email: "owner@example.com",
       defaultOrganizationId: orgId,
@@ -1263,7 +1262,6 @@ describe("a CIMD client (claude.ai-style)", () => {
       domain: "claude.ai",
       redirectUri: CLAUDE_REDIRECT,
       redirectHost: "claude.ai",
-      redirectIsLoopback: false,
     });
     // The member was never given the notes app.
     expect(context.organizations[0]!.apps.map((app) => app.slug)).toEqual([
@@ -1364,7 +1362,7 @@ describe("a CIMD client (claude.ai-style)", () => {
     expect(first.context.client).toMatchObject({
       name: "Claude Code",
       domain: "claude.ai",
-      redirectIsLoopback: true,
+      redirectHost: "localhost",
     });
     // Reconnected to step down to read only, on a new port.
     const second = await connect({
@@ -1667,7 +1665,6 @@ describe("a CIMD client that signs its token requests (ChatGPT-style)", () => {
       name: "ChatGPT",
       domain: "chatgpt.com",
       redirectHost: "chatgpt.com",
-      redirectIsLoopback: false,
     });
     const decision = await browser.postForm(
       "/oauth/consent/decision",
