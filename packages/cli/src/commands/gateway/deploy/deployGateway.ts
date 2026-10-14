@@ -5,8 +5,10 @@
  * Neither moves a gateway to an older release without --allow-downgrade.
  */
 import enquirer from "enquirer";
+import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
+import { getWorkerDeployment } from "@/lib/cf/workers";
 import { resolvesThroughCloudflare } from "@/lib/dns";
 import { formatWildcardDnsInstructions } from "@/lib/dnsInstructions";
 import { waitForCertificates } from "@/lib/domains/certWait";
@@ -191,6 +193,14 @@ export async function findInstall(
   const db = cfD1Database(cf, databaseId);
   const install = await readInstall(db);
   if (!install && (await migratedByDrizzleKit(db))) {
+    // Its Worker deleted and the database left: nothing to adopt, so say
+    // which database stands in the way.
+    if (!(await getWorkerDeployment(cf, GATEWAY_WORKER_NAME))) {
+      throw new EveryAppError(
+        "GATEWAY_NOT_ADOPTED",
+        `This Cloudflare account still has the D1 database of a gateway deployed before everyapp used cf (every-app-gateway, ${databaseId}), but not its Worker. A new gateway here needs that name. If you don't need the old gateway's users and app registrations, delete the database (\`cf d1 delete ${databaseId}\`; \`cf d1 undelete\` brings it back) and its every-app-gateway-OAUTH_KV namespace, then run this again. Or set up the new gateway in another Cloudflare account (--account-id).`,
+      );
+    }
     throw new EveryAppError(
       "GATEWAY_NOT_ADOPTED",
       "This Cloudflare account already runs a gateway, deployed before everyapp used cf, and an account holds one gateway: its Worker, D1 database and KV namespaces have fixed names, so a new one here would replace it. To move that gateway onto this code, adopt it first, which keeps its domain, wildcard route and app hostnames: `everyapp gateway adopt --domain <its domain>`, then `everyapp gateway upgrade` from a terminal. For a separate gateway, use another Cloudflare account (--account-id).",

@@ -125,6 +125,15 @@ describe("adopting the gateway the wrangler-era CLI deployed", () => {
     });
   });
 
+  it("names the database in the way once the old gateway's Worker is gone", async () => {
+    account.workers.delete("every-app-gateway");
+
+    await expect(findInstall(account.cf)).rejects.toMatchObject({
+      code: "GATEWAY_NOT_ADOPTED",
+      message: expect.stringContaining(`cf d1 delete ${databaseId}`),
+    });
+  });
+
   it("looks before it records anything", async () => {
     const inventory = await inventoryGateway({ cf: account.cf, db: db(), accountId: ACCOUNT_ID, domain: HOST });
 
