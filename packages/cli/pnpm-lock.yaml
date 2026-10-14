@@ -66,26 +66,6 @@ importers:
         specifier: ^3.2.4
         version: 3.2.6(@types/node@22.19.1)(jiti@2.6.1)
 
-  ../..: {}
-
-  ../../apps/chef: {}
-
-  ../../apps/every-app-gateway: {}
-
-  ../../apps/mobile-native: {}
-
-  ../../apps/todo-app: {}
-
-  ../../apps/workout-tracker: {}
-
-  ../../landing-page: {}
-
-  ../../templates/simple-todo: {}
-
-  ../perimeter: {}
-
-  ../sdk: {}
-
 packages:
 
   '@cloudflare/build-output-utils@0.9.0':

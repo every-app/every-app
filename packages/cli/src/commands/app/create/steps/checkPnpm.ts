@@ -1,6 +1,5 @@
 import chalk from "chalk";
 import { execa } from "execa";
-import { exitWithUpdateNotice } from "@/lib/version-check";
 
 /**
  * Check if pnpm is installed and exit if not
@@ -15,6 +14,6 @@ export async function checkPnpm(): Promise<void> {
       ),
     );
     console.error(chalk.cyan("  npm i -g pnpm\n"));
-    await exitWithUpdateNotice(1);
+    process.exit(1);
   }
 }

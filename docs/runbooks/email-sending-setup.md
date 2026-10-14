@@ -32,7 +32,7 @@ Sending**, choose **Onboard Domain**, then **Add records and onboard**.
 
 ## Sender configuration
 
-Set these sender values on the gateway Worker (`npx everyapp gateway secret
+Set these sender values on the gateway Worker (`everyapp gateway secret
 set EMAIL_FROM`, then `EMAIL_FROM_NAME`) or in the Docker gateway `.env`:
 
 - `EMAIL_FROM`: the sender address, for example `noreply@example.com`

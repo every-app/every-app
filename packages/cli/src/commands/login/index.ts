@@ -111,7 +111,7 @@ async function resumeLogin(
   if (claims.length === 0) {
     throw new EveryAppError(
       "NO_PENDING_SETUP",
-      `No setup on this machine is waiting for its owner${gatewayFlag ? ` at ${gatewayFlag}` : ""} (or its link expired). Run \`npx everyapp setup\`, or create a deploy token under Admin → Tokens and run \`npx everyapp login\`.`,
+      `No setup on this machine is waiting for its owner${gatewayFlag ? ` at ${gatewayFlag}` : ""} (or its link expired). Run \`everyapp setup\`, or create a deploy token under Admin → Tokens and run \`everyapp login\`.`,
     );
   }
   if (claims.length > 1) {
@@ -143,7 +143,7 @@ async function resumeLogin(
   if (state.status === "waiting") {
     throw new ActionRequiredError(
       "claim_owner",
-      "Nobody has finished the setup link yet: open it, then run `npx everyapp login --resume` again.",
+      "Nobody has finished the setup link yet: open it, then run `everyapp login --resume` again.",
       claim.url,
     );
   }

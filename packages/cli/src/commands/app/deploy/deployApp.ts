@@ -65,7 +65,7 @@ import {
 import { readInstall } from "@/lib/gateway/install";
 import { acquireLease, type BreakLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
-import { bundledReleaseTarball, compareVersions } from "@/lib/gateway/release";
+import { compareVersions } from "@/lib/gateway/release";
 import { findGatewayDatabase } from "@/lib/gateway/resources";
 import {
   loadEveryAppManifest,
@@ -134,8 +134,6 @@ interface DeployAppResult {
   workerName: string;
   versionId: string;
 }
-
-export type DeployApp = typeof deployApp;
 
 export async function deployApp(
   options: DeployAppOptions,
@@ -513,7 +511,7 @@ function checkGateway(whoami: GatewayWhoamiResponse): string {
   if ((whoami.capabilities?.deployProtocol ?? 1) < 2) {
     throw new EveryAppError(
       "GATEWAY_OUTDATED",
-      "The gateway is too old for this everyapp. Upgrade it first: npx everyapp gateway upgrade",
+      "The gateway is too old for this everyapp. Upgrade it first: everyapp gateway upgrade",
     );
   }
   if (whoami.minCli && compareVersions(cliVersion, whoami.minCli) < 0) {
@@ -525,7 +523,7 @@ function checkGateway(whoami: GatewayWhoamiResponse): string {
   if (!whoami.accountId) {
     throw new EveryAppError(
       "GATEWAY_ACCOUNT_UNKNOWN",
-      "The gateway doesn't say which Cloudflare account it runs in. Redeploy it: npx everyapp gateway upgrade",
+      "The gateway doesn't say which Cloudflare account it runs in. Redeploy it: everyapp gateway upgrade",
     );
   }
   return whoami.accountId;
@@ -667,7 +665,6 @@ async function bindIfNeeded({
       cliVersion,
       force: true,
       forceDns,
-      bundledTarball: bundledReleaseTarball(),
       ...seams,
     });
     return result.newHosts;

@@ -16,7 +16,7 @@ export function unsupportedRuntimeReason(
   versions: NodeJS.ProcessVersions = process.versions,
 ): string | null {
   if (versions["bun"]) {
-    return `everyapp runs on Node.js ${MIN_NODE_VERSION} or newer, not Bun: the Cloudflare CLI can't load cloudflare.config.ts under Bun. Run it with Node (npx everyapp …).`;
+    return `everyapp runs on Node.js ${MIN_NODE_VERSION} or newer, not Bun: the Cloudflare CLI can't load cloudflare.config.ts under Bun. Run it with Node (pnpm everyapp …).`;
   }
   if (!loadsCloudflareConfig(versions.node)) {
     return `everyapp needs Node.js ${MIN_NODE_VERSION} or newer; this is ${versions.node}. The Cloudflare CLI loads cloudflare.config.ts with Node's built-in TypeScript support, which older versions lack. Install a newer Node 22 or 24 and run the command again.`;

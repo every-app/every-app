@@ -1,17 +1,14 @@
 import type { LocalContext } from "@/context";
 import chalk from "chalk";
 import enquirer from "enquirer";
-import { cleanupTempDirectory } from "@/lib/file-operations";
+import { copyStarter, newAppDir } from "@/lib/app/starter";
+import { checkoutRoot, isInCheckout } from "@/lib/checkout";
+import { directoryExists } from "@/lib/file-operations";
 import { initRepository } from "@/lib/git";
 import { requireGatewaySetup } from "@/lib/gateway";
 import { checkNotNestedApp } from "@/commands/app/create/steps/checkNotNestedApp";
 import { checkPnpm } from "@/commands/app/create/steps/checkPnpm";
 import { promptUserInput } from "@/commands/app/create/steps/promptUserInput";
-import { cloneTemplate } from "@/commands/app/create/steps/cloneTemplate";
-import {
-  updateEveryappManifestId,
-  updatePackageJson,
-} from "@/commands/app/create/steps/updateConfiguration";
 import { setupLocalEnvironment } from "@/commands/app/shared/setupLocalEnvironment";
 import { printNextSteps } from "@/commands/app/create/steps/printNextSteps";
 import { loadEveryAppManifest } from "@/lib/manifest";
@@ -35,11 +32,12 @@ interface CreateCommandFlags {
  * 2. Check pnpm installed
  * 3. Prompt for app ID (with optional default from CLI argument)
  * 4. Confirm the deploy to the gateway (before any file operations)
- * 5. Clone template
- * 6. Update package.json with app name
- * 7. Deploy (registers with the gateway, creates D1/KV, migrates, uploads)
- * 8. Create .env.local
- * 9. Run local migrations
+ * 5. Copy the starter template from this checkout: to apps/<id> inside the
+ *    checkout, or ./<id> anywhere else (lib/app/starter.ts)
+ * 6. Deploy (registers with the gateway, creates D1/KV, migrates, uploads)
+ * 7. Create .env.local
+ * 8. Run local migrations
+ * 9. Outside the checkout, start a git repository for it
  * 10. Print success message
  */
 export default async function (
@@ -61,13 +59,20 @@ export default async function (
   console.log("\nCreate a new Every App project\n");
 
   const { appId } = await promptUserInput(nameArg);
+  const root = checkoutRoot();
+  const targetDir = newAppDir({ appId, cwd: process.cwd(), root });
+  if (await directoryExists(targetDir)) {
+    console.error(chalk.red(`\n${targetDir} already exists.\n`));
+    setExitCode(1);
+    return;
+  }
 
-  // Confirm deployment BEFORE cloning to avoid leaving project in weird state
+  // Confirm deployment BEFORE copying to avoid leaving project in weird state
   if (!skipConfirmation && canPromptInTerminal(false)) {
     const { confirmed } = await enquirer.prompt<{ confirmed: boolean }>({
       type: "confirm",
       name: "confirmed",
-      message: `Create ${appId} and deploy it to ${gatewayUrl}?`,
+      message: `Create ${appId} in ${targetDir} and deploy it to ${gatewayUrl}?`,
       initial: false,
     });
     if (!confirmed) {
@@ -76,18 +81,9 @@ export default async function (
     }
   }
 
-  let tempDir: string | null = null;
-
   try {
-    const { tempDir: clonedTempDir, targetDir } = await cloneTemplate({
-      appId,
-      verbose,
-    });
-    tempDir = clonedTempDir;
-
-    // Update package.json with app name before deployment
-    await updatePackageJson({ targetDir, appId });
-    await updateEveryappManifestId({ targetDir, appId });
+    await copyStarter({ root, targetDir, appId });
+    if (verbose) console.log(chalk.dim(`  Template copied to ${targetDir}\n`));
 
     // Deploy (registers it, creates D1/KV, installs deps, migrates, uploads)
     const { liveUrl } = await deployApp({
@@ -105,17 +101,15 @@ export default async function (
       gatewayUrl,
     });
 
-    // Initialize git repository with initial commit
-    await initRepository({ targetDir, verbose });
+    // Its own git repository, unless it's part of this checkout's
+    if (!isInCheckout(targetDir, root)) {
+      await initRepository({ targetDir, verbose });
+    }
 
-    printNextSteps({ appId, targetDir, gatewayUrl, liveUrl });
+    printNextSteps({ targetDir, gatewayUrl, liveUrl });
   } catch (error) {
     console.error(chalk.red("\nFailed to create project."));
     reportFailure(createHumanSink(), error);
     setExitCode(1);
-  } finally {
-    if (tempDir) {
-      await cleanupTempDirectory({ tmpDir: tempDir });
-    }
   }
 }

@@ -3,7 +3,6 @@ import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { waitForCertificates } from "@/lib/domains/certWait";
 import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
-import { bundledReleaseTarball } from "@/lib/gateway/release";
 import {
   cliVersion,
   connectToAccount,
@@ -55,7 +54,6 @@ export async function reconcile(
           yes: flags.yes,
           interactive: canPromptInTerminal(flags.json ?? false),
         }),
-        bundledTarball: bundledReleaseTarball(),
       });
       if (result.dryRunOutput !== undefined) {
         out.emit({

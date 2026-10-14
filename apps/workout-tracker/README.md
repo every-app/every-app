@@ -2,16 +2,14 @@
 
 ## Development
 
-Build the workspace SDK and run Workout Tracker behind the local Every App
-gateway:
+Run Workout Tracker behind the local Every App gateway:
 
 ```sh
-pnpm -C ../../packages/sdk build
-pnpm -C ../../packages/cli build
 pnpm dev
 ```
 
-`pnpm dev` runs `everyapp dev`, which manages the local identity keys, applies
+`pnpm dev` runs `everyapp dev` from this checkout (built first when its
+source or the SDK's changed), which manages the local identity keys, applies
 local D1 migrations and starts the app with `cf dev` behind the local gateway.
 Use `pnpm dev:vite` (bare `cf dev`) only for debugging the app server alone;
 authenticated routes expect the gateway started by `pnpm dev`. The Worker is

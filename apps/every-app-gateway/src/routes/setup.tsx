@@ -78,9 +78,7 @@ function Setup() {
           Open the setup link that was printed when this gateway was deployed,
           or create a new one on the machine that deployed it:
         </p>
-        <code className="block mt-3 text-sm">
-          npx everyapp gateway claim-link
-        </code>
+        <code className="block mt-3 text-sm">everyapp gateway claim-link</code>
       </AuthCard>
     );
   }

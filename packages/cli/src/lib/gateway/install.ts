@@ -62,7 +62,7 @@ export function assertUpgradedSinceAdopted(install: InstallRecord): void {
   if (install.releaseSha256 === ADOPTED_RELEASE) {
     throw new EveryAppError(
       "UPGRADE_FIRST",
-      "This gateway was adopted but not upgraded yet, so everyapp has no release of it to redeploy. Run `npx everyapp gateway upgrade` from a terminal first.",
+      "This gateway was adopted but not upgraded yet, so everyapp has no release of it to redeploy. Run `everyapp gateway upgrade` from a terminal first.",
     );
   }
 }

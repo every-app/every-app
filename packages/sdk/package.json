@@ -1,5 +1,6 @@
 {
   "name": "@every-app/sdk",
+  "private": true,
   "version": "0.3.0",
   "license": "MIT",
   "type": "module",
@@ -24,9 +25,6 @@
   "scripts": {
     "prebuild": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "build": "tsc -p tsconfig.build.json",
-    "prepack": "npm run build",
-    "build:prepublish": "pnpm install --ignore-scripts && npm run types:check && npm run build",
-    "prepublishOnly": "npm run build:prepublish",
     "types:check": "tsc --noEmit",
     "format:check": "prettier --check .",
     "format:write": "prettier . --write",

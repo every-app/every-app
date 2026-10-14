@@ -11,6 +11,7 @@ https://github.com/user-attachments/assets/7802f9ca-defd-4995-96f0-f46845cb3e83
 ## Table of Contents
 - [What is Every App?](#what-is-every-app)
 - [What is the Gateway?](#what-is-the-gateway)
+- [Work from This Checkout](#work-from-this-checkout)
 - [Deploy Your Gateway](#deploy-your-gateway)
 - [Deploy an Example App](#deploy-an-example-app)
 - [Build Your Own App](#build-your-own-app)
@@ -24,7 +25,7 @@ It's built for experienced engineers who want to use their favorite AI tooling t
 
 - We handle the tedious parts like auth, user management, database setup, and hosting so you can focus on your idea.
 - Your agent can reference example apps via our MCP server, with patterns that scale as your codebase grows.
-- Set it up in your own Cloudflare account with one command: `npx everyapp setup`
+- Set it up in your own Cloudflare account with one command: `pnpm everyapp setup`
 - Apps run on Cloudflare's serverless platform, so an idle app costs nothing beyond the $5/month Workers Paid plan.
 
 Start by vibe coding an idea, reimplementing an old side project, or trying the [example prompt](https://everyapp.dev/docs/build-an-app/create-app/#example-prompt). Once you've built something you love, stay in vibe coding mode forever, or dig deeper and build the best project of your life.
@@ -54,15 +55,15 @@ We simplify building apps by standardizing as much as possible and hoisting what
 
 </details>
 
-## Deploy Your Gateway
+## Work from This Checkout
+
+Nothing is published right now: no npm packages, and no syncs to the public repository. The CLI, the Gateway and the apps all run from this repository, and a deploy always deploys the code in front of you. Don't use `npx everyapp`: that runs the old 0.2 CLI from npm, which can't deploy this Gateway.
 
 ### What you need
 
-1. **Node.js 22.18 or newer** — https://nodejs.org
+1. **Node.js 22.18 or newer** — https://nodejs.org. Run everything with Node, not Bun: the Cloudflare CLI the deploy uses can't load the apps' `cloudflare.config.ts` under Bun.
 
-   This also installs `npx`, which runs the commands below without installing anything globally. Run everything with Node/npx — not bun: the Cloudflare CLI the deploy uses can't load the apps' `cloudflare.config.ts` under Bun.
-
-2. **pnpm** — https://pnpm.io/installation — builds the starter app (`npm install -g pnpm`).
+2. **pnpm** — https://pnpm.io/installation. The repository pins pnpm 10.34.5 (`packageManager` in `package.json`), and a newer pnpm switches to it by itself.
 
 3. **A Cloudflare account on Workers Paid** — the one thing you buy: $5 a month, plus usage above generous included amounts ([costs](https://everyapp.dev/docs/how-it-works/gateway#what-it-costs)). [Sign up](https://dash.cloudflare.com/sign-up), then subscribe under **Workers & Pages → Plans**. The Free plan can't run Every App: D1 stops answering for the rest of the day once an account reaches its daily limits (enforced since September 2026), and the Gateway reads D1 on every request; requests also get only 10 ms of CPU.
 
@@ -70,108 +71,113 @@ We simplify building apps by standardizing as much as possible and hoisting what
 
    No domain on Cloudflare yet? Buy one in the Cloudflare dashboard (**Domains → Buy a domain**; about $10 a year for a `.com`, at cost, ready in minutes), or add one you own and point its nameservers at Cloudflare.
 
-### Set up
+### Install
 
 ```bash
-npx everyapp setup
+pnpm install
+pnpm everyapp --help
 ```
 
-One command, from an empty account to a working Gateway and a live starter app:
+`pnpm install` also builds the SDK, which the apps and the Gateway load from `packages/sdk/dist`. `pnpm everyapp …` runs the CLI from this checkout, anywhere in the repository. It builds itself the first time, and again whenever its source or the SDK's changes (a few seconds). Inside an app, `pnpm dev` and `pnpm run deploy` run it too. Below, `everyapp` means `pnpm everyapp`.
+
+To type `everyapp` from anywhere, link it once: `pnpm -C packages/cli install:global` (an `npm link` of `packages/cli`).
+
+## Deploy Your Gateway
+
+```bash
+pnpm everyapp setup --domain apps.your-company.com
+```
+
+One command, from an empty account to a working Gateway:
 
 1. It logs in to Cloudflare with Cloudflare's own CLI (a link and a code, so it works over SSH), or uses `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and checks for Workers Paid.
-2. It asks where the Gateway lives (suggesting `apps.<your domain>`) and deploys it there. Every address is a Workers Custom Domain: Cloudflare creates its DNS record and certificate. No wildcard records, no DNS to edit by hand.
+2. It builds the Gateway from `apps/every-app-gateway` and deploys it at `--domain` (leave the flag out and it asks, suggesting `apps.<your domain>`). Every address is a Workers Custom Domain: Cloudflare creates its DNS record and certificate. No wildcard records, no DNS to edit by hand.
 3. It opens a one-time setup link: create your owner account there. Nobody can sign up before you, and after you only people you invite.
 4. Once your account exists, it logs this terminal in to the Gateway by itself, so it can deploy apps.
-5. It deploys the starter app, a simple todo list, from `./simple-todo` to `https://simple-todo.apps.<your domain>`.
 
-Stopped half-way (a login to approve, a domain to buy, a link you haven't opened yet)? Run it again: it picks up where it left off, and does nothing once everything is there. Coding agents can drive it with `--json` (NDJSON events; [Quickstart](https://everyapp.dev/docs/getting-started/quickstart) has a prompt).
+Stopped half-way (a login to approve, a domain to buy, a link you haven't opened yet)? Run it again: it picks up where it left off, and does nothing once everything is there. Coding agents can drive it with `--json` (NDJSON events).
 
 [What the Gateway does](https://everyapp.dev/docs/how-it-works/gateway) explains, on one page, what it promises, what it costs, and its limits today; one to know now: deploying apps takes Cloudflare credentials that can also change the Gateway, so only let trusted admins deploy.
 
 ### Deploy from another machine
 
-On your Gateway, go to **Admin → Tokens → Deploy token** (it's shown once), then:
+On your Gateway, go to **Admin → Tokens → Deploy token** (it's shown once), then, in a checkout of this repository:
 
 ```bash
-npx everyapp login
+pnpm everyapp login
 ```
 
 Enter your Gateway URL, then paste the token when asked. Revoke it any time from the same page.
 
-### Upgrading an existing install
+### Upgrading your Gateway
 
-`npx everyapp gateway upgrade` moves a Gateway to the release your CLI ships, keeping its data, users and apps.
+`everyapp gateway upgrade` builds the Gateway from this checkout and deploys it, keeping its data, users and apps. Run it after you pull or change `apps/every-app-gateway`.
 
-A Gateway deployed before `setup` existed (on its domain's apex, with a wildcard DNS record) keeps its domain and app addresses while it moves to the current CLI. From a terminal:
+A Gateway deployed before `setup` existed (on its domain's apex, with a wildcard DNS record) keeps its domain and app addresses while it moves to this checkout's. From a terminal:
 
 ```bash
-npx everyapp gateway adopt --domain your-domain.dev --dry-run   # look first
-npx everyapp gateway adopt --domain your-domain.dev             # record it as it is
-npx everyapp gateway upgrade                                     # confirm when asked
-npx everyapp gateway status
+pnpm everyapp gateway adopt --domain your-domain.dev --dry-run   # look first
+pnpm everyapp gateway adopt --domain your-domain.dev             # record it as it is
+pnpm everyapp gateway upgrade                                     # confirm when asked
+pnpm everyapp gateway status
 ```
 
-Later, `npx everyapp gateway use-per-app-domains` gives each app its own Custom Domain, after which the wildcard record can go. Details: [Upgrading an existing install](https://everyapp.dev/docs/reference/manage-your-gateway#upgrading-an-existing-install).
+Later, `everyapp gateway use-per-app-domains` gives each app its own Custom Domain, after which the wildcard record can go. Details: [Upgrading an existing install](https://everyapp.dev/docs/reference/manage-your-gateway#upgrading-an-existing-install).
 
 ## Deploy an Example App
 
-### Todo App
-
-A minimal todo list app with keyboard navigation.
+The example apps live in `apps/`. Deploy one from its directory:
 
 ```bash
-npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app
-cd every-todo-app
-npx everyapp app deploy
+cd apps/todo-app
+pnpm run deploy
 ```
 
 Refresh your Gateway — the app appears, live at the URL the deploy prints (`https://todo.apps.your-company.com`). You're already logged in.
 
-<details>
-<summary><h4>Workout Tracker</h4></summary>
+- **Todo App** (`apps/todo-app`) — a minimal todo list with keyboard navigation.
+- **Workout Tracker** (`apps/workout-tracker`) — track your workouts and programs.
+- **Cooking Assistant** (`apps/chef`) — an AI cooking assistant and recipe manager. Chat needs an OpenAI key, which goes on your **Gateway**, not the app: the Gateway holds provider keys and proxies AI calls for every app that declares the provider.
 
-Track your workouts and programs.
-
-```bash
-npx gitpick every-app/every-app/tree/main/apps/workout-tracker every-workout-tracker
-cd every-workout-tracker
-npx everyapp app deploy
-```
-
-</details>
-
-<details>
-<summary><h4>Cooking Assistant</h4></summary>
-
-An AI Cooking Assistant and Recipe Manager.
-
-```bash
-npx gitpick every-app/every-app/tree/main/apps/chef every-app-chef
-cd every-app-chef
-npx everyapp app deploy
-```
-
-Chat needs an OpenAI key. It goes on your **Gateway**, not the app — the Gateway holds provider keys and proxies AI calls for every app that declares the provider:
-
-```bash
-npx everyapp gateway secret set OPENAI_API_KEY
-```
-
-</details>
+  ```bash
+  pnpm everyapp gateway secret set OPENAI_API_KEY
+  ```
 
 ## Build Your Own App
 
 ```bash
-npx everyapp app create
-cd your-project-name
-npx everyapp dev
+pnpm everyapp app create my-app
+cd apps/my-app
+pnpm dev
 ```
 
-`app create` scaffolds the app from the starter template, deploys it, registers it with your Gateway, and sets up local development.
+`app create` copies the starter template (`templates/simple-todo`) to `apps/my-app`, deploys it, registers it with your Gateway, and sets up local development.
 
-`everyapp dev` runs your app behind a local Gateway that enforces the same security perimeter as production, signed in as a seeded dev user. Open the URL it prints — hot reload works as normal.
+`pnpm dev` (`everyapp dev`) runs your app behind a local Gateway that enforces the same security perimeter as production, signed in as a seeded dev user. Open the URL it prints — hot reload works as normal.
 
 Need inspiration? Try the [example prompt](https://everyapp.dev/docs/build-an-app/create-app/#example-prompt) to get started.
+
+### An app in its own repository
+
+An app can live in its own repository, next to this checkout (RepoLens does). Its `package.json` links the SDK and the CLI from the checkout by path:
+
+```json
+{
+  "scripts": {
+    "dev": "everyapp dev",
+    "deploy": "everyapp app deploy",
+    "db:migrate:local": "everyapp app d1 migrate --local"
+  },
+  "dependencies": {
+    "@every-app/sdk": "link:../private-every-app/packages/sdk"
+  },
+  "devDependencies": {
+    "everyapp": "link:../private-every-app/packages/cli"
+  }
+}
+```
+
+Then `pnpm install`, `pnpm dev` and `pnpm run deploy` work there as they do in `apps/`. `everyapp app create` run outside this repository sets a new app up this way.
 
 ### Database Migrations
 

@@ -29,7 +29,6 @@ import { GatewayClient, type DeletedApp } from "@/lib/gateway/api";
 import { readInstall } from "@/lib/gateway/install";
 import { confirmLeaseBreak, type BreakLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
-import { bundledReleaseTarball } from "@/lib/gateway/release";
 import { resolveGatewayUrl } from "@/lib/gateway/resolve";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
@@ -127,7 +126,6 @@ export async function removeApp({
     interactive,
     cliVersion,
     breakLease,
-    bundledTarball: bundledReleaseTarball(),
     ...reconcile,
   });
 

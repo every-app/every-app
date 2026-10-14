@@ -332,7 +332,7 @@ describe("gateway deploy", () => {
     const newer = await laterBuild();
     try {
       await deployGateway({ release: newer });
-      // An older CLI's bundled release: same version, built before.
+      // An older checkout's release: same version, built before.
       await expect(deployGateway({ reason: "upgrade" })).rejects.toMatchObject({
         code: "DOWNGRADE_REFUSED",
       });
@@ -1018,11 +1018,10 @@ describe("gateway reconcile", () => {
     });
   });
 
-  it("redeploys the live release from the cache, never the CLI's own", async () => {
-    const newer = await buildGatewayRelease({ version: "9.9.9" });
+  it("redeploys the live release from the cache", async () => {
     seedApps([{ slug: "todo", worker: "every-todo", status: "active", legacy: true }]);
 
-    await reconcile({ bundledTarball: newer });
+    await reconcile();
 
     expect(account.deploys.at(-1)!.config["env"].EVERYAPP_RELEASE.value).toEqual({
       version: "0.2.0",
@@ -1045,18 +1044,16 @@ describe("gateway reconcile", () => {
     expect(account.deploys).toHaveLength(1);
   });
 
-  it("falls back to the bundled release only when it is the live one", async () => {
+  it("says to upgrade when the live release isn't cached", async () => {
     const kv = account.namespaces.get(account.namespaceId("every-app-gateway-deploy")!)!;
     kv.keys.clear();
     seedApps([{ slug: "todo", worker: "every-todo", status: "active", legacy: true }]);
 
-    await expect(
-      reconcile({ bundledTarball: await buildGatewayRelease({ version: "1.0.0" }) }),
-    ).rejects.toMatchObject({ code: "RELEASE_NOT_CACHED" });
-
-    await expect(
-      reconcile({ bundledTarball: release.tarball }),
-    ).resolves.toMatchObject({ changed: true });
+    await expect(reconcile()).rejects.toMatchObject({
+      code: "RELEASE_NOT_CACHED",
+      message: expect.stringContaining("everyapp gateway upgrade"),
+    });
+    expect(account.deploys).toHaveLength(1);
   });
 
   it("sends a setting with the redeploy, in the secrets file", async () => {

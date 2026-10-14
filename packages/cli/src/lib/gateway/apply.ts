@@ -73,7 +73,7 @@ import {
   cacheRelease,
   compareReleaseOrder,
   compareVersions,
-  knownRelease,
+  fetchCachedRelease,
   releaseOrder,
   servingReleaseSha256,
   type GatewayRelease,
@@ -204,7 +204,7 @@ async function refuseDowngradeOfServing(
   ) {
     return;
   }
-  const live = await knownRelease(options.cf, options.resources.deployKvId, sha256);
+  const live = await fetchCachedRelease(options.cf, options.resources.deployKvId, sha256);
   if (!live) return;
   try {
     if (

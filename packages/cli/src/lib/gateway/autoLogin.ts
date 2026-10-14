@@ -133,9 +133,9 @@ export function setupLinkGone(
   gatewayUrl: string,
   hasOwner: boolean | null,
 ): Error {
-  const signIn = `Sign in at ${gatewayUrl}, create a deploy token under Admin → Tokens, and run \`npx everyapp login\`.`;
+  const signIn = `Sign in at ${gatewayUrl}, create a deploy token under Admin → Tokens, and run \`everyapp login\`.`;
   const newLink =
-    "Run `npx everyapp setup` again for a new link (or `npx everyapp gateway claim-link` on a machine logged in to the gateway's Cloudflare account).";
+    "Run `everyapp setup` again for a new link (or `everyapp gateway claim-link` on a machine logged in to the gateway's Cloudflare account).";
   if (hasOwner === false) {
     return new ActionRequiredError(
       "claim_owner",

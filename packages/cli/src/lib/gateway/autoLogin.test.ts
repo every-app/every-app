@@ -161,7 +161,7 @@ describe("setupLinkGone", () => {
     expect(unclaimed).toMatchObject({
       name: "ActionRequiredError",
       action: "claim_owner",
-      message: expect.stringContaining("npx everyapp setup` again for a new link"),
+      message: expect.stringContaining("everyapp setup` again for a new link"),
     });
     expect(unclaimed.message).not.toContain("Admin → Tokens");
     expect(setupLinkGone(CLAIM.gatewayUrl, null)).toMatchObject({

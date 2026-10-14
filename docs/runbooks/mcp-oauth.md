@@ -23,7 +23,7 @@ too, and logs `mcp.oauth.flag_unrecognized`. To turn it off (the CLI sends
 the secret with a redeploy of the live gateway release):
 
 ```sh
-npx everyapp gateway secret set MCP_OAUTH_ENABLED
+everyapp gateway secret set MCP_OAUTH_ENABLED
 # enter: false
 ```
 
@@ -35,7 +35,7 @@ they work again when the switch is turned back on, unless they were revoked
 or lapsed meanwhile. To turn it back on:
 
 ```sh
-npx everyapp gateway secret set MCP_OAUTH_ENABLED
+everyapp gateway secret set MCP_OAUTH_ENABLED
 # enter: true
 ```
 
@@ -66,7 +66,7 @@ DCR is on by default, because Cursor has no other way in. To allow CIMD
 clients only:
 
 ```sh
-npx everyapp gateway secret set MCP_DCR_ENABLED
+everyapp gateway secret set MCP_DCR_ENABLED
 # enter: false
 ```
 
@@ -105,7 +105,7 @@ and `everyapp gateway deploy` sets it up; there is nothing to set by hand.
   the resource, so changing it invalidates every connection; clients ask
   their users to connect again on their next request.
 
-Optional settings (`npx everyapp gateway secret set <name>`; locally, in
+Optional settings (`everyapp gateway secret set <name>`; locally, in
 `.dev.vars`):
 
 | Name                       | Default | What it does                                                                                                                                                                                    |

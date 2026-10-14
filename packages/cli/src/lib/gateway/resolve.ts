@@ -33,6 +33,6 @@ export async function resolveGatewayUrl(flag?: string): Promise<string> {
     "GATEWAY_REQUIRED",
     credentials.length > 1
       ? `You're logged in to several gateways (${credentials.map((c) => c.gatewayUrl).join(", ")}); pass --gateway <url> or set EVERYAPP_GATEWAY_URL.`
-      : "No gateway to use yet. Deploy one with `npx everyapp gateway deploy --domain <domain>`, or log in to yours with `npx everyapp login`.",
+      : "No gateway to use yet. Deploy one with `everyapp gateway deploy --domain <domain>`, or log in to yours with `everyapp login`.",
   );
 }

@@ -121,7 +121,7 @@ async function syncAndReport(
       } else if (isRouteMissing(error)) {
         notSynced(
           options,
-          `Agent tools for ${appId}: this gateway doesn't serve them yet. Run: npx everyapp gateway upgrade`,
+          `Agent tools for ${appId}: this gateway doesn't serve them yet. Run: everyapp gateway upgrade`,
           "GATEWAY_OUTDATED",
         );
       } else {

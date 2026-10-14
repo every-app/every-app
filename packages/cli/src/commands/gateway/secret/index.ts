@@ -2,7 +2,6 @@ import type { LocalContext } from "@/context";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
-import { bundledReleaseTarball } from "@/lib/gateway/release";
 import { assertSettableSecret } from "@/lib/gateway/secretsFile";
 import { readSecretValue } from "@/lib/secretValue";
 import {
@@ -61,7 +60,6 @@ export async function set(
           yes: flags.yes,
           interactive: canPromptInTerminal(flags.json ?? false),
         }),
-        bundledTarball: bundledReleaseTarball(),
       });
       out.emit({
         type: "done",

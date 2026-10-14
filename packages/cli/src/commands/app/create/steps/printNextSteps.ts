@@ -1,8 +1,7 @@
+import path from "node:path";
 import chalk from "chalk";
 
 interface PrintNextStepsOptions {
-  /** The unprefixed app ID (e.g., "todo-app") */
-  appId: string;
   targetDir: string;
   gatewayUrl: string;
   liveUrl: string;
@@ -12,11 +11,11 @@ interface PrintNextStepsOptions {
  * Print next steps for the user after successful project creation and deployment
  */
 export function printNextSteps({
-  appId,
   targetDir,
   gatewayUrl,
   liveUrl,
 }: PrintNextStepsOptions): void {
+  const dir = path.relative(process.cwd(), targetDir) || ".";
   console.log(chalk.green("Project created and deployed successfully!\n"));
   console.log(chalk.dim(`  Location: ${targetDir}`));
   console.log(chalk.dim(`  App URL:  ${chalk.cyan(liveUrl)}`));
@@ -24,7 +23,7 @@ export function printNextSteps({
   console.log(chalk.dim("  Routed through the gateway service binding."));
   console.log();
   console.log("For local development:\n");
-  console.log(chalk.dim(`  ${chalk.bold(`cd ${appId}`)}`));
+  console.log(chalk.dim(`  ${chalk.bold(`cd ${dir}`)}`));
   console.log(chalk.dim(`  ${chalk.bold(`pnpm run dev`)}`));
   console.log(
     chalk.dim(
@@ -33,6 +32,6 @@ export function printNextSteps({
   );
   console.log();
   console.log("To deploy updates after changes:\n");
-  console.log(chalk.dim(`  ${chalk.bold("npx everyapp app deploy")}`));
+  console.log(chalk.dim(`  ${chalk.bold("pnpm run deploy")}`));
   console.log();
 }

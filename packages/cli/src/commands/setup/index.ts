@@ -1,15 +1,14 @@
+import path from "node:path";
 import enquirer from "enquirer";
-import { execa } from "execa";
 import type { LocalContext } from "@/context";
-import { deployApp } from "@/commands/app/deploy/deployApp";
 import {
   cliVersion,
   eventSink,
   openGatewayRelease,
   runReported,
 } from "@/commands/gateway/shared";
-import { starterTemplateDir } from "@/lib/app/starter";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
+import { checkoutRoot } from "@/lib/checkout";
 import { createCfRunner } from "@/lib/cf/runner";
 import { normalizeHostname } from "@/lib/domains/hostnames";
 import { GatewayClient } from "@/lib/gateway/api";
@@ -24,39 +23,33 @@ export async function setup(
   await runReported(
     out,
     async () => {
-      const { gatewayUrl, organizationName, apps } = await runSetup(
-        flags,
-        out,
-        {
-          createCf: (accountId) => createCfRunner({ accountId }),
-          gatewayClient: (gatewayUrl) => new GatewayClient({ gatewayUrl }),
-          openRelease: () => openGatewayRelease({ out }),
-          deployApp,
-          templateDir: starterTemplateDir(),
-          cwd: process.cwd(),
-          interactive: canPromptInTerminal(flags.json ?? false),
-          prompts: terminalPrompts,
-          openBrowser: openInBrowser,
-          hasPnpm,
-          cliVersion,
-        },
-      );
-      const starter = apps[0];
+      const { gatewayUrl, organizationName } = await runSetup(flags, out, {
+        createCf: (accountId) => createCfRunner({ accountId }),
+        gatewayClient: (gatewayUrl) => new GatewayClient({ gatewayUrl }),
+        openRelease: () => openGatewayRelease({ out }),
+        interactive: canPromptInTerminal(flags.json ?? false),
+        prompts: terminalPrompts,
+        openBrowser: openInBrowser,
+        cliVersion,
+      });
+      const todoApp =
+        path.relative(process.cwd(), path.join(checkoutRoot(), "apps", "todo-app")) || ".";
+      const next: Array<[string, string]> = [
+        [`cd ${todoApp} && pnpm run deploy`, "deploy an app from this repository"],
+        ["everyapp app create", "start a new app in apps/"],
+        [`${gatewayUrl}/admin`, "invite people, decide who opens which app"],
+      ];
+      const width = Math.max(...next.map(([command]) => command.length));
       out.emit({
         type: "done",
         message: [
           "Every App is ready.",
           `  Gateway:  ${gatewayUrl}${organizationName ? ` (${organizationName})` : ""}`,
-          ...(starter ? [`  Starter:  ${starter.url}`] : []),
           "",
           "Next:",
-          ...(starter?.dir
-            ? [`  cd ${starter.dir} && npx everyapp dev   work on the starter locally`]
-            : []),
-          "  npx everyapp app create                  start a new app",
-          `  ${gatewayUrl}/admin                     invite people, decide who opens which app`,
+          ...next.map(([command, what]) => `  ${command.padEnd(width)}   ${what}`),
         ].join("\n"),
-        data: { gatewayUrl, organizationName, apps },
+        data: { gatewayUrl, organizationName },
       });
     },
     { verbose: flags.verbose },
@@ -102,12 +95,3 @@ const terminalPrompts = {
     return hostname;
   },
 };
-
-async function hasPnpm(): Promise<boolean> {
-  try {
-    await execa("pnpm", ["--version"], { stdio: "pipe" });
-    return true;
-  } catch {
-    return false;
-  }
-}

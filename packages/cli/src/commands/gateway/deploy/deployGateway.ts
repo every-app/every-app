@@ -1,6 +1,6 @@
 /**
- * `everyapp gateway deploy` and `upgrade`: deploy the release this CLI
- * bundles. Deploy also installs a new gateway; upgrade needs one that this
+ * `everyapp gateway deploy` and `upgrade`: deploy a release built from this
+ * checkout. Deploy also installs a new gateway; upgrade needs one that this
  * CLI deployed before and does nothing when it already runs this release.
  * Neither moves a gateway to an older release without --allow-downgrade.
  */
@@ -92,7 +92,7 @@ async function run(
   if (!domain) {
     throw new EveryAppError(
       "DOMAIN_REQUIRED",
-      "Pass --domain <hostname>: the gateway serves there, and each app one label below it (todo.<hostname>). Any hostname in a zone this Cloudflare account has works, e.g. apps.example.com in example.com. Or run `npx everyapp setup`, which helps pick one.",
+      "Pass --domain <hostname>: the gateway serves there, and each app one label below it (todo.<hostname>). Any hostname in a zone this Cloudflare account has works, e.g. apps.example.com in example.com. Or run `everyapp setup`, which helps pick one.",
     );
   }
 
@@ -152,7 +152,7 @@ async function run(
           type: "warning",
           code: "GATEWAY_UNCLAIMED",
           message:
-            "Gateway is unclaimed: run `npx everyapp gateway claim-link` on your machine to create the owner account.",
+            "Gateway is unclaimed: run `everyapp gateway claim-link` on your machine to create the owner account.",
         }),
     });
     out.emit({
@@ -193,7 +193,7 @@ export async function findInstall(
   if (!install && (await migratedByDrizzleKit(db))) {
     throw new EveryAppError(
       "GATEWAY_NOT_ADOPTED",
-      "This account already runs a gateway deployed before everyapp used cf. Adopt it first, which keeps its domain, wildcard route and app hostnames: `everyapp gateway adopt --domain <its domain>`, then `everyapp gateway upgrade` from a terminal.",
+      "This Cloudflare account already runs a gateway, deployed before everyapp used cf, and an account holds one gateway: its Worker, D1 database and KV namespaces have fixed names, so a new one here would replace it. To move that gateway onto this code, adopt it first, which keeps its domain, wildcard route and app hostnames: `everyapp gateway adopt --domain <its domain>`, then `everyapp gateway upgrade` from a terminal. For a separate gateway, use another Cloudflare account (--account-id).",
     );
   }
   return { databaseId, install };

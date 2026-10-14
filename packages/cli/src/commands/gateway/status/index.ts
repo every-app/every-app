@@ -3,7 +3,6 @@ import { cfD1Database } from "@/lib/cf/d1";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { checkSslReady } from "@/lib/gateway";
 import { GatewayClient, type GatewayStatusResponse } from "@/lib/gateway/api";
-import { olderThanInstalled } from "@/lib/gateway/apply";
 import { readGatewayCredential } from "@/lib/gateway/credentials";
 import {
   readDesiredState,
@@ -16,7 +15,6 @@ import {
 } from "@/lib/gateway/install";
 import { readLease } from "@/lib/gateway/lease";
 import { gatewayDomains } from "@/lib/gateway/patchBuildOutput";
-import { bundledReleaseManifest } from "@/lib/gateway/release";
 import { findGatewayDatabase } from "@/lib/gateway/resources";
 import { gatewayHasOwner } from "@/lib/gateway/setup-link";
 import {
@@ -33,10 +31,9 @@ interface StatusFlags {
 }
 
 /**
- * How the gateway in this account stands: the release it runs against the
- * one this CLI bundles, whether it binds and serves exactly the apps its
- * registry lists, its owner, each hostname's certificate, and any deploy in
- * progress.
+ * How the gateway in this account stands: the release it runs, whether it
+ * binds and serves exactly the apps its registry lists, its owner, each
+ * hostname's certificate, and any deploy in progress.
  */
 export async function status(
   this: LocalContext,
@@ -69,7 +66,7 @@ export async function status(
           type: "done",
           message: wranglerEra
             ? "This account runs a gateway deployed before everyapp used cf: `everyapp gateway adopt --domain <its domain>` takes it over as it is."
-            : "A gateway database exists, but this everyapp hasn't deployed the gateway yet: run `npx everyapp setup` (or `everyapp gateway deploy --domain <hostname>`).",
+            : "A gateway database exists, but this everyapp hasn't deployed the gateway yet: run `everyapp setup` (or `everyapp gateway deploy --domain <hostname>`).",
           data: { deployed: true, installed: false, adoptable: wranglerEra },
         });
         return;
@@ -77,7 +74,7 @@ export async function status(
       if (install.releaseSha256 === ADOPTED_RELEASE) {
         out.emit({
           type: "done",
-          message: `The gateway at https://${install.gatewayHost} is adopted (wildcard route, app hostnames kept) but not upgraded yet: run \`npx everyapp gateway upgrade\` from a terminal.`,
+          message: `The gateway at https://${install.gatewayHost} is adopted (wildcard route, app hostnames kept) but not upgraded yet: run \`everyapp gateway upgrade\` from a terminal.`,
           data: { deployed: true, installed: true, adopted: true, gatewayHost: install.gatewayHost },
         });
         return;
@@ -87,7 +84,6 @@ export async function status(
         readLease(db, "gateway"),
         gatewayHasOwner(db),
       ]);
-      const bundled = bundledReleaseManifest();
 
       const gatewayUrl = `https://${install.gatewayHost}`;
       const authed = Boolean(await readGatewayCredential(gatewayUrl));
@@ -123,15 +119,9 @@ export async function status(
       const liveRelease = live?.release ?? null;
       const leaseHeld = lease && lease.expiresAt > Date.now() ? lease : null;
 
-      const bundledNote =
-        !bundled || bundled.sha256 === install.releaseSha256
-          ? ""
-          : olderThanInstalled(bundled, install)
-            ? `; this everyapp bundles an older release (${bundled.version}, built ${bundled.builtAt}): upgrade everyapp`
-            : `; this everyapp bundles ${bundled.version}: run \`everyapp gateway upgrade\``;
       const lines = [
         `Gateway:  ${gatewayUrl} (${account.name ?? account.id})`,
-        `Release:  ${liveRelease ? `${liveRelease.version} (${liveRelease.sha256.slice(0, 12)})` : "unknown (the gateway didn't answer)"}${bundledNote}`,
+        `Release:  ${liveRelease ? `${liveRelease.version} (${liveRelease.sha256.slice(0, 12)})` : "unknown (the gateway didn't answer)"}`,
         `Routing:  ${perApp ? `each app its own Custom Domain under ${install.appBaseDomain}` : `wildcard route *.${install.gatewayHost} (switch: \`everyapp gateway use-per-app-domains\`)`}`,
         `Apps:     ${desired.appWorkers.length} to bind${live ? (inSync ? ", all bound" : "; the live gateway differs: run `everyapp gateway reconcile`") : ""}`,
         ...(unpublished.length
@@ -157,9 +147,6 @@ export async function status(
           gatewayUrl,
           accountId: account.id,
           release: liveRelease,
-          bundledRelease: bundled
-            ? { version: bundled.version, sha256: bundled.sha256 }
-            : null,
           versionId: live?.versionId ?? null,
           desiredApps: desired.appWorkers,
           liveApps: live?.appBindings ?? null,

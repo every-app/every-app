@@ -5,11 +5,8 @@
  * (approving a login, opening the setup link) played by the test.
  */
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { deployApp } from "@/commands/app/deploy/deployApp";
-import { starterTemplateDir } from "@/lib/app/starter";
+import { GatewayApiError } from "@/lib/gateway/api";
 import { readGatewayCredential } from "@/lib/gateway/credentials";
 import { readInstall } from "@/lib/gateway/install";
 import { listPendingClaims } from "@/lib/gateway/pendingClaims";
@@ -30,7 +27,6 @@ let account: FakeCloudflare;
 let gateway: FakeGateway;
 let tarball: string;
 let home: string;
-let cwd: string;
 let events: any[];
 let opened: string[];
 
@@ -44,7 +40,6 @@ beforeEach(async () => {
   account = new FakeCloudflare();
   gateway = new FakeGateway(account, GW);
   tarball = await buildGatewayRelease();
-  cwd = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-setup-"));
   events = [];
   opened = [];
 });
@@ -52,7 +47,6 @@ beforeEach(async () => {
 afterEach(() => {
   vi.unstubAllEnvs();
   fs.rmSync(home, { recursive: true, force: true });
-  fs.rmSync(cwd, { recursive: true, force: true });
 });
 
 /** The owner, opening the setup link the run hands out, while it waits. */
@@ -74,9 +68,6 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
     createCf: () => account.cf,
     gatewayClient: () => gateway.client,
     openRelease: () => openRelease(tarball),
-    deployApp,
-    templateDir: starterTemplateDir(),
-    cwd,
     interactive: false,
     prompts: {
       confirm: async () => {
@@ -92,7 +83,6 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
     openBrowser: async (url) => {
       opened.push(url);
     },
-    hasPnpm: async () => true,
     cliVersion: "0.3.0",
     seams: {
       readStatus: () => account.gatewayStatus(),
@@ -102,7 +92,6 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
       lookupCaa: account.lookupCaa,
       certificates: { isReady: async () => true, sleep: async () => undefined },
       login: { sleep: ownerOpensTheLink(), timeoutMs: 60_000 },
-      installDeps: async () => undefined,
     },
     ...overrides,
   };
@@ -135,7 +124,7 @@ const mintElsewhere = () =>
   });
 
 describe("everyapp setup", () => {
-  it("takes an empty account to a live gateway on a subdomain, its owner, a login and the starter app", async () => {
+  it("takes an empty account to a live gateway on a subdomain, its owner and a login", async () => {
     account.cf.override(["accounts", "subscriptions", "get"], {
       stdout: JSON.stringify([{ state: "Paid", rate_plan: { id: "workers_paid", public_name: "Workers Paid" } }]),
     });
@@ -153,18 +142,12 @@ describe("everyapp setup", () => {
       "setup.gateway ok",
       "setup.login ok",
       "setup.extras skip",
-      "setup.starter ok",
     ]);
-    expect(result).toEqual({
-      gatewayUrl: `https://${GW}`,
-      organizationName: "Acme",
-      apps: [{ appId: "simple-todo", url: `https://simple-todo.${GW}`, dir: path.join(cwd, "simple-todo") }],
-    });
+    expect(result).toEqual({ gatewayUrl: `https://${GW}`, organizationName: "Acme" });
 
-    // The gateway and the starter, each its own Custom Domain in the zone.
-    expect(account.gatewayDomains()).toEqual([GW, `simple-todo.${GW}`]);
-    expect(account.gatewayBindings()).toEqual(["every-acme-simple-todo"]);
-    expect(gateway.app("simple-todo")).toMatchObject({ status: "active", hostname: `simple-todo.${GW}` });
+    // The gateway, its own Custom Domain in the zone; no app yet.
+    expect(account.gatewayDomains()).toEqual([GW]);
+    expect(account.gatewayBindings()).toEqual([]);
     expect(account.dnsRecords).toHaveLength(1);
     await expect(
       readInstall(cfD1Database(account.cf, [...account.databases].find(([, d]) => d.name === "every-app-gateway")![0])),
@@ -194,10 +177,6 @@ describe("everyapp setup", () => {
       organizationId: "org-1",
     });
     await expect(listPendingClaims()).resolves.toEqual([]);
-
-    // The starter's source, ready to work on.
-    expect(fs.readFileSync(path.join(cwd, "simple-todo", "everyapp.config.ts"), "utf8")).toContain('id: "simple-todo"');
-    expect(fs.existsSync(path.join(cwd, "simple-todo", "node_modules"))).toBe(false);
   });
 
   it("does nothing on a second run", async () => {
@@ -217,22 +196,20 @@ describe("everyapp setup", () => {
       "setup.owner skip",
       "setup.login skip",
       "setup.extras skip",
-      "setup.starter skip",
     ]);
     expect(account.deploys).toHaveLength(deploys);
     expect(events.some((event) => event.type === "action_required")).toBe(false);
   });
 
   it("tells a revoked token from a gateway it can't reach yet", async () => {
-    await setup({ domain: GW, "no-starter": true });
-    const { GatewayApiError } = await import("@/lib/gateway/api");
+    await setup({ domain: GW });
     const client = gateway.client as unknown as { whoami: () => Promise<unknown> };
 
     client.whoami = async () => {
       throw new GatewayApiError({ message: "revoked", status: 401 });
     };
     events = [];
-    expect((await setup({ "no-starter": true })).exitCode).toBe(2);
+    expect((await setup()).exitCode).toBe(2);
     expect(events.at(-1)).toMatchObject({
       action: "create_deploy_token",
       data: { url: `https://${GW}/admin/tokens` },
@@ -242,7 +219,7 @@ describe("everyapp setup", () => {
       throw new TypeError("fetch failed");
     };
     events = [];
-    expect((await setup({ "no-starter": true })).exitCode).toBe(1);
+    expect((await setup()).exitCode).toBe(1);
     expect(events.at(-1)).toMatchObject({
       type: "error",
       code: "GATEWAY_UNREACHABLE",
@@ -253,7 +230,7 @@ describe("everyapp setup", () => {
   it("never puts the owner setup link into a CI log, unless asked to", async () => {
     vi.stubEnv("CI", "true");
 
-    const { exitCode } = await setup({ domain: GW, "no-starter": true });
+    const { exitCode } = await setup({ domain: GW });
 
     expect(exitCode).toBe(2);
     expect(events.at(-1)).toMatchObject({
@@ -268,7 +245,7 @@ describe("everyapp setup", () => {
 
     // Asked for, it is printed like `gateway deploy --printSetupLink` does.
     events = [];
-    const asked = await setup({ "no-starter": true, printSetupLink: true });
+    const asked = await setup({ printSetupLink: true });
     expect(asked.exitCode).toBe(0);
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -280,16 +257,18 @@ describe("everyapp setup", () => {
   });
 
   it("exits 1 when a step fails after the owner link it waited for", async () => {
-    // The starter's hostname already has a record of the company's.
-    account.dnsRecords.push({ zoneId: "zone-1", name: `simple-todo.${GW}`, type: "A", content: "192.0.2.1" });
+    // Cloudflare Access goes in front of the gateway while the run waits.
+    const client = gateway.client as unknown as { setupDeployToken: () => Promise<unknown> };
+    client.setupDeployToken = async () => {
+      throw new GatewayApiError({ message: "Access answered", status: 302, code: "ACCESS_IN_FRONT" });
+    };
 
     const { exitCode } = await setup({ domain: GW });
 
     expect(events).toContainEqual(
       expect.objectContaining({ action: "claim_owner", data: expect.objectContaining({ waiting: true }) }),
     );
-    expect(steps()).toContain("setup.login ok");
-    expect(events.at(-1)).toMatchObject({ type: "error", code: "DNS_RECORD_CONFLICT" });
+    expect(events.at(-1)).toMatchObject({ type: "error", code: "ACCESS_IN_FRONT" });
     expect(exitCode).toBe(1);
   });
 
@@ -307,7 +286,7 @@ describe("everyapp setup", () => {
       message: expect.stringContaining("login --resume"),
     });
     const url = links()[0].data.url;
-    expect(gateway.app("simple-todo")).toBeUndefined();
+    await expect(readGatewayCredential(`https://${GW}`)).resolves.toBeNull();
 
     // The link still works (unspent, unexpired): the next run shows it
     // again, and the owner opening it logs this CLI in.
@@ -315,13 +294,13 @@ describe("everyapp setup", () => {
     const second = await setup();
     expect(second.exitCode).toBe(0);
     expect(links()[0].data.url).toBe(url);
-    expect(gateway.app("simple-todo")).toMatchObject({ status: "active" });
+    expect(steps()).toContain("setup.login ok");
   });
 
   it("shows a new setup link when the one an earlier run showed stopped working since", async () => {
     const neverOpened = deps().seams!;
     await setup(
-      { domain: GW, "no-starter": true },
+      { domain: GW },
       { seams: { ...neverOpened, login: { sleep: async () => undefined, timeoutMs: 0 } } },
     );
     const first = events.find((event) => event.action === "claim_owner").data.url;
@@ -329,7 +308,7 @@ describe("everyapp setup", () => {
     await mintElsewhere();
     events = [];
 
-    const { exitCode } = await setup({ "no-starter": true });
+    const { exitCode } = await setup();
 
     // Not the dead link again: a fresh one, opened, and the CLI logged in.
     const shown = events.find((event) => event.action === "claim_owner");
@@ -342,7 +321,7 @@ describe("everyapp setup", () => {
   it("stops with a new link to get, not a token to create, when the link it waits on is replaced", async () => {
     let replaced = false;
     const { exitCode } = await setup(
-      { domain: GW, "no-starter": true },
+      { domain: GW },
       {
         seams: {
           ...deps().seams!,
@@ -372,7 +351,7 @@ describe("everyapp setup", () => {
   it("says to create a deploy token once the owner claimed the link more than 30 minutes ago", async () => {
     const neverOpened = deps().seams!;
     await setup(
-      { domain: GW, "no-starter": true },
+      { domain: GW },
       { seams: { ...neverOpened, login: { sleep: async () => undefined, timeoutMs: 0 } } },
     );
     // The owner opens the link after this run gave up; setup runs again 31
@@ -381,7 +360,7 @@ describe("everyapp setup", () => {
     gateway.now = () => Date.now() + 31 * 60_000;
     events = [];
 
-    const { exitCode } = await setup({ "no-starter": true });
+    const { exitCode } = await setup();
 
     expect(exitCode).toBe(1);
     expect(events.at(-1)).toMatchObject({
@@ -409,7 +388,7 @@ describe("everyapp setup", () => {
         };
       });
 
-    const { exitCode } = await setup({ domain: GW, "no-starter": true });
+    const { exitCode } = await setup({ domain: GW });
 
     expect(exitCode).toBe(0);
     expect(events).toContainEqual(
@@ -419,7 +398,7 @@ describe("everyapp setup", () => {
         data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", waiting: true },
       }),
     );
-    expect(steps()).toContain("setup.starter skip");
+    expect(steps()).toContain("setup.login ok");
   });
 
   it("says how to buy a domain when the account has none, before installing anything", async () => {
@@ -450,7 +429,7 @@ describe("everyapp setup", () => {
   });
 
   it("warns about Workers Paid it can't confirm, and asks a person whether to go on", async () => {
-    const { exitCode } = await setup({ domain: GW, "no-starter": true });
+    const { exitCode } = await setup({ domain: GW });
     expect(exitCode).toBe(0);
     expect(events).toContainEqual(
       expect.objectContaining({ type: "warning", code: "WORKERS_PAID_UNVERIFIED" }),
@@ -458,7 +437,7 @@ describe("everyapp setup", () => {
 
     events = [];
     const declined = await setup(
-      { "no-starter": true },
+      {},
       {
         interactive: true,
         prompts: {
@@ -476,7 +455,7 @@ describe("everyapp setup", () => {
     const asked: string[] = [];
 
     const { exitCode } = await setup(
-      { json: false, "no-starter": true, "allow-free-plan": true },
+      { json: false, "allow-free-plan": true },
       {
         interactive: true,
         prompts: {
@@ -505,7 +484,7 @@ describe("everyapp setup", () => {
   it("keeps an install from before per-app domains on its wildcard route", async () => {
     // Deployed by this CLI before per-app domains, at the zone apex.
     gateway = new FakeGateway(account, "example.com");
-    await setup({ domain: "example.com", "no-starter": true });
+    await setup({ domain: "example.com" });
     const db = cfD1Database(account.cf, [...account.databases].find(([, d]) => d.name === "every-app-gateway")![0]);
     const install = (await readInstall(db))!;
     const { writeInstall } = await import("@/lib/gateway/install");
@@ -524,7 +503,5 @@ describe("everyapp setup", () => {
       { type: "fetch", pattern: "*.example.com/*", zone: "zone-1" },
     ]);
     expect(last.config["env"].APP_BASE_DOMAIN).toBeUndefined();
-    // Its starter keeps the old naming: <app>-<org>.<host>.
-    expect(gateway.app("simple-todo")).toMatchObject({ hostname: "simple-todo-acme.example.com", status: "active" });
   });
 });

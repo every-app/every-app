@@ -19,9 +19,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Setup pnpm
+        # The version is package.json's packageManager.
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -46,9 +45,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Setup pnpm
+        # The version is package.json's packageManager.
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -71,9 +69,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Setup pnpm
+        # The version is package.json's packageManager.
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -90,9 +87,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Setup pnpm
+        # The version is package.json's packageManager.
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -111,9 +107,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       - name: Setup pnpm
+        # The version is package.json's packageManager.
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

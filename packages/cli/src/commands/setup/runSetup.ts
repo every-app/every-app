@@ -1,13 +1,14 @@
 /**
  * `everyapp setup`: from an empty Cloudflare account to a working gateway,
- * its owner, this CLI logged in, and the starter app live, in one command.
+ * its owner, and this CLI logged in, in one command. Apps are deployed
+ * from the repository afterwards (`pnpm run deploy` in apps/<app>).
  *
  * Every step looks at what is there first and acts only on what is
  * missing, so running setup again picks up where it stopped (a login to
  * approve, a domain to buy, a link nobody opened yet), and does nothing
  * once everything is there:
  *
- *    toolchain   Node and cf; pnpm when the starter app is deployed
+ *    toolchain   Node and cf
  *    auth        cf logged in: `cf auth login` at a terminal, cf's device
  *                link and code under --json, or CLOUDFLARE_API_TOKEN
  *    account     which Cloudflare account
@@ -20,22 +21,17 @@
  *    login       the owner's first deploy token, handed to this CLI once
  *                the link is claimed (lib/gateway/autoLogin.ts)
  *    extras      what can be set up next (AI, email)
- *    starter     the starter app, copied to --dir and deployed
  *
  * With --json, each step is an NDJSON event and what only a person can do
  * is `action_required`; a run that stops on one exits 2, and running the
  * same command again resumes it.
  */
-import fs from "node:fs/promises";
-import path from "node:path";
-import type { DeployApp } from "@/commands/app/deploy/deployApp";
 import {
   deployGatewayRelease,
   findInstall,
   gatewayTarget,
 } from "@/commands/gateway/deploy/deployGateway";
 import { rememberedInstall } from "@/commands/gateway/shared";
-import { copyStarter } from "@/lib/app/starter";
 import { ensureCfAuth, resolveAccount } from "@/lib/cf/account";
 import { PINNED_CF_VERSION } from "@/lib/cf/bin";
 import { syncAppToolsWithGateway } from "@/commands/app/deploy/steps/syncTools";
@@ -75,19 +71,9 @@ import {
 } from "@/lib/gateway/setup-link";
 import type { EventSink } from "@/lib/output/events";
 
-/**
- * The starter app's id, and the directory it is copied to by default. Not
- * "todo": that is the todo example app's id, which deploying after setup
- * would put over the starter.
- */
-const STARTER_APP_ID = "simple-todo";
-const STARTER_DIR = "simple-todo";
-
 export interface SetupFlags {
   domain?: string;
   "account-id"?: string;
-  dir?: string;
-  "no-starter"?: boolean;
   "allow-free-plan"?: boolean;
   "force-dns"?: boolean;
   "no-open"?: boolean;
@@ -111,15 +97,10 @@ export interface SetupDeps {
   createCf: (accountId?: string) => CfRunner;
   gatewayClient: (gatewayUrl: string) => GatewayClient;
   openRelease: () => Promise<GatewayRelease>;
-  deployApp: DeployApp;
-  /** The starter template's directory (lib/app/starter.ts). */
-  templateDir: string | null;
-  cwd: string;
   /** A person is at this terminal, and this isn't a --json run. */
   interactive: boolean;
   prompts: SetupPrompts;
   openBrowser: (url: string) => Promise<void>;
-  hasPnpm: () => Promise<boolean>;
   cliVersion: string;
   /** Seams for the deploys' waits and lookups (tests). */
   seams?: {
@@ -138,14 +119,12 @@ export interface SetupDeps {
       intervalMs?: number;
       sleep?: (ms: number) => Promise<void>;
     };
-    installDeps?: Parameters<DeployApp>[0]["installDeps"];
   };
 }
 
 interface SetupResult {
   gatewayUrl: string;
   organizationName: string | null;
-  apps: Array<{ appId: string; url: string; dir?: string }>;
 }
 
 export async function runSetup(
@@ -153,7 +132,7 @@ export async function runSetup(
   out: EventSink,
   deps: SetupDeps,
 ): Promise<SetupResult> {
-  await checkToolchain(flags, out, deps);
+  checkToolchain(out);
 
   // Cloudflare: login, account, plan.
   const whoami = await ensureCfAuth({
@@ -216,7 +195,7 @@ export async function runSetup(
     status: "ok",
     message:
       target.routing === "custom-domains"
-        ? `The gateway lives at https://${target.domain}, each app one label below it (${STARTER_APP_ID}.${target.appBaseDomain}) as its own Custom Domain.`
+        ? `The gateway lives at https://${target.domain}, each app one label below it (todo.${target.appBaseDomain}) as its own Custom Domain.`
         : `The gateway lives at https://${target.domain}, its apps at <app>-<org>.${target.domain} through its wildcard route (\`everyapp gateway use-per-app-domains\` changes that).`,
     data: {
       gatewayHost: target.domain,
@@ -248,35 +227,13 @@ export async function runSetup(
     step: "setup.extras",
     status: "skip",
     message:
-      "Optional, any time: AI for apps (`npx everyapp gateway secret set OPENAI_API_KEY`), and email for invitations and password resets (onboard the domain for Cloudflare Email Sending, then `npx everyapp gateway secret set EMAIL_FROM`); until then invitations and resets are links to share.",
+      "Optional, any time: AI for apps (`everyapp gateway secret set OPENAI_API_KEY`), and email for invitations and password resets (onboard the domain for Cloudflare Email Sending, then `everyapp gateway secret set EMAIL_FROM`); until then invitations and resets are links to share.",
   });
-
-  const apps = flags["no-starter"]
-    ? []
-    : [await deployStarter({ gatewayUrl, flags, out, deps })];
-  if (flags["no-starter"]) {
-    out.emit({
-      type: "step",
-      step: "setup.starter",
-      status: "skip",
-      message: "No starter app (--no-starter).",
-    });
-  }
-  return { gatewayUrl, organizationName: login, apps };
+  return { gatewayUrl, organizationName: login };
 }
 
-async function checkToolchain(
-  flags: SetupFlags,
-  out: EventSink,
-  deps: SetupDeps,
-): Promise<void> {
+function checkToolchain(out: EventSink): void {
   // bin/cli.ts already refused a Node too old for cf, and Bun.
-  if (!flags["no-starter"] && !(await deps.hasPnpm())) {
-    throw new EveryAppError(
-      "PNPM_REQUIRED",
-      "The starter app builds with pnpm, which isn't installed: run `npm install -g pnpm`, or pass --no-starter.",
-    );
-  }
   out.emit({
     type: "step",
     step: "setup.toolchain",
@@ -331,7 +288,7 @@ async function checkPlan(
     if (!(await deps.prompts.confirm("Continue without confirming Workers Paid?"))) {
       throw new ActionRequiredError(
         "upgrade_workers_paid",
-        "Subscribe to Workers Paid, then run `npx everyapp setup` again.",
+        "Subscribe to Workers Paid, then run `everyapp setup` again.",
         url,
       );
     }
@@ -351,8 +308,8 @@ async function pickDomain(
     throw new ActionRequiredError(
       "add_domain",
       pending.length > 0
-        ? `${pending.join(", ")} ${pending.length === 1 ? "isn't" : "aren't"} active yet: finish ${pending.length === 1 ? "its" : "their"} nameserver setup in the Cloudflare dashboard, then run \`npx everyapp setup\` again.`
-        : `Every App needs a domain on Cloudflare, and this account has none. Buy one in the Cloudflare dashboard: Domains → Buy a domain (${registerDomainUrl(accountId)}; a Worker's Domains tab sells them too). Cloudflare Registrar charges what the registry does, about $10 a year for a .com, and the domain is ready in minutes with nothing to configure. Or add a domain you own and point its nameservers at Cloudflare. Then run \`npx everyapp setup\` again; a subdomain of it works best, e.g. apps.<your domain>.`,
+        ? `${pending.join(", ")} ${pending.length === 1 ? "isn't" : "aren't"} active yet: finish ${pending.length === 1 ? "its" : "their"} nameserver setup in the Cloudflare dashboard, then run \`everyapp setup\` again.`
+        : `Every App needs a domain on Cloudflare, and this account has none. Buy one in the Cloudflare dashboard: Domains → Buy a domain (${registerDomainUrl(accountId)}; a Worker's Domains tab sells them too). Cloudflare Registrar charges what the registry does, about $10 a year for a .com, and the domain is ready in minutes with nothing to configure. Or add a domain you own and point its nameservers at Cloudflare. Then run \`everyapp setup\` again; a subdomain of it works best, e.g. apps.<your domain>.`,
       registerDomainUrl(accountId),
     );
   }
@@ -402,7 +359,7 @@ async function deployOrSkipGateway({
         install.releaseSha256 === manifest.sha256
           ? `The gateway already runs release ${manifest.version}.`
           : olderThanInstalled(manifest, install)
-            ? `The gateway runs release ${install.releaseVersion}, newer than the ${manifest.version} this everyapp bundles; leaving it as it is.`
+            ? `The gateway runs release ${install.releaseVersion}, newer than the ${manifest.version} built from this checkout; leaving it as it is.`
             : null;
       if (skip) {
         out.emit({ type: "step", step: "setup.gateway", status: "skip", message: skip });
@@ -518,7 +475,7 @@ async function ensureOwnerLink({
   ) {
     throw new ActionRequiredError(
       "claim_owner",
-      "The gateway has no owner yet. Create the owner account from your own machine: run `npx everyapp setup` (or `npx everyapp gateway claim-link`) in a terminal. To have this run print the link into its log instead, pass --printSetupLink.",
+      "The gateway has no owner yet. Create the owner account from your own machine: run `everyapp setup` (or `everyapp gateway claim-link`) in a terminal. To have this run print the link into its log instead, pass --printSetupLink.",
     );
   }
   // The link an interrupted setup showed, if the gateway still waits on it:
@@ -590,7 +547,7 @@ async function ensureLogin({
       }
       throw new EveryAppError(
         "GATEWAY_UNREACHABLE",
-        `Couldn't reach ${gatewayUrl} (${error instanceof Error ? error.message : String(error)}); its certificate may still be on its way. Run \`npx everyapp setup\` again in a few minutes.`,
+        `Couldn't reach ${gatewayUrl} (${error instanceof Error ? error.message : String(error)}); its certificate may still be on its way. Run \`everyapp setup\` again in a few minutes.`,
         { retryable: true },
       );
     });
@@ -607,7 +564,7 @@ async function ensureLogin({
   if (!claim) {
     throw new ActionRequiredError(
       "create_deploy_token",
-      `The gateway has an owner, but this machine has no deploy token for it. Sign in at ${gatewayUrl}, create one under Admin → Tokens, run \`npx everyapp login\`, then \`npx everyapp setup\` again.`,
+      `The gateway has an owner, but this machine has no deploy token for it. Sign in at ${gatewayUrl}, create one under Admin → Tokens, run \`everyapp login\`, then \`everyapp setup\` again.`,
       `${gatewayUrl}/admin/tokens`,
     );
   }
@@ -615,6 +572,9 @@ async function ensureLogin({
     claim,
     client,
     ...deps.seams?.login,
+  }).catch((error: unknown) => {
+    // Cloudflare Access put in front meanwhile: say so, by its code.
+    throw explainGatewayError(error);
   });
   if (state.status === "gone") {
     // Not minted again here: a link that dies while it is waited on was
@@ -624,7 +584,7 @@ async function ensureLogin({
   if (state.status === "waiting") {
     throw new ActionRequiredError(
       "claim_owner",
-      `Nobody has finished the setup link yet. It works until ${new Date(claim.expiresAt).toLocaleString()}: open it, then run \`npx everyapp setup\` again (or \`npx everyapp login --resume\`).`,
+      `Nobody has finished the setup link yet. It works until ${new Date(claim.expiresAt).toLocaleString()}: open it, then run \`everyapp setup\` again (or \`everyapp login --resume\`).`,
       claim.url,
     );
   }
@@ -642,116 +602,4 @@ async function ensureLogin({
     },
   });
   return login.organizationName;
-}
-
-/** Copy the starter app (or pick up a copy made before) and deploy it. */
-async function deployStarter({
-  gatewayUrl,
-  flags,
-  out,
-  deps,
-}: {
-  gatewayUrl: string;
-  flags: SetupFlags;
-  out: EventSink;
-  deps: SetupDeps;
-}): Promise<SetupResult["apps"][number]> {
-  const client = deps.gatewayClient(gatewayUrl);
-  const dir = path.resolve(deps.cwd, flags.dir ?? STARTER_DIR);
-  const live = await client.appInfo(STARTER_APP_ID).catch((error: unknown) => {
-    if (error instanceof GatewayApiError && error.code === "APP_NOT_FOUND") {
-      return null;
-    }
-    throw explainGatewayError(error);
-  });
-  if (live?.status === "active") {
-    const url = `https://${live.hostname}`;
-    out.emit({
-      type: "step",
-      step: "setup.starter",
-      status: "skip",
-      message: `The starter app is live at ${url}.`,
-      data: { url },
-    });
-    return { appId: STARTER_APP_ID, url };
-  }
-
-  if (!(await isStarterCopy(dir))) {
-    if (await exists(dir)) {
-      throw new EveryAppError(
-        "STARTER_DIR_TAKEN",
-        `${dir} already exists and isn't the starter app. Pass --dir with another directory, or --no-starter.`,
-      );
-    }
-    if (!deps.templateDir) {
-      throw new EveryAppError(
-        "STARTER_MISSING",
-        "This everyapp has no starter template bundled. Install the published CLI (npx everyapp@latest), or pass --no-starter.",
-      );
-    }
-    await copyStarter({
-      templateDir: deps.templateDir,
-      targetDir: dir,
-      appId: STARTER_APP_ID,
-    });
-    out.emit({
-      type: "progress",
-      step: "setup.starter",
-      message: `Copied the starter app to ${dir}.`,
-    });
-  }
-  out.emit({
-    type: "step",
-    step: "setup.starter",
-    status: "start",
-    message: "Deploying the starter app...",
-  });
-  const deployed = await deps.deployApp({
-    cwd: dir,
-    gatewayUrl,
-    out,
-    json: flags.json,
-    verbose: flags.verbose,
-    interactive: deps.interactive,
-    forceDns: flags["force-dns"],
-    client,
-    createCf: deps.createCf,
-    sleep: deps.seams?.sleep,
-    installDeps: deps.seams?.installDeps,
-    reconcile: {
-      readStatus: deps.seams?.readStatus,
-      sleep: deps.seams?.sleep,
-      verifyTimeoutMs: deps.seams?.verifyTimeoutMs,
-      leaseWaitMs: deps.seams?.leaseWaitMs,
-      lookupCaa: deps.seams?.lookupCaa,
-    },
-    certificates: deps.seams?.certificates,
-  });
-  out.emit({
-    type: "step",
-    step: "setup.starter",
-    status: "ok",
-    message: `The starter app is live at ${deployed.liveUrl}.`,
-    data: { url: deployed.liveUrl, dir },
-  });
-  return { appId: STARTER_APP_ID, url: deployed.liveUrl, dir };
-}
-
-async function exists(file: string): Promise<boolean> {
-  try {
-    await fs.stat(file);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** A directory an earlier setup copied the starter into. */
-async function isStarterCopy(dir: string): Promise<boolean> {
-  try {
-    const manifest = await fs.readFile(path.join(dir, "everyapp.config.ts"), "utf8");
-    return new RegExp(`\\bid\\s*:\\s*["']${STARTER_APP_ID}["']`).test(manifest);
-  } catch {
-    return false;
-  }
 }

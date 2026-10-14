@@ -14,7 +14,6 @@ import {
 } from "@/lib/gateway/install";
 import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
-import { bundledReleaseTarball } from "@/lib/gateway/release";
 import { findGatewayDatabase } from "@/lib/gateway/resources";
 import {
   cliVersion,
@@ -107,7 +106,6 @@ export async function usePerAppDomains(
           yes: flags.yes,
           interactive,
         }),
-        bundledTarball: bundledReleaseTarball(),
       });
       if (result.dryRunOutput !== undefined) {
         out.emit({

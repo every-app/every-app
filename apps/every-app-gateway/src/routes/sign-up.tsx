@@ -306,7 +306,7 @@ function SetupPending({
               machine that deployed it:
             </p>
             <code className="block mt-3 text-sm">
-              npx everyapp gateway claim-link
+              everyapp gateway claim-link
             </code>
 
             <div className="divider">OR</div>

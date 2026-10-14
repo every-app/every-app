@@ -1,5 +1,6 @@
 {
   "name": "everyapp",
+  "private": true,
   "author": "",
   "description": "Every App CLI - Deploy and manage apps.",
   "license": "MIT",
@@ -7,9 +8,7 @@
   "version": "0.3.0",
   "files": [
     "dist",
-    "bin",
-    "gateway",
-    "templates"
+    "bin"
   ],
   "bin": {
     "everyapp": "./bin/everyapp.js",
@@ -24,8 +23,6 @@
     "build": "tsup --silent",
     "dev": "tsup --watch",
     "install:global": "pnpm run build && npm link --ignore-scripts",
-    "build:prepack": "pnpm install --ignore-scripts && npm run types:check && npm run build && node scripts/bundle-gateway.js && node scripts/bundle-templates.js",
-    "prepack": "npm run build:prepack",
     "knip": "knip",
     "test": "vitest run --silent"
   },

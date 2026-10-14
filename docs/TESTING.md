@@ -227,23 +227,17 @@ dev, on the same code path as production.
 
 ### Walkthrough (verified end-to-end on `apps/todo-app`)
 
-1. **Build the CLI once** (monorepo):
-
-   ```bash
-   pnpm -C packages/sdk build && pnpm -C packages/cli build
-   ```
-
-2. **Run dev** from the app directory:
+1. **Run dev** from the app directory:
 
    ```bash
    cd apps/todo-app
-   node ../../packages/cli/bin/everyapp.js dev   # honors $PORT (portless assigns it); --port works too
+   pnpm dev   # everyapp dev; honors $PORT (portless assigns it); --port works too
    ```
 
-   (`pnpm dev` runs the published CLI; the line above runs the workspace one.)
-   Local D1 migrations are applied before the app starts, with
-   `cf d1 migrations apply --local`; `pnpm run db:migrate:local` applies new
-   ones without a restart.
+   `pnpm dev` runs this checkout's CLI, which builds itself first when its
+   source or the SDK's changed. Local D1 migrations are applied before the
+   app starts, with `cf d1 migrations apply --local`; `pnpm run
+   db:migrate:local` applies new ones without a restart.
 
    The dev gateway parses the Host header dynamically (first label = app,
    remainder = base host), so all of these route to the same app with no
@@ -257,7 +251,7 @@ dev, on the same code path as production.
    registry (`.everyapp/registry`), so several full gateway+app instances run
    side by side.
 
-3. **You are already “logged in”** as the seeded dev user — every proxied
+2. **You are already “logged in”** as the seeded dev user — every proxied
    request carries a freshly-minted identity JWT. The perimeter probes (all
    verified against the running todo-app):
 
@@ -288,7 +282,7 @@ dev, on the same code path as production.
      http://todo.localhost:8787/api/sync                                     # 426
    ```
 
-4. **WebSocket sync (UserSyncDO) through the proxy.** Open the app in two tabs;
+3. **WebSocket sync (UserSyncDO) through the proxy.** Open the app in two tabs;
    a change in one appears in the other. WebSocket upgrades (app sync *and*
    vite HMR) are raw-piped at the socket level with the perimeter contract
    applied at the upgrade hop: Cookie / Authorization / `x-everyapp-*` stripped,
@@ -297,7 +291,7 @@ dev, on the same code path as production.
    URL anymore. (Verified: raw 101 handshake through the dev gateway reaches
    the DO.)
 
-5. **Run the suites** as in section A.
+4. **Run the suites** as in section A.
 
 ### Mirror mode (`--mode mirror`) — real login against a local gateway
 
@@ -341,7 +335,7 @@ cd apps/every-app-gateway && pnpm dev          # serves on :3000
 
 # Terminal 2 — your app behind the perimeter, mirror auth
 cd apps/todo-app
-node ../../packages/cli/bin/everyapp.js dev --mode mirror --baseHost everyapp.localhost
+pnpm everyapp dev --mode mirror --baseHost everyapp.localhost
 # (--gateway http://localhost:3000 by default; the CLI fails fast with
 #  guidance if the gateway isn't reachable)
 ```

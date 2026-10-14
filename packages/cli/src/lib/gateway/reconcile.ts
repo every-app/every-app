@@ -13,8 +13,7 @@
  * itself) is reconciled; anything else (an older release, one nobody can
  * resolve, no answer from that version) could put an older release back,
  * so a person decides. It comes from the deploy KV cache, checked against
- * its SHA-256; the release bundled with this CLI is used only when it is
- * that same release.
+ * its SHA-256: reconciling never deploys the gateway from this checkout.
  */
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -42,7 +41,7 @@ import {
 import type { BreakLease } from "./lease";
 import {
   compareReleaseOrder,
-  knownRelease,
+  fetchCachedRelease,
   releaseOrder,
   servingReleaseSha256,
   type GatewayRelease,
@@ -72,8 +71,6 @@ interface ReconcileGatewayOptions {
   dryRun?: boolean;
   /** Deploy even when the live bindings already match. */
   force?: boolean;
-  /** The release this CLI bundles, used when it is the live one. */
-  bundledTarball?: string | null;
   readStatus?: (gatewayUrl: string) => Promise<GatewayStatusResponse>;
   sleep?: ApplyGatewayOptions["sleep"];
   verifyTimeoutMs?: number;
@@ -210,7 +207,6 @@ async function releaseToReconcile({
   install,
   readStatus,
   gatewayUrl,
-  bundledTarball,
   interactive,
   confirm = confirmAtTerminal,
 }: ReconcileGatewayOptions & {
@@ -218,16 +214,15 @@ async function releaseToReconcile({
   readStatus: (gatewayUrl: string) => Promise<GatewayStatusResponse>;
   gatewayUrl: string;
 }): Promise<GatewayRelease> {
-  const recorded = await knownRelease(
+  const recorded = await fetchCachedRelease(
     cf,
     install.deployKvId,
     install.releaseSha256,
-    bundledTarball,
   );
   if (!recorded) {
     throw new EveryAppError(
       "RELEASE_NOT_CACHED",
-      `The live gateway release (${install.releaseVersion}, ${install.releaseSha256.slice(0, 12)}) isn't cached in this account, and this everyapp doesn't bundle it. Run \`everyapp gateway upgrade\`, or install everyapp@${install.releaseVersion}, then reconcile again.`,
+      `The live gateway release (${install.releaseVersion}, ${install.releaseSha256.slice(0, 12)}) isn't cached in this account. Run \`everyapp gateway upgrade\` to deploy the gateway from this checkout, then reconcile again.`,
     );
   }
   try {
@@ -247,7 +242,7 @@ async function releaseToReconcile({
     // recording itself.
     if (liveSha256 === install.releaseSha256) return recorded;
     const live = liveSha256
-      ? await knownRelease(cf, install.deployKvId, liveSha256, bundledTarball)
+      ? await fetchCachedRelease(cf, install.deployKvId, liveSha256)
       : null;
     if (
       live &&

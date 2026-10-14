@@ -1,9 +1,9 @@
 /**
  * Gateway releases: the prebuilt Build Output, migrations and release.json
- * that apps/every-app-gateway/scripts/build-release.ts packs. The CLI ships
- * one (`gateway/every-app-gateway-release.tar.gz`), checks a release's
+ * that apps/every-app-gateway/scripts/build-release.ts packs. The CLI builds
+ * one from its checkout (commands/gateway/shared.ts), checks a release's
  * SHA-256 before using it, and keeps the live one in the account's
- * `every-app-gateway-deploy` KV namespace, so any CLI version can redeploy
+ * `every-app-gateway-deploy` KV namespace, so any checkout can redeploy
  * exactly the gateway that is live when it reconciles app bindings.
  */
 import { spawn } from "node:child_process";
@@ -11,7 +11,6 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { CfError } from "@/lib/cf/errors";
 import { makeCfTempDir } from "@/lib/cf/privateDir";
@@ -50,36 +49,6 @@ export interface GatewayRelease {
   tarball: string;
   manifest: ReleaseManifest;
   cleanup(): Promise<void>;
-}
-
-/** The release bundled next to the CLI's dist/, if this build has one. */
-export function bundledReleaseTarball(
-  moduleUrl: string = import.meta.url,
-): string | null {
-  const tarball = path.resolve(
-    path.dirname(fileURLToPath(moduleUrl)),
-    "..",
-    "gateway",
-    RELEASE_TARBALL,
-  );
-  return fs.existsSync(tarball) ? tarball : null;
-}
-
-/** release.json of the bundled release, read without extracting it. */
-export function bundledReleaseManifest(
-  moduleUrl: string = import.meta.url,
-): ReleaseManifest | null {
-  const tarball = bundledReleaseTarball(moduleUrl);
-  if (!tarball) return null;
-  try {
-    return ReleaseManifestSchema.parse(
-      JSON.parse(
-        fs.readFileSync(path.join(path.dirname(tarball), "release.json"), "utf8"),
-      ),
-    );
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -288,23 +257,6 @@ export async function fetchCachedRelease(
     await removeDir();
     throw error;
   }
-}
-
-/** A release from the deploy KV cache, or the bundled one when it is the same. */
-export async function knownRelease(
-  cf: CfRunner,
-  deployKvId: string,
-  sha256: string,
-  bundledTarball?: string | null,
-): Promise<GatewayRelease | null> {
-  const cached = await fetchCachedRelease(cf, deployKvId, sha256);
-  if (cached) return cached;
-  if (bundledTarball) {
-    const bundled = await openRelease(bundledTarball);
-    if (bundled.manifest.sha256 === sha256) return bundled;
-    await bundled.cleanup();
-  }
-  return null;
 }
 
 /**

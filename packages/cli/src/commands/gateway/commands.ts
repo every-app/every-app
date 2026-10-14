@@ -47,7 +47,7 @@ const deployFlags = {
   release: {
     kind: "parsed",
     parse: String,
-    brief: "Deploy this gateway release tarball instead of the bundled one",
+    brief: "Deploy this gateway release tarball instead of building one from this checkout",
     optional: true,
   },
   yes: {
@@ -85,7 +85,7 @@ export const deployCommand = buildCommand({
   docs: {
     brief: "Deploy the gateway to Cloudflare",
     fullDescription: [
-      "Deploys the gateway release bundled with this CLI with cf, from its prebuilt Build Output (nothing is installed or built on your machine):",
+      "Builds the gateway release from this checkout (apps/every-app-gateway), then deploys its Build Output with cf:",
       "  1. Finds or creates the gateway's D1 database and KV namespaces",
       "  2. Takes the deploy lease, so deploys never overlap",
       "  3. Checks every new hostname: no DNS record it would replace (unless --force-dns),",
@@ -117,9 +117,9 @@ const upgradeCommand = buildCommand({
     aliases: { y: "yes" },
   },
   docs: {
-    brief: "Upgrade the gateway to the release this CLI bundles",
+    brief: "Upgrade the gateway to a release built from this checkout",
     fullDescription:
-      "Like `gateway deploy` for a gateway this CLI deployed before, with its remembered domain and account. Does nothing when the gateway already runs this release, and refuses an older one without --allow-downgrade.",
+      "Like `gateway deploy` for a gateway this CLI deployed before, with its remembered domain and account. Does nothing when the gateway already runs the release this checkout builds, and refuses an older one without --allow-downgrade.",
   },
 });
 

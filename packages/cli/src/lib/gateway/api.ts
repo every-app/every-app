@@ -393,7 +393,7 @@ export function explainGatewayError(error: unknown): unknown {
   if (isOutdatedGatewayError(error)) {
     return new EveryAppError(
       "GATEWAY_OUTDATED",
-      "The gateway is too old for this everyapp. Upgrade it: npx everyapp gateway upgrade",
+      "The gateway is too old for this everyapp. Upgrade it: everyapp gateway upgrade",
     );
   }
   if (isGatewayAuthError(error)) {

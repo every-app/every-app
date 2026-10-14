@@ -204,12 +204,12 @@ identity providers, and copy the **Client ID**, **Client secret** and
 ### 2. Give them to the gateway
 
 ```sh
-npx everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_ISSUER
+everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_ISSUER
 # https://acme.cloudflareaccess.com/cdn-cgi/access/sso/oidc/<client id>
-npx everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_CLIENT_ID
-npx everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_CLIENT_SECRET
+everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_CLIENT_ID
+everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_CLIENT_SECRET
 # Optional: the button's label (default "Cloudflare Access")
-npx everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_LABEL
+everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_LABEL
 # Company SSO
 ```
 
@@ -320,11 +320,11 @@ app host's Access cookie is then a gateway login too.
 ### 2. Give the gateway your team domain and the AUD tags
 
 ```sh
-npx everyapp gateway secret set CLOUDFLARE_ACCESS_TEAM_DOMAIN
+everyapp gateway secret set CLOUDFLARE_ACCESS_TEAM_DOMAIN
 # acme.cloudflareaccess.com
-npx everyapp gateway secret set CLOUDFLARE_ACCESS_APPS_AUD
+everyapp gateway secret set CLOUDFLARE_ACCESS_APPS_AUD
 # the apps application's AUD tag (several: comma separated)
-npx everyapp gateway secret set CLOUDFLARE_ACCESS_AUD
+everyapp gateway secret set CLOUDFLARE_ACCESS_AUD
 # the gateway application's AUD tag
 ```
 
@@ -377,11 +377,11 @@ the outer ring set, no session counts without Access's word for it.
 ```sh
 # People with these email domains join as members, with the apps marked
 # "Available to everyone".
-npx everyapp gateway secret set CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS
+everyapp gateway secret set CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS
 # acme.com, acme.io
 
 # Outer ring only: everyone your Access policy lets in joins.
-npx everyapp gateway secret set CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN
+everyapp gateway secret set CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN
 # everyone
 ```
 
@@ -391,7 +391,7 @@ Access using the invited email.
 ## Turning passwords off
 
 ```sh
-npx everyapp gateway secret set EMAIL_PASSWORD_SIGN_IN
+everyapp gateway secret set EMAIL_PASSWORD_SIGN_IN
 # false
 ```
 
@@ -405,7 +405,7 @@ npx everyapp gateway secret set EMAIL_PASSWORD_SIGN_IN
 - The setup claim on a fresh gateway still works.
 - To turn passwords back on (say Access is down or misconfigured), set it to
   `true`; it takes effect once the redeploy is live:
-  `npx everyapp gateway secret set EMAIL_PASSWORD_SIGN_IN`.
+  `everyapp gateway secret set EMAIL_PASSWORD_SIGN_IN`.
 
 ## Test locally
 

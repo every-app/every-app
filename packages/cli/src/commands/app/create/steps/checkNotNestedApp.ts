@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import chalk from "chalk";
-import { exitWithUpdateNotice } from "@/lib/version-check";
 
 const CONFIG_FILES = ["everyapp.config.ts"];
 
@@ -24,8 +23,8 @@ export async function checkNotNestedApp(): Promise<void> {
         "To create a new app, run app create from the directory where you store your projects.\n",
       );
       console.log("If you meant to deploy this app, run:");
-      console.log(chalk.dim("  npx everyapp app deploy\n"));
-      await exitWithUpdateNotice(1);
+      console.log(chalk.dim("  everyapp app deploy\n"));
+      process.exit(1);
     } catch {
       // File doesn't exist, continue checking
     }

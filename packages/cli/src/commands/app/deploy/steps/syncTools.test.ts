@@ -103,7 +103,7 @@ describe("syncAppToolsWithGateway", () => {
         throw error;
       });
       await expect(result).resolves.toBeNull();
-      expect(lines.join("\n")).toContain("npx everyapp gateway upgrade");
+      expect(lines.join("\n")).toContain("everyapp gateway upgrade");
       expect(warnings()).toEqual(["GATEWAY_OUTDATED"]);
     }
 

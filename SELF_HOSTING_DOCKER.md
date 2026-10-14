@@ -8,8 +8,8 @@ The gateway compose file is `apps/every-app-gateway/docker-compose.yml`.
 
 > **Chef's standalone Docker self-host is not supported under Every App v2.**
 > The old two-container path does not provision Chef's signed identity or
-> gateway service binding. Deploy Chef with `npx everyapp app deploy`, or use
-> `npx everyapp dev` for local development.
+> gateway service binding. Deploy Chef with `pnpm run deploy` in `apps/chef`,
+> or use `pnpm dev` there for local development.
 
 ## Prerequisites
 

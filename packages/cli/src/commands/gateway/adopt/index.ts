@@ -59,7 +59,7 @@ export async function adopt(
       if (!databaseId) {
         throw new EveryAppError(
           "GATEWAY_NOT_DEPLOYED",
-          `No gateway database in ${account.name ?? account.id}: nothing to adopt. \`npx everyapp setup\` installs a gateway.`,
+          `No gateway database in ${account.name ?? account.id}: nothing to adopt. \`everyapp setup\` installs a gateway.`,
         );
       }
       const db = cfD1Database(cf, databaseId);
@@ -135,9 +135,9 @@ export async function adopt(
         message: [
           `Adopted the gateway at https://${domain}: it keeps its wildcard route and app hostnames.`,
           "Next, from a terminal (cf asks before replacing a Worker last changed outside it):",
-          "  npx everyapp gateway upgrade     bookmark, carry the migration history over, migrate, deploy",
-          "  npx everyapp gateway status      check it serves, then deploy each app again from a terminal",
-          "Later, if you like: npx everyapp gateway use-per-app-domains (each app its own Custom Domain).",
+          "  everyapp gateway upgrade     bookmark, carry the migration history over, migrate, deploy",
+          "  everyapp gateway status      check it serves, then deploy each app again from a terminal",
+          "Later, if you like: everyapp gateway use-per-app-domains (each app its own Custom Domain).",
         ].join("\n"),
         data: { adopted: true, gatewayHost: domain, routing: "wildcard-route" },
       });

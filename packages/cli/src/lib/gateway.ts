@@ -1,5 +1,4 @@
 import chalk from "chalk";
-import { exitWithUpdateNotice } from "@/lib/version-check";
 import { GatewayClient } from "@/lib/gateway/api";
 import { resolveGatewayUrl } from "@/lib/gateway/resolve";
 
@@ -96,7 +95,7 @@ export async function requireGatewaySetup(gatewayFlag?: string): Promise<string>
     console.log(
       chalk.dim(`  ${error instanceof Error ? error.message : String(error)}\n`),
     );
-    return exitWithUpdateNotice(1);
+    process.exit(1);
   }
 
   let hasOwner: boolean;
@@ -111,7 +110,7 @@ export async function requireGatewaySetup(gatewayFlag?: string): Promise<string>
           "  Confirm the gateway URL is correct and reachable, then run this command again.\n",
         ),
       );
-      return exitWithUpdateNotice(1);
+      process.exit(1);
     }
     throw error;
   }
@@ -123,10 +122,10 @@ export async function requireGatewaySetup(gatewayFlag?: string): Promise<string>
     );
     console.log(
       chalk.dim(
-        "  Open the setup link printed by `npx everyapp gateway deploy`, or run `npx everyapp gateway claim-link` for a new one, then run this command again.\n",
+        "  Open the setup link printed by `everyapp gateway deploy`, or run `everyapp gateway claim-link` for a new one, then run this command again.\n",
       ),
     );
-    return exitWithUpdateNotice(1);
+    process.exit(1);
   }
 
   return gatewayUrl;

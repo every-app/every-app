@@ -48,7 +48,7 @@ export default defineConfig((ctx) => ({
   `export default { ...everyApp(handler, { tools }), scheduled }`. A
   scheduled run has no user (identity is per request). Deploys keep the
   triggers; an app can't declare routes or domains.
-- **Secrets.** `npx everyapp app secret set GITHUB_TOKEN` deploys the app
+- **Secrets.** `everyapp app secret set GITHUB_TOKEN` deploys the app
   with the secret in the same version, and later deploys keep it, so
   production builds don't declare it. In dev, put it in `.dev.vars`:
   `everyAppWorker()` declares it only when it is set there, since the Vite

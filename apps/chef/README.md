@@ -2,17 +2,14 @@
 
 > **Standalone Docker self-hosting is not supported for Chef under Every App
 > v2.** Chef requires the identity configuration and gateway service binding
-> that `everyapp app deploy` provides. Use `npx -y everyapp@latest app deploy` for a
-> production deployment behind the gateway, or
-> `npx -y everyapp@latest dev` for local development.
+> that `everyapp app deploy` provides. Use `pnpm run deploy` for a production
+> deployment behind the gateway, or `pnpm dev` for local development.
 
 ## Development
 
-Build the workspace SDK, add a local OpenAI key, and run Chef behind the local
-Every App gateway:
+Add a local OpenAI key, and run Chef behind the local Every App gateway:
 
 ```sh
-pnpm -C ../../packages/sdk build
 cp .dev.vars.example .dev.vars
 # Set OPENAI_API_KEY in .dev.vars
 pnpm dev

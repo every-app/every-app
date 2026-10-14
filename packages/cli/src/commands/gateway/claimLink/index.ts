@@ -56,7 +56,7 @@ export async function mintClaimLink(
   if (!databaseId) {
     throw new EveryAppError(
       "GATEWAY_NOT_DEPLOYED",
-      "No gateway is deployed in this Cloudflare account. Run: npx everyapp gateway deploy --domain <domain>",
+      "No gateway is deployed in this Cloudflare account. Run: everyapp gateway deploy --domain <domain>",
     );
   }
   const db = cfD1Database(cf, databaseId);
@@ -70,7 +70,7 @@ export async function mintClaimLink(
   if (!gatewayHost) {
     throw new EveryAppError(
       "DOMAIN_REQUIRED",
-      "Which gateway? Pass its domain: npx everyapp gateway claim-link --domain <domain>",
+      "Which gateway? Pass its domain: everyapp gateway claim-link --domain <domain>",
     );
   }
   return mintOperatorSetupLink({ db, gatewayUrl: `https://${gatewayHost}` });

@@ -14,7 +14,7 @@ type ClaimResult =
 
 const CLAIM_ERROR_MESSAGES: Record<string, string> = {
   INVALID_OR_EXPIRED_SETUP_LINK:
-    "This setup link is invalid, expired or already used. Run `npx everyapp gateway claim-link` on the machine that deployed the gateway for a new one.",
+    "This setup link is invalid, expired or already used. Run `everyapp gateway claim-link` on the machine that deployed the gateway for a new one.",
   ALREADY_CLAIMED: "This gateway already has an owner. Sign in instead.",
   USER_ALREADY_EXISTS: "An account with this email already exists.",
 };

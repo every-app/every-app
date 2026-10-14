@@ -60,10 +60,13 @@ export function DeployAppStep({ isExpanded, onToggle }: DeployAppStepProps) {
                     1.
                   </span>
                   <div className="flex-1">
-                    <p className="text-sm mb-2">Clone the Todo App template</p>
-                    <CodeBlock code="npx gitpick every-app/every-app/tree/main/apps/todo-app every-todo-app" />
+                    <p className="text-sm mb-2">
+                      In your checkout of the Every App repository, go to the
+                      Todo App
+                    </p>
+                    <CodeBlock code="cd apps/todo-app" />
                     <p className="text-xs text-base-content/60 mt-1">
-                      This clones Todo App from the Every App monorepo
+                      Apps deploy from the repository, with the CLI in it
                     </p>
                   </div>
                 </div>
@@ -75,10 +78,8 @@ export function DeployAppStep({ isExpanded, onToggle }: DeployAppStepProps) {
                     2.
                   </span>
                   <div className="flex-1">
-                    <p className="text-sm mb-2">
-                      Navigate to the app directory
-                    </p>
-                    <CodeBlock code="cd every-todo-app" />
+                    <p className="text-sm mb-2">Deploy the app</p>
+                    <CodeBlock code="pnpm run deploy" />
                   </div>
                 </div>
               </li>
@@ -87,18 +88,6 @@ export function DeployAppStep({ isExpanded, onToggle }: DeployAppStepProps) {
                 <div className="flex items-start gap-2">
                   <span className="text-sm font-semibold text-primary min-w-[24px]">
                     3.
-                  </span>
-                  <div className="flex-1">
-                    <p className="text-sm mb-2">Deploy the app</p>
-                    <CodeBlock code="npx everyapp app deploy" />
-                  </div>
-                </div>
-              </li>
-
-              <li>
-                <div className="flex items-start gap-2">
-                  <span className="text-sm font-semibold text-primary min-w-[24px]">
-                    4.
                   </span>
                   <div className="flex-1">
                     <p className="text-sm">

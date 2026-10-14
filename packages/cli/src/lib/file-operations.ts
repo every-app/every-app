@@ -1,7 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import os from "node:os";
-import chalk from "chalk";
 
 interface CopyOptions {
   exclude?: string[];
@@ -75,39 +73,4 @@ export async function createEnvFiles({
   await Promise.all([
     fs.writeFile(path.join(targetDir, ".env.local"), envLocalContent),
   ]);
-}
-
-/**
- * Create a temporary directory with a given prefix
- * @param prefix - Prefix for the temp directory name
- * @returns Path to the created temporary directory
- */
-export async function createTempDirectory(prefix: string): Promise<string> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
-  return tmpDir;
-}
-
-interface CleanupTempDirectoryOptions {
-  tmpDir: string;
-  verbose?: boolean;
-}
-
-/**
- * Cleanup a temporary directory
- */
-export async function cleanupTempDirectory({
-  tmpDir,
-  verbose = false,
-}: CleanupTempDirectoryOptions): Promise<void> {
-  try {
-    await fs.rm(tmpDir, { recursive: true, force: true });
-    if (verbose) {
-      console.log(chalk.dim(`  Removed: ${tmpDir}`));
-    }
-  } catch (error) {
-    console.warn(
-      chalk.yellow("⚠️  Warning: Failed to clean up temporary directory:"),
-      tmpDir,
-    );
-  }
 }

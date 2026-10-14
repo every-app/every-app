@@ -25,11 +25,11 @@ identity verification fails closed until the app is redeployed.
    **Workers & Pages → every-app-gateway → Settings → Variables and
    Secrets**. Never rotate only one half of the pair.
 3. Because the gateway Worker then changed outside everyapp, its next deploy
-   asks for confirmation: run `npx everyapp gateway reconcile --force` in a
+   asks for confirmation: run `everyapp gateway reconcile --force` in a
    terminal and confirm cf's prompt, so later unattended deploys go through
    again.
 4. From each registered app's directory, run
-   `npx everyapp app deploy`. This statically injects the new public key into
+   `everyapp app deploy`. This statically injects the new public key into
    that app.
 
 ## Verification

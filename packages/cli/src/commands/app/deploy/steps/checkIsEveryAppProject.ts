@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import chalk from "chalk";
-import { exitWithUpdateNotice } from "@/lib/version-check";
 
 const CONFIG_FILES = ["everyapp.config.ts"];
 
@@ -28,6 +27,6 @@ export async function checkIsEveryAppProject(): Promise<void> {
   console.log(
     "To create a new app, run the below command from the directory where you store your projects:",
   );
-  console.log(chalk.dim("  npx everyapp app create\n"));
-  await exitWithUpdateNotice(1);
+  console.log(chalk.dim("  everyapp app create\n"));
+  process.exit(1);
 }

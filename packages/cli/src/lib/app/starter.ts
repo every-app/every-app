@@ -1,20 +1,17 @@
 /**
- * The starter app: `templates/simple-todo`, shipped inside the everyapp
- * package (scripts/bundle-templates.js copies the repository's tracked
- * files at prepack), so `everyapp setup` and `everyapp app create` need no
- * git clone and no access to the repository. Inside the Every App
- * monorepo, the source template is used.
+ * The starter app, `templates/simple-todo` in the checkout this CLI runs
+ * from, and where `everyapp app create` puts a copy of it: in the
+ * checkout's apps/, a workspace package like the example apps, when it
+ * runs inside the checkout; in the current directory anywhere else.
  */
-import fs from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   updateEveryappManifestId,
   updatePackageJson,
 } from "@/commands/app/create/steps/updateConfiguration";
+import { isInCheckout } from "@/lib/checkout";
 import { copyDirectory } from "@/lib/file-operations";
-
-const STARTER = path.join("templates", "simple-todo");
 
 /** Never copied into a new app: local state, build output, installs. */
 const LOCAL_ONLY = [
@@ -35,55 +32,48 @@ const LOCAL_ONLY = [
   "manual-steps.md",
 ];
 
+/** The starter template's directory in the checkout. */
+export function starterTemplateDir(root: string): string {
+  return path.join(root, "templates", "simple-todo");
+}
+
+/** Where app create puts app `appId` when run from `cwd`. */
+export function newAppDir({
+  appId,
+  cwd,
+  root,
+}: {
+  appId: string;
+  cwd: string;
+  root: string;
+}): string {
+  return isInCheckout(cwd, root)
+    ? path.join(root, "apps", appId)
+    : path.join(cwd, appId);
+}
+
 /**
- * The starter template's directory: bundled next to the CLI's dist/, or
- * the monorepo's own. Null when neither is there.
+ * What an app outside the checkout installs with: it is its own pnpm
+ * workspace there, and pnpm runs no dependency build scripts but these.
+ * Inside, the checkout's pnpm-workspace.yaml allows them.
  */
-export function starterTemplateDir(
-  moduleUrl: string = import.meta.url,
-): string | null {
-  const moduleDir = path.dirname(fileURLToPath(moduleUrl));
-  const bundled = path.resolve(moduleDir, "..", STARTER);
-  if (isStarter(bundled)) return bundled;
-  for (let dir = moduleDir; ; dir = path.dirname(dir)) {
-    const source = path.join(dir, STARTER);
-    if (isStarter(source)) return source;
-    if (path.dirname(dir) === dir) return null;
-  }
-}
+const STANDALONE_WORKSPACE = "allowBuilds:\n  esbuild: true\n  workerd: true\n";
 
-function isStarter(dir: string): boolean {
-  return fs.existsSync(path.join(dir, "everyapp.config.ts"));
-}
-
-/**
- * Copy a template's files, without local state, to `targetDir`. The
- * bundled template ships its .gitignore as `gitignore` (npm never
- * publishes a .gitignore), so it is renamed back.
- */
-export async function copyTemplateFiles(
-  templateDir: string,
-  targetDir: string,
-): Promise<void> {
-  await copyDirectory(templateDir, targetDir, { exclude: LOCAL_ONLY });
-  const shipped = path.join(targetDir, "gitignore");
-  const dotted = path.join(targetDir, ".gitignore");
-  if (fs.existsSync(shipped) && !fs.existsSync(dotted)) {
-    await fs.promises.rename(shipped, dotted);
-  }
-}
-
-/** Copy the starter to `targetDir` as app `appId`. */
+/** Copy the starter, without local state, to `targetDir` as app `appId`. */
 export async function copyStarter({
-  templateDir,
+  root,
   targetDir,
   appId,
 }: {
-  templateDir: string;
+  /** The checkout the template and the packages it links come from. */
+  root: string;
   targetDir: string;
   appId: string;
 }): Promise<void> {
-  await copyTemplateFiles(templateDir, targetDir);
-  await updatePackageJson({ targetDir, appId });
+  await copyDirectory(starterTemplateDir(root), targetDir, { exclude: LOCAL_ONLY });
+  if (!isInCheckout(targetDir, root)) {
+    await fs.writeFile(path.join(targetDir, "pnpm-workspace.yaml"), STANDALONE_WORKSPACE);
+  }
+  await updatePackageJson({ targetDir, appId, root });
   await updateEveryappManifestId({ targetDir, appId });
 }

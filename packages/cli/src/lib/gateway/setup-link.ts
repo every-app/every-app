@@ -165,7 +165,7 @@ export async function setupLinkForDeploy({
   onUnattended = () =>
     console.log(
       chalk.yellow(
-        "\nGateway is unclaimed: run `npx everyapp gateway claim-link` on your machine to create the owner account.\n",
+        "\nGateway is unclaimed: run `everyapp gateway claim-link` on your machine to create the owner account.\n",
       ),
     ),
 }: {
@@ -193,9 +193,9 @@ export async function presentSetupLink(link: SetupLink): Promise<void> {
     chalk.dim(
       `  It works once and expires ${link.expiresAt.toLocaleString()}. Treat it like a password.\n` +
         (link.cliSecret
-          ? "  Once the owner account exists, `npx everyapp login --resume` logs this CLI in.\n"
+          ? "  Once the owner account exists, `everyapp login --resume` logs this CLI in.\n"
           : "") +
-        "  Lost it? Run `npx everyapp gateway claim-link` for a new one.\n",
+        "  Lost it? Run `everyapp gateway claim-link` for a new one.\n",
     ),
   );
 

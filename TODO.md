@@ -36,6 +36,11 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] OAuth: refuse app hosts outside the gateway's base domain. Only theoretical today, because the deploy already forces them to match.
 - [ ] A CI step that compiles the docs site.
 
+## Paused while we work from the checkout
+
+- [ ] Publish again: npm for `everyapp` and `@every-app/sdk`, then the public repository sync. `.github/RELEASE.md` lists what pausing removed.
+- [ ] The docs site (`landing-page/content/docs`) still describes the published flow: `npx everyapp`, a starter app in `everyapp setup`, and `gitpick` for the examples. Update it when publishing resumes, or point it at the checkout flow until then.
+
 ## Check on the first live deploy
 
 Everything below needs a real Cloudflare account. The rest was checked locally: fake-cf end-to-end tests, `cf dev` smoke tests, and offline `cf deploy --prebuilt --dry-run`.
