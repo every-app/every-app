@@ -34,9 +34,12 @@ This is the self-host install with one difference: the Gateway's first
 upload sets `GATEWAY_DEPLOYMENT_MODE=hosted`, and the install record keeps
 the mode (`pnpm everyapp status` prints `Mode:     hosted`). The mode never
 changes after the first upload; `setup --mode self_hosted` on this Gateway
-stops with `MODE_CHANGE_UNSUPPORTED`. Later runs need no `--mode`, and a
-Gateway Worker deleted by hand comes back, on the next `setup` or deploy,
-with the mode the install record keeps.
+stops with `MODE_CHANGE_UNSUPPORTED`. Once the first upload has succeeded,
+later runs need no `--mode`, and a Gateway Worker deleted by hand comes
+back, on the next `setup` or deploy, with the mode the install record keeps.
+Until then, pass `--mode hosted` on every run: a run that resumes an install
+stopped before its first upload, without `--mode`, installs `self_hosted`
+and keeps it.
 
 Leave `setup` waiting at the owner step (below) or stop it and run it again
 when you are ready: a new run shows a new owner link.
@@ -69,8 +72,7 @@ Provider keys:
 - `DATAFORSEO_API_KEY`: the integration proxy's DataForSEO credential.
 - `CONTEXT_API_KEY`: the integration proxy's Context.dev key.
 
-`OPENAI_API_KEY` is settable today; the other three become settable with the
-integration-proxy PR, which adds the proxy that reads them.
+All four are settable (the integration proxy landed in #303).
 
 Optional:
 

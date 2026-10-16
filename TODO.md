@@ -68,7 +68,7 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] **Helper Workers.** An app may ship Workers of its own (`workers` in its manifest), deployed as `<worker>--<name>` before the app's Worker. Only the app's Worker can reach one; it shares the app's D1, KV and R2 and calls the gateway as the app. OpenSEO's site-audit engine runs on one. Redesign review #3: a helper presents its own Worker name in the binding's props, so a background call is attributed to the Worker that made it.
 - [x] **Manifest integration entries lose `as` and `background`.** Landed with the key renamed to `capabilities` (entries `{ access, why }`). An approval is of the app, attribution comes from the identity header, and an organization's connection always allows background use (Ben, 2026-10-15). Background writes on write-capable providers get an admin checkbox later (redesign review #2).
 - [ ] **Google: the operator holds the OAuth client, each organization connects its own accounts.** Decided by Ben on 2026-10-15; designed in [docs/design/2026-10-google-integration.md](docs/design/2026-10-google-integration.md). The remaining defaults, each with a recommendation in that doc's Appendix B:
-  - [ ] Hosted has two kinds of apps (settled by Ben, 2026-10-16): first-party catalog apps such as OpenSEO run as one shared Worker per app over multi-tenant Postgres (the hosted research's platform tier), and third-party apps run one Worker per organization on Workers for Platforms (dispatch tier). Google accounts and grants are per organization on both. A platform-tier Worker learns the organization from the identity token, or for background work asserts it with `x-everyapp-org` and the gateway checks that organization's install row (research H17a, [docs/research/2026-10-hosted-platform](docs/research/2026-10-hosted-platform/README.md) on `research/hosted-platform`, PR #299). The earlier "about 200 organizations under the 500-Workers limit" framing is withdrawn.
+  - [ ] Hosted has two kinds of apps (settled by Ben, 2026-10-16): first-party catalog apps such as OpenSEO run as one shared Worker per app over multi-tenant Postgres (the hosted research's platform tier), and third-party apps run one Worker per organization on Workers for Platforms (dispatch tier). Google accounts and grants are per organization on both. A platform-tier Worker learns the organization from the identity token, or for background work asserts it with `x-everyapp-org` and the gateway checks that organization's install row (research H17a, [docs/research/2026-10-hosted-platform](docs/research/2026-10-hosted-platform/README.md) on `research/hosted-platform`, PR #299). The earlier "about 200 organizations under the 500-Workers limit" framing is withdrawn. Built without install rows (#310): the gateway accepts `x-everyapp-org` from a shared Worker for an active organization with a live member.
   - [ ] No multi-organization gate: every uploader we ship is trusted (the operator's CLI on self-host, the deploy service on the dispatch tier, our own code on the platform tier). A gateway-issued per-app caller credential stays a later hardening for self-host gateways where several people deploy for several organizations.
   - [ ] Names follow the hosted research so both designs read the same: manifest key `capabilities`, table `app_capability_grants` keyed by the app row, per-organization keys on `organization_data_keys`; one route name, settled in the contracts PR.
   - [ ] The gateway uses its own Google Cloud project and OAuth client, not OpenSEO's verified one, because adding redirect URIs to a verified client may trigger re-verification (research R39, unverified). Organizations reconnect Google once rather than having tokens migrated; the OpenSEO cutover is dropped and app.openseo.so stays as it is.
@@ -80,7 +80,7 @@ Each of these shipped with a default. Confirm it or change it.
   - [ ] Local dev: the SDK's direct-to-provider fallback goes away; the gateway-lite proxies `/api/integrations` from `.dev.vars`, and `everyapp dev google connect` stores a refresh token from one team Desktop-type client.
 - [ ] **OpenSEO in Every App: how the two threads divide the work (reviewed 2026-10-16; Ben ruled the same day).** Settled by Ben: `app.openseo.so` keeps running as it is; on everyapp.com OpenSEO is a first-party app (one shared Worker over one multi-tenant Postgres database through Hyperdrive, identity from the gateway); organizations may also deploy forks of OpenSEO as third-party apps on Workers for Platforms with D1; the Google OAuth client and secret live in the gateway for both. The hosted thread ("Design a Multi-Tenant Hosted App Platform", PR #299; its research is numbered H0 to H42 and its chat plan of 27 PRs is written down nowhere else) had marked OpenSEO as not forkable onto the dispatch tier, so forks are new work for both threads. Defaults proposed, each to confirm:
   - [ ] One `AUTH_MODE=everyapp`, not one or two new modes. Identity is the same in both hosted shapes; what differs is three switches: `EVERY_APP_ORG_ID` set pins a fork to one organization, unset means the organization row comes from the token (first-party); `DATABASE_PROVIDER` picks D1 or Postgres as it does today; a job-runner flag with a derived capability list hides the job tools where no runner exists. The client reads `AUTH_MODE` at build time, so each extra mode would be a separate client build; per-tier differences reach the client as runtime data.
-  - [ ] First-party OpenSEO deploys through `everyapp deploy` from its manifest (helper audit Worker, three Workflows, the five-minute cron), not through an OpenSEO Alchemy stage as the research's H18 assumed. The CLI gains a `hyperdrive` resource bound to the app and the helper, a Postgres migration step (drizzle-kit against a direct database URL the operator holds), `DATABASE_PROVIDER=postgres` as a text binding, and a placement hint near the database. The dispatch tier refuses `hyperdrive` (25 configs per account). Rendering stays Context.dev through the gateway rather than a Browser Rendering binding, unless audit quality suffers.
+  - [ ] First-party OpenSEO deploys through `everyapp deploy` from its manifest (helper audit Worker, three Workflows, the five-minute cron), not through an OpenSEO Alchemy stage as the research's H18 assumed. The CLI gains a `hyperdrive` resource bound to the app and the helper, a Postgres migration step (drizzle-kit against a direct database URL the operator holds), `DATABASE_PROVIDER=postgres` as a text binding, and a placement hint near the database. The dispatch tier refuses `hyperdrive` (25 configs per account). Rendering stays Context.dev through the gateway rather than a Browser Rendering binding, unless audit quality suffers. As of 2026-10-16 the CLI side is #309 (merged), and the first deploy is open-seo #984's Alchemy stage, registered with `everyapp register` (#307).
   - [ ] The first-party database is a new PlanetScale Postgres, not app.openseo.so's, in whichever Cloudflare account runs the hosted gateway, since service bindings are same-account (research D7, still open; default a new dedicated account for everyapp.com).
   - [ ] Forks ship in tiers. Tier 0 when the dispatch tier opens: research tools, SAM chat and Google through the gateway, with `run_site_audit`, `run_rank_tracker`, `run_ai_visibility_check` and `complete_ai_research_setup` hidden by a capability flag and a manifest without Workflows, crons, KV or the audit helper (about 1 to 1.5 agent-days). Rank tracking once the gateway scheduler (research H15) and a job runner exist; AI visibility next (its research-setup result moves from Workflow output to the database); audits last, after a spike on a Durable Object binding between two user Workers decides single Worker or helper. Full parity is not a launch requirement.
   - [ ] A fork is code the organization deploys itself with the CLI through the hosted deploy API (research H12), under the research's rules for custom code: zero inherited grants with the admin's "approve as upstream" shortcut; the Paid plan once audits add a second Durable Object class and audit-length CPU. No one-click "my own OpenSEO instance": anyone who just wants OpenSEO uses the first-party app, so H17b's lazy installs and warm D1 pool are not needed.
@@ -88,10 +88,143 @@ Each of these shipped with a default. Confirm it or change it.
   - [ ] Fork egress: OpenSEO fetches arbitrary customer sites, which default-deny egress for third-party apps (research H16) would block even at Tier 0 (website research). Default: a `crawl` capability the organization's admin approves at deploy, allowing open http(s) egress except the metered provider hosts.
   - [ ] Launch gating for first-party: an invite-only preview as soon as identity, Postgres and background organization attribution work, with Google shown as not available yet and provider calls logged under a per-organization daily cap enforced at the gateway. Public sign-up waits for verified Google and the org wallet (research H13, H18). OpenSEO's own Autumn credits stay off on everyapp.com in both shapes.
   - [ ] Google consent screen reads "Every App" for every app and fork (branding is per Google Cloud project and Google enforces one brand per project); scopes are Search Console and Analytics read-only only (OpenSEO reads Business Profile data through DataForSEO and submits URLs through IndexNow); the project is owned by Ben's Google account with everyapp.com DNS-verified in Search Console. Verification is submitted this week; it is the external critical path.
-  - [ ] This branch lands first: rebase phase 0 onto `main` and merge it, then the OpenSEO `t3/every-app-mode` PR (51 uncommitted files), so the hosted thread builds on committed code. Contract names come from the research (`capabilities`, `app_capability_grants`, `x-everyapp-org`, `aud = workerName`); the step-runner protocol joins them. The hosted thread owns the dispatch tier, deployer, scheduler, wallet, grants and the step runner; runs the live checks this week (service-binding props from a namespaced script, cross-script Workflow binding, Durable Object alarm limits on Workers for Platforms, a Durable Object binding between two user Workers, the 32-invocation cap); and amends its README (first-party OpenSEO on Postgres through Hyperdrive and the CLI, the Google relay through app.openseo.so dropped, `forkable` per tier for OpenSEO, H25 multi-Worker apps if forks ship audits).
+  - [ ] This branch lands first: rebase phase 0 onto `main` and merge it, then the OpenSEO `t3/every-app-mode` PR (51 uncommitted files), so the hosted thread builds on committed code. Contract names come from the research (`capabilities`, `app_capability_grants`, `x-everyapp-org`, `aud = workerName`); the step-runner protocol joins them. The hosted thread owns the dispatch tier, deployer, scheduler, wallet, grants and the step runner; runs the live checks this week (service-binding props from a namespaced script, cross-script Workflow binding, Durable Object alarm limits on Workers for Platforms, a Durable Object binding between two user Workers, the 32-invocation cap); and amends its README (first-party OpenSEO on Postgres through Hyperdrive and the CLI, the Google relay through app.openseo.so dropped, `forkable` per tier for OpenSEO, H25 multi-Worker apps if forks ship audits). Done 2026-10-16: phase 0 landed as #303 and #306 and the OpenSEO mode is open-seo #983; `aud = workerName` is #304 and `x-everyapp-org` #310; the grants table was deferred.
   - [ ] Todo, chef and workout become first-party multi-tenant apps too (the hosted thread's default). The dispatch tier is needed for OpenSEO forks, not for anything first-party.
 - [ ] **OpenSEO roles.** Gateway members are OpenSEO members: they research, but can't create or delete projects or connect Google. Cloudflare Access mode made everyone an owner.
 - [ ] **OpenSEO's destructive tools.** Only its deletions (`delete_*`, `remove_*`) are destructive on the gateway, so saving keywords or reports stays usable. Its own MCP marks 11 tools destructive.
+
+### Hosted build (2026-10-16)
+
+Defaults the overnight build of the hosted platform shipped without Ben. Each item says what shipped; yes keeps it. [docs/hosted-platform-build.md](docs/hosted-platform-build.md) §3 has the reason and the walk-back for each.
+
+**Hosting shape**
+
+- [ ] **First-party hosts share the control plane's cookie.** First-party apps live at `<app>.app.everyapp.com` on one session cookie for `app.everyapp.com`; third-party apps live on `everyapp.dev` with a session per host (#314).
+- [ ] **The host never picks the organization.** One hostname per first-party app; a person works in their session's organization (their personal one, else the last active, else the first joined; the switcher changes it).
+- [ ] **The install organization is the platform organization**, always named Every App whatever the claimant types; it owns every shared app, and first-party Workers' binding props name it.
+- [ ] **The hosted gateway activates first-party apps on their first request**, as self-host does.
+- [ ] **A missing or mistyped `GATEWAY_DEPLOYMENT_MODE` fails closed in both modes**: a self-hosted gateway that loses it refuses the setup claim, Access sign-in, dynamic registration, app activation and account actions until someone sets it.
+- [ ] **A mistyped `AI_PROXY_ORG_DAILY_LIMIT` or `INTEGRATION_ORG_DAILY_LIMIT` stops that proxy** (a cap of 0) rather than keeping the default.
+- [ ] **The hosted gateway ignores and logs `CLOUDFLARE_ACCESS_*` and `EMAIL_PASSWORD_SIGN_IN`** rather than refusing to start.
+- [ ] **Install tables from before `--mode` aren't migrated**: `status` shows no Mode line for them, and writes fail until the table is recreated (thecomeup.cc is reinstalled anyway, below).
+- [ ] **The identity audience is the Worker name for every app**, first-party and self-hosted included, with no compatibility window: an app not built with `everyAppWorker()` answers 500 until it sets `EVERYAPP_AUDIENCE`, and apps refuse identities between a gateway upgrade and their own redeploy.
+- [ ] **A browser carrying two session cookies is locked out until it clears cookies** (a 401 with a hint), rather than treated as signed out.
+- [ ] **`APP_BASE_DOMAIN` stays the gateway's host on hosted**, so the mobile shell's copy of the session cookie matches the server's and it never holds two.
+- [ ] **Redirect URIs on the platform's domains are refused at authorize, consent and the token endpoint**, not at dynamic client registration.
+- [ ] **Deferred**: publishing the SDK and CLI, the agent, organization deletion and export, legal pages, and email bounce handling.
+
+**Sign-up and organizations**
+
+- [ ] **Open sign-up with verified email and daily mail budgets**, no Turnstile or social sign-in yet; invited sign-ups verify too, and verification links last 24 hours.
+- [ ] **The preview launches invite-only** (`HOSTED_OPEN_SIGNUP=false`, as the hosted-install runbook says).
+- [ ] **Exactly one personal organization per verified account**; growth by invitation; no self-serve creation or deletion.
+- [ ] **A personal organization is named after the person** ("Ada Lovelace", else the email's local part), not "Ada's workspace".
+- [ ] **An invitee whose invitation expired before they joined has an account and no organization**, and gets no personal one at the next sign-in.
+- [ ] **Mail budgets**: hosted 5 per address per kind per day and 2,000 verification, 1,000 reset and 2,000 invitation emails per gateway; self-hosted 10 and 1,000.
+- [ ] **Self-hosted people in several organizations start in their last active one**, not the organization picker.
+- [ ] **On hosted, Delete removes a person from the organization and keeps their account**; admins can't deactivate accounts or reset passwords.
+- [ ] **A member of two organizations keeps one MCP connection per organization** for the same AI client, rather than the newest replacing all.
+- [ ] **A suspension applies to the organization acted under**: a member of a suspended organization still opens their other organizations' apps.
+- [ ] **A suspension takes up to 30 seconds** to stop a shared app's background work (the caches' window).
+
+**Shared apps and caps**
+
+- [ ] **No install rows**: every organization gets every shared app, and an organization can't hide or cap one.
+- [ ] **Other organizations see shared apps read-only in Admin → Apps** rather than not at all.
+- [ ] **An API token may deploy, register and delete shared apps** as the account's own authority (CI), alongside the platform organization's owners and admins.
+- [ ] **Externally deployed first-party Workers take the registry's names** (`every-everyapp-<app>`), not names of their own.
+- [ ] **Chef is in the day-one catalog behind the per-organization AI cap** (200 requests a day).
+- [ ] **One capability cap (500 calls a day) covers DataForSEO and Context.dev together**, not one per capability.
+- [ ] **The daily caps are below OpenSEO's real use, so one of them changes before launch.** Shipped: 500 capability calls and 200 AI-proxy requests per organization a day, with OpenSEO's scheduled checks on by default (open-seo #990). One 300-keyword, two-device rank tracker is 600 capability calls, and one SAM turn can be 40 AI-proxy requests. Either raise the caps (`INTEGRATION_ORG_DAILY_LIMIT` and `AI_PROXY_ORG_DAILY_LIMIT` on the gateway, defaults in `platform-policy.ts`) or launch with `FIRST_PARTY_SCHEDULED_CHECKS=off`.
+- [ ] **An invalid mode answers every AI and capability call with 429** (a cap of 0), not a 503 "gateway misconfigured".
+- [ ] **Background work counts only for an active organization with at least one member who isn't banned.**
+- [ ] **Pending and unverified members count as live** for background attribution.
+- [ ] **A capability's status is answered to a shared Worker without naming an organization.**
+
+**Capabilities and keys**
+
+- [ ] **Keys at the gateway, metering later.** The DataForSEO, Context.dev, OpenRouter and OpenAI keys live only at the gateway; OpenSEO's Autumn is off in both Every App shapes; per-organization daily caps stand in until the wallet; public sign-up waits for verified Google and the wallet (also the other thread's default 2).
+- [ ] **DataForSEO's account-wide endpoints are refused for every app**, first-party OpenSEO included.
+- [ ] **An organization's own app may call without an identity**: the call is served and counted to the app's organization, with no `background` opt-in in the manifest.
+- [ ] **`integrationFetch` and `integrationStatus` keep their names** (not `capabilityFetch`).
+- [ ] **`read` is the only access level DataForSEO and Context.dev offer.**
+- [ ] **The AI proxy's own refusals carry no `x-everyapp-error`** until the AI providers fold into the capability registry.
+- [ ] **Helper Workers share all of the app's D1 and KV and call the gateway as the app**, with no narrower grant.
+- [ ] **Helper Workers get the app's secrets by default.**
+
+**OpenSEO**
+
+- [ ] **OpenSEO's own MCP, API keys, team UI, invitations, ownership transfer and Google connect are off in `everyapp` mode** until the gateway provides them.
+- [ ] **Every organization gets paid-size audits (10,000 pages) but two running at a time**, and the plan gates the gateway can meter stay open during the preview.
+- [ ] **Scheduled rank checks and AI visibility run by default in the first-party shape** (open-seo #990, reversing #983); `FIRST_PARTY_SCHEDULED_CHECKS=off` holds them.
+- [ ] **A `[research-spend]` log line is the per-organization record of research cost** until the wallet.
+- [ ] **Gateway organizations are stored as `Organization <first 8 characters of the id>`** (OpenSEO shows no organization names in `everyapp` mode).
+- [ ] **Forks keep their data in the single shared-workspace organization**, not under the organization's own id.
+- [ ] **"Sign out on Every App" opens the gateway's home**, where you sign out, rather than signing out in one click.
+- [ ] **A SAM chat closes 15 minutes after it connects** (open-seo #990) and reconnects through the gateway, which re-checks the member; there is no per-turn membership check.
+- [ ] **OpenSEO attributes gateway calls through two async-context scopes** (the request being served, the organization named) rather than a `for` argument on its ~40 fetchers; a path that names nobody throws before the call leaves (open-seo #990).
+- [ ] **Request paths forward the person's identity** rather than always sending `x-everyapp-org`.
+- [ ] **Inside a request, a call naming another organization is refused.**
+- [ ] **A request still working within 15 seconds of its identity's 120-second expiry continues as background work** for its own organization.
+- [ ] **SAM resolves its organization on each model call**, so a missing binding fails the turn when the model calls out rather than when it is built.
+- [ ] **The gateway's daily-cap refusal reaches people as "rate limited"** and isn't retried.
+- [ ] **The platform organization "Every App" has the slug `every-app` and the key `everyapp`**, so OpenSEO's Worker is `every-everyapp-openseo`; `EVERYAPP_WORKER_NAME` overrides the name otherwise, rather than editing a constant.
+- [ ] **The audit Worker's gateway binding names the app Worker** as its `workerName`.
+- [ ] **The `everyapp` stage keeps its KV, R2, Workers and Hyperdrive on `alchemy destroy`**, like production.
+- [ ] **A separate `.env.everyapp` and `pnpm deploy:everyapp:first-party`** rather than a flag on `deploy:postgres`.
+- [ ] **Hyperdrive keeps production's 30-connection origin limit** for the new PlanetScale database.
+
+**Third-party tier**
+
+- [ ] **Third-party deploys stay off until the launch gate in docs/hosted-platform-build.md §1 passes, and opening them is a hand edit**: a hosted gateway with `THIRD_PARTY_DEPLOYS` exactly `on`, which `secret set --for gateway` refuses to set (#311).
+- [ ] **A deploy key is a personal access token whose only scope is `deploy`**, owners and admins only, 30 days by default (#311).
+- [ ] **A deploy key opens no app and no `/mcp`**, even its owner's.
+- [ ] **`GET /api/v1/deploy-key` tells the CLI the key's organization** (a route beyond the spec's three).
+- [ ] **Registering a third-party app is a separate call before its build**; deploying an unregistered app answers 404.
+- [ ] **A deploy runs inside its POST** (no queue or Durable Object): the finished job under 20 seconds, else `running` for the CLI to poll for up to 6 minutes; one running job per app; a job past its 5-minute deadline is abandoned.
+- [ ] **Third-party apps may use up to 2 Durable Object classes and static assets**, while KV, Workflows, helper Workers and crons are refused and compatibility flags are limited to `nodejs_compat`, `nodejs_compat_v2`, `nodejs_als` and `global_fetch_strictly_public`.
+- [ ] **A third-party Worker gets only `GATEWAY_URL` and `EVERY_APP_ORG_ID`, as plain text**; any other secret or variable is refused until a secrets API exists.
+- [ ] **A third-party app's D1 is recorded in the CLI's resource ledger**, not a new `apps` column.
+- [ ] **Without `THIRD_PARTY_DOMAIN` a deploy is accepted with no hostname**; a later deploy names it.
+- [ ] **Third-party bundles are built with the sentinel Worker name `every-hosted--sentinel`**, and the deployer writes the real names.
+- [ ] **An app's tier never changes** (`APP_TIER_MISMATCH`), shared and dispatch included.
+- [ ] **`EVERYAPP_DEPLOY_TOKEN` switches `everyapp deploy` to the hosted deploy API** (renamed from `EVERYAPP_TOKEN` in #311's fix round, which the docs use for the MCP bearer).
+- [ ] **`CF_DEPLOY_TOKEN` lives in the public gateway Worker for the preview**, not in a separate deployer Worker as the research preferred.
+- [ ] **`APP_BASE_DOMAIN` is always set on a hosted gateway**, so #313's domain check runs (it is skipped when unset).
+- [ ] **`THIRD_PARTY_DOMAIN` is checked against `APP_BASE_DOMAIN` only**, not also against `GATEWAY_URL`'s host.
+- [ ] **A registration that fails after its deploy job started leaves a failed `deploy_jobs` row** as the record of the attempt (#313).
+- [ ] **The hosted pipeline runs every static check, creates the D1, uploads assets and builds the upload's metadata before migrating**, as the self-host deploy does (#313).
+- [ ] **The CLI's hosted-deploy success line** says the app takes bearer tokens only until per-host sessions exist (#313's wording; #314 now has them, so it needs new words).
+- [ ] **Host sessions last 24 hours, with a silent re-handoff** when one ends (#314); revocation is immediate because every request re-reads the gateway's session, membership and access.
+- [ ] **Personal access tokens work on third-party hosts** (`*.everyapp.dev`) under the first-party rules.
+- [ ] **`everyapp.dev` goes on the Public Suffix List.**
+- [ ] **The handoff page posts itself** rather than asking "Continue to <app>?".
+- [ ] **The host-session key is derived from `BETTER_AUTH_SECRET`** (HKDF), so rotating that secret ends every host session; no separate secret.
+- [ ] **Third-party hosts are served by one hand-made Workers route and a wildcard DNS record**, not per-app Custom Domains, until the CLI's hosted install manages them.
+- [ ] **A dispatched app has no internet egress** until the manifest gains an `egress` list.
+- [ ] **Third-party apps start at 5 seconds of CPU and 200 subrequests per invocation**, OpenSEO forks included.
+- [ ] **The hosted deployer authenticates with an API token from our own Cloudflare account** (no OAuth).
+- [ ] **Namespaced scripts are tagged `org=<id>` and `app=<id>`**, so deleting an organization's Workers is one delete-by-tag.
+- [ ] **A failed create or SQL call is reported, not retried** (it may already have been applied).
+
+**Deploy toolchain**
+
+- [ ] **OpenSEO's first deploy is the Alchemy stage, registered with `everyapp register`**; `everyapp deploy` from its manifest (#309) is the target (also the other thread's default 7).
+- [ ] **A helper Worker the manifest dropped keeps running**, with a warning, until `delete --purge`.
+- [ ] **The deploy reads the PlanetScale URL from the app's `.everyapp/secrets.env`.**
+- [ ] **One URL serves migrations and Hyperdrive** for the first-party OpenSEO, split later with `HYPERDRIVE_ORIGIN_URL` if needed.
+- [ ] **OpenSEO's Workers use targeted placement in the database's region**, not smart placement (#309; open-seo #984 uses smart placement until OpenSEO moves to `everyapp deploy`).
+- [ ] **A Hyperdrive config binds to every Worker of the app by default.**
+- [ ] **A password-only rotation needs a manual `cf hyperdrive update`** until the deploy can detect it.
+- [ ] **The CLI depends on `@every-app/cf-rest` for tests only** until the deployer lands.
+
+**The other thread's unconfirmed defaults** (handoff §5; the fuller text is in "OpenSEO in Every App" above; defaults 2 and 7 are under "Capabilities and keys" and "Deploy toolchain")
+
+- [ ] **One `AUTH_MODE=everyapp` with switches**, not one or two new modes (built that way in open-seo #983).
+- [ ] **Forks ship in tiers**: research tools, SAM and Google first; rank tracking with the scheduler and step runner; AI visibility next; audits last.
+- [ ] **A fork is code the organization deploys itself** through the hosted deploy API, with zero inherited grants; no one-click "my own OpenSEO".
+- [ ] **Google's consent screen says "Every App"** for every app and fork; the project is owned by Ben's Google account; verification is submitted this week.
+- [ ] **A new dedicated Cloudflare account for everyapp.com.** The build assumed the existing account; decide before the first live provisioning. The gateway, the first-party Workers and OpenSEO's Hyperdrive config must share one account.
 
 ## Build
 
@@ -108,18 +241,66 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] OAuth: refuse app hosts outside the gateway's base domain. Only theoretical today, because the deploy already forces them to match.
 - [ ] A CI step that compiles the docs site.
 - [ ] `SCHEMA_DRIFT` gets `rerun: "pnpm db:generate"`, and `LEASE_HELD`/`LEASE_LOST` the same command again, once errors carry `rerun` (the calm-output step). Their messages say it today.
-- [ ] **Redesign stack 1, integrations core** (review #2, #1, #5): `resolveCredential` seam with the Worker secret as operator default, `app_integration_grants` with deploy-time auto-approval for API-key reads, typed refusal codes and header owned by the SDK, operator vs organization-admin wording; then the AI fold (one registry, route and `gatewayFetch`, which also replaces the AI status route); then explicit attribution (`for: Request | { background: true }`), OpenSEO's request scope, and expired vs forged identities at the gateway.
-- [ ] **Redesign stack 2, identity** (review #3, #4): deploy policy pins the gateway binding's props for the app and each helper; identity tokens use `aud = workerName`, the SDK checks `EVERYAPP_ORG_ID`, one `OrgRole` type. On the hosted platform tier the props carry no organization and the SDK's pin is the install row instead (Google design §10).
+- [ ] **Redesign stack 1, integrations core** (review #2, #1, #5): `resolveCredential` seam with the Worker secret as operator default, `app_integration_grants` with deploy-time auto-approval for API-key reads, typed refusal codes and header owned by the SDK, operator vs organization-admin wording; then the AI fold (one registry, route and `gatewayFetch`, which also replaces the AI status route); then explicit attribution (`for: Request | { background: true }`), OpenSEO's request scope, and expired vs forged identities at the gateway. Explicit attribution (`for:`) is built in #310.
+- [ ] **Redesign stack 2, identity** (review #3, #4): deploy policy pins the gateway binding's props for the app and each helper; identity tokens use `aud = workerName`, the SDK checks `EVERYAPP_ORG_ID`, one `OrgRole` type. On the hosted platform tier the props carry no organization and the SDK's pin is the install row instead (Google design §10). `aud = workerName` is built (#304); pinning the props in deploy policy is still to do.
 - [ ] **Redesign stack 3, resources** (review #6, #7): R2 in the manifest and `storageBindings`, assigned by the gateway and checked by policy; then provisioned, recorded and purged by the CLI with Workflows deleted by derived name; `everyapp.config.ts` typed with `as const satisfies EveryAppManifest`.
 - [ ] **Google as a gateway integration** (Search Console, Analytics), so OpenSEO stops needing its own Google client and `BETTER_AUTH_SECRET`: the PR stack in [docs/design/2026-10-google-integration.md](docs/design/2026-10-google-integration.md) Appendix A (PR 0 to PR 11, about 19 agent-days, 7 to 8 wall-clock days with four subagents). PR 0 is now a rebase: `main` took the CLI redesign (#284 to #298) under this branch, so `deployApp.ts` moved to `commands/deploy/`, the deploy API and deploy tokens are gone, and a trial merge conflicts in 11 files. In hosted, Google rides the platform tier's install rows and organization assertion (research H17a); the design's §10 lists what each side takes from the other. Pieces of `poc/github-integration` are ported by hand onto phase 0's route and registry; the branch is tagged `archive/poc-github-integration` and deleted once PR 6 lands. Submit Google OAuth brand and scope verification for the hosted client before PR 5 starts.
-- [ ] **First-party OpenSEO prerequisites surfaced by the 2026-10-16 review.** (a) Background organization attribution: `integrationFetch` from crons and Workflows sends no organization today, so a shared Worker's DataForSEO, Context and OpenRouter calls are attributed to the app but not the organization; `for: { background: true, organizationId }` sends `x-everyapp-org`, checked against the install row at the gateway (redesign stack 2). (b) A deployment-tier predicate in OpenSEO separate from `AUTH_MODE`: in `everyapp` mode every plan gate no-ops, so the audit tier is `self_hosted` (10,000 pages, unlimited concurrent audits), scheduled rank checks and AI visibility run for every organization with no plan check (the hosted pause switch is hosted-only), and research spend is untracked; limits read the tier, Autumn stays on `hosted` only. (c) `hyperdrive` in the manifest, SDK type and CLI policy for the app and its helpers; a Postgres migration engine in `everyapp deploy`; placement. (d) OpenSEO's GSC preflight item says "Held by the Every App gateway" like DataForSEO and OpenRouter, and its own Google callbacks return 404 in `everyapp` mode.
+- [ ] **First-party OpenSEO prerequisites surfaced by the 2026-10-16 review.** (a) Background organization attribution: `integrationFetch` from crons and Workflows sends no organization today, so a shared Worker's DataForSEO, Context and OpenRouter calls are attributed to the app but not the organization; `for: { background: true, organizationId }` sends `x-everyapp-org`, checked against the install row at the gateway (redesign stack 2). (b) A deployment-tier predicate in OpenSEO separate from `AUTH_MODE`: in `everyapp` mode every plan gate no-ops, so the audit tier is `self_hosted` (10,000 pages, unlimited concurrent audits), scheduled rank checks and AI visibility run for every organization with no plan check (the hosted pause switch is hosted-only), and research spend is untracked; limits read the tier, Autumn stays on `hosted` only. (c) `hyperdrive` in the manifest, SDK type and CLI policy for the app and its helpers; a Postgres migration engine in `everyapp deploy`; placement. (d) OpenSEO's GSC preflight item says "Held by the Every App gateway" like DataForSEO and OpenRouter, and its own Google callbacks return 404 in `everyapp` mode. Built 2026-10-16: (a) #310, checked against an active organization with a live member rather than an install row; (b) and (d) open-seo #983; (c) #309. #309 and #310 are merged; #983 is open.
 - [ ] **Fork tier for OpenSEO.** Tier 0 capability flag and manifest variant; later the replay step shim and jobs facade behind a job-runner flag, with the AI research-setup result persisted in the database instead of Workflow output; KV caches fall back to Durable Object or D1 storage because the dispatch tier refuses KV.
 - [ ] Later from the review: per-organization API keys as `integration_accounts` rows (#13); per-organization usage and spend caps (#14); one `everyAppWorkers` builder with `vars`, `compatibilityFlags` and helpers in one call, `global_fetch_strictly_public` as the default, `withOpenSeoRuntime` deleted (#15); app secrets declared in the manifest and set without a full redeploy (#16); helper Worker removal and helper Durable Object tombstones (#17); GitHub as one App per gateway with state-bound installations.
 - [ ] Removing a Durable Object class a helper Worker defines. The deploy refuses it today; `--allow-delete-durable-object-data` covers only the app Worker's classes. (Review #17.)
 - [ ] App secrets for a helper Worker added later. A secret reaches the helpers deployed with it, so a new helper lacks it until `everyapp secret set` runs again. (Review #16.)
-- [ ] Spend caps for integrations; calls are only logged today. (Review #14.)
+- [ ] Spend caps for integrations; calls are only logged today. (Review #14.) Hosted now caps requests per organization per day (#307 for AI, #310 for capabilities); caps in money wait for the wallet.
 - [ ] Delete an app's Workflows and R2 buckets on `--purge`. (Review #6, second PR.)
 - [ ] A longer tool-call limit than 30 seconds for apps that need it (OpenSEO's prompt exploration).
+
+From the hosted build (2026-10-16; [docs/hosted-platform-build.md](docs/hosted-platform-build.md) §8 has the detail):
+
+- [ ] **The OpenSEO follow-up PR** (open-seo, after #310): `for:` on every gateway call (the request in server functions and tools; `{ background: true, organizationId }` in the Workflows, the cron and SAM, with the organization in each Workflow's payload); `EVERYAPP_SHARED=1` and `EVERYAPP_AUDIENCE` (the Worker's name) on both Workers; the SDK and CLI linked from `main`; the Workers renamed `every-everyapp-openseo` and `every-everyapp-openseo--audit`; `everyapp register` after each deploy; then `FIRST_PARTY_SCHEDULED_CHECKS=on`. Built as open-seo #990 (open, stacked on #984; Ben merges), with SAM sockets closed after 15 minutes and scheduled checks on by default.
+- [ ] **OpenSEO onto `everyapp deploy`** (#309 has merged): Hyperdrive, `database`, Postgres migrations and the audit helper's `cpuMs` in its manifest; then delete the Alchemy stage, `.env.everyapp` and the binding script.
+- [ ] OpenSEO: a membership check per SAM turn at the gateway, if #990's 15-minute socket lifetime is too long.
+- [ ] OpenSEO: a gateway GET sign-out page for the account menu, and hosted wording for the SAM setup gate and banners.
+- [ ] `everyapp register` lists `EVERYAPP_AUDIENCE` (the Worker's name) in `data.worker`, which an externally built Worker needs since #304.
+- [ ] Count the AI daily cap after the app's AI policy check, atomically; check for a hosted gateway before `register()` writes an inherited shared scope.
+- [ ] Suspend and reactivate an organization from the UI or the CLI (today a D1 `UPDATE`).
+- [ ] `everyapp dev`'s gateway-lite serves `/api/integrations` and `/api/ai`, so background attribution runs locally.
+- [ ] Log both organizations on `caller_org_mismatch`; tighten the `orgSource` type.
+- [ ] A hosted install resumed before its first upload keeps `--mode hosted`; `setup` resends a missing mode secret from the install row.
+- [ ] Admin → Users hides the account actions the hosted policy refuses.
+- [ ] The CLI's gateway test fake applies the setup claim and the deployment mode.
+- [ ] A per-organization daily invitation budget.
+- [ ] Validate the install organization's name at the setup claim; clear the verification row when a failed personal organization deletes the user; the sign-up page waits for `sign-in-methods` before rendering the invitation form.
+- [ ] `status` warns when a hosted gateway has no email; a fixed subject line for invitation mail.
+- [ ] Turnstile, disposable-domain lists and ASN budgets before open sign-up.
+- [ ] Organization leave, transfer and delete.
+- [ ] Strip session-named `Set-Cookie` headers from app responses.
+- [ ] The mobile shell scopes its session cookie as the server does, if `APP_BASE_DOMAIN` ever differs from the gateway host.
+- [ ] A gateway-computed catalog fingerprint stored with the snapshot; optionally, the control plane's duplicate-cookie 401 expires the gateway's own cookie variants.
+- [ ] The hosted install's patch profile adds the `DISPATCHER` binding with the gateway's `Outbound` entrypoint (parameters `["everyapp"]`), and the gateway config fixture is updated on purpose (needs a namespace).
+- [ ] A manifest `egress` list snapshotted into the registry row, and per-app or per-plan dispatch limits.
+- [ ] Check a dispatched Worker's name against its row's organization key; decide whether the egress allowlist names ports; one copy of `appBindingName()`.
+- [x] Third-party per-host sessions add their cookie names to `sessionCookieNames` (#314).
+- [x] #311's second-review findings (fixed in #313, merged): run D1 migrations after every static refusal (a dropped Durable Object class, a foreign migration tag) and after assets; accept deploy keys scoped exactly `["deploy"]`; drop `CLOUDFLARE_ACCOUNT_ID` from the hosted-install runbook's settable list; start the job before updating the registry row, and end it when `finish()` throws; check `THIRD_PARTY_DOMAIN` against `APP_BASE_DOMAIN`; reword the CLI's "goes live on its first visit" until per-host sessions exist.
+- [ ] Move `CF_DEPLOY_TOKEN` into a thin deployer Worker behind `DeployerPort` (#311).
+- [ ] Third-party secrets through the deploy API, and app delete and purge through it (the namespace script and its D1).
+- [ ] Meter third-party deploys through the wallet; sweep stale deploy jobs on the hourly cron.
+- [ ] A Public Suffix List check, so `THIRD_PARTY_DOMAIN` can't be a sibling of `APP_BASE_DOMAIN` on one registrable domain (#313).
+- [ ] Reword the CLI's hosted-deploy success line, which still says bearer tokens only, now that #314 has browser sessions on app hosts.
+- [ ] The CLI's hosted install manages the `*.everyapp.dev/*` route and wildcard DNS (#314).
+- [ ] Submit `everyapp.dev` to the Public Suffix List.
+- [ ] Sign-out on third-party app hosts (the host cookie lingers until it expires, though the session is revoked server-side).
+- [ ] Cache or fold `HostSessionAuthenticator`'s per-request reads.
+- [ ] A path for the mobile shell to third-party hosts.
+- [ ] Host-session follow-ups PR (`hosted/host-session-followups`, number pending): `Referrer-Policy: no-referrer` on the code exchange's 303 and the expired-link page; rebuild a WebSocket 101 response after stripping third-party headers; log a registration failure after its job started once, not twice.
+- [ ] `packages/cli`'s `interrupt.test.ts` failed once on timing and didn't reproduce in 8 runs; give its "stop cf's process group" case (about 4 seconds) more than vitest's 5-second timeout.
+- [ ] `HELPER_DURABLE_OBJECT_REMOVED` names the real way out; a Build Output directory without `worker.config.json` is an `APP_POLICY` error; the lenient manifest schema drops the helper-name format rules.
+- [ ] `delete --purge` reports unrecorded helper Workers; `secret list` shows helpers; `everyapp dev` with helpers gets a test.
+- [ ] #309 merged with these open: migrate D1 too when an app also has Postgres (or refuse the pair); record or gate adopting a Hyperdrive config whose password can't be compared; `POSTGRES_DATABASE_URL` in the drift check's environment; a length check on `<worker>--<binding>`; the new outputs in `sdk.mdx`.
+- [ ] Detect a Hyperdrive password-only rotation; `everyapp db query` for Postgres; the gateway's tolerant manifest schema accepts `migrations.dialect` (or the gateway is always upgraded first).
+- [ ] Drop `boolean` from the REST client's D1 parameters unless the live API accepts it.
+- [ ] The wallet replaces `orgDailyCaps` for AI and capability calls.
+- [x] #308: authenticators must name their session cookies, the control plane logs the refusal and the app-host 401 says to clear cookies; `d1.query()` returns exactly one result or throws, `d1.queryAll()` returns all, and more than 10 tags are refused; the DataForSEO path check compares whole segments, `integrationStatus` guards unknown ids, and the SDK types and two docs pages name the new keys.
+- [x] The consolidation PR: the CLI reference's shared-app scope rule, the security model's organization binding, capability attribution and dispatch re-check, and the hosted-install runbook's `--mode` warning.
 
 ## Paused while we work from the checkout
 
@@ -177,3 +358,23 @@ For the CLI redesign (`docs/cli-redesign.md` §5 "Live checks" has the commands 
 - [ ] Time from a Gateway deploy with a new binding to the first non-503 answer from the app's hostname (certificate included on a new hostname), against the live wait's 120 s timeout.
 - [ ] The checkout tree hash (`hashCheckoutTree`) and the source commit time are identical across two clean checkouts of the same commit on two machines, and the tree hash changes on any edit under the Gateway, the SDK, perimeter or toolbus. Decides whether the build cache and `status`'s `upToDate` can be trusted by tree hash. (Two builds of one tree give different release SHA-256s, on one machine already; the CLI doesn't rely on them matching.)
 - [ ] Reinstall thecomeup.cc from scratch (nothing adopts or migrates the old install any more): delete the Worker `every-app-gateway`, the D1 database `every-app-gateway`, the KV namespaces `every-app-gateway-OAUTH_KV` and `every-app-gateway-deploy`, and the `*.thecomeup.cc` wildcard DNS record and route; then `pnpm everyapp setup --domain thecomeup.cc` from a terminal and `pnpm everyapp deploy` in each app.
+
+For the hosted platform ([docs/hosted-platform-build.md](docs/hosted-platform-build.md) §7 has the morning ops list: Google, the Cloudflare account and a write token, Workers for Platforms, PlanetScale, Email Sending, the gateway's secrets):
+
+- [ ] Google: the Every App Cloud project and Web client, everyapp.com DNS-verified, the homepage and privacy policy on everyapp.com, the demo video, and brand and scope verification submitted (`webmasters.readonly`, `analytics.readonly`).
+- [ ] `pnpm everyapp setup --domain app.everyapp.com --mode hosted` in the chosen account: `status` shows `Mode: hosted`, `sign-in-methods` answers `signUp` and `emailVerification` as configured, and each `<app>.app.everyapp.com` gets its certificate.
+- [ ] Verification mail over Cloudflare Email Sending's REST path; the `/verify-email` redirect and one-time sign-in on the real domain and cookie scope.
+- [ ] `deploy --shared` for todo, chef and workout, and `register` for OpenSEO, against the hosted install; a shared app opens for members of two organizations; a suspension takes effect within 30 seconds.
+- [ ] The daily caps answer 429 with `Retry-After` at 200 AI requests and 500 capability calls per organization, and a cron or Workflow call with `x-everyapp-org` counts for its organization.
+- [ ] Workers for Platforms: the `DISPATCHER` binding with the gateway's `Outbound` entrypoint as the namespace's outbound Worker (a named entrypoint of the gateway Worker, not its own script), outbound parameters reaching it, the "Worker not found" wording, dispatch limits, and props on an upload-time service binding from a namespaced script.
+- [ ] Before setting `THIRD_PARTY_DEPLOYS=on` (the account has no dispatch namespace today): a namespaced Worker binds `every-app-gateway`'s `AppGateway` with props; `GET /bindings` echoes props and bindings in the shape the deployer sent (otherwise the read-back deletes every upload); Durable Object migrations and the assets upload session work for namespaced scripts; real `cf build` output passes the deploy API's bundle checks; a deploy through `everyapp deploy --gateway` with `EVERYAPP_TOKEN` end to end.
+- [ ] The REST client's unverified shapes: the delete-by-tag response (envelope or not), the codes for a missing or duplicate namespace, tag filters containing colons, boolean D1 parameters.
+- [ ] Hyperdrive: `cf hyperdrive create --body @file` output and duplicate-name wording, `hyperdrive list` pagination, a deploy with `placement.region` and `limits.cpuMs`, and `cf dev` with a Hyperdrive binding.
+- [ ] PlanetScale: `POSTGRES_DATABASE_URL=<url> pnpm db:migrate:pg` for the first-party OpenSEO (never without the variable: it falls back to `.env.local`), and OpenSEO's organization and member upserts on Postgres.
+- [ ] OpenSEO's stage: `PATCH /workers/scripts/:name/settings` accepts props on a service binding, and `inherit` keeps the Durable Object, Workflow, assets, Hyperdrive, rate-limit and version-metadata bindings; the first deploy runs with `--dry-run`.
+- [ ] SAM's WebSocket (`/agents/*`) through the gateway with the identity header, and its reconnect at 15 minutes resuming a streaming reply (open-seo #990).
+- [ ] `wrangler d1 execute every-app-gateway --remote` finds the gateway's database by name in the hosted account (open-seo #990's runbook reads the identity key with it).
+- [ ] A Vite build with a helper Worker: where the auxiliary Worker lands under `.cloudflare/output/v0/workers`, and its name.
+- [ ] Cookie-tossing variants against real hosts.
+- [ ] #314's handoff in real browsers: `__Host-` cookies, `SameSite=Lax` on the 303 back to the app host, the CSP's `form-action` on the redirect after the POST, and Safari.
+- [ ] `everyapp.dev`: the zone, a proxied wildcard DNS record and the Workers route `*.everyapp.dev/*`, provisioned by hand; whether `everyapp setup` or a gateway redeploy keeps that route.

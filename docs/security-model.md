@@ -325,9 +325,11 @@ in the gateway's Cloudflare account **is** operator authority.
   The upstream request carries none of the app's `Authorization`,
   `x-api-key`, cookies, `x-everyapp-*` or forwarding headers, and the
   response none of the provider's cookies. Only an app that lists a
-  capability learns whether the gateway holds its key. The call is
-  attributed to the person whose identity token the app forwards when it
-  verifies for the calling app's organization, otherwise to the app.
+  capability learns whether the gateway holds its key. An organization's
+  own app's call is attributed to the person whose identity token the app
+  forwards when it verifies for the app's organization, otherwise to the
+  app; a shared app's calls follow the attribution rule under
+  "Organizations and Shared Apps".
 
 ## Sign-in with Cloudflare Access
 
@@ -559,26 +561,33 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   the app id, signed with the public dev key, from the dev issuer alone.
 - Caches of minted tokens and compiled tool schemas are keyed by audience
   or registry row id, never by app id alone.
-- User identity is organization-bound; the gateway denies access when the
-  active session organization does not own the target app.
+- User identity is organization-bound: `org_id` is the organization the
+  request acts under, and the person is a live member of it. For an
+  organization's own app that is the app's organization (a session acting
+  under another of the person's organizations is let in only as their
+  membership there); for a shared app it is the session's organization.
+  Anything else is denied (see "Organizations and Shared Apps").
 - Missing, invalid, expired, or wrong-audience identity fails closed.
 
 ## Dispatch Tier and Egress
 
 The hosted gateway reaches third-party apps (registry `tier = 'dispatch'`)
 in a Workers for Platforms dispatch namespace. Third-party deploys are off
-(`platformPolicy.thirdPartyDeploys = false`), and the gateway's release
-config declares no namespace yet: the hosted install adds the `DISPATCHER`
+unless a hosted gateway's `THIRD_PARTY_DEPLOYS` secret is exactly `on`
+(`platformPolicy.thirdPartyDeploys`, "Hosted Deploy API" below), and the
+gateway's release config declares no namespace yet: the hosted install adds the `DISPATCHER`
 binding once the account has one. Until then every dispatch app answers
 503.
 
 - `getAppFetcher` is the only code that invokes an app. For a dispatch app
   it reads the optional `DISPATCHER` binding and throws
   `AppUnreachableError` (503 `app_unreachable`, never another route) when
-  it is absent; re-checks that the row's Worker name is the one the
-  registry naming rule gives the app id (`every-<orgKey>-<appId>`, not a
-  gateway name), so the registry can never dispatch to a script it didn't
-  name; and calls `DISPATCHER.get(workerName, {}, { limits, outbound })`
+  it is absent; re-checks that the row's Worker name has the registry's
+  shape for the app id (`every-<orgKey>-<appId>`, not a gateway name), so
+  the registry can never dispatch to a script outside that naming rule
+  (the org key is read from the name; checking it against the row's
+  organization is to come before third-party deploys open); and calls
+  `DISPATCHER.get(workerName, {}, { limits, outbound })`
   with per-invocation limits (by default 5,000 ms of CPU and 200
   subrequests) and the outbound parameter `everyapp` = the app id,
   organization, Worker name and egress allowlist. A script the namespace
