@@ -57,7 +57,7 @@ Every App uses [TanStack Start](https://tanstack.com/start), [Cloudflare Workers
 
 ## Identity pass details
 
-The identity pass is a JWT signed with RS256 and injected as the `x-everyapp-identity` header. Its claims identify the user and organization, and its audience limits it to one app.
+The identity pass is a JWT signed with RS256 and injected as the `x-everyapp-identity` header. Its claims identify the user and organization, and its audience limits it to one app's Worker, so another organization's copy of the same app refuses it.
 
 The SDK pins the signing algorithm and key ID, verifies the issuer, audience, and expiration, and rejects missing or invalid passes. The Gateway removes inbound `Cookie`, `Authorization`, and `x-everyapp-*` headers before it adds the verified identity pass.
 

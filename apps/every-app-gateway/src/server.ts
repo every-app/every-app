@@ -193,6 +193,9 @@ export class AppGateway extends WorkerEntrypoint<
   }
 }
 
+// Dispatched apps' outbound Worker (default-deny egress); no routes.
+export { Outbound } from "./server/outbound";
+
 export default {
   async fetch(request: Request): Promise<Response> {
     const gatewayHost = ownGatewayHost();

@@ -198,7 +198,11 @@ describe("fetchAppCatalog", () => {
     keys = await testKeys();
   });
 
-  const app = { appId: "todo", baseUrl: "https://todo-acme.example.com" };
+  const app = {
+    appId: "todo",
+    audience: "every-acme-todo",
+    baseUrl: "https://todo-acme.example.com",
+  };
   const fetchWith = (answer: (request: Request) => Response) =>
     fetchAppCatalog(app, {
       signing: { privateKeyPem: keys.privateKeyPem, issuer: ISSUER },
@@ -219,7 +223,7 @@ describe("fetchAppCatalog", () => {
     expect(claims).toMatchObject({
       typ: "system",
       purpose: "tools.list",
-      aud: "todo",
+      aud: "every-acme-todo",
       iss: ISSUER,
     });
   });

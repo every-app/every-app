@@ -13,6 +13,7 @@ import {
   AppUnreachableError,
   getAppFetcher,
   logEvent,
+  type AppFetcher,
 } from "@every-app/perimeter";
 import type { CatalogSnapshot } from "@every-app/toolbus";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
@@ -49,13 +50,20 @@ export class BindingNotReadyError extends Error {
   }
 }
 
+/** Reach an app's Worker through the one seam, whatever its tier. */
+export function appFetcherFor(app: SyncableApp): AppFetcher {
+  return getAppFetcher(env as unknown as Record<string, unknown>, {
+    appId: app.appSlug,
+    organizationId: app.organizationId,
+    workerName: app.workerName,
+    tier: app.tier === "dispatch" ? "dispatch" : "service_binding",
+  });
+}
+
 export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
   let fetcher;
   try {
-    fetcher = getAppFetcher(env as unknown as Record<string, unknown>, {
-      workerName: app.workerName,
-      tier: app.tier === "dispatch" ? "dispatch" : "service_binding",
-    });
+    fetcher = appFetcherFor(app);
   } catch (error) {
     if (error instanceof AppUnreachableError) {
       throw new BindingNotReadyError(error.message);
@@ -68,7 +76,11 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
   let snapshot: CatalogSnapshot;
   try {
     snapshot = await fetchAppCatalog(
-      { appId: app.appSlug, baseUrl: `https://${app.hostname}` },
+      {
+        appId: app.appSlug,
+        audience: app.workerName,
+        baseUrl: `https://${app.hostname}`,
+      },
       {
         signing: {
           privateKeyPem: env.JWT_PRIVATE_KEY,

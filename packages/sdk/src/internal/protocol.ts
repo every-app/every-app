@@ -35,8 +35,15 @@ export const GATEWAY_ERROR_HEADER = "x-everyapp-error";
 export const IDENTITY_TTL_SECONDS = 120;
 /** System tokens are minted per call and live at most a minute. */
 export const SYSTEM_TOKEN_TTL_SECONDS = 60;
-/** Env var carrying the app id used as the expected identity audience. */
+/** Env var carrying the app's manifest id. */
 export const APP_ID_ENV = "EVERYAPP_APP_ID";
+/**
+ * Env var carrying the expected identity audience: the app's Worker name,
+ * which the gateway stamps as `aud` on every token it mints for the app. Two
+ * Workers of one app id (two organizations' copies) never accept each
+ * other's tokens.
+ */
+export const AUDIENCE_ENV = "EVERYAPP_AUDIENCE";
 /** Default env var carrying a JSON array of SPKI PEM public keys. */
 export const PUBLIC_KEYS_ENV = "EVERYAPP_IDENTITY_PUBLIC_KEYS";
 /** Env var carrying the expected gateway issuer for user identity verification. */

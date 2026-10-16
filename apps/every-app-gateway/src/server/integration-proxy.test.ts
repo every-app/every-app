@@ -113,7 +113,7 @@ function identityFor(orgId: string) {
       orgId,
       orgRole: "member",
     },
-    audience: "openseo",
+    audience: "every-openseo",
     issuer: "https://home.example.com",
     channel: "web",
   });

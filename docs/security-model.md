@@ -5,7 +5,10 @@
 - **Client zone:** untrusted browser, API, and webhook traffic.
 - **Gateway zone:** the only public Worker; terminates Better Auth sessions,
   enforces app access, and injects signed identity.
-- **App zone:** private Workers invoked by the gateway over service bindings.
+- **App zone:** private Workers invoked by the gateway over service bindings,
+  or (hosted, third-party apps) Workers in a Workers for Platforms dispatch
+  namespace the gateway dispatches to. Either way through one seam,
+  `getAppFetcher` (`packages/perimeter/src/getAppFetcher.ts`).
 
 ## Deployment Mode
 
@@ -387,9 +390,64 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
 
 - Apps verify the signature, issuer, audience, token type, and key id before
   using identity. The production identity key id is `everyapp-identity`.
+- **The audience is the Worker name.** Every token the gateway mints for an
+  app (user identities and public markers in the perimeter, ToolBus call
+  identities and catalog system tokens) carries `aud` = the registry row's
+  `worker_name` (`every-<orgKey>-<appId>`), never the app id. A deployed
+  app expects exactly that: `everyAppWorker()` sets `EVERYAPP_AUDIENCE` to
+  the Worker's name at deploy, the CLI refuses a build whose
+  `EVERYAPP_AUDIENCE` is anything else, and the SDK answers 500 when it is
+  unset. So a token minted for one organization's copy of an app is refused
+  by another organization's copy of the same app id. The AppGateway
+  entrypoint verifies a forwarded identity against the calling Worker's
+  name (its upload-time `workerName` prop) too.
+- Only under the dev opt-in (`EVERYAPP_DEV`, which only `everyapp dev`
+  sets) does the SDK accept the app id as the audience when
+  `EVERYAPP_AUDIENCE` is unset: the dev gateway and dev ToolBus mint for
+  the app id, signed with the public dev key, from the dev issuer alone.
+- Caches of minted tokens and compiled tool schemas are keyed by audience
+  or registry row id, never by app id alone.
 - User identity is organization-bound; the gateway denies access when the
   active session organization does not own the target app.
 - Missing, invalid, expired, or wrong-audience identity fails closed.
+
+## Dispatch Tier and Egress
+
+The hosted gateway reaches third-party apps (registry `tier = 'dispatch'`)
+in a Workers for Platforms dispatch namespace. Third-party deploys are off
+(`platformPolicy.thirdPartyDeploys = false`), and the gateway's release
+config declares no namespace yet: the hosted install adds the `DISPATCHER`
+binding once the account has one. Until then every dispatch app answers
+503.
+
+- `getAppFetcher` is the only code that invokes an app. For a dispatch app
+  it reads the optional `DISPATCHER` binding and throws
+  `AppUnreachableError` (503 `app_unreachable`, never another route) when
+  it is absent; re-checks that the row's Worker name is the one the
+  registry naming rule gives the app id (`every-<orgKey>-<appId>`, not a
+  gateway name), so the registry can never dispatch to a script it didn't
+  name; and calls `DISPATCHER.get(workerName, {}, { limits, outbound })`
+  with per-invocation limits (by default 5,000 ms of CPU and 200
+  subrequests) and the outbound parameter `everyapp` = the app id,
+  organization, Worker name and egress allowlist. A script the namespace
+  doesn't hold ("Worker not found") is a 503, not an app error.
+  Self-hosted apps keep `tier = 'service_binding'` and are reached exactly
+  as before; neither tier ever falls back to the other.
+- The gateway's `Outbound` entrypoint (`apps/every-app-gateway/src/server/outbound.ts`,
+  exported from `server.ts`, no routes) is the namespace's outbound
+  Worker: every `fetch()` a dispatched Worker makes to the internet goes
+  through it. It denies by default: a request goes out only over HTTPS to
+  an exact hostname on the app's allowlist (empty until the manifest
+  declares one, so today everything is denied). It always denies the
+  providers whose keys the gateway holds (`api.openai.com`,
+  `openrouter.ai`, `api.dataforseo.com`, `api.context.dev`,
+  `gateway.ai.cloudflare.com`, and their subdomains) and the gateway's own
+  hosts (`GATEWAY_URL`'s host, `APP_BASE_DOMAIN` and every app host under
+  it), and refuses everything when the dispatcher passed no app. Each
+  denial is a 403 to the app and an `egress.denied` log line naming the
+  app, organization, Worker, host and reason. Service bindings (the
+  AppGateway binding included) never pass through it, so apps reach models
+  and data providers only through the gateway's metered proxies.
 
 ## Response Contract
 

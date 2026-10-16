@@ -52,8 +52,12 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
+// The Worker's name, the audience everyAppWorker() deploys it with.
+const WORKER = "every-acme-todo";
+
 function testEnv(events: string[]): Env {
   return {
+    EVERYAPP_AUDIENCE: WORKER,
     USER_SYNC: {
       idFromName: (userId: string) => userId,
       get: (userId: string) => ({
@@ -80,7 +84,7 @@ async function callTool(
       orgId: "org_1",
       orgRole: "member",
     },
-    audience: "todo",
+    audience: WORKER,
     issuer: ISSUER,
     channel: "mcp",
     actor: { sub: "pat:token_1" },
@@ -123,7 +127,7 @@ describe("todo agent tools", () => {
         headers: {
           "content-type": "application/json",
           [SYSTEM_HEADER]: await mintSystemJwt(keys.privateKeyPem, {
-            audience: "todo",
+            audience: WORKER,
             issuer: ISSUER,
             purpose: "tools.list",
           }),

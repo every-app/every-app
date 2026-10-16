@@ -8,7 +8,7 @@ vi.mock("@/server/repositories/AppRepository", () => ({
 
 import type { RegisteredApp } from "@every-app/perimeter";
 import { validateManifest } from "@every-app/perimeter/manifest";
-import { activateApp, probeAppBinding } from "./app-activation";
+import { activateApp, probeApp } from "./app-activation";
 
 const TODO: RegisteredApp = {
   appId: "todo",
@@ -35,21 +35,21 @@ function boundEnv(mode: string | undefined) {
   };
 }
 
-describe("probeAppBinding", () => {
+describe("probeApp", () => {
   it("probes an app through the gateway's service binding to it", async () => {
     const fetch = vi.fn(
       async () => new Response("unauthenticated", { status: 401 }),
     );
     await expect(
-      probeAppBinding({ "APP__every-acme-todo": { fetch } }, TODO),
+      probeApp({ "APP__every-acme-todo": { fetch } }, TODO),
     ).resolves.toBe(true);
     expect((fetch.mock.calls[0] as unknown as [Request])[0].url).toBe(
       "https://todo-acme.gateway.example.com/__everyapp/health",
     );
 
-    await expect(probeAppBinding({}, TODO)).resolves.toBe(false);
+    await expect(probeApp({}, TODO)).resolves.toBe(false);
     await expect(
-      probeAppBinding(
+      probeApp(
         {
           "APP__every-acme-todo": {
             fetch: async () => {
@@ -59,6 +59,30 @@ describe("probeAppBinding", () => {
         },
         TODO,
       ),
+    ).resolves.toBe(false);
+  });
+
+  it("probes a dispatch app through the namespace, and only there", async () => {
+    const DISPATCHED: RegisteredApp = { ...TODO, tier: "dispatch" };
+    const fetch = vi.fn(async () => new Response("ok"));
+    const get = vi.fn((name: string) => {
+      if (name !== "every-acme-todo") throw new Error("Worker not found.");
+      return { fetch };
+    });
+
+    await expect(probeApp({ DISPATCHER: { get } }, DISPATCHED)).resolves.toBe(
+      true,
+    );
+    expect(get.mock.calls[0]?.[0]).toBe("every-acme-todo");
+    // Not uploaded to the namespace yet, or no namespace at all.
+    await expect(
+      probeApp(
+        { DISPATCHER: { get } },
+        { ...DISPATCHED, appId: "notes", workerName: "every-acme-notes" },
+      ),
+    ).resolves.toBe(false);
+    await expect(
+      probeApp({ "APP__every-acme-todo": { fetch } }, DISPATCHED),
     ).resolves.toBe(false);
   });
 });

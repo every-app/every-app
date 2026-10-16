@@ -10,14 +10,18 @@
  * arguments or the result.
  */
 import { env, waitUntil } from "cloudflare:workers";
-import { getAppFetcher, logEvent } from "@every-app/perimeter";
+import { logEvent } from "@every-app/perimeter";
 import type {
   ToolBusApp,
   ToolBusHttpHandler,
   ToolCallAuditEvent,
 } from "@every-app/toolbus";
 import { McpToolCallRepository } from "@/server/repositories/McpToolCallRepository";
-import { scheduleCatalogResync, type SyncableApp } from "./catalog-sync";
+import {
+  appFetcherFor,
+  scheduleCatalogResync,
+  type SyncableApp,
+} from "./catalog-sync";
 
 /** Keyed digest context for argument fingerprints (see createArgumentsDigester). */
 const ARGS_DIGEST_CONTEXT = "every-app-gateway:mcp-args:v1";
@@ -81,10 +85,7 @@ export function toolBusHttp(): Promise<ToolBusHttpHandler> {
         invokeApp: (target, request) => {
           const app = servedApps.get(target);
           if (!app) throw new Error(`no route for app "${target.appId}"`);
-          return getAppFetcher(env as unknown as Record<string, unknown>, {
-            workerName: app.workerName,
-            tier: app.tier === "dispatch" ? "dispatch" : "service_binding",
-          }).fetch(request);
+          return appFetcherFor(app).fetch(request);
         },
         onCatalogDrift: (target) => {
           const app = servedApps.get(target);

@@ -71,6 +71,7 @@ export function todoApp(overrides: Partial<ToolBusApp> = {}): ToolBusApp {
   return {
     rowId: "row_todo",
     appId: "todo",
+    audience: "every-acme-todo",
     name: "Todos",
     baseUrl: "https://todo-acme.example.com",
     catalogHash: `sha256:${"a".repeat(64)}`,

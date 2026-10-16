@@ -63,7 +63,7 @@ Minted by `mintIdentityJwt()` (`packages/sdk/src/internal/protocol.ts`), verifie
 | Key distribution | `EVERYAPP_IDENTITY_PUBLIC_KEYS` env var injected at deploy — no runtime JWKS fetch. SDK supports a key _set_ for rotation; the CLI injects the one key it generated at install |
 | Failure          | `everyApp()` returns 401 before app code runs; missing key config → 500                                                                                                        |
 
-Anonymous public traffic gets a separate signed **public marker** JWT (`typ: "public"`, same audience binding, cached per app for ~60s) — so a forged `x-everyapp-public: 1` header from a re-exposed worker fails verification.
+Anonymous public traffic gets a separate signed **public marker** JWT (`typ: "public"`, same audience binding to the app's Worker name, cached per Worker for ~60s) — so a forged `x-everyapp-public: 1` header from a re-exposed worker fails verification.
 
 ## Machine credentials
 

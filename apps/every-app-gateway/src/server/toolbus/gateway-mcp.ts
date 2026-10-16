@@ -97,6 +97,7 @@ export async function serveGatewayMcp(
       {
         rowId: catalog.appRowId,
         appId: catalog.appSlug,
+        audience: catalog.workerName,
         name: catalog.name,
         ...(catalog.description ? { description: catalog.description } : {}),
         baseUrl: `https://${catalog.hostname}`,

@@ -5,15 +5,19 @@
  *
  * The wrapper verifies the gateway-injected identity before app code runs,
  * stores the result on the original Request, and then delegates to the
- * worker-style handler. The expected audience is the app id in
- * `env.EVERYAPP_APP_ID`, which `everyAppWorker()` sets from the manifest, so
- * the Worker never imports `everyapp.config.ts` (the Cloudflare Vite plugin
- * hides every file `cloudflare.config.ts` imports from the Worker in dev).
+ * worker-style handler. The expected audience is the Worker's own name in
+ * `env.EVERYAPP_AUDIENCE`, which `everyAppWorker()` sets at deploy (the
+ * gateway stamps every token it mints for the app with it); only in
+ * development, where `everyapp dev` mints for the app id, does the app id in
+ * `env.EVERYAPP_APP_ID` stand in. The Worker never imports
+ * `everyapp.config.ts` (the Cloudflare Vite plugin hides every file
+ * `cloudflare.config.ts` imports from the Worker in dev).
  * It also answers the gateway's internal tools contract
  * (`/__everyapp/tools/*`) for the app's `defineTools()` catalog.
  */
 import {
   APP_ID_ENV,
+  AUDIENCE_ENV,
   ConfigurationError,
   DEV_ENV,
   IdentityError,
@@ -110,24 +114,46 @@ function configFrom(
 }
 
 /**
- * The app id identity tokens must be scoped to. EVERYAPP_APP_ID wins; a
- * manifest passed to everyApp() is only a fallback for Workers deployed
- * without it, and must agree with it when both are present.
+ * The app id: EVERYAPP_APP_ID, or a manifest passed to everyApp() for
+ * Workers without it; the two must agree when both are present.
  */
-function audienceFor(env: unknown, config: VerificationConfig): string {
+function appIdFor(
+  env: unknown,
+  config: VerificationConfig,
+): string | undefined {
   const fromEnv = envValue(env, APP_ID_ENV);
   if (fromEnv && config.manifestAppId && fromEnv !== config.manifestAppId) {
     throw new ConfigurationError(
       `${APP_ID_ENV} ("${fromEnv}") does not match the manifest id ("${config.manifestAppId}").`,
     );
   }
-  const audience = fromEnv ?? config.manifestAppId;
-  if (!audience) {
-    throw new ConfigurationError(
-      `${APP_ID_ENV} is not set — the app's cloudflare.config.ts must declare it (everyAppWorker() does).`,
-    );
-  }
-  return audience;
+  return fromEnv ?? config.manifestAppId;
+}
+
+function devIdentitiesAllowed(env: unknown, config: VerificationConfig) {
+  const devEnv = envValue(env, DEV_ENV);
+  return (
+    config.allowDevIdentities ??
+    (devEnv !== undefined &&
+      (devEnv === "1" || devEnv.toLowerCase() === "true"))
+  );
+}
+
+/**
+ * The audience identity tokens must carry: this Worker's name, from
+ * EVERYAPP_AUDIENCE. The gateway mints for the Worker, not the app id, so a
+ * token for one organization's copy of an app never opens another's. Only
+ * under the dev opt-in, where `everyapp dev` mints for the app id, does the
+ * app id stand in when EVERYAPP_AUDIENCE is unset.
+ */
+function audienceFor(env: unknown, config: VerificationConfig): string {
+  const appId = appIdFor(env, config);
+  const audience = envValue(env, AUDIENCE_ENV);
+  if (audience) return audience;
+  if (appId && devIdentitiesAllowed(env, config)) return appId;
+  throw new ConfigurationError(
+    `${AUDIENCE_ENV} is not set — the app's cloudflare.config.ts must declare it (everyAppWorker() does at deploy).`,
+  );
 }
 
 function unauthorized(message: string): Response {
@@ -143,20 +169,13 @@ function identityOptions(
   config: VerificationConfig,
   audience: string,
 ): RequestIdentityOptions {
-  const devEnv =
-    env && typeof env === "object"
-      ? (env as Record<string, unknown>)[DEV_ENV]
-      : undefined;
   return {
     audience,
     issuer: config.issuer ?? envValue(env, ISSUER_ENV),
     publicKeys: config.publicKeys,
     env: env as Record<string, unknown> | undefined,
     keysEnvVar: config.keysEnvVar,
-    allowDevIdentities:
-      config.allowDevIdentities ??
-      (typeof devEnv === "string" &&
-        (devEnv === "1" || devEnv.toLowerCase() === "true")),
+    allowDevIdentities: devIdentitiesAllowed(env, config),
     now: config.now,
   };
 }
@@ -238,7 +257,8 @@ export function everyApp<TEnv = Record<string, unknown>>(
 ): EveryAppExport<TEnv>;
 /**
  * @deprecated Drop the manifest: the app id now comes from
- *   `env.EVERYAPP_APP_ID`. When passed, it must match that value.
+ *   `env.EVERYAPP_APP_ID` and the audience from `env.EVERYAPP_AUDIENCE`.
+ *   When passed, it must match the app id.
  */
 export function everyApp<TEnv = Record<string, unknown>>(
   handler: EveryAppHandler<TEnv>,
@@ -262,8 +282,10 @@ export function everyApp<TEnv = Record<string, unknown>>(
   return {
     async fetch(request: Request, env: TEnv, ctx: ExecutionContextLike) {
       let audience: string;
+      let appId: string;
       try {
         audience = audienceFor(env, config);
+        appId = appIdFor(env, config) ?? audience;
       } catch (err) {
         if (err instanceof ConfigurationError) {
           console.error(err);
@@ -276,7 +298,7 @@ export function everyApp<TEnv = Record<string, unknown>>(
       // never reaches the app's handler.
       const toolsResponse = await handleToolsRequest(request, env, ctx, {
         toolSet: options.tools,
-        appId: audience,
+        appId,
         identity: identityOptions(env, config, audience),
       });
       if (toolsResponse) return toolsResponse;

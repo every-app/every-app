@@ -181,6 +181,7 @@ export async function serveAppHostMcp({
     {
       rowId: catalog.appRowId,
       appId: app.appId,
+      audience: app.workerName,
       name: app.manifest.name ?? app.appId,
       baseUrl: `https://${app.hostname}`,
       catalogHash: catalog.catalogHash,

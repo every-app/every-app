@@ -3,8 +3,11 @@
 
 declare namespace Cloudflare {
   interface Env {
-    // App id used as the expected audience for identity verification.
+    // The app's manifest id.
     EVERYAPP_APP_ID: string;
+    // The Worker's name: the expected audience for identity verification.
+    // everyAppWorker() sets it at deploy; dev falls back to the app id.
+    EVERYAPP_AUDIENCE?: string;
     // JSON array of SPKI PEM public keys (current + next) for identity
     // verification. Injected by the gateway at deploy — never fetched at runtime.
     EVERYAPP_IDENTITY_PUBLIC_KEYS?: string;

@@ -110,6 +110,16 @@ describe("appPolicyProblems", () => {
       /EVERYAPP_IDENTITY_PUBLIC_KEYS isn't built in/,
     ],
     [
+      "no audience",
+      (c: any) => delete c.env.EVERYAPP_AUDIENCE,
+      /EVERYAPP_AUDIENCE isn't the Worker's name \("every-acme-todo"\)/,
+    ],
+    [
+      "another Worker's audience",
+      (c: any) => (c.env.EVERYAPP_AUDIENCE = { type: "text", value: "every-beta-todo" }),
+      /EVERYAPP_AUDIENCE isn't the Worker's name/,
+    ],
+    [
       "another Worker",
       (c: any) => (c.env.BILLING = { type: "worker", worker: "billing-api" }),
       /BILLING binds Worker "billing-api"/,

@@ -84,8 +84,10 @@ beforeAll(() => {
   app = appWith({ publicKeys: [publicKeyPem], issuer: ISSUER, tools });
 });
 
+// The Worker's name, as everyAppWorker() deploys it: the token audience.
+const WORKER = "every-todo";
 const fetchApp = (request: Request, target = app) =>
-  target.fetch(request, {}, ctx);
+  target.fetch(request, { EVERYAPP_AUDIENCE: WORKER }, ctx);
 
 const subject = {
   sub: "user_1",
@@ -104,7 +106,7 @@ function identity(
 ): Promise<string> {
   return mintIdentityJwt(privateKeyPem, {
     subject,
-    audience: overrides.audience ?? "todo",
+    audience: overrides.audience ?? WORKER,
     issuer: ISSUER,
     channel: overrides.channel ?? "mcp",
     actor: { sub: "pat:tok_1" },
@@ -116,7 +118,7 @@ function identity(
   });
 }
 
-function systemToken(audience = "todo"): Promise<string> {
+function systemToken(audience = WORKER): Promise<string> {
   return mintSystemJwt(privateKeyPem, {
     audience,
     issuer: ISSUER,
@@ -180,7 +182,8 @@ describe("POST /__everyapp/tools/list", () => {
     const userIdentity = await identity();
     const cases: Record<string, string>[] = [
       {},
-      { [SYSTEM_HEADER]: await systemToken("chef") },
+      // Same app id, another Worker (another organization's copy).
+      { [SYSTEM_HEADER]: await systemToken("every-other-todo") },
       { [SYSTEM_HEADER]: userIdentity },
       { [IDENTITY_HEADER]: userIdentity },
     ];
@@ -401,13 +404,13 @@ describe("POST /__everyapp/tools/call", () => {
 
   it("refuses system tokens, public markers and other apps' identities", async () => {
     const marker = await mintPublicMarkerJwt(privateKeyPem, {
-      audience: "todo",
+      audience: WORKER,
       issuer: ISSUER,
     });
     for (const token of [
       await systemToken(),
       marker,
-      await identity({ audience: "chef" }),
+      await identity({ audience: "every-other-todo" }),
     ]) {
       const { status } = await call("list_todos", {}, token);
       expect(status).toBe(401);

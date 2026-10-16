@@ -195,7 +195,12 @@ function deployApp(
           await new Promise((resolve) => setTimeout(resolve, 25));
         }
       }
-      return worker.fetch(request, {}, { waitUntil: () => undefined });
+      return worker.fetch(
+        request,
+        // Deployed as everyAppWorker() does: its name is the audience.
+        { EVERYAPP_AUDIENCE: WORKER },
+        { waitUntil: () => undefined },
+      );
     },
   };
 }

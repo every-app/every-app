@@ -6,7 +6,9 @@
  * Claude Code and scripted JSON-RPC all work against the dev server.
  *
  * Dev only: tokens are minted with the dev kid, which apps trust only under
- * EVERYAPP_DEV, and only localhost-class hosts and origins are served.
+ * EVERYAPP_DEV, and only localhost-class hosts and origins are served. Their
+ * audience is the app id, which a dev Worker (no EVERYAPP_AUDIENCE) expects
+ * under EVERYAPP_DEV.
  */
 import { IDENTITY_DEV_KEY_ID } from "@every-app/sdk/internal";
 import { fetchAppCatalog, type CatalogSnapshot } from "../catalog";
@@ -76,10 +78,13 @@ export function createDevToolBus(options: DevToolBusOptions): DevToolBus {
   const catalogFor = (app: DevToolBusApp): Promise<CatalogSnapshot> => {
     const cached = catalogs.get(app.appId);
     if (cached && cached.expiresAt > Date.now()) return cached.snapshot;
-    const snapshot = fetchAppCatalog(app, {
-      signing,
-      invoke: (request) => app.fetcher.fetch(request),
-    }).catch((error: unknown): CatalogSnapshot => ({
+    const snapshot = fetchAppCatalog(
+      { ...app, audience: app.appId },
+      {
+        signing,
+        invoke: (request) => app.fetcher.fetch(request),
+      },
+    ).catch((error: unknown): CatalogSnapshot => ({
       status: "error",
       error: `could not reach the app (${error instanceof Error ? error.message : String(error)})`,
     }));
@@ -121,6 +126,7 @@ export function createDevToolBus(options: DevToolBusOptions): DevToolBus {
       const toolBusApp: ToolBusApp = {
         rowId: appId,
         appId,
+        audience: appId,
         name: app.name ?? appId,
         baseUrl: app.baseUrl,
         catalogHash: snapshot.hash,

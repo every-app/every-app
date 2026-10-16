@@ -238,6 +238,8 @@ describe("deploy", () => {
     const upload = account.deploys.find((d) => d.workerName === "every-acme-todo")!;
     expect(upload.config["env"]).toMatchObject({
       DB: { type: "d1", name: "every-acme-todo" },
+      // The audience the gateway mints this Worker's identities for.
+      EVERYAPP_AUDIENCE: { type: "text", value: "every-acme-todo" },
       EVERYAPP_IDENTITY_ISSUER: { type: "text", value: GATEWAY_URL },
       EVERYAPP_IDENTITY_PUBLIC_KEYS: {
         type: "text",

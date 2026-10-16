@@ -110,6 +110,9 @@ export function createDevGatewayHandler(config: DevGatewayConfig) {
     resolveApp: async (host: ParsedHost, reg) =>
       host.appLabel ? reg.findByAppId(host.appLabel) : null,
     fetcherFor: config.fetcherFor ?? getAppFetcher,
+    // A dev Worker has no EVERYAPP_AUDIENCE; under EVERYAPP_DEV the SDK
+    // expects the app id instead.
+    audienceFor: (app) => app.appId,
     interceptMcp: config.interceptMcp,
   };
 

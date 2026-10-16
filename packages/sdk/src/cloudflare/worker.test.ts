@@ -104,6 +104,9 @@ describe("everyAppWorker in development", () => {
       CF_VERSION_METADATA: { type: "version-metadata" },
     });
     expect(worker().env).not.toHaveProperty("EVERY_APP_GATEWAY");
+    // `everyapp dev` mints for the app id, which the SDK accepts in its place
+    // only under EVERYAPP_DEV.
+    expect(worker().env).not.toHaveProperty("EVERYAPP_AUDIENCE");
   });
 
   it("gives each D1 database the local id cf d1 --local can address", () => {
@@ -203,6 +206,7 @@ describe("everyAppWorker in production", () => {
     expect(config.env).toEqual({
       EVERYAPP_APP_ID: { type: "text", value: "todo" },
       CF_VERSION_METADATA: { type: "version-metadata" },
+      EVERYAPP_AUDIENCE: { type: "text", value: "every-acme-todo" },
       EVERYAPP_IDENTITY_PUBLIC_KEYS: {
         type: "text",
         value: JSON.stringify([PUBLIC_KEY]),

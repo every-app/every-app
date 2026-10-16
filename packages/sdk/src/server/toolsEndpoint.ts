@@ -49,7 +49,7 @@ import {
 
 export interface ToolsEndpointOptions {
   toolSet?: ToolSet;
-  /** This app's id: the expected token audience and the masked-error label. */
+  /** This app's id, for the masked-error label. */
   appId: string;
   /** How to verify gateway-minted tokens (keys, issuer, dev opt-in). */
   identity: RequestIdentityOptions;

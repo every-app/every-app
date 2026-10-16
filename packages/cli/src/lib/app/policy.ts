@@ -113,6 +113,11 @@ export function appPolicyProblems(
   if (env["EVERYAPP_DEV"]) {
     problems.push("EVERYAPP_DEV is set, which only `everyapp dev` may do");
   }
+  // The gateway mints this Worker's identities for its name and nothing else.
+  const audience = env["EVERYAPP_AUDIENCE"];
+  if (audience?.type !== "text" || audience["value"] !== workerName) {
+    problems.push(`EVERYAPP_AUDIENCE isn't the Worker's name ("${workerName}")`);
+  }
 
   const d1Ids = new Set(Object.values(resources.d1 ?? {}).map((d1) => d1.id));
   const kvIds = new Set(Object.values(resources.kv ?? {}).map((kv) => kv.id));

@@ -86,6 +86,14 @@ export interface GatewayDeps {
   ): Promise<RegisteredApp | null>;
   /** Seam override (tests). Defaults to {@link getAppFetcher}. */
   fetcherFor?(env: Record<string, unknown>, app: RegisteredApp): AppFetcher;
+  /**
+   * The `aud` of every token minted for an app. Defaults to its Worker name,
+   * the audience a deployed app expects (EVERYAPP_AUDIENCE), so a token for
+   * one organization's copy of an app never opens another's. The dev
+   * gateway mints for the app id, which the SDK accepts only under
+   * EVERYAPP_DEV.
+   */
+  audienceFor?(app: RegisteredApp): string;
   /** Optional login URL to 302 to for unauthenticated HTML navigations. */
   loginUrl?: string;
   /**
@@ -169,19 +177,24 @@ function wantsHtml(request: Request): boolean {
   return (request.headers.get("accept") ?? "").includes("text/html");
 }
 
+function audienceOf(deps: GatewayDeps, app: RegisteredApp): string {
+  return deps.audienceFor ? deps.audienceFor(app) : app.workerName;
+}
+
 async function getPublicMarker(
   deps: GatewayDeps,
   app: RegisteredApp,
 ): Promise<string> {
   const now = deps.now ?? Date.now();
-  const cacheKey = `${app.appId}\0${deps.issuer}`;
+  const audience = audienceOf(deps, app);
+  const cacheKey = `${audience}\0${deps.issuer}`;
   const cached = publicMarkerCache.get(cacheKey);
   if (cached && now - cached.mintedAtMs < PUBLIC_MARKER_REUSE_MS) {
     return cached.marker;
   }
 
   const marker = await mintPublicMarkerJwt(deps.privateKeyPem, {
-    audience: app.appId,
+    audience,
     issuer: deps.issuer,
     keyId: deps.keyId,
     now,
@@ -401,7 +414,7 @@ export async function handleGatewayRequest(
         orgId: session.orgId,
         orgRole: session.orgRole,
       },
-      audience: app.appId,
+      audience: audienceOf(deps, app),
       issuer: deps.issuer,
       channel: session.credential?.channel ?? "web",
       actor: session.credential?.actor

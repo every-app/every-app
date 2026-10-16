@@ -236,11 +236,11 @@ export interface FetchCatalogOptions {
  * caller decides whether to retry.
  */
 export async function fetchAppCatalog(
-  app: { appId: string; baseUrl: string },
+  app: { appId: string; audience: string; baseUrl: string },
   options: FetchCatalogOptions,
 ): Promise<CatalogSnapshot> {
   const token = await mintSystemJwt(options.signing.privateKeyPem, {
-    audience: app.appId,
+    audience: app.audience,
     issuer: options.signing.issuer,
     purpose: "tools.list",
     keyId: options.signing.keyId,

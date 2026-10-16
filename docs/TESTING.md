@@ -77,7 +77,18 @@ in-process service binding, and asserts:
 - cookie tossing: a session cookie a sibling subdomain planted beside the
   member's own (any order, with or without `__Secure-`, public routes too)
   is refused with 401 before authentication, and a single cookie still
-  works.
+  works;
+- (f) a token the gateway minted for one Worker is refused by another
+  Worker of the same app id (identities carry `aud` = the Worker name, and
+  the fixture Workers get `EVERYAPP_AUDIENCE` as `everyAppWorker()` deploys
+  them).
+
+The seam itself, `getAppFetcher`, is covered by
+`packages/perimeter/src/getAppFetcher.test.ts` with a fake Workers for
+Platforms namespace (found, not found from `get` or the first fetch,
+missing `DISPATCHER`, the naming-rule re-check, limits and the outbound
+parameter passed through), and the dispatched apps' egress policy by
+`apps/every-app-gateway/src/server/outbound.test.ts`.
 
 ### MCP conformance (the ToolBus)
 
@@ -228,7 +239,9 @@ bundles.
 Nothing is written into the app: `everyAppWorker()` gives a development
 build `EVERYAPP_DEV=1` and the dev key's `EVERYAPP_IDENTITY_PUBLIC_KEYS` and
 `EVERYAPP_IDENTITY_ISSUER` as plain text bindings, so the SDK verifies real
-signatures in dev, on the same code path as production. The dev key is public;
+signatures in dev, on the same code path as production. A development build
+has no `EVERYAPP_AUDIENCE`: the dev gateway mints for the app id, which the
+SDK accepts as the audience only under `EVERYAPP_DEV`. The dev key is public;
 the SDK trusts it only behind `EVERYAPP_DEV` and only from the dev issuer, and
 the gateway-lite listens on 127.0.0.1 unless `--host`.
 

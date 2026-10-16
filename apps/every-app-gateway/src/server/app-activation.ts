@@ -11,29 +11,25 @@
  * an invalid `GATEWAY_DEPLOYMENT_MODE` (unset included) leaves them
  * deploying.
  */
-import { logEvent, type RegisteredApp } from "@every-app/perimeter";
-import { appBindingName } from "@every-app/perimeter/manifest";
+import {
+  getAppFetcher,
+  logEvent,
+  type RegisteredApp,
+} from "@every-app/perimeter";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { platformPolicy } from "@/server/platform-policy";
 
-interface ServiceBinding {
-  fetch(request: Request): Promise<Response>;
-}
-
 /**
- * Whether this gateway version can reach an app's Worker: it has the
- * service binding, and a request through it gets any HTTP response.
+ * Whether this gateway version can reach an app's Worker through the one
+ * seam (its service binding, or the dispatch namespace), and a request
+ * through it gets any HTTP response.
  */
-export async function probeAppBinding(
+export async function probeApp(
   env: object,
-  app: { workerName: string; hostname: string },
+  app: RegisteredApp,
 ): Promise<boolean> {
-  const binding = (env as Record<string, unknown>)[
-    appBindingName(app.workerName)
-  ] as ServiceBinding | undefined;
-  if (typeof binding?.fetch !== "function") return false;
   try {
-    await binding.fetch(
+    await getAppFetcher(env as Record<string, unknown>, app).fetch(
       new Request(`https://${app.hostname}/__everyapp/health`),
     );
     return true;
@@ -51,7 +47,7 @@ export async function activateApp(
   app: RegisteredApp,
 ): Promise<boolean> {
   if (!platformPolicy(env).bindingActivation) return false;
-  if (!app.rowId || !(await probeAppBinding(env, app))) return false;
+  if (!app.rowId || !(await probeApp(env, app))) return false;
   if (!(await AppRepository.activate(app.rowId, app.organizationId))) {
     // Deleted or disabled since the request looked it up.
     return false;

@@ -40,6 +40,7 @@ function toolBus(overrides: Partial<ToolBusDeps> = {}) {
 const chef = todoApp({
   appId: "chef",
   rowId: "row_chef",
+  audience: "every-acme-chef",
   name: "Chef",
   baseUrl: "https://chef-acme.example.com",
   instructions: undefined,

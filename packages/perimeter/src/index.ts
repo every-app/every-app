@@ -56,5 +56,7 @@ export {
 export {
   AppUnreachableError,
   getAppFetcher,
+  OUTBOUND_PARAMETER,
   type AppFetcher,
+  type OutboundParameters,
 } from "./getAppFetcher";

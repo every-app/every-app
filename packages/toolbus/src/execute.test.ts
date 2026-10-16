@@ -80,7 +80,7 @@ describe("executeToolCall", () => {
     expect(claims).toMatchObject({
       typ: "user",
       sub: "user_1",
-      aud: "todo",
+      aud: "every-acme-todo",
       iss: ISSUER,
       chan: "mcp",
       act: { sub: "pat:pat_1" },

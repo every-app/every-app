@@ -10,7 +10,7 @@ For full API reference and usage guides, see the [Embedded SDK documentation](ht
 
 ## Entry points
 
-- `@every-app/sdk/server`: runs in the Worker. `everyApp()` verifies the identity the gateway injects; the app id comes from `env.EVERYAPP_APP_ID`.
+- `@every-app/sdk/server`: runs in the Worker. `everyApp()` verifies the identity the gateway injects. Tokens carry the app's Worker name as their audience, which `everyAppWorker()` sets as `env.EVERYAPP_AUDIENCE` at deploy (in development, where `everyapp dev` mints for the app id, `env.EVERYAPP_APP_ID` stands in); the app id comes from `env.EVERYAPP_APP_ID`.
 - `@every-app/sdk/cloudflare`: runs in Node while `cf` loads `cloudflare.config.ts`. `everyAppWorker()` builds the Worker definition from `everyapp.config.ts`:
 
   ```ts

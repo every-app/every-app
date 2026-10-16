@@ -138,7 +138,7 @@ describe("handleGatewayRequest", () => {
     expect(body.identity).toBeTruthy();
     const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
     const { payload } = await jwtVerify(body.identity, pub, {
-      audience: "todo",
+      audience: "every-todo-app",
       issuer: "https://home.example.com",
     });
     expect(payload.sub).toBe("user_1");
@@ -187,7 +187,7 @@ describe("handleGatewayRequest", () => {
     const body = (await res.json()) as { identity: string };
     const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
     const { payload } = await jwtVerify(body.identity, pub, {
-      audience: "todo",
+      audience: "every-todo-app",
       issuer: "https://home.example.com",
     });
     expect(payload.chan).toBe("api");
@@ -594,6 +594,54 @@ describe("handleGatewayRequest", () => {
     expect(publicBody.authorization).toBeNull();
   });
 
+  it("stamps every token with the app's Worker name as its audience", async () => {
+    const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
+    const anonymous = {
+      authenticate: async () => null,
+      hasAppAccess: async () => true,
+    };
+    // Another organization's copy of the same app id.
+    const BETA_TODO: RegisteredApp = {
+      ...TODO,
+      hostname: "todo-beta.example.com",
+      workerName: "every-beta-todo",
+      organizationId: "org_2",
+    };
+    const registry = new InMemoryAppRegistry([TODO, BETA_TODO]);
+
+    for (const app of [TODO, BETA_TODO]) {
+      const user = await handleGatewayRequest(
+        req("/tasks", { host: app.hostname }),
+        deps({ registry }),
+      );
+      const { identity } = (await user.json()) as { identity: string };
+      const verified = await jwtVerify(identity, pub);
+      expect(verified.payload.aud).toBe(app.workerName);
+
+      const visitor = await handleGatewayRequest(
+        req("/health", { host: app.hostname }),
+        deps({ registry, authenticator: anonymous }),
+      );
+      const { publicMarker } = (await visitor.json()) as {
+        publicMarker: string;
+      };
+      // Cached per audience: one Worker's marker is never served to another.
+      expect((await jwtVerify(publicMarker, pub)).payload.aud).toBe(
+        app.workerName,
+      );
+    }
+  });
+
+  it("mints for the audience audienceFor names (the dev gateway's app id)", async () => {
+    const res = await handleGatewayRequest(
+      req("/tasks"),
+      deps({ audienceFor: (app) => app.appId }),
+    );
+    const { identity } = (await res.json()) as { identity: string };
+    const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
+    expect((await jwtVerify(identity, pub)).payload.aud).toBe("todo");
+  });
+
   it("reuses public markers until half the SDK TTL has elapsed", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(1_000_000);
@@ -654,7 +702,7 @@ describe("handleGatewayRequest", () => {
     expect(body.identity).toBeTruthy();
     const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
     const { payload } = await jwtVerify(body.identity as string, pub, {
-      audience: "todo",
+      audience: "every-todo-app",
       issuer: "https://home.example.com",
     });
     expect(payload.sub).toBe("user_1");
@@ -999,6 +1047,55 @@ describe("handleGatewayRequest", () => {
     expect(res.headers.getSetCookie()).toEqual([
       "session=app; Domain=example.com; Path=/",
     ]);
+  });
+
+  it("reaches a dispatch app through the namespace, and answers 503 when it can't", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    const DISPATCHED: RegisteredApp = {
+      ...TODO,
+      hostname: "todo-acme.example.com",
+      workerName: "every-acme-todo",
+      tier: "dispatch",
+    };
+    const get = vi.fn((name: string) => {
+      if (name !== "every-acme-todo") throw new Error("Worker not found.");
+      return echoFetcher();
+    });
+    const through = (env: Record<string, unknown>, app = DISPATCHED) =>
+      handleGatewayRequest(
+        req("/tasks", { host: app.hostname }),
+        deps({
+          env,
+          registry: new InMemoryAppRegistry([app]),
+          fetcherFor: undefined,
+        }),
+      );
+
+    const served = await through({ DISPATCHER: { get } });
+    expect(served.status).toBe(200);
+    const { identity } = (await served.json()) as { identity: string };
+    const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
+    expect((await jwtVerify(identity, pub)).payload.aud).toBe(
+      "every-acme-todo",
+    );
+
+    const noNamespace = await through({});
+    expect(noNamespace.status).toBe(503);
+    expect(await noNamespace.json()).toMatchObject({
+      error: "app_unreachable",
+    });
+
+    const notUploaded = await through(
+      { DISPATCHER: { get } },
+      { ...DISPATCHED, appId: "notes", workerName: "every-acme-notes" },
+    );
+    expect(notUploaded.status).toBe(503);
+    expect(await notUploaded.json()).toMatchObject({
+      error: "app_unreachable",
+    });
+    consoleError.mockRestore();
   });
 
   it("stamps security headers on app failure responses", async () => {

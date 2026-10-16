@@ -23,8 +23,13 @@ export interface ToolBusTool {
 export interface ToolBusApp {
   /** The gateway's row id (`apps.id`), for the audit line. */
   rowId: string;
-  /** Manifest id: the identity audience and the tool-name prefix. */
+  /** Manifest id: the tool-name prefix. */
   appId: string;
+  /**
+   * The `aud` of every token minted for the app: its Worker name (the app
+   * id under `everyapp dev`, whose Workers expect that).
+   */
+  audience: string;
   name: string;
   /** What the app is for, as `everyapp_list_apps` tells it. */
   description?: string;

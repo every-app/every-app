@@ -232,7 +232,11 @@ async function resolveCallerApp(
   registry: AppRegistry,
   props: AppCallerProps,
 ): Promise<RegisteredApp | null> {
-  const key = JSON.stringify([props.organizationId, props.appId]);
+  const key = JSON.stringify([
+    props.organizationId,
+    props.appId,
+    props.workerName,
+  ]);
   const now = Date.now();
   const cached = callerCache.get(key);
   if (cached && cached.expiresAt > now) return cached.app;
@@ -264,7 +268,7 @@ async function resolveAttribution(
     }
     const user = await verifyIdentityJwt(token, {
       publicKeys: [env.JWT_PUBLIC_KEY.replace(/\\n/g, "\n")],
-      audience: props.appId,
+      audience: props.workerName,
       issuer: env.GATEWAY_URL,
     });
     if (user.orgId !== props.organizationId) {

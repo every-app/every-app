@@ -216,7 +216,7 @@ export async function executeToolCall(
       orgId: principal.organizationId,
       orgRole: principal.orgRole,
     },
-    audience: app.appId,
+    audience: app.audience,
     issuer: deps.signing.issuer,
     keyId: deps.signing.keyId,
     channel: "mcp",

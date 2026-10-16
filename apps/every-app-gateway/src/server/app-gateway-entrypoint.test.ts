@@ -265,7 +265,7 @@ describe("AppGateway proxy and attribution", () => {
         orgId: "org-1",
         orgRole: "member",
       },
-      audience: "chef",
+      audience: "every-chef",
       issuer: "https://home.example.com",
     });
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -286,6 +286,35 @@ describe("AppGateway proxy and attribution", () => {
     expect(
       fetchUpstream.mock.calls[0]?.[0]?.headers.get("x-everyapp-identity"),
     ).toBeNull();
+  });
+
+  it("never attributes an identity minted for another Worker, even of the same app id", async () => {
+    const warning = vi
+      .spyOn(console, "warn")
+      .mockImplementation(() => undefined);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    for (const audience of ["chef", "every-other-chef"]) {
+      const token = await mintIdentityJwt(privateKeyPem, {
+        subject: {
+          sub: "user-1",
+          email: "user@example.com",
+          orgId: "org-1",
+          orgRole: "member",
+        },
+        audience,
+        issuer: "https://home.example.com",
+      });
+      const response = await call({
+        inbound: request({ "x-everyapp-identity": token }),
+      });
+      expect(response.status).toBe(200);
+      expect(info).toHaveBeenLastCalledWith(
+        "AI gateway request",
+        expect.objectContaining({ attribution: "app" }),
+      );
+    }
+    expect(warning).toHaveBeenCalledTimes(2);
   });
 
   it("falls back to app attribution when a forwarded identity is invalid", async () => {

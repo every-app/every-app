@@ -12,6 +12,8 @@
  *  (c) a declared public route works unauthenticated; everything else 401s
  *  (d) /__everyapp/* is unreachable unauthenticated from outside
  *  (e) Cookie and a spoofed x-everyapp-identity are stripped/replaced
+ *  (f) a token minted for one Worker is refused by another Worker of the
+ *      same app id (another organization's copy)
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { everyApp } from "@every-app/sdk/server";
@@ -25,6 +27,25 @@ import { IDENTITY_HEADER } from "../headers";
 
 let keys: TestKeyPair;
 const ctx = { waitUntil: (_promise: Promise<unknown>) => {} };
+
+/** A Worker's env as everyAppWorker() deploys it: its name is the audience. */
+function workerEnv(workerName: string) {
+  return { EVERYAPP_AUDIENCE: workerName };
+}
+
+/** The service binding to a deployed fixture app Worker. */
+function binding(
+  app: ReturnType<typeof buildFixtureApp>,
+  workerName: string,
+  seen: string[] = [],
+) {
+  return {
+    fetch: (request: Request) => {
+      seen.push(request.headers.get(IDENTITY_HEADER) ?? "");
+      return app.fetch(request, workerEnv(workerName), ctx);
+    },
+  };
+}
 
 /** The fixture sub-app: a real worker guarded by the real SDK wrapper. */
 function buildFixtureApp(publicKeys: string[]) {
@@ -88,7 +109,7 @@ beforeAll(async () => {
   };
 
   deps = {
-    env: { "APP__every-todo-app": fixtureApp },
+    env: { "APP__every-todo-app": binding(fixtureApp, TODO.workerName) },
     registry: new InMemoryAppRegistry([TODO]),
     authenticator,
     privateKeyPem: keys.privateKeyPem,
@@ -121,7 +142,7 @@ describe("perimeter end-to-end (gateway + real SDK app)", () => {
     const app = buildFixtureApp([keys.publicKeyPem]);
     const res = await app.fetch(
       new Request("https://todo.example.com/tasks"),
-      {},
+      workerEnv(TODO.workerName),
       ctx,
     );
     expect(res.status).toBe(401);
@@ -144,7 +165,7 @@ describe("perimeter end-to-end (gateway + real SDK app)", () => {
         new Request(`https://todo.example.com${path}`, {
           headers: { "x-everyapp-public": "1" },
         }),
-        {},
+        workerEnv(TODO.workerName),
         ctx,
       );
       expect(res.status).toBe(401);
@@ -218,6 +239,49 @@ describe("perimeter end-to-end (gateway + real SDK app)", () => {
     // ... but never saw the user's cookie or the forged headers.
     expect(body.sawCookie).toBeNull();
     expect(body.sawRawIdentity).toBeNull();
+  });
+
+  it("(f) a token minted for one Worker is refused by another Worker of the same app id", async () => {
+    // Two organizations' copies of `todo`, each its own Worker.
+    const BETA_TODO: RegisteredApp = {
+      ...TODO,
+      hostname: "todo-beta.example.com",
+      workerName: "every-beta-todo",
+      organizationId: "org_2",
+    };
+    const minted: string[] = [];
+    const alpha = binding(
+      buildFixtureApp([keys.publicKeyPem]),
+      TODO.workerName,
+      minted,
+    );
+    const beta = buildFixtureApp([keys.publicKeyPem]);
+    const twoApps: GatewayDeps = {
+      ...deps,
+      env: {
+        "APP__every-todo-app": alpha,
+        "APP__every-beta-todo": binding(beta, BETA_TODO.workerName),
+      },
+      registry: new InMemoryAppRegistry([TODO, BETA_TODO]),
+    };
+
+    const own = await handleGatewayRequest(
+      gwReq("/tasks", { headers: LOGGED_IN }),
+      twoApps,
+    );
+    expect(own.status).toBe(200);
+    const tokenForAlpha = minted.at(-1);
+    expect(tokenForAlpha).toBeTruthy();
+
+    // Replayed at the other Worker (same app id, same keys, same issuer).
+    const replayed = await beta.fetch(
+      new Request("https://todo-beta.example.com/tasks", {
+        headers: { [IDENTITY_HEADER]: tokenForAlpha! },
+      }),
+      workerEnv(BETA_TODO.workerName),
+      ctx,
+    );
+    expect(replayed.status).toBe(401);
   });
 });
 

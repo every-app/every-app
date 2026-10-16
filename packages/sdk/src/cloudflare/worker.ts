@@ -169,6 +169,7 @@ export type EveryAppDevEnv<M> = ResourceEnv<M> &
 /** Bindings in production: the deployed identity and the gateway binding. */
 export type EveryAppDeployEnv<M> = ResourceEnv<M> &
   SharedEnv & {
+    EVERYAPP_AUDIENCE: TextBinding;
     EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
     EVERY_APP_GATEWAY: GatewayBinding;
@@ -302,6 +303,8 @@ export function everyAppWorker<
     CF_VERSION_METADATA: { type: "version-metadata" },
   };
   if (deploy) {
+    // The gateway mints every identity for the Worker's name (`aud`).
+    env["EVERYAPP_AUDIENCE"] = { type: "text", value: name };
     env["EVERYAPP_IDENTITY_PUBLIC_KEYS"] = {
       type: "text",
       value: JSON.stringify(deploy.identityPublicKeys),

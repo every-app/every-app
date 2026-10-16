@@ -21,7 +21,7 @@ export default everyApp(async (request, env, ctx, user) => {
 });
 ```
 
-That's the entire auth surface. The wrapper checks that each identity was issued for this app, using the app id the Worker config sets as `EVERYAPP_APP_ID`, so the Worker never imports `everyapp.config.ts` itself. The wrapper verifies the Gateway's signed identity header on every request, fail-closed: no valid identity means a 401 before your code runs. It also wraps anything with a `.fetch` (a Hono app, another worker export) the same way.
+That's the entire auth surface. The wrapper checks that each identity was issued for this Worker, using the Worker name the deployed config sets as `EVERYAPP_AUDIENCE` (in local dev, the app id in `EVERYAPP_APP_ID`), so the Worker never imports `everyapp.config.ts` itself and a pass minted for another organization's copy of the same app is refused. The wrapper verifies the Gateway's signed identity header on every request, fail-closed: no valid identity means a 401 before your code runs. It also wraps anything with a `.fetch` (a Hono app, another worker export) the same way.
 
 <Callout type="warn">
   Never read user identity from headers, cookies, or request bodies yourself.
@@ -227,7 +227,7 @@ On a public route, requests skip login and your handler receives `user: null`. T
 <summary>How your app verifies signatures without calling home</summary>
 <div className="faq-content">
 
-Your app holds its id (`EVERYAPP_APP_ID`) and the Gateway's public key set (`EVERYAPP_IDENTITY_PUBLIC_KEYS`) in its environment, so verifying a request is a local audience and signature check — no network call, no JWKS endpoint, nothing your app needs to be allowed to reach. In local dev, `everyAppWorker()` hands the app a well-known, public dev key that `npx everyapp dev` signs with, accepted only in development builds and only from the dev issuer; in production, the key set is delivered at deploy time. The verification code path is the same in both.
+Your app holds its Worker name (`EVERYAPP_AUDIENCE`) and the Gateway's public key set (`EVERYAPP_IDENTITY_PUBLIC_KEYS`) in its environment, so verifying a request is a local audience and signature check — no network call, no JWKS endpoint, nothing your app needs to be allowed to reach. In local dev, `everyAppWorker()` hands the app a well-known, public dev key that `npx everyapp dev` signs with, accepted only in development builds and only from the dev issuer; in production, the key set is delivered at deploy time. The verification code path is the same in both.
 
 </div>
 </details>

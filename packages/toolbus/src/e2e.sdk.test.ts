@@ -103,6 +103,9 @@ let keys: Awaited<ReturnType<typeof testKeys>>;
 let app: ReturnType<typeof everyApp>;
 let snapshotApp: ToolBusApp;
 const ctx = { waitUntil: () => undefined };
+// The Worker's name is the audience everyAppWorker() deploys it with.
+const WORKER = "every-acme-todo";
+const WORKER_ENV = { EVERYAPP_AUDIENCE: WORKER };
 
 beforeAll(async () => {
   keys = await testKeys();
@@ -112,16 +115,21 @@ beforeAll(async () => {
     { publicKeys: [keys.publicKeyPem], issuer: ISSUER, tools },
   );
   const snapshot = await fetchAppCatalog(
-    { appId: "todo", baseUrl: "https://todo-acme.example.com" },
+    {
+      appId: "todo",
+      audience: WORKER,
+      baseUrl: "https://todo-acme.example.com",
+    },
     {
       signing: { privateKeyPem: keys.privateKeyPem, issuer: ISSUER },
-      invoke: (request) => app.fetch(request, {}, ctx),
+      invoke: (request) => app.fetch(request, WORKER_ENV, ctx),
     },
   );
   if ("error" in snapshot) throw new Error(snapshot.error);
   snapshotApp = {
     rowId: "row_todo",
     appId: "todo",
+    audience: WORKER,
     name: "Todos",
     baseUrl: "https://todo-acme.example.com",
     catalogHash: snapshot.hash,
@@ -138,7 +146,7 @@ function harness(overrides: Partial<ToolBusDeps> = {}) {
     signing: { privateKeyPem: keys.privateKeyPem, issuer: ISSUER },
     invokeApp: (_app, request) => {
       invocations += 1;
-      return app.fetch(request, {}, ctx);
+      return app.fetch(request, WORKER_ENV, ctx);
     },
     onCatalogDrift,
     audit: (event) => events.push(event),
@@ -236,6 +244,24 @@ describe("ToolBus + real SDK app", () => {
     );
     // Refused by the gateway's own check: only the two good calls ran.
     expect(invocations()).toBe(2);
+  });
+
+  it("is refused by another Worker of the same app id", async () => {
+    // The gateway mints for the Worker it reaches; another organization's
+    // copy of `todo` rejects that identity and never runs the tool.
+    seenUsers.length = 0;
+    const { serve } = harness({
+      invokeApp: (_app, request) =>
+        app.fetch(request, { EVERYAPP_AUDIENCE: "every-beta-todo" }, ctx),
+    });
+    const refused = await rpcBody(
+      await serve(
+        modernRequest("tools/call", { name: "list_todos", arguments: {} }),
+        view(),
+      ),
+    );
+    expect(refused.result.isError).toBe(true);
+    expect(seenUsers).toEqual([]);
   });
 
   it("delivers a verified chan:mcp identity bound to the call", async () => {

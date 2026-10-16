@@ -21,6 +21,7 @@ import {
   IDENTITY_HEADER,
   PUBLIC_HEADER,
   PUBLIC_MARKER_SUB,
+  AUDIENCE_ENV,
   DEV_ENV,
   DEV_ISSUER,
   ISSUER_ENV,
@@ -32,7 +33,7 @@ const ctx: ExecutionContextLike = { waitUntil: () => {} };
 const issuer = "https://home.example.com";
 
 async function mint(
-  aud = "todo",
+  aud = "every-todo",
   iss = issuer,
   kid = IDENTITY_KEY_ID,
 ): Promise<string> {
@@ -55,7 +56,7 @@ async function mint(
     .sign(key);
 }
 
-async function mintPublicMarker(aud = "todo"): Promise<string> {
+async function mintPublicMarker(aud = "every-todo"): Promise<string> {
   const key = await importPKCS8(privatePem, IDENTITY_ALG);
   return new SignJWT({ typ: "public", pub: true })
     .setProtectedHeader({ alg: IDENTITY_ALG, kid: IDENTITY_KEY_ID })
@@ -74,7 +75,11 @@ beforeAll(async () => {
 });
 
 describe("everyApp", () => {
-  const env = { [ISSUER_ENV]: issuer } as Record<string, unknown>;
+  // As everyAppWorker() deploys it: the audience is the Worker's name.
+  const env = {
+    [ISSUER_ENV]: issuer,
+    [AUDIENCE_ENV]: "every-todo",
+  } as Record<string, unknown>;
 
   it("passes the verified user to the handler", async () => {
     const app = everyApp(
@@ -184,46 +189,126 @@ describe("everyApp", () => {
     expect(await res.json()).toEqual({ userId: "user_1" });
   });
 
-  it("takes the audience from EVERYAPP_APP_ID without a manifest", async () => {
+  it("takes the audience from EVERYAPP_AUDIENCE, never the app id, outside dev", async () => {
     const app = everyApp(
       async (_req, _env, _ctx, user) => Response.json({ userId: user?.id }),
-      undefined,
       { publicKeys: [publicPem] },
     );
     const request = (aud: string) =>
       mint(aud).then(
         (token) =>
-          new Request("https://todo.example.com/tasks", {
+          new Request("https://todo-acme.example.com/tasks", {
             headers: { [IDENTITY_HEADER]: token },
           }),
       );
-    const appEnv = { ...env, EVERYAPP_APP_ID: "todo" };
+    const appEnv = {
+      [ISSUER_ENV]: issuer,
+      EVERYAPP_APP_ID: "todo",
+      [AUDIENCE_ENV]: "every-acme-todo",
+    };
 
-    const ok = await app.fetch(await request("todo"), appEnv, ctx);
+    const ok = await app.fetch(await request("every-acme-todo"), appEnv, ctx);
     expect(await ok.json()).toEqual({ userId: "user_1" });
 
-    const otherApp = await app.fetch(await request("chef"), appEnv, ctx);
-    expect(otherApp.status).toBe(401);
+    const appId = await app.fetch(await request("todo"), appEnv, ctx);
+    expect(appId.status).toBe(401);
   });
 
-  it("returns 500 when neither EVERYAPP_APP_ID nor a manifest names the app", async () => {
+  it("refuses a token minted for another Worker with the same app id", async () => {
+    // Two organizations' copies of `todo`: a token the gateway minted for
+    // one must never open the other.
+    let handlerRan = false;
+    const app = everyApp(
+      async () => {
+        handlerRan = true;
+        return new Response("ok");
+      },
+      { publicKeys: [publicPem] },
+    );
+    const workerB = {
+      [ISSUER_ENV]: issuer,
+      EVERYAPP_APP_ID: "todo",
+      [AUDIENCE_ENV]: "every-beta-todo",
+    };
+
+    const res = await app.fetch(
+      new Request("https://todo-beta.example.com/tasks", {
+        headers: { [IDENTITY_HEADER]: await mint("every-acme-todo") },
+      }),
+      workerB,
+      ctx,
+    );
+    expect(res.status).toBe(401);
+    expect(handlerRan).toBe(false);
+
+    const marker = await app.fetch(
+      new Request("https://todo-beta.example.com/health", {
+        headers: { [PUBLIC_HEADER]: await mintPublicMarker("every-acme-todo") },
+      }),
+      workerB,
+      ctx,
+    );
+    expect(marker.status).toBe(401);
+    expect(handlerRan).toBe(false);
+  });
+
+  it("returns 500 when EVERYAPP_AUDIENCE is unset outside dev", async () => {
+    // The app id alone never stands in for the audience in a deployed
+    // Worker, with or without a manifest naming it.
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const app = everyApp(async () => new Response("ok"), undefined, {
-      publicKeys: [publicPem],
-    });
+    const app = everyApp(
+      async () => new Response("ok"),
+      { id: "todo" },
+      { publicKeys: [publicPem] },
+    );
     const res = await app.fetch(
       new Request("https://todo.example.com/tasks", {
-        headers: { [IDENTITY_HEADER]: await mint() },
+        headers: { [IDENTITY_HEADER]: await mint("todo") },
       }),
-      env,
+      { [ISSUER_ENV]: issuer, EVERYAPP_APP_ID: "todo" },
       ctx,
     );
     spy.mockRestore();
     expect(res.status).toBe(500);
     expect(await res.json()).toMatchObject({
       error: "misconfigured",
-      message: expect.stringContaining("EVERYAPP_APP_ID is not set"),
+      message: expect.stringContaining("EVERYAPP_AUDIENCE is not set"),
     });
+  });
+
+  it("falls back to the app id as the audience only under EVERYAPP_DEV", async () => {
+    // `everyapp dev` mints for the app id and its Worker has no
+    // EVERYAPP_AUDIENCE.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const app = everyApp(async () => new Response("ok"), {
+      publicKeys: [publicPem],
+    });
+    const request = async () =>
+      new Request("https://todo.localhost/tasks", {
+        headers: {
+          [IDENTITY_HEADER]: await mint(
+            "todo",
+            DEV_ISSUER,
+            IDENTITY_DEV_KEY_ID,
+          ),
+        },
+      });
+    const devEnv = { [ISSUER_ENV]: DEV_ISSUER, EVERYAPP_APP_ID: "todo" };
+
+    const dev = await app.fetch(
+      await request(),
+      { ...devEnv, [DEV_ENV]: "1" },
+      ctx,
+    );
+    expect(dev.status).toBe(200);
+
+    const deployed = await app.fetch(
+      await request(),
+      { ...devEnv, [DEV_ENV]: "0" },
+      ctx,
+    );
+    spy.mockRestore();
+    expect(deployed.status).toBe(500);
   });
 
   it("returns 500 when EVERYAPP_APP_ID contradicts the manifest", async () => {
@@ -270,10 +355,11 @@ describe("everyApp", () => {
 
   it("re-verifies a cloned request directly from env", async () => {
     const original = new Request("https://env-only.example.com/tasks", {
-      headers: { [IDENTITY_HEADER]: await mint("env-only") },
+      headers: { [IDENTITY_HEADER]: await mint("every-env-only") },
     });
     const helperEnv = {
       EVERYAPP_APP_ID: "env-only",
+      [AUDIENCE_ENV]: "every-env-only",
       EVERYAPP_IDENTITY_PUBLIC_KEYS: JSON.stringify([publicPem]),
       [ISSUER_ENV]: issuer,
     };
@@ -331,12 +417,12 @@ describe("everyApp", () => {
         publicKeys: [publicPem],
       },
     );
-    const token = await mint("todo", "https://evil.example.com");
+    const token = await mint("every-todo", "https://evil.example.com");
     const res = await app.fetch(
       new Request("https://todo.example.com/tasks", {
         headers: { [IDENTITY_HEADER]: token },
       }),
-      { [ISSUER_ENV]: issuer },
+      env,
       ctx,
     );
     expect(res.status).toBe(401);
@@ -352,7 +438,7 @@ describe("everyApp", () => {
       new Request("https://todo.example.com/tasks", {
         headers: { [IDENTITY_HEADER]: await mint() },
       }),
-      {},
+      { [AUDIENCE_ENV]: "every-todo" },
       ctx,
     );
     expect(res.status).toBe(401);
@@ -370,7 +456,7 @@ describe("everyApp", () => {
       { id: "todo" },
       { publicKeys: [publicPem] },
     );
-    const token = await mint("todo", DEV_ISSUER, IDENTITY_DEV_KEY_ID);
+    const token = await mint("every-todo", DEV_ISSUER, IDENTITY_DEV_KEY_ID);
     const request = () =>
       new Request("https://todo.example.com/tasks", {
         headers: { [IDENTITY_HEADER]: token },
@@ -378,14 +464,22 @@ describe("everyApp", () => {
 
     const disabled = await app.fetch(
       request(),
-      { [ISSUER_ENV]: DEV_ISSUER, [DEV_ENV]: "0" },
+      {
+        [ISSUER_ENV]: DEV_ISSUER,
+        [AUDIENCE_ENV]: "every-todo",
+        [DEV_ENV]: "0",
+      },
       ctx,
     );
     expect(disabled.status).toBe(401);
 
     const enabled = await app.fetch(
       request(),
-      { [ISSUER_ENV]: DEV_ISSUER, [DEV_ENV]: "1" },
+      {
+        [ISSUER_ENV]: DEV_ISSUER,
+        [AUDIENCE_ENV]: "every-todo",
+        [DEV_ENV]: "1",
+      },
       ctx,
     );
     expect(enabled.status).toBe(200);
