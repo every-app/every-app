@@ -39,7 +39,6 @@ import { syncGatewayAppTools } from "@/commands/gateway/deploy/steps/syncAppTool
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
 import { hasWorkersPaid } from "@/lib/cf/plan";
 import type { CfRunner } from "@/lib/cf/runner";
-import type { CaaLookup } from "@/lib/domains/caa";
 import { normalizeHostname } from "@/lib/domains/hostnames";
 import { listZones, registerDomainUrl } from "@/lib/domains/zones";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
@@ -106,7 +105,6 @@ export interface SetupDeps {
     sleep?: (ms: number) => Promise<void>;
     verifyTimeoutMs?: number;
     leaseWaitMs?: number;
-    lookupCaa?: CaaLookup;
     certificates?: {
       isReady?: (url: string) => Promise<boolean>;
       sleep?: (ms: number) => Promise<void>;
@@ -191,15 +189,11 @@ export async function runSetup(
     type: "step",
     step: "setup.domain",
     status: "ok",
-    message:
-      target.routing === "custom-domains"
-        ? `The gateway lives at https://${target.domain}, each app one label below it (todo.${target.appBaseDomain}) as its own Custom Domain.`
-        : `The gateway lives at https://${target.domain}, its apps at <app>-<org>.${target.domain} through its wildcard route (\`everyapp gateway use-per-app-domains\` changes that).`,
+    message: `The gateway lives at https://${target.domain}, each app one label below it (todo.${target.appBaseDomain}) as its own Custom Domain.`,
     data: {
       gatewayHost: target.domain,
       appBaseDomain: target.appBaseDomain,
       zone: target.zone.name,
-      routing: target.routing,
     },
   });
 
@@ -395,7 +389,6 @@ async function deployOrSkipGateway({
       sleep: deps.seams?.sleep,
       verifyTimeoutMs: deps.seams?.verifyTimeoutMs,
       leaseWaitMs: deps.seams?.leaseWaitMs,
-      lookupCaa: deps.seams?.lookupCaa,
       certificates: deps.seams?.certificates,
     });
     out.emit({

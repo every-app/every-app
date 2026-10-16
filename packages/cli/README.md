@@ -59,8 +59,8 @@ the command to restore it), uploads with `cf deploy`, and remembers the
 address and account for later runs. The gateway serves at `--domain`, and each app one label below
 it (`todo.apps.example.com`) as its own Workers Custom Domain: Cloudflare
 creates the DNS record and certificate. Before it adds an address, the deploy
-checks for a DNS record it would replace (`--force-dns` replaces it), CAA
-records that would block the certificate, and room in the zone.
+checks for a DNS record that answers it, at the name or as a wildcard above it
+(`--force-dns` publishes anyway), and room in the zone.
 
 Other gateway commands:
 
@@ -70,8 +70,6 @@ everyapp gateway status         # release, apps, addresses and certificates, own
 everyapp gateway reconcile      # bind and serve exactly the registered apps
 everyapp gateway claim-link     # a new owner setup link
 everyapp gateway secret set OPENAI_API_KEY
-everyapp gateway adopt --domain example.com   # take over a gateway deployed before cf
-everyapp gateway use-per-app-domains          # move it off its wildcard route
 ```
 
 ### Create a new app

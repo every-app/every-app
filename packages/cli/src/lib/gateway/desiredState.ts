@@ -3,9 +3,9 @@
  * that are uploaded (`binding`), live (`active`) or switched off
  * (`disabled`, still bound so turning it on again is instant). `pending`
  * apps are never bound, since their Worker may not exist yet. A row is bound
- * only if its Worker is the one its naming rule gives it (legacy
- * `every-<appId>`, otherwise `every-<orgKey>-<appId>`), so the registry can
- * never point the gateway at another Worker in the account, and only if
+ * only if its Worker is the one the naming rule gives it
+ * (`every-<orgKey>-<appId>`), so the registry can never point the gateway
+ * at another Worker in the account, and only if
  * that Worker exists: `/deployed` moves a row to `binding` on the CLI's
  * word, and an `active` row outlives a Worker deleted by hand. Binding a
  * missing Worker fails the whole gateway deploy, so one stale row would
@@ -21,7 +21,7 @@ import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 
 const DESIRED_APPS = `SELECT apps.app_slug, apps.worker_name, apps.hostname, apps.status,
-  apps.legacy_names, organization_keys.org_key
+  organization_keys.org_key
 FROM apps LEFT JOIN organization_keys
   ON organization_keys.organization_id = apps.organization_id
 WHERE apps.status IN ('binding', 'active', 'disabled')
@@ -86,7 +86,8 @@ export async function readDesiredState(
       appId: app.appId,
       workerName: app.workerName,
       orgKey: typeof row["org_key"] === "string" ? row["org_key"] : null,
-      legacyNames: Boolean(Number(row["legacy_names"])),
+      // Until perimeter drops the option: names are assigned one way.
+      legacyNames: false,
     });
     if (valid) named.push(app);
     else skipped.push({ appId: app.appId, workerName: app.workerName });

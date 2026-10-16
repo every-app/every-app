@@ -1,19 +1,13 @@
 /**
  * Turn the gateway release's Build Output into this install's gateway: its
- * resource ids, a service binding per bound app, its domains (or route), and
- * the release stamp, then validate the result with `@cloudflare/config`'s
- * own Build Output schema before cf ever sees it.
+ * resource ids, a service binding per bound app, its domains, and the
+ * release stamp, then validate the result with `@cloudflare/config`'s own
+ * Build Output schema before cf ever sees it.
  *
- * Routing (lib/gateway/install.ts):
- *  - `custom-domains`: the gateway host and every bound app's host are
- *    Workers Custom Domains on the gateway, the full list on every deploy
- *    (cf publishes them as a whole: a host left out is removed), and
- *    APP_BASE_DOMAIN tells the gateway where apps live;
- *  - `wildcard-route`: the gateway host is a Custom Domain, and app hosts
- *    (`<app>-<org>.<gateway host>`) reach the gateway through a
- *    `*.<gateway host>/*` route over the wildcard DNS record the operator
- *    added. The release's APP_BASE_DOMAIN is removed, so the gateway keeps
- *    naming apps the old way.
+ * The gateway host and every bound app's host are Workers Custom Domains on
+ * the gateway, the full list on every deploy (cf publishes them as a whole:
+ * a host left out is removed), and APP_BASE_DOMAIN tells the gateway where
+ * apps live.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -25,7 +19,6 @@ import {
 } from "@every-app/perimeter/manifest";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { EveryAppError } from "@/lib/errors";
-import type { Routing } from "./install";
 
 export const GATEWAY_WORKER_CONFIG = path.join(
   ".cloudflare",
@@ -44,24 +37,21 @@ interface GatewayPatch {
   oauthKvId: string;
   release: { version: string; sha256: string };
   gatewayHost: string;
-  zoneId: string;
-  routing: Routing;
-  /** Where app hosts live (`custom-domains`). */
+  /** Where app hosts live. */
   appBaseDomain: string;
   /** Workers to bind as APP__<worker>. */
   appWorkers: readonly string[];
-  /** App hosts to publish as Custom Domains (`custom-domains`). */
+  /** App hosts to publish as Custom Domains. */
   appHosts: readonly string[];
 }
 
 /**
  * Every hostname the gateway is published under: its own host first, then
- * each app host, sorted. In route mode, its own host only.
+ * each app host, sorted.
  */
 export function gatewayDomains(
-  patch: Pick<GatewayPatch, "gatewayHost" | "routing" | "appHosts">,
+  patch: Pick<GatewayPatch, "gatewayHost" | "appHosts">,
 ): string[] {
-  if (patch.routing === "wildcard-route") return [patch.gatewayHost];
   return [
     patch.gatewayHost,
     ...[...new Set(patch.appHosts)]
@@ -110,44 +100,35 @@ export async function patchGatewayBuildOutput(
   }
   config.env = env;
 
+  // The gateway scopes its session cookie to APP_BASE_DOMAIN, and apps
+  // find it by dropping their first label (apps/every-app-gateway's
+  // server/app-hosts.ts): it must be the gateway's own host. One above
+  // it would hand the cookie to every other name in the company's zone.
+  if (patch.gatewayHost !== patch.appBaseDomain) {
+    throw new EveryAppError(
+      "INVALID_APP_BASE_DOMAIN",
+      `Apps live one label below the gateway host ${patch.gatewayHost}, so APP_BASE_DOMAIN must be ${patch.gatewayHost}, not ${patch.appBaseDomain}.`,
+    );
+  }
+  // Apps are published one by one; a stray host would take over a name
+  // in the zone the registry has no business with.
+  const stray = patch.appHosts.filter(
+    (host) => !isOneLabelBelow(host, patch.appBaseDomain),
+  );
+  if (stray.length > 0) {
+    throw new EveryAppError(
+      "INVALID_APP_HOST",
+      `Refusing to publish ${stray.join(", ")} on the gateway: app hosts are one label below ${patch.appBaseDomain}.`,
+    );
+  }
+  env["APP_BASE_DOMAIN"] = { type: "text", value: patch.appBaseDomain };
+  config.domains = gatewayDomains(patch);
+  // No route: a host the gateway serves is one of its Custom Domains.
   const otherTriggers = (config.triggers ?? []).filter(
     (trigger) => trigger["type"] !== "fetch",
   );
-  if (patch.routing === "custom-domains") {
-    // The gateway scopes its session cookie to APP_BASE_DOMAIN, and apps
-    // find it by dropping their first label (apps/every-app-gateway's
-    // server/app-hosts.ts): it must be the gateway's own host. One above
-    // it would hand the cookie to every other name in the company's zone.
-    if (patch.gatewayHost !== patch.appBaseDomain) {
-      throw new EveryAppError(
-        "INVALID_APP_BASE_DOMAIN",
-        `Apps live one label below the gateway host ${patch.gatewayHost}, so APP_BASE_DOMAIN must be ${patch.gatewayHost}, not ${patch.appBaseDomain}.`,
-      );
-    }
-    // Apps are published one by one; a stray host would take over a name
-    // in the zone the registry has no business with.
-    const stray = patch.appHosts.filter(
-      (host) => !isOneLabelBelow(host, patch.appBaseDomain),
-    );
-    if (stray.length > 0) {
-      throw new EveryAppError(
-        "INVALID_APP_HOST",
-        `Refusing to publish ${stray.join(", ")} on the gateway: app hosts are one label below ${patch.appBaseDomain}.`,
-      );
-    }
-    env["APP_BASE_DOMAIN"] = { type: "text", value: patch.appBaseDomain };
-    config.domains = gatewayDomains(patch);
-    // No route: a host the gateway serves is one of its Custom Domains.
-    if (otherTriggers.length > 0) config.triggers = otherTriggers;
-    else delete config.triggers;
-  } else {
-    delete env["APP_BASE_DOMAIN"];
-    config.domains = [patch.gatewayHost];
-    config.triggers = [
-      ...otherTriggers,
-      { type: "fetch", pattern: `*.${patch.gatewayHost}/*`, zone: patch.zoneId },
-    ];
-  }
+  if (otherTriggers.length > 0) config.triggers = otherTriggers;
+  else delete config.triggers;
   config.workersDev = false;
   config.previewUrls = false;
   config.observability ??= structuredClone(EVERYAPP_OBSERVABILITY);

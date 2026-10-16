@@ -30,7 +30,7 @@ export const setupCommand = buildCommand({
       "force-dns": {
         kind: "boolean",
         brief:
-          "Publish the gateway's hostnames even where a DNS record exists (it is replaced) or CAA records would block the certificate",
+          "Publish the gateway's hostnames even where a DNS record answers them (one at a hostname is replaced)",
         optional: true,
       },
       "no-open": {

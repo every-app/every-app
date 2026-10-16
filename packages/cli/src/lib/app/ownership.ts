@@ -9,8 +9,7 @@
  * leaves the app registered without having created anything. So an app
  * deploy uses an existing Worker, database or namespace only when it is
  * recorded here as the app's, and `app delete --purge` deletes only what is
- * recorded here. Legacy apps, whose resources the wrangler-era CLI created,
- * are recorded the first time this CLI deploys them (lib/app/resources.ts).
+ * recorded here.
  */
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { CfError } from "@/lib/cf/errors";
@@ -150,26 +149,6 @@ export async function forgetOwnedResources(
           params: [workerName],
         },
   ]);
-}
-
-/**
- * The app whose Worker has this name, deleted or not: its `DB` and `KV`
- * have that name too. A legacy app's other bindings are named
- * `every-<appId>-<binding>`, which can be another legacy app's Worker
- * name (`notes`'s ARCHIVE and app `notes-archive`), so a resource with
- * such a name is never created, adopted or purged for the first app.
- */
-export async function appWithWorkerNamed(
-  db: D1Database,
-  name: string,
-): Promise<string | null> {
-  const [rows = []] = await db.run([
-    {
-      sql: "SELECT app_slug FROM apps WHERE worker_name = ? LIMIT 1",
-      params: [name],
-    },
-  ]);
-  return rows[0] ? String(rows[0]["app_slug"]) : null;
 }
 
 export function describeResource({

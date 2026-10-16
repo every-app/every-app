@@ -8,11 +8,7 @@ import {
   readDesiredState,
   workerExistence,
 } from "@/lib/gateway/desiredState";
-import {
-  ADOPTED_RELEASE,
-  migratedByDrizzleKit,
-  readInstall,
-} from "@/lib/gateway/install";
+import { readInstall } from "@/lib/gateway/install";
 import { readLiveLeases, type LeaseHolder } from "@/lib/gateway/lease";
 import { gatewayDomains } from "@/lib/gateway/patchBuildOutput";
 import { findGatewayDatabase } from "@/lib/gateway/resources";
@@ -61,21 +57,11 @@ export async function status(
       const db = cfD1Database(cf, databaseId);
       const install = await readInstall(db);
       if (!install) {
-        const wranglerEra = await migratedByDrizzleKit(db);
         out.emit({
           type: "done",
-          message: wranglerEra
-            ? "This account runs a gateway deployed before everyapp used cf: `everyapp gateway adopt --domain <its domain>` takes it over as it is."
-            : "A gateway database exists, but this everyapp hasn't deployed the gateway yet: run `everyapp setup` (or `everyapp gateway deploy --domain <hostname>`).",
-          data: { deployed: true, installed: false, adoptable: wranglerEra },
-        });
-        return;
-      }
-      if (install.releaseSha256 === ADOPTED_RELEASE) {
-        out.emit({
-          type: "done",
-          message: `The gateway at https://${install.gatewayHost} is adopted (wildcard route, app hostnames kept) but not upgraded yet: run \`everyapp gateway upgrade\` from a terminal.`,
-          data: { deployed: true, installed: true, adopted: true, gatewayHost: install.gatewayHost },
+          message:
+            "A gateway database exists, but this everyapp hasn't deployed the gateway yet: run `everyapp setup` (or `everyapp gateway deploy --domain <hostname>`).",
+          data: { deployed: true, installed: false },
         });
         return;
       }
@@ -92,16 +78,12 @@ export async function status(
       })
         .status({ auth: authed })
         .catch(() => null);
-      const perApp = install.routing === "custom-domains";
-      const wanted = perApp
-        ? gatewayDomains({
-            gatewayHost: install.gatewayHost,
-            routing: install.routing,
-            appHosts: desired.appHosts.filter((host) =>
-              isOneLabelBelow(host, install.appBaseDomain),
-            ),
-          })
-        : [install.gatewayHost];
+      const wanted = gatewayDomains({
+        gatewayHost: install.gatewayHost,
+        appHosts: desired.appHosts.filter((host) =>
+          isOneLabelBelow(host, install.appBaseDomain),
+        ),
+      });
       const unpublished = wanted.filter((host) => !install.liveDomains.includes(host));
       const stale = install.liveDomains.filter((host) => !wanted.includes(host));
       const certificates = await Promise.all(
@@ -121,7 +103,6 @@ export async function status(
       const lines = [
         `Gateway:  ${gatewayUrl} (${account.name ?? account.id})`,
         `Release:  ${liveRelease ? `${liveRelease.version} (${liveRelease.sha256.slice(0, 12)})` : "unknown (the gateway didn't answer)"}`,
-        `Routing:  ${perApp ? `each app its own Custom Domain under ${install.appBaseDomain}` : `wildcard route *.${install.gatewayHost} (switch: \`everyapp gateway use-per-app-domains\`)`}`,
         `Apps:     ${desired.appWorkers.length} to bind${live ? (inSync ? ", all bound" : "; the live gateway differs: run `everyapp gateway reconcile`") : ""}`,
         ...(unpublished.length
           ? [`          not served yet: ${unpublished.join(", ")}`]
@@ -154,7 +135,6 @@ export async function status(
           versionId: live?.versionId ?? null,
           desiredApps: desired.appWorkers,
           liveApps: live?.appBindings ?? null,
-          routing: install.routing,
           appBaseDomain: install.appBaseDomain,
           domains: wanted,
           liveDomains: install.liveDomains,

@@ -8,8 +8,7 @@
  * deploy publishes its Worker's Custom Domains the way Cloudflare does (the
  * whole list, taken from other Workers, each with its own certificate pack
  * that outlives it) and creates or takes over the Workflows the Worker
- * defines, and CAA records answer the DNS-over-HTTPS lookups.
- * Nothing is spawned or sent.
+ * defines. Nothing is spawned or sent.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -20,7 +19,6 @@ import {
   appBindingsDigest,
 } from "@every-app/perimeter/manifest";
 import { FakeCf, type FakeCfResponse, type RecordedCfCall } from "@/lib/cf/fakeCf";
-import type { CaaLookup } from "@/lib/domains/caa";
 import type { GatewayStatusResponse } from "@/lib/gateway/api";
 import { loadEveryAppManifest, type EveryAppCliManifest } from "@/lib/manifest";
 import { createSqliteD1, sqliteD1Script, type SqliteD1 } from "./sqliteD1";
@@ -166,16 +164,7 @@ export class FakeCloudflare {
   /** Hostname → the Worker it is a Custom Domain of. */
   readonly customDomains = new Map<string, string>();
   readonly certificatePacks: FakeCertificatePack[] = [];
-  /** CAA records by name, as public DNS answers them. */
-  readonly caaRecords = new Map<string, string[]>();
   private counter = 0;
-
-  /** The DNS-over-HTTPS CAA lookup, answered from `caaRecords`. */
-  readonly lookupCaa: CaaLookup = async (name) =>
-    (this.caaRecords.get(name) ?? []).map((data) => {
-      const [flags, tag, ...value] = data.split(" ");
-      return { flags: Number(flags), tag: tag!, value: value.join(" ").replace(/^"|"$/g, "") };
-    });
 
   constructor() {
     const d1 = sqliteD1Script({});

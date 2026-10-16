@@ -32,12 +32,7 @@ import {
   type ApplyGatewayResult,
 } from "./apply";
 import { readDesiredState, workerExistence } from "./desiredState";
-import {
-  assertUpgradedSinceAdopted,
-  readInstall,
-  type InstallRecord,
-  type Routing,
-} from "./install";
+import { readInstall, type InstallRecord } from "./install";
 import {
   compareReleaseOrder,
   fetchCachedRelease,
@@ -52,16 +47,8 @@ interface ReconcileGatewayOptions {
   out: EventSink;
   accountId: string;
   interactive: boolean;
-  /** Publish new app hosts over DNS records and CAA blocks. */
+  /** Publish new app hosts over the DNS records that answer them. */
   forceDns?: boolean;
-  /**
-   * Deploy with this routing instead of the install's (switching to
-   * per-app domains); recorded only once cf has published every hostname
-   * it brings (lib/gateway/apply.ts record()), so a switch cf stopped
-   * part-way runs again.
-   */
-  routing?: Routing;
-  lookupCaa?: ApplyGatewayOptions["lookupCaa"];
   /** Asks that person whether to redeploy a release it can't be sure is live (tests). */
   confirm?: Confirm;
   cliVersion: string;
@@ -94,13 +81,12 @@ export async function reconcileGateway(
   const db = cfD1Database(cf, databaseId);
   const install = await readInstall(db);
   if (!install) throw notDeployedByEveryapp();
-  assertUpgradedSinceAdopted(install);
   const gatewayUrl = `https://${install.gatewayHost}`;
 
   const readStatus =
     options.readStatus ??
     ((url: string) => new GatewayClient({ gatewayUrl: url }).status());
-  if (!options.force && !options.stagedSecrets && !options.routing) {
+  if (!options.force && !options.stagedSecrets) {
     const live = await readStatus(gatewayUrl).catch(() => null);
     const desired = await readDesiredState(db, workerExistence(cf));
     if (
@@ -155,10 +141,8 @@ export async function reconcileGateway(
         accountId: options.accountId,
         gatewayHost: current.gatewayHost,
         zone: { id: current.zoneId, name: current.zoneName },
-        routing: options.routing ?? current.routing,
         appBaseDomain: current.appBaseDomain,
         forceDns: options.forceDns,
-        lookupCaa: options.lookupCaa,
         resources: {
           d1Id: databaseId,
           oauthKvId: current.oauthKvId,
@@ -184,12 +168,8 @@ export async function reconcileGateway(
   }
 }
 
-/**
- * Whether the install already publishes exactly these app hosts (always,
- * for an install whose apps reach it through the wildcard route).
- */
+/** Whether the install already publishes exactly these app hosts. */
 function publishesHosts(install: InstallRecord, appHosts: readonly string[]): boolean {
-  if (install.routing === "wildcard-route") return true;
   const live = install.liveDomains.filter((host) => host !== install.gatewayHost);
   const wanted = appHosts.filter((host) =>
     isOneLabelBelow(host, install.appBaseDomain),

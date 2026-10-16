@@ -1,17 +1,12 @@
 /**
  * An app's Worker, D1 databases and KV namespaces, under the names the
- * gateway assigned at registration (`every-<orgKey>-<appId>[--<binding>]`,
- * legacy apps `every-<appId>[-<binding>]`).
+ * gateway assigned at registration (`every-<orgKey>-<appId>[--<binding>]`).
  *
  * An existing one is used only when the gateway's D1 records it as the
  * app's (./ownership.ts): anything else under the app's name may belong to
  * another install or app, or to someone else entirely, and is refused, on
  * the first deploy and on every retry. A new one is recorded as the app's
  * before it is created, so a retry after any failure finds it again.
- *
- * Legacy apps, which the wrangler-era CLI deployed, have no records yet:
- * the first deploy with this CLI adopts their Worker and the resources it
- * created for them (see {@link adoptsLegacyResource}).
  */
 import { isReservedName } from "@every-app/perimeter/manifest";
 import type { D1Database } from "@/lib/cf/d1";
@@ -29,7 +24,6 @@ import type { AppResources } from "@/lib/gateway/api";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { DeployInputs } from "./deployInputs";
 import {
-  appWithWorkerNamed,
   describeResource,
   forgetOwnedResources,
   readOwnedResources,
@@ -40,11 +34,8 @@ import {
 /** What the registration says about the app's names. */
 interface AppNaming {
   workerName: string;
-  legacyNames: boolean;
   /** Names from the registration, by kind and binding. */
   resources: AppResources;
-  /** The manifest the app was last deployed (or, by older CLIs, registered) with. */
-  previousManifest: unknown;
 }
 
 interface ProvisionOptions {
@@ -52,9 +43,8 @@ interface ProvisionOptions {
   /** The gateway's D1, which holds the ownership records. */
   gatewayDb: D1Database;
   registration: AppNaming;
-  /** Said for each resource created, adopted, or created again after it was deleted. */
+  /** Said for each resource created, or created again after it was deleted. */
   onCreated?: (description: string) => void;
-  onAdopted?: (description: string) => void;
   onRecreated?: (description: string) => void;
 }
 
@@ -66,13 +56,11 @@ export async function claimAppWorker({
   cf,
   gatewayDb,
   registration,
-  onAdopted,
 }: ProvisionOptions): Promise<void> {
   const { workerName } = registration;
   const owned = await readOwnedResources(gatewayDb, workerName);
   if (owned.some((resource) => resource.kind === "worker")) return;
-  const exists = (await getWorkerDeployment(cf, workerName)) !== null;
-  if (exists && !registration.legacyNames) {
+  if ((await getWorkerDeployment(cf, workerName)) !== null) {
     throw new EveryAppError(
       "WORKER_NAME_TAKEN",
       `A Worker named ${workerName} already exists in this Cloudflare account, but no deploy of this app created it. It may belong to another gateway or project; delete or rename it, then deploy again.`,
@@ -84,7 +72,6 @@ export async function claimAppWorker({
     name: workerName,
     resourceId: workerName,
   });
-  if (exists) onAdopted?.(`Worker ${workerName}`);
 }
 
 export async function provisionAppResources(
@@ -146,7 +133,6 @@ async function provisionOne({
   find,
   create,
   onCreated,
-  onAdopted,
   onRecreated,
 }: ProvisionOptions & {
   owned: OwnedResource[];
@@ -158,15 +144,6 @@ async function provisionOne({
 }): Promise<string> {
   const { workerName } = registration;
   const resource = { kind, binding, name };
-  if (registration.legacyNames && name !== workerName) {
-    const otherApp = await appWithWorkerNamed(gatewayDb, name);
-    if (otherApp) {
-      throw new EveryAppError(
-        "RESOURCE_NAME_TAKEN",
-        `${describeResource(resource)} is app ${otherApp}'s: it is named after that app's Worker, and matches this app's ${binding} binding only under the old naming. Give the binding another name, so this app gets one of its own, then deploy again.`,
-      );
-    }
-  }
   const recorded = owned.find(
     (entry) =>
       entry.kind === kind && entry.binding === binding && entry.name === name,
@@ -192,18 +169,10 @@ async function provisionOne({
       return existing;
     }
   } else if (existing) {
-    if (!adoptsLegacyResource(registration, kind, binding)) {
-      throw new EveryAppError(
-        "RESOURCE_NAME_TAKEN",
-        `A ${kind === "d1" ? "D1 database" : "KV namespace"} named "${name}" already exists in this Cloudflare account, but no deploy of this app created it. It may belong to another gateway, app or project; delete or rename it, then deploy again.`,
-      );
-    }
-    await recordOwnedResource(gatewayDb, workerName, {
-      ...resource,
-      resourceId: existing,
-    });
-    onAdopted?.(describeResource(resource));
-    return existing;
+    throw new EveryAppError(
+      "RESOURCE_NAME_TAKEN",
+      `A ${kind === "d1" ? "D1 database" : "KV namespace"} named "${name}" already exists in this Cloudflare account, but no deploy of this app created it. It may belong to another gateway, app or project; delete or rename it, then deploy again.`,
+    );
   }
 
   // Claim the name first: a retry after a create whose id went unrecorded
@@ -232,26 +201,4 @@ async function provisionOne({
   });
   onCreated?.(describeResource(resource));
   return id;
-}
-
-/**
- * A legacy app's resources were created by the wrangler-era CLI, which
- * kept no records, so its first deploy with this CLI adopts them: DB and KV,
- * named exactly after its Worker (no other registered app can have that
- * name), and any other binding its last manifest declared (never one named
- * after another app's Worker: see appWithWorkerNamed). One it adds now is
- * created fresh: its legacy name may be another project's.
- */
-function adoptsLegacyResource(
-  registration: AppNaming,
-  kind: "d1" | "kv",
-  binding: string,
-): boolean {
-  if (!registration.legacyNames) return false;
-  if (binding === "DB" || binding === "KV") return true;
-  const previous = registration.previousManifest as {
-    resources?: Partial<Record<"d1" | "kv", unknown>>;
-  } | null;
-  const declared = previous?.resources?.[kind];
-  return Array.isArray(declared) && declared.includes(binding);
 }

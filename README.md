@@ -113,17 +113,6 @@ Enter your Gateway URL, then paste the token when asked. Revoke it any time from
 
 `everyapp gateway upgrade` builds the Gateway from this checkout and deploys it, keeping its data, users and apps. Run it after you pull or change `apps/every-app-gateway`.
 
-A Gateway deployed before `setup` existed (on its domain's apex, with a wildcard DNS record) keeps its domain and app addresses while it moves to this checkout's. From a terminal:
-
-```bash
-pnpm everyapp gateway adopt --domain your-domain.dev --dry-run   # look first
-pnpm everyapp gateway adopt --domain your-domain.dev             # record it as it is
-pnpm everyapp gateway upgrade                                     # confirm when asked
-pnpm everyapp gateway status
-```
-
-Later, `everyapp gateway use-per-app-domains` gives each app its own Custom Domain, after which the wildcard record can go. Details: [Upgrading an existing install](https://everyapp.com/docs/reference/manage-your-gateway#upgrading-an-existing-install).
-
 ## Deploy an Example App
 
 The example apps live in `apps/`. Deploy one from its directory:

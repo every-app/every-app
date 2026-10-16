@@ -61,19 +61,7 @@ Every App needs the Workers Paid plan ($5 a month): on the Free plan D1 stops an
 
 ### "…already has a DNS record" / "already have DNS records"
 
-The Gateway's address, or a new app's, already has an A, AAAA, CNAME or NS record. Publishing the Gateway there would replace it, and whatever it served (a website, another service), so nothing was deployed. Pick another address, delete the record in the Cloudflare dashboard (your domain → DNS), or, if the record should go, pass `--force-dns`. Mail and TXT records at the same name are fine.
-
-### "… answered now by a wildcard record"
-
-A warning, not a stop: the new address has no DNS record of its own, but a wildcard record above it (`*.apps.your-domain.dev`, say) answers it today. Publishing the address gives it its own record, so that one name stops getting the wildcard's answer, and whatever the wildcard serves keeps every other name. On a Gateway moving off its wildcard route (`gateway use-per-app-domains`) that is the point; otherwise, if something was meant to answer at that name, pick another one.
-
-### "Cloudflare can't issue a certificate for …"
-
-Your domain has CAA records (they say which certificate authorities may issue its certificates), and none of them is one Cloudflare issues these certificates from: Let's Encrypt, Google Trust Services or SSL.com. (Sectigo only issues Cloudflare's backup certificates, so a record for Sectigo alone doesn't do.) Records at a parent domain count too, above your zone as well: the closest name that has any decides. Add one, for example `0 issue "letsencrypt.org"` or `0 issue "pki.goog"`, at the name the message gives, then re-run. `--force-dns` publishes the address anyway, but it gets no certificate until the records allow one.
-
-### "Cloudflare may not get a certificate for …"
-
-A warning, not a stop: your CAA records allow one of Cloudflare's certificate authorities only with `accounturi` (one ACME account) or `validationmethods` (some ways of proving control), and those may not be the account or method Cloudflare uses. If the certificate doesn't arrive (`npx everyapp gateway status` shows it), add a record for one of them without those parameters at the name the message gives, for example `0 issue "letsencrypt.org"`.
+The Gateway's address, or a new app's, already has an A, AAAA, CNAME or NS record, or has no record of its own but a wildcard record above it (`*.apps.your-domain.dev: CNAME …`, say) answers it. Publishing the Gateway there would take that name from whatever the record serves (a website, another service; a wildcard keeps answering every other name), so nothing was deployed. Pick another address, delete the record in the Cloudflare dashboard (your domain → DNS), or, if the name should go to the Gateway, pass `--force-dns`. Mail and TXT records at the same name are fine.
 
 ### "Can't read …'s DNS records with this Cloudflare login"
 
@@ -83,21 +71,13 @@ The deploy checks that a new address won't replace a DNS record, and the API tok
 
 Cloudflare allows 100 Workers Custom Domains in a zone, the Gateway's own address and other Workers' included. Delete apps you no longer use (`npx everyapp app delete <app-id>`), or set up a second Gateway on another domain.
 
-### "This account already runs a gateway deployed before everyapp used cf"
-
-The account's Gateway was deployed with the wrangler-era CLI. Adopt it as it is (same domain, same app addresses), then upgrade it from a terminal: [Upgrading an existing install](/docs/reference/manage-your-gateway#upgrading-an-existing-install).
-
-### "This gateway was adopted but not upgraded yet"
-
-Run `npx everyapp gateway upgrade` once, from a terminal. Until then the account has no copy of a release everyapp deployed, so nothing can redeploy it.
-
 ### "This Cloudflare account has no workers.dev subdomain yet"
 
 Cloudflare wants a workers.dev subdomain on the account before its first Worker upload. Open the link the CLI prints (Workers & Pages → your subdomain), pick one, and run the same command again. Your apps never use it: they stay private behind the Gateway.
 
 ### "…is serving a version everyapp didn't record deploying"
 
-The Worker serves a version everyapp didn't record uploading: it was last changed in the Cloudflare dashboard or through the API, deployed before everyapp used `cf` (every app and Gateway deployed with the old CLI, once), or uploaded by a deploy killed before it could record it. `cf` won't replace a Worker changed in the dashboard unattended, and can't be asked first, so the command stops before it migrates anything. Run the same command in a terminal: everyapp asks before it migrates, and `cf` may ask again before it uploads. everyapp records the versions it uploads (also when a deploy is stopped with Ctrl+C, or fails after the upload), so later runs can be unattended again.
+The Worker serves a version everyapp didn't record uploading: it was last changed in the Cloudflare dashboard or through the API, or uploaded by a deploy killed before it could record it. `cf` won't replace a Worker changed in the dashboard unattended, and can't be asked first, so the command stops before it migrates anything. Run the same command in a terminal: everyapp asks before it migrates, and `cf` may ask again before it uploads. everyapp records the versions it uploads (also when a deploy is stopped with Ctrl+C, or fails after the upload), so later runs can be unattended again.
 
 ### "…was last changed outside everyapp"
 
@@ -121,17 +101,9 @@ Nothing was uploaded: the Gateway that was serving keeps running. Before migrati
 
 `cf` asked a question in the terminal (a Worker changed in the dashboard, a DNS record or Custom Domain held by something else) and it was answered no, so `cf` exited without deploying. The version that was serving still is. If the run had migrated the database, it stays migrated: run the command again and answer yes, or roll the database back with the restore command printed before the migration.
 
-### The deploy printed DNS instructions
-
-Only a Gateway installed before per-app addresses does this: its apps reach it through one wildcard DNS record, which you add once:
-
-> **your domain → DNS → Add record**: Type **CNAME**, Name **`*`**, Target **your domain**, Proxy **ON** (orange cloud).
-
-Without it the Gateway works but apps don't load. `npx everyapp gateway use-per-app-domains` gives each app its own address instead, which needs no wildcard record.
-
 ### "… has no certificate after …" / the address doesn't load yet
 
-**The certificate isn't issued yet.** Every new address (the Gateway's, and each app's) gets its own certificate from Cloudflare, usually within a minute or two and almost always within five. The CLI waits up to ten minutes, then says so and carries on: the address works as soon as the certificate arrives. `npx everyapp gateway status` shows which addresses have theirs. If one never arrives, check your domain's CAA records (above).
+**The certificate isn't issued yet.** Every new address (the Gateway's, and each app's) gets its own certificate from Cloudflare, usually within a minute or two and almost always within five. The CLI waits up to ten minutes, then says so and carries on: the address works as soon as the certificate arrives. `npx everyapp gateway status` shows which addresses have theirs. If one never arrives, check your domain's CAA records, if it has any (they say which certificate authorities may issue its certificates; records at a parent domain count too): one must allow a certificate authority Cloudflare issues these certificates from, such as Let's Encrypt (`0 issue "letsencrypt.org"`) or Google Trust Services (`0 issue "pki.goog"`).
 
 **Nameservers haven't propagated.** If your domain shows "Pending Nameserver Update" in the Cloudflare dashboard, Cloudflare doesn't control DNS for it yet and nothing will resolve. This can take a few hours after you change nameservers at your registrar.
 
@@ -193,11 +165,9 @@ App deploys run in the Gateway's own Cloudflare account. Log in to that account 
 
 The Gateway just registered this app, but a resource with the name it assigned already exists in your account, perhaps from another project. Deploying would take it over, so the CLI stops. Delete or rename that resource, then deploy again.
 
-An app registered before organization-scoped names gets `every-<app>-<binding>` for a binding other than `DB` and `KV`, which can be another app's Worker name, and so that app's database (`notes`' `ARCHIVE` and the app `notes-archive`). The CLI never uses such a resource for the first app (`…is app notes-archive's`): give the binding another name, so the app gets its own.
-
 ### "… is a … binding, which Every App apps can't use"
 
-An app may bind only text, JSON and secret values, version metadata, its assets, D1, KV, R2 (a bucket named after its Worker), its own Durable Objects and the Gateway's `EVERY_APP_GATEWAY`. Other types (Workers AI, `send_email`, queues, Hyperdrive, workflows, rate limits, …) reach things outside the app, or capabilities the Gateway brokers, so the deploy stops before it changes anything; there is no flag to allow them. For an AI model, call it through the Gateway's AI proxy (`everyapp gateway secret set OPENAI_API_KEY`). Apps deployed with the wrangler-era CLI could carry such bindings: remove them from `cloudflare.config.ts` before their first deploy with this CLI.
+An app may bind only text, JSON and secret values, version metadata, its assets, D1, KV, R2 (a bucket named after its Worker), its own Durable Objects and the Gateway's `EVERY_APP_GATEWAY`. Other types (Workers AI, `send_email`, queues, Hyperdrive, workflows, rate limits, …) reach things outside the app, or capabilities the Gateway brokers, so the deploy stops before it changes anything; there is no flag to allow them. For an AI model, call it through the Gateway's AI proxy (`everyapp gateway secret set OPENAI_API_KEY`).
 
 ### "…no longer declares the Durable Object class …"
 
@@ -222,7 +192,7 @@ A new app's address is a Custom Domain the deploy creates, with its own DNS reco
 dig +short todo.apps.your-domain.dev
 ```
 
-You want an answer, not an empty response. On a Gateway installed before per-app addresses, the deploy warns when `<app>-<org>.your-domain.dev` doesn't resolve: its wildcard DNS record is missing (see above).
+You want an answer, not an empty response.
 
 ### "Not inside an Every App project" / "No everyapp.config.ts found"
 

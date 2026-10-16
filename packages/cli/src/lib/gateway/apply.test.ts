@@ -59,7 +59,6 @@ async function deployGateway(
     accountId: ACCOUNT_ID,
     gatewayHost: "example.com",
     zone: { id: "zone-1", name: "example.com" },
-    routing: "custom-domains",
     appBaseDomain: options.gatewayHost ?? "example.com",
     resources,
     db: cfD1Database(account.cf, [...account.databases][0]![0]),
@@ -69,7 +68,6 @@ async function deployGateway(
     sleep: noSleep,
     verifyTimeoutMs: 0,
     leaseWaitMs: 0,
-    lookupCaa: account.lookupCaa,
     ...options,
   });
 }
@@ -85,7 +83,6 @@ function reconcile(options: Partial<Parameters<typeof reconcileGateway>[0]> = {}
     sleep: noSleep,
     verifyTimeoutMs: 0,
     leaseWaitMs: 0,
-    lookupCaa: account.lookupCaa,
     ...options,
   });
 }
@@ -106,10 +103,9 @@ function seedApps(
     slug: string;
     worker: string;
     status: string;
-    legacy?: boolean;
     /** Its Worker was never uploaded, or was deleted by hand. */
     missing?: boolean;
-    /** Default: `<slug>-acme.example.com`, as gateways name apps without APP_BASE_DOMAIN. */
+    /** Default: `<slug>.example.com`, one label below the default install's base. */
     hostname?: string;
   }>,
 ): void {
@@ -120,17 +116,16 @@ function seedApps(
   `);
   for (const row of rows) {
     db.prepare(
-      "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status, legacy_names) VALUES (?, 'org-1', ?, ?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status) VALUES (?, 'org-1', ?, ?, ?, ?, ?, ?, ?)",
     ).run(
       `row-${row.slug}`,
       row.slug,
       row.slug,
       row.slug,
-      row.hostname ?? `${row.slug}-acme.example.com`,
+      row.hostname ?? `${row.slug}.example.com`,
       row.worker,
       JSON.stringify({ id: row.slug }),
       row.status,
-      row.legacy ? 1 : 0,
     );
     if (!row.missing) {
       account.workers.set(row.worker, {
@@ -216,7 +211,6 @@ describe("gateway deploy", () => {
       accountId: ACCOUNT_ID,
       gatewayHost: "example.com",
       zoneId: "zone-1",
-      routing: "custom-domains",
       appBaseDomain: "example.com",
       liveDomains: ["example.com"],
       releaseSha256: release.manifest.sha256,
@@ -236,27 +230,6 @@ describe("gateway deploy", () => {
     expect(account.deploys).toHaveLength(2);
     expect(account.deploys[1]!.secrets).toBeNull();
     expect(result).toMatchObject({ firstDeploy: false, verified: true });
-  });
-
-  it("carries drizzle-kit's history over on a gateway it migrated before", async () => {
-    const { uuid, db } = account.createDatabase("every-app-gateway");
-    const { migrateGatewayWithDrizzle } = await import("@/test/sqliteD1");
-    migrateGatewayWithDrizzle(db);
-    expect(uuid).toBeTruthy();
-    await release.cleanup();
-    release = await openRelease(
-      await buildGatewayRelease({
-        extraMigration: { file: "9999_newer.sql", sql: "CREATE TABLE newer (id text);" },
-      }),
-    );
-
-    await deployGateway();
-
-    // What drizzle-kit ran was only recorded; the newer migration ran.
-    expect(db.all("SELECT name FROM d1_migrations ORDER BY id")).toEqual([
-      ...release.manifest.migrations.map(({ tag }) => ({ name: `${tag}.sql` })),
-      { name: "9999_newer.sql" },
-    ]);
   });
 
   it("leaves the gateway that is serving alone when a migration fails", async () => {
@@ -610,7 +583,6 @@ describe("per-app Custom Domains", () => {
       gatewayHost: GW,
       zoneName: "example.com",
       appBaseDomain: GW,
-      routing: "custom-domains",
       liveDomains: [GW],
     });
     expect(hostsChecked()).toEqual([GW]);
@@ -707,26 +679,20 @@ describe("per-app Custom Domains", () => {
     expect(account.deploys).toEqual([]);
   });
 
-  it("refuses a host whose zone's CAA records allow none of Cloudflare's certificate authorities", async () => {
+  it("refuses a new host a wildcard record answers, like one of its own, unless --force-dns", async () => {
     await deployOnSubdomain();
     seedApps([{ slug: "todo", worker: "every-acme-todo", status: "binding", hostname: `todo.${GW}` }]);
-    account.caaRecords.set("example.com", ['0 issue "digicert.com"', '0 iodef "mailto:sec@example.com"']);
+    account.dnsRecords.push({ zoneId: "zone-1", name: `*.${GW}`, type: "CNAME", content: "site.example.net" });
 
     await expect(reconcile()).rejects.toMatchObject({
-      code: "CAA_BLOCKS_ISSUANCE",
-      message: expect.stringContaining("CAA at example.com allows digicert.com"),
+      code: "DNS_RECORD_CONFLICT",
+      message: expect.stringContaining(`todo.${GW} (*.${GW}: CNAME site.example.net)`),
     });
-    // Sectigo only issues Cloudflare's backup certificates.
-    account.caaRecords.set("example.com", ['0 issue "sectigo.com"']);
-    await expect(reconcile()).rejects.toMatchObject({ code: "CAA_BLOCKS_ISSUANCE" });
     expect(account.gatewayDomains()).toEqual([GW]);
 
-    // Allowed only for one validation method: published, with a warning.
-    account.caaRecords.set("example.com", ['0 issue "digicert.com"', '0 issue "letsencrypt.org; validationmethods=dns-01"']);
-    await expect(reconcile()).resolves.toMatchObject({ newHosts: [`todo.${GW}`] });
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: "warning", code: "CAA_MAY_BLOCK_ISSUANCE", data: { hosts: [`todo.${GW}`] } }),
-    );
+    await expect(reconcile({ forceDns: true })).resolves.toMatchObject({
+      newHosts: [`todo.${GW}`],
+    });
   });
 
   it("refuses the 101st Custom Domain in a zone and warns from the 95th", async () => {
@@ -804,7 +770,7 @@ describe("per-app Custom Domains", () => {
     account.afterUpload = null;
 
     // The version that went live is recorded, with the app it binds; the
-    // routing and hostnames stay as the last finished deploy left them.
+    // hostnames stay as the last finished deploy left them.
     expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
     expect(account.customDomains.get(`todo.${GW}`)).toBe("marketing-site");
     await expect(readInstall(gatewayD1())).resolves.toEqual({
@@ -832,30 +798,6 @@ describe("per-app Custom Domains", () => {
       liveDomains: [GW, `todo.${GW}`],
     });
   });
-
-  it("keeps an install served through its wildcard route on it, untouched", async () => {
-    await deployGateway({ routing: "wildcard-route" });
-    seedApps([{ slug: "todo", worker: "every-todo", status: "active", legacy: true }]);
-    const checked = hostsChecked().length;
-
-    await reconcile();
-
-    const deploy = account.deploys.at(-1)!;
-    expect(deploy.config["domains"]).toEqual(["example.com"]);
-    expect(deploy.config["triggers"]).toEqual([
-      { type: "scheduled", schedule: "17 * * * *" },
-      { type: "fetch", pattern: "*.example.com/*", zone: "zone-1" },
-    ]);
-    expect(deploy.config["env"].APP_BASE_DOMAIN).toBeUndefined();
-    expect(account.gatewayBindings()).toEqual(["every-todo"]);
-    // Its app hosts ride the wildcard: none is checked or published.
-    expect(hostsChecked()).toHaveLength(checked);
-    expect(account.gatewayDomains()).toEqual(["example.com"]);
-    await expect(readInstall(gatewayD1())).resolves.toMatchObject({
-      routing: "wildcard-route",
-      liveDomains: ["example.com"],
-    });
-  });
 });
 
 describe("gateway reconcile", () => {
@@ -863,9 +805,9 @@ describe("gateway reconcile", () => {
     await deployGateway();
   });
 
-  it("binds legacy and org-scoped apps that are uploaded, and nothing else", async () => {
+  it("binds the apps that are uploaded, and nothing else", async () => {
     seedApps([
-      { slug: "todo", worker: "every-todo", status: "active", legacy: true },
+      { slug: "todo", worker: "every-acme-todo", status: "active" },
       { slug: "chef", worker: "every-acme-chef", status: "binding" },
       { slug: "gym", worker: "every-acme-gym", status: "disabled" },
       { slug: "notes", worker: "every-acme-notes", status: "pending" },
@@ -880,7 +822,7 @@ describe("gateway reconcile", () => {
     expect(account.gatewayBindings()).toEqual([
       "every-acme-chef",
       "every-acme-gym",
-      "every-todo",
+      "every-acme-todo",
     ]);
     expect(events).toContainEqual(
       expect.objectContaining({ type: "warning", code: "APP_NOT_BOUND" }),
@@ -894,14 +836,14 @@ describe("gateway reconcile", () => {
 
   it("skips an app whose Worker is gone, and binds the rest", async () => {
     seedApps([
-      { slug: "todo", worker: "every-todo", status: "active", legacy: true },
+      { slug: "todo", worker: "every-acme-todo", status: "active" },
       // Marked deployed, but its Worker was deleted by hand.
       { slug: "chef", worker: "every-acme-chef", status: "active", missing: true },
     ]);
 
     await expect(reconcile()).resolves.toMatchObject({ changed: true });
 
-    expect(account.gatewayBindings()).toEqual(["every-todo"]);
+    expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "warning",
@@ -914,7 +856,7 @@ describe("gateway reconcile", () => {
   });
 
   it("does nothing when the live gateway already binds the registry's apps", async () => {
-    seedApps([{ slug: "todo", worker: "every-todo", status: "active", legacy: true }]);
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
     await reconcile();
     const deploys = account.deploys.length;
 
@@ -923,7 +865,7 @@ describe("gateway reconcile", () => {
   });
 
   it("picks its release under the lease: after an upgrade, never the old one the edge still reports", async () => {
-    seedApps([{ slug: "todo", worker: "every-todo", status: "active", legacy: true }]);
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
     const newer = await laterBuild();
     try {
       // An upgrade holds the lease, and the edge still reports release A.
@@ -952,7 +894,7 @@ describe("gateway reconcile", () => {
       expect(upgraded).toBe(true);
       const live = account.deploys.at(-1)!.config["env"].EVERYAPP_RELEASE.value;
       expect(live.sha256).toBe(newer.manifest.sha256);
-      expect(account.gatewayBindings()).toEqual(["every-todo"]);
+      expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
       expect((await readInstall(gatewayD1()))!.releaseSha256).toBe(newer.manifest.sha256);
     } finally {
       await newer.cleanup();
@@ -969,7 +911,7 @@ describe("gateway reconcile", () => {
       newer = await laterBuild();
       await deployGateway({ reason: "upgrade", release: newer });
       await writeInstall(gatewayD1(), rowA!);
-      seedApps([{ slug: "todo", worker: "every-todo", status: "active", legacy: true }]);
+      seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
     });
     afterEach(() => newer.cleanup());
 
@@ -1062,7 +1004,7 @@ describe("gateway reconcile", () => {
   });
 
   it("redeploys the live release from the cache", async () => {
-    seedApps([{ slug: "todo", worker: "every-todo", status: "active", legacy: true }]);
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
 
     await reconcile();
 
@@ -1079,7 +1021,7 @@ describe("gateway reconcile", () => {
       `release/${release.manifest.sha256}`,
       fs.readFileSync(other).toString("base64"),
     );
-    seedApps([{ slug: "todo", worker: "every-todo", status: "active", legacy: true }]);
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
 
     await expect(reconcile()).rejects.toMatchObject({
       code: "RELEASE_CACHE_MISMATCH",
@@ -1090,7 +1032,7 @@ describe("gateway reconcile", () => {
   it("says to upgrade when the live release isn't cached", async () => {
     const kv = account.namespaces.get(account.namespaceId("every-app-gateway-deploy")!)!;
     kv.keys.clear();
-    seedApps([{ slug: "todo", worker: "every-todo", status: "active", legacy: true }]);
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
 
     await expect(reconcile()).rejects.toMatchObject({
       code: "RELEASE_NOT_CACHED",

@@ -89,7 +89,6 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
       sleep: async () => undefined,
       verifyTimeoutMs: 0,
       leaseWaitMs: 0,
-      lookupCaa: account.lookupCaa,
       certificates: { isReady: async () => true, sleep: async () => undefined },
       login: { sleep: ownerOpensTheLink(), timeoutMs: 60_000 },
     },
@@ -151,7 +150,7 @@ describe("everyapp setup", () => {
     expect(account.dnsRecords).toHaveLength(1);
     await expect(
       readInstall(cfD1Database(account.cf, [...account.databases].find(([, d]) => d.name === "every-app-gateway")![0])),
-    ).resolves.toMatchObject({ gatewayHost: GW, routing: "custom-domains", appBaseDomain: GW });
+    ).resolves.toMatchObject({ gatewayHost: GW, appBaseDomain: GW });
 
     // The owner link was handed out to the agent reading the events (never
     // opened by an unattended run, and never put in a CI log: see below),
@@ -479,29 +478,5 @@ describe("everyapp setup", () => {
     ]);
     expect(opened).toEqual([expect.stringMatching(/^https:\/\/tools\.example\.com\/setup#token=est_/)]);
     expect(account.gatewayDomains()).toEqual(["tools.example.com"]);
-  });
-
-  it("keeps an install from before per-app domains on its wildcard route", async () => {
-    // Deployed by this CLI before per-app domains, at the zone apex.
-    gateway = new FakeGateway(account, "example.com");
-    await setup({ domain: "example.com" });
-    const db = cfD1Database(account.cf, [...account.databases].find(([, d]) => d.name === "every-app-gateway")![0]);
-    const install = (await readInstall(db))!;
-    const { writeInstall } = await import("@/lib/gateway/install");
-    await writeInstall(db, { ...install, routing: "wildcard-route", releaseSha256: "0".repeat(64), releaseVersion: "0.1.0", releaseOrder: null });
-    events = [];
-
-    const { exitCode } = await setup();
-
-    expect(exitCode).toBe(0);
-    expect(events).toContainEqual(
-      expect.objectContaining({ step: "setup.domain", data: expect.objectContaining({ routing: "wildcard-route" }) }),
-    );
-    const last = account.deploys.at(-1)!;
-    expect(last.config["triggers"]).toEqual([
-      { type: "scheduled", schedule: "17 * * * *" },
-      { type: "fetch", pattern: "*.example.com/*", zone: "zone-1" },
-    ]);
-    expect(last.config["env"].APP_BASE_DOMAIN).toBeUndefined();
   });
 });

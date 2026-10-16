@@ -13,7 +13,6 @@ import {
 import { readOwnedResources } from "@/lib/app/ownership";
 import { cfD1Database, queryD1 } from "@/lib/cf/d1";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
-import { findD1 } from "@/lib/cf/resources";
 import { createCfRunner, runCfJson, type CfRunner } from "@/lib/cf/runner";
 import { D1RawOutput } from "@/lib/cf/schemas";
 import { EveryAppError } from "@/lib/errors";
@@ -232,15 +231,14 @@ export async function queryAppD1({
     interactive: canPromptInTerminal(json ?? false),
     createCf,
   });
-  // The database the app created and recorded; a legacy app not yet
-  // deployed with this CLI has no record, and its legacy name is its own.
+  // The database the app created and recorded.
   const owned = await readOwnedResources(
     cfD1Database(accountCf, gatewayDb),
     info.workerName,
   );
-  const databaseId =
-    owned.find((r) => r.kind === "d1" && r.binding === target)?.resourceId ??
-    (info.legacyNames && name ? await findD1(accountCf, name) : null);
+  const databaseId = owned.find(
+    (r) => r.kind === "d1" && r.binding === target,
+  )?.resourceId;
   if (!databaseId) {
     throw new EveryAppError(
       "D1_NOT_FOUND",

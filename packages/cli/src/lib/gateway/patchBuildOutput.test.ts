@@ -22,8 +22,6 @@ const PATCH = {
   oauthKvId: "0123456789abcdef0123456789abcdef",
   release: { version: "0.2.0", sha256: "a".repeat(64) },
   gatewayHost: "apps.example.com",
-  zoneId: "fedcba9876543210fedcba9876543210",
-  routing: "custom-domains" as const,
   appBaseDomain: "apps.example.com",
   appWorkers: ["every-todo", "every-acme-chef", "every-todo"],
   appHosts: [
@@ -31,13 +29,6 @@ const PATCH = {
     "chef-acme.apps.example.com",
     "todo.apps.example.com",
   ],
-};
-
-/** An install from before per-app domains, served through its wildcard route. */
-const ROUTE_PATCH = {
-  ...PATCH,
-  routing: "wildcard-route" as const,
-  appHosts: [],
 };
 
 let releaseDir: string;
@@ -130,29 +121,6 @@ describe("patchGatewayBuildOutput", () => {
     });
   });
 
-  it("keeps an install's wildcard route, its gateway host alone a Custom Domain", async () => {
-    const config = JSON.parse(fs.readFileSync(FIXTURE, "utf8"));
-    config.triggers = [
-      { type: "scheduled", schedule: "17 3 * * *" },
-      { type: "fetch", pattern: "*.old.example.com/*", zone: "old" },
-    ];
-    writeRelease("worker.config.json", JSON.stringify(config));
-
-    const patched = await patchGatewayBuildOutput(releaseDir, ROUTE_PATCH);
-    expect(patched.domains).toEqual(["apps.example.com"]);
-    expect(patched.triggers).toEqual([
-      { type: "scheduled", schedule: "17 3 * * *" },
-      {
-        type: "fetch",
-        pattern: "*.apps.example.com/*",
-        zone: PATCH.zoneId,
-      },
-    ]);
-    // So the gateway keeps naming apps <app>-<org>.<host>.
-    expect(patched.env!["APP_BASE_DOMAIN"]).toBeUndefined();
-    expect(() => validateWorkerConfig(patched, { requireDomain: true })).not.toThrow();
-  });
-
   it("refuses to publish a host that isn't one label below the base domain", async () => {
     for (const host of [
       "www.example.com",
@@ -187,13 +155,6 @@ describe("patchGatewayBuildOutput", () => {
         "must be apps.example.com, not example.com",
       ),
     });
-    // Route mode sets no APP_BASE_DOMAIN, so has nothing to check.
-    await expect(
-      patchGatewayBuildOutput(releaseDir, {
-        ...ROUTE_PATCH,
-        appBaseDomain: "example.com",
-      }),
-    ).resolves.toMatchObject({ domains: ["apps.example.com"] });
   });
 });
 
@@ -202,17 +163,9 @@ describe("gatewayDomains", () => {
     expect(
       gatewayDomains({
         gatewayHost: "apps.example.com",
-        routing: "custom-domains",
         appHosts: ["b.apps.example.com", "a.apps.example.com", "b.apps.example.com"],
       }),
     ).toEqual(["apps.example.com", "a.apps.example.com", "b.apps.example.com"]);
-    expect(
-      gatewayDomains({
-        gatewayHost: "example.com",
-        routing: "wildcard-route",
-        appHosts: ["todo-acme.example.com"],
-      }),
-    ).toEqual(["example.com"]);
   });
 });
 

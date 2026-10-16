@@ -1,8 +1,8 @@
 /**
  * A real SQLite database standing in for remote D1 in tests: behind the
  * `D1Database` seam, and behind FakeCf as `cf d1 query` and
- * `cf d1 migrations apply`, so the CLI's SQL (lease, backfill, setup link,
- * desired state, install row) runs against the gateway's actual schema.
+ * `cf d1 migrations apply`, so the CLI's SQL (lease, setup link, desired
+ * state, install row) runs against the gateway's actual schema.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -59,37 +59,6 @@ function execMigration(sqlite: DatabaseSync, file: string): void {
     .readFileSync(file, "utf8")
     .split("--> statement-breakpoint")) {
     if (statement.trim()) sqlite.exec(statement);
-  }
-}
-
-interface Journal {
-  entries: Array<{ tag: string; when: number }>;
-}
-
-/**
- * Migrate like drizzle-kit did before cf: apply the migrations in `dir`
- * (the gateway's by default; all, or the first `count`) and record them in
- * `__drizzle_migrations`.
- */
-export function migrateGatewayWithDrizzle(
-  db: SqliteD1,
-  count?: number,
-  dir = GATEWAY_MIGRATIONS_DIR,
-): void {
-  const journal = JSON.parse(
-    fs.readFileSync(path.join(dir, "meta", "_journal.json"), "utf8"),
-  ) as Journal;
-  const entries = journal.entries.slice(0, count);
-  db.sqlite.exec(
-    "CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric)",
-  );
-  for (const entry of entries) {
-    execMigration(db.sqlite, path.join(dir, `${entry.tag}.sql`));
-    db.sqlite
-      .prepare(
-        "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
-      )
-      .run(`hash-${entry.tag}`, entry.when);
   }
 }
 

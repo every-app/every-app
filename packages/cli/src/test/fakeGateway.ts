@@ -5,7 +5,7 @@
  * registrations write, activation succeeds only once the deployed gateway
  * binds the app's Worker, and new hostnames follow the deployed gateway's
  * APP_BASE_DOMAIN as the real one's do (`<app>.<base>` for the install's
- * organization; `<app>-<org>.<host>` without one).
+ * organization).
  */
 import { createHash, randomUUID } from "node:crypto";
 import { resourceNameFor } from "@every-app/perimeter/manifest";
@@ -29,7 +29,6 @@ interface AppRow {
   hostname: string;
   manifest: string | null;
   status: string;
-  legacy_names: number;
   version_id: string | null;
 }
 
@@ -50,11 +49,11 @@ export class FakeGateway {
     return `https://${this.gatewayHost}`;
   }
 
-  /** What the deployed gateway's APP_BASE_DOMAIN says, if it has one. */
-  private appBaseDomain(): string | null {
+  /** What the deployed gateway's APP_BASE_DOMAIN says; its host before the first deploy. */
+  private appBaseDomain(): string {
     return (
       this.account.workers.get("every-app-gateway")?.config["env"]?.APP_BASE_DOMAIN
-        ?.value ?? null
+        ?.value ?? this.gatewayHost
     );
   }
 
@@ -103,7 +102,7 @@ export class FakeGateway {
 
   app(appId: string): AppRow | undefined {
     return this.db.all(
-      "SELECT id, app_slug, worker_name, hostname, manifest, status, legacy_names, version_id FROM apps WHERE organization_id = ? AND app_slug = ?",
+      "SELECT id, app_slug, worker_name, hostname, manifest, status, version_id FROM apps WHERE organization_id = ? AND app_slug = ?",
       ORG.id,
       appId,
     )[0] as AppRow | undefined;
@@ -121,13 +120,11 @@ export class FakeGateway {
     return ORG.slug;
   }
 
-  private resources(workerName: string, manifest: unknown, legacyNames: boolean) {
+  private resources(workerName: string, manifest: unknown) {
     const resources = (manifest as { resources?: { d1?: string[]; kv?: string[] } })
       ?.resources;
     const names = (bindings: string[] = []) =>
-      Object.fromEntries(
-        bindings.map((b) => [b, resourceNameFor(workerName, b, { legacyNames })]),
-      );
+      Object.fromEntries(bindings.map((b) => [b, resourceNameFor(workerName, b)]));
     return { d1: names(resources?.d1), kv: names(resources?.kv) };
   }
 
@@ -202,20 +199,14 @@ export class FakeGateway {
 
     registerApp: async (payload: { appId: string; name: string; description: string; manifest: unknown }) => {
       const existing = this.app(payload.appId);
-      const legacy = existing?.legacy_names === 1;
-      const workerName =
-        existing?.worker_name ??
-        (legacy ? `every-${payload.appId}` : `every-${this.orgKey()}-${payload.appId}`);
-      const base = this.appBaseDomain();
+      const workerName = existing?.worker_name ?? `every-${this.orgKey()}-${payload.appId}`;
       // The seeded organization is the install's own.
-      const hostname =
-        existing?.hostname ??
-        (base ? `${payload.appId}.${base}` : `${payload.appId}-${ORG.slug}.${this.gatewayHost}`);
+      const hostname = existing?.hostname ?? `${payload.appId}.${this.appBaseDomain()}`;
       let status = existing?.status ?? "pending";
       if (!existing) {
         this.db.sqlite
           .prepare(
-            "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status, legacy_names) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0)",
+            "INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')",
           )
           .run(randomUUID(), ORG.id, payload.appId, payload.name, payload.description, hostname, workerName, JSON.stringify(payload.manifest));
       } else if (existing.status === "deleted") {
@@ -230,8 +221,7 @@ export class FakeGateway {
         status,
         workerName,
         hostname,
-        legacyNames: legacy,
-        resources: this.resources(workerName, payload.manifest, legacy),
+        resources: this.resources(workerName, payload.manifest),
         previousManifest: existing?.manifest ? JSON.parse(existing.manifest) : null,
         versionId: existing?.version_id ?? null,
         existingApp: Boolean(existing),
@@ -294,12 +284,7 @@ export class FakeGateway {
         status: app.status,
         workerName: app.worker_name,
         hostname: app.hostname,
-        legacyNames: app.legacy_names === 1,
-        resources: this.resources(
-          app.worker_name,
-          app.manifest && JSON.parse(app.manifest),
-          app.legacy_names === 1,
-        ),
+        resources: this.resources(app.worker_name, app.manifest && JSON.parse(app.manifest)),
       };
     },
 
@@ -311,12 +296,7 @@ export class FakeGateway {
         status: "deleted",
         workerName: app.worker_name,
         hostname: app.hostname,
-        legacyNames: app.legacy_names === 1,
-        resources: this.resources(
-          app.worker_name,
-          app.manifest && JSON.parse(app.manifest),
-          app.legacy_names === 1,
-        ),
+        resources: this.resources(app.worker_name, app.manifest && JSON.parse(app.manifest)),
       };
     },
   } as unknown as GatewayClient;

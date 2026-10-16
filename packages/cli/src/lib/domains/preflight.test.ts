@@ -15,7 +15,6 @@ function run(cf: FakeCf, options: Partial<Parameters<typeof preflightDomains>[0]
     domains: ["apps.example.com", "todo.apps.example.com"],
     liveDomains: ["apps.example.com"],
     interactive: true,
-    lookupCaa: async () => [],
     ...options,
   });
   return { result, events };
@@ -53,34 +52,42 @@ describe("preflightDomains", () => {
     }
   });
 
-  it("says which new hostnames a wildcard answers now, and goes on", async () => {
+  it("refuses new hostnames a wildcard answers, like a record of their own", async () => {
     const records: Record<string, Array<{ type: string; content: string }>> = {
-      "*.apps.example.com": [{ type: "CNAME", content: "legacy.example.net" }, { type: "TXT", content: "x" }],
+      "*.apps.example.com": [{ type: "CNAME", content: "site.example.net" }, { type: "TXT", content: "x" }],
       // Its own record: the wildcard doesn't answer it.
       "chef.apps.example.com": [{ type: "TXT", content: "v=spf1 -all" }],
     };
-    const cf = new FakeCf().on(["dns", "records", "list"], (call) => {
-      const name = call.args[call.args.indexOf("--name-exact") + 1]!;
-      return {
-        stdout: JSON.stringify((records[name] ?? []).map((row, i) => ({ id: `r${i}`, name, ...row }))),
-      };
-    });
-    const { result, events } = run(cf, {
-      domains: ["apps.example.com", "todo.apps.example.com", "notes.apps.example.com", "chef.apps.example.com"],
-    });
+    const cf = () =>
+      new FakeCf().on(["dns", "records", "list"], (call) => {
+        const name = call.args[call.args.indexOf("--name-exact") + 1]!;
+        return {
+          stdout: JSON.stringify((records[name] ?? []).map((row, i) => ({ id: `r${i}`, name, ...row }))),
+        };
+      });
+    const domains = ["apps.example.com", "todo.apps.example.com", "notes.apps.example.com", "chef.apps.example.com"];
 
+    const refused = cf();
+    await expect(run(refused, { domains }).result).rejects.toMatchObject({
+      code: "DNS_RECORD_CONFLICT",
+      message: expect.stringContaining(
+        "todo.apps.example.com (*.apps.example.com: CNAME site.example.net); notes.apps.example.com (*.apps.example.com: CNAME site.example.net).",
+      ),
+    });
+    // The wildcard is read once for both.
+    const asked = refused.calls.map((call) => call.args[call.args.indexOf("--name-exact") + 1]);
+    expect(asked.filter((name) => name === "*.apps.example.com")).toHaveLength(1);
+
+    // The operator says the names may go.
+    const { result, events } = run(cf(), { domains, forceDns: true });
     await expect(result).resolves.toEqual(["todo.apps.example.com", "notes.apps.example.com", "chef.apps.example.com"]);
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "warning",
-        code: "DNS_WILDCARD_ANSWERS",
-        message: expect.stringContaining("todo.apps.example.com (*.apps.example.com: CNAME legacy.example.net)"),
-        data: { hosts: ["todo.apps.example.com", "notes.apps.example.com"] },
+        code: "DNS_RECORD_REPLACED",
+        message: expect.stringContaining("keeps answering every other name"),
       }),
     );
-    // The wildcard is read once for both.
-    const asked = cf.calls.map((call) => call.args[call.args.indexOf("--name-exact") + 1]);
-    expect(asked.filter((name) => name === "*.apps.example.com")).toHaveLength(1);
   });
 
   it("refuses unless it can read the zone's DNS, or is told to go on", async () => {
@@ -96,55 +103,6 @@ describe("preflightDomains", () => {
     await expect(run(denied(), { forceDns: true }).result).resolves.toEqual([
       "todo.apps.example.com",
     ]);
-  });
-
-  it("asks public DNS about a new hostname only once it has a record", async () => {
-    const asked: string[] = [];
-    const lookupCaa = async (name: string) => {
-      asked.push(name);
-      return [];
-    };
-    const empty = new FakeCf().on(["dns", "records", "list"], { stdout: "[]" });
-    await run(empty, { lookupCaa }).result;
-    expect(asked).toEqual(["apps.example.com", "example.com", "com"]);
-  });
-
-  it("applies a parent domain's CAA records to a subdomain zone", async () => {
-    // The zone is apps.example.com; example.com, above it, allows only digicert.com.
-    const cf = new FakeCf().on(["dns", "records", "list"], { stdout: "[]" });
-    const lookupCaa = async (name: string) =>
-      name === "example.com" ? [{ flags: 0, tag: "issue", value: "digicert.com" }] : [];
-    await expect(
-      run(cf, { zone: { id: "zone-2", name: "apps.example.com" }, lookupCaa }).result,
-    ).rejects.toMatchObject({
-      code: "CAA_BLOCKS_ISSUANCE",
-      message: expect.stringContaining("CAA at example.com allows digicert.com"),
-    });
-  });
-
-  it("warns, and goes on, when CAA allows Cloudflare's CAs only for one ACME account or method", async () => {
-    const cf = new FakeCf().on(["dns", "records", "list"], { stdout: "[]" });
-    const lookupCaa = async (name: string) =>
-      name === "example.com"
-        ? [{ flags: 0, tag: "issue", value: "letsencrypt.org; validationmethods=dns-01" }]
-        : [];
-    const { result, events } = run(cf, { lookupCaa });
-    await expect(result).resolves.toEqual(["todo.apps.example.com"]);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: "warning",
-        code: "CAA_MAY_BLOCK_ISSUANCE",
-        message: expect.stringContaining("allows letsencrypt.org only with validationmethods"),
-        data: { hosts: ["todo.apps.example.com"] },
-      }),
-    );
-  });
-
-  it("says when CAA can't be read, and goes on", async () => {
-    const cf = new FakeCf().on(["dns", "records", "list"], { stdout: "[]" });
-    const { result, events } = run(cf, { lookupCaa: async () => null });
-    await expect(result).resolves.toEqual(["todo.apps.example.com"]);
-    expect(events).toContainEqual(expect.objectContaining({ code: "CAA_UNCHECKED" }));
   });
 
   it("warns unattended that cf can't tell which Worker holds a hostname", async () => {

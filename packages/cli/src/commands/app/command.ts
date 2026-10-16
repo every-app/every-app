@@ -111,7 +111,7 @@ export const deployCommand = buildCommand({
       "force-dns": {
         kind: "boolean",
         brief:
-          "Publish the app's new hostname even where a DNS record exists (it is replaced) or CAA records would block its certificate",
+          "Publish the app's new hostname even where a DNS record answers it (one at the hostname is replaced)",
         optional: true,
       },
       "no-wait-cert": {
@@ -129,7 +129,7 @@ export const deployCommand = buildCommand({
     fullDescription: [
       "Deploys the current app as a private Cloudflare Worker defined by cloudflare.config.ts, with cf:",
       "  1. Registers the app with the gateway, which names its Worker, resources and hostname",
-      "     (a new hostname is checked first: no DNS record it would replace, CAA, room in the zone)",
+      "     (a new hostname is checked first: no DNS record that answers it, room in the zone)",
       "  2. Creates or links the D1 databases and KV namespaces in everyapp.config.ts",
       "  3. Installs dependencies (the manifest's install setting, or auto-detected)",
       "  4. Bookmarks the production D1 database, then applies its migrations",

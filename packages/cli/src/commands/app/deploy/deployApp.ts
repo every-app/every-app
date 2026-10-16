@@ -10,8 +10,8 @@
  *      new or already the app's), check that its drizzle migrations still
  *      describe its schema (steps/checkSchemaDrift.ts), make sure an
  *      unattended run may replace the Worker, and only then (the lease
- *      checked again before each) migrate D1 (bookmark, drizzle history
- *      carried over once, `cf d1 migrations apply`) and upload it
+ *      checked again before each) migrate D1 (bookmark, then
+ *      `cf d1 migrations apply`) and upload it
  *      (`cf deploy --prebuilt`, with GATEWAY_URL and EVERY_APP_ORG_ID in
  *      the secrets file; cf creates or updates its Workflows), so a deploy
  *      that can't upload leaves the database alone. Workflows the app
@@ -22,8 +22,8 @@
  *      release), activate once the binding answers, and wait for a new
  *      hostname's certificate.
  *
- * A new hostname is checked (DNS records it would replace, CAA, the zone's
- * room) right after registering, before anything is created or uploaded.
+ * A new hostname is checked (DNS records that answer it, the zone's room)
+ * right after registering, before anything is created or uploaded.
  * A redeploy of an app the gateway already binds and serves never touches
  * the gateway.
  */
@@ -60,9 +60,6 @@ import {
 import { CfError } from "@/lib/cf/errors";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { deleteWorkflow } from "@/lib/cf/workflows";
-import { resolvesThroughCloudflare } from "@/lib/dns";
-import { formatWildcardDnsInstructions } from "@/lib/dnsInstructions";
-import type { CaaLookup } from "@/lib/domains/caa";
 import { waitForCertificates } from "@/lib/domains/certWait";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
@@ -75,6 +72,7 @@ import {
   type GatewayWhoamiResponse,
   type RegisterAppResponse,
 } from "@/lib/gateway/api";
+import { notDeployedByEveryapp } from "@/lib/gateway/apply";
 import { readInstall } from "@/lib/gateway/install";
 import { acquireLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
@@ -85,7 +83,7 @@ import {
   resolveMigrationBinding,
   type EveryAppCliManifest,
 } from "@/lib/manifest";
-import { migrateRemoteD1, readDrizzleJournal } from "@/lib/migrations/remote";
+import { migrateRemoteD1 } from "@/lib/migrations/remote";
 import type { EventSink } from "@/lib/output/events";
 import { installDependencies } from "@/lib/package-manager";
 
@@ -102,7 +100,7 @@ interface DeployAppOptions {
   allowDeleteDurableObjectData?: boolean;
   /** Delete the Workflows the app dropped, with their instances (`--allow-delete-workflows`). */
   allowDeleteWorkflows?: boolean;
-  /** Publish a new hostname over a DNS record or a CAA block (`--force-dns`). */
+  /** Publish a new hostname over the DNS record that answers it (`--force-dns`). */
   forceDns?: boolean;
   /** Wait for a new hostname's certificate (default true; `--no-wait-cert`). */
   waitForCertificate?: boolean;
@@ -117,7 +115,6 @@ interface DeployAppOptions {
   createCf?: (accountId?: string) => CfRunner;
   client?: GatewayClient;
   sleep?: (ms: number) => Promise<void>;
-  checkDns?: (hostname: string) => Promise<boolean>;
   installDeps?: typeof installDependencies;
   reconcile?: ReconcileSeams;
   certificates?: CertificateSeams;
@@ -129,7 +126,6 @@ export interface ReconcileSeams {
   sleep?: (ms: number) => Promise<void>;
   verifyTimeoutMs?: number;
   leaseWaitMs?: number;
-  lookupCaa?: CaaLookup;
 }
 
 /** How the certificate wait checks a hostname, sleeps, and how long it waits (tests). */
@@ -241,15 +237,14 @@ export async function deployApp(
   // neither checked nor a reason to redeploy the gateway.
   const registry = cfD1Database(cf, gatewayDb);
   const install = await readInstall(registry);
-  const perAppDomains = install?.routing === "custom-domains";
-  const outsideBase =
-    perAppDomains &&
-    !isOneLabelBelow(registration.hostname, install.appBaseDomain);
+  if (!install) throw notDeployedByEveryapp();
+  const outsideBase = !isOneLabelBelow(
+    registration.hostname,
+    install.appBaseDomain,
+  );
   const newHost =
-    perAppDomains &&
-    !outsideBase &&
-    !install.liveDomains.includes(registration.hostname);
-  if (install && outsideBase) {
+    !outsideBase && !install.liveDomains.includes(registration.hostname);
+  if (outsideBase) {
     out.emit({
       type: "warning",
       code: "APP_HOST_OUTSIDE_BASE",
@@ -257,7 +252,7 @@ export async function deployApp(
       message: `${registration.hostname} isn't one label below ${install.appBaseDomain}, so the gateway doesn't publish it and ${manifest.id} can't be reached there.`,
     });
   }
-  if (install && newHost) {
+  if (newHost) {
     await preflightDomains({
       cf,
       out,
@@ -267,7 +262,6 @@ export async function deployApp(
       liveDomains: install.liveDomains,
       forceDns: options.forceDns,
       interactive,
-      lookupCaa: options.reconcile?.lookupCaa,
     });
   }
 
@@ -306,12 +300,6 @@ export async function deployApp(
       registration,
       onCreated: (description: string) =>
         out.emit({ type: "progress", step: "app.resources", message: `Created ${description}.` }),
-      onAdopted: (description: string) =>
-        out.emit({
-          type: "progress",
-          step: "app.resources",
-          message: `Recorded ${description}, which ${manifest.id} already used, as its own.`,
-        }),
       onRecreated: (description: string) =>
         out.emit({
           type: "warning",
@@ -462,37 +450,21 @@ export async function deployApp(
     client,
   });
 
-  if (install?.routing === "custom-domains") {
-    if (published.includes(registration.hostname)) {
-      if (options.waitForCertificate ?? true) {
-        await waitForCertificates({
-          hosts: [registration.hostname],
-          out,
-          step: "app.tls",
-          ...options.certificates,
-        });
-      } else {
-        out.emit({
-          type: "progress",
-          step: "app.tls",
-          message: `https://${registration.hostname} gets its certificate within a few minutes; \`everyapp gateway status\` shows when.`,
-        });
-      }
+  if (published.includes(registration.hostname)) {
+    if (options.waitForCertificate ?? true) {
+      await waitForCertificates({
+        hosts: [registration.hostname],
+        out,
+        step: "app.tls",
+        ...options.certificates,
+      });
+    } else {
+      out.emit({
+        type: "progress",
+        step: "app.tls",
+        message: `https://${registration.hostname} gets its certificate within a few minutes; \`everyapp gateway status\` shows when.`,
+      });
     }
-  } else if (
-    !(await (options.checkDns ?? resolvesThroughCloudflare)(registration.hostname))
-  ) {
-    // An install still served through the wildcard route needs its record.
-    out.emit({
-      type: "warning",
-      code: "WILDCARD_DNS_MISSING",
-      message: formatWildcardDnsInstructions({
-        domain: registration.hostname.split(".").slice(1).join("."),
-        accountId,
-        mode: "app",
-        hostname: registration.hostname,
-      }),
-    });
   }
 
   return {
@@ -671,16 +643,11 @@ async function migrate({
     status: "start",
     message: "Migrating the app's database...",
   });
-  const engine = manifest.migrations?.engine ?? "drizzle";
   const result = await migrateRemoteD1({
     cf,
-    db: cfD1Database(cf, databaseId),
     databaseId,
     accountId,
     dir,
-    // drizzle-kit migrated apps before cf did; d1-sql apps were already
-    // tracked in d1_migrations.
-    journal: engine === "drizzle" ? await readDrizzleJournal(dir) : undefined,
     onProgress: (message) =>
       out.emit({ type: "progress", step: "app.migrations", message }),
   });

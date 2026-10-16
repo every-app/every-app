@@ -6,7 +6,6 @@ import {
   type ReconcileSeams,
 } from "@/commands/app/deploy/deployApp";
 import {
-  appWithWorkerNamed,
   describeResource,
   forgetOwnedResources,
   readOwnedResources,
@@ -127,7 +126,7 @@ export async function removeApp({
   const registry = cfD1Database(cf, gatewayDb);
   const install = await readInstall(registry);
   if (
-    install?.routing === "custom-domains" &&
+    install &&
     isOneLabelBelow(deleted.hostname, install.appBaseDomain) &&
     !install.liveDomains.includes(deleted.hostname)
   ) {
@@ -183,13 +182,7 @@ async function purgeApp(
   deleted: DeletedApp,
 ): Promise<PurgeResult> {
   const owned = await readOwnedResources(registry, deleted.workerName);
-  // Named after another app's Worker: that app's, whatever was recorded.
-  const othersApp = (name: string) =>
-    name === deleted.workerName
-      ? Promise.resolve(null)
-      : appWithWorkerNamed(registry, name);
   const removed: string[] = [];
-  const othersKept: string[] = [];
   const workflowsKept: string[] = [];
   // Its Workflows before the Worker they run on; a Worker the app didn't
   // record creating keeps its own.
@@ -217,11 +210,6 @@ async function purgeApp(
     a.kind === "worker" ? -1 : b.kind === "worker" ? 1 : 0,
   )) {
     if (!resource.resourceId) continue;
-    const otherApp = await othersApp(resource.name);
-    if (otherApp) {
-      othersKept.push(`${describeResource(resource)} (app ${otherApp}'s)`);
-      continue;
-    }
     try {
       if (resource.kind === "worker") {
         if (!(await getWorkerDeployment(cf, resource.resourceId))) continue;
@@ -240,24 +228,15 @@ async function purgeApp(
   await forgetOwnedResources(registry, deleted.workerName);
 
   const unrecorded = [
-    ...(await unrecordedResources(cf, deleted, owned, othersApp)),
+    ...(await unrecordedResources(cf, deleted, owned)),
     ...workflowsKept,
   ];
-  if (othersKept.length > 0) {
-    out.emit({
-      type: "warning",
-      code: "RESOURCES_KEPT",
-      step: "app.purge",
-      message: `Kept ${othersKept.join(", ")}: named after another app's Worker, so it is that app's (${appId} matched its name only under the old naming).`,
-      data: { kept: othersKept },
-    });
-  }
   if (unrecorded.length > 0) {
     out.emit({
       type: "warning",
       code: "RESOURCES_KEPT",
       step: "app.purge",
-      message: `Kept ${unrecorded.join(", ")}: they have ${appId}'s names, but no deploy recorded creating them, so they may belong to someone else. If they are ${appId}'s (deployed before everyapp recorded what it creates), delete them with npx cf.`,
+      message: `Kept ${unrecorded.join(", ")}: they have ${appId}'s names, but no deploy recorded creating them, so they may belong to someone else. If they are ${appId}'s, delete them with npx cf.`,
       data: { kept: unrecorded },
     });
   }
@@ -270,18 +249,14 @@ async function purgeApp(
       : "Nothing deleted in Cloudflare.",
     data: { removed },
   });
-  return { removed, kept: [...othersKept, ...unrecorded] };
+  return { removed, kept: unrecorded };
 }
 
-/**
- * What exists under the app's assigned names without being recorded as its
- * own, leaving out names of other apps' Workers.
- */
+/** What exists under the app's assigned names without being recorded as its own. */
 async function unrecordedResources(
   cf: CfRunner,
   deleted: DeletedApp,
   owned: ReadonlyArray<{ kind: string; name: string; resourceId: string | null }>,
-  othersApp: (name: string) => Promise<string | null>,
 ): Promise<string[]> {
   const recorded = new Set(
     owned.filter((r) => r.resourceId).map((r) => `${r.kind}:${r.name}`),
@@ -295,7 +270,7 @@ async function unrecordedResources(
   }
   for (const kind of ["d1", "kv"] as const) {
     for (const name of new Set(Object.values(deleted.resources[kind]))) {
-      if (recorded.has(`${kind}:${name}`) || (await othersApp(name))) continue;
+      if (recorded.has(`${kind}:${name}`)) continue;
       if (await (kind === "d1" ? findD1 : findKv)(cf, name)) {
         kept.push(describeResource({ kind, name }));
       }

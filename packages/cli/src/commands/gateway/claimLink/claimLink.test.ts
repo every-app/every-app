@@ -36,7 +36,6 @@ describe("everyapp gateway claim-link", () => {
       zoneName: "example.com",
       gatewayHost: "example.com",
       appBaseDomain: "example.com",
-      routing: "custom-domains",
       oauthKvId: "kv1",
       deployKvId: "kv2",
       releaseVersion: "0.2.0",

@@ -13,7 +13,6 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] **Destructive tools.** Tools marked destructive (e.g. delete todo) stay hidden from AI clients until approvals exist.
 - [ ] **Old invites.** Invites are now one-time links, so invites emailed before #268 stop working.
 - [ ] **Setup link expiring mid-wait.** If the owner setup link stops working while `everyapp setup` waits, setup doesn't make a new one.
-- [ ] **Wildcard DNS.** A wildcard record that covers a new app hostname only gets a warning, so the thecomeup.cc switch isn't blocked.
 - [ ] **RepoLens badges.** Badges are public even for private repos. Keep that, or return 404 for private ones?
 - [ ] **RepoLens access.** Deploy it the first time with `--access everyone` if the whole org should see it.
 - [ ] **RepoLens retry backfill.** Left out of its MCP tools, because it deletes fetched history.
@@ -65,7 +64,6 @@ Everything below needs a real Cloudflare account. The rest was checked locally: 
 - [ ] A brand-new Worker accepts a secrets file holding the PEM keys, and its first version has the required secrets.
 - [ ] Remote `cf d1 migrations apply` doesn't prompt and prints the expected output. Check `cf d1 time-travel get-bookmark` output, and that the printed restore command works.
 - [ ] Several SQL statements in one `cf d1 query --body @file` call run atomically. The lease, setup link and install record rely on it.
-- [ ] A Custom Domain and a route deployed together, and the certificate wait. How they interact with the route the wrangler-era deploy left on thecomeup.cc.
 - [ ] The shape and order of `cf workers deployments list`, and who a `cf deploy` is attributed to. A cf deploy must not trigger the "edited in the dashboard" abort on the next deploy; a real dashboard edit must.
 - [ ] Release cache: a `cf kv` put and get of the ~6.6 MiB base64 tarball comes back byte for byte, and `kv keys list` has the expected shape.
 - [ ] Source map size limits and Issues symbolication. Logs and traces show up in the dashboard.

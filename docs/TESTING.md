@@ -24,7 +24,7 @@ pnpm test          # runs `pnpm -r --no-bail run test` across all packages
 | `packages/sdk` | `src/**/*.test.ts` (49) | fail-closed identity verification: alg/kid pinning, `alg:none`, algorithm-confusion (HS256-with-public-key), wrong key, expiry, audience mismatch, missing claims, public-route handling, `everyApp()` handler wrapper |
 | `apps/every-app-gateway` | `src/v2/**/*.test.ts` (70) | public-route glob matching incl. path-traversal + percent-encoding (`/p/%2e%2e/__everyapp/...`), header stripping, security headers, CSRF default-deny, JWT mint, Host parsing, the full `handleGatewayRequest` proxy core, the dev gateway-lite, and an end-to-end perimeter↔real-SDK integration test |
 | `apps/every-app-gateway` | legacy `src/**/*.test.ts` | pre-existing gateway tests (still green) |
-| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the gateway and app deploy pipelines end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1, Build Outputs validated with cf's schema), the app policy check, leases, migrations backfill |
+| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the gateway and app deploy pipelines end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1, Build Outputs validated with cf's schema), the app policy check, leases, remote migrations |
 
 Run a single layer:
 
@@ -378,9 +378,7 @@ production.
 
 1. **Gateway** owns a Workers Custom Domain for its own host
    (`apps.example.com`) and one per app host (`todo.apps.example.com`), the
-   full list on every deploy (an install from before per-app domains: its
-   host plus a `*.<host>/*` route over a wildcard record instead), and holds
-   the RS256 keypair (`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`, kid
+   full list on every deploy, and holds the RS256 keypair (`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`, kid
    `everyapp-identity`).
 2. **Each app** is deployed PRIVATE from its manifest:
    - `everyapp app deploy` builds the Worker `cloudflare.config.ts` defines

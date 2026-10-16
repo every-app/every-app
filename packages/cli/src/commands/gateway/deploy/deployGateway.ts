@@ -5,12 +5,8 @@
  * Neither moves a gateway to an older release without --allow-downgrade.
  */
 import enquirer from "enquirer";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
-import { getWorkerDeployment } from "@/lib/cf/workers";
-import { resolvesThroughCloudflare } from "@/lib/dns";
-import { formatWildcardDnsInstructions } from "@/lib/dnsInstructions";
 import { waitForCertificates } from "@/lib/domains/certWait";
 import { normalizeHostname } from "@/lib/domains/hostnames";
 import { resolveZone, type Zone } from "@/lib/domains/zones";
@@ -25,12 +21,7 @@ import {
   type ApplyGatewayOptions,
   type ApplyGatewayResult,
 } from "@/lib/gateway/apply";
-import {
-  migratedByDrizzleKit,
-  readInstall,
-  type InstallRecord,
-  type Routing,
-} from "@/lib/gateway/install";
+import { readInstall, type InstallRecord } from "@/lib/gateway/install";
 import { compareVersions, type GatewayRelease } from "@/lib/gateway/release";
 import {
   ensureGatewayResources,
@@ -173,40 +164,19 @@ async function run(
   }
 }
 
-/**
- * The account's gateway database and install row. A gateway wrangler
- * deployed has a database but no install row; it keeps its wildcard route
- * and app hostnames, which only adopting it records.
- */
+/** The account's gateway database and install row. */
 export async function findInstall(
   cf: CfRunner,
 ): Promise<{ databaseId: string | null; install: InstallRecord | null }> {
   const databaseId = await findGatewayDatabase(cf);
   if (!databaseId) return { databaseId, install: null };
-  const db = cfD1Database(cf, databaseId);
-  const install = await readInstall(db);
-  if (!install && (await migratedByDrizzleKit(db))) {
-    // Its Worker deleted and the database left: nothing to adopt, so say
-    // which database stands in the way.
-    if (!(await getWorkerDeployment(cf, GATEWAY_WORKER_NAME))) {
-      throw new EveryAppError(
-        "GATEWAY_NOT_ADOPTED",
-        `This Cloudflare account still has the D1 database of a gateway deployed before everyapp used cf (every-app-gateway, ${databaseId}), but not its Worker. A new gateway here needs that name. If you don't need the old gateway's users and app registrations, delete the database (\`cf d1 delete ${databaseId}\`; \`cf d1 undelete\` brings it back) and its every-app-gateway-OAUTH_KV namespace, then run this again. Or set up the new gateway in another Cloudflare account (--account-id).`,
-      );
-    }
-    throw new EveryAppError(
-      "GATEWAY_NOT_ADOPTED",
-      "This Cloudflare account already runs a gateway, deployed before everyapp used cf, and an account holds one gateway: its Worker, D1 database and KV namespaces have fixed names, so a new one here would replace it. To move that gateway onto this code, adopt it first, which keeps its domain, wildcard route and app hostnames: `everyapp gateway adopt --domain <its domain>`, then `everyapp gateway upgrade` from a terminal. For a separate gateway, use another Cloudflare account (--account-id).",
-    );
-  }
-  return { databaseId, install };
+  return { databaseId, install: await readInstall(cfD1Database(cf, databaseId)) };
 }
 
 /** Where a deploy goes: the install's own settings, or a new install's. */
 interface GatewayTarget {
   domain: string;
   zone: Zone;
-  routing: Routing;
   appBaseDomain: string;
 }
 
@@ -230,19 +200,15 @@ export async function gatewayTarget({
         `This gateway is installed at ${install.gatewayHost}; moving it to ${domain} isn't supported.`,
       );
     }
-    // An install keeps how it was set up until switched
-    // (gateway use-per-app-domains).
     return {
       domain,
       zone: { id: install.zoneId, name: install.zoneName },
-      routing: install.routing,
       appBaseDomain: install.appBaseDomain,
     };
   }
   const zone = await resolveZone(cf, domain, accountId);
   warnIfZoneApex(domain, zone, out);
-  // New installs publish each app as its own Custom Domain.
-  return { domain, zone, routing: "custom-domains", appBaseDomain: domain };
+  return { domain, zone, appBaseDomain: domain };
 }
 
 /**
@@ -275,7 +241,6 @@ export async function deployGatewayRelease({
   | "sleep"
   | "verifyTimeoutMs"
   | "leaseWaitMs"
-  | "lookupCaa"
 > & {
     certificates?: Pick<
       Parameters<typeof waitForCertificates>[0],
@@ -301,7 +266,6 @@ export async function deployGatewayRelease({
     accountId,
     gatewayHost: target.domain,
     zone: target.zone,
-    routing: target.routing,
     appBaseDomain: target.appBaseDomain,
     resources,
     db,
@@ -316,20 +280,6 @@ export async function deployGatewayRelease({
     step: "gateway.tls",
     ...certificates,
   });
-  if (
-    target.routing === "wildcard-route" &&
-    !(await resolvesThroughCloudflare(`everyapp-wildcard-check.${target.domain}`))
-  ) {
-    out.emit({
-      type: "warning",
-      code: "WILDCARD_DNS_MISSING",
-      message: formatWildcardDnsInstructions({
-        domain: target.domain,
-        accountId,
-        mode: "gateway-warning",
-      }),
-    });
-  }
   return { result, db, gatewayUrl: `https://${target.domain}` };
 }
 

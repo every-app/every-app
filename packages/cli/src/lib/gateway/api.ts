@@ -122,7 +122,6 @@ export interface RegisterAppResponse {
   status: string;
   workerName: string;
   hostname: string;
-  legacyNames: boolean;
   resources: AppResources;
   previousManifest: unknown;
   /** The Worker version the last deploy uploaded (absent from older gateways). */
@@ -140,8 +139,6 @@ interface AppDeployState {
 
 /** An app's deploy state with the names of its resources. */
 export interface DeletedApp extends AppDeployState {
-  /** Registered before org-scoped names (absent from gateways before it). */
-  legacyNames?: boolean;
   resources: AppResources;
 }
 
@@ -163,8 +160,8 @@ export interface GatewayWhoamiResponse {
   gateway?: {
     release?: { version: string; sha256: string } | null;
     gatewayHost?: string | null;
-    /** Null when apps reach the gateway through a wildcard route. */
-    appBaseDomain?: string | null;
+    /** Apps live one label below it, each its own Custom Domain. */
+    appBaseDomain?: string;
   };
   minCli?: string;
   minSdk?: string;

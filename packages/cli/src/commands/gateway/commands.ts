@@ -25,7 +25,7 @@ const yesFlag = {
 const forceDnsFlag = {
   kind: "boolean",
   brief:
-    "Publish new hostnames even where a DNS record exists (it is replaced) or CAA records would block the certificate",
+    "Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)",
   optional: true,
 } as const;
 
@@ -81,8 +81,8 @@ export const deployCommand = buildCommand({
       "Builds the gateway release from this checkout (apps/every-app-gateway), then deploys its Build Output with cf:",
       "  1. Finds or creates the gateway's D1 database and KV namespaces",
       "  2. Takes the deploy lease, so deploys never overlap",
-      "  3. Checks every new hostname: no DNS record it would replace (unless --force-dns),",
-      "     CAA records that let Cloudflare issue its certificate, room in the zone",
+      "  3. Checks every new hostname: no DNS record that answers it (unless --force-dns),",
+      "     room in the zone",
       "  4. Bookmarks the database, then applies migrations before any code changes",
       "  5. Binds every registered app, publishes the gateway's domain and each app's as",
       "     Workers Custom Domains, then uploads with cf deploy",
@@ -226,86 +226,12 @@ const secretSetCommand = buildCommand({
   },
 });
 
-const adoptCommand = buildCommand({
-  loader: async () => {
-    const { adopt } = await import("./adopt");
-    return adopt;
-  },
-  parameters: {
-    positional: { kind: "tuple", parameters: [] },
-    flags: {
-      domain: {
-        kind: "parsed",
-        parse: String,
-        brief: "The host the gateway serves at (its GATEWAY_URL), e.g. example.com",
-        optional: true,
-      },
-      "account-id": accountFlag,
-      "dry-run": {
-        kind: "boolean",
-        brief: "Only show what it finds and would record",
-        optional: true,
-      },
-      yes: yesFlag,
-      json: jsonFlag,
-      verbose: verboseFlag,
-    },
-    aliases: { y: "yes" },
-  },
-  docs: {
-    brief: "Take over a gateway deployed before everyapp used cf",
-    fullDescription: [
-      "For a gateway deployed with an older everyapp (with wrangler): reads the account (zone, Worker,",
-      "namespaces, DNS, migration history, the registry's apps), checks that --domain serves this",
-      "account's gateway, and records the install as it is, keeping its domain, wildcard route and app",
-      "hostnames. Nothing is deployed or migrated.",
-      "",
-      "Then run `everyapp gateway upgrade` from a terminal (cf asks before replacing a Worker last",
-      "changed outside it), and later, if you like, `everyapp gateway use-per-app-domains`.",
-    ].join("\n"),
-  },
-});
-
-const usePerAppDomainsCommand = buildCommand({
-  loader: async () => {
-    const { usePerAppDomains } = await import("./usePerAppDomains");
-    return usePerAppDomains;
-  },
-  parameters: {
-    positional: { kind: "tuple", parameters: [] },
-    flags: {
-      "account-id": accountFlag,
-      "dry-run": {
-        kind: "boolean",
-        brief: "Check the hostnames and cf's deploy without changing anything",
-        optional: true,
-      },
-      "force-dns": forceDnsFlag,
-      yes: yesFlag,
-      json: jsonFlag,
-      verbose: verboseFlag,
-    },
-    aliases: { y: "yes" },
-  },
-  docs: {
-    brief: "Publish each app as its own Custom Domain instead of a wildcard route",
-    fullDescription: [
-      "For an install served through a *.<domain> route and wildcard DNS record: publishes every app's",
-      "hostname as a Workers Custom Domain on the gateway (checked first: DNS records, CAA, the zone's",
-      "100-domain limit), and new apps get <app>.<domain>. Hostnames don't change. Remove the wildcard",
-      "record and route afterwards; they keep working until you do.",
-    ].join("\n"),
-  },
-});
-
 export const gatewayRoutes = buildRouteMap({
   routes: {
     deploy: deployCommand,
     upgrade: upgradeCommand,
     reconcile: reconcileCommand,
     status: statusCommand,
-    adopt: adoptCommand,
-    "use-per-app-domains": usePerAppDomainsCommand,
     "claim-link": claimLinkCommand,
     secret: buildRouteMap({
       routes: { set: secretSetCommand },

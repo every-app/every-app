@@ -48,8 +48,6 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
             sha256: release.manifest.sha256,
           },
           gatewayHost: "apps.example.com",
-          zoneId: "fedcba9876543210fedcba9876543210",
-          routing: "custom-domains",
           appBaseDomain: "apps.example.com",
           appWorkers: ["every-acme-todo", "every-chef"],
           appHosts: ["todo.apps.example.com", "chef-globex.apps.example.com"],

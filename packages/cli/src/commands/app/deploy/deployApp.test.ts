@@ -70,6 +70,11 @@ const seams = {
   verifyTimeoutMs: 0,
   leaseWaitMs: 0,
 };
+/** Every new hostname has its certificate at once. */
+const readyCertificates = {
+  isReady: async () => true,
+  sleep: async () => undefined,
+};
 
 beforeEach(async () => {
   events = [];
@@ -78,9 +83,8 @@ beforeEach(async () => {
   account = new FakeCloudflare();
   gateway = new FakeGateway(account);
 
-  // A gateway this CLI deployed, installed before per-app domains: apps
-  // reach it through its wildcard route, at <app>-<org>.example.com. (The
-  // per-app Custom Domains of new installs are below.)
+  // A gateway this CLI deployed at the zone's apex: each app is its own
+  // Custom Domain at <app>.example.com. (One on a subdomain is below.)
   release = await openRelease(await buildGatewayRelease());
   const resources = await ensureGatewayResources(account.cf);
   await applyGateway({
@@ -91,13 +95,11 @@ beforeEach(async () => {
     accountId: ACCOUNT_ID,
     gatewayHost: "example.com",
     zone: { id: "zone-1", name: "example.com" },
-    routing: "wildcard-route",
     appBaseDomain: "example.com",
     resources,
     db: cfD1Database(account.cf, resources.d1Id),
     interactive: false,
     cliVersion: "0.3.0",
-    lookupCaa: account.lookupCaa,
     ...seams,
   });
   gateway.seedOrganization();
@@ -143,9 +145,9 @@ function deploy(
     createCf: () => account.cf,
     client: gateway.client,
     sleep: async () => undefined,
-    checkDns: async () => true,
     installDeps: async () => undefined,
     reconcile: seams,
+    certificates: readyCertificates,
     ...options,
   });
 }
@@ -167,9 +169,9 @@ function deployOther(manifest: EveryAppCliManifest) {
     createCf: () => account.cf,
     client: gateway.client,
     sleep: async () => undefined,
-    checkDns: async () => true,
     installDeps: async () => undefined,
     reconcile: seams,
+    certificates: readyCertificates,
   });
 }
 
@@ -184,7 +186,7 @@ describe("app deploy", () => {
     const result = await deploy();
 
     expect(result).toMatchObject({
-      liveUrl: "https://todo-acme.example.com",
+      liveUrl: "https://todo.example.com",
       workerName: "every-acme-todo",
     });
     // Its own resources, under the gateway's org-scoped names.
@@ -289,82 +291,6 @@ describe("app deploy", () => {
     expect(gateway.toolSyncs).toEqual(["todo", "todo"]);
   });
 
-  it("keeps a legacy app on its every-<appId> Worker and data", async () => {
-    account.database("every-app-gateway").sqlite.exec(`
-      INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status, legacy_names)
-      VALUES ('legacy', 'org-1', 'todo', 'Todos', 'Todos', 'todo-acme.example.com', 'every-todo', '{"id":"todo"}', 'active', 1);
-    `);
-    const legacyDb = account.createDatabase("every-todo").db;
-    legacyDb.sqlite.exec(
-      "CREATE TABLE todos (id text PRIMARY KEY, title text); CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY, hash text, created_at numeric); INSERT INTO __drizzle_migrations (hash, created_at) VALUES ('h', 1000);",
-    );
-
-    const result = await deploy();
-
-    expect(result.workerName).toBe("every-todo");
-    // drizzle-kit applied 0000 before: recorded, not run again.
-    expect(legacyDb.all("SELECT name FROM d1_migrations")).toEqual([
-      { name: "0000_init.sql" },
-    ]);
-    expect(account.gatewayBindings()).toEqual(["every-todo"]);
-    // From now on they are recorded as the app's own.
-    await expect(readOwnedResources(registry(), "every-todo")).resolves.toEqual([
-      { kind: "d1", binding: "DB", name: "every-todo", resourceId: databaseId("every-todo"), versionId: null },
-      { kind: "kv", binding: "KV", name: "every-todo", resourceId: account.namespaceId("every-todo"), versionId: null },
-      {
-        kind: "worker",
-        binding: "",
-        name: "every-todo",
-        resourceId: "every-todo",
-        versionId: result.versionId,
-      },
-    ]);
-  });
-
-  it("never adopts a database a legacy app's new binding would share with another app", async () => {
-    // Legacy apps `todo` and `todo-archive`: `todo` adding ARCHIVE would get
-    // every-todo-archive, which is `todo-archive`'s database.
-    account.database("every-app-gateway").sqlite.exec(`
-      INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status, legacy_names)
-      VALUES ('legacy', 'org-1', 'todo', 'Todos', 'Todos', 'todo-acme.example.com', 'every-todo', '${JSON.stringify(TODO)}', 'active', 1);
-    `);
-    account.createDatabase("every-todo");
-    const theirs = account.createDatabase("every-todo-archive");
-
-    await expect(
-      deploy({ ...TODO, resources: { ...TODO.resources, d1: ["DB", "ARCHIVE"] } }),
-    ).rejects.toMatchObject({ code: "RESOURCE_NAME_TAKEN" });
-    expect(theirs.db.all("SELECT name FROM sqlite_master WHERE name = 'd1_migrations'")).toEqual([]);
-  });
-
-  it("never takes another legacy app's database, even for a binding it declared", async () => {
-    // Legacy apps `todo`, which declared ARCHIVE, and `todo-archive`: the
-    // wrangler-era CLI named both `todo`'s ARCHIVE and `todo-archive`'s DB
-    // every-todo-archive.
-    const withArchive = { ...TODO, resources: { ...TODO.resources, d1: ["DB", "ARCHIVE"] } };
-    account.database("every-app-gateway").sqlite.exec(`
-      INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status, legacy_names)
-      VALUES ('legacy', 'org-1', 'todo', 'Todos', 'Todos', 'todo-acme.example.com', 'every-todo', '${JSON.stringify(withArchive)}', 'active', 1),
-        ('legacy-archive', 'org-1', 'todo-archive', 'Archive', 'Archive', 'todo-archive-acme.example.com', 'every-todo-archive', '{"id":"todo-archive"}', 'active', 1);
-    `);
-    account.createDatabase("every-todo");
-    const theirs = account.createDatabase("every-todo-archive");
-
-    await expect(deploy(withArchive)).rejects.toMatchObject({
-      code: "RESOURCE_NAME_TAKEN",
-      message: expect.stringContaining("is app todo-archive's"),
-    });
-    expect(theirs.db.all("SELECT name FROM sqlite_master WHERE name = 'd1_migrations'")).toEqual([]);
-    expect(
-      (await readOwnedResources(registry(), "every-todo")).map((resource) => resource.name),
-    ).not.toContain("every-todo-archive");
-
-    // Nor is it created while that app has none.
-    account.databases.delete(theirs.uuid);
-    await expect(deploy(withArchive)).rejects.toMatchObject({ code: "RESOURCE_NAME_TAKEN" });
-    expect(databaseId("every-todo-archive")).toBeUndefined();
-  });
-
   it("refuses someone else's database on every attempt, not just the first", async () => {
     const foreign = account.createDatabase("every-acme-todo");
     foreign.db.sqlite.exec("CREATE TABLE theirs (v TEXT); INSERT INTO theirs VALUES ('not yours');");
@@ -462,35 +388,27 @@ describe("app deploy", () => {
     expect(account.workers.has("every-acme-todo")).toBe(false);
   });
 
-  it("stops unattended over an app Worker it didn't record deploying, before migrating", async () => {
-    // A legacy app the wrangler-era CLI deployed: Worker and data exist.
-    account.database("every-app-gateway").sqlite.exec(`
-      INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status, legacy_names)
-      VALUES ('legacy', 'org-1', 'todo', 'Todos', 'Todos', 'todo-acme.example.com', 'every-todo', '${JSON.stringify(TODO)}', 'active', 1);
-    `);
-    const legacyDb = account.createDatabase("every-todo").db;
-    account.workers.set("every-todo", {
-      versions: ["wrangler-1"],
-      config: { name: "every-todo", env: {} },
-      secrets: { GATEWAY_URL: GATEWAY_URL, EVERY_APP_ORG_ID: "org-1" },
-    });
+  it("stops unattended over an app Worker version it didn't record deploying, before migrating", async () => {
+    await deploy();
+    // Edited in the dashboard since, with a migration waiting to run.
+    const worker = account.workers.get("every-acme-todo")!;
+    worker.versions.push("dashboard-1");
+    fs.writeFileSync(path.join(appDir, "drizzle", "0001_more.sql"), "CREATE TABLE more (id text);");
+    const migrated = () => account.database("every-acme-todo").all("SELECT name FROM d1_migrations");
 
     await expect(deploy()).rejects.toMatchObject({ action: "rerun_interactive" });
-    expect(
-      legacyDb.all("SELECT name FROM sqlite_master WHERE name = 'd1_migrations'"),
-    ).toEqual([]);
-    expect(account.workers.get("every-todo")!.versions).toEqual(["wrangler-1"]);
+    expect(migrated()).toEqual([{ name: "0000_init.sql" }]);
+    expect(worker.versions.at(-1)).toBe("dashboard-1");
 
     // At a terminal a person is asked first; once they say yes, the
     // recorded version lets the next unattended deploy go ahead.
     await expect(
       deploy(TODO, { interactive: true, confirm: async () => false }),
     ).rejects.toMatchObject({ code: "DEPLOY_CANCELLED" });
-    expect(
-      legacyDb.all("SELECT name FROM sqlite_master WHERE name = 'd1_migrations'"),
-    ).toEqual([]);
+    expect(migrated()).toEqual([{ name: "0000_init.sql" }]);
     await deploy(TODO, { interactive: true, confirm: async () => true });
-    await expect(deploy()).resolves.toMatchObject({ workerName: "every-todo" });
+    expect(migrated()).toEqual([{ name: "0000_init.sql" }, { name: "0001_more.sql" }]);
+    await expect(deploy()).resolves.toMatchObject({ workerName: "every-acme-todo" });
   });
 
   it("lets a retry go unattended after a deploy that uploaded but couldn't tell the gateway", async () => {
@@ -886,7 +804,7 @@ describe("app workflows", () => {
   });
 });
 
-describe("app deploy and delete with per-app Custom Domains", () => {
+describe("app deploy and delete with the gateway on a subdomain", () => {
   const GW = "apps.example.com";
   const certificateChecks: string[] = [];
   const certificates = {
@@ -911,13 +829,11 @@ describe("app deploy and delete with per-app Custom Domains", () => {
       accountId: ACCOUNT_ID,
       gatewayHost: GW,
       zone: { id: "zone-1", name: "example.com" },
-      routing: "custom-domains",
       appBaseDomain: GW,
       resources,
       db: cfD1Database(account.cf, resources.d1Id),
       interactive: false,
       cliVersion: "0.3.0",
-      lookupCaa: account.lookupCaa,
       ...seams,
     });
     gateway.seedOrganization();
@@ -935,12 +851,8 @@ describe("app deploy and delete with per-app Custom Domains", () => {
       createCf: () => account.cf,
       client: gateway.client,
       sleep: async () => undefined,
-      // No wildcard record to look for on these installs.
-      checkDns: async () => {
-        throw new Error("checked for a wildcard DNS record");
-      },
       installDeps: async () => undefined,
-      reconcile: { ...seams, lookupCaa: account.lookupCaa },
+      reconcile: seams,
       certificates,
       ...options,
     });
@@ -996,8 +908,8 @@ describe("app deploy and delete with per-app Custom Domains", () => {
     // A registry row from before, at a host that isn't one label below the base.
     account.database("every-app-gateway").sqlite.exec(`
       INSERT OR IGNORE INTO organization_keys (organization_id, org_key) VALUES ('org-1', 'acme');
-      INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status, legacy_names)
-        VALUES ('row-todo', 'org-1', 'todo', 'todo', 'todo', 'todo.example.com', 'every-acme-todo', '{}', 'pending', 0);
+      INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status)
+        VALUES ('row-todo', 'org-1', 'todo', 'todo', 'todo', 'todo.example.com', 'every-acme-todo', '{}', 'pending');
     `);
     await deployHere();
     expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
@@ -1029,7 +941,7 @@ describe("app deploy and delete with per-app Custom Domains", () => {
       interactive: false,
       purge: false,
       createCf: () => account.cf,
-      reconcile: { ...seams, lookupCaa: account.lookupCaa },
+      reconcile: seams,
     });
     expect(account.gatewayBindings()).toEqual([]);
     expect(account.certificatePacks.map((pack) => pack.id)).toContain("pack-site");
@@ -1101,7 +1013,7 @@ describe("app deploy and delete with per-app Custom Domains", () => {
       interactive: false,
       purge: false,
       createCf: () => account.cf,
-      reconcile: { ...seams, lookupCaa: account.lookupCaa },
+      reconcile: seams,
     });
 
     expect(account.gatewayDomains()).toEqual([GW]);
@@ -1129,7 +1041,7 @@ describe("app deploy and delete with per-app Custom Domains", () => {
       interactive: false,
       purge: false,
       createCf: () => account.cf,
-      reconcile: { ...seams, lookupCaa: account.lookupCaa },
+      reconcile: seams,
     });
 
     expect(gateway.app("todo")).toMatchObject({ status: "deleted" });
@@ -1163,12 +1075,11 @@ describe("app delete", () => {
   });
 
   it("purges only what the app recorded, never what merely has its names", async () => {
-    // A legacy app the wrangler-era CLI deployed: nothing recorded yet.
-    account.database("every-app-gateway").sqlite.exec(`
-      INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status, legacy_names)
-      VALUES ('legacy-chef', 'org-1', 'chef', 'Chef', 'Chef', 'chef-acme.example.com', 'every-chef', '{"id":"chef","resources":{"d1":["DB"]}}', 'active', 1);
-    `);
-    const legacyDb = account.createDatabase("every-chef");
+    // App chef is registered, but its deploy never created anything: the
+    // database with its name is someone else's.
+    const chef: EveryAppCliManifest = { id: "chef", resources: { d1: ["DB"] } };
+    const theirs = account.createDatabase("every-acme-chef");
+    await expect(deployOther(chef)).rejects.toMatchObject({ code: "RESOURCE_NAME_TAKEN" });
 
     const result = await removeApp({
       appId: "chef",
@@ -1180,63 +1091,19 @@ describe("app delete", () => {
       reconcile: seams,
     });
 
-    expect(databaseId("every-chef")).toBe(legacyDb.uuid);
+    expect(databaseId("every-acme-chef")).toBe(theirs.uuid);
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "warning",
         code: "RESOURCES_KEPT",
-        data: { kept: ['D1 database "every-chef"'] },
+        data: { kept: ['D1 database "every-acme-chef"'] },
       }),
     );
     // Nothing was deleted, and the last word says so.
     expect(deletionSummary("chef", result)).toMatchObject({
-      message: 'Deleted chef; kept D1 database "every-chef" (see above).',
-      data: { purged: false, removed: [], kept: ['D1 database "every-chef"'] },
+      message: 'Deleted chef; kept D1 database "every-acme-chef" (see above).',
+      data: { purged: false, removed: [], kept: ['D1 database "every-acme-chef"'] },
     });
-  });
-
-  it("never purges another app's database, even one recorded as the app's", async () => {
-    // Legacy apps `chef` and `chef-archive`, and a record (made before
-    // everyapp checked names) of chef-archive's database as chef's ARCHIVE.
-    account.database("every-app-gateway").sqlite.exec(`
-      INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status, legacy_names)
-      VALUES ('legacy-chef', 'org-1', 'chef', 'Chef', 'Chef', 'chef-acme.example.com', 'every-chef', '{"id":"chef","resources":{"d1":["DB","ARCHIVE"]}}', 'active', 1),
-        ('legacy-archive', 'org-1', 'chef-archive', 'Archive', 'Archive', 'chef-archive-acme.example.com', 'every-chef-archive', '{"id":"chef-archive"}', 'active', 1);
-    `);
-    const chefDb = account.createDatabase("every-chef");
-    const theirs = account.createDatabase("every-chef-archive");
-    await recordOwnedResource(registry(), "every-chef", {
-      kind: "d1",
-      binding: "DB",
-      name: "every-chef",
-      resourceId: chefDb.uuid,
-    });
-    await recordOwnedResource(registry(), "every-chef", {
-      kind: "d1",
-      binding: "ARCHIVE",
-      name: "every-chef-archive",
-      resourceId: theirs.uuid,
-    });
-
-    const result = await removeApp({
-      appId: "chef",
-      client: gateway.client,
-      out: out(),
-      interactive: false,
-      purge: true,
-      createCf: () => account.cf,
-      reconcile: seams,
-    });
-
-    expect(databaseId("every-chef")).toBeUndefined();
-    expect(databaseId("every-chef-archive")).toBe(theirs.uuid);
-    expect(result.purged).toEqual({
-      removed: ['D1 database "every-chef"'],
-      kept: ['D1 database "every-chef-archive" (app chef-archive\'s)'],
-    });
-    expect(events).toContainEqual(
-      expect.objectContaining({ type: "warning", code: "RESOURCES_KEPT" }),
-    );
   });
 
   it("purges the Workflows that run on the app's Worker, and no others", async () => {

@@ -8,23 +8,22 @@
  *      and the Worker serves a version everyapp recorded (cf's strict mode)
  *      or a person agrees to replace it. A database migrated under old code
  *      that keeps serving is what a failed upgrade must not leave behind;
- *   1. (deploy, upgrade) migrate the gateway's D1 — bookmark, carry
- *      drizzle-kit's history over once, `cf d1 migrations apply` — so a
- *      failed migration leaves the gateway that is serving untouched;
+ *   1. (deploy, upgrade) migrate the gateway's D1 — bookmark, then
+ *      `cf d1 migrations apply` — so a failed migration leaves the gateway
+ *      that is serving untouched;
  *   2. (deploy, upgrade) cache the release in the deploy KV namespace;
  *   3. read which app Workers the registry says to bind, and their hosts;
  *   4. patch a private copy of the release's Build Output with them and
  *      this install's ids and domains (each app host a Workers Custom
- *      Domain, or the wildcard route of an install from before those),
- *      validated with cf's schema;
+ *      Domain), validated with cf's schema;
  *   5. check every hostname it adds (lib/domains/preflight.ts: DNS
- *      records it would replace, CAA, the zone's limit), before the
- *      database changes when it can, and always before the upload;
+ *      records that answer it, the zone's limit), before the database
+ *      changes when it can, and always before the upload;
  *   6. `cf deploy --prebuilt`, with the secrets file on a first deploy,
  *      and record the install row as soon as the upload is known (on the
- *      way out of a Ctrl+C too). The routing and hostnames are recorded
- *      only once cf has published them: when it stops after the upload,
- *      only the version is (record());
+ *      way out of a Ctrl+C too). The hostnames are recorded only once cf
+ *      has published them: when it stops after the upload, only the
+ *      version is (record());
  *   7. wait for /api/deploy/status to report the new release and bindings;
  *   8. if the registry changed meanwhile (an app registered), go again.
  *
@@ -46,7 +45,6 @@ import { assertReplaceable, cfDeploy, type Confirm } from "@/lib/cf/deploy";
 import { makeCfTempDir } from "@/lib/cf/privateDir";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
-import type { CaaLookup } from "@/lib/domains/caa";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
 import { EveryAppError } from "@/lib/errors";
@@ -61,12 +59,7 @@ import {
   workerExistence,
   type DesiredState,
 } from "./desiredState";
-import {
-  readInstall,
-  writeInstall,
-  type InstallRecord,
-  type Routing,
-} from "./install";
+import { readInstall, writeInstall, type InstallRecord } from "./install";
 import { acquireLease, type Lease } from "./lease";
 import { gatewayDomains, patchGatewayBuildOutput } from "./patchBuildOutput";
 import {
@@ -83,8 +76,8 @@ import { firstDeploySecrets } from "./secretsFile";
 
 type ApplyReason = "deploy" | "upgrade" | "reconcile";
 
-/** How the install row says app hosts reach the gateway, and its hostnames. */
-type Publication = Pick<InstallRecord, "routing" | "liveDomains">;
+/** The hostnames the install row says the gateway is published under. */
+type Publication = Pick<InstallRecord, "liveDomains">;
 
 const MAX_DEPLOYS = 3;
 const VERIFY_TIMEOUT_MS = 120_000;
@@ -100,16 +93,12 @@ export interface ApplyGatewayOptions {
   accountId: string;
   gatewayHost: string;
   zone: { id: string; name: string };
-  /** How app hosts reach the gateway (lib/gateway/install.ts). */
-  routing: Routing;
   /** Where app hosts live; the gateway host. */
   appBaseDomain: string;
   resources: GatewayResources;
   db: D1Database;
-  /** Publish new hostnames over DNS records and CAA blocks (--force-dns). */
+  /** Publish new hostnames over the DNS records that answer them (--force-dns). */
   forceDns?: boolean;
-  /** How the domain preflight reads CAA records (tests). */
-  lookupCaa?: CaaLookup;
   /** A person at a terminal answers cf's own prompts. */
   interactive: boolean;
   /** Asks that person before replacing a version everyapp didn't record (tests). */
@@ -253,12 +242,12 @@ class DomainChecks {
 
   /** The domains the gateway publishes for these app hosts. */
   domainsFor(appHosts: readonly string[]): string[] {
-    const { routing, appBaseDomain, gatewayHost, out } = this.options;
+    const { appBaseDomain, gatewayHost, out } = this.options;
     const stray = appHosts.filter(
       (host) => !isOneLabelBelow(host, appBaseDomain),
     );
     const unwarned = stray.filter((host) => !this.warned.has(host));
-    if (routing === "custom-domains" && unwarned.length > 0) {
+    if (unwarned.length > 0) {
       out.emit({
         type: "warning",
         code: "APP_HOST_OUTSIDE_BASE",
@@ -268,7 +257,6 @@ class DomainChecks {
     }
     return gatewayDomains({
       gatewayHost,
-      routing,
       appHosts: appHosts.filter((host) => !stray.includes(host)),
     });
   }
@@ -283,7 +271,6 @@ class DomainChecks {
       liveDomains: [...this.liveDomains, ...this.checked],
       forceDns: this.options.forceDns,
       interactive: this.options.interactive,
-      lookupCaa: this.options.lookupCaa,
     });
     for (const host of domains) this.checked.add(host);
   }
@@ -351,7 +338,6 @@ export async function applyGateway(
       });
     }
     return await deployUntilSettled(options, domainChecks, workerExists, {
-      routing: install?.routing ?? options.routing,
       liveDomains: install?.liveDomains ?? [],
     }, lease);
   } finally {
@@ -362,7 +348,6 @@ export async function applyGateway(
 async function migrate({
   cf,
   out,
-  db,
   resources,
   release,
   accountId,
@@ -375,11 +360,9 @@ async function migrate({
   });
   const result = await migrateRemoteD1({
     cf,
-    db,
     databaseId: resources.d1Id,
     accountId,
     dir: path.join(release.dir, "drizzle"),
-    journal: release.manifest.migrations,
     onProgress: (message) =>
       out.emit({ type: "progress", step: "gateway.migrations", message }),
   });
@@ -466,7 +449,7 @@ async function deployUntilSettled(
     }
     versionId = deployed.versionId;
     firstDeploy = false;
-    lastPublished = { routing: options.routing, liveDomains: domains };
+    lastPublished = { liveDomains: domains };
     for (const host of domains) {
       if (!published.has(host)) newHosts.push(host);
       published.add(host);
@@ -548,9 +531,7 @@ function deployOnce(
           options,
           desired,
           versionId,
-          finished
-            ? { routing: options.routing, liveDomains: domains }
-            : before,
+          finished ? { liveDomains: domains } : before,
         ),
     }),
   );
@@ -578,8 +559,6 @@ async function withPatchedRelease<T>(
         sha256: options.release.manifest.sha256,
       },
       gatewayHost: options.gatewayHost,
-      zoneId: options.zone.id,
-      routing: options.routing,
       appBaseDomain: options.appBaseDomain,
       appWorkers: apps.appWorkers,
       // Only hosts one label below the base: see DomainChecks.domainsFor.
@@ -637,13 +616,12 @@ async function waitForStatus(
 
 /**
  * Record the version that went live: its release and the apps it binds,
- * and `publication`, the routing and hostnames the gateway is published
- * under. That is this deploy's once cf finished. When cf stopped after the
- * upload (it couldn't publish a hostname: a move from another Worker
- * declined, the zone's limit, an API error; or Ctrl+C), it is what was
- * recorded before: the next deploy then checks this one's new hostnames
- * again (DNS records, CAA, who may hold them), and a switch to per-app
- * domains isn't taken for done.
+ * and `publication`, the hostnames the gateway is published under. That is
+ * this deploy's once cf finished. When cf stopped after the upload (it
+ * couldn't publish a hostname: a move from another Worker declined, the
+ * zone's limit, an API error; or Ctrl+C), it is what was recorded before:
+ * the next deploy then checks this one's new hostnames again (DNS records,
+ * who may hold them).
  */
 async function record(
   options: ApplyGatewayOptions,
@@ -658,7 +636,6 @@ async function record(
     zoneName: options.zone.name,
     gatewayHost: options.gatewayHost,
     appBaseDomain: options.appBaseDomain,
-    routing: publication.routing,
     oauthKvId: options.resources.oauthKvId,
     deployKvId: options.resources.deployKvId,
     releaseVersion: options.release.manifest.version,
@@ -678,7 +655,6 @@ async function record(
     databaseId: options.resources.d1Id,
     oauthKvId: options.resources.oauthKvId,
     deployKvId: options.resources.deployKvId,
-    routing: publication.routing,
     releaseVersion: options.release.manifest.version,
     releaseSha256: options.release.manifest.sha256,
     updatedAt: new Date(updatedAt).toISOString(),
