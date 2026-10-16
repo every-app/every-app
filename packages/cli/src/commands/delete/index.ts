@@ -128,7 +128,7 @@ export async function removeApp({
   const { cf, db: registry } = connection;
   // Before the registry changes: never with a checkout behind the Gateway.
   await refuseOlderCheckout(connection.install, checkoutGateway(reconcile));
-  const deleted = await deleteFromRegistry(registry, appId);
+  const deleted = await deleteFromRegistry(registry, appId, connection.deployer);
   out.emit({
     type: "step",
     step: "app.delete",

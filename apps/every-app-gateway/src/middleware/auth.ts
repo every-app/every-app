@@ -4,6 +4,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import { GatewayError } from "@/server/errors";
 import { isUserBanned } from "@/server/user-ban";
 import {
+  isOrganizationActive,
   resolveOrgContext,
   type OrgContext,
 } from "@/server/organization/orgContext";
@@ -45,7 +46,7 @@ export const authMiddleware = createMiddleware({
 
 /**
  * Middleware that requires the current user to be a member
- * of an active organization.
+ * of an active organization: the session's, and not suspended.
  */
 export const organizationMemberMiddleware = createMiddleware({
   type: "function",
@@ -61,6 +62,12 @@ export const organizationMemberMiddleware = createMiddleware({
       throw new GatewayError(
         "UNAUTHORIZED",
         "Unauthorized: Organization membership required",
+      );
+    }
+    if (!(await isOrganizationActive(org.orgId))) {
+      throw new GatewayError(
+        "ORGANIZATION_SUSPENDED",
+        "This organization is suspended.",
       );
     }
 

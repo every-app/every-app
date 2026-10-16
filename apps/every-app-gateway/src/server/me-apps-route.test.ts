@@ -14,8 +14,10 @@ vi.mock("@/auth", () => ({
 }));
 
 const mockResolveOrgContext = vi.hoisted(() => vi.fn());
+const mockIsOrganizationActive = vi.hoisted(() => vi.fn(async () => true));
 vi.mock("@/server/organization/orgContext", () => ({
   resolveOrgContext: mockResolveOrgContext,
+  isOrganizationActive: mockIsOrganizationActive,
 }));
 
 const mockGetAppsForUser = vi.hoisted(() => vi.fn());
@@ -110,6 +112,26 @@ describe("GET /api/me/apps", () => {
       status: "active",
       grantedAt: "2026-01-02T00:00:00.000Z",
     });
+  });
+
+  it("returns 403 for a suspended organization", async () => {
+    mockGetSession.mockResolvedValue({
+      user: { id: "user-1" },
+      session: { activeOrganizationId: "org-1" },
+    });
+    mockResolveOrgContext.mockResolvedValue({
+      orgId: "org-1",
+      userId: "user-1",
+      role: "owner",
+    });
+    mockIsOrganizationActive.mockResolvedValueOnce(false);
+
+    const response = await getHandler()({ request: makeRequest() });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toEqual({ error: "organization_suspended" });
+    expect(mockIsOrganizationActive).toHaveBeenCalledWith("org-1");
+    expect(mockGetAppsForUser).not.toHaveBeenCalled();
   });
 
   it("filters out apps without a routing hostname", async () => {

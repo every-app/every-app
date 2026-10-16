@@ -75,6 +75,25 @@ async function findAllWithAccessCounts(organizationId: string) {
 }
 
 /**
+ * The shared apps (first-party, on the hosted gateway), deleted ones aside:
+ * every organization's members may open them. With
+ * `exceptOrganizationId`, those another organization owns (the platform
+ * organization's own are among its apps already).
+ */
+async function findAllShared(exceptOrganizationId?: string) {
+  return db.query.apps.findMany({
+    where: and(
+      eq(apps.scope, "shared"),
+      notDeleted,
+      ...(exceptOrganizationId
+        ? [ne(apps.organizationId, exceptOrganizationId)]
+        : []),
+    ),
+    orderBy: (apps, { asc }) => [asc(apps.name)],
+  });
+}
+
+/**
  * Find an app by its primary key ID.
  */
 async function findById(id: string, organizationId: string) {
@@ -115,7 +134,8 @@ async function findAllDefault(organizationId: string) {
 
 /**
  * The organization's apps nobody has access to: registered while it had no
- * members, before the gateway had an owner.
+ * members, before the gateway had an owner. Shared apps are nobody's to
+ * grant.
  */
 async function findAllWithoutAccess(organizationId: string) {
   return db
@@ -125,6 +145,7 @@ async function findAllWithoutAccess(organizationId: string) {
       and(
         eq(apps.organizationId, organizationId),
         notDeleted,
+        ne(apps.scope, "shared"),
         notExists(
           db
             .select({ id: userAppAccess.id })
@@ -246,6 +267,7 @@ async function tombstone(
 export const AppRepository = {
   findAll,
   findAllWithAccessCounts,
+  findAllShared,
   findById,
   findByAppSlug,
   findAllDefault,

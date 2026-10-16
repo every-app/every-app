@@ -7,9 +7,9 @@
  *    before the authorization server ever sees it.
  *
  * Nothing is cached. Every request re-reads the connection (or token), the
- * user's live membership and ban state, so revoking a connection, removing
- * or deactivating a member, or taking an app away takes effect on the next
- * request.
+ * user's live membership and ban state and the organization's status, so
+ * revoking a connection, removing or deactivating a member, suspending an
+ * organization, or taking an app away takes effect on the next request.
  */
 import { waitUntil } from "cloudflare:workers";
 import {
@@ -47,8 +47,11 @@ export type McpCaller =
       principal: McpPrincipal;
       apps: { connectionId?: string; appRowId?: string };
     }
-  /** A personal token without MCP scopes: valid, but not for this. */
-  | { kind: "refused"; reason: "token_scope" };
+  /**
+   * A personal token without MCP scopes: valid, but not for this; or a
+   * credential of a suspended organization.
+   */
+  | { kind: "refused"; reason: "token_scope" | "organization_suspended" };
 
 function isGrantProps(value: unknown): value is McpGrantProps {
   if (!value || typeof value !== "object") return false;
@@ -97,6 +100,9 @@ export async function resolvePatCaller(
   );
   const role = membership && resolvePrimaryOrganizationRole(membership.role);
   if (!membership || !role || isUserBanned(membership)) return null;
+  if (membership.organizationStatus !== "active") {
+    return { kind: "refused", reason: "organization_suspended" };
+  }
 
   const access = patAccess(scopes);
   if (!access) return { kind: "refused", reason: "token_scope" };
@@ -153,6 +159,9 @@ export async function resolveOauthCaller(
     return null;
   }
   if (isUserBanned(connection)) return null;
+  if (connection.organizationStatus !== "active") {
+    return { kind: "refused", reason: "organization_suspended" };
+  }
 
   // The connection's choice, capped by what the token carries.
   const access: McpAccess | null =

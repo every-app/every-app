@@ -84,6 +84,61 @@ first upload; ADR-0001) decides what the gateway does, once, in
   line in subjects and text (`server/email/templates.ts`): organization
   names and inviter addresses are user input.
 
+## Organizations and Shared Apps
+
+- Every request acts under one organization, and the identity JWT carries
+  it (`org_id`, `org_role`). An organization whose `status` isn't `active`
+  (the platform `suspended` it) opens nothing for anyone acting under it:
+  its members' browser sessions and personal access tokens get 403 on every
+  app host, its own apps and shared ones; its org-scoped control-plane
+  server functions refuse with `ORGANIZATION_SUSPENDED` and `/api/me/apps`
+  with 403; its AI connections and personal tokens are refused on the
+  gateway's `/mcp` (403, `organization_suspended`) and it is offered no
+  new connection. The status is cached per isolate for up to 30 seconds,
+  like memberships.
+- An organization's own app (`scope = 'org'`, every app on a self-hosted
+  gateway) opens for a member of that organization with the app installed
+  for them (a `user_app_access` row). A browser session acting under
+  another of the person's organizations is let in as their membership in
+  the app's organization: the JWT carries the app's organization and their
+  role there, never the session's. A personal access token only ever acts
+  in its own organization (and, bound to an app, in that app only).
+- A shared app (`scope = 'shared'`, the hosted gateway's first-party apps)
+  is a registry row of the platform organization (the install organization,
+  "Every App"), at `<appId>.<APP_BASE_DOMAIN>`, on a service binding, one
+  Worker for every organization. Any live member of any active
+  organization opens it, with no `user_app_access` row, acting under their
+  session's organization: the JWT carries that organization, and the app
+  scopes its data by it. Only `platformPolicy(env).sharedApps` (hosted)
+  honours the scope: elsewhere a shared row opens for nobody. Shared apps
+  are listed in every organization's launcher, AI-connection consent and
+  gateway `/mcp` catalog, and read-only in other organizations' Admin →
+  Apps; nobody manages their access, and only the platform organization's
+  owners and admins edit or delete them.
+- The registration rules give a shared app only to the install
+  organization and never change an app's scope (a redeploy that names none
+  keeps the row's; the same id asked for as the other scope is refused,
+  tombstones included). The CLI registers, redeploys (`secret set|unset`
+  included) or deletes one (`everyapp deploy --shared`, `everyapp register
+  --shared`, `everyapp delete`) only on a gateway whose install row records
+  `hosted` (deletes aside), and only for a Cloudflare login that is an owner
+  or admin of the platform organization by its verified email (an API token
+  is the account's own authority, as below).
+  A shared app's Worker gets no `EVERY_APP_ORG_ID`: nothing pins it to the
+  platform organization.
+- The AppGateway entrypoint attributes a provider call from a shared app to
+  the organization in the identity JWT the app forwards (verified: an
+  invalid or expired one is 401, never a fallback to the platform
+  organization); a call with none is refused (403) until background work
+  can assert its organization. An organization's own app's calls count for
+  its organization (the binding's props).
+- The hosted gateway caps AI proxy requests per organization per UTC day
+  (`orgDailyCaps.aiProxyRequests`, 200 unless `AI_PROXY_ORG_DAILY_LIMIT`
+  says otherwise), counted in D1 (`rate_limit_counters`); past it, 429
+  `org_daily_cap_exceeded` with `Retry-After` until the day ends. A counter
+  that can't be read refuses the call. Self-hosted gateways have no cap and
+  read no counter; an invalid mode allows none.
+
 ## Operator Authority (Self-Host)
 
 ADR-0003. In `self_hosted` mode, write access to the gateway's D1 database

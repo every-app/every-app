@@ -21,8 +21,14 @@ const orgContextCache = new Map<
   { context: OrgContext | null; expiresAt: number }
 >();
 
+const orgStatusCache = new Map<
+  string,
+  { active: boolean; expiresAt: number }
+>();
+
 export function clearOrgContextCacheForTests(): void {
   orgContextCache.clear();
+  orgStatusCache.clear();
 }
 
 /**
@@ -166,4 +172,35 @@ export async function chooseSessionOrganization(
   }
 
   return memberships[0]!.organizationId;
+}
+
+/**
+ * Whether an organization is active: not suspended by the platform (and
+ * there at all). Everything a member does acts under one organization, and
+ * a suspended one opens nothing: no app, shared or its own, and no
+ * org-scoped control-plane API. Cached per isolate like memberships, so a
+ * suspension takes up to the same 30s to reach every isolate.
+ */
+export async function isOrganizationActive(
+  organizationId: string,
+): Promise<boolean> {
+  const now = Date.now();
+  const cached = orgStatusCache.get(organizationId);
+  if (cached && cached.expiresAt > now) return cached.active;
+  if (cached) orgStatusCache.delete(organizationId);
+
+  const row = await db.query.organizations.findFirst({
+    where: eq(organizations.id, organizationId),
+    columns: { status: true },
+  });
+  const active = row?.status === "active";
+  orgStatusCache.set(organizationId, {
+    active,
+    expiresAt: now + ORG_CONTEXT_CACHE_TTL_MS,
+  });
+  if (orgStatusCache.size > ORG_CONTEXT_CACHE_MAX_ENTRIES) {
+    const oldest = orgStatusCache.keys().next().value;
+    if (oldest) orgStatusCache.delete(oldest);
+  }
+  return active;
 }

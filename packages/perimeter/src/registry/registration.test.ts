@@ -38,6 +38,7 @@ const registeredTodo: AppRow = {
   hostname: "todo-acme.apps.example.com",
   workerName: "every-acme-todo",
   tier: "service_binding",
+  scope: "org",
   manifest: JSON.stringify({ id: "todo" }),
   status: "active",
   versionId: "version-1",
@@ -319,6 +320,110 @@ describe("planRegistration", () => {
         existingApp: { ...registeredTodo, organizationId: "org-2" },
       }),
     ).toThrow("existingApp");
+  });
+});
+
+describe("shared apps", () => {
+  const platform = forApp("openseo", {
+    isInstallOrganization: true,
+    scope: "shared",
+    members: [
+      { id: "owner", role: "owner" },
+      { id: "member", role: "member" },
+    ],
+    deployerUserId: "owner",
+  });
+
+  it("registers a shared app in the platform organization, granting nobody", () => {
+    const plan = planRegistration(platform);
+    expect(plan.kind).toBe("new");
+    expect(plan.app).toMatchObject({
+      scope: "shared",
+      hostname: "openseo.apps.example.com",
+      workerName: "every-acme-openseo",
+      tier: "service_binding",
+      isDefault: false,
+      status: "pending",
+    });
+    expect(plan.grants).toEqual([]);
+  });
+
+  it("registers an organization's own app with scope org by default", () => {
+    expect(planRegistration(input).app.scope).toBe("org");
+  });
+
+  it("refuses a shared app from any organization but the platform's", () => {
+    expect(
+      thrown(() =>
+        planRegistration({ ...platform, isInstallOrganization: false }),
+      ),
+    ).toMatchObject({ status: 403, code: "SHARED_APP_NOT_PLATFORM" });
+  });
+
+  it("never changes an app's scope, tombstones included", () => {
+    const shared = { ...registeredTodo, scope: "shared" };
+    expect(
+      thrown(() =>
+        planRegistration({
+          ...input,
+          isInstallOrganization: true,
+          scope: "org",
+          existingApp: shared,
+        }),
+      ),
+    ).toMatchObject({ status: 409, code: "APP_SCOPE_MISMATCH" });
+    for (const status of ["active", "deleted"]) {
+      expect(
+        thrown(() =>
+          planRegistration({
+            ...input,
+            isInstallOrganization: true,
+            scope: "shared",
+            existingApp: { ...registeredTodo, status },
+          }),
+        ),
+      ).toMatchObject({ status: 409, code: "APP_SCOPE_MISMATCH" });
+    }
+    expect(
+      planRegistration({
+        ...input,
+        isInstallOrganization: true,
+        scope: "shared",
+        existingApp: shared,
+      }).kind,
+    ).toBe("existing");
+  });
+
+  it("keeps the row's scope when none is asked for, as a redeploy does", () => {
+    const shared = { ...registeredTodo, scope: "shared" };
+    const redeploy = planRegistration({
+      ...input,
+      isInstallOrganization: true,
+      existingApp: shared,
+    });
+    expect(redeploy).toMatchObject({
+      kind: "existing",
+      app: { scope: "shared" },
+    });
+
+    // A deleted shared app comes back shared, granting nobody.
+    const revived = planRegistration({
+      ...input,
+      isInstallOrganization: true,
+      existingApp: { ...shared, status: "deleted" },
+      members: [{ id: "owner", role: "owner" }],
+      deployerUserId: "owner",
+    });
+    expect(revived).toMatchObject({
+      kind: "revived",
+      app: { scope: "shared", isDefault: false },
+      grants: [],
+    });
+
+    // Only from the platform organization, still.
+    expect(
+      thrown(() => planRegistration({ ...input, existingApp: shared })),
+    ).toMatchObject({ status: 403, code: "SHARED_APP_NOT_PLATFORM" });
   });
 });
 

@@ -112,6 +112,24 @@ subscriptions (off), and prompts/resources (not served). Any other failure
 fails the run, and so does a baseline entry that starts passing (delete it).
 It needs the network, so it isn't part of `pnpm test` or CI.
 
+### Shared apps and organizations
+
+`apps/every-app-gateway/src/server/shared-apps.sqlite.test.ts` runs the real
+worker entry and Better Auth on SQLite on a hosted gateway with three
+organizations (the platform organization the setup claim makes, and two
+customers): a shared app opens for members of every organization with
+their own organization in the identity JWT, an organization's own app stays
+its own, a person acting under one organization opens another's app as
+their membership there (hosted and self-hosted), a personal access token
+stays in its organization, a suspended organization is refused for cookies
+and tokens alike, and a self-hosted gateway opens a shared row for nobody;
+then the listings: the launcher, the AI-connection consent, the gateway
+`/mcp` catalog (connections that chose the app included) and Admin → Apps
+(read-only elsewhere, no access management). The AppGateway entrypoint's
+attribution of shared apps' calls and the per-organization daily cap are in
+`app-gateway-entrypoint.test.ts`; `deploy --shared` and `register` against
+the fake Cloudflare in `packages/cli/src/commands/register/shared.test.ts`.
+
 ### The gateway's MCP connector and OAuth
 
 `apps/every-app-gateway/src/server/mcp-auth/gateway-mcp.e2e.sqlite.test.ts`

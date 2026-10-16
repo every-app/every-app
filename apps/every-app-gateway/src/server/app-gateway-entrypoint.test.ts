@@ -12,6 +12,7 @@ import {
   handleAppGatewayRequest,
   type AppCallerProps,
 } from "./app-gateway-entrypoint";
+import type { DailyCounters } from "./org-daily-cap";
 
 let privateKeyPem: string;
 let publicKeyPem: string;
@@ -67,6 +68,24 @@ function request(headers?: HeadersInit): Request {
   });
 }
 
+/** `rate_limit_counters` in memory, as RateLimitCounterRepository keeps them. */
+function memoryCounters(): DailyCounters & { counts: Map<string, number> } {
+  const counts = new Map<string, number>();
+  return {
+    counts,
+    async read(keys) {
+      return new Map(
+        keys.flatMap((key) =>
+          counts.has(key) ? [[key, counts.get(key)!] as const] : [],
+        ),
+      );
+    },
+    async increment(keys) {
+      for (const key of keys) counts.set(key, (counts.get(key) ?? 0) + 1);
+    },
+  };
+}
+
 function call(
   options: {
     props?: unknown;
@@ -74,6 +93,8 @@ function call(
     registry?: AppRegistry;
     inbound?: Request;
     fetchUpstream?: (request: Request) => Promise<Response>;
+    env?: Record<string, string>;
+    counters?: DailyCounters;
   } = {},
 ) {
   const props = Object.hasOwn(options, "props") ? options.props : PROPS;
@@ -88,11 +109,24 @@ function call(
     props,
     registry: options.registry ?? new InMemoryAppRegistry(registeredApps),
     env: {
+      GATEWAY_DEPLOYMENT_MODE: "self_hosted",
       OPENAI_API_KEY: "gateway-provider-key",
       JWT_PUBLIC_KEY: publicKeyPem,
       GATEWAY_URL: "https://home.example.com",
+      ...options.env,
     },
+    counters: options.counters ?? memoryCounters(),
     fetchUpstream,
+  });
+}
+
+/** A gateway identity for the `every-chef` Worker, as the perimeter mints it. */
+function identity(orgId: string, sub = "user-1", now?: number) {
+  return mintIdentityJwt(privateKeyPem, {
+    subject: { sub, email: `${sub}@example.com`, orgId, orgRole: "member" },
+    audience: "every-chef",
+    issuer: "https://home.example.com",
+    now,
   });
 }
 
@@ -335,6 +369,151 @@ describe("AppGateway proxy and attribution", () => {
     expect(info).toHaveBeenCalledWith(
       "AI gateway request",
       expect.objectContaining({ attribution: "app" }),
+    );
+  });
+});
+
+describe("AppGateway calls from a shared app", () => {
+  // OpenSEO-like: one Worker for every organization, owned by the platform
+  // organization, whose id the upload-time props carry.
+  const shared = () => app({ scope: "shared", organizationId: "org-1" });
+  const hosted = { GATEWAY_DEPLOYMENT_MODE: "hosted" };
+
+  it("attributes the call to the organization of the forwarded identity", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const usage = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const counters = memoryCounters();
+
+    const response = await call({
+      registeredApps: [shared()],
+      env: hosted,
+      counters,
+      inbound: request({ "x-everyapp-identity": await identity("org-acme") }),
+    });
+    await response.text();
+
+    expect(response.status).toBe(200);
+    expect(info).toHaveBeenCalledWith(
+      "AI gateway request",
+      expect.objectContaining({
+        organizationId: "org-acme",
+        attribution: "user",
+        userId: "user-1",
+      }),
+    );
+    expect(
+      usage.mock.calls.some(
+        ([line]) =>
+          typeof line === "string" &&
+          line.includes('"ai.proxy.usage"') &&
+          line.includes('"organizationId":"org-acme"'),
+      ),
+    ).toBe(true);
+    // The cap counts the member's organization, not the platform's.
+    expect([...counters.counts.keys()]).toEqual([
+      expect.stringMatching(/^org-daily:ai-proxy:org-acme:\d{4}-\d{2}-\d{2}$/),
+    ]);
+  });
+
+  it("refuses an invalid or expired identity with 401, never the platform organization", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fetchUpstream = vi.fn(async () => Response.json({}));
+    const expired = await identity(
+      "org-acme",
+      "user-1",
+      Date.now() - 10 * 60_000,
+    );
+    for (const token of ["not.a.jwt", expired]) {
+      await expectError(
+        call({
+          registeredApps: [shared()],
+          env: hosted,
+          inbound: request({ "x-everyapp-identity": token }),
+          fetchUpstream,
+        }),
+        401,
+        "caller_identity_invalid",
+      );
+    }
+    expect(fetchUpstream).not.toHaveBeenCalled();
+  });
+
+  it("refuses a call with no identity (background work) with 403", async () => {
+    await expectError(
+      call({ registeredApps: [shared()], env: hosted }),
+      403,
+      "caller_identity_required",
+    );
+  });
+
+  it("is refused outright when the gateway has no shared apps", async () => {
+    await expectError(
+      call({
+        registeredApps: [shared()],
+        inbound: request({ "x-everyapp-identity": await identity("org-acme") }),
+      }),
+      403,
+      "caller_not_active",
+    );
+  });
+});
+
+describe("AppGateway per-organization daily cap", () => {
+  it("refuses an organization's calls past the hosted cap with 429 and Retry-After", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const counters = memoryCounters();
+    const fetchUpstream = vi.fn(async () => Response.json({ ok: true }));
+    const env = {
+      GATEWAY_DEPLOYMENT_MODE: "hosted",
+      AI_PROXY_ORG_DAILY_LIMIT: "2",
+    };
+
+    for (let i = 0; i < 2; i += 1) {
+      const ok = await call({ env, counters, fetchUpstream });
+      expect(ok.status).toBe(200);
+    }
+    const refused = await call({ env, counters, fetchUpstream });
+    expect(refused.status).toBe(429);
+    await expect(refused.json()).resolves.toEqual({
+      error: "Too Many Requests",
+      code: "org_daily_cap_exceeded",
+      message: "This organization has used its 2 AI requests for today.",
+    });
+    const retryAfter = Number(refused.headers.get("retry-after"));
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThanOrEqual(24 * 60 * 60);
+    expect(fetchUpstream).toHaveBeenCalledTimes(2);
+
+    // Another organization's budget is its own.
+    const other = await call({
+      env,
+      counters,
+      fetchUpstream,
+      props: { ...PROPS, organizationId: "org-2" },
+      registeredApps: [app({ organizationId: "org-2" })],
+    });
+    expect(other.status).toBe(200);
+  });
+
+  it("counts nothing on a self-hosted gateway", async () => {
+    const counters = memoryCounters();
+    const read = vi.spyOn(counters, "read");
+    for (let i = 0; i < 3; i += 1) {
+      expect(
+        (await call({ counters, env: { AI_PROXY_ORG_DAILY_LIMIT: "1" } }))
+          .status,
+      ).toBe(200);
+    }
+    expect(read).not.toHaveBeenCalled();
+    expect(counters.counts.size).toBe(0);
+  });
+
+  it("refuses every call when the deployment mode is invalid", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expectError(
+      call({ env: { GATEWAY_DEPLOYMENT_MODE: "" } }),
+      429,
+      "org_daily_cap_exceeded",
     );
   });
 });

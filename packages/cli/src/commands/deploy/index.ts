@@ -14,6 +14,7 @@ interface DeployCommandFlags {
   "allow-delete-workflows"?: boolean;
   "force-dns"?: boolean;
   "no-wait"?: boolean;
+  shared?: boolean;
 }
 
 /**
@@ -43,6 +44,7 @@ export async function deploy(
           flags["allow-delete-durable-object-data"],
         allowDeleteWorkflows: flags["allow-delete-workflows"],
         forceDns: flags["force-dns"],
+        shared: flags.shared,
         waitForLive: !flags["no-wait"],
         offerInstall: { yes: flags.yes },
       });

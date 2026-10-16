@@ -33,6 +33,11 @@
  *      then wait for the app to go live: the gateway activates it on the
  *      first request that reaches it (steps/waitForLive.ts).
  *
+ * With `shared` (`--shared`, the hosted gateway's first-party apps) the app
+ * registers as one Worker every organization's members may open, owned by
+ * the platform organization; its Worker gets no EVERY_APP_ORG_ID. A
+ * redeploy without it (`secret set|unset` too) keeps the app's scope.
+ *
  * A new hostname is checked (DNS records that answer it, the zone's room)
  * right after registering, before anything is created or uploaded.
  * A redeploy of an app the gateway already binds and serves never touches
@@ -94,6 +99,7 @@ import { acquireLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import type { GatewayRelease } from "@/lib/gateway/release";
 import { markDeployed, register } from "@/lib/gateway/registry";
+import type { InstallRecord } from "@/lib/gateway/install";
 import {
   loadEveryAppManifest,
   resolveMigrationBinding,
@@ -119,6 +125,12 @@ interface DeployAppOptions {
   allowDeleteWorkflows?: boolean;
   /** Publish a new hostname over the DNS record that answers it (`--force-dns`). */
   forceDns?: boolean;
+  /**
+   * Register a shared app (`--shared`): hosted gateways only, by the
+   * platform organization's owners and admins. Unset, a registered app
+   * keeps its scope and a new one is the organization's own.
+   */
+  shared?: boolean;
   /**
    * Wait for the app to go live, its new hostname's certificate included
    * (default true; `--no-wait`). Without the wait, it goes live on its
@@ -287,6 +299,8 @@ async function deploySteps(
     );
   }
 
+  if (options.shared) assertSharedApps(install);
+
   // 2. Register: the rules name everything.
   const { plan, organization, hasOwner, deployerGranted } = await register(registry, {
     appSlug: manifest.id,
@@ -296,7 +310,11 @@ async function deploySteps(
     appBaseDomain: install.appBaseDomain,
     deployer,
     organizationName: accountName ?? "",
+    ...(options.shared ? { scope: "shared" as const } : {}),
   });
+  const shared = plan.app.scope === "shared";
+  // A redeploy that didn't ask keeps a shared app shared: still hosted only.
+  if (shared) assertSharedApps(install);
   const hostname = plan.app.hostname!;
   const workerName = plan.app.workerName!;
   const isNew = plan.kind !== "existing";
@@ -311,9 +329,11 @@ async function deploySteps(
     message: `${isNew ? "Registered" : "Updating"} ${manifest.id} as ${workerName} at https://${hostname} (${plan.app.status}).${
       !isNew
         ? ""
-        : plan.app.isDefault
-          ? " Everyone in the organization can open it."
-          : ` New apps are private: only ${deployerGranted ? "you and " : ""}the organization's owners and admins can open it. Grant others in Admin → Apps.`
+        : shared
+          ? " A shared app: every member of every organization can open it."
+          : plan.app.isDefault
+            ? " Everyone in the organization can open it."
+            : ` New apps are private: only ${deployerGranted ? "you and " : ""}the organization's owners and admins can open it. Grant others in Admin → Apps.`
     }${isNew && !hasOwner ? ` The gateway has no owner yet: its first owner gets the app (${CLI} setup).` : ""}`,
     data: {
       appId: manifest.id,
@@ -323,6 +343,7 @@ async function deploySteps(
       existingApp: !isNew,
       defaultAccess: plan.app.isDefault,
       deployerAccess: deployerGranted,
+      scope: plan.app.scope,
       organizationId: organization.id,
       organizationName: organization.name,
       ...(secretNames.length > 0 ? { secrets: secretNames } : {}),
@@ -424,6 +445,7 @@ async function deploySteps(
       identityIssuer: gatewayUrl,
       identityPublicKeys: [identityKey],
       resources,
+      ...(shared ? { shared: true as const } : {}),
       ...(deletedDurableObjects.length ? { deletedDurableObjects } : {}),
     };
     out.emit({ type: "step", step: "app.build", status: "start", message: "Building the app..." });
@@ -551,7 +573,8 @@ async function deploySteps(
       secrets: {
         ...options.secrets,
         GATEWAY_URL: gatewayUrl,
-        EVERY_APP_ORG_ID: organization.id,
+        // A shared app serves every organization: nothing pins it to one.
+        ...(shared ? {} : { EVERY_APP_ORG_ID: organization.id }),
       },
       interactive,
       // Recorded at once, before the registry hears of it: a retry must
@@ -665,6 +688,18 @@ async function deploySteps(
     versionId,
     live,
   };
+}
+
+/**
+ * Shared apps are the hosted gateway's: one self-hosted (or of no recorded
+ * mode) has none, and nothing registers one there.
+ */
+export function assertSharedApps(install: Pick<InstallRecord, "deploymentMode">): void {
+  if (install.deploymentMode === "hosted") return;
+  throw new EveryAppError(
+    "SHARED_APPS_UNAVAILABLE",
+    `Shared apps are for the hosted gateway; this one is ${install.deploymentMode ?? "of no recorded mode"}. Deploy without --shared to make it your organization's own app.`,
+  );
 }
 
 /** Durable Object classes the last deploy had and this one drops. */
@@ -807,7 +842,7 @@ async function migrate({
  * Reconcile the gateway when the install row says it doesn't bind this
  * app's Worker yet, or doesn't publish its hostname yet.
  */
-async function bindIfNeeded({
+export async function bindIfNeeded({
   cf,
   db,
   databaseId,
@@ -818,6 +853,7 @@ async function bindIfNeeded({
   interactive,
   forceDns,
   seams,
+  rerun = `${CLI} deploy`,
 }: {
   cf: CfRunner;
   db: D1Database;
@@ -830,6 +866,8 @@ async function bindIfNeeded({
   interactive: boolean;
   forceDns?: boolean;
   seams: ReconcileSeams & Required<Pick<ReconcileSeams, "openRelease">>;
+  /** What to run again when the gateway is busy. */
+  rerun?: string;
 }): Promise<void> {
   const install = await readInstall(db);
   if (install?.liveAppWorkers.includes(workerName) && !publishHost) return;
@@ -863,8 +901,8 @@ async function bindIfNeeded({
     if (error instanceof EveryAppError && error.code === "LEASE_HELD") {
       throw new EveryAppError(
         "LEASE_HELD",
-        `${error.message} This app's upload is kept: run \`${CLI} deploy\` again once the gateway is free, and it binds the app and makes it live.`,
-        { retryable: true, rerun: `${CLI} deploy` },
+        `${error.message} This app's upload is kept: run \`${rerun}\` again once the gateway is free, and it binds the app and makes it live.`,
+        { retryable: true, rerun },
       );
     }
     throw error;

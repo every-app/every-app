@@ -294,6 +294,11 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
           ? `${isNew ? "Deploying" : "Redeploying"} ${appId} ${secrets.length ? `with ${secrets.join(", ")}` : `without ${unset.join(", ")}`} (code and pending migrations from this directory)`
           : `${appId} → https://${text(data["hostname"])}${organization ? ` (${organization})` : ""}${isNew ? ", first deploy" : ""}`;
       if (!isNew) return { line: first };
+      if (data["scope"] === "shared") {
+        return {
+          line: `${first}\nRegistered ${appId}: shared, open to every organization's members`,
+        };
+      }
       const access =
         data["defaultAccess"] === true
           ? `open to everyone${organization ? ` in ${organization}` : ""}`

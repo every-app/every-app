@@ -10,6 +10,8 @@ import {
   handleIntegrationProxyRequest,
   type IntegrationProxyEnv,
 } from "./integration-proxy";
+import { spendOrgDailyCap, type DailyCounters } from "./org-daily-cap";
+import { platformPolicy } from "./platform-policy";
 
 const CALLER_CACHE_MAX_ENTRIES = 500;
 const CALLER_CACHE_HIT_TTL_MS = 30_000;
@@ -27,6 +29,8 @@ interface AppGatewayEnv extends IntegrationProxyEnv {
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
   AI_PROXY_EXTRA_ROUTES?: string;
+  GATEWAY_DEPLOYMENT_MODE?: string;
+  AI_PROXY_ORG_DAILY_LIMIT?: string;
 }
 
 interface HandleAppGatewayRequestOptions {
@@ -34,6 +38,8 @@ interface HandleAppGatewayRequestOptions {
   props: unknown;
   env: AppGatewayEnv;
   registry: AppRegistry;
+  /** Where the per-organization daily caps are counted (hosted only). */
+  counters: DailyCounters;
   fetchUpstream?: (request: Request) => Promise<Response>;
 }
 
@@ -42,6 +48,9 @@ type AppGatewayErrorCode =
   | "caller_not_registered"
   | "caller_not_active"
   | "caller_identity_mismatch"
+  | "caller_identity_required"
+  | "caller_identity_invalid"
+  | "org_daily_cap_exceeded"
   | "provider_not_allowed"
   | "invalid_gateway_route"
   | "caller_registry_unavailable"
@@ -50,8 +59,9 @@ type AppGatewayErrorCode =
 class AppGatewayError extends Error {
   constructor(
     readonly code: AppGatewayErrorCode,
-    readonly status: 401 | 403 | 404 | 500,
+    readonly status: 401 | 403 | 404 | 429 | 500,
     message: string,
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "AppGatewayError";
@@ -72,9 +82,11 @@ export async function handleAppGatewayRequest({
   props: rawProps,
   env,
   registry,
+  counters,
   fetchUpstream,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
   try {
+    const policy = platformPolicy(env);
     const props = parseCallerProps(rawProps);
     const route = routeFromPath(request);
     let app: RegisteredApp | null;
@@ -117,17 +129,26 @@ export async function handleAppGatewayRequest({
         "Service-binding caller identity does not match the registry.",
       );
     }
-    const caller = {
-      organizationId: props.organizationId,
-      appId: props.appId,
-    };
+    if (app.scope === "shared" && !policy.sharedApps) {
+      throw new AppGatewayError(
+        "caller_not_active",
+        403,
+        "Shared apps are off on this gateway.",
+      );
+    }
     if (route.kind === "integration") {
+      const { organizationId, user } = await attributeCall(
+        request,
+        app,
+        props,
+        env,
+      );
       return handleIntegrationProxyRequest({
         request,
         capabilities: app.manifest.capabilities,
-        user: await resolveAttribution(request, props, env),
+        user,
         env,
-        caller,
+        caller: { organizationId, appId: props.appId },
         fetchUpstream,
       });
     }
@@ -141,10 +162,15 @@ export async function handleAppGatewayRequest({
       );
     }
 
-    const user = await resolveAttribution(request, props, env);
+    const { organizationId, user } = await attributeCall(
+      request,
+      app,
+      props,
+      env,
+    );
     console.info("AI gateway request", {
       event: "ai.proxy.request",
-      organizationId: props.organizationId,
+      organizationId,
       appId: props.appId,
       workerName: props.workerName,
       provider,
@@ -152,12 +178,17 @@ export async function handleAppGatewayRequest({
       ...(user ? { userId: user.id } : {}),
     });
 
+    await spendDailyCap(counters, {
+      organizationId,
+      limit: policy.orgDailyCaps.aiProxyRequests,
+    });
+
     return handleAuthenticatedAiProxyRequest({
       request,
       provider,
       env,
       policy: app.manifest.ai,
-      caller,
+      caller: { organizationId, appId: props.appId },
       fetchUpstream,
     });
   } catch (error) {
@@ -254,6 +285,105 @@ async function resolveCallerApp(
   return app;
 }
 
+/** Whom a provider call is for: the organization it counts against, and the user. */
+interface Attribution {
+  organizationId: string;
+  user: EveryAppUser | null;
+}
+
+/**
+ * Attribute a provider call. An organization's own app calls for its
+ * organization (the upload-time props); a forwarded identity of that
+ * organization names the user, and one that doesn't verify is ignored (the
+ * call is the app's). A shared app serves every organization, so the
+ * forwarded identity (createGatewayFetch sends the request's) decides the
+ * organization and must verify: an invalid or expired one is 401, never a
+ * fallback to the platform organization, and a call without one is refused
+ * for now (background work, which has no request, will assert its
+ * organization another way).
+ */
+async function attributeCall(
+  request: Request,
+  app: RegisteredApp,
+  props: AppCallerProps,
+  env: AppGatewayEnv,
+): Promise<Attribution> {
+  if (app.scope !== "shared") {
+    return {
+      organizationId: props.organizationId,
+      user: await resolveAttribution(request, props, env),
+    };
+  }
+  const token = request.headers.get(IDENTITY_HEADER);
+  if (!token) {
+    throw new AppGatewayError(
+      "caller_identity_required",
+      403,
+      "A shared app's provider call needs the identity of the request it serves.",
+    );
+  }
+  const user = await verifyForwardedIdentity(token, props, env).catch(
+    (error: unknown) => {
+      console.warn("AI gateway identity attribution rejected", {
+        event: "ai.proxy.attribution.rejected",
+        organizationId: props.organizationId,
+        appId: props.appId,
+        message: error instanceof Error ? error.message : "Unknown error",
+      });
+      throw new AppGatewayError(
+        "caller_identity_invalid",
+        401,
+        "The forwarded identity is invalid or expired.",
+      );
+    },
+  );
+  return { organizationId: user.orgId, user };
+}
+
+function verifyForwardedIdentity(
+  token: string,
+  props: AppCallerProps,
+  env: AppGatewayEnv,
+): Promise<EveryAppUser> {
+  if (!env.JWT_PUBLIC_KEY?.trim() || !env.GATEWAY_URL?.trim()) {
+    throw new Error("Gateway identity verification is not configured.");
+  }
+  return verifyIdentityJwt(token, {
+    publicKeys: [env.JWT_PUBLIC_KEY.replace(/\\n/g, "\n")],
+    audience: props.workerName,
+    issuer: env.GATEWAY_URL,
+  });
+}
+
+/**
+ * Count the call against its organization's daily cap (hosted only); a
+ * spent cap is 429 until the UTC day ends, and a counter that can't be
+ * read refuses too.
+ */
+async function spendDailyCap(
+  counters: DailyCounters,
+  { organizationId, limit }: { organizationId: string; limit: number },
+): Promise<void> {
+  const decision = await spendOrgDailyCap({
+    counters,
+    budget: "ai-proxy",
+    organizationId,
+    limit,
+  });
+  if (decision.allowed) return;
+  console.warn("AI gateway daily cap reached", {
+    event: "ai.proxy.daily_cap",
+    organizationId,
+    limit: decision.limit,
+  });
+  throw new AppGatewayError(
+    "org_daily_cap_exceeded",
+    429,
+    `This organization has used its ${decision.limit} AI requests for today.`,
+    decision.retryAfterSeconds,
+  );
+}
+
 async function resolveAttribution(
   request: Request,
   props: AppCallerProps,
@@ -263,14 +393,7 @@ async function resolveAttribution(
   if (!token) return null;
 
   try {
-    if (!env.JWT_PUBLIC_KEY?.trim() || !env.GATEWAY_URL?.trim()) {
-      throw new Error("Gateway identity verification is not configured.");
-    }
-    const user = await verifyIdentityJwt(token, {
-      publicKeys: [env.JWT_PUBLIC_KEY.replace(/\\n/g, "\n")],
-      audience: props.workerName,
-      issuer: env.GATEWAY_URL,
-    });
+    const user = await verifyForwardedIdentity(token, props, env);
     if (user.orgId !== props.organizationId) {
       throw new Error("Identity organization does not match the calling app.");
     }
@@ -294,13 +417,23 @@ function errorResponse(error: AppGatewayError): Response {
         ? "Forbidden"
         : error.status === 404
           ? "Not Found"
-          : "Internal Server Error";
+          : error.status === 429
+            ? "Too Many Requests"
+            : "Internal Server Error";
   return Response.json(
     {
       error: errorLabel,
       code: error.code,
       message: error.message,
     },
-    { status: error.status, headers: { [GATEWAY_ERROR_HEADER]: error.code } },
+    {
+      status: error.status,
+      headers: {
+        [GATEWAY_ERROR_HEADER]: error.code,
+        ...(error.retryAfterSeconds === undefined
+          ? {}
+          : { "retry-after": String(error.retryAfterSeconds) }),
+      },
+    },
   );
 }

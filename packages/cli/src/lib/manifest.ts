@@ -15,14 +15,25 @@ export type EveryAppCliManifest = EveryAppManifest;
 export async function loadEveryAppManifest(
   cwd: string,
 ): Promise<EveryAppCliManifest> {
-  const manifestPath = path.join(cwd, "everyapp.config.ts");
+  return loadEveryAppManifestFile(
+    path.join(cwd, "everyapp.config.ts"),
+    "No everyapp.config.ts found in the current directory — run this command from an app root.",
+  );
+}
+
+/**
+ * An app's manifest from its file (`register --manifest`), validated as a
+ * deploy validates the app's own.
+ */
+export async function loadEveryAppManifestFile(
+  manifestPath: string,
+  missing = `No manifest at ${manifestPath}.`,
+): Promise<EveryAppCliManifest> {
   try {
     await fs.access(manifestPath);
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      throw new ManifestError(
-        "No everyapp.config.ts found in the current directory — run this command from an app root.",
-      );
+      throw new ManifestError(missing);
     }
     throw error;
   }

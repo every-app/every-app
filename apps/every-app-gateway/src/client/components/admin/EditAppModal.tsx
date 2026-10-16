@@ -91,15 +91,23 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
                 set by <span className="font-mono">everyapp deploy</span>
               </p>
             ) : null}
-            <Separator />
-            <form.AppField name="isDefault">
-              {(field) => (
-                <field.SwitchField
-                  label="Available to everyone"
-                  description="Every current and future member can open this app. Turning this off keeps existing access; use Manage access to remove people."
-                />
-              )}
-            </form.AppField>
+            {app.scope === "shared" ? (
+              <p className="text-sm text-muted-foreground">
+                A shared app: every member of every organization can open it.
+              </p>
+            ) : (
+              <>
+                <Separator />
+                <form.AppField name="isDefault">
+                  {(field) => (
+                    <field.SwitchField
+                      label="Available to everyone"
+                      description="Every current and future member can open this app. Turning this off keeps existing access; use Manage access to remove people."
+                    />
+                  )}
+                </form.AppField>
+              </>
+            )}
             {submitError ? (
               <Alert variant="destructive">
                 <CircleAlert />

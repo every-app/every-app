@@ -9,6 +9,7 @@ import { dbRoutes } from "./commands/db/command";
 import { deleteCommand } from "./commands/delete/command";
 import { deployCommand } from "./commands/deploy/command";
 import { devCommand } from "./commands/dev/command";
+import { registerCommand } from "./commands/register/command";
 import { secretRoutes } from "./commands/secret/command";
 import { setupCommand } from "./commands/setup/command";
 import { statusCommand } from "./commands/status/command";
@@ -21,6 +22,7 @@ const routes = buildRouteMap({
     create: createCommand,
     dev: devCommand,
     deploy: deployCommand,
+    register: registerCommand,
     delete: deleteCommand,
     secret: secretRoutes,
     db: dbRoutes,

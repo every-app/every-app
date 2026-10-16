@@ -48,6 +48,7 @@ async function findMembershipWithUser(userId: string, organizationId: string) {
       banned: users.banned,
       banExpires: users.banExpires,
       organizationName: organizations.name,
+      organizationStatus: organizations.status,
     })
     .from(members)
     .innerJoin(users, eq(users.id, members.userId))

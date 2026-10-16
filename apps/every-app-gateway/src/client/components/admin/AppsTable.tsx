@@ -120,7 +120,9 @@ function buildColumns({
       header: "Available to",
       enableSorting: false,
       cell: ({ row }) =>
-        row.original.isDefault ? (
+        row.original.scope === "shared" ? (
+          <Badge variant="info">Every organization</Badge>
+        ) : row.original.isDefault ? (
           <Badge variant="success">Everyone</Badge>
         ) : (
           <Badge variant="secondary">Selected people</Badge>
@@ -130,6 +132,10 @@ function buildColumns({
       accessorKey: "accessCount",
       header: ({ column }) => <SortableHeader column={column} label="Access" />,
       cell: ({ row }) => {
+        // Nobody is granted a shared app; there is no access to manage.
+        if (row.original.scope === "shared") {
+          return <span className="text-sm text-muted-foreground">—</span>;
+        }
         const count = row.original.accessCount;
         return (
           <Button
@@ -157,15 +163,21 @@ function buildColumns({
       header: () => <span className="sr-only">Actions</span>,
       enableSorting: false,
       meta: { headerClassName: "w-10" },
-      cell: ({ row }) => (
-        <AppActionsMenu
-          appName={row.original.name}
-          onManageAccess={() => onManageAccess(row.original)}
-          onEdit={() => onEdit(row.original)}
-          onDelete={() => onDelete(row.original)}
-          isOwner={isOwner}
-        />
-      ),
+      // Another organization's shared app is listed, never managed here.
+      cell: ({ row }) =>
+        row.original.readOnly ? null : (
+          <AppActionsMenu
+            appName={row.original.name}
+            onManageAccess={
+              row.original.scope === "shared"
+                ? undefined
+                : () => onManageAccess(row.original)
+            }
+            onEdit={() => onEdit(row.original)}
+            onDelete={() => onDelete(row.original)}
+            isOwner={isOwner}
+          />
+        ),
     },
   ];
 }

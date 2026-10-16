@@ -10,8 +10,11 @@
  *
  * Apps register into the install's own organization: the oldest one with
  * an owner, or before the gateway has one, the oldest of all, created here
- * when there is none (the setup claim adopts it). Who deploys is recorded
- * on the row (`deployed_by_actor`): the Cloudflare login's email, or
+ * when there is none (the setup claim adopts it). On the hosted gateway it
+ * is the platform organization, and a `shared` app (one Worker every
+ * organization's members may open) is one of its apps that only its owners
+ * and admins register. Who deploys is recorded on the row
+ * (`deployed_by_actor`): the Cloudflare login's email, or
  * `api-token:<account id>` for an API token.
  */
 import { randomUUID } from "node:crypto";
@@ -27,6 +30,7 @@ import {
   type AppNameOwner,
   type AppResources,
   type AppRow,
+  type AppScope,
   type RegistrationPlan,
 } from "@every-app/perimeter/registry";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
@@ -83,7 +87,7 @@ async function registryCall<T>(call: () => Promise<T>): Promise<T> {
 }
 
 const APP_COLUMNS =
-  "id, organization_id, app_slug, name, description, hostname, worker_name, tier, manifest, status, version_id, deployed_at, deployed_by_actor, is_default";
+  "id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, is_default";
 
 const text = (value: unknown): string | null =>
   value === null || value === undefined ? null : String(value);
@@ -98,6 +102,7 @@ function toAppRow(row: D1Row): AppRow {
     hostname: text(row["hostname"]),
     workerName: text(row["worker_name"]),
     tier: String(row["tier"]),
+    scope: String(row["scope"]),
     manifest: text(row["manifest"]),
     status: String(row["status"]),
     versionId: text(row["version_id"]),
@@ -231,6 +236,17 @@ export interface RegisterInput {
   deployer: Deployer;
   /** Names the organization created when the gateway has none yet. */
   organizationName: string;
+  /**
+   * `shared`: a first-party app for every organization; `org`: the
+   * organization's own. Unset keeps the registered app's (a new one is `org`).
+   */
+  scope?: AppScope;
+  /**
+   * The Worker the app must have (`everyapp register`, for a Worker
+   * deployed by other means): refused, writing nothing, when the rules name
+   * it otherwise.
+   */
+  expectedWorkerName?: string;
   now?: number;
 }
 
@@ -313,9 +329,14 @@ async function registerApp(
     },
   ]);
   const deployerUserId = text(deployers[0]?.["id"]);
+  const orgMembers = members.map((member) => ({
+    id: String(member["user_id"]),
+    role: text(member["role"]),
+  }));
   const plan = planRegistration({
     organizationId: organization.id,
     isInstallOrganization: true,
+    scope: input.scope,
     appSlug: input.appSlug,
     name: input.name,
     description: input.description,
@@ -325,12 +346,22 @@ async function registerApp(
     existingApp,
     hostnameOwner: toNameOwner(hostnameOwners[0]),
     workerNameOwner: toNameOwner(workerNameOwners[0]),
-    members: members.map((member) => ({
-      id: String(member["user_id"]),
-      role: text(member["role"]),
-    })),
+    members: orgMembers,
     deployerUserId,
   });
+  // The scope the plan resolved: a redeploy that didn't ask keeps the row's.
+  if (plan.app.scope === "shared") {
+    assertPlatformAdmin(input.deployer, deployerUserId, orgMembers, organization);
+  }
+  if (
+    input.expectedWorkerName !== undefined &&
+    plan.app.workerName !== input.expectedWorkerName
+  ) {
+    throw new EveryAppError(
+      "WORKER_NAME_MISMATCH",
+      `The gateway names ${input.appSlug}'s Worker ${plan.app.workerName}, and binds no other: deploy the Worker under that name, then register it with --worker ${plan.app.workerName}.`,
+    );
+  }
   await db.run(registrationWrites(plan, now));
   return {
     plan,
@@ -340,6 +371,30 @@ async function registerApp(
       deployerUserId !== null &&
       plan.grants.some((grant) => grant.userId === deployerUserId),
   };
+}
+
+const isOwnerOrAdmin = (role: string | null) =>
+  (role ?? "").split(",").some((item) => ["owner", "admin"].includes(item.trim()));
+
+/**
+ * Only the platform organization's owners and admins register, redeploy or
+ * delete shared apps. A person's Cloudflare login must be one (by its
+ * verified email); an API token is the account's own authority over the
+ * gateway's D1 (ADR-0003), with no person to check.
+ */
+function assertPlatformAdmin(
+  deployer: Deployer,
+  deployerUserId: string | null,
+  orgMembers: Array<{ id: string; role: string | null }>,
+  organization: Organization,
+): void {
+  if (deployer.email === null) return;
+  const member = orgMembers.find((candidate) => candidate.id === deployerUserId);
+  if (member && isOwnerOrAdmin(member.role)) return;
+  throw new EveryAppError(
+    "SHARED_APP_FORBIDDEN",
+    `Only owners and admins of ${organization.name}, the platform organization, deploy or delete shared apps; ${deployer.email} isn't one on this gateway.`,
+  );
 }
 
 /** What a registration writes, in one batch. */
@@ -363,8 +418,8 @@ VALUES (?, ?, ?, ?, NULL) ON CONFLICT DO NOTHING`,
       {
         sql: `INSERT INTO apps (id, organization_id, app_slug, name, description, hostname,
   worker_name, tier, manifest, status, version_id, deployed_at, deployed_by_actor,
-  is_default, created_at, updated_at)
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15)`,
+  is_default, created_at, updated_at, scope)
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15, ?16)`,
         params: [
           app.id,
           app.organizationId,
@@ -381,6 +436,7 @@ VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?15)`,
           app.deployedByActor,
           app.isDefault ? 1 : 0,
           now,
+          app.scope,
         ],
       },
       ...grants,
@@ -536,6 +592,13 @@ function info(app: AppRow): RegisteredAppInfo {
 
 /** The install organization's row for an app id, tombstones included. */
 async function findApp(db: D1Database, appSlug: string): Promise<AppRow | null> {
+  return (await findAppIn(db, appSlug))?.app ?? null;
+}
+
+async function findAppIn(
+  db: D1Database,
+  appSlug: string,
+): Promise<{ app: AppRow; organization: Organization } | null> {
   const found = await installOrganization(db);
   if (!found) return null;
   const [rows = []] = await db.run([
@@ -544,7 +607,32 @@ async function findApp(db: D1Database, appSlug: string): Promise<AppRow | null> 
       params: [found.organization.id, appSlug],
     },
   ]);
-  return rows[0] ? toAppRow(rows[0]) : null;
+  return rows[0] ? { app: toAppRow(rows[0]), organization: found.organization } : null;
+}
+
+/** {@link assertPlatformAdmin}, reading the organization's members. */
+async function assertPlatformAdminIn(
+  db: D1Database,
+  deployer: Deployer,
+  organization: Organization,
+): Promise<void> {
+  if (deployer.email === null) return;
+  const [members = [], deployers = []] = await db.run([
+    {
+      sql: "SELECT user_id, role FROM members WHERE organization_id = ?",
+      params: [organization.id],
+    },
+    {
+      sql: "SELECT id FROM users WHERE lower(email) = lower(?) AND email_verified = 1",
+      params: [deployer.email],
+    },
+  ]);
+  assertPlatformAdmin(
+    deployer,
+    text(deployers[0]?.["id"]),
+    members.map((member) => ({ id: String(member["user_id"]), role: text(member["role"]) })),
+    organization,
+  );
 }
 
 function notRegistered(appSlug: string): EveryAppError {
@@ -586,15 +674,20 @@ export async function listApps(db: D1Database): Promise<
  * Delete an app, leaving a tombstone: unrouted and unlisted, its names
  * still its organization's, with nothing of its access, tokens, tools or AI
  * connections left. An app deleted already writes nothing, so a delete
- * that stopped part-way can run again. Returns the app as it was named.
+ * that stopped part-way can run again. A shared app is every
+ * organization's: only the platform organization's owners and admins delete
+ * it. Returns the app as it was named.
  */
 export async function deleteApp(
   db: D1Database,
   appSlug: string,
+  deployer: Deployer,
   now = Date.now(),
 ): Promise<RegisteredAppInfo> {
-  const app = await findApp(db, appSlug);
-  if (!app || !app.workerName) throw notRegistered(appSlug);
+  const found = await findAppIn(db, appSlug);
+  if (!found || !found.app.workerName) throw notRegistered(appSlug);
+  const { app, organization } = found;
+  if (app.scope === "shared") await assertPlatformAdminIn(db, deployer, organization);
   const update = deleteUpdate(app);
   if (update) {
     await db.run([

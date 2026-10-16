@@ -12,6 +12,7 @@ While publishing is paused, everyapp runs from a checkout of the repository as `
 | [`create <id>`](#everyapp-create-id)                                               | A new app from the starter template, ready for `dev`. Doesn't contact the Gateway.                                                     |
 | [`dev`](#everyapp-dev)                                                             | Runs the app in this directory behind a local gateway with the real perimeter.                                                         |
 | [`deploy`](#everyapp-deploy)                                                       | Deploys the app in this directory. With no Gateway yet, offers to install one first.                                                   |
+| [`register <id>`](#everyapp-register-id)                                           | Registers a Worker deployed by other means as a shared app of a hosted Gateway.                                                        |
 | [`delete [id]`](#everyapp-delete-id)                                               | Removes an app from the Gateway; `--purge` deletes its Worker and data too.                                                            |
 | [`secret set\|unset\|list`](#everyapp-secret-setunsetlist)                         | The app's secrets, or the Gateway's settings with `--for gateway`. `set` and `unset` redeploy.                                         |
 | [`db migrate`, `db query "<sql>"`](#everyapp-db-migrate-and-everyapp-db-query-sql) | Local migrations for `dev`; SQL against the app's production database, or `--local`.                                                   |
@@ -227,10 +228,23 @@ A deploy holds the app's own lease from creating its resources to its upload, th
 | `--allow-delete-workflows`           | Deploy even though Workflows were removed, deleting them and their instances once the new version is live. |
 | `--force-dns`                        | Publish a new address even where a DNS record answers it (one at the address is replaced).                 |
 | `--no-wait`                          | Don't wait for the app to go live; it goes live on its first visit, once its certificate comes.            |
+| `--shared`                           | A shared app of a hosted Gateway (below). Every redeploy of a shared app needs it.                         |
 | `--gateway <url>`                    | The Gateway you mean, checked against the one in your Cloudflare account.                                  |
 | `--account-id <id>`                  | The Gateway's Cloudflare account, when your login sees several (default: `CLOUDFLARE_ACCOUNT_ID`).         |
 | `-y`, `--yes`                        | With no Gateway yet, install one at `apps.<domain>` without asking. A deploy asks nothing else.            |
 | `--json`, `--verbose`                | Only NDJSON events on stdout; every step, and build output on stderr.                                      |
+
+**Shared apps.** On a hosted Gateway (`setup --mode hosted`), `deploy --shared` registers the app as a shared app: one Worker that the members of every organization can open, owned by the platform organization, at `<app-id>.<base>`. Nobody is granted it and nobody manages its access; each member's identity carries their own organization, and the app scopes its data by it. Its Worker gets no `EVERY_APP_ORG_ID`. Only owners and admins of the platform organization deploy one (your Cloudflare login's email must be one of them, verified on the Gateway; an API token is the account's own authority), and a self-hosted Gateway refuses it (`SHARED_APPS_UNAVAILABLE`). An app keeps the scope it was registered with: deploying a shared app without `--shared`, or an organization's app with it, stops with `APP_SCOPE_MISMATCH`.
+
+### `everyapp register <id>`
+
+Registers a Worker deployed some other way (an Alchemy stage, wrangler, another pipeline) as a shared app of a hosted Gateway, and makes it live as `deploy` would, without building, uploading or changing it:
+
+```sh
+pnpm everyapp register openseo --worker every-everyapp-openseo --shared --manifest ../open-seo/everyapp.config.ts
+```
+
+It checks that the Gateway is hosted, loads and validates the manifest as `deploy` does (its `id` must be `<id>`), and checks the Worker exists in the Gateway's account (`WORKER_NOT_FOUND`). It registers the app under the Worker name the Gateway gives it, `every-<org>-<id>` for the platform organization; `--worker` must be that name (`WORKER_NAME_MISMATCH` says which). Then it records the Worker's live version, redeploys the Gateway to bind it and publish its address, and waits for it to go live. Run it again after the Worker's own pipeline ships a version. The `app.register` event's `data.worker` lists what that pipeline must give the Worker: the identity keys and issuer, and the `AppGateway` service binding's props. `delete --purge` never deletes a registered Worker. `--shared` is required: `register` makes shared apps only. Flags: `--worker`, `--manifest`, `--shared`, `--force-dns`, `--no-wait`, `--gateway`, `--account-id`, `--json`, `--verbose`.
 
 ### `everyapp delete [id]`
 

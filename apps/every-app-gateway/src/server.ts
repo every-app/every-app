@@ -58,6 +58,8 @@ import {
   withControlPlaneHeaders,
 } from "./server/control-plane-guard";
 import { isOauthPath } from "./server/oauth-flag";
+import { platformPolicy } from "./server/platform-policy";
+import { RateLimitCounterRepository } from "./server/repositories/RateLimitCounterRepository";
 import { serveAppHostMcp } from "./server/toolbus/app-host-mcp";
 
 const HOST_CACHE_MAX_ENTRIES = 500;
@@ -189,6 +191,7 @@ export class AppGateway extends WorkerEntrypoint<
       props: this.ctx.props,
       env: this.env,
       registry: new DrizzleAppRegistry(this.env.DB),
+      counters: RateLimitCounterRepository,
     });
   }
 }
@@ -280,7 +283,7 @@ export default {
       return await handleGatewayRequest(request, {
         env: env as unknown as Record<string, unknown>,
         registry,
-        authenticator: createProdAuthenticator(),
+        authenticator: createProdAuthenticator(platformPolicy(env)),
         privateKeyPem: env.JWT_PRIVATE_KEY,
         issuer: env.GATEWAY_URL,
         resolveApp: async () => app,

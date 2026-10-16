@@ -375,9 +375,13 @@ export async function handleGatewayRequest(
       );
     }
   }
-  const allowed = session
+  const access = session
     ? await deps.authenticator.hasAppAccess(session, app)
     : false;
+  const allowed = access !== false;
+  // The session the app sees: the one the authenticator let in with, which
+  // may act under the app's own organization rather than the session's.
+  if (session && typeof access === "object") session = access;
   const consumedBearer =
     session?.credential?.kind === "pat" ||
     session?.credential?.kind === "oauth";

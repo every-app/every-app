@@ -4,6 +4,7 @@ export {
   UnroutableAppError,
   type AppRegistry,
   type AppRegistryRow,
+  type AppScope,
   type AppStatus,
   type RegisteredApp,
   type Tier,

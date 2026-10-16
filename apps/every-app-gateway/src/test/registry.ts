@@ -31,6 +31,7 @@ function toAppRow(row: StoredApp): AppRow {
     hostname: row.hostname,
     workerName: row.workerName,
     tier: row.tier,
+    scope: row.scope,
     manifest: row.manifest,
     status: row.status,
     versionId: row.versionId,
@@ -105,6 +106,7 @@ export async function registerApp(
     deployerUserId?: string | null;
     appBaseDomain?: string;
     isInstallOrganization?: boolean;
+    scope?: "org" | "shared";
   },
 ): Promise<RegistrationPlan> {
   const { organizationId, appSlug } = input;
@@ -149,6 +151,7 @@ export async function registerApp(
   const plan = planRegistration({
     organizationId,
     isInstallOrganization,
+    scope: input.scope,
     appSlug,
     name: input.name ?? appSlug,
     description: input.description ?? appSlug,

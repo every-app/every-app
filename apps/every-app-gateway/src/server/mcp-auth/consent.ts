@@ -12,10 +12,12 @@ import {
   AuthorizationError,
   CimdFetchError,
 } from "@cloudflare/workers-oauth-provider";
+import { env } from "cloudflare:workers";
 import { MCP_READ_SCOPE, MCP_WRITE_SCOPE } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import type { ConsentDecision } from "@/schemas/consent-decision";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
+import { platformPolicy } from "@/server/platform-policy";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
 import { OFFLINE_ACCESS_SCOPE, type McpAuth } from "./config";
 import { ON_PLATFORM_DOMAIN, onPlatformDomain } from "./own-domain";
@@ -68,28 +70,38 @@ export function clientDisplayName(name: string): string {
     : characters.join("");
 }
 
-/** The user's organizations, and the apps they can use in each. */
+/**
+ * The user's organizations (active ones: a suspended organization connects
+ * nothing), and the apps they can use in each: its own they have access
+ * to, and on the hosted gateway the shared apps, in every organization.
+ */
 export async function consentChoices(
   userId: string,
 ): Promise<ConsentOrganization[]> {
-  const { memberships, accessibleApps } =
+  const { memberships, accessibleApps, sharedApps } =
     await McpConnectionRepository.listChoicesForUser(userId);
+  const shared = platformPolicy(env).sharedApps ? sharedApps : [];
   return memberships.flatMap((membership) => {
     const role = resolvePrimaryOrganizationRole(membership.role);
-    if (!role) return [];
+    if (!role || membership.organizationStatus !== "active") return [];
+    const own = accessibleApps.filter(
+      (app) => app.organizationId === membership.organizationId,
+    );
+    const ownIds = new Set(own.map((app) => app.appRowId));
     return [
       {
         id: membership.organizationId,
         name: membership.organizationName,
         role,
-        apps: accessibleApps
-          .filter((app) => app.organizationId === membership.organizationId)
-          .map((app) => ({
-            rowId: app.appRowId,
-            slug: app.appSlug,
-            name: app.name,
-            hasTools: app.catalogStatus === "ok",
-          })),
+        apps: [
+          ...own,
+          ...shared.filter((app) => !ownIds.has(app.appRowId)),
+        ].map((app) => ({
+          rowId: app.appRowId,
+          slug: app.appSlug,
+          name: app.name,
+          hasTools: app.catalogStatus === "ok",
+        })),
       },
     ];
   });

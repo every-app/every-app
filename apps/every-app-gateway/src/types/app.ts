@@ -14,10 +14,12 @@ type App = Omit<AppRow, "appSlug" | "versionId" | "deployedAt"> & {
 };
 
 /**
- * App with access count for admin views.
+ * App with access count for admin views. `readOnly`: a shared app another
+ * organization (the platform's) owns, listed for what it is.
  */
 export type AppWithAccessCount = App & {
   accessCount: number;
+  readOnly: boolean;
 };
 
 /**

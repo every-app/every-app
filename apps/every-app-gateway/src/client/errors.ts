@@ -61,6 +61,8 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   ACCOUNT_ACTIONS_UNAVAILABLE:
     "Accounts belong to the people who own them on this gateway, so they can't be deactivated or reset from an organization. Remove the member instead.",
   EMAIL_NOT_VERIFIED: "Verify your email address before inviting anyone.",
+  SHARED_APP_ACCESS:
+    "Every member of every organization can open a shared app, so its access can't be changed.",
 };
 
 const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {

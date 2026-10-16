@@ -47,9 +47,15 @@ export interface SessionAuthenticator {
   sessionCookieNames: readonly string[];
   /** Resolve the session from the request cookie, or null if unauthenticated. */
   authenticate(request: Request): Promise<AuthenticatedSession | null>;
-  /** Whether the user may access this app (org membership + app installed). */
+  /**
+   * Whether the user may access this app (org membership + app installed).
+   * A session instead of `true` lets them in acting as that session: the
+   * same person in the organization the app belongs to, when the session
+   * acts under another of their organizations. The identity JWT carries its
+   * organization and role.
+   */
   hasAppAccess(
     session: AuthenticatedSession,
     app: RegisteredApp,
-  ): Promise<boolean>;
+  ): Promise<boolean | AuthenticatedSession>;
 }

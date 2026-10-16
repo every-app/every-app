@@ -174,6 +174,7 @@ async function findActiveWithMembership(id: string) {
       banned: users.banned,
       banExpires: users.banExpires,
       organizationName: organizations.name,
+      organizationStatus: organizations.status,
     })
     .from(mcpConnections)
     .innerJoin(users, eq(users.id, mcpConnections.userId))
@@ -195,15 +196,23 @@ async function findActiveWithMembership(id: string) {
 
 /**
  * What a user may connect an AI app to: their memberships (with the
- * organization's name), and in each the active apps they have access to,
- * with whether the app has tools to serve.
+ * organization's name and status), in each the active apps they have
+ * access to, and the active shared apps, which any organization's members
+ * may use on the hosted gateway; each with whether the app has tools to
+ * serve.
  */
 async function listChoicesForUser(userId: string) {
-  const [memberships, accessibleApps] = await db.batch([
+  const usable = and(
+    eq(apps.status, "active"),
+    isNotNull(apps.hostname),
+    isNotNull(apps.workerName),
+  );
+  const [memberships, accessibleApps, shared] = await db.batch([
     db
       .select({
         organizationId: members.organizationId,
         organizationName: organizations.name,
+        organizationStatus: organizations.status,
         role: members.role,
       })
       .from(members)
@@ -228,16 +237,21 @@ async function listChoicesForUser(userId: string) {
         ),
       )
       .leftJoin(appToolCatalogs, eq(appToolCatalogs.appRowId, apps.id))
-      .where(
-        and(
-          eq(apps.status, "active"),
-          isNotNull(apps.hostname),
-          isNotNull(apps.workerName),
-        ),
-      )
+      .where(usable)
+      .orderBy(asc(apps.name)),
+    db
+      .select({
+        appRowId: apps.id,
+        appSlug: apps.appSlug,
+        name: apps.name,
+        catalogStatus: appToolCatalogs.status,
+      })
+      .from(apps)
+      .leftJoin(appToolCatalogs, eq(appToolCatalogs.appRowId, apps.id))
+      .where(and(usable, eq(apps.scope, "shared")))
       .orderBy(asc(apps.name)),
   ]);
-  return { memberships, accessibleApps };
+  return { memberships, accessibleApps, sharedApps: shared };
 }
 
 /** Note a use, unless one was noted in the last ten minutes. */

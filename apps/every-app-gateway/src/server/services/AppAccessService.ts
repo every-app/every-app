@@ -1,22 +1,58 @@
+import { env } from "cloudflare:workers";
 import { AppAccessRepository } from "../repositories/AppAccessRepository";
 import { AppRepository } from "../repositories/AppRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
+import { PublicError } from "@/server/errors";
 import type { OrgContext } from "@/server/organization/orgContext";
+import { platformPolicy } from "@/server/platform-policy";
 
 /**
- * Get all apps a user has access to.
+ * Get all apps a user has access to: the organization's own they have
+ * installed, and on the hosted gateway the shared apps, which every
+ * member of every organization may open.
  */
 async function getAppsForUser(ctx: OrgContext) {
-  const accessRecords = await AppAccessRepository.findAllByUserId(
-    ctx.userId,
-    ctx.orgId,
-  );
+  const [accessRecords, shared] = await Promise.all([
+    AppAccessRepository.findAllByUserId(ctx.userId, ctx.orgId),
+    platformPolicy(env).sharedApps ? AppRepository.findAllShared() : [],
+  ]);
+  const own = accessRecords.map((record) => ({
+    ...record.app,
+    grantedAt: record.grantedAt,
+  }));
+  const ownIds = new Set(own.map((app) => app.id));
   return {
-    apps: accessRecords.map((record) => ({
-      ...record.app,
-      grantedAt: record.grantedAt,
-    })),
+    apps: [
+      ...own,
+      ...shared
+        .filter((app) => !ownIds.has(app.id))
+        .map((app) => ({
+          id: app.id,
+          organizationId: app.organizationId,
+          appId: app.appSlug,
+          name: app.name,
+          description: app.description,
+          hostname: app.hostname,
+          scope: app.scope,
+          status: app.status,
+          isDefault: app.isDefault,
+          createdAt: app.createdAt,
+          updatedAt: app.updatedAt,
+          // Nobody is granted a shared app: it is everyone's from the start.
+          grantedAt: app.createdAt,
+        })),
+    ],
   };
+}
+
+/** Who opens a shared app is no admin's choice: every member of every organization. */
+function assertNotShared(app: { scope: string }): void {
+  if (app.scope === "shared") {
+    throw new PublicError(
+      "SHARED_APP_ACCESS",
+      "Every member of every organization can open a shared app; its access can't be changed.",
+    );
+  }
 }
 
 /**
@@ -24,6 +60,8 @@ async function getAppsForUser(ctx: OrgContext) {
  * Returns all users with a flag indicating if they have access.
  */
 async function getAccessStateForApp(ctx: OrgContext, appRowId: string) {
+  const app = await AppRepository.findById(appRowId, ctx.orgId);
+  if (app) assertNotShared(app);
   const [allUsers, accessRecords] = await Promise.all([
     OrganizationMembersRepository.listMembersForOrganization(ctx.orgId),
     AppAccessRepository.findAllByAppRowId(appRowId, ctx.orgId),
@@ -57,6 +95,7 @@ async function updateAccessForApp(
   if (!app) {
     throw new Error("App not found");
   }
+  assertNotShared(app);
 
   const organizationUsers =
     await OrganizationMembersRepository.listMembersForOrganization(ctx.orgId);

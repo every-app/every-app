@@ -244,6 +244,18 @@ describe("everyAppWorker in production", () => {
     expect(config.previewUrls).toBe(false);
   });
 
+  it("gives a shared app no organization to pin itself to", () => {
+    writeDeployInputs({ shared: true });
+    const env = worker().env;
+    expect(env).not.toHaveProperty("EVERY_APP_ORG_ID");
+    expect(env).toMatchObject({
+      GATEWAY_URL: { type: "secret" },
+      EVERY_APP_GATEWAY: {
+        props: { organizationId: "org_1", appId: "todo" },
+      },
+    });
+  });
+
   it("never enables dev identities", () => {
     writeDeployInputs();
     const env = worker().env;

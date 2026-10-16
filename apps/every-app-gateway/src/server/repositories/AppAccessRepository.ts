@@ -29,6 +29,7 @@ async function findAllByUserId(userId: string, organizationId: string) {
         name: apps.name,
         description: apps.description,
         hostname: apps.hostname,
+        scope: apps.scope,
         status: apps.status,
         isDefault: apps.isDefault,
         createdAt: apps.createdAt,

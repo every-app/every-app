@@ -3,6 +3,7 @@ const GATEWAY_ERROR_CODES = [
   "ORIGIN_NOT_ALLOWED",
   "REQUEST_EXPIRED",
   "ACCESS_DENIED",
+  "ORGANIZATION_SUSPENDED",
 ] as const;
 
 type GatewayErrorCode = (typeof GATEWAY_ERROR_CODES)[number];
@@ -42,6 +43,7 @@ const PUBLIC_ERROR_CODES = [
   "PASSWORD_SIGN_IN_DISABLED",
   "ACCOUNT_ACTIONS_UNAVAILABLE",
   "EMAIL_NOT_VERIFIED",
+  "SHARED_APP_ACCESS",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

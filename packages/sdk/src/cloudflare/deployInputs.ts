@@ -17,6 +17,12 @@ export interface EveryAppDeployInputs {
   workerName: string;
   /** The organization that owns the app; scopes the AppGateway binding. */
   organizationId: string;
+  /**
+   * A shared app (first-party, on the hosted gateway): one Worker for every
+   * organization, which takes each request's organization from its
+   * identity. It gets no EVERY_APP_ORG_ID to pin itself to the owner's.
+   */
+  shared?: true;
   gatewayUrl: string;
   /** Expected `iss` of identity tokens. */
   identityIssuer: string;
@@ -64,6 +70,10 @@ export function parseDeployInputs(value: unknown): EveryAppDeployInputs {
     );
   }
   const createdAt = input["createdAt"];
+  const shared = input["shared"];
+  if (shared !== undefined && shared !== true) {
+    throw new DeployInputsError("shared must be true when set");
+  }
 
   return {
     schema: 1,
@@ -82,6 +92,7 @@ export function parseDeployInputs(value: unknown): EveryAppDeployInputs {
         return { id: string(entry, "id") };
       }),
     },
+    ...(shared ? { shared } : {}),
     ...(deleted ? { deletedDurableObjects: deleted } : {}),
     ...(typeof createdAt === "string" ? { createdAt } : {}),
   };

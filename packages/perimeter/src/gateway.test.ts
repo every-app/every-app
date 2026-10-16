@@ -144,6 +144,57 @@ describe("handleGatewayRequest", () => {
     expect(payload.sub).toBe("user_1");
   });
 
+  it("mints the identity for the session the authenticator lets in as", async () => {
+    // The member acts under another of their organizations; the
+    // authenticator lets them in as their membership in the app's.
+    const interceptMcp = vi.fn(async () => null);
+    const asAppOrg = { ...SESSION, orgId: "org_1", orgRole: "owner" };
+    const res = await handleGatewayRequest(
+      req("/tasks"),
+      deps({
+        authenticator: {
+          sessionCookieNames: [],
+          authenticate: async () => ({ ...SESSION, orgId: "org_2" }),
+          hasAppAccess: async () => asAppOrg,
+        },
+        interceptMcp,
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { identity: string };
+    const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
+    const { payload } = await jwtVerify(body.identity, pub, {
+      audience: "every-todo-app",
+      issuer: "https://home.example.com",
+    });
+    expect(payload).toMatchObject({
+      sub: "user_1",
+      org_id: "org_1",
+      org_role: "owner",
+    });
+
+    await handleGatewayRequest(
+      req("/mcp", {
+        method: "POST",
+        headers: {
+          origin: "https://todo.example.com",
+          "sec-fetch-site": "same-origin",
+        },
+      }),
+      deps({
+        authenticator: {
+          sessionCookieNames: [],
+          authenticate: async () => ({ ...SESSION, orgId: "org_2" }),
+          hasAppAccess: async () => asAppOrg,
+        },
+        interceptMcp,
+      }),
+    );
+    expect(interceptMcp).toHaveBeenCalledWith(
+      expect.objectContaining({ session: asAppOrg }),
+    );
+  });
+
   it("answers 503 for a registry row with a tier or scope it doesn't know, reaching no app", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const fetcher = vi.fn();

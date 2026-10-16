@@ -7,7 +7,8 @@ import {
 
 interface AppActionsMenuProps {
   appName: string;
-  onManageAccess: () => void;
+  /** Absent for a shared app, whose access nobody manages. */
+  onManageAccess?: () => void;
   onEdit: () => void;
   onDelete: () => void;
   isOwner: boolean;
@@ -23,10 +24,12 @@ export function AppActionsMenu({
 }: AppActionsMenuProps) {
   return (
     <RowActionsMenu label={`Actions for ${appName}`}>
-      <DropdownMenuItem onClick={onManageAccess}>
-        <Users />
-        Manage access
-      </DropdownMenuItem>
+      {onManageAccess ? (
+        <DropdownMenuItem onClick={onManageAccess}>
+          <Users />
+          Manage access
+        </DropdownMenuItem>
+      ) : null}
       <DropdownMenuItem onClick={onEdit}>
         <Pencil />
         Edit app

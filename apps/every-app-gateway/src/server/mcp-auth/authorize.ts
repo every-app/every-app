@@ -225,6 +225,13 @@ export async function handleConsentDecision(
       "You're not a member of that organization.",
     );
   }
+  if (membership.organizationStatus !== "active") {
+    return errorPage(
+      403,
+      "Can't connect this app",
+      "That organization is suspended.",
+    );
+  }
   const selectedApps = [...new Set(decision.app_ids)];
   if (decision.app_mode === "selected") {
     const usable = new Set(

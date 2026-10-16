@@ -279,7 +279,7 @@ describe("markDeployed", () => {
 
   it("refuses an app deleted meanwhile", async () => {
     const { plan } = await registerApp("todo");
-    await deleteApp(db(), "todo");
+    await deleteApp(db(), "todo", DEPLOYER);
 
     await expect(
       markDeployed(db(), plan.app.id, { versionId: "v1", manifest: { id: "todo" }, actor: "x" }),
@@ -330,7 +330,7 @@ describe("deleteApp", () => {
     const { plan, organization } = await registerApp("todo");
     withAppData(plan.app.id, organization.id);
 
-    const deleted = await deleteApp(db(), "todo");
+    const deleted = await deleteApp(db(), "todo", DEPLOYER);
 
     expect(deleted).toMatchObject({
       status: "deleted",
@@ -345,8 +345,8 @@ describe("deleteApp", () => {
     await expect(readApp(db(), "todo")).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
     await expect(listApps(db())).resolves.toEqual([]);
     // A delete that stopped part-way runs again.
-    await expect(deleteApp(db(), "todo")).resolves.toMatchObject({ status: "deleted" });
-    await expect(deleteApp(db(), "nope")).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
+    await expect(deleteApp(db(), "todo", DEPLOYER)).resolves.toMatchObject({ status: "deleted" });
+    await expect(deleteApp(db(), "nope", DEPLOYER)).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
   });
 
   it("revives its own tombstone under the same names, as a new app", async () => {
@@ -355,7 +355,7 @@ describe("deleteApp", () => {
     const { plan } = await registerApp("todo", {
       manifest: { id: "todo", resources: { d1: ["DB"] } },
     });
-    await deleteApp(db(), "todo");
+    await deleteApp(db(), "todo", DEPLOYER);
     // Whatever was left on the tombstone, by hand or by an older gateway.
     withAppData(plan.app.id, "org-1");
 

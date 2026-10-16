@@ -34,6 +34,12 @@ export const deployCommand = buildCommand({
         brief:
           "Publish the app's new hostname even where a DNS record answers it (one at the hostname is replaced)",
       },
+      shared: {
+        kind: "boolean",
+        brief:
+          "Deploy a shared app: one Worker every organization's members can open (hosted gateway; platform organization owners and admins)",
+        optional: true,
+      },
       "no-wait": {
         kind: "boolean",
         brief:
@@ -77,6 +83,10 @@ export const deployCommand = buildCommand({
       "Nothing else asks first: the first line says where the app goes. Install and build output",
       "goes to a log file (its last lines and path are shown if it fails), never to stdout.",
       "Safe to run again: a redeploy of an app the Gateway already serves never touches the Gateway.",
+      "",
+      "--shared (a hosted Gateway only) registers a first-party app every organization's members can",
+      "open, owned by the platform organization; its Worker gets no EVERY_APP_ORG_ID. An app keeps the",
+      "scope it was registered with: a redeploy without --shared (or a secret set) keeps it shared.",
     ].join("\n"),
   },
 });

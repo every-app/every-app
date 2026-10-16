@@ -14,8 +14,8 @@ Gateway a customer self-hosts, with the hosted policy
 - no Cloudflare Access sign-in (its settings are ignored);
 - organization admins manage memberships, never accounts (no deactivating,
   resetting or deleting someone's account from an organization);
-- per-organization daily caps on the AI proxy (200 requests) and the
-  integration proxy (500), enforced at the Gateway as their PRs land;
+- per-organization daily caps on the AI proxy (200 requests, a 429 with
+  `Retry-After` past it) and the integration proxy (500, with its PR);
 - third-party deploys stay off (a launch gate).
 
 Until Google verification and the wallet exist, the preview is invite-only:
@@ -101,22 +101,72 @@ pnpm everyapp status
 
 shows `Mode:     hosted` and `Owner:    <email> (Every App)`.
 
-## 4. Deploy the first-party apps
-
-Coming with the shared-apps PR:
-
-- `everyapp deploy --shared`, from an app's directory: deploys the app as a
-  shared app of the platform organization (registry row `scope='shared'`,
-  hostname `<appId>.app.everyapp.com`, `service_binding`, one Worker for
-  every organization).
-- `everyapp register`: registers a first-party app the platform organization
-  already runs, without uploading it.
-
-Until then, `everyapp deploy` deploys an app into the platform organization
-as an ordinary organization app (`scope='org'`), visible to its members only.
-
 The owner's email counts as verified (the setup link is ours), so they sign
 in straight away. Open sign-up starts only after the claim.
+
+## 4. Deploy the first-party apps
+
+Each first-party app is a shared app: a registry row of the platform
+organization with `scope='shared'`, at `<appId>.app.everyapp.com`, reached
+over its service binding (`APP__<worker>`) as on self-host, one Worker for
+every organization. Any live member of any active organization opens it,
+and its identity JWT carries that member's `org_id` and `org_role`: the app
+scopes its data by them (todo, chef and workout are per user; OpenSEO scopes
+by organization). Only owners and admins of the platform organization deploy
+or register one: a Cloudflare login must be one of them by its verified
+email (sign up on the Gateway with the same email); an API token
+(`CLOUDFLARE_API_TOKEN`, CI) is the account's own authority. Both commands
+refuse a Gateway whose install record isn't `hosted`
+(`SHARED_APPS_UNAVAILABLE`).
+
+An app the CLI builds, from its directory:
+
+```sh
+pnpm everyapp deploy --shared
+```
+
+It deploys as any app does, with two differences: the row is shared (nobody
+is granted it, and it has no "Available to everyone" switch), and the Worker
+gets no `EVERY_APP_ORG_ID`, since it serves every organization. An app keeps
+the scope it was registered with: later deploys, and `secret set|unset`
+(which redeploy it), keep it shared with or without `--shared`, and still
+need a platform owner or admin. An organization app's id can't become a
+shared one (`APP_SCOPE_MISMATCH`; delete it and pick another id). Deleting a
+shared app (`everyapp delete`) cuts every organization off from it, so it
+too takes a platform owner or admin (`SHARED_APP_FORBIDDEN` otherwise).
+
+A Worker deployed by other means (OpenSEO's Alchemy stage, say), in the
+Gateway's account:
+
+```sh
+pnpm everyapp register openseo --worker every-everyapp-openseo --shared --manifest ../open-seo/everyapp.config.ts
+```
+
+`register` checks the Worker exists, validates the manifest as `deploy`
+does, registers the app under the Worker name the Gateway gives it
+(`every-<platform org key>-<appId>`, `every-everyapp-<appId>` for the
+"Every App" organization; any other `--worker` stops with
+`WORKER_NAME_MISMATCH`, which names it), records the Worker's live version,
+redeploys the Gateway to bind it and publish its hostname, and waits for it
+to go live. It never uploads or changes the Worker, and `delete --purge`
+keeps it. Run it again after the Worker's own pipeline ships a version, so
+the registry records it (the Gateway re-reads the app's tools on a new
+version). `--json` prints the same events as `deploy`; the `app.register`
+event's `data.worker` lists what the Worker's own pipeline must give it:
+
+- `EVERYAPP_IDENTITY_ISSUER` (`identityIssuer`) and
+  `EVERYAPP_IDENTITY_PUBLIC_KEYS` (`identityPublicKeys`, JSON), so the SDK
+  verifies the Gateway's identity JWTs;
+- `EVERY_APP_GATEWAY`, a service binding to `every-app-gateway`, entrypoint
+  `AppGateway`, with the props in `gatewayBinding.props`
+  (`organizationId` is the platform organization's): the AI proxy refuses
+  any other;
+- `GATEWAY_URL`, and no `EVERY_APP_ORG_ID`.
+
+Provider calls from a shared app forward the identity of the request they
+serve (`createGatewayFetch` does): the Gateway counts the call, and the
+daily cap, against that member's organization. A call with no identity
+(cron, Workflow) is refused with 403 until background attribution lands.
 
 ## Checks
 
@@ -126,6 +176,16 @@ in straight away. Open sign-up starts only after the claim.
   `"emailVerification": true` and no providers.
 - A registry row with a `tier` or `scope` the Gateway doesn't know answers
   503 on its host: fix the row, never the code.
+- A shared app opens at `https://<appId>.app.everyapp.com` for a member of
+  any organization; `pnpm everyapp status` lists it.
+- To suspend an organization, set its status in the Gateway's D1; within
+  30 seconds its members get 403 everywhere, and `'active'` restores it:
+
+  ```sh
+  npx cf@1.0.0-beta.14 d1 list --name every-app-gateway   # its id
+  npx cf@1.0.0-beta.14 d1 query <id> \
+    --sql "UPDATE organizations SET status = 'suspended' WHERE slug = 'acme'"
+  ```
 - An owner link that answers `SETUP_UNAVAILABLE` means the Worker's
   `GATEWAY_DEPLOYMENT_MODE` secret is missing or isn't `self_hosted` or
   `hosted` (someone changed it by hand; `everyapp secret set` refuses the

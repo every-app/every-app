@@ -85,10 +85,13 @@ function call(options: {
     props: options.props ?? PROPS,
     registry: new InMemoryAppRegistry([app(options.manifest)]),
     env: {
+      GATEWAY_DEPLOYMENT_MODE: "self_hosted",
       JWT_PUBLIC_KEY: publicKeyPem,
       GATEWAY_URL: "https://home.example.com",
       ...(options.env ?? { DATAFORSEO_API_KEY: "login@example.com:secret" }),
     },
+    // Capability calls spend no daily cap, so nothing reads these.
+    counters: { read: async () => new Map(), increment: async () => {} },
     fetchUpstream:
       options.fetchUpstream ?? vi.fn(async () => Response.json({ ok: true })),
   });

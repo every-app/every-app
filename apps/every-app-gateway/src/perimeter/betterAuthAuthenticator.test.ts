@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RegisteredApp } from "@every-app/perimeter";
 
-const { mockMemberFindFirst, mockUserFindFirst } = vi.hoisted(() => ({
-  mockMemberFindFirst: vi.fn(),
-  mockUserFindFirst: vi.fn(),
-}));
+const { mockMemberFindFirst, mockUserFindFirst, mockOrganizationFindFirst } =
+  vi.hoisted(() => ({
+    mockMemberFindFirst: vi.fn(),
+    mockUserFindFirst: vi.fn(),
+    // isOrganizationActive: the organization's status.
+    mockOrganizationFindFirst: vi.fn(async () => ({ status: "active" })),
+  }));
 
 vi.mock("cloudflare:workers", () => ({
   env: { GATEWAY_URL: "https://gateway.example.com" },
@@ -20,6 +23,9 @@ vi.mock("@/db", () => ({
     query: {
       users: {
         findFirst: mockUserFindFirst,
+      },
+      organizations: {
+        findFirst: mockOrganizationFindFirst,
       },
     },
     // resolveLiveOrgRole: the membership joined with the user's ban state.
@@ -45,6 +51,9 @@ vi.mock("@/db/schema", () => ({
   },
   users: {
     id: "users.id",
+  },
+  organizations: {
+    id: "organizations.id",
   },
 }));
 
@@ -87,6 +96,7 @@ import { AppRepository } from "@/server/repositories/AppRepository";
 import { UserPatRepository } from "@/server/repositories/UserPatRepository";
 import { UserPatService } from "@/server/services/UserPatService";
 import { createProdAuthenticator } from "./betterAuthAuthenticator";
+import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
 
 const mockAuth = vi.mocked(auth);
 const mockAppAccessRepository = vi.mocked(AppAccessRepository);
@@ -251,5 +261,87 @@ describe("createProdAuthenticator session cookie", () => {
     expect(createProdAuthenticator().sessionCookieNames).toEqual(
       SESSION_COOKIE_NAMES,
     );
+  });
+});
+
+describe("createProdAuthenticator with shared apps and suspended organizations", () => {
+  // A first-party app the platform organization owns, opened with a token
+  // of another organization.
+  const SHARED: RegisteredApp = {
+    ...APP,
+    appId: "openseo",
+    scope: "shared",
+    organizationId: "platform-org",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearOrgContextCacheForTests();
+    mockOrganizationFindFirst.mockResolvedValue({ status: "active" });
+    mockMemberFindFirst.mockResolvedValue({ role: "member" });
+    mockUserPatService.verify.mockResolvedValue(activePat());
+  });
+
+  it("lets any active organization's member into a shared app, acting under their own organization", async () => {
+    const session = await createProdAuthenticator().authenticate(request());
+    await expect(
+      createProdAuthenticator({ sharedApps: true }).hasAppAccess(
+        session!,
+        SHARED,
+      ),
+    ).resolves.toBe(true);
+    expect(
+      mockAppAccessRepository.hasAccessByUserAndAppSlug,
+    ).not.toHaveBeenCalled();
+  });
+
+  it("opens a shared app for nobody when the policy has no shared apps", async () => {
+    const session = await createProdAuthenticator().authenticate(request());
+    await expect(
+      createProdAuthenticator().hasAppAccess(session!, SHARED),
+    ).resolves.toBe(false);
+  });
+
+  it("refuses a token bound to another app on a shared app", async () => {
+    mockUserPatService.verify.mockResolvedValue(
+      activePat({ appRowId: "app-row-1" }),
+    );
+    mockAppRepository.findByAppSlug.mockResolvedValue({
+      id: "shared-row",
+    } as any);
+    const session = await createProdAuthenticator().authenticate(request());
+    await expect(
+      createProdAuthenticator({ sharedApps: true }).hasAppAccess(
+        session!,
+        SHARED,
+      ),
+    ).resolves.toBe(false);
+  });
+
+  it("refuses a suspended organization's token on its own apps and shared ones", async () => {
+    mockOrganizationFindFirst.mockResolvedValue({ status: "suspended" });
+    mockAppAccessRepository.hasAccessByUserAndAppSlug.mockResolvedValue(true);
+    const session = await createProdAuthenticator().authenticate(request());
+    const authenticator = createProdAuthenticator({ sharedApps: true });
+    await expect(authenticator.hasAppAccess(session!, APP)).resolves.toBe(
+      false,
+    );
+    await expect(authenticator.hasAppAccess(session!, SHARED)).resolves.toBe(
+      false,
+    );
+  });
+
+  it("keeps a token to its own organization's apps", async () => {
+    mockAppAccessRepository.hasAccessByUserAndAppSlug.mockResolvedValue(true);
+    const session = await createProdAuthenticator().authenticate(request());
+    await expect(
+      createProdAuthenticator().hasAppAccess(session!, {
+        ...APP,
+        organizationId: "other-org",
+      }),
+    ).resolves.toBe(false);
+    expect(
+      mockAppAccessRepository.hasAccessByUserAndAppSlug,
+    ).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockResolveOrgContext, mockCreateMiddleware } = vi.hoisted(() => ({
+const {
+  mockResolveOrgContext,
+  mockIsOrganizationActive,
+  mockCreateMiddleware,
+} = vi.hoisted(() => ({
   mockResolveOrgContext: vi.fn(),
+  mockIsOrganizationActive: vi.fn(),
   mockCreateMiddleware: vi.fn(() => {
     const middleware: Record<string, unknown> = {};
     middleware.middleware = vi.fn(() => middleware);
@@ -27,6 +32,8 @@ vi.mock("@/auth", () => ({
 
 vi.mock("@/server/organization/orgContext", () => ({
   resolveOrgContext: (...args: unknown[]) => mockResolveOrgContext(...args),
+  isOrganizationActive: (...args: unknown[]) =>
+    mockIsOrganizationActive(...args),
 }));
 
 import {
@@ -49,6 +56,25 @@ const soleOrg = {
 describe("organization middleware", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockIsOrganizationActive.mockResolvedValue(true);
+  });
+
+  it("refuses a suspended organization's members", async () => {
+    mockResolveOrgContext.mockResolvedValue(soleOrg);
+    mockIsOrganizationActive.mockResolvedValue(false);
+    const next = vi.fn();
+
+    await expect(
+      memberHandler()({
+        next,
+        context: {
+          user: { id: "user-1" },
+          session: { activeOrganizationId: "org-1" },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "ORGANIZATION_SUSPENDED" });
+    expect(mockIsOrganizationActive).toHaveBeenCalledWith("org-1");
+    expect(next).not.toHaveBeenCalled();
   });
 
   it("accepts a resolver-verified sole-org fallback", async () => {

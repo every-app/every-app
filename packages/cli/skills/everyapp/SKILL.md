@@ -23,6 +23,12 @@ Ship:    pnpm everyapp deploy --json   (from the app directory; safe to repeat;
          also upgrades the Gateway to this checkout when it has to rebind).
          No Gateway yet: action_required install_gateway; ask the user, run
          its data.rerun (setup), then deploy again.
+Shared:  hosted Gateway only, platform organization owners/admins, when the
+         user asks for a first-party app every organization opens:
+         deploy --shared --json (redeploys and secret set keep it shared), or for a
+         Worker deployed by other means: pnpm everyapp register <id>
+         --worker <name> --shared --manifest <everyapp.config.ts> --json
+         (WORKER_NAME_MISMATCH names the Worker name to deploy under).
 Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--local] --json
 Secrets: pnpm everyapp secret set NAME --from-env VAR -y --json   (redeploys the app)
          secret unset NAME, secret list; add --for gateway for the Gateway's settings

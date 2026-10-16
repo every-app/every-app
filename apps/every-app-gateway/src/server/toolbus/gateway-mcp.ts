@@ -6,8 +6,8 @@
  * The caller is already resolved (mcp-auth/validate.ts): an OAuth connection
  * or a personal access token. This reads, from D1 only, the serving catalogs
  * of the apps the caller reaches: active apps of their organization they
- * have access to, narrowed to the connection's chosen apps or the token's
- * app. It never asks an app for its tools; `tools/call` reaches exactly one
+ * have access to and, on the hosted gateway, the shared apps, narrowed to
+ * the connection's chosen apps or the token's app. It never asks an app for its tools; `tools/call` reaches exactly one
  * app over its service binding, with an identity minted for that call.
  *
  * Apps it reaches with no snapshot yet (deployed before the gateway took
@@ -18,6 +18,7 @@
  */
 import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
+import { platformPolicy } from "@/server/platform-policy";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
 import type { McpCaller } from "@/server/mcp-auth/validate";
 import { scheduleCatalogResync } from "./catalog-sync";
@@ -56,14 +57,16 @@ export async function serveGatewayMcp(
     );
   }
   const { principal } = caller;
+  const scope = {
+    organizationId: principal.organizationId,
+    userId: principal.userId,
+    sharedApps: platformPolicy(env).sharedApps,
+    ...caller.apps,
+  };
 
   let catalogs;
   try {
-    catalogs = await AppToolRepository.findVisibleCatalogs({
-      organizationId: principal.organizationId,
-      userId: principal.userId,
-      ...caller.apps,
-    });
+    catalogs = await AppToolRepository.findVisibleCatalogs(scope);
   } catch (error) {
     logEvent(
       "mcp.catalog.unavailable",
@@ -85,11 +88,7 @@ export async function serveGatewayMcp(
   }
 
   if (request.method === "POST") {
-    await syncUnsyncedApps({
-      organizationId: principal.organizationId,
-      userId: principal.userId,
-      ...caller.apps,
-    });
+    await syncUnsyncedApps(scope);
   }
 
   const apps = catalogs.map((catalog) =>
@@ -106,8 +105,10 @@ export async function serveGatewayMcp(
         tools: catalog.tools,
       },
       {
+        // The app row's own organization, where its catalog is kept; the
+        // call's identity carries the caller's (principal).
         rowId: catalog.appRowId,
-        organizationId: principal.organizationId,
+        organizationId: catalog.organizationId,
         appSlug: catalog.appSlug,
         hostname: catalog.hostname,
         workerName: catalog.workerName,

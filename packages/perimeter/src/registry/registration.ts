@@ -14,8 +14,12 @@
  * its D1 and KV resources after it (`every-<orgKey>-<appId>--<binding>`), and
  * the hostname, `<appId>.<base>` for the install's own organization and
  * `<appId>-<orgKey>.<base>` for any other. Deleted apps keep their row (a
- * tombstone), so their names stay taken.
+ * tombstone), so their names stay taken. A `shared` app (a first-party app
+ * every organization's members may open, on the hosted gateway) is only
+ * ever the install organization's, the platform organization there, and
+ * keeps its scope for good.
  */
+import type { AppScope } from "./apps";
 import {
   isRegistryWorkerName,
   isReservedAppId,
@@ -45,6 +49,8 @@ export interface AppRow {
   hostname: string | null;
   workerName: string | null;
   tier: string;
+  /** `org` or `shared` (./apps.ts). */
+  scope: string;
   /** JSON of the manifest the live code was built from. */
   manifest: string | null;
   status: string;
@@ -86,7 +92,9 @@ export type RegistrationErrorCode =
   | "RESOURCE_NAME_CONFLICT"
   | "ORG_KEY_UNAVAILABLE"
   | "APP_NOT_FOUND"
-  | "APP_NOT_REGISTERED";
+  | "APP_NOT_REGISTERED"
+  | "SHARED_APP_NOT_PLATFORM"
+  | "APP_SCOPE_MISMATCH";
 
 /** A registration the rules refuse, with the HTTP status a server answers. */
 export class RegistrationError extends Error {
@@ -308,6 +316,13 @@ export interface OrganizationMember {
 export interface RegistrationInput {
   organizationId: string;
   isInstallOrganization: boolean;
+  /**
+   * `shared` registers a first-party app for every organization (only the
+   * install organization's), `org` the organization's own. Unset keeps the
+   * scope of the app's row, so a redeploy (`secret set`, a plain `deploy`)
+   * keeps its shape; a new app is `org`.
+   */
+  scope?: AppScope;
   appSlug: string;
   name: string;
   description: string;
@@ -357,9 +372,13 @@ export interface RegistrationPlan {
  */
 function initialAccess(
   input: RegistrationInput,
+  scope: AppScope,
   manifest: Manifest,
   appRowId: string,
 ): { isDefault: boolean; grants: AccessGrant[] } {
+  // Membership of any active organization opens a shared app: nobody is
+  // granted it, and it is no organization's default.
+  if (scope === "shared") return { isDefault: false, grants: [] };
   const everyone = manifest.access === "everyone";
   return {
     isDefault: everyone,
@@ -384,16 +403,39 @@ function initialAccess(
  * Register an app, or a redeploy of one: check the rules against the rows
  * the caller read, and return what to write in one batch. A new app (or a
  * deleted one coming back) starts `pending` with the names the rules assign
- * it; a redeploy keeps its names, status and live manifest.
+ * it; a redeploy keeps its names, status and live manifest. A shared app is
+ * the install organization's only, and an app's scope never changes: an
+ * unset scope keeps the row's, and the same id asked for as the other scope
+ * is refused, tombstones included (delete it and register another id).
  */
 export function planRegistration(input: RegistrationInput): RegistrationPlan {
   const { existingApp } = input;
+  // A row's scope the rules don't know is refused below, as a mismatch.
+  const scope: AppScope =
+    input.scope ?? (existingApp?.scope === "shared" ? "shared" : "org");
   if (
     existingApp &&
     (existingApp.organizationId !== input.organizationId ||
       existingApp.appSlug !== input.appSlug)
   ) {
     throw new Error("existingApp is another organization's or app's row.");
+  }
+  if (scope === "shared" && !input.isInstallOrganization) {
+    throw new RegistrationError({
+      status: 403,
+      code: "SHARED_APP_NOT_PLATFORM",
+      message: `Only the platform organization registers shared apps; "${input.appSlug}" can't be shared from another organization.`,
+    });
+  }
+  if (existingApp && existingApp.scope !== scope) {
+    throw new RegistrationError({
+      status: 409,
+      code: "APP_SCOPE_MISMATCH",
+      message:
+        existingApp.scope === "shared"
+          ? `App "${input.appSlug}" is a shared app, not this organization's own. Deploy it without asking for another scope, or give the organization's own app an id of its own.`
+          : `App "${input.appSlug}" is this organization's own app, not a shared one. Shared apps need an app id of their own.`,
+    });
   }
   // Reserved and malformed ids first, as appNames would refuse them.
   const names = appNames(input);
@@ -453,7 +495,7 @@ export function planRegistration(input: RegistrationInput): RegistrationPlan {
   }
 
   const appRowId = existingApp?.id ?? crypto.randomUUID();
-  const { isDefault, grants } = initialAccess(input, manifest, appRowId);
+  const { isDefault, grants } = initialAccess(input, scope, manifest, appRowId);
   const started = {
     ...common,
     manifest: JSON.stringify(manifest),
@@ -473,6 +515,7 @@ export function planRegistration(input: RegistrationInput): RegistrationPlan {
           id: appRowId,
           appSlug: input.appSlug,
           tier: "service_binding",
+          scope,
           versionId: null,
           deployedAt: null,
           deployedByActor: null,

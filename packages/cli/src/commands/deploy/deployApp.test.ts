@@ -1798,7 +1798,7 @@ describe("delete", () => {
 
   it("runs again after a delete that stopped before the gateway dropped the app", async () => {
     // The tombstone was written, then the run stopped.
-    await deleteFromRegistry(registry(), "todo");
+    await deleteFromRegistry(registry(), "todo", { actor: "dev@example.com", email: "dev@example.com" });
     expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
 
     await remove("todo", false);

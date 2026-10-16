@@ -1,7 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { auth } from "@/auth";
 import { AppAccessService } from "@/server/services/AppAccessService";
-import { resolveOrgContext } from "@/server/organization/orgContext";
+import {
+  isOrganizationActive,
+  resolveOrgContext,
+} from "@/server/organization/orgContext";
 
 function unauthorized(): Response {
   return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -35,6 +38,12 @@ export const Route = createFileRoute("/api/me/apps")({
 
         if (!org) {
           return unauthorized();
+        }
+        if (!(await isOrganizationActive(org.orgId))) {
+          return new Response(
+            JSON.stringify({ error: "organization_suspended" }),
+            { status: 403, headers: { "Content-Type": "application/json" } },
+          );
         }
 
         const result = await AppAccessService.getAppsForUser(org);

@@ -3,8 +3,17 @@
  *
  * The perimeter terminates the Better Auth session cookie here. `authenticate`
  * resolves the session and the user's organization membership (the JWT's
- * orgId/orgRole claims); `hasAppAccess` enforces perimeter policy: org member + app
- * installed for that user (user_app_access row).
+ * orgId/orgRole claims); `hasAppAccess` enforces perimeter policy, always
+ * in an active (not suspended) organization:
+ *
+ *  - an organization's own app: a member of it with the app installed for
+ *    them (a user_app_access row). A browser session acting under another
+ *    of the person's organizations is let in as their membership in the
+ *    app's (the JWT carries that organization); a personal access token
+ *    only ever acts in its own;
+ *  - a shared app (first-party, on the hosted gateway): any live member of
+ *    any organization, acting under the session's own, with no
+ *    user_app_access row.
  *
  * Unlike the dependency-light perimeter package, this adapter is allowed heavy
  * imports (Better Auth, Drizzle) because it is only pulled in by the production
@@ -15,7 +24,10 @@ import { SESSION_COOKIE_NAMES } from "@/auth/session-cookie";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { members, users } from "@/db/schema";
-import { resolveOrgContext } from "@/server/organization/orgContext";
+import {
+  isOrganizationActive,
+  resolveOrgContext,
+} from "@/server/organization/orgContext";
 import { AppAccessRepository } from "@/server/repositories/AppAccessRepository";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { UserPatRepository } from "@/server/repositories/UserPatRepository";
@@ -26,6 +38,7 @@ import {
   extractBearerCredential,
   extractEveryAppBearer,
   type AuthenticatedSession,
+  type RegisteredApp,
   type SessionAuthenticator,
 } from "@every-app/perimeter";
 
@@ -61,7 +74,29 @@ async function resolveLiveOrgRole(
   return resolvePrimaryOrganizationRole(row.role);
 }
 
-export function createProdAuthenticator(): SessionAuthenticator {
+/** A token bound to one app (`credentialAppRowId`) is used on another. */
+async function boundToAnotherApp(
+  session: AuthenticatedSession,
+  app: RegisteredApp,
+): Promise<boolean> {
+  if (session.credential?.kind !== "pat") return false;
+  const credentialAppRowId = (session as CredentialBoundSession)
+    .credentialAppRowId;
+  if (!credentialAppRowId) return false;
+  const servedApp = await AppRepository.findByAppSlug(
+    app.appId,
+    app.organizationId,
+  );
+  return !servedApp || servedApp.id !== credentialAppRowId;
+}
+
+/**
+ * `sharedApps`: the platform policy's (server/platform-policy.ts). Without
+ * it a shared row opens for nobody.
+ */
+export function createProdAuthenticator(
+  policy: { sharedApps: boolean } = { sharedApps: false },
+): SessionAuthenticator {
   return {
     sessionCookieNames: SESSION_COOKIE_NAMES,
     async authenticate(request: Request): Promise<AuthenticatedSession | null> {
@@ -132,26 +167,45 @@ export function createProdAuthenticator(): SessionAuthenticator {
       };
     },
 
-    async hasAppAccess(session, app): Promise<boolean> {
-      // The org the session acts under must be the org the app belongs to —
-      // otherwise the minted JWT would carry claims for a different org.
-      if (session.orgId !== app.organizationId) return false;
-      if (session.credential?.kind === "pat") {
-        const credentialAppRowId = (session as CredentialBoundSession)
-          .credentialAppRowId;
-        if (credentialAppRowId) {
-          const servedApp = await AppRepository.findByAppSlug(
-            app.appId,
-            app.organizationId,
-          );
-          if (!servedApp || servedApp.id !== credentialAppRowId) return false;
-        }
+    async hasAppAccess(session, app): Promise<boolean | AuthenticatedSession> {
+      if (app.scope === "shared") {
+        // The member's own organization is the one the app serves: the JWT
+        // carries it, and the app scopes its data by it.
+        if (!policy.sharedApps) return false;
+        if (await boundToAnotherApp(session, app)) return false;
+        return isOrganizationActive(session.orgId);
       }
-      return AppAccessRepository.hasAccessByUserAndAppSlug(
+      if (session.orgId === app.organizationId) {
+        if (await boundToAnotherApp(session, app)) return false;
+        if (!(await isOrganizationActive(app.organizationId))) return false;
+        return AppAccessRepository.hasAccessByUserAndAppSlug(
+          session.sub,
+          app.appId,
+          app.organizationId,
+        );
+      }
+      // Another organization's app. A token acts in its own organization
+      // only; a browser session, whose active organization is just the one
+      // the person last chose, acts in the app's through their membership
+      // there, so the JWT never carries claims for a different org.
+      if (session.credential) return false;
+      const membership = await resolveOrgContext({
+        userId: session.sub,
+        activeOrganizationId: app.organizationId,
+      });
+      if (!membership) return false;
+      if (!(await isOrganizationActive(app.organizationId))) return false;
+      const installed = await AppAccessRepository.hasAccessByUserAndAppSlug(
         session.sub,
         app.appId,
         app.organizationId,
       );
+      if (!installed) return false;
+      return {
+        ...session,
+        orgId: membership.orgId,
+        orgRole: membership.role,
+      };
     },
   };
 }
