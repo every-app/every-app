@@ -11,7 +11,8 @@
  * are the deployer's own and read back, and a request to the app's host
  * dispatches through getAppFetcher. A gateway without the launch gate has
  * no deploy API; a member, an access token, a foreign binding and a
- * read-back that doesn't match are refused.
+ * read-back that doesn't match are refused, and a refused redeploy leaves
+ * the app's schema and registry row as they were.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
@@ -55,9 +56,17 @@ import { decodeJwt } from "jose";
 import { HOSTED_DEPLOY_SENTINEL } from "@every-app/perimeter/manifest";
 import { createCloudflareRest } from "@every-app/cf-rest";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
-import { apps, deployJobs, members, organizations, users } from "@/db/schema";
+import {
+  apps,
+  deployJobs,
+  members,
+  organizations,
+  userAccessTokens,
+  users,
+} from "@/db/schema";
 import server, { clearHostnameCacheForTests } from "@/server";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
+import { DeployJobRepository } from "@/server/repositories/DeployJobRepository";
 import { UserPatService } from "@/server/services/UserPatService";
 import { createTestDb } from "@/test/sqlite-db";
 
@@ -543,6 +552,57 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
     expect((await register()).status).toBe(401);
   });
 
+  it("refuses a key holding any scope beside deploy, however its row was written", async () => {
+    // Keys aren't made so; a row written by hand (or by an older gateway) is.
+    await db
+      .update(userAccessTokens)
+      .set({ scopes: JSON.stringify(["*", "deploy"]) })
+      .where(eq(userAccessTokens.scopes, JSON.stringify(["deploy"])));
+    for (const response of [
+      await api("/api/v1/deploy-key"),
+      await register(),
+    ]) {
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        error: "DEPLOY_SCOPE_REQUIRED",
+      });
+    }
+    expect(await row()).toBeUndefined();
+  });
+
+  it("refuses a bundle that drops a live Durable Object class before its migrations run", async () => {
+    await register();
+    expect(((await (await deploy()).json()) as any).job.status).toBe(
+      "succeeded",
+    );
+    const serving = script()!;
+    const withoutSync = { ...TODO, resources: { d1: ["DB"] } };
+    const form = upload(builtWorker(withoutSync), withoutSync);
+    form.set(
+      "migration:0001_more.sql",
+      new File(["CREATE TABLE more (id text PRIMARY KEY);"], "0001_more.sql"),
+    );
+    const response = await deploy(form);
+    const { job } = (await response.json()) as { job: Record<string, any> };
+    expect(job).toMatchObject({
+      status: "failed",
+      error: { code: "BUNDLE_REFUSED" },
+    });
+    expect(job["error"].message).toContain("UserSyncDO");
+
+    // The schema is where the serving version left it.
+    const database = [...account.databases.values()].find(
+      (entry) => entry.name === "every-acme-todo",
+    )!;
+    expect(database.db.all("SELECT name FROM d1_migrations")).toEqual([
+      { name: "0000_init.sql" },
+    ]);
+    expect(
+      database.db.all("SELECT name FROM sqlite_master WHERE name = 'more'"),
+    ).toEqual([]);
+    expect(script()).toBe(serving);
+  });
+
   it("refuses a bundle with a binding outside the allowlist, before anything is created", async () => {
     expect((await register()).status).toBe(201);
     const databases = account.databases.size;
@@ -720,10 +780,15 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
       status: "running",
       createdAt: new Date(),
     });
-    const busy = await deploy();
+    const before = await row();
+    const busy = await deploy(
+      upload(builtWorker(), { ...TODO, name: "Todos, renamed" }),
+    );
     expect(busy.status).toBe(409);
     expect(await busy.json()).toMatchObject({ error: "DEPLOY_IN_PROGRESS" });
     expect(script()).toBeUndefined();
+    // Refused before the row changes: not even its name or updatedAt.
+    expect(await row()).toEqual(before);
 
     // The isolate that ran it is long gone: the job reads as abandoned and
     // the app deploys again.
@@ -739,6 +804,52 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
     expect(((await (await deploy()).json()) as any).job).toMatchObject({
       status: "succeeded",
     });
+  });
+
+  it("answers with the job when its outcome can't be recorded", async () => {
+    await register();
+    const finish = vi
+      .spyOn(DeployJobRepository, "finish")
+      .mockRejectedValueOnce(new Error("D1 is unavailable"));
+    const response = await deploy();
+    expect(response.status).toBe(202);
+    const { job } = (await response.json()) as { job: Record<string, any> };
+    // Uploaded, but unrecorded: it reads abandoned at its deadline.
+    expect(job).toMatchObject({ status: "running", error: null });
+    expect(script()).toBeDefined();
+    expect(console.error).toHaveBeenCalledWith(
+      "deploy job outcome not recorded:",
+      expect.objectContaining({ message: "D1 is unavailable" }),
+    );
+    finish.mockRestore();
+  });
+
+  it("refuses a third-party domain on, under or above the gateway's own", async () => {
+    hoisted.env["APP_BASE_DOMAIN"] = "app.everyapp.com";
+    for (const domain of [
+      "app.everyapp.com",
+      "APP.everyapp.com.",
+      "acme.app.everyapp.com",
+      "everyapp.com",
+    ]) {
+      hoisted.env["THIRD_PARTY_DOMAIN"] = domain;
+      const response = await register();
+      expect(response.status, domain).toBe(503);
+      expect(await response.json()).toMatchObject({
+        error: "DEPLOYER_NOT_CONFIGURED",
+      });
+    }
+    expect(await row()).toBeUndefined();
+
+    hoisted.env["THIRD_PARTY_DOMAIN"] = "everyapp.dev";
+    expect((await register()).status).toBe(201);
+    hoisted.env["THIRD_PARTY_DOMAIN"] = "everyapp.com";
+    const response = await deploy();
+    expect(response.status).toBe(503);
+    expect(await db.select().from(deployJobs)).toMatchObject([
+      { status: "failed" },
+    ]);
+    expect(script()).toBeUndefined();
   });
 
   it("deploys without a third-party domain, with no hostname to open it on", async () => {

@@ -236,7 +236,8 @@ export async function deployToGateway(
     status: job.status === "succeeded" ? "ok" : "start",
     message:
       job.status === "succeeded"
-        ? `Deployed version ${job.app?.versionId}${url ? `; ${manifest.id} goes live at ${url} on its first visit` : ""}.`
+        ? // No browser session reaches a third-party host yet: bearer only.
+          `Deployed version ${job.app?.versionId}${url ? `; ${manifest.id} is at ${url}, open with a bearer token only for now (no browser sign-in on its host yet)` : ""}.`
         : `The gateway is deploying ${manifest.id} (job ${job.id}).`,
     data: { jobId: job.id, versionId: job.app?.versionId ?? null, status: job.status },
   });

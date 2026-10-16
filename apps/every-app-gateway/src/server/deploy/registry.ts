@@ -128,6 +128,30 @@ interface RegisterDispatchAppInput {
   deployerUserId: string;
   /** THIRD_PARTY_DOMAIN, when the gateway has one. */
   thirdPartyDomain: string | null;
+  /** The gateway's own APP_BASE_DOMAIN (appBaseDomain(env)). */
+  appBaseDomain: string | null;
+}
+
+/**
+ * Third-party code never gets a host on, under or above the gateway's own
+ * domain: the gateway's session cookie is scoped there, and a host above it
+ * could set cookies the gateway reads. A sibling under one registrable
+ * domain isn't caught here; the runbook asks for a registrable domain.
+ */
+function assertOwnDomain(domain: string, appBase: string | null): void {
+  const third = domain.replace(/\.$/, "");
+  if (
+    appBase &&
+    (third === appBase ||
+      third.endsWith(`.${appBase}`) ||
+      appBase.endsWith(`.${third}`))
+  ) {
+    throw new DeployError(
+      "DEPLOYER_NOT_CONFIGURED",
+      503,
+      `THIRD_PARTY_DOMAIN (${third}) overlaps the gateway's own domain (${appBase}); third-party apps need a registrable domain of their own.`,
+    );
+  }
 }
 
 /**
@@ -153,6 +177,7 @@ async function register(
 ): Promise<RegistrationPlan> {
   const { organizationId, appSlug } = input;
   const domain = input.thirdPartyDomain?.trim().toLowerCase() || null;
+  if (domain) assertOwnDomain(domain, input.appBaseDomain);
   const orgKey = await orgKeyFor(organizationId);
   const stored = await findOrgApp(organizationId, appSlug);
   const existingApp = stored ? toAppRow(stored) : null;

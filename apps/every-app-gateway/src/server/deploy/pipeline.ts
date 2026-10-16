@@ -2,13 +2,15 @@
  * One deploy of a third-party app, after the route checked the caller,
  * registered the app and started its job:
  *
- *   1. check the bundle against the hosted policy (./metadata.ts), before
- *      anything is created;
+ *   1. check the bundle against the hosted policy (./metadata.ts) and the
+ *      live Worker's Durable Object classes, before anything is created:
+ *      every refusal comes before the database changes, as in the
+ *      self-host deploy;
  *   2. find or create the app's D1 databases (only ever its own, through
- *      the resource ledger) and apply its migrations to the migration
- *      binding's database;
- *   3. upload its static assets, then its Worker into the dispatch
- *      namespace with every binding rewritten;
+ *      the resource ledger), upload its static assets and build the
+ *      Worker's metadata with every binding rewritten;
+ *   3. apply its migrations to the migration binding's database, then
+ *      upload its Worker into the dispatch namespace;
  *   4. read the Worker's bindings back and compare them with what was
  *      sent: on any difference the Worker is deleted and the job fails, so
  *      a Worker with bindings the deployer didn't choose never serves;
@@ -32,6 +34,7 @@ import {
   bindingMismatches,
   bundleProblems,
   buildUserWorkerMetadata,
+  durableObjectMigrations,
   type ThirdPartyLimits,
 } from "./metadata";
 import type { DeployerPort } from "./port";
@@ -160,7 +163,8 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
       "The app has no Worker name.",
     );
 
-  // 1. Nothing is created for a bundle that can't go.
+  // 1. Every refusal first: nothing is created, and the database never
+  // changes, for a bundle that can't go.
   const problems = bundleProblems(
     bundle.worker,
     manifest,
@@ -169,10 +173,32 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
   );
   if (problems.length > 0) throw bundleRefused(problems);
   const modules = workerModules(bundle);
+  const bindings = manifest.resources?.d1 ?? [];
+  const migrationBinding =
+    bindings.length > 0
+      ? (manifest.migrations?.binding ?? bindings[0]!)
+      : undefined;
+  if (migrationBinding !== undefined && !bindings.includes(migrationBinding)) {
+    throw bundleRefused([
+      `migrations.binding ${migrationBinding} isn't one of its D1 databases`,
+    ]);
+  }
+  const migrationTag = await deployer.scriptMigrationTag(workerName);
+  const live =
+    migrationTag === undefined ? null : parseStoredManifest(app.manifest);
+  const durableObjects = {
+    liveClasses: (live?.resources?.durableObjects ?? []).map((d) =>
+      String(d.className),
+    ),
+    migrationTag: migrationTag ?? null,
+  };
+  // Refuses a dropped class, or a tag the deployer didn't write, now; the
+  // metadata built below carries the migration itself.
+  durableObjectMigrations(manifest, durableObjects);
 
-  // 2. Its own databases, migrated before its new code goes up.
+  // 2. Its own databases and static assets, which the Worker's upload names.
   const d1: Record<string, { name: string; id: string }> = {};
-  for (const binding of manifest.resources?.d1 ?? []) {
+  for (const binding of bindings) {
     const name = resourceNameFor(workerName, binding);
     const { id } = await ensureAppDatabase(deployer, {
       workerName,
@@ -181,22 +207,6 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
     });
     d1[binding] = { name, id };
   }
-  const bindings = manifest.resources?.d1 ?? [];
-  if (bindings.length > 0) {
-    const migrationBinding = manifest.migrations?.binding ?? bindings[0]!;
-    const database = d1[migrationBinding];
-    if (!database) {
-      throw bundleRefused([
-        `migrations.binding ${migrationBinding} isn't one of its D1 databases`,
-      ]);
-    }
-    await migrate(deployer, database.id, bundle.migrations);
-  }
-
-  // 3. The Worker, every binding the deployer's own.
-  const migrationTag = await deployer.scriptMigrationTag(workerName);
-  const live =
-    migrationTag === undefined ? null : parseStoredManifest(app.manifest);
   const assetsJwt =
     bundle.assets.size > 0
       ? await deployer.uploadAssets(
@@ -209,6 +219,8 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
           ),
         )
       : undefined;
+  // Every binding the deployer's own, built (and checked once more) before
+  // the database changes.
   const metadata = buildUserWorkerMetadata({
     worker: bundle.worker,
     manifest,
@@ -220,15 +232,16 @@ export async function runDeploy(input: DeployInput): Promise<AppRow> {
       identityPublicKey: input.identityPublicKey,
       d1,
       limits,
-      durableObjects: {
-        liveClasses: (live?.resources?.durableObjects ?? []).map((d) =>
-          String(d.className),
-        ),
-        migrationTag: migrationTag ?? null,
-      },
+      durableObjects,
       ...(assetsJwt ? { assetsJwt } : {}),
     },
   });
+
+  // 3. Migrated only now, when nothing but Cloudflare can stop the upload;
+  // then the Worker.
+  if (migrationBinding !== undefined) {
+    await migrate(deployer, d1[migrationBinding]!.id, bundle.migrations);
+  }
   const { versionId } = await deployer.upload(workerName, {
     metadata,
     modules,

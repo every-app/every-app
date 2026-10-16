@@ -304,12 +304,16 @@ export interface DeployTarget {
   assetsJwt?: string;
 }
 
-/** The next Durable Object migration: `everyapp-v<n+1>`. */
-function migrationsFor(
+/**
+ * The next Durable Object migration (`everyapp-v<n+1>`) from the live
+ * Worker's classes and tag; refuses a dropped class or a tag the deployer
+ * didn't write. Exported so the pipeline refuses before it migrates.
+ */
+export function durableObjectMigrations(
   manifest: Manifest,
-  target: DeployTarget,
+  liveWorker: DeployTarget["durableObjects"],
 ): WorkerMigrations | undefined {
-  const live = new Set(target.durableObjects.liveClasses);
+  const live = new Set(liveWorker.liveClasses);
   const classes = durableObjects(manifest).map((d) => d.className);
   const removed = [...live].filter((className) => !classes.includes(className));
   if (removed.length > 0) {
@@ -319,7 +323,7 @@ function migrationsFor(
   }
   const added = classes.filter((className) => !live.has(className));
   if (added.length === 0) return undefined;
-  const tag = target.durableObjects.migrationTag;
+  const tag = liveWorker.migrationTag;
   const number = tag
     ? Number(/^everyapp-v(\d+)$/.exec(tag)?.[1] ?? Number.NaN)
     : 0;
@@ -434,7 +438,7 @@ export function buildUserWorkerMetadata({
   );
   if (problems.length > 0) throw bundleRefused(problems);
   const built = config(worker);
-  const migrations = migrationsFor(manifest, target);
+  const migrations = durableObjectMigrations(manifest, target.durableObjects);
   return {
     main_module: String(built.manifest?.mainModule),
     compatibility_date: String(built.compatibilityDate),

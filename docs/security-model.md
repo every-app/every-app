@@ -617,7 +617,9 @@ hosted gateway's dispatch namespace only through its deploy API
   are verified against a live namespace.
 - **Deploy keys.** A personal access token with the `deploy` scope and
   nothing else (`*` doesn't count), bound to one organization and
-  optionally one app, 30 days by default. Every request checks it live:
+  optionally one app, 30 days by default. Every request checks it live
+  (its scopes included: a row holding any scope beside `deploy` is refused
+  where it is used, not only where keys are made):
   unknown, revoked or expired is a 401; its owner must still be a member
   (not deactivated) and an owner or admin of that organization, which must
   not be suspended; a path naming another organization is a 404, and an
@@ -637,7 +639,11 @@ hosted gateway's dispatch namespace only through its deploy API
   deploy of the app created, is refused; a name claimed by a deploy that
   stopped before recording the id is finished by the next one); its own Durable Object classes (new ones get
   the next `everyapp-v<n>` migration, a dropped one is refused); its
-  assets; version metadata. A bundle declaring anything else is refused
+  assets; version metadata. Every refusal (the policy below, a dropped
+  class, a migration tag the deployer didn't write) comes before any
+  database is created or migrated: the app's D1 migrations run only once
+  the upload's metadata is built, right before the upload, as in the
+  self-host deploy. A bundle declaring anything else is refused
   before anything is registered or created: service bindings to any other
   Worker, dispatch namespaces, another Worker's Durable Objects, KV, R2,
   Hyperdrive, rate limits, the secrets store, mTLS, Workers AI, email,
@@ -658,11 +664,15 @@ hosted gateway's dispatch namespace only through its deploy API
 - **Registry.** Rows are `tier = 'dispatch'`, `scope = 'org'`, the Worker
   `every-<orgKey>-<appId>` (the only name `getAppFetcher` dispatches to),
   the hostname `<appId>-<orgKey>.<THIRD_PARTY_DOMAIN>` (none while the
-  domain is unset: nobody can open the app). An app keeps its tier: the
+  domain is unset: nobody can open the app). A `THIRD_PARTY_DOMAIN` that
+  is `APP_BASE_DOMAIN`, or under or above it, refuses every registration
+  and deploy (`DEPLOYER_NOT_CONFIGURED`). An app keeps its tier: the
   CLI's self-host deploy refuses a dispatch row and the deploy API a
   service-binding one (`APP_TIER_MISMATCH`); a shared app is never a
   dispatch app. Each deploy is a `deploy_jobs` row, one running at a time
-  per app; `deployed_by_actor` is `deploy-key:<token id>`.
+  per app, started before the deploy touches the row (one refused as
+  `DEPLOY_IN_PROGRESS` changes nothing); `deployed_by_actor` is
+  `deploy-key:<token id>`.
 - **The CLI.** Only `EVERYAPP_DEPLOY_TOKEN` sends `everyapp deploy` to the
   deploy API; `EVERYAPP_TOKEN` (a self-hoster's MCP bearer) and
   `EVERYAPP_GATEWAY_URL` alone leave the self-host deploy as it was.

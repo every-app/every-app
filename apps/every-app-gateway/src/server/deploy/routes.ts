@@ -22,6 +22,7 @@ import {
   type Manifest,
 } from "@every-app/perimeter/manifest";
 import type { AppRow } from "@every-app/perimeter/registry";
+import { appBaseDomain } from "@/server/app-hosts";
 import { platformPolicy } from "@/server/platform-policy";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import {
@@ -132,6 +133,7 @@ function register(caller: DeployCaller, manifest: Manifest) {
     manifest,
     deployerUserId: caller.userId,
     thirdPartyDomain: env.THIRD_PARTY_DOMAIN ?? null,
+    appBaseDomain: appBaseDomain(env),
   });
 }
 
@@ -162,6 +164,53 @@ async function registerRoute(request: Request, caller: DeployCaller) {
     kind: plan.kind,
   });
   return json({ app: appView(plan.app) }, plan.kind === "existing" ? 200 : 201);
+}
+
+type JobOutcome = Parameters<typeof DeployJobRepository.finish>[1];
+
+/** A failed job's outcome; an error the deployer didn't name is logged. */
+function failedOutcome(error: unknown): JobOutcome {
+  if (error instanceof DeployError) {
+    return { status: "failed", code: error.code, message: error.message };
+  }
+  console.error("deploy failed:", error);
+  return {
+    status: "failed",
+    code: "DEPLOY_FAILED",
+    message: "The deploy failed in the gateway. Deploy again.",
+  };
+}
+
+/**
+ * Record a job's outcome. One that can't be recorded is logged: the job
+ * stays `running` and reads DEPLOY_ABANDONED at its deadline, and the
+ * request that started it still answers with the job.
+ */
+async function finishJob(
+  id: string,
+  outcome: JobOutcome,
+  fields: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await DeployJobRepository.finish(id, outcome);
+  } catch (error) {
+    console.error("deploy job outcome not recorded:", error);
+    logEvent(
+      "deploy_api.deploy_unrecorded",
+      { ...fields, status: outcome.status },
+      "error",
+    );
+    return;
+  }
+  if (outcome.status === "succeeded") {
+    logEvent("deploy_api.deploy_succeeded", fields);
+  } else {
+    logEvent(
+      "deploy_api.deploy_failed",
+      { ...fields, code: outcome.code },
+      "warn",
+    );
+  }
 }
 
 async function deployRoute(
@@ -201,8 +250,12 @@ async function deployRoute(
   );
   if (problems.length > 0) throw bundleRefused(problems);
   const deployer = CfRestDeployer.fromEnv(env);
-  const { app } = await register(caller, manifest);
-  const job = await DeployJobRepository.start(caller.organizationId, app.id);
+  // The job before the row: a deploy refused as already running leaves the
+  // registry as the running one has it.
+  const job = await DeployJobRepository.start(
+    caller.organizationId,
+    existing.id,
+  );
   if (!job) {
     throw new DeployError(
       "DEPLOY_IN_PROGRESS",
@@ -210,12 +263,17 @@ async function deployRoute(
       `Another deploy of ${appId} is running; wait for it, then deploy again.`,
     );
   }
-  logEvent("deploy_api.deploy_started", {
-    org: caller.organizationId,
-    app: appId,
-    job: job.id,
-  });
+  const fields = { org: caller.organizationId, app: appId, job: job.id };
+  let app: AppRow;
+  try {
+    ({ app } = await register(caller, manifest));
+  } catch (error) {
+    await finishJob(job.id, failedOutcome(error), fields);
+    throw error;
+  }
+  logEvent("deploy_api.deploy_started", fields);
 
+  // Never rejects: the answer is the job, however its outcome was recorded.
   const run = runDeploy({
     app,
     manifest,
@@ -226,35 +284,8 @@ async function deployRoute(
     limits,
     actor: `deploy-key:${caller.tokenId}`,
   }).then(
-    async () => {
-      await DeployJobRepository.finish(job.id, { status: "succeeded" });
-      logEvent("deploy_api.deploy_succeeded", {
-        org: caller.organizationId,
-        app: appId,
-        job: job.id,
-      });
-    },
-    async (error: unknown) => {
-      const known = error instanceof DeployError;
-      if (!known) console.error("deploy failed:", error);
-      await DeployJobRepository.finish(job.id, {
-        status: "failed",
-        code: known ? error.code : "DEPLOY_FAILED",
-        message: known
-          ? error.message
-          : "The deploy failed in the gateway. Deploy again.",
-      });
-      logEvent(
-        "deploy_api.deploy_failed",
-        {
-          org: caller.organizationId,
-          app: appId,
-          job: job.id,
-          code: known ? error.code : "DEPLOY_FAILED",
-        },
-        "warn",
-      );
-    },
+    () => finishJob(job.id, { status: "succeeded" }, fields),
+    (error: unknown) => finishJob(job.id, failedOutcome(error), fields),
   );
   waitUntil(run);
   let timer: ReturnType<typeof setTimeout> | undefined;

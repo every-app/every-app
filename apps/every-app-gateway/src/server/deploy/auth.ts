@@ -43,7 +43,9 @@ export async function authenticateDeployKey(
       "The deploy key is unknown, revoked or expired. Create one in Admin → Tokens (Deploy key).",
     );
   }
-  if (!pat.scopes.includes(DEPLOY_SCOPE)) {
+  // Deploy-only, checked where the key is used and not only where it is
+  // made: a row with any other scope beside `deploy` isn't a deploy key.
+  if (pat.scopes.length !== 1 || pat.scopes[0] !== DEPLOY_SCOPE) {
     throw new DeployError(
       "DEPLOY_SCOPE_REQUIRED",
       403,

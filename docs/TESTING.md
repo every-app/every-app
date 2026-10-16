@@ -125,13 +125,17 @@ migrated, the namespaced Worker's bindings are the deployer's own (none
 of the sentinel values left) and read back, and a request to its host
 dispatches through getAppFetcher with the Worker's audience. It refuses
 without the gate (and on a self-hosted gateway), a member's key, an access
-token, another organization, a bundle with a binding outside the
-allowlist (before anything is created), a stamp below the protocol floor,
-a key bound to another app, a second deploy while one runs (until it is
-past its deadline), and a database with the app's name that no deploy of
-it created; it deletes the Worker when the bindings read back differ,
-finishes a database a failed create left claimed (made by Cloudflare or
-not), and deploys without a third-party domain (no hostname).
+token, a key holding any scope beside `deploy`, another organization, a
+bundle with a binding outside the allowlist (before anything is created),
+a bundle dropping a live Durable Object class (before its migrations run),
+a stamp below the protocol floor, a key bound to another app, a second
+deploy while one runs (leaving the row untouched, until it is past its
+deadline), a third-party domain on, under or above `APP_BASE_DOMAIN`, and
+a database with the app's name that no deploy of it created; it deletes
+the Worker when the bindings read back differ, answers with the job when
+its outcome can't be recorded, finishes a database a failed create left
+claimed (made by Cloudflare or not), and deploys without a third-party
+domain (no hostname).
 `metadata.test.ts` covers the allowlist, Durable Object migrations and the
 read-back comparison (fields Cloudflare adds pass, changed or missing ones
 don't); the CLI side, `everyapp deploy --gateway` with

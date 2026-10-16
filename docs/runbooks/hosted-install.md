@@ -207,14 +207,19 @@ gateway`):
 
 - `CF_DEPLOY_TOKEN`: an API token for this account with Workers for
   Platforms (Workers Scripts) edit and D1 edit.
-- `CLOUDFLARE_ACCOUNT_ID`: the account the namespace is in.
 - `DISPATCH_NAMESPACE`: the namespace's name; the Gateway's `DISPATCHER`
   binding (added to the hosted install with the namespace, with
   `outbound = { service = "every-app-gateway", entrypoint = "Outbound",
   parameters = ["everyapp"] }`) must name the same one.
 - `THIRD_PARTY_DOMAIN`: the registrable domain apps are named on
-  (`<app>-<orgKey>.everyapp.dev`), never `app.everyapp.com`. Unset, apps
-  deploy but get no hostname.
+  (`<app>-<orgKey>.everyapp.dev`), never `app.everyapp.com`: one that is,
+  or is under or above, `APP_BASE_DOMAIN` makes every registration and
+  deploy answer `DEPLOYER_NOT_CONFIGURED`. Unset, apps deploy but get no
+  hostname.
+
+The deployer's account is the Gateway's own `CLOUDFLARE_ACCOUNT_ID`, which
+the install writes (`secret set` refuses it): the namespace must be in the
+Gateway's account.
 
 The gate itself, `THIRD_PARTY_DEPLOYS=on`, is never set by the CLI: set it
 by hand on the `every-app-gateway` Worker once the checks above pass, and
