@@ -1471,6 +1471,9 @@ describe("delete", () => {
 
 describe("deploy with no Gateway in the account yet", () => {
   beforeEach(() => {
+    // GitHub Actions sets CI, which hides the owner link from `setup`;
+    // these runs stand in for a person at a terminal.
+    vi.stubEnv("CI", "");
     account = new FakeCloudflare();
     worker = new GatewayWorker(account);
   });
