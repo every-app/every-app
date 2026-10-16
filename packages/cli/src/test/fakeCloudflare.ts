@@ -8,7 +8,10 @@
  * deploy publishes its Worker's Custom Domains the way Cloudflare does (the
  * whole list, taken from other Workers, each with its own certificate pack
  * that outlives it) and creates or takes over the Workflows the Worker
- * defines. Nothing is spawned or sent.
+ * defines. `api.fetch` is the account's REST API, for the hosted
+ * deployer: Workers for Platforms dispatch namespaces (`dispatchNamespaces`),
+ * D1 and the account's Workers (fakeCloudflareApi.ts). Nothing is spawned
+ * or sent.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -18,6 +21,7 @@ import { APP_BINDING_PREFIX } from "@every-app/perimeter/manifest";
 import { FakeCf, type FakeCfResponse, type RecordedCfCall } from "@/lib/cf/fakeCf";
 import { loadEveryAppManifest, type EveryAppCliManifest } from "@/lib/manifest";
 import { createSqliteD1, sqliteD1Script, type SqliteD1 } from "./sqliteD1";
+import { FakeCloudflareApi, type FakeDispatchNamespace } from "./fakeCloudflareApi";
 
 export const ACCOUNT_ID = "0123456789abcdef0123456789abcd01";
 
@@ -175,6 +179,17 @@ export class FakeCloudflare {
   /** Hostname → the Worker it is a Custom Domain of. */
   readonly customDomains = new Map<string, string>();
   readonly certificatePacks: FakeCertificatePack[] = [];
+  /** Workers for Platforms dispatch namespaces, by name, with their scripts. */
+  readonly dispatchNamespaces = new Map<string, FakeDispatchNamespace>();
+  /** The REST API over this account; `api.fetch` is what a client calls. */
+  readonly api = new FakeCloudflareApi({
+    accountId: ACCOUNT_ID,
+    databases: this.databases,
+    workers: this.workers,
+    dispatchNamespaces: this.dispatchNamespaces,
+    createDatabase: (name) => this.createDatabase(name),
+    nextId: () => (this.counter += 1),
+  });
   private counter = 0;
 
   constructor() {

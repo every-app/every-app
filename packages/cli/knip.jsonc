@@ -7,6 +7,7 @@
   ],
   "ignoreDependencies": [
     // Workspace source imports are followed by Knip but not credited as package usage.
+    "@every-app/cf-rest",
     "@every-app/perimeter",
     "@every-app/sdk",
     "@every-app/toolbus",

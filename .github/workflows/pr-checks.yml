@@ -56,7 +56,7 @@ jobs:
       - name: Fail on critical advisories in committed lockfiles
         run: |
           failed=0
-          for project in apps/every-app-gateway apps/mobile-native landing-page packages/cli packages/perimeter packages/sdk packages/toolbus; do
+          for project in apps/every-app-gateway apps/mobile-native landing-page packages/cf-rest packages/cli packages/perimeter packages/sdk packages/toolbus; do
             echo "::group::$project"
             pnpm -C "$project" audit --audit-level critical || failed=1
             echo "::endgroup::"

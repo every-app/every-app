@@ -1,0 +1,28 @@
+{
+  "name": "@every-app/cf-rest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "types:check": "tsc --noEmit && tsc -p tsconfig.worker.json --noEmit",
+    "format:check": "prettier --check .",
+    "format:write": "prettier . --write",
+    "knip": "knip",
+    "test": "vitest run --silent",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251014.0",
+    "@types/node": "^22.18.13",
+    "knip": "^5.66.4",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.6"
+  }
+}
