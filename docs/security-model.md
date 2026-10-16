@@ -17,6 +17,13 @@
   each one against the same policy as the app's Worker (private, no routes
   or domains, only the app's own resources, Workflows named after the app's
   Worker) and refuses a built Worker the manifest doesn't declare.
+  A Hyperdrive binding is allowed only to a config the deploy provisioned
+  for the app (`<app worker>--<binding>`, recorded in the app's resource
+  ledger): created from, or adopted only when it connects to, the origin in
+  the app's `.everyapp/secrets.env`, so binding it gives the app no database
+  it couldn't already reach. The origin URL reaches `cf` and drizzle-kit only
+  in a private file or the environment, never argv or output. The dispatch
+  tier refuses Hyperdrive (`manifestTierProblems`).
 
 ## Deployment Mode
 

@@ -10,6 +10,7 @@ import {
   registryWorkerNameFor,
   resourceNameFor,
   isReservedAppId,
+  manifestTierProblems,
 } from "./manifest";
 
 describe("validateManifest", () => {
@@ -573,5 +574,110 @@ describe("helper Workers", () => {
     ],
   ])("refuses %s", (_case, manifest, problem) => {
     expect(() => validateManifestStrict(manifest)).toThrow(problem);
+  });
+});
+
+describe("Postgres, Hyperdrive and Worker limits", () => {
+  const openseo = {
+    id: "openseo",
+    resources: {
+      kv: ["KV"],
+      hyperdrive: [
+        { name: "HYPERDRIVE" },
+        { name: "CRAWL_DB", worker: "audit" },
+      ],
+    },
+    workers: [
+      { name: "audit", binding: "AUDIT_ENGINE", limits: { cpuMs: 300_000 } },
+    ],
+    database: { provider: "postgres", region: "aws:us-east-1" },
+    limits: { cpuMs: 30_000 },
+    migrations: {
+      engine: "drizzle",
+      dialect: "postgresql",
+      dir: "drizzle/pg",
+      config: "drizzle/pg.config.ts",
+    },
+  };
+
+  it("accepts Hyperdrive for the app's Workers, a Postgres database and CPU limits", () => {
+    expect(validateManifestStrict(openseo)).toEqual(openseo);
+    expect(validateManifest(openseo)).toEqual(openseo);
+  });
+
+  it.each([
+    [
+      "a Hyperdrive config bound by an undeclared helper",
+      {
+        resources: { hyperdrive: [{ name: "HYPERDRIVE", worker: "crawler" }] },
+      },
+      /Hyperdrive HYPERDRIVE is bound by Worker "crawler"/,
+    ],
+    [
+      "a Hyperdrive binding that isn't an identifier",
+      { resources: { hyperdrive: [{ name: "hyper-drive" }] } },
+      /resources\.hyperdrive\.0\.name/,
+    ],
+    [
+      "a Hyperdrive binding named like a D1 database",
+      { resources: { d1: ["DB"], hyperdrive: [{ name: "DB" }] } },
+      /the binding DB is declared twice/,
+    ],
+    [
+      "Postgres migrations without a Postgres database",
+      { database: { provider: "d1" } },
+      /need database: \{ provider: "postgres" \}/,
+    ],
+    [
+      "Postgres migrations on the d1-sql engine",
+      { migrations: { engine: "d1-sql", dialect: "postgresql", dir: "sql" } },
+      /migrations\.engine: Postgres migrations run on the "drizzle" engine/,
+    ],
+    [
+      "Postgres migrations naming a D1 binding",
+      {
+        migrations: { engine: "drizzle", dialect: "postgresql", binding: "DB" },
+      },
+      /migrations\.binding/,
+    ],
+    [
+      "a drizzle config outside the app",
+      {
+        migrations: {
+          engine: "drizzle",
+          dialect: "postgresql",
+          config: "../pg.config.ts",
+        },
+      },
+      /migrations\.config/,
+    ],
+    [
+      "a CPU limit over Cloudflare's 5 minutes",
+      { limits: { cpuMs: 300_001 } },
+      /limits\.cpuMs/,
+    ],
+    ["an unknown limit", { limits: { memoryMb: 256 } }, /limits/],
+    [
+      "a region that isn't a cloud region",
+      { database: { provider: "postgres", region: "Virginia" } },
+      /database\.region/,
+    ],
+  ])("refuses %s", (_case, change, problem) => {
+    expect(() => validateManifestStrict({ ...openseo, ...change })).toThrow(
+      problem,
+    );
+  });
+
+  it("refuses Hyperdrive on the dispatch tier, and any tier it doesn't know", () => {
+    expect(manifestTierProblems(openseo, "service_binding")).toEqual([]);
+    expect(manifestTierProblems(openseo, "dispatch")).toEqual([
+      expect.stringMatching(/at most 25 configs/),
+    ]);
+    expect(
+      manifestTierProblems({ resources: { kv: ["KV"] } }, "dispatch"),
+    ).toEqual([]);
+    expect(manifestTierProblems({}, "edge")).toEqual([
+      'apps on tier "edge" can\'t be deployed',
+    ]);
   });
 });

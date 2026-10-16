@@ -17,6 +17,18 @@ interface ClassResource {
   readonly worker?: string;
 }
 
+/** A Hyperdrive config, and the helper Worker that alone binds it. */
+interface HyperdriveResource {
+  readonly name: string;
+  /** A helper Worker (`workers`) that alone binds it; every Worker when unset. */
+  readonly worker?: string;
+}
+
+/** Cloudflare's limits for one of the app's Workers. */
+interface WorkerLimits {
+  readonly cpuMs?: number;
+}
+
 /** The fields of `everyapp.config.ts` the Worker definition is built from. */
 export interface EveryAppWorkerManifest {
   id: string;
@@ -26,13 +38,26 @@ export interface EveryAppWorkerManifest {
     kv?: readonly string[];
     durableObjects?: readonly ClassResource[];
     workflows?: readonly ClassResource[];
+    /** Hyperdrive configs, named `<app worker>--<binding>` by the deploy. */
+    hyperdrive?: readonly HyperdriveResource[];
   };
   /**
    * Helper Workers deployed beside the app's Worker as
    * `<app worker>--<name>`, built with {@link everyAppAuxiliaryWorker}.
    * `binding` names the app Worker's service binding to one.
    */
-  workers?: readonly { readonly name: string; readonly binding?: string }[];
+  workers?: readonly {
+    readonly name: string;
+    readonly binding?: string;
+    readonly limits?: WorkerLimits;
+  }[];
+  /**
+   * The database the app's code talks to, which its Workers read as
+   * DATABASE_PROVIDER; deployed Workers run near `region`.
+   */
+  database?: { readonly provider: "d1" | "postgres"; readonly region?: string };
+  /** Cloudflare's limits for the app's own Worker. */
+  limits?: WorkerLimits;
   /** AI providers the app calls through the gateway (`createGatewayFetch()`). */
   providers?: readonly string[];
   /** Capabilities the app calls through the gateway (`integrationFetch()`). */
@@ -99,6 +124,11 @@ export interface KvBinding {
   type: "kv";
   id?: string;
 }
+export interface HyperdriveBinding {
+  type: "hyperdrive";
+  id: string;
+  dev?: { connectionString?: string };
+}
 export interface DurableObjectBinding {
   type: "durable-object";
   worker: string;
@@ -129,6 +159,7 @@ export type EveryAppBinding =
   | SecretBinding
   | D1Binding
   | KvBinding
+  | HyperdriveBinding
   | DurableObjectBinding
   | WorkflowBinding
   | GatewayBinding
@@ -163,6 +194,21 @@ type Workflows<M> = M extends {
   : never;
 
 type HelperWorkers<M> = M extends { workers: readonly (infer H)[] } ? H : never;
+
+/** The Hyperdrive bindings the app's own Worker has: those no helper alone takes. */
+type AppHyperdriveNames<M> = M extends {
+  resources: { hyperdrive: readonly (infer H)[] };
+}
+  ? H extends { worker: string }
+    ? never
+    : H extends { name: infer N extends string }
+      ? N
+      : never
+  : never;
+
+type DatabaseEnv<M> = M extends { database: object }
+  ? { DATABASE_PROVIDER: TextBinding }
+  : unknown;
 
 /**
  * The gateway secrets holding the keys of the AI providers and capabilities
@@ -220,11 +266,18 @@ type SharedEnv = {
 };
 
 /**
+ * Hyperdrive in production; in development only where a local connection
+ * string is set, so `Env` marks each optional.
+ */
+type HyperdriveEnv<M> = { [B in AppHyperdriveNames<M>]: HyperdriveBinding };
+
+/**
  * Bindings in development: the well-known dev identity, as plain text, and
  * the developer's own gateway keys (when set).
  */
 export type EveryAppDevEnv<M> = ResourceEnv<M> &
-  SharedEnv & {
+  SharedEnv &
+  DatabaseEnv<M> & {
     EVERYAPP_DEV: TextBinding;
     EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
@@ -232,7 +285,9 @@ export type EveryAppDevEnv<M> = ResourceEnv<M> &
 
 /** Bindings in production: the deployed identity and the gateway binding. */
 export type EveryAppDeployEnv<M> = ResourceEnv<M> &
-  SharedEnv & {
+  SharedEnv &
+  DatabaseEnv<M> &
+  HyperdriveEnv<M> & {
     EVERYAPP_AUDIENCE: TextBinding;
     EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
@@ -267,6 +322,11 @@ export interface EveryAppObservability {
   issues: { enabled: boolean };
 }
 
+/** Structural copy of cf's targeted placement: run near a cloud region. */
+export interface EveryAppPlacement {
+  region: string;
+}
+
 /** Structural copy of cf's scheduled (cron) trigger. */
 export interface ScheduledTrigger {
   type: "scheduled";
@@ -282,6 +342,10 @@ export interface EveryAppWorkerConfig<M, TEntrypoint> {
   previewUrls: false;
   /** The `crons` option's schedules; absent without any. */
   triggers?: ScheduledTrigger[];
+  /** Near the manifest's `database.region`, once deployed. */
+  placement?: EveryAppPlacement;
+  /** The manifest's `limits`. */
+  limits?: { cpuMs?: number };
   observability: EveryAppObservability;
   /** Either branch, so `Env` marks dev-only and deploy-only bindings optional. */
   env: EveryAppDevEnv<M> | EveryAppDeployEnv<M>;
@@ -322,6 +386,12 @@ const GATEWAY_ENTRYPOINT = "AppGateway";
 const MAX_WORKFLOW_NAME_LENGTH = 64;
 /** Cloudflare's limit on a Worker's name. */
 const MAX_WORKER_NAME_LENGTH = 63;
+/**
+ * Where a developer puts a local Postgres URL for a Hyperdrive binding
+ * (`.dev.vars` or `.env`), the variable wrangler reads for the same.
+ */
+const LOCAL_HYPERDRIVE_PREFIX =
+  "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_";
 
 /**
  * Build the Worker definition for an Every App app from its manifest.
@@ -374,6 +444,7 @@ export function everyAppWorker<
   }
 
   Object.assign(env, storageBindings(manifest, name, deploy));
+  addDatabaseBindings(env, options, name, undefined, deploy);
   // The app binds every class, a helper Worker's in that Worker, and
   // exports only its own.
   const { bindings, exports: ownClasses } = classBindings(
@@ -423,6 +494,7 @@ export function everyAppWorker<
     workersDev: false,
     previewUrls: false,
     ...(triggers.length ? { triggers } : {}),
+    ...runtimeSettings(manifest, manifest.limits, deploy),
     observability: observability(),
     env: env as EveryAppDevEnv<M> | EveryAppDeployEnv<M>,
     exports: exports as EveryAppExports<M>,
@@ -446,6 +518,8 @@ export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
   workersDev: false;
   previewUrls: false;
   triggers?: ScheduledTrigger[];
+  placement?: EveryAppPlacement;
+  limits?: { cpuMs?: number };
   observability: EveryAppObservability;
   env: Record<string, EveryAppBinding>;
   exports: Record<string, DurableObjectExport | WorkflowExport>;
@@ -472,7 +546,8 @@ export function everyAppAuxiliaryWorker<
   options: EveryAppAuxiliaryWorkerOptions<M, TEntrypoint>,
 ): EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
   const { manifest, worker } = options;
-  if (!manifest.workers?.some((helper) => helper.name === worker)) {
+  const helper = manifest.workers?.find((entry) => entry.name === worker);
+  if (!helper) {
     throw new Error(
       `everyapp.config.ts declares no helper Worker "${worker}" in workers.`,
     );
@@ -494,6 +569,7 @@ export function everyAppAuxiliaryWorker<
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
   }
+  addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
   Object.assign(env, bindings);
   addSecrets(env, options, deploy);
@@ -507,6 +583,7 @@ export function everyAppAuxiliaryWorker<
     workersDev: false,
     previewUrls: false,
     ...(triggers.length ? { triggers } : {}),
+    ...runtimeSettings(manifest, helper.limits, deploy),
     observability: observability(),
     env,
     exports,
@@ -615,6 +692,79 @@ function storageBindings(
     }
   }
   return env;
+}
+
+/**
+ * DATABASE_PROVIDER and the Hyperdrive configs one of the app's Workers
+ * binds: each config every Worker shares, and those a helper (`forWorker`)
+ * alone takes. Deployed, each is the config the deploy provisioned; in
+ * development, a local Postgres URL set as
+ * CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_<binding>, or nothing.
+ */
+function addDatabaseBindings(
+  env: Record<string, EveryAppBinding>,
+  options: Pick<
+    EveryAppWorkerOptions<EveryAppWorkerManifest, unknown>,
+    "manifest" | "root" | "ctx"
+  >,
+  appWorker: string,
+  forWorker: string | undefined,
+  deploy: EveryAppDeployInputs | undefined,
+): void {
+  const { manifest } = options;
+  if (manifest.database) {
+    env["DATABASE_PROVIDER"] = {
+      type: "text",
+      value: manifest.database.provider,
+    };
+  }
+  const configs = (manifest.resources?.hyperdrive ?? []).filter(
+    (config) => config.worker === undefined || config.worker === forWorker,
+  );
+  if (configs.length === 0) return;
+  const local = deploy
+    ? {}
+    : localEnv(
+        options.root ?? process.cwd(),
+        options.ctx.mode ?? "development",
+      );
+  for (const config of configs) {
+    if (env[config.name]) {
+      throw new Error(
+        `hyperdrive: ${config.name} reuses a binding name the Worker already has.`,
+      );
+    }
+    if (deploy) {
+      const provisioned = deploy.resources.hyperdrive?.[config.name];
+      if (!provisioned) throw missingResource("Hyperdrive config", config.name);
+      env[config.name] = { type: "hyperdrive", id: provisioned.id };
+      continue;
+    }
+    const connectionString = local[`${LOCAL_HYPERDRIVE_PREFIX}${config.name}`];
+    if (connectionString) {
+      env[config.name] = {
+        type: "hyperdrive",
+        id: localD1Id(appWorker, config.name),
+        dev: { connectionString },
+      };
+    }
+  }
+}
+
+/**
+ * The placement and limits of one of the app's Workers: deployed, it runs
+ * near the database's region; its CPU limit is the manifest's.
+ */
+function runtimeSettings(
+  manifest: EveryAppWorkerManifest,
+  limits: WorkerLimits | undefined,
+  deploy: EveryAppDeployInputs | undefined,
+): { placement?: EveryAppPlacement; limits?: { cpuMs?: number } } {
+  const region = manifest.database?.region;
+  return {
+    ...(deploy && region ? { placement: { region } } : {}),
+    ...(limits?.cpuMs !== undefined ? { limits: { cpuMs: limits.cpuMs } } : {}),
+  };
 }
 
 /**
@@ -830,6 +980,15 @@ function locallySetSecrets(
   names: readonly string[],
 ): string[] {
   if (names.length === 0) return [];
+  const values = localEnv(root, mode);
+  return names.filter((name) => values[name]);
+}
+
+/** The values local dev sees, read as the Vite plugin reads them. */
+function localEnv(
+  root: string,
+  mode: string,
+): Record<string, string | undefined> {
   const read = (name: string): Record<string, string | undefined> => {
     const file = path.join(root, name);
     return fs.existsSync(file) ? parseEnv(fs.readFileSync(file, "utf8")) : {};
@@ -837,7 +996,7 @@ function locallySetSecrets(
   const devVars = [`.dev.vars.${mode}`, ".dev.vars"].find((name) =>
     fs.existsSync(path.join(root, name)),
   );
-  const values: Record<string, string | undefined> = devVars
+  return devVars
     ? read(devVars)
     : {
         ...read(".env"),
@@ -846,7 +1005,6 @@ function locallySetSecrets(
         ...read(`.env.${mode}.local`),
         ...process.env,
       };
-  return names.filter((name) => values[name]);
 }
 
 /** The dev Worker name, e.g. "todo" -> "every-todo". */

@@ -150,3 +150,23 @@ export const D1RawOutput = z.array(
       .nullish(),
   }),
 );
+
+/**
+ * `cf hyperdrive create`, and each entry of `cf hyperdrive list`: the
+ * config and where it connects (never the password, which the API keeps).
+ */
+export const HyperdriveConfigOutput = z.looseObject({
+  id: z.string(),
+  name: z.string(),
+  origin: z
+    .looseObject({
+      host: z.string().nullish(),
+      port: z.number().nullish(),
+      database: z.string().nullish(),
+      user: z.string().nullish(),
+      scheme: z.string().nullish(),
+    })
+    .nullish(),
+});
+export type HyperdriveConfig = z.infer<typeof HyperdriveConfigOutput>;
+export const HyperdriveConfigListOutput = z.array(HyperdriveConfigOutput);

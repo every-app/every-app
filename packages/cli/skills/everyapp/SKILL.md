@@ -30,6 +30,11 @@ Shared:  hosted Gateway only, platform organization owners/admins, when the
          --worker <name> --shared --manifest <everyapp.config.ts> --json
          (WORKER_NAME_MISMATCH names the Worker name to deploy under).
 Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--local] --json
+Postgres: an app with resources.hyperdrive or migrations.dialect "postgresql"
+         reads POSTGRES_DATABASE_URL (and <BINDING>_ORIGIN_URL) from
+         .everyapp/secrets.env, which the user writes; never print, commit or
+         ask for its values in chat. deploy runs drizzle-kit migrate before
+         the upload.
 Secrets: pnpm everyapp secret set NAME --from-env VAR -y --json   (redeploys the app)
          secret unset NAME, secret list; add --for gateway for the Gateway's settings
 Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,

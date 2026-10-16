@@ -111,6 +111,42 @@ gateway as the app. `everyapp deploy` checks and uploads helpers before the
 app's Worker, and `everyapp delete --purge` deletes them, and the Workflows
 they run, with it. A class stays in the Worker that first defined it.
 
+## Postgres through Hyperdrive
+
+An app whose data lives in Postgres declares the database and a
+[Hyperdrive](https://developers.cloudflare.com/hyperdrive/) config, and
+migrates it with drizzle:
+
+```ts
+resources: { hyperdrive: [{ name: "HYPERDRIVE" }] },
+database: { provider: "postgres", region: "aws:us-east-1" },
+migrations: { engine: "drizzle", dialect: "postgresql", dir: "drizzle/pg", config: "drizzle/pg.config.ts" },
+workers: [{ name: "audit", limits: { cpuMs: 300_000 } }],
+limits: { cpuMs: 30_000 },
+```
+
+Every one of the app's Workers binds `env.HYPERDRIVE` (a config with
+`worker: "<helper>"` binds only that helper) and reads `DATABASE_PROVIDER`
+(`"postgres"`); deployed, they run near `database.region`. `limits.cpuMs`
+raises a Worker's CPU time per invocation, up to 5 minutes. `everyapp
+deploy` reads the database's URL from `.everyapp/secrets.env`, which it
+never uploads or prints:
+
+```sh
+POSTGRES_DATABASE_URL=postgres://<user>:<password>@<host>:<port>/<database>
+# optional: the origin a binding's config connects to, when it isn't that one
+HYPERDRIVE_ORIGIN_URL=postgres://<app user>:<password>@<host>:<port>/<database>
+```
+
+It creates the config `every-acme-seo--hyperdrive` from it, or adopts one of
+that name that connects to the same database, runs `drizzle-kit migrate`
+(your config reads `process.env.POSTGRES_DATABASE_URL`) before it uploads, and
+`everyapp delete --purge` deletes the config, never the database. In
+development, set `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE`
+in `.dev.vars` to a local Postgres; without it the binding is absent. Apps on
+the dispatch tier (customer code in a Workers for Platforms namespace) can't
+use Hyperdrive.
+
 ## Agent tools
 
 `defineTools()` describes the actions an app offers to AI clients (Claude,

@@ -35,10 +35,11 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
 /**
  * The binding types an app may use. Everything else is refused until the
  * model covers it: most reach account-wide resources by id or name (another
- * app's queue, Hyperdrive config, dispatch namespace, private network,
- * secrets store, rate-limit counters, …), or account-wide capabilities the
- * gateway is meant to broker (Workers AI, email). Buckets and Workflows are
- * allowed only under the app's own names.
+ * app's queue, dispatch namespace, private network, secrets store,
+ * rate-limit counters, …), or account-wide capabilities the gateway is
+ * meant to broker (Workers AI, email). Buckets and Workflows are allowed
+ * only under the app's own names, and Hyperdrive configs only as the ones
+ * the deploy provisioned.
  */
 const ALLOWED_BINDINGS = new Set([
   "text",
@@ -52,6 +53,7 @@ const ALLOWED_BINDINGS = new Set([
   "durable-object",
   "workflow",
   "worker",
+  "hyperdrive",
 ]);
 
 /**
@@ -191,6 +193,9 @@ function bindingProblems(
   const appWorkers = new Set([workerName, ...helperWorkers]);
   const d1Ids = new Set(Object.values(resources.d1 ?? {}).map((d1) => d1.id));
   const kvIds = new Set(Object.values(resources.kv ?? {}).map((kv) => kv.id));
+  const hyperdriveIds = new Set(
+    Object.values(resources.hyperdrive ?? {}).map((config) => config.id),
+  );
   for (const [name, binding] of Object.entries(env)) {
     if (!ALLOWED_BINDINGS.has(String(binding.type))) {
       problems.push(
@@ -221,6 +226,12 @@ function bindingProblems(
       case "kv":
         if (!kvIds.has(String(binding["id"]))) {
           problems.push(`${name} isn't a KV namespace the deploy provisioned`);
+        }
+        break;
+      // A config holds a database's credentials: only the app's own.
+      case "hyperdrive":
+        if (!hyperdriveIds.has(String(binding["id"]))) {
+          problems.push(`${name} isn't a Hyperdrive config the deploy provisioned`);
         }
         break;
       case "r2": {

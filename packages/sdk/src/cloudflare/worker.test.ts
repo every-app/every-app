@@ -21,6 +21,7 @@ import {
   type DurableObjectExport,
   type EveryAppDeployInputs,
   type EveryAppDevEnv,
+  type HyperdriveBinding,
   type KvBinding,
   type ServiceBinding,
   type WorkflowBinding,
@@ -970,5 +971,175 @@ describe("helper Workers", () => {
         root,
       }),
     ).toThrow(/declares no helper Worker "crawler"/);
+  });
+});
+
+describe("Postgres through Hyperdrive", () => {
+  const seo = {
+    id: "seo",
+    resources: {
+      kv: ["KV"],
+      hyperdrive: [
+        { name: "HYPERDRIVE" },
+        { name: "CRAWL_DB", worker: "audit" },
+      ],
+    },
+    workers: [
+      { name: "audit", binding: "AUDIT_ENGINE", limits: { cpuMs: 300_000 } },
+    ],
+    database: { provider: "postgres", region: "aws:us-east-1" },
+    limits: { cpuMs: 60_000 },
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: seo,
+      entrypoint,
+      ctx: { mode },
+      root,
+    });
+    const { entrypoint: _audit, ...audit } = everyAppAuxiliaryWorker({
+      manifest: seo,
+      worker: "audit",
+      entrypoint: "/app/src/audit.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, audit };
+  };
+
+  it("binds each Worker's provisioned configs, near the database, with its CPU limit", () => {
+    writeDeployInputs({
+      workerName: "every-acme-seo",
+      resources: {
+        kv: { KV: { id: "kv-id" } },
+        hyperdrive: {
+          HYPERDRIVE: { id: "hd-app" },
+          CRAWL_DB: { id: "hd-crawl" },
+        },
+      },
+    });
+    const { app, audit } = build("production");
+    const pick = (config: {
+      env: object;
+      placement?: unknown;
+      limits?: unknown;
+    }) => {
+      const env = config.env as Record<string, unknown>;
+      return {
+        placement: config.placement,
+        limits: config.limits,
+        DATABASE_PROVIDER: env["DATABASE_PROVIDER"],
+        HYPERDRIVE: env["HYPERDRIVE"],
+        CRAWL_DB: env["CRAWL_DB"],
+      };
+    };
+    expect({ app: pick(app), audit: pick(audit) }).toMatchInlineSnapshot(`
+      {
+        "app": {
+          "CRAWL_DB": undefined,
+          "DATABASE_PROVIDER": {
+            "type": "text",
+            "value": "postgres",
+          },
+          "HYPERDRIVE": {
+            "id": "hd-app",
+            "type": "hyperdrive",
+          },
+          "limits": {
+            "cpuMs": 60000,
+          },
+          "placement": {
+            "region": "aws:us-east-1",
+          },
+        },
+        "audit": {
+          "CRAWL_DB": {
+            "id": "hd-crawl",
+            "type": "hyperdrive",
+          },
+          "DATABASE_PROVIDER": {
+            "type": "text",
+            "value": "postgres",
+          },
+          "HYPERDRIVE": {
+            "id": "hd-app",
+            "type": "hyperdrive",
+          },
+          "limits": {
+            "cpuMs": 300000,
+          },
+          "placement": {
+            "region": "aws:us-east-1",
+          },
+        },
+      }
+    `);
+  });
+
+  it("binds Hyperdrive in dev only to a local database the developer set", () => {
+    expect(build("development").app.env).not.toHaveProperty("HYPERDRIVE");
+    fs.writeFileSync(
+      path.join(root, ".dev.vars"),
+      "CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE=postgres://dev:dev@localhost:5432/seo\n",
+    );
+    const { app, audit } = build("development");
+    expect(app.env).toMatchObject({
+      DATABASE_PROVIDER: { type: "text", value: "postgres" },
+      HYPERDRIVE: {
+        type: "hyperdrive",
+        id: localD1Id("every-seo", "HYPERDRIVE"),
+        dev: { connectionString: "postgres://dev:dev@localhost:5432/seo" },
+      },
+    });
+    expect(audit.env).toHaveProperty("HYPERDRIVE");
+    expect(audit.env).not.toHaveProperty("CRAWL_DB");
+    // Placement is for the deployed Workers; limits hold in dev too.
+    expect(app).not.toHaveProperty("placement");
+    expect(app.limits).toEqual({ cpuMs: 60_000 });
+  });
+
+  it("types DATABASE_PROVIDER, and Hyperdrive as deploy-only", () => {
+    type Env = ReturnType<
+      typeof everyAppWorker<typeof seo, typeof entrypoint>
+    >["env"];
+    expectTypeOf<
+      Extract<Env, { EVERYAPP_DEV: unknown }>["DATABASE_PROVIDER"]
+    >().toEqualTypeOf<{
+      type: "text";
+      value: string;
+    }>();
+    expectTypeOf<
+      Extract<Env, { EVERYAPP_AUDIENCE: unknown }>["HYPERDRIVE"]
+    >().toEqualTypeOf<HyperdriveBinding>();
+    expectTypeOf<
+      Extract<Env, { EVERYAPP_AUDIENCE: unknown }>
+    >().not.toHaveProperty("CRAWL_DB");
+  });
+
+  it("refuses deploy inputs that miss a Hyperdrive config", () => {
+    writeDeployInputs({
+      workerName: "every-acme-seo",
+      resources: {
+        kv: { KV: { id: "kv-id" } },
+        hyperdrive: { CRAWL_DB: { id: "hd-crawl" } },
+      },
+    });
+    expect(() => build("production")).toThrow(
+      /no Hyperdrive config for binding "HYPERDRIVE"/,
+    );
+  });
+
+  it("leaves a Worker without a database, limits or Hyperdrive as it was", () => {
+    writeDeployInputs();
+    const config = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    expect(config).not.toHaveProperty("placement");
+    expect(config).not.toHaveProperty("limits");
+    expect(config.env).not.toHaveProperty("DATABASE_PROVIDER");
   });
 });

@@ -11,7 +11,8 @@
  * copy extends the app's; and it resolves `out` against the working
  * directory only, so the copy lives in the app's (ignored) `.everyapp/`.
  * It runs after the build (dependencies installed) and before the database
- * or the Worker changes.
+ * or the Worker changes. A Postgres app (migrations.dialect "postgresql")
+ * is checked the same way: generate needs no database.
  */
 import { rmSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -39,7 +40,8 @@ export async function checkSchemaDrift({
 }): Promise<void> {
   // An absent `migrations` field means drizzle (lib/manifest.ts).
   const engine = manifest.migrations?.engine ?? "drizzle";
-  if (!manifest.resources?.d1?.length || engine !== "drizzle") return;
+  const postgres = manifest.migrations?.dialect === "postgresql";
+  if ((!postgres && !manifest.resources?.d1?.length) || engine !== "drizzle") return;
   const skip = (why: string) =>
     out.emit({
       type: "warning",
@@ -55,10 +57,13 @@ export async function checkSchemaDrift({
     skip("drizzle-kit isn't installed in this app (add it to devDependencies)");
     return;
   }
-  const config = await firstFile(cwd, CONFIG_FILES);
+  const named = manifest.migrations?.config;
+  const config = await firstFile(cwd, named ? [named] : CONFIG_FILES);
   if (!config) {
     skip(
-      'This app has no drizzle.config.ts (an app that writes its SQL by hand sets migrations.engine to "d1-sql")',
+      named
+        ? `This app has no ${named} (migrations.config)`
+        : 'This app has no drizzle.config.ts (an app that writes its SQL by hand sets migrations.engine to "d1-sql")',
     );
     return;
   }

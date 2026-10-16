@@ -29,6 +29,17 @@ describe("parseDeployInputs", () => {
     ).toEqual({ d1: {}, kv: {} });
   });
 
+  it("carries Hyperdrive configs only when the deploy provisioned some", () => {
+    const resources = {
+      ...valid.resources,
+      hyperdrive: { HYPERDRIVE: { id: "hd-1" } },
+    };
+    expect(parseDeployInputs({ ...valid, resources }).resources).toEqual(
+      resources,
+    );
+    expect(parseDeployInputs(valid).resources).not.toHaveProperty("hyperdrive");
+  });
+
   it("rejects other schema versions with an upgrade hint", () => {
     expect(() => parseDeployInputs({ ...valid, schema: 2 })).toThrow(
       /schema 2.*Upgrade/,
@@ -41,6 +52,10 @@ describe("parseDeployInputs", () => {
     ["no public keys", { identityPublicKeys: [] }],
     ["a key that isn't a PEM public key", { identityPublicKeys: ["abc"] }],
     ["a D1 entry without an id", { resources: { d1: { DB: { name: "x" } } } }],
+    [
+      "a Hyperdrive entry without an id",
+      { resources: { hyperdrive: { HYPERDRIVE: {} } } },
+    ],
     ["non-string deleted classes", { deletedDurableObjects: [1] }],
   ])("rejects %s", (_label, override) => {
     expect(() => parseDeployInputs({ ...valid, ...override })).toThrow();

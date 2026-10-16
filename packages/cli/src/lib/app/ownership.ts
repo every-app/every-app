@@ -5,7 +5,7 @@
  * the gateway's schema).
  *
  * A resource's name proves nothing: anyone with the account can create a
- * D1 database or Worker named like an app's, and a failed first deploy
+ * D1 database, Hyperdrive config or Worker named like an app's, and a failed first deploy
  * leaves the app registered without having created anything. So an app
  * deploy uses an existing Worker, database or namespace only when it is
  * recorded here as the app's, and `app delete --purge` deletes only what is
@@ -38,7 +38,7 @@ const CREATE_TABLE: D1Statement[] = [
   },
 ];
 
-type ResourceKind = "worker" | "d1" | "kv";
+type ResourceKind = "worker" | "d1" | "kv" | "hyperdrive";
 
 export interface OwnedResource {
   kind: ResourceKind;
@@ -47,10 +47,10 @@ export interface OwnedResource {
    * helper Worker's name (`workers`) for a helper.
    */
   binding: string;
-  /** D1 name, KV title or Worker name. */
+  /** D1 name, KV title, Hyperdrive config name or Worker name. */
   name: string;
   /**
-   * D1 uuid, KV id or Worker name. Null while a create is in flight: the
+   * D1 uuid, KV id, Hyperdrive config id or Worker name. Null while a create is in flight: the
    * name was free when the claim was written, so a resource that has the
    * name now is the one this app created.
    */
@@ -165,7 +165,9 @@ export function describeResource({
       ? "Worker"
       : kind === "d1"
         ? "D1 database"
-        : "KV namespace";
+        : kind === "hyperdrive"
+          ? "Hyperdrive config"
+          : "KV namespace";
   return `${label} "${name}"`;
 }
 

@@ -19,6 +19,7 @@ import {
   findD1,
   findKv,
 } from "@/lib/cf/resources";
+import { deleteHyperdrive } from "@/lib/cf/hyperdrive";
 import type { CfRunner } from "@/lib/cf/runner";
 import { deleteWorker, getWorkerDeployment } from "@/lib/cf/workers";
 import { deleteWorkflow, listWorkflows } from "@/lib/cf/workflows";
@@ -240,7 +241,8 @@ async function purgeApp(
     }
   }
   // The Workers next, the app's before its helpers (it binds their
-  // classes): they bind the databases and namespaces.
+  // classes): they bind the databases, namespaces and Hyperdrive configs
+  // (a config goes; the Postgres database it connects to is never touched).
   const order = (resource: (typeof owned)[number]) =>
     resource.kind !== "worker" ? 2 : resource.binding === "" ? 0 : 1;
   for (const resource of owned.sort((a, b) => order(a) - order(b))) {
@@ -251,6 +253,8 @@ async function purgeApp(
         await deleteWorker(cf, resource.resourceId);
       } else if (resource.kind === "d1") {
         await deleteD1(cf, resource.resourceId);
+      } else if (resource.kind === "hyperdrive") {
+        await deleteHyperdrive(cf, resource.resourceId);
       } else {
         await deleteKv(cf, resource.resourceId);
       }

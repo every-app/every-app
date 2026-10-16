@@ -32,6 +32,7 @@ export interface EveryAppDeployInputs {
   resources: {
     d1?: Record<string, { name: string; id: string }>;
     kv?: Record<string, { id: string }>;
+    hyperdrive?: Record<string, { id: string }>;
   };
   /** Durable Object classes removed from the app; their data is deleted. */
   deletedDurableObjects?: string[];
@@ -91,6 +92,17 @@ export function parseDeployInputs(value: unknown): EveryAppDeployInputs {
         const entry = record(v, `resources.kv.${k}`);
         return { id: string(entry, "id") };
       }),
+      ...(resources["hyperdrive"] !== undefined
+        ? {
+            hyperdrive: mapValues(
+              record(resources["hyperdrive"], "resources.hyperdrive"),
+              (v, k) => {
+                const entry = record(v, `resources.hyperdrive.${k}`);
+                return { id: string(entry, "id") };
+              },
+            ),
+          }
+        : {}),
     },
     ...(shared ? { shared } : {}),
     ...(deleted ? { deletedDurableObjects: deleted } : {}),

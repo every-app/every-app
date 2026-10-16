@@ -222,7 +222,6 @@ describe("appPolicyProblems", () => {
   });
 
   it.each([
-    ["a Hyperdrive config", { type: "hyperdrive", id: "h1" }],
     ["a dispatch namespace", { type: "dispatch-namespace", namespace: "n" }],
     ["a private network", { type: "vpc-service", serviceId: "s1" }],
     ["a secrets store", { type: "secrets-store-secret", storeId: "s", secretName: "x" }],
@@ -245,6 +244,20 @@ describe("appPolicyProblems", () => {
     expect(appPolicyProblems(config, INPUTS).join("\n")).toMatch(
       /OldClass is marked deleted/,
     );
+  });
+
+  it("allows only the Hyperdrive configs the deploy provisioned", async () => {
+    const config = await builtConfig();
+    config["env"].HYPERDRIVE = { type: "hyperdrive", id: "hd-1" };
+    expect(appPolicyProblems(config, INPUTS).join("\n")).toContain(
+      "HYPERDRIVE isn't a Hyperdrive config the deploy provisioned",
+    );
+    expect(
+      appPolicyProblems(config, {
+        ...INPUTS,
+        resources: { ...INPUTS.resources, hyperdrive: { HYPERDRIVE: { id: "hd-1" } } },
+      }),
+    ).toEqual([]);
   });
 
   it("allows buckets named after the app's Worker", async () => {

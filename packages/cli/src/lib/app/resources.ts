@@ -1,6 +1,7 @@
 /**
  * An app's Worker, D1 databases and KV namespaces, under the names its
- * registration assigned (`every-<orgKey>-<appId>[--<binding>]`).
+ * registration assigned (`every-<orgKey>-<appId>[--<binding>]`), and its
+ * Hyperdrive configs, named `<worker>--<binding>` after its Worker.
  *
  * An existing one is used only when the gateway's D1 records it as the
  * app's (./ownership.ts): anything else under the app's name may belong to
@@ -8,7 +9,10 @@
  * the first deploy and on every retry. A new one is recorded as the app's
  * before it is created, so a retry after any failure finds it again.
  */
-import { isReservedName } from "@every-app/perimeter/manifest";
+import {
+  isReservedName,
+  RESOURCE_SEPARATOR,
+} from "@every-app/perimeter/manifest";
 import type { AppResources } from "@every-app/perimeter/registry";
 import type { D1Database } from "@/lib/cf/d1";
 import { CfError } from "@/lib/cf/errors";
@@ -18,12 +22,26 @@ import {
   findD1,
   findKv,
 } from "@/lib/cf/resources";
+import {
+  connectsTo,
+  createHyperdrive,
+  findHyperdrive,
+  updateHyperdriveOrigin,
+} from "@/lib/cf/hyperdrive";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { EveryAppError } from "@/lib/errors";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import type { DeployInputs } from "./deployInputs";
+import {
+  APP_SECRETS_FILE,
+  hyperdriveOriginUrl,
+  hyperdriveOriginVariable,
+  parseOriginUrl,
+  type AppSecrets,
+  type HyperdriveOrigin,
+} from "./deploySecrets";
 import {
   describeResource,
   forgetOwnedResources,
@@ -47,6 +65,8 @@ interface ProvisionOptions {
   /** Said for each resource created, or created again after it was deleted. */
   onCreated?: (description: string) => void;
   onRecreated?: (description: string) => void;
+  /** Said when an existing Hyperdrive config is adopted or pointed at a new origin. */
+  onChanged?: (message: string) => void;
 }
 
 /**
@@ -84,7 +104,11 @@ export async function claimAppWorker(
 }
 
 export async function provisionAppResources(
-  options: ProvisionOptions & { manifest: EveryAppCliManifest },
+  options: ProvisionOptions & {
+    manifest: EveryAppCliManifest;
+    /** The app's secrets file: the origins of its Hyperdrive configs. */
+    secrets?: AppSecrets;
+  },
 ): Promise<DeployInputs["resources"]> {
   const { cf, registration, manifest } = options;
   const owned = await readOwnedResources(
@@ -114,7 +138,151 @@ export async function provisionAppResources(
   for (const binding of manifest.resources?.kv ?? []) {
     kv[binding] = { id: await provision("kv", binding) };
   }
-  return { d1, kv };
+  const configs = manifest.resources?.hyperdrive ?? [];
+  if (configs.length === 0) return { d1, kv };
+  // Every origin is checked before any config is created or changed.
+  const origins = new Map(
+    configs.map(({ name: binding }) => {
+      const origin = hyperdriveOriginUrl(options.secrets ?? {}, manifest, binding);
+      return [
+        binding,
+        origin ? parseOriginUrl(origin.url, origin.variable) : null,
+      ] as const;
+    }),
+  );
+  const hyperdrive: NonNullable<DeployInputs["resources"]["hyperdrive"]> = {};
+  for (const { name: binding } of configs) {
+    hyperdrive[binding] = {
+      id: await provisionHyperdrive({
+        ...options,
+        owned,
+        binding,
+        name: hyperdriveNameFor(registration.workerName, binding),
+        origin: origins.get(binding) ?? null,
+      }),
+    };
+  }
+  return { d1, kv, hyperdrive };
+}
+
+/**
+ * The Hyperdrive config a binding uses, named after the app's Worker:
+ * `every-acme-seo` and `HYPERDRIVE` → `every-acme-seo--hyperdrive`.
+ */
+function hyperdriveNameFor(workerName: string, binding: string): string {
+  return `${workerName}${RESOURCE_SEPARATOR}${binding.toLowerCase().replaceAll("_", "-")}`;
+}
+
+/**
+ * The app's Hyperdrive config for one binding, as for its D1 databases
+ * (./resources.ts provisionOne) with two differences. One not recorded as
+ * the app's is adopted when it connects to the origin in the app's secrets
+ * file: whoever holds that URL holds the database already, so binding the
+ * config gives the app nothing more. And a recorded one whose host, port,
+ * database or user differ from that origin is pointed at it.
+ */
+async function provisionHyperdrive({
+  cf,
+  gatewayDb,
+  registration,
+  owned,
+  binding,
+  name,
+  origin,
+  onCreated,
+  onRecreated,
+  onChanged,
+}: ProvisionOptions & {
+  owned: OwnedResource[];
+  binding: string;
+  name: string;
+  origin: HyperdriveOrigin | null;
+}): Promise<string> {
+  const { workerName } = registration;
+  const resource = { kind: "hyperdrive" as const, binding, name };
+  const description = describeResource(resource);
+  const variable = hyperdriveOriginVariable(binding);
+  const recorded = owned.find(
+    (entry) =>
+      entry.kind === "hyperdrive" &&
+      entry.binding === binding &&
+      entry.name === name,
+  );
+  const existing = await findHyperdrive(cf, name);
+
+  if (recorded?.resourceId) {
+    if (existing?.id === recorded.resourceId) {
+      if (origin && !connectsTo(existing, origin)) {
+        await updateHyperdriveOrigin(cf, existing.id, origin);
+        onChanged?.(`Pointed ${description} at the database in ${APP_SECRETS_FILE}.`);
+      }
+      return existing.id;
+    }
+    if (existing) {
+      throw new EveryAppError(
+        "RESOURCE_REPLACED",
+        `${description} isn't the one this app created (${recorded.resourceId}): that was deleted, and this one was created by someone else since. Delete or rename it, then deploy again.`,
+      );
+    }
+    onRecreated?.(description);
+  } else if (recorded) {
+    // Claimed, then created, but the id never recorded: it's this one.
+    if (existing) {
+      await recordOwnedResource(gatewayDb, workerName, {
+        ...resource,
+        resourceId: existing.id,
+      });
+      return existing.id;
+    }
+  } else if (existing) {
+    if (origin && connectsTo(existing, origin)) {
+      await recordOwnedResource(gatewayDb, workerName, {
+        ...resource,
+        resourceId: existing.id,
+      });
+      onChanged?.(`Adopted ${description}, which connects to the database in ${APP_SECRETS_FILE}.`);
+      return existing.id;
+    }
+    throw new EveryAppError(
+      "RESOURCE_NAME_TAKEN",
+      `A Hyperdrive config named "${name}" already exists in this Cloudflare account, but no deploy of this app created it. To use it, set ${variable} in ${APP_SECRETS_FILE} to the URL of the database it connects to; otherwise delete or rename it, then deploy again.`,
+    );
+  }
+
+  if (!origin) {
+    throw new EveryAppError(
+      "HYPERDRIVE_ORIGIN_MISSING",
+      `${binding} needs a Hyperdrive config, and creating one needs the database it connects to: set ${variable} (or POSTGRES_DATABASE_URL, when it is the app's only config) in ${APP_SECRETS_FILE} to postgres://<user>:<password>@<host>:<port>/<database>, then deploy again.`,
+    );
+  }
+  // Claim the name first: a retry after a create whose id went unrecorded
+  // finds the config by it.
+  await recordOwnedResource(gatewayDb, workerName, {
+    ...resource,
+    resourceId: null,
+  });
+  let id: string;
+  try {
+    id = await createHyperdrive(cf, name, origin);
+  } catch (error) {
+    if (error instanceof CfError && error.kind === "already_exists") {
+      await forgetOwnedResources(gatewayDb, workerName, {
+        kind: "hyperdrive",
+        binding,
+      });
+      throw new EveryAppError(
+        "RESOURCE_NAME_TAKEN",
+        `${description} was created by someone else while this deploy was creating it. Delete or rename it, then deploy again.`,
+      );
+    }
+    throw error;
+  }
+  await recordOwnedResource(gatewayDb, workerName, {
+    ...resource,
+    resourceId: id,
+  });
+  onCreated?.(description);
+  return id;
 }
 
 function assignedName(

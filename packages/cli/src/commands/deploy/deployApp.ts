@@ -9,14 +9,17 @@
  *      the rules in @every-app/perimeter/registry): its Worker, resource
  *      and host names, and for a new app (`pending`, unbound) who can open
  *      it;
- *   3. under the app's deploy lease: find or create its D1 and KV (only
- *      ever the app's own), `cf build` with the deploy inputs (the
+ *   3. under the app's deploy lease: find or create its D1, KV and
+ *      Hyperdrive configs (only ever the app's own; a config from the
+ *      origin in the app's secrets file, lib/app/deploySecrets.ts),
+ *      `cf build` with the deploy inputs (the
  *      gateway's identity key from the install row) and check the built
  *      Worker against the app policy and its Workflows' names (each new or
  *      already the app's), check that its drizzle migrations still describe
  *      its schema (steps/checkSchemaDrift.ts), make sure an unattended run
  *      may replace the Worker, and only then (the lease checked again
- *      before each) migrate D1 (bookmark, then `cf d1 migrations apply`)
+ *      before each) migrate D1 (bookmark, then `cf d1 migrations apply`),
+ *      or Postgres (`drizzle-kit migrate`, lib/migrations/postgres.ts),
  *      and upload it (`cf deploy --prebuilt`, with GATEWAY_URL and
  *      EVERY_APP_ORG_ID in the secrets file; cf creates or updates its
  *      Workflows), so a deploy that can't upload leaves the database alone.
@@ -47,7 +50,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { version as cliVersion } from "../../../package.json";
-import { appBindingName } from "@every-app/perimeter/manifest";
+import {
+  appBindingName,
+  manifestTierProblems,
+} from "@every-app/perimeter/manifest";
 import type { RegistrationPlan } from "@every-app/perimeter/registry";
 import { helperWorkerName } from "@every-app/sdk/cloudflare";
 import { setupDeps, type SetupDeps } from "@/commands/setup/runSetup";
@@ -60,6 +66,12 @@ import {
   readCloudflareConfig,
 } from "@/lib/app/cloudflareConfig";
 import type { DeployInputs } from "@/lib/app/deployInputs";
+import {
+  APP_SECRETS_FILE,
+  POSTGRES_URL_VARIABLE,
+  readAppSecrets,
+  type AppSecrets,
+} from "@/lib/app/deploySecrets";
 import { prepareAppBuildOutput } from "@/lib/app/policy";
 import { assertAppSecretName } from "@/lib/app/secrets";
 import { readOwnedResources, recordUploadedVersion } from "@/lib/app/ownership";
@@ -105,6 +117,7 @@ import {
   resolveMigrationBinding,
   type EveryAppCliManifest,
 } from "@/lib/manifest";
+import { migratePostgres, type DrizzleKitRunner } from "@/lib/migrations/postgres";
 import { migrateRemoteD1 } from "@/lib/migrations/remote";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
@@ -160,6 +173,8 @@ interface DeployAppOptions {
   confirm?: Confirm;
   createCf?: (accountId?: string) => CfRunner;
   installDeps?: typeof installDependencies;
+  /** Runs drizzle-kit for Postgres migrations (default: the app's own). */
+  drizzleKit?: DrizzleKitRunner;
   reconcile?: ReconcileSeams;
   live?: LiveWaitSeams;
 }
@@ -227,6 +242,8 @@ async function deploySteps(
     ...(manifest.resources?.durableObjects ?? []).map((d) => d.name),
     ...(manifest.resources?.workflows ?? []).map((w) => w.name),
     ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
+    ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
+    ...(manifest.database ? ["DATABASE_PROVIDER"] : []),
     "ASSETS",
   ]);
   for (const name of options.unsetSecrets ?? []) assertAppSecretName(name);
@@ -238,6 +255,18 @@ async function deploySteps(
         `${name} is one of ${manifest.id}'s bindings; pick another name for the secret.`,
       );
     }
+  }
+  // What reaches the app's Postgres database, checked before anything is created.
+  const postgresMigrations = manifest.migrations?.dialect === "postgresql";
+  const appSecrets: AppSecrets =
+    postgresMigrations || manifest.resources?.hyperdrive?.length
+      ? await readAppSecrets(cwd)
+      : {};
+  if (postgresMigrations && !appSecrets[POSTGRES_URL_VARIABLE]) {
+    throw new EveryAppError(
+      "POSTGRES_URL_MISSING",
+      `${manifest.id} migrates a Postgres database, and the deploy needs its URL: set ${POSTGRES_URL_VARIABLE} in ${APP_SECRETS_FILE} to postgres://<user>:<password>@<host>:<port>/<database>, then deploy again.`,
+    );
   }
   const cloudflareConfig = await readCloudflareConfig(cwd);
   if (!cloudflareConfig) {
@@ -318,6 +347,13 @@ async function deploySteps(
   const hostname = plan.app.hostname!;
   const workerName = plan.app.workerName!;
   const isNew = plan.kind !== "existing";
+  const tierProblems = manifestTierProblems(manifest, plan.app.tier);
+  if (tierProblems.length > 0) {
+    throw new EveryAppError(
+      "TIER_POLICY",
+      `${manifest.id} can't be deployed as it is: ${tierProblems.join("; ")}.`,
+    );
+  }
   // A person's first line: where this goes, and (secret set|unset) what
   // for. A new app's says who can open it.
   const secretNames = Object.keys(options.secrets ?? {});
@@ -421,6 +457,8 @@ async function deploySteps(
           step: "app.resources",
           message: `${description}, which ${manifest.id} created before, is gone; creating a new, empty one.`,
         }),
+      onChanged: (message: string) =>
+        out.emit({ type: "progress", step: "app.resources", message }),
     };
     // The app's helper Workers (`workers`), named after its own.
     const helpers = (manifest.workers ?? []).map((helper) => ({
@@ -429,7 +467,11 @@ async function deploySteps(
     }));
     await claimAppWorker(ownership);
     for (const helper of helpers) await claimAppWorker(ownership, helper);
-    const resources = await provisionAppResources({ ...ownership, manifest });
+    const resources = await provisionAppResources({
+      ...ownership,
+      manifest,
+      secrets: appSecrets,
+    });
 
     await (options.installDeps ?? installDependencies)({
       cwd,
@@ -530,6 +572,8 @@ async function deploySteps(
       manifest,
       resources,
       accountId,
+      appSecrets,
+      drizzleKit: options.drizzleKit,
     });
 
     // Helper Workers first: the app's Worker binds them, so each must be
@@ -785,6 +829,8 @@ async function migrate({
   manifest,
   resources,
   accountId,
+  appSecrets,
+  drizzleKit,
 }: {
   cf: CfRunner;
   out: EventSink;
@@ -792,7 +838,13 @@ async function migrate({
   manifest: EveryAppCliManifest;
   resources: DeployInputs["resources"];
   accountId: string;
+  appSecrets: AppSecrets;
+  drizzleKit?: DrizzleKitRunner;
 }): Promise<string | null> {
+  if (manifest.migrations?.dialect === "postgresql") {
+    await migratePostgresDatabase({ out, cwd, manifest, appSecrets, drizzleKit });
+    return null;
+  }
   const bindings = manifest.resources?.d1 ?? [];
   if (bindings.length === 0) return null;
   const binding = resolveMigrationBinding(bindings, manifest.migrations);
@@ -836,6 +888,51 @@ async function migrate({
     },
   });
   return changed ? result.rollbackCommand : null;
+}
+
+/** Postgres has no restore point to offer: its own backups are the way back. */
+async function migratePostgresDatabase({
+  out,
+  cwd,
+  manifest,
+  appSecrets,
+  drizzleKit,
+}: {
+  out: EventSink;
+  cwd: string;
+  manifest: EveryAppCliManifest;
+  appSecrets: AppSecrets;
+  drizzleKit?: DrizzleKitRunner;
+}): Promise<void> {
+  if (!(await isDirectory(path.resolve(cwd, manifest.migrations?.dir ?? "drizzle")))) {
+    out.emit({
+      type: "step",
+      step: "app.migrations",
+      status: "skip",
+      message: "No migrations to apply.",
+    });
+    return;
+  }
+  out.emit({
+    type: "step",
+    step: "app.migrations",
+    status: "start",
+    message: "Migrating the app's Postgres database...",
+  });
+  await migratePostgres({
+    cwd,
+    // Checked before anything was created (deploySteps).
+    databaseUrl: appSecrets[POSTGRES_URL_VARIABLE]!,
+    config: manifest.migrations?.config,
+    ...(drizzleKit ? { run: drizzleKit } : {}),
+  });
+  out.emit({
+    type: "step",
+    step: "app.migrations",
+    status: "ok",
+    message: "Migrated the app's Postgres database (drizzle-kit migrate).",
+    data: { dialect: "postgresql" },
+  });
 }
 
 /**

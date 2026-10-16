@@ -43,6 +43,16 @@ const ClassResourceSchema = z.object({
   worker: z.string().optional(),
 });
 
+/**
+ * A Hyperdrive config the app's Workers bind: every one of them, or only
+ * the helper Worker `worker` names. Each is named after the app's Worker
+ * in the account, `<worker>--<binding>`.
+ */
+const HyperdriveResourceSchema = z.object({
+  name: z.string(),
+  worker: z.string().optional(),
+});
+
 export const ResourcesSchema = z
   .object({
     d1: z.array(z.string()).optional(),
@@ -54,6 +64,8 @@ export const ResourcesSchema = z
      * after the app's Worker in the account, `<worker>--<binding>`.
      */
     workflows: z.array(ClassResourceSchema).optional(),
+    /** Hyperdrive configs to a Postgres database the app owns. */
+    hyperdrive: z.array(HyperdriveResourceSchema).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -88,13 +100,49 @@ const ScopesSchemaStrict = ScopesSchema;
 export const MigrationsSchema = z
   .object({
     engine: z.enum(["drizzle", "d1-sql"]),
-    /** Directory of D1 SQL migration files, relative to the app root. */
+    /**
+     * The database the migrations are for: "sqlite" (the default), the D1
+     * database `binding` names; "postgresql", the Postgres database at
+     * POSTGRES_DATABASE_URL in the app's secrets file, which the deploy
+     * migrates with `drizzle-kit migrate` before it uploads.
+     */
+    dialect: z.enum(["sqlite", "postgresql"]).optional(),
+    /** Directory of SQL migration files, relative to the app root. */
     dir: z.string().optional(),
+    /**
+     * The app's drizzle config, relative to the app root, when it isn't
+     * drizzle.config.ts: the schema check and the Postgres migration run
+     * drizzle-kit with it.
+     */
+    config: z.string().min(1).optional(),
     /** D1 binding to migrate. Defaults to the first declared D1 binding. */
     binding: z.string().min(1).optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.dialect === "postgresql") {
+      if (value.engine !== "drizzle") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["engine"],
+          message: 'Postgres migrations run on the "drizzle" engine',
+        });
+      }
+      if (value.binding !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["binding"],
+          message: "binding names a D1 database; Postgres migrations have none",
+        });
+      }
+    }
+    if (value.config !== undefined && !isSafeRelativePath(value.config)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["config"],
+        message: "config must be a relative path without .. segments",
+      });
+    }
     if (value.engine === "d1-sql" && !value.dir?.trim()) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -171,6 +219,34 @@ const CapabilitiesSchemaStrict = z
     }
   });
 
+/**
+ * Cloudflare's limits for one of the app's Workers. `cpuMs` raises the CPU
+ * time an invocation may use (a Workflow step that crawls for minutes, say),
+ * up to Cloudflare's 5 minutes.
+ */
+const WorkerLimitsSchema = z
+  .object({ cpuMs: z.number().int().min(1).max(300_000).optional() })
+  .passthrough();
+
+/**
+ * The database the app's code talks to, which its Workers read as
+ * DATABASE_PROVIDER: its D1 database, or Postgres (through `hyperdrive`).
+ * `region` is the cloud region the database runs in (e.g. "aws:us-east-1"),
+ * where Cloudflare then places the app's Workers.
+ */
+const DatabaseSchema = z
+  .object({
+    provider: z.enum(["d1", "postgres"]),
+    region: z
+      .string()
+      .regex(
+        /^[a-z0-9]+:[a-z0-9-]+$/,
+        'region must be a cloud region such as "aws:us-east-1"',
+      )
+      .optional(),
+  })
+  .passthrough();
+
 /** A helper Worker's short name: kebab-case, so `<worker>--<name>` stays one name. */
 const HelperWorkerNameSchema = z
   .string()
@@ -190,6 +266,7 @@ const HelperWorkerNameSchema = z
 const HelperWorkerSchema = z.object({
   name: HelperWorkerNameSchema,
   binding: z.string().optional(),
+  limits: WorkerLimitsSchema.optional(),
 });
 
 export const AppAccessSchema = z.enum(["everyone", "admins"]);
@@ -241,6 +318,10 @@ export const ManifestSchema = z
     resources: ResourcesSchema.optional(),
     /** Helper Workers deployed beside the app's Worker. Default: none. */
     workers: z.array(HelperWorkerSchema.passthrough()).optional(),
+    /** The database the app's code talks to (DATABASE_PROVIDER). */
+    database: DatabaseSchema.optional(),
+    /** Cloudflare's limits for the app's own Worker (`workers` set theirs). */
+    limits: WorkerLimitsSchema.optional(),
     /** Routes reachable without an authenticated session. Default: none. */
     public: z.array(PublicRouteSchema).optional(),
     /** Provider APIs this app may call through the gateway. Default: none. */
@@ -317,6 +398,11 @@ export const ResourcesSchemaStrict = ResourcesSchema.extend({
   workflows: z
     .array(ClassResourceSchema.extend({ name: BindingNameSchema }).strict())
     .optional(),
+  hyperdrive: z
+    .array(
+      HyperdriveResourceSchema.extend({ name: BindingNameSchema }).strict(),
+    )
+    .optional(),
 }).strict();
 export const ManifestSchemaStrict = ManifestSchema.extend({
   resources: ResourcesSchemaStrict.optional(),
@@ -324,6 +410,7 @@ export const ManifestSchemaStrict = ManifestSchema.extend({
     .array(
       HelperWorkerSchema.extend({
         binding: BindingNameSchema.optional(),
+        limits: WorkerLimitsSchema.strict().optional(),
       }).strict(),
     )
     .optional(),
@@ -331,6 +418,8 @@ export const ManifestSchemaStrict = ManifestSchema.extend({
   scopes: ScopesSchemaStrict.optional(),
   ai: AiPolicySchema.strict().optional(),
   capabilities: CapabilitiesSchemaStrict.optional(),
+  database: DatabaseSchema.strict().optional(),
+  limits: WorkerLimitsSchema.strict().optional(),
 }).strict();
 export type EveryAppManifest = z.infer<typeof ManifestSchemaStrict>;
 
@@ -402,6 +491,7 @@ export function validateManifestStrict(input: unknown): EveryAppManifest {
     assertPublicPathIsSafe(route.path);
   }
   assertHelperWorkersAreDeclared(manifest);
+  assertDatabaseIsConsistent(manifest);
   return manifest;
 }
 
@@ -430,6 +520,60 @@ function assertHelperWorkersAreDeclared(manifest: EveryAppManifest): void {
       );
     }
   }
+  for (const resource of resources?.hyperdrive ?? []) {
+    if (resource.worker !== undefined && !helpers.has(resource.worker)) {
+      throw new ManifestError(
+        `Invalid everyapp.config: Hyperdrive ${resource.name} is bound by Worker "${resource.worker}", which workers doesn't declare.`,
+      );
+    }
+  }
+}
+
+/**
+ * Postgres migrations and the database the code talks to agree, and each
+ * binding name is used once among the app's storage bindings.
+ */
+function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
+  if (
+    manifest.migrations?.dialect === "postgresql" &&
+    manifest.database?.provider !== "postgres"
+  ) {
+    throw new ManifestError(
+      'Invalid everyapp.config: Postgres migrations (migrations.dialect "postgresql") need database: { provider: "postgres" }.',
+    );
+  }
+  const names = new Set<string>();
+  for (const name of [
+    ...(manifest.resources?.d1 ?? []),
+    ...(manifest.resources?.kv ?? []),
+    ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
+  ]) {
+    if (names.has(name)) {
+      throw new ManifestError(
+        `Invalid everyapp.config: the binding ${name} is declared twice in resources.`,
+      );
+    }
+    names.add(name);
+  }
+}
+
+/**
+ * What a manifest asks for that an app on `tier` can't have, as sentences.
+ * The dispatch tier (customer code in a Workers for Platforms namespace)
+ * gets no Hyperdrive: an account holds at most 25 configs, so they are
+ * kept for first-party apps.
+ */
+export function manifestTierProblems(
+  manifest: Pick<Manifest, "resources">,
+  tier: string,
+): string[] {
+  if (tier === "service_binding") return [];
+  if (tier !== "dispatch") return [`apps on tier "${tier}" can't be deployed`];
+  return manifest.resources?.hyperdrive?.length
+    ? [
+        "resources.hyperdrive: Hyperdrive isn't available to apps in a dispatch namespace (an account holds at most 25 configs)",
+      ]
+    : [];
 }
 
 /** Typed identity helper for everyapp.config.ts authors. */

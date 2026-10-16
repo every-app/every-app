@@ -8,7 +8,8 @@
  * deploy publishes its Worker's Custom Domains the way Cloudflare does (the
  * whole list, taken from other Workers, each with its own certificate pack
  * that outlives it) and creates or takes over the Workflows the Worker
- * defines. `api.fetch` is the account's REST API, for the hosted
+ * defines. Hyperdrive configs keep their origin, password apart, as the
+ * API does (it never returns one). `api.fetch` is the account's REST API, for the hosted
  * deployer: Workers for Platforms dispatch namespaces (`dispatchNamespaces`),
  * D1 and the account's Workers (fakeCloudflareApi.ts). Nothing is spawned
  * or sent.
@@ -66,6 +67,19 @@ interface FakeWorkflow {
   scriptName: string;
   className: string;
   instances: Map<string, { status: string; params?: unknown }>;
+}
+
+interface FakeHyperdrive {
+  name: string;
+  origin: {
+    scheme: string;
+    host: string;
+    port: number;
+    database: string;
+    user: string;
+  };
+  /** Kept apart: `list` never shows it, like Cloudflare's API. */
+  password: string;
 }
 
 /** What each `cf workflows instances <action>` makes of an instance. */
@@ -154,6 +168,8 @@ export class FakeCloudflare {
   readonly workers = new Map<string, DeployedWorker>();
   /** Workflows by name: `cf deploy` creates or takes over a Worker's own. */
   readonly workflows = new Map<string, FakeWorkflow>();
+  /** Hyperdrive configs by id. */
+  readonly hyperdrive = new Map<string, FakeHyperdrive>();
   readonly deploys: RecordedDeploy[] = [];
   /** Apps `cf build` can build, by app root. */
   readonly apps = new Map<string, EveryAppCliManifest>();
@@ -390,6 +406,7 @@ export class FakeCloudflare {
         return { stdout: JSON.stringify({ status: "ok", success: true }) };
       })
       .on(["workflows", "instances"], (call) => this.workflowInstances(call))
+      .on(["hyperdrive"], (call) => this.hyperdriveCommand(call))
       .on(["build"], (call) => this.build(call))
       .on(["deploy"], (call) => this.deploy(call));
   }
@@ -440,6 +457,73 @@ export class FakeCloudflare {
       .filter((name) => name.startsWith(APP_BINDING_PREFIX))
       .map((name) => name.slice(APP_BINDING_PREFIX.length))
       .sort();
+  }
+
+  /** A Hyperdrive config, by name. */
+  hyperdriveConfig(name: string): (FakeHyperdrive & { id: string }) | undefined {
+    const entry = [...this.hyperdrive].find(([, config]) => config.name === name);
+    return entry ? { id: entry[0], ...entry[1] } : undefined;
+  }
+
+  /**
+   * `cf hyperdrive list|create|update|delete`: a create or update reads its
+   * body from the `--body @<file>` cf is handed, which holds the password.
+   */
+  private hyperdriveCommand(call: RecordedCfCall): FakeCfResponse {
+    const listed = (id: string, config: FakeHyperdrive) => ({
+      id,
+      name: config.name,
+      origin: config.origin,
+    });
+    const body = () => {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return null;
+      return JSON.parse(call.files[path.basename(file.slice(1))]!) as {
+        name?: string;
+        origin?: FakeHyperdrive["origin"] & { password: string };
+      };
+    };
+    const action = call.args[1];
+    if (action === "list") {
+      const perPage = Number(flag(call.args, "--per-page") ?? "20");
+      const page = Number(flag(call.args, "--page") ?? "1");
+      return {
+        stdout: JSON.stringify(
+          [...this.hyperdrive]
+            .slice((page - 1) * perPage, page * perPage)
+            .map(([id, config]) => listed(id, config)),
+        ),
+      };
+    }
+    if (action === "create") {
+      const request = body();
+      if (!request?.name || !request.origin) return cfError("A body is required");
+      if (this.hyperdriveConfig(request.name)) {
+        return cfError(`A Hyperdrive config named ${request.name} already exists [code: 2017]`);
+      }
+      const { password, ...origin } = request.origin;
+      const id = (this.counter += 1).toString(16).padStart(32, "0");
+      this.hyperdrive.set(id, { name: request.name, origin, password });
+      return { stdout: JSON.stringify(listed(id, this.hyperdrive.get(id)!)) };
+    }
+    const id = call.args[2]!;
+    const config = this.hyperdrive.get(id);
+    if (!config) return cfError(`Hyperdrive config ${id} not found [code: 2005]`);
+    if (action === "update") {
+      const { password, ...origin } = body()?.origin ?? {
+        ...config.origin,
+        password: config.password,
+      };
+      this.hyperdrive.set(id, { ...config, origin, password });
+      return { stdout: JSON.stringify(listed(id, this.hyperdrive.get(id)!)) };
+    }
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This permanently deletes the Hyperdrive config.");
+      if (declined) return declined;
+      this.hyperdrive.delete(id);
+      return { stdout: "{}" };
+    }
+    return cfError(`unknown command hyperdrive ${action}`);
   }
 
   /** `cf workflows instances create|list|get|<status change>`. */
