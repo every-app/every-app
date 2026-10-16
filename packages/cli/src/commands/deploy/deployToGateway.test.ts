@@ -173,7 +173,7 @@ describe("everyapp deploy --gateway (hosted deploy API)", () => {
     // No browser session reaches a third-party host yet: no promise it opens on a visit.
     const done = events.find((e) => e["type"] === "step" && e["step"] === "app.upload" && e["status"] === "ok");
     expect(done?.["message"]).toBe(
-      "Deployed version etag-1; todo is at https://todo-acme.everyapp.dev, open with a bearer token only for now (no browser sign-in on its host yet).",
+      "Deployed version etag-1; todo is at https://todo-acme.everyapp.dev.",
     );
   });
 

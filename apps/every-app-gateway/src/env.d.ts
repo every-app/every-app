@@ -20,12 +20,6 @@ declare namespace Cloudflare {
     // Dev builds default to "self_hosted" (cloudflare.config.ts).
     GATEWAY_DEPLOYMENT_MODE?: "self_hosted" | "hosted";
 
-    // The hosted gateway's requests per organization per UTC day through
-    // the AI proxy (default 200) and the integration proxy (default 500), a
-    // whole number each; anything else is 0. Ignored when self-hosted.
-    AI_PROXY_ORG_DAILY_LIMIT?: string;
-    INTEGRATION_ORG_DAILY_LIMIT?: string;
-
     // "false" keeps the hosted gateway invite-only (the preview launches
     // that way); open sign-up when unset or "true", and any other value is
     // invite-only. Ignored when self-hosted, which is always invite-only.

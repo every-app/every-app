@@ -32,8 +32,7 @@ Shared:  hosted Gateway only, platform organization owners/admins, when the
 Hosted:  third-party apps on a hosted Gateway, only when the user has a deploy
          key: EVERYAPP_DEPLOY_TOKEN=<key> pnpm everyapp deploy --gateway <url> --json
          (no Cloudflare login; EVERYAPP_GATEWAY_URL works too; BUNDLE_REFUSED
-         lists what the hosted policy refuses; the deployed app answers
-         bearer tokens only for now, no browser sign-in on its host)
+         lists what the hosted policy refuses)
 Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--local] --json
 Postgres: an app with resources.hyperdrive or migrations.dialect "postgresql"
          reads POSTGRES_DATABASE_URL (and <BINDING>_ORIGIN_URL) from

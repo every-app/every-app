@@ -17,10 +17,6 @@ describe("platformPolicy", () => {
       thirdPartyLimits: { cpuMs: 0, subrequests: 0, durableObjectClasses: 0 },
       tenantAdminUserActions: true,
       bindingActivation: true,
-      orgDailyCaps: {
-        aiProxyRequests: Infinity,
-        integrationProxyRequests: Infinity,
-      },
       dcr: { perAddress: 20, perGateway: 200 },
       mailDaily: {
         verification: { perAddress: 10, perGateway: 1_000 },
@@ -50,7 +46,6 @@ describe("platformPolicy", () => {
       },
       tenantAdminUserActions: false,
       bindingActivation: true,
-      orgDailyCaps: { aiProxyRequests: 200, integrationProxyRequests: 500 },
       dcr: { perAddress: 200, perGateway: 20_000 },
       mailDaily: {
         verification: { perAddress: 5, perGateway: 2_000 },
@@ -78,7 +73,6 @@ describe("platformPolicy", () => {
         setupClaim: false,
         tenantAdminUserActions: false,
         bindingActivation: false,
-        orgDailyCaps: { aiProxyRequests: 0, integrationProxyRequests: 0 },
         dcr: { perAddress: 0, perGateway: 0 },
         mailDaily: {
           verification: { perAddress: 0, perGateway: 0 },
@@ -143,48 +137,10 @@ describe("platformPolicy", () => {
     ).toBe("self_hosted");
   });
 
-  it("takes the hosted daily caps from the env, and a typo stops traffic", () => {
-    const caps = (overrides: Record<string, string>) =>
-      platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "hosted", ...overrides })
-        .orgDailyCaps;
-    expect(
-      caps({
-        AI_PROXY_ORG_DAILY_LIMIT: "50",
-        INTEGRATION_ORG_DAILY_LIMIT: " 1000 ",
-      }),
-    ).toEqual({ aiProxyRequests: 50, integrationProxyRequests: 1000 });
-    expect(caps({ AI_PROXY_ORG_DAILY_LIMIT: "0" }).aiProxyRequests).toBe(0);
-    expect(caps({ AI_PROXY_ORG_DAILY_LIMIT: "" }).aiProxyRequests).toBe(200);
-    for (const typo of ["-1", "2e3", "lots", "10.5", "Infinity"]) {
-      expect(caps({ INTEGRATION_ORG_DAILY_LIMIT: typo }), typo).toMatchObject({
-        integrationProxyRequests: 0,
-      });
-    }
-  });
-
-  it("never lets an override cap a self-hosted gateway or lift an invalid one", () => {
-    const overrides = {
-      AI_PROXY_ORG_DAILY_LIMIT: "5",
-      INTEGRATION_ORG_DAILY_LIMIT: "5",
-    };
-    expect(
-      platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "self_hosted", ...overrides })
-        .orgDailyCaps,
-    ).toEqual({
-      aiProxyRequests: Infinity,
-      integrationProxyRequests: Infinity,
-    });
-    expect(platformPolicy(overrides).orgDailyCaps).toEqual({
-      aiProxyRequests: 0,
-      integrationProxyRequests: 0,
-    });
-  });
-
   it("is frozen, nested objects included", () => {
     const policy = platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "hosted" });
     expect(Object.isFrozen(policy)).toBe(true);
     expect(Object.isFrozen(policy.dcr)).toBe(true);
-    expect(Object.isFrozen(policy.orgDailyCaps)).toBe(true);
     expect(Object.isFrozen(policy.mailDaily)).toBe(true);
     expect(Object.isFrozen(policy.mailDaily.verification)).toBe(true);
   });

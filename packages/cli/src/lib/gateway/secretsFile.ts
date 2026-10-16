@@ -31,9 +31,6 @@ const SETTABLE_GATEWAY_SECRETS = [
   "CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS",
   "CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN",
   "EMAIL_PASSWORD_SIGN_IN",
-  // The hosted gateway's per-organization daily caps.
-  "AI_PROXY_ORG_DAILY_LIMIT",
-  "INTEGRATION_ORG_DAILY_LIMIT",
   // "false" keeps the hosted gateway's sign-up invite-only.
   "HOSTED_OPEN_SIGNUP",
   // The hosted deploy API's deployer and the third-party domain. Its launch

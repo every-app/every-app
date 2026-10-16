@@ -179,8 +179,8 @@ and tokens alike, and a self-hosted gateway opens a shared row for nobody;
 then the listings: the launcher, the AI-connection consent, the gateway
 `/mcp` catalog (connections that chose the app included) and Admin → Apps
 (read-only elsewhere, no access management). The AppGateway entrypoint's
-attribution of shared apps' calls and the per-organization daily cap are in
-`app-gateway-entrypoint.test.ts`; `deploy --shared` and `register` against
+attribution of shared apps' calls is in `app-gateway-entrypoint.test.ts`
+(and against SQLite in `background-org.sqlite.test.ts`); `deploy --shared` and `register` against
 the fake Cloudflare in `packages/cli/src/commands/register/shared.test.ts`.
 
 ### The gateway's MCP connector and OAuth

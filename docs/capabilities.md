@@ -100,8 +100,8 @@ const { ready } = await integrationStatus({ env, provider: "dataforseo" });
   serves every organization, so its background work passes
   `for: { background: true, organizationId }`, sent as `x-everyapp-org`;
   the gateway accepts it for an active organization with a live member and
-  counts the call against that organization's daily cap. A shared Worker's
-  call that names neither throws `AttributionError`.
+  attributes the call to that organization. A shared Worker's call that
+  names neither throws `AttributionError`.
 - In local dev (`everyapp dev`, no binding) the fetch calls the provider
   directly with the developer's own key from `.dev.vars`, under the same
   name as the gateway secret.

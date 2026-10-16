@@ -66,12 +66,11 @@ interface HandleIntegrationProxyRequestOptions {
   capabilities: Record<string, CapabilityRequest> | undefined;
   env: IntegrationProxyEnv;
   /**
-   * Attribute a call the proxy would forward and count it against its
-   * organization's daily cap; throws to refuse it. Status requests and
-   * calls the proxy refuses on its own never reach it, so they spend
-   * nothing and need no organization.
+   * Attribute a call the proxy would forward to its organization; throws to
+   * refuse it. Status requests and calls the proxy refuses on its own never
+   * reach it, so they need no organization.
    */
-  admit: (capability: CapabilityId) => Promise<IntegrationCallAdmission>;
+  admit: () => Promise<IntegrationCallAdmission>;
   fetchUpstream?: (request: Request) => Promise<Response>;
 }
 
@@ -143,7 +142,7 @@ export async function handleIntegrationProxyRequest({
       `${integration.label} isn't set up on this gateway. Its operator sets ${integration.secret} with: everyapp secret set ${integration.secret} --for gateway`,
     );
   }
-  const { caller, user } = await admit(route.id);
+  const { caller, user } = await admit();
 
   const headers = new Headers(request.headers);
   for (const header of STRIPPED_HEADERS) headers.delete(header);

@@ -3,7 +3,6 @@ import {
   IDENTITY_HEADER,
   ORG_HEADER,
   verifyIdentityJwt,
-  type CapabilityId,
   type EveryAppUser,
 } from "@every-app/sdk/internal";
 import type { AppRegistry, RegisteredApp } from "@every-app/perimeter";
@@ -12,7 +11,6 @@ import {
   handleIntegrationProxyRequest,
   type IntegrationProxyEnv,
 } from "./integration-proxy";
-import { spendOrgDailyCap, type DailyCounters } from "./org-daily-cap";
 import { platformPolicy } from "./platform-policy";
 
 const CALLER_CACHE_MAX_ENTRIES = 500;
@@ -35,8 +33,6 @@ interface AppGatewayEnv extends IntegrationProxyEnv {
   OPENROUTER_API_KEY?: string;
   AI_PROXY_EXTRA_ROUTES?: string;
   GATEWAY_DEPLOYMENT_MODE?: string;
-  AI_PROXY_ORG_DAILY_LIMIT?: string;
-  INTEGRATION_ORG_DAILY_LIMIT?: string;
 }
 
 /**
@@ -54,8 +50,6 @@ interface HandleAppGatewayRequestOptions {
   env: AppGatewayEnv;
   registry: AppRegistry;
   organizations: OrganizationDirectory;
-  /** Where the per-organization daily caps are counted (hosted only). */
-  counters: DailyCounters;
   fetchUpstream?: (request: Request) => Promise<Response>;
 }
 
@@ -68,7 +62,6 @@ type AppGatewayErrorCode =
   | "caller_identity_invalid"
   | "caller_org_mismatch"
   | "caller_org_not_attributable"
-  | "org_daily_cap_exceeded"
   | "provider_not_allowed"
   | "invalid_gateway_route"
   | "caller_registry_unavailable"
@@ -77,9 +70,8 @@ type AppGatewayErrorCode =
 class AppGatewayError extends Error {
   constructor(
     readonly code: AppGatewayErrorCode,
-    readonly status: 401 | 403 | 404 | 429 | 500,
+    readonly status: 401 | 403 | 404 | 500,
     message: string,
-    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "AppGatewayError";
@@ -107,7 +99,6 @@ export async function handleAppGatewayRequest({
   env,
   registry,
   organizations,
-  counters,
   fetchUpstream,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
   try {
@@ -167,7 +158,7 @@ export async function handleAppGatewayRequest({
         request,
         capabilities: app.manifest.capabilities,
         env,
-        admit: async (capability) => {
+        admit: async () => {
           const { organizationId, orgSource, user } = await attributeCall(
             request,
             app,
@@ -175,14 +166,6 @@ export async function handleAppGatewayRequest({
             env,
             organizations,
           );
-          await spendDailyCap(counters, {
-            kind: "integration",
-            organizationId,
-            appId: props.appId,
-            orgSource,
-            capability,
-            limit: policy.orgDailyCaps.integrationProxyRequests,
-          });
           return {
             caller: { organizationId, appId: props.appId, orgSource },
             user,
@@ -217,14 +200,6 @@ export async function handleAppGatewayRequest({
       orgSource,
       attribution: user ? "user" : "app",
       ...(user ? { userId: user.id } : {}),
-    });
-
-    await spendDailyCap(counters, {
-      kind: "ai",
-      organizationId,
-      appId: props.appId,
-      orgSource,
-      limit: policy.orgDailyCaps.aiProxyRequests,
     });
 
     return handleAuthenticatedAiProxyRequest({
@@ -485,60 +460,6 @@ function verifyForwardedIdentity(
   });
 }
 
-/** What each daily cap counts, and how its refusal names it. */
-const DAILY_CAPS = {
-  ai: { budget: "ai-proxy", unit: "AI requests" },
-  integration: { budget: "integration-proxy", unit: "capability calls" },
-} as const;
-
-/**
- * Count the call against its organization's daily cap of its kind (hosted
- * only); a spent cap is 429 until the UTC day ends, and a counter that
- * can't be read refuses too.
- */
-async function spendDailyCap(
-  counters: DailyCounters,
-  {
-    kind,
-    organizationId,
-    appId,
-    orgSource,
-    capability,
-    limit,
-  }: {
-    kind: keyof typeof DAILY_CAPS;
-    organizationId: string;
-    appId: string;
-    orgSource: Attribution["orgSource"];
-    capability?: CapabilityId;
-    limit: number;
-  },
-): Promise<void> {
-  const { budget, unit } = DAILY_CAPS[kind];
-  const decision = await spendOrgDailyCap({
-    counters,
-    budget,
-    organizationId,
-    limit,
-  });
-  if (decision.allowed) return;
-  console.warn("AI gateway daily cap reached", {
-    event: "ai.proxy.daily_cap",
-    budget,
-    organizationId,
-    appId,
-    orgSource,
-    ...(capability ? { capability } : {}),
-    limit: decision.limit,
-  });
-  throw new AppGatewayError(
-    "org_daily_cap_exceeded",
-    429,
-    `This organization has used its ${decision.limit} ${unit} for today.`,
-    decision.retryAfterSeconds,
-  );
-}
-
 async function resolveAttribution(
   request: Request,
   props: AppCallerProps,
@@ -572,9 +493,7 @@ function errorResponse(error: AppGatewayError): Response {
         ? "Forbidden"
         : error.status === 404
           ? "Not Found"
-          : error.status === 429
-            ? "Too Many Requests"
-            : "Internal Server Error";
+          : "Internal Server Error";
   return Response.json(
     {
       error: errorLabel,
@@ -583,12 +502,7 @@ function errorResponse(error: AppGatewayError): Response {
     },
     {
       status: error.status,
-      headers: {
-        [GATEWAY_ERROR_HEADER]: error.code,
-        ...(error.retryAfterSeconds === undefined
-          ? {}
-          : { "retry-after": String(error.retryAfterSeconds) }),
-      },
+      headers: { [GATEWAY_ERROR_HEADER]: error.code },
     },
   );
 }

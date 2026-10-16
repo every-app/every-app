@@ -135,7 +135,7 @@ first upload; ADR-0001) decides what the gateway does, once, in
   A shared app's Worker gets no `EVERY_APP_ORG_ID`: nothing pins it to the
   platform organization.
 - Machine-path attribution: the AppGateway entrypoint decides which
-  organization a provider call (AI proxy or capability) counts against,
+  organization a provider call (AI proxy or capability) is attributed to,
   and logs where it came from (`orgSource`):
   - An organization's own app (`scope = 'org'`: every self-hosted app, and
     dispatched apps) calls for the organization in its binding's
@@ -160,24 +160,20 @@ first upload; ADR-0001) decides what the gateway does, once, in
   - Browsers can't send it: the perimeter strips every inbound
     `x-everyapp-*` (`x-everyapp-org` included) before an app sees the
     request, and the gateway strips it before a provider does.
-  - A capability's status (`GET /api/integrations/<id>`) spends nothing and
-    names no organization's data, so it needs no attribution.
+  - A capability's status (`GET /api/integrations/<id>`) calls no provider
+    and names no organization's data, so it needs no attribution.
   - The SDK's `createGatewayFetch` and `integrationFetch` take `for: request`
     (forward the identity) or `for: { background: true, organizationId }`
     (send `x-everyapp-org`, no identity), and in a shared app's Worker
     (`EVERYAPP_SHARED=1`) throw `AttributionError` for a call that names
     neither. The gateway enforces the rule either way.
-- The hosted gateway caps provider calls per organization per UTC day, AI
-  proxy requests (`orgDailyCaps.aiProxyRequests`, 200 unless
-  `AI_PROXY_ORG_DAILY_LIMIT` says otherwise) and capability calls
-  (`orgDailyCaps.integrationProxyRequests`, 500 unless
-  `INTEGRATION_ORG_DAILY_LIMIT` says otherwise) each on its own counter,
-  counted in D1 (`rate_limit_counters`) against the attributed
-  organization; past one, 429 `org_daily_cap_exceeded` with `Retry-After`
-  until the day ends. Only a capability call the proxy would forward
-  counts (not a status request or a call it refuses itself). A counter
-  that can't be read refuses the call. Self-hosted gateways have no cap and
-  read no counter; an invalid mode allows none.
+- No per-organization usage limits yet, in any mode: every provider call
+  (AI proxy or capability) is attributed to an organization (from the
+  props, the forwarded identity or `x-everyapp-org`, as above) and logged
+  with it, and nothing is counted or refused on volume. Metering (the
+  wallet) is a later feature; until then nothing at the gateway bounds an
+  organization's provider spend, so the hosted preview stays invite-only
+  (`HOSTED_OPEN_SIGNUP=false`).
 
 ## Operator Authority (Self-Host)
 

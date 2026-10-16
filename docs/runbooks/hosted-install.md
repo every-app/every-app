@@ -14,8 +14,9 @@ Gateway a customer self-hosts, with the hosted policy
 - no Cloudflare Access sign-in (its settings are ignored);
 - organization admins manage memberships, never accounts (no deactivating,
   resetting or deleting someone's account from an organization);
-- per-organization daily caps on the AI proxy (200 requests, a 429 with
-  `Retry-After` past it) and the integration proxy (500, with its PR);
+- every AI and capability call attributed to an organization and logged,
+  with no per-organization usage limits yet (metering, the wallet, comes
+  later);
 - third-party deploys stay off (a launch gate, section 5).
 
 Until Google verification and the wallet exist, the preview is invite-only:
@@ -76,10 +77,6 @@ All four are settable (the integration proxy landed in #303).
 
 Optional:
 
-- `AI_PROXY_ORG_DAILY_LIMIT`, `INTEGRATION_ORG_DAILY_LIMIT`: whole numbers
-  replacing the default caps (200 and 500 requests per organization per UTC
-  day). Anything that isn't a whole number stops that proxy for everyone
-  (0), so check the value.
 - `HOSTED_OPEN_SIGNUP`: `false` keeps sign-up invite-only (the preview);
   unset or `true` lets anyone sign up into an organization of their own.
   Any other value is invite-only.
@@ -168,8 +165,8 @@ event's `data.worker` lists what the Worker's own pipeline must give it:
   gateway call that says nobody's.
 
 Provider calls from a shared app say whom they are for. Serving a request,
-they forward its identity (`for: request`): the Gateway counts the call,
-and the daily cap, against that member's organization. Background work
+they forward its identity (`for: request`): the Gateway attributes the
+call to that member's organization. Background work
 (cron, Workflow) names the organization (`for: { background: true,
 organizationId }`, sent as `x-everyapp-org`), which the Gateway accepts
 for an active organization with a live member and refuses with 403

@@ -156,7 +156,7 @@ in its second review at `961ad2b2` and merged as `e328a5ce` after a one-file
 rebase conflict in the CLI's fake Cloudflare; its six findings were fixed in
 #313, each with a test that fails on `e328a5ce`; the remaining nits of #313's
 and #314's reviews go to a host-session follow-ups PR, branch
-`hosted/host-session-followups`, number pending) and merged by a serialized
+`hosted/host-session-followups`, #315, merged as 40090696) and merged by a serialized
 merge step after CI. No lane failed: the build workflow ran 46 agents, plus a
 follow-ups workflow for #308, #313 and open-seo #990. Non-blocking review
 findings went into #308 or into §8. Merge-time repairs, all test-only or
@@ -178,6 +178,38 @@ model state both.
 Grouped by PR. Each is what shipped, why, and how to walk it back. Decisions
 that change no behaviour (names of internal helpers, test layout) are left out;
 the PR bodies have them.
+
+### Walked back on 2026-10-16: the per-organization daily caps
+
+Ben ruled on the evening of 2026-10-16 that per-organization usage limits at
+the gateway are a later feature and must not be on by default, and that the
+caps go from the code entirely rather than staying switchable. #316 removed
+them: the platform policy's `orgDailyCaps` and the `dailyLimit()` override
+parsing (#302), the AI proxy's cap of 200 requests a day (#307), the
+capability proxy's cap of 500 calls a day (#310), `org-daily-cap.ts`, the
+`org_daily_cap_exceeded` 429 with `Retry-After`, and the
+`AI_PROXY_ORG_DAILY_LIMIT` and `INTEGRATION_ORG_DAILY_LIMIT` settings (gateway
+env, `everyapp secret set --for gateway`, docs). Nothing is counted or refused
+on volume in any mode; `rate_limit_counters` stays for the host-session code
+exchange, the dynamic-registration limit and the mail budgets. Walk back:
+revert #316.
+
+Organization attribution stays exactly as #307 and #310 built it: every AI
+and capability call is attributed to an organization (the binding's props, the
+forwarded identity, or a shared Worker's `x-everyapp-org`, with the same 401
+and 403 refusals) and logged with it, because logging needs it now and
+metering (the wallet) will count against it later.
+
+What changes beyond the caps: an invalid deployment mode no longer refuses AI
+and capability calls with 429 (that was a cap of 0); everything else an
+invalid mode turns off stays off. The decisions below that describe the caps
+are history, and the follow-ups that tuned them (deciding them against
+OpenSEO's volume, counting the AI cap atomically, the wallet replacing
+`orgDailyCaps`, the live check of the 429) are void. OpenSEO-side decisions
+that leaned on the caps (open-seo #990: the open plan gates "bounded by the
+gateway's daily cap", the `RATE_LIMITED` mapping of the cap's refusal,
+scheduled checks against the caps) lose that premise; nothing at the gateway
+bounds an organization's provider spend until the wallet.
 
 ### #300 Tenancy hardening
 
@@ -281,6 +313,8 @@ the PR bodies have them.
   `platformOrganizationName: null` for hosted.
 - **A daily-cap override that isn't a whole number means 0** (that proxy stops
   for everyone). Walk back: fall back to the default in `dailyLimit()`.
+  Walked back on 2026-10-16 (§3, "Walked back on 2026-10-16: the
+  per-organization daily caps").
 - **The mode is recorded in `_everyapp_install.deployment_mode` and wins on
   every re-upload** (a deleted gateway Worker comes back hosted); `--mode` must
   match a live gateway's (`MODE_CHANGE_UNSUPPORTED`). Older install tables
@@ -444,6 +478,8 @@ the PR bodies have them.
   then refuses still counts. An unreadable counter is 500; an invalid mode is a
   cap of 0 (429). Walk back: an atomic `UPDATE ... WHERE count < limit` after
   the policy check, and 503.
+  Walked back on 2026-10-16 (§3, "Walked back on 2026-10-16: the
+  per-organization daily caps").
 - **Other organizations see shared apps read-only in Admin → Apps**, labelled
   "Every organization". Walk back: hide them there.
 
@@ -498,6 +534,8 @@ the PR bodies have them.
   sharing `org_daily_cap_exceeded` with the AI cap; an invalid mode refuses
   capability calls with 429. Walk back: a cap per capability, or a `kind` field
   in the body.
+  Walked back on 2026-10-16 (§3, "Walked back on 2026-10-16: the
+  per-organization daily caps").
 
 ### #311 Hosted deploy API (`e328a5ce`)
 
@@ -1070,7 +1108,7 @@ Third-party tier:
   cache or fold the per-request reads; a path for the mobile shell to
   third-party hosts.
 - Review nits of #313 and #314, for a host-session follow-ups PR (branch
-  `hosted/host-session-followups`, number pending):
+  `hosted/host-session-followups`, #315, merged as 40090696):
   `Referrer-Policy: no-referrer` on the code exchange's 303 and on the
   expired-link page; rebuild a WebSocket 101 response after stripping
   third-party headers; log a registration failure after the job started once,

@@ -460,7 +460,9 @@ export function createAuth() {
         // (server/organization/personal-organization.ts). Anyone else who
         // could create one would own it: see its apps, mint personal access
         // tokens and invite outsiders past invite-only sign-up; and on the
-        // hosted gateway, multiply the per-organization daily caps.
+        // hosted gateway, spread its provider calls over organizations of
+        // their own making, the unit those calls are attributed to (and
+        // metered by, once metering exists).
         allowUserToCreateOrganization: false,
         // Invitations are emailed (or handed to the admin as a link when
         // email isn't set up) by InvitationService, not by Better Auth.

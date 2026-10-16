@@ -91,8 +91,6 @@ function call(options: {
       ...(options.env ?? { DATAFORSEO_API_KEY: "login@example.com:secret" }),
     },
     organizations: { isAttributable: async () => true },
-    // A self-hosted gateway has no daily cap, so nothing reads these.
-    counters: { read: async () => new Map(), increment: async () => {} },
     fetchUpstream:
       options.fetchUpstream ?? vi.fn(async () => Response.json({ ok: true })),
   });

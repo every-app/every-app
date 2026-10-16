@@ -235,8 +235,7 @@ passes it through.
 ### Whom a call is for
 
 `createGatewayFetch` and `integrationFetch` take `for`, which decides the
-organization the call counts against (and its daily cap, on the hosted
-gateway):
+organization the call is attributed to:
 
 - `for: request`, the inbound request: the identity the gateway put on it
   is forwarded, so the call is that person's, in their organization.

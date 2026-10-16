@@ -55,9 +55,6 @@ const OPTIONAL_SECRETS = [
   "EMAIL_PASSWORD_SIGN_IN",
   "EVERYAPP_DEV_COOKIE_DOMAIN",
   "APP_BASE_DOMAIN",
-  // The hosted gateway's per-organization daily caps (src/server/platform-policy.ts).
-  "AI_PROXY_ORG_DAILY_LIMIT",
-  "INTEGRATION_ORG_DAILY_LIMIT",
   // The hosted gateway's sign-up switch (src/server/platform-policy.ts).
   "HOSTED_OPEN_SIGNUP",
 ] as const;

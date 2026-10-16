@@ -1,9 +1,8 @@
 /**
  * Background work from a shared app, against a migrated SQLite database:
  * which organizations its `x-everyapp-org` may name (active, with a live
- * member), and the per-organization daily cap on capability calls counted
- * in `rate_limit_counters`, through the AppGateway entrypoint with the
- * repositories the Worker uses.
+ * member), through the AppGateway entrypoint with the repositories the
+ * Worker uses.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
@@ -18,13 +17,12 @@ vi.mock("@/db", async () => {
 import { eq } from "drizzle-orm";
 import { InMemoryAppRegistry } from "@every-app/perimeter";
 import { validateManifest } from "@every-app/perimeter/manifest";
-import { organizations, users } from "@/db/schema";
+import { organizations, rateLimitCounters, users } from "@/db/schema";
 import {
   clearAppCallerCacheForTests,
   handleAppGatewayRequest,
 } from "@/server/app-gateway-entrypoint";
 import { OrganizationRepository } from "@/server/repositories/OrganizationRepository";
-import { RateLimitCounterRepository } from "@/server/repositories/RateLimitCounterRepository";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 
 const SERP =
@@ -105,7 +103,6 @@ describe("background organization attribution (SQLite)", () => {
       },
       env: {
         GATEWAY_DEPLOYMENT_MODE: "hosted",
-        INTEGRATION_ORG_DAILY_LIMIT: "2",
         DATAFORSEO_API_KEY: "login@example.com:secret",
       },
       registry: new InMemoryAppRegistry([
@@ -124,23 +121,31 @@ describe("background organization attribution (SQLite)", () => {
         },
       ]),
       organizations: OrganizationRepository,
-      counters: RateLimitCounterRepository,
       fetchUpstream: async () => Response.json({ ok: true }),
     });
   }
 
-  it("serves a shared app's background work for the organization it names, up to its daily cap", async () => {
-    for (let i = 0; i < 2; i += 1) {
-      const response = await backgroundCall(acme);
+  it("serves a shared app's background work for the organization it names, and counts nothing", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    for (const organizationId of [acme, acme, acme, platform]) {
+      const response = await backgroundCall(organizationId);
       expect(response.status).toBe(200);
       await response.text();
     }
-    const capped = await backgroundCall(acme);
-    expect(capped.status).toBe(429);
-    expect(capped.headers.get("retry-after")).toMatch(/^\d+$/);
-
-    // The platform organization's own budget is untouched.
-    expect((await backgroundCall(platform)).status).toBe(200);
+    const logged = log.mock.calls
+      .map(([line]) => (typeof line === "string" ? line : ""))
+      .filter((line) => line.includes('"integration.proxy.call"'))
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(
+      logged.map((line) => [line["organizationId"], line["orgSource"]]),
+    ).toEqual([
+      [acme, "header"],
+      [acme, "header"],
+      [acme, "header"],
+      [platform, "header"],
+    ]);
+    // No usage limits yet: nothing is counted against the organization.
+    expect(await db.select().from(rateLimitCounters)).toEqual([]);
   });
 
   it("refuses background work for a suspended or unknown organization", async () => {

@@ -77,14 +77,6 @@ interface PlatformPolicy {
    */
   readonly bindingActivation: boolean;
   /**
-   * Requests per organization per UTC day through the AI proxy and the
-   * integration proxy. Infinity: no cap.
-   */
-  readonly orgDailyCaps: {
-    readonly aiProxyRequests: number;
-    readonly integrationProxyRequests: number;
-  };
-  /**
    * Dynamic client registrations (/oauth/register) per UTC day, per client
    * address and for the whole gateway (server/mcp-auth/registration-limit.ts).
    */
@@ -108,24 +100,8 @@ interface MailBudget {
 
 interface PlatformPolicyEnv {
   GATEWAY_DEPLOYMENT_MODE?: string;
-  AI_PROXY_ORG_DAILY_LIMIT?: string;
-  INTEGRATION_ORG_DAILY_LIMIT?: string;
   HOSTED_OPEN_SIGNUP?: string;
   THIRD_PARTY_DEPLOYS?: string;
-}
-
-const HOSTED_AI_PROXY_ORG_DAILY_LIMIT = 200;
-const HOSTED_INTEGRATION_ORG_DAILY_LIMIT = 500;
-
-/**
- * A daily cap from its env override: a whole number of requests, or the
- * default when unset. Anything else is 0, so a typo stops traffic rather
- * than lifting the cap.
- */
-function dailyLimit(raw: string | undefined, fallback: number): number {
-  const value = raw?.trim();
-  if (!value) return fallback;
-  return /^\d+$/.test(value) ? Number(value) : 0;
 }
 
 /**
@@ -162,7 +138,6 @@ const THIRD_PARTY_LIMITS = {
 const NO_THIRD_PARTY = { cpuMs: 0, subrequests: 0, durableObjectClasses: 0 };
 
 function freeze(policy: PlatformPolicy): PlatformPolicy {
-  Object.freeze(policy.orgDailyCaps);
   Object.freeze(policy.thirdPartyLimits);
   Object.freeze(policy.dcr);
   for (const budget of Object.values(policy.mailDaily)) Object.freeze(budget);
@@ -188,10 +163,6 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         thirdPartyLimits: { ...NO_THIRD_PARTY },
         tenantAdminUserActions: true,
         bindingActivation: true,
-        orgDailyCaps: {
-          aiProxyRequests: Infinity,
-          integrationProxyRequests: Infinity,
-        },
         dcr: { perAddress: 20, perGateway: 200 },
         // An operator's own members: far above what an install sends, so
         // only a loop or a script ever meets them.
@@ -217,16 +188,6 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         thirdPartyLimits: { ...THIRD_PARTY_LIMITS },
         tenantAdminUserActions: false,
         bindingActivation: true,
-        orgDailyCaps: {
-          aiProxyRequests: dailyLimit(
-            env.AI_PROXY_ORG_DAILY_LIMIT,
-            HOSTED_AI_PROXY_ORG_DAILY_LIMIT,
-          ),
-          integrationProxyRequests: dailyLimit(
-            env.INTEGRATION_ORG_DAILY_LIMIT,
-            HOSTED_INTEGRATION_ORG_DAILY_LIMIT,
-          ),
-        },
         dcr: { perAddress: 200, perGateway: 20_000 },
         // Anyone can type an address into the sign-up or resend form: a
         // few mails a day reach any one address, whoever asks.
@@ -251,7 +212,6 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         thirdPartyLimits: { ...NO_THIRD_PARTY },
         tenantAdminUserActions: false,
         bindingActivation: false,
-        orgDailyCaps: { aiProxyRequests: 0, integrationProxyRequests: 0 },
         dcr: { perAddress: 0, perGateway: 0 },
         mailDaily: mailBudgets(0, { verification: 0, reset: 0, invitation: 0 }),
       });
