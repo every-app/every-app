@@ -81,6 +81,15 @@ in the gateway's Cloudflare account **is** operator authority.
   `Origin`; bearer-only upgrades are exempt.
 - The gateway strips an inbound `Cloudflare-Workers-Version-Overrides`
   header, so clients cannot choose which app version answers.
+- Cookie tossing: any host under the session cookie's registrable domain (a
+  sibling subdomain, or an app setting a host-only cookie on its own host)
+  can plant a second cookie with the session cookie's name, and the browser
+  sends both in an order the planter controls. A request whose `Cookie`
+  header names the session cookie (`better-auth.session_token`, with or
+  without `__Secure-`) more than once, however the copies are ordered or
+  scoped, is refused with `401 duplicate_session_cookie` before anything is
+  authenticated, on every app route (public ones included) and on the
+  gateway's own host. A single copy works as before.
 
 ## Control Plane
 
@@ -91,7 +100,9 @@ in the gateway's Cloudflare account **is** operator authority.
   are left to their own checks; none of them reads the session cookie). Every response gets HSTS for the gateway host alone
   (no `includeSubDomains`: the gateway often runs on the customer's apex
   domain), `nosniff`, frame denial, `Referrer-Policy: no-referrer`, and
-  `Cache-Control: no-store` on admin, OAuth, setup and reset pages.
+  `Cache-Control: no-store` on admin, OAuth, setup and reset pages. A
+  request carrying the session cookie twice is refused before any of this
+  (see cookie tossing under the perimeter contract).
 - A fresh gateway has no owner and accepts no sign-ups or organizations until
   it is claimed with the one-time setup link the CLI mints into D1 with the
   operator's Cloudflare login. Apps may be deployed before then (a CI-first
@@ -112,7 +123,11 @@ in the gateway's Cloudflare account **is** operator authority.
   responses and chat completions). The provider key is shared by every app,
   so anything else needs both the operator's allowlist (the
   `AI_PROXY_EXTRA_ROUTES` Gateway setting, e.g. `/v1/files`) and the app
-  manifest's `ai.routes`; `ai.models` can restrict models.
+  manifest's `ai.routes`; `ai.models` can restrict models. The upstream
+  request carries the gateway's key and none of the app's credentials or
+  account selectors (`x-api-key`, `OpenAI-Organization`, `OpenAI-Project`),
+  no AI Gateway header (`cf-aig-*`), no `x-everyapp-*` header, no cookie and
+  no forwarding headers.
 
 ## Sign-in with Cloudflare Access
 
@@ -240,7 +255,10 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   and arguments with more than 1,000 values to the app, whose SDK validates
   every call with the tool's own schema. Arguments nested more than 64
   levels deep are refused, JSON-RPC batches are refused, and an app gets 30
-  seconds (headers and body) to answer a call.
+  seconds (headers and body) to answer a call. The compiled checks are
+  cached per registry row (never per app id, which two organizations' rows
+  share) and catalog hash, and reused only for the exact schema they were
+  built from, since the hash is the app's own claim.
 - Each tool call, on either endpoint, logs one `mcp.tool_call` line and
   writes one `mcp_tool_calls` row with a keyed digest of the arguments,
   never the arguments or the result, including calls refused for their
@@ -255,8 +273,9 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   Tokens are bound to it and work nowhere else: an app host refuses them,
   and never forwards one to an app, even on a public route.
   Every client must use S256 PKCE; redirect URIs must be https or loopback
-  http, and neither a client id nor a redirect URI may be on the gateway's
-  own domain (its host or an app host under it): the authorization
+  http, and neither a client id nor a redirect URI may be on the
+  platform's domains (the gateway's host, `APP_BASE_DOMAIN`, or any host
+  under either: every host the gateway answers): the authorization
   endpoint, the consent page and the token endpoint all refuse one before
   anything is fetched. An invalid authorization request is answered on the
   gateway's own page, never redirected to the client: registration is open,
@@ -272,8 +291,8 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   door, never straight to an origin behind a zone. That doesn't keep a
   fetch away from the gateway's own zone: its front door is the gateway
   itself, so a document served from an app's public route would come back
-  as a "verified" client. That is why client ids on the gateway's own
-  domain are refused, not fetched. A dynamic registration that names no
+  as a "verified" client. That is why client ids on the platform's
+  domains are refused, not fetched. A dynamic registration that names no
   token endpoint authentication method is registered as a public client.
 - Dynamic registration is anonymous, and each one is a write to the
   account's KV, whose writes every namespace shares. So it keeps only what
@@ -302,9 +321,10 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
 - Users list and revoke their connections at `/settings/connections`.
   Removing a member revokes their connections in that organization, and
   deactivating a user revokes all of theirs, grants included. Connecting
-  the same client again replaces the earlier connection and its grant
-  (for a metadata document client, the same installation's: same redirect
-  URI, a loopback redirect's port not counting).
+  the same client again in the same organization replaces the earlier
+  connection there and its grant (for a metadata document client, the same
+  installation's: same redirect URI, a loopback redirect's port not
+  counting); a member of two organizations keeps one connection in each.
 - Refresh tokens rotate on every use, but the library accepts the token
   before the latest one until the latest is used (so a client that lost a
   refresh response can retry), and it has no reuse detection: a replayed

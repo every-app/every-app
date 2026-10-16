@@ -34,31 +34,37 @@ type ArgumentsCheck = (input: unknown) => {
 };
 
 const MAX_CACHED_VALIDATORS = 256;
-// null: this schema is left to the app.
-const cachedValidators = new Map<string, ArgumentsCheck | null>();
+// A null check: this schema is left to the app.
+const cachedValidators = new Map<
+  string,
+  { schema: string; check: ArgumentsCheck | null }
+>();
 
 /**
  * The gateway's validator for one tool's arguments, or null when only the
- * app checks them. Keyed by catalog hash + names, so a redeployed app never
- * reuses a stale schema.
+ * app checks them. Cached under `cacheKey` (the app's registry row, its
+ * catalog hash and the tool's name), and reused only for the very schema it
+ * was built from: the catalog hash is the app's own claim, so a schema
+ * changed under an unchanged hash gets a validator of its own.
  */
 export function argumentsValidator(
   cacheKey: string,
   schema: JsonObject,
 ): ArgumentsCheck | null {
-  let validate = cachedValidators.get(cacheKey);
-  if (validate === undefined) {
-    const checkable = gatewayCheckableSchema(schema);
-    validate = checkable
-      ? jsonSchemaValidator.getValidator(checkable as JsonSchemaType)
-      : null;
-    if (cachedValidators.size >= MAX_CACHED_VALIDATORS) {
-      const oldest = cachedValidators.keys().next().value;
-      if (oldest !== undefined) cachedValidators.delete(oldest);
-    }
-    cachedValidators.set(cacheKey, validate);
+  const text = JSON.stringify(schema);
+  const cached = cachedValidators.get(cacheKey);
+  if (cached?.schema === text) return cached.check;
+  const checkable = gatewayCheckableSchema(schema);
+  const check = checkable
+    ? jsonSchemaValidator.getValidator(checkable as JsonSchemaType)
+    : null;
+  cachedValidators.delete(cacheKey);
+  if (cachedValidators.size >= MAX_CACHED_VALIDATORS) {
+    const oldest = cachedValidators.keys().next().value;
+    if (oldest !== undefined) cachedValidators.delete(oldest);
   }
-  return validate;
+  cachedValidators.set(cacheKey, { schema: text, check });
+  return check;
 }
 
 /**

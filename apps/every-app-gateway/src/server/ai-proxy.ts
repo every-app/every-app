@@ -26,7 +26,15 @@ const STRIPPED_PROXY_HEADERS = [
   "x-forwarded-for",
   "x-forwarded-host",
   "x-forwarded-proto",
+  // Provider credentials and account selectors: the gateway's key decides
+  // the account, never the app.
+  "x-api-key",
+  "openai-organization",
+  "openai-project",
 ];
+// Every gateway trust header, and AI Gateway's (cf-aig-*), which would let
+// an app pick a gateway's cache, logging or metadata.
+const STRIPPED_PROXY_HEADER_PREFIXES = ["x-everyapp-", "cf-aig-"];
 
 /**
  * The one key is shared by every app in every organization, and OpenAI keeps
@@ -318,6 +326,11 @@ function isSafeUpstreamPath(pathname: string): boolean {
 function stripProxyHeaders(headers: Headers): void {
   for (const header of STRIPPED_PROXY_HEADERS) {
     headers.delete(header);
+  }
+  for (const header of [...headers.keys()]) {
+    if (STRIPPED_PROXY_HEADER_PREFIXES.some((p) => header.startsWith(p))) {
+      headers.delete(header);
+    }
   }
 }
 

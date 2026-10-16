@@ -81,6 +81,7 @@ vi.mock("@/server/repositories/AppRepository", () => ({
 }));
 
 import { auth } from "@/auth";
+import { SESSION_COOKIE_NAMES } from "@/auth/session-cookie";
 import { AppAccessRepository } from "@/server/repositories/AppAccessRepository";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import { UserPatRepository } from "@/server/repositories/UserPatRepository";
@@ -241,5 +242,13 @@ describe("createProdAuthenticator with other bearers", () => {
     }
     expect(mockUserPatService.verify).not.toHaveBeenCalled();
     expect(mockAuth.api.getSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("createProdAuthenticator session cookie", () => {
+  it("names the Better Auth session cookie, so the perimeter refuses a tossed copy", () => {
+    expect(createProdAuthenticator().sessionCookieNames).toEqual(
+      SESSION_COOKIE_NAMES,
+    );
   });
 });

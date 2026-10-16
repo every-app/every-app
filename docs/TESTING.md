@@ -72,7 +72,11 @@ in-process service binding, and asserts:
   valid identity; the internal tools contract (`/__everyapp/tools/*`) is 404
   from outside under any encoding, signed in or not;
 - (e) the inbound `Cookie` and a spoofed `x-everyapp-identity` are
-  stripped/replaced before the app sees the request.
+  stripped/replaced before the app sees the request;
+- cookie tossing: a session cookie a sibling subdomain planted beside the
+  member's own (any order, with or without `__Secure-`, public routes too)
+  is refused with 401 before authentication, and a single cookie still
+  works.
 
 ### MCP conformance (the ToolBus)
 
@@ -107,12 +111,13 @@ documents stubbed: claude.ai, Claude Code on changing loopback ports, and
 a ChatGPT-style client signing its token requests) through authorize →
 consent → token → `tools/list` → `tools/call` → refresh → revocation, the
 authorization endpoint's refusals (errors shown, never redirected; PKCE for
-every client; nothing on the gateway's own domain, at consent and the token
-endpoint too), dynamic registration's limits (what is kept, 16 KiB, per
+every client; nothing on the platform's domains, the gateway's host and
+`APP_BASE_DOMAIN`, at consent and the token endpoint too), dynamic registration's limits (what is kept, 16 KiB, per
 address and per gateway per day, `MCP_DCR_ENABLED`), the consent page's
 protections (cross-site, another browser, replay, a double-submitted
 approval, framing, caching), body limits and failures, reconnecting
-replacing the earlier connection (by installation), the per-request
+replacing the earlier connection (by installation, in its organization
+only), the per-request
 re-checks (revoked connection, removed member, a member who left and came
 back, deactivated user, app access removed, app deleted), read-only and
 chosen-apps connections, personal tokens, the `MCP_OAUTH_ENABLED` kill

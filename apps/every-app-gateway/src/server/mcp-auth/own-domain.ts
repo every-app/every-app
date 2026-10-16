@@ -1,37 +1,53 @@
 /**
- * Client ids and redirect URIs on the gateway's own domain (its host, or an
- * app host under it) are refused wherever a client id is read: the
- * authorization endpoint, the consent page and the token endpoint, before
- * the library can fetch one as a Client ID Metadata Document.
+ * Client ids and redirect URIs on the platform's domains (the gateway's
+ * host, APP_BASE_DOMAIN, or any host under either: every host this gateway
+ * answers) are refused wherever a client id is read: the authorization
+ * endpoint, the consent page and the token endpoint, before the library can
+ * fetch one as a Client ID Metadata Document.
  *
  * The `global_fetch_strictly_public` compatibility flag doesn't keep such a
  * fetch out: it sends a request for this zone out through Cloudflare's
  * front door like any request from the internet (never straight to an
  * origin behind it), and the front door is this gateway. A metadata
  * document served from an app's public route would then pass for a
- * verified client that looks like part of Every App.
+ * verified client that looks like part of Every App. APP_BASE_DOMAIN is the
+ * gateway's host today; it counts on its own so that apps moving to a base
+ * domain apart from the gateway stay covered.
  */
+import { appBaseDomain } from "@/server/app-hosts";
 
 const LOOPBACK_HOST = /^(?:localhost|127(?:\.\d{1,3}){3})$/;
 
-export const ON_GATEWAY_DOMAIN =
+export const ON_PLATFORM_DOMAIN =
   "This app uses an address on this gateway's own domain, which only Every App itself may use.";
 
 /**
- * Whether a URL is on the gateway's own host or an app host under it. A
- * loopback gateway (local testing) is exempt: its local clients share
- * `localhost`.
+ * Whether a URL is on one of the platform's domains: the gateway's host
+ * (from the issuer, GATEWAY_URL's origin), APP_BASE_DOMAIN, or a host under
+ * either. A loopback gateway (local testing) is exempt: its local clients
+ * share `localhost`.
  */
-export function onGatewayDomain(value: string, issuer: string): boolean {
-  const gateway = new URL(issuer).hostname;
-  if (LOOPBACK_HOST.test(gateway)) return false;
+export function onPlatformDomain(
+  value: string,
+  issuer: string,
+  env: Parameters<typeof appBaseDomain>[0],
+): boolean {
+  const gateway = new URL(issuer).hostname.toLowerCase();
+  const base = appBaseDomain(env);
+  const domains = [
+    ...(LOOPBACK_HOST.test(gateway) ? [] : [gateway]),
+    ...(base ? [base] : []),
+  ];
+  if (domains.length === 0) return false;
   let host: string;
   try {
-    host = new URL(value).hostname.toLowerCase();
+    host = new URL(value).hostname.toLowerCase().replace(/\.$/, "");
   } catch {
     return false;
   }
-  return host === gateway || host.endsWith(`.${gateway}`);
+  return domains.some(
+    (domain) => host === domain || host.endsWith(`.${domain}`),
+  );
 }
 
 /** A JWT's `iss`, read without verifying anything. */

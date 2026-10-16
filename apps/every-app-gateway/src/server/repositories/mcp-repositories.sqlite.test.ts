@@ -1,6 +1,7 @@
 /**
  * The MCP repositories against a migrated SQLite database: the audit prune's
- * bounded batches, and how often a connection's last use is written.
+ * bounded batches, how often a connection's last use is written, and what
+ * superseding a connection retires.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
@@ -14,7 +15,7 @@ vi.mock("@/db", async () => {
   return { db: testDbProxy(testDb), schema };
 });
 
-import { mcpConnections, mcpToolCalls } from "@/db/schema";
+import { mcpConnections, mcpToolCalls, members } from "@/db/schema";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import { McpConnectionRepository } from "./McpConnectionRepository";
 import { McpToolCallRepository } from "./McpToolCallRepository";
@@ -96,5 +97,65 @@ describe("McpConnectionRepository.touchLastUsed", () => {
       new Date(t0 + 11 * 60_000),
     );
     expect(await lastUsed()).toBe(t0 + 11 * 60_000);
+  });
+});
+
+describe("McpConnectionRepository.supersedeEarlier", () => {
+  it("two orgs, two connections for the same client", async () => {
+    const orgA = await seedOrganization(db, "org-a");
+    const orgB = await seedOrganization(db, "org-b");
+    const userId = await seedMember(db, { organizationId: orgA });
+    await db.insert(members).values({
+      id: "member-b",
+      organizationId: orgB,
+      userId,
+      role: "member",
+      createdAt: new Date(),
+    });
+    const t0 = Date.now();
+    const connect = (id: string, organizationId: string, at: number) =>
+      McpConnectionRepository.create({
+        id,
+        userId,
+        organizationId,
+        clientId: "https://claude.ai/oauth/claude-code-client-metadata",
+        clientName: "Claude Code",
+        clientDomain: "claude.ai",
+        redirectUri: "http://localhost:1/callback",
+        redirectHost: "localhost",
+        appScope: "all",
+        appRowIds: [],
+        access: "write",
+        createdAt: new Date(at),
+      });
+    await connect("mcpc_a1", orgA, t0);
+    await connect("mcpc_b1", orgB, t0 + 1);
+    await connect("mcpc_a2", orgA, t0 + 2);
+
+    // Connecting the same client in org A again retires org A's earlier
+    // connection and never org B's, though B's was made in between.
+    await expect(
+      McpConnectionRepository.supersedeEarlier(
+        {
+          userId,
+          organizationId: orgA,
+          clientId: "https://claude.ai/oauth/claude-code-client-metadata",
+          createdAt: new Date(t0 + 2),
+        },
+        () => true,
+      ),
+    ).resolves.toEqual(["mcpc_a1"]);
+    const rows = await db
+      .select({
+        id: mcpConnections.id,
+        revokedReason: mcpConnections.revokedReason,
+      })
+      .from(mcpConnections)
+      .orderBy(mcpConnections.createdAt);
+    expect(rows).toEqual([
+      { id: "mcpc_a1", revokedReason: "superseded" },
+      { id: "mcpc_b1", revokedReason: null },
+      { id: "mcpc_a2", revokedReason: null },
+    ]);
   });
 });

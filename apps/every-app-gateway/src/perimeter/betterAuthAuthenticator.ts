@@ -11,6 +11,7 @@
  * worker entry.
  */
 import { auth } from "@/auth";
+import { SESSION_COOKIE_NAMES } from "@/auth/session-cookie";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { members, users } from "@/db/schema";
@@ -62,6 +63,7 @@ async function resolveLiveOrgRole(
 
 export function createProdAuthenticator(): SessionAuthenticator {
   return {
+    sessionCookieNames: SESSION_COOKIE_NAMES,
     async authenticate(request: Request): Promise<AuthenticatedSession | null> {
       const bearerCredential = extractBearerCredential(request.headers);
       // Same reserved-credential definition the gateway uses for its CSRF

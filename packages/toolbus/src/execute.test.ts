@@ -229,6 +229,48 @@ describe("executeToolCall", () => {
     expect(events.every((e) => e.outcome === "invalid_arguments")).toBe(true);
   });
 
+  it("never checks one registry row's calls with another row's schema", async () => {
+    // One app id in two organizations (or a fork beside its original), both
+    // reporting the same catalog hash: the hash is each app's own claim.
+    const hash = `sha256:${"c".repeat(64)}`;
+    const tagTool = (maxLength?: number) => ({
+      name: "tag_todo",
+      description: "Tag a todo.",
+      risk: "write" as const,
+      inputSchema: {
+        type: "object",
+        properties: {
+          tag: { type: "string", ...(maxLength ? { maxLength } : {}) },
+        },
+        required: ["tag"],
+      },
+    });
+    const loose = todoApp({
+      rowId: "row_todo_other",
+      catalogHash: hash,
+      tools: [tagTool()],
+    });
+    const strict = todoApp({
+      rowId: "row_todo_acme",
+      catalogHash: hash,
+      tools: [tagTool(3)],
+    });
+    const { deps, requests, events } = harness(() => ok());
+    const call = { name: "tag_todo", arguments: { tag: "too long" } };
+
+    await expect(
+      executeToolCall(appView(loose), call, deps),
+    ).resolves.toMatchObject({ result: { content: [{ text: "done" }] } });
+    await expect(
+      executeToolCall(appView(strict), call, deps),
+    ).resolves.toMatchObject({ result: { isError: true } });
+    expect(requests).toHaveLength(1);
+    expect(events.map((event) => event.outcome)).toEqual([
+      "ok",
+      "invalid_arguments",
+    ]);
+  });
+
   it("never runs an app's regex on the gateway: a catastrophic pattern answers at once", async () => {
     const { deps, requests } = harness(() => ok());
     const app = todoApp({

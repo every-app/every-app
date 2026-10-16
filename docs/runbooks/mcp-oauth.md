@@ -88,8 +88,9 @@ and `everyapp setup` sets it up; there is nothing to set by hand.
   behind a zone), and advertises `client_id_metadata_document_supported`,
   which is what makes claude.ai and ChatGPT use CIMD. Without it, CIMD is
   off and they fall back to dynamic registration. The front door of the
-  gateway's own domain is the gateway itself, so client ids and redirect
-  URIs there are refused before anything is fetched.
+  gateway's own domain (and of `APP_BASE_DOMAIN`) is the gateway itself, so
+  client ids and redirect URIs there are refused before anything is
+  fetched.
 - An hourly cron trigger (`17 * * * *`). It deletes `mcp_tool_calls` rows
   older than `MCP_AUDIT_RETENTION_DAYS` (default 90), up to 20,000 a run,
   marks connections unused for 31 days as expired, deletes rate limit

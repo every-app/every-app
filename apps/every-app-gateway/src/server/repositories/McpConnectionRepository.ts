@@ -97,14 +97,21 @@ async function create(input: CreateConnectionInput): Promise<boolean> {
 }
 
 /**
- * Retire the user's active connections through the same client made before
- * `connection`, from the installations `sameInstallation` accepts (by their
- * redirect URI), as superseded; returns their ids. Only connections made
- * before this one: of two consents completing at once, neither retires the
- * other's row.
+ * Retire the user's active connections through the same client in the same
+ * organization made before `connection`, from the installations
+ * `sameInstallation` accepts (by their redirect URI), as superseded; returns
+ * their ids. Only connections made before this one: of two consents
+ * completing at once, neither retires the other's row. Only this
+ * organization's: a member of two connects the same client to each, and
+ * connecting one never cuts off the other.
  */
 async function supersedeEarlier(
-  connection: { userId: string; clientId: string; createdAt: Date },
+  connection: {
+    userId: string;
+    organizationId: string;
+    clientId: string;
+    createdAt: Date;
+  },
   sameInstallation: (redirectUri: string) => boolean,
 ): Promise<string[]> {
   const earlier = await db
@@ -113,6 +120,7 @@ async function supersedeEarlier(
     .where(
       and(
         eq(mcpConnections.userId, connection.userId),
+        eq(mcpConnections.organizationId, connection.organizationId),
         eq(mcpConnections.clientId, connection.clientId),
         lt(mcpConnections.createdAt, connection.createdAt),
         isNull(mcpConnections.revokedAt),

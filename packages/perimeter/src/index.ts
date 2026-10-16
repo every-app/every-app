@@ -4,6 +4,7 @@ export {
   type McpInterceptInput,
 } from "./gateway";
 export { parseHost, type ParsedHost } from "./host";
+export { hasDuplicateSessionCookie } from "./cookies";
 export {
   evaluateCsrf,
   evaluateWebSocketOrigin,

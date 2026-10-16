@@ -218,3 +218,91 @@ describe("perimeter end-to-end (gateway + real SDK app)", () => {
     expect(body.sawRawIdentity).toBeNull();
   });
 });
+
+describe("perimeter end-to-end: cookie tossing", () => {
+  const SESSION_COOKIE = "everyapp_session";
+  const SESSIONS: Record<string, AuthenticatedSession> = {
+    user_1: SESSION,
+    attacker: {
+      sub: "attacker",
+      email: "attacker@example.com",
+      orgId: "org_1",
+      orgRole: "member",
+    },
+  };
+  let authenticateCalls = 0;
+
+  /**
+   * Reads the session the way a cookie parser that keeps the last copy does
+   * (Better Auth's): whichever copy the browser sends last wins.
+   */
+  function tossingDeps(): GatewayDeps {
+    const authenticator: SessionAuthenticator = {
+      sessionCookieNames: [SESSION_COOKIE, `__Secure-${SESSION_COOKIE}`],
+      authenticate: async (req) => {
+        authenticateCalls++;
+        let token: string | undefined;
+        for (const pair of (req.headers.get("cookie") ?? "").split(";")) {
+          const [name, value] = pair.trim().split("=");
+          if (name?.endsWith(SESSION_COOKIE)) token = value;
+        }
+        return token ? (SESSIONS[token] ?? null) : null;
+      },
+      hasAppAccess: async () => true,
+    };
+    return { ...deps, authenticator };
+  }
+
+  it("a single session cookie still reaches the app as its member", async () => {
+    authenticateCalls = 0;
+    const res = await handleGatewayRequest(
+      gwReq("/tasks", {
+        headers: { cookie: `theme=dark; __Secure-${SESSION_COOKIE}=user_1` },
+      }),
+      tossingDeps(),
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { userId: string }).userId).toBe("user_1");
+    expect(authenticateCalls).toBe(1);
+  });
+
+  it("refuses a copy a sibling subdomain planted, before authenticating", async () => {
+    // evil.example.com set `everyapp_session=attacker; Domain=example.com;
+    // Path=/tasks`: the browser sends it to todo.example.com beside the
+    // member's own cookie, the longer path first.
+    authenticateCalls = 0;
+    const res = await handleGatewayRequest(
+      gwReq("/tasks", {
+        headers: {
+          cookie: `${SESSION_COOKIE}=attacker; ${SESSION_COOKIE}=user_1`,
+        },
+      }),
+      tossingDeps(),
+    );
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({
+      error: "unauthenticated",
+      reason: "duplicate_session_cookie",
+    });
+    expect(authenticateCalls).toBe(0);
+  });
+
+  it("refuses it in any order, with or without the __Secure- prefix, on public routes too", async () => {
+    for (const [path, cookie] of [
+      ["/tasks", `${SESSION_COOKIE}=user_1; ${SESSION_COOKIE}=attacker`],
+      [
+        "/tasks",
+        `__Secure-${SESSION_COOKIE}=user_1; theme=dark; ${SESSION_COOKIE}=attacker`,
+      ],
+      ["/health", `${SESSION_COOKIE}=attacker; ${SESSION_COOKIE}=user_1`],
+    ] as const) {
+      authenticateCalls = 0;
+      const res = await handleGatewayRequest(
+        gwReq(path, { headers: { cookie } }),
+        tossingDeps(),
+      );
+      expect(res.status, cookie).toBe(401);
+      expect(authenticateCalls).toBe(0);
+    }
+  });
+});

@@ -4,7 +4,7 @@
  *
  *  - GET /oauth/authorize validates the request with the library, and
  *    requires PKCE of every client and a client and redirect URI off the
- *    gateway's own domain. Its errors are shown here, never redirected to
+ *    platform's domains (own-domain.ts). Its errors are shown here, never redirected to
  *    the client: anyone can register a client with any https redirect URI,
  *    so redirecting them would make the gateway an open redirector (RFC 9700
  *    §4.11.2). It then sends a signed-out user to sign in and back, starts
@@ -39,7 +39,7 @@ import {
   describeAuthorizationFailure,
   grantedScopes,
 } from "./consent";
-import { ON_GATEWAY_DOMAIN, onGatewayDomain } from "./own-domain";
+import { ON_PLATFORM_DOMAIN, onPlatformDomain } from "./own-domain";
 import type { McpGrantProps } from "./validate";
 
 /** The largest consent form accepted (a few hundred app ids at most). */
@@ -93,8 +93,8 @@ export async function handleAuthorize(
 ): Promise<Response> {
   // Before the library fetches a metadata document from it.
   const clientId = new URL(request.url).searchParams.get("client_id");
-  if (clientId && onGatewayDomain(clientId, mcpAuth.issuer)) {
-    return errorPage(400, CANT_CONNECT, ON_GATEWAY_DOMAIN);
+  if (clientId && onPlatformDomain(clientId, mcpAuth.issuer, env)) {
+    return errorPage(400, CANT_CONNECT, ON_PLATFORM_DOMAIN);
   }
   const oauth = mcpAuth.authorizationServer.getOAuthApi(env);
   let authRequest;
@@ -114,8 +114,8 @@ export async function handleAuthorize(
       "This app didn't use PKCE (S256), which Every App requires.",
     );
   }
-  if (onGatewayDomain(authRequest.redirectUri, mcpAuth.issuer)) {
-    return errorPage(400, CANT_CONNECT, ON_GATEWAY_DOMAIN);
+  if (onPlatformDomain(authRequest.redirectUri, mcpAuth.issuer, env)) {
+    return errorPage(400, CANT_CONNECT, ON_PLATFORM_DOMAIN);
   }
 
   // Re-serialized, so the sign-in page's same-site redirect check sees no
@@ -327,6 +327,7 @@ export async function handleConsentDecision(
   await McpConnectionService.supersedeEarlier({
     id: connectionId,
     userId: user.id,
+    organizationId,
     clientId: approved.request.clientId,
     clientDomain: details.clientDomain ?? null,
     redirectUri: approved.request.redirectUri,

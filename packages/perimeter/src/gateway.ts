@@ -3,7 +3,8 @@
  *
  * Composes the perimeter: resolve app from Host (activating one whose Worker
  * was just uploaded, through `deps.activate`), refuse the internal tools
- * contract, guard server functions, enforce CSRF (and the WebSocket Origin
+ * contract, guard server functions, refuse a request carrying the session
+ * cookie twice (cookie tossing), enforce CSRF (and the WebSocket Origin
  * check), decide public-vs-private, authenticate + authorize (an MCP-only
  * token reaches `/mcp` alone), hand `/mcp` to the gateway's ToolBus when it
  * serves the app's tools, strip inbound trust headers, inject a fresh
@@ -14,6 +15,7 @@
  * run for real (D1 registry, Better Auth, service bindings) without changes.
  */
 import { parseHost, type ParsedHost } from "./host";
+import { hasDuplicateSessionCookie } from "./cookies";
 import type { AppRegistry, RegisteredApp } from "./registry";
 import {
   isMcpOnlyCredential,
@@ -260,6 +262,20 @@ export async function handleGatewayRequest(
     if (!decision.allowed) {
       return json(403, { error: "server_fn_denied", reason: decision.reason });
     }
+  }
+
+  // Cookie tossing (cookies.ts): refused before anything reads a session.
+  if (
+    hasDuplicateSessionCookie(
+      request.headers,
+      deps.authenticator.sessionCookieNames ?? [],
+    )
+  ) {
+    logEvent("session.duplicate_cookie", { app: app.appId }, "warn");
+    return json(401, {
+      error: "unauthenticated",
+      reason: "duplicate_session_cookie",
+    });
   }
 
   const bearerPresent = hasBearerCredential(request.headers);

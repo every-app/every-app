@@ -33,10 +33,12 @@
 import { env, WorkerEntrypoint } from "cloudflare:workers";
 import {
   handleGatewayRequest,
+  hasDuplicateSessionCookie,
   type AppRegistry,
   type RegisteredApp,
   withSecurityHeaders,
 } from "@every-app/perimeter";
+import { SESSION_COOKIE_NAMES } from "./auth/session-cookie";
 import { createProdAuthenticator } from "./perimeter/betterAuthAuthenticator";
 import { activateApp } from "./server/app-activation";
 import { DrizzleAppRegistry } from "./perimeter/drizzleAppRegistry";
@@ -124,9 +126,28 @@ async function serveGatewayHost(request: Request): Promise<Response> {
 }
 
 /**
- * Serve a control-plane request: guard it, count it against the credential
- * rate limits, then hand it to `serve`, stamping the control-plane security
- * headers on whatever comes back.
+ * A request carrying the session cookie twice: a host sharing the cookie's
+ * domain planted a second copy (cookie tossing, see @every-app/perimeter's
+ * cookies.ts), so neither copy is read.
+ */
+function refuseDuplicateSessionCookie(request: Request): Response | null {
+  if (!hasDuplicateSessionCookie(request.headers, SESSION_COOKIE_NAMES)) {
+    return null;
+  }
+  return Response.json(
+    {
+      error: "duplicate_session_cookie",
+      message:
+        "Your browser sent more than one Every App session cookie, which another site on this domain can cause. Clear this site's cookies and sign in again.",
+    },
+    { status: 401, headers: { "cache-control": "no-store" } },
+  );
+}
+
+/**
+ * Serve a control-plane request: refuse a tossed session cookie, guard it,
+ * count it against the credential rate limits, then hand it to `serve`,
+ * stamping the control-plane security headers on whatever comes back.
  */
 async function serveGuarded(
   request: Request,
@@ -135,6 +156,7 @@ async function serveGuarded(
 ): Promise<Response> {
   const { pathname } = new URL(request.url);
   const denied =
+    refuseDuplicateSessionCookie(request) ??
     guardControlPlaneRequest(request, host) ??
     (await rateLimitCredentialRequest(request, env));
   if (denied) return withControlPlaneHeaders(denied, pathname);

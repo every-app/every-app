@@ -27,7 +27,7 @@ import { serveGatewayMcp } from "@/server/toolbus/gateway-mcp";
 import { errorPage, handleAuthorize, handleConsentDecision } from "./authorize";
 import { payloadTooLarge, readBodyWithLimit, withBody } from "./body";
 import { getMcpAuth, MCP_OAUTH_PATHS, type McpAuth } from "./config";
-import { onGatewayDomain, tokenRequestClientIds } from "./own-domain";
+import { onPlatformDomain, tokenRequestClientIds } from "./own-domain";
 import { normalizeClientRegistrationRequest } from "./registration";
 import { allowRegistration } from "./registration-limit";
 import { resolvePatCaller } from "./validate";
@@ -192,7 +192,7 @@ async function serveRegistration(
 
 /**
  * The token endpoint (and revocation), its body read with a cap first. A
- * client id on the gateway's own domain is refused before the library could
+ * client id on the platform's domains is refused before the library could
  * fetch it as a metadata document.
  */
 async function serveTokenEndpoint(
@@ -206,7 +206,7 @@ async function serveTokenEndpoint(
   if (!body) return payloadTooLarge("64 KiB");
   if (
     tokenRequestClientIds(request.headers, body).some((clientId) =>
-      onGatewayDomain(clientId, mcpAuth.issuer),
+      onPlatformDomain(clientId, mcpAuth.issuer, env),
     )
   ) {
     logEvent(
@@ -215,7 +215,7 @@ async function serveTokenEndpoint(
         status: 401,
         error: "invalid_client",
         category: "client-authentication",
-        reason: "client_on_gateway_domain",
+        reason: "client_on_platform_domain",
       },
       "warn",
     );

@@ -1494,6 +1494,29 @@ describe("a CIMD client (claude.ai-style)", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("nor from APP_BASE_DOMAIN when apps live apart from the gateway", async () => {
+    hoisted.env["APP_BASE_DOMAIN"] = "apps.example.net";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const { challenge } = pkce();
+    const clientId = "https://todo.apps.example.net/hooks/client.json";
+    const response = await new Browser(ownerId).get(
+      `/oauth/authorize?${authorizeQuery(clientId, CLAUDE_REDIRECT, challenge)}`,
+    );
+    expect(response.status).toBe(400);
+    expect(await response.text()).toContain("gateway&#39;s own domain");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    const redirectUri = "https://todo.apps.example.net/callback";
+    const client = await registerClient({ redirect_uris: [redirectUri] });
+    const redirected = await new Browser(ownerId).get(
+      `/oauth/authorize?${authorizeQuery(client.client_id, redirectUri, challenge)}`,
+    );
+    expect(redirected.status).toBe(400);
+    expect(await redirected.text()).toContain("gateway&#39;s own domain");
+    expect(await db.select().from(mcpConnections)).toEqual([]);
+  });
+
   it("nor for the consent page or the token endpoint", async () => {
     const fetchMock = vi.fn(async () => new Response("nope", { status: 404 }));
     vi.stubGlobal("fetch", fetchMock);
@@ -2143,6 +2166,73 @@ describe("every request re-checks the connection", () => {
     );
   });
 
+  it("two orgs, two connections for the same client", async () => {
+    const otherOrg = await seedOrganization(db, "other");
+    await db.insert(members).values({
+      id: "member-other",
+      organizationId: otherOrg,
+      userId: memberId,
+      role: "member",
+      createdAt: new Date(),
+    });
+    const acme = await connected(memberId);
+    const other = await connect({
+      clientId: acme.client.client_id,
+      redirectUri: CODEX_REDIRECT,
+      userId: memberId,
+      choices: { organization_id: otherOrg },
+    });
+    await settle();
+    // Connecting the client to the other organization leaves acme's working.
+    expect((await mcp(acme.tokens.access_token, "tools/list")).status).toBe(
+      200,
+    );
+    expect((await mcp(other.tokens.access_token, "tools/list")).status).toBe(
+      200,
+    );
+
+    // Connecting it to acme again replaces acme's connection alone.
+    const again = await connect({
+      clientId: acme.client.client_id,
+      redirectUri: CODEX_REDIRECT,
+      userId: memberId,
+    });
+    await settle();
+    expect((await mcp(acme.tokens.access_token, "tools/list")).status).toBe(
+      401,
+    );
+    expect((await mcp(other.tokens.access_token, "tools/list")).status).toBe(
+      200,
+    );
+    expect((await mcp(again.tokens.access_token, "tools/list")).status).toBe(
+      200,
+    );
+    const rows = await db
+      .select({
+        organizationId: mcpConnections.organizationId,
+        revokedReason: mcpConnections.revokedReason,
+      })
+      .from(mcpConnections)
+      .where(eq(mcpConnections.userId, memberId))
+      .orderBy(mcpConnections.createdAt);
+    expect(rows).toEqual([
+      { organizationId: orgId, revokedReason: "superseded" },
+      { organizationId: otherOrg, revokedReason: null },
+      { organizationId: orgId, revokedReason: null },
+    ]);
+    const grants = await getMcpAuth(env)!
+      .authorizationServer.getOAuthApi(env)
+      .listUserGrants(memberId);
+    expect(
+      grants.items
+        .map(
+          (grant) =>
+            (grant.metadata as { organizationId: string }).organizationId,
+        )
+        .sort(),
+    ).toEqual([orgId, otherOrg].sort());
+  });
+
   it("revokes only the removed organization's connections of a member of two", async () => {
     const otherOrg = await seedOrganization(db, "other");
     await db.insert(members).values({
@@ -2159,8 +2249,8 @@ describe("every request re-checks the connection", () => {
       acme.client.client_id,
       CODEX_REDIRECT,
     );
-    // The same client again, for the other organization: it replaces the
-    // first grant, as the library replaces a user's grant per client.
+    // The same client again, for the other organization: a connection of
+    // its own, beside the first.
     await browser.postForm(
       "/oauth/consent/decision",
       approvalForm(other.context, { organization_id: otherOrg }),
@@ -2188,7 +2278,7 @@ describe("every request re-checks the connection", () => {
       .where(eq(mcpConnections.userId, memberId))
       .orderBy(mcpConnections.createdAt);
     expect(rows).toEqual([
-      { organizationId: orgId, revokedReason: "superseded" },
+      { organizationId: orgId, revokedReason: "member_removed" },
       { organizationId: otherOrg, revokedReason: null },
       { organizationId: orgId, revokedReason: "member_removed" },
     ]);

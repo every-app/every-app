@@ -68,6 +68,26 @@ describe("gatewayCheckableSchema", () => {
     }
   });
 
+  it("never reuses a validator built from another schema under the same key", () => {
+    const loose = argumentsValidator(
+      "row\u0000sha256:same\u0000tag",
+      object({ tag: { type: "string" } }),
+    );
+    expect(loose?.({ tag: "too long" })).toMatchObject({ valid: true });
+    const strict = argumentsValidator(
+      "row\u0000sha256:same\u0000tag",
+      object({ tag: { type: "string", maxLength: 3 } }),
+    );
+    expect(strict?.({ tag: "too long" })).toMatchObject({ valid: false });
+    // The same schema again is served from the cache.
+    expect(
+      argumentsValidator(
+        "row\u0000sha256:same\u0000tag",
+        object({ tag: { type: "string", maxLength: 3 } }),
+      ),
+    ).toBe(strict);
+  });
+
   it("checks a catastrophic pattern's arguments in bounded time", () => {
     const validate = argumentsValidator(
       "redos",

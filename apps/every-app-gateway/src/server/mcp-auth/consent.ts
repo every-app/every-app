@@ -18,7 +18,7 @@ import type { ConsentDecision } from "@/schemas/consent-decision";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
 import { OFFLINE_ACCESS_SCOPE, type McpAuth } from "./config";
-import { ON_GATEWAY_DOMAIN, onGatewayDomain } from "./own-domain";
+import { ON_PLATFORM_DOMAIN, onPlatformDomain } from "./own-domain";
 
 type ConsentOrganization = {
   id: string;
@@ -127,10 +127,10 @@ export async function buildConsentContext(
   // As /oauth/authorize refuses them, before the library fetches anything.
   if (
     ["client_id", "redirect_uri"].some((name) =>
-      onGatewayDomain(params.get(name) ?? "", auth.issuer),
+      onPlatformDomain(params.get(name) ?? "", auth.issuer, env),
     )
   ) {
-    return { ok: false, message: ON_GATEWAY_DOMAIN };
+    return { ok: false, message: ON_PLATFORM_DOMAIN };
   }
 
   const oauth = auth.authorizationServer.getOAuthApi(env);

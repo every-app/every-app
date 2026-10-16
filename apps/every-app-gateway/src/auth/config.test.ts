@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getCookies } from "better-auth/cookies";
 
 const workerEnv = vi.hoisted(() => ({
   BETTER_AUTH_SECRET: "test-secret",
@@ -104,6 +105,7 @@ vi.mock("@/server/services/AppAccessService", () => ({
 import { findPendingInvitationByToken } from "@/server/invitation-token";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { createAuth } from "./config";
+import { SESSION_COOKIE_NAMES } from "./session-cookie";
 
 type AuthOptions = {
   emailAndPassword: {
@@ -302,6 +304,18 @@ describe("createAuth Better Auth options", () => {
     } finally {
       workerEnv.APP_BASE_DOMAIN = undefined;
     }
+  });
+
+  it("names its session cookie as the cookie-tossing check counts it, in dev and production builds", () => {
+    const names: string[] = [];
+    for (const dev of [true, false]) {
+      vi.stubEnv("DEV", dev);
+      names.push(
+        getCookies(createAuthOptions() as Parameters<typeof getCookies>[0])
+          .sessionToken.name,
+      );
+    }
+    expect(names).toEqual([...SESSION_COOKIE_NAMES]);
   });
 
   it("omits the base URL and cookie domain without GATEWAY_URL", () => {

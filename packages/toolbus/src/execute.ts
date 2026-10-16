@@ -280,8 +280,11 @@ function argumentsProblem(
   tool: ToolBusTool,
   args: unknown,
 ): string | null {
+  // By registry row: two rows (one app id in two organizations, or a fork
+  // beside the app it forked) never share a validator, whatever hash each
+  // reports.
   const validate = argumentsValidator(
-    `${app.appId}\u0000${app.catalogHash}\u0000${tool.name}`,
+    `${app.rowId}\u0000${app.catalogHash}\u0000${tool.name}`,
     tool.inputSchema,
   );
   // null: the app's own validation is the only check for this schema.

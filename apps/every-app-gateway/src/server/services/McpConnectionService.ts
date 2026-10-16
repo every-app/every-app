@@ -182,10 +182,11 @@ function madeBefore(metadata: GrantMetadata, createdAt: Date): boolean {
 
 /**
  * Retire what a just-completed connection replaces: the user's connections
- * through the same client made before it, and their grants. For a Client
- * ID Metadata Document client (one client id for every installation) only
- * the same installation's, by redirect URI, a loopback redirect's port not
- * counting (sameInstallation). This replaces the authorization server's own
+ * through the same client in the same organization made before it, and
+ * their grants (a member of two organizations keeps a connection to each).
+ * For a Client ID Metadata Document client (one client id for every
+ * installation) only the same installation's, by redirect URI, a loopback
+ * redirect's port not counting (sameInstallation). This replaces the authorization server's own
  * replacement (`revokeExistingGrants`, turned off), which compares redirect
  * URIs exactly: Claude Code listens on a new port each time it connects, so
  * reconnecting it (to downgrade to read only, say) left the earlier grant
@@ -199,6 +200,7 @@ function madeBefore(metadata: GrantMetadata, createdAt: Date): boolean {
 async function supersedeEarlier(connection: {
   id: string;
   userId: string;
+  organizationId: string;
   clientId: string;
   clientDomain: string | null;
   redirectUri: string;
@@ -214,6 +216,7 @@ async function supersedeEarlier(connection: {
       connection.userId,
       (grant) =>
         grant.clientId === connection.clientId &&
+        grant.metadata.organizationId === connection.organizationId &&
         grant.metadata.connectionId !== connection.id &&
         madeBefore(grant.metadata, connection.createdAt) &&
         inInstallation(grant.redirectUri),

@@ -354,6 +354,34 @@ describe("gateway host (control plane)", () => {
     ]);
   });
 
+  it("refuses a session cookie tossed in by a sibling subdomain, before anything runs", async () => {
+    // evil.example.com set `__Secure-better-auth.session_token=<its own>;
+    // Domain=example.com; Path=/api`: the browser sends both copies here.
+    for (const cookie of [
+      "__Secure-better-auth.session_token=tossed.sig; __Secure-better-auth.session_token=mine.sig",
+      "__Secure-better-auth.session_token=mine.sig; theme=dark; better-auth.session_token=tossed.sig",
+    ]) {
+      const response = await server.fetch(
+        gatewayRequest("/api/auth/get-session", { headers: { cookie } }),
+      );
+      expect(response.status, cookie).toBe(401);
+      expect(await response.json()).toMatchObject({
+        error: "duplicate_session_cookie",
+      });
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("x-frame-options")).toBe("DENY");
+    }
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+
+    const single = await server.fetch(
+      gatewayRequest("/api/auth/get-session", {
+        headers: { cookie: "__Secure-better-auth.session_token=mine.sig" },
+      }),
+    );
+    expect(single.status).toBe(200);
+    expect(mocks.controlPlaneFetch).toHaveBeenCalledOnce();
+  });
+
   it("never caches admin, consent or setup pages", async () => {
     for (const path of [
       "/admin",

@@ -74,6 +74,13 @@ describe("handleAuthenticatedAiProxyRequest", () => {
           connection: "keep-alive",
           "transfer-encoding": "chunked",
           "x-forwarded-for": "1.2.3.4",
+          "x-api-key": "app-held-key",
+          "openai-organization": "org-app-chosen",
+          "openai-project": "proj_app_chosen",
+          "cf-aig-cache-key": "another-apps-cache",
+          "cf-aig-metadata": '{"org":"someone-else"}',
+          "x-everyapp-org": "org-forged",
+          "x-everyapp-anything": "forged",
         },
         body: JSON.stringify({ model: "gpt-5.2", input: "hello" }),
       }),
@@ -102,6 +109,18 @@ describe("handleAuthenticatedAiProxyRequest", () => {
     expect(forwardedRequest.headers.get("connection")).toBeNull();
     expect(forwardedRequest.headers.get("transfer-encoding")).toBeNull();
     expect(forwardedRequest.headers.get("x-forwarded-for")).toBeNull();
+    expect(forwardedRequest.headers.get("x-api-key")).toBeNull();
+    expect(forwardedRequest.headers.get("openai-organization")).toBeNull();
+    expect(forwardedRequest.headers.get("openai-project")).toBeNull();
+    const forwardedNames = [...forwardedRequest.headers.keys()];
+    expect(
+      forwardedNames.filter(
+        (name) => name.startsWith("cf-aig-") || name.startsWith("x-everyapp-"),
+      ),
+    ).toEqual([]);
+    expect(forwardedRequest.headers.get("content-type")).toBe(
+      "application/json",
+    );
   });
 
   it("streams request bodies upstream without waiting for the body to finish", async () => {
