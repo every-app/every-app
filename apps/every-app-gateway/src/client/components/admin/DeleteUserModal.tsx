@@ -1,46 +1,34 @@
-import { Modal } from "../Modal";
+import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 
 interface DeleteUserModalProps {
-  open: boolean;
   onClose: () => void;
   onConfirm: () => void;
   userName: string | null;
   userEmail: string;
 }
 
+/** Confirms deleting a user. Render it only while it is open. */
 export function DeleteUserModal({
-  open,
   onClose,
   onConfirm,
   userName,
   userEmail,
 }: DeleteUserModalProps) {
   return (
-    <Modal
-      open={open}
+    <ConfirmDialog
+      title={`Delete ${userName || userEmail}?`}
+      confirmLabel="Delete user"
+      destructive
       onClose={onClose}
-      title="Delete User"
-      actions={
-        <>
-          <button className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="btn btn-error" onClick={onConfirm}>
-            Delete
-          </button>
-        </>
-      }
+      onConfirm={onConfirm}
     >
-      <p className="py-4">
-        Are you sure you want to delete <strong>{userName || userEmail}</strong>
-        ? Their deploy tokens and personal access tokens for this organization
-        stop working. This action cannot be undone.
-      </p>
-      <p className="pb-4 text-sm text-base-content/70">
+      Their deploy tokens and personal access tokens for this organization stop
+      working. This action cannot be undone.
+      <span className="mt-2 block">
         If Cloudflare Access would let them straight back in (their email domain
         joins automatically), they are deactivated instead, which keeps them
         out.
-      </p>
-    </Modal>
+      </span>
+    </ConfirmDialog>
   );
 }

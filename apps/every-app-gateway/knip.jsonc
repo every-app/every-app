@@ -9,6 +9,8 @@
     // Better auth cli entrypoint
     "src/auth/index.ts",
     "scripts/*.{js,mjs,ts}",
+    // shadcn components are copied in whole; pages use only some exports
+    "src/client/components/ui/**",
   ],
   "project": ["**/*.{js,mjs,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "src/auth/cli-config.ts"],
@@ -20,8 +22,10 @@
     "@every-app/perimeter",
     "@every-app/sdk",
     "@every-app/toolbus",
-    "daisyui",
     // Used by vite during bundling
     "tailwindcss",
+    // Imported by app.css; shadcn is also the component CLI
+    "tw-animate-css",
+    "shadcn",
   ],
 }

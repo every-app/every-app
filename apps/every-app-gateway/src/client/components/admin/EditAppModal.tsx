@@ -1,148 +1,120 @@
-import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Modal } from "../Modal";
-import { FormField } from "../FormField";
+import { useState } from "react";
+import { revalidateLogic } from "@tanstack/react-form";
+import { CircleAlert } from "lucide-react";
+import { useAppForm } from "@/client/components/form/useAppForm";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/client/components/ui/dialog";
+import { Separator } from "@/client/components/ui/separator";
 import { adminAppsCollection } from "@/client/tanstack-db";
 import { getServerErrorMessage } from "@/client/errors";
 import { editAppSchema, type EditAppFormData } from "@/schemas/app";
 import type { AppWithAccessCount } from "@/types/app";
 
 interface EditAppModalProps {
-  open: boolean;
+  app: AppWithAccessCount;
   onClose: () => void;
-  app: AppWithAccessCount | null;
 }
 
-export function EditAppModal({ open, onClose, app }: EditAppModalProps) {
-  const [isPending, setIsPending] = useState(false);
+/** Edits an app's catalog metadata. Render it only while it is open. */
+export function EditAppModal({ app, onClose }: EditAppModalProps) {
+  // Local state, not the form's error map: a stale onSubmit error there would
+  // keep the form invalid and block a retry until a field changed.
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const form = useForm<EditAppFormData>({
-    resolver: zodResolver(editAppSchema),
-    defaultValues: {
-      name: "",
-      description: "",
-      isDefault: false,
+  const defaultValues: EditAppFormData = {
+    name: app.name,
+    description: app.description,
+    isDefault: app.isDefault,
+  };
+
+  const form = useAppForm({
+    defaultValues,
+    validationLogic: revalidateLogic(),
+    validators: { onDynamic: editAppSchema },
+    onSubmit: ({ value }) => {
+      setSubmitError(null);
+      try {
+        // Use collection's update method for optimistic update
+        adminAppsCollection.update(app.id, (draft) => {
+          draft.name = value.name;
+          draft.description = value.description;
+          draft.isDefault = value.isDefault ?? false;
+          draft.updatedAt = new Date();
+        });
+        onClose();
+      } catch (err) {
+        setSubmitError(getServerErrorMessage(err, "Failed to update app"));
+      }
     },
   });
 
-  // Reset form when app changes
-  useEffect(() => {
-    if (app) {
-      form.reset({
-        name: app.name,
-        description: app.description,
-        isDefault: app.isDefault,
-      });
-    }
-  }, [app, form]);
-
-  const onSubmit = async (data: EditAppFormData) => {
-    if (!app) return;
-
-    setIsPending(true);
-    try {
-      // Use collection's update method for optimistic update
-      adminAppsCollection.update(app.id, (draft) => {
-        draft.name = data.name;
-        draft.description = data.description;
-        draft.isDefault = data.isDefault ?? false;
-        draft.updatedAt = new Date();
-      });
-      handleClose();
-    } catch (err) {
-      form.setError("root", {
-        message: getServerErrorMessage(err, "Failed to update app"),
-      });
-    } finally {
-      setIsPending(false);
-    }
-  };
-
-  const handleClose = () => {
-    form.reset();
-    onClose();
-  };
-
-  const {
-    register,
-    formState: { errors },
-  } = form;
-
-  if (!open || !app) return null;
-
   return (
-    <Modal
-      open={open}
-      onClose={handleClose}
-      title="Edit App"
-      description={`Editing ${app.appId}`}
-      actions={
-        <>
-          <button type="button" className="btn btn-ghost" onClick={handleClose}>
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="edit-app-form"
-            className="btn btn-primary"
-            disabled={isPending}
-          >
-            {isPending ? "Saving..." : "Save Changes"}
-          </button>
-        </>
-      }
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
     >
-      <form
-        id="edit-app-form"
-        onSubmit={form.handleSubmit(onSubmit)}
-        className="space-y-4 mt-4"
-      >
-        <FormField
-          label="App Name"
-          placeholder="My App"
-          registration={register("name")}
-          error={errors.name}
-        />
-        <FormField
-          label="Description"
-          placeholder="Describe what your app does..."
-          type="textarea"
-          registration={register("description")}
-          error={errors.description}
-        />
-        {app.hostname && (
-          <div className="text-sm text-base-content/60">
-            Served at <span className="font-mono">{app.hostname}</span> — set by{" "}
-            <span className="font-mono">everyapp deploy</span>
-          </div>
-        )}
-
-        <div className="divider"></div>
-
-        <div className="form-control">
-          <label className="label cursor-pointer justify-start gap-3">
-            <input
-              type="checkbox"
-              className="checkbox checkbox-primary"
-              {...register("isDefault")}
-            />
-            <div>
-              <span className="label-text font-medium">
-                Available to everyone
-              </span>
-              <p className="text-xs text-base-content/60">
-                Every current and future member can open this app. Turning this
-                off keeps existing access; use Manage Access to remove people.
+      <DialogContent showCloseButton={false} className="sm:max-w-md">
+        <form.AppForm>
+          <form.Form className="flex flex-col gap-4">
+            <DialogHeader>
+              <DialogTitle>Edit app</DialogTitle>
+              <DialogDescription>
+                Editing <span className="font-mono">{app.appId}</span>
+              </DialogDescription>
+            </DialogHeader>
+            <form.AppField name="name">
+              {(field) => (
+                <field.TextField label="App name" placeholder="My App" />
+              )}
+            </form.AppField>
+            <form.AppField name="description">
+              {(field) => (
+                <field.TextareaField
+                  label="Description"
+                  placeholder="Describe what your app does..."
+                />
+              )}
+            </form.AppField>
+            {app.hostname ? (
+              <p className="text-sm text-muted-foreground">
+                Served at <span className="font-mono">{app.hostname}</span> —
+                set by <span className="font-mono">everyapp deploy</span>
               </p>
-            </div>
-          </label>
-        </div>
-
-        {errors.root && (
-          <div className="text-error text-sm">{errors.root.message}</div>
-        )}
-      </form>
-    </Modal>
+            ) : null}
+            <Separator />
+            <form.AppField name="isDefault">
+              {(field) => (
+                <field.SwitchField
+                  label="Available to everyone"
+                  description="Every current and future member can open this app. Turning this off keeps existing access; use Manage access to remove people."
+                />
+              )}
+            </form.AppField>
+            {submitError ? (
+              <Alert variant="destructive">
+                <CircleAlert />
+                <AlertDescription>{submitError}</AlertDescription>
+              </Alert>
+            ) : null}
+            <DialogFooter>
+              <Button variant="ghost" onClick={onClose}>
+                Cancel
+              </Button>
+              <form.SubmitButton>Save changes</form.SubmitButton>
+            </DialogFooter>
+          </form.Form>
+        </form.AppForm>
+      </DialogContent>
+    </Dialog>
   );
 }

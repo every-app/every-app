@@ -1,0 +1,119 @@
+import { useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { Building2, Check, ChevronsUpDown } from "lucide-react";
+import { toast } from "sonner";
+import { authClient } from "@/client/auth-client";
+import { useActiveOrganization } from "@/client/hooks/useActiveOrganization";
+import { useSetActiveOrganization } from "@/client/hooks/useSetActiveOrganization";
+import { Skeleton } from "@/client/components/ui/skeleton";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/client/components/ui/dropdown-menu";
+
+/**
+ * The active organization at the top of the sidebar, with a menu that
+ * switches to another of the user's organizations.
+ */
+export function OrganizationSwitcher({
+  signedIn,
+  onCloseDrawer,
+}: {
+  /** The session is confirmed, so the active organization can load. */
+  signedIn: boolean;
+  onCloseDrawer?: () => void;
+}) {
+  const { data: organizations } = authClient.useListOrganizations();
+  const { data: activeOrganization, isPending } = useActiveOrganization({
+    enabled: signedIn,
+  });
+  const setActiveOrganization = useSetActiveOrganization();
+  const [isSwitching, setIsSwitching] = useState(false);
+
+  if (isPending) {
+    // The loaded switcher's box: a name line and a slug line, so nothing
+    // moves when the organization arrives.
+    return (
+      <div
+        className="flex min-w-0 flex-col rounded-lg border border-sidebar-border bg-card px-3 py-1.5"
+        aria-busy
+      >
+        <span className="flex h-5 items-center">
+          <Skeleton className="h-3.5 w-28" />
+        </span>
+        <span className="flex h-4 items-center">
+          <Skeleton className="h-3 w-20" />
+        </span>
+      </div>
+    );
+  }
+
+  const handleSelect = async (organizationId: string) => {
+    onCloseDrawer?.();
+    if (isSwitching || organizationId === activeOrganization?.id) return;
+    setIsSwitching(true);
+    const error = await setActiveOrganization(organizationId);
+    setIsSwitching(false);
+    if (error) toast.error(error);
+  };
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="Switch organization"
+        disabled={isSwitching}
+        className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-sidebar-border bg-card px-3 py-1.5 text-left outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
+      >
+        <span className="flex min-w-0 flex-col">
+          <span className="truncate text-sm font-medium">
+            {activeOrganization?.name ?? "Select organization"}
+          </span>
+          {activeOrganization?.slug ? (
+            <span className="truncate text-xs text-muted-foreground">
+              {activeOrganization.slug}
+            </span>
+          ) : null}
+        </span>
+        <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-(--anchor-width)">
+        {organizations && organizations.length > 0 ? (
+          <>
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>Organizations</DropdownMenuLabel>
+              {organizations.map((organization) => (
+                <DropdownMenuItem
+                  key={organization.id}
+                  disabled={isSwitching}
+                  onClick={() => void handleSelect(organization.id)}
+                >
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate">{organization.name}</span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {organization.slug}
+                    </span>
+                  </span>
+                  {organization.id === activeOrganization?.id ? (
+                    <Check className="ml-auto" />
+                  ) : null}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+          </>
+        ) : null}
+        <DropdownMenuItem
+          render={<Link to="/organizations" onClick={onCloseDrawer} />}
+        >
+          <Building2 />
+          Manage organizations
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}

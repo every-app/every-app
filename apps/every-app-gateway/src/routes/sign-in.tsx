@@ -1,10 +1,22 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { z } from "zod";
+import { CircleAlert, Info, ShieldCheck } from "lucide-react";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import {
+  AuthCard,
+  AuthDivider,
+  AuthPageShell,
+  authInputClassName,
+  authLinkClassName,
+  authSubmitClassName,
+} from "@/client/components/auth/AuthPageShell";
+import { useAppForm } from "@/client/components/form/useAppForm";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import { useSession } from "@/client/hooks/useSession";
 import {
@@ -28,6 +40,11 @@ const searchSchema = z.object({
   return_to: z.string().optional(),
   // Set by Better Auth when a Cloudflare Access sign-in comes back refused.
   error: z.string().optional(),
+});
+
+const signInSchema = z.object({
+  email: z.string().trim().email("Enter a valid email address."),
+  password: z.string().min(1, "Enter your password."),
 });
 
 function getAuthSearch({
@@ -60,8 +77,6 @@ export const Route = createFileRoute("/sign-in")({
 });
 
 function SignIn() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [redirecting, setRedirecting] = useState(false);
   const [stalled, setStalled] = useState(false);
@@ -137,6 +152,19 @@ function SignIn() {
     }
   };
 
+  // The schema only checks the fields. The sign-in runs in `runSignIn`, which
+  // retries on a CPU timeout, so it reads the values from the form each try.
+  const form = useAppForm({
+    defaultValues: { email: "", password: "" },
+    validators: { onSubmit: signInSchema },
+    // Every submit clears the last server error, a refused one included.
+    onSubmitInvalid: () => setError(""),
+    onSubmit: () => {
+      setError("");
+      runSignIn();
+    },
+  });
+
   const {
     isRunning,
     attemptCount,
@@ -149,6 +177,9 @@ function SignIn() {
     setRetrySuccess,
     executeWithRetry: runSignIn,
   } = useCpuTimeoutRetry(async () => {
+    // Trimmed as the browser trims a type="email" input's value.
+    const email = form.state.values.email.trim();
+    const { password } = form.state.values;
     try {
       const { error: signInError } = await authClient.signIn.email(
         { email, password },
@@ -205,13 +236,7 @@ function SignIn() {
     }
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    runSignIn();
-  };
-
-  // Show the game when retrying or when retries are exhausted
+  // Show the retry status while retrying or once retries are exhausted
   if (showWarning || isRetrySuccess) {
     return (
       <CpuTimeoutWarning
@@ -235,164 +260,164 @@ function SignIn() {
           methods?.accessEmail ?? null,
         )
       : null;
+  const isStalled = Boolean(stalled && signedInAs);
+  const authSearch = getAuthSearch({ redirect, return_to });
 
   return (
-    <div className="flex h-screen items-center justify-center overflow-hidden bg-base-100">
-      <div className="relative w-full max-w-md">
-        <img
-          src="/transparent-logo.png"
-          alt="Logo"
-          className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
-        />
-        <div className="card auth-card">
-          <div className="card-body">
-            <h2 className="card-title">Sign In</h2>
-
-            {stalled && signedInAs ? (
-              <div className="flex flex-col gap-3">
-                {accessMessage ? (
-                  <p className="text-error">{accessMessage}</p>
-                ) : (
-                  <p>
-                    You're signed in as <strong>{signedInAs}</strong>, but the
-                    page you were going to sent you back here.
-                  </p>
-                )}
-                <button
-                  type="button"
-                  className="btn btn-primary w-full"
-                  onClick={continueToDestination}
+    <AuthPageShell>
+      <AuthCard
+        title="Sign in"
+        description={
+          !isStalled && passwordSignIn && !accessProvider
+            ? "Enter your email and password to sign in."
+            : undefined
+        }
+        footer={
+          !isStalled && passwordSignIn ? (
+            <>
+              <p>
+                Don't have an account?{" "}
+                <Link
+                  to="/sign-up"
+                  search={authSearch}
+                  className={authLinkClassName}
                 >
-                  {accessMessage ? "Continue" : "Try again"}
-                </button>
-              </div>
+                  Sign up
+                </Link>
+              </p>
+              <p>
+                <Link
+                  to="/forgot-password"
+                  search={authSearch}
+                  className={authLinkClassName}
+                >
+                  Forgot password?
+                </Link>
+              </p>
+            </>
+          ) : undefined
+        }
+      >
+        {isStalled ? (
+          <>
+            {accessMessage ? (
+              <ErrorAlert>{accessMessage}</ErrorAlert>
             ) : (
+              <p className="text-sm text-muted-foreground">
+                You're signed in as{" "}
+                <strong className="font-medium text-foreground">
+                  {signedInAs}
+                </strong>
+                , but the page you were going to sent you back here.
+              </p>
+            )}
+            <Button
+              className={authSubmitClassName}
+              onClick={continueToDestination}
+            >
+              {accessMessage ? "Continue" : "Try again"}
+            </Button>
+          </>
+        ) : (
+          <>
+            {methods?.accessEmail && !signedInAs ? (
+              <Alert variant="info">
+                <Info />
+                <AlertDescription>
+                  Cloudflare Access says you're{" "}
+                  <strong className="font-medium text-foreground">
+                    {methods.accessEmail}
+                  </strong>
+                  , which doesn't give you an account here by itself.{" "}
+                  {passwordSignIn
+                    ? "If you have an account with this email, sign in below once to connect it; otherwise ask an admin to invite you."
+                    : "Ask an admin to invite you."}{" "}
+                  <a href={ACCESS_SIGN_OUT_PATH}>Not you? Sign out of Access</a>
+                </AlertDescription>
+              </Alert>
+            ) : null}
+
+            {accessMessage ? <ErrorAlert>{accessMessage}</ErrorAlert> : null}
+
+            {accessProvider ? (
+              <Button
+                variant="outline"
+                className="w-full bg-card font-semibold dark:border-border dark:bg-card"
+                onClick={() => void signInWithAccess()}
+                disabled={isRunning}
+                pending={redirecting}
+              >
+                {redirecting ? null : <ShieldCheck data-icon="inline-start" />}
+                {redirecting
+                  ? "Redirecting..."
+                  : `Continue with ${accessProvider.label}`}
+              </Button>
+            ) : null}
+
+            {passwordSignIn ? (
               <>
-                {methods?.accessEmail && !signedInAs && (
-                  <div className="alert text-sm">
-                    <span>
-                      Cloudflare Access says you're{" "}
-                      <strong>{methods.accessEmail}</strong>, which doesn't give
-                      you an account here by itself.{" "}
-                      {passwordSignIn
-                        ? "If you have an account with this email, sign in below once to connect it; otherwise ask an admin to invite you."
-                        : "Ask an admin to invite you."}{" "}
-                      <a href={ACCESS_SIGN_OUT_PATH} className="link">
-                        Not you? Sign out of Access
-                      </a>
-                    </span>
-                  </div>
-                )}
-
-                {accessMessage && (
-                  <div className="text-sm text-error">{accessMessage}</div>
-                )}
-
-                {accessProvider && (
-                  <button
-                    type="button"
-                    className="btn btn-outline w-full"
-                    onClick={() => void signInWithAccess()}
-                    disabled={redirecting || isRunning}
-                  >
-                    {redirecting
-                      ? "Redirecting..."
-                      : `Continue with ${accessProvider.label}`}
-                  </button>
-                )}
-
-                {passwordSignIn && (
-                  <>
-                    {accessProvider && (
-                      <div className="divider text-xs text-base-content/60">
-                        or
-                      </div>
-                    )}
-                    <p>Enter your email and password to sign in</p>
-
-                    <form onSubmit={handleSubmit}>
-                      <div className="form-control">
-                        <label className="label">
-                          <span className="label-text">Email</span>
-                        </label>
-                        <input
-                          id="email"
+                {accessProvider ? <AuthDivider /> : null}
+                <form.AppForm>
+                  <form.Form className="space-y-4">
+                    <form.AppField name="email">
+                      {(field) => (
+                        <field.TextField
+                          label="Email"
                           type="email"
                           placeholder="you@example.com"
-                          className="input input-bordered w-full"
-                          value={email}
-                          onChange={(e) => setEmail(e.target.value)}
+                          className={authInputClassName}
+                          autoComplete="email"
                           required
                           disabled={isRunning || redirecting}
                         />
-                      </div>
-                      <div className="form-control">
-                        <label className="label">
-                          <span className="label-text">Password</span>
-                        </label>
-                        <input
-                          id="password"
+                      )}
+                    </form.AppField>
+                    <form.AppField name="password">
+                      {(field) => (
+                        <field.TextField
+                          label="Password"
                           type="password"
                           placeholder="Enter your password"
-                          className="input input-bordered w-full"
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
+                          className={authInputClassName}
+                          autoComplete="current-password"
                           required
                           disabled={isRunning || redirecting}
                         />
-                      </div>
-                      {error && (
-                        <div className="text-sm text-error">{error}</div>
                       )}
-                      <button
-                        type="submit"
-                        className="btn btn-primary w-full"
-                        disabled={isRunning || redirecting}
-                      >
-                        {isRunning ? "Signing in..." : "Sign In"}
-                      </button>
-                    </form>
-
-                    <div className="text-left">
-                      <p className="text-sm text-base-content/60">
-                        Don't have an account?{" "}
-                        <Link
-                          to="/sign-up"
-                          search={getAuthSearch({ redirect, return_to })}
-                          className="font-medium text-base-content hover:underline"
-                        >
-                          Sign up
-                        </Link>
-                      </p>
-                      <p className="text-sm text-base-content/60">
-                        <Link
-                          to="/forgot-password"
-                          search={getAuthSearch({ redirect, return_to })}
-                          className="font-medium text-base-content hover:underline"
-                        >
-                          Forgot password?
-                        </Link>
-                      </p>
-                    </div>
-                  </>
-                )}
-
-                {!passwordSignIn &&
-                  !accessProvider &&
-                  !methods?.accessEmail && (
-                    <p>
-                      Open this gateway through Cloudflare Access to sign in.
-                    </p>
-                  )}
-
-                {!passwordSignIn && error && (
-                  <div className="text-sm text-error">{error}</div>
-                )}
+                    </form.AppField>
+                    {error ? <ErrorAlert>{error}</ErrorAlert> : null}
+                    <Button
+                      type="submit"
+                      className={authSubmitClassName}
+                      pending={isRunning}
+                      disabled={redirecting}
+                    >
+                      {isRunning ? "Signing in..." : "Sign in"}
+                    </Button>
+                  </form.Form>
+                </form.AppForm>
               </>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+            ) : null}
+
+            {!passwordSignIn && !accessProvider && !methods?.accessEmail ? (
+              <p className="text-sm text-muted-foreground">
+                Open this gateway through Cloudflare Access to sign in.
+              </p>
+            ) : null}
+
+            {!passwordSignIn && error ? <ErrorAlert>{error}</ErrorAlert> : null}
+          </>
+        )}
+      </AuthCard>
+    </AuthPageShell>
+  );
+}
+
+function ErrorAlert({ children }: { children: ReactNode }) {
+  return (
+    <Alert variant="destructive">
+      <CircleAlert />
+      <AlertDescription>{children}</AlertDescription>
+    </Alert>
   );
 }

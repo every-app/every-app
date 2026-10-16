@@ -1,9 +1,53 @@
 import { useState } from "react";
-import { Modal } from "../Modal";
+import { revalidateLogic } from "@tanstack/react-form";
+import { CircleAlert } from "lucide-react";
+import { z } from "zod";
+import { useAppForm } from "@/client/components/form/useAppForm";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/client/components/ui/dialog";
 import { getServerErrorMessage } from "@/client/errors";
+import {
+  EXPIRY_CHOICES,
+  EXPIRY_ITEMS,
+  expiryToIso,
+  localDateTimeValue,
+  msUntil,
+  type ExpiryChoice,
+} from "./tokenExpiry";
+
+// The server gives a deploy token 90 days when no expiry is sent, so this
+// choice sends null.
+const DEFAULT_EXPIRY: ExpiryChoice = "90";
+
+const createAppTokenSchema = z
+  .object({
+    expiry: z.enum(EXPIRY_CHOICES),
+    customExpiresAt: z.string(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.expiry !== "custom") return;
+    const ms = msUntil(value.customExpiresAt);
+    if (ms === null || ms <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["customExpiresAt"],
+        message:
+          ms === null
+            ? "Pick an expiration date."
+            : "Expiration date must be in the future.",
+      });
+    }
+  });
 
 interface CreateAppTokenModalProps {
-  open: boolean;
   onClose: () => void;
   onCreate: (input: {
     tokenType: "deploy";
@@ -11,96 +55,97 @@ interface CreateAppTokenModalProps {
   }) => Promise<void>;
 }
 
+/** Creates an organization deploy token. Render it only while open. */
 export function CreateAppTokenModal({
-  open,
   onClose,
   onCreate,
 }: CreateAppTokenModalProps) {
-  const [expiresAt, setExpiresAt] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isPending, setIsPending] = useState(false);
 
-  const reset = () => {
-    setExpiresAt("");
-    setError(null);
-    setIsPending(false);
-  };
-
-  const handleClose = () => {
-    reset();
-    onClose();
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-
-    setIsPending(true);
-    try {
-      const parsedExpiresAt = expiresAt
-        ? new Date(expiresAt).toISOString()
-        : null;
-      await onCreate({
-        tokenType: "deploy",
-        expiresAt: parsedExpiresAt,
-      });
-      handleClose();
-    } catch (err) {
-      setError(getServerErrorMessage(err, "Failed to create token"));
-      setIsPending(false);
-    }
-  };
-
-  if (!open) return null;
+  const form = useAppForm({
+    defaultValues: {
+      expiry: DEFAULT_EXPIRY as ExpiryChoice,
+      customExpiresAt: localDateTimeValue(90),
+    },
+    validationLogic: revalidateLogic(),
+    validators: { onDynamic: createAppTokenSchema },
+    onSubmit: async ({ value }) => {
+      setError(null);
+      try {
+        await onCreate({
+          tokenType: "deploy",
+          expiresAt:
+            value.expiry === DEFAULT_EXPIRY
+              ? null
+              : expiryToIso(value.expiry, value.customExpiresAt),
+        });
+      } catch (err) {
+        setError(getServerErrorMessage(err, "Failed to create token"));
+      }
+    },
+  });
 
   return (
-    <Modal
-      open={open}
-      onClose={handleClose}
-      title="Create Deploy Token"
-      description="Generate an organization-scoped token for CLI deploys."
-      actions={
-        <>
-          <button type="button" className="btn btn-ghost" onClick={handleClose}>
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="create-app-token-form"
-            className="btn btn-primary"
-            disabled={isPending}
-          >
-            {isPending ? "Creating..." : "Create Deploy Token"}
-          </button>
-        </>
-      }
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !form.state.isSubmitting) onClose();
+      }}
     >
-      <form
-        id="create-app-token-form"
-        className="space-y-4 mt-4"
-        onSubmit={handleSubmit}
-      >
-        <div className="rounded-box border border-base-300 bg-base-200/50 p-4">
-          <p className="text-sm text-base-content/70">
-            Deploy tokens are scoped to this organization and can register apps
-            during <code className="text-xs">everyapp deploy</code>.
-          </p>
-        </div>
-
-        <fieldset className="fieldset">
-          <legend className="fieldset-legend">
-            Expiration (optional, defaults to 90 days)
-          </legend>
-          <input
-            type="datetime-local"
-            className="input w-full"
-            value={expiresAt}
-            onChange={(e) => setExpiresAt(e.target.value)}
-          />
-        </fieldset>
-
-        {error && <p className="text-error text-sm">{error}</p>}
-      </form>
-    </Modal>
+      <DialogContent showCloseButton={false} className="sm:max-w-md">
+        <form.AppForm>
+          <form.Form className="flex flex-col gap-4">
+            <DialogHeader>
+              <DialogTitle>Create deploy token</DialogTitle>
+              <DialogDescription>
+                Generate an organization-scoped token for CLI deploys. It can
+                register apps during{" "}
+                <code className="font-mono text-xs">everyapp deploy</code>.
+              </DialogDescription>
+            </DialogHeader>
+            <form.AppField name="expiry">
+              {(field) => (
+                <field.SelectField label="Expiration" items={EXPIRY_ITEMS} />
+              )}
+            </form.AppField>
+            <form.Subscribe selector={(state) => state.values.expiry}>
+              {(expiry) =>
+                expiry === "custom" ? (
+                  <form.AppField name="customExpiresAt">
+                    {(field) => (
+                      <field.TextField
+                        label="Expires at"
+                        type="datetime-local"
+                        required
+                      />
+                    )}
+                  </form.AppField>
+                ) : null
+              }
+            </form.Subscribe>
+            {error ? (
+              <Alert variant="destructive">
+                <CircleAlert aria-hidden />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+            <DialogFooter>
+              <form.Subscribe selector={(state) => state.isSubmitting}>
+                {(isSubmitting) => (
+                  <Button
+                    variant="ghost"
+                    onClick={onClose}
+                    disabled={isSubmitting}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </form.Subscribe>
+              <form.SubmitButton>Create deploy token</form.SubmitButton>
+            </DialogFooter>
+          </form.Form>
+        </form.AppForm>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -1,48 +1,45 @@
-import { MoreVertical, Users, Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Users } from "lucide-react";
+import { RowActionsMenu } from "@/client/components/RowActionsMenu";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/client/components/ui/dropdown-menu";
 
 interface AppActionsMenuProps {
+  appName: string;
   onManageAccess: () => void;
   onEdit: () => void;
   onDelete: () => void;
   isOwner: boolean;
 }
 
+/** The kebab menu at the end of an app row. Only owners can delete an app. */
 export function AppActionsMenu({
+  appName,
   onManageAccess,
   onEdit,
   onDelete,
   isOwner,
 }: AppActionsMenuProps) {
   return (
-    <div className="dropdown dropdown-end">
-      <button tabIndex={0} className="btn btn-ghost btn-sm btn-square">
-        <MoreVertical className="w-4 h-4" />
-      </button>
-      <ul
-        tabIndex={0}
-        className="dropdown-content menu z-10 w-48 bg-base-100 rounded-box shadow-lg"
-      >
-        <li>
-          <button onClick={onManageAccess}>
-            <Users className="w-4 h-4" />
-            Manage Access
-          </button>
-        </li>
-        <li>
-          <button onClick={onEdit}>
-            <Pencil className="w-4 h-4" />
-            Edit App
-          </button>
-        </li>
-        {isOwner && (
-          <li>
-            <button className="text-error" onClick={onDelete}>
-              <Trash2 className="w-4 h-4" />
-              Delete App
-            </button>
-          </li>
-        )}
-      </ul>
-    </div>
+    <RowActionsMenu label={`Actions for ${appName}`}>
+      <DropdownMenuItem onClick={onManageAccess}>
+        <Users />
+        Manage access
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={onEdit}>
+        <Pencil />
+        Edit app
+      </DropdownMenuItem>
+      {isOwner ? (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={onDelete}>
+            <Trash2 />
+            Delete app
+          </DropdownMenuItem>
+        </>
+      ) : null}
+    </RowActionsMenu>
   );
 }

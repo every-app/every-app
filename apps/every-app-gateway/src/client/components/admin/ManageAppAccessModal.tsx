@@ -1,22 +1,41 @@
 import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Search, Plus, Minus } from "lucide-react";
-import { Modal } from "../Modal";
+import { Minus, Plus, Search } from "lucide-react";
+import { toast } from "sonner";
+import { cn } from "cn";
+import { ErrorState } from "@/client/components/ErrorState";
+import { Badge } from "@/client/components/ui/badge";
+import { Button } from "@/client/components/ui/button";
+import { Checkbox } from "@/client/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/client/components/ui/dialog";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+} from "@/client/components/ui/input-group";
+import { Skeleton } from "@/client/components/ui/skeleton";
 import { useSession } from "@/client/hooks/useSession";
+import { getServerErrorMessage } from "@/client/errors";
 import { getAppAccessState, updateAppAccess } from "@/serverFunctions/apps";
 import { adminAppsCollection } from "@/client/tanstack-db";
 import type { AppWithAccessCount, UserAccessState } from "@/types/app";
 
 interface ManageAppAccessModalProps {
-  open: boolean;
+  app: AppWithAccessCount;
   onClose: () => void;
-  app: AppWithAccessCount | null;
 }
 
+/** Picks who can open an app. Render it only while it is open. */
 export function ManageAppAccessModal({
-  open,
-  onClose,
   app,
+  onClose,
 }: ManageAppAccessModalProps) {
   const { data: session } = useSession();
   const currentUserId = session?.user?.id;
@@ -31,11 +50,10 @@ export function ManageAppAccessModal({
   const [searchQuery, setSearchQuery] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  // Fetch access state when modal opens
-  const { data, isLoading } = useQuery({
-    queryKey: ["app-access", app?.id],
-    queryFn: () => getAppAccessState({ data: { id: app!.id } }),
-    enabled: open && !!app,
+  // Fetch access state when the dialog opens
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
+    queryKey: ["app-access", app.id],
+    queryFn: () => getAppAccessState({ data: { id: app.id } }),
   });
 
   // Initialize selected users when data loads
@@ -85,8 +103,6 @@ export function ManageAppAccessModal({
   };
 
   const handleSave = async () => {
-    if (!app) return;
-
     const userIds = Array.from(selectedUserIds);
 
     setIsSaving(true);
@@ -99,22 +115,16 @@ export function ManageAppAccessModal({
       });
       await adminAppsCollection.utils.refetch();
 
-      setHasChanges(false);
-      setSearchQuery("");
+      toast.success("Access updated");
       onClose();
+    } catch (err) {
+      toast.error(getServerErrorMessage(err, "Failed to update access"));
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleClose = () => {
-    setHasChanges(false);
-    setSearchQuery("");
-    onClose();
-  };
-
   const users = data?.users ?? [];
-  const isPending = isSaving;
 
   // Filter users based on search query
   const filteredUsers = useMemo(() => {
@@ -160,85 +170,100 @@ export function ManageAppAccessModal({
     );
   }, [users, originalUserIds, currentUserId]);
 
-  if (!open || !app) return null;
+  const showSearch = users.length > 5;
+  const showBulkActions = canGrantAll || canRevokeAll;
 
   return (
-    <Modal
-      open={open}
-      onClose={handleClose}
-      title={`Manage Access: ${app.name}`}
-      description="Select which users can access this app"
-      actions={
-        <>
-          <button type="button" className="btn btn-ghost" onClick={handleClose}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={!hasChanges || isPending}
-          >
-            {isSaving ? "Saving..." : "Save Changes"}
-          </button>
-        </>
-      }
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !isSaving) onClose();
+      }}
     >
-      <div className="mt-4">
+      <DialogContent showCloseButton={false} className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Manage access to {app.name}</DialogTitle>
+          <DialogDescription>
+            Select which users can access this app.
+          </DialogDescription>
+        </DialogHeader>
+
         {/* Search and bulk actions */}
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          {users.length > 5 && (
-            <label className="input input-sm flex-1 min-w-48">
-              <Search className="w-4 h-4 opacity-50" />
-              <input
-                type="text"
-                placeholder="Search users..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </label>
-          )}
-          {(canGrantAll || canRevokeAll) && (
-            <div className="flex gap-2 ml-auto">
-              {canGrantAll && (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-soft btn-success"
-                  onClick={handleGrantAll}
-                  disabled={isPending}
-                >
-                  Grant All
-                </button>
-              )}
-              {canRevokeAll && (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-soft btn-error"
-                  onClick={handleRevokeAll}
-                  disabled={isPending}
-                >
-                  Revoke All
-                </button>
-              )}
-            </div>
-          )}
-        </div>
+        {showSearch || showBulkActions ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {showSearch ? (
+              <InputGroup className="h-8 min-w-48 flex-1">
+                <InputGroupAddon>
+                  <Search />
+                </InputGroupAddon>
+                <InputGroupInput
+                  type="search"
+                  aria-label="Search users"
+                  placeholder="Search users…"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                />
+              </InputGroup>
+            ) : null}
+            {showBulkActions ? (
+              <div className="ml-auto flex gap-2">
+                {canGrantAll ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleGrantAll}
+                    disabled={isSaving}
+                  >
+                    Grant all
+                  </Button>
+                ) : null}
+                {canRevokeAll ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRevokeAll}
+                    disabled={isSaving}
+                  >
+                    Revoke all
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
         {/* User list */}
         {isLoading ? (
-          <div className="flex justify-center py-8">
-            <span className="loading loading-spinner loading-md"></span>
-          </div>
-        ) : (
-          <div className="max-h-72 overflow-y-auto border border-base-300 rounded-lg">
-            {filteredUsers.length === 0 && searchQuery ? (
-              <div className="text-center py-8">
-                <p className="text-base-content/70 text-sm">
-                  No users match "{searchQuery}"
-                </p>
+          <div
+            className="divide-y divide-border rounded-lg border border-border"
+            aria-busy
+          >
+            {Array.from({ length: 4 }, (_, index) => (
+              <div key={index} className="flex items-center gap-3 px-3 py-2.5">
+                <Skeleton className="size-4" />
+                <div className="flex-1 space-y-1.5">
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-3 w-48" />
+                </div>
               </div>
+            ))}
+          </div>
+        ) : isError ? (
+          <ErrorState
+            message="Failed to load users."
+            onRetry={() => void refetch()}
+            isRetrying={isFetching}
+          />
+        ) : (
+          <div className="max-h-72 overflow-y-auto overscroll-contain rounded-lg border border-border">
+            {filteredUsers.length === 0 ? (
+              <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                {searchQuery
+                  ? `No users match "${searchQuery}"`
+                  : "No users in this organization yet."}
+              </p>
             ) : (
-              <ul className="divide-y divide-base-300">
+              <ul className="divide-y divide-border">
                 {filteredUsers.map((user: UserAccessState) => {
                   const isCurrentUser = user.id === currentUserId;
                   const isSelected = selectedUserIds.has(user.id);
@@ -250,56 +275,61 @@ export function ManageAppAccessModal({
                   return (
                     <li key={user.id}>
                       <label
-                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-base-200 transition-colors ${
-                          isCurrentUser ? "cursor-not-allowed opacity-75" : ""
-                        } ${isGranting ? "bg-success/10" : ""} ${isRevoking ? "bg-error/10" : ""}`}
+                        className={cn(
+                          "flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-muted",
+                          isCurrentUser && "cursor-not-allowed opacity-75",
+                          isGranting && "bg-success/10 hover:bg-success/15",
+                          isRevoking &&
+                            "bg-destructive/10 hover:bg-destructive/15",
+                        )}
                       >
-                        <input
-                          type="checkbox"
-                          className="checkbox checkbox-sm checkbox-primary"
+                        <Checkbox
                           checked={isSelected}
-                          onChange={() => toggleUser(user.id)}
-                          disabled={isPending || isCurrentUser}
+                          onCheckedChange={() => toggleUser(user.id)}
+                          disabled={isSaving || isCurrentUser}
                         />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium truncate">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className="truncate font-medium">
                               {displayName}
                             </span>
-                            {isCurrentUser && (
-                              <span className="badge badge-sm rounded-full">
+                            {isCurrentUser ? (
+                              <Badge variant="secondary" size="sm">
                                 You
-                              </span>
-                            )}
-                            {user.status && user.status !== "active" && (
-                              <span className="badge badge-sm badge-warning">
+                              </Badge>
+                            ) : null}
+                            {user.status && user.status !== "active" ? (
+                              <Badge
+                                variant="warning"
+                                size="sm"
+                                className="capitalize"
+                              >
                                 {user.status}
-                              </span>
-                            )}
+                              </Badge>
+                            ) : null}
                           </div>
-                          {user.name && (
-                            <div className="text-xs text-base-content/60 truncate">
+                          {user.name ? (
+                            <p className="truncate text-xs text-muted-foreground">
                               {user.email}
-                            </div>
-                          )}
+                            </p>
+                          ) : null}
                         </div>
                         {isGranting ? (
-                          <span className="badge badge-sm badge-success gap-1 rounded-full">
-                            <Plus className="w-3 h-3" />
+                          <Badge variant="success">
+                            <Plus />
                             Granting
-                          </span>
+                          </Badge>
                         ) : isRevoking ? (
-                          <span className="badge badge-sm badge-error gap-1 rounded-full">
-                            <Minus className="w-3 h-3" />
+                          <Badge variant="destructive">
+                            <Minus />
                             Revoking
-                          </span>
+                          </Badge>
                         ) : (
                           <span
-                            className={`text-xs ${
-                              isSelected
-                                ? "text-base-content/60"
-                                : "text-base-content/40"
-                            }`}
+                            className={cn(
+                              "shrink-0 text-xs text-muted-foreground",
+                              !isSelected && "opacity-70",
+                            )}
                           >
                             {isSelected ? "Has access" : "No access"}
                           </span>
@@ -314,35 +344,48 @@ export function ManageAppAccessModal({
         )}
 
         {/* Summary */}
-        <div className="mt-4 space-y-2">
+        <div className="space-y-1 text-sm">
           {hasChanges &&
-            (changes.granting.length > 0 || changes.revoking.length > 0) && (
-              <div className="flex flex-wrap gap-3 text-sm">
-                {changes.granting.length > 0 && (
-                  <span className="text-success">
-                    +{changes.granting.length} gaining access
-                  </span>
-                )}
-                {changes.revoking.length > 0 && (
-                  <span className="text-error">
-                    -{changes.revoking.length} losing access
-                  </span>
-                )}
-              </div>
-            )}
-          <div className="flex items-center justify-between text-sm text-base-content/60">
+          (changes.granting.length > 0 || changes.revoking.length > 0) ? (
+            <div className="flex flex-wrap gap-3">
+              {changes.granting.length > 0 ? (
+                <span className="text-success">
+                  +{changes.granting.length} gaining access
+                </span>
+              ) : null}
+              {changes.revoking.length > 0 ? (
+                <span className="text-destructive">
+                  -{changes.revoking.length} losing access
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between gap-3 text-muted-foreground">
             <span>
               {selectedUserIds.size} of {users.length} user
               {users.length !== 1 ? "s" : ""} will have access
             </span>
-            {searchQuery && filteredUsers.length !== users.length && (
-              <span className="text-xs">
+            {searchQuery && filteredUsers.length !== users.length ? (
+              <span className="text-xs tabular-nums">
                 Showing {filteredUsers.length} of {users.length}
               </span>
-            )}
+            ) : null}
           </div>
         </div>
-      </div>
-    </Modal>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => void handleSave()}
+            disabled={!hasChanges}
+            pending={isSaving}
+          >
+            Save changes
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

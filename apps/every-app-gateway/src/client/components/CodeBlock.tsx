@@ -1,35 +1,30 @@
-import { useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { CopyButton } from "@/client/components/CopyButton";
 
 interface CodeBlockProps {
   code: string;
+  /** The toast after a copy. */
+  successMessage?: string;
 }
 
-export function CodeBlock({ code }: CodeBlockProps) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
+/** A monospace block for a command, token or link, with a copy button. */
+export function CodeBlock({
+  code,
+  successMessage = "Copied to clipboard",
+}: CodeBlockProps) {
   return (
-    <div className="relative">
-      <pre className="bg-base-200 rounded-lg p-3 pr-14 overflow-x-auto text-sm font-mono">
-        <code className="text-base-content/70">{code}</code>
+    <div className="relative min-w-0">
+      {/* Long links and tokens wrap, so no text runs under the copy button. */}
+      <pre className="rounded-lg border border-border bg-muted px-3 py-2.5 pr-11 font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">
+        <code>{code}</code>
       </pre>
-      <button
-        onClick={handleCopy}
-        className="absolute top-2 right-2 btn btn-ghost btn-xs bg-base-100/80 border border-base-content/10 backdrop-blur-sm opacity-100"
-        title="Copy to clipboard"
-      >
-        {copied ? (
-          <Check className="w-3 h-3 text-success" />
-        ) : (
-          <Copy className="w-3 h-3" />
-        )}
-      </button>
+      <CopyButton
+        value={code}
+        successMessage={successMessage}
+        label="Copy to clipboard"
+        variant="ghost"
+        size="icon-xs"
+        className="absolute top-2 right-2"
+      />
     </div>
   );
 }

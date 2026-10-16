@@ -1,8 +1,21 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { z } from "zod";
+import { CircleAlert } from "lucide-react";
 import { authClient } from "@/client/auth-client";
+import {
+  AuthCard,
+  AuthPageShell,
+  authInputClassName,
+  authSubmitClassName,
+} from "@/client/components/auth/AuthPageShell";
+import { CodeBlock } from "@/client/components/CodeBlock";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import { useAppForm } from "@/client/components/form/useAppForm";
+import { PageLoading } from "@/client/components/Spinner";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import { claimGateway, readSetupToken } from "@/client/setup-link";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
@@ -12,22 +25,17 @@ export const Route = createFileRoute("/setup")({
   component: Setup,
 });
 
-function AuthCard({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-screen items-center justify-center overflow-hidden">
-      <div className="relative w-full max-w-md">
-        <img
-          src="/transparent-logo.png"
-          alt="Logo"
-          className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
-        />
-        <div className="card auth-card">
-          <div className="card-body">{children}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
+const claimSchema = z
+  .object({
+    name: z.string().trim().min(1, "Enter your name."),
+    email: z.string().trim().email("Enter a valid email address."),
+    password: z.string().min(8, "Password must be at least 8 characters"),
+    confirmPassword: z.string(),
+  })
+  .refine((value) => value.password === value.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
 
 /**
  * Claim a freshly deployed gateway with the one-time link the CLI printed
@@ -54,32 +62,41 @@ function Setup() {
     }
   }, []);
 
-  if (isLoading || token === undefined) return null;
+  if (isLoading || token === undefined) return <PageLoading />;
 
   if (ownerData?.hasOwner) {
     return (
-      <AuthCard>
-        <h2 className="card-title">Gateway already set up</h2>
-        <p className="text-base-content/70">
-          This gateway already has an owner.
-        </p>
-        <Link to="/sign-in" className="btn btn-primary mt-4">
-          Sign in
-        </Link>
-      </AuthCard>
+      <AuthPageShell>
+        <AuthCard
+          title="Gateway already set up"
+          description="This gateway already has an owner."
+        >
+          <Button
+            nativeButton={false}
+            className={authSubmitClassName}
+            render={<Link to="/sign-in" />}
+          >
+            Sign in
+          </Button>
+        </AuthCard>
+      </AuthPageShell>
     );
   }
 
   if (!token) {
     return (
-      <AuthCard>
-        <h2 className="card-title">Setup link required</h2>
-        <p className="text-base-content/70">
-          Open the setup link that was printed when this gateway was deployed,
-          or create a new one on the machine that deployed it:
-        </p>
-        <code className="block mt-3 text-sm">everyapp gateway claim-link</code>
-      </AuthCard>
+      <AuthPageShell>
+        <AuthCard title="Setup link required" size="md">
+          <p className="text-sm text-muted-foreground">
+            Open the setup link that was printed when this gateway was deployed,
+            or create a new one on the machine that deployed it:
+          </p>
+          <CodeBlock
+            code="everyapp gateway claim-link"
+            successMessage="Command copied"
+          />
+        </AuthCard>
+      </AuthPageShell>
     );
   }
 
@@ -87,10 +104,6 @@ function Setup() {
 }
 
 function ClaimForm({ token }: { token: string }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -99,6 +112,15 @@ function ClaimForm({ token }: { token: string }) {
     await queryClient.invalidateQueries({ queryKey: ["hasOwner"] });
     navigate({ to: "/" });
   };
+
+  const form = useAppForm({
+    defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
+    validators: { onSubmit: claimSchema },
+    onSubmit: () => {
+      setError("");
+      executeWithRetry();
+    },
+  });
 
   const {
     isRunning,
@@ -112,6 +134,7 @@ function ClaimForm({ token }: { token: string }) {
     setRetrySuccess,
     executeWithRetry,
   } = useCpuTimeoutRetry(async () => {
+    const { name, email, password } = form.state.values;
     const result = await claimGateway({ token, name, email, password });
     if (!result.ok) {
       if (result.retry) return false;
@@ -137,16 +160,6 @@ function ClaimForm({ token }: { token: string }) {
     return true;
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    if (password !== confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-    executeWithRetry();
-  };
-
   if (showWarning || isRetrySuccess) {
     return (
       <CpuTimeoutWarning
@@ -161,90 +174,85 @@ function ClaimForm({ token }: { token: string }) {
   }
 
   return (
-    <AuthCard>
-      <h2 className="card-title">Set up your gateway</h2>
-      <p>Create the owner account for this gateway.</p>
+    <AuthPageShell>
+      <AuthCard
+        title="Set up your gateway"
+        description="Create the owner account for this gateway."
+      >
+        <form.AppForm>
+          <form.Form className="space-y-4">
+            <form.AppField name="name">
+              {(field) => (
+                <field.TextField
+                  label="Name"
+                  placeholder="Your name"
+                  autoComplete="name"
+                  className={authInputClassName}
+                  maxLength={120}
+                  disabled={isRunning}
+                  required
+                />
+              )}
+            </form.AppField>
+            <form.AppField name="email">
+              {(field) => (
+                <field.TextField
+                  label="Email"
+                  type="email"
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  className={authInputClassName}
+                  disabled={isRunning}
+                  required
+                />
+              )}
+            </form.AppField>
+            <form.AppField name="password">
+              {(field) => (
+                <field.TextField
+                  label="Password"
+                  description="Password must be at least 8 characters"
+                  type="password"
+                  placeholder="Create a password"
+                  autoComplete="new-password"
+                  className={authInputClassName}
+                  maxLength={128}
+                  disabled={isRunning}
+                  required
+                />
+              )}
+            </form.AppField>
+            <form.AppField name="confirmPassword">
+              {(field) => (
+                <field.TextField
+                  label="Confirm password"
+                  type="password"
+                  placeholder="Confirm your password"
+                  autoComplete="new-password"
+                  className={authInputClassName}
+                  maxLength={128}
+                  disabled={isRunning}
+                  required
+                />
+              )}
+            </form.AppField>
 
-      <form onSubmit={handleSubmit}>
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text">Name</span>
-          </label>
-          <input
-            id="name"
-            type="text"
-            placeholder="Your name"
-            className="input input-bordered w-full"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            maxLength={120}
-            disabled={isRunning}
-          />
-        </div>
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text">Email</span>
-          </label>
-          <input
-            id="email"
-            type="email"
-            placeholder="you@example.com"
-            className="input input-bordered w-full"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            disabled={isRunning}
-          />
-        </div>
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text">Password</span>
-          </label>
-          <input
-            id="password"
-            type="password"
-            placeholder="Create a password"
-            className="input input-bordered w-full"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={8}
-            maxLength={128}
-            disabled={isRunning}
-          />
-          <label className="label">
-            <span className="label-text-alt text-base-content/60">
-              Password must be at least 8 characters
-            </span>
-          </label>
-        </div>
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text">Confirm Password</span>
-          </label>
-          <input
-            id="confirmPassword"
-            type="password"
-            placeholder="Confirm your password"
-            className="input input-bordered w-full"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            minLength={8}
-            maxLength={128}
-            disabled={isRunning}
-          />
-        </div>
-        {error && <div className="text-sm text-error">{error}</div>}
-        <button
-          type="submit"
-          className="btn btn-primary w-full"
-          disabled={isRunning}
-        >
-          {isRunning ? "Setting up..." : "Create Owner Account"}
-        </button>
-      </form>
-    </AuthCard>
+            {error ? (
+              <Alert variant="destructive">
+                <CircleAlert />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+            <Button
+              type="submit"
+              className={authSubmitClassName}
+              pending={isRunning}
+            >
+              {isRunning ? "Setting up..." : "Create owner account"}
+            </Button>
+          </form.Form>
+        </form.AppForm>
+      </AuthCard>
+    </AuthPageShell>
   );
 }

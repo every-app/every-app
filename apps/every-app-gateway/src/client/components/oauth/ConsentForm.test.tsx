@@ -181,7 +181,7 @@ describe("what the consent form posts", () => {
     // pressed button's decision from the form being sent.
     for (const label of ["Allow", "Deny"]) {
       expect(button(label).getAttribute("aria-disabled")).toBe("true");
-      expect(button(label).className).toContain("btn-disabled");
+      expect(button(label).classList.contains("opacity-50")).toBe(true);
     }
     expect(allow.disabled).toBe(false);
   });

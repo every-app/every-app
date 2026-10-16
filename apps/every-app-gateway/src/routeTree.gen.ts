@@ -9,22 +9,23 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as AppRouteImport } from './routes/_app'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
-import { Route as AdminRouteImport } from './routes/admin'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
-import { Route as OrganizationsRouteImport } from './routes/organizations'
 import { Route as PwaRouteImport } from './routes/pwa'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
-import { Route as AdminIndexRouteImport } from './routes/admin/index'
-import { Route as AdminAppsRouteImport } from './routes/admin/apps'
-import { Route as AdminTokensRouteImport } from './routes/admin/tokens'
-import { Route as AdminUsersRouteImport } from './routes/admin/users'
+import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as AppAdminRouteImport } from './routes/_app/admin'
+import { Route as AppOrganizationsRouteImport } from './routes/_app/organizations'
 import { Route as OauthConsentRouteImport } from './routes/oauth/consent'
-import { Route as SettingsConnectionsRouteImport } from './routes/settings/connections'
+import { Route as AppAdminIndexRouteImport } from './routes/_app/admin/index'
+import { Route as AppAdminAppsRouteImport } from './routes/_app/admin/apps'
+import { Route as AppAdminTokensRouteImport } from './routes/_app/admin/tokens'
+import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
+import { Route as AppSettingsConnectionsRouteImport } from './routes/_app/settings/connections'
 import { Route as ApiAdminHasOwnerRouteImport } from './routes/api/admin/has-owner'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDeployIdentityKeysRouteImport } from './routes/api/deploy/identity-keys'
@@ -41,9 +42,8 @@ import { Route as ApiDeployAppsAppIdDeployedRouteImport } from './routes/api/dep
 import { Route as ApiDeployAppsAppIdInfoRouteImport } from './routes/api/deploy/apps/$appId/info'
 import { Route as ApiDeployAppsAppIdToolsSyncRouteImport } from './routes/api/deploy/apps/$appId/tools/sync'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AppRoute = AppRouteImport.update({
+  id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
@@ -51,19 +51,9 @@ const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
   path: '/accept-invitation',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OrganizationsRoute = OrganizationsRouteImport.update({
-  id: '/organizations',
-  path: '/organizations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PwaRoute = PwaRouteImport.update({
@@ -91,35 +81,50 @@ const SignUpRoute = SignUpRouteImport.update({
   path: '/sign-up',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminIndexRoute = AdminIndexRouteImport.update({
+const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AdminRoute,
+  getParentRoute: () => AppRoute,
 } as any)
-const AdminAppsRoute = AdminAppsRouteImport.update({
-  id: '/apps',
-  path: '/apps',
-  getParentRoute: () => AdminRoute,
+const AppAdminRoute = AppAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AppRoute,
 } as any)
-const AdminTokensRoute = AdminTokensRouteImport.update({
-  id: '/tokens',
-  path: '/tokens',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminUsersRoute = AdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => AdminRoute,
+const AppOrganizationsRoute = AppOrganizationsRouteImport.update({
+  id: '/organizations',
+  path: '/organizations',
+  getParentRoute: () => AppRoute,
 } as any)
 const OauthConsentRoute = OauthConsentRouteImport.update({
   id: '/oauth/consent',
   path: '/oauth/consent',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsConnectionsRoute = SettingsConnectionsRouteImport.update({
+const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppAdminRoute,
+} as any)
+const AppAdminAppsRoute = AppAdminAppsRouteImport.update({
+  id: '/apps',
+  path: '/apps',
+  getParentRoute: () => AppAdminRoute,
+} as any)
+const AppAdminTokensRoute = AppAdminTokensRouteImport.update({
+  id: '/tokens',
+  path: '/tokens',
+  getParentRoute: () => AppAdminRoute,
+} as any)
+const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AppAdminRoute,
+} as any)
+const AppSettingsConnectionsRoute = AppSettingsConnectionsRouteImport.update({
   id: '/settings/connections',
   path: '/settings/connections',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => AppRoute,
 } as any)
 const ApiAdminHasOwnerRoute = ApiAdminHasOwnerRouteImport.update({
   id: '/api/admin/has-owner',
@@ -202,22 +207,21 @@ const ApiDeployAppsAppIdToolsSyncRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof AppIndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
-  '/admin': typeof AdminRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
-  '/organizations': typeof OrganizationsRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
-  '/admin/apps': typeof AdminAppsRoute
-  '/admin/tokens': typeof AdminTokensRoute
-  '/admin/users': typeof AdminUsersRoute
+  '/admin': typeof AppAdminRouteWithChildren
+  '/organizations': typeof AppOrganizationsRoute
   '/oauth/consent': typeof OauthConsentRoute
-  '/settings/connections': typeof SettingsConnectionsRoute
-  '/admin/': typeof AdminIndexRoute
+  '/admin/apps': typeof AppAdminAppsRoute
+  '/admin/tokens': typeof AppAdminTokensRoute
+  '/admin/users': typeof AppAdminUsersRoute
+  '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/deploy/identity-keys': typeof ApiDeployIdentityKeysRoute
@@ -228,6 +232,7 @@ export interface FileRoutesByFullPath {
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/api/setup/deploy-token': typeof ApiSetupDeployTokenRoute
+  '/admin/': typeof AppAdminIndexRoute
   '/api/deploy/apps/$appId/activate': typeof ApiDeployAppsAppIdActivateRoute
   '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
   '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
@@ -235,21 +240,20 @@ export interface FileRoutesByFullPath {
   '/api/deploy/apps/$appId/tools/sync': typeof ApiDeployAppsAppIdToolsSyncRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
   '/forgot-password': typeof ForgotPasswordRoute
-  '/organizations': typeof OrganizationsRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
-  '/admin/apps': typeof AdminAppsRoute
-  '/admin/tokens': typeof AdminTokensRoute
-  '/admin/users': typeof AdminUsersRoute
+  '/organizations': typeof AppOrganizationsRoute
   '/oauth/consent': typeof OauthConsentRoute
-  '/settings/connections': typeof SettingsConnectionsRoute
-  '/admin': typeof AdminIndexRoute
+  '/': typeof AppIndexRoute
+  '/admin/apps': typeof AppAdminAppsRoute
+  '/admin/tokens': typeof AppAdminTokensRoute
+  '/admin/users': typeof AppAdminUsersRoute
+  '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/deploy/identity-keys': typeof ApiDeployIdentityKeysRoute
@@ -260,6 +264,7 @@ export interface FileRoutesByTo {
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/api/setup/deploy-token': typeof ApiSetupDeployTokenRoute
+  '/admin': typeof AppAdminIndexRoute
   '/api/deploy/apps/$appId/activate': typeof ApiDeployAppsAppIdActivateRoute
   '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
   '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
@@ -268,22 +273,22 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_app': typeof AppRouteWithChildren
   '/accept-invitation': typeof AcceptInvitationRoute
-  '/admin': typeof AdminRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
-  '/organizations': typeof OrganizationsRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/setup': typeof SetupRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
-  '/admin/apps': typeof AdminAppsRoute
-  '/admin/tokens': typeof AdminTokensRoute
-  '/admin/users': typeof AdminUsersRoute
+  '/_app/admin': typeof AppAdminRouteWithChildren
+  '/_app/organizations': typeof AppOrganizationsRoute
   '/oauth/consent': typeof OauthConsentRoute
-  '/settings/connections': typeof SettingsConnectionsRoute
-  '/admin/': typeof AdminIndexRoute
+  '/_app/': typeof AppIndexRoute
+  '/_app/admin/apps': typeof AppAdminAppsRoute
+  '/_app/admin/tokens': typeof AppAdminTokensRoute
+  '/_app/admin/users': typeof AppAdminUsersRoute
+  '/_app/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/deploy/identity-keys': typeof ApiDeployIdentityKeysRoute
@@ -294,6 +299,7 @@ export interface FileRoutesById {
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/api/setup/deploy-token': typeof ApiSetupDeployTokenRoute
+  '/_app/admin/': typeof AppAdminIndexRoute
   '/api/deploy/apps/$appId/activate': typeof ApiDeployAppsAppIdActivateRoute
   '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
   '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
@@ -305,20 +311,19 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/accept-invitation'
-    | '/admin'
     | '/forgot-password'
-    | '/organizations'
     | '/pwa'
     | '/reset-password'
     | '/setup'
     | '/sign-in'
     | '/sign-up'
+    | '/admin'
+    | '/organizations'
+    | '/oauth/consent'
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/users'
-    | '/oauth/consent'
     | '/settings/connections'
-    | '/admin/'
     | '/api/admin/has-owner'
     | '/api/auth/$'
     | '/api/deploy/identity-keys'
@@ -329,6 +334,7 @@ export interface FileRouteTypes {
     | '/api/me/apps'
     | '/api/setup/claim'
     | '/api/setup/deploy-token'
+    | '/admin/'
     | '/api/deploy/apps/$appId/activate'
     | '/api/deploy/apps/$appId/delete'
     | '/api/deploy/apps/$appId/deployed'
@@ -336,21 +342,20 @@ export interface FileRouteTypes {
     | '/api/deploy/apps/$appId/tools/sync'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/accept-invitation'
     | '/forgot-password'
-    | '/organizations'
     | '/pwa'
     | '/reset-password'
     | '/setup'
     | '/sign-in'
     | '/sign-up'
+    | '/organizations'
+    | '/oauth/consent'
+    | '/'
     | '/admin/apps'
     | '/admin/tokens'
     | '/admin/users'
-    | '/oauth/consent'
     | '/settings/connections'
-    | '/admin'
     | '/api/admin/has-owner'
     | '/api/auth/$'
     | '/api/deploy/identity-keys'
@@ -361,6 +366,7 @@ export interface FileRouteTypes {
     | '/api/me/apps'
     | '/api/setup/claim'
     | '/api/setup/deploy-token'
+    | '/admin'
     | '/api/deploy/apps/$appId/activate'
     | '/api/deploy/apps/$appId/delete'
     | '/api/deploy/apps/$appId/deployed'
@@ -368,22 +374,22 @@ export interface FileRouteTypes {
     | '/api/deploy/apps/$appId/tools/sync'
   id:
     | '__root__'
-    | '/'
+    | '/_app'
     | '/accept-invitation'
-    | '/admin'
     | '/forgot-password'
-    | '/organizations'
     | '/pwa'
     | '/reset-password'
     | '/setup'
     | '/sign-in'
     | '/sign-up'
-    | '/admin/apps'
-    | '/admin/tokens'
-    | '/admin/users'
+    | '/_app/admin'
+    | '/_app/organizations'
     | '/oauth/consent'
-    | '/settings/connections'
-    | '/admin/'
+    | '/_app/'
+    | '/_app/admin/apps'
+    | '/_app/admin/tokens'
+    | '/_app/admin/users'
+    | '/_app/settings/connections'
     | '/api/admin/has-owner'
     | '/api/auth/$'
     | '/api/deploy/identity-keys'
@@ -394,6 +400,7 @@ export interface FileRouteTypes {
     | '/api/me/apps'
     | '/api/setup/claim'
     | '/api/setup/deploy-token'
+    | '/_app/admin/'
     | '/api/deploy/apps/$appId/activate'
     | '/api/deploy/apps/$appId/delete'
     | '/api/deploy/apps/$appId/deployed'
@@ -402,18 +409,15 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
   AcceptInvitationRoute: typeof AcceptInvitationRoute
-  AdminRoute: typeof AdminRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
-  OrganizationsRoute: typeof OrganizationsRoute
   PwaRoute: typeof PwaRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SetupRoute: typeof SetupRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   OauthConsentRoute: typeof OauthConsentRoute
-  SettingsConnectionsRoute: typeof SettingsConnectionsRoute
   ApiAdminHasOwnerRoute: typeof ApiAdminHasOwnerRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDeployIdentityKeysRoute: typeof ApiDeployIdentityKeysRoute
@@ -433,11 +437,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
+    '/_app': {
+      id: '/_app'
+      path: ''
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/accept-invitation': {
@@ -447,25 +451,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AcceptInvitationRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/forgot-password': {
       id: '/forgot-password'
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/organizations': {
-      id: '/organizations'
-      path: '/organizations'
-      fullPath: '/organizations'
-      preLoaderRoute: typeof OrganizationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pwa': {
@@ -503,33 +493,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SignUpRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/': {
-      id: '/admin/'
+    '/_app/': {
+      id: '/_app/'
       path: '/'
-      fullPath: '/admin/'
-      preLoaderRoute: typeof AdminIndexRouteImport
-      parentRoute: typeof AdminRoute
+      fullPath: '/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/admin/apps': {
-      id: '/admin/apps'
-      path: '/apps'
-      fullPath: '/admin/apps'
-      preLoaderRoute: typeof AdminAppsRouteImport
-      parentRoute: typeof AdminRoute
+    '/_app/admin': {
+      id: '/_app/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AppAdminRouteImport
+      parentRoute: typeof AppRoute
     }
-    '/admin/tokens': {
-      id: '/admin/tokens'
-      path: '/tokens'
-      fullPath: '/admin/tokens'
-      preLoaderRoute: typeof AdminTokensRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/users': {
-      id: '/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof AdminUsersRouteImport
-      parentRoute: typeof AdminRoute
+    '/_app/organizations': {
+      id: '/_app/organizations'
+      path: '/organizations'
+      fullPath: '/organizations'
+      preLoaderRoute: typeof AppOrganizationsRouteImport
+      parentRoute: typeof AppRoute
     }
     '/oauth/consent': {
       id: '/oauth/consent'
@@ -538,12 +521,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OauthConsentRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/connections': {
-      id: '/settings/connections'
+    '/_app/admin/': {
+      id: '/_app/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AppAdminIndexRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
+    '/_app/admin/apps': {
+      id: '/_app/admin/apps'
+      path: '/apps'
+      fullPath: '/admin/apps'
+      preLoaderRoute: typeof AppAdminAppsRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
+    '/_app/admin/tokens': {
+      id: '/_app/admin/tokens'
+      path: '/tokens'
+      fullPath: '/admin/tokens'
+      preLoaderRoute: typeof AppAdminTokensRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
+    '/_app/admin/users': {
+      id: '/_app/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AppAdminUsersRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
+    '/_app/settings/connections': {
+      id: '/_app/settings/connections'
       path: '/settings/connections'
       fullPath: '/settings/connections'
-      preLoaderRoute: typeof SettingsConnectionsRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof AppSettingsConnectionsRouteImport
+      parentRoute: typeof AppRoute
     }
     '/api/admin/has-owner': {
       id: '/api/admin/has-owner'
@@ -653,35 +664,50 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AdminRouteChildren {
-  AdminAppsRoute: typeof AdminAppsRoute
-  AdminTokensRoute: typeof AdminTokensRoute
-  AdminUsersRoute: typeof AdminUsersRoute
-  AdminIndexRoute: typeof AdminIndexRoute
+interface AppAdminRouteChildren {
+  AppAdminAppsRoute: typeof AppAdminAppsRoute
+  AppAdminTokensRoute: typeof AppAdminTokensRoute
+  AppAdminUsersRoute: typeof AppAdminUsersRoute
+  AppAdminIndexRoute: typeof AppAdminIndexRoute
 }
 
-const AdminRouteChildren: AdminRouteChildren = {
-  AdminAppsRoute: AdminAppsRoute,
-  AdminTokensRoute: AdminTokensRoute,
-  AdminUsersRoute: AdminUsersRoute,
-  AdminIndexRoute: AdminIndexRoute,
+const AppAdminRouteChildren: AppAdminRouteChildren = {
+  AppAdminAppsRoute: AppAdminAppsRoute,
+  AppAdminTokensRoute: AppAdminTokensRoute,
+  AppAdminUsersRoute: AppAdminUsersRoute,
+  AppAdminIndexRoute: AppAdminIndexRoute,
 }
 
-const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+const AppAdminRouteWithChildren = AppAdminRoute._addFileChildren(
+  AppAdminRouteChildren,
+)
+
+interface AppRouteChildren {
+  AppAdminRoute: typeof AppAdminRouteWithChildren
+  AppOrganizationsRoute: typeof AppOrganizationsRoute
+  AppIndexRoute: typeof AppIndexRoute
+  AppSettingsConnectionsRoute: typeof AppSettingsConnectionsRoute
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppAdminRoute: AppAdminRouteWithChildren,
+  AppOrganizationsRoute: AppOrganizationsRoute,
+  AppIndexRoute: AppIndexRoute,
+  AppSettingsConnectionsRoute: AppSettingsConnectionsRoute,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
   AcceptInvitationRoute: AcceptInvitationRoute,
-  AdminRoute: AdminRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
-  OrganizationsRoute: OrganizationsRoute,
   PwaRoute: PwaRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SetupRoute: SetupRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   OauthConsentRoute: OauthConsentRoute,
-  SettingsConnectionsRoute: SettingsConnectionsRoute,
   ApiAdminHasOwnerRoute: ApiAdminHasOwnerRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDeployIdentityKeysRoute: ApiDeployIdentityKeysRoute,

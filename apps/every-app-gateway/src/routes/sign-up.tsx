@@ -1,10 +1,23 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
+import { CircleAlert } from "lucide-react";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
+import { CodeBlock } from "@/client/components/CodeBlock";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import { PageLoading } from "@/client/components/Spinner";
+import {
+  AuthCard,
+  AuthPageShell,
+  authInputClassName,
+  authLinkClassName,
+  authSubmitClassName,
+} from "@/client/components/auth/AuthPageShell";
+import { useAppForm } from "@/client/components/form/useAppForm";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import { useSignInMethods } from "@/client/sign-in-methods";
 import { hasOwner } from "@/serverFunctions/admin";
@@ -14,6 +27,17 @@ const searchSchema = z.object({
   redirect: z.string().optional(),
   return_to: z.string().optional(),
 });
+
+const createAccountSchema = z
+  .object({
+    email: z.string().trim().email("Enter a valid email address."),
+    password: z.string().min(8, "Password must be at least 8 characters."),
+    confirmPassword: z.string(),
+  })
+  .refine((value) => value.password === value.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
 
 function getAuthSearch({
   redirect,
@@ -53,7 +77,7 @@ function SignUp() {
   const { data: methods } = useSignInMethods();
 
   if (isCheckingOwner) {
-    return null;
+    return <PageLoading />;
   }
 
   // With password sign-in off, an invited person signs in with Cloudflare
@@ -90,9 +114,6 @@ function CreateInvitedAccountForm({
   return_to?: string;
   invitationToken: string;
 }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -109,6 +130,20 @@ function CreateInvitedAccountForm({
     }
   };
 
+  // The schema checks the fields, matching passwords included. The sign-up
+  // runs in `executeWithRetry`, which retries on a CPU timeout, so it reads
+  // the values from the form each try.
+  const form = useAppForm({
+    defaultValues: { email: "", password: "", confirmPassword: "" },
+    validators: { onSubmit: createAccountSchema },
+    // Every submit clears the last server error, a refused one included.
+    onSubmitInvalid: () => setError(""),
+    onSubmit: () => {
+      setError("");
+      executeWithRetry();
+    },
+  });
+
   const {
     isRunning,
     attemptCount,
@@ -121,6 +156,9 @@ function CreateInvitedAccountForm({
     setRetrySuccess,
     executeWithRetry,
   } = useCpuTimeoutRetry(async () => {
+    // Trimmed as the browser trims a type="email" input's value.
+    const email = form.state.values.email.trim();
+    const { password } = form.state.values;
     try {
       const { error: signUpError } = await authClient.signUp.email(
         {
@@ -162,18 +200,6 @@ function CreateInvitedAccountForm({
     }
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-
-    executeWithRetry();
-  };
-
   if (showWarning || isRetrySuccess) {
     return (
       <CpuTimeoutWarning
@@ -188,92 +214,94 @@ function CreateInvitedAccountForm({
   }
 
   return (
-    <div className="flex h-screen items-center justify-center overflow-hidden">
-      <div className="relative w-full max-w-md">
-        <img
-          src="/transparent-logo.png"
-          alt="Logo"
-          className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
-        />
-        <div className="card auth-card">
-          <div className="card-body">
-            <h2 className="card-title">Create Account</h2>
-            <p>Create your account to join the invited organization</p>
-
-            <form onSubmit={handleSubmit}>
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Email</span>
-                </label>
-                <input
-                  id="email"
+    <AuthPageShell>
+      <AuthCard
+        title="Create account"
+        description="Create your account to join the invited organization."
+        footer={<SignInInstead redirect={redirect} return_to={return_to} />}
+      >
+        <form.AppForm>
+          <form.Form className="space-y-4">
+            <form.AppField name="email">
+              {(field) => (
+                <field.TextField
+                  label="Email"
                   type="email"
                   placeholder="you@example.com"
-                  className="input input-bordered w-full"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  className={authInputClassName}
+                  autoComplete="email"
                   required
                   disabled={isRunning}
                 />
-              </div>
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Password</span>
-                </label>
-                <input
-                  id="password"
+              )}
+            </form.AppField>
+            <form.AppField name="password">
+              {(field) => (
+                <field.TextField
+                  label="Password"
                   type="password"
                   placeholder="Create a password"
-                  className="input input-bordered w-full"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  className={authInputClassName}
+                  autoComplete="new-password"
                   required
                   minLength={8}
                   disabled={isRunning}
                 />
-              </div>
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Confirm Password</span>
-                </label>
-                <input
-                  id="confirmPassword"
+              )}
+            </form.AppField>
+            <form.AppField name="confirmPassword">
+              {(field) => (
+                <field.TextField
+                  label="Confirm password"
                   type="password"
                   placeholder="Confirm your password"
-                  className="input input-bordered w-full"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  className={authInputClassName}
+                  autoComplete="new-password"
                   required
                   minLength={8}
                   disabled={isRunning}
                 />
-              </div>
-              {error && <div className="text-sm text-error">{error}</div>}
-              <button
-                type="submit"
-                className="btn btn-primary w-full"
-                disabled={isRunning}
-              >
-                {isRunning ? "Creating account..." : "Create Account"}
-              </button>
-            </form>
+              )}
+            </form.AppField>
+            {error ? (
+              <Alert variant="destructive">
+                <CircleAlert />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+            <Button
+              type="submit"
+              className={authSubmitClassName}
+              pending={isRunning}
+            >
+              {isRunning ? "Creating account..." : "Create account"}
+            </Button>
+          </form.Form>
+        </form.AppForm>
+      </AuthCard>
+    </AuthPageShell>
+  );
+}
 
-            <div className="flex justify-center mt-4">
-              <p className="text-sm text-base-content/60">
-                Already have an account?{" "}
-                <Link
-                  to="/sign-in"
-                  search={getAuthSearch({ redirect, return_to })}
-                  className="font-medium text-base-content hover:underline"
-                >
-                  Sign in
-                </Link>
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+/** "Already have an account? Sign in", below the card. */
+function SignInInstead({
+  redirect,
+  return_to,
+}: {
+  redirect?: string;
+  return_to?: string;
+}) {
+  return (
+    <p>
+      Already have an account?{" "}
+      <Link
+        to="/sign-in"
+        search={getAuthSearch({ redirect, return_to })}
+        className={authLinkClassName}
+      >
+        Sign in
+      </Link>
+    </p>
   );
 }
 
@@ -290,41 +318,22 @@ function SetupPending({
   return_to?: string;
 }) {
   return (
-    <div className="flex h-screen items-center justify-center overflow-hidden">
-      <div className="relative w-full max-w-md">
-        <img
-          src="/transparent-logo.png"
-          alt="Logo"
-          className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
+    <AuthPageShell>
+      <AuthCard
+        title="Setup pending"
+        footer={<SignInInstead redirect={redirect} return_to={return_to} />}
+      >
+        <p className="text-sm text-muted-foreground">
+          This gateway hasn&apos;t been claimed yet. Open the setup link that
+          was printed when it was deployed, or create a new one on the machine
+          that deployed it:
+        </p>
+        <CodeBlock
+          code="everyapp gateway claim-link"
+          successMessage="Command copied"
         />
-        <div className="card auth-card">
-          <div className="card-body text-center">
-            <h2 className="card-title justify-center">Setup pending</h2>
-            <p className="text-base-content/70 mt-2">
-              This gateway hasn&apos;t been claimed yet. Open the setup link
-              that was printed when it was deployed, or create a new one on the
-              machine that deployed it:
-            </p>
-            <code className="block mt-3 text-sm">
-              everyapp gateway claim-link
-            </code>
-
-            <div className="divider">OR</div>
-
-            <p className="text-sm text-base-content/60">
-              Already have an account?{" "}
-              <Link
-                to="/sign-in"
-                search={getAuthSearch({ redirect, return_to })}
-                className="font-medium text-base-content hover:underline"
-              >
-                Sign in
-              </Link>
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
+      </AuthCard>
+    </AuthPageShell>
   );
 }
 
@@ -337,34 +346,26 @@ function SignInWithAccessInstead({
   return_to?: string;
 }) {
   return (
-    <div className="flex h-screen items-center justify-center overflow-hidden">
-      <div className="relative w-full max-w-md">
-        <img
-          src="/transparent-logo.png"
-          alt="Logo"
-          className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
-        />
-        <div className="card auth-card">
-          <div className="card-body text-center">
-            <h2 className="card-title justify-center">Sign in to join</h2>
-            <p className="text-base-content/70 mt-2">
-              This gateway doesn&apos;t use passwords. Sign in with your invited
-              email through Cloudflare Access, and you&apos;ll join
-              automatically.
-            </p>
-            <div className="mt-4">
-              <Link
-                to="/sign-in"
-                search={getAuthSearch({ redirect, return_to })}
-                className="btn btn-primary"
-              >
-                Sign in
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AuthPageShell>
+      <AuthCard title="Sign in to join">
+        <p className="text-sm text-muted-foreground">
+          This gateway doesn&apos;t use passwords. Sign in with your invited
+          email through Cloudflare Access, and you&apos;ll join automatically.
+        </p>
+        <Button
+          className={authSubmitClassName}
+          nativeButton={false}
+          render={
+            <Link
+              to="/sign-in"
+              search={getAuthSearch({ redirect, return_to })}
+            />
+          }
+        >
+          Sign in
+        </Button>
+      </AuthCard>
+    </AuthPageShell>
   );
 }
 
@@ -380,37 +381,17 @@ function InvitationRequired({
   return_to?: string;
 }) {
   return (
-    <div className="flex h-screen items-center justify-center overflow-hidden">
-      <div className="relative w-full max-w-md">
-        <img
-          src="/transparent-logo.png"
-          alt="Logo"
-          className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
-        />
-        <div className="card auth-card">
-          <div className="card-body text-center">
-            <h2 className="card-title justify-center">Invitation Required</h2>
-            <p className="text-base-content/70 mt-2">
-              This gateway uses invite-only registration. Please contact the
-              administrator to request an invitation email.
-            </p>
-
-            <div className="divider">OR</div>
-
-            <p className="text-sm text-base-content/60">
-              Already have an account?{" "}
-              <Link
-                to="/sign-in"
-                search={getAuthSearch({ redirect, return_to })}
-                className="font-medium text-base-content hover:underline"
-              >
-                Sign in
-              </Link>
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AuthPageShell>
+      <AuthCard
+        title="Invitation required"
+        footer={<SignInInstead redirect={redirect} return_to={return_to} />}
+      >
+        <p className="text-sm text-muted-foreground">
+          This gateway uses invite-only registration. Please contact the
+          administrator to request an invitation email.
+        </p>
+      </AuthCard>
+    </AuthPageShell>
   );
 }
 

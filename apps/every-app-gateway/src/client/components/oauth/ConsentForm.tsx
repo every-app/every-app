@@ -1,7 +1,30 @@
-import { useRef, useState } from "react";
-import { BadgeCheck, ShieldAlert } from "lucide-react";
+import { useRef, useState, type ComponentProps, type ReactNode } from "react";
+import {
+  ArrowLeftRight,
+  BadgeCheck,
+  CheckIcon,
+  Send,
+  ShieldAlert,
+  User,
+} from "lucide-react";
+import { cn } from "cn";
 import { CONSENT_FIELDS } from "@/schemas/consent-decision";
 import type { ConsentContext } from "@/server/mcp-auth/consent";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Badge } from "@/client/components/ui/badge";
+import { Button, buttonVariants } from "@/client/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/client/components/ui/card";
+import {
+  FieldDescription,
+  FieldLegend,
+  FieldSet,
+} from "@/client/components/ui/field";
+import { Spinner } from "@/client/components/ui/spinner";
 import { domainCoversRedirect } from "./clientSite";
 import { useDeliberateAllow } from "./useDeliberateAllow";
 
@@ -41,239 +64,330 @@ export function ConsentForm({
     Boolean(organization) && (appMode === "all" || selected.size > 0);
   // One answer per page: a double-clicked button would send the form twice.
   const sent = useRef(false);
-  const [sending, setSending] = useState(false);
+  // The pressed button's decision once the form is sent ("" when the form
+  // was sent without a button), for its spinner.
+  const [sentDecision, setSentDecision] = useState<string | null>(null);
+  const sending = sentDecision !== null;
   // Not `disabled`: a submit button disabled while its form is being sent
   // drops out of what is sent, and with it the decision.
-  const sendingButton = sending ? " btn-disabled" : "";
+  const sendingClassName = sending ? "pointer-events-none opacity-50" : "";
+  const verified = Boolean(
+    client.domain && domainCoversRedirect(client.domain, client.redirectHost),
+  );
 
   return (
-    <main className="min-h-screen bg-base-100 grid place-items-center p-6">
-      <form
-        method="post"
-        action="/oauth/consent/decision"
-        className="w-full max-w-lg rounded-lg border border-base-300 bg-base-100 p-6 shadow-sm space-y-6"
-        aria-busy={sending}
-        onSubmit={(event) => {
-          if (sent.current) {
-            event.preventDefault();
-            return;
-          }
-          sent.current = true;
-          setSending(true);
-        }}
-      >
-        <input
-          type="hidden"
-          name={CONSENT_FIELDS.handle}
-          value={context.handle}
-        />
-        <input type="hidden" name={CONSENT_FIELDS.clientId} value={client.id} />
-        <input
-          type="hidden"
-          name={CONSENT_FIELDS.redirectUri}
-          value={client.redirectUri}
-        />
+    <form
+      method="post"
+      action="/oauth/consent/decision"
+      className="w-full max-w-md"
+      aria-busy={sending}
+      onSubmit={(event) => {
+        if (sent.current) {
+          event.preventDefault();
+          return;
+        }
+        sent.current = true;
+        const { submitter } = event.nativeEvent as SubmitEvent;
+        setSentDecision(submitter?.getAttribute("value") ?? "");
+      }}
+    >
+      <input
+        type="hidden"
+        name={CONSENT_FIELDS.handle}
+        value={context.handle}
+      />
+      <input type="hidden" name={CONSENT_FIELDS.clientId} value={client.id} />
+      <input
+        type="hidden"
+        name={CONSENT_FIELDS.redirectUri}
+        value={client.redirectUri}
+      />
 
-        <header className="flex items-start gap-4">
-          <div
-            aria-hidden
-            className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-primary/10 text-primary font-semibold"
-          >
-            {initials(client.name)}
+      <Card>
+        <CardHeader className="flex flex-col items-center text-center">
+          <div aria-hidden className="flex items-center gap-3">
+            <div className="grid size-12 shrink-0 place-items-center rounded-xl bg-primary/10 text-base font-semibold text-primary">
+              {initials(client.name)}
+            </div>
+            <ArrowLeftRight className="size-4 text-muted-foreground" />
+            <img
+              src="/transparent-logo.png"
+              alt=""
+              className="size-12 rounded-lg"
+            />
           </div>
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold break-words">
-              Connect {client.name} to Every App
-            </h1>
-            {client.domain &&
-            domainCoversRedirect(client.domain, client.redirectHost) ? (
-              <p className="mt-1 text-sm flex items-center gap-1">
-                <BadgeCheck className="h-4 w-4 text-success shrink-0" />
-                <span>
-                  Published by <strong>{client.domain}</strong>
-                </span>
-              </p>
-            ) : client.domain ? (
-              <p className="mt-1 text-sm flex items-start gap-1 text-warning">
-                <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
-                <span>
-                  Its details are published on <strong>{client.domain}</strong>,
-                  but it sends access to <strong>{client.redirectHost}</strong>,
-                  a different site. Continue only if you trust both.
-                </span>
-              </p>
-            ) : (
-              <p className="mt-1 text-sm text-base-content/70">
-                <span className="badge badge-ghost badge-sm mr-1">
-                  unverified
-                </span>
-                This app named itself; its name is not verified.
-              </p>
-            )}
-          </div>
-        </header>
+          <CardTitle className="mt-4 text-xl">
+            <h1 className="break-words">Connect {client.name} to Every App</h1>
+          </CardTitle>
+          {verified ? (
+            <p className="mt-1 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
+              <BadgeCheck className="size-4 shrink-0 text-success" />
+              <span>
+                Published by{" "}
+                <strong className="font-medium text-foreground">
+                  {client.domain}
+                </strong>
+              </span>
+            </p>
+          ) : client.domain ? null : (
+            <p className="mt-1 text-sm text-muted-foreground">
+              <Badge
+                variant="outline"
+                size="sm"
+                className="mr-1.5 align-middle"
+              >
+                unverified
+              </Badge>
+              This app named itself; its name is not verified.
+            </p>
+          )}
+        </CardHeader>
 
-        <div className="rounded-md border border-base-300 p-4 text-sm space-y-2">
-          <p>
-            Access will be sent to <strong>{client.redirectHost}</strong>.
-          </p>
-          <p className="text-base-content/70">
-            Signed in as <strong>{context.email}</strong>.{" "}
-            <button type="button" className="link" onClick={onSwitchAccount}>
-              Use another account
-            </button>
-          </p>
-        </div>
+        <CardContent className="space-y-6">
+          {client.domain && !verified ? (
+            <Alert variant="warning">
+              <ShieldAlert />
+              <AlertDescription className="text-foreground">
+                Its details are published on <strong>{client.domain}</strong>,
+                but it sends access to <strong>{client.redirectHost}</strong>, a
+                different site. Continue only if you trust both.
+              </AlertDescription>
+            </Alert>
+          ) : null}
 
-        {organizations.length === 0 ? (
-          <p className="alert alert-warning text-sm">
-            Your account isn't a member of any organization, so there is nothing
-            to connect.
-          </p>
-        ) : (
-          <>
-            {organizations.length > 1 ? (
-              <fieldset className="space-y-2">
-                <legend className="text-sm font-semibold mb-2">
-                  Organization
-                </legend>
-                {organizations.map((org) => (
-                  <label key={org.id} className="flex items-center gap-2">
-                    <input
-                      type="radio"
-                      className="radio radio-sm"
-                      name={CONSENT_FIELDS.organizationId}
-                      value={org.id}
-                      checked={organizationId === org.id}
-                      onChange={() => {
-                        setOrganizationId(org.id);
-                        setSelected(new Set());
-                      }}
-                    />
-                    <span>{org.name}</span>
-                  </label>
-                ))}
-              </fieldset>
-            ) : (
-              <input
-                type="hidden"
-                name={CONSENT_FIELDS.organizationId}
-                value={organizationId}
-              />
-            )}
-
-            <fieldset className="space-y-2">
-              <legend className="text-sm font-semibold mb-2">Apps</legend>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  className="radio radio-sm"
-                  name={CONSENT_FIELDS.appMode}
-                  value="all"
-                  checked={appMode === "all"}
-                  onChange={() => setAppMode("all")}
-                />
-                <span>All apps I can use, including future ones</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  className="radio radio-sm"
-                  name={CONSENT_FIELDS.appMode}
-                  value="selected"
-                  checked={appMode === "selected"}
-                  onChange={() => setAppMode("selected")}
-                />
-                <span>Only these apps</span>
-              </label>
-              {appMode === "selected" && (
-                <div className="ml-6 space-y-1">
-                  {(organization?.apps ?? []).length === 0 && (
-                    <p className="text-sm text-base-content/60">
-                      You don't have access to any apps here yet.
-                    </p>
-                  )}
-                  {organization?.apps.map((app) => (
-                    <label
-                      key={app.rowId}
-                      className={`flex items-center gap-2 ${app.hasTools ? "" : "opacity-50"}`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="checkbox checkbox-sm"
-                        name={CONSENT_FIELDS.appIds}
-                        value={app.rowId}
-                        disabled={!app.hasTools}
-                        checked={selected.has(app.rowId)}
-                        onChange={(event) => {
-                          const next = new Set(selected);
-                          if (event.target.checked) next.add(app.rowId);
-                          else next.delete(app.rowId);
-                          setSelected(next);
-                        }}
-                      />
-                      <span>{app.name}</span>
-                      {!app.hasTools && (
-                        <span className="text-xs">(no AI tools yet)</span>
-                      )}
-                    </label>
-                  ))}
+          <div className="divide-y divide-border rounded-lg border border-border bg-muted/50 text-sm">
+            <div className="flex items-center gap-3 px-3 py-2">
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
+                <User className="size-4" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs text-muted-foreground">
+                  Signed in as
                 </div>
-              )}
-            </fieldset>
-
-            <fieldset className="space-y-2">
-              <legend className="text-sm font-semibold mb-2">Access</legend>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  className="radio radio-sm"
-                  name={CONSENT_FIELDS.access}
-                  value="write"
-                  defaultChecked
-                />
-                <span>Read &amp; write</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  className="radio radio-sm"
-                  name={CONSENT_FIELDS.access}
-                  value="read"
-                />
-                <span>Read only</span>
-              </label>
-              <p className="text-xs text-base-content/60 flex items-start gap-1">
-                <ShieldAlert className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                Deleting and other destructive actions are never available to
-                connected AI apps yet.
+                <div className="truncate font-medium">{context.email}</div>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={onSwitchAccount}
+              >
+                Use another account
+              </Button>
+            </div>
+            <div className="flex items-center gap-3 px-3 py-2">
+              <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
+                <Send className="size-4" />
+              </div>
+              <p className="min-w-0 flex-1 break-words">
+                Access will be sent to{" "}
+                <strong className="font-medium">{client.redirectHost}</strong>.
               </p>
-            </fieldset>
-          </>
-        )}
+            </div>
+          </div>
 
-        <div className="flex justify-end gap-3">
-          <button
-            type="submit"
-            name={CONSENT_FIELDS.decision}
-            value="deny"
-            className={`btn btn-ghost${sendingButton}`}
-            aria-disabled={sending}
-          >
-            Deny
-          </button>
-          <button
-            type="submit"
-            name={CONSENT_FIELDS.decision}
-            value="approve"
-            className={`btn btn-primary${sendingButton}`}
-            aria-disabled={sending}
-            disabled={!canAllow || !deliberate}
-          >
-            Allow
-          </button>
-        </div>
-      </form>
-    </main>
+          {organizations.length === 0 ? (
+            <Alert variant="warning">
+              <ShieldAlert />
+              <AlertDescription className="text-foreground">
+                Your account isn't a member of any organization, so there is
+                nothing to connect.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <>
+              {organizations.length > 1 ? (
+                <FieldSet>
+                  <FieldLegend variant="label">Organization</FieldLegend>
+                  <div className="grid gap-2.5">
+                    {organizations.map((org) => (
+                      <Choice
+                        key={org.id}
+                        type="radio"
+                        name={CONSENT_FIELDS.organizationId}
+                        value={org.id}
+                        checked={organizationId === org.id}
+                        onChange={() => {
+                          setOrganizationId(org.id);
+                          setSelected(new Set());
+                        }}
+                      >
+                        {org.name}
+                      </Choice>
+                    ))}
+                  </div>
+                </FieldSet>
+              ) : (
+                <input
+                  type="hidden"
+                  name={CONSENT_FIELDS.organizationId}
+                  value={organizationId}
+                />
+              )}
+
+              <FieldSet>
+                <FieldLegend variant="label">Apps</FieldLegend>
+                <div className="grid gap-2.5">
+                  <Choice
+                    type="radio"
+                    name={CONSENT_FIELDS.appMode}
+                    value="all"
+                    checked={appMode === "all"}
+                    onChange={() => setAppMode("all")}
+                  >
+                    All apps I can use, including future ones
+                  </Choice>
+                  <Choice
+                    type="radio"
+                    name={CONSENT_FIELDS.appMode}
+                    value="selected"
+                    checked={appMode === "selected"}
+                    onChange={() => setAppMode("selected")}
+                  >
+                    Only these apps
+                  </Choice>
+                  {appMode === "selected" ? (
+                    <div className="ml-6.5 grid gap-2.5 rounded-lg border border-border p-3">
+                      {(organization?.apps ?? []).length === 0 ? (
+                        <p className="text-sm text-muted-foreground">
+                          You don't have access to any apps here yet.
+                        </p>
+                      ) : null}
+                      {organization?.apps.map((app) => (
+                        <Choice
+                          key={app.rowId}
+                          type="checkbox"
+                          name={CONSENT_FIELDS.appIds}
+                          value={app.rowId}
+                          disabled={!app.hasTools}
+                          checked={selected.has(app.rowId)}
+                          onChange={(event) => {
+                            const next = new Set(selected);
+                            if (event.target.checked) next.add(app.rowId);
+                            else next.delete(app.rowId);
+                            setSelected(next);
+                          }}
+                          hint={app.hasTools ? undefined : "(no AI tools yet)"}
+                        >
+                          {app.name}
+                        </Choice>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </FieldSet>
+
+              <FieldSet>
+                <FieldLegend variant="label">Access</FieldLegend>
+                <div className="grid gap-2.5">
+                  <Choice
+                    type="radio"
+                    name={CONSENT_FIELDS.access}
+                    value="write"
+                    defaultChecked
+                  >
+                    Read &amp; write
+                  </Choice>
+                  <Choice
+                    type="radio"
+                    name={CONSENT_FIELDS.access}
+                    value="read"
+                  >
+                    Read only
+                  </Choice>
+                </div>
+                <FieldDescription className="flex items-start gap-1.5">
+                  <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
+                  Deleting and other destructive actions are never available to
+                  connected AI apps yet.
+                </FieldDescription>
+              </FieldSet>
+            </>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="submit"
+              name={CONSENT_FIELDS.decision}
+              value="deny"
+              className={cn(
+                buttonVariants({ variant: "ghost" }),
+                "flex-1",
+                sendingClassName,
+              )}
+              aria-disabled={sending}
+            >
+              {sentDecision === "deny" ? (
+                <Spinner data-icon="inline-start" />
+              ) : null}
+              Deny
+            </button>
+            <button
+              type="submit"
+              name={CONSENT_FIELDS.decision}
+              value="approve"
+              className={cn(buttonVariants(), "flex-1", sendingClassName)}
+              aria-disabled={sending}
+              disabled={!canAllow || !deliberate}
+            >
+              {sentDecision === "approve" ? (
+                <Spinner data-icon="inline-start" />
+              ) : null}
+              Allow
+            </button>
+          </div>
+
+          <p className="text-center text-xs text-muted-foreground">
+            You can disconnect it at any time from Connected AI apps.
+          </p>
+        </CardContent>
+      </Card>
+    </form>
+  );
+}
+
+/**
+ * A radio or checkbox with its label. Native inputs styled like the shadcn
+ * ones, not Base UI's: the form posts natively, so each choice must be a real
+ * input with its own name and value.
+ */
+function Choice({
+  type,
+  hint,
+  children,
+  ...props
+}: Omit<ComponentProps<"input">, "type" | "className"> & {
+  type: "radio" | "checkbox";
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="flex w-fit cursor-pointer items-center gap-2.5 text-sm has-disabled:cursor-not-allowed has-disabled:opacity-50">
+      <span className="relative grid size-4 shrink-0 place-items-center">
+        <input
+          type={type}
+          className={cn(
+            "peer size-4 cursor-pointer appearance-none border border-input outline-none transition-colors checked:border-primary checked:bg-primary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed dark:bg-input/30 dark:checked:bg-primary",
+            type === "radio" ? "rounded-full" : "rounded-[4px]",
+          )}
+          {...props}
+        />
+        {type === "radio" ? (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute size-2 rounded-full bg-primary-foreground opacity-0 peer-checked:opacity-100"
+          />
+        ) : (
+          <CheckIcon
+            aria-hidden
+            className="pointer-events-none absolute size-3.5 text-primary-foreground opacity-0 peer-checked:opacity-100"
+          />
+        )}
+      </span>
+      <span>{children}</span>
+      {hint ? (
+        <span className="text-xs text-muted-foreground">{hint}</span>
+      ) : null}
+    </label>
   );
 }

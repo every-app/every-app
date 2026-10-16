@@ -1,8 +1,19 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { z } from "zod";
+import { CircleAlert, CircleCheck } from "lucide-react";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
+import {
+  AuthCard,
+  AuthPageShell,
+  authInputClassName,
+  authLinkClassName,
+  authSubmitClassName,
+} from "@/client/components/auth/AuthPageShell";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import { useAppForm } from "@/client/components/form/useAppForm";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import { getServerErrorMessage } from "@/client/errors";
 
@@ -12,6 +23,16 @@ const searchSchema = z.object({
   redirect: z.string().optional(),
   return_to: z.string().optional(),
 });
+
+const resetPasswordSchema = z
+  .object({
+    newPassword: z.string().min(8, "Password must be at least 8 characters"),
+    confirmPassword: z.string(),
+  })
+  .refine((value) => value.newPassword === value.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  });
 
 function getAuthSearch({
   redirect,
@@ -30,6 +51,19 @@ function getAuthSearch({
   return redirect || return_to ? search : undefined;
 }
 
+/** Why this reset link can't be used, or null when it carries a token. */
+function getLinkError(token: string, urlError: string) {
+  if (urlError) {
+    return urlError === "INVALID_TOKEN"
+      ? "Invalid or expired reset link. Please request a new one."
+      : "An error occurred. Please try again.";
+  }
+  if (!token) {
+    return "Invalid reset link. Please request a new password reset.";
+  }
+  return null;
+}
+
 export const Route = createFileRoute("/reset-password")({
   component: ResetPassword,
   validateSearch: searchSchema,
@@ -37,21 +71,21 @@ export const Route = createFileRoute("/reset-password")({
 
 function ResetPassword() {
   const { token, error: urlError, redirect, return_to } = Route.useSearch();
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
+  const authSearch = getAuthSearch({ redirect, return_to });
+  const linkError = getLinkError(token, urlError);
 
-  useEffect(() => {
-    if (urlError) {
-      setError(
-        urlError === "INVALID_TOKEN"
-          ? "Invalid or expired reset link. Please request a new one."
-          : "An error occurred. Please try again.",
-      );
-    }
-  }, [urlError]);
+  // The form only renders when the link carries a token and no error.
+  const form = useAppForm({
+    defaultValues: { newPassword: "", confirmPassword: "" },
+    validators: { onSubmit: resetPasswordSchema },
+    onSubmit: () => {
+      setError("");
+      executeWithRetry();
+    },
+  });
 
   const {
     isRunning,
@@ -68,7 +102,7 @@ function ResetPassword() {
     try {
       const { error: resetError } = await authClient.resetPassword({
         token,
-        newPassword,
+        newPassword: form.state.values.newPassword,
       });
 
       if (resetError) {
@@ -84,7 +118,7 @@ function ResetPassword() {
           () =>
             navigate({
               to: "/sign-in",
-              search: getAuthSearch({ redirect, return_to }),
+              search: authSearch,
             }),
           2000,
         );
@@ -104,29 +138,7 @@ function ResetPassword() {
     }
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-
-    if (newPassword !== confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-
-    if (newPassword.length < 8) {
-      setError("Password must be at least 8 characters");
-      return;
-    }
-
-    if (!token) {
-      setError("Invalid reset link. Please request a new password reset.");
-      return;
-    }
-
-    executeWithRetry();
-  };
-
-  // Show the game when retrying or when retries are exhausted
+  // Show the retry status while retrying or once retries are exhausted
   if (showWarning || isRetrySuccess) {
     return (
       <CpuTimeoutWarning
@@ -138,89 +150,109 @@ function ResetPassword() {
         onContinue={() =>
           navigate({
             to: "/sign-in",
-            search: getAuthSearch({ redirect, return_to }),
+            search: authSearch,
           })
         }
       />
     );
   }
 
-  return (
-    <div className="flex h-screen items-center justify-center overflow-hidden">
-      <div className="card auth-card">
-        <div className="card-body">
-          <h2 className="card-title">Reset Password</h2>
-          <p>Enter your new password below</p>
+  const footer = (
+    <p>
+      <Link to="/sign-in" search={authSearch} className={authLinkClassName}>
+        Back to sign in
+      </Link>
+    </p>
+  );
 
-          {success ? (
-            <div className="space-y-4 mt-4">
-              <div className="alert alert-success text-sm">
-                Password reset successful! Redirecting to sign in...
-              </div>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit}>
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">New Password</span>
-                </label>
-                <input
-                  id="newPassword"
+  if (success) {
+    return (
+      <AuthPageShell>
+        <AuthCard title="Password updated" footer={footer}>
+          <Alert variant="success">
+            <CircleCheck />
+            <AlertDescription>
+              Password reset successful! Redirecting to sign in...
+            </AlertDescription>
+          </Alert>
+        </AuthCard>
+      </AuthPageShell>
+    );
+  }
+
+  if (linkError) {
+    return (
+      <AuthPageShell>
+        <AuthCard
+          title="Reset link invalid"
+          description={linkError}
+          footer={footer}
+        >
+          <Button
+            nativeButton={false}
+            className={authSubmitClassName}
+            render={<Link to="/forgot-password" search={authSearch} />}
+          >
+            Request a new reset link
+          </Button>
+        </AuthCard>
+      </AuthPageShell>
+    );
+  }
+
+  return (
+    <AuthPageShell>
+      <AuthCard
+        title="Reset password"
+        description="Enter your new password below."
+        footer={footer}
+      >
+        <form.AppForm>
+          <form.Form className="space-y-4">
+            <form.AppField name="newPassword">
+              {(field) => (
+                <field.TextField
+                  label="New password"
+                  description="Password must be at least 8 characters"
                   type="password"
                   placeholder="Enter new password"
-                  className="input input-bordered w-full"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  className={authInputClassName}
+                  disabled={isRunning}
                   required
-                  minLength={8}
-                  disabled={!!urlError || isRunning}
                 />
-              </div>
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Confirm Password</span>
-                </label>
-                <input
-                  id="confirmPassword"
+              )}
+            </form.AppField>
+            <form.AppField name="confirmPassword">
+              {(field) => (
+                <field.TextField
+                  label="Confirm password"
                   type="password"
                   placeholder="Confirm new password"
-                  className="input input-bordered w-full"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  autoComplete="new-password"
+                  className={authInputClassName}
+                  disabled={isRunning}
                   required
-                  minLength={8}
-                  disabled={!!urlError || isRunning}
                 />
-                <label className="label">
-                  <span className="label-text-alt text-base-content/60">
-                    Password must be at least 8 characters
-                  </span>
-                </label>
-              </div>
-              {error && <div className="text-sm text-error">{error}</div>}
-              <button
-                type="submit"
-                className="btn btn-primary w-full"
-                disabled={!!urlError || isRunning}
-              >
-                {isRunning ? "Resetting..." : "Reset Password"}
-              </button>
-            </form>
-          )}
+              )}
+            </form.AppField>
 
-          <div className="flex justify-center mt-4">
-            <p className="text-sm text-base-content/60">
-              <Link
-                to="/sign-in"
-                search={getAuthSearch({ redirect, return_to })}
-                className="font-medium text-base-content hover:underline"
-              >
-                Back to Sign In
-              </Link>
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
+            {error ? (
+              <Alert variant="destructive">
+                <CircleAlert />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+            <Button
+              type="submit"
+              className={authSubmitClassName}
+              pending={isRunning}
+            >
+              {isRunning ? "Resetting..." : "Reset password"}
+            </Button>
+          </form.Form>
+        </form.AppForm>
+      </AuthCard>
+    </AuthPageShell>
   );
 }

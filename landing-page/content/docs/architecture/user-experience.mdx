@@ -27,7 +27,7 @@ Direct sign-up never works: before the claim `/sign-up` shows **Setup pending**,
 
 ### 3. Everyday use — the launcher
 
-- Home page = header (org name, Admin link for owner/admin, sign out) + your app list for the **active org**.
+- Every signed-in page sits in a sidebar: the organization switcher, Home, the Admin pages for owners and admins, settings, and an account menu with the theme and sign out. Home is your app list for the **active org**.
 - Clicking an active app navigates same-tab to `//<app>.<gateway-host>`. No iframe, no token handoff — the shared cookie does the work.
 - Apps that aren't routable show dimmed with a badge — `needs deploy` when there's no hostname yet, otherwise the raw status (`deploying`, `disabled`).
 - Members with zero granted apps are told to contact their admin; owners see deploy instructions instead.
@@ -35,19 +35,19 @@ Direct sign-up never works: before the claim `/sign-up` shows **Setup pending**,
 
 ### 4. Invitations
 
-1. An owner or admin enters an email in **Invite User** and picks the role (`member` or `admin`).
+1. An owner or admin enters an email in **Invite user** and picks the role (`member` or `admin`).
 2. The invitation is always created. It's emailed when email is configured; otherwise (or if sending fails) the admin gets a **Copy invite link** (single use, 72 hours) and the Users page shows an "Email not configured" banner.
 3. Recipient's link → sign in or create account (email must match the invite — case-insensitive, trimmed).
-4. After authenticating, they press **Join Organization** — acceptance is a separate explicit step.
+4. After authenticating, they press **Join organization** — acceptance is a separate explicit step.
 5. Membership grants the org's "Available to everyone" apps automatically.
 
-### 5. Admin (`/admin`, desktop only — mobile shows "Coming Soon")
+### 5. Admin (`/admin`)
 
-| Tab        | What you can do                                                                                                                                                                                                                                                                                                                                                         |
-| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Users      | See members + pending invites in one table; send reset email; change role (member ↔ admin; only owners change admins); deactivate/reactivate (bans the account, ends its sessions, revokes its PATs and deploy tokens); delete user (removes membership and revokes their deploy tokens and PATs for this org; deletes the account only if it belongs to no other org). |
-| Apps       | Apps appear only via `everyapp app deploy` — no manual create. Edit name/description/"Available to everyone"; manage per-user access (can't revoke yourself); delete leaves a tombstone that keeps the app id reserved to the org (does **not** undeploy the worker).                                                                                                   |
-| App Tokens | Create `eat_` app tokens (per-app, provider scopes) and `eak_` deploy tokens (org-wide); one-time reveal modal; revoke.                                                                                                                                                                                                                                                 |
+| Page   | What you can do                                                                                                                                                                                                                                                                                                                                                         |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Users  | See members + pending invites in one table; send reset email; change role (member ↔ admin; only owners change admins); deactivate/reactivate (bans the account, ends its sessions, revokes its PATs and deploy tokens); delete user (removes membership and revokes their deploy tokens and PATs for this org; deletes the account only if it belongs to no other org). |
+| Apps   | Apps appear only via `everyapp app deploy` — no manual create. Edit name/description/"Available to everyone"; manage per-user access (can't revoke yourself); delete leaves a tombstone that keeps the app id reserved to the org (does **not** undeploy the worker).                                                                                                   |
+| Tokens | Create `eak_` deploy tokens (org-wide) and personal access tokens for MCP and API clients; one-time reveal; revoke.                                                                                                                                                                                                                                                     |
 
 **Organizations** (`/organizations`): switch the active org. It's a workspace switcher, not org management — nobody can create, rename or delete orgs (the only org-creating path is the setup claim), and there's no ownership transfer.
 

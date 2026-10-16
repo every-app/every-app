@@ -1,15 +1,22 @@
+import { useState } from "react";
 import {
-  MoreVertical,
   Key,
   Link as LinkIcon,
-  Trash2,
-  XCircle,
   ShieldCheck,
   ShieldOff,
-  UserX,
+  Trash2,
   UserCheck,
+  UserX,
+  XCircle,
 } from "lucide-react";
+import { ConfirmDialog } from "@/client/components/ConfirmDialog";
+import { RowActionsMenu } from "@/client/components/RowActionsMenu";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/client/components/ui/dropdown-menu";
 import type { AdminUser } from "@/types/admin-user";
+import { DeleteUserModal } from "./DeleteUserModal";
 
 export interface UserActions {
   onSendPasswordResetEmail: (userId: string) => void;
@@ -31,60 +38,87 @@ interface UserActionsMenuProps extends UserActions {
   currentUserId: string | undefined;
 }
 
-export function UserActionsMenu({
+/**
+ * The row menu of the users table. Deactivating, canceling an invitation and
+ * deleting ask first; the callbacks run only once the admin confirms.
+ */
+export function UserActionsMenu(props: UserActionsMenuProps) {
+  return props.user.status === "pending" ? (
+    <InvitationActionsMenu {...props} />
+  ) : (
+    <MemberActionsMenu {...props} />
+  );
+}
+
+function InvitationActionsMenu({
+  user,
+  onCopyInvitationLink,
+  onCancelInvitation,
+  isPending,
+  canManageInvitations,
+}: UserActionsMenuProps) {
+  const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
+
+  const invitationId = user.invitationId;
+  if (!canManageInvitations || !invitationId) {
+    return null;
+  }
+
+  return (
+    <>
+      <RowActionsMenu label={`Actions for the invitation to ${user.email}`}>
+        <DropdownMenuItem
+          disabled={isPending}
+          onClick={() => onCopyInvitationLink(invitationId)}
+        >
+          <LinkIcon />
+          Copy invite link
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          variant="destructive"
+          disabled={isPending}
+          onClick={() => setIsConfirmingCancel(true)}
+        >
+          <XCircle />
+          Cancel invitation
+        </DropdownMenuItem>
+      </RowActionsMenu>
+      {isConfirmingCancel ? (
+        <ConfirmDialog
+          title={`Cancel the invitation for ${user.email}?`}
+          confirmLabel="Cancel invitation"
+          cancelLabel="Keep invitation"
+          destructive
+          onClose={() => setIsConfirmingCancel(false)}
+          onConfirm={() => {
+            setIsConfirmingCancel(false);
+            onCancelInvitation(invitationId);
+          }}
+        >
+          Its invite link stops working.
+        </ConfirmDialog>
+      ) : null}
+    </>
+  );
+}
+
+type MemberConfirmation = "deactivate" | "delete";
+
+function MemberActionsMenu({
   user,
   emailConfigured,
   onSendPasswordResetEmail,
   onCreatePasswordResetLink,
   onDelete,
-  onCopyInvitationLink,
-  onCancelInvitation,
   onChangeRole,
   onDeactivate,
   onReactivate,
   isPending,
-  canManageInvitations,
   isOwner,
   currentUserId,
 }: UserActionsMenuProps) {
-  if (user.status === "pending") {
-    const invitationId = user.invitationId;
-    if (!canManageInvitations || !invitationId) {
-      return null;
-    }
-
-    return (
-      <div className="dropdown dropdown-end">
-        <button tabIndex={0} className="btn btn-ghost btn-sm btn-square">
-          <MoreVertical className="w-4 h-4" />
-        </button>
-        <ul
-          tabIndex={0}
-          className="dropdown-content menu z-10 w-56 bg-base-100 rounded-box shadow-lg"
-        >
-          <li>
-            <button
-              onClick={() => onCopyInvitationLink(invitationId)}
-              disabled={isPending}
-            >
-              <LinkIcon className="w-4 h-4" />
-              Copy Invite Link
-            </button>
-          </li>
-          <li>
-            <button
-              className="text-error"
-              onClick={() => onCancelInvitation(invitationId)}
-              disabled={isPending}
-            >
-              <XCircle className="w-4 h-4" />
-              Cancel Invitation
-            </button>
-          </li>
-        </ul>
-      </div>
-    );
-  }
+  const [confirming, setConfirming] = useState<MemberConfirmation | null>(null);
 
   // Owners are never managed here, nobody manages themselves, and only an
   // owner manages an admin (the server enforces the same rules).
@@ -93,89 +127,119 @@ export function UserActionsMenu({
   }
   const canManage = isOwner || user.role !== "admin";
 
+  const showResetEmail = !user.banned && emailConfigured;
+  const showResetLink = !user.banned && canManage;
+  const showRoleChange = canManage && !user.banned;
+  const showReactivate = canManage && !!user.banned;
+  const showDeactivate = canManage && !user.banned;
+  const showDelete = isOwner;
+
+  const hasSafeItems =
+    showResetEmail || showResetLink || showRoleChange || showReactivate;
+  const hasDestructiveItems = showDeactivate || showDelete;
+  // A deactivated user an admin may not manage has nothing to offer.
+  if (!hasSafeItems && !hasDestructiveItems) {
+    return null;
+  }
+
   return (
-    <div className="dropdown dropdown-end">
-      <button tabIndex={0} className="btn btn-ghost btn-sm btn-square">
-        <MoreVertical className="w-4 h-4" />
-      </button>
-      <ul
-        tabIndex={0}
-        className="dropdown-content menu z-10 w-60 bg-base-100 rounded-box shadow-lg"
-      >
-        {!user.banned && emailConfigured && (
-          <li>
-            <button
-              onClick={() => onSendPasswordResetEmail(user.id)}
+    <>
+      <RowActionsMenu label={`Actions for ${user.email}`}>
+        {showResetEmail ? (
+          <DropdownMenuItem
+            disabled={isPending}
+            onClick={() => onSendPasswordResetEmail(user.id)}
+          >
+            <Key />
+            Send password reset email
+          </DropdownMenuItem>
+        ) : null}
+        {showResetLink ? (
+          <DropdownMenuItem
+            disabled={isPending}
+            onClick={() => onCreatePasswordResetLink(user.id)}
+          >
+            <LinkIcon />
+            Generate password reset link
+          </DropdownMenuItem>
+        ) : null}
+        {showRoleChange ? (
+          user.role === "admin" ? (
+            <DropdownMenuItem
               disabled={isPending}
+              onClick={() => onChangeRole(user.id, "member")}
             >
-              <Key className="w-4 h-4" />
-              Send Password Reset Email
-            </button>
-          </li>
-        )}
-        {!user.banned && canManage && (
-          <li>
-            <button
-              onClick={() => onCreatePasswordResetLink(user.id)}
+              <ShieldOff />
+              Change role to member
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem
               disabled={isPending}
+              onClick={() => onChangeRole(user.id, "admin")}
             >
-              <LinkIcon className="w-4 h-4" />
-              Generate Password Reset Link
-            </button>
-          </li>
-        )}
-        {canManage && !user.banned && (
-          <li>
-            {user.role === "admin" ? (
-              <button
-                onClick={() => onChangeRole(user.id, "member")}
-                disabled={isPending}
-              >
-                <ShieldOff className="w-4 h-4" />
-                Change role to member
-              </button>
-            ) : (
-              <button
-                onClick={() => onChangeRole(user.id, "admin")}
-                disabled={isPending}
-              >
-                <ShieldCheck className="w-4 h-4" />
-                Change role to admin
-              </button>
-            )}
-          </li>
-        )}
-        {canManage && (
-          <li>
-            {user.banned ? (
-              <button
-                onClick={() => onReactivate(user.id)}
-                disabled={isPending}
-              >
-                <UserCheck className="w-4 h-4" />
-                Reactivate
-              </button>
-            ) : (
-              <button
-                className="text-error"
-                onClick={() => onDeactivate(user.id)}
-                disabled={isPending}
-              >
-                <UserX className="w-4 h-4" />
-                Deactivate
-              </button>
-            )}
-          </li>
-        )}
-        {isOwner && (
-          <li>
-            <button className="text-error" onClick={() => onDelete(user.id)}>
-              <Trash2 className="w-4 h-4" />
-              Delete User
-            </button>
-          </li>
-        )}
-      </ul>
-    </div>
+              <ShieldCheck />
+              Change role to admin
+            </DropdownMenuItem>
+          )
+        ) : null}
+        {showReactivate ? (
+          <DropdownMenuItem
+            disabled={isPending}
+            onClick={() => onReactivate(user.id)}
+          >
+            <UserCheck />
+            Reactivate
+          </DropdownMenuItem>
+        ) : null}
+        {hasSafeItems && hasDestructiveItems ? <DropdownMenuSeparator /> : null}
+        {showDeactivate ? (
+          <DropdownMenuItem
+            variant="destructive"
+            disabled={isPending}
+            onClick={() => setConfirming("deactivate")}
+          >
+            <UserX />
+            Deactivate
+          </DropdownMenuItem>
+        ) : null}
+        {showDelete ? (
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={() => setConfirming("delete")}
+          >
+            <Trash2 />
+            Delete user
+          </DropdownMenuItem>
+        ) : null}
+      </RowActionsMenu>
+
+      {confirming === "deactivate" ? (
+        <ConfirmDialog
+          title={`Deactivate ${user.email}?`}
+          confirmLabel="Deactivate"
+          destructive
+          onClose={() => setConfirming(null)}
+          onConfirm={() => {
+            setConfirming(null);
+            onDeactivate(user.id);
+          }}
+        >
+          They are signed out everywhere, can no longer sign in, and their
+          personal access tokens and deploy tokens are revoked.
+        </ConfirmDialog>
+      ) : null}
+
+      {confirming === "delete" ? (
+        <DeleteUserModal
+          userName={user.name}
+          userEmail={user.email}
+          onClose={() => setConfirming(null)}
+          onConfirm={() => {
+            setConfirming(null);
+            onDelete(user.id);
+          }}
+        />
+      ) : null}
+    </>
   );
 }

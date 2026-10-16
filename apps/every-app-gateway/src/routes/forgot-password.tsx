@@ -1,8 +1,19 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { z } from "zod";
+import { CircleAlert, CircleCheck } from "lucide-react";
 import { authClient, isCpuTimeoutError } from "@/client/auth-client";
+import {
+  AuthCard,
+  AuthPageShell,
+  authInputClassName,
+  authLinkClassName,
+  authSubmitClassName,
+} from "@/client/components/auth/AuthPageShell";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import { useAppForm } from "@/client/components/form/useAppForm";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import {
   getBetterAuthErrorMessage,
@@ -12,6 +23,10 @@ import {
 const searchSchema = z.object({
   redirect: z.string().optional(),
   return_to: z.string().optional(),
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string().trim().email("Enter a valid email address."),
 });
 
 function getAuthSearch({
@@ -37,11 +52,21 @@ export const Route = createFileRoute("/forgot-password")({
 });
 
 function ForgotPassword() {
-  const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
   const { redirect, return_to } = Route.useSearch();
+  const authSearch = getAuthSearch({ redirect, return_to });
+
+  const form = useAppForm({
+    defaultValues: { email: "" },
+    validators: { onSubmit: forgotPasswordSchema },
+    onSubmit: () => {
+      setError("");
+      setSuccess(false);
+      runForgotPassword();
+    },
+  });
 
   const {
     isRunning,
@@ -68,7 +93,7 @@ function ForgotPassword() {
       }
 
       const { error: resetError } = await authClient.requestPasswordReset({
-        email,
+        email: form.state.values.email,
         redirectTo: resetPasswordUrl.toString(),
       });
 
@@ -99,14 +124,7 @@ function ForgotPassword() {
     }
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    setSuccess(false);
-    runForgotPassword();
-  };
-
-  // Show the game when retrying or when retries are exhausted
+  // Show the retry status while retrying or once retries are exhausted
   if (showWarning || isRetrySuccess) {
     return (
       <CpuTimeoutWarning
@@ -118,7 +136,7 @@ function ForgotPassword() {
         onContinue={() =>
           navigate({
             to: "/sign-in",
-            search: getAuthSearch({ redirect, return_to }),
+            search: authSearch,
           })
         }
       />
@@ -126,73 +144,80 @@ function ForgotPassword() {
   }
 
   return (
-    <div className="flex h-screen items-center justify-center overflow-hidden">
-      <div className="card auth-card">
-        <div className="card-body">
-          <h2 className="card-title">Forgot Password</h2>
-          <p>
-            Enter your email address and we'll send you a link to reset your
-            password
-          </p>
-
-          {success ? (
-            <div className="space-y-4 mt-4">
-              <div className="alert alert-success text-sm">
-                If an account exists for this email, we sent a password reset
-                link.
-              </div>
+    <AuthPageShell>
+      <AuthCard
+        title={success ? "Check your email" : "Forgot password"}
+        description={
+          success
+            ? undefined
+            : "Enter your email address and we'll send you a link to reset your password."
+        }
+        footer={
+          success ? undefined : (
+            <p>
+              Remember your password?{" "}
               <Link
                 to="/sign-in"
-                search={getAuthSearch({ redirect, return_to })}
-                className="btn btn-primary w-full"
+                search={authSearch}
+                className={authLinkClassName}
               >
-                Back to Sign In
+                Sign in
               </Link>
-            </div>
-          ) : (
-            <form onSubmit={handleSubmit}>
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Email</span>
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  placeholder="you@example.com"
-                  className="input input-bordered w-full"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  disabled={isRunning}
-                />
-              </div>
-              {error && <div className="text-sm text-error">{error}</div>}
-              <button
-                type="submit"
-                className="btn btn-primary w-full"
-                disabled={isRunning}
-              >
-                {isRunning ? "Sending..." : "Send Reset Link"}
-              </button>
-            </form>
-          )}
+            </p>
+          )
+        }
+      >
+        {success ? (
+          <>
+            <Alert variant="success">
+              <CircleCheck />
+              <AlertDescription>
+                If an account exists for this email, we sent a password reset
+                link.
+              </AlertDescription>
+            </Alert>
+            <Button
+              nativeButton={false}
+              className={authSubmitClassName}
+              render={<Link to="/sign-in" search={authSearch} />}
+            >
+              Back to sign in
+            </Button>
+          </>
+        ) : (
+          <form.AppForm>
+            <form.Form className="space-y-4">
+              <form.AppField name="email">
+                {(field) => (
+                  <field.TextField
+                    label="Email"
+                    type="email"
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    className={authInputClassName}
+                    disabled={isRunning}
+                    required
+                  />
+                )}
+              </form.AppField>
 
-          {!success && (
-            <div className="flex justify-center mt-4">
-              <p className="text-sm text-base-content/60">
-                Remember your password?{" "}
-                <Link
-                  to="/sign-in"
-                  search={getAuthSearch({ redirect, return_to })}
-                  className="font-medium text-base-content hover:underline"
-                >
-                  Sign in
-                </Link>
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+              {error ? (
+                <Alert variant="destructive">
+                  <CircleAlert />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              ) : null}
+              <Button
+                type="submit"
+                className={authSubmitClassName}
+                pending={isRunning}
+              >
+                {isRunning ? "Sending..." : "Send reset link"}
+              </Button>
+            </form.Form>
+          </form.AppForm>
+        )}
+      </AuthCard>
+    </AuthPageShell>
   );
 }

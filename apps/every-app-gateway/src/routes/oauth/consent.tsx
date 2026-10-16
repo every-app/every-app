@@ -1,7 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { CircleAlert } from "lucide-react";
 import { authClient } from "@/client/auth-client";
+import { AuthPageShell } from "@/client/components/auth/AuthPageShell";
 import { ConsentForm } from "@/client/components/oauth/ConsentForm";
+import { PageLoading } from "@/client/components/Spinner";
+import { StatusScreen } from "@/client/components/StatusScreen";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { getConsentContext } from "@/serverFunctions/oauthConsent";
 
 /**
@@ -67,29 +72,33 @@ function ConsentPage() {
 
   if ("status" in context) {
     return context.status === "loading" ? (
-      <main className="min-h-screen bg-base-100 grid place-items-center p-6">
-        <span className="loading loading-spinner loading-lg" />
-      </main>
+      <PageLoading />
     ) : (
       <ConsentError message="This connection request can't be shown." />
     );
   }
   if (!context.ok) return <ConsentError message={context.message} />;
   return (
-    <ConsentForm
-      context={context}
-      onSwitchAccount={() => void switchAccount(query)}
-    />
+    <AuthPageShell>
+      <main className="flex w-full justify-center">
+        <ConsentForm
+          context={context}
+          onSwitchAccount={() => void switchAccount(query)}
+        />
+      </main>
+    </AuthPageShell>
   );
 }
 
 function ConsentError({ message }: { message: string }) {
   return (
-    <main className="min-h-screen bg-base-100 grid place-items-center p-6">
-      <section className="w-full max-w-lg rounded-lg border border-error/30 bg-base-100 p-6 shadow-sm">
-        <h1 className="text-xl font-bold">Can't connect this app</h1>
-        <p className="mt-2 text-base-content/70">{message}</p>
-      </section>
+    <main className="h-[100dvh]">
+      <StatusScreen logo title="Can't connect this app">
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription>{message}</AlertDescription>
+        </Alert>
+      </StatusScreen>
     </main>
   );
 }

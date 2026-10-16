@@ -117,6 +117,6 @@ works once and expires after 24 hours; restart the container (or run
 If you want additional users, add them manually from Gateway admin:
 
 - Open `/admin/users`
-- Click `Invite User`
+- Click `Invite user`
 - Without email configured, copy the invite link it shows and send it
   yourself (it works once, for 72 hours)

@@ -2,8 +2,18 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { z } from "zod";
+import { CircleAlert } from "lucide-react";
 import { isCpuTimeoutError } from "@/client/auth-client";
+import {
+  AuthCard,
+  AuthPageShell,
+  authLinkClassName,
+  authSubmitClassName,
+} from "@/client/components/auth/AuthPageShell";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import { PageLoading } from "@/client/components/Spinner";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import { useSession } from "@/client/hooks/useSession";
 import { getServerErrorMessage } from "@/client/errors";
@@ -80,106 +90,84 @@ function AcceptInvitation() {
 
   if (!token) {
     return (
-      <div className="flex h-screen items-center justify-center overflow-hidden">
-        <div className="relative w-full max-w-md">
-          <img
-            src="/transparent-logo.png"
-            alt="Logo"
-            className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
-          />
-          <div className="card auth-card">
-            <div className="card-body text-center">
-              <h2 className="card-title justify-center">Invalid Invitation</h2>
-              <p className="text-base-content/70 mt-2">
-                {invitationId
-                  ? "This invitation link no longer works: invite links changed in a gateway update. Ask the person who invited you to send you a new link."
-                  : "This invitation link is invalid or incomplete. Please request a new invitation from the administrator."}
-              </p>
-              <div className="mt-4">
-                <Link to="/sign-in" className="btn btn-primary">
-                  Go to Sign In
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <AuthPageShell>
+        <AuthCard title="Invalid invitation">
+          <p className="text-sm text-muted-foreground">
+            {invitationId
+              ? "This invitation link no longer works: invite links changed in a gateway update. Ask the person who invited you to send you a new link."
+              : "This invitation link is invalid or incomplete. Please request a new invitation from the administrator."}
+          </p>
+          <Button
+            nativeButton={false}
+            className={authSubmitClassName}
+            render={<Link to="/sign-in" />}
+          >
+            Go to sign in
+          </Button>
+        </AuthCard>
+      </AuthPageShell>
     );
   }
 
-  if (!session.isPending && !session.data?.user) {
+  if (session.isPending) {
+    return <PageLoading />;
+  }
+
+  if (!session.data?.user) {
     return (
-      <div className="flex h-screen items-center justify-center overflow-hidden">
-        <div className="relative w-full max-w-md">
-          <img
-            src="/transparent-logo.png"
-            alt="Logo"
-            className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
-          />
-          <div className="card auth-card">
-            <div className="card-body text-center">
-              <h2 className="card-title justify-center">Sign in Required</h2>
-              <p className="text-base-content/70 mt-2">
-                Please sign in or create an account with your invited email to
-                accept this invitation.
-              </p>
-              <div className="mt-4 flex gap-2 justify-center">
-                <Link
-                  to="/sign-in"
-                  search={{ redirect: redirectTo }}
-                  className="btn btn-primary"
-                >
-                  Sign In
-                </Link>
-                <Link
-                  to="/sign-up"
-                  search={{ redirect: redirectTo }}
-                  className="btn btn-outline"
-                >
-                  Create Account
-                </Link>
-              </div>
-            </div>
+      <AuthPageShell>
+        <AuthCard title="Sign in required">
+          <p className="text-sm text-muted-foreground">
+            Please sign in or create an account with your invited email to
+            accept this invitation.
+          </p>
+          <div className="space-y-2">
+            <Button
+              nativeButton={false}
+              className={authSubmitClassName}
+              render={<Link to="/sign-in" search={{ redirect: redirectTo }} />}
+            >
+              Sign in
+            </Button>
+            <Button
+              nativeButton={false}
+              variant="ghost"
+              className="w-full"
+              render={<Link to="/sign-up" search={{ redirect: redirectTo }} />}
+            >
+              Create account
+            </Button>
           </div>
-        </div>
-      </div>
+        </AuthCard>
+      </AuthPageShell>
     );
   }
 
   if (success) {
     return (
-      <div className="flex h-screen items-center justify-center overflow-hidden">
-        <div className="relative w-full max-w-md">
-          <img
-            src="/transparent-logo.png"
-            alt="Logo"
-            className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
-          />
-          <div className="card auth-card">
-            <div className="card-body text-center">
-              <h2 className="card-title justify-center">Account Created!</h2>
-              <p className="text-base-content/70 mt-2">
-                You have joined the organization successfully.
-              </p>
-              <div className="mt-4">
-                <Link to="/" className="btn btn-primary">
-                  Go to Gateway
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      <AuthPageShell>
+        <AuthCard title="Invitation accepted">
+          <p className="text-sm text-muted-foreground">
+            You have joined the organization successfully.
+          </p>
+          <Button
+            nativeButton={false}
+            className={authSubmitClassName}
+            render={<Link to="/" />}
+          >
+            Go to gateway
+          </Button>
+        </AuthCard>
+      </AuthPageShell>
     );
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleJoin = () => {
     setError("");
     executeWithRetry();
   };
 
-  // Show the game when retrying or when retries are exhausted
+  // Show the retry status while retrying or once retries are exhausted
   if (showWarning || isRetrySuccess) {
     return (
       <CpuTimeoutWarning
@@ -194,43 +182,33 @@ function AcceptInvitation() {
   }
 
   return (
-    <div className="flex h-screen items-center justify-center overflow-hidden">
-      <div className="relative w-full max-w-md">
-        <img
-          src="/transparent-logo.png"
-          alt="Logo"
-          className="h-12 w-auto absolute left-1/2 -translate-x-1/2 -top-12"
-        />
-        <div className="card auth-card">
-          <div className="card-body">
-            <h2 className="card-title">Accept Invitation</h2>
-            <p>Join your organization workspace</p>
-
-            <form onSubmit={handleSubmit}>
-              {error && <div className="text-sm text-error">{error}</div>}
-              <button
-                type="submit"
-                className="btn btn-primary w-full"
-                disabled={isRunning}
-              >
-                {isRunning ? "Joining..." : "Join Organization"}
-              </button>
-            </form>
-
-            <div className="flex justify-center mt-4">
-              <p className="text-sm text-base-content/60">
-                Already have an account?{" "}
-                <Link
-                  to="/sign-in"
-                  className="font-medium text-base-content hover:underline"
-                >
-                  Sign in
-                </Link>
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+    <AuthPageShell>
+      <AuthCard
+        title="Accept invitation"
+        description="Join your organization workspace."
+        footer={
+          <p>
+            Already have an account?{" "}
+            <Link to="/sign-in" className={authLinkClassName}>
+              Sign in
+            </Link>
+          </p>
+        }
+      >
+        {error ? (
+          <Alert variant="destructive">
+            <CircleAlert />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+        <Button
+          className={authSubmitClassName}
+          pending={isRunning}
+          onClick={handleJoin}
+        >
+          {isRunning ? "Joining..." : "Join organization"}
+        </Button>
+      </AuthCard>
+    </AuthPageShell>
   );
 }

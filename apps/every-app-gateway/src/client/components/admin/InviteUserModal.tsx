@@ -1,15 +1,42 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
+import { revalidateLogic } from "@tanstack/react-form";
+import { CircleAlert, TriangleAlert } from "lucide-react";
+import { z } from "zod";
 import { inviteMember } from "@/serverFunctions/admin";
 import { getServerErrorMessage } from "@/client/errors";
-import { CodeBlock } from "@/client/components/CodeBlock";
-import { Modal } from "../Modal";
+import { useAppForm } from "@/client/components/form/useAppForm";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/client/components/ui/dialog";
+import { LinkRevealContent } from "./LinkRevealModal";
 
 type Role = "member" | "admin";
 type InviteResult = Awaited<ReturnType<typeof inviteMember>>;
 
+const inviteSchema = z.object({
+  email: z.string().trim().email("Enter a valid email address."),
+  role: z.enum(["member", "admin"]),
+});
+
+const ROLE_ITEMS: { value: Role; label: string }[] = [
+  { value: "member", label: "Member" },
+  { value: "admin", label: "Admin" },
+];
+
+const ROLE_HINTS: Record<Role, string> = {
+  member: "Opens the apps they are given.",
+  admin: "Also manages users and apps.",
+};
+
 interface InviteUserModalProps {
-  open: boolean;
   onClose: () => void;
   /** Called after an invitation is created and emailed. */
   onSuccess: () => void;
@@ -17,31 +44,21 @@ interface InviteUserModalProps {
   onInvited: () => void;
 }
 
+/** Invite someone to the organization. Render it only while it is open. */
 export function InviteUserModal({
-  open,
   onClose,
   onSuccess,
   onInvited,
 }: InviteUserModalProps) {
-  const [email, setEmail] = useState("");
-  const [role, setRole] = useState<Role>("member");
-  const [error, setError] = useState("");
+  const [error, setError] = useState<string | null>(null);
   // Set when the invitation was created but not emailed: show its link.
   const [unsent, setUnsent] = useState<InviteResult | null>(null);
-
-  const reset = () => {
-    setEmail("");
-    setRole("member");
-    setError("");
-    setUnsent(null);
-  };
 
   const inviteMutation = useMutation({
     mutationFn: (data: { email: string; role: Role }) => inviteMember({ data }),
     onSuccess: (result) => {
       onInvited();
       if (result.emailSent) {
-        reset();
         onSuccess();
       } else {
         setUnsent(result);
@@ -52,105 +69,108 @@ export function InviteUserModal({
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    inviteMutation.mutate({ email, role });
-  };
-
-  const handleClose = () => {
-    reset();
-    onClose();
-  };
-
-  if (!open) return null;
-
-  if (unsent) {
-    return (
-      <Modal
-        open={open}
-        onClose={handleClose}
-        title="Copy invite link"
-        description={`The invitation for ${unsent.email} was created but not emailed.`}
-        actions={
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleClose}
-          >
-            Done
-          </button>
-        }
-      >
-        <div className="mt-4 space-y-3">
-          <div className="alert alert-warning text-sm">
-            {unsent.emailConfigured
-              ? "Sending the invitation email failed."
-              : "Email is not configured on this gateway."}{" "}
-            Send this link to {unsent.email} yourself.
-          </div>
-          <CodeBlock code={unsent.inviteUrl} />
-          <p className="text-sm text-base-content/60">
-            Works once, until {new Date(unsent.expiresAt).toLocaleString()}, and
-            only for an account with this email address.
-          </p>
-        </div>
-      </Modal>
-    );
-  }
+  const form = useAppForm({
+    defaultValues: { email: "", role: "member" as Role },
+    validationLogic: revalidateLogic(),
+    validators: { onDynamic: inviteSchema },
+    // The mutation's onError shows a failure, so the rejection is not handled
+    // here.
+    onSubmit: ({ value }) => {
+      setError(null);
+      return inviteMutation.mutateAsync({
+        email: value.email.trim(),
+        role: value.role,
+      });
+    },
+  });
 
   return (
-    <Modal
-      open={open}
-      onClose={handleClose}
-      title="Invite User"
-      actions={
-        <>
-          <button type="button" className="btn btn-ghost" onClick={handleClose}>
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="invite-user-form"
-            className="btn btn-primary"
-            disabled={inviteMutation.isPending}
-          >
-            {inviteMutation.isPending ? "Inviting..." : "Invite"}
-          </button>
-        </>
-      }
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !inviteMutation.isPending) onClose();
+      }}
     >
-      <form id="invite-user-form" onSubmit={handleSubmit} className="mt-4">
-        <div className="form-control">
-          <label className="label">
-            <span className="label-text">Email</span>
-          </label>
-          <input
-            type="email"
-            placeholder="user@example.com"
-            className="input input-bordered w-full"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
+      <DialogContent
+        showCloseButton={false}
+        // A minmax(0, 1fr) track, so a long invite link scrolls in its box.
+        className="grid-cols-1 sm:max-w-md"
+      >
+        {unsent ? (
+          <LinkRevealContent
+            title="Copy invite link"
+            description={`The invitation for ${unsent.email} was created but not emailed.`}
+            notice={
+              <Alert variant="warning">
+                <TriangleAlert />
+                <AlertDescription className="text-foreground">
+                  {unsent.emailConfigured
+                    ? "Sending the invitation email failed."
+                    : "Email is not configured on this gateway."}{" "}
+                  Send this link to {unsent.email} yourself.
+                </AlertDescription>
+              </Alert>
+            }
+            url={unsent.inviteUrl}
+            footnote={
+              <>
+                Works once, until {new Date(unsent.expiresAt).toLocaleString()},
+                and only for an account with this email address.
+              </>
+            }
+            onDone={onClose}
           />
-        </div>
-        <div className="form-control mt-3">
-          <label className="label">
-            <span className="label-text">Role</span>
-          </label>
-          <select
-            className="select select-bordered w-full"
-            value={role}
-            onChange={(e) => setRole(e.target.value as Role)}
-          >
-            <option value="member">
-              Member: opens the apps they are given
-            </option>
-            <option value="admin">Admin: also manages users and apps</option>
-          </select>
-        </div>
-        {error && <div className="text-error text-sm mt-2">{error}</div>}
-      </form>
-    </Modal>
+        ) : (
+          <form.AppForm>
+            <form.Form className="flex flex-col gap-4">
+              <DialogHeader>
+                <DialogTitle>Invite user</DialogTitle>
+                <DialogDescription>
+                  They join this organization when they sign up or sign in with
+                  this email address.
+                </DialogDescription>
+              </DialogHeader>
+              <form.AppField name="email">
+                {(field) => (
+                  <field.TextField
+                    label="Email"
+                    type="email"
+                    placeholder="user@example.com"
+                    autoComplete="off"
+                    required
+                    autoFocus
+                  />
+                )}
+              </form.AppField>
+              <form.AppField name="role">
+                {(field) => (
+                  <field.SelectField
+                    label="Role"
+                    items={ROLE_ITEMS}
+                    description={ROLE_HINTS[field.state.value]}
+                  />
+                )}
+              </form.AppField>
+              {error ? (
+                <Alert variant="destructive">
+                  <CircleAlert />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              ) : null}
+              <DialogFooter>
+                <Button
+                  variant="ghost"
+                  onClick={onClose}
+                  disabled={inviteMutation.isPending}
+                >
+                  Cancel
+                </Button>
+                <form.SubmitButton>Invite</form.SubmitButton>
+              </DialogFooter>
+            </form.Form>
+          </form.AppForm>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

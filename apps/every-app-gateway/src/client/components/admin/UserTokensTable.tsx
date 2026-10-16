@@ -1,81 +1,134 @@
+import { useMemo, type ReactNode } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { Trash2 } from "lucide-react";
+import { RowActionsMenu } from "@/client/components/RowActionsMenu";
+import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import { DateCell, dateSortValue } from "@/client/components/table/DateCell";
+import { SortableHeader } from "@/client/components/table/SortableHeader";
+import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
 import type { UserAccessToken } from "@/types/user-token";
+import { TokenPrefix, TokenStatusBadge, tokenStatus } from "./tokenDisplay";
 
 interface UserTokensTableProps {
   tokens: UserAccessToken[];
-  onRevoke: (tokenId: string) => Promise<void>;
+  isLoading: boolean;
+  /** A load failure, shown above the rows. */
+  error?: ReactNode;
+  onRevoke: (token: UserAccessToken) => void;
   isRevoking: boolean;
-}
-
-function formatDate(date: Date | null): string {
-  if (!date) return "-";
-  return new Date(date).toLocaleString();
-}
-
-function appScopeLabel(token: UserAccessToken): string {
-  return token.appName ? `${token.appName} (${token.appSlug})` : "all my apps";
 }
 
 export function UserTokensTable({
   tokens,
+  isLoading,
+  error,
   onRevoke,
   isRevoking,
 }: UserTokensTableProps) {
-  if (tokens.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-base-content/70">No personal access tokens yet.</p>
-      </div>
-    );
-  }
+  const columns = useMemo<ColumnDef<UserAccessToken>[]>(
+    () => [
+      {
+        id: "name",
+        accessorFn: (token) => token.name,
+        header: ({ column }) => <SortableHeader column={column} label="Name" />,
+        meta: { cellClassName: "max-w-[240px] truncate font-medium" },
+        cell: ({ row }) => row.original.name,
+      },
+      {
+        id: "prefix",
+        header: "Prefix",
+        cell: ({ row }) => <TokenPrefix prefix={row.original.tokenPrefix} />,
+      },
+      {
+        id: "appScope",
+        header: "App scope",
+        meta: { cellClassName: "max-w-[240px]" },
+        cell: ({ row }) =>
+          row.original.appName ? (
+            <>
+              <p className="truncate">{row.original.appName}</p>
+              <p className="truncate text-xs text-muted-foreground">
+                {row.original.appSlug}
+              </p>
+            </>
+          ) : (
+            <span className="text-muted-foreground">All my apps</span>
+          ),
+      },
+      {
+        id: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <TokenStatusBadge status={tokenStatus(row.original)} />
+        ),
+      },
+      {
+        id: "created",
+        accessorFn: (token) => dateSortValue(token.createdAt, 0),
+        header: ({ column }) => (
+          <SortableHeader column={column} label="Created" />
+        ),
+        meta: { cellClassName: "text-xs text-muted-foreground" },
+        cell: ({ row }) => <DateCell value={row.original.createdAt} />,
+      },
+      {
+        id: "expires",
+        accessorFn: (token) =>
+          dateSortValue(token.expiresAt, Number.POSITIVE_INFINITY),
+        header: ({ column }) => (
+          <SortableHeader column={column} label="Expires" />
+        ),
+        meta: { cellClassName: "text-xs text-muted-foreground" },
+        cell: ({ row }) => <DateCell value={row.original.expiresAt} />,
+      },
+      {
+        id: "lastUsed",
+        accessorFn: (token) => dateSortValue(token.lastUsedAt, 0),
+        header: ({ column }) => (
+          <SortableHeader column={column} label="Last used" />
+        ),
+        meta: { cellClassName: "text-xs text-muted-foreground" },
+        cell: ({ row }) => <DateCell value={row.original.lastUsedAt} />,
+      },
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { headerClassName: "w-10" },
+        // Only an active token has anything left to revoke.
+        cell: ({ row }) =>
+          tokenStatus(row.original) === "active" ? (
+            <RowActionsMenu label={`Actions for ${row.original.name}`}>
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={isRevoking}
+                onClick={() => onRevoke(row.original)}
+              >
+                <Trash2 />
+                Revoke token
+              </DropdownMenuItem>
+            </RowActionsMenu>
+          ) : null,
+      },
+    ],
+    [isRevoking, onRevoke],
+  );
+
+  const table = useDataTable({
+    data: tokens,
+    columns,
+    getRowId: (token) => token.id,
+    withSorting: true,
+  });
 
   return (
-    <div className="overflow-x-auto">
-      <table className="table">
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Prefix</th>
-            <th>App Scope</th>
-            <th>Created</th>
-            <th>Expires</th>
-            <th>Last Used</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {tokens.map((token) => {
-            const isRevoked = !!token.revokedAt;
-            const isExpired = new Date(token.expiresAt).getTime() <= Date.now();
-
-            return (
-              <tr key={token.id}>
-                <td>
-                  <div className="font-medium">{token.name}</div>
-                  {(isRevoked || isExpired) && (
-                    <div className="badge badge-ghost badge-sm mt-1">
-                      {isRevoked ? "revoked" : "expired"}
-                    </div>
-                  )}
-                </td>
-                <td className="font-mono text-xs">{token.tokenPrefix}...</td>
-                <td className="text-sm">{appScopeLabel(token)}</td>
-                <td className="text-sm">{formatDate(token.createdAt)}</td>
-                <td className="text-sm">{formatDate(token.expiresAt)}</td>
-                <td className="text-sm">{formatDate(token.lastUsedAt)}</td>
-                <td>
-                  <button
-                    className="btn btn-xs btn-error btn-soft"
-                    disabled={isRevoked || isExpired || isRevoking}
-                    onClick={() => void onRevoke(token.id)}
-                  >
-                    Revoke
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <DataTable
+      table={table}
+      isLoading={isLoading}
+      error={error}
+      empty={{
+        title: "No personal access tokens yet",
+        description: "Create one for Claude Code, Cursor, or an API client.",
+      }}
+    />
   );
 }

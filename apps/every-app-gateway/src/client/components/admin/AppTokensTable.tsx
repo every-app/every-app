@@ -1,33 +1,32 @@
-import { useState } from "react";
-import { Search } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
+import type { ColumnDef } from "@tanstack/react-table";
+import { Trash2 } from "lucide-react";
+import { RowActionsMenu } from "@/client/components/RowActionsMenu";
+import { DataTable, useDataTable } from "@/client/components/table/DataTable";
+import {
+  DataTableSearch,
+  DataTableToolbar,
+} from "@/client/components/table/DataTableToolbar";
+import { DateCell, dateSortValue } from "@/client/components/table/DateCell";
+import { SortableHeader } from "@/client/components/table/SortableHeader";
+import { Badge } from "@/client/components/ui/badge";
+import { Button } from "@/client/components/ui/button";
+import { DropdownMenuItem } from "@/client/components/ui/dropdown-menu";
 import type { AdminAppToken } from "@/types/app-token";
+import { TokenPrefix, TokenStatusBadge, tokenStatus } from "./tokenDisplay";
 
 interface AppTokensTableProps {
   tokens: AdminAppToken[];
-  onRevoke: (tokenId: string) => Promise<void>;
+  isLoading: boolean;
+  /** A load failure, shown above the rows. */
+  error?: ReactNode;
+  onRevoke: (token: AdminAppToken) => void;
   isRevoking: boolean;
   isOwner: boolean;
 }
 
-function formatDate(date: Date | null): string {
-  if (!date) return "—";
-  return new Date(date).toLocaleString();
-}
-
-function statusForToken(token: AdminAppToken): {
-  label: string;
-  className: string;
-} {
-  if (token.revokedAt) {
-    return { label: "Revoked", className: "badge badge-error badge-sm" };
-  }
-
-  if (token.expiresAt && new Date(token.expiresAt).getTime() <= Date.now()) {
-    return { label: "Expired", className: "badge badge-warning badge-sm" };
-  }
-
-  return { label: "Active", className: "badge badge-success badge-sm" };
-}
+// The search box appears once the list is long enough to need it.
+const SEARCH_THRESHOLD = 5;
 
 function scopeLabel(scopes: string[]): string[] {
   if (scopes.includes("apps:register") && scopes.includes("apps:deploy")) {
@@ -39,124 +38,163 @@ function scopeLabel(scopes: string[]): string[] {
 
 export function AppTokensTable({
   tokens,
+  isLoading,
+  error,
   onRevoke,
   isRevoking,
   isOwner,
 }: AppTokensTableProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredTokens = tokens.filter((token) => {
+  const filteredTokens = useMemo(() => {
     const query = searchQuery.toLowerCase();
-    return (
-      (token.appName ?? "").toLowerCase().includes(query) ||
-      (token.appSlug ?? "").toLowerCase().includes(query) ||
-      token.tokenPrefix.toLowerCase().includes(query) ||
-      scopeLabel(token.scopes).join(",").toLowerCase().includes(query)
+    return tokens.filter(
+      (token) =>
+        (token.appName ?? "").toLowerCase().includes(query) ||
+        (token.appSlug ?? "").toLowerCase().includes(query) ||
+        token.tokenPrefix.toLowerCase().includes(query) ||
+        scopeLabel(token.scopes).join(",").toLowerCase().includes(query),
     );
+  }, [tokens, searchQuery]);
+
+  const columns = useMemo<ColumnDef<AdminAppToken>[]>(() => {
+    const base: ColumnDef<AdminAppToken>[] = [
+      {
+        id: "app",
+        accessorFn: (token) => token.appName ?? "",
+        header: ({ column }) => <SortableHeader column={column} label="App" />,
+        meta: { cellClassName: "max-w-[280px]" },
+        cell: ({ row }) => (
+          <>
+            <p className="truncate font-medium">
+              {row.original.appName ?? "No app"}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">
+              {row.original.appSlug ?? "Organization deploy token"}
+            </p>
+          </>
+        ),
+      },
+      {
+        id: "prefix",
+        header: "Prefix",
+        cell: ({ row }) => <TokenPrefix prefix={row.original.tokenPrefix} />,
+      },
+      {
+        id: "scopes",
+        header: "Scopes",
+        cell: ({ row }) => (
+          <div className="flex flex-wrap gap-1">
+            {scopeLabel(row.original.scopes).map((scope) => (
+              <Badge key={scope} variant="secondary">
+                {scope}
+              </Badge>
+            ))}
+          </div>
+        ),
+      },
+      {
+        id: "status",
+        header: "Status",
+        cell: ({ row }) => (
+          <TokenStatusBadge status={tokenStatus(row.original)} />
+        ),
+      },
+      {
+        id: "lastUsed",
+        accessorFn: (token) => dateSortValue(token.lastUsedAt, 0),
+        header: ({ column }) => (
+          <SortableHeader column={column} label="Last used" />
+        ),
+        meta: { cellClassName: "text-xs text-muted-foreground" },
+        cell: ({ row }) => <DateCell value={row.original.lastUsedAt} />,
+      },
+      {
+        id: "expires",
+        accessorFn: (token) =>
+          dateSortValue(token.expiresAt, Number.POSITIVE_INFINITY),
+        header: ({ column }) => (
+          <SortableHeader column={column} label="Expires" />
+        ),
+        meta: { cellClassName: "text-xs text-muted-foreground" },
+        cell: ({ row }) => <DateCell value={row.original.expiresAt} />,
+      },
+    ];
+    if (!isOwner) return base;
+
+    return [
+      ...base,
+      {
+        id: "actions",
+        header: () => <span className="sr-only">Actions</span>,
+        meta: { headerClassName: "w-10" },
+        // Only an active token has anything left to revoke.
+        cell: ({ row }) =>
+          tokenStatus(row.original) === "active" ? (
+            <RowActionsMenu
+              label={`Actions for token ${row.original.tokenPrefix}`}
+            >
+              <DropdownMenuItem
+                variant="destructive"
+                disabled={isRevoking}
+                onClick={() => onRevoke(row.original)}
+              >
+                <Trash2 />
+                Revoke token
+              </DropdownMenuItem>
+            </RowActionsMenu>
+          ) : null,
+      },
+    ];
+  }, [isOwner, isRevoking, onRevoke]);
+
+  const table = useDataTable({
+    data: filteredTokens,
+    columns,
+    getRowId: (token) => token.id,
+    withSorting: true,
   });
 
-  if (tokens.length === 0) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-base-content/70">
-          {isOwner
-            ? "No deploy tokens yet. Create one to authorize the CLI to deploy apps."
-            : "No deploy tokens yet."}
-        </p>
-      </div>
-    );
-  }
+  const isSearching = searchQuery !== "" && tokens.length > 0;
 
   return (
-    <div>
-      {tokens.length > 5 && (
-        <div className="mb-4">
-          <label className="input w-full max-w-xs">
-            <Search className="w-4 h-4 opacity-50" />
-            <input
-              type="text"
-              placeholder="Search tokens..."
+    <DataTable
+      table={table}
+      isLoading={isLoading}
+      error={error}
+      toolbar={
+        tokens.length > SEARCH_THRESHOLD ? (
+          <DataTableToolbar>
+            <DataTableSearch
+              label="Search tokens"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={setSearchQuery}
             />
-          </label>
-        </div>
-      )}
-
-      <div className="overflow-x-auto">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>App</th>
-              <th>Prefix</th>
-              <th>Scopes</th>
-              <th>Status</th>
-              <th>Last Used</th>
-              <th>Expires</th>
-              {isOwner && <th></th>}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTokens.map((token) => {
-              const status = statusForToken(token);
-              const isRevoked = !!token.revokedAt;
-              const isExpired =
-                !!token.expiresAt &&
-                new Date(token.expiresAt).getTime() <= Date.now();
-
-              return (
-                <tr key={token.id}>
-                  <td>
-                    <div className="font-medium">
-                      {token.appName ?? "No app"}
-                    </div>
-                    <div className="text-xs text-base-content/50">
-                      {token.appSlug ?? "Organization deploy token"}
-                    </div>
-                  </td>
-                  <td className="font-mono text-xs">{token.tokenPrefix}...</td>
-                  <td>
-                    <div className="flex flex-wrap gap-1">
-                      {scopeLabel(token.scopes).map((scope) => (
-                        <span
-                          key={`${token.id}-${scope}`}
-                          className="badge badge-ghost badge-sm"
-                        >
-                          {scope}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td>
-                    <span className={status.className}>{status.label}</span>
-                  </td>
-                  <td className="text-sm">{formatDate(token.lastUsedAt)}</td>
-                  <td className="text-sm">{formatDate(token.expiresAt)}</td>
-                  {isOwner && (
-                    <td>
-                      <button
-                        className="btn btn-xs btn-error btn-soft"
-                        disabled={isRevoked || isExpired || isRevoking}
-                        onClick={() => void onRevoke(token.id)}
-                      >
-                        Revoke
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {filteredTokens.length === 0 && searchQuery && (
-        <div className="text-center py-8">
-          <p className="text-base-content/70">
-            No tokens match "{searchQuery}"
-          </p>
-        </div>
-      )}
-    </div>
+          </DataTableToolbar>
+        ) : null
+      }
+      empty={
+        isSearching
+          ? {
+              kind: "filtered",
+              title: `No tokens match "${searchQuery}"`,
+              action: (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSearchQuery("")}
+                >
+                  Clear search
+                </Button>
+              ),
+            }
+          : {
+              title: "No deploy tokens yet",
+              description: isOwner
+                ? "Create one to authorize the CLI to deploy apps."
+                : undefined,
+            }
+      }
+    />
   );
 }

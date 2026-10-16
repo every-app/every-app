@@ -1,4 +1,11 @@
 import { CheckCircle, XCircle, AlertTriangle } from "lucide-react";
+import { StatusScreen } from "@/client/components/StatusScreen";
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
 
 interface CpuTimeoutWarningProps {
   attemptCount: number;
@@ -8,8 +15,6 @@ interface CpuTimeoutWarningProps {
   isSuccess?: boolean;
   onContinue?: () => void;
 }
-
-const iconClassName = "shrink-0 h-5 w-5 mt-0.5";
 
 /**
  * Full-page warning component displayed when retrying due to Cloudflare Worker CPU timeout.
@@ -23,42 +28,41 @@ export function CpuTimeoutWarning({
   isSuccess,
   onContinue,
 }: CpuTimeoutWarningProps) {
-  const content = (
-    <div className="flex flex-col items-center gap-4 py-4 flex-1">
-      {/* Success/Warning/Error Alert */}
+  return (
+    <StatusScreen logo>
       {isSuccess ? (
-        <div className="alert alert-success text-sm w-full">
-          <CheckCircle className={iconClassName} />
-          <div>
-            <p className="font-semibold">You're signed in!</p>
-            <p>Your sign in was successful. Continue when you're ready.</p>
-          </div>
-        </div>
+        <Alert variant="success">
+          <CheckCircle />
+          <AlertTitle>You're signed in!</AlertTitle>
+          <AlertDescription>
+            Your sign in was successful. Continue when you're ready.
+          </AlertDescription>
+        </Alert>
       ) : hasExhaustedRetries ? (
-        <div className="alert alert-error text-sm w-full">
-          <XCircle className={iconClassName} />
-          <div>
-            <p className="font-semibold">Max Retries Reached</p>
+        <Alert variant="destructive">
+          <XCircle />
+          <AlertTitle>Max Retries Reached</AlertTitle>
+          <AlertDescription>
             <p>
               We tried {maxRetries} times but the request keeps timing out.
               Please wait a few minutes before trying again.
             </p>
-            <p className="mt-2">
+            <p>
               Upgrading to the $5/month paid plan will resolve this. Go to
               Cloudflare: Compute & AI &gt; Workers Plans
             </p>
-          </div>
-        </div>
+          </AlertDescription>
+        </Alert>
       ) : (
-        <div className="alert alert-warning text-sm w-full">
-          <AlertTriangle className={iconClassName} />
-          <div>
-            <p className="font-semibold">
-              {secondsUntilRetry && secondsUntilRetry > 0
-                ? `Retrying in ${secondsUntilRetry} seconds (${attemptCount} of ${maxRetries})...`
-                : `Retrying request (${attemptCount} of ${maxRetries})...`}
-            </p>
-            <p className="pb-2">
+        <Alert variant="warning">
+          <AlertTriangle />
+          <AlertTitle>
+            {secondsUntilRetry && secondsUntilRetry > 0
+              ? `Retrying in ${secondsUntilRetry} seconds (${attemptCount} of ${maxRetries})...`
+              : `Retrying request (${attemptCount} of ${maxRetries})...`}
+          </AlertTitle>
+          <AlertDescription>
+            <p>
               Hashing passwords sometimes takes more CPU time than the
               Cloudflare Free Plan allows. We're automatically retrying your
               request.
@@ -67,29 +71,13 @@ export function CpuTimeoutWarning({
               Upgrading to the $5/month Cloudflare paid plan and redeploying the
               Every App Gateway will fix this problem.
             </p>
-          </div>
-        </div>
+          </AlertDescription>
+        </Alert>
       )}
 
-      {/* Continue button when success */}
       {isSuccess && onContinue && (
-        <button className="btn btn-primary" onClick={onContinue}>
-          Continue
-        </button>
+        <Button onClick={onContinue}>Continue</Button>
       )}
-    </div>
-  );
-
-  return (
-    <div className="flex min-h-screen items-center justify-center overflow-auto py-8">
-      <div className="w-full max-w-md px-4 flex flex-col min-h-[80vh]">
-        <img
-          src="/transparent-logo.png"
-          alt="Logo"
-          className="h-12 w-auto mx-auto mb-6"
-        />
-        {content}
-      </div>
-    </div>
+    </StatusScreen>
   );
 }

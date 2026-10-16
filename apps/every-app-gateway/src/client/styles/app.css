@@ -1,125 +1,194 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-@plugin "daisyui" {
-  /* @property isn't supported by some browsers and gives a noisy warning https://github.com/saadeghi/daisyui/issues/3882 */
-  exclude: properties;
+/* shadcn components here are built on Base UI. The shadcn variables below are
+   the source of truth for theme colors. Surfaces match OpenSEO's, light and
+   dark. The primary is Every App's near-black (light grey in dark mode), and
+   the default button is the metallic one below, not a flat primary fill. */
+
+@custom-variant dark (&:where([data-theme=everyapp-dark], [data-theme=everyapp-dark] *));
+
+@theme {
+  --container-8xl: 88rem;
 }
 
-/* Define Light Theme (Default) */
-@plugin "daisyui/theme" {
-  name: "gateway";
-  default: true;
-  prefersdark: false;
-  color-scheme: "light";
-
-  /* Base Colors */
-  --color-base-100: oklch(100% 0 0);
-  --color-base-200: oklch(97% 0 0);
-  --color-base-300: oklch(94% 0 0);
-  --color-base-content: oklch(0% 0 0);
-
-  /* Semantic Colors */
-  --color-primary: oklch(15.906% 0 0);
-  --color-primary-content: oklch(100% 0 0);
-  --color-secondary: oklch(21.455% 0.001 17.278);
-  --color-secondary-content: oklch(100% 0 0);
-  --color-accent: oklch(26.861% 0 0);
-  --color-accent-content: oklch(100% 0 0);
-  --color-neutral: oklch(0% 0 0);
-  --color-neutral-content: oklch(100% 0 0);
-
-  /* Status Colors */
-  --color-info: oklch(70% 0.15 230);
-  --color-info-content: oklch(100% 0 0);
-  --color-success: oklch(65% 0.18 145);
-  --color-success-content: oklch(100% 0 0);
-  --color-warning: oklch(80% 0.15 80);
-  --color-warning-content: oklch(100% 0 0);
-  --color-error: oklch(65% 0.2 25);
-  --color-error-content: oklch(100% 0 0);
-
-  /* Border Radius */
-  --radius-selector: 0rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.25rem;
-
-  /* Sizes */
-  --size-selector: 0.25rem;
-  --size-field: 0.21875rem;
-
-  /* Effects */
-  --border: 1px;
-  --depth: 0;
-  --noise: 0;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  /* At --radius 0.5rem this scale equals Tailwind's defaults, so existing
+     rounded-* classes do not change. Fields (rounded-lg) are 0.5rem and cards
+     (rounded-xl) are 0.75rem. */
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: calc(var(--radius) * 0.75);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.5);
+  --radius-2xl: calc(var(--radius) * 2);
+  --radius-3xl: calc(var(--radius) * 3);
+  --radius-4xl: calc(var(--radius) * 4);
 }
 
-/* Define Dark Theme */
-@plugin "daisyui/theme" {
-  name: "gateway-dark";
-  prefersdark: true;
-  color-scheme: "dark";
-
-  --color-base-100: #0a0f0d;
-  --color-base-200: oklch(14% 0 0);
-  --color-base-300: oklch(22% 0 0);
-  --color-base-content: oklch(92% 0 0);
-
-  --color-primary: oklch(45% 0 0);
-  --color-primary-content: oklch(95% 0 0);
-  --color-secondary: oklch(78.545% 0 17.278);
-  --color-secondary-content: oklch(0% 0 0);
-  --color-accent: oklch(73.139% 0 0);
-  --color-accent-content: oklch(0% 0 0);
-  --color-neutral: oklch(30% 0 0);
-  --color-neutral-content: oklch(100% 0 0);
-
-  --color-info: oklch(70% 0.15 230);
-  --color-info-content: oklch(100% 0 0);
-  --color-success: oklch(65% 0.18 145);
-  --color-success-content: oklch(100% 0 0);
-  --color-warning: oklch(80% 0.15 80);
-  --color-warning-content: oklch(100% 0 0);
-  --color-error: oklch(65% 0.2 25);
-  --color-error-content: oklch(100% 0 0);
-
-  --radius-selector: 0rem;
-  --radius-field: 0.25rem;
-  --radius-box: 0.25rem;
-
-  --size-selector: 0.25rem;
-  --size-field: 0.21875rem;
-
-  --border: 1px;
-  --depth: 0;
-  --noise: 0;
+:where(:root),
+[data-theme="everyapp"] {
+  color-scheme: light;
+  --radius: 0.5rem;
+  --background: oklch(95.5% 0 0);
+  --foreground: oklch(20% 0 0);
+  --card: oklch(100% 0 0);
+  --card-foreground: oklch(20% 0 0);
+  --popover: oklch(100% 0 0);
+  --popover-foreground: oklch(20% 0 0);
+  --primary: oklch(15.9% 0 0);
+  --primary-foreground: oklch(100% 0 0);
+  --secondary: oklch(97% 0 0);
+  --secondary-foreground: oklch(20% 0 0);
+  --muted: oklch(97% 0 0);
+  --muted-foreground: oklch(20% 0 0 / 60%);
+  --accent: oklch(97% 0 0);
+  --accent-foreground: oklch(20% 0 0);
+  --destructive: oklch(65% 0.2 25);
+  --success: oklch(65% 0.18 145);
+  --success-foreground: oklch(100% 0 0);
+  --warning: oklch(80% 0.15 80);
+  --warning-foreground: oklch(25% 0.05 80);
+  --info: oklch(70% 0.15 230);
+  --info-foreground: oklch(100% 0 0);
+  --border: oklch(92% 0 0);
+  --input: oklch(82% 0 0);
+  --ring: oklch(55% 0 0);
+  --chart-1: oklch(57.5% 0.163 255.5);
+  --chart-2: oklch(67.1% 0.175 40.6);
+  --chart-3: oklch(66.9% 0.141 162.1);
+  --chart-4: oklch(76.4% 0.161 75.1);
+  --chart-5: oklch(71.6% 0.141 357.4);
+  --sidebar: oklch(91% 0 0);
+  --sidebar-foreground: oklch(20% 0 0);
+  --sidebar-primary: oklch(15.9% 0 0);
+  --sidebar-primary-foreground: oklch(100% 0 0);
+  --sidebar-accent: oklch(20% 0 0 / 8%);
+  --sidebar-accent-foreground: oklch(20% 0 0);
+  --sidebar-border: oklch(86% 0 0);
+  --sidebar-ring: oklch(55% 0 0);
 }
 
-/* Global Styles */
+[data-theme="everyapp-dark"] {
+  color-scheme: dark;
+  --background: oklch(18% 0 0);
+  --foreground: oklch(92% 0 0);
+  --card: oklch(23% 0 0);
+  --card-foreground: oklch(92% 0 0);
+  --popover: oklch(25% 0 0);
+  --popover-foreground: oklch(92% 0 0);
+  --primary: oklch(88% 0 0);
+  --primary-foreground: oklch(20% 0 0);
+  --secondary: oklch(28% 0 0);
+  --secondary-foreground: oklch(92% 0 0);
+  --muted: oklch(18% 0 0);
+  --muted-foreground: oklch(92% 0 0 / 60%);
+  --accent: oklch(28% 0 0);
+  --accent-foreground: oklch(92% 0 0);
+  --destructive: oklch(65% 0.2 25);
+  --success: oklch(65% 0.18 145);
+  --success-foreground: oklch(100% 0 0);
+  --warning: oklch(80% 0.15 80);
+  --warning-foreground: oklch(25% 0.05 80);
+  --info: oklch(70% 0.15 230);
+  --info-foreground: oklch(100% 0 0);
+  --border: oklch(30% 0 0);
+  --input: oklch(40% 0 0);
+  --ring: oklch(60% 0 0);
+  --chart-1: oklch(62.2% 0.161 255.1);
+  --chart-2: oklch(62.2% 0.173 40.1);
+  --chart-3: oklch(62.1% 0.128 163.1);
+  --chart-4: oklch(67% 0.143 73.2);
+  --chart-5: oklch(62.2% 0.171 0.8);
+  --sidebar: oklch(24% 0 0);
+  --sidebar-foreground: oklch(92% 0 0);
+  --sidebar-primary: oklch(88% 0 0);
+  --sidebar-primary-foreground: oklch(20% 0 0);
+  --sidebar-accent: oklch(100% 0 0 / 8%);
+  --sidebar-accent-foreground: oklch(92% 0 0);
+  --sidebar-border: oklch(31% 0 0);
+  --sidebar-ring: oklch(60% 0 0);
+}
+
+/* The document never scrolls: the app shell's content area, AuthPageShell
+   and StatusScreen are the scroll containers. */
 html,
 body {
-  @apply m-0 p-0 antialiased;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
-    "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
-  /* Fallback for browsers that don't support dvh */
-  height: 100vh;
+  @apply m-0 bg-background text-foreground;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  height: 100%;
   overflow: hidden;
-  /* Allow browser/extensions to detect color scheme preference */
-  color-scheme: light dark;
 }
 
-body {
-  @apply bg-base-100 text-base-content;
-  height: 100%;
+/* Thin scrollbars in the muted text color, in both themes. */
+:root {
+  scrollbar-color: color-mix(in oklch, currentColor 35%, transparent)
+    transparent;
 }
 
-#app {
-  @apply flex flex-col;
-  height: 100%;
-  overflow-y: auto;
+/* Prevent Safari mobile from zooming on input focus (requires 16px minimum).
+   This rule is outside a layer, so it beats every utility. shadcn controls
+   (the ones with data-slot) are left out: they are 16px below md and 14px
+   from md up through their own utilities. */
+input:not([data-slot]),
+textarea:not([data-slot]),
+select:not([data-slot]) {
+  @apply text-base;
 }
 
-/* Custom Utility Classes */
+/* Override 1Password and browser autofill styling, which would otherwise paint
+   filled inputs yellow or blue on top of the theme. */
+input[data-com-onepassword-filled],
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px var(--color-card) inset !important;
+  -webkit-text-fill-color: var(--color-foreground) !important;
+  caret-color: var(--color-foreground) !important;
+  background-color: var(--color-card) !important;
+  color: var(--color-foreground) !important;
+}
+
+/* Safe area utilities for mobile devices */
 @layer utilities {
   .pb-safe {
     padding-bottom: calc(env(safe-area-inset-bottom, 0.5rem) + 0.5rem);
@@ -138,151 +207,62 @@ body {
     width: 0;
     height: 0;
   }
-  @media (pointer: coarse) {
-    .scrollbar-hidden-mobile {
-      scrollbar-width: none;
-      -ms-overflow-style: none;
-    }
-    .scrollbar-hidden-mobile::-webkit-scrollbar {
-      width: 0;
-      height: 0;
-    }
+}
+
+/* Every App's metallic button: a graphite gradient with a soft top highlight.
+   Dark mode lifts it a few steps so it stands off OpenSEO's dark greys. */
+@utility metallic {
+  color: white;
+  background-image: linear-gradient(
+    180deg,
+    #484848 0%,
+    #383838 50%,
+    #2a2a2a 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.12),
+    0 1px 2px rgb(0 0 0 / 0.2);
+  &:hover {
+    background-image: linear-gradient(
+      180deg,
+      #545454 0%,
+      #434343 50%,
+      #353535 100%
+    );
+  }
+  &:where([data-theme="everyapp-dark"], [data-theme="everyapp-dark"] *) {
+    background-image: linear-gradient(
+      180deg,
+      #6a6a6a 0%,
+      #555555 50%,
+      #444444 100%
+    );
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.18),
+      0 1px 2px rgb(0 0 0 / 0.4);
+  }
+  &:where([data-theme="everyapp-dark"], [data-theme="everyapp-dark"] *):hover {
+    background-image: linear-gradient(
+      180deg,
+      #767676 0%,
+      #616161 50%,
+      #4f4f4f 100%
+    );
   }
 }
 
-/* Fade in animation */
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+/* Row actions that appear on hover. Keyboard focus inside the row and touch
+   screens (no hover) show them too. Put `group` on the row. */
+@utility reveal-on-hover {
+  @apply opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100;
 }
 
-.animate-fade-in {
-  animation: fade-in 300ms ease-in-out;
-}
-
-/* Touch action handling for mobile */
+/* Touch device optimizations */
 @media (pointer: coarse) {
   html {
     touch-action: none;
   }
-
   body {
     touch-action: pan-x pan-y;
-  }
-}
-
-/* Override 1Password and browser autofill styling */
-input[data-com-onepassword-filled],
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus,
-input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 1000px var(--color-base-200) inset !important;
-  -webkit-text-fill-color: var(--color-base-content) !important;
-  caret-color: var(--color-base-content) !important;
-  background-color: var(--color-base-200) !important;
-  color: var(--color-base-content) !important;
-}
-
-/* Prevent Safari mobile from zooming on input focus (requires 16px minimum) */
-input,
-textarea,
-select {
-  @apply text-base;
-}
-
-/* Add spacing between labels and inputs */
-.form-control .label {
-  @apply pb-2;
-}
-
-/* Apply shared styling to all dropdown menus */
-.dropdown-content.menu {
-  @apply bg-base-100 rounded-box shadow border border-base-300 p-2;
-}
-
-/* Apply consistent form spacing */
-form {
-  @apply space-y-4 mt-4;
-}
-
-/* Apply consistent modal styling */
-.modal-box {
-  @apply max-w-lg;
-}
-
-/* Make toggle switches fully rounded */
-.toggle {
-  @apply rounded-full bg-base-300;
-}
-
-.toggle:checked {
-  @apply bg-base-content/70;
-}
-
-.toggle::before {
-  @apply rounded-full;
-}
-
-/* Apply consistent auth card styling */
-.card.auth-card {
-  @apply w-full max-w-md;
-}
-
-.card.auth-card .card-body p {
-  @apply text-sm text-base-content/70 mt-1;
-}
-
-/* Metallic/shiny primary button style - Pill Metal */
-.btn-primary {
-  background: linear-gradient(180deg, #424242 0%, #353535 50%, #2a2a2a 100%);
-  border: none;
-  color: white;
-}
-
-.btn-primary:hover {
-  background: linear-gradient(180deg, #4d4d4d 0%, #404040 50%, #353535 100%);
-}
-
-/* Custom alert styling with darker borders and transparent background */
-.alert {
-  @apply flex gap-3 rounded-lg border p-4 text-base-content/70;
-}
-
-.alert-warning {
-  @apply border-warning/70 bg-warning/40 text-base-content/90;
-}
-
-.alert-info {
-  @apply border-info/70 bg-info/40 text-base-content/90;
-}
-
-.alert-success {
-  @apply border-success/70 bg-success/40 text-base-content/90;
-}
-
-.alert-error {
-  @apply border-error/70 bg-error/40 text-base-content/90;
-}
-
-@media (prefers-color-scheme: dark) {
-  .alert-warning {
-    @apply border-warning/60 bg-warning/20;
-  }
-
-  .alert-info {
-    @apply border-info/60 bg-info/20;
-  }
-
-  .alert-success {
-    @apply border-success/60 bg-success/20;
-  }
-
-  .alert-error {
-    @apply border-error/60 bg-error/20;
   }
 }

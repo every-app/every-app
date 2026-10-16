@@ -1,10 +1,64 @@
 import { useMemo, useState } from "react";
-import { Modal } from "../Modal";
+import { revalidateLogic } from "@tanstack/react-form";
+import { CircleAlert } from "lucide-react";
+import { z } from "zod";
+import { useAppForm } from "@/client/components/form/useAppForm";
+import { Alert, AlertDescription } from "@/client/components/ui/alert";
+import { Button } from "@/client/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/client/components/ui/dialog";
 import { getServerErrorMessage } from "@/client/errors";
 import type { AppWithAccessCount } from "@/types/app";
+import {
+  DAY_MS,
+  EXPIRY_CHOICES,
+  EXPIRY_ITEMS,
+  expiryToIso,
+  localDateTimeValue,
+  msUntil,
+  type ExpiryChoice,
+} from "./tokenExpiry";
+
+// The server rejects longer names.
+const MAX_NAME_LENGTH = 64;
+
+// The app scope select needs a real value for "no app".
+const ALL_APPS = "all";
+
+const createUserTokenSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1, "Enter a name.")
+      .max(MAX_NAME_LENGTH, `Use ${MAX_NAME_LENGTH} characters or fewer.`),
+    appId: z.string(),
+    expiry: z.enum(EXPIRY_CHOICES),
+    customExpiresAt: z.string(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.expiry !== "custom") return;
+    // The same window the server enforces.
+    const ms = msUntil(value.customExpiresAt);
+    if (ms === null || ms < DAY_MS || ms > 365 * DAY_MS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["customExpiresAt"],
+        message:
+          ms === null
+            ? "Pick an expiration date."
+            : "Expiration must be between 1 day and 1 year from now.",
+      });
+    }
+  });
 
 interface CreateUserTokenModalProps {
-  open: boolean;
   onClose: () => void;
   apps: AppWithAccessCount[];
   onCreate: (input: {
@@ -14,129 +68,122 @@ interface CreateUserTokenModalProps {
   }) => Promise<void>;
 }
 
-function defaultExpiryValue(): string {
-  const date = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
-  date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
-  return date.toISOString().slice(0, 16);
-}
-
+/** Creates a personal access token. Render it only while open. */
 export function CreateUserTokenModal({
-  open,
   onClose,
   apps,
   onCreate,
 }: CreateUserTokenModalProps) {
-  const sortedApps = useMemo(
-    () => [...apps].sort((a, b) => a.name.localeCompare(b.name)),
+  const appItems = useMemo(
+    () => [
+      { value: ALL_APPS, label: "All my apps" },
+      ...[...apps]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((app) => ({ value: app.id, label: `${app.name} (${app.appId})` })),
+    ],
     [apps],
   );
-  const [name, setName] = useState("");
-  const [appId, setAppId] = useState("");
-  const [expiresAt, setExpiresAt] = useState(defaultExpiryValue);
   const [error, setError] = useState<string | null>(null);
-  const [isPending, setIsPending] = useState(false);
 
-  const reset = () => {
-    setName("");
-    setAppId("");
-    setExpiresAt(defaultExpiryValue());
-    setError(null);
-    setIsPending(false);
-  };
-
-  const handleClose = () => {
-    reset();
-    onClose();
-  };
-
-  const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    setError(null);
-    setIsPending(true);
-
-    try {
-      await onCreate({
-        name,
-        appId: appId || undefined,
-        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
-      });
-      handleClose();
-    } catch (err) {
-      setError(getServerErrorMessage(err, "Failed to create token"));
-      setIsPending(false);
-    }
-  };
-
-  if (!open) return null;
+  const form = useAppForm({
+    defaultValues: {
+      name: "",
+      appId: ALL_APPS,
+      expiry: "90" as ExpiryChoice,
+      customExpiresAt: localDateTimeValue(90),
+    },
+    validationLogic: revalidateLogic(),
+    validators: { onDynamic: createUserTokenSchema },
+    onSubmit: async ({ value }) => {
+      setError(null);
+      try {
+        await onCreate({
+          name: value.name,
+          appId: value.appId === ALL_APPS ? undefined : value.appId,
+          expiresAt: expiryToIso(value.expiry, value.customExpiresAt),
+        });
+      } catch (err) {
+        setError(getServerErrorMessage(err, "Failed to create token"));
+      }
+    },
+  });
 
   return (
-    <Modal
-      open={open}
-      onClose={handleClose}
-      title="Create Personal Access Token"
-      description="For Claude Code, Cursor, and API clients. claude.ai connectors need the OAuth connector (coming later)."
-      actions={
-        <>
-          <button type="button" className="btn btn-ghost" onClick={handleClose}>
-            Cancel
-          </button>
-          <button
-            type="submit"
-            form="create-user-token-form"
-            className="btn btn-primary"
-            disabled={isPending}
-          >
-            {isPending ? "Creating..." : "Create Token"}
-          </button>
-        </>
-      }
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !form.state.isSubmitting) onClose();
+      }}
     >
-      <form
-        id="create-user-token-form"
-        className="space-y-4 mt-4"
-        onSubmit={handleSubmit}
-      >
-        <fieldset className="fieldset">
-          <legend className="fieldset-legend">Name</legend>
-          <input
-            className="input w-full"
-            value={name}
-            maxLength={64}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Claude Code on MacBook"
-            required
-          />
-        </fieldset>
-
-        <fieldset className="fieldset">
-          <legend className="fieldset-legend">App scope</legend>
-          <select
-            className="select w-full"
-            value={appId}
-            onChange={(event) => setAppId(event.target.value)}
-          >
-            <option value="">All my apps</option>
-            {sortedApps.map((app) => (
-              <option key={app.id} value={app.id}>
-                {app.name} ({app.appId})
-              </option>
-            ))}
-          </select>
-        </fieldset>
-
-        <fieldset className="fieldset">
-          <legend className="fieldset-legend">Expiration</legend>
-          <input
-            type="datetime-local"
-            className="input w-full"
-            value={expiresAt}
-            onChange={(event) => setExpiresAt(event.target.value)}
-            required
-          />
-        </fieldset>
-
-        {error && <p className="text-error text-sm">{error}</p>}
-      </form>
-    </Modal>
+      <DialogContent showCloseButton={false} className="sm:max-w-md">
+        <form.AppForm>
+          <form.Form className="flex flex-col gap-4">
+            <DialogHeader>
+              <DialogTitle>Create personal access token</DialogTitle>
+              <DialogDescription>
+                For Claude Code, Cursor, and API clients. claude.ai connectors
+                need the OAuth connector (coming later).
+              </DialogDescription>
+            </DialogHeader>
+            <form.AppField name="name">
+              {(field) => (
+                <field.TextField
+                  label="Name"
+                  placeholder="Claude Code on MacBook"
+                  maxLength={MAX_NAME_LENGTH}
+                  required
+                  autoFocus
+                />
+              )}
+            </form.AppField>
+            <form.AppField name="appId">
+              {(field) => (
+                <field.SelectField label="App scope" items={appItems} />
+              )}
+            </form.AppField>
+            <form.AppField name="expiry">
+              {(field) => (
+                <field.SelectField label="Expiration" items={EXPIRY_ITEMS} />
+              )}
+            </form.AppField>
+            <form.Subscribe selector={(state) => state.values.expiry}>
+              {(expiry) =>
+                expiry === "custom" ? (
+                  <form.AppField name="customExpiresAt">
+                    {(field) => (
+                      <field.TextField
+                        label="Expires at"
+                        type="datetime-local"
+                        required
+                      />
+                    )}
+                  </form.AppField>
+                ) : null
+              }
+            </form.Subscribe>
+            {error ? (
+              <Alert variant="destructive">
+                <CircleAlert aria-hidden />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+            <DialogFooter>
+              <form.Subscribe selector={(state) => state.isSubmitting}>
+                {(isSubmitting) => (
+                  <Button
+                    variant="ghost"
+                    onClick={onClose}
+                    disabled={isSubmitting}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </form.Subscribe>
+              <form.SubmitButton>Create token</form.SubmitButton>
+            </DialogFooter>
+          </form.Form>
+        </form.AppForm>
+      </DialogContent>
+    </Dialog>
   );
 }

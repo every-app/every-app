@@ -13,6 +13,8 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import * as React from "react";
 import appCss from "@/client/styles/app.css?url";
 import { queryClient, persister, CACHE_BUSTER } from "@/client/tanstack-db";
+import { themePreferenceInitScript } from "@/client/lib/theme";
+import { TooltipProvider } from "@/client/components/ui/tooltip";
 import { Toaster } from "sonner";
 
 const PUBLIC_ROUTES = [
@@ -64,24 +66,24 @@ function RootComponent() {
       client={queryClient}
       persistOptions={{ persister, buster: CACHE_BUSTER }}
     >
-      <AppRouter />
-      <Toaster
-        richColors
-        position="bottom-right"
-        toastOptions={{
-          className:
-            "!bg-base-300 !text-base-content !shadow-lg !border !border-base-content/20",
-        }}
-      />
-      {/* <TanStackRouterDevtools /> */}
+      <TooltipProvider>
+        <AppRouter />
+        <Toaster position="bottom-right" />
+        {/* <TanStackRouterDevtools /> */}
+      </TooltipProvider>
     </PersistQueryClientProvider>
   );
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html>
+    <html suppressHydrationWarning>
       <head>
+        {/* Sets data-theme before the first paint, so a dark theme never
+            flashes light. */}
+        <script
+          dangerouslySetInnerHTML={{ __html: themePreferenceInitScript }}
+        />
         <meta charSet="utf-8" />
         <meta
           name="viewport"
@@ -95,12 +97,12 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         <meta name="apple-mobile-web-app-title" content="Every App" />
         <meta
           name="theme-color"
-          content="#242424"
+          content="#121212"
           media="(prefers-color-scheme: dark)"
         />
         <meta
           name="theme-color"
-          content="#f7f7f7"
+          content="#f0f0f0"
           media="(prefers-color-scheme: light)"
         />
         <meta
@@ -127,7 +129,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <ClientOnly>{children}</ClientOnly>
         <div
-          className="fixed bottom-1.5 right-2 z-50 font-mono text-[10px] opacity-40 pointer-events-none select-none"
+          className="pointer-events-none fixed right-2 bottom-1.5 z-50 font-mono text-[10px] text-muted-foreground opacity-70 select-none"
           title="Gateway build"
         >
           {__GATEWAY_BUILD__}
