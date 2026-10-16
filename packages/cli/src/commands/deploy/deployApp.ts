@@ -22,7 +22,10 @@
  *      Workflows), so a deploy that can't upload leaves the database alone.
  *      Workflows the app dropped (with --allow-delete-workflows) go once
  *      the upload is live; then the registry records the version, its
- *      manifest and who deployed it (`pending` → `binding`);
+ *      manifest and who deployed it (`pending` → `binding`). The app's
+ *      helper Workers (`workers`, `<worker>--<name>`) are claimed, checked
+ *      and recorded like its Worker, and uploaded before it, since it binds
+ *      them;
  *   4. bind the Worker on the gateway and publish the app's hostname as a
  *      Workers Custom Domain if the install row says it doesn't yet (a
  *      reconcile: the gateway this checkout builds, from the build cache
@@ -41,6 +44,7 @@ import path from "node:path";
 import { version as cliVersion } from "../../../package.json";
 import { appBindingName } from "@every-app/perimeter/manifest";
 import type { RegistrationPlan } from "@every-app/perimeter/registry";
+import { helperWorkerName } from "@every-app/sdk/cloudflare";
 import { setupDeps, type SetupDeps } from "@/commands/setup/runSetup";
 import { checkSchemaDrift } from "./steps/checkSchemaDrift";
 import { offerGateway } from "./steps/offerGateway";
@@ -210,6 +214,7 @@ async function deploySteps(
     ...(manifest.resources?.kv ?? []),
     ...(manifest.resources?.durableObjects ?? []).map((d) => d.name),
     ...(manifest.resources?.workflows ?? []).map((w) => w.name),
+    ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
     "ASSETS",
   ]);
   for (const name of options.unsetSecrets ?? []) assertAppSecretName(name);
@@ -396,7 +401,13 @@ async function deploySteps(
           message: `${description}, which ${manifest.id} created before, is gone; creating a new, empty one.`,
         }),
     };
+    // The app's helper Workers (`workers`), named after its own.
+    const helpers = (manifest.workers ?? []).map((helper) => ({
+      name: helper.name,
+      workerName: helperWorkerName(workerName, helper.name),
+    }));
     await claimAppWorker(ownership);
+    for (const helper of helpers) await claimAppWorker(ownership, helper);
     const resources = await provisionAppResources({ ...ownership, manifest });
 
     await (options.installDeps ?? installDependencies)({
@@ -424,32 +435,70 @@ async function deploySteps(
       env: {},
       verbose: options.verbose ?? false,
     });
-    const { workflows } = await prepareAppBuildOutput({ cwd, inputs });
+    const { workflows, helperWorkflows } = await prepareAppBuildOutput({
+      cwd,
+      inputs: {
+        ...inputs,
+        helperWorkers: helpers.map((helper) => helper.workerName),
+      },
+    });
     await assertOwnWorkflows({ cf, workerName, names: workflows });
+    for (const helper of helpers) {
+      await assertOwnWorkflows({
+        cf,
+        workerName: helper.workerName,
+        names: helperWorkflows[helper.workerName] ?? [],
+      });
+    }
     out.emit({
       type: "step",
       step: "app.build",
       status: "ok",
-      message: "Built the app and checked its Worker.",
-      data: { workflows },
+      message: helpers.length
+        ? "Built the app and checked its Workers."
+        : "Built the app and checked its Worker.",
+      data: {
+        workflows: [...workflows, ...Object.values(helperWorkflows).flat()],
+      },
     });
     // Migrations that lag the schema would go live with code that needs more.
     await checkSchemaDrift({ cwd, manifest, out });
 
     // The database changes only once nothing else can stop the upload.
-    const workerRecord = (await readOwnedResources(registry, workerName)).find(
+    const workerRecords = (await readOwnedResources(registry, workerName)).filter(
       (resource) => resource.kind === "worker",
     );
+    const recordedVersion = (binding: string) =>
+      workerRecords.find((record) => record.binding === binding)?.versionId;
     await assertReplaceable({
       cf,
       workerName,
-      recordedVersionIds: [plan.versionId, workerRecord?.versionId],
+      recordedVersionIds: [plan.versionId, recordedVersion("")],
       interactive,
       confirm: options.confirm,
     });
+    for (const helper of helpers) {
+      await assertReplaceable({
+        cf,
+        workerName: helper.workerName,
+        recordedVersionIds: [recordedVersion(helper.name)],
+        interactive,
+        confirm: options.confirm,
+      });
+    }
     if (unsetNames.length > 0) {
       await lease.check();
       await dropSecrets({ cf, registry, workerName, names: unsetNames, out });
+      for (const helper of helpers) {
+        await dropSecrets({
+          cf,
+          registry,
+          workerName,
+          helper,
+          names: unsetNames,
+          out,
+        });
+      }
     }
     await lease.check();
     migrated.rollbackCommand = await migrate({
@@ -460,6 +509,31 @@ async function deploySteps(
       resources,
       accountId,
     });
+
+    // Helper Workers first: the app's Worker binds them, so each must be
+    // there (with any new class) before the version that uses it. The
+    // app's own secrets go to each, as all of them are the app's code.
+    for (const helper of helpers) {
+      await lease.check();
+      out.emit({
+        type: "step",
+        step: "app.upload",
+        status: "start",
+        message: `Uploading ${helper.workerName}...`,
+      });
+      await cfDeploy({
+        cf,
+        cwd,
+        workerName: helper.workerName,
+        buildOutputWorker: helper.workerName,
+        accountId,
+        message: `everyapp ${cliVersion} ${manifest.id} ${helper.name}`,
+        secrets: options.secrets,
+        interactive,
+        onUploaded: (uploadedVersion) =>
+          recordUploadedVersion(registry, workerName, uploadedVersion, helper.name),
+      });
+    }
 
     await lease.check();
     out.emit({
@@ -511,6 +585,19 @@ async function deploySteps(
         type: "progress",
         step: "app.upload",
         message: `Deleted the Workflow ${workflow.binding} (${workflow.name}) with its instances.`,
+      });
+    }
+    // A helper Worker the manifest dropped keeps running (with its crons)
+    // until the app is purged: the deploy never deletes a Worker.
+    const droppedHelpers = (plan.previousManifest?.workers ?? [])
+      .map((helper) => String(helper.name))
+      .filter((name) => !helpers.some((helper) => helper.name === name));
+    for (const name of droppedHelpers) {
+      out.emit({
+        type: "warning",
+        code: "HELPER_WORKER_KEPT",
+        step: "app.upload",
+        message: `everyapp.config.ts no longer declares the helper Worker ${name}; ${helperWorkerName(workerName, name)} keeps running until \`${CLI} delete ${manifest.id} --purge\` or until you delete it with npx cf.`,
       });
     }
     await markDeployed(registry, plan.app.id, {
@@ -586,9 +673,28 @@ function checkDurableObjects(
   manifest: EveryAppCliManifest,
   allowDelete: boolean,
 ): string[] {
-  const current = new Set(
-    (manifest.resources?.durableObjects ?? []).map((d) => d.className),
+  const current = new Map(
+    (manifest.resources?.durableObjects ?? []).map((d) => [d.className, d.worker]),
   );
+  for (const durableObject of plan.previousManifest?.resources?.durableObjects ?? []) {
+    const className = String(durableObject.className);
+    const before = durableObject.worker ? String(durableObject.worker) : undefined;
+    // Cloudflare moves a class's data between Workers only by a transfer,
+    // which the deploy never makes; and a helper Worker gets no tombstones.
+    if (current.has(className) && current.get(className) !== before) {
+      throw new EveryAppError(
+        "DURABLE_OBJECT_MOVED",
+        `everyapp.config.ts moves the Durable Object class ${className} to another Worker. Its data can't follow it; give the class a new name instead.`,
+      );
+    }
+    if (!current.has(className) && before) {
+      // Its own code: --allow-delete-durable-object-data doesn't cover it.
+      throw new EveryAppError(
+        "HELPER_DURABLE_OBJECT_REMOVED",
+        `everyapp.config.ts no longer declares the Durable Object class ${className}, which helper Worker ${before} defines. Removing a helper Worker's class isn't supported yet; keep declaring it.`,
+      );
+    }
+  }
   const removed = (plan.previousManifest?.resources?.durableObjects ?? [])
     .map((d) => String(d.className))
     .filter((className) => !current.has(className));
@@ -603,8 +709,9 @@ function checkDurableObjects(
 
 /**
  * Workflows the last deploy had that this one drops, among those that run
- * on the app's Worker: like a Durable Object class, deleting one deletes
- * its instances, so only with --allow-delete-workflows.
+ * on the Worker that defined them (the app's or a helper's): like a
+ * Durable Object class, deleting one deletes its instances, so only with
+ * --allow-delete-workflows.
  */
 async function checkWorkflows({
   cf,
@@ -773,28 +880,38 @@ async function dropSecrets({
   cf,
   registry,
   workerName,
+  helper,
   names,
   out,
 }: {
   cf: CfRunner;
   registry: D1Database;
+  /** The app's Worker, which the records are kept under. */
   workerName: string;
+  /** One of its helper Workers instead (`workers`), whose copies go too. */
+  helper?: { name: string; workerName: string };
   names: readonly string[];
   out: EventSink;
 }): Promise<void> {
+  const target = helper?.workerName ?? workerName;
   for (const name of names) {
-    const deleted = await deleteWorkerSecret(cf, workerName, name);
+    const deleted = await deleteWorkerSecret(cf, target, name);
     out.emit({
       type: "progress",
       step: "app.secrets",
       message: deleted
-        ? `Deleted the secret ${name} from ${workerName}.`
-        : `${workerName} has no secret ${name}.`,
+        ? `Deleted the secret ${name} from ${target}.`
+        : `${target} has no secret ${name}.`,
     });
   }
-  const serving = await getWorkerDeployment(cf, workerName);
+  const serving = await getWorkerDeployment(cf, target);
   if (serving?.versionId) {
-    await recordUploadedVersion(registry, workerName, serving.versionId);
+    await recordUploadedVersion(
+      registry,
+      workerName,
+      serving.versionId,
+      helper?.name,
+    );
   }
 }
 

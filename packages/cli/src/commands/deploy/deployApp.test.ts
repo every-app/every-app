@@ -1072,6 +1072,425 @@ export default defineConfig({ dialect: "sqlite", schema: "./src/db/schema.ts", o
   });
 });
 
+describe("deploy of an app without helper Workers", () => {
+  /** Ids and paths that differ on every run, replaced by what they are. */
+  function stable(value: unknown): unknown {
+    const replacements: Array<[string, string]> = [
+      [organizationId(), "<organization>"],
+      [appDir, "<app>"],
+      [os.tmpdir(), "<tmp>"],
+    ];
+    let text = JSON.stringify(value);
+    for (const [from, to] of replacements) text = text.split(from).join(to);
+    text = text
+      .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, "<uuid>")
+      .replace(/[0-9a-f]{32}/g, "<id>")
+      .replace(/-----BEGIN PUBLIC KEY-----[^"]*?-----END PUBLIC KEY-----\\\\n/g, "<public key>")
+      .replace(/"every-acme-todo-version-\d+"/g, '"<version>"');
+    return JSON.parse(text);
+  }
+
+  it("builds, uploads and records exactly what it did before helper Workers", async () => {
+    account.cf.calls.length = 0;
+    await deploy(WITH_WORKFLOW);
+
+    const uploads = account.deploys.filter((upload) =>
+      upload.workerName.startsWith("every-acme-todo"),
+    );
+    expect(
+      stable({
+        // The registry's own queries are left out: `owned` shows what they record.
+        cf: account.cf.calls
+          .filter((call) => call.args[0] !== "d1" || call.args[1] !== "query")
+          .map((call) => call.args.join(" ")),
+        uploads: uploads.map(({ workerName, config, args, secrets }) => ({
+          workerName,
+          args,
+          secrets: Object.keys(secrets ?? {}),
+          env: config["env"],
+          exports: config["exports"],
+          modules: config["manifest"].modules,
+        })),
+        owned: await readOwnedResources(registry(), "every-acme-todo"),
+        built: events.find(
+          (event) => event["step"] === "app.build" && event["status"] === "ok",
+        )?.["data"],
+      }),
+    ).toMatchInlineSnapshot(`
+      {
+        "built": {
+          "workflows": [
+            "every-acme-todo--rank-check",
+          ],
+        },
+        "cf": [
+          "auth whoami",
+          "d1 list --name every-app-gateway --per-page 100",
+          "dns records list -z zone-1 --name-exact todo.example.com --per-page 100",
+          "dns records list -z zone-1 --name-exact *.example.com --per-page 100",
+          "workers deployments list --worker every-acme-todo --per-page 10",
+          "d1 list --name every-acme-todo --per-page 100",
+          "d1 create --name every-acme-todo",
+          "kv namespaces list --per-page 100 --page 1",
+          "kv namespaces create --title every-acme-todo",
+          "build",
+          "workflows get every-acme-todo--rank-check",
+          "workers deployments list --worker every-acme-todo --per-page 10",
+          "d1 time-travel get-bookmark <uuid>",
+          "d1 migrations apply <uuid> --dir <app>/drizzle",
+          "workers deployments list --worker every-acme-todo --per-page 10",
+          "deploy --prebuilt --mode production --message everyapp 0.3.0 todo --secrets-file /fake-cf-files/secrets.json",
+          "workers deployments list --worker every-acme-todo --per-page 10",
+          "workers deployments list --worker every-app-gateway --per-page 10",
+          "workers deployments list --worker every-acme-todo --per-page 10",
+          "dns records list -z zone-1 --name-exact todo.example.com --per-page 100",
+          "dns records list -z zone-1 --name-exact *.example.com --per-page 100",
+          "workers deployments list --worker every-app-gateway --per-page 10",
+          "deploy --prebuilt --mode production --message everyapp 0.3.0 gateway 0.2.0 (reconcile)",
+          "workers deployments list --worker every-app-gateway --per-page 10",
+        ],
+        "owned": [
+          {
+            "binding": "DB",
+            "kind": "d1",
+            "name": "every-acme-todo",
+            "resourceId": "<uuid>",
+            "versionId": null,
+          },
+          {
+            "binding": "KV",
+            "kind": "kv",
+            "name": "every-acme-todo",
+            "resourceId": "<id>",
+            "versionId": null,
+          },
+          {
+            "binding": "",
+            "kind": "worker",
+            "name": "every-acme-todo",
+            "resourceId": "every-acme-todo",
+            "versionId": "<version>",
+          },
+        ],
+        "uploads": [
+          {
+            "args": [
+              "deploy",
+              "--prebuilt",
+              "--mode",
+              "production",
+              "--message",
+              "everyapp 0.3.0 todo",
+              "--secrets-file",
+              "/fake-cf-files/secrets.json",
+            ],
+            "env": {
+              "CF_VERSION_METADATA": {
+                "type": "version-metadata",
+              },
+              "DB": {
+                "id": "<uuid>",
+                "name": "every-acme-todo",
+                "type": "d1",
+              },
+              "EVERYAPP_APP_ID": {
+                "type": "text",
+                "value": "todo",
+              },
+              "EVERYAPP_AUDIENCE": {
+                "type": "text",
+                "value": "every-acme-todo",
+              },
+              "EVERYAPP_IDENTITY_ISSUER": {
+                "type": "text",
+                "value": "https://example.com",
+              },
+              "EVERYAPP_IDENTITY_PUBLIC_KEYS": {
+                "type": "text",
+                "value": "["<public key>"]",
+              },
+              "EVERY_APP_GATEWAY": {
+                "exportName": "AppGateway",
+                "props": {
+                  "appId": "todo",
+                  "organizationId": "<organization>",
+                  "workerName": "every-acme-todo",
+                },
+                "type": "worker",
+                "worker": "every-app-gateway",
+              },
+              "EVERY_APP_ORG_ID": {
+                "type": "secret",
+              },
+              "GATEWAY_URL": {
+                "type": "secret",
+              },
+              "KV": {
+                "id": "<id>",
+                "type": "kv",
+              },
+              "RANK_CHECK": {
+                "exportName": "RankCheckWorkflow",
+                "name": "every-acme-todo--rank-check",
+                "type": "workflow",
+                "worker": "every-acme-todo",
+              },
+              "USER_SYNC": {
+                "exportName": "UserSyncDO",
+                "type": "durable-object",
+                "worker": "every-acme-todo",
+              },
+            },
+            "exports": {
+              "RankCheckWorkflow": {
+                "name": "every-acme-todo--rank-check",
+                "type": "workflow",
+              },
+              "UserSyncDO": {
+                "storage": "sqlite",
+                "type": "durable-object",
+              },
+            },
+            "modules": {
+              "assets/x.js.map": {
+                "type": "sourcemap",
+              },
+            },
+            "secrets": [
+              "GATEWAY_URL",
+              "EVERY_APP_ORG_ID",
+            ],
+            "workerName": "every-acme-todo",
+          },
+        ],
+      }
+    `);
+  });
+});
+
+describe("apps with helper Workers", () => {
+  const SEO: EveryAppCliManifest = {
+    id: "seo",
+    resources: {
+      d1: ["DB"],
+      durableObjects: [
+        { name: "CHAT", className: "ChatAgent" },
+        { name: "SCRATCHPAD", className: "Scratchpad", worker: "audit" },
+      ],
+      workflows: [
+        { name: "RANK_CHECK", className: "RankCheckWorkflow" },
+        { name: "SITE_AUDIT", className: "SiteAuditWorkflow", worker: "audit" },
+      ],
+    },
+    workers: [{ name: "audit", binding: "AUDIT_ENGINE" }],
+  };
+  const HELPER = "every-acme-seo--audit";
+
+  it("uploads each helper Worker before the app's, private and named after it", async () => {
+    await deploy(SEO, { secrets: { CRAWLER_SECRET: "s" } });
+
+    const uploads = account.deploys.filter((upload) =>
+      upload.workerName.startsWith("every-acme-seo"),
+    );
+    expect(uploads.map((upload) => upload.workerName)).toEqual([
+      HELPER,
+      "every-acme-seo",
+    ]);
+    const [helper, app] = uploads;
+    expect(helper!.args).toEqual(expect.arrayContaining(["--worker", HELPER]));
+    expect(app!.args).not.toContain("--worker");
+    expect(helper!.config).toMatchObject({
+      workersDev: false,
+      previewUrls: false,
+      env: {
+        DB: { type: "d1", name: "every-acme-seo" },
+        EVERY_APP_GATEWAY: {
+          props: { appId: "seo", workerName: "every-acme-seo" },
+        },
+      },
+      exports: {
+        Scratchpad: { type: "durable-object" },
+        SiteAuditWorkflow: { type: "workflow", name: "every-acme-seo--site-audit" },
+      },
+    });
+    // The app's own secrets reach both; the gateway's only the app's Worker.
+    expect(helper!.secrets).toEqual({ CRAWLER_SECRET: "s" });
+    expect(Object.keys(app!.secrets!).sort()).toEqual([
+      "CRAWLER_SECRET",
+      "EVERY_APP_ORG_ID",
+      "GATEWAY_URL",
+    ]);
+    expect(app!.config["env"]).toMatchObject({
+      AUDIT_ENGINE: { type: "worker", worker: HELPER },
+      SCRATCHPAD: { type: "durable-object", worker: HELPER, exportName: "Scratchpad" },
+      SITE_AUDIT: { type: "workflow", worker: HELPER },
+    });
+    // cf made each Workflow on the Worker that defines it.
+    expect(account.workflows.get("every-acme-seo--site-audit")).toMatchObject({
+      scriptName: HELPER,
+      className: "SiteAuditWorkflow",
+    });
+    expect(account.workflows.get("every-acme-seo--rank-check")).toMatchObject({
+      scriptName: "every-acme-seo",
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "app.build",
+        status: "ok",
+        data: {
+          workflows: ["every-acme-seo--rank-check", "every-acme-seo--site-audit"],
+        },
+      }),
+    );
+    // The gateway reaches only the app's Worker.
+    expect(account.gatewayBindings()).toEqual(["every-acme-seo"]);
+    await expect(readOwnedResources(registry(), "every-acme-seo")).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "worker",
+          binding: "audit",
+          name: HELPER,
+          versionId: account.workers.get(HELPER)!.versions.at(-1),
+        }),
+        expect.objectContaining({
+          kind: "worker",
+          binding: "",
+          name: "every-acme-seo",
+          versionId: account.workers.get("every-acme-seo")!.versions.at(-1),
+        }),
+      ]),
+    );
+    expect(appRow("seo")).toMatchObject({ status: "active" });
+  });
+
+  it("redeploys unattended, replacing the versions it recorded", async () => {
+    await deploy(SEO);
+    await deploy(SEO);
+    expect(account.workers.get(HELPER)!.versions).toHaveLength(2);
+    expect(account.workers.get("every-acme-seo")!.versions).toHaveLength(2);
+  });
+
+  it("refuses a helper Worker's name that something else already has", async () => {
+    account.workers.set(HELPER, {
+      versions: ["someone-elses"],
+      config: {},
+      secrets: {},
+    });
+    const before = account.deploys.length;
+    await expect(deploy(SEO)).rejects.toMatchObject({ code: "WORKER_NAME_TAKEN" });
+    expect(account.deploys.length).toBe(before);
+  });
+
+  it("refuses a helper's Workflow name another Worker runs, before uploading", async () => {
+    account.workflows.set("every-acme-seo--site-audit", {
+      scriptName: "billing-api",
+      className: "Run",
+      instances: new Map(),
+    });
+    const before = account.deploys.length;
+    await expect(deploy(SEO)).rejects.toMatchObject({ code: "WORKFLOW_NAME_TAKEN" });
+    expect(account.deploys.length).toBe(before);
+  });
+
+  it("refuses to move a Durable Object class between Workers or drop a helper's", async () => {
+    await deploy(SEO);
+    const moved: EveryAppCliManifest = {
+      ...SEO,
+      resources: {
+        ...SEO.resources,
+        durableObjects: [
+          { name: "CHAT", className: "ChatAgent", worker: "audit" },
+          { name: "SCRATCHPAD", className: "Scratchpad", worker: "audit" },
+        ],
+      },
+    };
+    await expect(deploy(moved)).rejects.toMatchObject({ code: "DURABLE_OBJECT_MOVED" });
+    const dropped: EveryAppCliManifest = {
+      ...SEO,
+      resources: {
+        ...SEO.resources,
+        durableObjects: [{ name: "CHAT", className: "ChatAgent" }],
+      },
+    };
+    await expect(
+      deploy(dropped, { allowDeleteDurableObjectData: true }),
+    ).rejects.toMatchObject({ code: "HELPER_DURABLE_OBJECT_REMOVED" });
+  });
+
+  it("deletes a helper's dropped Workflow only with --allow-delete-workflows", async () => {
+    await deploy(SEO);
+    const withoutAudit: EveryAppCliManifest = {
+      ...SEO,
+      resources: {
+        ...SEO.resources,
+        workflows: [{ name: "RANK_CHECK", className: "RankCheckWorkflow" }],
+      },
+    };
+    await expect(deploy(withoutAudit)).rejects.toMatchObject({ code: "WORKFLOW_REMOVED" });
+    expect(account.workflows.has("every-acme-seo--site-audit")).toBe(true);
+
+    await deploy(withoutAudit, { allowDeleteWorkflows: true });
+    expect(account.workflows.has("every-acme-seo--site-audit")).toBe(false);
+    expect(account.workflows.has("every-acme-seo--rank-check")).toBe(true);
+  });
+
+  it("unsets the app's secret on its helper Workers too", async () => {
+    await deploy(SEO, { secrets: { CRAWLER_SECRET: "s" } });
+    await deploy(SEO, { unsetSecrets: ["CRAWLER_SECRET"] });
+    expect(account.workers.get(HELPER)!.secrets).not.toHaveProperty("CRAWLER_SECRET");
+    expect(account.workers.get("every-acme-seo")!.secrets).not.toHaveProperty(
+      "CRAWLER_SECRET",
+    );
+  });
+
+  it("warns that a helper Worker the manifest dropped keeps running", async () => {
+    const plain: EveryAppCliManifest = { id: "seo", resources: { d1: ["DB"] } };
+    await deploy({ ...plain, workers: [{ name: "audit" }] });
+    await deploy(plain);
+    expect(account.workers.has(HELPER)).toBe(true);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "warning", code: "HELPER_WORKER_KEPT" }),
+    );
+  });
+
+  it("starts a helper's Workflow by its binding", async () => {
+    await deploy(SEO);
+    fs.writeFileSync(
+      path.join(appDir, "everyapp.config.ts"),
+      `export default ${JSON.stringify(SEO)};\n`,
+    );
+    const options = { cwd: appDir, interactive: false, createCf: () => account.cf };
+    await expect(
+      startInstance({ ...options, workflow: "SITE_AUDIT", instanceId: "run-1" }),
+    ).resolves.toMatchObject({ instance: { id: "run-1" } });
+    await expect(listAppWorkflows(options)).resolves.toEqual([
+      expect.objectContaining({ binding: "RANK_CHECK", deployed: true }),
+      expect.objectContaining({
+        binding: "SITE_AUDIT",
+        name: "every-acme-seo--site-audit",
+        deployed: true,
+      }),
+    ]);
+  });
+
+  it("purges the helper Workers and their Workflows with the app", async () => {
+    await deploy(SEO);
+    const result = await remove("seo", true);
+
+    expect(account.workers.has("every-acme-seo")).toBe(false);
+    expect(account.workers.has(HELPER)).toBe(false);
+    expect([...account.workflows.keys()]).toEqual([]);
+    expect(result.purged?.removed).toEqual(
+      expect.arrayContaining([
+        'Workflow "every-acme-seo--site-audit"',
+        `Worker "${HELPER}"`,
+      ]),
+    );
+    expect(result.purged?.kept).toEqual([]);
+    await expect(readOwnedResources(registry(), "every-acme-seo")).resolves.toEqual([]);
+  });
+});
+
 describe("workflows", () => {
   const options = () => ({
     cwd: appDir,

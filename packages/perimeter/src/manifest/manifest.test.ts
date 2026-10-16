@@ -514,3 +514,64 @@ describe("capabilities manifest field", () => {
     ).toEqual({ "new-provider": { access: "read", scopes: ["x"] } });
   });
 });
+
+describe("helper Workers", () => {
+  const withAudit = {
+    id: "seo",
+    workers: [{ name: "audit", binding: "AUDIT_ENGINE" }],
+    resources: {
+      durableObjects: [
+        { name: "SCRATCHPAD", className: "Scratchpad", worker: "audit" },
+      ],
+      workflows: [
+        { name: "SITE_AUDIT", className: "SiteAuditWorkflow", worker: "audit" },
+      ],
+    },
+  };
+
+  it("accepts helper Workers and the classes they define", () => {
+    const manifest = validateManifestStrict(withAudit);
+    expect(manifest.workers).toEqual([
+      { name: "audit", binding: "AUDIT_ENGINE" },
+    ]);
+    expect(manifest.resources?.workflows).toEqual([
+      { name: "SITE_AUDIT", className: "SiteAuditWorkflow", worker: "audit" },
+    ]);
+  });
+
+  it("keeps the defining Worker at registration", () => {
+    expect(validateManifest(withAudit).resources?.durableObjects).toEqual([
+      { name: "SCRATCHPAD", className: "Scratchpad", worker: "audit" },
+    ]);
+  });
+
+  it.each([
+    [
+      "a class on an undeclared Worker",
+      { ...withAudit, workers: [] },
+      /SCRATCHPAD is defined by Worker "audit", which workers doesn't declare/,
+    ],
+    [
+      "a Worker declared twice",
+      { ...withAudit, workers: [{ name: "audit" }, { name: "audit" }] },
+      /workers lists "audit" twice/,
+    ],
+    [
+      "a name that would break the Worker's name apart",
+      { id: "seo", workers: [{ name: "audit--x" }] },
+      /kebab-case/,
+    ],
+    [
+      "a binding that isn't a JavaScript identifier",
+      { id: "seo", workers: [{ name: "audit", binding: "AUDIT-ENGINE" }] },
+      /binding names must be JavaScript identifiers/,
+    ],
+    [
+      "an unknown key on a helper Worker",
+      { id: "seo", workers: [{ name: "audit", routes: ["/x"] }] },
+      /Unrecognized key\(s\) in object: 'routes'/,
+    ],
+  ])("refuses %s", (_case, manifest, problem) => {
+    expect(() => validateManifestStrict(manifest)).toThrow(problem);
+  });
+});

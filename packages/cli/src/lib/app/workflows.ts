@@ -1,13 +1,13 @@
 /**
- * An app's Workflows: its Worker defines each one in everyapp.config.ts
- * (`resources.workflows`), named after the Worker
- * (`every-acme-seo--rank-check`), and cf creates or updates it when it
- * deploys the Worker. Workflow names are account-wide, and cf's update
- * reassigns a name another Worker holds, so a deploy first makes sure each
- * name is free or already the app Worker's.
+ * An app's Workflows: its Worker, or one of its helper Workers (`worker`),
+ * defines each one in everyapp.config.ts (`resources.workflows`), named
+ * after the app's Worker (`every-acme-seo--rank-check`), and cf creates or
+ * updates it when it deploys the defining Worker. Workflow names are
+ * account-wide, and cf's update reassigns a name another Worker holds, so a
+ * deploy first makes sure each name is free or already that Worker's.
  */
 import { ManifestSchema } from "@every-app/perimeter/manifest";
-import { workflowNameFor } from "@every-app/sdk/cloudflare";
+import { helperWorkerName, workflowNameFor } from "@every-app/sdk/cloudflare";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkflow } from "@/lib/cf/workflows";
 import { EveryAppError } from "@/lib/errors";
@@ -18,11 +18,17 @@ export interface AppWorkflow {
   className: string;
   /** The Workflow's name in the account. */
   name: string;
+  /** The Worker that runs it: the app's own, or one of its helper Workers. */
+  worker: string;
 }
 
 interface DeclaresWorkflows {
   resources?: {
-    workflows?: ReadonlyArray<{ name: string; className: string }>;
+    workflows?: ReadonlyArray<{
+      name: string;
+      className: string;
+      worker?: string;
+    }>;
   };
 }
 
@@ -35,12 +41,15 @@ export function appWorkflows(
     binding: workflow.name,
     className: workflow.className,
     name: workflowNameFor(workerName, workflow.name),
+    worker: workflow.worker
+      ? helperWorkerName(workerName, workflow.worker)
+      : workerName,
   }));
 }
 
 /**
  * Refuse a Workflow name another Worker runs: deploying would hand it, with
- * its instances, to the app's Worker.
+ * its instances, to `workerName` (the app's Worker or a helper).
  */
 export async function assertOwnWorkflows({
   cf,
@@ -64,7 +73,7 @@ export async function assertOwnWorkflows({
 
 /**
  * The Workflows the last deploy's manifest declared that this one doesn't,
- * among those that still run on the app's Worker.
+ * among those that still run on the Worker that defined them.
  */
 export async function droppedWorkflows({
   cf,
@@ -84,7 +93,7 @@ export async function droppedWorkflows({
   for (const workflow of appWorkflows(workerName, previous.data)) {
     if (names.includes(workflow.name)) continue;
     // A first deploy that was refused registered a name another Worker runs.
-    if ((await getWorkflow(cf, workflow.name))?.script_name === workerName) {
+    if ((await getWorkflow(cf, workflow.name))?.script_name === workflow.worker) {
       dropped.push(workflow);
     }
   }

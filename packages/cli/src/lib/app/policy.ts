@@ -1,12 +1,16 @@
 /**
- * What an app's built Worker may be, checked on its Build Output before
- * `cf deploy --prebuilt` uploads it. An app's cloudflare.config.ts is the
+ * What an app's built Workers may be, checked on its Build Output before
+ * `cf deploy --prebuilt` uploads them. An app's cloudflare.config.ts is the
  * app author's code; this keeps it from shipping a Worker the gateway's
  * model doesn't allow: public on workers.dev or a domain of its own,
  * without its identity keys or in dev mode, bound to another Worker or to
  * resources the deploy didn't provision for it or that aren't named after
  * it, with a binding type the model doesn't know, or giving away or
  * deleting Durable Object data.
+ *
+ * An app may also ship helper Workers (its manifest's `workers`), built as
+ * auxiliary Workers beside its own. Each is private in the same way and
+ * named after the app's Worker; only the app's Worker may bind it.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -22,7 +26,8 @@ import {
 import type { DeployInputs } from "./deployInputs";
 
 const OUTPUT_DIR = path.join(".cloudflare", "output", "v0");
-const WORKER_DIR = path.join(OUTPUT_DIR, "workers", "default");
+const WORKERS_DIR = path.join(OUTPUT_DIR, "workers");
+const DEFAULT_WORKER = "default";
 
 type Binding = Record<string, unknown> & { type?: string };
 type Export = Record<string, unknown> & { type?: string; state?: string };
@@ -76,19 +81,84 @@ interface BuiltWorkerConfig extends Record<string, unknown> {
   };
 }
 
-/** Everything wrong with the built Worker, as sentences; empty when it's fine. */
+type PolicyInputs = Pick<
+  DeployInputs,
+  "workerName" | "resources" | "deletedDurableObjects"
+> & {
+  /** The app's helper Workers, by full name (`<app worker>--<name>`). */
+  helperWorkers?: readonly string[];
+};
+
+/** Everything wrong with the app's built Worker, as sentences; empty when it's fine. */
 export function appPolicyProblems(
   config: BuiltWorkerConfig,
-  {
-    workerName,
-    resources,
-    deletedDurableObjects = [],
-  }: Pick<DeployInputs, "workerName" | "resources" | "deletedDurableObjects">,
+  inputs: PolicyInputs,
 ): string[] {
+  const { workerName, helperWorkers = [] } = inputs;
   const problems: string[] = [];
   if (config.name !== workerName) {
     problems.push(`its name is "${config.name}", not "${workerName}"`);
   }
+  problems.push(...privacyProblems(config));
+
+  const env = config.env ?? {};
+  for (const name of ["EVERYAPP_IDENTITY_PUBLIC_KEYS", "EVERYAPP_IDENTITY_ISSUER"]) {
+    if (env[name]?.type !== "text") problems.push(`${name} isn't built in`);
+  }
+  // The gateway mints this Worker's identities for its name and nothing else.
+  const audience = env["EVERYAPP_AUDIENCE"];
+  if (audience?.type !== "text" || audience["value"] !== workerName) {
+    problems.push(`EVERYAPP_AUDIENCE isn't the Worker's name ("${workerName}")`);
+  }
+  problems.push(
+    ...bindingProblems(env, inputs, (name, binding) =>
+      (name === "EVERY_APP_GATEWAY" &&
+        binding["worker"] === GATEWAY_WORKER_NAME &&
+        binding["exportName"] === "AppGateway") ||
+      helperWorkers.includes(String(binding["worker"])),
+    ),
+    ...exportProblems(
+      config.exports ?? {},
+      inputs.deletedDurableObjects ?? [],
+      workerName,
+    ),
+  );
+  return problems;
+}
+
+/**
+ * Everything wrong with one of the app's built helper Workers: it is
+ * private like the app, named after it, and reaches only the gateway (with
+ * the app's identity) and the app's own resources.
+ */
+export function helperPolicyProblems(
+  config: BuiltWorkerConfig,
+  helperName: string,
+  inputs: PolicyInputs,
+): string[] {
+  const problems: string[] = [];
+  if (config.name !== helperName) {
+    problems.push(`its name is "${config.name}", not "${helperName}"`);
+  }
+  problems.push(
+    ...privacyProblems(config),
+    ...bindingProblems(
+      config.env ?? {},
+      inputs,
+      (name, binding) =>
+        name === "EVERY_APP_GATEWAY" &&
+        binding["worker"] === GATEWAY_WORKER_NAME &&
+        binding["exportName"] === "AppGateway",
+    ),
+    // No tombstones on a helper yet: its classes stay while it does.
+    ...exportProblems(config.exports ?? {}, [], inputs.workerName),
+  );
+  return problems;
+}
+
+/** Reached only through the gateway: no public URL, domain or route. */
+function privacyProblems(config: BuiltWorkerConfig): string[] {
+  const problems: string[] = [];
   if (config.workersDev !== false) problems.push("workersDev isn't false");
   if (config.previewUrls !== false) problems.push("previewUrls isn't false");
   if (config.domains?.length) {
@@ -105,20 +175,20 @@ export function appPolicyProblems(
         : `it declares a trigger of type "${String(trigger.type)}" (apps may only declare cron schedules)`,
     );
   }
-
-  const env = config.env ?? {};
-  for (const name of ["EVERYAPP_IDENTITY_PUBLIC_KEYS", "EVERYAPP_IDENTITY_ISSUER"]) {
-    if (env[name]?.type !== "text") problems.push(`${name} isn't built in`);
-  }
-  if (env["EVERYAPP_DEV"]) {
+  if (config.env?.["EVERYAPP_DEV"]) {
     problems.push("EVERYAPP_DEV is set, which only `everyapp dev` may do");
   }
-  // The gateway mints this Worker's identities for its name and nothing else.
-  const audience = env["EVERYAPP_AUDIENCE"];
-  if (audience?.type !== "text" || audience["value"] !== workerName) {
-    problems.push(`EVERYAPP_AUDIENCE isn't the Worker's name ("${workerName}")`);
-  }
+  return problems;
+}
 
+/** Problems with a Worker's bindings; `mayBindWorker` decides service bindings. */
+function bindingProblems(
+  env: Record<string, Binding>,
+  { workerName, resources, helperWorkers = [] }: PolicyInputs,
+  mayBindWorker: (name: string, binding: Binding) => boolean,
+): string[] {
+  const problems: string[] = [];
+  const appWorkers = new Set([workerName, ...helperWorkers]);
   const d1Ids = new Set(Object.values(resources.d1 ?? {}).map((d1) => d1.id));
   const kvIds = new Set(Object.values(resources.kv ?? {}).map((kv) => kv.id));
   for (const [name, binding] of Object.entries(env)) {
@@ -130,18 +200,14 @@ export function appPolicyProblems(
     }
     switch (binding.type) {
       case "worker":
-        if (
-          name !== "EVERY_APP_GATEWAY" ||
-          binding["worker"] !== GATEWAY_WORKER_NAME ||
-          binding["exportName"] !== "AppGateway"
-        ) {
+        if (!mayBindWorker(name, binding)) {
           problems.push(
-            `${name} binds Worker "${String(binding["worker"])}"; apps may only bind the gateway's AppGateway`,
+            `${name} binds Worker "${String(binding["worker"])}"; apps may only bind the gateway's AppGateway and, from the app's own Worker, its helper Workers`,
           );
         }
         break;
       case "durable-object":
-        if (binding["worker"] !== workerName) {
+        if (!appWorkers.has(String(binding["worker"]))) {
           problems.push(
             `${name} binds another Worker's Durable Object ("${String(binding["worker"])}")`,
           );
@@ -167,11 +233,11 @@ export function appPolicyProblems(
         break;
       }
       case "workflow": {
-        // A Workflow runs on the Worker that defines it: an app binds only
-        // its own, under its own names.
+        // Workflow names are account-wide and name their instances, so an
+        // app reaches only Workflows its own Workers define, named after it.
         const workflow = String(binding["name"] ?? "");
         if (
-          binding["worker"] !== workerName ||
+          !appWorkers.has(String(binding["worker"])) ||
           !isOwnResourceName(workflow, workerName)
         ) {
           problems.push(
@@ -182,9 +248,6 @@ export function appPolicyProblems(
       }
     }
   }
-  problems.push(
-    ...exportProblems(config.exports ?? {}, deletedDurableObjects, workerName),
-  );
   return problems;
 }
 
@@ -192,8 +255,8 @@ export function appPolicyProblems(
  * Durable Object exports may create, rename or keep classes. Deleting one
  * deletes its data, so only the classes the deploy dropped with
  * --allow-delete-durable-object-data may be; moving one's data to another
- * Worker, or taking another Worker's, never. Workflows are named after the
- * app's Worker.
+ * Worker, or taking another Worker's, never. Workflows must be named after
+ * the app's Worker.
  */
 function exportProblems(
   exports: Record<string, Export>,
@@ -249,21 +312,23 @@ function exportProblems(
 }
 
 /**
- * Check the app's Build Output against the policy, list its source maps for
- * upload, and validate it with cf's schema. Throws APP_POLICY with every
- * problem. Returns the Workflows the Worker defines, which cf creates or
- * updates as it deploys it.
+ * Check the app's Build Output against the policy (its Worker and every
+ * helper Worker the manifest declares), list each Worker's source maps for
+ * upload, and validate each with cf's schema. Throws APP_POLICY with every
+ * problem. Returns the Workflows each Worker defines, which cf creates or
+ * updates as it deploys that Worker: `workflows` for the app's own, and
+ * `helperWorkflows` by helper Worker name.
  */
 export async function prepareAppBuildOutput({
   cwd,
   inputs,
 }: {
   cwd: string;
-  inputs: Pick<
-    DeployInputs,
-    "workerName" | "resources" | "deletedDurableObjects"
-  >;
-}): Promise<{ workflows: string[] }> {
+  inputs: PolicyInputs;
+}): Promise<{
+  workflows: string[];
+  helperWorkflows: Record<string, string[]>;
+}> {
   const rootConfig = JSON.parse(
     await fs.readFile(path.join(cwd, OUTPUT_DIR, "config.json"), "utf8"),
   ) as { buildContext?: { mode?: string; isPreview?: boolean } };
@@ -277,11 +342,39 @@ export async function prepareAppBuildOutput({
     );
   }
 
-  const configPath = path.join(cwd, WORKER_DIR, "worker.config.json");
-  const config = JSON.parse(
-    await fs.readFile(configPath, "utf8"),
-  ) as BuiltWorkerConfig;
-  const problems = appPolicyProblems(config, inputs);
+  const built = await readBuiltWorkers(cwd);
+  const helperWorkers = inputs.helperWorkers ?? [];
+  const problems: string[] = [];
+  const app = built.get(DEFAULT_WORKER);
+  if (!app) {
+    throw new EveryAppError(
+      "APP_POLICY",
+      "The app's Build Output has no default Worker. Build it from everyAppWorker() in cloudflare.config.ts.",
+    );
+  }
+  problems.push(...appPolicyProblems(app.config, inputs));
+  for (const [directory, { config }] of built) {
+    if (directory === DEFAULT_WORKER) continue;
+    const name = String(config.name);
+    if (!helperWorkers.includes(name)) {
+      problems.push(
+        `the build has a Worker "${name}" that everyapp.config.ts doesn't declare in workers`,
+      );
+      continue;
+    }
+    problems.push(
+      ...helperPolicyProblems(config, name, inputs).map(
+        (problem) => `${name}: ${problem}`,
+      ),
+    );
+  }
+  for (const helper of helperWorkers) {
+    if (![...built.values()].some(({ config }) => config.name === helper)) {
+      problems.push(
+        `the build has no Worker ${helper}, which everyapp.config.ts declares; add it to the Vite plugin's auxiliaryWorkers with everyAppAuxiliaryWorker()`,
+      );
+    }
+  }
   if (problems.length > 0) {
     throw new EveryAppError(
       "APP_POLICY",
@@ -289,17 +382,30 @@ export async function prepareAppBuildOutput({
     );
   }
 
-  // cf uploads source maps only as listed modules; list every one.
-  if (config.manifest) {
-    const modules = { ...(config.manifest.modules ?? {}) };
-    for (const map of await listSourceMaps(path.join(cwd, WORKER_DIR, "bundle"))) {
-      modules[map] = { type: "sourcemap" };
+  const helperWorkflows: Record<string, string[]> = {};
+  for (const [worker, { config, directory }] of built) {
+    if (worker !== DEFAULT_WORKER) {
+      const name = String(config.name);
+      helperWorkflows[name] = definedWorkflows(config, name);
     }
-    config.manifest = { ...config.manifest, modules };
+    // cf uploads source maps only as listed modules; list every one.
+    if (config.manifest) {
+      const modules = { ...(config.manifest.modules ?? {}) };
+      for (const map of await listSourceMaps(path.join(directory, "bundle"))) {
+        modules[map] = { type: "sourcemap" };
+      }
+      config.manifest = { ...config.manifest, modules };
+    }
+    validateWorkerConfig(config);
+    await fs.writeFile(
+      path.join(directory, "worker.config.json"),
+      `${JSON.stringify(config, null, 2)}\n`,
+    );
   }
-  validateWorkerConfig(config);
-  await fs.writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`);
-  return { workflows: definedWorkflows(config, inputs.workerName) };
+  return {
+    workflows: definedWorkflows(app.config, inputs.workerName),
+    helperWorkflows,
+  };
 }
 
 /**
@@ -322,4 +428,25 @@ function definedWorkflows(
       .map((binding) => String(binding["name"])),
   ];
   return [...new Set(names)];
+}
+
+/** Each Worker in the Build Output, by its directory name. */
+async function readBuiltWorkers(
+  cwd: string,
+): Promise<Map<string, { config: BuiltWorkerConfig; directory: string }>> {
+  const workers = new Map<
+    string,
+    { config: BuiltWorkerConfig; directory: string }
+  >();
+  for (const entry of await fs.readdir(path.join(cwd, WORKERS_DIR), {
+    withFileTypes: true,
+  })) {
+    if (!entry.isDirectory()) continue;
+    const directory = path.join(cwd, WORKERS_DIR, entry.name);
+    const config = JSON.parse(
+      await fs.readFile(path.join(directory, "worker.config.json"), "utf8"),
+    ) as BuiltWorkerConfig;
+    workers.set(entry.name, { config, directory });
+  }
+  return workers;
 }

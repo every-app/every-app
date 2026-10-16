@@ -18,11 +18,6 @@ export default defineConfig((ctx) => {
         ...worker.env,
         // Recipe images, in a bucket named after this install's Worker.
         R2: bindings.r2({ name: worker.name }),
-        // Dev only: your own OpenAI key from .dev.vars, used because local dev
-        // has no gateway binding to proxy OpenAI through.
-        ...(ctx.mode === "production"
-          ? {}
-          : { OPENAI_API_KEY: bindings.secret() }),
       },
     },
   };

@@ -16,7 +16,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { OutputWorkerSchema } from "@cloudflare/config";
-import { everyAppWorker } from "@every-app/sdk/cloudflare";
+import {
+  everyAppAuxiliaryWorker,
+  everyAppWorker,
+} from "@every-app/sdk/cloudflare";
 import { APP_BINDING_PREFIX } from "@every-app/perimeter/manifest";
 import { FakeCf, type FakeCfResponse, type RecordedCfCall } from "@/lib/cf/fakeCf";
 import { loadEveryAppManifest, type EveryAppCliManifest } from "@/lib/manifest";
@@ -73,7 +76,8 @@ const INSTANCE_STATUS: Record<string, string> = {
   restart: "queued",
 };
 
-const WORKER_CONFIG = ".cloudflare/output/v0/workers/default/worker.config.json";
+const WORKERS_OUTPUT = ".cloudflare/output/v0/workers";
+const WORKER_CONFIG = `${WORKERS_OUTPUT}/default/worker.config.json`;
 
 function cfError(message: string): FakeCfResponse {
   return { exitCode: 1, stderr: `┌ Error\n│ ${message}\n└\n` };
@@ -487,6 +491,9 @@ export class FakeCloudflare {
       this.apps.get(cwd) ?? (await loadEveryAppManifest(cwd).catch(() => null));
     if (!manifest) return cfError(`no app to build in ${cwd}`);
     let worker;
+    // Helper Workers, as the Vite plugin builds auxiliary Workers: each in
+    // its own directory, named after the Worker.
+    const helpers: Record<string, any>[] = [];
     try {
       const { entrypoint: _entrypoint, ...definition } = everyAppWorker({
         manifest,
@@ -496,6 +503,17 @@ export class FakeCloudflare {
       });
       worker = structuredClone(definition) as Record<string, any>;
       this.editBuild?.(worker);
+      for (const helper of manifest.workers ?? []) {
+        const { entrypoint: _helperEntry, ...helperDefinition } =
+          everyAppAuxiliaryWorker({
+            manifest,
+            worker: helper.name,
+            entrypoint: `./src/${helper.name}.ts`,
+            ctx: { mode: "production" },
+            root: cwd,
+          });
+        helpers.push(structuredClone(helperDefinition) as Record<string, any>);
+      }
     } catch (error) {
       return cfError((error as Error).message);
     }
@@ -515,6 +533,18 @@ export class FakeCloudflare {
     );
     fs.writeFileSync(path.join(out, "workers/default/bundle/index.js"), "export {}");
     fs.writeFileSync(path.join(out, "workers/default/bundle/assets/x.js.map"), "{}");
+    for (const helper of helpers) {
+      const dir = path.join(out, "workers", String(helper["name"]));
+      fs.mkdirSync(path.join(dir, "bundle"), { recursive: true });
+      fs.writeFileSync(
+        path.join(dir, "worker.config.json"),
+        JSON.stringify({
+          ...helper,
+          manifest: { type: "partial", mainModule: "index.js", modules: {} },
+        }),
+      );
+      fs.writeFileSync(path.join(dir, "bundle/index.js"), "export {}");
+    }
     return { stdout: "◆  Build complete" };
   }
 
@@ -533,8 +563,14 @@ export class FakeCloudflare {
       this.declineNextDeploy = false;
       return { stdout: "" };
     }
+    const selected = flag(call.args, "--worker");
     const config = JSON.parse(
-      fs.readFileSync(path.join(call.cwd!, WORKER_CONFIG), "utf8"),
+      fs.readFileSync(
+        selected
+          ? path.join(call.cwd!, WORKERS_OUTPUT, selected, "worker.config.json")
+          : path.join(call.cwd!, WORKER_CONFIG),
+        "utf8",
+      ),
     ) as Record<string, any>;
     const parsed = OutputWorkerSchema.safeParse(config);
     if (!parsed.success) return cfError(`Invalid Build Output: ${parsed.error.message}`);
@@ -550,6 +586,21 @@ export class FakeCloudflare {
       const [name, worker] = unresolved[0]!;
       return cfError(
         `Could not resolve service binding '${name}'. Target script '${worker}' not found. [code: 10143]`,
+      );
+    }
+    // A class another Worker defines must be there, exported, first.
+    const unexported = Object.entries(config["env"] ?? {})
+      .filter(([, binding]) => (binding as { type: string }).type === "durable-object")
+      .map(([name, binding]) => [name, binding as { worker: string; exportName: string }] as const)
+      .filter(
+        ([, binding]) =>
+          binding.worker !== workerName &&
+          !this.workers.get(binding.worker)?.config["exports"]?.[binding.exportName],
+      );
+    if (unexported.length > 0 && !call.args.includes("--dry-run")) {
+      const [name, binding] = unexported[0]!;
+      return cfError(
+        `Durable Object binding '${name}' refers to class '${binding.exportName}' of script '${binding.worker}', which doesn't export it. [code: 10061]`,
       );
     }
     if (call.args.includes("--dry-run")) {

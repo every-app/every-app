@@ -51,25 +51,33 @@ interface ProvisionOptions {
 
 /**
  * Make sure the Worker this deploy uploads is the app's: recorded as its
- * own, or not there yet (then recorded before the first upload).
+ * own, or not there yet (then recorded before the first upload). A helper
+ * Worker is recorded under the app's Worker, by its name in `workers`.
  */
-export async function claimAppWorker({
-  cf,
-  gatewayDb,
-  registration,
-}: ProvisionOptions): Promise<void> {
-  const { workerName } = registration;
-  const owned = await readOwnedResources(gatewayDb, workerName);
-  if (owned.some((resource) => resource.kind === "worker")) return;
+export async function claimAppWorker(
+  { cf, gatewayDb, registration }: ProvisionOptions,
+  /** A helper Worker (`workers`): its name there and its Worker's name. */
+  helper?: { name: string; workerName: string },
+): Promise<void> {
+  const binding = helper?.name ?? "";
+  const workerName = helper?.workerName ?? registration.workerName;
+  const owned = await readOwnedResources(gatewayDb, registration.workerName);
+  if (
+    owned.some(
+      (resource) => resource.kind === "worker" && resource.binding === binding,
+    )
+  ) {
+    return;
+  }
   if ((await getWorkerDeployment(cf, workerName)) !== null) {
     throw new EveryAppError(
       "WORKER_NAME_TAKEN",
       `A Worker named ${workerName} already exists in this Cloudflare account, but no deploy of this app created it. It may belong to another gateway or project; delete or rename it, then deploy again.`,
     );
   }
-  await recordOwnedResource(gatewayDb, workerName, {
+  await recordOwnedResource(gatewayDb, registration.workerName, {
     kind: "worker",
-    binding: "",
+    binding,
     name: workerName,
     resourceId: workerName,
   });

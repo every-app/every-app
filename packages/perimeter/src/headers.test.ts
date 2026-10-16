@@ -193,6 +193,22 @@ describe("withSecurityHeaders", () => {
     expect(csp).not.toContain("frame-ancestors *");
   });
 
+  it("lets an app frame its own pages or keep a stricter base-uri", () => {
+    const res = withSecurityHeaders(
+      new Response("<html></html>", {
+        headers: {
+          "content-type": "text/html",
+          "content-security-policy":
+            "default-src 'none'; frame-ancestors 'self'; base-uri 'none'",
+        },
+      }),
+    );
+    const csp = res.headers.get("content-security-policy")!;
+    expect(csp).toContain("frame-ancestors 'self'");
+    expect(csp).toContain("base-uri 'none'");
+    expect(res.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+  });
+
   it("preserves status and body", async () => {
     const res = withSecurityHeaders(
       new Response("hello", {

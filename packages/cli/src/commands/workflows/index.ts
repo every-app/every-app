@@ -77,7 +77,6 @@ async function connect({
   createCf = (accountId?: string) => createCfRunner({ accountId }),
 }: WorkflowCommandOptions): Promise<{
   cf: CfRunner;
-  workerName: string;
   workflows: AppWorkflow[];
 }> {
   const manifest = await loadEveryAppManifest(cwd);
@@ -95,11 +94,7 @@ async function connect({
     createCf,
   });
   const { workerName } = await readApp(db, manifest.id);
-  return {
-    cf,
-    workerName,
-    workflows: appWorkflows(workerName, manifest),
-  };
+  return { cf, workflows: appWorkflows(workerName, manifest) };
 }
 
 /** One of the app's deployed Workflows, by binding, class or name. */
@@ -107,7 +102,7 @@ async function openWorkflow(
   options: WorkflowCommandOptions,
   name: string,
 ): Promise<{ cf: CfRunner; workflow: AppWorkflow }> {
-  const { cf, workerName, workflows } = await connect(options);
+  const { cf, workflows } = await connect(options);
   const workflow = workflows.find((candidate) =>
     [candidate.binding, candidate.className, candidate.name].includes(name),
   );
@@ -118,11 +113,11 @@ async function openWorkflow(
     );
   }
   const deployed = await getWorkflow(cf, workflow.name);
-  if (deployed?.script_name !== workerName) {
+  if (deployed?.script_name !== workflow.worker) {
     throw new EveryAppError(
       "WORKFLOW_NOT_DEPLOYED",
       deployed
-        ? `${workflow.name} runs on Worker ${deployed.script_name ?? "(unknown)"}, not the app's ${workerName}.`
+        ? `${workflow.name} runs on Worker ${deployed.script_name ?? "(unknown)"}, not the app's ${workflow.worker}.`
         : `${workflow.name} doesn't exist yet; deploy the app first (${CLI} deploy).`,
     );
   }
@@ -131,11 +126,11 @@ async function openWorkflow(
 
 /** Each Workflow the app declares, with its instances' counts once deployed. */
 export async function listAppWorkflows(options: WorkflowCommandOptions) {
-  const { cf, workerName, workflows } = await connect(options);
+  const { cf, workflows } = await connect(options);
   const listed = [];
-  for (const workflow of workflows) {
+  for (const { worker, ...workflow } of workflows) {
     const found = await getWorkflow(cf, workflow.name);
-    const deployed = found?.script_name === workerName ? found : null;
+    const deployed = found?.script_name === worker ? found : null;
     listed.push({
       ...workflow,
       deployed: deployed !== null,

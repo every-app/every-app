@@ -1,10 +1,17 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { everyAppWorker } from "@every-app/sdk/cloudflare";
+import {
+  everyAppAuxiliaryWorker,
+  everyAppWorker,
+} from "@every-app/sdk/cloudflare";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeDeployInputs, type DeployInputs } from "./deployInputs";
-import { appPolicyProblems, prepareAppBuildOutput } from "./policy";
+import {
+  appPolicyProblems,
+  helperPolicyProblems,
+  prepareAppBuildOutput,
+} from "./policy";
 
 const PUBLIC_KEY =
   "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA\n-----END PUBLIC KEY-----";
@@ -255,7 +262,10 @@ describe("prepareAppBuildOutput", () => {
     // The Workflows cf will create or update for the Worker.
     await expect(
       prepareAppBuildOutput({ cwd: appDir, inputs: INPUTS }),
-    ).resolves.toEqual({ workflows: ["every-acme-todo--rank-check"] });
+    ).resolves.toEqual({
+      workflows: ["every-acme-todo--rank-check"],
+      helperWorkflows: {},
+    });
 
     const written = JSON.parse(
       fs.readFileSync(
@@ -288,5 +298,106 @@ describe("prepareAppBuildOutput", () => {
     await expect(
       prepareAppBuildOutput({ cwd: appDir, inputs: INPUTS }),
     ).rejects.toThrow(/isn't a production build/);
+  });
+});
+
+describe("helper Workers", () => {
+  const SEO = {
+    id: "todo",
+    resources: {
+      d1: ["DB"],
+      kv: ["KV"],
+      durableObjects: [
+        { name: "SCRATCHPAD", className: "Scratchpad", worker: "audit" },
+      ],
+      workflows: [
+        { name: "SITE_AUDIT", className: "SiteAuditWorkflow", worker: "audit" },
+      ],
+    },
+    workers: [{ name: "audit", binding: "AUDIT_ENGINE" }],
+  } as const;
+  const HELPER = "every-acme-todo--audit";
+  const WITH_HELPER = { ...INPUTS, helperWorkers: [HELPER] };
+
+  async function builtPair() {
+    await writeDeployInputs(appDir, INPUTS);
+    const options = { manifest: SEO, ctx: { mode: "production" }, root: appDir } as const;
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      ...options,
+      entrypoint: "./src/entry.worker.ts",
+    });
+    const { entrypoint: _helper, ...helper } = everyAppAuxiliaryWorker({
+      ...options,
+      worker: "audit",
+      entrypoint: "./src/audit.ts",
+    });
+    const bundle = { type: "partial", mainModule: "index.js", modules: {} };
+    return {
+      app: { ...structuredClone(app), manifest: bundle } as Record<string, any>,
+      helper: { ...structuredClone(helper), manifest: bundle } as Record<string, any>,
+    };
+  }
+
+  function writeHelper(config: object, directory = HELPER): void {
+    const dir = path.join(appDir, ".cloudflare/output/v0/workers", directory);
+    fs.mkdirSync(path.join(dir, "bundle"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "worker.config.json"), JSON.stringify(config));
+    fs.writeFileSync(path.join(dir, "bundle/index.js"), "");
+  }
+
+  it("lets the app bind its helper and the classes the helper defines", async () => {
+    const { app, helper } = await builtPair();
+    expect(appPolicyProblems(app, WITH_HELPER)).toEqual([]);
+    expect(helperPolicyProblems(helper, HELPER, WITH_HELPER)).toEqual([]);
+  });
+
+  it.each([
+    ["a public helper", (c: any) => (c.workersDev = true), /workersDev/],
+    [
+      "a helper that binds the app's Worker",
+      (c: any) => (c.env.APP = { type: "worker", worker: "every-acme-todo" }),
+      /APP binds Worker "every-acme-todo"/,
+    ],
+    [
+      "a helper that binds another app's Durable Object",
+      (c: any) =>
+        (c.env.SCRATCHPAD.worker = "every-acme-todo-archive--audit"),
+      /SCRATCHPAD binds another Worker's Durable Object/,
+    ],
+    [
+      "a helper's Workflow named for another app",
+      (c: any) => (c.exports.SiteAuditWorkflow.name = "every-acme-other--x"),
+      /Workflow SiteAuditWorkflow is named "every-acme-other--x"/,
+    ],
+  ])("refuses %s", async (_case, change, problem) => {
+    const { helper } = await builtPair();
+    change(helper);
+    expect(helperPolicyProblems(helper, HELPER, WITH_HELPER).join("\n")).toMatch(
+      problem,
+    );
+  });
+
+  it("checks every Worker in the build, and that each declared helper is there", async () => {
+    const { app, helper } = await builtPair();
+    writeOutput(app);
+    writeHelper(helper);
+    // Each Worker's Workflows: cf creates a helper's as it deploys that helper.
+    await expect(
+      prepareAppBuildOutput({ cwd: appDir, inputs: WITH_HELPER }),
+    ).resolves.toEqual({
+      workflows: [],
+      helperWorkflows: { [HELPER]: ["every-acme-todo--site-audit"] },
+    });
+
+    writeHelper({ ...helper, name: "every-acme-todo--crawler" }, "crawler");
+    await expect(
+      prepareAppBuildOutput({ cwd: appDir, inputs: WITH_HELPER }),
+    ).rejects.toThrow(/Worker "every-acme-todo--crawler" that everyapp.config.ts doesn't declare/);
+
+    fs.rmSync(path.join(appDir, ".cloudflare/output/v0/workers"), { recursive: true });
+    writeOutput(app);
+    await expect(
+      prepareAppBuildOutput({ cwd: appDir, inputs: WITH_HELPER }),
+    ).rejects.toThrow(/has no Worker every-acme-todo--audit/);
   });
 });

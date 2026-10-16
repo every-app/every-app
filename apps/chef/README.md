@@ -16,7 +16,8 @@ pnpm dev
 ```
 
 The SDK uses `OPENAI_API_KEY` directly only in local development, where
-`cloudflare.config.ts` declares it as a secret read from `.dev.vars`.
+`everyAppWorker()` declares it as a secret read from `.dev.vars`, since the
+manifest asks for the `openai` provider.
 Production deploys receive the private `EVERY_APP_GATEWAY` service binding from
 `everyapp deploy`; Chef does not need an app token or provider key there.
 Recipe images live in the `R2` bucket, which `cloudflare.config.ts` adds to the

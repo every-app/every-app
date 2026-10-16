@@ -12,6 +12,7 @@ import {
 import {
   DEPLOY_INPUTS_FILE,
   EVERYAPP_OBSERVABILITY,
+  everyAppAuxiliaryWorker,
   everyAppWorker,
   localD1Id,
   localD1Path,
@@ -19,11 +20,15 @@ import {
   type DurableObjectBinding,
   type DurableObjectExport,
   type EveryAppDeployInputs,
+  type EveryAppDevEnv,
   type KvBinding,
+  type ServiceBinding,
   type WorkflowBinding,
   type WorkflowExport,
 } from "./index";
 import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/index";
+import { DEV_AI_PROVIDERS } from "../internal/aiProviders";
+import { CAPABILITIES } from "../internal/capabilities";
 
 const PUBLIC_KEY =
   "-----BEGIN PUBLIC KEY-----\nMIIBIjANBg\n-----END PUBLIC KEY-----\n";
@@ -444,6 +449,64 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     );
   });
 
+  it("declares the developer's own keys for the manifest's providers and capabilities", () => {
+    const gatewayManifest = {
+      ...manifest,
+      providers: ["openrouter"],
+      capabilities: { dataforseo: { access: "read" } },
+    } as const;
+    fs.writeFileSync(
+      path.join(root, ".dev.vars"),
+      "OPENROUTER_API_KEY=or\nDATAFORSEO_API_KEY=dfs\nOPENAI_API_KEY=oa\n",
+    );
+    const env = (mode: "development" | "production") =>
+      everyAppWorker({
+        manifest: gatewayManifest,
+        entrypoint,
+        ctx: { mode },
+        root,
+      }).env as Record<string, unknown>;
+
+    expect(env("development")).toMatchObject({
+      OPENROUTER_API_KEY: { type: "secret" },
+      DATAFORSEO_API_KEY: { type: "secret" },
+    });
+    // Only the keys of what the manifest asks for.
+    expect(env("development")["OPENAI_API_KEY"]).toBeUndefined();
+    expectTypeOf<EveryAppDevEnv<typeof gatewayManifest>>().toHaveProperty(
+      "DATAFORSEO_API_KEY",
+    );
+
+    // Deployed, the gateway holds them.
+    writeDeployInputs();
+    expect(env("production")["OPENROUTER_API_KEY"]).toBeUndefined();
+    expect(env("production")["DATAFORSEO_API_KEY"]).toBeUndefined();
+  });
+
+  it("knows the key of every provider and capability the SDK reaches in dev", () => {
+    const keys = [
+      ...Object.values(DEV_AI_PROVIDERS).map(({ keyEnv }) => keyEnv),
+      ...Object.values(CAPABILITIES).map(({ secret }) => secret),
+    ];
+    fs.writeFileSync(
+      path.join(root, ".dev.vars"),
+      keys.map((key) => `${key}=set`).join("\n"),
+    );
+    const env = everyAppWorker({
+      manifest: {
+        ...manifest,
+        providers: Object.keys(DEV_AI_PROVIDERS),
+        capabilities: Object.fromEntries(
+          Object.keys(CAPABILITIES).map((id) => [id, { access: "read" }]),
+        ),
+      },
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    }).env as Record<string, unknown>;
+    for (const key of keys) expect(env[key], key).toEqual({ type: "secret" });
+  });
+
   it("refuses a secret named like a binding it builds or one the deploy sets", () => {
     for (const secret of [
       "DB",
@@ -522,5 +585,363 @@ describe("the cloudflare entry", () => {
       }
     }
     expect(importsOf(path.join(dir, "..", "dev", "keypair.ts"))).toEqual([]);
+  });
+});
+
+describe("helper Workers", () => {
+  const seo = {
+    id: "seo",
+    resources: {
+      d1: ["DB"],
+      durableObjects: [
+        { name: "CHAT", className: "ChatAgent" },
+        { name: "SCRATCHPAD", className: "Scratchpad", worker: "audit" },
+      ],
+      workflows: [
+        { name: "SITE_AUDIT", className: "SiteAuditWorkflow", worker: "audit" },
+      ],
+    },
+    workers: [{ name: "audit", binding: "AUDIT_ENGINE" }],
+  } as const;
+
+  const helper = (mode: "development" | "production") =>
+    everyAppAuxiliaryWorker({
+      manifest: seo,
+      worker: "audit",
+      entrypoint: "/app/src/audit.ts",
+      ctx: { mode },
+      root,
+    });
+
+  it("binds the app to a helper's classes and the helper itself", () => {
+    const app = everyAppWorker({
+      manifest: seo,
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    });
+
+    expect(app.env).toMatchObject({
+      SCRATCHPAD: {
+        type: "durable-object",
+        worker: "every-seo--audit",
+        exportName: "Scratchpad",
+      },
+      SITE_AUDIT: {
+        type: "workflow",
+        name: "every-seo--site-audit",
+        worker: "every-seo--audit",
+        exportName: "SiteAuditWorkflow",
+      },
+      AUDIT_ENGINE: { type: "worker", worker: "every-seo--audit" },
+    });
+    expect(app.exports).toEqual({
+      ChatAgent: { type: "durable-object", storage: "sqlite" },
+    });
+  });
+
+  it("builds a private helper that shares the app's storage and defines its own classes", () => {
+    const audit = helper("development");
+
+    expect(audit).toMatchObject({
+      name: "every-seo--audit",
+      entrypoint: "/app/src/audit.ts",
+      workersDev: false,
+      previewUrls: false,
+    });
+    expect(audit.env).toEqual({
+      EVERYAPP_APP_ID: { type: "text", value: "seo" },
+      EVERYAPP_DEV: { type: "text", value: "1" },
+      DB: { type: "d1", name: "every-seo", id: localD1Id("every-seo", "DB") },
+      SCRATCHPAD: {
+        type: "durable-object",
+        worker: "every-seo--audit",
+        exportName: "Scratchpad",
+      },
+      SITE_AUDIT: {
+        type: "workflow",
+        name: "every-seo--site-audit",
+        worker: "every-seo--audit",
+        exportName: "SiteAuditWorkflow",
+      },
+    });
+    expect(audit.exports).toEqual({
+      Scratchpad: { type: "durable-object", storage: "sqlite" },
+      SiteAuditWorkflow: {
+        type: "workflow",
+        name: "every-seo--site-audit",
+      },
+    });
+  });
+
+  it("shares the app's local KV namespaces with a helper in dev", () => {
+    const withKv = { ...seo, resources: { ...seo.resources, kv: ["KV"] } };
+    const app = everyAppWorker({
+      manifest: withKv,
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    });
+    const audit = everyAppAuxiliaryWorker({
+      manifest: withKv,
+      worker: "audit",
+      entrypoint: "/app/src/audit.ts",
+      ctx: { mode: "development" },
+      root,
+    });
+    expect(audit.env["KV"]).toEqual({ type: "kv", id: "KV-every-seo" });
+    expect(audit.env["KV"]).toEqual(app.env["KV"]);
+  });
+
+  it("gives a helper in dev the developer's keys for the app's capabilities", () => {
+    fs.writeFileSync(path.join(root, ".dev.vars"), "CONTEXT_API_KEY=ctx\n");
+    const audit = everyAppAuxiliaryWorker({
+      manifest: { ...seo, capabilities: { context: { access: "read" } } },
+      worker: "audit",
+      entrypoint: "/app/src/audit.ts",
+      ctx: { mode: "development" },
+      root,
+    });
+    expect(audit.env["CONTEXT_API_KEY"]).toEqual({ type: "secret" });
+  });
+
+  it("gives a deployed helper the gateway binding with the app's identity", () => {
+    writeDeployInputs({
+      workerName: "every-acme-seo",
+      resources: { d1: { DB: { name: "every-acme-seo", id: "d1-uuid" } } },
+    });
+    const audit = helper("production");
+
+    expect(audit.name).toBe("every-acme-seo--audit");
+    expect(audit.env).toMatchObject({
+      DB: { type: "d1", name: "every-acme-seo", id: "d1-uuid" },
+      EVERY_APP_GATEWAY: {
+        type: "worker",
+        worker: "every-app-gateway",
+        exportName: "AppGateway",
+        props: {
+          organizationId: "org_1",
+          appId: "seo",
+          workerName: "every-acme-seo",
+        },
+      },
+    });
+    expect(audit.env).not.toHaveProperty("EVERYAPP_DEV");
+  });
+
+  it("types the helper's service binding and leaves its classes out of the app's exports", () => {
+    const app = everyAppWorker({
+      manifest: seo,
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    });
+    expectTypeOf(app.env.AUDIT_ENGINE).toEqualTypeOf<ServiceBinding>();
+    expectTypeOf(app.env.SITE_AUDIT).toEqualTypeOf<WorkflowBinding>();
+    expectTypeOf(app.env.SCRATCHPAD).toEqualTypeOf<DurableObjectBinding>();
+    expectTypeOf(app.exports).toEqualTypeOf<{
+      ChatAgent: DurableObjectExport;
+    }>();
+  });
+
+  it("builds the deployed app and helper Workers", () => {
+    writeDeployInputs({
+      workerName: "every-acme-seo",
+      resources: { d1: { DB: { name: "every-acme-seo", id: "d1-uuid" } } },
+    });
+    const withOwnWorkflow = {
+      ...seo,
+      resources: {
+        ...seo.resources,
+        workflows: [
+          ...seo.resources.workflows,
+          { name: "RANK_CHECK", className: "RankCheckWorkflow" },
+        ],
+      },
+    } as const;
+    const app = everyAppWorker({
+      manifest: withOwnWorkflow,
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    const audit = everyAppAuxiliaryWorker({
+      manifest: withOwnWorkflow,
+      worker: "audit",
+      entrypoint: "/app/src/audit.ts",
+      ctx: { mode: "production" },
+      root,
+    });
+    expect({
+      app: { name: app.name, env: app.env, exports: app.exports },
+      audit: { name: audit.name, env: audit.env, exports: audit.exports },
+    }).toMatchInlineSnapshot(`
+      {
+        "app": {
+          "env": {
+            "AUDIT_ENGINE": {
+              "type": "worker",
+              "worker": "every-acme-seo--audit",
+            },
+            "CF_VERSION_METADATA": {
+              "type": "version-metadata",
+            },
+            "CHAT": {
+              "exportName": "ChatAgent",
+              "type": "durable-object",
+              "worker": "every-acme-seo",
+            },
+            "DB": {
+              "id": "d1-uuid",
+              "name": "every-acme-seo",
+              "type": "d1",
+            },
+            "EVERYAPP_APP_ID": {
+              "type": "text",
+              "value": "seo",
+            },
+            "EVERYAPP_AUDIENCE": {
+              "type": "text",
+              "value": "every-acme-seo",
+            },
+            "EVERYAPP_IDENTITY_ISSUER": {
+              "type": "text",
+              "value": "https://apps.example.com",
+            },
+            "EVERYAPP_IDENTITY_PUBLIC_KEYS": {
+              "type": "text",
+              "value": "["-----BEGIN PUBLIC KEY-----\\nMIIBIjANBg\\n-----END PUBLIC KEY-----\\n"]",
+            },
+            "EVERY_APP_GATEWAY": {
+              "exportName": "AppGateway",
+              "props": {
+                "appId": "seo",
+                "organizationId": "org_1",
+                "workerName": "every-acme-seo",
+              },
+              "type": "worker",
+              "worker": "every-app-gateway",
+            },
+            "EVERY_APP_ORG_ID": {
+              "type": "secret",
+            },
+            "GATEWAY_URL": {
+              "type": "secret",
+            },
+            "RANK_CHECK": {
+              "exportName": "RankCheckWorkflow",
+              "name": "every-acme-seo--rank-check",
+              "type": "workflow",
+              "worker": "every-acme-seo",
+            },
+            "SCRATCHPAD": {
+              "exportName": "Scratchpad",
+              "type": "durable-object",
+              "worker": "every-acme-seo--audit",
+            },
+            "SITE_AUDIT": {
+              "exportName": "SiteAuditWorkflow",
+              "name": "every-acme-seo--site-audit",
+              "type": "workflow",
+              "worker": "every-acme-seo--audit",
+            },
+          },
+          "exports": {
+            "ChatAgent": {
+              "storage": "sqlite",
+              "type": "durable-object",
+            },
+            "RankCheckWorkflow": {
+              "name": "every-acme-seo--rank-check",
+              "type": "workflow",
+            },
+          },
+          "name": "every-acme-seo",
+        },
+        "audit": {
+          "env": {
+            "DB": {
+              "id": "d1-uuid",
+              "name": "every-acme-seo",
+              "type": "d1",
+            },
+            "EVERYAPP_APP_ID": {
+              "type": "text",
+              "value": "seo",
+            },
+            "EVERY_APP_GATEWAY": {
+              "exportName": "AppGateway",
+              "props": {
+                "appId": "seo",
+                "organizationId": "org_1",
+                "workerName": "every-acme-seo",
+              },
+              "type": "worker",
+              "worker": "every-app-gateway",
+            },
+            "SCRATCHPAD": {
+              "exportName": "Scratchpad",
+              "type": "durable-object",
+              "worker": "every-acme-seo--audit",
+            },
+            "SITE_AUDIT": {
+              "exportName": "SiteAuditWorkflow",
+              "name": "every-acme-seo--site-audit",
+              "type": "workflow",
+              "worker": "every-acme-seo--audit",
+            },
+          },
+          "exports": {
+            "Scratchpad": {
+              "storage": "sqlite",
+              "type": "durable-object",
+            },
+            "SiteAuditWorkflow": {
+              "name": "every-acme-seo--site-audit",
+              "type": "workflow",
+            },
+          },
+          "name": "every-acme-seo--audit",
+        },
+      }
+    `);
+  });
+
+  it("refuses a helper binding that reuses one of the app's binding names", () => {
+    expect(() =>
+      everyAppWorker({
+        manifest: {
+          ...seo,
+          workers: [{ name: "audit", binding: "DB" }],
+        },
+        entrypoint,
+        ctx: { mode: "development" },
+        root,
+      }),
+    ).toThrow(/audit's binding DB reuses a binding name/);
+  });
+
+  it("refuses a helper whose Worker name would pass Cloudflare's limit", () => {
+    expect(() =>
+      everyAppAuxiliaryWorker({
+        manifest: { id: "seo", workers: [{ name: "a".repeat(60) }] },
+        worker: "a".repeat(60),
+        entrypoint: "/app/src/audit.ts",
+        ctx: { mode: "development" },
+        root,
+      }),
+    ).toThrow(/longer than Cloudflare's 63 characters/);
+  });
+
+  it("refuses a helper the manifest doesn't declare", () => {
+    expect(() =>
+      everyAppAuxiliaryWorker({
+        manifest: seo,
+        worker: "crawler",
+        entrypoint: "/app/src/crawler.ts",
+        ctx: { mode: "development" },
+        root,
+      }),
+    ).toThrow(/declares no helper Worker "crawler"/);
   });
 });

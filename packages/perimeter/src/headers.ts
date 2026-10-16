@@ -145,15 +145,17 @@ const BASELINE_CSP = [
 ].join("; ");
 
 /**
- * CSP directives the gateway guarantees on every HTML response. Apps may add
- * or tighten directives, but these are always overwritten to the floor value —
- * an app returning `frame-ancestors *` must not be able to remove the
- * perimeter's framing protection.
+ * CSP directives the gateway guarantees on every HTML response, each with
+ * the values an app may choose instead. Anything else an app sends is
+ * overwritten to the floor value — an app returning `frame-ancestors *` must
+ * not be able to remove the perimeter's framing protection. An app may frame
+ * its own pages (`frame-ancestors 'self'`): every app has its own origin, so
+ * that admits neither the gateway nor another app.
  */
-const CSP_FLOOR: Record<string, string> = {
-  "frame-ancestors": "'none'",
-  "base-uri": "'self'",
-  "object-src": "'none'",
+const CSP_FLOOR: Record<string, { floor: string; allowed: string[] }> = {
+  "frame-ancestors": { floor: "'none'", allowed: ["'none'", "'self'"] },
+  "base-uri": { floor: "'self'", allowed: ["'none'", "'self'"] },
+  "object-src": { floor: "'none'", allowed: ["'none'"] },
 };
 
 /** Merge an app-supplied CSP with the non-negotiable floor directives. */
@@ -167,8 +169,9 @@ export function enforceCspFloor(appCsp: string): string {
     const value = space === -1 ? "" : part.slice(space + 1).trim();
     directives.set(name, value);
   }
-  for (const [name, value] of Object.entries(CSP_FLOOR)) {
-    directives.set(name, value);
+  for (const [name, { floor, allowed }] of Object.entries(CSP_FLOOR)) {
+    const chosen = directives.get(name)?.toLowerCase();
+    directives.set(name, chosen && allowed.includes(chosen) ? chosen : floor);
   }
   return [...directives.entries()]
     .map(([name, value]) => (value ? `${name} ${value}` : name))
@@ -241,10 +244,11 @@ export function withSecurityHeaders(
 
   if (isHtml) {
     const appCsp = headers.get("content-security-policy");
-    headers.set(
-      "Content-Security-Policy",
-      appCsp ? enforceCspFloor(appCsp) : BASELINE_CSP,
-    );
+    const csp = appCsp ? enforceCspFloor(appCsp) : BASELINE_CSP;
+    headers.set("Content-Security-Policy", csp);
+    if (/(^|;\s*)frame-ancestors 'self'(;|$)/.test(csp)) {
+      headers.set("X-Frame-Options", "SAMEORIGIN");
+    }
   }
 
   return new Response(response.body, {

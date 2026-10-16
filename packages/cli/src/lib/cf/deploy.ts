@@ -32,6 +32,11 @@ interface CfDeployOptions {
   /** Deploy with the CLI's own cf: `cwd` is a gateway release, not an app. */
   cliCf?: boolean;
   /**
+   * Upload this Worker of the Build Output (an app's helper Worker) rather
+   * than its default one; it is `workerName` too.
+   */
+  buildOutputWorker?: string;
+  /**
    * Records the version uploaded, as soon as it is known, so the next
    * unattended deploy knows it was everyapp's (assertReplaceable): also on
    * the way out of a run interrupted once cf got that far, or one cf failed
@@ -145,6 +150,9 @@ async function deployAndRecord(
         "production",
         "--message",
         options.message,
+        ...(options.buildOutputWorker
+          ? ["--worker", options.buildOutputWorker]
+          : []),
         ...(secrets ? ["--secrets-file", files["secrets.json"]!] : []),
         ...(options.dryRun ? ["--dry-run"] : []),
       ],

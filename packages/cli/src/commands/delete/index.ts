@@ -89,9 +89,10 @@ export async function deleteApp(
  * keeps for that hostname, and with `purge` delete its Worker, D1
  * databases and KV namespaces: only those the registry recorded as created
  * by the app, never whatever has its names; and the Workflows that run on
- * its Worker. `purged` says what was deleted and what was kept. An app
- * deleted already is deleted again from the reconcile on, so a delete that
- * stopped part-way can run again.
+ * its Worker. Its helper Workers are recorded beside its Worker, so they
+ * and their Workflows go with it. `purged` says what was deleted and what
+ * was kept. An app deleted already is deleted again from the reconcile on,
+ * so a delete that stopped part-way can run again.
  */
 export async function removeApp({
   appId,
@@ -211,11 +212,17 @@ async function purgeApp(
   const owned = await readOwnedResources(registry, deleted.workerName);
   const removed: string[] = [];
   const workflowsKept: string[] = [];
-  // Its Workflows before the Worker they run on; a Worker the app didn't
+  // The app's Worker and its helper Workers (`<worker>--<name>`), as recorded.
+  const ownWorkers = new Set(
+    owned.flatMap((resource) =>
+      resource.kind === "worker" && resource.resourceId ? [resource.resourceId] : [],
+    ),
+  );
+  // Its Workflows before the Workers they run on; a Worker the app didn't
   // record creating keeps its own.
-  if (owned.some((resource) => resource.kind === "worker" && resource.resourceId)) {
+  if (ownWorkers.size > 0) {
     for (const workflow of await listWorkflows(cf, deleted.workerName)) {
-      if (workflow.script_name !== deleted.workerName) {
+      if (!ownWorkers.has(workflow.script_name ?? "")) {
         // Named like the app's, but another Worker runs it.
         if (workflow.name.startsWith(`${deleted.workerName}--`)) {
           workflowsKept.push(
@@ -232,10 +239,11 @@ async function purgeApp(
       }
     }
   }
-  // The Worker next: it binds the databases and namespaces.
-  for (const resource of owned.sort((a, b) =>
-    a.kind === "worker" ? -1 : b.kind === "worker" ? 1 : 0,
-  )) {
+  // The Workers next, the app's before its helpers (it binds their
+  // classes): they bind the databases and namespaces.
+  const order = (resource: (typeof owned)[number]) =>
+    resource.kind !== "worker" ? 2 : resource.binding === "" ? 0 : 1;
+  for (const resource of owned.sort((a, b) => order(a) - order(b))) {
     if (!resource.resourceId) continue;
     try {
       if (resource.kind === "worker") {

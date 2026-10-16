@@ -9,6 +9,14 @@ import {
   type EveryAppDeployInputs,
 } from "./deployInputs.js";
 
+/** A Durable Object or Workflow class, and the helper Worker defining it. */
+interface ClassResource {
+  readonly name: string;
+  readonly className: string;
+  /** A helper Worker (`workers`) that defines the class; the app's own when unset. */
+  readonly worker?: string;
+}
+
 /** The fields of `everyapp.config.ts` the Worker definition is built from. */
 export interface EveryAppWorkerManifest {
   id: string;
@@ -16,15 +24,19 @@ export interface EveryAppWorkerManifest {
   resources?: {
     d1?: readonly string[];
     kv?: readonly string[];
-    durableObjects?: readonly {
-      readonly name: string;
-      readonly className: string;
-    }[];
-    workflows?: readonly {
-      readonly name: string;
-      readonly className: string;
-    }[];
+    durableObjects?: readonly ClassResource[];
+    workflows?: readonly ClassResource[];
   };
+  /**
+   * Helper Workers deployed beside the app's Worker as
+   * `<app worker>--<name>`, built with {@link everyAppAuxiliaryWorker}.
+   * `binding` names the app Worker's service binding to one.
+   */
+  workers?: readonly { readonly name: string; readonly binding?: string }[];
+  /** AI providers the app calls through the gateway (`createGatewayFetch()`). */
+  providers?: readonly string[];
+  /** Capabilities the app calls through the gateway (`integrationFetch()`). */
+  capabilities?: { readonly [id: string]: unknown };
 }
 
 /** The context cf passes to a `defineConfig((ctx) => …)` factory. */
@@ -58,6 +70,11 @@ export interface EveryAppWorkerOptions<
    * (`.dev.vars[.<mode>]` alone when present, otherwise the `.env` files
    * and the environment), so the plugin passes it through. Type them as
    * optional in `src/env.d.ts`.
+   *
+   * The keys of the manifest's `providers` and `capabilities` need no
+   * listing: there's no gateway in development, so each one set locally
+   * under the gateway secret's name (OPENAI_API_KEY, DATAFORSEO_API_KEY, …)
+   * is declared for the SDK's direct fallback.
    */
   secrets?: readonly string[];
 }
@@ -99,6 +116,11 @@ export interface GatewayBinding {
   exportName: string;
   props: Record<string, string>;
 }
+/** The app's service binding to one of its helper Workers. */
+export interface ServiceBinding {
+  type: "worker";
+  worker: string;
+}
 export interface VersionMetadataBinding {
   type: "version-metadata";
 }
@@ -110,6 +132,7 @@ export type EveryAppBinding =
   | DurableObjectBinding
   | WorkflowBinding
   | GatewayBinding
+  | ServiceBinding
   | VersionMetadataBinding;
 
 export interface DurableObjectExport {
@@ -139,6 +162,40 @@ type Workflows<M> = M extends {
   ? W
   : never;
 
+type HelperWorkers<M> = M extends { workers: readonly (infer H)[] } ? H : never;
+
+/**
+ * The gateway secrets holding the keys of the AI providers and capabilities
+ * an app may ask for. With no gateway in development, the SDK reaches them
+ * with the developer's own keys under the same names. A copy of the tables
+ * in ../internal, which the Worker loads: the Vite plugin hides whatever
+ * cloudflare.config.ts imports from the Worker. A test keeps them in step.
+ */
+const DEV_GATEWAY_KEYS = {
+  providers: { openai: "OPENAI_API_KEY", openrouter: "OPENROUTER_API_KEY" },
+  capabilities: {
+    dataforseo: "DATAFORSEO_API_KEY",
+    context: "CONTEXT_API_KEY",
+  },
+} as const;
+type DevProviderKeys = typeof DEV_GATEWAY_KEYS.providers;
+type DevCapabilityKeys = typeof DEV_GATEWAY_KEYS.capabilities;
+
+/** The gateway keys a developer may set locally for the manifest's providers and capabilities. */
+type DevGatewayKeys<M> =
+  | (M extends { providers: readonly (infer P)[] }
+      ? P extends keyof DevProviderKeys
+        ? DevProviderKeys[P]
+        : never
+      : never)
+  | (M extends { capabilities: infer C }
+      ? keyof C extends infer K
+        ? K extends keyof DevCapabilityKeys
+          ? DevCapabilityKeys[K]
+          : never
+        : never
+      : never);
+
 type ResourceEnv<M> = { [B in D1Names<M>]: D1Binding } & {
   [B in KvNames<M>]: KvBinding;
 } & {
@@ -149,6 +206,10 @@ type ResourceEnv<M> = { [B in D1Names<M>]: D1Binding } & {
   [W in Workflows<M> as W extends { name: infer N extends string }
     ? N
     : never]: WorkflowBinding;
+} & {
+  [H in HelperWorkers<M> as H extends { binding: infer B extends string }
+    ? B
+    : never]: ServiceBinding;
 };
 
 // Object type aliases rather than interfaces: cf's `env` is a
@@ -158,13 +219,16 @@ type SharedEnv = {
   CF_VERSION_METADATA: VersionMetadataBinding;
 };
 
-/** Bindings in development: the well-known dev identity, as plain text. */
+/**
+ * Bindings in development: the well-known dev identity, as plain text, and
+ * the developer's own gateway keys (when set).
+ */
 export type EveryAppDevEnv<M> = ResourceEnv<M> &
   SharedEnv & {
     EVERYAPP_DEV: TextBinding;
     EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
-  };
+  } & { [K in DevGatewayKeys<M>]: SecretBinding };
 
 /** Bindings in production: the deployed identity and the gateway binding. */
 export type EveryAppDeployEnv<M> = ResourceEnv<M> &
@@ -177,12 +241,13 @@ export type EveryAppDeployEnv<M> = ResourceEnv<M> &
     EVERY_APP_ORG_ID: SecretBinding;
   };
 
+/** The classes the app's own Worker defines: none a helper Worker does. */
 export type EveryAppExports<M> = {
-  [E in DurableObjects<M> | Workflows<M> as E extends {
-    className: infer C extends string;
-  }
-    ? C
-    : never]: E extends Workflows<M> ? WorkflowExport : DurableObjectExport;
+  [E in DurableObjects<M> | Workflows<M> as E extends { worker: string }
+    ? never
+    : E extends { className: infer C extends string }
+      ? C
+      : never]: E extends Workflows<M> ? WorkflowExport : DurableObjectExport;
 };
 
 export interface EveryAppObservability {
@@ -252,6 +317,8 @@ const GATEWAY_WORKER_NAME = "every-app-gateway";
 const GATEWAY_ENTRYPOINT = "AppGateway";
 /** Cloudflare's limit on a Workflow's name. */
 const MAX_WORKFLOW_NAME_LENGTH = 64;
+/** Cloudflare's limit on a Worker's name. */
+const MAX_WORKER_NAME_LENGTH = 63;
 
 /**
  * Build the Worker definition for an Every App app from its manifest.
@@ -271,32 +338,8 @@ export function everyAppWorker<
 >(
   options: EveryAppWorkerOptions<M, TEntrypoint>,
 ): EveryAppWorkerConfig<M, TEntrypoint> {
-  const { manifest, ctx } = options;
-  assertAppId(manifest.id);
-
-  let deploy: EveryAppDeployInputs | undefined;
-  if (ctx.mode === "production") {
-    deploy = readDeployInputs(options.root ?? process.cwd());
-    if (!deploy) {
-      throw new Error(
-        `${DEPLOY_INPUTS_FILE} not found. Every App Workers are built for production only by \`everyapp deploy\` (\`pnpm run deploy\`); ` +
-          "a bare `cf build` or `cf deploy` would ship a Worker without identity keys or its gateway binding. " +
-          "For a local build, run Vite in development mode (`vite build --mode development`).",
-      );
-    }
-  } else if (ctx.mode !== undefined && ctx.mode !== "development") {
-    throw new Error(
-      `everyAppWorker() builds in the "development" or "production" mode, not "${ctx.mode}".`,
-    );
-  }
-
-  const name = deploy?.workerName ?? workerNameFor(manifest.id);
-  if (name === GATEWAY_WORKER_NAME) {
-    throw new Error(
-      `App id "${manifest.id}" is reserved: its Worker would be the gateway's own (${GATEWAY_WORKER_NAME}).`,
-    );
-  }
-  const resources = manifest.resources ?? {};
+  const { manifest } = options;
+  const { deploy, name } = appWorkerName(options, "everyAppWorker");
 
   const env: Record<string, EveryAppBinding> = {
     EVERYAPP_APP_ID: { type: "text", value: manifest.id },
@@ -313,16 +356,7 @@ export function everyAppWorker<
       type: "text",
       value: deploy.identityIssuer,
     };
-    env["EVERY_APP_GATEWAY"] = {
-      type: "worker",
-      worker: GATEWAY_WORKER_NAME,
-      exportName: GATEWAY_ENTRYPOINT,
-      props: {
-        organizationId: deploy.organizationId,
-        appId: manifest.id,
-        workerName: name,
-      },
-    };
+    env["EVERY_APP_GATEWAY"] = gatewayBinding(deploy, manifest.id, name);
     // Sent by the deploy pipeline through `cf deploy --secrets-file`.
     env["GATEWAY_URL"] = { type: "secret" };
     env["EVERY_APP_ORG_ID"] = { type: "secret" };
@@ -335,30 +369,16 @@ export function everyAppWorker<
     env["EVERYAPP_IDENTITY_ISSUER"] = { type: "text", value: DEV_ISSUER };
   }
 
-  for (const binding of resources.d1 ?? []) {
-    if (deploy) {
-      const d1 = deploy.resources.d1?.[binding];
-      if (!d1) throw missingResource("D1 database", binding);
-      env[binding] = { type: "d1", name: d1.name, id: d1.id };
-    } else {
-      env[binding] = {
-        type: "d1",
-        name: resourceNameFor(name, binding),
-        id: localD1Id(name, binding),
-      };
-    }
-  }
-
-  for (const binding of resources.kv ?? []) {
-    if (deploy) {
-      const kv = deploy.resources.kv?.[binding];
-      if (!kv) throw missingResource("KV namespace", binding);
-      env[binding] = { type: "kv", id: kv.id };
-    } else {
-      env[binding] = { type: "kv" };
-    }
-  }
-
+  Object.assign(env, storageBindings(manifest, name, deploy));
+  // The app binds every class, a helper Worker's in that Worker, and
+  // exports only its own.
+  const { bindings, exports: ownClasses } = classBindings(
+    manifest,
+    name,
+    undefined,
+    env,
+  );
+  Object.assign(env, bindings);
   // Deleted classes are tombstones the deploy adds at runtime; they bind
   // nothing, so the exports type only names the live classes.
   const exports: Record<
@@ -366,40 +386,18 @@ export function everyAppWorker<
     | DurableObjectExport
     | WorkflowExport
     | { type: "durable-object"; state: "deleted" }
-  > = {};
-  for (const durableObject of resources.durableObjects ?? []) {
-    env[durableObject.name] = {
-      type: "durable-object",
-      worker: name,
-      exportName: durableObject.className,
-    };
-    exports[durableObject.className] = {
-      type: "durable-object",
-      storage: "sqlite",
-    };
-  }
-  // The Worker defines each Workflow (the export), and binds it to start
-  // and look up its instances. Workflow names are account-wide, so each is
-  // named after the Worker.
-  for (const workflow of resources.workflows ?? []) {
-    if (env[workflow.name] || exports[workflow.className]) {
+  > = { ...ownClasses };
+  for (const helper of manifest.workers ?? []) {
+    if (!helper.binding) continue;
+    if (env[helper.binding]) {
       throw new Error(
-        `workflows: ${workflow.name} (${workflow.className}) reuses a binding or class name the Worker already has.`,
+        `workers: ${helper.name}'s binding ${helper.binding} reuses a binding name the Worker already has.`,
       );
     }
-    const workflowName = workflowNameFor(name, workflow.name);
-    if (workflowName.length > MAX_WORKFLOW_NAME_LENGTH) {
-      throw new Error(
-        `workflows: ${workflow.name} would be the Workflow "${workflowName}", longer than Cloudflare's ${MAX_WORKFLOW_NAME_LENGTH} characters; shorten the binding name.`,
-      );
-    }
-    env[workflow.name] = {
-      type: "workflow",
-      name: workflowName,
-      worker: name,
-      exportName: workflow.className,
+    env[helper.binding] = {
+      type: "worker",
+      worker: helperWorkerName(name, helper.name),
     };
-    exports[workflow.className] = { type: "workflow", name: workflowName };
   }
   for (const className of deploy?.deletedDurableObjects ?? []) {
     if (exports[className]) {
@@ -410,6 +408,293 @@ export function everyAppWorker<
     exports[className] = { type: "durable-object", state: "deleted" };
   }
 
+  addSecrets(env, options, deploy);
+  const triggers = cronTriggers(options.crons);
+
+  return {
+    name,
+    entrypoint: options.entrypoint,
+    compatibilityDate: manifest.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE,
+    compatibilityFlags: ["nodejs_compat"],
+    workersDev: false,
+    previewUrls: false,
+    ...(triggers.length ? { triggers } : {}),
+    observability: observability(),
+    env: env as EveryAppDevEnv<M> | EveryAppDeployEnv<M>,
+    exports: exports as EveryAppExports<M>,
+  };
+}
+
+export interface EveryAppAuxiliaryWorkerOptions<
+  TManifest extends EveryAppWorkerManifest,
+  TEntrypoint,
+> extends EveryAppWorkerOptions<TManifest, TEntrypoint> {
+  /** The helper Worker's name in the manifest's `workers`. */
+  worker: string;
+}
+
+/** A helper Worker's definition, for the Vite plugin's `auxiliaryWorkers`. */
+export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
+  name: string;
+  entrypoint: TEntrypoint;
+  compatibilityDate: string;
+  compatibilityFlags: string[];
+  workersDev: false;
+  previewUrls: false;
+  triggers?: ScheduledTrigger[];
+  observability: EveryAppObservability;
+  env: Record<string, EveryAppBinding>;
+  exports: Record<string, DurableObjectExport | WorkflowExport>;
+}
+
+/**
+ * Build the definition of one of the app's helper Workers (the manifest's
+ * `workers`), e.g. one that runs a memory-hungry job away from the app's
+ * Worker. It is named `<app worker>--<worker>`, is private like the app, and
+ * binds the app's D1 databases and KV namespaces, the classes it defines, and
+ * the gateway (with the app's identity, for capabilities). Only the app's
+ * Worker reaches it. Pass it to the Vite plugin:
+ *
+ *   cloudflare({
+ *     auxiliaryWorkers: [
+ *       { config: everyAppAuxiliaryWorker({ manifest, worker: "audit", entrypoint: "./src/audit.ts", ctx: { mode } }) },
+ *     ],
+ *   })
+ */
+export function everyAppAuxiliaryWorker<
+  const M extends EveryAppWorkerManifest,
+  TEntrypoint extends string | object,
+>(
+  options: EveryAppAuxiliaryWorkerOptions<M, TEntrypoint>,
+): EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
+  const { manifest, worker } = options;
+  if (!manifest.workers?.some((helper) => helper.name === worker)) {
+    throw new Error(
+      `everyapp.config.ts declares no helper Worker "${worker}" in workers.`,
+    );
+  }
+  const { deploy, name: appWorker } = appWorkerName(
+    options,
+    "everyAppAuxiliaryWorker",
+  );
+  const name = helperWorkerName(appWorker, worker);
+
+  const env: Record<string, EveryAppBinding> = {
+    EVERYAPP_APP_ID: { type: "text", value: manifest.id },
+    ...storageBindings(manifest, appWorker, deploy),
+  };
+  if (deploy) {
+    // The app's identity: the gateway treats its helper Workers as the app.
+    env["EVERY_APP_GATEWAY"] = gatewayBinding(deploy, manifest.id, appWorker);
+  } else {
+    env["EVERYAPP_DEV"] = { type: "text", value: "1" };
+  }
+  const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
+  Object.assign(env, bindings);
+  addSecrets(env, options, deploy);
+  const triggers = cronTriggers(options.crons);
+
+  return {
+    name,
+    entrypoint: options.entrypoint,
+    compatibilityDate: manifest.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE,
+    compatibilityFlags: ["nodejs_compat"],
+    workersDev: false,
+    previewUrls: false,
+    ...(triggers.length ? { triggers } : {}),
+    observability: observability(),
+    env,
+    exports,
+  };
+}
+
+/**
+ * A helper Worker's name: `<app worker>--<name>`, within Cloudflare's
+ * limit. New app ids can't contain `--`, so it is never another app's
+ * Worker name.
+ */
+export function helperWorkerName(appWorker: string, helper: string): string {
+  const name = `${appWorker}--${helper}`;
+  if (name.length > MAX_WORKER_NAME_LENGTH) {
+    throw new Error(
+      `Helper Worker ${name} is longer than Cloudflare's ${MAX_WORKER_NAME_LENGTH} characters; shorten its name in everyapp.config.ts.`,
+    );
+  }
+  return name;
+}
+
+/** The deploy inputs (in production) and the app Worker's name. */
+function appWorkerName(
+  options: Pick<
+    EveryAppWorkerOptions<EveryAppWorkerManifest, unknown>,
+    "manifest" | "ctx" | "root"
+  >,
+  builder: string,
+): { deploy: EveryAppDeployInputs | undefined; name: string } {
+  const { manifest, ctx } = options;
+  assertAppId(manifest.id);
+
+  let deploy: EveryAppDeployInputs | undefined;
+  if (ctx.mode === "production") {
+    deploy = readDeployInputs(options.root ?? process.cwd());
+    if (!deploy) {
+      throw new Error(
+        `${DEPLOY_INPUTS_FILE} not found. Every App Workers are built for production only by \`everyapp deploy\` (\`pnpm run deploy\`); ` +
+          "a bare `cf build` or `cf deploy` would ship a Worker without identity keys or its gateway binding. " +
+          "For a local build, run Vite in development mode (`vite build --mode development`).",
+      );
+    }
+  } else if (ctx.mode !== undefined && ctx.mode !== "development") {
+    throw new Error(
+      `${builder}() builds in the "development" or "production" mode, not "${ctx.mode}".`,
+    );
+  }
+
+  const name = deploy?.workerName ?? workerNameFor(manifest.id);
+  if (name === GATEWAY_WORKER_NAME) {
+    throw new Error(
+      `App id "${manifest.id}" is reserved: its Worker would be the gateway's own (${GATEWAY_WORKER_NAME}).`,
+    );
+  }
+  return { deploy, name };
+}
+
+function gatewayBinding(
+  deploy: EveryAppDeployInputs,
+  appId: string,
+  appWorker: string,
+): GatewayBinding {
+  return {
+    type: "worker",
+    worker: GATEWAY_WORKER_NAME,
+    exportName: GATEWAY_ENTRYPOINT,
+    props: {
+      organizationId: deploy.organizationId,
+      appId,
+      workerName: appWorker,
+    },
+  };
+}
+
+/** The app's D1 databases and KV namespaces, which all its Workers share. */
+function storageBindings(
+  manifest: EveryAppWorkerManifest,
+  appWorker: string,
+  deploy: EveryAppDeployInputs | undefined,
+): Record<string, D1Binding | KvBinding> {
+  const env: Record<string, D1Binding | KvBinding> = {};
+  for (const binding of manifest.resources?.d1 ?? []) {
+    if (deploy) {
+      const d1 = deploy.resources.d1?.[binding];
+      if (!d1) throw missingResource("D1 database", binding);
+      env[binding] = { type: "d1", name: d1.name, id: d1.id };
+    } else {
+      env[binding] = {
+        type: "d1",
+        name: resourceNameFor(appWorker, binding),
+        id: localD1Id(appWorker, binding),
+      };
+    }
+  }
+  for (const binding of manifest.resources?.kv ?? []) {
+    if (deploy) {
+      const kv = deploy.resources.kv?.[binding];
+      if (!kv) throw missingResource("KV namespace", binding);
+      env[binding] = { type: "kv", id: kv.id };
+    } else if (manifest.workers?.length) {
+      // The Vite plugin's own default for the app's Worker, named so that
+      // its helpers share the namespace in dev, as deployed ones do.
+      env[binding] = { type: "kv", id: `${binding}-${appWorker}` };
+    } else {
+      env[binding] = { type: "kv" };
+    }
+  }
+  return env;
+}
+
+/**
+ * Durable Object and Workflow bindings, and the classes to export, for one
+ * of the app's Workers: the app's own (`forWorker` undefined) binds every
+ * class, each in the Worker that defines it, and a helper Worker binds only
+ * its own. Each Worker exports the classes it defines. Workflow names are
+ * account-wide, so all of them are named after the app's Worker.
+ */
+function classBindings(
+  manifest: EveryAppWorkerManifest,
+  appWorker: string,
+  forWorker: string | undefined,
+  /** The bindings the Worker already has, which no class may reuse. */
+  taken: Readonly<Record<string, EveryAppBinding>>,
+): {
+  bindings: Record<string, DurableObjectBinding | WorkflowBinding>;
+  exports: Record<string, DurableObjectExport | WorkflowExport>;
+} {
+  const bindings: Record<string, DurableObjectBinding | WorkflowBinding> = {};
+  const exports: Record<string, DurableObjectExport | WorkflowExport> = {};
+  const definedHere = (resource: ClassResource) =>
+    resource.worker === forWorker;
+  const definingWorker = (resource: ClassResource) =>
+    resource.worker ? helperWorkerName(appWorker, resource.worker) : appWorker;
+
+  for (const durableObject of manifest.resources?.durableObjects ?? []) {
+    if (forWorker !== undefined && !definedHere(durableObject)) continue;
+    bindings[durableObject.name] = {
+      type: "durable-object",
+      worker: definingWorker(durableObject),
+      exportName: durableObject.className,
+    };
+    if (definedHere(durableObject)) {
+      exports[durableObject.className] = {
+        type: "durable-object",
+        storage: "sqlite",
+      };
+    }
+  }
+  // The defining Worker exports each Workflow, and every Worker that binds
+  // one can start it and look up its instances.
+  for (const workflow of manifest.resources?.workflows ?? []) {
+    if (forWorker !== undefined && !definedHere(workflow)) continue;
+    if (
+      taken[workflow.name] ||
+      bindings[workflow.name] ||
+      exports[workflow.className]
+    ) {
+      throw new Error(
+        `workflows: ${workflow.name} (${workflow.className}) reuses a binding or class name the Worker already has.`,
+      );
+    }
+    const workflowName = workflowNameFor(appWorker, workflow.name);
+    if (workflowName.length > MAX_WORKFLOW_NAME_LENGTH) {
+      throw new Error(
+        `workflows: ${workflow.name} would be the Workflow "${workflowName}", longer than Cloudflare's ${MAX_WORKFLOW_NAME_LENGTH} characters; shorten the binding name.`,
+      );
+    }
+    bindings[workflow.name] = {
+      type: "workflow",
+      name: workflowName,
+      worker: definingWorker(workflow),
+      exportName: workflow.className,
+    };
+    if (definedHere(workflow)) {
+      exports[workflow.className] = { type: "workflow", name: workflowName };
+    }
+  }
+  return { bindings, exports };
+}
+
+/**
+ * Check the app's secret names, and in dev declare the ones set locally,
+ * with the developer's own keys for the manifest's providers and
+ * capabilities.
+ */
+function addSecrets(
+  env: Record<string, EveryAppBinding>,
+  options: Pick<
+    EveryAppWorkerOptions<EveryAppWorkerManifest, unknown>,
+    "manifest" | "secrets" | "root" | "ctx"
+  >,
+  deploy: EveryAppDeployInputs | undefined,
+): void {
   for (const secret of options.secrets ?? []) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(secret)) {
       throw new Error(`secrets: "${secret}" isn't a valid binding name.`);
@@ -421,16 +706,38 @@ export function everyAppWorker<
     }
   }
   if (!deploy) {
+    const names = new Set([
+      ...(options.secrets ?? []),
+      ...devGatewayKeys(options.manifest),
+    ]);
     for (const secret of locallySetSecrets(
       options.root ?? process.cwd(),
-      ctx.mode ?? "development",
-      options.secrets ?? [],
+      options.ctx.mode ?? "development",
+      [...names].filter((name) => !env[name]),
     )) {
       env[secret] = { type: "secret" };
     }
   }
+}
 
-  const triggers = (options.crons ?? []).map((schedule): ScheduledTrigger => {
+/** The {@link DEV_GATEWAY_KEYS} of the manifest's providers and capabilities. */
+function devGatewayKeys(manifest: EveryAppWorkerManifest): string[] {
+  const keyOf = (table: Record<string, string>, id: string) =>
+    Object.hasOwn(table, id) ? [table[id]!] : [];
+  return [
+    ...(manifest.providers ?? []).flatMap((provider) =>
+      keyOf(DEV_GATEWAY_KEYS.providers, provider),
+    ),
+    ...Object.keys(manifest.capabilities ?? {}).flatMap((id) =>
+      keyOf(DEV_GATEWAY_KEYS.capabilities, id),
+    ),
+  ];
+}
+
+function cronTriggers(
+  crons: readonly string[] | undefined,
+): ScheduledTrigger[] {
+  return (crons ?? []).map((schedule): ScheduledTrigger => {
     if (!/^\S+( \S+){4}$/.test(schedule)) {
       throw new Error(
         `crons: "${schedule}" isn't a five-field cron schedule, e.g. "0 6 * * *".`,
@@ -438,23 +745,14 @@ export function everyAppWorker<
     }
     return { type: "scheduled", schedule };
   });
+}
 
+function observability(): EveryAppObservability {
   return {
-    name,
-    entrypoint: options.entrypoint,
-    compatibilityDate: manifest.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE,
-    compatibilityFlags: ["nodejs_compat"],
-    workersDev: false,
-    previewUrls: false,
-    ...(triggers.length ? { triggers } : {}),
-    observability: {
-      ...EVERYAPP_OBSERVABILITY,
-      logs: { ...EVERYAPP_OBSERVABILITY.logs },
-      traces: { ...EVERYAPP_OBSERVABILITY.traces },
-      issues: { ...EVERYAPP_OBSERVABILITY.issues },
-    },
-    env: env as EveryAppDevEnv<M> | EveryAppDeployEnv<M>,
-    exports: exports as EveryAppExports<M>,
+    ...EVERYAPP_OBSERVABILITY,
+    logs: { ...EVERYAPP_OBSERVABILITY.logs },
+    traces: { ...EVERYAPP_OBSERVABILITY.traces },
+    issues: { ...EVERYAPP_OBSERVABILITY.issues },
   };
 }
 

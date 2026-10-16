@@ -9,6 +9,14 @@
   or (hosted, third-party apps) Workers in a Workers for Platforms dispatch
   namespace the gateway dispatches to. Either way through one seam,
   `getAppFetcher` (`packages/perimeter/src/getAppFetcher.ts`).
+  An app's helper Workers (its manifest's `workers`, deployed as
+  `<app worker>--<name>`) are in the app zone as the app: the gateway never
+  binds them, only the app's own Worker may (a service binding, or the
+  Durable Objects and Workflows a helper defines), and a helper binds only
+  the gateway's AppGateway, with the app's own props. The deploy checks
+  each one against the same policy as the app's Worker (private, no routes
+  or domains, only the app's own resources, Workflows named after the app's
+  Worker) and refuses a built Worker the manifest doesn't declare.
 
 ## Deployment Mode
 
@@ -500,6 +508,10 @@ binding once the account has one. Until then every dispatch app answers
   parent-domain cookies.
 - HTML responses receive the perimeter CSP floor (`frame-ancestors 'none'`,
   `base-uri 'self'`, `object-src 'none'`) without a blanket `default-src`.
+  An app may keep `frame-ancestors 'self'` (then `X-Frame-Options` is
+  `SAMEORIGIN`), since every app has its own origin and that admits neither
+  the gateway nor another app, and may keep `base-uri 'none'`; any other
+  value of those three is replaced by the floor.
 - HSTS, `nosniff`, frame denial, and referrer policy are applied uniformly.
 - Structured gateway events (`logEvent`: setup claims, invitations, member
   changes, app activations, AI usage and upstream failures, proxied

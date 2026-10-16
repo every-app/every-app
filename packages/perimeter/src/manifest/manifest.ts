@@ -33,21 +33,27 @@ export type PublicRoute = z.infer<typeof PublicRouteSchema>;
 // relies on (id, public routes) but deliberately tolerate unknown keys
 // (`passthrough`, not `strict`) so an additive manifest change in the CLI
 // never bricks app registration until the gateway is redeployed.
+/**
+ * A Durable Object or Workflow class: its binding name, the class, and the
+ * helper Worker that defines it (`workers`), when not the app's own.
+ */
+const ClassResourceSchema = z.object({
+  name: z.string(),
+  className: z.string(),
+  worker: z.string().optional(),
+});
+
 export const ResourcesSchema = z
   .object({
     d1: z.array(z.string()).optional(),
     kv: z.array(z.string()).optional(),
     /** Durable Objects exported by the worker (binding name + class). */
-    durableObjects: z
-      .array(z.object({ name: z.string(), className: z.string() }))
-      .optional(),
+    durableObjects: z.array(ClassResourceSchema).optional(),
     /**
      * Workflows the worker defines (binding name + class). Each is named
      * after the app's Worker in the account, `<worker>--<binding>`.
      */
-    workflows: z
-      .array(z.object({ name: z.string(), className: z.string() }))
-      .optional(),
+    workflows: z.array(ClassResourceSchema).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -165,6 +171,27 @@ const CapabilitiesSchemaStrict = z
     }
   });
 
+/** A helper Worker's short name: kebab-case, so `<worker>--<name>` stays one name. */
+const HelperWorkerNameSchema = z
+  .string()
+  .regex(
+    /^[a-z]([a-z0-9]|-(?!-))*[a-z0-9]$|^[a-z]$/,
+    "helper Worker names are kebab-case (lowercase letters, digits, single hyphens)",
+  )
+  .max(20);
+
+/**
+ * Helper Workers that run beside the app's Worker, e.g. one that takes a
+ * memory-hungry job off it. Each is deployed as `<app worker>--<name>`,
+ * private like the app: only the app's Worker reaches it, through
+ * `binding` (a service binding to its default export) or the Durable
+ * Objects and Workflows it defines.
+ */
+const HelperWorkerSchema = z.object({
+  name: HelperWorkerNameSchema,
+  binding: z.string().optional(),
+});
+
 export const AppAccessSchema = z.enum(["everyone", "admins"]);
 export type AppAccess = z.infer<typeof AppAccessSchema>;
 
@@ -212,6 +239,8 @@ export const ManifestSchema = z
     compatibilityDate: CompatibilityDateSchema.optional(),
     /** Cloudflare resources the worker binds. Provisioned by the CLI. */
     resources: ResourcesSchema.optional(),
+    /** Helper Workers deployed beside the app's Worker. Default: none. */
+    workers: z.array(HelperWorkerSchema.passthrough()).optional(),
     /** Routes reachable without an authenticated session. Default: none. */
     public: z.array(PublicRouteSchema).optional(),
     /** Provider APIs this app may call through the gateway. Default: none. */
@@ -284,17 +313,20 @@ const BindingNameSchema = z
 export const ResourcesSchemaStrict = ResourcesSchema.extend({
   d1: z.array(BindingNameSchema).optional(),
   kv: z.array(BindingNameSchema).optional(),
-  durableObjects: z
-    .array(z.object({ name: z.string(), className: z.string() }).strict())
-    .optional(),
+  durableObjects: z.array(ClassResourceSchema.strict()).optional(),
   workflows: z
-    .array(
-      z.object({ name: BindingNameSchema, className: z.string() }).strict(),
-    )
+    .array(ClassResourceSchema.extend({ name: BindingNameSchema }).strict())
     .optional(),
 }).strict();
 export const ManifestSchemaStrict = ManifestSchema.extend({
   resources: ResourcesSchemaStrict.optional(),
+  workers: z
+    .array(
+      HelperWorkerSchema.extend({
+        binding: BindingNameSchema.optional(),
+      }).strict(),
+    )
+    .optional(),
   public: z.array(PublicRouteSchemaStrict).optional(),
   scopes: ScopesSchemaStrict.optional(),
   ai: AiPolicySchema.strict().optional(),
@@ -369,7 +401,35 @@ export function validateManifestStrict(input: unknown): EveryAppManifest {
   for (const route of manifest.public ?? []) {
     assertPublicPathIsSafe(route.path);
   }
+  assertHelperWorkersAreDeclared(manifest);
   return manifest;
+}
+
+/**
+ * Each helper Worker is named once, and every Durable Object or Workflow
+ * that names a helper Worker names a declared one.
+ */
+function assertHelperWorkersAreDeclared(manifest: EveryAppManifest): void {
+  const helpers = new Set<string>();
+  for (const { name } of manifest.workers ?? []) {
+    if (helpers.has(name)) {
+      throw new ManifestError(
+        `Invalid everyapp.config: workers lists "${name}" twice.`,
+      );
+    }
+    helpers.add(name);
+  }
+  const resources = manifest.resources;
+  for (const resource of [
+    ...(resources?.durableObjects ?? []),
+    ...(resources?.workflows ?? []),
+  ]) {
+    if (resource.worker !== undefined && !helpers.has(resource.worker)) {
+      throw new ManifestError(
+        `Invalid everyapp.config: ${resource.name} is defined by Worker "${resource.worker}", which workers doesn't declare.`,
+      );
+    }
+  }
 }
 
 /** Typed identity helper for everyapp.config.ts authors. */

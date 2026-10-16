@@ -71,6 +71,46 @@ and export the `WorkflowEntrypoint` class from the Worker entry.
 names are shared by the whole Cloudflare account. Start one with
 `env.RANK_CHECK.create({ params })`; a run has no user.
 
+## Helper Workers
+
+An app can run part of its work on Workers of its own, e.g. a memory-hungry
+job that would crowd the app's isolate. Declare each one, and the Durable
+Objects and Workflows it defines:
+
+```ts
+resources: {
+  durableObjects: [{ name: "SCRATCHPAD", className: "Scratchpad", worker: "audit" }],
+  workflows: [{ name: "SITE_AUDIT", className: "SiteAuditWorkflow", worker: "audit" }],
+},
+workers: [{ name: "audit", binding: "AUDIT" }],
+```
+
+Build it as an auxiliary Worker of the Vite plugin:
+
+```ts
+// vite.config.ts: defineConfig(({ mode }) => ({ plugins: [ … ] }))
+cloudflare({
+  viteEnvironment: { name: "ssr" },
+  auxiliaryWorkers: [
+    {
+      config: everyAppAuxiliaryWorker({
+        manifest,
+        worker: "audit",
+        entrypoint: "./src/audit.worker.ts",
+        ctx: { mode },
+      }),
+    },
+  ],
+}),
+```
+
+It deploys as `every-acme-seo--audit`, private like the app: only the app's
+Worker reaches it, through `env.AUDIT` and the bindings of the classes it
+defines. It shares the app's D1 databases and KV namespaces, and calls the
+gateway as the app. `everyapp deploy` checks and uploads helpers before the
+app's Worker, and `everyapp delete --purge` deletes them, and the Workflows
+they run, with it. A class stays in the Worker that first defined it.
+
 ## Agent tools
 
 `defineTools()` describes the actions an app offers to AI clients (Claude,
@@ -149,8 +189,9 @@ list the capability, the gateway holds no key) from the provider's answers.
 without making one. In local dev, with no binding, the key comes from
 `.dev.vars` under the gateway secret's name (`DATAFORSEO_API_KEY`), and so do
 the AI providers' (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`) for
-`createGatewayFetch`; list those names in `everyAppWorker()`'s `secrets` so
-the dev server passes them through.
+`createGatewayFetch`: `everyAppWorker()` declares the key of each capability
+and provider the manifest lists when it is set there, so the dev server
+passes it through.
 
 `createMcpHandler()` from 0.2 still works in 0.3 but is deprecated and goes
 away in 0.4. The gateway keeps proxying `/mcp` to an app that defines no

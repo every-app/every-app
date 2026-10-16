@@ -42,7 +42,10 @@ type ResourceKind = "worker" | "d1" | "kv";
 
 export interface OwnedResource {
   kind: ResourceKind;
-  /** The manifest binding; empty for the Worker. */
+  /**
+   * The manifest binding; for a Worker, empty for the app's own and the
+   * helper Worker's name (`workers`) for a helper.
+   */
   binding: string;
   /** D1 name, KV title or Worker name. */
   name: string;
@@ -86,12 +89,14 @@ export async function recordUploadedVersion(
   db: D1Database,
   workerName: string,
   versionId: string,
+  /** A helper Worker's name in the manifest; the app's own Worker when empty. */
+  binding = "",
 ): Promise<void> {
   await db.run([
     ...CREATE_TABLE,
     {
-      sql: "UPDATE _everyapp_app_resources SET version_id = ? WHERE worker_name = ? AND kind = 'worker'",
-      params: [versionId, workerName],
+      sql: "UPDATE _everyapp_app_resources SET version_id = ? WHERE worker_name = ? AND kind = 'worker' AND binding = ?",
+      params: [versionId, workerName, binding],
     },
   ]);
 }
