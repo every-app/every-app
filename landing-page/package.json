@@ -19,6 +19,7 @@
     "format:write": "prettier --write .",
     "deploy": "npm run build && npm run db:migrate:remote && wrangler deploy",
     "deploy:prod": "npm run build && npm run db:migrate:remote && wrangler deploy",
+    "deploy:redirect": "wrangler deploy -c redirect/wrangler.jsonc",
     "deploy:preview": "npm run build && wrangler d1 migrations apply DB --remote --env preview && wrangler deploy --env preview"
   },
   "dependencies": {

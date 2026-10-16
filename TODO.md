@@ -46,14 +46,13 @@ Each of these shipped with a default. Confirm it or change it.
 
 ## Move the website to everyapp.com
 
-In order. Steps 2 and 4 are dashboard work: the Cloudflare MCP token can read DNS but not edit it.
+In order.
 
-- [ ] Registration transfer from Namecheap to Cloudflare finishes. It was requested on 2026-10-15 and completes on its own within 5–7 days. DNS is already on Cloudflare, so nothing waits on it.
-- [ ] Delete the 46 Afternic parking records in the everyapp.com zone (DNS → Records → select all → Delete).
-- [ ] Deploy the landing page (`pnpm deploy` in `landing-page/`). It attaches everyapp.com as the Worker's Custom Domain.
-- [ ] Redirect everyapp.dev: detach it from the Worker (Settings → Domains & Routes), add a proxied `AAAA @ 100::` record, then a Redirect Rule for all requests to `concat("https://everyapp.com", http.request.uri.path)`, 301, query string kept. Same for `www.everyapp.com` on the everyapp.com zone. Keep everyapp.dev renewed.
+- [x] Registration transferred from Namecheap to Cloudflare (2026-10-15).
+- [ ] Delete the Afternic parking records in the everyapp.com zone, keeping the apex null `MX` and `v=spf1 -all` TXT until email is set up.
+- [ ] Deploy the site (`pnpm deploy` in `landing-page/`), then the redirect Worker (`pnpm deploy:redirect`). The redirect Worker takes over everyapp.dev and www.everyapp.com as Custom Domains and 301s them to everyapp.com, path and query kept. Keep everyapp.dev renewed.
 - [ ] Google Search Console: verify everyapp.com, run Change of Address from everyapp.dev, submit `https://everyapp.com/sitemap.xml`.
-- [ ] Email still says `support@everyapp.dev` and `ben@everyapp.dev`. Move it only after mail works on everyapp.com.
+- [ ] Email still says `support@everyapp.dev` and `ben@everyapp.dev` (Proton Mail; `notify.everyapp.dev` sends through Resend). Move it only after mail works on everyapp.com.
 
 ## Check on the first live deploy
 
