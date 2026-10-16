@@ -22,6 +22,7 @@ import {
   PUBLIC_HEADER,
   PUBLIC_MARKER_SUB,
   DEV_ENV,
+  DEV_ISSUER,
   ISSUER_ENV,
 } from "../internal";
 
@@ -369,7 +370,7 @@ describe("everyApp", () => {
       { id: "todo" },
       { publicKeys: [publicPem] },
     );
-    const token = await mint("todo", issuer, IDENTITY_DEV_KEY_ID);
+    const token = await mint("todo", DEV_ISSUER, IDENTITY_DEV_KEY_ID);
     const request = () =>
       new Request("https://todo.example.com/tasks", {
         headers: { [IDENTITY_HEADER]: token },
@@ -377,14 +378,14 @@ describe("everyApp", () => {
 
     const disabled = await app.fetch(
       request(),
-      { [ISSUER_ENV]: issuer, [DEV_ENV]: "0" },
+      { [ISSUER_ENV]: DEV_ISSUER, [DEV_ENV]: "0" },
       ctx,
     );
     expect(disabled.status).toBe(401);
 
     const enabled = await app.fetch(
       request(),
-      { [ISSUER_ENV]: issuer, [DEV_ENV]: "1" },
+      { [ISSUER_ENV]: DEV_ISSUER, [DEV_ENV]: "1" },
       ctx,
     );
     expect(enabled.status).toBe(200);
@@ -399,13 +400,36 @@ describe("everyApp", () => {
     const res = await app.fetch(
       new Request("https://todo.example.com/tasks", {
         headers: {
-          [IDENTITY_HEADER]: await mint("todo", issuer, IDENTITY_DEV_KEY_ID),
+          [IDENTITY_HEADER]: await mint(
+            "todo",
+            DEV_ISSUER,
+            IDENTITY_DEV_KEY_ID,
+          ),
         },
       }),
-      { [ISSUER_ENV]: issuer, [DEV_ENV]: "0" },
+      { [ISSUER_ENV]: DEV_ISSUER, [DEV_ENV]: "0" },
       ctx,
     );
     expect(res.status).toBe(200);
+  });
+
+  it("answers 500 when EVERYAPP_DEV meets a real gateway's issuer", async () => {
+    // A deployed Worker with EVERYAPP_DEV set would otherwise trust the
+    // public dev keypair under its own issuer.
+    const app = everyApp(async () => new Response("ok"), {
+      publicKeys: [publicPem],
+    });
+    const res = await app.fetch(
+      new Request("https://todo.example.com/tasks", {
+        headers: {
+          [IDENTITY_HEADER]: await mint("todo", issuer, IDENTITY_DEV_KEY_ID),
+        },
+      }),
+      { EVERYAPP_APP_ID: "todo", [ISSUER_ENV]: issuer, [DEV_ENV]: "1" },
+      ctx,
+    );
+    expect(res.status).toBe(500);
+    expect(await res.json()).toMatchObject({ error: "misconfigured" });
   });
 });
 

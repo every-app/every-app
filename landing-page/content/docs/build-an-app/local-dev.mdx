@@ -94,8 +94,9 @@ It answers `{"result":{"outcome":"ok"}}` once the `scheduled` handler has run. A
 <summary>What the CLI writes into your project</summary>
 <div className="faq-content">
 
-- `.everyapp/dev-keys.json` — a persistent local signing keypair, generated on first run and gitignored automatically. Dev identity passes are signed with it, so your app verifies real signatures in dev on the same code path as production. Dev keys are marked as dev-only and can never be mistaken for production credentials.
-- `.dev.vars` — gets `EVERYAPP_IDENTITY_PUBLIC_KEYS` (the dev public key) and `EVERYAPP_IDENTITY_ISSUER`, which the Cloudflare vite plugin loads into your worker's environment. Your own lines (an API key, say) are kept. `EVERYAPP_DEV=1` comes from `everyAppWorker()`, in development builds only.
+Nothing of its own. Dev identities are signed with a well-known dev keypair that ships in the SDK, and `everyAppWorker()` gives a development build its public key, the dev issuer and `EVERYAPP_DEV=1` itself, so your app verifies real signatures in dev on the same code path as production. The dev key is public by design: the SDK accepts it only in a development build and only from the dev issuer, so it can never pass for a production identity. Because anyone who can reach the local gateway gets a dev identity, `everyapp dev` listens on `127.0.0.1` unless you pass `--host`.
+
+What does appear is local state, all gitignored: `.cloudflare/state` (the local database and storage), `.cloudflare/types` (the Worker's types, generated on first run when missing) and `.everyapp/registry` (how local Workers find each other). `.dev.vars` and `.env.local` stay yours, for your own secrets.
 
 </div>
 </details>

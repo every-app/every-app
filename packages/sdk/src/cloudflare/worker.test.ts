@@ -14,6 +14,7 @@ import {
   EVERYAPP_OBSERVABILITY,
   everyAppWorker,
   localD1Id,
+  localD1Path,
   type D1Binding,
   type DurableObjectBinding,
   type DurableObjectExport,
@@ -22,6 +23,7 @@ import {
   type WorkflowBinding,
   type WorkflowExport,
 } from "./index";
+import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/index";
 
 const PUBLIC_KEY =
   "-----BEGIN PUBLIC KEY-----\nMIIBIjANBg\n-----END PUBLIC KEY-----\n";
@@ -88,12 +90,17 @@ describe("everyAppWorker in development", () => {
     });
   });
 
-  it("reads the dev identity from .dev.vars secrets and opts into dev tokens", () => {
+  it("carries the well-known dev identity as text and opts into dev tokens", () => {
+    // Text, not secrets: cf dev needs no .dev.vars, and never looks for the
+    // identity in .env files or the environment.
     expect(worker().env).toMatchObject({
       EVERYAPP_APP_ID: { type: "text", value: "todo" },
       EVERYAPP_DEV: { type: "text", value: "1" },
-      EVERYAPP_IDENTITY_PUBLIC_KEYS: { type: "secret" },
-      EVERYAPP_IDENTITY_ISSUER: { type: "secret" },
+      EVERYAPP_IDENTITY_PUBLIC_KEYS: {
+        type: "text",
+        value: JSON.stringify([DEV_PUBLIC_KEY_PEM]),
+      },
+      EVERYAPP_IDENTITY_ISSUER: { type: "text", value: DEV_ISSUER },
       CF_VERSION_METADATA: { type: "version-metadata" },
     });
     expect(worker().env).not.toHaveProperty("EVERY_APP_GATEWAY");
@@ -161,6 +168,19 @@ describe("everyAppWorker in development", () => {
   });
 });
 
+describe("localD1Path", () => {
+  it("names the sqlite file cf dev keeps a local D1 database in", () => {
+    // Pinned: miniflare names the file after the Durable Object id that
+    // idFromName(<database id>) gives in its D1 namespace.
+    expect(localD1Path("/app", localD1Id("every-todo", "DB"))).toBe(
+      "/app/.cloudflare/state/v3/d1/miniflare-D1DatabaseObject/6c6898e95bbb2d113f5d13a82c755843e6d92f528645620a69a4d3d49dc0e221.sqlite",
+    );
+    expect(localD1Path("/gw", localD1Id("every-app-gateway", "DB"))).toBe(
+      "/gw/.cloudflare/state/v3/d1/miniflare-D1DatabaseObject/00c5731e4bf6076d494879b9013ac4063ab8cd87f9803f518a34c9ac10293718.sqlite",
+    );
+  });
+});
+
 describe("everyAppWorker in production", () => {
   const worker = () =>
     everyAppWorker({
@@ -217,7 +237,12 @@ describe("everyAppWorker in production", () => {
 
   it("never enables dev identities", () => {
     writeDeployInputs();
-    expect(worker().env).not.toHaveProperty("EVERYAPP_DEV");
+    const env = worker().env;
+    expect(env).not.toHaveProperty("EVERYAPP_DEV");
+    expect(JSON.stringify(env)).not.toContain(DEV_ISSUER);
+    expect(JSON.stringify(env)).not.toContain(
+      JSON.stringify(DEV_PUBLIC_KEY_PEM).slice(1, -1),
+    );
   });
 
   it("refuses deploy inputs that miss a declared resource", () => {
@@ -467,25 +492,31 @@ describe("everyAppWorker guards", () => {
 });
 
 describe("the cloudflare entry", () => {
+  const importsOf = (file: string) =>
+    [
+      ...fs
+        .readFileSync(file, "utf-8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .matchAll(/from\s+"([^"]+)"/g),
+    ].map((match) => match[1]!);
+
   it("imports nothing the Worker bundle also loads", () => {
     // The Vite plugin denies the Worker every file cloudflare.config.ts
     // imports. When the SDK is linked from source, a shared module would be
-    // denied to the Worker in dev.
+    // denied to the Worker in dev. The dev keypair is a leaf the Worker
+    // never loads (src/dev/index.test.ts checks that side).
     const dir = path.dirname(new URL(import.meta.url).pathname);
     for (const file of fs.readdirSync(dir)) {
       if (!file.endsWith(".ts") || file.endsWith(".test.ts")) continue;
-      const source = fs
-        .readFileSync(path.join(dir, file), "utf-8")
-        .replace(/\/\*[\s\S]*?\*\//g, "");
-      const specifiers = [...source.matchAll(/from\s+"([^"]+)"/g)].map(
-        (match) => match[1]!,
-      );
-      for (const specifier of specifiers) {
+      for (const specifier of importsOf(path.join(dir, file))) {
         expect(
-          specifier.startsWith("node:") || specifier.startsWith("./"),
+          specifier.startsWith("node:") ||
+            specifier.startsWith("./") ||
+            specifier === "../dev/keypair.js",
           `${file} imports ${specifier}`,
         ).toBe(true);
       }
     }
+    expect(importsOf(path.join(dir, "..", "dev", "keypair.ts"))).toEqual([]);
   });
 });

@@ -2,9 +2,11 @@
  * Gateway-lite for `everyapp dev`.
  *
  * Runs the REAL perimeter locally: real public-route policy, real header
- * strip/inject, a real identity JWT signed by a local dev keypair, and a seeded
- * dev user. The only differences from prod are (1) the session is a seeded dev
- * user instead of a Better Auth cookie and (2) the keypair is generated locally.
+ * strip/inject, a real identity JWT, and a seeded dev user. The only
+ * differences from prod are (1) the session is a seeded dev user instead of a
+ * Better Auth cookie and (2) tokens are signed with the SDK's well-known dev
+ * keypair (`@every-app/sdk/dev`) under the dev kid and the dev issuer, which
+ * apps trust only in a development build.
  *
  * This module is dev-only and must never be imported by the production worker
  * entry, so the dev-identity machinery is excluded from prod bundles.
@@ -27,6 +29,7 @@ import {
   mintPublicMarkerJwt,
   IDENTITY_DEV_KEY_ID,
 } from "@every-app/sdk/internal";
+import { DEV_ISSUER, DEV_PRIVATE_KEY_PEM } from "@every-app/sdk/dev";
 
 // Re-exported for the `everyapp dev` runner in the CLI, which consumes this
 // module via the package export "@every-app/perimeter/dev".
@@ -36,9 +39,6 @@ export type { RegisteredApp } from "../registry";
 export type { AppFetcher } from "../getAppFetcher";
 export type { SessionAuthenticator, AuthenticatedSession } from "../session";
 export type { McpInterceptInput } from "../gateway";
-
-/** Issuer for locally-minted dev identity tokens. */
-export const DEV_ISSUER = "https://gateway.dev.localhost";
 
 /** The seeded local dev user every request is authenticated as. */
 export const DEV_USER: AuthenticatedSession = {
@@ -51,12 +51,8 @@ export const DEV_USER: AuthenticatedSession = {
 export interface DevGatewayConfig {
   /** Registered apps, typically built from each app's manifest at dev start. */
   apps: RegisteredApp[];
-  /** Local dev RS256 private key PEM (generated at dev start). */
-  privateKeyPem: string;
   /** Worker env (carries the local service bindings). */
   env: Record<string, unknown>;
-  /** Issuer for dev identity tokens. */
-  issuer?: string;
   /**
    * Session source. Defaults to the seeded dev user (`stub` mode). In `mirror`
    * mode the CLI injects a RemoteAuthenticator that resolves a real Better Auth
@@ -103,10 +99,10 @@ export function createDevGatewayHandler(config: DevGatewayConfig) {
     env: config.env,
     registry,
     authenticator: config.authenticator ?? devAuthenticator(),
-    privateKeyPem: config.privateKeyPem,
-    issuer: config.issuer ?? "https://gateway.dev.localhost",
+    privateKeyPem: DEV_PRIVATE_KEY_PEM,
+    issuer: DEV_ISSUER,
     // Dev tokens are minted under a distinct kid the SDK only trusts when
-    // EVERYAPP_DEV is set — never in production.
+    // EVERYAPP_DEV is set and the issuer is the dev one — never in production.
     keyId: IDENTITY_DEV_KEY_ID,
     // Dev resolves by first label so the base host is never hardcoded.
     resolveApp: async (host: ParsedHost, reg) =>
@@ -128,29 +124,23 @@ export function createDevGatewayHandler(config: DevGatewayConfig) {
  * the real resolved session.
  */
 export async function mintDevIdentityJwt(
-  privateKeyPem: string,
   appId: string,
-  issuer: string = DEV_ISSUER,
   subject: AuthenticatedSession = DEV_USER,
 ): Promise<string> {
-  return mintIdentityJwt(privateKeyPem, {
+  return mintIdentityJwt(DEV_PRIVATE_KEY_PEM, {
     subject,
     audience: appId,
-    issuer,
+    issuer: DEV_ISSUER,
     channel: "web",
     keyId: IDENTITY_DEV_KEY_ID,
   });
 }
 
 /** Mint the same signed public marker used by the HTTP dev gateway. */
-export async function mintDevPublicMarkerJwt(
-  privateKeyPem: string,
-  appId: string,
-  issuer: string = DEV_ISSUER,
-): Promise<string> {
-  return mintPublicMarkerJwt(privateKeyPem, {
+export async function mintDevPublicMarkerJwt(appId: string): Promise<string> {
+  return mintPublicMarkerJwt(DEV_PRIVATE_KEY_PEM, {
     audience: appId,
-    issuer,
+    issuer: DEV_ISSUER,
     keyId: IDENTITY_DEV_KEY_ID,
   });
 }

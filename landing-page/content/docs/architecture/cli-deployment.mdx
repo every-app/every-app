@@ -46,7 +46,7 @@ The gateway ships prebuilt inside the npm package (`gateway/every-app-gateway-re
 
 ## `everyapp app create`
 
-Not scaffold-only — it **production-deploys as part of create**. Clone template (`templates/simple-todo` from the monorepo) → rewrite ids/deps → run the full `deployApp()` pipeline below → local setup (`.env.local`, Worker types, local migrations; failures warn, don't abort) → `git init` + first commit.
+Scaffold-only: it never contacts the gateway. Copy the template (`templates/simple-todo` from the checkout) → rewrite ids/deps → `pnpm install` → Worker types and local migrations (failures warn, don't abort; `everyapp dev` redoes both) → outside the checkout, `git init` + first commit. `--deploy` then runs the full `deployApp()` pipeline below. The id comes from the argument (validated); only with none, at a terminal, is it asked for.
 
 ## `everyapp app deploy` — the interesting one
 
@@ -101,7 +101,7 @@ Details worth remembering:
 
 ## `everyapp dev`
 
-No production gateway involved: the CLI builds a Node **gateway-lite** from `packages/perimeter/src/dev/devGateway.ts` — the _real_ perimeter (CSRF, public routes, header stripping, JWT minting) in front of the app's `cf dev`, with a local RSA keypair (`.everyapp/dev-keys.json`, gitignored, 0600) and an in-memory one-app registry.
+No production gateway involved: the CLI builds a Node **gateway-lite** from `packages/perimeter/src/dev/devGateway.ts` — the _real_ perimeter (CSRF, public routes, header stripping, JWT minting) in front of the app's `cf dev`, with the SDK's well-known dev RSA keypair (`@every-app/sdk/dev`; `everyAppWorker()` gives development builds its public key and issuer) and an in-memory one-app registry. It listens on `127.0.0.1` unless `--host`.
 
 |                | Stub mode (default)                             | Mirror mode                                                                      |
 | -------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
@@ -110,7 +110,7 @@ No production gateway involved: the CLI builds a Node **gateway-lite** from `pac
 | JWT minting    | gateway-lite, dev keypair, dev `kid`            | same (the real gateway only _resolves_ the session; gateway-lite mints)          |
 | Access checks  | n/a                                             | currently always-allow (`hasAppAccess` returns true)                             |
 
-The dev `kid` is accepted by the SDK when `EVERYAPP_DEV` is any non-empty value (or an app opts in with `allowDevIdentities: true`); `/api/dev/identity` hard-404s in production builds, though the route itself still ships. Anonymous behavior is testable via `x-everyapp-dev-anon: 1`.
+The dev `kid` is accepted by the SDK only when `EVERYAPP_DEV` is `1` or `true` (or an app opts in with `allowDevIdentities: true`), and only from the dev issuer: the dev opt-in with any other issuer is a configuration error, so a dev-key token naming a real Gateway never verifies; `/api/dev/identity` hard-404s in production builds, though the route itself still ships. Anonymous behavior is testable via `x-everyapp-dev-anon: 1`.
 
 `http://<appId>.localhost:8787/mcp` is served by a local ToolBus from the app's live `defineTools()` catalog, with the gateway's tool policy. In stub mode an MCP client sends any bearer and acts as the dev user; in mirror mode it sends a personal access token, which the local gateway verifies.
 

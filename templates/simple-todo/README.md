@@ -9,9 +9,9 @@ pnpm install
 pnpm dev
 ```
 
-`pnpm dev` runs `everyapp dev`: it writes the dev identity to `.dev.vars`,
-applies local D1 migrations, starts the app with `cf dev` and puts the local
-gateway in front of it. Use `pnpm dev:vite` (bare `cf dev`) only when you
+`pnpm dev` runs `everyapp dev`: it applies local D1 migrations, starts the
+app with `cf dev` and puts the local gateway in front of it, signing a dev
+identity the app's development build trusts. Use `pnpm dev:vite` (bare `cf dev`) only when you
 intentionally need the app server alone; SDK-protected routes require the
 gateway started by `pnpm dev`.
 

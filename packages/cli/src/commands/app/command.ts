@@ -14,11 +14,21 @@ export const createCommand = buildCommand({
       ],
     },
     flags: {
+      deploy: {
+        kind: "boolean",
+        brief: "Deploy the new app once it is created (see `everyapp app deploy`)",
+        optional: true,
+      },
       gateway: {
         kind: "parsed",
         parse: String,
         brief:
-          "Gateway URL (default: EVERYAPP_GATEWAY_URL, or the only gateway you're logged in to)",
+          "With --deploy: the Gateway URL (default: EVERYAPP_GATEWAY_URL, or the only gateway you're logged in to)",
+        optional: true,
+      },
+      json: {
+        kind: "boolean",
+        brief: "Print progress as NDJSON events on stdout (never asks anything)",
         optional: true,
       },
       verbose: {
@@ -28,7 +38,7 @@ export const createCommand = buildCommand({
       },
       yes: {
         kind: "boolean",
-        brief: "Skip deployment confirmation",
+        brief: "Never ask anything (an app id is then required)",
         optional: true,
       },
     },
@@ -39,17 +49,18 @@ export const createCommand = buildCommand({
   docs: {
     brief: "Create a new app from the starter template",
     fullDescription: [
-      "Copies the simple-todo starter template, deploys it through your gateway, and configures local development.",
+      "Copies the simple-todo starter template into apps/<app-id> inside this checkout, or ./<app-id> anywhere else, and readies it for `everyapp dev`. It doesn't contact your Gateway.",
       "",
-      "Usage: every app create [name]",
+      "Usage: everyapp app create <app-id> [--deploy]",
       "",
       "The command will:",
-      "  1. Prompt for app ID (or use provided name)",
-      "  2. Deploy it as a private Cloudflare Worker (see `everyapp app deploy`)",
-      "  3. Configure package.json and local .env files",
-      "  4. Install dependencies and run local migrations for the starter app",
+      "  1. Name the app after <app-id> (asked for at a terminal when it's missing)",
+      "  2. Install its dependencies",
+      "  3. Generate the Worker's types and apply its migrations to the local database",
+      "  4. Outside the checkout, start a git repository for it",
+      "  5. With --deploy, deploy it as a private Cloudflare Worker (see `everyapp app deploy`)",
       "",
-      "After creation, run 'pnpm run dev' to start developing.",
+      "Then: cd into it and run `pnpm dev`.",
     ].join("\n"),
   },
 });
@@ -275,44 +286,6 @@ const d1Routes = buildRouteMap({
   },
   docs: {
     brief: "D1 database commands",
-  },
-});
-
-export const setupLocalCommand = buildCommand({
-  loader: async () => {
-    const { setupLocal } = await import("./setupLocal");
-    return setupLocal;
-  },
-  parameters: {
-    positional: {
-      kind: "tuple",
-      parameters: [],
-    },
-    flags: {
-      gateway: gatewayFlag,
-      verbose: {
-        kind: "boolean",
-        brief: "Show detailed output during local setup",
-        optional: true,
-      },
-    },
-  },
-  docs: {
-    brief: "Set up local development in an existing app",
-    fullDescription: [
-      "Configures local development for an existing Every App project in the current directory.",
-      "",
-      "Usage: every app setup-local",
-      "",
-      "The command will:",
-      "  1. Verify the current directory is an Every App project",
-      "  2. Find the gateway and check it has an owner",
-      "  3. Install dependencies using package-manager auto-detection",
-      "  4. Create or refresh .env.local",
-      "  5. Generate Worker types and apply local D1 migrations with cf",
-      "",
-      "This is useful after cloning an existing Every App repository.",
-    ].join("\n"),
   },
 });
 
@@ -551,7 +524,6 @@ export const appRoutes = buildRouteMap({
     secret: secretRoutes,
     d1: d1Routes,
     workflows: workflowsRoutes,
-    "setup-local": setupLocalCommand,
     delete: deleteCommand,
   },
   docs: {

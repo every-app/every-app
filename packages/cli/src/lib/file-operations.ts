@@ -51,26 +51,3 @@ export async function directoryExists(dirPath: string): Promise<boolean> {
     return false;
   }
 }
-
-interface CreateEnvFilesOptions {
-  targetDir: string;
-  /** The unprefixed app ID (e.g., "todo-app") */
-  appId: string;
-  gatewayUrl: string;
-}
-
-/**
- * Create environment files for the project
- */
-export async function createEnvFiles({
-  targetDir,
-  appId,
-  gatewayUrl,
-}: CreateEnvFilesOptions): Promise<void> {
-
-  const envLocalContent = `# Vite client-side secrets\nVITE_APP_ID=${appId}\nVITE_GATEWAY_URL=${gatewayUrl}\n# Set Cloudflare secrets locally\nGATEWAY_URL=${gatewayUrl}\n`;
-
-  await Promise.all([
-    fs.writeFile(path.join(targetDir, ".env.local"), envLocalContent),
-  ]);
-}

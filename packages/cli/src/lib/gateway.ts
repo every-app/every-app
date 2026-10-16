@@ -1,6 +1,4 @@
-import chalk from "chalk";
 import { GatewayClient } from "@/lib/gateway/api";
-import { resolveGatewayUrl } from "@/lib/gateway/resolve";
 
 export class GatewayUnreachableError extends Error {
   url: string;
@@ -12,12 +10,6 @@ export class GatewayUnreachableError extends Error {
     this.url = url;
     this.cause = cause;
   }
-}
-
-function formatGatewayUnreachableError(
-  error: GatewayUnreachableError,
-): string {
-  return `Could not reach your Gateway at ${error.url} (${reasonForCause(error.cause)})`;
 }
 
 /**
@@ -79,56 +71,6 @@ export async function checkGatewayHasOwner(
   } catch (error) {
     throw new GatewayUnreachableError(gatewayUrl, error);
   }
-}
-
-/**
- * Require a gateway that has been claimed: an app is deployed to, and
- * developed against, a gateway with an owner. Exits with what to do
- * otherwise. Returns the gateway's URL.
- */
-export async function requireGatewaySetup(gatewayFlag?: string): Promise<string> {
-  let gatewayUrl: string;
-  try {
-    gatewayUrl = await resolveGatewayUrl(gatewayFlag);
-  } catch (error) {
-    console.log(chalk.yellow("\nNo gateway found\n"));
-    console.log(
-      chalk.dim(`  ${error instanceof Error ? error.message : String(error)}\n`),
-    );
-    process.exit(1);
-  }
-
-  let hasOwner: boolean;
-  try {
-    hasOwner = await checkGatewayHasOwner(gatewayUrl);
-  } catch (error) {
-    if (error instanceof GatewayUnreachableError) {
-      console.log(chalk.yellow("\nGateway unreachable\n"));
-      console.log(formatGatewayUnreachableError(error));
-      console.log(
-        chalk.dim(
-          "  Confirm the gateway URL is correct and reachable, then run this command again.\n",
-        ),
-      );
-      process.exit(1);
-    }
-    throw error;
-  }
-
-  if (!hasOwner) {
-    console.log(chalk.yellow("\nOwner account required\n"));
-    console.log(
-      `Your Gateway at ${chalk.cyan(gatewayUrl)} has not been claimed yet.\n`,
-    );
-    console.log(
-      chalk.dim(
-        "  Open the setup link printed by `everyapp gateway deploy`, or run `everyapp gateway claim-link` for a new one, then run this command again.\n",
-      ),
-    );
-    process.exit(1);
-  }
-
-  return gatewayUrl;
 }
 
 function reasonForCause(cause: unknown): string {

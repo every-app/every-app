@@ -1,5 +1,4 @@
-# `everyapp dev` writes the local identity keys and issuer to .dev.vars and
-# keeps the rest of the file.
+# Your own secrets for local dev. `everyapp dev` never writes this file.
 
 # Your own OpenAI key for local dev, where there is no gateway binding to
 # proxy OpenAI through. Never needed in production.

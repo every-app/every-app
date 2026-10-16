@@ -334,12 +334,7 @@ export async function deployApp(
       cf,
       inputs,
       buildCommand: manifest.build,
-      env: {
-        VITE_GATEWAY_URL: gatewayUrl,
-        VITE_APP_ID: manifest.id,
-        EVERYAPP_GATEWAY_URL: gatewayUrl,
-        EVERYAPP_APP_ID: manifest.id,
-      },
+      env: {},
       verbose: options.verbose ?? false,
     });
     const { workflows } = await prepareAppBuildOutput({ cwd, inputs });

@@ -1,7 +1,8 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
+import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/keypair.js";
 import {
   DEPLOY_INPUTS_FILE,
   readDeployInputs,
@@ -157,12 +158,12 @@ type SharedEnv = {
   CF_VERSION_METADATA: VersionMetadataBinding;
 };
 
-/** Bindings in development: the dev identity arrives through `.dev.vars`. */
+/** Bindings in development: the well-known dev identity, as plain text. */
 export type EveryAppDevEnv<M> = ResourceEnv<M> &
   SharedEnv & {
     EVERYAPP_DEV: TextBinding;
-    EVERYAPP_IDENTITY_PUBLIC_KEYS: SecretBinding;
-    EVERYAPP_IDENTITY_ISSUER: SecretBinding;
+    EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
+    EVERYAPP_IDENTITY_ISSUER: TextBinding;
   };
 
 /** Bindings in production: the deployed identity and the gateway binding. */
@@ -255,9 +256,10 @@ const MAX_WORKFLOW_NAME_LENGTH = 64;
  * Build the Worker definition for an Every App app from its manifest.
  *
  * - `development` (cf dev) and no mode (cf API commands, `cf workers types`):
- *   the dev identity keys and issuer are secrets `everyapp dev` writes to
- *   `.dev.vars`, EVERYAPP_DEV is on, and each D1 database gets a fixed local
- *   id (see {@link localD1Id}) that `cf d1 … --local` can address.
+ *   EVERYAPP_DEV is on, the identity keys and issuer are the well-known dev
+ *   ones (`@every-app/sdk/dev`) as plain text, so nothing needs writing to
+ *   `.dev.vars`, and each D1 database gets a fixed local id (see
+ *   {@link localD1Id}) that `cf d1 … --local` can address.
  * - `production`: everything deploy-specific comes from `.everyapp/deploy.json`,
  *   which only `everyapp app deploy` writes. Without it this throws, so a bare
  *   `cf deploy` can't ship a Worker without identity keys.
@@ -323,8 +325,11 @@ export function everyAppWorker<
     env["EVERY_APP_ORG_ID"] = { type: "secret" };
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
-    env["EVERYAPP_IDENTITY_PUBLIC_KEYS"] = { type: "secret" };
-    env["EVERYAPP_IDENTITY_ISSUER"] = { type: "secret" };
+    env["EVERYAPP_IDENTITY_PUBLIC_KEYS"] = {
+      type: "text",
+      value: JSON.stringify([DEV_PUBLIC_KEY_PEM]),
+    };
+    env["EVERYAPP_IDENTITY_ISSUER"] = { type: "text", value: DEV_ISSUER };
   }
 
   for (const binding of resources.d1 ?? []) {
@@ -470,6 +475,42 @@ export function localD1Id(workerName: string, binding: string): string {
     .update(`${workerName}:${binding}`)
     .digest("hex")
     .slice(0, 32);
+}
+
+/** Where `cf dev` keeps D1 databases, under the app's state directory. */
+const LOCAL_D1_OBJECT = "miniflare-D1DatabaseObject";
+
+/**
+ * The sqlite file `cf dev` (and `cf d1 … --local`) keeps the local D1
+ * database `databaseId` in, under the app at `root`, for tools such as
+ * drizzle-kit studio: `.cloudflare/state/v3/d1/miniflare-D1DatabaseObject/
+ * <hash>.sqlite`. The database is a Durable Object named after its id, and
+ * the file after that object's id. `databaseId` is the {@link localD1Id}.
+ */
+export function localD1Path(root: string, databaseId: string): string {
+  return path.join(
+    root,
+    ".cloudflare",
+    "state",
+    "v3",
+    "d1",
+    LOCAL_D1_OBJECT,
+    `${durableObjectIdFromName(LOCAL_D1_OBJECT, databaseId)}.sqlite`,
+  );
+}
+
+/** The id workerd's `idFromName(name)` gives in the namespace `uniqueKey`. */
+function durableObjectIdFromName(uniqueKey: string, name: string): string {
+  const key = createHash("sha256").update(uniqueKey).digest();
+  const nameHmac = createHmac("sha256", key)
+    .update(name)
+    .digest()
+    .subarray(0, 16);
+  const hmac = createHmac("sha256", key)
+    .update(nameHmac)
+    .digest()
+    .subarray(0, 16);
+  return Buffer.concat([nameHmac, hmac]).toString("hex");
 }
 
 /**

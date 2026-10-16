@@ -212,18 +212,19 @@ mock Access with an outer-ring proxy: `docs/runbooks/cloudflare-access.md`,
 port and a **gateway-lite Node proxy** in front of it on `$PORT` (default
 8787). The proxy runs the **real** perimeter (`handleGatewayRequest`, imported
 from `every-app-gateway/v2/dev`): real public-route policy, real header
-strip/inject, a real RS256 identity JWT signed by a persistent local dev
-keypair (`.everyapp/dev-keys.json`, gitignored), CSRF rules, security headers,
+strip/inject, a real RS256 identity JWT signed by the SDK's well-known dev
+keypair (`@every-app/sdk/dev`), CSRF rules, security headers,
 and a seeded dev user (`dev@everyapp.localhost`, org `dev-org`, role `owner`).
 Hot reload is untouched — the app runs under `cf dev` (Vite with the
 Cloudflare plugin); only ingress goes through the perimeter. The dev gateway module is dev-only and excluded from production
 bundles.
 
-Before the app starts, the CLI writes `EVERYAPP_IDENTITY_PUBLIC_KEYS` (one
-dotenv-safe line; PEM newlines are JSON-escaped) and `EVERYAPP_IDENTITY_ISSUER`
-into the app's root `.dev.vars`, where the Cloudflare Vite plugin fills the
-secrets `cloudflare.config.ts` declares — the SDK verifies real signatures in
-dev, on the same code path as production.
+Nothing is written into the app: `everyAppWorker()` gives a development
+build `EVERYAPP_DEV=1` and the dev key's `EVERYAPP_IDENTITY_PUBLIC_KEYS` and
+`EVERYAPP_IDENTITY_ISSUER` as plain text bindings, so the SDK verifies real
+signatures in dev, on the same code path as production. The dev key is public;
+the SDK trusts it only behind `EVERYAPP_DEV` and only from the dev issuer, and
+the gateway-lite listens on 127.0.0.1 unless `--host`.
 
 ### Walkthrough (verified end-to-end on `apps/todo-app`)
 
@@ -247,9 +248,9 @@ dev, on the same code path as production.
      for curl add `--connect-to todo.localhost:8787:127.0.0.1:8787`)
    - `http://todo.fix-ui.everyapp.localhost/` (portless, per-worktree)
 
-   Each git worktree gets its own `.cloudflare/state`, dev keypair and dev
-   registry (`.everyapp/registry`), so several full gateway+app instances run
-   side by side.
+   Each git worktree gets its own `.cloudflare/state` and dev registry
+   (`.everyapp/registry`), so several full gateway+app instances run side by
+   side.
 
 2. **You are already “logged in”** as the seeded dev user — every proxied
    request carries a freshly-minted identity JWT. The perimeter probes (all

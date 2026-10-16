@@ -1,16 +1,20 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { importSPKI, jwtVerify } from "jose";
-import { createDevGatewayHandler, DEV_USER } from "./devGateway";
+import { describe, it, expect } from "vitest";
+import { decodeProtectedHeader, importSPKI, jwtVerify } from "jose";
+import {
+  createDevGatewayHandler,
+  DEV_USER,
+  mintDevIdentityJwt,
+  mintDevPublicMarkerJwt,
+} from "./devGateway";
 import type { RegisteredApp } from "../registry";
 import { validateManifest } from "../manifest/manifest";
-import { generateTestKeyPair, type TestKeyPair } from "../test-helpers";
 import { IDENTITY_HEADER } from "../headers";
+import {
+  DEV_ISSUER,
+  DEV_PUBLIC_KEY_PEM,
+  IDENTITY_DEV_KEY_ID,
+} from "@every-app/sdk/dev";
 import { IDENTITY_ALG } from "@every-app/sdk/internal";
-
-let keys: TestKeyPair;
-beforeAll(async () => {
-  keys = await generateTestKeyPair();
-});
 
 function todoApp(): RegisteredApp {
   return {
@@ -34,7 +38,6 @@ function handlerWithEcho() {
   };
   return createDevGatewayHandler({
     apps: [todoApp()],
-    privateKeyPem: keys.privateKeyPem,
     env: {},
     fetcherFor: () => echo,
   });
@@ -53,7 +56,7 @@ describe("dev gateway-lite", () => {
     }
   });
 
-  it("mints a real identity JWT for the seeded dev user", async () => {
+  it("mints a real identity JWT for the seeded dev user, with the SDK's dev key", async () => {
     const handler = handlerWithEcho();
     const res = await handler(
       new Request("http://todo.localhost:8787/tasks", {
@@ -61,12 +64,27 @@ describe("dev gateway-lite", () => {
       }),
     );
     const body = (await res.json()) as { identity: string };
-    const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
+    const pub = await importSPKI(DEV_PUBLIC_KEY_PEM, IDENTITY_ALG);
     const { payload } = await jwtVerify(body.identity, pub, {
       audience: "todo",
+      issuer: DEV_ISSUER,
     });
+    expect(decodeProtectedHeader(body.identity).kid).toBe(IDENTITY_DEV_KEY_ID);
     expect(payload.sub).toBe(DEV_USER.sub);
     expect(payload.org_role).toBe("owner");
+  });
+
+  it("mints upgrade identities and public markers with the same key and issuer", async () => {
+    const pub = await importSPKI(DEV_PUBLIC_KEY_PEM, IDENTITY_ALG);
+    for (const token of [
+      await mintDevIdentityJwt("todo"),
+      await mintDevPublicMarkerJwt("todo"),
+    ]) {
+      await expect(
+        jwtVerify(token, pub, { audience: "todo", issuer: DEV_ISSUER }),
+      ).resolves.toBeTruthy();
+      expect(decodeProtectedHeader(token).kid).toBe(IDENTITY_DEV_KEY_ID);
+    }
   });
 
   it("public routes are auth-optional: the seeded dev session gets identity, not the marker", async () => {
@@ -121,7 +139,6 @@ describe("dev gateway-lite", () => {
     const seen: unknown[] = [];
     const handler = createDevGatewayHandler({
       apps: [todoApp()],
-      privateKeyPem: keys.privateKeyPem,
       env: {},
       fetcherFor: () => ({ fetch: async () => new Response("app") }),
       interceptMcp: async ({ app, session }) => {

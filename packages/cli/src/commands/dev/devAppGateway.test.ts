@@ -1,14 +1,8 @@
-import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { SessionAuthenticator } from "@every-app/perimeter/dev";
+import { createNdjsonSink } from "@/lib/output/events";
 import { createDevAppGateway } from "./devAppGateway";
 import { registerDevApp } from "./registerDevApp";
-
-const { privateKey } = generateKeyPairSync("rsa", {
-  modulusLength: 2048,
-  publicKeyEncoding: { type: "spki", format: "pem" },
-  privateKeyEncoding: { type: "pkcs8", format: "pem" },
-});
 const HASH = `sha256:${"a".repeat(64)}`;
 const APP_URL = "http://todo.localhost:8787";
 
@@ -54,9 +48,8 @@ function gateway(authenticator?: SessionAuthenticator) {
     appName: "Todos",
     appUrl: APP_URL,
     appFetcher: app.fetcher,
-    privateKeyPem: privateKey,
     authenticator,
-    log: () => undefined,
+    out: createNdjsonSink(() => undefined),
   });
   return { handle, paths: app.paths };
 }

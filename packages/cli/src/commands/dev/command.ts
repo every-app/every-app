@@ -11,22 +11,32 @@ export const devCommand = buildCommand({
         brief: "Gateway port (defaults to $PORT, then 8787)",
         optional: true,
       },
+      host: {
+        kind: "parsed",
+        parse: String,
+        brief:
+          "Address the gateway listens on (default 127.0.0.1; 0.0.0.0 lets other machines in, each as a dev identity)",
+        optional: true,
+      },
       mode: {
         kind: "parsed",
         parse: String,
-        brief: "stub (seeded dev user, default) | mirror (real login via local gateway)",
+        brief:
+          "stub (seeded dev user, default) | mirror (real login via local gateway)",
         optional: true,
       },
       gateway: {
         kind: "parsed",
         parse: String,
-        brief: "mirror mode: URL of the separately-run local gateway (default http://localhost:3000)",
+        brief:
+          "mirror mode: URL of the separately-run local gateway (default http://localhost:3000)",
         optional: true,
       },
       baseHost: {
         kind: "parsed",
         parse: String,
-        brief: "mirror mode: two-label base host for cookie scope (default everyapp.localhost)",
+        brief:
+          "mirror mode: two-label base host for cookie scope (default everyapp.localhost)",
         optional: true,
       },
       "skip-migrations": {
@@ -46,8 +56,12 @@ export const devCommand = buildCommand({
       "Host label selects the app, so portless per-worktree hosts work with no",
       "configuration.",
       "",
-      "Before starting, it writes the dev identity to .dev.vars and applies local",
-      "D1 migrations (cf d1 migrations apply --local) to .cloudflare/state.",
+      "Identities are signed with the SDK's well-known dev keypair, which the app's",
+      "development build trusts on its own: nothing is written into the app. The",
+      "key is public, so the gateway listens on 127.0.0.1 unless --host says",
+      "otherwise. Before starting, dev generates the Worker's types when",
+      ".cloudflare/types is missing and applies local D1 migrations",
+      "(cf d1 migrations apply --local) to .cloudflare/state.",
       "",
       "--mode stub (default): seeded dev user, zero setup.",
       "--mode mirror: authenticate against a SEPARATELY-running local gateway",

@@ -3,7 +3,7 @@ import { devRegistryEnv } from "@/lib/app/localD1";
 import type { CfRunner } from "@/lib/cf/runner";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 
-interface AppDevServer {
+export interface AppDevServer {
   /** Settles when the dev server process exits. */
   readonly exited: Promise<unknown>;
   stop(): void;

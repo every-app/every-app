@@ -20,7 +20,9 @@ import {
   PUBLIC_HEADER,
   PUBLIC_MARKER_SUB,
   DEV_ENV,
+  DEV_ISSUER,
   ISSUER_ENV,
+  resolveVerifyOptions,
 } from "./identity";
 import { mintIdentityJwt, mintSystemJwt } from "./protocol";
 
@@ -266,30 +268,74 @@ describe("dev identity kid — the dev/prod signer firewall", () => {
   });
 
   it("accepts a dev-kid token ONLY when allowDevIdentities is set", async () => {
-    const token = await mint({}, { kid: IDENTITY_DEV_KEY_ID });
+    const token = await mint({}, { kid: IDENTITY_DEV_KEY_ID, iss: DEV_ISSUER });
     const user = await verifyIdentityJwt(token, {
       publicKeys: [publicPem],
       audience: "todo",
-      issuer,
+      issuer: DEV_ISSUER,
       allowDevIdentities: true,
     });
     expect(user.id).toBe("user_1");
   });
 
   it("still rejects the prod kid signed by the wrong key, dev mode or not", async () => {
-    const token = await mint({}, { kid: IDENTITY_KEY_ID });
+    const token = await mint({}, { kid: IDENTITY_KEY_ID, iss: DEV_ISSUER });
     await expect(
       verifyIdentityJwt(token, {
         publicKeys: [otherPublicPem],
         audience: "todo",
-        issuer,
+        issuer: DEV_ISSUER,
+        allowDevIdentities: true,
+      }),
+    ).rejects.toBeInstanceOf(IdentityError);
+  });
+
+  it("refuses the dev opt-in with any issuer but the dev one", async () => {
+    // The dev keypair is public: a dev-kid token naming a real gateway must
+    // never verify, whatever EVERYAPP_DEV says.
+    const token = await mint({}, { kid: IDENTITY_DEV_KEY_ID });
+    for (const expected of [issuer, undefined]) {
+      await expect(
+        verifyIdentityJwt(token, {
+          publicKeys: [publicPem],
+          audience: "todo",
+          issuer: expected,
+          allowDevIdentities: true,
+        }),
+      ).rejects.toBeInstanceOf(ConfigurationError);
+    }
+    const env = {
+      EVERYAPP_IDENTITY_PUBLIC_KEYS: JSON.stringify([publicPem]),
+      [ISSUER_ENV]: issuer,
+      [DEV_ENV]: "1",
+    };
+    expect(() => resolveVerifyOptions({ audience: "todo", env })).toThrow(
+      ConfigurationError,
+    );
+    await expect(
+      getIdentityFromRequest(
+        new Request("https://todo.localhost/tasks", {
+          headers: { [IDENTITY_HEADER]: token },
+        }),
+        { audience: "todo", env },
+      ),
+    ).rejects.toBeInstanceOf(ConfigurationError);
+  });
+
+  it("rejects a dev-kid token whose issuer isn't the dev issuer", async () => {
+    const token = await mint({}, { kid: IDENTITY_DEV_KEY_ID, iss: issuer });
+    await expect(
+      verifyIdentityJwt(token, {
+        publicKeys: [publicPem],
+        audience: "todo",
+        issuer: DEV_ISSUER,
         allowDevIdentities: true,
       }),
     ).rejects.toBeInstanceOf(IdentityError);
   });
 
   it("getIdentityFromRequest accepts the dev kid only for strict EVERYAPP_DEV values", async () => {
-    const token = await mint({}, { kid: IDENTITY_DEV_KEY_ID });
+    const token = await mint({}, { kid: IDENTITY_DEV_KEY_ID, iss: DEV_ISSUER });
     const req = () =>
       new Request("https://todo.localhost/tasks", {
         headers: { [IDENTITY_HEADER]: token },
@@ -301,7 +347,7 @@ describe("dev identity kid — the dev/prod signer firewall", () => {
         audience: "todo",
         env: {
           EVERYAPP_IDENTITY_PUBLIC_KEYS: JSON.stringify([publicPem]),
-          [ISSUER_ENV]: issuer,
+          [ISSUER_ENV]: DEV_ISSUER,
         },
       }),
     ).rejects.toBeInstanceOf(IdentityError);
@@ -312,7 +358,7 @@ describe("dev identity kid — the dev/prod signer firewall", () => {
         audience: "todo",
         env: {
           EVERYAPP_IDENTITY_PUBLIC_KEYS: JSON.stringify([publicPem]),
-          [ISSUER_ENV]: issuer,
+          [ISSUER_ENV]: DEV_ISSUER,
           [DEV_ENV]: "0",
         },
       }),
@@ -323,7 +369,7 @@ describe("dev identity kid — the dev/prod signer firewall", () => {
       audience: "todo",
       env: {
         EVERYAPP_IDENTITY_PUBLIC_KEYS: JSON.stringify([publicPem]),
-        [ISSUER_ENV]: issuer,
+        [ISSUER_ENV]: DEV_ISSUER,
         [DEV_ENV]: "1",
       },
     });
@@ -333,7 +379,7 @@ describe("dev identity kid — the dev/prod signer firewall", () => {
       audience: "todo",
       env: {
         EVERYAPP_IDENTITY_PUBLIC_KEYS: JSON.stringify([publicPem]),
-        [ISSUER_ENV]: issuer,
+        [ISSUER_ENV]: DEV_ISSUER,
         [DEV_ENV]: "TRUE",
       },
     });
@@ -498,12 +544,11 @@ describe("verifySystemJwt — the gateway's catalog token", () => {
     issuer,
     purpose: "tools.list" as const,
   });
-  const mintSystem = (overrides: { audience?: string; keyId?: string } = {}) =>
+  const mintSystem = (overrides: { audience?: string } = {}) =>
     mintSystemJwt(privatePem, {
       audience: overrides.audience ?? "todo",
       issuer,
       purpose: "tools.list",
-      keyId: overrides.keyId,
     });
 
   it("accepts a system token minted for this app and purpose", async () => {
@@ -575,13 +620,22 @@ describe("verifySystemJwt — the gateway's catalog token", () => {
     );
   });
 
-  it("accepts the dev kid only with the dev opt-in", async () => {
-    const devToken = await mintSystem({ keyId: IDENTITY_DEV_KEY_ID });
-    await expect(verifySystemJwt(devToken, options())).rejects.toBeInstanceOf(
+  it("accepts the dev kid only with the dev opt-in and the dev issuer", async () => {
+    const devToken = await mintSystemJwt(privatePem, {
+      audience: "todo",
+      issuer: DEV_ISSUER,
+      purpose: "tools.list",
+      keyId: IDENTITY_DEV_KEY_ID,
+    });
+    const dev = { ...options(), issuer: DEV_ISSUER };
+    await expect(verifySystemJwt(devToken, dev)).rejects.toBeInstanceOf(
       IdentityError,
     );
     await expect(
-      verifySystemJwt(devToken, { ...options(), allowDevIdentities: true }),
+      verifySystemJwt(devToken, { ...dev, allowDevIdentities: true }),
     ).resolves.toMatchObject({ typ: "system" });
+    await expect(
+      verifySystemJwt(devToken, { ...options(), allowDevIdentities: true }),
+    ).rejects.toBeInstanceOf(ConfigurationError);
   });
 });

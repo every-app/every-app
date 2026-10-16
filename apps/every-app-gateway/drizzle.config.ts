@@ -1,13 +1,14 @@
 import { defineConfig } from "drizzle-kit";
-import { getLocalD1Url } from "./src/db/getLocalD1Url";
+import { localD1Id, localD1Path } from "@every-app/sdk/cloudflare";
 
-const localUrl = getLocalD1Url();
-
+// drizzle-kit studio opens the local database `pnpm dev` serves (the id
+// cloudflare.config.ts gives it). It exists once `pnpm dev` or
+// `pnpm run db:migrate:local` has run.
 export default defineConfig({
   dialect: "sqlite",
   schema: "./src/db/schema.ts",
   out: "./drizzle",
   dbCredentials: {
-    url: localUrl || "", // Empty fallback for CI/non-dev environments
+    url: localD1Path(process.cwd(), localD1Id("every-app-gateway", "DB")),
   },
 });

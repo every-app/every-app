@@ -8,8 +8,9 @@ description: Build your first app with a coding agent
 ```text
 Help me build an Every App application (docs: https://everyapp.com/llms.txt).
 
-1. Run `npx -y everyapp app create`. When it asks for an app name, pause and
-   ask me. Then move into the folder it created.
+1. Ask me what to call the app (a kebab-case id such as `tasks`), then run
+   `npx -y everyapp app create <that id> --json` and move into the folder it
+   created.
 2. Ask me what app I want to build, then build it.
 3. Start local dev with `npx everyapp dev` and give me the local URL to open.
 4. When I say I'm happy with it, deploy with `npx -y everyapp app deploy -y`
@@ -25,13 +26,13 @@ The manual steps, if you'd rather drive:
 ## 1. Create the app
 
 ```bash
-npx everyapp app create
+npx everyapp app create your-app-name
 cd your-app-name
 ```
 
-The command asks you to name your app; `cd your-app-name` means move into the folder it created, using the name you chose.
+Name your app with a kebab-case id such as `tasks` (leave it out and the command asks); `cd your-app-name` moves into the folder it created.
 
-This creates a working app from our starter template, deploys it to your Cloudflare account, and registers it with your Gateway. Before you write a line of code, you have a real full-stack app with a database, running behind your Gateway's login.
+This creates a working app from our starter template, installs it and sets up its local database. Before you write a line of code, you have a real full-stack app with a database that runs locally behind the same login checks as production. Nothing reaches your Cloudflare account until you deploy (`npx everyapp app create your-app-name --deploy` does both at once).
 
 ## 2. Describe what you want
 

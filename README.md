@@ -140,7 +140,7 @@ cd apps/my-app
 pnpm dev
 ```
 
-`app create` copies the starter template (`templates/simple-todo`) to `apps/my-app`, deploys it, registers it with your Gateway, and sets up local development.
+`app create` copies the starter template (`templates/simple-todo`) to `apps/my-app`, installs it and sets up its local database, without contacting your Gateway; `pnpm run deploy` (or `app create --deploy`) ships it.
 
 `pnpm dev` (`everyapp dev`) runs your app behind a local Gateway that enforces the same security perimeter as production, signed in as a seeded dev user. Open the URL it prints — hot reload works as normal.
 

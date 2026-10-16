@@ -2,15 +2,16 @@
  * The gateway-lite for one app: the real perimeter with the app registered,
  * and `<app>.localhost/mcp` served by a local ToolBus from the app's live
  * `defineTools()` catalog, with the gateway's policy and identity contract.
+ * Both sign with the SDK's well-known dev keypair.
  */
-import chalk from "chalk";
 import {
   createDevGatewayHandler,
-  DEV_ISSUER,
   type RegisteredApp,
   type SessionAuthenticator,
 } from "@every-app/perimeter/dev";
+import { DEV_ISSUER, DEV_PRIVATE_KEY_PEM } from "@every-app/sdk/dev";
 import { createDevToolBus } from "@every-app/toolbus/dev";
+import type { EventSink } from "@/lib/output/events";
 
 interface DevAppGatewayOptions {
   app: RegisteredApp;
@@ -19,16 +20,16 @@ interface DevAppGatewayOptions {
   appUrl: string;
   /** Reaches the app's dev server. */
   appFetcher: { fetch(request: Request): Promise<Response> };
-  privateKeyPem: string;
   /** Mirror mode's remote authenticator; the seeded dev user otherwise. */
   authenticator?: SessionAuthenticator;
-  log?: (line: string) => void;
+  /** Where tool calls and catalog problems are reported. */
+  out: EventSink;
 }
 
 export function createDevAppGateway(
   options: DevAppGatewayOptions,
 ): (request: Request) => Promise<Response> {
-  const log = options.log ?? ((line: string) => console.log(line));
+  const { out } = options;
   const toolBus = createDevToolBus({
     apps: [
       {
@@ -38,20 +39,32 @@ export function createDevAppGateway(
         fetcher: options.appFetcher,
       },
     ],
-    privateKeyPem: options.privateKeyPem,
+    privateKeyPem: DEV_PRIVATE_KEY_PEM,
     issuer: DEV_ISSUER,
     onToolCall: (event) =>
-      log(
-        chalk.dim(
-          `  mcp ${event.tool} → ${event.decision === "blocked" ? `blocked (${event.reason})` : event.outcome} (${event.durationMs}ms)`,
-        ),
-      ),
-    onCatalogProblem: (_appId, problem) =>
-      log(chalk.yellow(`  Agent tools: ${problem}`)),
+      out.emit({
+        type: "progress",
+        step: "dev.mcp",
+        message: `mcp ${event.tool} → ${event.decision === "blocked" ? `blocked (${event.reason})` : event.outcome} (${event.durationMs}ms)`,
+        data: {
+          tool: event.tool,
+          decision: event.decision,
+          reason: event.reason,
+          outcome: event.outcome,
+          durationMs: event.durationMs,
+        },
+      }),
+    onCatalogProblem: (appId, problem) =>
+      out.emit({
+        type: "warning",
+        code: "TOOLS_CATALOG",
+        step: "dev.mcp",
+        message: `Agent tools: ${problem}`,
+        data: { appId },
+      }),
   });
   return createDevGatewayHandler({
     apps: [options.app],
-    privateKeyPem: options.privateKeyPem,
     env: { [`APP__${options.app.workerName}`]: options.appFetcher },
     authenticator: options.authenticator,
     interceptMcp: ({ request, app, session }) =>

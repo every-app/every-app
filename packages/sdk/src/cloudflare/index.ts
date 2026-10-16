@@ -15,11 +15,13 @@
  * Worker. Keep it self-contained: the plugin hides every file the config
  * imports from the Worker in dev, so sharing a module with `/server` or
  * `/internal` would break `cf dev` wherever the SDK is linked from source.
+ * (The dev keypair it hands the dev Worker is a leaf the Worker never loads.)
  */
 export {
   EVERYAPP_OBSERVABILITY,
   everyAppWorker,
   localD1Id,
+  localD1Path,
   workflowNameFor,
   type D1Binding,
   type DurableObjectBinding,

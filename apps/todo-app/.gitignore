@@ -26,9 +26,11 @@ yarn.lock
 /blob-report/
 /playwright/.cache/
 .tanstack
+
+# everyapp's local state: the dev registry, and the deploy inputs while a
+# deploy builds
 .everyapp/
 
 # Regenerated on install; would contain link: entries pointing into the
 # monorepo, which are broken for anyone who clones this directory alone.
 pnpm-lock.yaml
-.dev.vars

@@ -1,9 +1,11 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { localD1Id } from "@every-app/sdk/cloudflare";
 import { FakeCf } from "@/lib/cf/fakeCf";
+import { EveryAppError } from "@/lib/errors";
+import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { applyDevMigrations } from "./migrations";
 
 const manifest = {
@@ -13,17 +15,17 @@ const manifest = {
 };
 
 let cwd: string;
+let events: Array<Record<string, unknown>>;
+let out: EventSink;
 
 beforeEach(async () => {
   cwd = await fs.mkdtemp(path.join(os.tmpdir(), "everyapp-dev-migrations-"));
   await fs.mkdir(path.join(cwd, "drizzle"));
-  process.exitCode = undefined;
-  vi.spyOn(console, "log").mockImplementation(() => {});
+  events = [];
+  out = createNdjsonSink((line) => events.push(JSON.parse(line)));
 });
 
 afterEach(async () => {
-  vi.restoreAllMocks();
-  process.exitCode = undefined;
   await fs.rm(cwd, { recursive: true, force: true });
 });
 
@@ -33,14 +35,8 @@ describe("applyDevMigrations", () => {
       stdout: '[{"name":"0000_init.sql","status":"✅"}]',
     });
 
-    const result = await applyDevMigrations({
-      cwd,
-      manifest,
-      cf,
-      skipMigrations: false,
-    });
+    await applyDevMigrations({ cwd, manifest, cf, out });
 
-    expect(result).toBe(true);
     expect(cf.calls).toHaveLength(1);
     expect(cf.calls[0]).toMatchObject({
       args: [
@@ -62,43 +58,48 @@ describe("applyDevMigrations", () => {
         MINIFLARE_REGISTRY_PATH: path.join(cwd, ".everyapp", "registry"),
       },
     });
+    expect(events.at(-1)).toMatchObject({
+      type: "step",
+      step: "migrations.local",
+      status: "ok",
+      message: "Applied 0000_init.sql.",
+      data: { applied: ["0000_init.sql"] },
+    });
   });
 
-  it("aborts dev with an actionable error when migration fails", async () => {
+  it("stops dev with an actionable error when migration fails", async () => {
     const cf = new FakeCf().on(["d1", "migrations", "apply"], {
       exitCode: 1,
       stderr: "┌ Error\n│ migration 0001 failed\n└\n",
     });
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const result = await applyDevMigrations({
-      cwd,
-      manifest,
-      cf,
-      skipMigrations: false,
+    const failure = applyDevMigrations({ cwd, manifest, cf, out });
+
+    await expect(failure).rejects.toBeInstanceOf(EveryAppError);
+    await expect(failure).rejects.toMatchObject({
+      code: "MIGRATIONS_FAILED",
+      message: expect.stringContaining("migration 0001 failed"),
     });
-
-    expect(result).toBe(false);
-    expect(process.exitCode).toBe(1);
-    expect(error).toHaveBeenCalledWith(
-      expect.stringContaining("migration 0001 failed"),
-    );
-    expect(error).toHaveBeenCalledWith(
+    await expect(failure).rejects.toThrow(
       "Run manually: pnpm run db:migrate:local",
     );
+    expect(events.at(-1)).toMatchObject({
+      type: "step",
+      step: "migrations.local",
+      status: "fail",
+    });
   });
 
-  it("--skip-migrations bypasses migration application", async () => {
+  it("skips an app without a migrations directory", async () => {
+    await fs.rm(path.join(cwd, "drizzle"), { recursive: true });
     const cf = new FakeCf();
 
-    const result = await applyDevMigrations({
-      cwd,
-      manifest,
-      cf,
-      skipMigrations: true,
-    });
+    await applyDevMigrations({ cwd, manifest, cf, out });
 
-    expect(result).toBe(true);
     expect(cf.calls).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      status: "skip",
+      data: { reason: "no_migrations_dir" },
+    });
   });
 });

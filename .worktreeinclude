@@ -2,8 +2,8 @@
 .env.local
 .env.*
 **/.env*
-.dev.vars*
-.wrangler
+**/.dev.vars*
+**/.cloudflare/state
 node_modules/
 **/node_modules/
 **/.claude/settings.local.json

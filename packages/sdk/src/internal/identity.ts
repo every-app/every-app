@@ -17,6 +17,7 @@ import {
 import {
   APP_ID_ENV,
   DEV_ENV,
+  DEV_ISSUER,
   IDENTITY_ALG,
   IDENTITY_DEV_KEY_ID,
   IDENTITY_HEADER,
@@ -39,6 +40,7 @@ import {
 export {
   APP_ID_ENV,
   DEV_ENV,
+  DEV_ISSUER,
   IDENTITY_ALG,
   IDENTITY_DEV_KEY_ID,
   IDENTITY_HEADER,
@@ -123,11 +125,24 @@ export interface VerifyOptions {
   /**
    * Accept the dev identity kid ({@link IDENTITY_DEV_KEY_ID}). Set ONLY in
    * local dev (driven by the {@link DEV_ENV} worker env var). Never true in
-   * production.
+   * production. Requires `issuer` to be {@link DEV_ISSUER}.
    */
   allowDevIdentities?: boolean;
   /** Override for tests. */
   now?: number;
+}
+
+/**
+ * The dev keypair is public (`@every-app/sdk/dev`), so the dev opt-in holds
+ * only for the dev issuer: a dev-kid token that names a real gateway as its
+ * issuer never verifies, whatever the env says.
+ */
+function assertDevIssuer(options: VerifyOptions): void {
+  if (options.allowDevIdentities && options.issuer !== DEV_ISSUER) {
+    throw new ConfigurationError(
+      `Dev identities are accepted only from the dev issuer ${DEV_ISSUER}, not ${options.issuer ? `"${options.issuer}"` : "an unset issuer"}. ${DEV_ENV} is for \`everyapp dev\` alone.`,
+    );
+  }
 }
 
 /**
@@ -179,6 +194,7 @@ async function verifyPinnedJwt(
   options: VerifyOptions,
   expectedTyp: IdentityTokenType,
 ): Promise<JWTPayload> {
+  assertDevIssuer(options);
   if (!token) throw new IdentityError("no identity token");
 
   // Pin the header BEFORE attempting any signature work. This is what defeats
@@ -280,7 +296,8 @@ export interface RequestIdentityOptions {
 /**
  * The verification options for a request: keys from options or env, the
  * expected issuer, and the dev-kid opt-in. Throws {@link ConfigurationError}
- * when no key set is configured.
+ * when no key set is configured, or when the dev opt-in meets an issuer other
+ * than {@link DEV_ISSUER}.
  */
 export function resolveVerifyOptions(
   options: RequestIdentityOptions,
@@ -290,14 +307,14 @@ export function resolveVerifyOptions(
     parsePublicKeys(
       (options.env?.[options.keysEnvVar ?? PUBLIC_KEYS_ENV] as string) ?? null,
     );
-  // Dev identities are accepted only when the worker env opts in (everyapp dev
-  // sets EVERYAPP_DEV in .dev.vars). Production never sets it.
+  // Dev identities are accepted only when the worker env opts in
+  // (everyAppWorker() sets EVERYAPP_DEV in development). A deploy never does.
   const devEnv = options.env?.[DEV_ENV];
   const allowDevIdentities =
     options.allowDevIdentities ??
     (typeof devEnv === "string" &&
       (devEnv === "1" || devEnv.toLowerCase() === "true"));
-  return {
+  const resolved: VerifyOptions = {
     publicKeys,
     audience: options.audience,
     issuer:
@@ -306,6 +323,8 @@ export function resolveVerifyOptions(
     allowDevIdentities,
     now: options.now,
   };
+  assertDevIssuer(resolved);
+  return resolved;
 }
 
 /**

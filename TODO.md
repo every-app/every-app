@@ -22,6 +22,8 @@ Each of these shipped with a default. Confirm it or change it.
 - [x] **Gateway layout.** A sidebar (OpenSEO's app shell) replaces the top header and the admin tabs. Admin pages now open on phones too, where the old UI showed "not supported on mobile".
 - [ ] **When the schema check runs.** `deploy` checks an app's drizzle migrations against its schema after the build, so under the app's lease: the build needs resources created under the lease, and the check needs the dependencies the deploy installs. The redesign's step 7 asked for it before the lease as well.
 - [ ] **A schema check drizzle-kit can't finish.** When `drizzle-kit generate` fails (most often a renamed column, which it asks about only at a terminal), the deploy stops with `SCHEMA_CHECK_FAILED`. Only a missing drizzle-kit or drizzle config is a warning.
+- [ ] **`dev --host` takes an address.** `everyapp dev` listens on 127.0.0.1; `--host 0.0.0.0` opens it to other machines. Vite's bare `--host` (no value) isn't supported.
+- [ ] **`app create -y`.** With nothing left to confirm, `-y` means "never ask": an app id is then required, as under `--json`. A failed `cf workers types` or local migration in `create` is a warning, since `dev` redoes both.
 
 ## Build
 

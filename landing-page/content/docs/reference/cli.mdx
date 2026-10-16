@@ -88,7 +88,7 @@ App commands find your Gateway from `--gateway <url>`, then `EVERYAPP_GATEWAY_UR
 
 ### `everyapp app create <app-id>`
 
-Scaffolds a new app from the starter template the CLI ships (kebab-case id), wires its `everyapp.config.ts`, deploys it and sets up local development. Flags: `-y`, `--gateway`, `--verbose`.
+Scaffolds a new app from the starter template (kebab-case id): copies it to `apps/<app-id>` inside the checkout or `./<app-id>` anywhere else, names it in `package.json` and `everyapp.config.ts`, installs its dependencies, generates the Worker's types, applies its migrations to the local database, and outside the checkout starts a git repository for it. It doesn't contact your Gateway, so `everyapp dev` works at once. With no id it asks for one at a terminal; `--json` and `-y` never ask. `--deploy` deploys the new app afterwards, as `everyapp app deploy` does (`--gateway` picks the Gateway). Flags: `--deploy`, `--gateway`, `--json`, `-y`, `--verbose`.
 
 ### `everyapp app deploy`
 
@@ -140,19 +140,16 @@ Run from an app directory. Manages the deployed app's [Workflows](/docs/how-it-w
 
 All take `--gateway` and `--json`. Locally, `everyapp dev` links to the Local Explorer, which does the same for the Workflows `cf dev` runs.
 
-### `everyapp app setup-local`
-
-Prepares an existing app checkout for local development (dependencies, `.env.local`, Worker types, local database).
-
 ## Local development
 
 ### `everyapp dev`
 
-Runs your app under `cf dev` behind a local gateway with the real security perimeter — real identity verification, real public-route policy, hot reload intact. App at `http://<app-id>.localhost:8787`. Before starting it writes the dev identity to `.dev.vars` and applies local D1 migrations. Requires Node.js 22.18 or newer.
+Runs your app under `cf dev` behind a local gateway with the real security perimeter — real identity verification, real public-route policy, hot reload intact. App at `http://<app-id>.localhost:8787`. Identities are signed with the SDK's well-known dev keypair, which a development build trusts on its own, so nothing is written into your app. Before starting it generates the Worker's types when `.cloudflare/types` is missing and applies local D1 migrations. The gateway listens on `127.0.0.1` unless `--host`: the dev key is public, so anyone who can reach the port gets a dev identity. Requires Node.js 22.18 or newer.
 
 | Flag                  | Meaning                                                                                                           |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `--port <n>`          | Gateway port (defaults to `$PORT`, then 8787).                                                                    |
+| `--host <address>`    | Address the gateway listens on (default `127.0.0.1`; `0.0.0.0` lets other machines in, each as a dev identity).   |
 | `--mode stub\|mirror` | `stub` (default): a seeded dev user, zero setup. `mirror`: real login against a separately running local gateway. |
 | `--gateway <url>`     | Mirror mode: the local gateway's URL (default `http://localhost:3000`).                                           |
 | `--baseHost <host>`   | Mirror mode: two-label base host for the session cookie (default `everyapp.localhost`).                           |

@@ -26,6 +26,10 @@ For full API reference and usage guides, see the [Embedded SDK documentation](ht
 
   Production builds read `.everyapp/deploy.json`, which only `everyapp app deploy` writes, so deploy with `everyapp app deploy` rather than `cf deploy`.
 
+  `localD1Path(root, id)` is the sqlite file `cf dev` keeps the local D1 database `id` in (`env.DB.id` of a development `everyAppWorker()`, or `localD1Id(workerName, binding)`), for drizzle-kit studio.
+
+- `@every-app/sdk/dev`: the well-known keypair and issuer `everyapp dev` signs local identities with. Public by design: the SDK accepts it only in development (`EVERYAPP_DEV`, which `everyAppWorker()` sets there and a deploy never does) and only from the dev issuer.
+
 ## Scheduled work and secrets
 
 `everyAppWorker()` also takes cron schedules and the app's own secrets:

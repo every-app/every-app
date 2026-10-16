@@ -9,11 +9,18 @@
  *             two-label base host so the session cookie crosses the
  *             gateway->app subdomain boundary.
  */
+import { EveryAppError } from "@/lib/errors";
+
 export type DevMode = "stub" | "mirror";
 
 export const DEV_MODE_ENV = "EVERYAPP_DEV_MODE";
 
-export class DevModeError extends Error {}
+export class DevModeError extends EveryAppError {
+  constructor(message: string) {
+    super("INVALID_DEV_MODE", message);
+    this.name = "DevModeError";
+  }
+}
 
 /** Flag wins over env; env over the `stub` default. Unknown values throw. */
 export function resolveDevMode(

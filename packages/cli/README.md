@@ -77,17 +77,20 @@ everyapp gateway secret set OPENAI_API_KEY
 Create a new app from the starter template (`templates/simple-todo`):
 
 ```bash
-everyapp app create [name]
+everyapp app create <app-id> [--deploy]
 ```
 
 This will:
 
-1. Prompt for an app ID (or use the provided name)
-2. Copy the template to `apps/<id>` when run inside the repository, or to
-   `./<id>` anywhere else, linking the SDK and the CLI from the checkout by path
-3. Deploy it through your gateway (D1 database, KV namespace, Worker)
-4. Configure package.json, everyapp.config.ts and .env files
-5. Install dependencies and run local migrations
+1. Copy the template to `apps/<id>` when run inside the repository, or to
+   `./<id>` anywhere else, linking the SDK and the CLI from the checkout by path,
+   and name it in package.json and everyapp.config.ts (with no id, it asks at a
+   terminal; `--json` and `--yes` never ask)
+2. Install dependencies
+3. Generate the Worker's types and run local migrations
+4. Outside the repository, start a git repository for it
+5. With `--deploy`, deploy it through your gateway; without, it never contacts
+   the gateway, and `everyapp dev` works at once
 
 ### Deploy an app
 
@@ -120,9 +123,9 @@ From your app directory:
 everyapp dev
 ```
 
-Runs the app with `cf dev` behind a local gateway with the real perimeter and a
-seeded dev user, after writing the dev identity to `.dev.vars` and applying
-local D1 migrations.
+Runs the app with `cf dev` behind a local gateway (on 127.0.0.1) with the real
+perimeter and a seeded dev user, after generating the Worker's types when they
+are missing and applying local D1 migrations. It writes nothing into the app.
 
 ### Query or migrate the app's D1 database
 
@@ -136,21 +139,6 @@ everyapp app d1 migrate --local
 in the gateway's account) or, with `--local`, the one `everyapp dev` uses.
 `migrate --local` applies the app's migrations locally (`cf d1 migrations
 apply --local`); production migrations run as part of `app deploy`.
-
-### Set up local environment
-
-Set up local development for an existing Every App app (for example, after cloning a repo):
-
-```bash
-everyapp app setup-local
-```
-
-This will:
-
-1. Find the gateway and check it has an owner
-2. Install dependencies
-3. Create or refresh `.env.local`
-4. Generate Cloudflare types and run local migrations
 
 ## Documentation
 

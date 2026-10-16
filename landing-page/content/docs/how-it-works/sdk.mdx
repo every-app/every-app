@@ -189,7 +189,7 @@ export default defineConfig((ctx) => ({
 }));
 ```
 
-`everyAppWorker()` always produces a private Worker (no routes, no `workers.dev` URL, no preview URLs) with the manifest's D1 databases, KV namespaces, Durable Objects and Workflows, logs, traces and Workers Issues turned on, and the identity settings the SDK checks. `cf` infers the Worker's `Env` type from it. In local dev the identity keys come from `.dev.vars`, which `everyapp dev` writes. A production build needs deploy inputs that only `everyapp app deploy` provides, so `cf build` and `cf deploy` refuse to build for production on their own — deploy with `everyapp app deploy`.
+`everyAppWorker()` always produces a private Worker (no routes, no `workers.dev` URL, no preview URLs) with the manifest's D1 databases, KV namespaces, Durable Objects and Workflows, logs, traces and Workers Issues turned on, and the identity settings the SDK checks. `cf` infers the Worker's `Env` type from it. In local dev it carries a well-known dev public key and issuer that only `everyapp dev` signs with, so nothing is written to `.dev.vars`; the SDK trusts them only in a development build and only from the dev issuer. A production build needs deploy inputs that only `everyapp app deploy` provides, so `cf build` and `cf deploy` refuse to build for production on their own — deploy with `everyapp app deploy`.
 
 To add a binding the manifest doesn't model, spread the result. Don't import anything here that the Worker also imports: in dev, the Vite plugin hides this file's imports from the Worker.
 
@@ -227,7 +227,7 @@ On a public route, requests skip login and your handler receives `user: null`. T
 <summary>How your app verifies signatures without calling home</summary>
 <div className="faq-content">
 
-Your app holds its id (`EVERYAPP_APP_ID`) and the Gateway's public key set (`EVERYAPP_IDENTITY_PUBLIC_KEYS`) in its environment, so verifying a request is a local audience and signature check — no network call, no JWKS endpoint, nothing your app needs to be allowed to reach. In local dev, `npx everyapp dev` writes a per-project dev keypair into `.dev.vars` automatically; in production, the key set is delivered at deploy time. The verification code path is the same in both.
+Your app holds its id (`EVERYAPP_APP_ID`) and the Gateway's public key set (`EVERYAPP_IDENTITY_PUBLIC_KEYS`) in its environment, so verifying a request is a local audience and signature check — no network call, no JWKS endpoint, nothing your app needs to be allowed to reach. In local dev, `everyAppWorker()` hands the app a well-known, public dev key that `npx everyapp dev` signs with, accepted only in development builds and only from the dev issuer; in production, the key set is delivered at deploy time. The verification code path is the same in both.
 
 </div>
 </details>

@@ -11,6 +11,12 @@ import type { ToolCallClaim } from "./tools.js";
 export const IDENTITY_ALG = "RS256";
 export const IDENTITY_KEY_ID = "everyapp-identity";
 export const IDENTITY_DEV_KEY_ID = "everyapp-identity-dev";
+/**
+ * The only issuer a dev-kid token may name. The same value as
+ * `@every-app/sdk/dev`'s, kept apart so the Worker never loads the module
+ * `cloudflare.config.ts` does (a test pins the two together).
+ */
+export const DEV_ISSUER = "https://gateway.dev.localhost";
 export const IDENTITY_HEADER = "x-everyapp-identity";
 export const PUBLIC_HEADER = "x-everyapp-public";
 /**
