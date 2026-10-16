@@ -1,6 +1,6 @@
 # ADR-0002: CLI and Control-Plane Authentication Model
 
-- Status: Accepted
+- Status: Accepted (Decisions 2 and 3 superseded by ADR-0003)
 - Date: 2026-03-02
 
 ## Context

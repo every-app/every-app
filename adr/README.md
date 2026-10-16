@@ -4,6 +4,7 @@ This folder tracks architecture decisions and RFCs for the hosted gateway roadma
 
 - `ADR-0001-hosted-vs-self-hosted-topology.md`
 - `ADR-0002-cli-and-control-plane-auth.md`
+- `ADR-0003-self-host-authority.md`
 - `RFC-0001-org-rearchitecture-phase-1.md`
 
 Status values:
