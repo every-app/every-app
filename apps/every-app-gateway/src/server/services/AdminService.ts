@@ -64,9 +64,10 @@ async function listMembers(ctx: OrgContext) {
 
 /**
  * Remove a user from the organization (and delete the account when it
- * belongs to no other one). Their deploy tokens and personal access tokens
- * for this organization are revoked in the same transaction, and the AI apps
- * they connected to it right after.
+ * belongs to no other one). Their personal access tokens for this
+ * organization are revoked in the same transaction, and the AI apps they
+ * connected to it right after. (Deploying needs the Cloudflare login, which
+ * the gateway can't revoke: see docs/security-model.md.)
  *
  * Someone Cloudflare Access would let straight back in (an auto-join domain,
  * or everyone the outer ring admits) isn't kept out by deleting their

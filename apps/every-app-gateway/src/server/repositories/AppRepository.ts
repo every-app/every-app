@@ -7,50 +7,23 @@ import {
   userAccessTokens,
   userAppAccess,
 } from "@/db/schema";
-import { and, count, eq, inArray, isNull, ne } from "drizzle-orm";
-
-/** Status of a deleted app's tombstone row (see {@link tombstone}). */
-export const DELETED_APP_STATUS = "deleted";
+import {
+  DELETED_APP_STATUS,
+  deleteUpdate,
+  type AppRow,
+} from "@every-app/perimeter/registry";
+import { and, count, eq, inArray, isNull, ne, notExists } from "drizzle-orm";
 
 const notDeleted = ne(apps.status, DELETED_APP_STATUS);
 
-// Types for repository operations
-type CreateApp = {
-  id: string;
-  organizationId: string;
-  appSlug: string;
-  name: string;
-  description: string;
-  // Perimeter registry columns, written at `everyapp deploy` registration time.
-  hostname: string;
-  workerName: string;
-  /** Required: the column defaults to true, for rows older code writes. */
-  legacyNames: boolean;
-  manifest: string;
-  tier?: string;
-  status?: string;
-  isDefault?: boolean;
-};
-
+// Apps are registered, deployed and deleted by the CLI writing D1 itself
+// (ADR-0003). The gateway edits catalog metadata, activates apps and
+// deletes them from the admin UI.
 type UpdateApp = {
   organizationId: string;
   name?: string;
   description?: string;
-  hostname?: string;
-  workerName?: string;
-  manifest?: string;
-  status?: string;
   isDefault?: boolean;
-  versionId?: string;
-  deployedAt?: Date;
-};
-
-type CreateInitialAccess = {
-  id: string;
-  organizationId: string;
-  userId: string;
-  appRowId: string;
-  grantedBy?: string | null;
 };
 
 /**
@@ -79,6 +52,7 @@ async function findAllWithAccessCounts(organizationId: string) {
       tier: apps.tier,
       manifest: apps.manifest,
       status: apps.status,
+      deployedByActor: apps.deployedByActor,
       isDefault: apps.isDefault,
       createdAt: apps.createdAt,
       updatedAt: apps.updatedAt,
@@ -126,28 +100,6 @@ async function findByAppSlug(appSlug: string, organizationId: string) {
 }
 
 /**
- * Find an app by routing hostname. Hostnames are globally unique across the
- * gateway (one subdomain namespace), so this deliberately has no org filter.
- * Tombstones are included: their hostnames stay reserved.
- */
-async function findByHostname(hostname: string) {
-  return db.query.apps.findFirst({
-    where: eq(apps.hostname, hostname),
-  });
-}
-
-/**
- * Find an app by Cloudflare worker script name. Worker names share one
- * namespace per Cloudflare account, so this deliberately has no org filter.
- * Tombstones are included: their worker names stay reserved.
- */
-async function findByWorkerName(workerName: string) {
-  return db.query.apps.findFirst({
-    where: eq(apps.workerName, workerName),
-  });
-}
-
-/**
  * Find all apps marked as default.
  */
 async function findAllDefault(organizationId: string) {
@@ -160,68 +112,31 @@ async function findAllDefault(organizationId: string) {
   });
 }
 
-function insertAccess(accessRecords: CreateInitialAccess[]) {
-  return accessRecords.map((record) =>
-    db
-      .insert(userAppAccess)
-      .values({
-        id: record.id,
-        organizationId: record.organizationId,
-        userId: record.userId,
-        appRowId: record.appRowId,
-        grantedBy: record.grantedBy,
-      })
-      .onConflictDoNothing({
-        target: [
-          userAppAccess.organizationId,
-          userAppAccess.userId,
-          userAppAccess.appRowId,
-        ],
-      }),
-  );
-}
-
 /**
- * Create a newly registered app and its initial ACL in one D1 transaction.
+ * The organization's apps nobody has access to: registered while it had no
+ * members, before the gateway had an owner.
  */
-async function createWithInitialAccess(
-  data: CreateApp,
-  accessRecords: CreateInitialAccess[],
-) {
-  const appInsert = db.insert(apps).values({
-    id: data.id,
-    organizationId: data.organizationId,
-    appSlug: data.appSlug,
-    name: data.name,
-    description: data.description,
-    hostname: data.hostname,
-    workerName: data.workerName,
-    legacyNames: data.legacyNames,
-    manifest: data.manifest,
-    tier: data.tier ?? "service_binding",
-    status: data.status ?? "active",
-    isDefault: data.isDefault ?? false,
-  });
-  await db.batch([appInsert, ...insertAccess(accessRecords)]);
-}
-
-/**
- * Bring a deleted app back on redeploy by its own organization: update the
- * tombstone and give it a fresh initial ACL in one D1 transaction, as if it
- * were registered for the first time.
- */
-async function restoreWithInitialAccess(
-  id: string,
-  data: UpdateApp,
-  accessRecords: CreateInitialAccess[],
-) {
-  const { organizationId, ...changes } = data;
-  const appUpdate = db
-    .update(apps)
-    .set({ ...changes, updatedAt: new Date() })
-    .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId)));
-
-  await db.batch([appUpdate, ...insertAccess(accessRecords)]);
+async function findAllWithoutAccess(organizationId: string) {
+  return db
+    .select({ id: apps.id })
+    .from(apps)
+    .where(
+      and(
+        eq(apps.organizationId, organizationId),
+        notDeleted,
+        notExists(
+          db
+            .select({ id: userAppAccess.id })
+            .from(userAppAccess)
+            .where(
+              and(
+                eq(userAppAccess.appRowId, apps.id),
+                eq(userAppAccess.organizationId, apps.organizationId),
+              ),
+            ),
+        ),
+      ),
+    );
 }
 
 /**
@@ -237,20 +152,47 @@ async function update(id: string, data: UpdateApp) {
 }
 
 /**
+ * Make a `binding` app `active` (its Worker answered over this gateway's
+ * service binding). True when the app is active now; false when it was
+ * deleted, disabled or never uploaded in the meantime. Concurrent requests
+ * may all activate it: an app already active answers true again.
+ */
+async function activate(id: string, organizationId: string) {
+  const rows = await db
+    .update(apps)
+    .set({ status: "active", updatedAt: new Date() })
+    .where(
+      and(
+        eq(apps.id, id),
+        eq(apps.organizationId, organizationId),
+        inArray(apps.status, ["binding", "active"]),
+      ),
+    )
+    .returning({ id: apps.id });
+  return rows.length === 1;
+}
+
+/**
  * Delete an app, leaving a tombstone: the row stays with status "deleted",
  * so the perimeter stops routing it, the binding reconcile drops its service
  * binding, and its slug, hostname and worker name stay reserved to this
  * organization. (Dropping the row would let another org register the same
  * slug, and the old Worker would accept identity tokens minted for it.)
  * Everyone's access, any personal access tokens bound to it, its agent
- * tools snapshot and its place in AI connections go with it.
+ * tools snapshot and its place in AI connections go with it: the same
+ * writes the CLI's `delete` makes (`deleteUpdate` in the perimeter).
  */
-async function tombstone(id: string, organizationId: string) {
+async function tombstone(
+  app: Pick<AppRow, "id" | "organizationId" | "status">,
+) {
+  const update = deleteUpdate(app);
+  if (!update) return;
+  const { id, organizationId } = app;
   const now = new Date();
   await db.batch([
     db
       .update(apps)
-      .set({ status: DELETED_APP_STATUS, isDefault: false, updatedAt: now })
+      .set({ ...update, updatedAt: now })
       .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId))),
     db
       .delete(userAppAccess)
@@ -305,11 +247,9 @@ export const AppRepository = {
   findAllWithAccessCounts,
   findById,
   findByAppSlug,
-  findByHostname,
-  findByWorkerName,
   findAllDefault,
-  createWithInitialAccess,
-  restoreWithInitialAccess,
+  findAllWithoutAccess,
   update,
+  activate,
   tombstone,
 } as const;

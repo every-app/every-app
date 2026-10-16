@@ -172,7 +172,7 @@ const DISABLED_AUTH_PATHS = [
   "/organization/update-member-role",
   "/organization/add-member",
   // Leaving drops the membership without the gateway's cleanup, so the
-  // member's PATs, deploy tokens and app access would survive and work again
+  // member's PATs and app access would survive and work again
   // on a later re-invite. Members leave by an admin removing them.
   "/organization/leave",
   // Better Auth Expo's bridge into the system browser: it sets the OAuth
@@ -192,9 +192,9 @@ const DISABLED_AUTH_PATHS = [
  * a gateway at `apps.example.com`), and the perimeter authenticates them
  * with the same Better Auth session — so the session cookie is scoped to
  * APP_BASE_DOMAIN (Domain=<base> covers the apps, and nothing else in the
- * company's zone). A gateway without it (served through a wildcard route)
- * scopes it to its own hostname, as before; that is the same domain, since
- * APP_BASE_DOMAIN is the gateway host (server/app-hosts.ts).
+ * company's zone). Without it the cookie is scoped to the gateway's own
+ * hostname, the same domain, since APP_BASE_DOMAIN is the gateway host
+ * (server/app-hosts.ts).
  *
  * Dev builds use EVERYAPP_DEV_COOKIE_DOMAIN instead (`everyapp dev --mode
  * mirror` serves the gateway at e.g. everyapp.localhost); bare-localhost dev
@@ -310,8 +310,8 @@ export function createAuth() {
       organization({
         // Only the setup claim creates an organization (a server-side system
         // action, which this does not block). Anyone else who could create
-        // one would own it: mint deploy tokens, register apps and invite
-        // outsiders past invite-only sign-up.
+        // one would own it: see its apps, mint personal access tokens and
+        // invite outsiders past invite-only sign-up.
         allowUserToCreateOrganization: false,
         // Invitations are emailed (or handed to the admin as a link when
         // email isn't set up) by InvitationService, not by Better Auth.

@@ -153,15 +153,15 @@ export default defineConfig(({ mode }) => {
         // The gateway's own origin. A secret, as on gateways that predate
         // this config.
         GATEWAY_URL: bindings.secret(),
-        // Better Auth's secret, also HMAC key material for app token hashes
-        // (with domain separation).
+        // Better Auth's secret, also HMAC key material for personal access
+        // token hashes (with domain separation).
         BETTER_AUTH_SECRET: bindings.secret(),
         // RS256 keypair for the identity JWTs the perimeter mints per proxied
         // request (kid "everyapp-identity"); apps verify with the public key,
         // which `everyapp app deploy` builds into them.
         JWT_PRIVATE_KEY: bindings.secret(),
         JWT_PUBLIC_KEY: bindings.secret(),
-        // Which gateway release is live; /api/deploy/status reports it.
+        // Which gateway release this Worker runs, patched in by the deploy.
         EVERYAPP_RELEASE: bindings.json(
           production
             ? { version: PATCH, sha256: PATCH }

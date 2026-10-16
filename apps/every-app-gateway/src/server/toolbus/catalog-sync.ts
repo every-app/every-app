@@ -1,11 +1,12 @@
 /**
  * Snapshot an app's agent tools into D1.
  *
- * Runs when `everyapp app deploy` calls the deploy API, when a tool call
- * shows the app has a different catalog than the snapshot (self-heal), and
- * when an app host's /mcp finds no usable snapshot. One sync is exactly one
+ * Runs when /mcp finds no snapshot of an app, or one taken from an older
+ * version than the app runs now, and when a tool call shows the app has a
+ * different catalog than the snapshot (self-heal). One sync is exactly one
  * invocation of the app, over its service binding, with a one-minute system
- * token that opens nothing but the catalog.
+ * token that opens nothing but the catalog. The snapshot records the app
+ * version (`apps.version_id`) it was taken from.
  */
 import { env, waitUntil } from "cloudflare:workers";
 import {
@@ -24,6 +25,8 @@ export type SyncableApp = {
   hostname: string;
   workerName: string;
   tier: string;
+  /** The app's `version_id` when the sync started. */
+  versionId: string | null;
 };
 
 type ToolSyncResult = {
@@ -87,6 +90,7 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
       await AppToolRepository.replace({
         appRowId: app.rowId,
         organizationId: app.organizationId,
+        versionId: app.versionId,
         status: "unsupported",
         catalogHash: null,
         instructions: null,
@@ -99,6 +103,7 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
       await AppToolRepository.recordError({
         appRowId: app.rowId,
         organizationId: app.organizationId,
+        versionId: app.versionId,
         message: snapshot.error,
       });
     }
@@ -115,6 +120,7 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
   await AppToolRepository.replace({
     appRowId: app.rowId,
     organizationId: app.organizationId,
+    versionId: app.versionId,
     status: snapshot.status,
     catalogHash: snapshot.hash,
     instructions: snapshot.instructions ?? null,
@@ -135,7 +141,7 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
 export function logToolSync(
   app: SyncableApp,
   result: ToolSyncResult,
-  trigger: "deploy" | "drift" | "first_use",
+  trigger: "drift" | "first_use" | "new_version",
 ): void {
   logEvent(
     "mcp.catalog.sync",
@@ -158,12 +164,15 @@ const SYNC_WINDOW_MS = 30_000;
 const SYNC_CLAIMS_MAX_ENTRIES = 500;
 const lastSyncClaim = new Map<string, number>();
 
-/** Claim the right to sync an app now; false while a recent claim holds. */
-export function claimCatalogSync(appRowId: string, now = Date.now()): boolean {
-  const last = lastSyncClaim.get(appRowId);
+/**
+ * Claim the right to sync an app now (keyed by its row id, or by row id and
+ * version for a sync of a new version); false while a recent claim holds.
+ */
+export function claimCatalogSync(key: string, now = Date.now()): boolean {
+  const last = lastSyncClaim.get(key);
   if (last !== undefined && now - last < SYNC_WINDOW_MS) return false;
-  lastSyncClaim.delete(appRowId);
-  lastSyncClaim.set(appRowId, now);
+  lastSyncClaim.delete(key);
+  lastSyncClaim.set(key, now);
   if (lastSyncClaim.size > SYNC_CLAIMS_MAX_ENTRIES) {
     const oldest = lastSyncClaim.keys().next().value;
     if (oldest !== undefined) lastSyncClaim.delete(oldest);

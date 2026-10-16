@@ -13,8 +13,9 @@ import { organizations, users } from "./auth.schema";
  * The tools catalog each app last reported (one row per app). MCP clients
  * are served from this snapshot, never by asking apps live: one request may
  * make at most 32 Worker invocations, and a slow app must not slow every
- * tools/list. `everyapp app deploy` syncs it, and a tool call that reports a
- * different `catalog_hash` re-syncs it.
+ * tools/list. The gateway takes it on first use, again when the app's
+ * `version_id` moves on from the one it was taken from, and when a tool call
+ * reports a different `catalog_hash`.
  */
 export const appToolCatalogs = sqliteTable(
   "app_tool_catalogs",
@@ -33,6 +34,10 @@ export const appToolCatalogs = sqliteTable(
     // When the snapshot was taken. For a catalog that isn't serving (empty,
     // unsupported, error), when the gateway last tried to take one.
     fetchedAt: integer("fetched_at", { mode: "timestamp_ms" }).notNull(),
+    // The app's `apps.version_id` the snapshot was taken from (for one that
+    // isn't serving, the last one tried). A snapshot from another version is
+    // re-taken on use.
+    versionId: text("version_id"),
   },
   (table) => [
     foreignKey({

@@ -1,6 +1,5 @@
 import { db } from "@/db";
 import {
-  appTokens,
   members,
   organizations,
   userAccessTokens,
@@ -24,15 +23,6 @@ async function listMembersForOrganization(organizationId: string) {
     .from(members)
     .innerJoin(users, eq(members.userId, users.id))
     .where(eq(members.organizationId, organizationId));
-}
-
-/** The organization `userId` owns (the claim's owner owns exactly one). */
-async function findOwnedOrganizationId(userId: string): Promise<string | null> {
-  const row = await db.query.members.findFirst({
-    columns: { organizationId: true },
-    where: and(eq(members.userId, userId), eq(members.role, "owner")),
-  });
-  return row?.organizationId ?? null;
 }
 
 async function findMembership(userId: string, organizationId: string) {
@@ -90,8 +80,8 @@ async function updateRole(
 
 /**
  * Take a user out of an organization in one D1 transaction: the membership,
- * their app access there, and the deploy tokens they created and personal
- * access tokens they hold for it. Tokens act for the user, so they go too.
+ * their app access there, and the personal access tokens they hold for it.
+ * Tokens act for the user, so they go too.
  * (The AI apps they connected are revoked after it, by
  * McpConnectionService.revokeForRemovedMember.)
  */
@@ -118,16 +108,6 @@ async function removeMember(
         ),
       ),
     db
-      .update(appTokens)
-      .set({ revokedAt: now, updatedAt: now })
-      .where(
-        and(
-          eq(appTokens.createdBy, userId),
-          eq(appTokens.organizationId, organizationId),
-          isNull(appTokens.revokedAt),
-        ),
-      ),
-    db
       .update(userAccessTokens)
       .set({ revokedAt: now, updatedAt: now })
       .where(
@@ -141,7 +121,6 @@ async function removeMember(
 }
 
 export const OrganizationMembersRepository = {
-  findOwnedOrganizationId,
   listMembersForOrganization,
   findMembership,
   findMembershipWithUser,

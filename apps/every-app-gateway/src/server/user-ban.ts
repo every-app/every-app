@@ -1,8 +1,8 @@
 /**
  * Deactivated users are banned with Better Auth's admin fields. Better Auth
  * itself only checks a ban when a session is created; every credential the
- * gateway accepts on its own (existing sessions, personal access tokens,
- * deploy tokens) must check it too.
+ * gateway accepts on its own (existing sessions, personal access tokens)
+ * must check it too.
  */
 export function isUserBanned(
   user: {

@@ -13,7 +13,7 @@ describe("readSetupToken", () => {
 
   it("ignores anything that is not a setup secret", () => {
     expect(readSetupToken("")).toBeNull();
-    expect(readSetupToken("#token=eak_abc")).toBeNull();
+    expect(readSetupToken("#token=epat_abc")).toBeNull();
     expect(readSetupToken("#other=est_abc")).toBeNull();
   });
 });

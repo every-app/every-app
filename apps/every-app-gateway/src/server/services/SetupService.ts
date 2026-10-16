@@ -7,22 +7,15 @@ import {
   hasAnyOwnerMembership,
   releaseOwnerBootstrap,
 } from "@/server/organization/owner-membership";
-import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { OrganizationRepository } from "../repositories/OrganizationRepository";
 import { OwnerSetupTokenRepository } from "../repositories/OwnerSetupTokenRepository";
 import { UserRepository } from "../repositories/UserRepository";
 import {
-  CLI_SECRET_PREFIX,
   SETUP_TOKEN_PREFIX,
   digestsEqual,
   hashSetupToken,
 } from "../setup-token";
 import { AppAccessService } from "./AppAccessService";
-import { AppTokenService } from "./AppTokenService";
-
-// The CLI polls while the owner fills in the setup page; a claim this old
-// without a retrieval means that CLI gave up, and the token stays unissued.
-const DEPLOY_TOKEN_RETRIEVAL_WINDOW_MS = 30 * 60 * 1000;
 
 type SetupErrorCode =
   | "INVALID_OR_EXPIRED_SETUP_LINK"
@@ -97,7 +90,9 @@ async function findClaimLink(token: string): Promise<{ id: string } | null> {
 /**
  * Create the gateway's first owner, organization and membership from a
  * one-time setup link. Until this succeeds the gateway is closed: sign-up
- * needs an invitation and nobody can create an organization.
+ * needs an invitation and nobody can create an organization. Apps the CLI
+ * deployed before then sit in an organization with no members; the owner
+ * takes that one over and gets every app in it nobody has access to.
  *
  * The bootstrap singleton lets only one claim run at a time, and the link is
  * consumed (guarded, so at most once) as the last step. If anything fails
@@ -157,29 +152,41 @@ async function claimOwner(input: ClaimOwnerInput) {
 
     createdUserId = result.user.id;
 
-    const slug =
-      slugify(result.user.name || "") ||
-      slugify(email.split("@")[0] || "org") ||
-      "org";
-
-    // A system action (userId, no session): allowed even though members
-    // cannot create organizations.
-    const organization = await auth.api.createOrganization({
-      body: {
-        name: result.user.name?.trim() || "My Organization",
-        slug,
+    const organizationName = result.user.name?.trim() || "My Organization";
+    // Apps deployed before anyone existed wait in an organization without
+    // members: the first owner takes it over instead of starting another.
+    let organizationId = await OrganizationRepository.findAwaitingOwner();
+    const adopted = organizationId !== null;
+    if (organizationId) {
+      await OrganizationRepository.adoptForOwner(organizationId, {
         userId: result.user.id,
-      },
-    });
-
-    if (!organization) {
-      throw new Error("Failed to create organization");
+        name: organizationName,
+      });
+    } else {
+      const slug =
+        slugify(result.user.name || "") ||
+        slugify(email.split("@")[0] || "org") ||
+        "org";
+      // A system action (userId, no session): allowed even though members
+      // cannot create organizations.
+      const organization = await auth.api.createOrganization({
+        body: { name: organizationName, slug, userId: result.user.id },
+      });
+      if (!organization) {
+        throw new Error("Failed to create organization");
+      }
+      createdOrganizationId = organization.id;
+      organizationId = organization.id;
     }
-    createdOrganizationId = organization.id;
 
+    // Their initial access found nobody to grant: the owner gets them.
+    await AppAccessService.grantUnclaimedAppsToOwner(
+      result.user.id,
+      organizationId,
+    );
     await AppAccessService.grantDefaultAppsToUser(
       result.user.id,
-      organization.id,
+      organizationId,
     );
     if (!(await OwnerSetupTokenRepository.consume(link.id, result.user.id))) {
       throw new SetupError("INVALID_OR_EXPIRED_SETUP_LINK");
@@ -187,10 +194,13 @@ async function claimOwner(input: ClaimOwnerInput) {
 
     logEvent("setup.claimed", {
       userId: result.user.id,
-      organizationId: organization.id,
+      organizationId,
+      adopted,
     });
-    return { userId: result.user.id, organizationId: organization.id };
+    return { userId: result.user.id, organizationId };
   } catch (error) {
+    // An adopted organization stays, with its apps: removing the user takes
+    // their membership and grants there with them.
     if (createdOrganizationId) {
       await OrganizationRepository.deleteById(createdOrganizationId);
     }
@@ -202,93 +212,6 @@ async function claimOwner(input: ClaimOwnerInput) {
   }
 }
 
-type DeployTokenRetrieval =
-  | {
-      status: "issued";
-      token: string;
-      organizationId: string;
-      organizationName: string;
-      /** Who claimed the link: the owner the token acts for. */
-      ownerEmail: string | null;
-    }
-  | { status: "pending" }
-  | { status: "invalid" };
-
-/**
- * Hand the CLI that minted a setup link the owner's first deploy token, once
- * the link is claimed: `pending` until then, `issued` exactly once (within
- * 30 minutes of the claim), with who claimed it so the CLI can show whose
- * token it holds, `invalid` for anything else, the link's own secret
- * included.
- */
-async function retrieveDeployToken(
-  cliSecret: string,
-  now = new Date(),
-): Promise<DeployTokenRetrieval> {
-  if (!cliSecret.startsWith(CLI_SECRET_PREFIX)) return { status: "invalid" };
-  const secretHash = await hashSetupToken(cliSecret);
-  let link:
-    | Awaited<
-        ReturnType<
-          typeof OwnerSetupTokenRepository.findClaimsAwaitingDeployToken
-        >
-      >[number]
-    | null = null;
-  for (const candidate of await OwnerSetupTokenRepository.findClaimsAwaitingDeployToken()) {
-    if (
-      candidate.cliSecretHash &&
-      digestsEqual(candidate.cliSecretHash, secretHash)
-    ) {
-      link = candidate;
-    }
-  }
-  if (!link) return { status: "invalid" };
-  if (!link.consumedAt) {
-    return link.expiresAt > now ? { status: "pending" } : { status: "invalid" };
-  }
-  if (
-    !link.consumedBy ||
-    link.consumedAt.getTime() < now.getTime() - DEPLOY_TOKEN_RETRIEVAL_WINDOW_MS
-  ) {
-    return { status: "invalid" };
-  }
-  const organizationId =
-    await OrganizationMembersRepository.findOwnedOrganizationId(
-      link.consumedBy,
-    );
-  if (!organizationId) return { status: "invalid" };
-  if (!(await OwnerSetupTokenRepository.markDeployTokenIssued(link.id, now))) {
-    return { status: "invalid" };
-  }
-
-  try {
-    const issued = await AppTokenService.issueDeployToken({
-      organizationId,
-      createdBy: link.consumedBy,
-    });
-    const [organization, owner] = await Promise.all([
-      OrganizationRepository.findSummaryById(organizationId),
-      UserRepository.findById(link.consumedBy),
-    ]);
-    logEvent("setup.deploy_token_issued", {
-      userId: link.consumedBy,
-      organizationId,
-    });
-    return {
-      status: "issued",
-      token: issued.token,
-      organizationId,
-      organizationName: organization?.name ?? organizationId,
-      ownerEmail: owner?.email ?? null,
-    };
-  } catch (error) {
-    // Not handed out after all: the CLI's retry may have it.
-    await OwnerSetupTokenRepository.unmarkDeployTokenIssued(link.id);
-    throw error;
-  }
-}
-
 export const SetupService = {
   claimOwner,
-  retrieveDeployToken,
 } as const;

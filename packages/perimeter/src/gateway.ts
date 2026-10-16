@@ -1,7 +1,8 @@
 /**
  * The gateway proxy core — `handleGatewayRequest`.
  *
- * Composes the perimeter: resolve app from Host, refuse the internal tools
+ * Composes the perimeter: resolve app from Host (activating one whose Worker
+ * was just uploaded, through `deps.activate`), refuse the internal tools
  * contract, guard server functions, enforce CSRF (and the WebSocket Origin
  * check), decide public-vs-private, authenticate + authorize (an MCP-only
  * token reaches `/mcp` alone), hand `/mcp` to the gateway's ToolBus when it
@@ -87,6 +88,14 @@ export interface GatewayDeps {
    * no tool catalog).
    */
   interceptMcp?(input: McpInterceptInput): Promise<Response | null>;
+  /**
+   * Make a `binding` app live: its Worker is uploaded, and this may be the
+   * first request that can reach it. Resolve true once this gateway reaches
+   * the Worker over its service binding and has marked the app active; the
+   * request is then served as for an active app. False (or a rejection)
+   * leaves it "deploying", as does omitting the hook.
+   */
+  activate?(app: RegisteredApp): Promise<boolean>;
   now?: number;
 }
 
@@ -175,6 +184,28 @@ function logProxy(options: {
   });
 }
 
+/** Whether `deps.activate` made a `binding` app live; never throws. */
+async function activated(
+  deps: GatewayDeps,
+  app: RegisteredApp,
+): Promise<boolean> {
+  if (!deps.activate) return false;
+  try {
+    return await deps.activate(app);
+  } catch (error) {
+    // Still deploying, as far as this request knows: the next one retries.
+    logEvent(
+      "app.activate_failed",
+      {
+        app: app.appId,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "warn",
+    );
+    return false;
+  }
+}
+
 export async function handleGatewayRequest(
   request: Request,
   deps: GatewayDeps,
@@ -185,7 +216,7 @@ export async function handleGatewayRequest(
     return json(400, { error: "missing_host" });
   }
 
-  const app = await deps.resolveApp(parsed, deps.registry);
+  let app = await deps.resolveApp(parsed, deps.registry);
   if (!app) {
     // Base host (launcher) or unknown subdomain. In production this is handled
     // by the control-plane app before reaching here.
@@ -194,9 +225,12 @@ export async function handleGatewayRequest(
   if (app.status === "disabled") {
     return json(503, { error: "app_unavailable", status: app.status });
   }
+  if (app.status === "binding" && (await activated(deps, app))) {
+    app = { ...app, status: "active" };
+  }
   if (app.status !== "active") {
-    // Registered and mid-deploy: the gateway binds and verifies the new
-    // Worker before the app goes active.
+    // Registered and mid-deploy: `pending` until its Worker is uploaded,
+    // `binding` until a gateway version with its service binding serves.
     const response = json(503, { error: "app_deploying", status: app.status });
     response.headers.set("retry-after", "5");
     return response;

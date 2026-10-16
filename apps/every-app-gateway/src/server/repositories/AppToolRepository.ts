@@ -6,8 +6,10 @@ import {
   isNotNull,
   isNull,
   lt,
+  ne,
   or,
   sql,
+  type Column,
   type SQL,
 } from "drizzle-orm";
 import { db } from "@/db";
@@ -29,12 +31,18 @@ export type StoredCatalog = {
   instructions: string | null;
   /** When it was taken; for a catalog that isn't serving, the last try. */
   fetchedAt: Date;
+  /** The app version it was taken from (or last tried). */
+  versionId: string | null;
+  /** The app's version now (`apps.version_id`). */
+  appVersionId: string | null;
   tools: ToolBusTool[];
 };
 
 type ReplaceCatalogInput = {
   appRowId: string;
   organizationId: string;
+  /** The app version the catalog was taken from. */
+  versionId: string | null;
   status: CatalogStatus;
   catalogHash: string | null;
   instructions: string | null;
@@ -56,6 +64,7 @@ type VisibleCatalog = {
   hostname: string;
   workerName: string;
   tier: string;
+  versionId: string | null;
   catalogHash: string;
   instructions: string | null;
   tools: ToolBusTool[];
@@ -86,6 +95,8 @@ async function findByOrgApp(
         catalogHash: appToolCatalogs.catalogHash,
         instructions: appToolCatalogs.instructions,
         fetchedAt: appToolCatalogs.fetchedAt,
+        versionId: appToolCatalogs.versionId,
+        appVersionId: apps.versionId,
       })
       .from(appToolCatalogs)
       .innerJoin(
@@ -132,6 +143,8 @@ async function findByOrgApp(
     catalogHash: catalog.catalogHash,
     instructions: catalog.instructions,
     fetchedAt: catalog.fetchedAt,
+    versionId: catalog.versionId,
+    appVersionId: catalog.appVersionId,
     tools: toolRows
       // Rows are replaced atomically; the hash check only guards a reader
       // that raced a sync between the two selects.
@@ -235,6 +248,7 @@ async function findVisibleCatalogs(
         hostname: apps.hostname,
         workerName: apps.workerName,
         tier: apps.tier,
+        versionId: apps.versionId,
         catalogHash: appToolCatalogs.catalogHash,
         instructions: appToolCatalogs.instructions,
       })
@@ -290,6 +304,7 @@ async function replace(input: ReplaceCatalogInput): Promise<void> {
   const fetchedAt = new Date();
   const catalog = {
     organizationId: input.organizationId,
+    versionId: input.versionId,
     status: input.status,
     catalogHash: input.catalogHash,
     toolCount: input.tools.length,
@@ -333,21 +348,28 @@ async function replace(input: ReplaceCatalogInput): Promise<void> {
 /**
  * Record a failed sync. A catalog that was serving keeps serving: only
  * `last_error` changes, so one bad answer from an app can't take its tools
- * offline. Without an earlier catalog, the app gets an "error" row. A
- * catalog that isn't serving moves `fetched_at` to this attempt, which is
- * what spaces out the retries on first use.
+ * offline (and it stays marked with the version it was taken from, so a
+ * newer version is tried again). Without an earlier catalog, the app gets
+ * an "error" row. A catalog that isn't serving moves `fetched_at` and
+ * `version_id` to this attempt, which is what spaces out the retries on
+ * use.
  */
 async function recordError(input: {
   appRowId: string;
   organizationId: string;
+  versionId: string | null;
   message: string;
 }): Promise<void> {
   const attemptedAt = new Date();
+  // A serving catalog keeps the column; any other takes this attempt's.
+  const unlessServing = (column: Column, attempted: unknown) =>
+    sql`CASE WHEN ${appToolCatalogs.status} = 'ok' THEN ${column} ELSE ${attempted} END`;
   await db
     .insert(appToolCatalogs)
     .values({
       appRowId: input.appRowId,
       organizationId: input.organizationId,
+      versionId: input.versionId,
       status: "error",
       lastError: input.message,
       fetchedAt: attemptedAt,
@@ -356,15 +378,20 @@ async function recordError(input: {
       target: appToolCatalogs.appRowId,
       set: {
         lastError: input.message,
-        fetchedAt: sql`CASE WHEN ${appToolCatalogs.status} = 'ok' THEN ${appToolCatalogs.fetchedAt} ELSE ${attemptedAt.getTime()} END`,
+        fetchedAt: unlessServing(
+          appToolCatalogs.fetchedAt,
+          attemptedAt.getTime(),
+        ),
+        versionId: unlessServing(appToolCatalogs.versionId, input.versionId),
       },
     });
 }
 
 /**
  * Apps a caller of the gateway /mcp reaches whose tools aren't snapshotted:
- * never synced, or last tried and failed before `failedBefore`. An app that
- * has no tools, or doesn't serve them, stays as its deploy recorded it.
+ * never synced, synced from another version than the app runs now, or last
+ * tried and failed before `failedBefore`. An app that has no tools, or
+ * doesn't serve them, stays as its version's sync recorded it.
  */
 async function findVisibleUnsyncedApps(
   scope: VisibilityScope,
@@ -377,6 +404,7 @@ async function findVisibleUnsyncedApps(
     hostname: string;
     workerName: string;
     tier: string;
+    versionId: string | null;
   }[]
 > {
   const rows = await db
@@ -387,6 +415,7 @@ async function findVisibleUnsyncedApps(
       hostname: apps.hostname,
       workerName: apps.workerName,
       tier: apps.tier,
+      versionId: apps.versionId,
     })
     .from(apps)
     .innerJoin(userAppAccess, accessFor(scope))
@@ -396,6 +425,13 @@ async function findVisibleUnsyncedApps(
         ...reachableApps(scope),
         or(
           isNull(appToolCatalogs.appRowId),
+          and(
+            isNotNull(apps.versionId),
+            or(
+              isNull(appToolCatalogs.versionId),
+              ne(appToolCatalogs.versionId, apps.versionId),
+            ),
+          ),
           and(
             eq(appToolCatalogs.status, "error"),
             lt(appToolCatalogs.fetchedAt, failedBefore),

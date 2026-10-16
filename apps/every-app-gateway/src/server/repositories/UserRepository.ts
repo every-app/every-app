@@ -1,11 +1,5 @@
 import { db } from "@/db";
-import {
-  appTokens,
-  members,
-  sessions,
-  userAccessTokens,
-  users,
-} from "@/db/schema";
+import { members, sessions, userAccessTokens, users } from "@/db/schema";
 import { and, eq, gte, isNull } from "drizzle-orm";
 
 /**
@@ -54,7 +48,7 @@ async function deleteUnaffiliatedByEmail(
 /**
  * Deactivate a user everywhere, in one D1 transaction: ban the account
  * (Better Auth's admin fields, so new sign-ins fail), end every session, and
- * revoke their personal access tokens and the deploy tokens they created.
+ * revoke their personal access tokens.
  * (The AI apps they connected are revoked after it, by
  * McpConnectionService.revokeForDeactivatedUser.)
  */
@@ -80,10 +74,6 @@ async function deactivate(userId: string, reason: string): Promise<void> {
           isNull(userAccessTokens.revokedAt),
         ),
       ),
-    db
-      .update(appTokens)
-      .set({ revokedAt: now, updatedAt: now })
-      .where(and(eq(appTokens.createdBy, userId), isNull(appTokens.revokedAt))),
   ]);
 }
 

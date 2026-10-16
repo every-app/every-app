@@ -1,5 +1,5 @@
-// The expiration picker shared by the deploy token and personal access token
-// dialogs: a few presets, or a custom date and time.
+// The personal access token dialog's expiration picker: a few presets, or a
+// custom date and time.
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 

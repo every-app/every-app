@@ -79,7 +79,7 @@ export const updateMemberRole = createServerFn({ method: "POST" })
   });
 
 /**
- * Deactivate a user: no sign-in, no sessions, no personal or deploy tokens.
+ * Deactivate a user: no sign-in, no sessions, no personal access tokens.
  * Owners and admins; only an owner can deactivate an admin.
  */
 export const deactivateUser = createServerFn({ method: "POST" })

@@ -368,7 +368,7 @@ interface RegistryNaming {
   /** The organization's immutable key (`organization_keys.org_key`). */
   orgKey: string | null;
   /** Registered before org-scoped names: the row keeps `every-<appId>`. */
-  legacyNames: boolean;
+  legacyNames?: boolean;
 }
 
 /**

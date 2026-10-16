@@ -105,30 +105,6 @@ CREATE TABLE `user_onboarding` (
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `user_onboarding_user_id_unique` ON `user_onboarding` (`user_id`);--> statement-breakpoint
-CREATE TABLE `app_tokens` (
-	`id` text PRIMARY KEY NOT NULL,
-	`app_row_id` text,
-	`organization_id` text NOT NULL,
-	`token_hash` text NOT NULL,
-	`token_prefix` text NOT NULL,
-	`scopes` text DEFAULT '[]' NOT NULL,
-	`created_by` text,
-	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
-	`expires_at` integer,
-	`revoked_at` integer,
-	`last_used_at` integer,
-	FOREIGN KEY (`app_row_id`) REFERENCES `apps`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`organization_id`) REFERENCES `organizations`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`created_by`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE set null,
-	FOREIGN KEY (`app_row_id`,`organization_id`) REFERENCES `apps`(`id`,`organization_id`) ON UPDATE no action ON DELETE cascade
-);
---> statement-breakpoint
-CREATE UNIQUE INDEX `app_tokens_token_hash_unique` ON `app_tokens` (`token_hash`);--> statement-breakpoint
-CREATE INDEX `app_tokens_organization_id_idx` ON `app_tokens` (`organization_id`);--> statement-breakpoint
-CREATE INDEX `app_tokens_app_row_id_idx` ON `app_tokens` (`app_row_id`);--> statement-breakpoint
-CREATE INDEX `app_tokens_token_prefix_idx` ON `app_tokens` (`token_prefix`);--> statement-breakpoint
-CREATE INDEX `app_tokens_revoked_at_idx` ON `app_tokens` (`revoked_at`);--> statement-breakpoint
 CREATE TABLE `apps` (
 	`id` text PRIMARY KEY NOT NULL,
 	`organization_id` text NOT NULL,
@@ -137,12 +113,12 @@ CREATE TABLE `apps` (
 	`description` text NOT NULL,
 	`hostname` text,
 	`worker_name` text,
-	`legacy_names` integer DEFAULT true NOT NULL,
 	`tier` text DEFAULT 'service_binding' NOT NULL,
 	`manifest` text,
 	`status` text DEFAULT 'active' NOT NULL,
 	`version_id` text,
 	`deployed_at` integer,
+	`deployed_by_actor` text,
 	`is_default` integer DEFAULT false NOT NULL,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`updated_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
@@ -212,13 +188,10 @@ CREATE TABLE `owner_setup_tokens` (
 	`expires_at` integer NOT NULL,
 	`consumed_at` integer,
 	`consumed_by` text,
-	`cli_secret_hash` text,
-	`deploy_token_issued_at` integer,
 	CONSTRAINT "owner_setup_tokens_kind_check" CHECK("owner_setup_tokens"."kind" IN ('claim', 'recovery'))
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `owner_setup_tokens_token_hash_unique` ON `owner_setup_tokens` (`token_hash`);--> statement-breakpoint
-CREATE UNIQUE INDEX `owner_setup_tokens_cli_secret_hash_unique` ON `owner_setup_tokens` (`cli_secret_hash`);--> statement-breakpoint
 CREATE TABLE `invitation_link_tokens` (
 	`id` text PRIMARY KEY NOT NULL,
 	`invitation_id` text NOT NULL,
@@ -248,6 +221,7 @@ CREATE TABLE `app_tool_catalogs` (
 	`warnings` text,
 	`last_error` text,
 	`fetched_at` integer NOT NULL,
+	`version_id` text,
 	FOREIGN KEY (`app_row_id`,`organization_id`) REFERENCES `apps`(`id`,`organization_id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint

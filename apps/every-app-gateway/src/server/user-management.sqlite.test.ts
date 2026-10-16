@@ -33,7 +33,6 @@ vi.mock("@/server/mcp-auth/config", () => ({ getMcpAuth: () => null }));
 import { eq, sql } from "drizzle-orm";
 import { createAuth } from "@/auth";
 import {
-  appTokens,
   members,
   sessions,
   userAccessTokens,
@@ -41,15 +40,13 @@ import {
   users,
 } from "@/db/schema";
 import { createProdAuthenticator } from "@/perimeter/betterAuthAuthenticator";
-import { hashAppToken } from "@/server/app-token-hash";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
 import { AdminService } from "@/server/services/AdminService";
 import { AppAccessService } from "@/server/services/AppAccessService";
-import { AppRegistrationService } from "@/server/services/AppRegistrationService";
 import { AppService } from "@/server/services/AppService";
-import { AppTokenService } from "@/server/services/AppTokenService";
 import { MembershipService } from "@/server/services/MembershipService";
 import { hashUserPat } from "@/server/user-pat-hash";
+import { registerApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 
 type Role = "owner" | "admin" | "member";
@@ -67,8 +64,8 @@ describe("user management (SQLite)", () => {
       (app) => app.appId,
     );
 
-  function registerTodo(manifest: Record<string, unknown> = {}) {
-    return AppRegistrationService.register({
+  async function registerTodo(manifest: Record<string, unknown> = {}) {
+    const { app } = await registerApp(db, {
       organizationId: org,
       appSlug: "todo",
       name: "Todo",
@@ -76,6 +73,7 @@ describe("user management (SQLite)", () => {
       manifest: { id: "todo", ...manifest },
       deployerUserId: deployer,
     });
+    return { appId: app.id };
   }
 
   beforeEach(async () => {
@@ -168,7 +166,6 @@ describe("user management (SQLite)", () => {
   });
 
   const PAT = "epat_member-personal-access-token";
-  const DEPLOY_TOKEN = "eak_member-deploy-token";
 
   async function seedCredentials() {
     await registerTodo({ access: "everyone" });
@@ -188,14 +185,6 @@ describe("user management (SQLite)", () => {
       tokenPrefix: "epat_memb",
       expiresAt: new Date(Date.now() + 60_000),
     });
-    await db.insert(appTokens).values({
-      id: "deploy-1",
-      organizationId: org,
-      tokenHash: await hashAppToken(DEPLOY_TOKEN, SECRET),
-      tokenPrefix: "eak_memb",
-      scopes: JSON.stringify(["apps:register", "apps:deploy"]),
-      createdBy: member,
-    });
   }
 
   function authenticatePat() {
@@ -207,12 +196,9 @@ describe("user management (SQLite)", () => {
   }
 
   describe("deactivate", () => {
-    it("ends sessions and rejects the user's PAT and deploy token", async () => {
+    it("ends sessions and rejects the user's PAT", async () => {
       await seedCredentials();
       await expect(authenticatePat()).resolves.toMatchObject({ sub: member });
-      await expect(
-        AppTokenService.verifyDeployToken(DEPLOY_TOKEN),
-      ).resolves.toMatchObject({ organizationId: org, createdBy: member });
 
       await MembershipService.deactivate(ctx(admin, "admin"), member);
 
@@ -220,21 +206,14 @@ describe("user management (SQLite)", () => {
         await db.select().from(sessions).where(eq(sessions.userId, member)),
       ).toEqual([]);
       await expect(authenticatePat()).resolves.toBeNull();
-      await expect(
-        AppTokenService.verifyDeployToken(DEPLOY_TOKEN),
-      ).resolves.toBeNull();
     });
 
     it("rejects a banned user's tokens even if they were never revoked", async () => {
       await seedCredentials();
       await MembershipService.deactivate(ctx(owner, "owner"), member);
       await db.update(userAccessTokens).set({ revokedAt: null });
-      await db.update(appTokens).set({ revokedAt: null });
 
       await expect(authenticatePat()).resolves.toBeNull();
-      await expect(
-        AppTokenService.verifyDeployToken(DEPLOY_TOKEN),
-      ).resolves.toBeNull();
 
       // Reactivating lets them sign in again, but revoked tokens stay dead.
       await db.update(userAccessTokens).set({ revokedAt: new Date() });
@@ -312,22 +291,15 @@ describe("user management (SQLite)", () => {
   });
 
   describe("delete user", () => {
-    it("revokes the deleted user's deploy tokens and personal access tokens", async () => {
+    it("revokes the deleted user's personal access tokens", async () => {
       await seedCredentials();
-      await expect(
-        AppTokenService.verifyDeployToken(DEPLOY_TOKEN),
-      ).resolves.toMatchObject({ createdBy: member });
+      await expect(authenticatePat()).resolves.toMatchObject({ sub: member });
 
       await AdminService.deleteUser(ctx(owner, "owner"), member);
 
       expect(await db.select().from(users).where(eq(users.id, member))).toEqual(
         [],
       );
-      await expect(
-        AppTokenService.verifyDeployToken(DEPLOY_TOKEN),
-      ).resolves.toBeNull();
-      const [token] = await db.select().from(appTokens);
-      expect(token?.revokedAt).toBeInstanceOf(Date);
       await expect(authenticatePat()).resolves.toBeNull();
     });
 
@@ -341,15 +313,6 @@ describe("user management (SQLite)", () => {
         role: "owner",
         createdAt: new Date(),
       });
-      const OTHER_DEPLOY_TOKEN = "eak_member-other-org-token";
-      await db.insert(appTokens).values({
-        id: "deploy-other",
-        organizationId: other,
-        tokenHash: await hashAppToken(OTHER_DEPLOY_TOKEN, SECRET),
-        tokenPrefix: "eak_memb",
-        scopes: JSON.stringify(["apps:register", "apps:deploy"]),
-        createdBy: member,
-      });
 
       await AdminService.deleteUser(ctx(owner, "owner"), member);
 
@@ -362,14 +325,8 @@ describe("user management (SQLite)", () => {
           .from(userAppAccess)
           .where(eq(userAppAccess.userId, member)),
       ).toEqual([]);
-      await expect(
-        AppTokenService.verifyDeployToken(DEPLOY_TOKEN),
-      ).resolves.toBeNull();
       const [pat] = await db.select().from(userAccessTokens);
       expect(pat?.revokedAt).toBeInstanceOf(Date);
-      await expect(
-        AppTokenService.verifyDeployToken(OTHER_DEPLOY_TOKEN),
-      ).resolves.toMatchObject({ organizationId: other, createdBy: member });
     });
 
     it("removes and deactivates even before the AI app connections table exists", async () => {
@@ -413,24 +370,6 @@ describe("user management (SQLite)", () => {
         "user_deactivated",
       ]);
       await Promise.all(background.splice(0));
-    });
-
-    it("refuses a deploy token whose creator left the organization or was deleted", async () => {
-      await seedCredentials();
-
-      // Membership removed some other way: the unrevoked token still fails.
-      await db.delete(members).where(eq(members.userId, member));
-      await expect(
-        AppTokenService.verifyDeployToken(DEPLOY_TOKEN),
-      ).resolves.toBeNull();
-
-      // Creator deleted: created_by is nulled and the token has no owner.
-      await db.delete(users).where(eq(users.id, member));
-      const [token] = await db.select().from(appTokens);
-      expect(token).toMatchObject({ createdBy: null, revokedAt: null });
-      await expect(
-        AppTokenService.verifyDeployToken(DEPLOY_TOKEN),
-      ).resolves.toBeNull();
     });
   });
 });

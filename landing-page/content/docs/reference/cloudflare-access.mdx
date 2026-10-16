@@ -31,7 +31,7 @@ Access only says who someone is. Whether they are a member is still your Gateway
 - **Everyone your Access policy admits**, only through the outer ring and only with `CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN=everyone`. Your Access policy then is your member list.
 - **Anyone else** is refused, and nothing is created for them. Before the Gateway is claimed, nobody gets in through Access.
 
-To take someone off, **Deactivate** them in **Admin → Users**: it signs them out everywhere and revokes their tokens and AI connections at once. Removing them from your Access policy stops new sign-ins (and, behind the outer ring, their browser once their Access session runs out), but tokens and AI connections never pass through Access. With auto-join, **Delete** deactivates instead, since a deleted account would simply join again at the next sign-in.
+To take someone off, **Deactivate** them in **Admin → Users**: it signs them out everywhere and revokes their tokens and AI connections at once. Removing them from your Access policy stops new sign-ins (and, behind the outer ring, their browser once their Access session runs out), but tokens and AI connections never pass through Access. Neither does deploying, which takes the Cloudflare login: revoke that in Cloudflare. With auto-join, **Delete** deactivates instead, since a deleted account would simply join again at the next sign-in.
 
 An existing account (one made with a password, including yours as the owner) connects to Access once, while signed in: sign in with the password through the outer ring, or with **Continue with Company SSO** then the password when asked, or **Connect Company SSO** in the account menu. After that, Access alone signs it in. This is what stops someone who registered with another person's email from being handed that person's account. Behind the outer ring, an account's email must be the one Access knows the person by, so claim the Gateway and invite people with those addresses.
 
@@ -104,8 +104,7 @@ Put two **hostname-based** self-hosted Access applications in front: one for you
 
 - `/mcp` and `/mcp/*` (Gateway and apps): MCP clients;
 - `/oauth/token`, `/oauth/register` and `/.well-known/*` (Gateway): the OAuth server MCP clients connect through. Keep `/oauth/authorize` and the consent pages behind Access: they're for people;
-- `/api/deploy/*` (Gateway): the CLI's deploys, with your deploy token;
-- `/api/setup/deploy-token` and `/api/admin/has-owner` (Gateway): the CLI's login after a setup link, with its own secret, and its check whether the Gateway is claimed;
+- `/api/admin/has-owner` (Gateway): the CLI's check whether the Gateway is claimed;
 - each app's public routes (its `everyapp.config.ts` `public` list), on that app's host.
 
 Keep Access's cookie **HttpOnly** (the default) and turn on its **binding cookie** on both.
@@ -122,8 +121,6 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
       {"path_pattern": "/oauth/token", "behavior": "public"},
       {"path_pattern": "/oauth/register", "behavior": "public"},
       {"path_pattern": "/.well-known/*", "behavior": "public"},
-      {"path_pattern": "/api/deploy/*", "behavior": "public"},
-      {"path_pattern": "/api/setup/deploy-token", "behavior": "public"},
       {"path_pattern": "/api/admin/has-owner", "behavior": "public"}
     ]}
   ],
@@ -180,5 +177,5 @@ It takes effect once Access sign-in is configured and you (an owner) have connec
 - **"An account with this email already exists":** sign in with the password once to connect Access.
 - **"You're signed in to Cloudflare Access as X, but this account is Y":** behind the outer ring an account's email must be the one Access asserts, so claim the Gateway and invite people with the addresses Access knows them by. Sign out of Access and sign in there as Y, or have an admin invite X. For the owner's account, change its email to X in the Gateway's database (`npx cf@1.0.0-beta.14 d1 query <id> --sql "UPDATE users SET email = 'x@acme.com' WHERE email = 'y@acme.com'"`, with the id from `npx cf@1.0.0-beta.14 d1 list --name every-app-gateway`), then sign in with the password through Access once.
 - **Teammates can't log in at Access:** add the one-time PIN identity provider.
-- **MCP clients or deploys get an HTML login page:** a bypass path is missing.
+- **MCP clients get an HTML login page:** a bypass path is missing. (Deploys never go through the Gateway's hostname: the CLI writes its database directly.)
 - **The mobile app can't sign in behind the outer ring:** use OIDC sign-in for teams on the app.

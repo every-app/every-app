@@ -111,6 +111,7 @@ export async function serveGatewayMcp(
         hostname: catalog.hostname,
         workerName: catalog.workerName,
         tier: catalog.tier,
+        versionId: catalog.versionId,
       },
     ),
   );

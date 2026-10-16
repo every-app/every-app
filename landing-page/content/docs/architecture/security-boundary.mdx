@@ -27,7 +27,7 @@ Three things this boundary **assumes but cannot enforce** (deployment invariants
 
 Registered-host requests go through `handleGatewayRequest()` (`packages/perimeter/src/gateway.ts`); step 1 happens before it in `server.ts`:
 
-1. **App resolution + status** — full-hostname D1 lookup; unknown subdomains of the gateway domain get 404 (never the control plane, since the cookie spans those hosts); non-`active` apps get 503.
+1. **App resolution + status** — full-hostname D1 lookup; unknown subdomains of the gateway domain get 404 (never the control plane, since the cookie spans those hosts). A `binding` app (its Worker uploaded) becomes `active` on the first request that reaches it over the gateway's service binding; other non-`active` apps get 503.
 2. **Public/private classification** — manifest match with fail-closed path canonicalization.
 3. **CSRF** — before authentication. GET/HEAD/OPTIONS always pass; other methods need `Sec-Fetch-Site: same-origin`, or (if absent) an `Origin` whose host matches the app host (scheme is ignored). Origin-signal policy, no CSRF tokens.
 4. **Header hygiene** — inbound `Cookie`, `Authorization`, and every `x-everyapp-*` header are deleted. Public routes get `Authorization` back (apps may run their own bearer/webhook auth; the gateway never interprets it).
@@ -53,28 +53,23 @@ The public-route CSRF downgrade is deliberate: webhooks work, but a cross-site r
 
 Minted by `mintIdentityJwt()` (`packages/sdk/src/internal/protocol.ts`), verified by `verifyPinnedJwt()` (`packages/sdk/src/internal/identity.ts`).
 
-| Property         | Value                                                                                                                                                                   |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Algorithm / key  | RS256, gateway's `JWT_PRIVATE_KEY`; `kid: everyapp-identity` (dev kid accepted when `EVERYAPP_DEV` is any non-empty value, or via explicit `allowDevIdentities: true`)  |
-| Lifetime         | 120 seconds                                                                                                                                                             |
-| Audience         | the target app's ID — a token for `todo` is useless against `chef`                                                                                                      |
-| Claims           | verified: `sub`, `email`, `org_id`, `org_role`, `typ: "user"`, audience. Minted but defaulted if absent: `chan: "web"`, `act`, `jti`                                    |
-| Verification     | pins alg + kid before signature check (rejects `none`/confusion), requires audience + `typ` + nonempty user claims; issuer checked only when configured                 |
-| Key distribution | `EVERYAPP_IDENTITY_PUBLIC_KEYS` env var injected at deploy — no runtime JWKS fetch. SDK supports a key _set_ for rotation; the deploy endpoint currently serves one key |
-| Failure          | `everyApp()` returns 401 before app code runs; missing key config → 500                                                                                                 |
+| Property         | Value                                                                                                                                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Algorithm / key  | RS256, gateway's `JWT_PRIVATE_KEY`; `kid: everyapp-identity` (dev kid accepted when `EVERYAPP_DEV` is any non-empty value, or via explicit `allowDevIdentities: true`)         |
+| Lifetime         | 120 seconds                                                                                                                                                                    |
+| Audience         | the target app's ID — a token for `todo` is useless against `chef`                                                                                                             |
+| Claims           | verified: `sub`, `email`, `org_id`, `org_role`, `typ: "user"`, audience. Minted but defaulted if absent: `chan: "web"`, `act`, `jti`                                           |
+| Verification     | pins alg + kid before signature check (rejects `none`/confusion), requires audience + `typ` + nonempty user claims; issuer checked only when configured                        |
+| Key distribution | `EVERYAPP_IDENTITY_PUBLIC_KEYS` env var injected at deploy — no runtime JWKS fetch. SDK supports a key _set_ for rotation; the CLI injects the one key it generated at install |
+| Failure          | `everyApp()` returns 401 before app code runs; missing key config → 500                                                                                                        |
 
 Anonymous public traffic gets a separate signed **public marker** JWT (`typ: "public"`, same audience binding, cached per app for ~60s) — so a forged `x-everyapp-public: 1` header from a re-exposed worker fails verification.
 
-## Machine tokens
+## Machine credentials
 
-Both types: 32 random bytes, HMAC-SHA256-hashed at rest (domain-separated, keyed by `BETTER_AUTH_SECRET`), plaintext shown exactly once.
+The gateway issues one kind of token: the **personal access token** (`epat_`, 32 random bytes, HMAC-SHA256-hashed at rest, domain-separated and keyed by `BETTER_AUTH_SECRET`, plaintext shown exactly once). It acts as its user for MCP and HTTP API clients, optionally bound to one app, and dies with the user's deactivation or removal.
 
-|              | `eak_` deploy token                                                                       | `eat_` app token                                                    |
-| ------------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Who holds it | developer's laptop (`~/.everyapp/credentials.json`, mode 0600)                            | app worker secret (`GATEWAY_APP_API_TOKEN`)                         |
-| Scope        | org-wide: `apps:register` + `apps:deploy` (checked together — effectively one capability) | one app: `provider:<name>` scopes                                   |
-| Authorizes   | the four `/api/deploy/*` endpoints (self-hosted mode only; 404 otherwise)                 | the legacy AI proxy (`x-every-app-token` header, OpenAI only today) |
-| Cannot       | deploy workers (that's the Cloudflare token) or access apps as a user                     | mint identity or reach private app routes                           |
+Deploying needs no gateway credential at all (ADR-0003): in self-host, write access to the gateway's D1 in its Cloudflare account **is** operator authority. The CLI registers, deploys and deletes apps by writing the registry itself with the operator's Cloudflare login (or `CLOUDFLARE_API_TOKEN` in CI), running the rules in `@every-app/perimeter/registry`, and records the deploy's actor on the app row. There is no deploy API, no deploy token and no app token. The cost: revoking someone's deploy access is Cloudflare's job, not the gateway's, and any API token with D1 write on the account is an operator.
 
 ## What is deliberately NOT protected
 
@@ -91,5 +86,5 @@ Both types: 32 random bytes, HMAC-SHA256-hashed at rest (domain-separated, keyed
 2. **`exp`, `iat`, `chan`, `act`, and `jti` are not required claims** — expired tokens are rejected when `exp` is present, but a signed token lacking any of these would pass (the last three silently default). Gateway always mints them, so this only matters if the signing key is misused.
 3. **Security headers are not uniform** — gateway-generated errors (401/403/404/5xx) and login redirects return before `withSecurityHeaders()`; any response to a WebSocket upgrade request (not just 101s) bypasses both it _and_ the `Set-Cookie` domain-stripping.
 4. **"Apps can't set parent-domain cookies" covers proxied HTTP responses only** — app JS could still write a non-HttpOnly parent-domain cookie via `document.cookie`.
-5. **Key rotation is supported by the SDK but not served** — `/api/deploy/identity-keys` returns a single key, not current+next.
+5. **Key rotation is supported by the SDK but not used** — the CLI injects the single key it generated at install, not current+next.
 6. **Revocation latency** — hostname/registry cache means disabled apps can serve for up to 30s per isolate; identity JWTs live up to 120s past access revocation.

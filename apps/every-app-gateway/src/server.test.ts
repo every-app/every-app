@@ -1,4 +1,13 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { generateKeyPairSync } from "node:crypto";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import type { AppRegistry, RegisteredApp } from "@every-app/perimeter";
 import server, {
   clearHostnameCacheForTests,
@@ -14,6 +23,7 @@ const mocks = vi.hoisted(() => ({
   controlPlaneFetch: vi.fn(),
   serveAppHostMcp: vi.fn(),
   runMcpMaintenance: vi.fn(),
+  activateApp: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({
@@ -39,6 +49,10 @@ vi.mock("./perimeter/drizzleAppRegistry", () => ({
 
 vi.mock("./server/toolbus/app-host-mcp", () => ({
   serveAppHostMcp: mocks.serveAppHostMcp,
+}));
+
+vi.mock("./server/app-activation", () => ({
+  activateApp: mocks.activateApp,
 }));
 
 vi.mock("./perimeter/betterAuthAuthenticator", () => ({
@@ -456,18 +470,17 @@ describe("gateway host (control plane)", () => {
     );
     expect(nativeSignIn.status).toBe(200);
 
-    const deployRegister = await server.fetch(
-      gatewayRequest("/api/deploy/register", {
+    const oauthToken = await server.fetch(
+      gatewayRequest("/oauth/token", {
         method: "POST",
         headers: {
           cookie: "session=abc",
-          authorization: "Bearer eak_x",
-          "content-type": "application/json",
+          "content-type": "application/x-www-form-urlencoded",
         },
-        body: "{}",
+        body: "grant_type=refresh_token",
       }),
     );
-    expect(deployRegister.status).toBe(200);
+    expect(oauthToken.status).not.toBe(403);
 
     const cookielessPost = await server.fetch(
       gatewayRequest("/api/setup/claim", {
@@ -477,20 +490,24 @@ describe("gateway host (control plane)", () => {
       }),
     );
     expect(cookielessPost.status).toBe(200);
+  });
 
-    // Authenticated by the CLI's own secret, whatever cookie rides along.
-    const deployToken = await server.fetch(
-      gatewayRequest("/api/setup/deploy-token", {
-        method: "POST",
-        headers: {
-          cookie: "session=abc",
-          "content-type": "application/json",
-        },
-        body: "{}",
-      }),
-    );
-    expect(deployToken.status).toBe(200);
-    expect(mocks.controlPlaneFetch).toHaveBeenCalledTimes(4);
+  it("exempts no deploy API or deploy-token route from the cookie check: there are none", async () => {
+    for (const path of ["/api/deploy/register", "/api/setup/deploy-token"]) {
+      const response = await server.fetch(
+        gatewayRequest(path, {
+          method: "POST",
+          headers: {
+            cookie: "session=abc",
+            authorization: "Bearer eak_x",
+            "content-type": "application/json",
+          },
+          body: "{}",
+        }),
+      );
+      expect(response.status).toBe(403);
+    }
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
   });
 
   it("keeps the native-app exemption to exact, metadata-free auth calls", async () => {
@@ -719,6 +736,91 @@ describe("gateway host (control plane)", () => {
     expect(challenge.headers.get("www-authenticate")).toBe(
       'Bearer realm="every-app"',
     );
+  });
+});
+
+describe("activating an app on its first request", () => {
+  const BINDING_TODO: RegisteredApp = {
+    ...TODO,
+    status: "binding",
+    rowId: "row-1",
+  };
+  const appPage = vi.fn(async () => new Response("todo page"));
+
+  beforeAll(() => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    mocks.env.JWT_PRIVATE_KEY = privateKey;
+  });
+
+  beforeEach(() => {
+    clearHostnameCacheForTests();
+    for (const key of Object.keys(mocks.env)) {
+      if (key !== "JWT_PRIVATE_KEY") delete mocks.env[key];
+    }
+    Object.assign(mocks.env, {
+      DB: {},
+      GATEWAY_URL: "https://example.com",
+      "APP__every-todo": { fetch: appPage },
+    });
+    mocks.findByHostname.mockReset();
+    mocks.findByHostname.mockResolvedValue(BINDING_TODO);
+    mocks.activateApp.mockReset();
+    mocks.authenticate.mockReset();
+    mocks.authenticate.mockResolvedValue({
+      sub: "user-1",
+      email: "user@example.com",
+      orgId: "org-1",
+      orgRole: "member",
+    });
+    appPage.mockClear();
+  });
+
+  const appRequest = () =>
+    server.fetch(
+      new Request("https://todo.example.com/", {
+        headers: { host: "todo.example.com" },
+      }),
+    );
+
+  it("serves a binding app once this isolate activates it, then reads the row again", async () => {
+    mocks.activateApp.mockResolvedValue(true);
+
+    const response = await appRequest();
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("todo page");
+    expect(mocks.activateApp).toHaveBeenCalledWith(mocks.env, BINDING_TODO);
+
+    // The cached row said binding; the next request looks it up afresh.
+    mocks.findByHostname.mockResolvedValue({ ...TODO, rowId: "row-1" });
+    await appRequest();
+    expect(mocks.findByHostname).toHaveBeenCalledTimes(2);
+    expect(mocks.activateApp).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers deploying, with Retry-After, while the binding isn't reachable", async () => {
+    mocks.activateApp.mockResolvedValue(false);
+
+    const response = await appRequest();
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("5");
+    await expect(response.json()).resolves.toEqual({
+      error: "app_deploying",
+      status: "binding",
+    });
+    expect(appPage).not.toHaveBeenCalled();
+    expectSecurityHeaders(response);
+  });
+
+  it("never activates an app that isn't uploaded yet", async () => {
+    mocks.findByHostname.mockResolvedValue({ ...TODO, status: "pending" });
+
+    const response = await appRequest();
+    expect(response.status).toBe(503);
+    expect(mocks.activateApp).not.toHaveBeenCalled();
   });
 });
 

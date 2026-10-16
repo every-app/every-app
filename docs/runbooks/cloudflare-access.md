@@ -63,8 +63,11 @@ verified email). Whether they are a member is still the gateway's decision:
 ### Taking someone off: Deactivate, not Delete
 
 Deactivate them in Every App (**Admin → Users → ⋯ → Deactivate**). That
-signs them out everywhere at once and revokes their personal access tokens,
-deploy tokens and AI app connections, whatever Access says.
+signs them out everywhere at once and revokes their personal access tokens
+and AI app connections, whatever Access says. Deploying is another matter:
+it takes the Cloudflare login, not a gateway account, so someone who still
+holds that login or an API token for the account can deploy until you
+revoke it in Cloudflare (`docs/security-model.md`, "Operator Authority").
 
 Taking them out of your Access policy isn't enough on its own. It stops new
 Access sign-ins, and behind the outer ring their browser loses the gateway
@@ -244,15 +247,15 @@ credentials:
 | `/mcp`, `/mcp/*`                  | gateway and apps  | MCP clients, with OAuth or a personal access token     |
 | `/oauth/token`, `/oauth/register` | gateway           | The OAuth server's token, revocation and registration  |
 | `/.well-known/*`                  | gateway           | OAuth discovery documents                              |
-| `/api/deploy/*`                   | gateway           | The CLI's deploy and registration API (deploy tokens)  |
-| `/api/setup/deploy-token`         | gateway           | The CLI's login after a setup link (its own secret)    |
 | `/api/admin/has-owner`            | gateway           | The CLI's check whether the gateway is claimed         |
 | Each app's public routes          | that app's host   | Whatever its `everyapp.config.ts` declares as `public` |
 
 Keep everything else behind Access, `/oauth/authorize` and the consent pages
 (`/oauth/consent*`) included: those are pages for people, signed in with
 the gateway's session. (This guide used to bypass all of `/oauth/*`; narrow
-such a bypass to the two paths above.) Path overrides don't cover subpaths,
+such a bypass to the two paths above. It also bypassed `/api/deploy/*` and
+`/api/setup/deploy-token`, which no longer exist: the CLI deploys by
+writing the gateway's database, never through it. Remove those overrides.) Path overrides don't cover subpaths,
 so use the `/*` forms; a destination takes at most 25.
 
 On both applications keep the `CF_Authorization` cookie **HttpOnly** (the
@@ -271,8 +274,6 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
       {"path_pattern": "/oauth/token", "behavior": "public"},
       {"path_pattern": "/oauth/register", "behavior": "public"},
       {"path_pattern": "/.well-known/*", "behavior": "public"},
-      {"path_pattern": "/api/deploy/*", "behavior": "public"},
-      {"path_pattern": "/api/setup/deploy-token", "behavior": "public"},
       {"path_pattern": "/api/admin/has-owner", "behavior": "public"}
     ]}
   ],
@@ -356,8 +357,8 @@ the outer ring set, no session counts without Access's word for it.
   is used: the perimeter on app hosts (an app's `/mcp` included), server
   functions, the OAuth pages, Better Auth's own endpoints. A browser holding
   someone else's session gets the Access user's session instead on the
-  gateway; elsewhere the session just isn't used. Personal access tokens,
-  OAuth tokens and deploy tokens never pass through this.
+  gateway; elsewhere the session just isn't used. Personal access tokens
+  and OAuth tokens never pass through this.
 - So when someone's Access session ends (they were taken out of the
   policy, their session ran out), so does their gateway access in the
   browser, whatever gateway session it still holds. Their tokens are
@@ -491,8 +492,7 @@ The automated tests cover the same ground without a browser:
   going to sent you back here") behind the outer ring. Their hosts' Access
   application isn't one the gateway knows: put its AUD tag in
   `CLOUDFLARE_ACCESS_APPS_AUD`.
-- **MCP clients or `everyapp app deploy` get an HTML login page.** A bypass
-  path is missing. (Connecting an AI app does show Access's login in the
+- **MCP clients get an HTML login page.** A bypass path is missing. (Connecting an AI app does show Access's login in the
   browser, at `/oauth/authorize`: that page is for people.)
 - **Someone you took out of the Access policy still uses an AI app or a
   script.** Tokens never pass through Access: deactivate them (see "Taking

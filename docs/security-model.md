@@ -7,6 +7,46 @@
   enforces app access, and injects signed identity.
 - **App zone:** private Workers invoked by the gateway over service bindings.
 
+## Operator Authority (Self-Host)
+
+ADR-0003. In `self_hosted` mode, write access to the gateway's D1 database
+in the gateway's Cloudflare account **is** operator authority.
+
+- The CLI reads and writes the app registry (`apps`, `user_app_access`,
+  `organization_keys`), the install row, the deploy lease, the resource
+  ledger and the owner setup link with `cf d1 query`, under the operator's
+  own Cloudflare login or API token. The gateway issues no deploy
+  credential and has no deploy API: nothing on the public Worker accepts a
+  registration, a deploy or a delete.
+- The registration rules live once, as pure functions in
+  `@every-app/perimeter/registry`, and the CLI runs them before every write:
+  reserved and malformed app ids, the Worker name `every-<orgKey>-<appId>`
+  (never one of the gateway's own names, at most 63 characters), D1 and KV
+  names derived from it, the hostname, takeover checks against existing
+  rows (a deleted app's tombstone keeps its names), and initial access (the
+  deployer, owners and admins; everyone with `access: "everyone"`). The
+  gateway still validates the manifest it reads from a row and treats an
+  unknown status as disabled. A hand-written row that breaks a rule is the
+  operator's doing, as a hand-edited Worker is.
+- The gateway activates apps itself: a `binding` app (its Worker uploaded)
+  becomes `active` on the first request that reaches the Worker over a
+  service binding of the gateway version serving that request. A `pending`
+  app is never bound or activated, a disabled or deleted one is never
+  switched back on, and only `GATEWAY_DEPLOYMENT_MODE=self_hosted`
+  activates (any other value, unset included, fails closed).
+- Every deploy records its actor on the app row (`deployed_by_actor`, with
+  `deployed_at`): the Cloudflare login's email, or `api-token:<account id>`
+  in CI. Admin → Apps shows it. There is no deploy event log.
+- Revocation is Cloudflare's alone. Removing, banning or deactivating a
+  gateway member doesn't stop them deploying while they still hold the
+  Cloudflare login or an API token for the account. Any Cloudflare API
+  token with D1 write on the account is an operator, including the token an
+  app's CI uses to upload Workers; such a token could already redeploy the
+  gateway Worker or write `owner_setup_tokens`. Compromise of the Cloudflare
+  credential carries account-wide blast radius.
+- This trust model is not valid for the hosted tier (ADR-0001), which needs
+  its own HTTP control plane and credentials.
+
 ## Perimeter Contract
 
 - Routes are private unless the app manifest explicitly declares them public.
@@ -47,16 +87,17 @@
 - The gateway's own host applies the same server-function rule and requires a
   same-origin `Origin`/`Sec-Fetch-Site` on every cookie-carrying
   state-changing request (the native shell's exact `everyapp://` origin and
-  the token-authenticated deploy API, `/mcp`, and OAuth token and
-  registration endpoints are left to their own checks; none of them reads
-  the session cookie). Every response gets HSTS for the gateway host alone
+  the token-authenticated `/mcp` and OAuth token and registration endpoints
+  are left to their own checks; none of them reads the session cookie). Every response gets HSTS for the gateway host alone
   (no `includeSubDomains`: the gateway often runs on the customer's apex
   domain), `nosniff`, frame denial, `Referrer-Policy: no-referrer`, and
   `Cache-Control: no-store` on admin, OAuth, setup and reset pages.
 - A fresh gateway has no owner and accepts no sign-ups or organizations until
-  it is claimed with the one-time setup link the deployer's CLI mints into D1.
-  Members cannot create organizations; app registration requires the app's
-  own worker name (`every-<appId>`), never the gateway's.
+  it is claimed with the one-time setup link the CLI mints into D1 with the
+  operator's Cloudflare login. Apps may be deployed before then (a CI-first
+  install): the claim makes the first owner the owner of the organization
+  they were deployed to and gives them every app in it nobody has access
+  to. Members cannot create organizations.
 - Invite links carry their own random secret (only its SHA-256 is stored);
   signing up through an invitation and joining with one both need it, never
   just the invitation id. Better Auth's accept, list-invitations and
@@ -104,10 +145,10 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   refused). So a person taken out of the Access policy loses browser access
   when their Access session ends. Access bypasses only machine endpoints
   (`/mcp*`, `/oauth/token`, `/oauth/register`, `/.well-known/*`,
-  `/api/deploy/*`, `/api/setup/deploy-token`, `/api/admin/has-owner`, apps'
-  public routes), never `/oauth/authorize` or the
-  consent pages. Bearer credentials (personal access, OAuth and deploy
-  tokens) never pass through Access: offboarding is deactivation.
+  `/api/admin/has-owner`, apps' public routes), never `/oauth/authorize` or
+  the consent pages. Bearer credentials (personal access and OAuth tokens)
+  never pass through Access: offboarding is deactivation. The CLI never
+  calls the gateway, so nothing is bypassed for it.
 - OIDC sign-in goes through Better Auth's own state and PKCE (S256) with the
   client secret; the ID token is verified in full (signature by the
   application's JWKS, issuer, audience = client id, expiry); posted ID tokens
@@ -149,7 +190,8 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   the read-only built-ins `everyapp_whoami` and `everyapp_list_apps`), and
   each app host's `/mcp`, for that app alone under its tools' own names.
   Both are served by the gateway's ToolBus from the tool catalogs it
-  snapshots in D1 at deploy (apps declare them with `defineTools()`).
+  snapshots in D1 on first use and again once an app runs a new version
+  (apps declare them with `defineTools()`).
   Listing tools never calls an app; each tool call is one call over the
   app's service binding.
 - The gateway's `/mcp` takes an OAuth access token issued by the gateway
@@ -170,8 +212,9 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   it. A cookie-carrying POST needs `Sec-Fetch-Site: same-origin`, or without
   that header an `Origin` on the app's host; a sibling app's page
   (`same-site`) or any other site gets `403 csrf_denied` before a tool runs.
-  Only a POST makes the gateway call the app (to sync a missing catalog), so
-  the GETs a sibling page can send with the cookie never do.
+  Only a POST makes the gateway call the app (to sync a missing or
+  outdated catalog), so the GETs a sibling page can send with the cookie
+  never do.
 - A token whose scopes are all `mcp:` scopes is MCP-only: every app route
   other than `/mcp` (public ones included) answers it `403 token_scope`, so
   an `mcp:read` token stays read only even though apps don't check scopes on
@@ -287,9 +330,12 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   `base-uri 'self'`, `object-src 'none'`) without a blanket `default-src`.
 - HSTS, `nosniff`, frame denial, and referrer policy are applied uniformly.
 - Structured gateway events (`logEvent`: setup claims, invitations, member
-  changes, AI usage and upstream failures, proxied requests, unhandled
-  server-function errors) go through a logger that redacts `cookie`,
-  `authorization`, `set-cookie` and any token, secret, password or code
-  field. Other error logs (perimeter and app failures) record an error's
-  message and stack as thrown, so errors must not put credentials in their
-  messages.
+  changes, app activations, AI usage and upstream failures, proxied
+  requests, unhandled server-function errors) go through a logger that
+  redacts `cookie`, `authorization`, `set-cookie` and any token, secret,
+  password or code field. Other error logs (perimeter and app failures)
+  record an error's message and stack as thrown, so errors must not put
+  credentials in their messages.
+- Deploys happen outside the gateway, so it logs none: who uploaded an
+  app's live version is on its row (`deployed_by_actor`, `deployed_at`,
+  `version_id`), the Cloudflare login's email or `api-token:<account id>`.

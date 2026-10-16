@@ -4,7 +4,7 @@ import {
   rowToRegisteredApp,
   type AppRegistryRow,
   type RegisteredApp,
-} from "./registry";
+} from "./apps";
 
 const BASE_ROW: AppRegistryRow = {
   appId: "todo",
@@ -27,6 +27,19 @@ describe("rowToRegisteredApp", () => {
     for (const status of ["pending", "binding"]) {
       expect(rowToRegisteredApp({ ...BASE_ROW, status }).status).toBe(status);
     }
+  });
+
+  it("fails the retired deploying status closed", () => {
+    expect(
+      rowToRegisteredApp({ ...BASE_ROW, status: "deploying" }).status,
+    ).toBe("disabled");
+  });
+
+  it("carries the row id and the uploaded version when the row has them", () => {
+    expect(
+      rowToRegisteredApp({ ...BASE_ROW, rowId: "row-1", versionId: "v1" }),
+    ).toMatchObject({ rowId: "row-1", versionId: "v1" });
+    expect(rowToRegisteredApp(BASE_ROW)).not.toHaveProperty("rowId");
   });
 
   it("still coerces unknown tiers to service_binding", () => {

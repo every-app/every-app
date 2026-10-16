@@ -61,6 +61,7 @@ import {
   type PlainToolSchema,
 } from "@every-app/sdk/server";
 import {
+  apps,
   appToolCatalogs,
   appTools,
   mcpToolCalls,
@@ -70,9 +71,9 @@ import {
 import { createProdAuthenticator } from "@/perimeter/betterAuthAuthenticator";
 import { DrizzleAppRegistry } from "@/perimeter/drizzleAppRegistry";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
-import { AppRegistrationService } from "@/server/services/AppRegistrationService";
 import { AppService } from "@/server/services/AppService";
 import { UserPatService } from "@/server/services/UserPatService";
+import { deployLiveApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import {
   clearCatalogSyncClaimsForTests,
@@ -338,37 +339,30 @@ function syncable(): SyncableApp {
     hostname: HOST,
     workerName: WORKER,
     tier: "service_binding",
+    versionId: "todo-version",
   };
 }
 
 /**
- * Register an app and take it live, as `everyapp app deploy` does: the
- * gateway names it, then hears the version is up, then binds it.
+ * Register an app and take it live, as `everyapp deploy` does: the CLI
+ * registers it and records the uploaded version, then the gateway's first
+ * request over the new binding activates it.
  */
 async function deployLive(
   appSlug: string,
   manifest: Record<string, unknown>,
 ): Promise<string> {
-  const { appId } = await AppRegistrationService.register({
+  const { app } = await deployLiveApp(db, {
     organizationId,
     appSlug,
     name: String(manifest["name"] ?? appSlug),
     description: String(manifest["name"] ?? appSlug),
     manifest,
     deployerUserId: ownerId,
+    appBaseDomain: "gateway.example.com",
+    isInstallOrganization: false,
   });
-  await AppRegistrationService.markDeployed({
-    organizationId,
-    appSlug,
-    versionId: `${appSlug}-version`,
-    manifest,
-  });
-  await AppRegistrationService.activate({
-    organizationId,
-    appSlug,
-    probe: async () => true,
-  });
-  return appId;
+  return app.id;
 }
 
 beforeAll(() => {
@@ -727,8 +721,9 @@ describe("app-host /mcp with a personal access token", () => {
 
   it("re-syncs once when a call shows the app was redeployed", async () => {
     const token = await personalToken();
-    await syncAppTools(syncable()); // what the deploy does
-    deployApp({ extraTool: true }); // redeployed without a sync
+    await syncAppTools(syncable());
+    // New code behind the same version id: only the call can tell.
+    deployApp({ extraTool: true });
     appRequests.length = 0;
 
     for (let i = 0; i < 3; i += 1) {
@@ -840,6 +835,8 @@ describe("syncing on first use", () => {
       catalogHash: null,
       instructions: null,
       fetchedAt: new Date(0),
+      versionId: null,
+      appVersionId: null,
       tools: [],
     });
     const late = await mcp(token, "tools/list");
@@ -867,6 +864,85 @@ describe("syncing on first use", () => {
       "GET",
     );
     expect(served.status).toBe(405);
+  });
+});
+
+describe("syncing a new version", () => {
+  /** The app's next deploy: new code, and the version it records. */
+  async function redeploy(options: Parameters<typeof deployApp>[0] = {}) {
+    deployApp({ extraTool: true, ...options });
+    await db
+      .update(apps)
+      .set({ versionId: "todo-version-2" })
+      .where(eq(apps.id, appRowId));
+  }
+
+  const toolNames = async (response: Response) =>
+    (
+      (await response.json()) as { result: { tools: { name: string }[] } }
+    ).result.tools.map((tool) => tool.name);
+
+  it("syncs inline on the first POST after a redeploy, then serves the snapshot", async () => {
+    const token = await personalToken();
+    await mcp(token, "tools/list");
+    expect(listCalls()).toBe(1);
+
+    await redeploy();
+    // A GET never makes the gateway call the app; it gets the old snapshot.
+    await mcpRaw({ authorization: `Bearer ${token}` }, undefined, "GET");
+    expect(listCalls()).toBe(1);
+
+    expect(await toolNames(await mcp(token, "tools/list"))).toEqual([
+      "archive_todos",
+      "create_todo",
+      "list_todos",
+    ]);
+    expect(listCalls()).toBe(2);
+    const [catalog] = await db.select().from(appToolCatalogs);
+    expect(catalog?.versionId).toBe("todo-version-2");
+
+    await mcp(token, "tools/list");
+    expect(listCalls()).toBe(2);
+  });
+
+  it("serves the older snapshot while this isolate can't reach the new version", async () => {
+    const token = await personalToken();
+    await mcp(token, "tools/list");
+    await redeploy();
+    delete hoisted.env[BINDING];
+
+    expect(await toolNames(await mcp(token, "tools/list"))).toEqual([
+      "create_todo",
+      "list_todos",
+    ]);
+    const [catalog] = await db.select().from(appToolCatalogs);
+    expect(catalog?.versionId).toBe("todo-version");
+  });
+
+  it("keeps serving the older snapshot when the new version's catalog fails, and tries it again", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const token = await personalToken();
+    await mcp(token, "tools/list");
+    await redeploy({ catalog: "broken" });
+
+    expect(await toolNames(await mcp(token, "tools/list"))).toEqual([
+      "create_todo",
+      "list_todos",
+    ]);
+    expect(listCalls()).toBe(2);
+    const [catalog] = await db.select().from(appToolCatalogs);
+    expect(catalog).toMatchObject({
+      status: "ok",
+      versionId: "todo-version",
+      lastError: expect.stringContaining("500"),
+    });
+
+    // The next isolate (or this one, after its window) tries again.
+    clearCatalogSyncClaimsForTests();
+    deployApp({ extraTool: true });
+    expect(await toolNames(await mcp(token, "tools/list"))).toContain(
+      "archive_todos",
+    );
   });
 });
 

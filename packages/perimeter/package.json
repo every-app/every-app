@@ -12,6 +12,10 @@
       "types": "./src/manifest/index.ts",
       "default": "./src/manifest/index.ts"
     },
+    "./registry": {
+      "types": "./src/registry/index.ts",
+      "default": "./src/registry/index.ts"
+    },
     "./dev": {
       "types": "./src/dev/index.ts",
       "default": "./src/dev/index.ts"

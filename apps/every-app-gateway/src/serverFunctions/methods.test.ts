@@ -23,7 +23,6 @@ vi.mock("@/server/services/AppAccessService", () => ({
   AppAccessService: {},
 }));
 vi.mock("@/server/services/AppService", () => ({ AppService: {} }));
-vi.mock("@/server/services/AppTokenService", () => ({ AppTokenService: {} }));
 vi.mock("@/server/services/MembershipService", () => ({
   MembershipService: {},
 }));
@@ -55,7 +54,6 @@ const READS = [
   "getMyApps",
   "getOnboardingStatus",
   "hasOwner",
-  "listAppTokens",
   "listMembers",
   "listUserTokens",
 ];

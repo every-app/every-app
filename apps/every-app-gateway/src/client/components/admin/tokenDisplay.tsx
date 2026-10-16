@@ -1,6 +1,6 @@
 import { Badge } from "@/client/components/ui/badge";
 
-// Cells shared by the deploy token and personal access token tables.
+// Cells of the personal access token table.
 
 type TokenStatus = "active" | "expired" | "revoked";
 

@@ -28,19 +28,9 @@ import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppSettingsConnectionsRouteImport } from './routes/_app/settings/connections'
 import { Route as ApiAdminHasOwnerRouteImport } from './routes/api/admin/has-owner'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
-import { Route as ApiDeployIdentityKeysRouteImport } from './routes/api/deploy/identity-keys'
-import { Route as ApiDeployRegisterRouteImport } from './routes/api/deploy/register'
-import { Route as ApiDeployStatusRouteImport } from './routes/api/deploy/status'
-import { Route as ApiDeployWhoamiRouteImport } from './routes/api/deploy/whoami'
 import { Route as ApiDevIdentityRouteImport } from './routes/api/dev/identity'
 import { Route as ApiMeAppsRouteImport } from './routes/api/me/apps'
 import { Route as ApiSetupClaimRouteImport } from './routes/api/setup/claim'
-import { Route as ApiSetupDeployTokenRouteImport } from './routes/api/setup/deploy-token'
-import { Route as ApiDeployAppsAppIdActivateRouteImport } from './routes/api/deploy/apps/$appId/activate'
-import { Route as ApiDeployAppsAppIdDeleteRouteImport } from './routes/api/deploy/apps/$appId/delete'
-import { Route as ApiDeployAppsAppIdDeployedRouteImport } from './routes/api/deploy/apps/$appId/deployed'
-import { Route as ApiDeployAppsAppIdInfoRouteImport } from './routes/api/deploy/apps/$appId/info'
-import { Route as ApiDeployAppsAppIdToolsSyncRouteImport } from './routes/api/deploy/apps/$appId/tools/sync'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -136,26 +126,6 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiDeployIdentityKeysRoute = ApiDeployIdentityKeysRouteImport.update({
-  id: '/api/deploy/identity-keys',
-  path: '/api/deploy/identity-keys',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDeployRegisterRoute = ApiDeployRegisterRouteImport.update({
-  id: '/api/deploy/register',
-  path: '/api/deploy/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDeployStatusRoute = ApiDeployStatusRouteImport.update({
-  id: '/api/deploy/status',
-  path: '/api/deploy/status',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDeployWhoamiRoute = ApiDeployWhoamiRouteImport.update({
-  id: '/api/deploy/whoami',
-  path: '/api/deploy/whoami',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiDevIdentityRoute = ApiDevIdentityRouteImport.update({
   id: '/api/dev/identity',
   path: '/api/dev/identity',
@@ -171,40 +141,6 @@ const ApiSetupClaimRoute = ApiSetupClaimRouteImport.update({
   path: '/api/setup/claim',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiSetupDeployTokenRoute = ApiSetupDeployTokenRouteImport.update({
-  id: '/api/setup/deploy-token',
-  path: '/api/setup/deploy-token',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDeployAppsAppIdActivateRoute =
-  ApiDeployAppsAppIdActivateRouteImport.update({
-    id: '/api/deploy/apps/$appId/activate',
-    path: '/api/deploy/apps/$appId/activate',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiDeployAppsAppIdDeleteRoute =
-  ApiDeployAppsAppIdDeleteRouteImport.update({
-    id: '/api/deploy/apps/$appId/delete',
-    path: '/api/deploy/apps/$appId/delete',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiDeployAppsAppIdDeployedRoute =
-  ApiDeployAppsAppIdDeployedRouteImport.update({
-    id: '/api/deploy/apps/$appId/deployed',
-    path: '/api/deploy/apps/$appId/deployed',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiDeployAppsAppIdInfoRoute = ApiDeployAppsAppIdInfoRouteImport.update({
-  id: '/api/deploy/apps/$appId/info',
-  path: '/api/deploy/apps/$appId/info',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiDeployAppsAppIdToolsSyncRoute =
-  ApiDeployAppsAppIdToolsSyncRouteImport.update({
-    id: '/api/deploy/apps/$appId/tools/sync',
-    path: '/api/deploy/apps/$appId/tools/sync',
-    getParentRoute: () => rootRouteImport,
-  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -224,20 +160,10 @@ export interface FileRoutesByFullPath {
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/deploy/identity-keys': typeof ApiDeployIdentityKeysRoute
-  '/api/deploy/register': typeof ApiDeployRegisterRoute
-  '/api/deploy/status': typeof ApiDeployStatusRoute
-  '/api/deploy/whoami': typeof ApiDeployWhoamiRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
-  '/api/setup/deploy-token': typeof ApiSetupDeployTokenRoute
   '/admin/': typeof AppAdminIndexRoute
-  '/api/deploy/apps/$appId/activate': typeof ApiDeployAppsAppIdActivateRoute
-  '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
-  '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
-  '/api/deploy/apps/$appId/info': typeof ApiDeployAppsAppIdInfoRoute
-  '/api/deploy/apps/$appId/tools/sync': typeof ApiDeployAppsAppIdToolsSyncRoute
 }
 export interface FileRoutesByTo {
   '/accept-invitation': typeof AcceptInvitationRoute
@@ -256,20 +182,10 @@ export interface FileRoutesByTo {
   '/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/deploy/identity-keys': typeof ApiDeployIdentityKeysRoute
-  '/api/deploy/register': typeof ApiDeployRegisterRoute
-  '/api/deploy/status': typeof ApiDeployStatusRoute
-  '/api/deploy/whoami': typeof ApiDeployWhoamiRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
-  '/api/setup/deploy-token': typeof ApiSetupDeployTokenRoute
   '/admin': typeof AppAdminIndexRoute
-  '/api/deploy/apps/$appId/activate': typeof ApiDeployAppsAppIdActivateRoute
-  '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
-  '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
-  '/api/deploy/apps/$appId/info': typeof ApiDeployAppsAppIdInfoRoute
-  '/api/deploy/apps/$appId/tools/sync': typeof ApiDeployAppsAppIdToolsSyncRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -291,20 +207,10 @@ export interface FileRoutesById {
   '/_app/settings/connections': typeof AppSettingsConnectionsRoute
   '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
-  '/api/deploy/identity-keys': typeof ApiDeployIdentityKeysRoute
-  '/api/deploy/register': typeof ApiDeployRegisterRoute
-  '/api/deploy/status': typeof ApiDeployStatusRoute
-  '/api/deploy/whoami': typeof ApiDeployWhoamiRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
-  '/api/setup/deploy-token': typeof ApiSetupDeployTokenRoute
   '/_app/admin/': typeof AppAdminIndexRoute
-  '/api/deploy/apps/$appId/activate': typeof ApiDeployAppsAppIdActivateRoute
-  '/api/deploy/apps/$appId/delete': typeof ApiDeployAppsAppIdDeleteRoute
-  '/api/deploy/apps/$appId/deployed': typeof ApiDeployAppsAppIdDeployedRoute
-  '/api/deploy/apps/$appId/info': typeof ApiDeployAppsAppIdInfoRoute
-  '/api/deploy/apps/$appId/tools/sync': typeof ApiDeployAppsAppIdToolsSyncRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -326,20 +232,10 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/api/admin/has-owner'
     | '/api/auth/$'
-    | '/api/deploy/identity-keys'
-    | '/api/deploy/register'
-    | '/api/deploy/status'
-    | '/api/deploy/whoami'
     | '/api/dev/identity'
     | '/api/me/apps'
     | '/api/setup/claim'
-    | '/api/setup/deploy-token'
     | '/admin/'
-    | '/api/deploy/apps/$appId/activate'
-    | '/api/deploy/apps/$appId/delete'
-    | '/api/deploy/apps/$appId/deployed'
-    | '/api/deploy/apps/$appId/info'
-    | '/api/deploy/apps/$appId/tools/sync'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/accept-invitation'
@@ -358,20 +254,10 @@ export interface FileRouteTypes {
     | '/settings/connections'
     | '/api/admin/has-owner'
     | '/api/auth/$'
-    | '/api/deploy/identity-keys'
-    | '/api/deploy/register'
-    | '/api/deploy/status'
-    | '/api/deploy/whoami'
     | '/api/dev/identity'
     | '/api/me/apps'
     | '/api/setup/claim'
-    | '/api/setup/deploy-token'
     | '/admin'
-    | '/api/deploy/apps/$appId/activate'
-    | '/api/deploy/apps/$appId/delete'
-    | '/api/deploy/apps/$appId/deployed'
-    | '/api/deploy/apps/$appId/info'
-    | '/api/deploy/apps/$appId/tools/sync'
   id:
     | '__root__'
     | '/_app'
@@ -392,20 +278,10 @@ export interface FileRouteTypes {
     | '/_app/settings/connections'
     | '/api/admin/has-owner'
     | '/api/auth/$'
-    | '/api/deploy/identity-keys'
-    | '/api/deploy/register'
-    | '/api/deploy/status'
-    | '/api/deploy/whoami'
     | '/api/dev/identity'
     | '/api/me/apps'
     | '/api/setup/claim'
-    | '/api/setup/deploy-token'
     | '/_app/admin/'
-    | '/api/deploy/apps/$appId/activate'
-    | '/api/deploy/apps/$appId/delete'
-    | '/api/deploy/apps/$appId/deployed'
-    | '/api/deploy/apps/$appId/info'
-    | '/api/deploy/apps/$appId/tools/sync'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -420,19 +296,9 @@ export interface RootRouteChildren {
   OauthConsentRoute: typeof OauthConsentRoute
   ApiAdminHasOwnerRoute: typeof ApiAdminHasOwnerRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
-  ApiDeployIdentityKeysRoute: typeof ApiDeployIdentityKeysRoute
-  ApiDeployRegisterRoute: typeof ApiDeployRegisterRoute
-  ApiDeployStatusRoute: typeof ApiDeployStatusRoute
-  ApiDeployWhoamiRoute: typeof ApiDeployWhoamiRoute
   ApiDevIdentityRoute: typeof ApiDevIdentityRoute
   ApiMeAppsRoute: typeof ApiMeAppsRoute
   ApiSetupClaimRoute: typeof ApiSetupClaimRoute
-  ApiSetupDeployTokenRoute: typeof ApiSetupDeployTokenRoute
-  ApiDeployAppsAppIdActivateRoute: typeof ApiDeployAppsAppIdActivateRoute
-  ApiDeployAppsAppIdDeleteRoute: typeof ApiDeployAppsAppIdDeleteRoute
-  ApiDeployAppsAppIdDeployedRoute: typeof ApiDeployAppsAppIdDeployedRoute
-  ApiDeployAppsAppIdInfoRoute: typeof ApiDeployAppsAppIdInfoRoute
-  ApiDeployAppsAppIdToolsSyncRoute: typeof ApiDeployAppsAppIdToolsSyncRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -570,34 +436,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/deploy/identity-keys': {
-      id: '/api/deploy/identity-keys'
-      path: '/api/deploy/identity-keys'
-      fullPath: '/api/deploy/identity-keys'
-      preLoaderRoute: typeof ApiDeployIdentityKeysRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/deploy/register': {
-      id: '/api/deploy/register'
-      path: '/api/deploy/register'
-      fullPath: '/api/deploy/register'
-      preLoaderRoute: typeof ApiDeployRegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/deploy/status': {
-      id: '/api/deploy/status'
-      path: '/api/deploy/status'
-      fullPath: '/api/deploy/status'
-      preLoaderRoute: typeof ApiDeployStatusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/deploy/whoami': {
-      id: '/api/deploy/whoami'
-      path: '/api/deploy/whoami'
-      fullPath: '/api/deploy/whoami'
-      preLoaderRoute: typeof ApiDeployWhoamiRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/dev/identity': {
       id: '/api/dev/identity'
       path: '/api/dev/identity'
@@ -617,48 +455,6 @@ declare module '@tanstack/react-router' {
       path: '/api/setup/claim'
       fullPath: '/api/setup/claim'
       preLoaderRoute: typeof ApiSetupClaimRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/setup/deploy-token': {
-      id: '/api/setup/deploy-token'
-      path: '/api/setup/deploy-token'
-      fullPath: '/api/setup/deploy-token'
-      preLoaderRoute: typeof ApiSetupDeployTokenRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/deploy/apps/$appId/activate': {
-      id: '/api/deploy/apps/$appId/activate'
-      path: '/api/deploy/apps/$appId/activate'
-      fullPath: '/api/deploy/apps/$appId/activate'
-      preLoaderRoute: typeof ApiDeployAppsAppIdActivateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/deploy/apps/$appId/delete': {
-      id: '/api/deploy/apps/$appId/delete'
-      path: '/api/deploy/apps/$appId/delete'
-      fullPath: '/api/deploy/apps/$appId/delete'
-      preLoaderRoute: typeof ApiDeployAppsAppIdDeleteRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/deploy/apps/$appId/deployed': {
-      id: '/api/deploy/apps/$appId/deployed'
-      path: '/api/deploy/apps/$appId/deployed'
-      fullPath: '/api/deploy/apps/$appId/deployed'
-      preLoaderRoute: typeof ApiDeployAppsAppIdDeployedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/deploy/apps/$appId/info': {
-      id: '/api/deploy/apps/$appId/info'
-      path: '/api/deploy/apps/$appId/info'
-      fullPath: '/api/deploy/apps/$appId/info'
-      preLoaderRoute: typeof ApiDeployAppsAppIdInfoRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/deploy/apps/$appId/tools/sync': {
-      id: '/api/deploy/apps/$appId/tools/sync'
-      path: '/api/deploy/apps/$appId/tools/sync'
-      fullPath: '/api/deploy/apps/$appId/tools/sync'
-      preLoaderRoute: typeof ApiDeployAppsAppIdToolsSyncRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -710,19 +506,9 @@ const rootRouteChildren: RootRouteChildren = {
   OauthConsentRoute: OauthConsentRoute,
   ApiAdminHasOwnerRoute: ApiAdminHasOwnerRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
-  ApiDeployIdentityKeysRoute: ApiDeployIdentityKeysRoute,
-  ApiDeployRegisterRoute: ApiDeployRegisterRoute,
-  ApiDeployStatusRoute: ApiDeployStatusRoute,
-  ApiDeployWhoamiRoute: ApiDeployWhoamiRoute,
   ApiDevIdentityRoute: ApiDevIdentityRoute,
   ApiMeAppsRoute: ApiMeAppsRoute,
   ApiSetupClaimRoute: ApiSetupClaimRoute,
-  ApiSetupDeployTokenRoute: ApiSetupDeployTokenRoute,
-  ApiDeployAppsAppIdActivateRoute: ApiDeployAppsAppIdActivateRoute,
-  ApiDeployAppsAppIdDeleteRoute: ApiDeployAppsAppIdDeleteRoute,
-  ApiDeployAppsAppIdDeployedRoute: ApiDeployAppsAppIdDeployedRoute,
-  ApiDeployAppsAppIdInfoRoute: ApiDeployAppsAppIdInfoRoute,
-  ApiDeployAppsAppIdToolsSyncRoute: ApiDeployAppsAppIdToolsSyncRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

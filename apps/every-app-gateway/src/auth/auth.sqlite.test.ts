@@ -29,10 +29,18 @@ vi.mock("better-auth/tanstack-start", () => ({
 }));
 
 import { createHash } from "node:crypto";
-import { count } from "drizzle-orm";
-import { members, organizations, ownerSetupTokens, users } from "@/db/schema";
+import { count, eq } from "drizzle-orm";
+import {
+  apps,
+  members,
+  organizations,
+  ownerSetupTokens,
+  userAppAccess,
+  users,
+} from "@/db/schema";
 import { SetupService } from "@/server/services/SetupService";
-import { createTestDb } from "@/test/sqlite-db";
+import { registerApp } from "@/test/registry";
+import { createTestDb, seedOrganization } from "@/test/sqlite-db";
 import { createAuth } from "./config";
 
 const SETUP_TOKEN = "est_test-setup-link-secret";
@@ -180,92 +188,47 @@ describe("Better Auth lockdown (SQLite)", () => {
     expect(row?.consumedAt).toBeInstanceOf(Date);
   });
 
-  it("hands the CLI that minted the link the owner's first deploy token, once", async () => {
-    const cliSetupLink = "../../../../packages/cli/src/lib/gateway/setup-link";
-    const { mintSetupLink } = (await import(
-      /* @vite-ignore */ cliSetupLink
-    )) as {
-      mintSetupLink(input: {
-        db: { run(statements: Statement[]): Promise<unknown[][]> };
-        gatewayUrl: string;
-        withCliSecret?: boolean;
-      }): Promise<{ url: string; expiresAt: Date; cliSecret?: string }>;
-    };
-    type Statement = { sql: string; params?: (string | number | null)[] };
-    const gatewayD1 = {
-      run: async (statements: Statement[]) => {
-        const results: unknown[][] = [];
-        for (const { sql, params = [] } of statements) {
-          results.push(
-            (await testDb.current!.$client.execute({ sql, args: params })).rows,
-          );
-        }
-        return results;
-      },
-    };
-    const link = await mintSetupLink({
-      db: gatewayD1,
-      gatewayUrl: GATEWAY_URL,
-      withCliSecret: true,
+  it("gives the first owner the organization and apps deployed before anyone existed", async () => {
+    // A CI-first install: the CLI deployed apps before the owner claimed.
+    const ci = await seedOrganization(db, "apps-example-com");
+    const todo = await registerApp(db, { organizationId: ci, appSlug: "todo" });
+    const notes = await registerApp(db, {
+      organizationId: ci,
+      appSlug: "notes",
+      manifest: { id: "notes", access: "everyone" },
     });
-    const token = new URL(link.url).hash.replace(/^#token=/, "");
-    const cliSecret = link.cliSecret!;
-    expect(cliSecret).toMatch(/^ecs_[A-Za-z0-9_-]{43}$/);
-    expect(link.url).not.toContain(cliSecret);
+    const gone = await registerApp(db, { organizationId: ci, appSlug: "gone" });
+    await db
+      .update(apps)
+      .set({ status: "deleted" })
+      .where(eq(apps.id, gone.app.id));
+    expect([todo, notes].map((plan) => plan.grants)).toEqual([[], []]);
+    const organizationsBefore = await db.select().from(organizations);
 
-    // Before the claim: wait. The link's own secret never gets a token.
-    await expect(SetupService.retrieveDeployToken(cliSecret)).resolves.toEqual({
-      status: "pending",
-    });
-    await expect(SetupService.retrieveDeployToken(token)).resolves.toEqual({
-      status: "invalid",
-    });
+    await claimAndSignIn(db);
 
-    const { organizationId } = await SetupService.claimOwner({
-      token,
-      name: "Owner",
-      ...OWNER,
-    });
-    const issued = await SetupService.retrieveDeployToken(cliSecret);
-    expect(issued).toMatchObject({
-      status: "issued",
-      token: expect.stringMatching(/^eak_/),
-      organizationId,
-      organizationName: "Owner",
-      // Who claimed it, for the CLI to show whose token it now holds.
-      ownerEmail: OWNER.email,
-    });
-    // A deploy token for the owner's organization, created by the owner.
-    const { AppTokenService } = await import(
-      "@/server/services/AppTokenService"
-    );
     const [owner] = await db.select().from(users);
-    await expect(
-      AppTokenService.verifyDeployToken((issued as { token: string }).token),
-    ).resolves.toMatchObject({ organizationId, createdBy: owner!.id });
-
-    // Once only.
-    await expect(SetupService.retrieveDeployToken(cliSecret)).resolves.toEqual({
-      status: "invalid",
+    expect(await db.select().from(organizations)).toHaveLength(
+      organizationsBefore.length,
+    );
+    const [membership] = await db.select().from(members);
+    expect(membership).toMatchObject({
+      organizationId: ci,
+      userId: owner!.id,
+      role: "owner",
     });
-  });
-
-  it("gives no deploy token for a claim older than 30 minutes, or a guessed secret", async () => {
-    await db.insert(ownerSetupTokens).values({
-      id: "link-old",
-      kind: "claim",
-      tokenHash: "a".repeat(64),
-      cliSecretHash: createHash("sha256").update("ecs_old").digest("hex"),
-      expiresAt: new Date(Date.now() + 60_000),
-      consumedAt: new Date(Date.now() - 31 * 60_000),
-      consumedBy: "someone",
-    });
-    await expect(SetupService.retrieveDeployToken("ecs_old")).resolves.toEqual({
-      status: "invalid",
-    });
-    await expect(
-      SetupService.retrieveDeployToken("ecs_guessed"),
-    ).resolves.toEqual({ status: "invalid" });
+    const [adopted] = await db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, ci));
+    expect(adopted?.name).toBe("Owner");
+    const granted = await db
+      .select({ appRowId: userAppAccess.appRowId })
+      .from(userAppAccess)
+      .where(eq(userAppAccess.userId, owner!.id));
+    expect(granted.map((grant) => grant.appRowId).sort()).toEqual(
+      [todo.app.id, notes.app.id].sort(),
+    );
   });
 
   it("claims the gateway once with the setup link, then the link is spent", async () => {

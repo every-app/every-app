@@ -10,7 +10,9 @@ import {
 import { organizations, users } from "./auth.schema";
 
 /**
- * Organization app catalog - managed per organization
+ * Organization app catalog - managed per organization. The CLI writes the
+ * registry columns straight into D1 in self-host (ADR-0003), with the
+ * rules in `@every-app/perimeter/registry`.
  */
 export const apps = sqliteTable(
   "apps",
@@ -25,18 +27,11 @@ export const apps = sqliteTable(
     // --- perimeter routing + policy registry columns ---
     // Full routing hostname, e.g. "todo-acme.example.com" (unique per gateway).
     hostname: text("hostname").unique(),
-    // Service-binding / script name the gateway assigns at registration,
-    // "every-<orgKey>-<appId>" (legacy rows: "every-<appId>"). Unique per
-    // gateway: worker names share one Cloudflare-account namespace, and
-    // D1/KV resource names derive from them.
+    // Service-binding / script name assigned at registration,
+    // "every-<orgKey>-<appId>". Unique per gateway: worker names share one
+    // Cloudflare-account namespace, and D1/KV resource names derive from
+    // them.
     workerName: text("worker_name").unique(),
-    // Registered before org-scoped names: the row keeps "every-<appId>".
-    // True by default, so a row the gateway code from before this column
-    // writes (an upgrade migrates before its new code is live) is legacy;
-    // registrations write false explicitly.
-    legacyNames: integer("legacy_names", { mode: "boolean" })
-      .default(true)
-      .notNull(),
     // 'service_binding' now; 'dispatch' reserved for the hosted tier.
     tier: text("tier").notNull().default("service_binding"),
     // JSON snapshot of everyapp.config.ts, taken when a deploy uploads the
@@ -44,15 +39,17 @@ export const apps = sqliteTable(
     manifest: text("manifest"),
     // The app's deploy state:
     //  - 'pending': registered, its Worker not uploaded yet (not bound);
-    //  - 'binding': uploaded, waiting for the gateway to bind and verify it;
+    //  - 'binding': uploaded; the first request that reaches it over the
+    //    gateway's service binding makes it 'active';
     //  - 'active' | 'disabled' (bound, 503 while disabled);
     //  - 'deleted': a tombstone, unrouted and hidden, but its slug, hostname
     //    and worker name stay reserved to its organization.
-    // 'deploying' is a legacy value, treated like 'binding'.
     status: text("status").notNull().default("active"),
-    // The Worker version and time of the last upload.
+    // The Worker version and time of the last upload, and who uploaded it:
+    // the Cloudflare login's email, or `api-token:<account id>` in CI.
     versionId: text("version_id"),
     deployedAt: integer("deployed_at", { mode: "timestamp_ms" }),
+    deployedByActor: text("deployed_by_actor"),
     isDefault: integer("is_default", { mode: "boolean" })
       .default(false)
       .notNull(), // Auto-grant to new users within organization
@@ -117,58 +114,9 @@ export const userAppAccess = sqliteTable(
   ],
 );
 
-/**
- * Machine-to-machine app tokens for gateway access.
- * Tokens are stored as irreversible hashes; plaintext is never persisted.
- *
- * Also stores organization-scoped `eak_` deploy tokens. Deploy-token rows have
- * `app_row_id` NULL and scopes `apps:register`, `apps:deploy`.
- */
-export const appTokens = sqliteTable(
-  "app_tokens",
-  {
-    id: text("id").primaryKey(),
-    appRowId: text("app_row_id").references(() => apps.id, {
-      onDelete: "cascade",
-    }),
-    organizationId: text("organization_id")
-      .notNull()
-      .references(() => organizations.id, { onDelete: "cascade" }),
-    tokenHash: text("token_hash").notNull(),
-    tokenPrefix: text("token_prefix").notNull(),
-    scopes: text("scopes").notNull().default("[]"),
-    createdBy: text("created_by").references(() => users.id, {
-      onDelete: "set null",
-    }),
-    createdAt: integer("created_at", { mode: "timestamp_ms" })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .notNull(),
-    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
-      .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
-      .$onUpdate(() => new Date())
-      .notNull(),
-    expiresAt: integer("expires_at", { mode: "timestamp_ms" }),
-    revokedAt: integer("revoked_at", { mode: "timestamp_ms" }),
-    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
-  },
-  (table) => [
-    foreignKey({
-      columns: [table.appRowId, table.organizationId],
-      foreignColumns: [apps.id, apps.organizationId],
-      name: "app_tokens_app_row_org_fk",
-    }).onDelete("cascade"),
-    uniqueIndex("app_tokens_token_hash_unique").on(table.tokenHash),
-    index("app_tokens_organization_id_idx").on(table.organizationId),
-    index("app_tokens_app_row_id_idx").on(table.appRowId),
-    index("app_tokens_token_prefix_idx").on(table.tokenPrefix),
-    index("app_tokens_revoked_at_idx").on(table.revokedAt),
-  ],
-);
-
 // Relations
 export const appsRelations = relations(apps, ({ many }) => ({
   userAccess: many(userAppAccess),
-  appTokens: many(appTokens),
 }));
 
 export const userAppAccessRelations = relations(userAppAccess, ({ one }) => ({
@@ -182,17 +130,6 @@ export const userAppAccessRelations = relations(userAppAccess, ({ one }) => ({
   }),
   grantedByUser: one(users, {
     fields: [userAppAccess.grantedBy],
-    references: [users.id],
-  }),
-}));
-
-export const appTokensRelations = relations(appTokens, ({ one }) => ({
-  app: one(apps, {
-    fields: [appTokens.appRowId],
-    references: [apps.id],
-  }),
-  createdByUser: one(users, {
-    fields: [appTokens.createdBy],
     references: [users.id],
   }),
 }));

@@ -1,16 +1,7 @@
 import { db } from "@/db";
-import { members, organizations } from "@/db/schema";
-import { and, asc, eq } from "drizzle-orm";
-
-async function findSlugById(organizationId: string) {
-  const rows = await db
-    .select({ slug: organizations.slug })
-    .from(organizations)
-    .where(eq(organizations.id, organizationId))
-    .limit(1);
-
-  return rows[0]?.slug;
-}
+import { apps, members, organizations } from "@/db/schema";
+import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
+import { and, asc, eq, exists, ne, notExists } from "drizzle-orm";
 
 /** An organization's display fields (no members, no invitations). */
 async function findSummaryById(organizationId: string) {
@@ -28,20 +19,34 @@ async function findSummaryById(organizationId: string) {
 }
 
 /**
- * The install's own organization: the one its owner claimed it with. Only
- * the setup claim creates organizations with an owner, so it is the oldest
- * that has one; on a gateway set up before the claim existed, its first
- * owner's. Null before the claim.
+ * The organization apps were deployed to before the gateway had an owner:
+ * the oldest one with live apps and no members. The setup claim makes its
+ * first owner the owner of this one instead of creating another. Null when
+ * there is none.
  */
-async function findInstallOrganizationId(): Promise<string | null> {
+async function findAwaitingOwner(): Promise<string | null> {
   const rows = await db
     .select({ id: organizations.id })
     .from(organizations)
-    .innerJoin(
-      members,
+    .where(
       and(
-        eq(members.organizationId, organizations.id),
-        eq(members.role, "owner"),
+        notExists(
+          db
+            .select({ id: members.id })
+            .from(members)
+            .where(eq(members.organizationId, organizations.id)),
+        ),
+        exists(
+          db
+            .select({ id: apps.id })
+            .from(apps)
+            .where(
+              and(
+                eq(apps.organizationId, organizations.id),
+                ne(apps.status, DELETED_APP_STATUS),
+              ),
+            ),
+        ),
       ),
     )
     .orderBy(asc(organizations.createdAt), asc(organizations.id))
@@ -50,14 +55,37 @@ async function findInstallOrganizationId(): Promise<string | null> {
   return rows[0]?.id ?? null;
 }
 
+/**
+ * Make `userId` the owner of an organization that has none, and give it the
+ * name the claim would have given a new one.
+ */
+async function adoptForOwner(
+  organizationId: string,
+  { userId, name }: { userId: string; name: string },
+): Promise<void> {
+  await db.batch([
+    db
+      .update(organizations)
+      .set({ name })
+      .where(eq(organizations.id, organizationId)),
+    db.insert(members).values({
+      id: crypto.randomUUID(),
+      organizationId,
+      userId,
+      role: "owner",
+      createdAt: new Date(),
+    }),
+  ]);
+}
+
 /** Delete an organization; memberships, invitations and apps cascade. */
 async function deleteById(organizationId: string): Promise<void> {
   await db.delete(organizations).where(eq(organizations.id, organizationId));
 }
 
 export const OrganizationRepository = {
-  findSlugById,
   findSummaryById,
-  findInstallOrganizationId,
+  findAwaitingOwner,
+  adoptForOwner,
   deleteById,
 } as const;

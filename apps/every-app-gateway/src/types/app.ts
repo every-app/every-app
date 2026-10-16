@@ -4,14 +4,14 @@ import { apps } from "@/db/schema";
 /**
  * Base app type inferred from the Drizzle schema: catalog metadata plus the
  * perimeter routing/policy registry columns (hostname, workerName, tier, manifest,
- * status). Apps are registered by `everyapp deploy`, never created by hand.
+ * status), and who deployed it. Apps are registered by `everyapp deploy`,
+ * never created by hand.
  */
 type AppRow = InferSelectModel<typeof apps>;
-// Deploy bookkeeping (naming rule, uploaded version) stays server-side.
-type App = Omit<
-  AppRow,
-  "appSlug" | "legacyNames" | "versionId" | "deployedAt"
-> & { appId: AppRow["appSlug"] };
+// Deploy bookkeeping (uploaded version and time) stays server-side.
+type App = Omit<AppRow, "appSlug" | "versionId" | "deployedAt"> & {
+  appId: AppRow["appSlug"];
+};
 
 /**
  * App with access count for admin views.

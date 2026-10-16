@@ -146,9 +146,31 @@ async function grantDefaultAppsToUser(userId: string, organizationId?: string) {
   await AppAccessRepository.createMany(accessRecords);
 }
 
+/**
+ * Give the gateway's first owner every app of their organization that
+ * nobody has access to: apps deployed before anyone existed, whose initial
+ * access found no members to grant.
+ */
+async function grantUnclaimedAppsToOwner(
+  userId: string,
+  organizationId: string,
+) {
+  const unclaimed = await AppRepository.findAllWithoutAccess(organizationId);
+  await AppAccessRepository.createMany(
+    unclaimed.map((app) => ({
+      id: crypto.randomUUID(),
+      organizationId,
+      userId,
+      appRowId: app.id,
+      grantedBy: null,
+    })),
+  );
+}
+
 export const AppAccessService = {
   getAppsForUser,
   getAccessStateForApp,
   updateAccessForApp,
   grantDefaultAppsToUser,
+  grantUnclaimedAppsToOwner,
 } as const;

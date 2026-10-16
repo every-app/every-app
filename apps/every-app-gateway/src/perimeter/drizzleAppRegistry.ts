@@ -9,6 +9,7 @@ import {
 import { apps } from "@/db/apps.schema";
 
 type RegistryRow = {
+  id: string;
   appSlug: string;
   hostname: string | null;
   workerName: string | null;
@@ -16,9 +17,11 @@ type RegistryRow = {
   organizationId: string;
   status: string;
   manifest: string | null;
+  versionId: string | null;
 };
 
 const registryColumns = {
+  id: apps.id,
   appSlug: apps.appSlug,
   hostname: apps.hostname,
   workerName: apps.workerName,
@@ -26,6 +29,7 @@ const registryColumns = {
   organizationId: apps.organizationId,
   status: apps.status,
   manifest: apps.manifest,
+  versionId: apps.versionId,
 };
 
 export class DrizzleAppRegistry implements AppRegistry {
@@ -85,5 +89,7 @@ function toRegistryRow(row: RegistryRow): AppRegistryRow {
     organizationId: row.organizationId,
     status: row.status,
     manifest: row.manifest,
+    rowId: row.id,
+    versionId: row.versionId,
   };
 }

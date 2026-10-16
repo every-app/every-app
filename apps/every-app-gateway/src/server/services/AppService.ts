@@ -5,8 +5,8 @@ import { PublicError } from "@/server/errors";
 import type { OrgContext } from "@/server/organization/orgContext";
 
 // Types for service operations.
-// Apps are created by `everyapp deploy` registration, never by hand. The admin
-// UI can only edit catalog metadata.
+// Apps are registered by `everyapp deploy` writing the gateway's D1, never by
+// hand. The admin UI can only edit catalog metadata and delete them.
 type UpdateAppInput = {
   id: string;
   name?: string;
@@ -67,7 +67,7 @@ async function deleteApp(ctx: OrgContext, id: string) {
     throw new PublicError("APP_NOT_FOUND", "App not found");
   }
 
-  await AppRepository.tombstone(id, ctx.orgId);
+  await AppRepository.tombstone(existingApp);
 }
 
 export const AppService = {

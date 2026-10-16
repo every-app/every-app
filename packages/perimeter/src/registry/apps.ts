@@ -6,21 +6,20 @@
  * the proxy core can be unit-tested with an in-memory registry and run for real
  * against D1 in production / under miniflare.
  */
-import { validateManifest, type Manifest } from "./manifest/manifest";
+import { validateManifest, type Manifest } from "../manifest/manifest";
 
 export type Tier = "service_binding" | "dispatch";
 /**
  * `pending`: registered, its Worker not uploaded yet. `binding`: uploaded,
- * waiting for the gateway to bind and verify it. Both answer "deploying";
- * `disabled` is switched off; `deploying` is a legacy value.
+ * waiting for the gateway to reach it over a service binding (the first
+ * request that does activates it). Both answer "deploying"; `disabled` is
+ * switched off.
  */
-export type AppStatus =
-  "active" | "disabled" | "deploying" | "pending" | "binding";
+export type AppStatus = "active" | "disabled" | "pending" | "binding";
 
 const APP_STATUSES: readonly string[] = [
   "active",
   "disabled",
-  "deploying",
   "pending",
   "binding",
 ] satisfies AppStatus[];
@@ -37,6 +36,10 @@ export interface RegisteredApp {
   status: AppStatus;
   /** Parsed manifest snapshot taken at deploy time. */
   manifest: Manifest;
+  /** The `apps` row's primary key; registries backed by D1 set it. */
+  rowId?: string;
+  /** The Worker version the last deploy uploaded; null before the first. */
+  versionId?: string | null;
 }
 
 export interface AppRegistry {
@@ -58,6 +61,8 @@ export interface AppRegistryRow {
   organizationId: string;
   status: string;
   manifest: string;
+  rowId?: string;
+  versionId?: string | null;
 }
 
 export function rowToRegisteredApp(row: AppRegistryRow): RegisteredApp {
@@ -73,6 +78,8 @@ export function rowToRegisteredApp(row: AppRegistryRow): RegisteredApp {
     organizationId: row.organizationId,
     status,
     manifest: validateManifest(JSON.parse(row.manifest)),
+    ...(row.rowId === undefined ? {} : { rowId: row.rowId }),
+    ...(row.versionId === undefined ? {} : { versionId: row.versionId }),
   };
 }
 

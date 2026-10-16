@@ -13,10 +13,11 @@
  *    server/auth-rate-limit.ts). The MCP and OAuth code loads with the first
  *    request that needs it (server/mcp-auth/routes.ts);
  *  - a host in the app registry → the perimeter proxy
- *    (`handleGatewayRequest`), which authenticates the Better Auth session,
+ *    (`handleGatewayRequest`), which activates an app whose Worker was just
+ *    uploaded (server/app-activation.ts), authenticates the Better Auth session,
  *    mints the identity JWT, and proxies to the app's private worker over its
  *    service binding. App hosts reach this Worker as its Workers Custom
- *    Domains (or, on gateways installed before those, a `*.<host>` route).
+ *    Domains.
  *    An app host's `/mcp` is served by the ToolBus from the app's tool
  *    catalog instead (server/toolbus/app-host-mcp.ts);
  *  - any other host → 404 (local dev serves the control plane there too).
@@ -37,12 +38,13 @@ import {
   withSecurityHeaders,
 } from "@every-app/perimeter";
 import { createProdAuthenticator } from "./perimeter/betterAuthAuthenticator";
+import { activateApp } from "./server/app-activation";
 import { DrizzleAppRegistry } from "./perimeter/drizzleAppRegistry";
 import {
   handleAppGatewayRequest,
   type AppCallerProps,
 } from "./server/app-gateway-entrypoint";
-import { appHostParent } from "./server/app-hosts";
+import { appBaseDomain } from "./server/app-hosts";
 import { rateLimitCredentialRequest } from "./server/auth-rate-limit";
 import { serveControlPlane } from "./server/control-plane";
 import {
@@ -219,10 +221,10 @@ export default {
       // subdomain is a 404 — serving the control plane (auth/admin UI) on an
       // arbitrary app-shaped origin would let a stale origin or service
       // worker impersonate it, and the session cookie spans these hosts.
-      const appParent = appHostParent(env);
+      const base = appBaseDomain(env);
       if (
         requestHost.endsWith(`.${gatewayHost}`) ||
-        (appParent && requestHost.endsWith(`.${appParent}`))
+        (base && requestHost.endsWith(`.${base}`))
       ) {
         return notFound("unknown_app_host");
       }
@@ -249,6 +251,12 @@ export default {
         resolveApp: async () => app,
         loginUrl: `${env.GATEWAY_URL}/sign-in`,
         interceptMcp: serveAppHostMcp,
+        activate: async (binding) => {
+          const active = await activateApp(env, binding);
+          // The cached row still says `binding`.
+          if (active) hostnameCache.delete(requestHost);
+          return active;
+        },
       });
     } catch (error) {
       // The perimeter must never leak an uncaught exception (Cloudflare's

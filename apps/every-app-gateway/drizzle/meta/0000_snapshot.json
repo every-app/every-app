@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f039499f-d25f-40da-a19b-80b838d574aa",
+  "id": "ed511418-16e3-449a-b059-6622e8c150ac",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "accounts": {
@@ -733,194 +733,6 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
-    "app_tokens": {
-      "name": "app_tokens",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "app_row_id": {
-          "name": "app_row_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "token_hash": {
-          "name": "token_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "token_prefix": {
-          "name": "token_prefix",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "scopes": {
-          "name": "scopes",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "'[]'"
-        },
-        "created_by": {
-          "name": "created_by",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "(cast(unixepoch('subsecond') * 1000 as integer))"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "revoked_at": {
-          "name": "revoked_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "last_used_at": {
-          "name": "last_used_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "app_tokens_token_hash_unique": {
-          "name": "app_tokens_token_hash_unique",
-          "columns": [
-            "token_hash"
-          ],
-          "isUnique": true
-        },
-        "app_tokens_organization_id_idx": {
-          "name": "app_tokens_organization_id_idx",
-          "columns": [
-            "organization_id"
-          ],
-          "isUnique": false
-        },
-        "app_tokens_app_row_id_idx": {
-          "name": "app_tokens_app_row_id_idx",
-          "columns": [
-            "app_row_id"
-          ],
-          "isUnique": false
-        },
-        "app_tokens_token_prefix_idx": {
-          "name": "app_tokens_token_prefix_idx",
-          "columns": [
-            "token_prefix"
-          ],
-          "isUnique": false
-        },
-        "app_tokens_revoked_at_idx": {
-          "name": "app_tokens_revoked_at_idx",
-          "columns": [
-            "revoked_at"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "app_tokens_app_row_id_apps_id_fk": {
-          "name": "app_tokens_app_row_id_apps_id_fk",
-          "tableFrom": "app_tokens",
-          "tableTo": "apps",
-          "columnsFrom": [
-            "app_row_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "app_tokens_organization_id_organizations_id_fk": {
-          "name": "app_tokens_organization_id_organizations_id_fk",
-          "tableFrom": "app_tokens",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "app_tokens_created_by_users_id_fk": {
-          "name": "app_tokens_created_by_users_id_fk",
-          "tableFrom": "app_tokens",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "app_tokens_app_row_org_fk": {
-          "name": "app_tokens_app_row_org_fk",
-          "tableFrom": "app_tokens",
-          "tableTo": "apps",
-          "columnsFrom": [
-            "app_row_id",
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id",
-            "organization_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {}
-    },
     "apps": {
       "name": "apps",
       "columns": {
@@ -973,14 +785,6 @@
           "notNull": false,
           "autoincrement": false
         },
-        "legacy_names": {
-          "name": "legacy_names",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": true
-        },
         "tier": {
           "name": "tier",
           "type": "text",
@@ -1014,6 +818,13 @@
         "deployed_at": {
           "name": "deployed_at",
           "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "deployed_by_actor": {
+          "name": "deployed_by_actor",
+          "type": "text",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
@@ -1537,20 +1348,6 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
-        },
-        "cli_secret_hash": {
-          "name": "cli_secret_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "deploy_token_issued_at": {
-          "name": "deploy_token_issued_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
         }
       },
       "indexes": {
@@ -1558,13 +1355,6 @@
           "name": "owner_setup_tokens_token_hash_unique",
           "columns": [
             "token_hash"
-          ],
-          "isUnique": true
-        },
-        "owner_setup_tokens_cli_secret_hash_unique": {
-          "name": "owner_setup_tokens_cli_secret_hash_unique",
-          "columns": [
-            "cli_secret_hash"
           ],
           "isUnique": true
         }
@@ -1773,6 +1563,13 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
+          "autoincrement": false
+        },
+        "version_id": {
+          "name": "version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
           "autoincrement": false
         }
       },

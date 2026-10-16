@@ -13,7 +13,10 @@ const mocks = vi.hoisted(() => ({
   deleteOrganization: vi.fn(),
   signUpEmail: vi.fn(),
   createOrganization: vi.fn(),
+  findAwaitingOwner: vi.fn(),
+  adoptForOwner: vi.fn(),
   grantDefaultAppsToUser: vi.fn(),
+  grantUnclaimedAppsToOwner: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({ env: {} }));
@@ -50,11 +53,18 @@ vi.mock("../repositories/UserRepository", () => ({
 }));
 
 vi.mock("../repositories/OrganizationRepository", () => ({
-  OrganizationRepository: { deleteById: mocks.deleteOrganization },
+  OrganizationRepository: {
+    deleteById: mocks.deleteOrganization,
+    findAwaitingOwner: mocks.findAwaitingOwner,
+    adoptForOwner: mocks.adoptForOwner,
+  },
 }));
 
 vi.mock("./AppAccessService", () => ({
-  AppAccessService: { grantDefaultAppsToUser: mocks.grantDefaultAppsToUser },
+  AppAccessService: {
+    grantDefaultAppsToUser: mocks.grantDefaultAppsToUser,
+    grantUnclaimedAppsToOwner: mocks.grantUnclaimedAppsToOwner,
+  },
 }));
 
 import { hashSetupToken } from "../setup-token";
@@ -89,7 +99,10 @@ describe("SetupService.claimOwner", () => {
     });
     mocks.findById.mockResolvedValue({ id: "user-1" });
     mocks.createOrganization.mockResolvedValue({ id: "org-1" });
+    mocks.findAwaitingOwner.mockResolvedValue(null);
+    mocks.adoptForOwner.mockResolvedValue(undefined);
     mocks.grantDefaultAppsToUser.mockResolvedValue(undefined);
+    mocks.grantUnclaimedAppsToOwner.mockResolvedValue(undefined);
   });
 
   it("creates the owner, their organization and consumes the link", async () => {
@@ -108,8 +121,48 @@ describe("SetupService.claimOwner", () => {
     expect(mocks.createOrganization).toHaveBeenCalledWith({
       body: { name: "Ada Owner", slug: "ada-owner", userId: "user-1" },
     });
+    expect(mocks.adoptForOwner).not.toHaveBeenCalled();
+    expect(mocks.grantUnclaimedAppsToOwner).toHaveBeenCalledWith(
+      "user-1",
+      "org-1",
+    );
     expect(mocks.consume).toHaveBeenCalledWith("link-1", "user-1");
     expect(mocks.releaseOwnerBootstrap).not.toHaveBeenCalled();
+  });
+
+  it("takes over the organization apps were deployed to before anyone existed", async () => {
+    mocks.findAwaitingOwner.mockResolvedValue("org-ci");
+
+    await expect(claim()).resolves.toEqual({
+      userId: "user-1",
+      organizationId: "org-ci",
+    });
+
+    expect(mocks.createOrganization).not.toHaveBeenCalled();
+    expect(mocks.adoptForOwner).toHaveBeenCalledWith("org-ci", {
+      userId: "user-1",
+      name: "Ada Owner",
+    });
+    // Their initial access found no members: the owner gets them all.
+    expect(mocks.grantUnclaimedAppsToOwner).toHaveBeenCalledWith(
+      "user-1",
+      "org-ci",
+    );
+    expect(
+      mocks.grantUnclaimedAppsToOwner.mock.invocationCallOrder[0],
+    ).toBeGreaterThan(mocks.adoptForOwner.mock.invocationCallOrder[0]!);
+  });
+
+  it("keeps an adopted organization and its apps when the claim rolls back", async () => {
+    mocks.findAwaitingOwner.mockResolvedValue("org-ci");
+    mocks.consume.mockResolvedValue(false);
+
+    await expect(claim()).rejects.toMatchObject({
+      code: "INVALID_OR_EXPIRED_SETUP_LINK",
+    });
+    expect(mocks.deleteOrganization).not.toHaveBeenCalled();
+    // Its membership and grants go with the user.
+    expect(mocks.deleteById).toHaveBeenCalledWith("user-1");
   });
 
   it("rejects a wrong token with 403 and creates nothing", async () => {

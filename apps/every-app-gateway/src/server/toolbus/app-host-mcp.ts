@@ -6,10 +6,11 @@
  * personal access token, or a same-origin browser session that passed the
  * CSRF check), confirmed access to the app, and ruled out apps that keep
  * their own MCP server (`mcp: "app"`). This finds the snapshot, syncing it
- * on a POST if there is none or a failed one has gone stale, and serves the
- * request. With no snapshot to serve, or when the snapshot can't be read at
- * all (D1 before the catalog migration ran, say), it returns null and the
- * request is proxied to the app as before, so apps that still answer /mcp
+ * on a POST if there is none, it was taken from another version than the
+ * app runs now, or a failed one has gone stale, and serves the request.
+ * With no snapshot to serve, or when the snapshot can't be read at all (D1
+ * before the catalog migration ran, say), it returns null and the request
+ * is proxied to the app as before, so apps that still answer /mcp
  * themselves keep working.
  */
 import {
@@ -49,17 +50,27 @@ async function syncableApp(app: RegisteredApp): Promise<SyncableApp | null> {
     hostname: row.hostname,
     workerName: row.workerName,
     tier: row.tier,
+    versionId: row.versionId,
   };
+}
+
+function serving(stored: StoredCatalog | null): StoredCatalog | null {
+  return stored?.status === "ok" ? stored : null;
 }
 
 async function servingCatalog(
   app: RegisteredApp,
 ): Promise<StoredCatalog | null> {
-  const stored = await AppToolRepository.findByOrgApp(
-    app.organizationId,
-    app.appId,
+  return serving(
+    await AppToolRepository.findByOrgApp(app.organizationId, app.appId),
   );
-  return stored?.status === "ok" ? stored : null;
+}
+
+/** Taken from another version than the app runs now: a redeploy since. */
+function fromOtherVersion(stored: StoredCatalog): boolean {
+  return (
+    stored.appVersionId !== null && stored.versionId !== stored.appVersionId
+  );
 }
 
 // Per isolate: concurrent first requests for an app wait for one sync.
@@ -67,11 +78,12 @@ const pendingSyncs = new Map<string, Promise<StoredCatalog | null>>();
 
 /**
  * The snapshot to serve. A POST (a client actually using the tools) syncs
- * inline, one app invocation, when there is none, or the last attempt didn't
- * produce one and is over five minutes old. Other methods never make the
- * gateway call the app: a GET is what a sibling app's page can send with
- * the session cookie. Deploys sync explicitly; this covers apps deployed
- * before the gateway learned to snapshot, or by an older CLI.
+ * inline, one app invocation, when there is none, when it was taken from
+ * another version than the app runs now (a redeploy), or when the last
+ * attempt didn't produce one and is over five minutes old. Until a sync
+ * stores a new one, a serving snapshot from the older version is served.
+ * Other methods never make the gateway call the app: a GET is what a
+ * sibling app's page can send with the session cookie.
  */
 async function servableCatalog(
   app: RegisteredApp,
@@ -81,10 +93,11 @@ async function servableCatalog(
     app.organizationId,
     app.appId,
   );
-  if (stored?.status === "ok") return stored;
-  if (method !== "POST") return null;
+  const current = stored !== null && !fromOtherVersion(stored);
+  if (current && stored.status === "ok") return stored;
+  if (method !== "POST") return serving(stored);
   if (
-    stored &&
+    current &&
     Date.now() - stored.fetchedAt.getTime() < RETRY_UNSERVED_SNAPSHOT_MS
   ) {
     return null;
@@ -93,24 +106,35 @@ async function servableCatalog(
   const key = `${app.organizationId}\u0000${app.appId}`;
   let pending = pendingSyncs.get(key);
   if (!pending) {
-    pending = syncOnFirstUse(app).finally(() => pendingSyncs.delete(key));
+    pending = syncOnUse(app, stored).finally(() => pendingSyncs.delete(key));
     pendingSyncs.set(key, pending);
   }
   return pending;
 }
 
-async function syncOnFirstUse(
+async function syncOnUse(
   app: RegisteredApp,
+  stored: StoredCatalog | null,
 ): Promise<StoredCatalog | null> {
   const target = await syncableApp(app);
-  if (!target) return null;
+  if (!target) return serving(stored);
+  // A new version gets its own sync at once, whenever the last one ran.
+  const newVersion = stored !== null && fromOtherVersion(stored);
+  const claim = newVersion
+    ? `${target.rowId}@${target.versionId}`
+    : target.rowId;
   // Synced moments ago (by a request that read the catalog before this one
   // did): serve what that sync stored.
-  if (!claimCatalogSync(target.rowId)) return servingCatalog(app);
+  if (!claimCatalogSync(claim)) return servingCatalog(app);
   try {
-    logToolSync(target, await syncAppTools(target), "first_use");
+    logToolSync(
+      target,
+      await syncAppTools(target),
+      newVersion ? "new_version" : "first_use",
+    );
   } catch (error) {
-    if (error instanceof BindingNotReadyError) return null;
+    // This isolate can't reach the app yet: keep serving what there is.
+    if (error instanceof BindingNotReadyError) return serving(stored);
     throw error;
   }
   return servingCatalog(app);
@@ -170,6 +194,7 @@ export async function serveAppHostMcp({
       hostname: app.hostname,
       workerName: app.workerName,
       tier: app.tier,
+      versionId: catalog.appVersionId,
     },
   );
 

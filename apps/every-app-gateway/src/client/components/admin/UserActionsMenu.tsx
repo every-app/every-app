@@ -225,7 +225,7 @@ function MemberActionsMenu({
           }}
         >
           They are signed out everywhere, can no longer sign in, and their
-          personal access tokens and deploy tokens are revoked.
+          personal access tokens are revoked.
         </ConfirmDialog>
       ) : null}
 

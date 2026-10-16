@@ -14,7 +14,9 @@ declare namespace Cloudflare {
     // Cloudflare account that owns this gateway deployment
     CLOUDFLARE_ACCOUNT_ID?: string;
 
-    // Deployment mode used to gate internal operator APIs
+    // "self_hosted" (the CLI sets it at install) or "hosted". Only a
+    // self-hosted gateway activates apps on its own (server/app-activation.ts);
+    // anything else, unset included, fails closed.
     GATEWAY_DEPLOYMENT_MODE?: "self_hosted" | "hosted";
 
     // "false" turns off the OAuth authorization server for MCP clients (set
@@ -78,9 +80,8 @@ declare namespace Cloudflare {
     EMAIL_FROM?: string;
     EMAIL_FROM_NAME?: string;
 
-    // The domain apps live one label below (src/server/app-hosts.ts). The
-    // deploy sets it on installs with per-app Custom Domains; unset on
-    // gateways still served through a wildcard route.
+    // The domain apps live one label below (src/server/app-hosts.ts), each a
+    // Workers Custom Domain. The deploy sets it; unset in local dev.
     APP_BASE_DOMAIN?: string;
 
     // DEV ONLY (`everyapp dev --mode mirror`): parent domain to scope the

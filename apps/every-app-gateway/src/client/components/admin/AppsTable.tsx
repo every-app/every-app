@@ -51,9 +51,7 @@ function appStatus(app: AppWithAccessCount): {
   switch (app.status) {
     case "active":
       return { label: "Active", variant: "success" };
-    // 'deploying' is the legacy name for 'binding'.
     case "binding":
-    case "deploying":
       return { label: "Deploying", variant: "info" };
     case "disabled":
       return { label: "Disabled", variant: "secondary" };
@@ -84,6 +82,11 @@ function AppNameCell({ app }: { app: AppWithAccessCount }) {
         {app.appId}
         {app.hostname ? ` · ${app.hostname}` : null}
       </p>
+      {app.deployedByActor ? (
+        <p className="truncate text-xs text-muted-foreground">
+          Deployed by {app.deployedByActor}
+        </p>
+      ) : null}
     </>
   );
 }

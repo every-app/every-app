@@ -89,7 +89,7 @@ function Setup() {
         <AuthCard title="Setup link required" size="md">
           <p className="text-sm text-muted-foreground">
             Open the setup link that was printed when this gateway was deployed,
-            or create a new one on the machine that deployed it:
+            or create a new one with the Cloudflare login that deployed it:
           </p>
           <CodeBlock
             code="everyapp gateway claim-link"

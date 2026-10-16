@@ -839,6 +839,65 @@ describe("handleGatewayRequest", () => {
     }
   });
 
+  it("serves a binding app once activate reaches it, and passes the app on as active", async () => {
+    const activate = vi.fn(async () => true);
+    const seen: RegisteredApp[] = [];
+    const res = await handleGatewayRequest(
+      req("/x"),
+      deps({
+        registry: new InMemoryAppRegistry([{ ...TODO, status: "binding" }]),
+        activate,
+        fetcherFor: (_env, app) => {
+          seen.push(app);
+          return echoFetcher();
+        },
+      }),
+    );
+
+    expect(res.status).toBe(200);
+    expect(activate).toHaveBeenCalledWith(
+      expect.objectContaining({ appId: "todo", status: "binding" }),
+    );
+    expect(seen.map((app) => app.status)).toEqual(["active"]);
+  });
+
+  it("keeps answering 'deploying' while activate can't reach a binding app, or fails", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    for (const activate of [
+      async () => false,
+      async () => {
+        throw new Error("D1 unavailable");
+      },
+    ]) {
+      const res = await handleGatewayRequest(
+        req("/x"),
+        deps({
+          registry: new InMemoryAppRegistry([{ ...TODO, status: "binding" }]),
+          activate,
+        }),
+      );
+      expect(res.status).toBe(503);
+      await expect(res.json()).resolves.toEqual({
+        error: "app_deploying",
+        status: "binding",
+      });
+    }
+  });
+
+  it("never activates a pending, disabled or active app", async () => {
+    const activate = vi.fn(async () => true);
+    for (const status of ["pending", "disabled", "active"] as const) {
+      await handleGatewayRequest(
+        req("/x"),
+        deps({
+          registry: new InMemoryAppRegistry([{ ...TODO, status }]),
+          activate,
+        }),
+      );
+    }
+    expect(activate).not.toHaveBeenCalled();
+  });
+
   it("stamps headers and strips cookie domains from a non-101 response to an upgrade request", async () => {
     const headers = new Headers({ "content-type": "text/plain" });
     headers.append(

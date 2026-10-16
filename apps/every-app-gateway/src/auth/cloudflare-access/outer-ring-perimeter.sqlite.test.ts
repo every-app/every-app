@@ -44,7 +44,6 @@ import { members, ownerSetupTokens, users } from "@/db/schema";
 import server, { clearHostnameCacheForTests } from "@/server";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
 import { AppAccessService } from "@/server/services/AppAccessService";
-import { AppRegistrationService } from "@/server/services/AppRegistrationService";
 import { SetupService } from "@/server/services/SetupService";
 import { UserPatService } from "@/server/services/UserPatService";
 import {
@@ -53,6 +52,7 @@ import {
   MOCK_ACCESS_ENV,
   type MockAccess,
 } from "@/test/mock-access";
+import { deployLiveApp } from "@/test/registry";
 import { createTestDb } from "@/test/sqlite-db";
 import { clearJwksClientsForTests } from "./jwt";
 
@@ -124,27 +124,16 @@ beforeEach(async () => {
     role: "member",
     createdAt: new Date(),
   });
-  // Live, as `everyapp app deploy` leaves it: the gateway names its
-  // Worker, hears the version is up, then binds it.
-  const manifest = { id: "todo", name: "Todos" };
-  const todo = await AppRegistrationService.register({
+  // Live, as `everyapp deploy` leaves it: registered, uploaded, then
+  // activated by the gateway's first request over the new binding.
+  const { app: todo } = await deployLiveApp(db, {
     organizationId: owner.organizationId,
     appSlug: "todo",
     name: "Todos",
     description: "Things to do",
-    manifest,
+    manifest: { id: "todo", name: "Todos" },
     deployerUserId: owner.userId,
-  });
-  await AppRegistrationService.markDeployed({
-    organizationId: owner.organizationId,
-    appSlug: "todo",
-    versionId: "todo-version",
-    manifest,
-  });
-  await AppRegistrationService.activate({
-    organizationId: owner.organizationId,
-    appSlug: "todo",
-    probe: async () => true,
+    appBaseDomain: new URL(GATEWAY).host,
   });
   hoisted.env[`APP__${todo.workerName}`] = {
     fetch: async (request: Request) => {
@@ -154,10 +143,10 @@ beforeEach(async () => {
       });
     },
   };
-  appHost = todo.hostname;
+  appHost = todo.hostname!;
   await AppAccessService.updateAccessForApp(
     { orgId: owner.organizationId, userId: owner.userId, role: "owner" },
-    todo.appId,
+    todo.id,
     [owner.userId, "user-alice"],
   );
 

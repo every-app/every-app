@@ -100,9 +100,8 @@ async function requireAccountWideManageable(
 
 /**
  * Lock a user out everywhere at once: banned (no new sign-ins), every
- * session ended, their personal access tokens, the deploy tokens they
- * created and their AI app connections revoked. The perimeter, the deploy
- * API and /mcp also refuse banned users.
+ * session ended, their personal access tokens and their AI app connections
+ * revoked. The perimeter and /mcp also refuse banned users.
  */
 async function deactivate(ctx: OrgContext, targetUserId: string) {
   await requireAccountWideManageable(ctx, targetUserId);

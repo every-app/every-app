@@ -92,6 +92,7 @@ import {
   type PlainToolSchema,
 } from "@every-app/sdk/server";
 import {
+  apps,
   appToolCatalogs,
   appTools,
   mcpConnectionApps,
@@ -103,9 +104,7 @@ import {
 } from "@/db/schema";
 import server from "@/server";
 import { AdminService } from "@/server/services/AdminService";
-import { AppRepository } from "@/server/repositories/AppRepository";
 import { AppAccessService } from "@/server/services/AppAccessService";
-import { AppRegistrationService } from "@/server/services/AppRegistrationService";
 import { AppService } from "@/server/services/AppService";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
 import { McpToolCallRepository } from "@/server/repositories/McpToolCallRepository";
@@ -118,6 +117,7 @@ import {
 } from "@/server/toolbus/catalog-sync";
 import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
 import { createKvFake } from "@/test/kv-fake";
+import { deployLiveApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import { getMcpAuth } from "./config";
 import { buildConsentContext, type ConsentContext } from "./consent";
@@ -571,41 +571,30 @@ beforeEach(async () => {
     public: [{ path: "/hooks/*" }],
   };
   const notesManifest = { id: "notes", name: "Notes" };
-  const todo = await AppRegistrationService.register({
+  // Live, as `everyapp deploy` leaves them: registered, uploaded, then
+  // activated by the gateway's first request over the new binding.
+  const deployed = {
     organizationId: orgId,
+    deployerUserId: ownerId,
+    appBaseDomain: HOST,
+    isInstallOrganization: false,
+  };
+  const { app: todo } = await deployLiveApp(db, {
+    ...deployed,
     appSlug: "todo",
     name: "Todos",
     description: "Things to do",
     manifest: todoManifest,
-    deployerUserId: ownerId,
   });
-  const notes = await AppRegistrationService.register({
-    organizationId: orgId,
+  const { app: notes } = await deployLiveApp(db, {
+    ...deployed,
     appSlug: "notes",
     name: "Notes",
     description: "Notes",
     manifest: notesManifest,
-    deployerUserId: ownerId,
   });
-  // Live, as `everyapp app deploy` leaves them: uploaded, then bound.
-  for (const [appSlug, manifest] of [
-    ["todo", todoManifest],
-    ["notes", notesManifest],
-  ] as const) {
-    await AppRegistrationService.markDeployed({
-      organizationId: orgId,
-      appSlug,
-      versionId: `${appSlug}-version`,
-      manifest,
-    });
-    await AppRegistrationService.activate({
-      organizationId: orgId,
-      appSlug,
-      probe: async () => true,
-    });
-  }
-  todoRowId = todo.appId;
-  notesRowId = notes.appId;
+  todoRowId = todo.id;
+  notesRowId = notes.id;
   bindApp(`APP__${todo.workerName}`, todoApp(keys.publicKeyPem));
   bindApp(`APP__${notes.workerName}`, notesApp(keys.publicKeyPem));
   for (const [app, rowId] of [
@@ -616,9 +605,10 @@ beforeEach(async () => {
       rowId,
       organizationId: orgId,
       appSlug: app.appSlug,
-      hostname: app.hostname,
-      workerName: app.workerName,
+      hostname: app.hostname!,
+      workerName: app.workerName!,
       tier: "service_binding",
+      versionId: app.versionId,
     });
   }
   // Both apps are private to the owner until shared.
@@ -2358,6 +2348,30 @@ describe("apps with no tool snapshot yet", () => {
       "todo_list_todos",
     ]);
   });
+
+  it("re-syncs an app in the background once it runs a newer version", async () => {
+    clearCatalogSyncClaimsForTests();
+    await db
+      .update(apps)
+      .set({ versionId: "todo-version-2" })
+      .where(eq(apps.id, todoRowId));
+    const { plaintext: token } = await UserPatService.create({
+      userId: ownerId,
+      organizationId: orgId,
+      name: "claude code",
+    });
+    const catalogVersion = async () =>
+      (
+        await db
+          .select({ versionId: appToolCatalogs.versionId })
+          .from(appToolCatalogs)
+          .where(eq(appToolCatalogs.appRowId, todoRowId))
+      )[0]?.versionId;
+
+    // Served from the snapshot it has meanwhile.
+    expect(await toolNames(token)).toContain("todo_create_todo");
+    expect(await catalogVersion()).toBe("todo-version-2");
+  });
 });
 
 describe("a deleted app", () => {
@@ -2377,7 +2391,10 @@ describe("a deleted app", () => {
       createdAt: new Date(),
     });
 
-    await AppRepository.tombstone(todoRowId, orgId);
+    await AppService.delete(
+      { orgId, userId: ownerId, role: "owner" },
+      todoRowId,
+    );
 
     expect(
       await db
