@@ -1,4 +1,3 @@
-import chalk from "chalk";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execa } from "execa";
 import type { D1Database } from "@/lib/cf/d1";
@@ -163,17 +162,12 @@ export async function setupLinkForDeploy({
   db,
   gatewayUrl,
   printSetupLink = false,
-  onUnattended = () =>
-    console.log(
-      chalk.yellow(
-        "\nGateway is unclaimed: run `everyapp gateway claim-link` on your machine to create the owner account.\n",
-      ),
-    ),
+  onUnattended,
 }: {
   db: D1Database;
   gatewayUrl: string;
   printSetupLink?: boolean;
-  onUnattended?: () => void;
+  onUnattended: () => void;
 }): Promise<SetupLink | null> {
   if (await gatewayHasOwner(db)) return null;
 
@@ -184,25 +178,22 @@ export async function setupLinkForDeploy({
   return mintOperatorSetupLink({ db, gatewayUrl });
 }
 
-/** Print the link and, in an interactive terminal, open it. */
-export async function presentSetupLink(link: SetupLink): Promise<void> {
-  console.log(
-    chalk.bold("Create the owner account with this one-time setup link:\n"),
-  );
-  console.log(`  ${chalk.cyan(link.url)}\n`);
-  console.log(
-    chalk.dim(
-      `  It works once and expires ${link.expiresAt.toLocaleString()}. Treat it like a password.\n` +
-        (link.cliSecret
-          ? "  Once the owner account exists, `everyapp login --resume` logs this CLI in.\n"
-          : "") +
-        "  Lost it? Run `everyapp gateway claim-link` for a new one.\n",
-    ),
-  );
+/** The link as a person reads it: what it does, the link, how long it works. */
+export function describeSetupLink(link: SetupLink): string {
+  return [
+    "Create the owner account with this one-time setup link:",
+    `  ${link.url}`,
+    `It works once and expires ${link.expiresAt.toLocaleString()}. Treat it like a password.${
+      link.cliSecret
+        ? " Once the owner account exists, `everyapp login --resume` logs this CLI in."
+        : ""
+    } Lost it? Run \`everyapp gateway claim-link\` for a new one.`,
+  ].join("\n");
+}
 
-  if (isInteractiveRun()) {
-    await openInBrowser(link.url);
-  }
+/** Open the link in this machine's browser, when a person watches the run. */
+export async function openSetupLinkHere(link: SetupLink): Promise<void> {
+  if (isInteractiveRun()) await openInBrowser(link.url);
 }
 
 export async function openInBrowser(url: string): Promise<void> {

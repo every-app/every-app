@@ -3,9 +3,17 @@ title: CLI Reference
 description: Every everyapp command and flag on one page
 ---
 
-All commands run via `npx everyapp …` (or a local checkout's binary). Global help: `everyapp --help`. The CLI needs Node.js 22.18 or newer and drives Cloudflare's own CLI, `cf`: log in with `npx cf auth login` (the CLI offers it when you're logged out), or set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+While publishing is paused, everyapp runs from a checkout of the repository as `pnpm everyapp …`, and its output names the next command that way. Global help: `pnpm everyapp --help`. The CLI needs Node.js 22.18 or newer and drives Cloudflare's own CLI, `cf`: log in with `npx cf auth login` (the CLI offers it when you're logged out), or set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
-Deploy commands take `--json` to print progress as NDJSON events on stdout. They exit with 0 when done, 2 when a person has to do something first (log in, open a setup link, buy a domain, confirm in a terminal; run the same command again afterwards) and 1 on an error, whatever came before it. An `action_required` event with `data.waiting: true` is one the command waits for: show its `data.url` (and `data.code`) to a person and keep reading.
+## Output, `--json`, `--verbose` and `--yes`
+
+At a terminal a command shows a few lines: its milestones, short ones joined on one line (`Built · 2 migrations applied · uploaded 3f9c1a2e`), a spinner while a step runs, the waits a person should know about (another deploy holding the lease, a certificate on its way, the Gateway's build), and warnings and errors on stderr, each ending with the command to run next. Piped, the same lines without the spinner. `--verbose` adds every step and progress line, and streams build and install output to stderr.
+
+What a command runs writes to a log file, never to the screen: pnpm, the manifest's install and build commands, git and the Gateway's build go to `$TMPDIR/everyapp/<command>-<time>.log`, and a failure shows the last 20 lines and the log's path. `cf`'s output is kept in memory the same way (its last lines on failure). The one exception is `cf deploy` at a terminal: it runs attached, so it can ask its own questions.
+
+With `--json`, stdout carries NDJSON events and nothing else, one per line. A command exits with 0 when done, 2 when a person has to do something first (log in, open a setup link, buy a domain, run it once in a terminal; run the same command again afterwards) and 1 on an error, whatever came before it. An `action_required` event with `data.waiting: true` is one the command waits for: show its `data.url` (and `data.code`) to a person and keep reading. Errors and actions end with `data.rerun`, the command to run next (this same one, unless it says otherwise). An error whose rerun adds a flag that takes something over (`--force-dns`, `--allow-downgrade`, `--allow-delete-durable-object-data`, `--allow-delete-workflows`, `--yes` where a confirmation was needed) carries `data.authorize: true`: show it to a person and ask before running it. An error after a database migration repeats the command that rolls the database back, as `data.rollbackCommand`; the migration's own `step … ok` event has it too.
+
+Nothing asks before it acts: a command's first line says what happens (`todo → https://todo.apps.example.com (Acme), first deploy`; `Redeploying todo with GITHUB_TOKEN (code and pending migrations from this directory)`), and the Workers Paid check is a warning. What still asks, at a terminal only: which Cloudflare account when the login has several; where the Gateway goes when `setup` has no `--domain`; `cf`'s own questions at the upload (a Worker changed in the dashboard or through the API, a Custom Domain or DNS record held by something else); replacing a Worker everyapp didn't record deploying, before anything is migrated; a secret's value, hidden; and `app delete` (with `--purge`, typing the app id). `--yes` skips everyapp's own confirmations (`app delete`'s, including `--purge`'s typed id, and `app workflows terminate`'s), never `cf`'s questions, the replace check or the secret's value.
 
 ## Setup
 
@@ -30,8 +38,10 @@ One command from an empty Cloudflare account to a working Gateway, its owner, th
 | `--force-dns`         | Publish the Gateway's address even where a DNS record answers it (one at the address is replaced).                           |
 | `--no-open`           | Print the setup link without opening a browser.                                                                              |
 | `--printSetupLink`    | Print the setup link even in CI or with piped output, where the log keeps it.                                                |
-| `-y`, `--yes`         | Skip confirmations.                                                                                                          |
-| `--json`, `--verbose` | NDJSON events; detailed output.                                                                                              |
+| `-y`, `--yes`         | Skip everyapp's own confirmations; setup asks for none (see [Output](#output---json---verbose-and---yes)).                   |
+| `--json`, `--verbose` | Only NDJSON events on stdout; every step and progress line, and the Gateway's build output on stderr.                        |
+
+When there is nothing to do, it says `Gateway 0.4.0 at https://apps.example.com is up to date.`, and it always ends with what comes next (`Next:`), the optional AI and email settings included.
 
 ## Gateway
 
@@ -44,7 +54,7 @@ Deploys (or redeploys) your Gateway on your Cloudflare account from the release 
 | `--domain <hostname>` | Where the Gateway lives: any hostname in a zone the account has (the longest one that holds it), e.g. `apps.your-domain.dev`. Apps live one level below it. Required the first time; remembered after.                                                          |
 | `--account-id <id>`   | The Cloudflare account, when your login has several (default: `CLOUDFLARE_ACCOUNT_ID`, the account used before, or the only one).                                                                                                                               |
 | `--release <tarball>` | Deploy this gateway release tarball instead of the bundled one (development).                                                                                                                                                                                   |
-| `-y`, `--yes`         | Skip the confirmation prompt.                                                                                                                                                                                                                                   |
+| `-y`, `--yes`         | Skip everyapp's own confirmations; the deploy itself asks for none.                                                                                                                                                                                             |
 | `--printSetupLink`    | Print the one-time owner setup link even when the deploy isn't run from a terminal (CI, piped output). Without it, an unattended deploy of an unclaimed Gateway only tells you to run `npx everyapp gateway claim-link`, so the link never lands in build logs. |
 | `--allow-downgrade`   | Deploy a release older than the one the Gateway runs. Releases are ordered by their newest migration, then by when they were built (not by version, which builds share).                                                                                        |
 | `--force-dns`         | Publish a new address even where a DNS record answers it (one at the address is replaced).                                                                                                                                                                      |
@@ -96,26 +106,37 @@ Run from an app directory. Registers the app with your Gateway, which names its 
 
 | Flag                                 | Meaning                                                                                                    |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `-y`, `--yes`                        | Skip the confirmation prompt.                                                                              |
+| `-y`, `--yes`                        | Skip everyapp's own confirmations; a deploy asks for none (its first line says where the app goes).        |
 | `--access everyone\|admins`          | Who can open a newly registered app (default: the deployer, owners and admins).                            |
 | `--allow-delete-durable-object-data` | Deploy even though Durable Object classes were removed, deleting their data.                               |
 | `--allow-delete-workflows`           | Deploy even though Workflows were removed, deleting them and their instances once the new version is live. |
 | `--gateway <url>`                    | The Gateway to deploy through.                                                                             |
 | `--force-dns`                        | Publish a new address even where a DNS record answers it (one at the address is replaced).                 |
 | `--no-wait-cert`                     | Don't wait for a new address's certificate (it comes within minutes anyway).                               |
-| `--json`, `--verbose`                | NDJSON events; detailed output.                                                                            |
+| `--json`, `--verbose`                | Only NDJSON events on stdout; every step, and build output on stderr.                                      |
 
 **The schema check.** For an app on the drizzle migrations engine (the default), the deploy runs `drizzle-kit generate` with the app's own `drizzle.config.ts` against a copy of its migrations, after the build and before anything is migrated or uploaded. If that would write a new migration, the schema has changes no migration carries, and the deploy stops with `SCHEMA_DRIFT`: run `pnpm db:generate`, then deploy again. Otherwise it reports `schema in sync`. When drizzle-kit can't tell (it asks about a renamed column or table only at a terminal), the deploy stops with `SCHEMA_CHECK_FAILED`. An app without drizzle-kit installed or a drizzle config gets a `SCHEMA_CHECK_SKIPPED` warning and deploys anyway. Apps on `migrations.engine: "d1-sql"` aren't checked.
 
 An app deploy holds the app's own lease from creating its resources to its upload, then the Gateway's while it binds a new app, with the same 3-minute expiry and no way to take a live one over.
 
+At a terminal a first deploy reads:
+
+```
+todo → https://todo.apps.example.com (Acme), first deploy
+Registered todo: private to you, owners and admins (change it in Admin → Apps)
+Built · schema in sync · 2 migrations applied · uploaded 3f9c1a2e
+  restore point: CLOUDFLARE_ACCOUNT_ID=… npx cf@1.0.0-beta.14 d1 time-travel restore <db> --bookmark <b> --force
+Binding to the Gateway · uploaded 7d20c4e1
+Live: https://todo.apps.example.com
+```
+
 ### `everyapp app secret set <NAME>`
 
-Run from an app directory. Sets one of the app's own secrets (an API key its Worker calls out with, say) from a hidden prompt or `--from-env <VAR>`, never the command line, and deploys the app with the secret in the same version, as `everyapp app deploy` does: its code and pending migrations go too, so at a terminal it asks first (`-y` skips that). Later deploys keep it. Setting a secret with `cf` directly makes a version everyapp didn't upload, which the next unattended deploy stops on; this doesn't. Names everyapp sets itself are refused (`GATEWAY_URL`, and the `EVERYAPP_*`, `EVERY_APP_*` and `APP__*` names), as are the app's own binding names. Flags: `-y`, `--from-env`, `--gateway`, `--json`, `--verbose`.
+Run from an app directory. Sets one of the app's own secrets (an API key its Worker calls out with, say) from a hidden prompt or `--from-env <VAR>`, never the command line, and deploys the app with the secret in the same version, as `everyapp app deploy` does: its code and pending migrations go too, which its first line says (`Redeploying todo with GITHUB_TOKEN (code and pending migrations from this directory)`). Later deploys keep it. Setting a secret with `cf` directly makes a version everyapp didn't upload, which the next unattended deploy stops on; this doesn't. Names everyapp sets itself are refused (`GATEWAY_URL`, and the `EVERYAPP_*`, `EVERY_APP_*` and `APP__*` names), as are the app's own binding names. Flags: `-y`, `--from-env`, `--gateway`, `--json`, `--verbose`.
 
 ### `everyapp app delete [app-id]`
 
-Removes the app from your Gateway (its name and address stay reserved to your organization), drops the Gateway's binding to it and its address, and deletes the certificate Cloudflare keeps for that address. Its Worker and data, and any cron schedules and Workflows the Worker runs, are kept unless `--purge`, which asks you to type the app id and deletes only the Worker, databases and namespaces its deploys recorded creating, with the Workflows that run on that Worker; anything else with its names is kept and listed. Flags: `-y`, `--purge`, `--gateway`, `--json`.
+Removes the app from your Gateway (its name and address stay reserved to your organization), drops the Gateway's binding to it and its address, and deletes the certificate Cloudflare keeps for that address. Its Worker and data, and any cron schedules and Workflows the Worker runs, are kept unless `--purge`, which asks you to type the app id and deletes only the Worker, databases and namespaces its deploys recorded creating, with the Workflows that run on that Worker; anything else with its names is kept and listed. At a terminal it asks first; unattended it needs `-y`, which also skips typing the id for `--purge`. Flags: `-y`, `--purge`, `--gateway`, `--json`, `--verbose`.
 
 ### `everyapp app d1 query "<sql>"`
 
@@ -123,7 +144,7 @@ Runs SQL against the app's production D1 database through `cf`, with your Cloudf
 
 ### `everyapp app d1 migrate --local`
 
-Applies the app's D1 migrations (`migrations.dir`, default `drizzle/`) to the local database in `.cloudflare/state` that `everyapp dev` serves, with `cf d1 migrations apply --local`. `--json` prints progress as NDJSON events. Used by the `db:migrate:local` package script; production migrations run in `everyapp app deploy`.
+Applies the app's D1 migrations (`migrations.dir`, default `drizzle/`) to the local database in `.cloudflare/state` that `everyapp dev` serves, with `cf d1 migrations apply --local`. `--json` prints NDJSON events, ending `done` or `error` like every other command. Used by the `db:migrate:local` package script; production migrations run in `everyapp app deploy`.
 
 ### `everyapp app workflows`
 

@@ -4,17 +4,16 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEPLOY_INPUTS_FILE } from "@every-app/sdk/cloudflare";
-import { CfError } from "@/lib/cf/errors";
 import { FakeCf } from "@/lib/cf/fakeCf";
 import { buildApp } from "./buildApp";
 import { writeDeployInputs, type DeployInputs } from "./deployInputs";
 
 const mocks = vi.hoisted(() => ({
-  executeCommandWithFormatting: vi.fn(),
+  runLogged: vi.fn(),
 }));
 
-vi.mock("@/lib/formatting", () => ({
-  executeCommandWithFormatting: mocks.executeCommandWithFormatting,
+vi.mock("@/lib/childLog", () => ({
+  runLogged: mocks.runLogged,
 }));
 
 const PUBLIC_KEY =
@@ -33,8 +32,7 @@ let cwd: string;
 
 beforeEach(async () => {
   cwd = await fs.mkdtemp(path.join(os.tmpdir(), "everyapp-build-app-"));
-  mocks.executeCommandWithFormatting.mockReset();
-  vi.spyOn(console, "log").mockImplementation(() => {});
+  mocks.runLogged.mockReset();
 });
 
 afterEach(async () => {
@@ -75,21 +73,28 @@ describe("buildApp", () => {
     expect(existsSync(deployInputsPath())).toBe(false);
   });
 
-  it("removes deploy.json when the build fails", async () => {
+  it("removes deploy.json when the build fails, and shows what the build printed last", async () => {
+    const vite = Array.from({ length: 30 }, (_, i) => `vite line ${i + 1}`);
     const cf = new FakeCf().on(["build"], {
       exitCode: 1,
+      stdout: vite.join("\n"),
       stderr: "error during build:\nError: boom\n",
     });
 
-    await expect(
-      buildApp({ cwd, cf, inputs, env: {}, verbose: false }),
-    ).rejects.toBeInstanceOf(CfError);
+    const failure = await buildApp({ cwd, cf, inputs, env: {}, verbose: false }).catch(
+      (error: unknown) => error,
+    );
+    expect(failure).toMatchObject({ code: "BUILD_FAILED" });
+    const lines = String((failure as Error).message).split("\n");
+    expect(lines.slice(1)).toEqual(
+      [...vite.slice(-18), "error during build:", "Error: boom"].map((line) => `  ${line}`),
+    );
     expect(existsSync(deployInputsPath())).toBe(false);
   });
 
   it("runs the manifest's build command instead of cf build", async () => {
     const cf = new FakeCf();
-    mocks.executeCommandWithFormatting.mockImplementation(async () => {
+    mocks.runLogged.mockImplementation(async () => {
       expect(existsSync(deployInputsPath())).toBe(true);
     });
 
@@ -103,7 +108,7 @@ describe("buildApp", () => {
     });
 
     expect(cf.calls).toHaveLength(0);
-    expect(mocks.executeCommandWithFormatting).toHaveBeenCalledWith(
+    expect(mocks.runLogged).toHaveBeenCalledWith(
       "pnpm run build:prod",
       [],
       expect.objectContaining({

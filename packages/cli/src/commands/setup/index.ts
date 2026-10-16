@@ -13,20 +13,22 @@ import { createCfRunner } from "@/lib/cf/runner";
 import { normalizeHostname } from "@/lib/domains/hostnames";
 import { GatewayClient } from "@/lib/gateway/api";
 import { openInBrowser } from "@/lib/gateway/setup-link";
+import { CLI } from "@/lib/output/command";
+import { handTerminalOver } from "@/lib/output/terminal";
 import { runSetup, type SetupFlags } from "./runSetup";
 
 export async function setup(
   this: LocalContext,
   flags: SetupFlags,
 ): Promise<void> {
-  const out = eventSink(flags.json);
+  const out = eventSink(flags.json, flags.verbose);
   await runReported(
     out,
     async () => {
       const { gatewayUrl, organizationName } = await runSetup(flags, out, {
         createCf: (accountId) => createCfRunner({ accountId }),
         gatewayClient: (gatewayUrl) => new GatewayClient({ gatewayUrl }),
-        openRelease: () => openGatewayRelease({ out }),
+        openRelease: () => openGatewayRelease({ out, verbose: flags.verbose }),
         interactive: canPromptInTerminal(flags.json ?? false),
         prompts: terminalPrompts,
         openBrowser: openInBrowser,
@@ -34,22 +36,21 @@ export async function setup(
       });
       const todoApp =
         path.relative(process.cwd(), path.join(checkoutRoot(), "apps", "todo-app")) || ".";
-      const next: Array<[string, string]> = [
-        [`cd ${todoApp} && pnpm run deploy`, "deploy an app from this repository"],
-        ["everyapp app create", "start a new app in apps/"],
-        [`${gatewayUrl}/admin`, "invite people, decide who opens which app"],
-      ];
-      const width = Math.max(...next.map(([command]) => command.length));
       out.emit({
         type: "done",
-        message: [
-          "Every App is ready.",
-          `  Gateway:  ${gatewayUrl}${organizationName ? ` (${organizationName})` : ""}`,
-          "",
-          "Next:",
-          ...next.map(([command, what]) => `  ${command.padEnd(width)}   ${what}`),
-        ].join("\n"),
-        data: { gatewayUrl, organizationName },
+        message: `Your Gateway is ready: ${gatewayUrl}${organizationName ? ` (${organizationName})` : ""}`,
+        data: {
+          gatewayUrl,
+          organizationName,
+          // Said once, here: what to do next, then what can come any time.
+          next: [
+            `${CLI} app create my-app`,
+            `Deploy the todo app from this repository: cd ${todoApp} && pnpm run deploy`,
+            `Invite people, and decide who opens which app: ${gatewayUrl}/admin`,
+            `AI for apps, any time: ${CLI} gateway secret set OPENAI_API_KEY`,
+            `Email for invitations and password resets (until then they are links to share): onboard the domain for Cloudflare Email Sending, then ${CLI} gateway secret set EMAIL_FROM`,
+          ],
+        },
       });
     },
     { verbose: flags.verbose },
@@ -57,16 +58,8 @@ export async function setup(
 }
 
 const terminalPrompts = {
-  async confirm(message: string): Promise<boolean> {
-    const { confirmed } = await enquirer.prompt<{ confirmed: boolean }>({
-      type: "confirm",
-      name: "confirmed",
-      message,
-      initial: true,
-    });
-    return confirmed;
-  },
   async pickZone(zones: string[]): Promise<string> {
+    handTerminalOver();
     const { zone } = await enquirer.prompt<{ zone: string }>({
       type: "select",
       name: "zone",
@@ -76,6 +69,7 @@ const terminalPrompts = {
     return zone;
   },
   async hostname(zone: string): Promise<string> {
+    handTerminalOver();
     const { hostname } = await enquirer.prompt<{ hostname: string }>({
       type: "input",
       name: "hostname",

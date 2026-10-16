@@ -29,7 +29,7 @@ export async function set(
   flags: SecretSetFlags,
   name: string,
 ): Promise<void> {
-  const out = eventSink(flags.json);
+  const out = eventSink(flags.json, flags.verbose);
   await runReported(
     out,
     async () => {

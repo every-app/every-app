@@ -46,6 +46,7 @@ switch (scenario) {
       cwd: process.cwd(),
       noColor: process.env.NO_COLOR ?? null,
       quiet: process.env.CF_QUIET ?? null,
+      delegation: process.env.CF_DELEGATION ?? null,
       accountId: process.env.CLOUDFLARE_ACCOUNT_ID ?? null,
       extra: process.env.EXTRA ?? null,
     }));
@@ -87,6 +88,11 @@ switch (scenario) {
   case "fail":
     process.stderr.write("\n┌ Error\n│ Expected a D1 database ID, but received <database>=\"DB\".\n└\n");
     process.exit(1);
+    break;
+  case "strict-abort":
+    // cf deploy, unattended, for a Worker changed in the dashboard.
+    process.stdout.write("Aborting the upload operation because of conflicts. To override and upload anyway, remove the \`--strict\` flag\n");
+    process.exitCode = 1;
     break;
   case "not-json":
     process.stdout.write("Build complete");
@@ -156,6 +162,8 @@ describe("createCfRunner", () => {
     expect(output).toMatchObject({
       noColor: "1",
       quiet: "1",
+      // cf runs as the runner chose, never handing off to another cf.
+      delegation: "1",
       accountId: "acct_123",
       extra: "1",
     });
@@ -343,6 +351,17 @@ describe("createCfRunner", () => {
       kind: "d1_id_rejected",
       exitCode: 1,
       message: 'Expected a D1 database ID, but received <database>="DB".',
+    });
+  });
+
+  it("classifies the strict-mode abort cf prints on stdout", async () => {
+    const cf = createCfRunner(options);
+    await expect(
+      cf.run({ args: ["strict-abort"], plane: "account", mode: "text" }),
+    ).rejects.toMatchObject({
+      name: "CfError",
+      kind: "strict_conflict",
+      stdout: expect.stringContaining("Aborting the upload operation"),
     });
   });
 

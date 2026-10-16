@@ -32,6 +32,7 @@ import { resolveGatewayUrl } from "@/lib/gateway/resolve";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { eventSink, runReported } from "@/lib/output/run";
+import { handTerminalOver } from "@/lib/output/terminal";
 import { version as cliVersion } from "../../../../package.json";
 
 interface DeleteCommandFlags {
@@ -47,7 +48,7 @@ export async function deleteApp(
   flags: DeleteCommandFlags,
   appIdArgument?: string,
 ): Promise<void> {
-  const out = eventSink(flags.json);
+  const out = eventSink(flags.json, flags.verbose);
   await runReported(
     out,
     async () => {
@@ -109,6 +110,7 @@ export async function removeApp({
     step: "app.delete",
     status: "ok",
     message: `${appId} is deleted on the gateway; ${deleted.hostname} stops serving it.`,
+    data: { appId, hostname: deleted.hostname, workerName: deleted.workerName },
   });
 
   await reconcileGateway({
@@ -292,11 +294,13 @@ async function confirmDelete({
 }): Promise<boolean> {
   if (flags.yes) return true;
   if (!interactive) {
+    // Its rerun adds --yes, for a person to agree to (lib/errors.ts).
     throw new EveryAppError(
       "CONFIRMATION_REQUIRED",
       `Deleting an app needs a person at a terminal, or --yes.`,
     );
   }
+  handTerminalOver();
   if (flags.purge) {
     const { typed } = await enquirer.prompt<{ typed: string }>({
       type: "input",

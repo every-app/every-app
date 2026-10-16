@@ -1,7 +1,8 @@
 /**
  * Production D1 migrations, the same for the gateway and every app:
  *
- *   1. a Time Travel bookmark, printed with the command that restores it;
+ *   1. a Time Travel bookmark, and the command that restores it (in the
+ *      result, for the migration step's event and any later failure);
  *   2. `cf d1 migrations apply`, which keeps its own `d1_migrations` table.
  *
  * Callers run this before they upload new code, so a failed migration
@@ -29,6 +30,8 @@ interface MigrateRemoteD1Options {
 
 interface MigrateRemoteD1Result {
   bookmark: string;
+  /** Restores the bookmark: the caller shows it, and repeats it in a later failure. */
+  rollbackCommand: string;
   applied: string[];
 }
 
@@ -42,9 +45,6 @@ export async function migrateRemoteD1({
   const nested = await hasNestedLayout(dir);
   const bookmark = await getD1Bookmark(cf, databaseId);
   const rollback = restoreCommand(databaseId, bookmark, accountId);
-  onProgress?.(
-    `Bookmarked the database before migrating. To roll it back: ${rollback}`,
-  );
 
   try {
     const applied = await applyRemoteMigrations({
@@ -53,7 +53,7 @@ export async function migrateRemoteD1({
       dir,
       nested,
     });
-    return { bookmark, applied };
+    return { bookmark, rollbackCommand: rollback, applied };
   } catch (error) {
     throw new EveryAppError(
       "MIGRATION_FAILED",

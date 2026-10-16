@@ -11,6 +11,7 @@
 import enquirer from "enquirer";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import { isInterrupted, onInterrupt } from "@/lib/interrupt";
+import { handTerminalOver } from "@/lib/output/terminal";
 import { CfError } from "./errors";
 import type { CfRunner } from "./runner";
 import { getWorkerDeployment } from "./workers";
@@ -53,8 +54,9 @@ interface CfDeployResult {
 /** Asks the person at the terminal a yes/no question; tests answer for them. */
 export type Confirm = (question: string) => Promise<boolean>;
 
-export const confirmAtTerminal: Confirm = async (message) =>
-  (
+export const confirmAtTerminal: Confirm = async (message) => {
+  handTerminalOver();
+  return (
     await enquirer.prompt<{ confirmed: boolean }>({
       type: "confirm",
       name: "confirmed",
@@ -62,6 +64,7 @@ export const confirmAtTerminal: Confirm = async (message) =>
       initial: false,
     })
   ).confirmed;
+};
 
 /** Whether a person is at this terminal to answer cf's prompts. */
 export function canPromptInTerminal(json: boolean): boolean {
@@ -231,6 +234,13 @@ function explainDeployFailure(
       "This Cloudflare account has no workers.dev subdomain yet, and Cloudflare wants one before the first Worker upload and for Workflows. Pick one in the dashboard (apps stay private; they never use it), then run this command again.",
       error.message.match(/https:\/\/dash\.cloudflare\.com\/\S+/)?.[0] ??
         `https://dash.cloudflare.com/${accountId}/workers/onboarding`,
+    );
+  }
+  if (error.kind === "free_plan") {
+    return new ActionRequiredError(
+      "upgrade_workers_paid",
+      `Cloudflare refused the upload of ${workerName} on the Free plan: ${error.message}\nEvery App needs Workers Paid ($5 a month, then usage). Subscribe, then run this command again.`,
+      `https://dash.cloudflare.com/${accountId}/workers/plans`,
     );
   }
   return error;

@@ -5,6 +5,7 @@
  */
 import enquirer from "enquirer";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
+import { handTerminalOver } from "@/lib/output/terminal";
 import { runCfJson, type CfRunner } from "./runner";
 import { CfWhoamiOutput, type CfWhoami } from "./schemas";
 
@@ -161,6 +162,7 @@ export async function resolveAccount({
         .join(", ")}.`,
     );
   }
+  handTerminalOver();
   const { accountId } = await enquirer.prompt<{ accountId: string }>({
     type: "select",
     name: "accountId",

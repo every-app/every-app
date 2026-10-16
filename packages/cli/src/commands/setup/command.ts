@@ -46,17 +46,20 @@ export const setupCommand = buildCommand({
       },
       json: {
         kind: "boolean",
-        brief: "Print progress as NDJSON events on stdout (exit 2: an action is required)",
+        brief:
+          "Print only NDJSON events on stdout (exit 2: an action is required; then run it again)",
         optional: true,
       },
       yes: {
         kind: "boolean",
-        brief: "Skip confirmation prompts",
+        brief:
+          "Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)",
         optional: true,
       },
       verbose: {
         kind: "boolean",
-        brief: "Show detailed output",
+        brief:
+          "Show every step and progress line, and stream the Gateway's build output to stderr",
         optional: true,
       },
     },
@@ -70,7 +73,7 @@ export const setupCommand = buildCommand({
       "everything is there. The gateway is built from this checkout.",
       "",
       "  1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and picks the account",
-      "  2. Checks for Workers Paid, which Every App needs (a warning, not a stop)",
+      "  2. Checks for Workers Paid, which Every App needs (a warning, not a question)",
       "  3. Picks where the gateway lives: any hostname in a zone the account has (apps.example.com);",
       "     apps get one each below it (todo.apps.example.com), with their own DNS and certificate",
       "  4. Deploys the gateway (everyapp gateway deploy), and waits for its certificate",
@@ -79,6 +82,8 @@ export const setupCommand = buildCommand({
       "",
       "Then deploy apps from the repository: cd apps/todo-app && pnpm run deploy.",
       "No domain on Cloudflare yet? Buy one in the dashboard (Domains → Buy a domain), then run it again.",
+      "Nothing asks for a go-ahead: the first lines say which account and where. The Gateway's",
+      "build output goes to a log file, never to stdout.",
       "With --json, each step is an NDJSON event; what a person must do is `action_required`",
       "(with its link and code), and the run exits 2 when it stops on one.",
     ].join("\n"),

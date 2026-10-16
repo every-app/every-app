@@ -1,6 +1,7 @@
 import enquirer from "enquirer";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { EveryAppError } from "@/lib/errors";
+import { handTerminalOver } from "@/lib/output/terminal";
 
 /**
  * A secret's value from `--from-env <VAR>`, or a hidden prompt at a
@@ -28,10 +29,11 @@ export async function readSecretValue(
       `Pass the value through an environment variable: --from-env <VAR>.`,
     );
   }
+  handTerminalOver();
   const { value } = await enquirer.prompt<{ value: string }>({
     type: "password",
     name: "value",
-    message: `${name}`,
+    message: `Value for ${name}`,
     validate: (input: string) => (input.trim() ? true : "Enter a value"),
   });
   return value.trim();

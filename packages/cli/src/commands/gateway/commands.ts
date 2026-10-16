@@ -9,12 +9,14 @@ const accountFlag = {
 } as const;
 const jsonFlag = {
   kind: "boolean",
-  brief: "Print progress as NDJSON events on stdout",
+  brief:
+    "Print only NDJSON events on stdout (exit 2: an action is required; then run it again)",
   optional: true,
 } as const;
 const verboseFlag = {
   kind: "boolean",
-  brief: "Show detailed output",
+  brief:
+    "Show every step and progress line, and stream build output to stderr",
   optional: true,
 } as const;
 const yesFlag = {
@@ -46,7 +48,8 @@ const deployFlags = {
   },
   yes: {
     kind: "boolean",
-    brief: "Skip the confirmation prompt",
+    brief:
+      "Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)",
     optional: true,
   },
   printSetupLink: {

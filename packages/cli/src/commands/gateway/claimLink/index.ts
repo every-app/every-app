@@ -6,9 +6,10 @@ import { EveryAppError } from "@/lib/errors";
 import { readInstall } from "@/lib/gateway/install";
 import { findGatewayDatabase } from "@/lib/gateway/resources";
 import {
+  describeSetupLink,
   gatewayHasOwner,
   mintOperatorSetupLink,
-  presentSetupLink,
+  openSetupLinkHere,
   type SetupLink,
 } from "@/lib/gateway/setup-link";
 import {
@@ -42,8 +43,12 @@ export async function claimLink(
       remembered: cached?.accountId,
     });
     const link = await mintClaimLink(cf, domain ?? cached?.gatewayHost);
-    console.log();
-    await presentSetupLink(link);
+    out.emit({
+      type: "done",
+      message: describeSetupLink(link),
+      data: { url: link.url, expiresAt: link.expiresAt.toISOString() },
+    });
+    await openSetupLinkHere(link);
   });
 }
 

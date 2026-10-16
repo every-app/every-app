@@ -8,12 +8,22 @@ import { makeTestHome } from "@/test/home";
 import { login } from ".";
 
 let home: string;
+let stdout: string;
+let stderr: string;
 
 beforeEach(() => {
   home = makeTestHome();
   vi.stubEnv("HOME", home);
-  vi.spyOn(console, "log").mockImplementation(() => undefined);
-  vi.spyOn(console, "error").mockImplementation(() => undefined);
+  stdout = "";
+  stderr = "";
+  vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+    stdout += String(chunk);
+    return true;
+  });
+  vi.spyOn(process.stderr, "write").mockImplementation((chunk) => {
+    stderr += String(chunk);
+    return true;
+  });
 });
 
 afterEach(() => {
@@ -55,7 +65,7 @@ describe("everyapp login --resume", () => {
       token: "eak_token",
     });
     await expect(listPendingClaims()).resolves.toEqual([]);
-    expect(vi.mocked(console.log).mock.calls.flat().join("\n")).toContain(
+    expect(stdout).toContain(
       "Logged in to https://apps.example.com as ada@example.com (owner of Acme).",
     );
   });
@@ -84,10 +94,7 @@ describe("everyapp login --resume", () => {
             { status: 404 },
           ),
     );
-    const printed = () =>
-      [...vi.mocked(console.log).mock.calls, ...vi.mocked(console.error).mock.calls]
-        .flat()
-        .join("\n");
+    const printed = () => `${stdout}\n${stderr}`;
 
     // Replaced by a newer link, or expired, before anyone used it.
     await writePendingClaim(claim);

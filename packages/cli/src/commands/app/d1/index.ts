@@ -1,6 +1,6 @@
 import type { LocalContext } from "@/context";
 import { localD1Id } from "@every-app/sdk/cloudflare";
-import { ManifestError, workerNameFor } from "@every-app/perimeter/manifest";
+import { workerNameFor } from "@every-app/perimeter/manifest";
 import {
   connectToGatewayAccount,
   gatewayCall,
@@ -16,16 +16,12 @@ import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { createCfRunner, runCfJson, type CfRunner } from "@/lib/cf/runner";
 import { D1RawOutput } from "@/lib/cf/schemas";
 import { EveryAppError } from "@/lib/errors";
-import { setExitCode } from "@/lib/exit-code";
 import { GatewayClient } from "@/lib/gateway/api";
 import { resolveGatewayUrl } from "@/lib/gateway/resolve";
 import { loadEveryAppManifest, resolveMigrationBinding } from "@/lib/manifest";
+import { thisCommand } from "@/lib/output/command";
+import type { EventSink } from "@/lib/output/events";
 import { eventSink, runReported } from "@/lib/output/run";
-import {
-  createHumanSink,
-  createNdjsonSink,
-  type EventSink,
-} from "@/lib/output/events";
 
 interface MigrateCommandFlags {
   local?: boolean;
@@ -42,9 +38,11 @@ export async function migrate(
   this: LocalContext,
   flags: MigrateCommandFlags,
 ): Promise<void> {
-  const out = flags.json ? createNdjsonSink() : createHumanSink();
-  await migrateLocal({ cwd: process.cwd(), out, local: flags.local ?? false });
-  setExitCode(out.exitCode);
+  const out = eventSink(flags.json);
+  await runReported(out, async () => {
+    await migrateLocal({ cwd: process.cwd(), out, local: flags.local ?? false });
+    out.emit({ type: "done" });
+  });
 }
 
 interface MigrateLocalOptions {
@@ -61,67 +59,57 @@ export async function migrateLocal({
   cf = createCfRunner(),
 }: MigrateLocalOptions): Promise<void> {
   if (!local) {
-    out.emit({
-      type: "error",
-      code: "REMOTE_MIGRATIONS_UNSUPPORTED",
-      message:
-        "Remote migrations run as part of `everyapp app deploy`. Pass --local to migrate the database `everyapp dev` uses.",
-      retryable: false,
-    });
-    return;
+    throw new EveryAppError(
+      "REMOTE_MIGRATIONS_UNSUPPORTED",
+      "Remote migrations run as part of `everyapp app deploy`. Pass --local to migrate the database `everyapp dev` uses.",
+      { rerun: thisCommand(["--local"]) },
+    );
   }
 
-  try {
-    const manifest = await loadEveryAppManifest(cwd);
-    const note = await legacyLocalStateNote(cwd);
-    if (note)
-      out.emit({ type: "warning", code: "LEGACY_LOCAL_STATE", message: note });
+  const manifest = await loadEveryAppManifest(cwd);
+  const note = await legacyLocalStateNote(cwd);
+  if (note) {
+    out.emit({ type: "warning", code: "LEGACY_LOCAL_STATE", message: note });
+  }
 
+  out.emit({
+    type: "step",
+    step: STEP,
+    status: "start",
+    message: "Applying local database migrations...",
+  });
+  let result: Awaited<ReturnType<typeof applyLocalMigrations>>;
+  try {
+    result = await applyLocalMigrations({ cwd, manifest, cf });
+  } catch (error) {
+    throw new EveryAppError(
+      "MIGRATIONS_FAILED",
+      `Failed to apply local database migrations: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  if (result.status === "skipped") {
     out.emit({
       type: "step",
       step: STEP,
-      status: "start",
-      message: "Applying local database migrations...",
+      status: "skip",
+      message:
+        result.reason === "no_d1"
+          ? "The app declares no D1 database."
+          : "The app has no migrations directory yet.",
+      data: { reason: result.reason },
     });
-    const result = await applyLocalMigrations({ cwd, manifest, cf });
-    if (result.status === "skipped") {
-      out.emit({
-        type: "step",
-        step: STEP,
-        status: "skip",
-        message:
-          result.reason === "no_d1"
-            ? "The app declares no D1 database."
-            : "The app has no migrations directory yet.",
-        data: { reason: result.reason },
-      });
-    } else {
-      out.emit({
-        type: "step",
-        step: STEP,
-        status: "ok",
-        message:
-          result.applied.length > 0
-            ? `Applied ${result.applied.join(", ")}.`
-            : "The local database is up to date.",
-        data: { database: result.database, applied: result.applied },
-      });
-    }
-    out.emit({ type: "done" });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    out.emit({ type: "step", step: STEP, status: "fail", data: { message } });
-    out.emit({
-      type: "error",
-      code:
-        error instanceof ManifestError
-          ? "INVALID_MANIFEST"
-          : "MIGRATIONS_FAILED",
-      message: `Failed to apply local database migrations: ${message}`,
-      retryable: false,
-      step: STEP,
-    });
+    return;
   }
+  out.emit({
+    type: "step",
+    step: STEP,
+    status: "ok",
+    message:
+      result.applied.length > 0
+        ? `Applied ${result.applied.join(", ")}.`
+        : "The local database is up to date.",
+    data: { database: result.database, applied: result.applied },
+  });
 }
 
 interface QueryCommandFlags {

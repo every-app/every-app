@@ -20,6 +20,7 @@ import {
 } from "@/commands/app/workflows";
 import { readOwnedResources, recordOwnedResource } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
+import { rollbackCommandFor } from "@/lib/errors";
 import { applyGateway } from "@/lib/gateway/apply";
 import { readInstall } from "@/lib/gateway/install";
 import { handleInterrupt, resetInterruptsForTests } from "@/lib/interrupt";
@@ -229,12 +230,39 @@ describe("app deploy", () => {
       .map((event) => event["step"]);
     expect(steps).toEqual([
       "app.register",
+      "app.build",
       "app.migrations",
       "app.upload",
       "gateway.deploy",
       "gateway.verify",
+      "app.bind",
       "app.tools",
+      "app.live",
     ]);
+    // What a person sees of it comes from these events' data.
+    expect(events.find((event) => event["step"] === "app.register")).toMatchObject({
+      data: {
+        appId: "todo",
+        hostname: "todo.example.com",
+        existingApp: false,
+        defaultAccess: false,
+        organizationName: "Acme",
+      },
+    });
+    expect(events.find((event) => event["step"] === "app.migrations" && event["status"] === "ok")).toMatchObject({
+      data: {
+        applied: ["0000_init.sql"],
+        rollbackCommand: expect.stringContaining("d1 time-travel restore"),
+      },
+      message: expect.stringContaining("d1 time-travel restore"),
+    });
+    expect(events.find((event) => event["step"] === "app.live")).toMatchObject({
+      data: { hostname: "todo.example.com", url: "https://todo.example.com" },
+    });
+    // The restore command is no longer a progress line.
+    expect(
+      events.filter((event) => event["type"] === "progress" && String(event["message"]).includes("time-travel")),
+    ).toEqual([]);
     // Once it is live, the gateway snapshots its agent tools.
     expect(gateway.toolSyncs).toEqual(["todo"]);
     const leases = account.database("every-app-gateway").all(
@@ -591,9 +619,10 @@ describe("app deploy", () => {
   it("stops before uploading when the account has no workers.dev subdomain", async () => {
     account.failNextDeploy = `Register a workers.dev subdomain: https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`;
 
-    await expect(deploy()).rejects.toMatchObject({
-      action: "register_workers_subdomain",
-    });
+    const failure = await deploy().catch((error: unknown) => error);
+    expect(failure).toMatchObject({ action: "register_workers_subdomain" });
+    // The database was migrated first: the report says how to put it back.
+    expect(rollbackCommandFor(failure)).toContain("d1 time-travel restore");
     // Registered and provisioned; the next run picks it up, with the same
     // database and namespace it created.
     expect(gateway.app("todo")).toMatchObject({ status: "pending" });

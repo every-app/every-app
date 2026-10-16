@@ -1,10 +1,16 @@
 import { setExitCode } from "@/lib/exit-code";
 import { createHumanSink, createNdjsonSink, type EventSink } from "./events";
 import { reportFailure } from "./report";
+import { isTerminal } from "./terminal";
 
-/** NDJSON events on stdout with --json, lines for a person otherwise. */
-export function eventSink(json?: boolean): EventSink {
-  return json ? createNdjsonSink() : createHumanSink();
+/**
+ * NDJSON events on stdout with --json, and nothing else there; lines for a
+ * person otherwise (more of them with --verbose).
+ */
+export function eventSink(json?: boolean, verbose?: boolean): EventSink {
+  return json
+    ? createNdjsonSink()
+    : createHumanSink({ verbose, terminal: isTerminal() });
 }
 
 /**
@@ -20,7 +26,7 @@ export async function runReported(
     await body();
   } catch (error) {
     if (verbose && error instanceof Error && error.stack) {
-      console.error(error.stack);
+      process.stderr.write(`${error.stack}\n`);
     }
     reportFailure(out, error);
   }

@@ -5,10 +5,15 @@
  *
  * `cf build` gets no `--mode`: cf refuses `--mode` for TanStack Start
  * projects, and Vite builds in production mode by default.
+ *
+ * Nothing the build prints reaches stdout: cf's output stays in memory and
+ * a failure shows its last 20 lines, a manifest build command's goes to a
+ * log file (lib/childLog.ts). With `verbose`, either streams to stderr.
  */
-import chalk from "chalk";
-import { executeCommandWithFormatting } from "@/lib/formatting";
+import { runLogged } from "@/lib/childLog";
+import { CfError, outputTail } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
+import { EveryAppError } from "@/lib/errors";
 import {
   removeDeployInputs,
   writeDeployInputs,
@@ -38,27 +43,39 @@ export async function buildApp({
   await writeDeployInputs(cwd, inputs);
   try {
     if (buildCommand) {
-      await executeCommandWithFormatting(buildCommand, [], {
+      await runLogged(buildCommand, [], {
         cwd,
-        description: "Building your application...\n",
         env: { ...process.env, ...env },
         shell: true,
-        verbose,
+        echo: verbose,
+        what: "The app's build command",
+        code: "BUILD_FAILED",
       });
       return;
     }
-    console.log(chalk.dim("  Building your application with cf build..."));
-    const result = await cf.run({
-      args: ["build"],
-      plane: "project",
-      cwd,
-      mode: "text",
-      env,
-      timeoutMs: BUILD_TIMEOUT_MS,
-    });
-    if (verbose && result.stdout.trim()) {
-      console.log(chalk.dim(result.stdout.trimEnd()));
-    }
+    await cf
+      .run({
+        args: ["build"],
+        plane: "project",
+        cwd,
+        mode: "text",
+        env,
+        timeoutMs: BUILD_TIMEOUT_MS,
+        ...(verbose
+          ? { onOutput: (chunk: string) => void process.stderr.write(chunk) }
+          : {}),
+      })
+      .catch((error: unknown) => {
+        // A build's error is in what Vite printed, not only in cf's box.
+        if (!(error instanceof CfError)) throw error;
+        throw new EveryAppError(
+          "BUILD_FAILED",
+          [
+            "cf build failed. Its last lines:",
+            ...outputTail(error.stdout, error.stderr).map((line) => `  ${line}`),
+          ].join("\n"),
+        );
+      });
   } finally {
     await removeDeployInputs(cwd);
   }

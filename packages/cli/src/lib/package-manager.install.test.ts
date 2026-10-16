@@ -2,16 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { installDependencies } from "./package-manager";
 
 const mocks = vi.hoisted(() => ({
-  executeCommandWithFormatting: vi.fn(),
+  runLogged: vi.fn(),
 }));
 
-vi.mock("./formatting", () => ({
-  executeCommandWithFormatting: mocks.executeCommandWithFormatting,
+vi.mock("./childLog", () => ({
+  runLogged: mocks.runLogged,
 }));
 
 describe("installDependencies manifest overrides", () => {
   beforeEach(() => {
-    mocks.executeCommandWithFormatting.mockReset();
+    mocks.runLogged.mockReset();
   });
 
   it("skips dependency install when install is false", async () => {
@@ -21,7 +21,7 @@ describe("installDependencies manifest overrides", () => {
       install: false,
     });
 
-    expect(mocks.executeCommandWithFormatting).not.toHaveBeenCalled();
+    expect(mocks.runLogged).not.toHaveBeenCalled();
   });
 
   it("runs a custom install command through the shell", async () => {
@@ -32,14 +32,15 @@ describe("installDependencies manifest overrides", () => {
       verbose: true,
     });
 
-    expect(mocks.executeCommandWithFormatting).toHaveBeenCalledWith(
+    // Its output goes to a log file; --verbose streams it to stderr too.
+    expect(mocks.runLogged).toHaveBeenCalledWith(
       "yarn install --immutable && yarn constraints",
       [],
       expect.objectContaining({
         cwd: "/tmp/app",
-        description: "Installing...",
+        what: "Installing",
         shell: true,
-        verbose: true,
+        echo: true,
       }),
     );
   });

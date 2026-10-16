@@ -15,7 +15,7 @@ import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { cfD1Database } from "@/lib/cf/d1";
 import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { reportFailure } from "@/lib/output/report";
-import { FakeCloudflare } from "@/test/fakeCloudflare";
+import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { FakeGateway } from "@/test/fakeGateway";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
 import { makeTestHome } from "@/test/home";
@@ -70,9 +70,6 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
     openRelease: () => openRelease(tarball),
     interactive: false,
     prompts: {
-      confirm: async () => {
-        throw new Error("asked a person");
-      },
       pickZone: async () => {
         throw new Error("asked a person");
       },
@@ -140,7 +137,6 @@ describe("everyapp setup", () => {
       "setup.domain ok",
       "setup.gateway ok",
       "setup.login ok",
-      "setup.extras skip",
     ]);
     expect(result).toEqual({ gatewayUrl: `https://${GW}`, organizationName: "Acme" });
 
@@ -194,7 +190,6 @@ describe("everyapp setup", () => {
       "setup.gateway skip",
       "setup.owner skip",
       "setup.login skip",
-      "setup.extras skip",
     ]);
     expect(account.deploys).toHaveLength(deploys);
     expect(events.some((event) => event.type === "action_required")).toBe(false);
@@ -237,7 +232,8 @@ describe("everyapp setup", () => {
       action: "claim_owner",
       message: expect.stringContaining("--printSetupLink"),
     });
-    expect(events.at(-1).data).toBeUndefined();
+    // No link: only the command to run once someone took it.
+    expect(events.at(-1).data).toEqual({ rerun: expect.stringMatching(/^pnpm everyapp/) });
     expect(JSON.stringify(events)).not.toContain("#token=");
     // None minted, so a link someone already has keeps working.
     expect(account.database("every-app-gateway").all("SELECT id FROM owner_setup_tokens")).toEqual([]);
@@ -427,26 +423,29 @@ describe("everyapp setup", () => {
     });
   });
 
-  it("warns about Workers Paid it can't confirm, and asks a person whether to go on", async () => {
-    const { exitCode } = await setup({ domain: GW });
+  it("warns about Workers Paid it can't confirm, never asks, and stops when Cloudflare refuses for the plan", async () => {
+    account.failNextDeploy = "Your account must be on the Workers Paid plan to use this feature.";
+
+    const refused = await setup({ domain: GW });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "warning", code: "WORKERS_PAID_UNVERIFIED" }),
+    );
+    expect(refused.exitCode).toBe(2);
+    expect(events.at(-1)).toMatchObject({
+      type: "action_required",
+      action: "upgrade_workers_paid",
+      data: { url: `https://dash.cloudflare.com/${ACCOUNT_ID}/workers/plans` },
+    });
+
+    // Subscribed: at a terminal, the same command goes on without a question
+    // (the deps' prompts throw if asked).
+    events = [];
+    const { exitCode } = await setup({ domain: GW }, { interactive: true });
     expect(exitCode).toBe(0);
     expect(events).toContainEqual(
       expect.objectContaining({ type: "warning", code: "WORKERS_PAID_UNVERIFIED" }),
     );
-
-    events = [];
-    const declined = await setup(
-      {},
-      {
-        interactive: true,
-        prompts: {
-          ...deps().prompts,
-          confirm: async () => false,
-        },
-      },
-    );
-    expect(declined.exitCode).toBe(2);
-    expect(events.at(-1)).toMatchObject({ action: "upgrade_workers_paid" });
   });
 
   it("asks a person at a terminal where the gateway goes, and opens the setup link", async () => {
@@ -458,10 +457,6 @@ describe("everyapp setup", () => {
       {
         interactive: true,
         prompts: {
-          confirm: async (message) => {
-            asked.push(message);
-            return true;
-          },
           pickZone: async (zones) => {
             asked.push(zones.join(","));
             return "example.com";
@@ -472,10 +467,15 @@ describe("everyapp setup", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(asked).toEqual([
-      "example.com,other.dev",
-      `Install the Every App gateway at https://tools.example.com in Acme?`,
-    ]);
+    // Where, and nothing else: no go-ahead for the install.
+    expect(asked).toEqual(["example.com,other.dev"]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "setup.gateway",
+        status: "start",
+        data: expect.objectContaining({ gatewayUrl: "https://tools.example.com", from: null }),
+      }),
+    );
     expect(opened).toEqual([expect.stringMatching(/^https:\/\/tools\.example\.com\/setup#token=est_/)]);
     expect(account.gatewayDomains()).toEqual(["tools.example.com"]);
   });

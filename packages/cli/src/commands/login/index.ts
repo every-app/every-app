@@ -1,5 +1,4 @@
 import type { LocalContext } from "@/context";
-import chalk from "chalk";
 import enquirer from "enquirer";
 import { findGatewayUrl } from "@/lib/gateway/resolve";
 import { GatewayClient } from "@/lib/gateway/api";
@@ -39,11 +38,14 @@ export async function login(
   this: LocalContext,
   flags: LoginFlags = {},
 ): Promise<void> {
-  if (flags.resume) {
-    const out = eventSink();
-    await runReported(out, () => resumeLogin(flags.gateway, out));
-    return;
-  }
+  const out = eventSink();
+  await runReported(out, () =>
+    flags.resume ? resumeLogin(flags.gateway, out) : storeDeployToken(out),
+  );
+}
+
+/** `everyapp login`: a deploy token pasted at the terminal. */
+async function storeDeployToken(out: EventSink): Promise<void> {
   const defaultGatewayUrl = await getDefaultGatewayUrl();
   const { gatewayUrl: rawGatewayUrl } = await enquirer.prompt<{
     gatewayUrl: string;
@@ -88,11 +90,11 @@ export async function login(
     organizationId: whoami.organizationId,
   });
 
-  console.log(
-    chalk.green(
-      `Logged in to ${gatewayUrl} for ${whoami.organizationName} (${whoami.organizationId}).`,
-    ),
-  );
+  out.emit({
+    type: "done",
+    message: `Logged in to ${gatewayUrl} for ${whoami.organizationName} (${whoami.organizationId}).`,
+    data: { gatewayUrl, organizationId: whoami.organizationId },
+  });
 }
 
 /**

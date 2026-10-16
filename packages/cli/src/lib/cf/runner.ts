@@ -27,6 +27,7 @@ import { rmSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { onInterrupt, trackChild } from "@/lib/interrupt";
+import { handTerminalOver } from "@/lib/output/terminal";
 import type { z } from "zod";
 import { resolveCfBinary, type CfBinary } from "./bin";
 import {
@@ -34,7 +35,7 @@ import {
   CfError,
   CfOutputError,
   CfTimeoutError,
-  parseCfStderr,
+  parseCfOutput,
 } from "./errors";
 import {
   CF_FILES_PREFIX,
@@ -132,6 +133,9 @@ export function createCfRunner(options: CfRunnerOptions = {}): CfRunner {
   ): Promise<NodeJS.ProcessEnv> {
     const env: NodeJS.ProcessEnv = {
       ...baseEnv,
+      // cf otherwise hands the call to any cf it resolves from the working
+      // directory; which cf runs is the runner's choice (./bin.ts).
+      CF_DELEGATION: "1",
       ...(mode === "interactive" ? {} : { NO_COLOR: "1" }),
       ...(mode === "json" ? { CF_QUIET: "1" } : {}),
       ...(options.accountId
@@ -284,6 +288,8 @@ interface SpawnCfOptions {
 function spawnCf(options: SpawnCfOptions): Promise<CfResult> {
   const command = describe(options.args);
   const interactive = options.mode === "interactive";
+  // cf draws on the terminal itself: our spinner and open line make way.
+  if (interactive) handTerminalOver();
 
   return new Promise<CfResult>((resolve, reject) => {
     const child = spawn(
@@ -363,8 +369,8 @@ function spawnCf(options: SpawnCfOptions): Promise<CfResult> {
               apiCodes: [],
               kind: "unknown" as const,
             }
-          : parseCfStderr(stderr);
-        reject(new CfError(parsed, { exitCode: code, stderr }));
+          : parseCfOutput(stderr, stdout);
+        reject(new CfError(parsed, { exitCode: code, stderr, stdout }));
       });
     });
   });

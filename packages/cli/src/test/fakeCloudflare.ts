@@ -79,6 +79,16 @@ function cfError(message: string): FakeCfResponse {
   return { exitCode: 1, stderr: `┌ Error\n│ ${message}\n└\n` };
 }
 
+/**
+ * cf 1.0.0-beta.14's strict-mode abort at the upload: on stdout, with no
+ * box on stderr, and exit 1.
+ */
+const STRICT_ABORT: FakeCfResponse = {
+  exitCode: 1,
+  stdout:
+    "Aborting the upload operation because of conflicts. To override and upload anyway, remove the `--strict` flag\n",
+};
+
 /** A missing Workflow, as cf 1.0.0-beta.14 prints the API's answer. */
 function workflowNotFound(path: string): FakeCfResponse {
   return {
@@ -145,6 +155,11 @@ export class FakeCloudflare {
   readonly apps = new Map<string, EveryAppCliManifest>();
   /** The next `cf deploy` fails with this stderr box message. */
   failNextDeploy: string | null = null;
+  /**
+   * The next `cf deploy` aborts in strict mode, as cf does unattended for a
+   * Worker last changed in the dashboard or through the API.
+   */
+  strictAbortNextDeploy = false;
   /** The next `cf deploy` uploads nothing and exits 0, as when a person declines its prompt. */
   declineNextDeploy = false;
   /** Changes what `cf build` writes, as an app's own cloudflare.config.ts could. */
@@ -498,6 +513,10 @@ export class FakeCloudflare {
       const message = this.failNextDeploy;
       this.failNextDeploy = null;
       return cfError(message);
+    }
+    if (this.strictAbortNextDeploy) {
+      this.strictAbortNextDeploy = false;
+      return STRICT_ABORT;
     }
     if (this.declineNextDeploy) {
       this.declineNextDeploy = false;

@@ -66,10 +66,12 @@ describe("migrateRemoteD1", () => {
       "--dir",
       GATEWAY_MIGRATIONS_DIR,
     ]);
-    // A rollback that runs where no one can answer cf's question.
-    expect(progress[0]).toContain(
+    // A rollback that runs where no one can answer cf's question, for the
+    // caller to show; it isn't a progress line.
+    expect(result.rollbackCommand).toContain(
       `d1 time-travel restore ${DB_ID} --bookmark 00000085-bookmark --force`,
     );
+    expect(progress.join("\n")).not.toContain("time-travel restore");
   });
 
   it("applies nothing to a database that is up to date", async () => {

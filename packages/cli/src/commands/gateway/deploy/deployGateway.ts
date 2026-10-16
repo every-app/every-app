@@ -4,7 +4,7 @@
  * CLI deployed before and does nothing when it already runs this release.
  * Neither moves a gateway to an older release without --allow-downgrade.
  */
-import enquirer from "enquirer";
+import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { waitForCertificates } from "@/lib/domains/certWait";
@@ -28,7 +28,8 @@ import {
   findGatewayDatabase,
 } from "@/lib/gateway/resources";
 import {
-  presentSetupLink,
+  describeSetupLink,
+  openInBrowser,
   setupLinkForDeploy,
 } from "@/lib/gateway/setup-link";
 import type { EventSink } from "@/lib/output/events";
@@ -58,7 +59,7 @@ export async function deployGateway(
   flags: DeployGatewayFlags,
   reason: "deploy" | "upgrade",
 ): Promise<void> {
-  const out = eventSink(flags.json);
+  const out = eventSink(flags.json, flags.verbose);
   await runReported(out, () => run(flags, reason, out), {
     verbose: flags.verbose,
   });
@@ -90,6 +91,7 @@ async function run(
   const release = await openGatewayRelease({
     releasePath: flags.release,
     out,
+    verbose: flags.verbose,
   });
   try {
     if (!checkRelease({ release, install, reason, flags, out })) return;
@@ -100,11 +102,6 @@ async function run(
       domain,
       out,
     });
-
-    if (!(await confirm({ flags, release, domain, account }))) {
-      out.emit({ type: "done", message: "Deployment cancelled." });
-      return;
-    }
 
     const interactive = canPromptInTerminal(flags.json ?? false);
     const { result, db, gatewayUrl } = await deployGatewayRelease({
@@ -143,14 +140,17 @@ async function run(
     });
     out.emit({
       type: "done",
-      message: `Gateway ${release.manifest.version} is live at ${gatewayUrl}.`,
+      message: [
+        `Gateway ${release.manifest.version} is live at ${gatewayUrl}.`,
+        ...(setupLink ? [describeSetupLink(setupLink)] : []),
+      ].join("\n"),
       data: {
         gatewayUrl,
         release: release.manifest.version,
         versionId: result.versionId,
         apps: result.appWorkers,
         domains: result.domains,
-        ...(setupLink && flags.json
+        ...(setupLink
           ? {
               setupLink: setupLink.url,
               setupLinkExpiresAt: setupLink.expiresAt.toISOString(),
@@ -158,7 +158,7 @@ async function run(
           : {}),
       },
     });
-    if (setupLink && !flags.json) await presentSetupLink(setupLink);
+    if (setupLink && interactive) await openInBrowser(setupLink.url);
   } finally {
     await release.cleanup();
   }
@@ -334,25 +334,4 @@ function checkRelease({
     });
   }
   return true;
-}
-
-async function confirm({
-  flags,
-  release,
-  domain,
-  account,
-}: {
-  flags: DeployGatewayFlags;
-  release: GatewayRelease;
-  domain: string;
-  account: { id: string; name: string | null };
-}): Promise<boolean> {
-  if (flags.yes || !canPromptInTerminal(flags.json ?? false)) return true;
-  const { confirmed } = await enquirer.prompt<{ confirmed: boolean }>({
-    type: "confirm",
-    name: "confirmed",
-    message: `Deploy gateway ${release.manifest.version} to ${domain} in ${account.name ?? account.id}?`,
-    initial: false,
-  });
-  return confirmed;
 }

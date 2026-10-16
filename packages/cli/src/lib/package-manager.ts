@@ -1,8 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import chalk from "chalk";
 import { execa } from "execa";
-import { executeCommandWithFormatting } from "./formatting";
+import { runLogged } from "./childLog";
 
 /**
  * Check if pnpm is installed
@@ -18,8 +17,10 @@ async function isPnpmInstalled(): Promise<boolean> {
 
 interface InstallDependenciesOptions {
   cwd: string;
+  /** What the install is for, as a failure names it: "Installing dependencies...". */
   description: string;
   install?: string | false;
+  /** Stream the install's output to stderr too. */
   verbose?: boolean;
 }
 
@@ -31,7 +32,9 @@ interface InstallCommand {
 }
 
 /**
- * Install dependencies using pnpm (either directly or via npx)
+ * Install dependencies: the manifest's install command, or the project's
+ * package manager (pnpm directly or through npx). Their output goes to a
+ * log file (lib/childLog.ts); `install: false` installs nothing.
  */
 export async function installDependencies({
   cwd,
@@ -39,17 +42,16 @@ export async function installDependencies({
   install,
   verbose = false,
 }: InstallDependenciesOptions): Promise<void> {
-  if (install === false) {
-    console.log(chalk.dim("  Skipping dependency install (manifest install=false)."));
-    return;
-  }
+  if (install === false) return;
+  const what = description.replace(/\.+$/, "");
 
   if (typeof install === "string") {
-    await executeCommandWithFormatting(install, [], {
+    await runLogged(install, [], {
       cwd,
-      verbose,
-      description,
       shell: true,
+      echo: verbose,
+      what,
+      code: "INSTALL_FAILED",
     });
     return;
   }
@@ -62,17 +64,12 @@ export async function installDependencies({
   // answer `pnpm approve-builds` in this non-interactive install. Projects we
   // install must declare their approvals (the gateway release ships an
   // `allowBuilds` allowlist in its pnpm-workspace.yaml; see build-release.js).
-  try {
-    await executeCommandWithFormatting(command, args, {
-      cwd,
-      verbose,
-      description,
-    });
-  } catch (error) {
-    throw new Error(
-      `Failed to install dependencies with ${packageManager}: ${error instanceof Error ? error.message : "Unknown error"}`,
-    );
-  }
+  await runLogged(command, args, {
+    cwd,
+    echo: verbose,
+    what: `${what} with ${packageManager}`,
+    code: "INSTALL_FAILED",
+  });
 }
 
 export async function detectPackageManager(cwd: string): Promise<PackageManager> {

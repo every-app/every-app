@@ -9,7 +9,7 @@
  * unmatched calls succeed with empty output. A response can be computed from
  * the call (to back `cf d1 query` with a real database, say). A non-zero
  * `exitCode` throws the same `CfError` the real runner would, parsed from
- * `stderr`, and so does cf's `Aborted.` after a confirmation it declined.
+ * its output, and so does cf's `Aborted.` after a confirmation it declined.
  */
 import type {
   CfCall,
@@ -18,7 +18,7 @@ import type {
   CfRunner,
   CfStartCall,
 } from "./runner";
-import { abortedCfError, CfError, parseCfStderr } from "./errors";
+import { abortedCfError, CfError, parseCfOutput } from "./errors";
 
 export interface FakeCfResponse {
   stdout?: string;
@@ -106,7 +106,11 @@ export class FakeCf implements CfRunner {
     if (stdout) call.onOutput?.(stdout);
     if (stderr) call.onOutput?.(stderr);
     if (exitCode !== 0) {
-      throw new CfError(parseCfStderr(stderr), { exitCode, stderr });
+      throw new CfError(parseCfOutput(stderr, stdout), {
+        exitCode,
+        stderr,
+        stdout,
+      });
     }
     const aborted = abortedCfError(["cf", ...args].join(" "), stderr);
     if (aborted) throw aborted;

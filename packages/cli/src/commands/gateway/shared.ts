@@ -3,8 +3,8 @@
  * and account, the remembered install, and the release to deploy.
  */
 import path from "node:path";
-import { execa } from "execa";
 import { version as cliVersion } from "../../../package.json";
+import { runLogged } from "@/lib/childLog";
 import { ensureCfAuth, resolveAccount } from "@/lib/cf/account";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
@@ -67,24 +67,39 @@ export async function rememberedInstall(
 export async function openGatewayRelease({
   releasePath,
   out,
+  verbose,
 }: {
   releasePath?: string;
   out: EventSink;
+  /** Stream the build's output to stderr too. */
+  verbose?: boolean;
 }): Promise<GatewayRelease> {
   if (releasePath) return openRelease(path.resolve(releasePath));
-  return openRelease(await buildReleaseFromCheckout(out));
+  return openRelease(await buildReleaseFromCheckout(out, verbose ?? false));
 }
 
-async function buildReleaseFromCheckout(out: EventSink): Promise<string> {
+/** The release build's output goes to a log file (lib/childLog.ts). */
+async function buildReleaseFromCheckout(
+  out: EventSink,
+  verbose: boolean,
+): Promise<string> {
   const root = checkoutRoot();
   const gatewayDir = path.join(root, "apps", "every-app-gateway");
   out.emit({
     type: "progress",
     step: "gateway.release",
-    message: `Building the gateway release from ${gatewayDir}...`,
+    message: "Building the Gateway from this checkout (a minute or two)...",
+    data: { dir: gatewayDir },
   });
+  const build = (args: string[], cwd: string) =>
+    runLogged("pnpm", args, {
+      cwd,
+      echo: verbose,
+      what: "Building the Gateway",
+      code: "GATEWAY_BUILD_FAILED",
+    });
   // The gateway build resolves @every-app/sdk from its dist/.
-  await execa("pnpm", ["--filter", "@every-app/sdk", "build"], { cwd: root });
-  await execa("pnpm", ["run", "build:release"], { cwd: gatewayDir });
+  await build(["--filter", "@every-app/sdk", "build"], root);
+  await build(["run", "build:release"], gatewayDir);
   return path.join(gatewayDir, RELEASE_TARBALL);
 }

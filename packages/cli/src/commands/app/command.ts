@@ -73,6 +73,27 @@ const gatewayFlag = {
   optional: true,
 } as const;
 
+const jsonFlag = {
+  kind: "boolean",
+  brief:
+    "Print only NDJSON events on stdout (exit 2: an action is required; then run it again)",
+  optional: true,
+} as const;
+
+const verboseFlag = {
+  kind: "boolean",
+  brief:
+    "Show every step and progress line, and stream build and install output to stderr",
+  optional: true,
+} as const;
+
+const yesFlag = {
+  kind: "boolean",
+  brief:
+    "Skip everyapp's own confirmations (never cf's questions, or the one before replacing a Worker changed outside everyapp)",
+  optional: true,
+} as const;
+
 export const deployCommand = buildCommand({
   loader: async () => {
     const { deploy } = await import("./deploy");
@@ -85,21 +106,9 @@ export const deployCommand = buildCommand({
     },
     flags: {
       gateway: gatewayFlag,
-      verbose: {
-        kind: "boolean",
-        brief: "Show detailed output during deployment",
-        optional: true,
-      },
-      yes: {
-        kind: "boolean",
-        brief: "Skip deployment confirmation",
-        optional: true,
-      },
-      json: {
-        kind: "boolean",
-        brief: "Print progress as NDJSON events on stdout",
-        optional: true,
-      },
+      verbose: verboseFlag,
+      yes: yesFlag,
+      json: jsonFlag,
       access: {
         kind: "enum",
         values: ["everyone", "admins"],
@@ -149,6 +158,9 @@ export const deployCommand = buildCommand({
       "     creates or updates its Workflows (refused if another Worker runs one of their names)",
       "  7. Has the gateway bind the Worker and publish its hostname (new apps), makes the app",
       "     live, and waits for a new hostname's certificate",
+      "",
+      "Nothing asks first: the first line says where the app goes. Install and build output goes to",
+      "a log file (its last lines and path are shown if it fails), never to stdout.",
     ].join("\n"),
   },
 });
@@ -179,19 +191,12 @@ export const deleteCommand = buildCommand({
       },
       yes: {
         kind: "boolean",
-        brief: "Skip the confirmation",
+        brief:
+          "Delete without asking (with --purge too, without typing the app id)",
         optional: true,
       },
-      json: {
-        kind: "boolean",
-        brief: "Print progress as NDJSON events on stdout",
-        optional: true,
-      },
-      verbose: {
-        kind: "boolean",
-        brief: "Show detailed output",
-        optional: true,
-      },
+      json: jsonFlag,
+      verbose: verboseFlag,
     },
     aliases: { y: "yes" },
   },
@@ -220,11 +225,7 @@ const d1MigrateCommand = buildCommand({
         brief: "Migrate the local database `everyapp dev` uses",
         optional: true,
       },
-      json: {
-        kind: "boolean",
-        brief: "Print progress as NDJSON events on stdout",
-        optional: true,
-      },
+      json: jsonFlag,
     },
   },
   docs: {
@@ -307,21 +308,9 @@ const secretSetCommand = buildCommand({
         optional: true,
       },
       gateway: gatewayFlag,
-      yes: {
-        kind: "boolean",
-        brief: "Skip the confirmation",
-        optional: true,
-      },
-      json: {
-        kind: "boolean",
-        brief: "Print progress as NDJSON events on stdout",
-        optional: true,
-      },
-      verbose: {
-        kind: "boolean",
-        brief: "Show detailed output during the deploy",
-        optional: true,
-      },
+      yes: yesFlag,
+      json: jsonFlag,
+      verbose: verboseFlag,
     },
     aliases: { y: "yes" },
   },
@@ -329,7 +318,7 @@ const secretSetCommand = buildCommand({
     brief: "Set one of the app's secrets, with a deploy",
     fullDescription: [
       "Sets a secret the app's Worker reads from env (an API key it calls out with, say), from a hidden prompt or --from-env <VAR>, never the command line.",
-      "It deploys the app in this directory, code and pending migrations included, with the secret in the same version (see `everyapp app deploy`); at a terminal it asks first. Later deploys keep it.",
+      "It deploys the app in this directory, code and pending migrations included, with the secret in the same version (see `everyapp app deploy`), and its first line says so. Later deploys keep it.",
       "Names everyapp sets itself are refused: GATEWAY_URL and the EVERYAPP_*, EVERY_APP_* and APP__* names.",
     ].join("\n"),
   },

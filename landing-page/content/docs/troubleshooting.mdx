@@ -57,7 +57,7 @@ Cloudflare doesn't serve DNS for the domain yet: point its nameservers at Cloudf
 
 ### "Couldn't confirm this account is on Workers Paid"
 
-Every App needs the Workers Paid plan ($5 a month): on the Free plan D1 stops answering for the rest of the day once the account reaches its daily limits, and the Gateway reads D1 on every request. Subscribe under **Workers & Pages → Plans**, then re-run. If the account is on Workers Paid already, the check couldn't read its subscription: go on (at a terminal, answer yes; `--allow-free-plan` skips the check).
+Every App needs the Workers Paid plan ($5 a month): on the Free plan D1 stops answering for the rest of the day once the account reaches its daily limits, and the Gateway reads D1 on every request. Subscribe under **Workers & Pages → Plans**, then re-run. It is a warning, not a question: setup goes on either way, and if the account is on Workers Paid already, the check couldn't read its subscription (`--allow-free-plan` skips it). When Cloudflare itself refuses something for the Free plan, the command stops there (`action_required` `upgrade_workers_paid` under `--json`) with the link to subscribe; run it again afterwards.
 
 ### "…already has a DNS record" / "already have DNS records"
 
@@ -95,11 +95,11 @@ The deploy lost its lease while it ran: its renewals failed for more than 90 sec
 
 ### "Migrating the database failed"
 
-Nothing was uploaded: the Gateway that was serving keeps running. Before migrating, the CLI bookmarked the database and printed the command that restores it (`cf d1 time-travel restore … --force`, in PowerShell syntax on Windows outside Git Bash; `--force` answers cf's own confirmation, which it otherwise declines wherever no one can type). Fix the cause and re-run.
+Nothing was uploaded: the Gateway that was serving keeps running. Before migrating, the CLI bookmarked the database; the error ends with the command that restores it (`cf d1 time-travel restore … --force`, in PowerShell syntax on Windows outside Git Bash; `--force` answers cf's own confirmation, which it otherwise declines wherever no one can type). Fix the cause and re-run.
 
 ### "cf finished without uploading a new version"
 
-`cf` asked a question in the terminal (a Worker changed in the dashboard, a DNS record or Custom Domain held by something else) and it was answered no, so `cf` exited without deploying. The version that was serving still is. If the run had migrated the database, it stays migrated: run the command again and answer yes, or roll the database back with the restore command printed before the migration.
+`cf` asked a question in the terminal (a Worker changed in the dashboard, a DNS record or Custom Domain held by something else) and it was answered no, so `cf` exited without deploying. The version that was serving still is. If the run had migrated the database, it stays migrated: run the command again and answer yes, or roll the database back with the restore command the error repeats (it is also under the migration's line, `restore point: …`, and in `data.rollbackCommand` under `--json`).
 
 ### "… has no certificate after …" / the address doesn't load yet
 
@@ -264,7 +264,7 @@ npx everyapp gateway status
 dig +short apps.your-domain.dev
 ```
 
-Plus the full command you ran and its complete output (with `--verbose`), and whether your domain shows **Active** in the Cloudflare dashboard.
+Plus the full command you ran and its complete output (with `--verbose`, which also shows every step and the build and install output), the log file a failed build or install names (`$TMPDIR/everyapp/…log`), and whether your domain shows **Active** in the Cloudflare dashboard.
 
 <Callout type="info">
   Re-running a failed deploy is safe. Resources are created get-or-create,

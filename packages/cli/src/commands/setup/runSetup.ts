@@ -20,8 +20,8 @@
  *                into a CI log, unless --printSetupLink)
  *    login       the owner's first deploy token, handed to this CLI once
  *                the link is claimed (lib/gateway/autoLogin.ts)
- *    extras      what can be set up next (AI, email)
  *
+ * What can be set up next (AI, email) is the command's `done.data.next`.
  * With --json, each step is an NDJSON event and what only a person can do
  * is `action_required`; a run that stops on one exits 2, and running the
  * same command again resumes it.
@@ -82,9 +82,12 @@ export interface SetupFlags {
   verbose?: boolean;
 }
 
-/** What only a person at a terminal answers. */
+/**
+ * What only a person at a terminal answers: where the gateway goes, when
+ * there is no --domain. Nothing asks for a go-ahead: the first lines say
+ * which account and where.
+ */
 interface SetupPrompts {
-  confirm(message: string): Promise<boolean>;
   pickZone(zones: string[]): Promise<string>;
   hostname(zone: string): Promise<string>;
 }
@@ -168,9 +171,9 @@ export async function runSetup(
     step: "setup.account",
     status: "ok",
     message: `Using Cloudflare account ${account.name ?? account.id}.`,
-    data: { id: account.id, name: account.name },
+    data: { id: account.id, name: account.name, email: whoami.email ?? null },
   });
-  await checkPlan(cf, account.id, flags, out, deps);
+  await checkPlan(cf, account.id, flags, out);
 
   // Where the gateway lives.
   const { databaseId, install } = await findInstall(cf);
@@ -214,13 +217,6 @@ export async function runSetup(
   const claim = await ensureOwnerLink({ db, gatewayUrl, flags, out, deps });
   const login = await ensureLogin({ db, gatewayUrl, claim, out, deps });
 
-  out.emit({
-    type: "step",
-    step: "setup.extras",
-    status: "skip",
-    message:
-      "Optional, any time: AI for apps (`everyapp gateway secret set OPENAI_API_KEY`), and email for invitations and password resets (onboard the domain for Cloudflare Email Sending, then `everyapp gateway secret set EMAIL_FROM`); until then invitations and resets are links to share.",
-  });
   return { gatewayUrl, organizationName: login };
 }
 
@@ -239,16 +235,16 @@ function checkToolchain(out: EventSink): void {
  * The Free plan can't run Every App: D1 stops answering for the rest of
  * the day once a database reaches its daily row limits (enforced since
  * 2026-09-01), and the gateway reads D1 on every request; requests get
- * 10 ms of CPU; an account has 10 databases. Warned about, never required:
- * the subscription's shape isn't verified, so a paid account could read
- * as unknown.
+ * 10 ms of CPU; an account has 10 databases. Warned about, never asked or
+ * required: the subscription's shape isn't verified, so a paid account
+ * could read as unknown. When Cloudflare itself refuses for the plan, the
+ * run stops with `upgrade_workers_paid` (lib/cf/deploy.ts, report.ts).
  */
 async function checkPlan(
   cf: CfRunner,
   accountId: string,
   flags: SetupFlags,
   out: EventSink,
-  deps: SetupDeps,
 ): Promise<void> {
   if (await hasWorkersPaid(cf)) {
     out.emit({
@@ -276,15 +272,6 @@ async function checkPlan(
     message: `Couldn't confirm this account is on Workers Paid ($5 a month, then usage). Every App needs it: on the Free plan D1 stops answering for the rest of the day once it reaches its daily limits (and the gateway reads D1 on every request), requests get 10 ms of CPU, and an account has 10 databases. Subscribe at ${url}.`,
     data: { url },
   });
-  if (deps.interactive && !flags.yes) {
-    if (!(await deps.prompts.confirm("Continue without confirming Workers Paid?"))) {
-      throw new ActionRequiredError(
-        "upgrade_workers_paid",
-        "Subscribe to Workers Paid, then run `everyapp setup` again.",
-        url,
-      );
-    }
-  }
 }
 
 /** A hostname for the gateway, picked at the terminal from the account's zones. */
@@ -346,27 +333,24 @@ async function deployOrSkipGateway({
         `Gateway release ${manifest.version} needs everyapp ${manifest.minCli} or newer; this is ${deps.cliVersion}.`,
       );
     }
+    const gatewayUrl = `https://${target.domain}`;
     if (install && databaseId) {
-      const skip =
-        install.releaseSha256 === manifest.sha256
-          ? `The gateway already runs release ${manifest.version}.`
-          : olderThanInstalled(manifest, install)
-            ? `The gateway runs release ${install.releaseVersion}, newer than the ${manifest.version} built from this checkout; leaving it as it is.`
-            : null;
+      const upToDate = install.releaseSha256 === manifest.sha256;
+      const skip = upToDate
+        ? `The gateway already runs release ${manifest.version}.`
+        : olderThanInstalled(manifest, install)
+          ? `The gateway runs release ${install.releaseVersion}, newer than the ${manifest.version} built from this checkout; leaving it as it is.`
+          : null;
       if (skip) {
-        out.emit({ type: "step", step: "setup.gateway", status: "skip", message: skip });
+        out.emit({
+          type: "step",
+          step: "setup.gateway",
+          status: "skip",
+          message: skip,
+          data: { release: manifest.version, gatewayUrl, upToDate },
+        });
         return cfD1Database(cf, databaseId);
       }
-    }
-    if (
-      !install &&
-      deps.interactive &&
-      !flags.yes &&
-      !(await deps.prompts.confirm(
-        `Install the Every App gateway at https://${target.domain} in ${account.name ?? account.id}?`,
-      ))
-    ) {
-      throw new EveryAppError("SETUP_CANCELLED", "Nothing was installed.");
     }
     out.emit({
       type: "step",
@@ -374,7 +358,12 @@ async function deployOrSkipGateway({
       status: "start",
       message: install
         ? `Upgrading the gateway to release ${manifest.version}...`
-        : `Installing the gateway at https://${target.domain}...`,
+        : `Installing the gateway at ${gatewayUrl} in ${account.name ?? account.id}...`,
+      data: {
+        release: manifest.version,
+        from: install?.releaseVersion ?? null,
+        gatewayUrl,
+      },
     });
     const { result, db } = await deployGatewayRelease({
       cf,

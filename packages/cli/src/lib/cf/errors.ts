@@ -38,10 +38,11 @@ export class CfError extends Error {
   readonly apiCodes: number[];
   readonly exitCode: number | null;
   readonly stderr: string;
+  readonly stdout: string;
 
   constructor(
     parsed: ParsedCfError,
-    details: { exitCode: number | null; stderr: string },
+    details: { exitCode: number | null; stderr: string; stdout?: string },
   ) {
     super(parsed.message);
     this.name = "CfError";
@@ -49,6 +50,7 @@ export class CfError extends Error {
     this.apiCodes = parsed.apiCodes;
     this.exitCode = details.exitCode;
     this.stderr = details.stderr;
+    this.stdout = details.stdout ?? "";
   }
 }
 
@@ -71,14 +73,17 @@ export class CfOutputError extends Error {
   }
 }
 
+/**
+ * cf's strict-mode abort at the upload (a Worker changed in the dashboard or
+ * through the API, run without a terminal). cf 1.0.0-beta.14 prints it on
+ * stdout with no box on stderr and exits 1, so it is looked for in both.
+ */
+const STRICT_CONFLICT = /Aborting the upload operation because of conflicts/;
+
 const KIND_RULES: Array<
   [CfErrorKind, (text: string, codes: number[]) => boolean]
 > = [
   ["d1_id_rejected", (text) => /Expected a D1 database ID/.test(text)],
-  [
-    "strict_conflict",
-    (text) => /Aborting the upload operation because of conflicts/.test(text),
-  ],
   [
     "subdomain_missing",
     (text) => /workers\.dev subdomain|\/workers\/onboarding/.test(text),
@@ -133,15 +138,19 @@ export function abortedCfError(command: string, stderr: string): CfError | null 
   );
 }
 
-/** Pull the message, API codes and kind out of cf's stderr. */
-export function parseCfStderr(stderr: string): ParsedCfError {
-  const message = boxedMessage(stderr) ?? lastLines(stderr);
+/**
+ * Pull the message, API codes and kind out of what cf printed: the error
+ * box on stderr, or else the last lines of its output.
+ */
+export function parseCfOutput(stderr: string, stdout = ""): ParsedCfError {
+  const message = boxedMessage(stderr) ?? lastLines(stdout, stderr);
   const apiCodes = [...message.matchAll(/\[(?:code: )?(\d{4,})\]/g)].map(
     (match) => Number(match[1]),
   );
-  const kind =
-    KIND_RULES.find(([, matches]) => matches(message, apiCodes))?.[0] ??
-    "unknown";
+  const kind = STRICT_CONFLICT.test(`${stdout}\n${stderr}`)
+    ? "strict_conflict"
+    : (KIND_RULES.find(([, matches]) => matches(message, apiCodes))?.[0] ??
+      "unknown");
   return { message, apiCodes, kind };
 }
 
@@ -185,10 +194,17 @@ function joinWrapped(lines: string[]): string {
     .trim();
 }
 
-function lastLines(stderr: string): string {
-  const lines = stderr
+/** Without a box, what cf printed last: a build's error, say. */
+function lastLines(...outputs: string[]): string {
+  return outputTail(...outputs).join("\n") || "cf failed without an error message";
+}
+
+/** The last 20 lines cf printed, stdout then stderr: what a failure shows of it. */
+export function outputTail(...outputs: string[]): string[] {
+  return outputs
+    .join("\n")
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-  return lines.slice(-3).join("\n") || "cf failed without an error message";
+    .map((line) => line.trimEnd())
+    .filter((line) => line.trim().length > 0)
+    .slice(-20);
 }

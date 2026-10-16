@@ -1,5 +1,3 @@
-import { GatewayClient } from "@/lib/gateway/api";
-
 export class GatewayUnreachableError extends Error {
   url: string;
   override cause: unknown;
@@ -53,23 +51,6 @@ export async function checkSslReady(url: string): Promise<boolean> {
     }
 
     throw new GatewayUnreachableError(url, error);
-  }
-}
-
-/**
- * Check if the gateway has an owner account by querying the hasOwner endpoint
- */
-export async function checkGatewayHasOwner(
-  gatewayUrl: string,
-): Promise<boolean> {
-  const client = new GatewayClient({
-    gatewayUrl,
-    getAuthToken: async () => "",
-  });
-  try {
-    return await client.hasOwner();
-  } catch (error) {
-    throw new GatewayUnreachableError(gatewayUrl, error);
   }
 }
 

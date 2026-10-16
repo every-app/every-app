@@ -7,6 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
+import { rollbackCommandFor } from "@/lib/errors";
 import { createNdjsonSink } from "@/lib/output/events";
 import {
   ACCOUNT_ID,
@@ -308,17 +309,20 @@ describe("gateway deploy", () => {
   it("asks for the workers.dev subdomain an account without one needs", async () => {
     account.failNextDeploy = `You need a workers.dev subdomain before your first upload. Register one: https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`;
 
-    await expect(deployGateway()).rejects.toMatchObject({
+    const failure = await deployGateway().catch((error: unknown) => error);
+    expect(failure).toMatchObject({
       name: "ActionRequiredError",
       action: "register_workers_subdomain",
       url: `https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`,
     });
+    // Migrated before the upload stopped: the report repeats the restore command.
+    expect(rollbackCommandFor(failure)).toContain("d1 time-travel restore");
   });
 
   it("asks for a terminal when the Worker was last changed in the dashboard", async () => {
     await deployGateway();
-    account.failNextDeploy =
-      "Aborting the upload operation because of conflicts. To override and upload anyway, remove the `--strict` flag";
+    // cf says so on stdout, with no error box.
+    account.strictAbortNextDeploy = true;
 
     await expect(deployGateway()).rejects.toMatchObject({
       action: "rerun_interactive",

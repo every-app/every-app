@@ -63,7 +63,7 @@ import { deleteWorkflow } from "@/lib/cf/workflows";
 import { waitForCertificates } from "@/lib/domains/certWait";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
-import { EveryAppError } from "@/lib/errors";
+import { afterMigration, EveryAppError } from "@/lib/errors";
 import {
   explainGatewayError,
   GatewayApiError,
@@ -84,6 +84,7 @@ import {
   type EveryAppCliManifest,
 } from "@/lib/manifest";
 import { migrateRemoteD1 } from "@/lib/migrations/remote";
+import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { installDependencies } from "@/lib/package-manager";
 
@@ -146,6 +147,24 @@ interface DeployAppResult {
 
 export async function deployApp(
   options: DeployAppOptions,
+): Promise<DeployAppResult> {
+  const migrated: Migrated = { rollbackCommand: null };
+  try {
+    return await deploySteps(options, migrated);
+  } catch (error) {
+    // Once the app's database changed, a failure says how to put it back.
+    throw afterMigration(error, migrated.rollbackCommand);
+  }
+}
+
+/** The command that rolls the app's database back, once this deploy migrated it. */
+interface Migrated {
+  rollbackCommand: string | null;
+}
+
+async function deploySteps(
+  options: DeployAppOptions,
+  migrated: Migrated,
 ): Promise<DeployAppResult> {
   const { cwd, out, gatewayUrl } = options;
   const createCf = options.createCf ?? ((accountId?: string) => createCfRunner({ accountId }));
@@ -211,25 +230,31 @@ export async function deployApp(
       ...(sdkVersion ? { sdkVersion } : {}),
     }),
   );
+  // A person's first line: where this goes, and (secret set) what for. A
+  // new app's says who can open it.
+  const secretNames = Object.keys(options.secrets ?? {});
   out.emit({
     type: "step",
     step: "app.register",
     status: "ok",
-    message: `${registration.existingApp ? "Updating" : "Registered"} ${manifest.id} as ${registration.workerName} (${registration.status}).`,
+    message: `${registration.existingApp ? "Updating" : "Registered"} ${manifest.id} as ${registration.workerName} at https://${registration.hostname} (${registration.status}).${
+      registration.existingApp
+        ? ""
+        : registration.defaultAccess
+          ? " Everyone in the organization can open it."
+          : " New apps are private: only you and the organization's owners and admins can open it. Grant others in Admin → Apps."
+    }`,
     data: {
+      appId: manifest.id,
       workerName: registration.workerName,
       hostname: registration.hostname,
       status: registration.status,
+      existingApp: registration.existingApp,
+      defaultAccess: registration.defaultAccess,
+      organizationName: whoami.organizationName,
+      ...(secretNames.length > 0 ? { secrets: secretNames } : {}),
     },
   });
-  if (!registration.existingApp && !registration.defaultAccess) {
-    out.emit({
-      type: "progress",
-      step: "app.register",
-      message:
-        "New apps are private: only you and the organization's owners and admins can open it. Grant others in Admin → Apps, or deploy with --access everyone.",
-    });
-  }
 
   // A hostname the gateway doesn't serve yet is checked before anything is
   // created or uploaded; the reconcile that publishes it checks again. One
@@ -343,6 +368,13 @@ export async function deployApp(
       workerName: registration.workerName,
       names: workflows,
     });
+    out.emit({
+      type: "step",
+      step: "app.build",
+      status: "ok",
+      message: "Built the app and checked its Worker.",
+      data: { workflows },
+    });
     // Migrations that lag the schema would go live with code that needs more.
     await checkSchemaDrift({ cwd, manifest, out });
 
@@ -358,7 +390,14 @@ export async function deployApp(
       confirm: options.confirm,
     });
     await lease.check();
-    await migrate({ cf, out, cwd, manifest, resources, accountId });
+    migrated.rollbackCommand = await migrate({
+      cf,
+      out,
+      cwd,
+      manifest,
+      resources,
+      accountId,
+    });
 
     await lease.check();
     out.emit({
@@ -461,6 +500,16 @@ export async function deployApp(
       });
     }
   }
+  out.emit({
+    type: "step",
+    step: "app.live",
+    status: "ok",
+    message: `${manifest.id} is live at https://${registration.hostname}.`,
+    data: {
+      hostname: registration.hostname,
+      url: `https://${registration.hostname}`,
+    },
+  });
 
   return {
     liveUrl: `https://${registration.hostname}`,
@@ -520,6 +569,7 @@ function checkGateway(whoami: GatewayWhoamiResponse): string {
     throw new EveryAppError(
       "GATEWAY_OUTDATED",
       "The gateway is too old for this everyapp. Upgrade it first: everyapp gateway upgrade",
+      { rerun: `${CLI} gateway upgrade` },
     );
   }
   if (whoami.minCli && compareVersions(cliVersion, whoami.minCli) < 0) {
@@ -532,6 +582,7 @@ function checkGateway(whoami: GatewayWhoamiResponse): string {
     throw new EveryAppError(
       "GATEWAY_ACCOUNT_UNKNOWN",
       "The gateway doesn't say which Cloudflare account it runs in. Redeploy it: everyapp gateway upgrade",
+      { rerun: `${CLI} gateway upgrade` },
     );
   }
   return whoami.accountId;
@@ -603,6 +654,7 @@ async function checkWorkflows({
   return removed;
 }
 
+/** Returns the command that rolls the database back, when it changed. */
 async function migrate({
   cf,
   out,
@@ -617,9 +669,9 @@ async function migrate({
   manifest: EveryAppCliManifest;
   resources: DeployInputs["resources"];
   accountId: string;
-}): Promise<void> {
+}): Promise<string | null> {
   const bindings = manifest.resources?.d1 ?? [];
-  if (bindings.length === 0) return;
+  if (bindings.length === 0) return null;
   const binding = resolveMigrationBinding(bindings, manifest.migrations);
   const databaseId = resources.d1?.[binding]?.id;
   const dir = path.resolve(cwd, manifest.migrations?.dir ?? "drizzle");
@@ -630,7 +682,7 @@ async function migrate({
       status: "skip",
       message: "No migrations to apply.",
     });
-    return;
+    return null;
   }
   out.emit({
     type: "step",
@@ -646,16 +698,21 @@ async function migrate({
     onProgress: (message) =>
       out.emit({ type: "progress", step: "app.migrations", message }),
   });
+  const changed = result.applied.length > 0;
   out.emit({
     type: "step",
     step: "app.migrations",
     status: "ok",
-    message:
-      result.applied.length > 0
-        ? `Applied ${result.applied.join(", ")}.`
-        : "The app's database is up to date.",
-    data: { bookmark: result.bookmark, applied: result.applied },
+    message: changed
+      ? `Applied ${result.applied.join(", ")}. To roll the database back to before this run: ${result.rollbackCommand}`
+      : "The app's database is up to date.",
+    data: {
+      bookmark: result.bookmark,
+      applied: result.applied,
+      rollbackCommand: result.rollbackCommand,
+    },
   });
+  return changed ? result.rollbackCommand : null;
 }
 
 /**
@@ -703,6 +760,13 @@ async function bindIfNeeded({
       force: true,
       forceDns,
       ...seams,
+    });
+    out.emit({
+      type: "step",
+      step: "app.bind",
+      status: "ok",
+      message: `The gateway binds ${appBindingName(workerName)} (gateway version ${result.versionId ?? "unknown"}).`,
+      data: { versionId: result.versionId, newHosts: result.newHosts },
     });
     return result.newHosts;
   } catch (error) {

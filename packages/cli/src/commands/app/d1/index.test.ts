@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FakeCf } from "@/lib/cf/fakeCf";
 import { createNdjsonSink } from "@/lib/output/events";
+import { reportFailure } from "@/lib/output/report";
 import { migrateLocal } from "./index";
 
 let cwd: string;
@@ -28,6 +29,16 @@ function ndjson() {
   return { out, events };
 }
 
+/** `everyapp app d1 migrate --json`, as runReported reports it. */
+async function migrate(options: Parameters<typeof migrateLocal>[0]) {
+  try {
+    await migrateLocal(options);
+    options.out.emit({ type: "done" });
+  } catch (error) {
+    reportFailure(options.out, error);
+  }
+}
+
 describe("migrateLocal", () => {
   it("reports the applied migrations as NDJSON and exits 0", async () => {
     await fs.mkdir(path.join(cwd, "drizzle"));
@@ -36,7 +47,7 @@ describe("migrateLocal", () => {
       stdout: '[{"name":"0000_init.sql","status":"✅"}]',
     });
 
-    await migrateLocal({ cwd, out, local: true, cf });
+    await migrate({ cwd, out, local: true, cf });
 
     expect(events().map((event) => [event["type"], event["status"]])).toEqual([
       ["step", "start"],
@@ -52,7 +63,7 @@ describe("migrateLocal", () => {
 
   it("skips an app without a migrations directory", async () => {
     const { out, events } = ndjson();
-    await migrateLocal({ cwd, out, local: true, cf: new FakeCf() });
+    await migrate({ cwd, out, local: true, cf: new FakeCf() });
 
     expect(events()[1]).toMatchObject({
       type: "step",
@@ -70,7 +81,7 @@ describe("migrateLocal", () => {
       stderr: '┌ Error\n│ near "CREAT": syntax error\n└\n',
     });
 
-    await migrateLocal({ cwd, out, local: true, cf });
+    await migrate({ cwd, out, local: true, cf });
 
     expect(events().at(-1)).toMatchObject({
       type: "error",
@@ -82,12 +93,13 @@ describe("migrateLocal", () => {
 
   it("points remote migrations at app deploy", async () => {
     const { out, events } = ndjson();
-    await migrateLocal({ cwd, out, local: false, cf: new FakeCf() });
+    await migrate({ cwd, out, local: false, cf: new FakeCf() });
 
     expect(events()).toEqual([
       expect.objectContaining({
         type: "error",
         code: "REMOTE_MIGRATIONS_UNSUPPORTED",
+        data: { rerun: expect.stringMatching(/ --local$/) },
       }),
     ]);
     expect(out.exitCode).toBe(1);

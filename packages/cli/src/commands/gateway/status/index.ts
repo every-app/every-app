@@ -35,7 +35,7 @@ export async function status(
   this: LocalContext,
   flags: StatusFlags,
 ): Promise<void> {
-  const out = eventSink(flags.json);
+  const out = eventSink(flags.json, flags.verbose);
   await runReported(
     out,
     async () => {

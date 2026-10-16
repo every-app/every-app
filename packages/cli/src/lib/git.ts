@@ -1,7 +1,8 @@
-import { executeCommandWithFormatting } from "./formatting";
+import { runLogged } from "./childLog";
 
 interface InitRepositoryOptions {
   targetDir: string;
+  /** Stream git's output to stderr too. */
   verbose?: boolean;
 }
 
@@ -12,34 +13,14 @@ export async function initRepository({
   targetDir,
   verbose = false,
 }: InitRepositoryOptions): Promise<void> {
-  try {
-    // Initialize git repository
-    await executeCommandWithFormatting("git", ["init"], {
-      verbose,
-      logCommandToConsole: false,
+  const git = (args: string[]) =>
+    runLogged("git", args, {
       cwd: targetDir,
+      echo: verbose,
+      what: "Initializing the app's git repository",
+      code: "GIT_FAILED",
     });
-
-    // Stage all files
-    await executeCommandWithFormatting("git", ["add", "."], {
-      verbose,
-      logCommandToConsole: false,
-      cwd: targetDir,
-    });
-
-    // Create initial commit
-    await executeCommandWithFormatting(
-      "git",
-      ["commit", "-m", "Starter template"],
-      {
-        verbose,
-        logCommandToConsole: false,
-        cwd: targetDir,
-      },
-    );
-  } catch (error) {
-    throw new Error(
-      `Failed to initialize git repository: ${error instanceof Error ? error.message : "Unknown error"}`,
-    );
-  }
+  await git(["init"]);
+  await git(["add", "."]);
+  await git(["commit", "-m", "Starter template"]);
 }

@@ -47,7 +47,7 @@ import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
-import { EveryAppError } from "@/lib/errors";
+import { afterMigration, EveryAppError } from "@/lib/errors";
 import { onInterrupt } from "@/lib/interrupt";
 import { writeCachedInstall } from "@/lib/install/state";
 import { migrateRemoteD1 } from "@/lib/migrations/remote";
@@ -285,6 +285,8 @@ export async function applyGateway(
       ? null
       : await acquireGatewayLease(options, `gateway.${reason}`);
   const lease = options.dryRun ? null : (options.heldLease ?? ownLease);
+  // Once the database is migrated, a failure says how to put it back.
+  let rollbackCommand: string | null = null;
   try {
     // Only now is the install record the last deploy's for sure: another
     // upgrade may have finished while this one waited for the lease.
@@ -326,7 +328,7 @@ export async function applyGateway(
         note: "If it runs a newer gateway release (an upgrade that stopped before recording itself), this replaces it with an older one.",
       });
       await lease?.check();
-      await migrate(options);
+      rollbackCommand = await migrate(options);
       out.emit({
         type: "step",
         step: "gateway.release_cache",
@@ -340,18 +342,21 @@ export async function applyGateway(
     return await deployUntilSettled(options, domainChecks, workerExists, {
       liveDomains: install?.liveDomains ?? [],
     }, lease);
+  } catch (error) {
+    throw afterMigration(error, rollbackCommand);
   } finally {
     await ownLease?.release();
   }
 }
 
+/** Returns the command that rolls the database back, when it changed. */
 async function migrate({
   cf,
   out,
   resources,
   release,
   accountId,
-}: ApplyGatewayOptions): Promise<void> {
+}: ApplyGatewayOptions): Promise<string | null> {
   out.emit({
     type: "step",
     step: "gateway.migrations",
@@ -366,16 +371,21 @@ async function migrate({
     onProgress: (message) =>
       out.emit({ type: "progress", step: "gateway.migrations", message }),
   });
+  const changed = result.applied.length > 0;
   out.emit({
     type: "step",
     step: "gateway.migrations",
     status: "ok",
-    message:
-      result.applied.length > 0
-        ? `Applied ${result.applied.length} migration${result.applied.length === 1 ? "" : "s"}.`
-        : "The gateway's database is up to date.",
-    data: { bookmark: result.bookmark, applied: result.applied },
+    message: changed
+      ? `Applied ${result.applied.length} migration${result.applied.length === 1 ? "" : "s"}. To roll the database back to before this run: ${result.rollbackCommand}`
+      : "The gateway's database is up to date.",
+    data: {
+      bookmark: result.bookmark,
+      applied: result.applied,
+      rollbackCommand: result.rollbackCommand,
+    },
   });
+  return changed ? result.rollbackCommand : null;
 }
 
 async function deployUntilSettled(

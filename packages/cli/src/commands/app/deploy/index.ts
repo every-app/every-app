@@ -1,6 +1,4 @@
-import enquirer from "enquirer";
 import type { LocalContext } from "@/context";
-import { checkIsEveryAppProject } from "@/commands/app/deploy/steps/checkIsEveryAppProject";
 import { deployApp } from "@/commands/app/deploy/deployApp";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { resolveGatewayUrl } from "@/lib/gateway/resolve";
@@ -19,15 +17,19 @@ interface DeployCommandFlags {
   "no-wait-cert"?: boolean;
 }
 
+/**
+ * `everyapp app deploy`: no question first. The first line says where the
+ * app goes (`todo → https://todo.apps.example.com (Acme)`), and the last
+ * that it is live.
+ */
 export async function deploy(
   this: LocalContext,
   flags: DeployCommandFlags,
 ): Promise<void> {
-  const out = eventSink(flags.json);
+  const out = eventSink(flags.json, flags.verbose);
   await runReported(
     out,
     async () => {
-      await checkIsEveryAppProject();
       const cwd = process.cwd();
       const loaded = await loadEveryAppManifest(cwd);
       // --access overrides the manifest. Either only matters the first time
@@ -36,19 +38,6 @@ export async function deploy(
         ? { ...loaded, access: flags.access }
         : loaded;
       const gatewayUrl = await resolveGatewayUrl(flags.gateway);
-
-      if (!flags.yes && canPromptInTerminal(flags.json ?? false)) {
-        const { confirmed } = await enquirer.prompt<{ confirmed: boolean }>({
-          type: "confirm",
-          name: "confirmed",
-          message: `Deploy ${manifest.id} to ${gatewayUrl}?`,
-          initial: false,
-        });
-        if (!confirmed) {
-          out.emit({ type: "done", message: "Deployment cancelled." });
-          return;
-        }
-      }
 
       const result = await deployApp({
         cwd,
@@ -63,9 +52,9 @@ export async function deploy(
         forceDns: flags["force-dns"],
         waitForCertificate: !flags["no-wait-cert"],
       });
+      // `app.live` said it to a person already.
       out.emit({
         type: "done",
-        message: `${manifest.id} is live at ${result.liveUrl}`,
         data: {
           url: result.liveUrl,
           workerName: result.workerName,

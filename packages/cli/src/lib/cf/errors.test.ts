@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCfStderr } from "./errors";
+import { parseCfOutput } from "./errors";
 
 // Captured from cf 1.0.0-beta.14 with NO_COLOR=1, logged out and offline.
 const D1_ID_REJECTED = `
@@ -32,9 +32,9 @@ const WORKFLOW_NOT_FOUND = `
 // Message text from cf's source; the API renders codes as "[code: N]".
 const box = (message: string) => `┌ Error\n│ ${message}\n└\n`;
 
-describe("parseCfStderr", () => {
+describe("parseCfOutput", () => {
   it("unwraps the boxed message and rejoins wrapped lines", () => {
-    expect(parseCfStderr(D1_ID_REJECTED)).toEqual({
+    expect(parseCfOutput(D1_ID_REJECTED)).toEqual({
       message:
         'Expected a D1 database ID, but received <database>="DB". Database names and binding names are not accepted.',
       apiCodes: [],
@@ -43,7 +43,7 @@ describe("parseCfStderr", () => {
   });
 
   it("keeps list items and paragraphs on their own lines", () => {
-    const parsed = parseCfStderr(NOT_LOGGED_IN);
+    const parsed = parseCfOutput(NOT_LOGGED_IN);
     expect(parsed.kind).toBe("auth");
     expect(parsed.message).toBe(
       [
@@ -92,11 +92,11 @@ describe("parseCfStderr", () => {
     ],
     ["unknown", "Something else went wrong"],
   ] as const)("classifies %s", (kind, message) => {
-    expect(parseCfStderr(box(message)).kind).toBe(kind);
+    expect(parseCfOutput(box(message)).kind).toBe(kind);
   });
 
   it("reads an API error's box and code", () => {
-    expect(parseCfStderr(WORKFLOW_NOT_FOUND)).toEqual({
+    expect(parseCfOutput(WORKFLOW_NOT_FOUND)).toEqual({
       message:
         "[10200] workflows.api.error.workflow.not_found 404 Not Found · HTTP /accounts/0123/workflows/every-acme-todo--rank-check",
       apiCodes: [10200],
@@ -106,17 +106,32 @@ describe("parseCfStderr", () => {
 
   it("collects every API error code", () => {
     expect(
-      parseCfStderr(box("Upload failed [code: 10021] then [code: 10042]"))
+      parseCfOutput(box("Upload failed [code: 10021] then [code: 10042]"))
         .apiCodes,
     ).toEqual([10021, 10042]);
   });
 
-  it("falls back to the last lines when cf printed no box", () => {
+  it("falls back to the last 20 lines when cf printed no box", () => {
     expect(
-      parseCfStderr("warming up\nerror during build:\nError: boom\n").message,
+      parseCfOutput("warming up\nerror during build:\nError: boom\n").message,
     ).toBe("warming up\nerror during build:\nError: boom");
-    expect(parseCfStderr("").message).toBe(
+    expect(parseCfOutput("").message).toBe(
       "cf failed without an error message",
     );
+    const build = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`);
+    const message = parseCfOutput(build.slice(25).join("\n"), build.slice(0, 25).join("\n")).message;
+    expect(message.split("\n")).toEqual(build.slice(10));
+  });
+
+  it("finds the strict-mode abort cf prints on stdout, with no box", () => {
+    expect(
+      parseCfOutput(
+        "",
+        "Uploading every-app-gateway\nAborting the upload operation because of conflicts. To override and upload anyway, remove the `--strict` flag\n",
+      ),
+    ).toMatchObject({
+      kind: "strict_conflict",
+      message: expect.stringContaining("Aborting the upload operation"),
+    });
   });
 });
