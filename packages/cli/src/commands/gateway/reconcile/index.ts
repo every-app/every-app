@@ -1,7 +1,6 @@
 import type { LocalContext } from "@/context";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { waitForCertificates } from "@/lib/domains/certWait";
-import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import {
   cliVersion,
@@ -16,8 +15,6 @@ interface ReconcileFlags {
   "dry-run"?: boolean;
   force?: boolean;
   "force-dns"?: boolean;
-  "break-lease"?: boolean;
-  yes?: boolean;
   json?: boolean;
   verbose?: boolean;
 }
@@ -49,11 +46,6 @@ export async function reconcile(
         dryRun: flags["dry-run"],
         force: flags.force,
         forceDns: flags["force-dns"],
-        breakLease: confirmLeaseBreak({
-          breakLease: flags["break-lease"],
-          yes: flags.yes,
-          interactive: canPromptInTerminal(flags.json ?? false),
-        }),
       });
       if (result.dryRunOutput !== undefined) {
         out.emit({

@@ -4,7 +4,6 @@ import { checkIsEveryAppProject } from "@/commands/app/deploy/steps/checkIsEvery
 import { deployApp } from "@/commands/app/deploy/deployApp";
 import { assertAppSecretName } from "@/lib/app/secrets";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
-import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { resolveGatewayUrl } from "@/lib/gateway/resolve";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import { eventSink, runReported } from "@/lib/output/run";
@@ -13,7 +12,6 @@ import { readSecretValue } from "@/lib/secretValue";
 interface AppSecretSetFlags {
   "from-env"?: string;
   gateway?: string;
-  "break-lease"?: boolean;
   yes?: boolean;
   json?: boolean;
   verbose?: boolean;
@@ -71,11 +69,6 @@ export async function set(
         json: flags.json,
         verbose: flags.verbose,
         secrets: { [name]: value },
-        breakLease: confirmLeaseBreak({
-          breakLease: flags["break-lease"],
-          yes: flags.yes,
-          interactive: canPromptInTerminal(flags.json ?? false),
-        }),
       });
       out.emit({
         type: "done",

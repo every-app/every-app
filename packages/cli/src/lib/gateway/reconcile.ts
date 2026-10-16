@@ -38,7 +38,6 @@ import {
   type InstallRecord,
   type Routing,
 } from "./install";
-import type { BreakLease } from "./lease";
 import {
   compareReleaseOrder,
   fetchCachedRelease,
@@ -67,7 +66,6 @@ interface ReconcileGatewayOptions {
   confirm?: Confirm;
   cliVersion: string;
   stagedSecrets?: Record<string, string>;
-  breakLease?: BreakLease;
   dryRun?: boolean;
   /** Deploy even when the live bindings already match. */
   force?: boolean;
@@ -133,7 +131,6 @@ export async function reconcileGateway(
         {
           db,
           out,
-          breakLease: options.breakLease,
           leaseWaitMs: options.leaseWaitMs,
           sleep: options.sleep,
         },
@@ -172,7 +169,7 @@ export async function reconcileGateway(
         interactive: options.interactive,
         cliVersion: options.cliVersion,
         stagedSecrets: options.stagedSecrets,
-        leaseHeld: true,
+        ...(lease ? { heldLease: lease } : {}),
         dryRun: options.dryRun,
         readStatus: options.readStatus,
         sleep: options.sleep,

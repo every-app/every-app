@@ -7,6 +7,8 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deletionSummary, removeApp } from "@/commands/app/delete";
 import { queryAppD1 } from "@/commands/app/d1";
@@ -30,7 +32,10 @@ import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { FakeGateway, GATEWAY_URL } from "@/test/fakeGateway";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
 import { makeTestHome } from "@/test/home";
+import { loseLeaseAtCheck, OTHER_HOLDER } from "@/test/loseLease";
 import { deployApp } from "./deployApp";
+
+const REPO = fileURLToPath(new URL("../../../../../../", import.meta.url));
 
 const TODO: EveryAppCliManifest = {
   id: "todo",
@@ -548,36 +553,52 @@ describe("app deploy", () => {
     });
   });
 
-  it("takes over only the app's own lease with --break-lease", async () => {
-    // A deploy of this app that died holding its lease, and a gateway
-    // upgrade that is still running.
-    await acquireLease({
-      db: registry(),
-      id: "app:every-acme-todo",
-      purpose: "app.deploy",
-      heartbeatMs: 0,
-    });
+  it("keeps the upload when binding waits for a gateway deploy, and binds it next time", async () => {
+    // A gateway upgrade that is still running.
     const upgrade = await acquireLease({
       db: registry(),
       id: "gateway",
       purpose: "gateway.upgrade",
       heartbeatMs: 0,
     });
-    const asked: string[] = [];
 
-    await expect(
-      deploy(TODO, {
-        breakLease: async (current) => (asked.push(current.purpose), true),
-      }),
-    ).rejects.toMatchObject({
-      code: "LEASE_HELD",
-      message: expect.stringContaining("everyapp gateway reconcile --break-lease"),
-    });
+    const held = await deploy().catch((error: Error) => error);
+    expect(held).toMatchObject({ code: "LEASE_HELD", retryable: true });
+    expect((held as Error).message).toContain(
+      `${upgrade.holder} has held the gateway deploy lease (gateway.upgrade)`,
+    );
+    expect((held as Error).message).toContain("`everyapp gateway status` shows it");
+    expect((held as Error).message).toContain("This app's upload is kept");
+    expect((held as Error).message).not.toContain("--");
+    expect(account.workers.get("every-acme-todo")!.versions).toHaveLength(1);
+    await expect(readLease(registry(), "app:every-acme-todo")).resolves.toBeNull();
 
-    expect(asked).toEqual(["app.deploy"]);
-    await expect(readLease(registry(), "gateway")).resolves.toMatchObject({
-      holder: upgrade.holder,
+    await upgrade.release();
+    await expect(deploy()).resolves.toMatchObject({ workerName: "every-acme-todo" });
+    expect(account.gatewayBindings()).toContain("every-acme-todo");
+  });
+
+  it("stops before migrating once its lease is lost", async () => {
+    loseLeaseAtCheck(account, "app:every-acme-todo", 1);
+
+    await expect(deploy()).rejects.toMatchObject({ code: "LEASE_LOST", retryable: true });
+    expect(
+      account.database("every-acme-todo").all("SELECT name FROM sqlite_master WHERE name = 'd1_migrations'"),
+    ).toEqual([]);
+    expect(account.workers.get("every-acme-todo")).toBeUndefined();
+    await expect(readLease(registry(), "app:every-acme-todo")).resolves.toMatchObject({
+      holder: OTHER_HOLDER,
     });
+  });
+
+  it("stops before uploading once its lease is lost", async () => {
+    loseLeaseAtCheck(account, "app:every-acme-todo", 2);
+
+    await expect(deploy()).rejects.toMatchObject({ code: "LEASE_LOST" });
+    expect(account.database("every-acme-todo").all("SELECT name FROM d1_migrations")).toEqual([
+      { name: "0000_init.sql" },
+    ]);
+    expect(account.workers.get("every-acme-todo")).toBeUndefined();
   });
 
   it("refuses to drop a Durable Object class without the flag", async () => {
@@ -684,6 +705,120 @@ describe("app deploy", () => {
         createCf: () => account.cf,
       }),
     ).resolves.toEqual([[{ title: "ship it" }]]);
+  });
+});
+
+describe("app deploy's schema check", () => {
+  const SCHEMA = `import { sqliteTable, text } from "drizzle-orm/sqlite-core";
+export const todos = sqliteTable("todos", { id: text("id").primaryKey(), title: text("title") });
+`;
+
+  /**
+   * Turn the fake app into a drizzle app: the starter template's
+   * drizzle-kit and drizzle-orm, a schema, its config (which warns on
+   * stderr, as the template's does without a local database), and the
+   * migration drizzle-kit generates for that schema in place of the
+   * fixture's.
+   */
+  async function useDrizzle(): Promise<void> {
+    const template = path.join(REPO, "templates/simple-todo/node_modules");
+    fs.mkdirSync(path.join(appDir, "node_modules"));
+    for (const name of ["drizzle-kit", "drizzle-orm"]) {
+      fs.symlinkSync(
+        fs.realpathSync(path.join(template, name)),
+        path.join(appDir, "node_modules", name),
+        "junction",
+      );
+    }
+    fs.mkdirSync(path.join(appDir, "src", "db"), { recursive: true });
+    fs.writeFileSync(path.join(appDir, "src", "db", "schema.ts"), SCHEMA);
+    fs.writeFileSync(
+      path.join(appDir, "drizzle.config.ts"),
+      `import { defineConfig } from "drizzle-kit";
+console.error("WARNING: no local D1 database yet");
+export default defineConfig({ dialect: "sqlite", schema: "./src/db/schema.ts", out: "./drizzle" });
+`,
+    );
+    fs.rmSync(path.join(appDir, "drizzle"), { recursive: true });
+    await execa(process.execPath, [path.join(appDir, "node_modules", "drizzle-kit", "bin.cjs"), "generate"], {
+      cwd: appDir,
+      stdin: "ignore",
+    });
+  }
+
+  const migrationsOf = () => fs.readdirSync(path.join(appDir, "drizzle"), { recursive: true }).sort();
+  const scratchLeft = () =>
+    fs.existsSync(path.join(appDir, ".everyapp"))
+      ? fs.readdirSync(path.join(appDir, ".everyapp")).filter((name) => name.startsWith("schema-check-"))
+      : [];
+  const schemaEvents = () => events.filter((event) => event["step"] === "app.schema");
+
+  it("goes on when the migrations describe the schema", async () => {
+    await useDrizzle();
+    const before = migrationsOf();
+
+    await deploy();
+
+    expect(schemaEvents()).toEqual([
+      expect.objectContaining({ type: "step", status: "start" }),
+      expect.objectContaining({ type: "step", status: "ok", message: "schema in sync" }),
+    ]);
+    expect(account.database("every-acme-todo").all("SELECT name FROM d1_migrations")).toEqual([
+      { name: migrationsOf().find((file) => String(file).endsWith(".sql")) },
+    ]);
+    expect(migrationsOf()).toEqual(before);
+    expect(scratchLeft()).toEqual([]);
+  });
+
+  it("stops before migrating or uploading when the schema changed without a migration", async () => {
+    await useDrizzle();
+    const before = migrationsOf();
+    fs.writeFileSync(
+      path.join(appDir, "src", "db", "schema.ts"),
+      SCHEMA.replace('title: text("title")', 'title: text("title"), done: text("done")'),
+    );
+
+    await expect(deploy()).rejects.toMatchObject({
+      code: "SCHEMA_DRIFT",
+      message: expect.stringContaining("Run `pnpm db:generate`, then deploy again"),
+    });
+    expect(
+      account.database("every-acme-todo").all("SELECT name FROM sqlite_master WHERE name = 'd1_migrations'"),
+    ).toEqual([]);
+    expect(account.workers.get("every-acme-todo")).toBeUndefined();
+    // The app's own migrations are left as they were.
+    expect(migrationsOf()).toEqual(before);
+    expect(scratchLeft()).toEqual([]);
+  });
+
+  it("stops when drizzle-kit can't tell, as on a renamed column it asks about", async () => {
+    await useDrizzle();
+    fs.writeFileSync(
+      path.join(appDir, "src", "db", "schema.ts"),
+      SCHEMA.replace('title: text("title")', 'name: text("name")'),
+    );
+
+    await expect(deploy()).rejects.toMatchObject({
+      code: "SCHEMA_CHECK_FAILED",
+      message: expect.stringContaining("Run `pnpm db:generate` in a terminal"),
+    });
+    expect(account.workers.get("every-acme-todo")).toBeUndefined();
+    expect(scratchLeft()).toEqual([]);
+  });
+
+  it("warns and goes on when the app has no drizzle-kit", async () => {
+    await deploy();
+
+    expect(schemaEvents()).toEqual([
+      expect.objectContaining({
+        type: "warning",
+        code: "SCHEMA_CHECK_SKIPPED",
+        message: expect.stringContaining("drizzle-kit isn't installed"),
+      }),
+    ]);
+    expect(account.database("every-acme-todo").all("SELECT name FROM d1_migrations")).toEqual([
+      { name: "0000_init.sql" },
+    ]);
   });
 });
 

@@ -28,7 +28,6 @@ import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { EveryAppError } from "@/lib/errors";
 import { GatewayClient, type DeletedApp } from "@/lib/gateway/api";
 import { readInstall } from "@/lib/gateway/install";
-import { confirmLeaseBreak, type BreakLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { resolveGatewayUrl } from "@/lib/gateway/resolve";
 import { loadEveryAppManifest } from "@/lib/manifest";
@@ -42,7 +41,6 @@ interface DeleteCommandFlags {
   yes?: boolean;
   json?: boolean;
   verbose?: boolean;
-  "break-lease"?: boolean;
 }
 
 export async function deleteApp(
@@ -68,11 +66,6 @@ export async function deleteApp(
         out,
         interactive,
         purge: flags.purge ?? false,
-        breakLease: confirmLeaseBreak({
-          breakLease: flags["break-lease"],
-          yes: flags.yes,
-          interactive,
-        }),
       });
       out.emit({ type: "done", ...deletionSummary(appId, result) });
     },
@@ -95,7 +88,6 @@ export async function removeApp({
   out,
   interactive,
   purge,
-  breakLease,
   createCf = (accountId?: string) => createCfRunner({ accountId }),
   reconcile,
 }: {
@@ -104,7 +96,6 @@ export async function removeApp({
   out: EventSink;
   interactive: boolean;
   purge: boolean;
-  breakLease?: BreakLease;
   createCf?: (accountId?: string) => CfRunner;
   reconcile?: ReconcileSeams;
 }): Promise<DeletedApp & { purged?: PurgeResult }> {
@@ -127,7 +118,6 @@ export async function removeApp({
     accountId,
     interactive,
     cliVersion,
-    breakLease,
     ...reconcile,
   });
 

@@ -44,12 +44,6 @@ export const setupCommand = buildCommand({
           "Print the owner setup link even in CI or with piped output (the log keeps it)",
         optional: true,
       },
-      "break-lease": {
-        kind: "boolean",
-        brief:
-          "Take the deploy lease over from a deploy that died (asks first; unattended, with --yes)",
-        optional: true,
-      },
       json: {
         kind: "boolean",
         brief: "Print progress as NDJSON events on stdout (exit 2: an action is required)",

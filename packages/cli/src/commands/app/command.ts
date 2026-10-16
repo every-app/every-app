@@ -108,12 +108,6 @@ export const deployCommand = buildCommand({
           "Deploy even though Workflows were removed, deleting them and their instances",
         optional: true,
       },
-      "break-lease": {
-        kind: "boolean",
-        brief:
-          "Take the app's deploy lease over from a deploy that died (asks first; unattended, with --yes)",
-        optional: true,
-      },
       "force-dns": {
         kind: "boolean",
         brief:
@@ -185,12 +179,6 @@ export const deleteCommand = buildCommand({
       verbose: {
         kind: "boolean",
         brief: "Show detailed output",
-        optional: true,
-      },
-      "break-lease": {
-        kind: "boolean",
-        brief:
-          "Take the gateway's deploy lease over from a deploy that died (asks first; unattended, with --yes)",
         optional: true,
       },
     },
@@ -346,16 +334,9 @@ const secretSetCommand = buildCommand({
         optional: true,
       },
       gateway: gatewayFlag,
-      "break-lease": {
-        kind: "boolean",
-        brief:
-          "Take the app's deploy lease over from a deploy that died (asks first; unattended, with --yes)",
-        optional: true,
-      },
       yes: {
         kind: "boolean",
-        brief:
-          "Skip the confirmation (and, with --break-lease, take the lease over without asking)",
+        brief: "Skip the confirmation",
         optional: true,
       },
       json: {

@@ -7,8 +7,10 @@
  *   3. under the app's deploy lease: find or create its D1 and KV (only
  *      ever the app's own), `cf build` with the deploy inputs and check the
  *      built Worker against the app policy and its Workflows' names (each
- *      new or already the app's), make sure an unattended run may replace
- *      the Worker, and only then migrate D1 (bookmark, drizzle history
+ *      new or already the app's), check that its drizzle migrations still
+ *      describe its schema (steps/checkSchemaDrift.ts), make sure an
+ *      unattended run may replace the Worker, and only then (the lease
+ *      checked again before each) migrate D1 (bookmark, drizzle history
  *      carried over once, `cf d1 migrations apply`) and upload it
  *      (`cf deploy --prebuilt`, with GATEWAY_URL and EVERY_APP_ORG_ID in
  *      the secrets file; cf creates or updates its Workflows), so a deploy
@@ -29,6 +31,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { version as cliVersion } from "../../../../package.json";
 import { appBindingName } from "@every-app/perimeter/manifest";
+import { checkSchemaDrift } from "@/commands/app/deploy/steps/checkSchemaDrift";
 import { syncAppToolsWithGateway } from "@/commands/app/deploy/steps/syncTools";
 import { buildApp } from "@/lib/app/buildApp";
 import {
@@ -73,7 +76,7 @@ import {
   type RegisterAppResponse,
 } from "@/lib/gateway/api";
 import { readInstall } from "@/lib/gateway/install";
-import { acquireLease, type BreakLease } from "@/lib/gateway/lease";
+import { acquireLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { compareVersions } from "@/lib/gateway/release";
 import { findGatewayDatabase } from "@/lib/gateway/resources";
@@ -99,8 +102,6 @@ interface DeployAppOptions {
   allowDeleteDurableObjectData?: boolean;
   /** Delete the Workflows the app dropped, with their instances (`--allow-delete-workflows`). */
   allowDeleteWorkflows?: boolean;
-  /** Asked whether to take the app's lease from a deploy that holds it (`--break-lease`). */
-  breakLease?: BreakLease;
   /** Publish a new hostname over a DNS record or a CAA block (`--force-dns`). */
   forceDns?: boolean;
   /** Wait for a new hostname's certificate (default true; `--no-wait-cert`). */
@@ -275,7 +276,6 @@ export async function deployApp(
     db: registry,
     id: `app:${registration.workerName}`,
     purpose: "app.deploy",
-    breakLease: options.breakLease,
     onWait: (holder) =>
       out.emit({
         type: "progress",
@@ -360,6 +360,8 @@ export async function deployApp(
       workerName: registration.workerName,
       names: workflows,
     });
+    // Migrations that lag the schema would go live with code that needs more.
+    await checkSchemaDrift({ cwd, manifest, out });
 
     // The database changes only once nothing else can stop the upload.
     const workerRecord = (
@@ -372,8 +374,10 @@ export async function deployApp(
       interactive,
       confirm: options.confirm,
     });
+    await lease.check();
     await migrate({ cf, out, cwd, manifest, resources, accountId });
 
+    await lease.check();
     out.emit({
       type: "step",
       step: "app.upload",
@@ -432,8 +436,7 @@ export async function deployApp(
     await lease.release();
   }
 
-  // 4. Bind, publish and go live. --break-lease was about the app's lease:
-  // the gateway's is waited for.
+  // 4. Bind, publish and go live, under the gateway's lease.
   const published = await bindIfNeeded({
     client,
     cf,
@@ -744,7 +747,7 @@ async function bindIfNeeded({
     if (error instanceof EveryAppError && error.code === "LEASE_HELD") {
       throw new EveryAppError(
         "LEASE_HELD",
-        `${error.message} The upload is kept, and \`everyapp app deploy\` binds it once the gateway is free. Its --break-lease takes over only the app's lease: if that gateway deploy died, \`everyapp gateway reconcile --break-lease\` takes over the gateway's and binds the app; then run \`everyapp app deploy\` again to make it live.`,
+        `${error.message} This app's upload is kept: run \`everyapp app deploy\` again once the gateway is free, and it binds the app and makes it live.`,
         { retryable: true },
       );
     }

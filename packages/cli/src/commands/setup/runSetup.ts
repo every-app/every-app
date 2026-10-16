@@ -58,7 +58,6 @@ import {
 } from "@/lib/gateway/autoLogin";
 import { readGatewayCredential } from "@/lib/gateway/credentials";
 import type { InstallRecord } from "@/lib/gateway/install";
-import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import {
   readPendingClaim,
   type PendingClaim,
@@ -79,7 +78,6 @@ export interface SetupFlags {
   "no-open"?: boolean;
   /** Show the owner setup link in CI or piped output too (`gateway deploy`'s flag). */
   printSetupLink?: boolean;
-  "break-lease"?: boolean;
   json?: boolean;
   yes?: boolean;
   verbose?: boolean;
@@ -393,11 +391,6 @@ async function deployOrSkipGateway({
       target,
       interactive: deps.interactive,
       forceDns: flags["force-dns"],
-      breakLease: confirmLeaseBreak({
-        breakLease: flags["break-lease"],
-        yes: flags.yes,
-        interactive: deps.interactive,
-      }),
       readStatus: deps.seams?.readStatus,
       sleep: deps.seams?.sleep,
       verifyTimeoutMs: deps.seams?.verifyTimeoutMs,

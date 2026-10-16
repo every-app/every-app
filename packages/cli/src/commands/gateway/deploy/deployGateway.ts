@@ -31,7 +31,6 @@ import {
   type InstallRecord,
   type Routing,
 } from "@/lib/gateway/install";
-import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { compareVersions, type GatewayRelease } from "@/lib/gateway/release";
 import {
   ensureGatewayResources,
@@ -60,7 +59,6 @@ export interface DeployGatewayFlags {
   json?: boolean;
   verbose?: boolean;
   printSetupLink?: boolean;
-  "break-lease"?: boolean;
   "allow-downgrade"?: boolean;
   "force-dns"?: boolean;
 }
@@ -127,11 +125,6 @@ async function run(
       target,
       interactive,
       forceDns: flags["force-dns"],
-      breakLease: confirmLeaseBreak({
-        breakLease: flags["break-lease"],
-        yes: flags.yes,
-        interactive,
-      }),
       allowDowngrade: flags["allow-downgrade"],
     });
 
@@ -276,7 +269,6 @@ export async function deployGatewayRelease({
 } & Pick<
   ApplyGatewayOptions,
   | "forceDns"
-  | "breakLease"
   | "allowDowngrade"
   | "confirm"
   | "readStatus"

@@ -103,11 +103,15 @@ The Worker serves a version everyapp didn't record uploading: it was last change
 
 `cf` itself refused, at the upload, to replace the Worker unattended: Cloudflare says it was last changed in the dashboard or through the API. If the run migrated a database, it stays migrated. Run the same command in a terminal and confirm `cf`'s prompt.
 
-### "Another deploy holds the gateway lease"
+### "Another deploy is running: … has held the … deploy lease"
 
-Deploys of the Gateway (and of each app) never overlap. If another deploy is running, wait for it. If it died, its lease expires within 10 minutes, or take it over with `--break-lease`: it shows who holds the lease and asks first (unattended, it also needs `--yes`). A deploy stopped with Ctrl+C frees its lease on the way out.
+Deploys of the Gateway (and of each app) never overlap: each holds a lease in the Gateway's database while it runs, and a deploy that finds it taken waits up to 5 minutes. The error names the holder (machine, process) and when it started; `npx everyapp gateway status` lists every deploy running and when its lease expires. Wait for it and run the command again. If that deploy died, its lease expires within 3 minutes of its last heartbeat and the next run takes it; there is nothing to break by hand. A deploy stopped with Ctrl+C frees its lease on the way out.
 
-`app deploy --break-lease` takes over only the app's own lease. When binding a new app waits for the Gateway's lease, its upload is kept: run `app deploy` again once the Gateway deploy finishes. If that deploy died, `npx everyapp gateway reconcile --break-lease` takes the Gateway's lease over and binds the app; then run `app deploy` once more to make it live.
+When binding a new app waits too long for the Gateway's lease, the app's upload is kept: run `app deploy` again once the Gateway deploy finishes, and it binds the app and makes it live.
+
+### "The … deploy lease is no longer this deploy's" / "Couldn't renew the … deploy lease"
+
+The deploy lost its lease while it ran: its renewals failed for more than 90 seconds (the network, or Cloudflare's API), or the lease expired and another deploy took it. It stopped before its next migration or upload so the two can't overlap. Run the same command again. If it had migrated the database already, the database stays migrated; the restore command printed before the migration rolls it back.
 
 ### "Migrating the database failed"
 
@@ -199,6 +203,17 @@ An app may bind only text, JSON and secret values, version metadata, its assets,
 
 Removing a Durable Object class from `everyapp.config.ts` deletes its data for good. If that's what you want, deploy with `--allow-delete-durable-object-data`.
 
+### "…'s schema has changes its migrations don't" (`SCHEMA_DRIFT`)
+
+You changed the database schema (`src/db/schema.ts`) without generating its migration, so the code would go live expecting tables or columns the database doesn't have. The deploy checks this after the build, before it migrates or uploads anything, by running `drizzle-kit generate` against a copy of your migrations. Generate the migration, look it over, commit it, and deploy again:
+
+```bash
+pnpm db:generate
+npx everyapp app deploy
+```
+
+`SCHEMA_CHECK_FAILED` means drizzle-kit couldn't tell: most often a renamed column or table, which it asks about only at a terminal, or a schema file that doesn't load. Run `pnpm db:generate` in a terminal, answer its questions, and deploy again. `SCHEMA_CHECK_SKIPPED` is a warning: the app has no drizzle-kit installed or no `drizzle.config.ts`, so the deploy couldn't check; an app that writes its SQL by hand sets `migrations: { engine: "d1-sql", dir: "…" }` in `everyapp.config.ts`.
+
 ### The app's address doesn't resolve yet
 
 A new app's address is a Custom Domain the deploy creates, with its own DNS record and certificate: give it a few minutes (`npx everyapp gateway status` shows its certificate). To check the record yourself:
@@ -265,7 +280,7 @@ Generate the migration first, then restart:
 pnpm run db:generate
 ```
 
-`db:generate` writes the migration file; it doesn't apply it. Restarting `everyapp dev` applies it locally, and `everyapp app deploy` applies it in production.
+`db:generate` writes the migration file; it doesn't apply it. Restarting `everyapp dev` applies it locally, and `everyapp app deploy` applies it in production (and refuses to deploy a schema change without one: `SCHEMA_DRIFT` above).
 
 ## Still stuck
 

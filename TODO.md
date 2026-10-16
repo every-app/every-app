@@ -21,6 +21,8 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] **Gateway UI scope.** Only the gateway moved to OpenSEO's shadcn design system. The todo app, Chef, the workout tracker, the simple-todo template and the landing page still use daisyUI or their own styles.
 - [ ] **Gateway look.** Every App's metallic primary buttons and neutral accents, on OpenSEO's surfaces. Dark mode uses OpenSEO's dark greys, with a lighter metallic so the buttons stand out on them. Check the dark-mode buttons.
 - [x] **Gateway layout.** A sidebar (OpenSEO's app shell) replaces the top header and the admin tabs. Admin pages now open on phones too, where the old UI showed "not supported on mobile".
+- [ ] **When the schema check runs.** `deploy` checks an app's drizzle migrations against its schema after the build, so under the app's lease: the build needs resources created under the lease, and the check needs the dependencies the deploy installs. The redesign's step 7 asked for it before the lease as well.
+- [ ] **A schema check drizzle-kit can't finish.** When `drizzle-kit generate` fails (most often a renamed column, which it asks about only at a terminal), the deploy stops with `SCHEMA_CHECK_FAILED`. Only a missing drizzle-kit or drizzle config is a warning.
 
 ## Build
 
@@ -37,6 +39,7 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] Metered billing at the gateway (deferred).
 - [ ] OAuth: refuse app hosts outside the gateway's base domain. Only theoretical today, because the deploy already forces them to match.
 - [ ] A CI step that compiles the docs site.
+- [ ] `SCHEMA_DRIFT` gets `rerun: "pnpm db:generate"`, and `LEASE_HELD`/`LEASE_LOST` the same command again, once errors carry `rerun` (the calm-output step). Their messages say it today.
 
 ## Paused while we work from the checkout
 

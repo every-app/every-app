@@ -17,12 +17,6 @@ const verboseFlag = {
   brief: "Show detailed output",
   optional: true,
 } as const;
-const breakLeaseFlag = {
-  kind: "boolean",
-  brief:
-    "Take the deploy lease over from a deploy that died (asks first; unattended, with --yes)",
-  optional: true,
-} as const;
 const yesFlag = {
   kind: "boolean",
   brief: "Skip confirmation prompts",
@@ -61,7 +55,6 @@ const deployFlags = {
       "Print the owner setup link even when not run from a terminal (CI logs keep it)",
     optional: true,
   },
-  "break-lease": breakLeaseFlag,
   "allow-downgrade": {
     kind: "boolean",
     brief: "Deploy a release older than the one the gateway runs",
@@ -143,12 +136,9 @@ const reconcileCommand = buildCommand({
         optional: true,
       },
       "force-dns": forceDnsFlag,
-      "break-lease": breakLeaseFlag,
-      yes: yesFlag,
       json: jsonFlag,
       verbose: verboseFlag,
     },
-    aliases: { y: "yes" },
   },
   docs: {
     brief: "Bind and publish exactly the apps the gateway's registry lists",
@@ -225,12 +215,9 @@ const secretSetCommand = buildCommand({
         optional: true,
       },
       "account-id": accountFlag,
-      "break-lease": breakLeaseFlag,
-      yes: yesFlag,
       json: jsonFlag,
       verbose: verboseFlag,
     },
-    aliases: { y: "yes" },
   },
   docs: {
     brief: "Set one of the gateway's optional settings",
@@ -294,7 +281,6 @@ const usePerAppDomainsCommand = buildCommand({
         optional: true,
       },
       "force-dns": forceDnsFlag,
-      "break-lease": breakLeaseFlag,
       yes: yesFlag,
       json: jsonFlag,
       verbose: verboseFlag,

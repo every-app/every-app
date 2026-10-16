@@ -12,7 +12,6 @@ import {
   assertUpgradedSinceAdopted,
   readInstall,
 } from "@/lib/gateway/install";
-import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { findGatewayDatabase } from "@/lib/gateway/resources";
 import {
@@ -27,7 +26,6 @@ interface UsePerAppDomainsFlags {
   "account-id"?: string;
   "dry-run"?: boolean;
   "force-dns"?: boolean;
-  "break-lease"?: boolean;
   yes?: boolean;
   json?: boolean;
   verbose?: boolean;
@@ -101,11 +99,6 @@ export async function usePerAppDomains(
         force: true,
         forceDns: flags["force-dns"],
         dryRun: flags["dry-run"],
-        breakLease: confirmLeaseBreak({
-          breakLease: flags["break-lease"],
-          yes: flags.yes,
-          interactive,
-        }),
       });
       if (result.dryRunOutput !== undefined) {
         out.emit({

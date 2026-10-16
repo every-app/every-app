@@ -15,6 +15,7 @@ import {
 } from "@/test/fakeCloudflare";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
 import { makeTestHome } from "@/test/home";
+import { loseLeaseAtCheck, OTHER_HOLDER } from "@/test/loseLease";
 import { handleInterrupt, resetInterruptsForTests } from "@/lib/interrupt";
 import { applyGateway } from "./apply";
 import { readInstall, writeInstall } from "./install";
@@ -278,21 +279,56 @@ describe("gateway deploy", () => {
     expect(gatewayDb().all("SELECT * FROM _everyapp_deploy_lease")).toEqual([]);
   });
 
-  it("waits for, and then gives up on, a deploy that holds the lease", async () => {
+  it("waits for, and then gives up on, a deploy that holds the lease, and goes once it expires", async () => {
     await ensureGatewayResources(account.cf);
     gatewayDb().sqlite.exec(`
       CREATE TABLE _everyapp_deploy_lease (id TEXT PRIMARY KEY, holder TEXT NOT NULL, purpose TEXT NOT NULL, acquired_at INTEGER NOT NULL, expires_at INTEGER NOT NULL);
-      INSERT INTO _everyapp_deploy_lease VALUES ('gateway', 'laptop:42:abcd', 'gateway.upgrade', ${Date.now()}, ${Date.now() + 600_000});
+      INSERT INTO _everyapp_deploy_lease VALUES ('gateway', 'laptop:42:abcd', 'gateway.upgrade', ${Date.now()}, ${Date.now() + 180_000});
     `);
 
-    await expect(deployGateway()).rejects.toMatchObject({
-      code: "LEASE_HELD",
-      message: expect.stringContaining("laptop:42:abcd"),
-    });
+    const held = await deployGateway().catch((error: Error) => error);
+    expect(held).toMatchObject({ code: "LEASE_HELD", retryable: true });
+    expect((held as Error).message).toContain("laptop:42:abcd has held the gateway deploy lease (gateway.upgrade) since");
+    expect((held as Error).message).toContain("`everyapp gateway status` shows it");
+    expect((held as Error).message).not.toContain("--");
     expect(account.deploys).toEqual([]);
 
-    await expect(deployGateway({ breakLease: async () => true })).resolves.toMatchObject({
-      firstDeploy: true,
+    // That deploy died: its lease runs out.
+    gatewayDb().sqlite.exec(`UPDATE _everyapp_deploy_lease SET expires_at = ${Date.now() - 1}`);
+    await expect(deployGateway()).resolves.toMatchObject({ firstDeploy: true });
+  });
+
+  describe("once its lease is lost", () => {
+    const migrated = () =>
+      account.cf.calls.some((call) => call.args.slice(0, 3).join(" ") === "d1 migrations apply");
+
+    it("stops before migrating", async () => {
+      loseLeaseAtCheck(account, "gateway", 1);
+
+      await expect(deployGateway()).rejects.toMatchObject({ code: "LEASE_LOST", retryable: true });
+      expect(migrated()).toBe(false);
+      expect(account.deploys).toEqual([]);
+      // The deploy that has it now keeps it.
+      expect(gatewayDb().all("SELECT holder FROM _everyapp_deploy_lease")).toEqual([
+        { holder: OTHER_HOLDER },
+      ]);
+    });
+
+    it("stops before uploading", async () => {
+      loseLeaseAtCheck(account, "gateway", 2);
+
+      await expect(deployGateway()).rejects.toMatchObject({ code: "LEASE_LOST" });
+      expect(migrated()).toBe(true);
+      expect(account.deploys).toEqual([]);
+    });
+
+    it("stops a reconcile before uploading, under the lease it took", async () => {
+      await deployGateway();
+      const deploys = account.deploys.length;
+      loseLeaseAtCheck(account, "gateway", 1);
+
+      await expect(reconcile({ force: true })).rejects.toMatchObject({ code: "LEASE_LOST" });
+      expect(account.deploys).toHaveLength(deploys);
     });
   });
 

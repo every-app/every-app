@@ -3,7 +3,6 @@ import type { LocalContext } from "@/context";
 import { checkIsEveryAppProject } from "@/commands/app/deploy/steps/checkIsEveryAppProject";
 import { deployApp } from "@/commands/app/deploy/deployApp";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
-import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { resolveGatewayUrl } from "@/lib/gateway/resolve";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import { eventSink, runReported } from "@/lib/output/run";
@@ -16,7 +15,6 @@ interface DeployCommandFlags {
   access?: "everyone" | "admins";
   "allow-delete-durable-object-data"?: boolean;
   "allow-delete-workflows"?: boolean;
-  "break-lease"?: boolean;
   "force-dns"?: boolean;
   "no-wait-cert"?: boolean;
 }
@@ -64,11 +62,6 @@ export async function deploy(
         allowDeleteWorkflows: flags["allow-delete-workflows"],
         forceDns: flags["force-dns"],
         waitForCertificate: !flags["no-wait-cert"],
-        breakLease: confirmLeaseBreak({
-          breakLease: flags["break-lease"],
-          yes: flags.yes,
-          interactive: canPromptInTerminal(flags.json ?? false),
-        }),
       });
       out.emit({
         type: "done",

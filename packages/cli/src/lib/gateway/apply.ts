@@ -67,7 +67,7 @@ import {
   type InstallRecord,
   type Routing,
 } from "./install";
-import { acquireLease, type BreakLease } from "./lease";
+import { acquireLease, type Lease } from "./lease";
 import { gatewayDomains, patchGatewayBuildOutput } from "./patchBuildOutput";
 import {
   cacheRelease,
@@ -117,10 +117,8 @@ export interface ApplyGatewayOptions {
   cliVersion: string;
   /** Settings from `everyapp gateway secret set`, sent with the upload. */
   stagedSecrets?: Record<string, string>;
-  /** Asked whether to take the lease from a deploy that holds it (`--break-lease`). */
-  breakLease?: BreakLease;
-  /** The caller holds the gateway lease (a reconcile picks its release under it). */
-  leaseHeld?: boolean;
+  /** The gateway lease the caller holds (a reconcile picks its release under it). */
+  heldLease?: Lease;
   /** Deploy a release older than the one the install record names. */
   allowDowngrade?: boolean;
   /** Patch and `cf deploy --dry-run` only: no lease, no writes. */
@@ -153,7 +151,7 @@ const readPublicStatus: StatusReader = (gatewayUrl) =>
 export function acquireGatewayLease(
   options: Pick<
     ApplyGatewayOptions,
-    "db" | "out" | "breakLease" | "leaseWaitMs" | "sleep"
+    "db" | "out" | "leaseWaitMs" | "sleep"
   >,
   purpose: string,
 ) {
@@ -161,7 +159,6 @@ export function acquireGatewayLease(
     db: options.db,
     id: "gateway",
     purpose,
-    breakLease: options.breakLease,
     waitMs: options.leaseWaitMs,
     ...(options.sleep ? { sleep: options.sleep } : {}),
     onWait: (holder) =>
@@ -296,10 +293,11 @@ export async function applyGateway(
   options: ApplyGatewayOptions,
 ): Promise<ApplyGatewayResult> {
   const { cf, out, reason, release, db, resources } = options;
-  const lease =
-    options.dryRun || options.leaseHeld
+  const ownLease =
+    options.dryRun || options.heldLease
       ? null
       : await acquireGatewayLease(options, `gateway.${reason}`);
+  const lease = options.dryRun ? null : (options.heldLease ?? ownLease);
   try {
     // Only now is the install record the last deploy's for sure: another
     // upgrade may have finished while this one waited for the lease.
@@ -340,6 +338,7 @@ export async function applyGateway(
         confirm: options.confirm,
         note: "If it runs a newer gateway release (an upgrade that stopped before recording itself), this replaces it with an older one.",
       });
+      await lease?.check();
       await migrate(options);
       out.emit({
         type: "step",
@@ -354,9 +353,9 @@ export async function applyGateway(
     return await deployUntilSettled(options, domainChecks, workerExists, {
       routing: install?.routing ?? options.routing,
       liveDomains: install?.liveDomains ?? [],
-    });
+    }, lease);
   } finally {
-    await lease?.release();
+    await ownLease?.release();
   }
 }
 
@@ -402,6 +401,8 @@ async function deployUntilSettled(
   workerExists: (workerName: string) => Promise<boolean>,
   /** What the install row records before this run. */
   recorded: Publication,
+  /** Checked before each upload (none for a dry run). */
+  lease: Lease | null,
 ): Promise<ApplyGatewayResult> {
   const { cf, out, release, db, gatewayHost } = options;
   const gatewayUrl = `https://${gatewayHost}`;
@@ -435,6 +436,7 @@ async function deployUntilSettled(
     }
     domains = domainChecks.domainsFor(desired.appHosts);
     await domainChecks.check(domains);
+    await lease?.check();
     out.emit({
       type: "step",
       step: "gateway.deploy",

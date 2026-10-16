@@ -13,7 +13,7 @@ import {
   migratedByDrizzleKit,
   readInstall,
 } from "@/lib/gateway/install";
-import { readLease } from "@/lib/gateway/lease";
+import { readLiveLeases, type LeaseHolder } from "@/lib/gateway/lease";
 import { gatewayDomains } from "@/lib/gateway/patchBuildOutput";
 import { findGatewayDatabase } from "@/lib/gateway/resources";
 import { gatewayHasOwner } from "@/lib/gateway/setup-link";
@@ -79,9 +79,9 @@ export async function status(
         });
         return;
       }
-      const [desired, lease, claimed] = await Promise.all([
+      const [desired, leases, claimed] = await Promise.all([
         readDesiredState(db, workerExistence(cf)),
-        readLease(db, "gateway"),
+        readLiveLeases(db),
         gatewayHasOwner(db),
       ]);
 
@@ -117,7 +117,6 @@ export async function status(
         unpublished.length === 0 &&
         stale.length === 0;
       const liveRelease = live?.release ?? null;
-      const leaseHeld = lease && lease.expiresAt > Date.now() ? lease : null;
 
       const lines = [
         `Gateway:  ${gatewayUrl} (${account.name ?? account.id})`,
@@ -136,7 +135,12 @@ export async function status(
         ),
         `Owner:    ${claimed ? "claimed" : "unclaimed: run `everyapp gateway claim-link`"}`,
         `TLS:      ${waiting.length === 0 ? `ready (${certificates.length} hostname${certificates.length === 1 ? "" : "s"})` : `no certificate yet for ${waiting.join(", ")}`}`,
-        `Deploys:  ${leaseHeld ? `${leaseHeld.holder} is running ${leaseHeld.purpose} since ${new Date(leaseHeld.acquiredAt).toISOString()}` : "none running"}`,
+        ...(leases.length
+          ? leases.map(
+              (lease, index) =>
+                `${index === 0 ? "Deploys:  " : "          "}${describeDeploy(lease)}`,
+            )
+          : ["Deploys:  none running"]),
       ];
       out.emit({
         type: "done",
@@ -158,10 +162,19 @@ export async function status(
           claimed,
           tls,
           certificates,
-          lease: leaseHeld,
+          leases,
         },
       });
     },
     { verbose: flags.verbose },
   );
+}
+
+/**
+ * A running deploy: its lease, who holds it since when, and when it expires
+ * unless that deploy renews it (it does every 30 seconds while it runs).
+ */
+function describeDeploy(lease: LeaseHolder): string {
+  const at = (ms: number) => new Date(ms).toISOString();
+  return `${lease.holder} is running ${lease.purpose} (lease ${lease.id}, since ${at(lease.acquiredAt)}, expires ${at(lease.expiresAt)} unless renewed)`;
 }

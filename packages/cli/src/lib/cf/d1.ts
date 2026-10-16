@@ -27,11 +27,21 @@ type D1Row = Record<string, unknown>;
  * one's rows. `cfD1Database` is the real one; tests use SQLite.
  */
 export interface D1Database {
-  run(statements: readonly D1Statement[]): Promise<D1Row[][]>;
+  run(
+    statements: readonly D1Statement[],
+    options?: D1RunOptions,
+  ): Promise<D1Row[][]>;
+}
+
+interface D1RunOptions {
+  /** Give up on the request after this long (default: the runner's limit). */
+  timeoutMs?: number;
 }
 
 export function cfD1Database(cf: CfRunner, databaseId: string): D1Database {
-  return { run: (statements) => queryD1(cf, databaseId, statements) };
+  return {
+    run: (statements, options) => queryD1(cf, databaseId, statements, options),
+  };
 }
 
 const MIGRATIONS_TIMEOUT_MS = 600_000;
@@ -46,12 +56,14 @@ export async function queryD1(
   cf: CfRunner,
   databaseId: string,
   statements: readonly D1Statement[],
+  { timeoutMs }: D1RunOptions = {},
 ): Promise<D1Row[][]> {
   const body = statements.length === 1 ? statements[0] : { batch: statements };
   const results = await runCfJson(
     cf,
     {
       plane: "account",
+      ...(timeoutMs ? { timeoutMs } : {}),
       args: (files) => [
         "d1",
         "query",

@@ -1,6 +1,5 @@
 import type { LocalContext } from "@/context";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
-import { confirmLeaseBreak } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { assertSettableSecret } from "@/lib/gateway/secretsFile";
 import { readSecretValue } from "@/lib/secretValue";
@@ -15,8 +14,6 @@ import {
 interface SecretSetFlags {
   "from-env"?: string;
   "account-id"?: string;
-  "break-lease"?: boolean;
-  yes?: boolean;
   json?: boolean;
   verbose?: boolean;
 }
@@ -55,11 +52,6 @@ export async function set(
         cliVersion,
         stagedSecrets: { [name]: value },
         force: true,
-        breakLease: confirmLeaseBreak({
-          breakLease: flags["break-lease"],
-          yes: flags.yes,
-          interactive: canPromptInTerminal(flags.json ?? false),
-        }),
       });
       out.emit({
         type: "done",
