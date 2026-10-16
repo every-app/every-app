@@ -649,7 +649,7 @@ describe("per-app Custom Domains", () => {
     expect(account.gatewayDomains()).toEqual([GW]);
     expect(account.deploys[0]!.config["env"].APP_BASE_DOMAIN.value).toBe(GW);
     expect(account.certificatePacks).toEqual([
-      expect.objectContaining({ zoneId: "zone-1", hosts: [GW] }),
+      expect.objectContaining({ zoneId: "zone-1", hosts: ["example.com", GW, `*.${GW}`] }),
     ]);
     expect(account.dnsRecords).toHaveLength(1);
     await expect(readInstall(gatewayD1())).resolves.toMatchObject({
@@ -700,7 +700,7 @@ describe("per-app Custom Domains", () => {
       newHosts: [],
     });
     expect(account.gatewayDomains()).toEqual([GW, `todo.${GW}`]);
-    expect(account.certificatePacks.map((pack) => pack.hosts[0])).toContain(
+    expect(account.certificatePacks.map((pack) => pack.hosts[1])).toContain(
       `chef.${GW}`,
     );
   });

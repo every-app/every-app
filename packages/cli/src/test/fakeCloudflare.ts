@@ -7,7 +7,7 @@
  * everyAppWorker() from the deploy inputs. Zones hold DNS records, a
  * deploy publishes its Worker's Custom Domains the way Cloudflare does (the
  * whole list, taken from other Workers, each with its own certificate pack
- * that outlives it) and creates or takes over the Workflows the Worker
+ * that outlives it, listing the zone apex, the hostname and its wildcard) and creates or takes over the Workflows the Worker
  * defines. Hyperdrive configs keep their origin, password apart, as the
  * API does (it never returns one). `api.fetch` is the account's REST API, for the hosted
  * deployer: Workers for Platforms dispatch namespaces (`dispatchNamespaces`),
@@ -774,7 +774,8 @@ export class FakeCloudflare {
    * Publish a Worker's Custom Domains as Cloudflare does: only when the
    * config declares some, as the whole list (its others are removed), one
    * taken from another Worker when unattended, and a certificate pack per
-   * new hostname that stays when the domain goes.
+   * new hostname that stays when the domain goes: [apex, host, *.host], or
+   * [apex, *.apex] for the apex itself.
    */
   private publishDomains(workerName: string, domains: unknown): void {
     if (!Array.isArray(domains) || domains.length === 0) return;
@@ -789,11 +790,14 @@ export class FakeCloudflare {
       const zone = [...this.zones]
         .sort((a, b) => b.name.length - a.name.length)
         .find((candidate) => host === candidate.name || host.endsWith(`.${candidate.name}`));
-      if (zone && !this.certificatePacks.some((pack) => pack.hosts.join() === host)) {
+      if (!zone) continue;
+      const hosts =
+        host === zone.name ? [host, `*.${host}`] : [zone.name, host, `*.${host}`];
+      if (!this.certificatePacks.some((pack) => pack.hosts.join() === hosts.join())) {
         this.certificatePacks.push({
           id: `pack-${(this.counter += 1)}`,
           zoneId: zone.id,
-          hosts: [host],
+          hosts,
         });
       }
     }

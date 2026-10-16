@@ -1746,14 +1746,19 @@ describe("deploy and delete with the gateway on a subdomain", () => {
   it("removes a deleted app's hostname, and the certificate Cloudflare keeps for it", async () => {
     await deployHere();
     expect(account.certificatePacks.map((pack) => pack.hosts)).toContainEqual([
+      "example.com",
       `todo.${GW}`,
+      `*.todo.${GW}`,
     ]);
 
     await remove("todo", false);
 
     expect(account.gatewayDomains()).toEqual([GW]);
     expect(account.gatewayBindings()).toEqual([]);
-    expect(account.certificatePacks.map((pack) => pack.hosts)).toEqual([[GW]]);
+    // The gateway's own pack lists the apex too, so the app's can go.
+    expect(account.certificatePacks.map((pack) => pack.hosts)).toEqual([
+      ["example.com", GW, `*.${GW}`],
+    ]);
     await expect(readInstall(registry())).resolves.toMatchObject({
       liveDomains: [GW],
     });
