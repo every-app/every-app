@@ -3,6 +3,7 @@ CREATE TABLE `exercise_library` (
 	`user_id` text NOT NULL,
 	`name` text NOT NULL,
 	`notes` text,
+	`progression_increment` integer DEFAULT 5 NOT NULL,
 	`created_at` text DEFAULT (current_timestamp) NOT NULL,
 	`updated_at` text DEFAULT (current_timestamp) NOT NULL,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
@@ -18,6 +19,7 @@ CREATE TABLE `programs` (
 	`template_id` text,
 	`current_workout_index` integer DEFAULT 0 NOT NULL,
 	`is_active` integer DEFAULT false NOT NULL,
+	`progression_mode` text DEFAULT 'linear' NOT NULL,
 	`created_at` text DEFAULT (current_timestamp) NOT NULL,
 	`updated_at` text DEFAULT (current_timestamp) NOT NULL,
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
@@ -65,7 +67,7 @@ CREATE TABLE `workout_sessions` (
 --> statement-breakpoint
 CREATE INDEX `workout_sessions_user_id_idx` ON `workout_sessions` (`user_id`);--> statement-breakpoint
 CREATE INDEX `workout_sessions_program_id_idx` ON `workout_sessions` (`program_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `workout_sessions_single_active_idx` ON `workout_sessions` (`user_id`) WHERE status = 'in_progress';--> statement-breakpoint
+CREATE UNIQUE INDEX `workout_sessions_single_active_idx` ON `workout_sessions` (`workout_id`) WHERE status = 'in_progress';--> statement-breakpoint
 CREATE TABLE `workout_set_logs` (
 	`id` text PRIMARY KEY NOT NULL,
 	`session_id` text NOT NULL,

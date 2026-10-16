@@ -240,15 +240,22 @@ describe("gateway deploy", () => {
   it("carries drizzle-kit's history over on a gateway it migrated before", async () => {
     const { uuid, db } = account.createDatabase("every-app-gateway");
     const { migrateGatewayWithDrizzle } = await import("@/test/sqliteD1");
-    migrateGatewayWithDrizzle(db, release.manifest.migrations.length - 1);
+    migrateGatewayWithDrizzle(db);
     expect(uuid).toBeTruthy();
+    await release.cleanup();
+    release = await openRelease(
+      await buildGatewayRelease({
+        extraMigration: { file: "9999_newer.sql", sql: "CREATE TABLE newer (id text);" },
+      }),
+    );
 
     await deployGateway();
 
-    // The newest migration ran; the others were only recorded.
-    expect(db.all("SELECT name FROM d1_migrations ORDER BY id").at(-1)).toEqual({
-      name: `${release.manifest.migrations.at(-1)!.tag}.sql`,
-    });
+    // What drizzle-kit ran was only recorded; the newer migration ran.
+    expect(db.all("SELECT name FROM d1_migrations ORDER BY id")).toEqual([
+      ...release.manifest.migrations.map(({ tag }) => ({ name: `${tag}.sql` })),
+      { name: "9999_newer.sql" },
+    ]);
   });
 
   it("leaves the gateway that is serving alone when a migration fails", async () => {

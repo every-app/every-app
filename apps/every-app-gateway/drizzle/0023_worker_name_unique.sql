@@ -1,1 +1,0 @@
-CREATE UNIQUE INDEX `apps_worker_name_unique` ON `apps` (`worker_name`);

@@ -20,7 +20,8 @@ export const auth = betterAuth({
     ...sharedAuthOptions.plugins,
     admin(),
     organization(),
-    // No schema of its own; registered so the plugin list matches.
+    // Registered so the plugin list matches, and so its unique index on
+    // accounts is in the generated schema.
     cloudflareAccess({
       config: readAccessConfig({}, { allowLoopback: false }),
       gatewayUrl: undefined,

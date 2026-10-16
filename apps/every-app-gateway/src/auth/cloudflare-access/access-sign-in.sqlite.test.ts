@@ -575,7 +575,7 @@ describe("outer ring: Access in front of the gateway (SQLite)", () => {
     });
   });
 
-  it("can't store a second account for the same identity (migration 0032)", async () => {
+  it("can't store a second account for the same identity", async () => {
     const owner = await claimGateway();
     const account = {
       providerId: "cloudflare-access",

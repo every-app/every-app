@@ -51,17 +51,18 @@ beforeEach(async () => {
   account = new FakeCloudflare();
   account.zones.push({ id: "zone-tcc", name: HOST, status: "active" });
 
-  // What the wrangler-era CLI left: a database drizzle-kit migrated up to
-  // 0023, the gateway Worker (secrets set through the API) on the apex
-  // with a wildcard route over a proxied `*` record, its OAuth namespace,
-  // and two apps at <app>-<org>.thecomeup.cc.
+  // What the wrangler-era CLI left: a database drizzle-kit migrated, the
+  // gateway Worker (secrets set through the API) on the apex with a
+  // wildcard route over a proxied `*` record, its OAuth namespace, and two
+  // apps at <app>-<org>.thecomeup.cc.
   const created = account.createDatabase("every-app-gateway");
   databaseId = created.uuid;
   gatewayDb = created.db;
-  migrateGatewayWithDrizzle(gatewayDb, 24);
-  // Migration 0012 made the "default" organization the founder owns.
+  migrateGatewayWithDrizzle(gatewayDb);
+  // The "default" organization the founder owns.
   const org = "00000000-0000-4000-8000-000000000001";
   gatewayDb.sqlite.exec(`
+    INSERT INTO organizations (id, name, slug, created_at) VALUES ('${org}', 'Default Organization', 'default', 0);
     INSERT INTO users (id, name, email, email_verified, created_at, updated_at) VALUES ('founder', 'Founder', 'f@thecomeup.cc', 1, 0, 0);
     INSERT INTO members (id, organization_id, user_id, role, created_at) VALUES ('m1', '${org}', 'founder', 'owner', 0);
     INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, tier, manifest, status)
@@ -143,7 +144,7 @@ describe("adopting the gateway the wrangler-era CLI deployed", () => {
       oauthKvId: account.namespaceId("every-app-gateway-OAUTH_KV"),
       deployKvId: null,
       wildcardRecords: [`CNAME ${HOST}`],
-      drizzleMigrations: 24,
+      drizzleMigrations: 1,
       cfMigrations: false,
       strayApps: [],
       claimed: true,

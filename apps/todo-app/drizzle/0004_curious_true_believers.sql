@@ -1,1 +1,0 @@
-ALTER TABLE `todos` ADD `due_date` text;

@@ -29,10 +29,9 @@ async function findSummaryById(organizationId: string) {
 
 /**
  * The install's own organization: the one its owner claimed it with. Only
- * the setup claim creates organizations with an owner (migration 0012's
- * "Default Organization" starts with no members), so it is the oldest that
- * has one; on a gateway set up before the claim existed, its first owner's.
- * Null before the claim.
+ * the setup claim creates organizations with an owner, so it is the oldest
+ * that has one; on a gateway set up before the claim existed, its first
+ * owner's. Null before the claim.
  */
 async function findInstallOrganizationId(): Promise<string | null> {
   const rows = await db

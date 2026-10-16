@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4b2a0b3a-1d00-4bc3-b273-98e51d585f82",
+  "id": "0060ee7c-1782-49d2-b496-e148df875cf9",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "exercise_library": {
@@ -34,6 +34,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "progression_increment": {
+          "name": "progression_increment",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 5
         },
         "created_at": {
           "name": "created_at",
@@ -140,6 +148,14 @@
           "notNull": true,
           "autoincrement": false,
           "default": false
+        },
+        "progression_mode": {
+          "name": "progression_mode",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'linear'"
         },
         "created_at": {
           "name": "created_at",
@@ -437,7 +453,7 @@
         "workout_sessions_single_active_idx": {
           "name": "workout_sessions_single_active_idx",
           "columns": [
-            "user_id"
+            "workout_id"
           ],
           "isUnique": true,
           "where": "status = 'in_progress'"

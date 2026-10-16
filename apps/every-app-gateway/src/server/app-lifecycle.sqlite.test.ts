@@ -213,8 +213,7 @@ describe("app deploy lifecycle (SQLite)", () => {
     });
 
     it("puts the install's own organization's apps one label below the base domain, others with their org key", async () => {
-      // acme is the oldest organization with an owner (the setup claim's):
-      // migration 0012's Default Organization, older still, has no members.
+      // acme is the oldest organization with an owner (the setup claim's).
       await expect(register(acme)).resolves.toMatchObject({
         workerName: "every-acme-todo",
         hostname: "todo.apps.example.com",

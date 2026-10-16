@@ -1,1 +1,0 @@
-ALTER TABLE `users` ADD `status` text DEFAULT 'active';

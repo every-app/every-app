@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
 import { cfD1Database, restoreCommand } from "@/lib/cf/d1";
 import { FakeCf } from "@/lib/cf/fakeCf";
 import {
@@ -20,17 +28,46 @@ import {
 
 const DB_ID = "0123456789abcdef0123456789abcdef";
 
+/**
+ * A drizzle-kit history of several migrations, one table each: the
+ * gateway's own is a single generated baseline.
+ */
+function writeDrizzleHistory(dir: string, count: number): void {
+  const entries = Array.from({ length: count }, (_, idx) => ({
+    idx,
+    version: "6",
+    when: 1_000 * (idx + 1),
+    tag: `${String(idx).padStart(4, "0")}_t${idx}`,
+    breakpoints: true,
+  }));
+  fs.mkdirSync(path.join(dir, "meta"), { recursive: true });
+  for (const { idx, tag } of entries) {
+    fs.writeFileSync(path.join(dir, `${tag}.sql`), `CREATE TABLE t${idx} (id text);`);
+  }
+  fs.writeFileSync(
+    path.join(dir, "meta", "_journal.json"),
+    JSON.stringify({ version: "7", dialect: "sqlite", entries }),
+  );
+}
+
+let historyDir: string;
 let db: SqliteD1;
 let journal: JournalEntry[];
 
+beforeAll(() => {
+  historyDir = fs.mkdtempSync(path.join(os.tmpdir(), "drizzle-history-"));
+  writeDrizzleHistory(historyDir, 4);
+});
+afterAll(() => fs.rmSync(historyDir, { recursive: true, force: true }));
+
 beforeEach(async () => {
   db = createSqliteD1();
-  journal = (await readDrizzleJournal(GATEWAY_MIGRATIONS_DIR))!;
+  journal = (await readDrizzleJournal(historyDir))!;
 });
 
 describe("backfillD1Migrations", () => {
   it("marks exactly what drizzle applied, by drizzle's own rule", async () => {
-    migrateGatewayWithDrizzle(db, 20);
+    migrateGatewayWithDrizzle(db, 3, historyDir);
 
     const marked = await backfillD1Migrations({
       db,
@@ -38,14 +75,14 @@ describe("backfillD1Migrations", () => {
       nameFor: (tag) => `${tag}.sql`,
     });
 
-    expect(marked).toEqual(journal.slice(0, 20).map((e) => `${e.tag}.sql`));
+    expect(marked).toEqual(journal.slice(0, 3).map((e) => `${e.tag}.sql`));
     expect(db.all("SELECT name FROM d1_migrations ORDER BY id")).toEqual(
       marked.map((name) => ({ name })),
     );
   });
 
   it("runs once: never again after cf has recorded migrations", async () => {
-    migrateGatewayWithDrizzle(db, 20);
+    migrateGatewayWithDrizzle(db, 3, historyDir);
     await backfillD1Migrations({ db, journal, nameFor: (t) => `${t}.sql` });
     db.sqlite.exec("DELETE FROM d1_migrations WHERE id > 1");
 
@@ -60,9 +97,9 @@ describe("backfillD1Migrations", () => {
   it("refuses a history that ran migrations this release dates differently", async () => {
     // As on a database an unreleased branch migrated: its own migrations
     // carry dates between this release's, so fewer rows than dated entries.
-    migrateGatewayWithDrizzle(db, 20);
+    migrateGatewayWithDrizzle(db, 3, historyDir);
     db.sqlite.exec(
-      `DELETE FROM __drizzle_migrations WHERE created_at = ${journal[18]!.when}`,
+      `DELETE FROM __drizzle_migrations WHERE created_at = ${journal[1]!.when}`,
     );
 
     await expect(
@@ -96,7 +133,7 @@ describe("migrateRemoteD1", () => {
       .on((args) => args[0] === "d1", sqliteD1Script({ [DB_ID]: db }));
   });
 
-  const migrate = (dir = GATEWAY_MIGRATIONS_DIR) =>
+  const migrate = (dir = historyDir) =>
     migrateRemoteD1({
       cf,
       db: cfD1Database(cf, DB_ID),
@@ -107,7 +144,7 @@ describe("migrateRemoteD1", () => {
     });
 
   it("bookmarks, carries drizzle's history over, then applies only what's new", async () => {
-    migrateGatewayWithDrizzle(db, journal.length - 1);
+    migrateGatewayWithDrizzle(db, journal.length - 1, historyDir);
 
     const result = await migrate();
 
@@ -131,7 +168,7 @@ describe("migrateRemoteD1", () => {
       "apply",
       DB_ID,
       "--dir",
-      GATEWAY_MIGRATIONS_DIR,
+      historyDir,
     ]);
     // A rollback that runs where no one can answer cf's question.
     expect(progress[0]).toContain(
@@ -140,9 +177,11 @@ describe("migrateRemoteD1", () => {
   });
 
   it("applies everything to a fresh database", async () => {
-    const result = await migrate();
+    const result = await migrate(GATEWAY_MIGRATIONS_DIR);
     expect(result.backfilled).toEqual([]);
-    expect(result.applied).toHaveLength(journal.length);
+    expect(result.applied).toEqual(
+      fs.readdirSync(GATEWAY_MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")),
+    );
     expect(db.all("SELECT COUNT(*) AS n FROM apps")).toEqual([{ n: 0 }]);
   });
 

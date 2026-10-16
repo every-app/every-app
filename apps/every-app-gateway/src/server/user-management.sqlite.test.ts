@@ -373,9 +373,9 @@ describe("user management (SQLite)", () => {
     });
 
     it("removes and deactivates even before the AI app connections table exists", async () => {
-      // A gateway whose code shipped before migration 0030 ran: /mcp
-      // refuses removed and banned users anyway, so the connections table
-      // is never what an offboarding hangs on.
+      // A database without the connections tables: /mcp refuses removed
+      // and banned users anyway, so the connections table is never what
+      // an offboarding hangs on.
       await seedCredentials();
       await db.run(sql`DROP TABLE mcp_connection_apps`);
       await db.run(sql`DROP TABLE mcp_connections`);

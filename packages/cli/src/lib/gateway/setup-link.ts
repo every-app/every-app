@@ -40,9 +40,9 @@ export async function gatewayHasOwner(db: D1Database): Promise<boolean> {
  * fragment, so it never reaches the gateway's logs or a Referer header, and
  * it is never on a command line: the statements travel in a private file.
  *
- * With `withCliSecret` (a gateway from migration 0028 on), a second secret
- * (`ecs_…`) is stored the same way, for this CLI to log itself in with
- * once the link is claimed.
+ * With `withCliSecret` (a gateway whose `owner_setup_tokens` has a
+ * `cli_secret_hash` column), a second secret (`ecs_…`) is stored the same
+ * way, for this CLI to log itself in with once the link is claimed.
  */
 export async function mintSetupLink({
   db,
@@ -85,8 +85,9 @@ export async function mintSetupLink({
 }
 
 /**
- * Whether the gateway's database takes a CLI secret with a setup link
- * (migration 0028), so this CLI can log itself in once the link is claimed.
+ * Whether the gateway's database takes a CLI secret with a setup link (its
+ * `owner_setup_tokens` has a `cli_secret_hash` column), so this CLI can log
+ * itself in once the link is claimed.
  */
 async function storesCliSecrets(db: D1Database): Promise<boolean> {
   const [columns = []] = await db.run([

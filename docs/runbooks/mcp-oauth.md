@@ -98,9 +98,9 @@ and `everyapp gateway deploy` sets it up; there is nothing to set by hand.
   resuming from its cursor (after three failed runs in a row it starts a
   new sweep). Each run logs one `mcp.maintenance` line; `audit_behind: true`
   (a warning) means more calls arrive than a run deletes.
-- Migrations `0030_mcp_connections` and `0031_rate_limit_counters` (run by
-  `everyapp gateway deploy`): `mcp_connections`, `mcp_connection_apps`,
-  `mcp_tool_calls` and `rate_limit_counters`.
+- The gateway's migrations (run by `everyapp gateway deploy`), which create
+  `mcp_connections`, `mcp_connection_apps`, `mcp_tool_calls` and
+  `rate_limit_counters`.
 - A `GATEWAY_URL` on `https`. It is the OAuth issuer and `<GATEWAY_URL>/mcp`
   the resource, so changing it invalidates every connection; clients ask
   their users to connect again on their next request.

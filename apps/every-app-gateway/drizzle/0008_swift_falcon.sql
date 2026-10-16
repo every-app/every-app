@@ -1,1 +1,0 @@
-ALTER TABLE `user_apps` ADD `dev_url` text;

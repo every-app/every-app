@@ -67,22 +67,24 @@ interface Journal {
 }
 
 /**
- * Migrate like drizzle-kit did before cf: apply the gateway's migrations
- * (all, or the first `count`) and record them in `__drizzle_migrations`.
+ * Migrate like drizzle-kit did before cf: apply the migrations in `dir`
+ * (the gateway's by default; all, or the first `count`) and record them in
+ * `__drizzle_migrations`.
  */
-export function migrateGatewayWithDrizzle(db: SqliteD1, count?: number): void {
+export function migrateGatewayWithDrizzle(
+  db: SqliteD1,
+  count?: number,
+  dir = GATEWAY_MIGRATIONS_DIR,
+): void {
   const journal = JSON.parse(
-    fs.readFileSync(
-      path.join(GATEWAY_MIGRATIONS_DIR, "meta", "_journal.json"),
-      "utf8",
-    ),
+    fs.readFileSync(path.join(dir, "meta", "_journal.json"), "utf8"),
   ) as Journal;
   const entries = journal.entries.slice(0, count);
   db.sqlite.exec(
     "CREATE TABLE __drizzle_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, hash text NOT NULL, created_at numeric)",
   );
   for (const entry of entries) {
-    execMigration(db.sqlite, path.join(GATEWAY_MIGRATIONS_DIR, `${entry.tag}.sql`));
+    execMigration(db.sqlite, path.join(dir, `${entry.tag}.sql`));
     db.sqlite
       .prepare(
         "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",

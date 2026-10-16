@@ -9,9 +9,10 @@ import { describe, expect, it } from "vitest";
  * renames a table or column has to wait one release, until no live code
  * reads it, and say so with `-- everyapp:contract <release it follows>`.
  *
- * Migrations from before the deploy order changed are not checked.
+ * Every migration is checked, the generated baseline included (it only
+ * creates).
  */
-const FIRST_CHECKED_MIGRATION = 27;
+const FIRST_CHECKED_MIGRATION = 0;
 const MIGRATIONS_DIR = fileURLToPath(new URL("../../drizzle", import.meta.url));
 const CONTRACTING = /\bDROP\s+(TABLE|COLUMN)\b|\bRENAME\b/i;
 

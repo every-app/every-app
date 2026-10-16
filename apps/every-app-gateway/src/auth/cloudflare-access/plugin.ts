@@ -133,6 +133,23 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
 
   return {
     id: "cloudflare-access",
+    // One account row per provider identity. Better Auth looks accounts up
+    // by (provider_id, account_id) and refuses a sign-in when two rows
+    // match, which two first-time sign-ins racing (say, the outer ring in
+    // several restored tabs) could otherwise create; with this index the
+    // second insert fails and that request simply isn't signed in.
+    schema: {
+      account: {
+        fields: {},
+        indexes: [
+          {
+            name: "accounts_provider_account_unique",
+            fields: ["providerId", "accountId"],
+            unique: true,
+          },
+        ],
+      },
+    },
     init(ctx) {
       return {
         ...(oidcProvider
@@ -450,8 +467,8 @@ async function linkSignedInAccount(
   try {
     await adapter.linkAccount({ ...key, userId: user.id });
   } catch (error) {
-    // Another request linked it first (one row per identity: migration
-    // 0032). The session stands either way.
+    // Another request linked it first (one row per identity: the unique
+    // index in this plugin's schema). The session stands either way.
     logEvent("access.account_link_skipped", {
       userId: user.id,
       reason: error instanceof Error ? error.message.slice(0, 120) : "unknown",

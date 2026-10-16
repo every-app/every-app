@@ -244,8 +244,8 @@ async function supersedeEarlier(connection: {
  * Mark an offboarded user's connections revoked, as a statement of its own
  * after the offboarding transaction, never inside it: best effort, since
  * /mcp and every refresh already refuse a removed member or a banned user.
- * So a failure here (D1 unavailable, or a gateway whose code shipped before
- * migration 0030 ran) is logged, and the removal or deactivation stands.
+ * So a failure here (D1 unavailable, or a database that doesn't have the
+ * connections tables yet) is logged, and the removal or deactivation stands.
  */
 async function markRevoked(
   userId: string,
