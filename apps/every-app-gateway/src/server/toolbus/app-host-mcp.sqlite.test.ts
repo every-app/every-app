@@ -210,6 +210,7 @@ const SESSION_COOKIE = "every-app.session_token=owner-session";
 function authenticator(): SessionAuthenticator {
   const prod = createProdAuthenticator();
   return {
+    sessionCookieNames: prod.sessionCookieNames,
     async authenticate(request) {
       if (request.headers.has("authorization")) {
         return prod.authenticate(request);

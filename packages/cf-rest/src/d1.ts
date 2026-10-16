@@ -96,26 +96,38 @@ export function d1(transport: CloudflareTransport) {
           context: `Delete D1 database ${databaseId}`,
         },
       ),
-    /** One statement with `?` parameters; its rows. */
+    /**
+     * One statement with `?` parameters; its rows. Several statements
+     * joined with `;` go to `queryAll`: this fails rather than drop
+     * the results after the first.
+     */
     query: async <Row = Record<string, unknown>>(
       databaseId: string,
       sql: string,
       params: D1Param[] = [],
     ): Promise<D1QueryResult<Row>> => {
-      const [result] = await run<Row>(
-        databaseId,
-        { sql, params },
-        `Query D1 database ${databaseId}`,
-      );
-      if (!result) {
+      const context = `Query D1 database ${databaseId}`;
+      const results = await run<Row>(databaseId, { sql, params }, context);
+      const [result] = results;
+      if (!result || results.length > 1) {
         throw new CloudflareApiError({
           status: 200,
-          context: `Query D1 database ${databaseId}`,
-          message: "no result for the statement",
+          context,
+          message: `${results.length} results for one statement (queryAll runs several)`,
         });
       }
       return result;
     },
+    /**
+     * `sql` as D1 runs it: statements joined with `;` (a migration file,
+     * say) run in order, and each returns its own result.
+     */
+    queryAll: <Row = Record<string, unknown>>(
+      databaseId: string,
+      sql: string,
+      params: D1Param[] = [],
+    ): Promise<D1QueryResult<Row>[]> =>
+      run<Row>(databaseId, { sql, params }, `Query D1 database ${databaseId}`),
     /** Statements run in order, in one transaction; a result for each. */
     batch: async <Row = Record<string, unknown>>(
       databaseId: string,

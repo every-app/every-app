@@ -61,6 +61,7 @@ vi.mock("./server/app-activation", () => ({
 
 vi.mock("./perimeter/betterAuthAuthenticator", () => ({
   createProdAuthenticator: () => ({
+    sessionCookieNames: [],
     authenticate: mocks.authenticate,
     hasAppAccess: vi.fn(async () => true),
   }),
@@ -405,6 +406,31 @@ describe("gateway host (control plane)", () => {
     );
     expect(single.status).toBe(200);
     expect(mocks.controlPlaneFetch).toHaveBeenCalledOnce();
+  });
+
+  it("logs a tossed session cookie on the gateway host with where, never the cookie", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const response = await server.fetch(
+        gatewayRequest("/api/auth/get-session?x=1", {
+          headers: {
+            cookie:
+              "__Secure-better-auth.session_token=tossed.sig; __Secure-better-auth.session_token=mine.sig",
+          },
+        }),
+      );
+      expect(response.status).toBe(401);
+      expect(warn).toHaveBeenCalledOnce();
+      const line = String(warn.mock.calls[0]?.[0]);
+      expect(JSON.parse(line)).toEqual({
+        evt: "session.duplicate_cookie",
+        host: "example.com",
+        path: "/api/auth/get-session",
+      });
+      expect(line).not.toContain("sig");
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("never caches admin, consent or setup pages", async () => {

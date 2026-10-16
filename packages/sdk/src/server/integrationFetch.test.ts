@@ -185,6 +185,19 @@ describe("integrationStatus", () => {
     ).resolves.toEqual({ requested: false, configured: false, ready: false });
   });
 
+  it("refuses a capability the gateway doesn't offer, deployed or in local dev", async () => {
+    const bindingFetch = vi.fn(async () => Response.json({}));
+    for (const env of [
+      { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
+      { EVERYAPP_DEV: "1" },
+    ]) {
+      await expect(
+        integrationStatus({ env, provider: "toString" as "dataforseo" }),
+      ).rejects.toThrowError(ConfigurationError);
+    }
+    expect(bindingFetch).not.toHaveBeenCalled();
+  });
+
   it("is ready in local dev once .dev.vars sets the key", async () => {
     await expect(
       integrationStatus({

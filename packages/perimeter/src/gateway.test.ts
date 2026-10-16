@@ -90,6 +90,7 @@ function echoFetcher() {
 
 function deps(over: Partial<GatewayDeps> = {}): GatewayDeps {
   const auth: SessionAuthenticator = {
+    sessionCookieNames: [],
     authenticate: async () => SESSION,
     hasAppAccess: async () => true,
   };
@@ -175,6 +176,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => PAT_SESSION,
           hasAppAccess: async () => true,
         },
@@ -232,6 +234,7 @@ describe("handleGatewayRequest", () => {
           }),
         }),
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => OAUTH_SESSION,
           hasAppAccess: async () => false,
         },
@@ -252,6 +255,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => PAT_SESSION,
           hasAppAccess: async () => false,
         },
@@ -272,6 +276,7 @@ describe("handleGatewayRequest", () => {
       deps({
         loginUrl: "https://home.example.com/login",
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -290,6 +295,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -311,6 +317,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -334,6 +341,7 @@ describe("handleGatewayRequest", () => {
       deps({
         loginUrl: "https://home.example.com/login",
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -352,6 +360,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -372,6 +381,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => PAT_SESSION,
           hasAppAccess: async () => true,
         },
@@ -418,6 +428,7 @@ describe("handleGatewayRequest", () => {
       req("/tasks"),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -432,6 +443,7 @@ describe("handleGatewayRequest", () => {
       req("/tasks", { headers: { accept: "text/html" } }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -451,6 +463,7 @@ describe("handleGatewayRequest", () => {
       req("/health"),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -480,6 +493,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -509,6 +523,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -527,6 +542,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => OAUTH_SESSION,
           hasAppAccess: async () => true,
         },
@@ -549,6 +565,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => PAT_SESSION,
           hasAppAccess: async () => true,
         },
@@ -565,6 +582,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => PAT_SESSION,
           hasAppAccess: async () => true,
         },
@@ -585,6 +603,7 @@ describe("handleGatewayRequest", () => {
       deps({
         issuer: "https://cache.example.com",
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -598,6 +617,7 @@ describe("handleGatewayRequest", () => {
       deps({
         issuer: "https://cache.example.com",
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -612,6 +632,7 @@ describe("handleGatewayRequest", () => {
       deps({
         issuer: "https://cache.example.com",
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -644,6 +665,7 @@ describe("handleGatewayRequest", () => {
       req("/health"),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => SESSION,
           hasAppAccess: async () => false,
         },
@@ -663,6 +685,7 @@ describe("handleGatewayRequest", () => {
       req("/tasks"),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => SESSION,
           hasAppAccess: async () => false,
         },
@@ -683,6 +706,7 @@ describe("handleGatewayRequest", () => {
       req("/health"),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => {
             throw error;
           },
@@ -714,6 +738,7 @@ describe("handleGatewayRequest", () => {
         req("/tasks"),
         deps({
           authenticator: {
+            sessionCookieNames: [],
             authenticate: async () => {
               throw error;
             },
@@ -732,6 +757,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -761,6 +787,7 @@ describe("handleGatewayRequest", () => {
       req("/mcp", { method: "POST" }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => false,
         },
@@ -792,6 +819,7 @@ describe("handleGatewayRequest", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate,
           hasAppAccess: async () => true,
         },
@@ -815,6 +843,7 @@ describe("handleGatewayRequest", () => {
       req("/tasks"),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => SESSION,
           hasAppAccess: async () => false,
         },
@@ -1050,6 +1079,7 @@ describe("handleGatewayRequest", () => {
 
 describe("no OAuth on app hosts", () => {
   const anonymous: SessionAuthenticator = {
+    sessionCookieNames: [],
     authenticate: async () => null,
     hasAppAccess: async () => false,
   };
@@ -1286,6 +1316,7 @@ describe("WebSocket Origin check", () => {
       upgrade({ authorization: "Bearer epat_valid" }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => PAT_SESSION,
           hasAppAccess: async () => true,
         },
@@ -1304,7 +1335,13 @@ describe("WebSocket Origin check", () => {
           origin: "https://evil.example.net",
         },
       }),
-      deps({ authenticator: { authenticate, hasAppAccess: async () => true } }),
+      deps({
+        authenticator: {
+          sessionCookieNames: [],
+          authenticate,
+          hasAppAccess: async () => true,
+        },
+      }),
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
@@ -1379,6 +1416,7 @@ describe("internal tools contract", () => {
           }),
           deps({
             authenticator: {
+              sessionCookieNames: [],
               authenticate: async () => session,
               hasAppAccess: async () => true,
             },
@@ -1423,6 +1461,7 @@ describe("ToolBus /mcp interception", () => {
   function patDeps(over: Partial<GatewayDeps> = {}): GatewayDeps {
     return deps({
       authenticator: {
+        sessionCookieNames: [],
         authenticate: async () => PAT_SESSION,
         hasAppAccess: async () => true,
       },
@@ -1468,6 +1507,7 @@ describe("ToolBus /mcp interception", () => {
       deps({
         interceptMcp,
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => null,
           hasAppAccess: async () => true,
         },
@@ -1483,6 +1523,7 @@ describe("ToolBus /mcp interception", () => {
       patDeps({
         interceptMcp,
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => PAT_SESSION,
           hasAppAccess: async () => false,
         },
@@ -1574,6 +1615,7 @@ describe("MCP-only tokens", () => {
       }),
       deps({
         authenticator: {
+          sessionCookieNames: [],
           authenticate: async () => session,
           hasAppAccess: async () => true,
         },

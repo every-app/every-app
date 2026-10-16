@@ -72,6 +72,8 @@ export const MODULE_CONTENT_TYPES: Record<WorkerModuleType, string> = {
 };
 
 const TAG_PATTERN = /^[^,&:]+$/;
+/** How many tags the API lets a script carry. */
+const MAX_TAGS = 10;
 
 function assertTag(tag: string): void {
   // The API forbids "," and "&"; ":" would be read as the filter's
@@ -79,6 +81,16 @@ function assertTag(tag: string): void {
   if (!TAG_PATTERN.test(tag) || tag.length > 1024) {
     throw new Error(`Invalid Worker tag: ${JSON.stringify(tag)}`);
   }
+}
+
+/** A script's whole tag list, as an upload or a replacement sets it. */
+function assertTags(tags: readonly string[]): void {
+  if (tags.length > MAX_TAGS) {
+    throw new Error(
+      `A Worker can carry at most ${MAX_TAGS} tags, not ${tags.length}`,
+    );
+  }
+  for (const tag of tags) assertTag(tag);
 }
 
 function tagQuery(filter: TagFilter): string {
@@ -161,7 +173,7 @@ export function dispatchScripts(transport: CloudflareTransport) {
           `main_module ${metadata.main_module} is not among the modules of ${label(namespace, script)}`,
         );
       }
-      for (const tag of metadata.tags ?? []) assertTag(tag);
+      assertTags(metadata.tags ?? []);
       const form = new FormData();
       form.set("metadata", jsonPart(metadata));
       for (const module of modules) {
@@ -226,7 +238,7 @@ export function dispatchScripts(transport: CloudflareTransport) {
       script: string,
       settings: WorkerSettings,
     ) => {
-      for (const tag of settings.tags ?? []) assertTag(tag);
+      assertTags(settings.tags ?? []);
       const form = new FormData();
       form.set("settings", jsonPart(settings));
       return transport.request<WorkerSettingsResult>(
@@ -299,7 +311,7 @@ export function dispatchScripts(transport: CloudflareTransport) {
       ),
     /** Replace the script's tags. */
     setTags: async (namespace: string, script: string, tags: string[]) => {
-      for (const tag of tags) assertTag(tag);
+      assertTags(tags);
       return transport.request<string[] | null>(
         scripts(namespace, script, "tags"),
         json("PUT", tags),

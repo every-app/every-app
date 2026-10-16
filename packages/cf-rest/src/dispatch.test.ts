@@ -169,6 +169,28 @@ describe("dispatch scripts", () => {
     expect(requests).toHaveLength(0);
   });
 
+  it("refuses more than the 10 tags a script can carry", async () => {
+    const { fetch, requests } = mockFetch(envelope({}));
+    const cf = client(fetch);
+    const eleven = Array.from({ length: 11 }, (_, i) => `t${i}`);
+    await expect(
+      cf.dispatchScripts.upload("apps", "x", {
+        metadata: { ...metadata, tags: eleven },
+        modules: [{ name: "index.js", type: "esm", content: "" }],
+      }),
+    ).rejects.toThrow(/at most 10 tags, not 11/);
+    await expect(
+      cf.dispatchScripts.patchSettings("apps", "x", { tags: eleven }),
+    ).rejects.toThrow(/at most 10 tags/);
+    await expect(
+      cf.dispatchScripts.setTags("apps", "x", eleven),
+    ).rejects.toThrow(/at most 10 tags/);
+    expect(requests).toHaveLength(0);
+
+    await cf.dispatchScripts.setTags("apps", "x", eleven.slice(0, 10));
+    expect(requests).toHaveLength(1);
+  });
+
   it("reads a script, its bindings and its settings, and deletes it", async () => {
     const { fetch, requests } = mockFetch(envelope({}));
     const cf = client(fetch);

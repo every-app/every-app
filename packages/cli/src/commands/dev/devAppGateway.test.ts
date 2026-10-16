@@ -132,6 +132,7 @@ describe("everyapp dev /mcp", () => {
     // challenged before it could reach the ToolBus.
     const authenticate = vi.fn(async () => null);
     const { handle, paths } = gateway({
+      sessionCookieNames: [],
       authenticate,
       hasAppAccess: async () => true,
     });

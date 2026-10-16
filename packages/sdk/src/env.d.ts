@@ -12,8 +12,13 @@ declare namespace Cloudflare {
     EVERY_APP_GATEWAY?: Fetcher;
     // Explicit local-dev opt-in required before the provider-key fallback.
     EVERYAPP_DEV?: string;
-    // Developer-owned direct-provider fallback from .dev.vars only.
+    // Developer-owned direct-provider fallbacks from .dev.vars only, read
+    // with EVERYAPP_DEV set and no binding: the AI providers' keys
+    // (createGatewayFetch) and the capabilities' keys (integrationFetch).
     OPENAI_API_KEY?: string;
+    OPENROUTER_API_KEY?: string;
+    DATAFORSEO_API_KEY?: string;
+    CONTEXT_API_KEY?: string;
   }
 }
 

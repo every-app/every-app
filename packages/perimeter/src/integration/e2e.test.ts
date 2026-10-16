@@ -79,6 +79,7 @@ beforeAll(async () => {
 
   // Cookie-based session stub: `everyapp_session=user_1` ⇒ authenticated.
   const authenticator: SessionAuthenticator = {
+    sessionCookieNames: ["everyapp_session"],
     authenticate: async (req) =>
       (req.headers.get("cookie") ?? "").includes("everyapp_session=user_1")
         ? SESSION
@@ -284,6 +285,10 @@ describe("perimeter end-to-end: cookie tossing", () => {
     expect(await res.json()).toEqual({
       error: "unauthenticated",
       reason: "duplicate_session_cookie",
+      // The planted copy stays until the person clears it: say so.
+      message: expect.stringContaining(
+        "Clear this site's cookies and sign in again.",
+      ),
     });
     expect(authenticateCalls).toBe(0);
   });
@@ -305,5 +310,16 @@ describe("perimeter end-to-end: cookie tossing", () => {
       expect(res.status, cookie).toBe(401);
       expect(authenticateCalls).toBe(0);
     }
+  });
+
+  it("won't take an authenticator that leaves out its session cookie names", () => {
+    // Optional, a forgotten field would quietly skip the refusal above.
+    const forgetful = {
+      authenticate: async () => SESSION,
+      hasAppAccess: async () => true,
+    };
+    // @ts-expect-error sessionCookieNames is required
+    const authenticator: SessionAuthenticator = forgetful;
+    expect(authenticator).toBe(forgetful);
   });
 });

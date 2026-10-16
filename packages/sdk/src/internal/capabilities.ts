@@ -28,12 +28,13 @@ export interface ApiKeyCapability {
   /** Methods an app asking for `access: "read"` may use. */
   readMethods: readonly string[];
   /**
-   * Paths no app may reach, matched against the upstream pathname decoded
-   * and lowercased (see {@link isAccountWidePath}). One key
-   * serves every app in every organization, so endpoints that list or
-   * describe the whole provider account would show one app another's work.
+   * Paths no app may reach, each as its run of path segments, refused
+   * wherever those segments appear together in the upstream path however
+   * it is spelled (see {@link isAccountWidePath}). One key serves every app
+   * in every organization, so endpoints that list or describe the whole
+   * provider account would show one app another's work.
    */
-  accountWidePaths: readonly RegExp[];
+  accountWidePaths: readonly (readonly string[])[];
   /** The Authorization header value for a configured key. */
   authorization(key: string): string;
 }
@@ -52,8 +53,11 @@ export const CAPABILITIES = {
     // Results are fetched by task id, which only the app that posted the
     // task holds; these list every task, error and setting on the account.
     accountWidePaths: [
-      /\/(tasks_ready|id_list|errors)([/;.]|$)/,
-      /\/appendix\/(user_data|webhook_resend)([/;.]|$)/,
+      ["tasks_ready"],
+      ["id_list"],
+      ["errors"],
+      ["appendix", "user_data"],
+      ["appendix", "webhook_resend"],
     ],
     authorization: (key) => `Basic ${dataForSeoCredentials(key)}`,
   },
@@ -118,22 +122,66 @@ export function parseIntegrationProxyPath(
   return { id, upstream };
 }
 
+/** Times a path may decode to something new before it counts as hiding one. */
+const MAX_PATH_DECODES = 3;
+/** Control, zero-width and whitespace characters: in no endpoint's path. */
+const UNPRINTABLE = /[\p{Cc}\p{Cf}\p{Z}\s]/u;
+/**
+ * The part of a segment a provider can route on: an endpoint's name ends at
+ * the first character no name has, so `tasks_ready,`, `tasks_ready;x` and
+ * `tasks_ready.json` all name `tasks_ready`.
+ */
+const SEGMENT_NAME = /^[a-z0-9_-]*/;
+
 /**
  * Whether `pathname` reaches one of the capability's account-wide paths,
- * however it is spelled: percent-encoded, in another case, or with a
- * trailing segment. A path that doesn't decode counts as one.
+ * however it is spelled: percent-encoded (twice, even), in another case,
+ * with a suffix on a segment, with doubled or backslash separators, or with
+ * a trailing segment. A path that doesn't decode, or that holds control
+ * characters or whitespace once decoded, counts as one; so does anything
+ * outside ASCII for a provider that has account-wide paths, since how it
+ * folds case is its own business.
  */
 export function isAccountWidePath(
   capability: ApiKeyCapability,
   pathname: string,
 ): boolean {
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(pathname).toLowerCase();
-  } catch {
+  const decoded = decodePath(pathname);
+  if (decoded === null || UNPRINTABLE.test(decoded)) return true;
+  const blocked = capability.accountWidePaths;
+  if (blocked.length === 0) return false;
+  if (!/^[\x20-\x7e]*$/.test(decoded)) return true;
+  // Empty segments drop out, as on a server that merges slashes.
+  const segments = decoded.split(/[/\\]/).filter(Boolean);
+  // The URL parser already resolved every dot segment it could see; one
+  // that only decoding reveals is a disguise.
+  if (segments.some((segment) => segment === "." || segment === "..")) {
     return true;
   }
-  return capability.accountWidePaths.some((pattern) => pattern.test(decoded));
+  const names = segments.map(
+    (segment) => SEGMENT_NAME.exec(segment)?.[0] ?? "",
+  );
+  return blocked.some((path) =>
+    names.some((_, start) =>
+      path.every((name, offset) => names[start + offset] === name),
+    ),
+  );
+}
+
+/** `pathname` percent-decoded until it stops changing, lowercased; null if it won't. */
+function decodePath(pathname: string): string | null {
+  let current = pathname;
+  for (let round = 0; round <= MAX_PATH_DECODES; round++) {
+    let next: string;
+    try {
+      next = decodeURIComponent(current);
+    } catch {
+      return null;
+    }
+    if (next === current) return current.toLowerCase();
+    current = next;
+  }
+  return null;
 }
 
 /**

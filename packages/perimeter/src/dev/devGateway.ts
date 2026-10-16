@@ -78,6 +78,8 @@ const DEV_ANON_COOKIE = /(?:^|;\s*)everyapp_dev_anon=1(?:;|$)/;
  */
 export function devAuthenticator(): SessionAuthenticator {
   return {
+    // No session cookie to toss: every request is the seeded user.
+    sessionCookieNames: [],
     authenticate: async (request) => {
       if (request.headers.get(DEV_ANON_HEADER) === "1") return null;
       if (DEV_ANON_COOKIE.test(request.headers.get("cookie") ?? ""))

@@ -67,6 +67,43 @@ describe("D1", () => {
     });
   });
 
+  it("returns a result for each of several statements joined with ;", async () => {
+    const sql =
+      "CREATE TABLE t (a TEXT); INSERT INTO t VALUES ('x'); SELECT a FROM t";
+    const joined = mockFetch(
+      envelope([
+        { results: [], success: true },
+        { results: [], success: true, meta: { changes: 1 } },
+        { results: [{ a: "x" }], success: true },
+      ]),
+    );
+    const results = await client(joined.fetch).d1.queryAll<{ a: string }>(
+      "db-1",
+      sql,
+    );
+    expect(results.map((result) => result.results)).toEqual([
+      [],
+      [],
+      [{ a: "x" }],
+    ]);
+    expect(await joined.requests[0]!.json()).toEqual({ sql, params: [] });
+
+    // query() is for one statement and never drops the results after it.
+    const several = mockFetch(
+      envelope([
+        { results: [], success: true },
+        { results: [{ a: "x" }], success: true },
+      ]),
+    );
+    await expect(
+      client(several.fetch).d1.query("db-1", "DELETE FROM t; SELECT a FROM t"),
+    ).rejects.toThrow(/2 results for one statement/);
+    const none = mockFetch(envelope([]));
+    await expect(
+      client(none.fetch).d1.query("db-1", "SELECT 1"),
+    ).rejects.toThrow(/0 results for one statement/);
+  });
+
   it("batches statements and expects a result for each", async () => {
     const statements = [
       { sql: "INSERT INTO t (a) VALUES (?)", params: ["x"] },

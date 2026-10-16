@@ -53,6 +53,9 @@ export function createRemoteAuthenticator(
   }
 
   return {
+    // The Cookie header goes to the gateway's /api/dev/identity unchanged,
+    // and the gateway refuses a duplicated session cookie there itself.
+    sessionCookieNames: [],
     async authenticate(request: Request): Promise<AuthenticatedSession | null> {
       const cookie = request.headers.get("cookie");
       const token = extractEveryAppBearer(request.headers);

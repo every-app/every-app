@@ -46,12 +46,7 @@ export function integrationFetch({
   provider,
   request: inboundRequest,
 }: IntegrationFetchOptions): typeof fetch {
-  const integration = Object.hasOwn(CAPABILITIES, provider)
-    ? CAPABILITIES[provider]
-    : undefined;
-  if (!integration) {
-    throw new ConfigurationError(`Unknown capability "${String(provider)}".`);
-  }
+  const integration = capability(provider);
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
     | GatewayServiceBinding
@@ -106,6 +101,14 @@ export function integrationFetch({
   };
 }
 
+/** The capability `provider` names, from plain JavaScript or a stale type too. */
+function capability(provider: CapabilityId) {
+  if (!Object.hasOwn(CAPABILITIES, provider)) {
+    throw new ConfigurationError(`Unknown capability "${String(provider)}".`);
+  }
+  return CAPABILITIES[provider];
+}
+
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -131,6 +134,7 @@ export async function integrationStatus({
   IntegrationFetchOptions,
   "env" | "provider"
 >): Promise<IntegrationStatus> {
+  const integration = capability(provider);
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
     | GatewayServiceBinding
@@ -145,8 +149,7 @@ export async function integrationStatus({
     return (await response.json()) as IntegrationStatus;
   }
   const configured = Boolean(
-    values["EVERYAPP_DEV"] &&
-    stringValue(values[CAPABILITIES[provider].secret]),
+    values["EVERYAPP_DEV"] && stringValue(values[integration.secret]),
   );
   return { requested: true, configured, ready: configured };
 }

@@ -15,7 +15,10 @@
  * run for real (D1 registry, Better Auth, service bindings) without changes.
  */
 import { parseHost, type ParsedHost } from "./host";
-import { hasDuplicateSessionCookie } from "./cookies";
+import {
+  DUPLICATE_SESSION_COOKIE_MESSAGE,
+  hasDuplicateSessionCookie,
+} from "./cookies";
 import {
   UnroutableAppError,
   type AppRegistry,
@@ -291,13 +294,14 @@ export async function handleGatewayRequest(
   if (
     hasDuplicateSessionCookie(
       request.headers,
-      deps.authenticator.sessionCookieNames ?? [],
+      deps.authenticator.sessionCookieNames,
     )
   ) {
     logEvent("session.duplicate_cookie", { app: app.appId }, "warn");
     return json(401, {
       error: "unauthenticated",
       reason: "duplicate_session_cookie",
+      message: DUPLICATE_SESSION_COOKIE_MESSAGE,
     });
   }
 

@@ -32,8 +32,10 @@
  */
 import { env, WorkerEntrypoint } from "cloudflare:workers";
 import {
+  DUPLICATE_SESSION_COOKIE_MESSAGE,
   handleGatewayRequest,
   hasDuplicateSessionCookie,
+  logEvent,
   type AppRegistry,
   type RegisteredApp,
   UnroutableAppError,
@@ -130,17 +132,19 @@ async function serveGatewayHost(request: Request): Promise<Response> {
 /**
  * A request carrying the session cookie twice: a host sharing the cookie's
  * domain planted a second copy (cookie tossing, see @every-app/perimeter's
- * cookies.ts), so neither copy is read.
+ * cookies.ts), so neither copy is read. Logged like the app-host refusal,
+ * with where it happened and never the cookie.
  */
 function refuseDuplicateSessionCookie(request: Request): Response | null {
   if (!hasDuplicateSessionCookie(request.headers, SESSION_COOKIE_NAMES)) {
     return null;
   }
+  const { host, pathname } = new URL(request.url);
+  logEvent("session.duplicate_cookie", { host, path: pathname }, "warn");
   return Response.json(
     {
       error: "duplicate_session_cookie",
-      message:
-        "Your browser sent more than one Every App session cookie, which another site on this domain can cause. Clear this site's cookies and sign in again.",
+      message: DUPLICATE_SESSION_COOKIE_MESSAGE,
     },
     { status: 401, headers: { "cache-control": "no-store" } },
   );

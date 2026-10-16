@@ -341,6 +341,11 @@ describe("AppGateway capabilities", () => {
     "/v3/serp/google/organic/tasks_ready/advanced",
     "/v3/serp/id_list;x",
     "/v3/serp/%E0%A4%A",
+    "/v3/serp/google/organic/tasks_ready%20",
+    "/v3/serp/google/organic/tasks_ready%00",
+    "/v3/serp/google/organic/tasks_ready,",
+    "/v3/serp/google/organic/tasks_ready%2C",
+    "/v3/appendix//user_data",
   ])(
     "refuses DataForSEO's account-wide %s, which would show one app another's tasks",
     async (path) => {
@@ -359,13 +364,18 @@ describe("AppGateway capabilities", () => {
     },
   );
 
-  it("still serves a task's own results by id", async () => {
+  it("still serves a task's own results by id, and posting tasks", async () => {
     const response = await call({
       manifest: LISTS_DATAFORSEO,
       path: "/api/integrations/dataforseo/api.dataforseo.com/v3/serp/google/organic/task_get/advanced/09271234-1535-0066-0000-5c2f2a1f8d10",
       method: "GET",
     });
     expect(response.status).toBe(200);
+    const posted = await call({
+      manifest: LISTS_DATAFORSEO,
+      path: "/api/integrations/dataforseo/api.dataforseo.com/v3/serp/google/organic/task_post",
+    });
+    expect(posted.status).toBe(200);
   });
 
   it("refuses methods the provider doesn't read with", async () => {

@@ -131,6 +131,7 @@ export interface WorkerSettings {
   compatibility_date?: string;
   compatibility_flags?: string[];
   limits?: WorkerLimits;
+  /** Replaces the script's tags. At most 10; no "," or "&". */
   tags?: string[];
   observability?: WorkerObservability;
   placement?: { mode: "smart" };

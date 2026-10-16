@@ -14,6 +14,14 @@
  */
 
 /**
+ * What a refused request is told, on the gateway host and on app hosts
+ * alike: the copy a sibling host planted lives in the browser until the
+ * person clears it.
+ */
+export const DUPLICATE_SESSION_COOKIE_MESSAGE =
+  "Your browser sent more than one Every App session cookie, which another site on this domain can cause. Clear this site's cookies and sign in again.";
+
+/**
  * How many times the Cookie header names any of `names`. A request may carry
  * several Cookie headers, which `Headers` joins with ", ", so commas count as
  * separators too: splitting more finely only ever finds more copies.
