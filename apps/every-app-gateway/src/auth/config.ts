@@ -16,18 +16,28 @@ import {
   isAccessSignInConfigured,
   isPasswordSignInOn,
 } from "./cloudflare-access";
-import { sendEmail } from "@/server/email/sendEmail";
+import { logEvent } from "@every-app/perimeter";
+import { isEmailConfigured, sendEmail } from "@/server/email/sendEmail";
 import { passwordResetUrl } from "@/server/email/links";
+import {
+  passwordResetEmail,
+  verificationEmail,
+} from "@/server/email/templates";
 import { findPendingInvitationByToken } from "@/server/invitation-token";
 import { appBaseDomain } from "@/server/app-hosts";
 import { AppAccessRepository } from "@/server/repositories/AppAccessRepository";
+import { UserRepository } from "@/server/repositories/UserRepository";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { AppAccessService } from "@/server/services/AppAccessService";
-import { resolveOrgContext } from "@/server/organization/orgContext";
+import { chooseSessionOrganization } from "@/server/organization/orgContext";
+import { createPersonalOrganization } from "@/server/organization/personal-organization";
 import { describePolicy, platformPolicy } from "@/server/platform-policy";
 
 // Invitation links work once, for this long (Better Auth's default is 48h).
 const INVITATION_TTL_SECONDS = 72 * 60 * 60;
+
+// Email verification links work this long; the verify page resends one.
+const EMAIL_VERIFICATION_TTL_SECONDS = 24 * 60 * 60;
 
 function isSignUpEmailPath(path: string): boolean {
   return path === "/sign-up/email";
@@ -83,18 +93,49 @@ function assertInvitationEmailMatches(
 }
 
 /**
- * Sign-up over HTTP always needs a live invite link for the same email,
- * before and after the gateway has an owner: the first owner is created
- * server-side from the deployer's setup link (SetupService), never by
- * signing up. The link's token is the credential, never the invitation id,
- * which is not a secret.
+ * Who may sign up over HTTP. An invite link, when the request carries one,
+ * must be live and for the same email, in every mode: its token is the
+ * credential, never the invitation id, which is not a secret. Without one,
+ * only where the platform policy has open sign-up (the hosted gateway);
+ * otherwise sign-up is invite-only, before and after the gateway has an
+ * owner: the first owner is created server-side from the deployer's setup
+ * link (SetupService), never by signing up.
+ *
+ * Where accounts must verify their email, a gateway that can't send email
+ * refuses every sign-up, invited or not, before anything is made: the
+ * account could never sign in.
  */
-async function enforceInviteOnlySignUp(ctx: {
+async function enforceSignUpPolicy(ctx: {
   request: Request;
   body?: { email?: unknown };
+  policy: { openSignUp: boolean; requireEmailVerification: boolean };
 }): Promise<void> {
+  if (ctx.policy.requireEmailVerification && !isEmailConfigured()) {
+    logEvent(
+      "auth.sign_up_refused",
+      { reason: "email_not_configured" },
+      "error",
+    );
+    throw new APIError("SERVICE_UNAVAILABLE", {
+      code: "EMAIL_NOT_CONFIGURED",
+      message:
+        "Sign-up is unavailable: this gateway can't send the email that verifies new accounts. Its operator must set EMAIL_FROM and an email transport (EMAIL_REST_API_TOKEN, or the EMAIL binding).",
+    });
+  }
+
   const token = getInvitationTokenFromRequest(ctx.request);
   if (!token) {
+    if (ctx.policy.openSignUp) {
+      // Open, but only once the gateway has its owner: a stranger's
+      // personal organization would make them an owner first, and the
+      // setup claim would then find the gateway taken.
+      if (!(await hasAnyOwnerMembership())) {
+        throw new APIError("FORBIDDEN", {
+          message: "This gateway has not been set up yet.",
+        });
+      }
+      return;
+    }
     throw new APIError("FORBIDDEN", {
       message: "Sign up is invite-only. Please use the invitation link.",
     });
@@ -136,6 +177,38 @@ function resetPasswordLink(betterAuthUrl: string, token: string): string {
     // An unparseable url: the plain reset page below.
   }
   return passwordResetUrl(token);
+}
+
+/**
+ * A new account's personal organization, where the policy gives one: for an
+ * account made over HTTP without an invite link (an invitee joins only the
+ * organization that invited them, and a server-side sign-up is the setup
+ * claim, which makes its own). Better Auth runs this once the sign-up has
+ * written the account; when it fails, the account is removed again and the
+ * sign-up fails, so nobody is left with an account and no organization.
+ */
+async function givePersonalOrganization(
+  user: { id: string; name?: string | null; email: string },
+  request: Request | undefined,
+): Promise<void> {
+  if (!request || getInvitationTokenFromRequest(request)) return;
+  try {
+    await createPersonalOrganization(user);
+  } catch (error) {
+    logEvent(
+      "organization.personal_failed",
+      {
+        userId: user.id,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "error",
+    );
+    await UserRepository.deleteById(user.id);
+    throw new APIError("INTERNAL_SERVER_ERROR", {
+      code: "ACCOUNT_CREATION_FAILED",
+      message: "Your account couldn't be created. Please try again.",
+    });
+  }
 }
 
 async function grantDefaultAppsForMembership(
@@ -296,7 +369,13 @@ export function createAuth() {
     // button, so it has none.
     rateLimit: {
       enabled: isProductionBuild,
-      customRules: { "/sign-in-methods": false },
+      // Anyone may ask for another verification email for any address: a
+      // few a minute per client here, and a few a day per address in
+      // sendEmail's budgets.
+      customRules: {
+        "/sign-in-methods": false,
+        "/send-verification-email": { window: 60, max: 3 },
+      },
     },
     advanced: {
       useSecureCookies: isProductionBuild,
@@ -315,19 +394,59 @@ export function createAuth() {
     },
     emailAndPassword: {
       ...sharedAuthOptions.emailAndPassword,
+      // Where the policy asks for it (hosted), an account signs in only once
+      // its email is verified; self-hosted accounts never need to.
+      requireEmailVerification: policy.requireEmailVerification,
       // The link goes to the gateway's reset page with the token in the query
       // string, not to Better Auth's /reset-password/<token> path, so it never
       // sits in a URL path where log redaction can't reach it.
       sendResetPassword: async ({ user, url: betterAuthUrl, token }) => {
         const url = resetPasswordLink(betterAuthUrl, token);
         await sendEmail({
+          kind: "reset",
           to: user.email,
-          subject: "Reset your Every App password",
-          text: `Use this link to reset your password: ${url}`,
-          html: `<p>Use this link to reset your password:</p><p><a href="${url}">${url}</a></p>`,
+          ...passwordResetEmail(url),
         });
       },
     },
+    // Verification mail exists only where the policy needs it: without
+    // this, Better Auth sends none and its resend endpoint refuses.
+    ...(policy.requireEmailVerification
+      ? {
+          emailVerification: {
+            sendOnSignUp: true,
+            // A refused sign-in sends nothing: the verify page resends.
+            sendOnSignIn: false,
+            // The link proves the address, so it signs the account in, once
+            // (Better Auth only does it while the email is unverified).
+            autoSignInAfterVerification: true,
+            expiresIn: EMAIL_VERIFICATION_TTL_SECONDS,
+            // The token is in the link's query string (Better Auth's
+            // /verify-email?token=), where log redaction reaches it. A
+            // server-side sign-up (the setup claim, which verifies its owner
+            // itself) has no request and gets no mail. A mail that can't go
+            // (a spent budget, a provider error, logged by sendEmail) fails
+            // nothing: the sign-up stands and the verify page resends, and
+            // the resend answers the same either way, so it doesn't tell
+            // whether an address has an account.
+            sendVerificationEmail: async (
+              { user, url }: { user: { email: string }; url: string },
+              request?: Request,
+            ) => {
+              if (!request) return;
+              try {
+                await sendEmail({
+                  kind: "verification",
+                  to: user.email,
+                  ...verificationEmail(url),
+                });
+              } catch {
+                // Logged by sendEmail.
+              }
+            },
+          },
+        }
+      : {}),
     secret: env.BETTER_AUTH_SECRET,
     trustedOrigins,
     disabledPaths: DISABLED_AUTH_PATHS,
@@ -335,10 +454,13 @@ export function createAuth() {
       ...sharedAuthOptions.plugins,
       admin(),
       organization({
-        // Only the setup claim creates an organization (a server-side system
-        // action, which this does not block). Anyone else who could create
-        // one would own it: see its apps, mint personal access tokens and
-        // invite outsiders past invite-only sign-up.
+        // Only the gateway creates organizations: the setup claim (a
+        // server-side system action, which this does not block) and, on the
+        // hosted gateway, sign-up's one personal organization per account
+        // (server/organization/personal-organization.ts). Anyone else who
+        // could create one would own it: see its apps, mint personal access
+        // tokens and invite outsiders past invite-only sign-up; and on the
+        // hosted gateway, multiply the per-organization daily caps.
         allowUserToCreateOrganization: false,
         // Invitations are emailed (or handed to the admin as a link when
         // email isn't set up) by InvitationService, not by Better Auth.
@@ -398,9 +520,10 @@ export function createAuth() {
         }
 
         if (isSignUpEmailPath(ctx.path)) {
-          await enforceInviteOnlySignUp({
+          await enforceSignUpPolicy({
             request: ctx.request,
             body: { email: ctx.body?.email },
+            policy,
           });
           return;
         }
@@ -418,15 +541,28 @@ export function createAuth() {
       }),
     },
     databaseHooks: {
+      ...(policy.personalOrgs
+        ? {
+            user: {
+              create: {
+                after: async (user, ctx) => {
+                  await givePersonalOrganization(user, ctx?.request);
+                },
+              },
+            },
+          }
+        : {}),
       session: {
         create: {
+          // Every session starts in an organization when the user has one
+          // (their personal one, else the last they were active in, else
+          // the first they joined), so nobody lands without one.
           before: async (session) => {
-            const org = await resolveOrgContext({
-              userId: session.userId,
-              activeOrganizationId: null,
-            });
-            return org
-              ? { data: { ...session, activeOrganizationId: org.orgId } }
+            const organizationId = await chooseSessionOrganization(
+              session.userId,
+            );
+            return organizationId
+              ? { data: { ...session, activeOrganizationId: organizationId } }
               : undefined;
           },
         },

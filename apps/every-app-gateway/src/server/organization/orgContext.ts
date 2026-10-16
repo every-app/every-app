@@ -1,10 +1,11 @@
-import { and, eq } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db";
-import { members } from "@/db/schema";
+import { members, organizations, sessions } from "@/db/schema";
 import {
   resolvePrimaryOrganizationRole,
   type OrganizationRole,
 } from "@/server/org-roles";
+import { isPersonalOrganizationOf } from "./personal-marker";
 
 export interface OrgContext {
   orgId: string;
@@ -36,7 +37,10 @@ export function forgetOrgContext(userId: string): void {
 
 /**
  * Resolve the verified organization membership a session is acting under.
- * Falls back only when the user belongs to exactly one organization.
+ * Every session starts with an organization when the user has one
+ * (chooseSessionOrganization); a session without one (made before the user
+ * joined any) falls back only when the user belongs to exactly one, and
+ * never guesses between several.
  */
 export async function resolveOrgContext({
   userId,
@@ -107,4 +111,59 @@ function toOrgContext(
 ): OrgContext | null {
   const role = resolvePrimaryOrganizationRole(row.role);
   return role ? { orgId: row.organizationId, userId, role } : null;
+}
+
+/** How many of the user's latest sessions "last active" looks through. */
+const RECENT_SESSIONS = 5;
+
+/**
+ * The organization a new session starts in: the user's personal
+ * organization, else the one their latest session was in (if they are still
+ * a member there), else the first they joined. Null with no membership of a
+ * role the gateway knows. Read fresh, never from the cache: it runs once per
+ * sign-in.
+ */
+export async function chooseSessionOrganization(
+  userId: string,
+): Promise<string | null> {
+  const rows = await db
+    .select({
+      organizationId: members.organizationId,
+      role: members.role,
+      metadata: organizations.metadata,
+    })
+    .from(members)
+    .innerJoin(organizations, eq(organizations.id, members.organizationId))
+    .where(eq(members.userId, userId))
+    .orderBy(asc(members.createdAt), asc(members.id));
+  const memberships = rows.filter((row) =>
+    resolvePrimaryOrganizationRole(row.role),
+  );
+  if (memberships.length === 0) return null;
+
+  const personal = memberships.find((row) =>
+    isPersonalOrganizationOf(row.metadata, userId),
+  );
+  if (personal) return personal.organizationId;
+
+  if (memberships.length > 1) {
+    const recent = await db
+      .select({ organizationId: sessions.activeOrganizationId })
+      .from(sessions)
+      .where(
+        and(
+          eq(sessions.userId, userId),
+          isNotNull(sessions.activeOrganizationId),
+        ),
+      )
+      .orderBy(desc(sessions.updatedAt), desc(sessions.createdAt))
+      .limit(RECENT_SESSIONS);
+    const member = new Set(memberships.map((row) => row.organizationId));
+    const lastActive = recent.find(
+      (row) => row.organizationId && member.has(row.organizationId),
+    );
+    if (lastActive?.organizationId) return lastActive.organizationId;
+  }
+
+  return memberships[0]!.organizationId;
 }

@@ -29,8 +29,52 @@ first upload; ADR-0001) decides what the gateway does, once, in
   Third-party deploys stay off behind a launch gate.
 - Anything else, unset included, is `invalid`: every capability off, hosted
   and self-hosted alike: no setup claim, no Access sign-in, no app
-  activation, no dynamic registration, no account actions. Local dev builds
-  default to `self_hosted` (`cloudflare.config.ts`).
+  activation, no dynamic registration, no account actions, no outbound
+  mail. Local dev builds default to `self_hosted` (`cloudflare.config.ts`).
+
+### Hosted sign-up
+
+- Open sign-up starts only once the gateway is claimed (before that a
+  stranger's personal organization would make them an owner first). The
+  operator setting `HOSTED_OPEN_SIGNUP=false` keeps it invite-only (any value
+  but unset or `"true"` does, so a typo closes it); self-hosted is always
+  invite-only.
+- An invite link, when a sign-up carries one, is checked as on self-host
+  (live, same email, its secret not the invitation id), and an invitee gets
+  no organization of their own: they join only the inviting one.
+- A sign-up without one gets exactly one personal organization (named after
+  the person, else their email's local part; at most 64 characters and no
+  control or invisible formatting characters; slug plus 6 random
+  characters; marked `{"personalFor": <user id>}` in its metadata) and an
+  owner membership, written in one D1 batch. If it fails, the account is
+  deleted and the sign-up fails: no account without its organization.
+  Members still can't create organizations (`allowUserToCreateOrganization`
+  off); a server-side sign-up (the setup claim) gets none.
+- Accounts sign in only once their email is verified. The verification link
+  (Better Auth's, a signed token in the query string, 24 hours) signs the
+  account in once. The setup claim's owner is verified by the claim. A
+  hosted gateway that can't send email refuses every sign-up with
+  `EMAIL_NOT_CONFIGURED` (503) before writing anything, and logs
+  `auth.sign_up_refused`. Only a verified account may invite.
+- Every session starts in an organization when the user has one: their
+  personal one, else the one their latest session was in (if still a
+  member), else the first they joined. A session without one still falls
+  back only to a sole membership, never a guess between several.
+
+### Outbound mail
+
+- Every email (`verification`, `reset`, `invitation`) counts against daily
+  budgets per kind, per recipient (an HMAC of the address, never the
+  address) and for the whole gateway, in `rate_limit_counters`, before it
+  is sent: 5 per address and 2,000 / 1,000 / 2,000 per gateway when hosted,
+  10 and 1,000 each when self-hosted, none when the mode is invalid. A
+  budget that can't be read or written sends nothing. Verification mail
+  that can't go fails nothing: the resend answers the same whether or not
+  it sent, so it doesn't tell whether an address has an account (Better
+  Auth also limits it to 3 a minute per client).
+- Every value interpolated into an email is HTML-escaped, and kept to one
+  line in subjects and text (`server/email/templates.ts`): organization
+  names and inviter addresses are user input.
 
 ## Operator Authority (Self-Host)
 
@@ -135,7 +179,8 @@ in the gateway's Cloudflare account **is** operator authority.
   operator's Cloudflare login. Apps may be deployed before then (a CI-first
   install): the claim makes the first owner the owner of the organization
   they were deployed to and gives them every app in it nobody has access
-  to. Members cannot create organizations. On a gateway whose deployment
+  to. Members cannot create organizations (a hosted sign-up's personal
+  organization is the gateway's doing, above). On a gateway whose deployment
   mode is invalid the claim is refused (`SETUP_UNAVAILABLE`).
 - Invite links carry their own random secret (only its SHA-256 is stored);
   signing up through an invitation and joining with one both need it, never

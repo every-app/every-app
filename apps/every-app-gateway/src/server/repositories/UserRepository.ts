@@ -45,6 +45,13 @@ async function deleteUnaffiliatedByEmail(
   if (!membership) await deleteById(user.id);
 }
 
+async function markEmailVerified(userId: string): Promise<void> {
+  await db
+    .update(users)
+    .set({ emailVerified: true, updatedAt: new Date() })
+    .where(eq(users.id, userId));
+}
+
 /**
  * Deactivate a user everywhere, in one D1 transaction: ban the account
  * (Better Auth's admin fields, so new sign-ins fail), end every session, and
@@ -94,6 +101,7 @@ export const UserRepository = {
   findById,
   deleteById,
   deleteUnaffiliatedByEmail,
+  markEmailVerified,
   deactivate,
   reactivate,
 } as const;

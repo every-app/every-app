@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   findById: vi.fn(),
   deleteById: vi.fn(),
   deleteUnaffiliatedByEmail: vi.fn(),
+  markEmailVerified: vi.fn(),
   deleteOrganization: vi.fn(),
   signUpEmail: vi.fn(),
   createOrganization: vi.fn(),
@@ -53,6 +54,7 @@ vi.mock("../repositories/UserRepository", () => ({
     findById: mocks.findById,
     deleteById: mocks.deleteById,
     deleteUnaffiliatedByEmail: mocks.deleteUnaffiliatedByEmail,
+    markEmailVerified: mocks.markEmailVerified,
   },
 }));
 
@@ -137,6 +139,8 @@ describe("SetupService.claimOwner", () => {
     );
     expect(mocks.consume).toHaveBeenCalledWith("link-1", "user-1");
     expect(mocks.releaseOwnerBootstrap).not.toHaveBeenCalled();
+    // Self-hosted accounts never need a verified email.
+    expect(mocks.markEmailVerified).not.toHaveBeenCalled();
   });
 
   it("takes over the organization apps were deployed to before anyone existed", async () => {
@@ -192,6 +196,8 @@ describe("SetupService.claimOwner", () => {
           status: "active",
         },
       });
+      // Hosted accounts sign in once verified; the setup link's owner is.
+      expect(mocks.markEmailVerified).toHaveBeenCalledWith("user-1");
     } finally {
       workerEnv.GATEWAY_DEPLOYMENT_MODE = "self_hosted";
     }

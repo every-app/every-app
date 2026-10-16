@@ -26,6 +26,11 @@ declare namespace Cloudflare {
     AI_PROXY_ORG_DAILY_LIMIT?: string;
     INTEGRATION_ORG_DAILY_LIMIT?: string;
 
+    // "false" keeps the hosted gateway invite-only (the preview launches
+    // that way); open sign-up when unset or "true", and any other value is
+    // invite-only. Ignored when self-hosted, which is always invite-only.
+    HOSTED_OPEN_SIGNUP?: string;
+
     // "false" turns off the OAuth authorization server for MCP clients (set
     // as a secret so deploys keep it). On when unset or "true"; any other
     // value is off: see server/oauth-flag.ts.

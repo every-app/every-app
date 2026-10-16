@@ -21,6 +21,11 @@ describe("platformPolicy", () => {
         integrationProxyRequests: Infinity,
       },
       dcr: { perAddress: 20, perGateway: 200 },
+      mailDaily: {
+        verification: { perAddress: 10, perGateway: 1_000 },
+        reset: { perAddress: 10, perGateway: 1_000 },
+        invitation: { perAddress: 10, perGateway: 1_000 },
+      },
     });
   });
 
@@ -41,6 +46,11 @@ describe("platformPolicy", () => {
       bindingActivation: true,
       orgDailyCaps: { aiProxyRequests: 200, integrationProxyRequests: 500 },
       dcr: { perAddress: 200, perGateway: 20_000 },
+      mailDaily: {
+        verification: { perAddress: 5, perGateway: 2_000 },
+        reset: { perAddress: 5, perGateway: 1_000 },
+        invitation: { perAddress: 5, perGateway: 2_000 },
+      },
     });
   });
 
@@ -64,8 +74,44 @@ describe("platformPolicy", () => {
         bindingActivation: false,
         orgDailyCaps: { aiProxyRequests: 0, integrationProxyRequests: 0 },
         dcr: { perAddress: 0, perGateway: 0 },
+        mailDaily: {
+          verification: { perAddress: 0, perGateway: 0 },
+          reset: { perAddress: 0, perGateway: 0 },
+          invitation: { perAddress: 0, perGateway: 0 },
+        },
       });
     }
+  });
+
+  it("opens hosted sign-up unless the operator keeps the preview invite-only", () => {
+    const openSignUp = (value: string | undefined) =>
+      platformPolicy({
+        GATEWAY_DEPLOYMENT_MODE: "hosted",
+        HOSTED_OPEN_SIGNUP: value,
+      }).openSignUp;
+    expect(openSignUp(undefined)).toBe(true);
+    expect(openSignUp("")).toBe(true);
+    expect(openSignUp(" TRUE ")).toBe(true);
+    expect(openSignUp("false")).toBe(false);
+    // A typo closes sign-up rather than opening it.
+    for (const typo of ["flase", "no", "0", "off"]) {
+      expect(openSignUp(typo), typo).toBe(false);
+    }
+    // Nothing else changes: invitees still verify and get no personal
+    // organization of their own.
+    expect(
+      platformPolicy({
+        GATEWAY_DEPLOYMENT_MODE: "hosted",
+        HOSTED_OPEN_SIGNUP: "false",
+      }),
+    ).toMatchObject({ personalOrgs: true, requireEmailVerification: true });
+    // The switch is hosted-only: self-hosted stays invite-only.
+    expect(
+      platformPolicy({
+        GATEWAY_DEPLOYMENT_MODE: "self_hosted",
+        HOSTED_OPEN_SIGNUP: "true",
+      }).openSignUp,
+    ).toBe(false);
   });
 
   it("reads the mode as resolveDeploymentMode does: trimmed, any case", () => {
@@ -119,6 +165,8 @@ describe("platformPolicy", () => {
     expect(Object.isFrozen(policy)).toBe(true);
     expect(Object.isFrozen(policy.dcr)).toBe(true);
     expect(Object.isFrozen(policy.orgDailyCaps)).toBe(true);
+    expect(Object.isFrozen(policy.mailDaily)).toBe(true);
+    expect(Object.isFrozen(policy.mailDaily.verification)).toBe(true);
   });
 });
 
@@ -132,6 +180,14 @@ describe("describePolicy", () => {
     expect(
       describePolicy(platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "hosted" })),
     ).toEqual({ signUp: "open", emailVerification: true });
+    expect(
+      describePolicy(
+        platformPolicy({
+          GATEWAY_DEPLOYMENT_MODE: "hosted",
+          HOSTED_OPEN_SIGNUP: "false",
+        }),
+      ),
+    ).toEqual({ signUp: "invitation", emailVerification: true });
     expect(describePolicy(platformPolicy({}))).toEqual({
       signUp: "invitation",
       emailVerification: false,

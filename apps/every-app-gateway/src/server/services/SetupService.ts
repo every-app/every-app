@@ -9,6 +9,7 @@ import {
   hasAnyOwnerMembership,
   releaseOwnerBootstrap,
 } from "@/server/organization/owner-membership";
+import { slugify } from "@/server/organization/organization-name";
 import { OrganizationRepository } from "../repositories/OrganizationRepository";
 import { OwnerSetupTokenRepository } from "../repositories/OwnerSetupTokenRepository";
 import { UserRepository } from "../repositories/UserRepository";
@@ -70,17 +71,6 @@ type ClaimOwnerInput = {
   email: string;
   password: string;
 };
-
-function slugify(name: string): string {
-  return name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 48);
-}
 
 /**
  * The active claim link matching `token`, compared in constant time against
@@ -166,6 +156,12 @@ async function claimOwner(input: ClaimOwnerInput) {
     }
 
     createdUserId = result.user.id;
+    // The setup link is the operator's own, so where accounts must verify
+    // their email the owner's counts as verified: no mail is sent for a
+    // server-side sign-up (auth/config.ts), and the owner signs in next.
+    if (policy.requireEmailVerification) {
+      await UserRepository.markEmailVerified(result.user.id);
+    }
 
     // Named after the owner, but for the hosted gateway's platform
     // organization.

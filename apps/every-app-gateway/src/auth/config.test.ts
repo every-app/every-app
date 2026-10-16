@@ -107,6 +107,15 @@ vi.mock("@/server/services/AppAccessService", () => ({
   AppAccessService: { grantDefaultAppsToUser: vi.fn() },
 }));
 
+// Reset mail is within its daily budget here (the budgets have their own
+// tests in sendEmail.test.ts).
+vi.mock("@/server/repositories/RateLimitCounterRepository", () => ({
+  RateLimitCounterRepository: {
+    read: async () => new Map(),
+    increment: async () => undefined,
+  },
+}));
+
 import { findPendingInvitationByToken } from "@/server/invitation-token";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { createAuth } from "./config";
@@ -277,7 +286,13 @@ describe("createAuth Better Auth options", () => {
     vi.stubEnv("DEV", false);
 
     expect(createAuthOptions()).toMatchObject({
-      rateLimit: { enabled: true, customRules: { "/sign-in-methods": false } },
+      rateLimit: {
+        enabled: true,
+        customRules: {
+          "/sign-in-methods": false,
+          "/send-verification-email": { window: 60, max: 3 },
+        },
+      },
       advanced: {
         useSecureCookies: true,
         ipAddress: { ipAddressHeaders: ["cf-connecting-ip"] },
@@ -417,6 +432,38 @@ describe("createAuth Better Auth options", () => {
       expect(
         createAuthOptions().plugins.map((plugin) => plugin.id),
       ).not.toContain("cloudflare-access");
+    });
+
+    type ModeOptions = {
+      emailAndPassword: { requireEmailVerification?: boolean };
+      emailVerification?: {
+        sendOnSignUp?: boolean;
+        sendOnSignIn?: boolean;
+        autoSignInAfterVerification?: boolean;
+      };
+      databaseHooks: { user?: unknown; session?: unknown };
+    };
+    const modeOptions = () => createAuthOptions() as unknown as ModeOptions;
+
+    it("asks for verified email and gives personal organizations only when hosted", () => {
+      for (const mode of ["self_hosted", undefined, "selfhosted"]) {
+        workerEnv.GATEWAY_DEPLOYMENT_MODE = mode;
+        const options = modeOptions();
+        expect(options.emailAndPassword.requireEmailVerification).toBe(false);
+        expect(options.emailVerification).toBeUndefined();
+        expect(options.databaseHooks.user).toBeUndefined();
+        expect(options.databaseHooks.session).toBeDefined();
+      }
+
+      workerEnv.GATEWAY_DEPLOYMENT_MODE = "hosted";
+      const hosted = modeOptions();
+      expect(hosted.emailAndPassword.requireEmailVerification).toBe(true);
+      expect(hosted.emailVerification).toMatchObject({
+        sendOnSignUp: true,
+        sendOnSignIn: false,
+        autoSignInAfterVerification: true,
+      });
+      expect(hosted.databaseHooks.user).toBeDefined();
     });
 
     it("registers neither open sign-up nor Access when the mode is invalid", () => {

@@ -149,6 +149,25 @@ plays an MCP client and its browser through the same flow, and with
 `--conformance` runs the MCP conformance suite's authorization-server
 scenarios. Setup and usage: `docs/runbooks/mcp-oauth.md`, "Test locally".
 
+### Hosted sign-up
+
+`apps/every-app-gateway/src/auth/hosted-sign-up.sqlite.test.ts` runs the
+real Better Auth configuration on SQLite with a fake `EMAIL` binding that
+keeps every mail: a stranger's sign-up makes the account, a personal
+organization and an owner membership (and nothing at all when the
+organization's batch fails), sign-in is refused until the mailed link
+verifies the email and signs the account in once, an invitee joins only
+the inviting organization, a bad invite link is refused with sign-up open,
+sessions start in the right organization with none, one or two memberships
+(personal, last active, first joined), only a verified account invites and
+its organization's name is escaped in the mail, resends stop at the
+per-address budget, `HOSTED_OPEN_SIGNUP=false`, a hosted gateway without
+email refusing sign-up, open sign-up refused before the claim, and
+self-hosted unchanged (invite-only, no personal organization, no
+verification, no verification mail). The mail budgets and templates have
+unit tests next to them (`server/email/sendEmail.test.ts`,
+`server/email/templates.test.ts`).
+
 ### Signing in with Cloudflare Access
 
 `apps/every-app-gateway/src/auth/cloudflare-access/` is tested at three

@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { and, eq, gt } from "drizzle-orm";
 import { logEvent } from "@every-app/perimeter";
 import { createAuth } from "@/auth";
@@ -6,6 +7,7 @@ import { invitations, organizations } from "@/db/schema";
 import { PublicError } from "@/server/errors";
 import { invitationUrl } from "@/server/email/links";
 import { isEmailConfigured, sendEmail } from "@/server/email/sendEmail";
+import { invitationEmail } from "@/server/email/templates";
 import {
   findPendingInvitationByToken,
   generateInvitationToken,
@@ -15,6 +17,7 @@ import {
   forgetOrgContext,
   type OrgContext,
 } from "@/server/organization/orgContext";
+import { platformPolicy } from "@/server/platform-policy";
 import { InvitationLinkRepository } from "../repositories/InvitationLinkRepository";
 import { OrganizationMembersRepository } from "../repositories/OrganizationMembersRepository";
 import { UserRepository } from "../repositories/UserRepository";
@@ -42,10 +45,13 @@ async function emailInvitation(
 
   try {
     await sendEmail({
+      kind: "invitation",
       to: invitation.email,
-      subject: `You have been invited to ${orgName}`,
-      text: `${inviterEmail} invited you to join ${orgName}. Accept the invitation: ${url}`,
-      html: `<p>${inviterEmail} invited you to join ${orgName}.</p><p><a href="${url}">Accept invitation</a></p>`,
+      ...invitationEmail({
+        organizationName: orgName,
+        inviterEmail,
+        url,
+      }),
     });
     return true;
   } catch {
@@ -75,6 +81,17 @@ async function mintInvitationLink(invitationId: string): Promise<string> {
  * for an account with the invited email).
  */
 async function invite(ctx: OrgContext, headers: Headers, input: InviteInput) {
+  // Where accounts verify their email (hosted), only a verified one invites:
+  // an invitation is mail the gateway sends in its sender's name.
+  if (platformPolicy(env).requireEmailVerification) {
+    const inviter = await UserRepository.findById(ctx.userId);
+    if (!inviter?.emailVerified) {
+      throw new PublicError(
+        "EMAIL_NOT_VERIFIED",
+        "Verify your email address before inviting anyone.",
+      );
+    }
+  }
   const auth = createAuth();
   const invitation = await auth.api.createInvitation({
     headers,

@@ -20,6 +20,10 @@ import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { Button } from "@/client/components/ui/button";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import { useSignInMethods } from "@/client/sign-in-methods";
+import {
+  verifyEmailCallbackURL,
+  verifyEmailSearch,
+} from "@/client/verify-email";
 import { hasOwner } from "@/serverFunctions/admin";
 import { getSafeRedirect, getSafeReturnTo, isWorkerRoute } from "@/utils/auth";
 
@@ -94,6 +98,7 @@ function SignUp() {
         redirect={redirect}
         return_to={return_to}
         invitationToken={invitationToken!}
+        emailVerification={methods?.emailVerification ?? false}
       />
     );
   }
@@ -104,7 +109,13 @@ function SignUp() {
 
   // Open sign-up (the hosted gateway's policy): anyone may make an account.
   if (methods?.signUp === "open") {
-    return <CreateAccountForm redirect={redirect} return_to={return_to} />;
+    return (
+      <CreateAccountForm
+        redirect={redirect}
+        return_to={return_to}
+        emailVerification={methods.emailVerification}
+      />
+    );
   }
 
   return <InvitationRequired redirect={redirect} return_to={return_to} />;
@@ -112,16 +123,21 @@ function SignUp() {
 
 /**
  * The account form: with an invite link's secret, to join the inviting
- * organization; without one, where sign-up is open.
+ * organization; without one, where sign-up is open (into an organization of
+ * the person's own). Where accounts verify their email, it ends at the
+ * verify page, and the emailed link signs them in and carries on to the
+ * destination.
  */
 function CreateAccountForm({
   redirect,
   return_to,
   invitationToken,
+  emailVerification,
 }: {
   redirect?: string;
   return_to?: string;
   invitationToken?: string;
+  emailVerification: boolean;
 }) {
   const [error, setError] = useState("");
   const navigate = useNavigate();
@@ -174,6 +190,9 @@ function CreateAccountForm({
           email,
           password,
           name: email.split("@")[0] || "",
+          ...(emailVerification
+            ? { callbackURL: verifyEmailCallbackURL({ redirect, return_to }) }
+            : {}),
         },
         // The invite link's secret: an invite-only gateway refuses a
         // sign-up without it.
@@ -182,6 +201,14 @@ function CreateAccountForm({
 
       if (signUpError) {
         setError(signUpError.message || "Failed to create account.");
+        return true;
+      }
+
+      if (emailVerification) {
+        navigate({
+          to: "/verify-email",
+          search: verifyEmailSearch({ email, redirect, return_to }),
+        });
         return true;
       }
 
@@ -228,7 +255,7 @@ function CreateAccountForm({
         description={
           invitationToken
             ? "Create your account to join the invited organization."
-            : "Create your Every App account."
+            : "Create your Every App account. You'll get an organization of your own, and can invite people to it."
         }
         footer={<SignInInstead redirect={redirect} return_to={return_to} />}
       >

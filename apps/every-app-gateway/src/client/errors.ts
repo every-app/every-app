@@ -60,6 +60,7 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
     "Password sign-in is turned off on this gateway, so a password reset wouldn't work. People sign in with Cloudflare Access.",
   ACCOUNT_ACTIONS_UNAVAILABLE:
     "Accounts belong to the people who own them on this gateway, so they can't be deactivated or reset from an organization. Remove the member instead.",
+  EMAIL_NOT_VERIFIED: "Verify your email address before inviting anyone.",
 };
 
 const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {
@@ -68,6 +69,12 @@ const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {
   USER_NOT_FOUND: "User not found.",
   TOO_MANY_REQUESTS: "Too many attempts. Please try again later.",
   INVALID_TOKEN: "Invalid link. Please request a new one.",
+  TOKEN_EXPIRED: "This link has expired. Please request a new one.",
+  EMAIL_NOT_VERIFIED: "Verify your email address to sign in.",
+  EMAIL_NOT_CONFIGURED:
+    "Sign-up is unavailable right now: this gateway can't send email yet.",
+  ACCOUNT_CREATION_FAILED:
+    "Your account couldn't be created. Please try again.",
 };
 
 function readCode(value: unknown): string | null {

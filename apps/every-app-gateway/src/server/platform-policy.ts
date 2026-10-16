@@ -70,12 +70,28 @@ interface PlatformPolicy {
    * address and for the whole gateway (server/mcp-auth/registration-limit.ts).
    */
   readonly dcr: { readonly perAddress: number; readonly perGateway: number };
+  /**
+   * Emails a UTC day, per kind of mail, to one address and from the whole
+   * gateway (server/email/sendEmail.ts): what a sign-up form, a resend
+   * button or a careless admin can make the gateway send, and so what they
+   * can do to its sender reputation.
+   */
+  readonly mailDaily: Readonly<Record<MailKind, MailBudget>>;
+}
+
+/** The mail the gateway sends, each kind with its own daily budgets. */
+export type MailKind = "verification" | "reset" | "invitation";
+
+interface MailBudget {
+  readonly perAddress: number;
+  readonly perGateway: number;
 }
 
 interface PlatformPolicyEnv {
   GATEWAY_DEPLOYMENT_MODE?: string;
   AI_PROXY_ORG_DAILY_LIMIT?: string;
   INTEGRATION_ORG_DAILY_LIMIT?: string;
+  HOSTED_OPEN_SIGNUP?: string;
 }
 
 const HOSTED_AI_PROXY_ORG_DAILY_LIMIT = 200;
@@ -92,9 +108,32 @@ function dailyLimit(raw: string | undefined, fallback: number): number {
   return /^\d+$/.test(value) ? Number(value) : 0;
 }
 
+/**
+ * Whether the hosted gateway lets anyone sign up: yes unless the operator
+ * set HOSTED_OPEN_SIGNUP to something other than "true" ("false" keeps the
+ * preview invite-only), so a typo closes sign-up rather than opening it.
+ */
+function hostedOpenSignUp(raw: string | undefined): boolean {
+  const value = raw?.trim().toLowerCase();
+  return !value || value === "true";
+}
+
+function mailBudgets(
+  perAddress: number,
+  perGateway: Record<MailKind, number>,
+): Record<MailKind, MailBudget> {
+  return {
+    verification: { perAddress, perGateway: perGateway.verification },
+    reset: { perAddress, perGateway: perGateway.reset },
+    invitation: { perAddress, perGateway: perGateway.invitation },
+  };
+}
+
 function freeze(policy: PlatformPolicy): PlatformPolicy {
   Object.freeze(policy.orgDailyCaps);
   Object.freeze(policy.dcr);
+  for (const budget of Object.values(policy.mailDaily)) Object.freeze(budget);
+  Object.freeze(policy.mailDaily);
   return Object.freeze(policy);
 }
 
@@ -120,12 +159,19 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
           integrationProxyRequests: Infinity,
         },
         dcr: { perAddress: 20, perGateway: 200 },
+        // An operator's own members: far above what an install sends, so
+        // only a loop or a script ever meets them.
+        mailDaily: mailBudgets(10, {
+          verification: 1_000,
+          reset: 1_000,
+          invitation: 1_000,
+        }),
       });
     case "hosted":
       return freeze({
         mode,
         hosted: true,
-        openSignUp: true,
+        openSignUp: hostedOpenSignUp(env.HOSTED_OPEN_SIGNUP),
         personalOrgs: true,
         requireEmailVerification: true,
         accessSignIn: false,
@@ -146,6 +192,13 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
           ),
         },
         dcr: { perAddress: 200, perGateway: 20_000 },
+        // Anyone can type an address into the sign-up or resend form: a
+        // few mails a day reach any one address, whoever asks.
+        mailDaily: mailBudgets(5, {
+          verification: 2_000,
+          reset: 1_000,
+          invitation: 2_000,
+        }),
       });
     default:
       return freeze({
@@ -163,6 +216,7 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         bindingActivation: false,
         orgDailyCaps: { aiProxyRequests: 0, integrationProxyRequests: 0 },
         dcr: { perAddress: 0, perGateway: 0 },
+        mailDaily: mailBudgets(0, { verification: 0, reset: 0, invitation: 0 }),
       });
   }
 }

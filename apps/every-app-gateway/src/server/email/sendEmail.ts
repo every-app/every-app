@@ -1,6 +1,10 @@
 import { env } from "cloudflare:workers";
+import { type MailKind, platformPolicy } from "@/server/platform-policy";
+import { RateLimitCounterRepository } from "@/server/repositories/RateLimitCounterRepository";
 
 type SendEmailOptions = {
+  /** What the mail is for: each kind has its own daily budgets. */
+  kind: MailKind;
   to: string;
   subject: string;
   text: string;
@@ -22,7 +26,12 @@ type RestEmailResponse = {
 type EmailDeliveryErrorCode =
   | "EMAIL_BINDING_UNAVAILABLE"
   | "EMAIL_SENDER_NOT_CONFIGURED"
-  | "EMAIL_SEND_FAILED";
+  | "EMAIL_SEND_FAILED"
+  | "EMAIL_BUDGET_EXHAUSTED"
+  | "EMAIL_BUDGET_UNAVAILABLE";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const ADDRESS_KEY_CONTEXT = "every-app-gateway:mail-recipient:v1";
 
 class EmailDeliveryError extends Error {
   readonly code: EmailDeliveryErrorCode;
@@ -187,18 +196,109 @@ export function isEmailConfigured(): boolean {
   return Boolean(binding && typeof binding.send === "function");
 }
 
+/**
+ * The recipient as a counter key: an HMAC of the address, so the counters
+ * table never holds anyone's email.
+ */
+async function recipientKey(address: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(env.BETTER_AUTH_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(
+      `${ADDRESS_KEY_CONTEXT}:${address.trim().toLowerCase()}`,
+    ),
+  );
+  return [...new Uint8Array(signature)]
+    .slice(0, 16)
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+/**
+ * Count this mail against its kind's daily budgets (platformPolicy's
+ * mailDaily), to its address and for the whole gateway, in D1
+ * (`rate_limit_counters`) so they hold across isolates. Counted before it
+ * is sent, so a send that fails still counts: a flood of failures is
+ * bounded too. A budget that can't be read or written refuses the mail.
+ */
+async function spendMailBudget(
+  kind: MailKind,
+  to: string,
+  now = new Date(),
+): Promise<void> {
+  const day = now.toISOString().slice(0, 10);
+  const dayEnds = new Date(Date.parse(day) + DAY_MS);
+  const gatewayKey = `mail:${kind}:gateway:${day}`;
+  const addressKey = `mail:${kind}:to:${await recipientKey(to)}:${day}`;
+  const { perAddress, perGateway } = platformPolicy(env).mailDaily[kind];
+
+  let counts: Map<string, number>;
+  try {
+    counts = await RateLimitCounterRepository.read(
+      [gatewayKey, addressKey],
+      now,
+    );
+  } catch (error) {
+    throw new EmailDeliveryError(
+      "EMAIL_BUDGET_UNAVAILABLE",
+      "The gateway couldn't check its email budget, so nothing was sent.",
+      { cause: error },
+    );
+  }
+  const exhausted =
+    (counts.get(gatewayKey) ?? 0) >= perGateway
+      ? "gateway"
+      : (counts.get(addressKey) ?? 0) >= perAddress
+        ? "address"
+        : null;
+  if (exhausted) {
+    throw new EmailDeliveryError(
+      "EMAIL_BUDGET_EXHAUSTED",
+      exhausted === "gateway"
+        ? `The gateway has sent all the ${kind} emails it may today. Try again tomorrow.`
+        : `This address has been sent all the ${kind} emails it may get today. Try again tomorrow.`,
+    );
+  }
+  try {
+    await RateLimitCounterRepository.increment(
+      [gatewayKey, addressKey],
+      dayEnds,
+    );
+  } catch (error) {
+    throw new EmailDeliveryError(
+      "EMAIL_BUDGET_UNAVAILABLE",
+      "The gateway couldn't record its email budget, so nothing was sent.",
+      { cause: error },
+    );
+  }
+}
+
+/**
+ * Send one email, within its kind's daily budgets. Throws an
+ * EmailDeliveryError (logged here) when email isn't configured, a budget is
+ * spent or the provider refuses.
+ */
 export async function sendEmail(options: SendEmailOptions): Promise<void> {
   try {
     const restConfiguration = getRestConfiguration();
 
     if (restConfiguration) {
       const from = parseConfiguredSender();
+      await spendMailBudget(options.kind, options.to);
       await sendWithRest(options, from, restConfiguration);
       return;
     }
 
     const binding = requireEmailBinding();
     const from = parseConfiguredSender();
+    await spendMailBudget(options.kind, options.to);
 
     await binding.send({
       to: options.to,
@@ -212,6 +312,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
 
     console.error("Email delivery failed", {
       event: "email.send.failed",
+      kind: options.kind,
       code: deliveryError.code,
       providerCode: getProviderErrorCode(deliveryError.cause),
       message: deliveryError.message,

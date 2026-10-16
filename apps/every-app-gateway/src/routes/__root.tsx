@@ -24,6 +24,8 @@ const PUBLIC_ROUTES = [
   "/forgot-password",
   "/reset-password",
   "/accept-invitation",
+  // An account verifying its email can't sign in yet.
+  "/verify-email",
   // Asks the server whether the user is signed in: it is reached by a full
   // page load straight after sign-in, before the cached session catches up.
   "/oauth/consent",

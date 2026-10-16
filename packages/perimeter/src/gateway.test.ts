@@ -597,6 +597,7 @@ describe("handleGatewayRequest", () => {
   it("stamps every token with the app's Worker name as its audience", async () => {
     const pub = await importSPKI(keys.publicKeyPem, IDENTITY_ALG);
     const anonymous = {
+      sessionCookieNames: [],
       authenticate: async () => null,
       hasAppAccess: async () => true,
     };

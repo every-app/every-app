@@ -18,8 +18,8 @@ Gateway a customer self-hosts, with the hosted policy
   integration proxy (500), enforced at the Gateway as their PRs land;
 - third-party deploys stay off (a launch gate).
 
-Until Google verification and the wallet exist, the preview is invite-only
-in practice: we hand out the address, not a sign-up page.
+Until Google verification and the wallet exist, the preview is invite-only:
+set `HOSTED_OPEN_SIGNUP=false` (below) and people join by invitation.
 
 ## 1. Install
 
@@ -48,10 +48,19 @@ which redeploys the Gateway with it). Apps never hold provider keys: the
 Gateway proxies them.
 
 Email, needed for verification, invitations and password resets
-(`docs/runbooks/email-sending-setup.md`):
+(`docs/runbooks/email-sending-setup.md`). Without it the hosted Gateway
+refuses every sign-up (`EMAIL_NOT_CONFIGURED`, logged as
+`auth.sign_up_refused`): new accounts couldn't verify their email.
 
 - `EMAIL_FROM`, e.g. `noreply@everyapp.com` (the domain onboarded for
   Cloudflare Email Sending first), and `EMAIL_FROM_NAME`, e.g. `Every App`.
+- `EMAIL_REST_API_TOKEN`, unless the Worker sends through its `EMAIL`
+  binding.
+
+Mail is budgeted per UTC day and kind: 5 emails per address, and 2,000
+verification, 1,000 reset and 2,000 invitation emails for the whole
+Gateway. A refused mail logs `email.send.failed` with
+`EMAIL_BUDGET_EXHAUSTED`.
 
 Provider keys:
 
@@ -69,6 +78,9 @@ Optional:
   replacing the default caps (200 and 500 requests per organization per UTC
   day). Anything that isn't a whole number stops that proxy for everyone
   (0), so check the value.
+- `HOSTED_OPEN_SIGNUP`: `false` keeps sign-up invite-only (the preview);
+  unset or `true` lets anyone sign up into an organization of their own.
+  Any other value is invite-only.
 
 Never set the `CLOUDFLARE_ACCESS_*` settings or `EMAIL_PASSWORD_SIGN_IN` on
 the hosted Gateway: they are ignored there, and the Gateway logs that once
@@ -103,11 +115,15 @@ Coming with the shared-apps PR:
 Until then, `everyapp deploy` deploys an app into the platform organization
 as an ordinary organization app (`scope='org'`), visible to its members only.
 
+The owner's email counts as verified (the setup link is ours), so they sign
+in straight away. Open sign-up starts only after the claim.
+
 ## Checks
 
 - `pnpm everyapp status --json`: `data.mode` is `"hosted"`.
 - `https://app.everyapp.com/api/auth/sign-in-methods` answers
-  `"signUp": "open"`, `"emailVerification": true` and no providers.
+  `"signUp": "open"` (`"invitation"` with `HOSTED_OPEN_SIGNUP=false`),
+  `"emailVerification": true` and no providers.
 - A registry row with a `tier` or `scope` the Gateway doesn't know answers
   503 on its host: fix the row, never the code.
 - An owner link that answers `SETUP_UNAVAILABLE` means the Worker's

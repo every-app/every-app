@@ -41,6 +41,7 @@ const PUBLIC_ERROR_CODES = [
   "USER_IN_OTHER_ORGANIZATION",
   "PASSWORD_SIGN_IN_DISABLED",
   "ACCOUNT_ACTIONS_UNAVAILABLE",
+  "EMAIL_NOT_VERIFIED",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

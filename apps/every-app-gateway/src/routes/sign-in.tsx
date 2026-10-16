@@ -27,6 +27,7 @@ import {
   shouldLinkAfterPasswordSignIn,
   useSignInMethods,
 } from "@/client/sign-in-methods";
+import { verifyEmailSearch } from "@/client/verify-email";
 import { getSafeRedirect, getSafeReturnTo, isWorkerRoute } from "@/utils/auth";
 import {
   getBetterAuthErrorMessage,
@@ -208,6 +209,14 @@ function SignIn() {
         },
       );
 
+      if (signInError?.code === "EMAIL_NOT_VERIFIED") {
+        // Hosted accounts sign in once verified: the verify page resends.
+        navigate({
+          to: "/verify-email",
+          search: verifyEmailSearch({ email, redirect, return_to }),
+        });
+        return true;
+      }
       if (signInError) {
         setError(
           signInError.code === "ACCESS_EMAIL_MISMATCH"
