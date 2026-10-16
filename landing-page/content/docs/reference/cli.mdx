@@ -95,13 +95,14 @@ Gateway 0.4.0 up to date · binding 3 apps (was 2) · uploaded 1a7f33c9
 {"v":1,"type":"action_required","action":"claim_owner","message":"The Gateway has no owner yet. Run `pnpm everyapp setup` at a terminal on any machine with this Cloudflare login to create the owner account; apps deploy without one.","data":{"rerun":"pnpm everyapp setup"}}
 ```
 
-| Flag                  | Meaning                                                                                                                                                   |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `--domain <hostname>` | Where the Gateway lives: any hostname in a zone the account has, e.g. `apps.your-domain.dev`. Asked at a terminal otherwise; the install record keeps it. |
-| `--account-id <id>`   | The Gateway's Cloudflare account, when your login sees several; with no Gateway yet, the one to install it in.                                            |
-| `--force-dns`         | Publish an address even where a DNS record answers it (one at the address is replaced).                                                                   |
-| `-y`, `--yes`         | Skip everyapp's own confirmations; setup asks for none.                                                                                                   |
-| `--json`, `--verbose` | Only NDJSON events on stdout; every step and progress line, and the Gateway's build output on stderr.                                                     |
+| Flag                  | Meaning                                                                                                                                                                                            |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--domain <hostname>` | Where the Gateway lives: any hostname in a zone the account has, e.g. `apps.your-domain.dev`. Asked at a terminal otherwise; the install record keeps it.                                          |
+| `--mode <mode>`       | What a new Gateway is: `self_hosted` (your own, the default) or `hosted` (the hosted Gateway's rules). Set with its first upload; a live Gateway's mode never changes (`MODE_CHANGE_UNSUPPORTED`). |
+| `--account-id <id>`   | The Gateway's Cloudflare account, when your login sees several; with no Gateway yet, the one to install it in.                                                                                     |
+| `--force-dns`         | Publish an address even where a DNS record answers it (one at the address is replaced).                                                                                                            |
+| `-y`, `--yes`         | Skip everyapp's own confirmations; setup asks for none.                                                                                                                                            |
+| `--json`, `--verbose` | Only NDJSON events on stdout; every step and progress line, and the Gateway's build output on stderr.                                                                                              |
 
 Two hidden flags:
 
@@ -119,6 +120,7 @@ Everything from the Gateway's database, `cf` and this checkout, nothing over HTT
 ```
 $ pnpm everyapp status
 Gateway:  https://apps.example.com (Example Inc)
+Mode:     self_hosted
 Release:  0.4.0 (e43cbca3a6aa) · built from this checkout's sources
 Owner:    ben@example.com (Example Inc)
 Apps:     chef (binding, not bound), todo (active)
@@ -127,7 +129,7 @@ Deploys:  none running
 To do:    The live gateway doesn't bind or publish exactly the apps its registry lists. Run: pnpm everyapp setup
 ```
 
-It shows the release the install record names and whether the Worker serves that version, whether that release was built from this checkout's Gateway sources (`upToDate`: their tree hash against the install record's, `null` when either is unknown; `data.checkout` has the checkout's version and tree), its owner, each registered app (`id`, `hostname`, `workerName`, `status`, whether the live version binds it, and who deployed it last), whether the Gateway binds and publishes exactly the registered apps, each address and whether Cloudflare lists an active certificate for it, and every deploy in progress (the Gateway's or an app's): who holds its lease, since when, and when the lease expires unless that deploy renews it.
+It shows the Gateway's deployment mode (`self_hosted` or `hosted`, as its first upload recorded it; `data.mode`, `null` and no `Mode:` line when the install record doesn't have it), the release the install record names and whether the Worker serves that version, whether that release was built from this checkout's Gateway sources (`upToDate`: their tree hash against the install record's, `null` when either is unknown; `data.checkout` has the checkout's version and tree), its owner, each registered app (`id`, `hostname`, `workerName`, `status`, whether the live version binds it, and who deployed it last), whether the Gateway binds and publishes exactly the registered apps, each address and whether Cloudflare lists an active certificate for it, and every deploy in progress (the Gateway's or an app's): who holds its lease, since when, and when the lease expires unless that deploy renews it.
 
 `data.fixes` (and `To do:` at a terminal) says what to run about anything off: no owner, sources changed since the live release was built, bindings that differ from the registry, a Gateway changed outside everyapp, or an install that stopped before its first upload (all `setup`); a checkout behind the live Gateway (`git pull`); an app whose Worker is gone or that never finished a deploy (`deploy` from its directory, or `delete <id>`); and what settles by itself, with `run: null` (an app that goes live on its first visit, a certificate on its way, a running deploy). With `--json`, the `done` event's data has all of it: the one state query an agent needs. With no Gateway in the login's accounts it stops with `GATEWAY_NOT_FOUND`. Flags: `--account-id`, `--json`, `--verbose`.
 

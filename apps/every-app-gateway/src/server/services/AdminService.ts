@@ -13,6 +13,10 @@ import { accessWouldLetBackIn } from "@/server/access-rejoin";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { requirePasswordSignIn } from "@/server/password-sign-in";
 import {
+  mayDeleteMemberAccounts,
+  requireTenantAdminUserActions,
+} from "@/server/tenant-user-actions";
+import {
   forgetOrgContext,
   type OrgContext,
 } from "@/server/organization/orgContext";
@@ -73,6 +77,9 @@ async function listMembers(ctx: OrgContext) {
  * or everyone the outer ring admits) isn't kept out by deleting their
  * account: their next Access sign-in would make a new one and join again.
  * They are deactivated instead, and stay listed so they can be reactivated.
+ *
+ * Where the platform policy keeps accounts from tenant admins (the hosted
+ * gateway) only the membership goes: the account is the person's own.
  */
 async function deleteUser(
   ctx: OrgContext,
@@ -139,7 +146,7 @@ async function deleteUser(
     .from(members)
     .where(eq(members.userId, targetUserId));
 
-  if ((orgCountResult?.value ?? 0) === 0) {
+  if ((orgCountResult?.value ?? 0) === 0 && mayDeleteMemberAccounts()) {
     await db.delete(users).where(eq(users.id, targetUserId));
   }
   return { deactivatedInstead: false };
@@ -173,6 +180,7 @@ async function cancelInvitation(
 }
 
 async function sendPasswordResetEmail(ctx: OrgContext, userId: string) {
+  requireTenantAdminUserActions();
   await requirePasswordSignIn();
   const membership = await db.query.members.findFirst({
     columns: { id: true },

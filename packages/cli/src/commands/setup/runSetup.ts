@@ -70,6 +70,7 @@ import {
 } from "@/lib/gateway/checkoutRelease";
 import { discoverGateway, type Discovery } from "@/lib/gateway/discover";
 import type { InstallRecord } from "@/lib/gateway/install";
+import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { reconcileGateway, registryDrift } from "@/lib/gateway/reconcile";
 import { compareVersions, type GatewayRelease } from "@/lib/gateway/release";
 import {
@@ -87,6 +88,8 @@ import { deployGatewayRelease, gatewayTarget } from "./deployGateway";
 
 export interface SetupFlags {
   domain?: string;
+  /** What a new Gateway is: self_hosted (the default) or hosted. */
+  mode?: DeploymentMode;
   "account-id"?: string;
   "force-dns"?: boolean;
   /** Put a Gateway older than the live one back on purpose (hidden). */
@@ -268,6 +271,7 @@ export async function installGateway({
   });
 
   // The gateway.
+  assertModeUnchanged(install, flags.mode);
   const gatewayUrl = `https://${target.domain}`;
   const gateway = await deployOrRepairGateway({
     cf,
@@ -469,6 +473,7 @@ async function deployOrRepairGateway({
       forceDns: flags["force-dns"],
       allowDowngrade,
       allowDowngradeFlag: true,
+      deploymentMode: flags.mode,
       sleep: deps.seams?.sleep,
       leaseWaitMs: deps.seams?.leaseWaitMs,
       certificates: deps.seams?.certificates,
@@ -488,6 +493,24 @@ async function deployOrRepairGateway({
   } finally {
     await release.cleanup();
   }
+}
+
+/**
+ * --mode decides what a new Gateway is: its first upload sets
+ * GATEWAY_DEPLOYMENT_MODE, and nothing changes it after. On a live Gateway
+ * the flag may only say what its install row recorded.
+ */
+function assertModeUnchanged(
+  install: InstallRecord | null,
+  mode: DeploymentMode | undefined,
+): void {
+  if (!mode || !install?.liveVersionId || install.deploymentMode === mode) {
+    return;
+  }
+  throw new EveryAppError(
+    "MODE_CHANGE_UNSUPPORTED",
+    `This gateway was installed as ${install.deploymentMode}; changing it to ${mode} isn't supported.`,
+  );
 }
 
 /**

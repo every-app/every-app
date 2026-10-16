@@ -1,5 +1,6 @@
 export {
   handleGatewayRequest,
+  unroutableAppResponse,
   type GatewayDeps,
   type McpInterceptInput,
 } from "./gateway";
@@ -38,6 +39,7 @@ export {
 export {
   InMemoryAppRegistry,
   rowToRegisteredApp,
+  UnroutableAppError,
   type AppRegistry,
   type AppRegistryRow,
   type AppStatus,

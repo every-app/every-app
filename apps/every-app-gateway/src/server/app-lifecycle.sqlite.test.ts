@@ -19,6 +19,7 @@ vi.mock("@/db", async () => {
 });
 
 import { eq } from "drizzle-orm";
+import { UnroutableAppError } from "@every-app/perimeter";
 import { apps, userAccessTokens, userAppAccess } from "@/db/schema";
 import { DrizzleAppRegistry } from "@/perimeter/drizzleAppRegistry";
 import { activateApp } from "@/server/app-activation";
@@ -131,6 +132,24 @@ describe("app lifecycle (SQLite)", () => {
     await db.update(apps).set({ status: "disabled" });
     await expect(activateApp(BOUND, uploaded)).resolves.toBe(false);
     await expect(lookup()).resolves.toMatchObject({ status: "disabled" });
+  });
+
+  it("registers an organization's own app, and never routes a row with a tier or scope it doesn't know", async () => {
+    const { app } = await register(acme);
+    await expect(lookup()).resolves.toMatchObject({
+      tier: "service_binding",
+      scope: "org",
+    });
+
+    // A hand-edited row: unroutable (a 503 at the perimeter), never read
+    // as some other tier or scope.
+    for (const odd of [{ tier: "dispatch_v2" }, { scope: "public" }]) {
+      await db
+        .update(apps)
+        .set({ tier: "service_binding", scope: "org", ...odd })
+        .where(eq(apps.id, app.id));
+      await expect(lookup()).rejects.toBeInstanceOf(UnroutableAppError);
+    }
   });
 
   it("redeploys an active app without unbinding it, and its policy changes with the code", async () => {

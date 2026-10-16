@@ -31,7 +31,18 @@ const SETTABLE_GATEWAY_SECRETS = [
   "CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS",
   "CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN",
   "EMAIL_PASSWORD_SIGN_IN",
+  // The hosted gateway's per-organization daily caps.
+  "AI_PROXY_ORG_DAILY_LIMIT",
+  "INTEGRATION_ORG_DAILY_LIMIT",
 ] as const;
+
+/**
+ * What the gateway is (GATEWAY_DEPLOYMENT_MODE, ADR-0001): an operator's
+ * own install, or the hosted one. Set once, with a new gateway's secrets:
+ * nothing changes it after the first deploy.
+ */
+export const DEPLOYMENT_MODES = ["self_hosted", "hosted"] as const;
+export type DeploymentMode = (typeof DEPLOYMENT_MODES)[number];
 
 /**
  * A new gateway's secrets, with a new identity key pair. The public half
@@ -43,9 +54,11 @@ const SETTABLE_GATEWAY_SECRETS = [
 export function newGatewaySecrets({
   gatewayUrl,
   accountId,
+  deploymentMode,
 }: {
   gatewayUrl: string;
   accountId: string;
+  deploymentMode: DeploymentMode;
 }): { secrets: Record<string, string>; jwtPublicKey: string } {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", {
     modulusLength: 2048,
@@ -60,7 +73,7 @@ export function newGatewaySecrets({
       // Signs the identity JWTs the gateway mints; apps verify with the public key.
       JWT_PRIVATE_KEY: privateKey,
       JWT_PUBLIC_KEY: publicKey,
-      GATEWAY_DEPLOYMENT_MODE: "self_hosted",
+      GATEWAY_DEPLOYMENT_MODE: deploymentMode,
       CLOUDFLARE_ACCOUNT_ID: accountId,
     },
     jwtPublicKey: publicKey,

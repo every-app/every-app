@@ -113,6 +113,7 @@ export const organizations = sqliteTable("organizations", {
   logo: text("logo"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   metadata: text("metadata"),
+  status: text("status").default("active").notNull(),
 });
 
 export const members = sqliteTable(
@@ -129,6 +130,10 @@ export const members = sqliteTable(
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   },
   (table) => [
+    uniqueIndex("members_organization_user_unique").on(
+      table.organizationId,
+      table.userId,
+    ),
     index("members_organizationId_idx").on(table.organizationId),
     index("members_userId_idx").on(table.userId),
   ],

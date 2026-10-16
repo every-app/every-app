@@ -22,6 +22,7 @@ function todoApp(): RegisteredApp {
     hostname: "todo.localhost",
     workerName: "every-todo-app",
     tier: "service_binding",
+    scope: "org",
     organizationId: "dev-org",
     status: "active",
     manifest: validateManifest({ id: "todo", public: [{ path: "/health" }] }),

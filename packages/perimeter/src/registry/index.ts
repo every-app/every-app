@@ -1,6 +1,7 @@
 export {
   InMemoryAppRegistry,
   rowToRegisteredApp,
+  UnroutableAppError,
   type AppRegistry,
   type AppRegistryRow,
   type AppStatus,

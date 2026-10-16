@@ -36,6 +36,8 @@ import {
   hasDuplicateSessionCookie,
   type AppRegistry,
   type RegisteredApp,
+  UnroutableAppError,
+  unroutableAppResponse,
   withSecurityHeaders,
 } from "@every-app/perimeter";
 import { SESSION_COOKIE_NAMES } from "./auth/session-cookie";
@@ -231,11 +233,15 @@ export default {
 
     // A host other than the gateway's own is an app host — if it's in the
     // registry. A failed lookup (unmigrated D1, brand-new deploy) is treated
-    // as no app, so app content is never served on a failure.
+    // as no app, so app content is never served on a failure; a row the
+    // gateway can't route (an unknown tier or scope) is a 503.
     let app: RegisteredApp | null = null;
     try {
       app = await resolveAppByHostname(registry, requestHost);
-    } catch {
+    } catch (error) {
+      if (error instanceof UnroutableAppError) {
+        return unroutableAppResponse(error);
+      }
       app = null;
     }
     if (!app) {

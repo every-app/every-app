@@ -5,6 +5,7 @@ import { members } from "@/db/schema";
 import { and, eq, ne } from "drizzle-orm";
 import { passwordResetUrl } from "@/server/email/links";
 import { requirePasswordSignIn } from "@/server/password-sign-in";
+import { requireTenantAdminUserActions } from "@/server/tenant-user-actions";
 import { PublicError } from "@/server/errors";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 import {
@@ -76,12 +77,15 @@ async function changeRole(
  * A ban and a password belong to the account, which spans organizations, so
  * an organization can only deactivate, reactivate or reset the password of
  * users who belong to no other one (an admin here must never take over an
- * owner or admin of another organization).
+ * owner or admin of another organization), and only where the platform
+ * policy lets tenant admins act on accounts at all (not on the hosted
+ * gateway).
  */
 async function requireAccountWideManageable(
   ctx: OrgContext,
   targetUserId: string,
 ) {
+  requireTenantAdminUserActions();
   await requireManageableMember(ctx, targetUserId);
   const otherMembership = await db.query.members.findFirst({
     columns: { id: true },

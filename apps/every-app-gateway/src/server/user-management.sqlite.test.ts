@@ -3,7 +3,7 @@
  * apps, "Available to everyone", roles, and deactivation reaching every
  * credential the gateway accepts.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TestDb } from "@/test/sqlite-db";
 
 const testDb = vi.hoisted(() => ({ current: null as TestDb | null }));
@@ -12,6 +12,7 @@ const SECRET = "test-secret-0123456789abcdefghijklmnopqrstuv";
 const background = vi.hoisted(() => [] as Promise<unknown>[]);
 vi.mock("cloudflare:workers", () => ({
   env: {
+    GATEWAY_DEPLOYMENT_MODE: "self_hosted",
     GATEWAY_URL: "https://gateway.example.com",
     BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
     DB: {},
@@ -30,6 +31,7 @@ vi.mock("better-auth/tanstack-start", () => ({
 // The OAuth grants a removal revokes are covered by the MCP OAuth tests.
 vi.mock("@/server/mcp-auth/config", () => ({ getMcpAuth: () => null }));
 
+import { env as workerEnv } from "cloudflare:workers";
 import { eq, sql } from "drizzle-orm";
 import { createAuth } from "@/auth";
 import {
@@ -369,6 +371,54 @@ describe("user management (SQLite)", () => {
         "member_removed",
         "user_deactivated",
       ]);
+      await Promise.all(background.splice(0));
+    });
+  });
+
+  describe("on the hosted gateway", () => {
+    beforeEach(() => {
+      workerEnv.GATEWAY_DEPLOYMENT_MODE = "hosted";
+    });
+    afterEach(() => {
+      workerEnv.GATEWAY_DEPLOYMENT_MODE = "self_hosted";
+    });
+
+    it("refuses to act on a member's account: no deactivating, reactivating or resetting it", async () => {
+      await seedCredentials();
+      for (const action of [
+        () => MembershipService.deactivate(ctx(owner, "owner"), member),
+        () => MembershipService.reactivate(ctx(owner, "owner"), member),
+        () =>
+          MembershipService.createPasswordResetLink(
+            ctx(owner, "owner"),
+            member,
+          ),
+        () => AdminService.sendPasswordResetEmail(ctx(owner, "owner"), member),
+      ]) {
+        await expect(action()).rejects.toMatchObject({
+          code: "ACCOUNT_ACTIONS_UNAVAILABLE",
+        });
+      }
+      const [user] = await db.select().from(users).where(eq(users.id, member));
+      expect(user?.banned).toBe(false);
+      await expect(authenticatePat()).resolves.toMatchObject({ sub: member });
+    });
+
+    it("removes a member from the organization but keeps their account", async () => {
+      await seedCredentials();
+
+      await expect(
+        AdminService.deleteUser(ctx(owner, "owner"), member),
+      ).resolves.toEqual({ deactivatedInstead: false });
+
+      expect(
+        await db.select().from(members).where(eq(members.userId, member)),
+      ).toEqual([]);
+      expect(
+        await db.select().from(users).where(eq(users.id, member)),
+      ).toHaveLength(1);
+      // What the organization gave them goes with the membership.
+      await expect(authenticatePat()).resolves.toBeNull();
       await Promise.all(background.splice(0));
     });
   });

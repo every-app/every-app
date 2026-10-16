@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { SignInMethods } from "@/auth/cloudflare-access";
+import type { SignInMethods } from "@/auth/sign-in-methods";
 
 /**
  * What the gateway's sign-in page offers: passwords (unless turned off),

@@ -8,6 +8,7 @@ export function registerDevApp(manifest: EveryAppCliManifest): RegisteredApp {
     hostname: `${manifest.id}.localhost`,
     workerName: workerNameFor(manifest.id),
     tier: "service_binding",
+    scope: "org",
     organizationId: DEV_USER.orgId,
     status: "active",
     manifest: manifest as RegisteredApp["manifest"],

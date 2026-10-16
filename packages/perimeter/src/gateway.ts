@@ -16,7 +16,11 @@
  */
 import { parseHost, type ParsedHost } from "./host";
 import { hasDuplicateSessionCookie } from "./cookies";
-import type { AppRegistry, RegisteredApp } from "./registry";
+import {
+  UnroutableAppError,
+  type AppRegistry,
+  type RegisteredApp,
+} from "./registry";
 import {
   isMcpOnlyCredential,
   type AuthenticatedSession,
@@ -115,6 +119,19 @@ function json(status: number, body: Record<string, unknown>): Response {
       headers: { "content-type": "application/json" },
     }),
   );
+}
+
+/**
+ * A registry row with a tier or scope the gateway doesn't know: the host is
+ * an app's, so it is no 404, and it is never routed.
+ */
+export function unroutableAppResponse(error: UnroutableAppError): Response {
+  logEvent(
+    "app.unroutable",
+    { app: error.appId, message: error.message },
+    "error",
+  );
+  return json(503, { error: "app_unavailable", app: error.appId });
 }
 
 /**
@@ -218,7 +235,13 @@ export async function handleGatewayRequest(
     return json(400, { error: "missing_host" });
   }
 
-  let app = await deps.resolveApp(parsed, deps.registry);
+  let app: RegisteredApp | null;
+  try {
+    app = await deps.resolveApp(parsed, deps.registry);
+  } catch (error) {
+    if (!(error instanceof UnroutableAppError)) throw error;
+    return unroutableAppResponse(error);
+  }
   if (!app) {
     // Base host (launcher) or unknown subdomain. In production this is handled
     // by the control-plane app before reaching here.

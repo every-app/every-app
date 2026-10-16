@@ -7,6 +7,28 @@
   enforces app access, and injects signed identity.
 - **App zone:** private Workers invoked by the gateway over service bindings.
 
+## Deployment Mode
+
+`GATEWAY_DEPLOYMENT_MODE` (`everyapp setup --mode`, a secret set with the
+first upload; ADR-0001) decides what the gateway does, once, in
+`platformPolicy(env)` (`apps/every-app-gateway/src/server/platform-policy.ts`):
+
+- `self_hosted`: invite-only sign-up, Cloudflare Access sign-in when
+  configured, the setup claim, tenant admins manage their members' accounts,
+  dynamic client registration 20 a day per address and 200 per gateway.
+- `hosted`: our own install of the same gateway, with open sign-up into
+  personal organizations and verified email, shared first-party apps, no
+  Access sign-in (its settings are ignored and its plugin is not
+  registered), the setup claim (the first owner's organization is the
+  platform organization, named Every App), registration 200 a day per address and 20,000 per
+  gateway, and tenant admins can't act on accounts (deactivate, reactivate,
+  reset a password, delete one): removing a member keeps the account.
+  Third-party deploys stay off behind a launch gate.
+- Anything else, unset included, is `invalid`: every capability off, hosted
+  and self-hosted alike: no setup claim, no Access sign-in, no app
+  activation, no dynamic registration, no account actions. Local dev builds
+  default to `self_hosted` (`cloudflare.config.ts`).
+
 ## Operator Authority (Self-Host)
 
 ADR-0003. In `self_hosted` mode, write access to the gateway's D1 database
@@ -26,14 +48,16 @@ in the gateway's Cloudflare account **is** operator authority.
   rows (a deleted app's tombstone keeps its names), and initial access (the
   deployer, owners and admins; everyone with `access: "everyone"`). The
   gateway still validates the manifest it reads from a row and treats an
-  unknown status as disabled. A hand-written row that breaks a rule is the
+  unknown status as disabled; a row whose `tier` isn't `service_binding` or
+  `dispatch`, or whose `scope` isn't `org` or `shared`, is never routed (a
+  503 on its host), never read as another tier or scope. A hand-written row that breaks a rule is the
   operator's doing, as a hand-edited Worker is.
 - The gateway activates apps itself: a `binding` app (its Worker uploaded)
   becomes `active` on the first request that reaches the Worker over a
   service binding of the gateway version serving that request. A `pending`
   app is never bound or activated, a disabled or deleted one is never
-  switched back on, and only `GATEWAY_DEPLOYMENT_MODE=self_hosted`
-  activates (any other value, unset included, fails closed).
+  switched back on, and only `GATEWAY_DEPLOYMENT_MODE=self_hosted` or
+  `hosted` activates (any other value, unset included, fails closed).
 - Every deploy records its actor on the app row (`deployed_by_actor`, with
   `deployed_at`): the Cloudflare login's email, or `api-token:<account id>`
   in CI. Admin → Apps shows it. There is no deploy event log.
@@ -108,12 +132,17 @@ in the gateway's Cloudflare account **is** operator authority.
   operator's Cloudflare login. Apps may be deployed before then (a CI-first
   install): the claim makes the first owner the owner of the organization
   they were deployed to and gives them every app in it nobody has access
-  to. Members cannot create organizations.
+  to. Members cannot create organizations. On a gateway whose deployment
+  mode is invalid the claim is refused (`SETUP_UNAVAILABLE`).
 - Invite links carry their own random secret (only its SHA-256 is stored);
   signing up through an invitation and joining with one both need it, never
   just the invitation id. Better Auth's accept, list-invitations and
   get-full-organization endpoints are closed over HTTP, so members are never
   sent pending invitations.
+- Better Auth's admin plugin endpoints (`/admin/*`: ban, impersonate, set a
+  password, list or remove any user) are closed over HTTP in every mode: the
+  gateway's admin pages go through its own server functions, which act only
+  on members of the caller's organization and follow the platform policy.
 - The OAuth authorization server for MCP clients is on unless
   `MCP_OAUTH_ENABLED` is `"false"`, the kill switch: then its endpoints and
   discovery documents return 404 and only personal access tokens (`epat_`)
@@ -147,7 +176,9 @@ in the gateway's Cloudflare account **is** operator authority.
 
 ## Sign-in with Cloudflare Access
 
-Optional (`docs/runbooks/cloudflare-access.md`). Better Auth stays the only
+Optional (`docs/runbooks/cloudflare-access.md`), and only on a self-hosted
+gateway: elsewhere the plugin is not registered and the Access settings are
+ignored (passwords alone, no outer ring). Better Auth stays the only
 session system: Cloudflare Access, as an OIDC provider or as an outer ring in
 front of the gateway's hostnames, only proves who someone is, and a Better
 Auth plugin (`apps/every-app-gateway/src/auth/cloudflare-access/`) turns that
@@ -315,7 +346,9 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   the gateway uses (at most 16 KiB in, the name cleaned and clipped, ten
   redirect URIs), for 60 days without use, and is limited to 5 a minute
   per client address in each isolate, 20 a day per address and 200 a day
-  per gateway (counted in D1, where a refused request writes nothing).
+  per gateway when self-hosted, 200 and 20,000 on the hosted gateway, none
+  when the mode is invalid (counted in D1, where a refused request writes
+  nothing).
   `MCP_DCR_ENABLED=false` turns it off for gateways whose users only need
   clients with metadata documents.
 - Consent: `/oauth/authorize` validates the request before anything else

@@ -32,8 +32,14 @@ export const apps = sqliteTable(
     // Cloudflare-account namespace, and D1/KV resource names derive from
     // them.
     workerName: text("worker_name").unique(),
-    // 'service_binding' now; 'dispatch' reserved for the hosted tier.
+    // 'service_binding' now; 'dispatch' reserved for third-party apps on
+    // the hosted gateway. Any other value is unroutable (a 503), never
+    // coerced (packages/perimeter/src/registry/apps.ts).
     tier: text("tier").notNull().default("service_binding"),
+    // 'org': the organization's own app. 'shared': a first-party app the
+    // platform organization owns, for members of every organization (the
+    // hosted gateway). Parsed like `tier`.
+    scope: text("scope").notNull().default("org"),
     // JSON snapshot of everyapp.config.ts, taken when a deploy uploads the
     // app's Worker, so a new route policy goes live with the new code.
     manifest: text("manifest"),

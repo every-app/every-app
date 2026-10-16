@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { UnroutableAppError } from "@every-app/perimeter";
 import { DrizzleAppRegistry } from "./drizzleAppRegistry";
 
 function dbReturning(row: unknown) {
@@ -32,6 +33,7 @@ describe("DrizzleAppRegistry", () => {
         hostname: "todo.example.com",
         workerName: "every-todo",
         tier: "dispatch",
+        scope: "shared",
         organizationId: "org-1",
         status: "active",
         manifest: JSON.stringify({ id: "todo" }),
@@ -45,6 +47,7 @@ describe("DrizzleAppRegistry", () => {
       hostname: "todo.example.com",
       workerName: "every-todo",
       tier: "dispatch",
+      scope: "shared",
       organizationId: "org-1",
       status: "active",
     });
@@ -57,6 +60,7 @@ describe("DrizzleAppRegistry", () => {
         hostname: "todo.example.com",
         workerName: "every-todo",
         tier: "service_binding",
+        scope: "org",
         organizationId: "org-1",
         status: "paused",
         manifest: JSON.stringify({ id: "todo" }),
@@ -75,6 +79,7 @@ describe("DrizzleAppRegistry", () => {
         hostname: "todo.example.com",
         workerName: "every-todo",
         tier: "service_binding",
+        scope: "org",
         organizationId: "org-1",
         status: "active",
         manifest: JSON.stringify({ id: "todo", providers: ["openai"] }),
@@ -88,5 +93,28 @@ describe("DrizzleAppRegistry", () => {
         manifest: { providers: ["openai"] },
       },
     );
+  });
+
+  it("refuses a row with a tier or scope it doesn't know, never coercing it", async () => {
+    const row = {
+      appSlug: "todo",
+      hostname: "todo.example.com",
+      workerName: "every-todo",
+      tier: "service_binding",
+      scope: "org",
+      organizationId: "org-1",
+      status: "active",
+      manifest: JSON.stringify({ id: "todo" }),
+    };
+    for (const odd of [
+      { tier: "worker_loader" },
+      { tier: "" },
+      { scope: "global" },
+    ]) {
+      const registry = new DrizzleAppRegistry(dbReturning({ ...row, ...odd }));
+      await expect(
+        registry.findByHostname("todo.example.com"),
+      ).rejects.toBeInstanceOf(UnroutableAppError);
+    }
   });
 });

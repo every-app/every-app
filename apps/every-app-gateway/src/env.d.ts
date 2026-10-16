@@ -14,10 +14,17 @@ declare namespace Cloudflare {
     // Cloudflare account this Gateway is deployed in
     CLOUDFLARE_ACCOUNT_ID?: string;
 
-    // "self_hosted" (the CLI sets it at install) or "hosted". Only a
-    // self-hosted gateway activates apps on its own (server/app-activation.ts);
-    // anything else, unset included, fails closed.
+    // "self_hosted" or "hosted" (`everyapp setup --mode`, set at install):
+    // what the gateway does follows from it (server/platform-policy.ts).
+    // Anything else, unset included, fails closed: every capability off.
+    // Dev builds default to "self_hosted" (cloudflare.config.ts).
     GATEWAY_DEPLOYMENT_MODE?: "self_hosted" | "hosted";
+
+    // The hosted gateway's requests per organization per UTC day through
+    // the AI proxy (default 200) and the integration proxy (default 500), a
+    // whole number each; anything else is 0. Ignored when self-hosted.
+    AI_PROXY_ORG_DAILY_LIMIT?: string;
+    INTEGRATION_ORG_DAILY_LIMIT?: string;
 
     // "false" turns off the OAuth authorization server for MCP clients (set
     // as a secret so deploys keep it). On when unset or "true"; any other

@@ -270,17 +270,23 @@ describe("applyGateway", () => {
   });
 
   it("records the public half of every new key pair it sends, as when the Worker was deleted and comes back", async () => {
-    await deployGateway();
+    await deployGateway({ deploymentMode: "hosted" });
     const before = (await readInstall(gatewayD1()))!.jwtPublicKey;
     // The gateway Worker deleted by hand: the next deploy sets a new pair.
     account.workers.delete("every-app-gateway");
 
+    // As a repair or a reconcile deploys it: no mode asked for.
     await deployGateway();
 
     const sent = account.deploys.at(-1)!.secrets!["JWT_PUBLIC_KEY"];
     expect(sent).toMatch(/^-----BEGIN PUBLIC KEY-----/);
     expect(sent).not.toBe(before);
     expect((await readInstall(gatewayD1()))!.jwtPublicKey).toBe(sent);
+    // The mode it was installed with comes back with it.
+    expect(account.deploys.at(-1)!.secrets).toMatchObject({
+      GATEWAY_DEPLOYMENT_MODE: "hosted",
+    });
+    expect((await readInstall(gatewayD1()))!.deploymentMode).toBe("hosted");
   });
 
   it("deploys once, even when an app registers meanwhile: that app's own rebind binds it", async () => {

@@ -9,6 +9,20 @@
 import { validateManifest, type Manifest } from "../manifest/manifest";
 
 export type Tier = "service_binding" | "dispatch";
+
+const TIERS: readonly string[] = [
+  "service_binding",
+  "dispatch",
+] satisfies Tier[];
+
+/**
+ * `org`: an organization's own app. `shared`: a first-party app the
+ * platform organization owns, which members of other organizations may
+ * open too (the hosted gateway).
+ */
+export type AppScope = "org" | "shared";
+
+const APP_SCOPES: readonly string[] = ["org", "shared"] satisfies AppScope[];
 /**
  * `pending`: registered, its Worker not uploaded yet. `binding`: uploaded,
  * waiting for the gateway to reach it over a service binding (the first
@@ -32,6 +46,7 @@ export interface RegisteredApp {
   /** Service-binding / script name, e.g. `every-todo-app`. */
   workerName: string;
   tier: Tier;
+  scope: AppScope;
   organizationId: string;
   status: AppStatus;
   /** Parsed manifest snapshot taken at deploy time. */
@@ -58,6 +73,7 @@ export interface AppRegistryRow {
   hostname: string;
   workerName: string;
   tier: string;
+  scope: string;
   organizationId: string;
   status: string;
   manifest: string;
@@ -65,16 +81,38 @@ export interface AppRegistryRow {
   versionId?: string | null;
 }
 
+/**
+ * A registry row the gateway can't route: a tier or scope it doesn't know.
+ * Never coerced to a known one (that could route a row somewhere it was
+ * never meant to go); the perimeter answers 503 for its host.
+ */
+export class UnroutableAppError extends Error {
+  constructor(
+    readonly appId: string,
+    reason: string,
+  ) {
+    super(`App "${appId}" can't be routed: ${reason}`);
+    this.name = "UnroutableAppError";
+  }
+}
+
 export function rowToRegisteredApp(row: AppRegistryRow): RegisteredApp {
   const status = APP_STATUSES.includes(row.status)
     ? (row.status as AppStatus)
     : "disabled";
+  if (!TIERS.includes(row.tier)) {
+    throw new UnroutableAppError(row.appId, `unknown tier "${row.tier}"`);
+  }
+  if (!APP_SCOPES.includes(row.scope)) {
+    throw new UnroutableAppError(row.appId, `unknown scope "${row.scope}"`);
+  }
 
   return {
     appId: row.appId,
     hostname: row.hostname,
     workerName: row.workerName,
-    tier: row.tier === "dispatch" ? "dispatch" : "service_binding",
+    tier: row.tier as Tier,
+    scope: row.scope as AppScope,
     organizationId: row.organizationId,
     status,
     manifest: validateManifest(JSON.parse(row.manifest)),

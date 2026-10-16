@@ -73,7 +73,7 @@ import {
   type ReleaseSource,
 } from "./release";
 import type { GatewayResources } from "./resources";
-import { newGatewaySecrets } from "./secretsFile";
+import { newGatewaySecrets, type DeploymentMode } from "./secretsFile";
 
 type ApplyReason = "deploy" | "upgrade" | "reconcile";
 
@@ -101,6 +101,12 @@ export interface ApplyGatewayOptions {
   cliVersion: string;
   /** Settings from `everyapp secret set --for gateway`, sent with the upload. */
   stagedSecrets?: Record<string, string>;
+  /**
+   * GATEWAY_DEPLOYMENT_MODE for a Worker's first upload (default
+   * `self_hosted`) when the install row records none; later uploads keep
+   * the one it has.
+   */
+  deploymentMode?: DeploymentMode;
   /** The gateway lease the caller holds (a reconcile picks its release under it). */
   heldLease?: Lease;
   /** Deploy a release older than the one the install record names. */
@@ -328,6 +334,7 @@ export async function applyGateway(
           liveDomains: [],
           liveAppWorkers: [],
           jwtPublicKey: null,
+          deploymentMode: null,
         }),
       );
     }
@@ -356,7 +363,10 @@ export async function applyGateway(
       await lease.check();
       rollbackCommand = await migrate(options);
     }
-    return await deploy(options, domainChecks, workerExists, {
+    // A mode the install row records is the gateway's for good: a Worker
+    // that comes back (deleted by hand) gets the one it was installed with.
+    const deploymentMode = install?.deploymentMode ?? options.deploymentMode;
+    return await deploy({ ...options, deploymentMode }, domainChecks, workerExists, {
       liveDomains: install?.liveDomains ?? [],
     }, lease);
   } catch (error) {
@@ -448,16 +458,23 @@ async function deploy(
     message: `Deploying gateway ${release.manifest.version} with ${desired.appWorkers.length} app${desired.appWorkers.length === 1 ? "" : "s"}...`,
     data: { appWorkers: desired.appWorkers, domains },
   });
-  // A Worker without a version yet gets a new identity key pair, and the
-  // install row the public half with the upload, for the apps' deploys to hand
-  // their Workers.
+  // A Worker without a version yet gets a new identity key pair and its
+  // deployment mode, and the install row the public half and the mode with
+  // the upload, for the apps' deploys to hand their Workers and status to
+  // show.
+  const deploymentMode = options.deploymentMode ?? "self_hosted";
   const keys = firstDeploy
-    ? newGatewaySecrets({ gatewayUrl: `https://${gatewayHost}`, accountId: options.accountId })
+    ? newGatewaySecrets({
+        gatewayUrl: `https://${gatewayHost}`,
+        accountId: options.accountId,
+        deploymentMode,
+      })
     : null;
   const deployed = await upload(options, desired, domains, {
     before: recorded,
     secrets: { ...keys?.secrets, ...options.stagedSecrets },
     jwtPublicKey: keys?.jwtPublicKey ?? null,
+    deploymentMode: keys ? deploymentMode : null,
   });
   const newHosts = domains.filter((host) => !domainChecks.liveDomains.includes(host));
   out.emit({
@@ -484,6 +501,7 @@ function upload(
     before,
     secrets,
     jwtPublicKey,
+    deploymentMode,
   }: {
     /** What stays recorded if cf stops after the upload. */
     before: Publication;
@@ -493,6 +511,8 @@ function upload(
      * the install row must name the key the gateway signs with.
      */
     jwtPublicKey: string | null;
+    /** The deployment mode, whenever this upload sets it (a first one). */
+    deploymentMode: DeploymentMode | null;
   },
 ): Promise<{ versionId: string | null; output: string }> {
   return withPatchedRelease(options, desired, (workdir) =>
@@ -511,7 +531,7 @@ function upload(
           desired,
           versionId,
           finished ? { liveDomains: domains } : before,
-          jwtPublicKey,
+          { jwtPublicKey, deploymentMode },
         ),
     }),
   );
@@ -560,15 +580,16 @@ async function withPatchedRelease<T>(
  * couldn't publish a hostname: a move from another Worker declined, the
  * zone's limit, an API error; or Ctrl+C), it is what was recorded before:
  * the next deploy then checks this one's new hostnames again (DNS records,
- * who may hold them). The identity key's public half only when this upload
- * set a new key pair; otherwise the row keeps the one it has.
+ * who may hold them). The identity key's public half and the deployment
+ * mode only when this upload set them (a first one); otherwise the row
+ * keeps the ones it has.
  */
 function record(
   options: ApplyGatewayOptions,
   desired: DesiredState,
   versionId: string | null,
   publication: Publication,
-  jwtPublicKey: string | null,
+  firstSecrets: Pick<InstallRecord, "jwtPublicKey" | "deploymentMode">,
 ): Promise<void> {
   return writeInstall(
     options.db,
@@ -576,7 +597,7 @@ function record(
       liveVersionId: versionId,
       liveDomains: publication.liveDomains,
       liveAppWorkers: desired.appWorkers,
-      jwtPublicKey,
+      ...firstSecrets,
     }),
   );
 }
@@ -586,7 +607,11 @@ function installRecord(
   options: ApplyGatewayOptions,
   live: Pick<
     InstallRecord,
-    "liveVersionId" | "liveDomains" | "liveAppWorkers" | "jwtPublicKey"
+    | "liveVersionId"
+    | "liveDomains"
+    | "liveAppWorkers"
+    | "jwtPublicKey"
+    | "deploymentMode"
   >,
 ): InstallRecord {
   return {

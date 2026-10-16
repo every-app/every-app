@@ -55,25 +55,24 @@ const OPTIONAL_SECRETS = [
   "EMAIL_PASSWORD_SIGN_IN",
   "EVERYAPP_DEV_COOKIE_DOMAIN",
   "APP_BASE_DOMAIN",
+  // The hosted gateway's per-organization daily caps (src/server/platform-policy.ts).
+  "AI_PROXY_ORG_DAILY_LIMIT",
+  "INTEGRATION_ORG_DAILY_LIMIT",
 ] as const;
 
 /**
- * The optional secrets set for local dev, read the way the Vite plugin reads
- * them: `.dev.vars[.<mode>]` alone when present, otherwise `.env` files and
- * the process environment.
+ * The settings for local dev, read the way the Vite plugin reads them:
+ * `.dev.vars[.<mode>]` alone when present, otherwise `.env` files and the
+ * process environment.
  */
-function locallySetSecrets(
-  mode: string,
-): Partial<
-  Record<(typeof OPTIONAL_SECRETS)[number], ReturnType<typeof bindings.secret>>
-> {
+function localSettings(mode: string): Record<string, string | undefined> {
   const file = (name: string) => new URL(name, import.meta.url);
   const read = (name: string) =>
     existsSync(file(name)) ? parseEnv(readFileSync(file(name), "utf8")) : {};
   const devVars = [`.dev.vars.${mode}`, ".dev.vars"].find((name) =>
     existsSync(file(name)),
   );
-  const values: Record<string, string | undefined> = devVars
+  return devVars
     ? read(devVars)
     : {
         ...read(".env"),
@@ -82,12 +81,29 @@ function locallySetSecrets(
         ...read(`.env.${mode}.local`),
         ...process.env,
       };
+}
+
+/** The optional secrets set for local dev. */
+function locallySetSecrets(
+  values: Record<string, string | undefined>,
+): Partial<
+  Record<(typeof OPTIONAL_SECRETS)[number], ReturnType<typeof bindings.secret>>
+> {
   return Object.fromEntries(
     OPTIONAL_SECRETS.filter((name) => values[name]).map((name) => [
       name,
       bindings.secret(),
     ]),
   );
+}
+
+function devBindings(values: Record<string, string | undefined>) {
+  return {
+    GATEWAY_DEPLOYMENT_MODE: bindings.text<string>(
+      values["GATEWAY_DEPLOYMENT_MODE"] || "self_hosted",
+    ),
+    ...locallySetSecrets(values),
+  };
 }
 
 export default defineConfig(({ mode }) => {
@@ -177,9 +193,14 @@ export default defineConfig(({ mode }) => {
         // route; a CLI that predates it leaves the placeholder and so
         // refuses to deploy this release, rather than dropping the apps'
         // domains from it.
+        // Dev runs as a self-hosted gateway (src/server/platform-policy.ts)
+        // unless GATEWAY_DEPLOYMENT_MODE is set locally (the value is
+        // declared here, so whatever it says reaches the policy, which
+        // refuses an unknown one); a deployed one has the secret the CLI set
+        // at install.
         ...(production
           ? { APP_BASE_DOMAIN: bindings.text<string>(PATCH) }
-          : locallySetSecrets(mode ?? "development")),
+          : devBindings(localSettings(mode ?? "development"))),
       },
     },
   };

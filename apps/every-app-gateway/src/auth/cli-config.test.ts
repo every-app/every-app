@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { getAuthTables } from "better-auth/db";
 
-vi.mock("cloudflare:workers", () => ({
-  env: {
-    BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnop",
-    DB: {},
-    GATEWAY_URL: "https://gateway.example.com",
-  },
+const workerEnv = vi.hoisted(() => ({
+  GATEWAY_DEPLOYMENT_MODE: "self_hosted",
+  BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnop",
+  DB: {},
+  GATEWAY_URL: "https://gateway.example.com",
 }));
+
+vi.mock("cloudflare:workers", () => ({ env: workerEnv }));
 
 import { auth as cliAuth } from "./cli-config";
 import { createAuth } from "./config";
@@ -39,5 +40,18 @@ describe("CLI auth config", () => {
 
   it("derives the same database schema as the runtime", () => {
     expect(tables(cli)).toEqual(tables(runtimeAuth));
+  });
+
+  // A hosted gateway registers no Cloudflare Access plugin, and runs on the
+  // same migrations: the plugins it leaves out add nothing to the schema.
+  it("derives the same database schema as a hosted gateway's runtime", () => {
+    workerEnv.GATEWAY_DEPLOYMENT_MODE = "hosted";
+    try {
+      const hosted = createAuth() as unknown as AnyAuth;
+      expect(pluginIds(hosted)).not.toContain("cloudflare-access");
+      expect(tables(cli)).toEqual(tables(hosted));
+    } finally {
+      workerEnv.GATEWAY_DEPLOYMENT_MODE = "self_hosted";
+    }
   });
 });

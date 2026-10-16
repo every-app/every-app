@@ -14,6 +14,7 @@ const testDb = vi.hoisted(() => ({ current: null as TestDb | null }));
 const workerEnv = vi.hoisted(
   () =>
     ({
+      GATEWAY_DEPLOYMENT_MODE: "self_hosted",
       GATEWAY_URL: "https://gateway.example.com",
       BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
       DB: {},
@@ -68,6 +69,7 @@ import {
 } from "@/test/mock-access";
 import { createTestDb } from "@/test/sqlite-db";
 import { readAccessConfig } from "./config";
+import { accessConfigFromEnv } from "./index";
 import { clearJwksClientsForTests } from "./jwt";
 import { accessSignInMode, ensureAccessMembership } from "./membership";
 
@@ -980,6 +982,8 @@ describe("outer ring: Access in front of the gateway (SQLite)", () => {
       emailPassword: true,
       providers: [],
       accessEmail: "alice@acme.com",
+      signUp: "invitation",
+      emailVerification: false,
     });
 
     const unverified = await api("/sign-in-methods", {
@@ -1045,6 +1049,8 @@ describe("OIDC sign-in: Continue with Company SSO (SQLite)", () => {
       emailPassword: true,
       providers: [{ id: "cloudflare-access", label: "Company SSO" }],
       accessEmail: null,
+      signUp: "invitation",
+      emailVerification: false,
     });
   });
 
@@ -2016,5 +2022,69 @@ describe("the membership policy itself (SQLite)", () => {
     ]) {
       expect(accessSignInMode(ctx)).toBeNull();
     }
+  });
+});
+
+describe("a hosted gateway: no Cloudflare Access sign-in, whatever is set (SQLite)", () => {
+  beforeEach(() => {
+    useAccessEnv({
+      ...MOCK_ACCESS_ENV.oidc,
+      ...MOCK_ACCESS_ENV.outerRing,
+      EMAIL_PASSWORD_SIGN_IN: "false",
+      GATEWAY_DEPLOYMENT_MODE: "hosted",
+    });
+  });
+
+  it("offers passwords alone, and open sign-up with verified email", async () => {
+    const response = await api("/sign-in-methods", {
+      headers: await throughAccess("alice@acme.com"),
+    });
+    await expect(response.json()).resolves.toEqual({
+      emailPassword: true,
+      providers: [],
+      accessEmail: null,
+      signUp: "open",
+      emailVerification: true,
+    });
+  });
+
+  it("signs nobody in through the outer ring or OIDC, and takes passwords without Access", async () => {
+    await claimGateway();
+
+    // An assertion for the owner is no session.
+    const browser = new Browser();
+    const session = await send(`${GATEWAY_URL}/api/auth/get-session`, {
+      browser,
+      headers: await throughAccess(OWNER.email),
+    });
+    await expect(session.json()).resolves.toBeNull();
+
+    // No Access provider to start a sign-in with.
+    const social = await api("/sign-in/social", {
+      method: "POST",
+      browser,
+      body: { provider: "cloudflare-access", callbackURL: "/" },
+    });
+    expect(social.status).toBeGreaterThanOrEqual(400);
+
+    // A password sign-in needs no assertion, and passwords stay on.
+    expect(
+      (await passwordSignIn(browser, OWNER.email, OWNER.password)).status,
+    ).toBe(200);
+    expect(await accessAccountsOf(OWNER.email)).toEqual([]);
+  });
+
+  it("says it ignores the Access settings and EMAIL_PASSWORD_SIGN_IN, and nothing when neither is set", () => {
+    const ignored = [
+      expect.stringContaining("EMAIL_PASSWORD_SIGN_IN are ignored"),
+    ];
+    expect(accessConfigFromEnv().problems).toEqual(ignored);
+    useAccessEnv({
+      EMAIL_PASSWORD_SIGN_IN: "false",
+      GATEWAY_DEPLOYMENT_MODE: "hosted",
+    });
+    expect(accessConfigFromEnv().problems).toEqual(ignored);
+    useAccessEnv({ GATEWAY_DEPLOYMENT_MODE: "hosted" });
+    expect(accessConfigFromEnv().problems).toEqual([]);
   });
 });

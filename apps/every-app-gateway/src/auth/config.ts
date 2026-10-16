@@ -7,6 +7,8 @@ import { drizzle } from "drizzle-orm/d1";
 import { schema } from "../db";
 import { env } from "cloudflare:workers";
 import { sharedAuthOptions } from "./shared";
+import { gatewaySchema, organizationSchema } from "./schema";
+import { signInMethods } from "./sign-in-methods";
 import {
   ACCESS_PROVIDER_ID,
   accessConfigFromEnv,
@@ -22,6 +24,7 @@ import { AppAccessRepository } from "@/server/repositories/AppAccessRepository";
 import { hasAnyOwnerMembership } from "@/server/organization/owner-membership";
 import { AppAccessService } from "@/server/services/AppAccessService";
 import { resolveOrgContext } from "@/server/organization/orgContext";
+import { describePolicy, platformPolicy } from "@/server/platform-policy";
 
 // Invitation links work once, for this long (Better Auth's default is 48h).
 const INVITATION_TTL_SECONDS = 72 * 60 * 60;
@@ -144,7 +147,8 @@ async function grantDefaultAppsForMembership(
 
 /**
  * Better Auth endpoints the gateway never serves over HTTP: most
- * organization endpoints, and Expo's authorization proxy (below).
+ * organization endpoints, the admin plugin's, and Expo's authorization
+ * proxy (below).
  *
  * Organizations are created only by the setup claim, and membership changes
  * (invites, accepting them, roles, removal) go through gateway server
@@ -175,6 +179,27 @@ const DISABLED_AUTH_PATHS = [
   // member's PATs and app access would survive and work again
   // on a later re-invite. Members leave by an admin removing them.
   "/organization/leave",
+  // The admin plugin is here for its user fields (ban, role) and the ban
+  // check on sign-in. Its endpoints act on any account, whatever
+  // organizations it belongs to, and the gateway's own admin pages never
+  // call them over HTTP: member management goes through gateway server
+  // functions (MembershipService, AdminService), which write the same
+  // fields themselves under the gateway's rules and the platform policy.
+  "/admin/ban-user",
+  "/admin/create-user",
+  "/admin/get-user",
+  "/admin/has-permission",
+  "/admin/impersonate-user",
+  "/admin/list-user-sessions",
+  "/admin/list-users",
+  "/admin/remove-user",
+  "/admin/revoke-user-session",
+  "/admin/revoke-user-sessions",
+  "/admin/set-role",
+  "/admin/set-user-password",
+  "/admin/stop-impersonating",
+  "/admin/unban-user",
+  "/admin/update-user",
   // Better Auth Expo's bridge into the system browser: it sets the OAuth
   // state cookie to whatever state the link carries and redirects to any
   // https URL, so any site could plant its own sign-in's state in a
@@ -238,7 +263,9 @@ export function createAuth() {
   // production builds, off under `vite dev`.
   const isProductionBuild = !import.meta.env.DEV;
 
-  // Cloudflare Access sign-in (OIDC and the outer ring), from secrets.
+  const policy = platformPolicy(env);
+  // Cloudflare Access sign-in (OIDC and the outer ring), from secrets; none
+  // where the policy has no Access sign-in.
   const access = accessConfigFromEnv();
 
   return betterAuth({
@@ -316,6 +343,7 @@ export function createAuth() {
         // Invitations are emailed (or handed to the admin as a link when
         // email isn't set up) by InvitationService, not by Better Auth.
         invitationExpiresIn: INVITATION_TTL_SECONDS,
+        schema: organizationSchema,
         organizationHooks: {
           afterAcceptInvitation: async ({ user, organization }) => {
             await grantDefaultAppsForMembership(user.id, organization.id);
@@ -333,10 +361,22 @@ export function createAuth() {
           },
         },
       }),
+      gatewaySchema(),
+      signInMethods({
+        access,
+        gatewayUrl: env.GATEWAY_URL,
+        policy: describePolicy(policy),
+      }),
+      // Only where the policy has Access sign-in (self-hosted): a hosted
+      // gateway has no Access in front of it, nor OIDC through it.
       // Before the user-level database hooks: it makes an invited or
       // auto-joining Access user a member before the session hook below
       // picks the session's organization.
-      cloudflareAccess({ config: access, gatewayUrl: env.GATEWAY_URL }),
+      ...(policy.accessSignIn
+        ? ([
+            cloudflareAccess({ config: access, gatewayUrl: env.GATEWAY_URL }),
+          ] as const)
+        : ([] as const)),
       // Must stay last so it sees the Set-Cookie headers of every plugin's
       // after-hooks when auth runs inside TanStack server functions.
       tanstackStartCookies(),

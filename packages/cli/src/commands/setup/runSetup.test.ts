@@ -186,6 +186,47 @@ describe("everyapp setup", () => {
     expect(fs.readdirSync(`${home}/.everyapp`)).toEqual(["cf"]);
   });
 
+  it("installs a self-hosted Gateway by default, and a hosted one with --mode hosted", async () => {
+    expect((await setup({ domain: GW })).exitCode).toBe(0);
+    expect(account.deploys[0]!.secrets).toMatchObject({ GATEWAY_DEPLOYMENT_MODE: "self_hosted" });
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({ deploymentMode: "self_hosted" });
+
+    const hosted = new FakeCloudflare();
+    account = hosted;
+    worker = new GatewayWorker(hosted);
+    events = [];
+    expect((await setup({ domain: GW, mode: "hosted" })).exitCode).toBe(0);
+    const [first] = hosted.deploys;
+    expect(first!.workerName).toBe("every-app-gateway");
+    expect(first!.secrets).toMatchObject({
+      GATEWAY_DEPLOYMENT_MODE: "hosted",
+      GATEWAY_URL: `https://${GW}`,
+    });
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({ deploymentMode: "hosted" });
+    // Its owner claims it like any other: the install organization is the
+    // platform organization.
+    expect(events).toContainEqual(expect.objectContaining({ step: "setup.owner", status: "ok" }));
+
+    // Run again with the mode it has: nothing to do, and no secrets sent.
+    events = [];
+    expect((await setup({ mode: "hosted" })).exitCode).toBe(0);
+    expect(hosted.deploys).toHaveLength(1);
+  });
+
+  it("refuses to change the mode of a live Gateway", async () => {
+    await setup({ domain: GW, mode: "hosted" });
+    events = [];
+
+    const { exitCode } = await setup({ mode: "self_hosted" });
+
+    expect(exitCode).not.toBe(0);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "error", code: "MODE_CHANGE_UNSUPPORTED" }),
+    );
+    expect(account.deploys).toHaveLength(1);
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({ deploymentMode: "hosted" });
+  });
+
   it("resumes an install that stopped before its first upload, without --domain", async () => {
     account.failNextDeploy = `You need a workers.dev subdomain before your first upload. Register one: https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`;
 

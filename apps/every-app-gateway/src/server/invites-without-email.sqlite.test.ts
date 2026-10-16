@@ -11,6 +11,7 @@ const GATEWAY_URL = "https://gateway.example.com";
 vi.mock("cloudflare:workers", () => ({
   // No EMAIL binding, no EMAIL_FROM: email is not configured.
   env: {
+    GATEWAY_DEPLOYMENT_MODE: "self_hosted",
     GATEWAY_URL: "https://gateway.example.com",
     BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
     DB: {},

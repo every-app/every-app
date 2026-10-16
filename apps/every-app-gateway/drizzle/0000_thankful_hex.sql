@@ -42,6 +42,7 @@ CREATE TABLE `members` (
 	FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
+CREATE UNIQUE INDEX `members_organization_user_unique` ON `members` (`organization_id`,`user_id`);--> statement-breakpoint
 CREATE INDEX `members_organizationId_idx` ON `members` (`organization_id`);--> statement-breakpoint
 CREATE INDEX `members_userId_idx` ON `members` (`user_id`);--> statement-breakpoint
 CREATE TABLE `organizations` (
@@ -50,7 +51,8 @@ CREATE TABLE `organizations` (
 	`slug` text NOT NULL,
 	`logo` text,
 	`created_at` integer NOT NULL,
-	`metadata` text
+	`metadata` text,
+	`status` text DEFAULT 'active' NOT NULL
 );
 --> statement-breakpoint
 CREATE UNIQUE INDEX `organizations_slug_unique` ON `organizations` (`slug`);--> statement-breakpoint
@@ -114,6 +116,7 @@ CREATE TABLE `apps` (
 	`hostname` text,
 	`worker_name` text,
 	`tier` text DEFAULT 'service_binding' NOT NULL,
+	`scope` text DEFAULT 'org' NOT NULL,
 	`manifest` text,
 	`status` text DEFAULT 'active' NOT NULL,
 	`version_id` text,

@@ -50,6 +50,7 @@ async function findAllWithAccessCounts(organizationId: string) {
       hostname: apps.hostname,
       workerName: apps.workerName,
       tier: apps.tier,
+      scope: apps.scope,
       manifest: apps.manifest,
       status: apps.status,
       deployedByActor: apps.deployedByActor,

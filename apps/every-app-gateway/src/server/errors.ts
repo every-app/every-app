@@ -40,6 +40,7 @@ const PUBLIC_ERROR_CODES = [
   "OWNER_REQUIRED",
   "USER_IN_OTHER_ORGANIZATION",
   "PASSWORD_SIGN_IN_DISABLED",
+  "ACCOUNT_ACTIONS_UNAVAILABLE",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

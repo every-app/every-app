@@ -529,6 +529,7 @@ beforeEach(async () => {
   for (const key of Object.keys(hoisted.env)) delete hoisted.env[key];
   kv = createKvFake();
   Object.assign(hoisted.env, {
+    GATEWAY_DEPLOYMENT_MODE: "self_hosted",
     GATEWAY_URL: GATEWAY,
     BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
     JWT_PRIVATE_KEY: keys.privateKeyPem,
@@ -1184,6 +1185,39 @@ describe("dynamic client registration", () => {
     // A new day, a new budget.
     vi.setSystemTime(new Date("2026-10-14T00:00:01Z"));
     expect((await register(CURSOR)).status).toBe(201);
+  });
+
+  it("gives the hosted gateway larger registration budgets", async () => {
+    hoisted.env["GATEWAY_DEPLOYMENT_MODE"] = "hosted";
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-13T08:00:00Z"));
+    expect((await register(CURSOR)).status).toBe(201);
+    const counters = await db.select().from(rateLimitCounters);
+    const gatewayKey = "oauth-register:gateway:2026-10-13";
+    const addressKey = counters.find((row) => row.key !== gatewayKey)!.key;
+    const spend = (key: string, count: number) =>
+      db
+        .update(rateLimitCounters)
+        .set({ count })
+        .where(eq(rateLimitCounters.key, key));
+
+    // Past a self-hosted gateway's 20 an address and 200 a day...
+    await spend(addressKey, 20);
+    await spend(gatewayKey, 200);
+    vi.setSystemTime(Date.now() + 61_000);
+    expect((await register(CURSOR)).status).toBe(201);
+    // ...up to 200 an address and 20,000 a day.
+    await spend(addressKey, 200);
+    expect((await register(CURSOR)).status).toBe(429);
+    await spend(gatewayKey, 20_000);
+    expect((await register(CURSOR, "198.51.100.1")).status).toBe(429);
+  });
+
+  it("registers no client when the deployment mode is invalid", async () => {
+    delete hoisted.env["GATEWAY_DEPLOYMENT_MODE"];
+    const response = await register(CURSOR);
+    expect(response.status).toBe(429);
+    expect(registeredClients()).toEqual([]);
   });
 
   it("is off with MCP_DCR_ENABLED=false; clients registered before keep working", async () => {

@@ -53,6 +53,7 @@ async function account(
       updatedAt: 0,
       updatedBy: null,
       jwtPublicKey: "-----BEGIN PUBLIC KEY-----",
+      deploymentMode: "self_hosted",
     });
   }
   return entry;

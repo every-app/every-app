@@ -19,7 +19,11 @@ const mocks = vi.hoisted(() => ({
   grantUnclaimedAppsToOwner: vi.fn(),
 }));
 
-vi.mock("cloudflare:workers", () => ({ env: {} }));
+const workerEnv = vi.hoisted(() => ({
+  GATEWAY_DEPLOYMENT_MODE: "self_hosted" as string | undefined,
+}));
+
+vi.mock("cloudflare:workers", () => ({ env: workerEnv }));
 
 vi.mock("@/auth", () => ({
   createAuth: () => ({
@@ -119,7 +123,12 @@ describe("SetupService.claimOwner", () => {
       },
     });
     expect(mocks.createOrganization).toHaveBeenCalledWith({
-      body: { name: "Ada Owner", slug: "ada-owner", userId: "user-1" },
+      body: {
+        name: "Ada Owner",
+        slug: "ada-owner",
+        userId: "user-1",
+        status: "active",
+      },
     });
     expect(mocks.adoptForOwner).not.toHaveBeenCalled();
     expect(mocks.grantUnclaimedAppsToOwner).toHaveBeenCalledWith(
@@ -163,6 +172,43 @@ describe("SetupService.claimOwner", () => {
     expect(mocks.deleteOrganization).not.toHaveBeenCalled();
     // Its membership and grants go with the user.
     expect(mocks.deleteById).toHaveBeenCalledWith("user-1");
+  });
+
+  it("names the hosted gateway's install organization Every App: the platform organization", async () => {
+    workerEnv.GATEWAY_DEPLOYMENT_MODE = "hosted";
+    try {
+      await expect(claim()).resolves.toEqual({
+        userId: "user-1",
+        organizationId: "org-1",
+      });
+      expect(mocks.signUpEmail).toHaveBeenCalledWith({
+        body: expect.objectContaining({ name: "Ada Owner" }),
+      });
+      expect(mocks.createOrganization).toHaveBeenCalledWith({
+        body: {
+          name: "Every App",
+          slug: "every-app",
+          userId: "user-1",
+          status: "active",
+        },
+      });
+    } finally {
+      workerEnv.GATEWAY_DEPLOYMENT_MODE = "self_hosted";
+    }
+  });
+
+  it("refuses every claim, creating nothing, when the deployment mode is invalid", async () => {
+    for (const mode of [undefined, "", "selfhosted"]) {
+      workerEnv.GATEWAY_DEPLOYMENT_MODE = mode;
+      await expect(claim()).rejects.toMatchObject({
+        code: "SETUP_UNAVAILABLE",
+        status: 403,
+      });
+    }
+    workerEnv.GATEWAY_DEPLOYMENT_MODE = "self_hosted";
+    expect(mocks.findActiveClaims).not.toHaveBeenCalled();
+    expect(mocks.claimOwnerBootstrap).not.toHaveBeenCalled();
+    expect(mocks.signUpEmail).not.toHaveBeenCalled();
   });
 
   it("rejects a wrong token with 403 and creates nothing", async () => {

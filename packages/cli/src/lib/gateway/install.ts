@@ -4,7 +4,8 @@
  * ids, the live release (and the checkout tree it was built from) and what
  * that deploy bound and published, and the public half of the gateway's
  * identity key, which the apps' deploys give their Workers to verify the
- * identities the gateway signs. The row is the source of truth for the live
+ * identities the gateway signs, and the deployment mode its first upload
+ * set (self-hosted or hosted). The row is the source of truth for the live
  * release: any machine logged in to the account finds the Gateway and this
  * row (./discover.ts), and can redeploy or reconcile the gateway, or deploy
  * an app, from it; nothing about the install is kept anywhere else. A new
@@ -13,6 +14,7 @@
  */
 import type { D1Database } from "@/lib/cf/d1";
 import type { ReleaseOrder } from "./release";
+import { DEPLOYMENT_MODES, type DeploymentMode } from "./secretsFile";
 
 const CREATE_INSTALL_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_install (
   id TEXT PRIMARY KEY CHECK (id = 'install'),
@@ -32,7 +34,8 @@ const CREATE_INSTALL_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_install (
   live_app_workers TEXT NOT NULL DEFAULT '[]',
   updated_at INTEGER NOT NULL,
   updated_by TEXT,
-  jwt_public_key TEXT
+  jwt_public_key TEXT,
+  deployment_mode TEXT
 )`;
 
 export interface InstallRecord {
@@ -66,6 +69,12 @@ export interface InstallRecord {
    * one recorded.
    */
   jwtPublicKey: string | null;
+  /**
+   * The GATEWAY_DEPLOYMENT_MODE the first upload set (a secret, which
+   * nothing reads back), written with that upload like `jwtPublicKey`; a
+   * write without one keeps the one recorded. Null before the first upload.
+   */
+  deploymentMode: DeploymentMode | null;
 }
 
 function list(value: unknown): string[] {
@@ -79,6 +88,11 @@ function list(value: unknown): string[] {
 
 const text = (value: unknown): string | null =>
   typeof value === "string" && value ? value : null;
+
+const mode = (value: unknown): DeploymentMode | null =>
+  (DEPLOYMENT_MODES as readonly unknown[]).includes(value)
+    ? (value as DeploymentMode)
+    : null;
 
 /** The install row, or null before the CLI first deployed this gateway. */
 export async function readInstall(
@@ -115,6 +129,7 @@ export async function readInstall(
     updatedAt: Number(row["updated_at"]),
     updatedBy: text(row["updated_by"]),
     jwtPublicKey: text(row["jwt_public_key"]),
+    deploymentMode: mode(row["deployment_mode"]),
   };
 }
 
@@ -140,6 +155,7 @@ export async function writeInstall(
     record.updatedAt,
     record.updatedBy,
     record.jwtPublicKey,
+    record.deploymentMode,
   ];
   await db.run([
     { sql: CREATE_INSTALL_TABLE },
@@ -147,8 +163,8 @@ export async function writeInstall(
       sql: `INSERT INTO _everyapp_install (id, account_id, zone_id, zone_name, gateway_host,
   app_base_domain, oauth_kv_id, release_version, release_sha256, release_schema,
   release_committed_at, source_tree_sha256, live_version_id, live_domains,
-  live_app_workers, updated_at, updated_by, jwt_public_key)
-VALUES ('install', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+  live_app_workers, updated_at, updated_by, jwt_public_key, deployment_mode)
+VALUES ('install', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
 ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id,
   zone_id = excluded.zone_id, zone_name = excluded.zone_name,
   gateway_host = excluded.gateway_host, app_base_domain = excluded.app_base_domain,
@@ -159,7 +175,8 @@ ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id,
   live_version_id = excluded.live_version_id, live_domains = excluded.live_domains,
   live_app_workers = excluded.live_app_workers, updated_at = excluded.updated_at,
   updated_by = excluded.updated_by,
-  jwt_public_key = COALESCE(excluded.jwt_public_key, _everyapp_install.jwt_public_key)`,
+  jwt_public_key = COALESCE(excluded.jwt_public_key, _everyapp_install.jwt_public_key),
+  deployment_mode = COALESCE(excluded.deployment_mode, _everyapp_install.deployment_mode)`,
       params: values,
     },
   ]);

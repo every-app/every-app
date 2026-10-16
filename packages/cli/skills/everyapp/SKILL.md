@@ -13,7 +13,8 @@ is set, ask before using data.rerun. waiting: true = keep reading (up to 15
 min: device login, owner link).
 
 State:   pnpm everyapp status --json   (data.fixes says what to run when something is off)
-Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair)
+Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair;
+         --mode hosted only when the user asks for the hosted Gateway)
 New app: pnpm everyapp create <id> --json   then cd into it and edit src/; the
          manifest is everyapp.config.ts
 Run:     pnpm everyapp dev   (long-running, human-facing: start it in the

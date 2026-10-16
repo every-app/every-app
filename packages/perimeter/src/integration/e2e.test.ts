@@ -65,6 +65,7 @@ const TODO: RegisteredApp = {
   hostname: "todo.example.com",
   workerName: "every-todo-app",
   tier: "service_binding",
+  scope: "org",
   organizationId: "org_1",
   status: "active",
   manifest: validateManifest({ id: "todo", public: [{ path: "/health" }] }),

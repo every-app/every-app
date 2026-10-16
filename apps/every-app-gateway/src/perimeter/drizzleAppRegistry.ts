@@ -14,6 +14,7 @@ type RegistryRow = {
   hostname: string | null;
   workerName: string | null;
   tier: string;
+  scope: string;
   organizationId: string;
   status: string;
   manifest: string | null;
@@ -26,6 +27,7 @@ const registryColumns = {
   hostname: apps.hostname,
   workerName: apps.workerName,
   tier: apps.tier,
+  scope: apps.scope,
   organizationId: apps.organizationId,
   status: apps.status,
   manifest: apps.manifest,
@@ -86,6 +88,7 @@ function toRegistryRow(row: RegistryRow): AppRegistryRow {
     hostname: row.hostname,
     workerName: row.workerName,
     tier: row.tier,
+    scope: row.scope,
     organizationId: row.organizationId,
     status: row.status,
     manifest: row.manifest,

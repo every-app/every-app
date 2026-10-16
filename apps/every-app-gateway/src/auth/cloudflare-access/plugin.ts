@@ -22,7 +22,6 @@
  *    whatever gateway session their browser still holds. Personal access
  *    tokens and OAuth tokens don't pass through here: deactivation ends
  *    those.
- *  - `GET /api/auth/sign-in-methods`: what the sign-in pages offer.
  *  - The mobile app's OIDC sign-in, handed from the system browser to the
  *    app with a one-time code (mobile-sign-in.ts).
  *
@@ -32,15 +31,13 @@
  * account's own email must be verified too (or it was linked while signed
  * in), so an account someone registered with another person's address is
  * never handed to that person. Who may sign in at all is membership.ts.
+ *
+ * Registered only where the platform policy allows Access sign-in (a
+ * self-hosted gateway): see auth/config.ts. What the sign-in pages offer,
+ * Access or not, is auth/sign-in-methods.ts.
  */
 import type { BetterAuthPlugin, Session, User } from "better-auth";
-import { HIDE_METADATA } from "better-auth";
-import {
-  APIError,
-  createAuthEndpoint,
-  createAuthMiddleware,
-  isAPIError,
-} from "better-auth/api";
+import { APIError, createAuthMiddleware, isAPIError } from "better-auth/api";
 import { deleteSessionCookie, setSessionCookie } from "better-auth/cookies";
 import { parseSessionOutput, parseUserOutput } from "better-auth/db";
 import { handleOAuthUserInfo } from "better-auth/oauth2";
@@ -65,17 +62,6 @@ interface CloudflareAccessPluginOptions {
    * the one Access protects; it is off without it.
    */
   gatewayUrl: string | undefined;
-}
-
-/** What the sign-in pages (web and the mobile shell) offer. */
-export interface SignInMethods {
-  emailPassword: boolean;
-  providers: { id: string; label: string }[];
-  /**
-   * The person Cloudflare Access says this browser belongs to, when the
-   * request came through the outer ring.
-   */
-  accessEmail: string | null;
 }
 
 type SessionPair = { session: Session; user: User };
@@ -108,48 +94,45 @@ function withoutCookies(headers: Headers, names: string[]): Headers {
   return new Headers({ cookie: kept.join("; ") });
 }
 
+/** The outer ring's settings, when it can sign people in on the gateway's host. */
+function outerRingOf(
+  config: AccessConfig,
+  gatewayHost: string | null,
+): AccessOuterRingConfig | null {
+  return config.outerRing && gatewayHost ? config.outerRing : null;
+}
+
+/**
+ * The person the outer ring may sign in on a request to the gateway's
+ * host: a verified assertion for the gateway's own Access application.
+ */
+export async function outerRingSignInIdentity(
+  config: AccessConfig,
+  gatewayUrl: string | undefined,
+  request: Request | undefined,
+): Promise<AccessIdentity | null> {
+  const gatewayHost = hostOf(gatewayUrl);
+  const outerRing = outerRingOf(config, gatewayHost);
+  if (!outerRing || !request || requestHost(request) !== gatewayHost) {
+    return null;
+  }
+  const identity = await verifyOuterRingAssertion(request.headers, outerRing);
+  return identity?.maySignIn ? identity : null;
+}
+
 export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
   const { config } = options;
   const gatewayHost = hostOf(options.gatewayUrl);
-  const outerRing: AccessOuterRingConfig | null =
-    config.outerRing && gatewayHost ? config.outerRing : null;
+  const outerRing = outerRingOf(config, gatewayHost);
   const oidcProvider = config.oidc
     ? createAccessOidcProvider(config.oidc)
     : null;
 
-  /**
-   * The person the outer ring may sign in on a request to the gateway's
-   * host: a verified assertion for the gateway's own Access application.
-   */
-  async function outerRingIdentity(
-    request: Request | undefined,
-  ): Promise<AccessIdentity | null> {
-    if (!outerRing || !request || requestHost(request) !== gatewayHost) {
-      return null;
-    }
-    const identity = await verifyOuterRingAssertion(request.headers, outerRing);
-    return identity?.maySignIn ? identity : null;
-  }
-
   return {
     id: "cloudflare-access",
-    // One account row per provider identity. Better Auth looks accounts up
-    // by (provider_id, account_id) and refuses a sign-in when two rows
-    // match, which two first-time sign-ins racing (say, the outer ring in
-    // several restored tabs) could otherwise create; with this index the
-    // second insert fails and that request simply isn't signed in.
-    schema: {
-      account: {
-        fields: {},
-        indexes: [
-          {
-            name: "accounts_provider_account_unique",
-            fields: ["providerId", "accountId"],
-            unique: true,
-          },
-        ],
-      },
-    },
+    // Its unique index on accounts, one row per provider identity, is the
+    // gateway's schema plugin's (auth/schema.ts), so a gateway without this
+    // plugin has the same schema.
     init(ctx) {
       return {
         ...(oidcProvider
@@ -354,26 +337,7 @@ export function cloudflareAccess(options: CloudflareAccessPluginOptions) {
         max: 3,
       },
     ],
-    endpoints: {
-      ...mobileSignInEndpoints(oidcProvider),
-      signInMethods: createAuthEndpoint(
-        "/sign-in-methods",
-        { method: "GET", metadata: HIDE_METADATA },
-        async (ctx) => {
-          const identity = await outerRingIdentity(ctx.request);
-          const { isPasswordSignInOn } = await import("./membership");
-          ctx.setHeader("cache-control", "no-store");
-          const methods: SignInMethods = {
-            emailPassword: await isPasswordSignInOn(config),
-            providers: config.oidc
-              ? [{ id: ACCESS_PROVIDER_ID, label: config.oidc.label }]
-              : [],
-            accessEmail: identity?.email ?? null,
-          };
-          return ctx.json(methods);
-        },
-      ),
-    },
+    endpoints: mobileSignInEndpoints(oidcProvider),
   } satisfies BetterAuthPlugin;
 }
 

@@ -1,0 +1,140 @@
+import { describe, expect, it } from "vitest";
+import { describePolicy, platformPolicy } from "./platform-policy";
+
+describe("platformPolicy", () => {
+  it("reproduces today's self-hosted gateway", () => {
+    expect(platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "self_hosted" })).toEqual({
+      mode: "self_hosted",
+      hosted: false,
+      openSignUp: false,
+      personalOrgs: false,
+      requireEmailVerification: false,
+      accessSignIn: true,
+      setupClaim: true,
+      platformOrganizationName: null,
+      sharedApps: false,
+      thirdPartyDeploys: false,
+      tenantAdminUserActions: true,
+      bindingActivation: true,
+      orgDailyCaps: {
+        aiProxyRequests: Infinity,
+        integrationProxyRequests: Infinity,
+      },
+      dcr: { perAddress: 20, perGateway: 200 },
+    });
+  });
+
+  it("gives the hosted gateway its own rules", () => {
+    expect(platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "hosted" })).toEqual({
+      mode: "hosted",
+      hosted: true,
+      openSignUp: true,
+      personalOrgs: true,
+      requireEmailVerification: true,
+      accessSignIn: false,
+      setupClaim: true,
+      platformOrganizationName: "Every App",
+      sharedApps: true,
+      // The launch gate: off until third-party deploys may go live.
+      thirdPartyDeploys: false,
+      tenantAdminUserActions: false,
+      bindingActivation: true,
+      orgDailyCaps: { aiProxyRequests: 200, integrationProxyRequests: 500 },
+      dcr: { perAddress: 200, perGateway: 20_000 },
+    });
+  });
+
+  it("fails closed on a missing or mistyped mode: nothing hosted, nothing self-hosted", () => {
+    for (const mode of [undefined, "", "selfhosted", "self-hosted", "prod"]) {
+      const policy = platformPolicy({ GATEWAY_DEPLOYMENT_MODE: mode });
+      expect(policy.mode, String(mode)).toBe("invalid");
+      // Hosted-only behaviour is refused...
+      expect(policy).toMatchObject({
+        hosted: false,
+        openSignUp: false,
+        personalOrgs: false,
+        sharedApps: false,
+        thirdPartyDeploys: false,
+      });
+      // ...and so is what a self-hosted gateway does.
+      expect(policy).toMatchObject({
+        accessSignIn: false,
+        setupClaim: false,
+        tenantAdminUserActions: false,
+        bindingActivation: false,
+        orgDailyCaps: { aiProxyRequests: 0, integrationProxyRequests: 0 },
+        dcr: { perAddress: 0, perGateway: 0 },
+      });
+    }
+  });
+
+  it("reads the mode as resolveDeploymentMode does: trimmed, any case", () => {
+    expect(platformPolicy({ GATEWAY_DEPLOYMENT_MODE: " Hosted " }).mode).toBe(
+      "hosted",
+    );
+    expect(
+      platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "SELF_HOSTED" }).mode,
+    ).toBe("self_hosted");
+  });
+
+  it("takes the hosted daily caps from the env, and a typo stops traffic", () => {
+    const caps = (overrides: Record<string, string>) =>
+      platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "hosted", ...overrides })
+        .orgDailyCaps;
+    expect(
+      caps({
+        AI_PROXY_ORG_DAILY_LIMIT: "50",
+        INTEGRATION_ORG_DAILY_LIMIT: " 1000 ",
+      }),
+    ).toEqual({ aiProxyRequests: 50, integrationProxyRequests: 1000 });
+    expect(caps({ AI_PROXY_ORG_DAILY_LIMIT: "0" }).aiProxyRequests).toBe(0);
+    expect(caps({ AI_PROXY_ORG_DAILY_LIMIT: "" }).aiProxyRequests).toBe(200);
+    for (const typo of ["-1", "2e3", "lots", "10.5", "Infinity"]) {
+      expect(caps({ INTEGRATION_ORG_DAILY_LIMIT: typo }), typo).toMatchObject({
+        integrationProxyRequests: 0,
+      });
+    }
+  });
+
+  it("never lets an override cap a self-hosted gateway or lift an invalid one", () => {
+    const overrides = {
+      AI_PROXY_ORG_DAILY_LIMIT: "5",
+      INTEGRATION_ORG_DAILY_LIMIT: "5",
+    };
+    expect(
+      platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "self_hosted", ...overrides })
+        .orgDailyCaps,
+    ).toEqual({
+      aiProxyRequests: Infinity,
+      integrationProxyRequests: Infinity,
+    });
+    expect(platformPolicy(overrides).orgDailyCaps).toEqual({
+      aiProxyRequests: 0,
+      integrationProxyRequests: 0,
+    });
+  });
+
+  it("is frozen, nested objects included", () => {
+    const policy = platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "hosted" });
+    expect(Object.isFrozen(policy)).toBe(true);
+    expect(Object.isFrozen(policy.dcr)).toBe(true);
+    expect(Object.isFrozen(policy.orgDailyCaps)).toBe(true);
+  });
+});
+
+describe("describePolicy", () => {
+  it("tells the sign-in pages how people sign up, per mode", () => {
+    expect(
+      describePolicy(
+        platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "self_hosted" }),
+      ),
+    ).toEqual({ signUp: "invitation", emailVerification: false });
+    expect(
+      describePolicy(platformPolicy({ GATEWAY_DEPLOYMENT_MODE: "hosted" })),
+    ).toEqual({ signUp: "open", emailVerification: true });
+    expect(describePolicy(platformPolicy({}))).toEqual({
+      signUp: "invitation",
+      emailVerification: false,
+    });
+  });
+});

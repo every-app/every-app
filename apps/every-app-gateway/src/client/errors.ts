@@ -58,6 +58,8 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
     "This user also belongs to another organization, so their account can't be deactivated or reset from here.",
   PASSWORD_SIGN_IN_DISABLED:
     "Password sign-in is turned off on this gateway, so a password reset wouldn't work. People sign in with Cloudflare Access.",
+  ACCOUNT_ACTIONS_UNAVAILABLE:
+    "Accounts belong to the people who own them on this gateway, so they can't be deactivated or reset from an organization. Remove the member instead.",
 };
 
 const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {

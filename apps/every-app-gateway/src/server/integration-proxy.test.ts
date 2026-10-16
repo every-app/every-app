@@ -52,6 +52,7 @@ function app(manifest: Record<string, unknown> = {}): RegisteredApp {
     hostname: "openseo.example.com",
     workerName: "every-openseo",
     tier: "service_binding",
+    scope: "org",
     organizationId: "org-1",
     status: "active",
     manifest: validateManifest({ id: "openseo", ...manifest }),

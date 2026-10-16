@@ -173,6 +173,12 @@ describe("everyapp status", () => {
     expect(done["message"]).toContain("Apps:     todo (active) · all bound");
   });
 
+  it("prints the deployment mode the install recorded", async () => {
+    const done = await status();
+    expect(done["data"]["mode"]).toBe("self_hosted");
+    expect(done["message"]).toContain("Mode:     self_hosted");
+  });
+
   it("says what to run when the registry, the install row and cf disagree", async () => {
     await deployed("todo");
     await deployed("chef");

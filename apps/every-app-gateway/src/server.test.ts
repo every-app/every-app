@@ -8,7 +8,11 @@ import {
   it,
   vi,
 } from "vitest";
-import type { AppRegistry, RegisteredApp } from "@every-app/perimeter";
+import {
+  UnroutableAppError,
+  type AppRegistry,
+  type RegisteredApp,
+} from "@every-app/perimeter";
 import server, {
   clearHostnameCacheForTests,
   resolveAppByHostname,
@@ -67,6 +71,7 @@ const TODO: RegisteredApp = {
   hostname: "todo.example.com",
   workerName: "every-todo",
   tier: "service_binding",
+  scope: "org",
   organizationId: "org-1",
   status: "active",
   manifest: validateManifest({ id: "todo" }),
@@ -233,6 +238,26 @@ describe("gateway-generated errors", () => {
       delete mocks.env["APP_BASE_DOMAIN"];
       vi.unstubAllEnvs();
     }
+  });
+
+  it("answers 503 on the host of a registry row it can't route", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.findByHostname.mockRejectedValue(
+      new UnroutableAppError("todo", 'unknown tier "worker_loader"'),
+    );
+
+    const response = await server.fetch(
+      new Request("https://todo.example.com/", {
+        headers: { host: "todo.example.com" },
+      }),
+    );
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "app_unavailable",
+      app: "todo",
+    });
+    expectSecurityHeaders(response);
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
   });
 
   it("treats a failed app lookup as no app and never serves app content", async () => {

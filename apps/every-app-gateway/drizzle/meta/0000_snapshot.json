@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "ed511418-16e3-449a-b059-6622e8c150ac",
+  "id": "e580117d-a521-4263-921b-f4d441733a13",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "accounts": {
@@ -287,6 +287,14 @@
         }
       },
       "indexes": {
+        "members_organization_user_unique": {
+          "name": "members_organization_user_unique",
+          "columns": [
+            "organization_id",
+            "user_id"
+          ],
+          "isUnique": true
+        },
         "members_organizationId_idx": {
           "name": "members_organizationId_idx",
           "columns": [
@@ -378,6 +386,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'active'"
         }
       },
       "indexes": {
@@ -792,6 +808,14 @@
           "notNull": true,
           "autoincrement": false,
           "default": "'service_binding'"
+        },
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'org'"
         },
         "manifest": {
           "name": "manifest",

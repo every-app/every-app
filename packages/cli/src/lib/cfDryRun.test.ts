@@ -62,6 +62,7 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
           secrets: newGatewaySecrets({
             gatewayUrl: "https://apps.example.com",
             accountId: ACCOUNT_ID,
+            deploymentMode: "self_hosted",
           }).secrets,
           interactive: false,
           dryRun: true,

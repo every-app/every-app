@@ -15,6 +15,7 @@ const TODO: RegisteredApp = {
   hostname: "todo-acme.gateway.example.com",
   workerName: "every-acme-todo",
   tier: "service_binding",
+  scope: "org",
   organizationId: "org-1",
   status: "binding",
   manifest: validateManifest({ id: "todo" }),
@@ -90,8 +91,8 @@ describe("activateApp", () => {
     );
   });
 
-  it("only activates on a self-hosted gateway, failing closed on any other mode", async () => {
-    for (const mode of ["hosted", "", undefined, "selfhosted"]) {
+  it("activates on a self-hosted or hosted gateway, failing closed on any other mode", async () => {
+    for (const mode of ["", undefined, "selfhosted"]) {
       const { env, fetch } = boundEnv(mode);
       await expect(activateApp(env, TODO)).resolves.toBe(false);
       expect(fetch).not.toHaveBeenCalled();
@@ -99,7 +100,10 @@ describe("activateApp", () => {
     await expect(
       activateApp(boundEnv(" Self_Hosted ").env, TODO),
     ).resolves.toBe(true);
-    expect(mocks.activate).toHaveBeenCalledTimes(1);
+    // The hosted gateway is the same install shape: its first-party apps
+    // are service bindings too.
+    await expect(activateApp(boundEnv("hosted").env, TODO)).resolves.toBe(true);
+    expect(mocks.activate).toHaveBeenCalledTimes(2);
   });
 
   it("needs the row id to activate", async () => {

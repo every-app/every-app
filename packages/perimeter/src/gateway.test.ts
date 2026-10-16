@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { importSPKI, jwtVerify } from "jose";
 import { handleGatewayRequest, type GatewayDeps } from "./gateway";
-import { InMemoryAppRegistry, type RegisteredApp } from "./registry";
+import {
+  InMemoryAppRegistry,
+  rowToRegisteredApp,
+  type RegisteredApp,
+} from "./registry";
 import type { AuthenticatedSession, SessionAuthenticator } from "./session";
 import type { ParsedHost } from "./host";
 import { generateTestKeyPair, type TestKeyPair } from "./test-helpers";
@@ -24,6 +28,7 @@ const TODO: RegisteredApp = {
   hostname: "todo.example.com",
   workerName: "every-todo-app",
   tier: "service_binding",
+  scope: "org",
   organizationId: "org_1",
   status: "active",
   manifest: validateManifest({
@@ -136,6 +141,31 @@ describe("handleGatewayRequest", () => {
       issuer: "https://home.example.com",
     });
     expect(payload.sub).toBe("user_1");
+  });
+
+  it("answers 503 for a registry row with a tier or scope it doesn't know, reaching no app", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const fetcher = vi.fn();
+    const row = {
+      ...TODO,
+      manifest: JSON.stringify({ id: "todo" }),
+    };
+    for (const odd of [{ tier: "worker_loader" }, { scope: "everyone" }]) {
+      const res = await handleGatewayRequest(
+        req("/tasks"),
+        deps({
+          resolveApp: async () => rowToRegisteredApp({ ...row, ...odd }),
+          fetcherFor: () => ({ fetch: fetcher }),
+        }),
+      );
+      expect(res.status).toBe(503);
+      await expect(res.json()).resolves.toEqual({
+        error: "app_unavailable",
+        app: "todo",
+      });
+      expectSecurityHeaders(res);
+    }
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("valid PAT bearer on a private route mints an api identity JWT with actor and scopes", async () => {

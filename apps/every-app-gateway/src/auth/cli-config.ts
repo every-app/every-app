@@ -6,7 +6,9 @@ import { drizzle } from "drizzle-orm/d1";
 import * as schema from "../db/schema";
 import { readAccessConfig } from "./cloudflare-access/config";
 import { cloudflareAccess } from "./cloudflare-access/plugin";
+import { gatewaySchema, organizationSchema } from "./schema";
 import { sharedAuthOptions } from "./shared";
+import { signInMethods } from "./sign-in-methods";
 
 /**
  * Necessary because cloudflare bindings don't work in when run as a cli.
@@ -19,9 +21,15 @@ export const auth = betterAuth({
   plugins: [
     ...sharedAuthOptions.plugins,
     admin(),
-    organization(),
-    // Registered so the plugin list matches, and so its unique index on
-    // accounts is in the generated schema.
+    organization({ schema: organizationSchema }),
+    gatewaySchema(),
+    // Registered so the plugin list matches a self-hosted gateway's (neither
+    // adds to the schema).
+    signInMethods({
+      access: readAccessConfig({}, { allowLoopback: false }),
+      gatewayUrl: undefined,
+      policy: { signUp: "invitation", emailVerification: false },
+    }),
     cloudflareAccess({
       config: readAccessConfig({}, { allowLoopback: false }),
       gatewayUrl: undefined,

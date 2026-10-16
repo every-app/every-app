@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   InMemoryAppRegistry,
   rowToRegisteredApp,
+  UnroutableAppError,
   type AppRegistryRow,
   type RegisteredApp,
 } from "./apps";
@@ -11,12 +12,38 @@ const BASE_ROW: AppRegistryRow = {
   hostname: "todo.example.com",
   workerName: "every-todo",
   tier: "service_binding",
+  scope: "org",
   organizationId: "org-1",
   status: "active",
   manifest: JSON.stringify({ id: "todo" }),
 };
 
 describe("rowToRegisteredApp", () => {
+  it("keeps the tiers and scopes it knows", () => {
+    for (const tier of ["service_binding", "dispatch"]) {
+      expect(rowToRegisteredApp({ ...BASE_ROW, tier }).tier).toBe(tier);
+    }
+    for (const scope of ["org", "shared"]) {
+      expect(rowToRegisteredApp({ ...BASE_ROW, scope }).scope).toBe(scope);
+    }
+  });
+
+  it("refuses any other tier or scope instead of coercing it", () => {
+    for (const odd of [
+      { tier: "" },
+      { tier: "Service_Binding" },
+      { tier: "worker_loader" },
+      { scope: "" },
+      { scope: "global" },
+      { scope: "SHARED" },
+    ]) {
+      expect(
+        () => rowToRegisteredApp({ ...BASE_ROW, ...odd }),
+        JSON.stringify(odd),
+      ).toThrow(UnroutableAppError);
+    }
+  });
+
   it("maps unknown statuses to disabled so registry reads fail closed", () => {
     expect(rowToRegisteredApp({ ...BASE_ROW, status: "archived" }).status).toBe(
       "disabled",
@@ -40,12 +67,6 @@ describe("rowToRegisteredApp", () => {
       rowToRegisteredApp({ ...BASE_ROW, rowId: "row-1", versionId: "v1" }),
     ).toMatchObject({ rowId: "row-1", versionId: "v1" });
     expect(rowToRegisteredApp(BASE_ROW)).not.toHaveProperty("rowId");
-  });
-
-  it("still coerces unknown tiers to service_binding", () => {
-    expect(rowToRegisteredApp({ ...BASE_ROW, tier: "other" }).tier).toBe(
-      "service_binding",
-    );
   });
 
   it("exposes the persisted provider policy", () => {

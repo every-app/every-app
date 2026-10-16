@@ -11,6 +11,7 @@ const GATEWAY_URL = "https://gateway.example.com";
 
 vi.mock("cloudflare:workers", () => ({
   env: {
+    GATEWAY_DEPLOYMENT_MODE: "self_hosted",
     GATEWAY_URL: "https://gateway.example.com",
     BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
     DB: {},
@@ -137,7 +138,7 @@ describe("Better Auth lockdown (SQLite)", () => {
     await expect(
       createAuth().api.createOrganization({
         headers: new Headers({ cookie }),
-        body: { name: "Mine", slug: "mine-2" },
+        body: { name: "Mine", slug: "mine-2", status: "active" },
       }),
     ).rejects.toThrow();
     const slugs = (await db.select().from(organizations)).map((o) => o.slug);

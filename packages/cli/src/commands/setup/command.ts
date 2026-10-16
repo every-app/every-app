@@ -16,6 +16,13 @@ export const setupCommand = buildCommand({
           "Where the Gateway lives: any hostname in a zone the account has, e.g. apps.example.com (asked at a terminal; its install row keeps it after that)",
         optional: true,
       },
+      mode: {
+        kind: "enum",
+        values: ["self_hosted", "hosted"],
+        brief:
+          "What a new Gateway is: self_hosted (your own install, the default) or hosted (open sign-up, shared first-party apps); set once, at install",
+        optional: true,
+      },
       "account-id": {
         kind: "parsed",
         parse: String,
@@ -70,6 +77,9 @@ export const setupCommand = buildCommand({
       "  5. Opens a one-time link to create the owner account, and waits up to 15 minutes for it",
       "     (in CI it only says to run setup on your machine); a run resumed later shows a new",
       "     link, and the earlier one stops working",
+      "",
+      "--mode hosted installs the hosted Gateway instead (docs/runbooks/hosted-install.md); the",
+      "mode is set with the first upload and never changes after.",
       "",
       "Then: everyapp create my-app, cd into it, everyapp dev, everyapp deploy.",
       "No domain on Cloudflare yet? Buy one in the dashboard (Domains → Buy a domain), then run it again.",

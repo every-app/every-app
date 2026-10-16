@@ -89,6 +89,7 @@ export async function deployGatewayRelease({
   | "confirm"
   | "sleep"
   | "leaseWaitMs"
+  | "deploymentMode"
 > & {
     certificates?: Pick<
       Parameters<typeof waitForCertificates>[0],

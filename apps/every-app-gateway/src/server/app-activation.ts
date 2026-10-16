@@ -6,13 +6,15 @@
  * version has no such binding and keeps answering "deploying", which is
  * exactly the rollout window.
  *
- * Only a self-hosted gateway activates apps on its own; any other
- * `GATEWAY_DEPLOYMENT_MODE` (unset included) leaves them deploying.
+ * Self-hosted and hosted gateways activate apps on their own (both reach
+ * their apps over service bindings: platformPolicy's bindingActivation);
+ * an invalid `GATEWAY_DEPLOYMENT_MODE` (unset included) leaves them
+ * deploying.
  */
 import { logEvent, type RegisteredApp } from "@every-app/perimeter";
 import { appBindingName } from "@every-app/perimeter/manifest";
 import { AppRepository } from "@/server/repositories/AppRepository";
-import { resolveDeploymentMode } from "@/server/deployment-mode";
+import { platformPolicy } from "@/server/platform-policy";
 
 interface ServiceBinding {
   fetch(request: Request): Promise<Response>;
@@ -48,9 +50,7 @@ export async function activateApp(
   env: { GATEWAY_DEPLOYMENT_MODE?: string },
   app: RegisteredApp,
 ): Promise<boolean> {
-  if (resolveDeploymentMode(env.GATEWAY_DEPLOYMENT_MODE) !== "self_hosted") {
-    return false;
-  }
+  if (!platformPolicy(env).bindingActivation) return false;
   if (!app.rowId || !(await probeAppBinding(env, app))) return false;
   if (!(await AppRepository.activate(app.rowId, app.organizationId))) {
     // Deleted or disabled since the request looked it up.

@@ -83,6 +83,7 @@ beforeAll(() => {
 beforeEach(async () => {
   for (const key of Object.keys(hoisted.env)) delete hoisted.env[key];
   Object.assign(hoisted.env, {
+    GATEWAY_DEPLOYMENT_MODE: "self_hosted",
     GATEWAY_URL: GATEWAY,
     BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
     JWT_PRIVATE_KEY: privateKeyPem,

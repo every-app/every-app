@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getCookies } from "better-auth/cookies";
 
 const workerEnv = vi.hoisted(() => ({
+  GATEWAY_DEPLOYMENT_MODE: "self_hosted" as string | undefined,
   BETTER_AUTH_SECRET: "test-secret",
   DB: {},
   GATEWAY_URL: "https://gateway.example.com",
@@ -82,6 +83,10 @@ vi.mock("./cloudflare-access", () => ({
     id: "cloudflare-access",
     options,
   }),
+}));
+
+vi.mock("./sign-in-methods", () => ({
+  signInMethods: (options: unknown) => ({ id: "sign-in-methods", options }),
 }));
 
 vi.mock("@/db/schema", () => ({}));
@@ -358,9 +363,74 @@ describe("createAuth Better Auth options", () => {
     expect(createAuthOptions().plugins.map((plugin) => plugin.id)).toEqual([
       "admin",
       "organization",
+      "every-app-schema",
+      "sign-in-methods",
       "cloudflare-access",
       "tanstack-start-cookies",
     ]);
+  });
+
+  it("closes every one of the admin plugin's endpoints over HTTP", async () => {
+    const { disabledPaths } = createAuthOptions() as CapturedOptions & {
+      disabledPaths?: string[];
+    };
+    // From the installed plugin, so an endpoint a Better Auth upgrade adds
+    // can't stay open.
+    const { admin } = await vi.importActual<
+      typeof import("better-auth/plugins")
+    >("better-auth/plugins");
+    const paths = Object.values(admin().endpoints).map(
+      (endpoint) => endpoint.path,
+    );
+    expect(paths).toContain("/admin/ban-user");
+    expect(disabledPaths).toEqual(expect.arrayContaining(paths));
+  });
+
+  describe("by deployment mode", () => {
+    afterEach(() => {
+      workerEnv.GATEWAY_DEPLOYMENT_MODE = "self_hosted";
+    });
+
+    const signInPolicy = () =>
+      (
+        createAuthOptions().plugins.find(
+          (plugin) => plugin.id === "sign-in-methods",
+        ) as unknown as { options: { policy: unknown } }
+      ).options.policy;
+
+    it("offers invite-only sign-up and registers Access sign-in when self-hosted", () => {
+      expect(signInPolicy()).toEqual({
+        signUp: "invitation",
+        emailVerification: false,
+      });
+      expect(createAuthOptions().plugins.map((plugin) => plugin.id)).toContain(
+        "cloudflare-access",
+      );
+    });
+
+    it("offers open sign-up with verified email and no Access plugin when hosted", () => {
+      workerEnv.GATEWAY_DEPLOYMENT_MODE = "hosted";
+      expect(signInPolicy()).toEqual({
+        signUp: "open",
+        emailVerification: true,
+      });
+      expect(
+        createAuthOptions().plugins.map((plugin) => plugin.id),
+      ).not.toContain("cloudflare-access");
+    });
+
+    it("registers neither open sign-up nor Access when the mode is invalid", () => {
+      for (const mode of [undefined, "", "selfhosted"]) {
+        workerEnv.GATEWAY_DEPLOYMENT_MODE = mode;
+        expect(signInPolicy()).toEqual({
+          signUp: "invitation",
+          emailVerification: false,
+        });
+        expect(
+          createAuthOptions().plugins.map((plugin) => plugin.id),
+        ).not.toContain("cloudflare-access");
+      }
+    });
   });
 
   describe("with Cloudflare Access sign-in", () => {

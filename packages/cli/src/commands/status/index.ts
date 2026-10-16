@@ -53,10 +53,10 @@ interface Fix {
 
 /**
  * How the gateway in this account stands, all of it from its D1 and cf,
- * nothing over HTTPS: the release its install row records and whether the
- * Worker serves the version that row names, whether it was built from this
- * checkout's Gateway sources (`upToDate`, by tree hash, nothing built), its
- * owner, the apps its registry lists and whether the live version binds
+ * nothing over HTTPS: its deployment mode and the release its install row
+ * records, whether the Worker serves the version that row names, whether
+ * it was built from this checkout's Gateway sources (`upToDate`, by tree
+ * hash, nothing built), its owner, the apps its registry lists and whether the live version binds
  * them, each published hostname's certificate (Cloudflare's certificate
  * packs), any deploy in progress, and `fixes`: what to run when something
  * is off.
@@ -165,6 +165,9 @@ export async function reportStatus({
 
   const lines = [
     `Gateway:  ${gatewayUrl} (${account.name ?? account.id})`,
+    // The mode is a secret nothing reads back: the install row has it when
+    // the first upload recorded it.
+    ...(install.deploymentMode ? [`Mode:     ${install.deploymentMode}`] : []),
     `Release:  ${install.releaseVersion} (${install.releaseSha256.slice(0, 12)})${
       source.upToDate === true
         ? " · built from this checkout's sources"
@@ -202,6 +205,7 @@ export async function reportStatus({
       installed: true,
       gatewayUrl,
       accountId: account.id,
+      mode: install.deploymentMode,
       release: {
         version: install.releaseVersion,
         sha256: install.releaseSha256,

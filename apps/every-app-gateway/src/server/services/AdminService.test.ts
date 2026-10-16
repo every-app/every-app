@@ -22,6 +22,7 @@ vi.mock("@/server/access-rejoin", () => ({
 
 vi.mock("cloudflare:workers", () => ({
   env: {
+    GATEWAY_DEPLOYMENT_MODE: "self_hosted",
     GATEWAY_URL: "https://gateway.example.com",
   },
 }));

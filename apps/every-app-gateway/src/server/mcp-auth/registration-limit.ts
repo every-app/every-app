@@ -11,7 +11,10 @@
  *  - per client address and per gateway, per UTC day, in D1
  *    (`rate_limit_counters`): these hold across isolates and locations. A
  *    refused request only reads two counters; only a registration let
- *    through writes them.
+ *    through writes them. The daily budgets are the platform policy's
+ *    (server/platform-policy.ts): 20 per address and 200 per gateway when
+ *    self-hosted, more on the hosted gateway, whose customers' AI clients
+ *    all register here, and none when the mode is invalid.
  *
  * The Workers Rate Limiting bindings (AUTH_RATE_LIMIT_IP,
  * server/auth-rate-limit.ts) also count /oauth/register and /oauth/token
@@ -21,13 +24,10 @@
 import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import { clientAddressKey } from "@/server/auth-rate-limit";
+import { platformPolicy } from "@/server/platform-policy";
 import { RateLimitCounterRepository } from "@/server/repositories/RateLimitCounterRepository";
 
 const PER_ISOLATE_PER_MINUTE = 5;
-/** Registrations a day from one client address (an IPv6 address by its /64). */
-const PER_ADDRESS_PER_DAY = 20;
-/** Registrations a day for the whole gateway. */
-const PER_GATEWAY_PER_DAY = 200;
 const MAX_TRACKED_ADDRESSES = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ADDRESS_KEY_CONTEXT = "every-app-gateway:oauth-register-address:v1";
@@ -140,10 +140,13 @@ export async function allowRegistration(
     };
   }
 
+  // Registrations a day for the whole gateway, and from one client address
+  // (an IPv6 address by its /64).
+  const { perGateway, perAddress } = platformPolicy(env).dcr;
   const exhausted =
-    (counts.get(gatewayKey) ?? 0) >= PER_GATEWAY_PER_DAY
+    (counts.get(gatewayKey) ?? 0) >= perGateway
       ? "gateway"
-      : (counts.get(addressKey) ?? 0) >= PER_ADDRESS_PER_DAY
+      : (counts.get(addressKey) ?? 0) >= perAddress
         ? "address"
         : null;
   if (exhausted) {
@@ -156,8 +159,7 @@ export async function allowRegistration(
         "mcp.oauth.registration_limited",
         {
           budget: exhausted,
-          limit:
-            exhausted === "gateway" ? PER_GATEWAY_PER_DAY : PER_ADDRESS_PER_DAY,
+          limit: exhausted === "gateway" ? perGateway : perAddress,
         },
         "warn",
       );

@@ -1,6 +1,8 @@
+import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import { createAuth } from "@/auth";
 import { PublicError } from "@/server/errors";
+import { platformPolicy } from "@/server/platform-policy";
 import {
   claimOwnerBootstrap,
   clearStaleOwnerBootstrap,
@@ -18,6 +20,7 @@ import {
 import { AppAccessService } from "./AppAccessService";
 
 type SetupErrorCode =
+  | "SETUP_UNAVAILABLE"
   | "INVALID_OR_EXPIRED_SETUP_LINK"
   | "ALREADY_CLAIMED"
   | "CLAIM_IN_PROGRESS";
@@ -26,6 +29,13 @@ const SETUP_ERRORS: Record<
   SetupErrorCode,
   { status: 403 | 409 | 503; message: string }
 > = {
+  // The platform policy has no setup claim: GATEWAY_DEPLOYMENT_MODE is
+  // missing or mistyped, and nothing is made until it is fixed.
+  SETUP_UNAVAILABLE: {
+    status: 403,
+    message:
+      "This gateway can't be set up: its GATEWAY_DEPLOYMENT_MODE secret isn't self_hosted or hosted. Its operator must set it on the Worker to the mode `everyapp status` prints.",
+  },
   INVALID_OR_EXPIRED_SETUP_LINK: {
     status: 403,
     message: "This setup link is invalid, expired or already used.",
@@ -103,6 +113,11 @@ async function findClaimLink(token: string): Promise<{ id: string } | null> {
  * retries, rather than being told an owner exists when none does.
  */
 async function claimOwner(input: ClaimOwnerInput) {
+  const policy = platformPolicy(env);
+  if (!policy.setupClaim) {
+    logEvent("setup.claim_rejected", { reason: "no_setup_claim" });
+    throw new SetupError("SETUP_UNAVAILABLE");
+  }
   const link = await findClaimLink(input.token);
   if (!link) {
     logEvent("setup.claim_rejected", { reason: "invalid_or_expired" });
@@ -152,7 +167,11 @@ async function claimOwner(input: ClaimOwnerInput) {
 
     createdUserId = result.user.id;
 
-    const organizationName = result.user.name?.trim() || "My Organization";
+    // Named after the owner, but for the hosted gateway's platform
+    // organization.
+    const organizationName =
+      policy.platformOrganizationName ??
+      (result.user.name?.trim() || "My Organization");
     // Apps deployed before anyone existed wait in an organization without
     // members: the first owner takes it over instead of starting another.
     let organizationId = await OrganizationRepository.findAwaitingOwner();
@@ -164,13 +183,20 @@ async function claimOwner(input: ClaimOwnerInput) {
       });
     } else {
       const slug =
-        slugify(result.user.name || "") ||
+        slugify(policy.platformOrganizationName ?? (result.user.name || "")) ||
         slugify(email.split("@")[0] || "org") ||
         "org";
       // A system action (userId, no session): allowed even though members
       // cannot create organizations.
+      // `status` is the column's default; Better Auth's server-side type
+      // asks for it although the endpoint takes no input for it.
       const organization = await auth.api.createOrganization({
-        body: { name: organizationName, slug, userId: result.user.id },
+        body: {
+          name: organizationName,
+          slug,
+          userId: result.user.id,
+          status: "active",
+        },
       });
       if (!organization) {
         throw new Error("Failed to create organization");

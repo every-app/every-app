@@ -99,6 +99,7 @@ const APP: RegisteredApp = {
   hostname: "todo.example.com",
   workerName: "every-todo",
   tier: "service_binding",
+  scope: "org",
   organizationId: "org-id",
   status: "active",
   manifest: { id: "todo" },

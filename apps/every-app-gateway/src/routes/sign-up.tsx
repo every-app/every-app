@@ -90,7 +90,7 @@ function SignUp() {
 
   if (isInvitationFlow) {
     return (
-      <CreateInvitedAccountForm
+      <CreateAccountForm
         redirect={redirect}
         return_to={return_to}
         invitationToken={invitationToken!}
@@ -102,17 +102,26 @@ function SignUp() {
     return <SetupPending redirect={redirect} return_to={return_to} />;
   }
 
+  // Open sign-up (the hosted gateway's policy): anyone may make an account.
+  if (methods?.signUp === "open") {
+    return <CreateAccountForm redirect={redirect} return_to={return_to} />;
+  }
+
   return <InvitationRequired redirect={redirect} return_to={return_to} />;
 }
 
-function CreateInvitedAccountForm({
+/**
+ * The account form: with an invite link's secret, to join the inviting
+ * organization; without one, where sign-up is open.
+ */
+function CreateAccountForm({
   redirect,
   return_to,
   invitationToken,
 }: {
   redirect?: string;
   return_to?: string;
-  invitationToken: string;
+  invitationToken?: string;
 }) {
   const [error, setError] = useState("");
   const navigate = useNavigate();
@@ -166,10 +175,9 @@ function CreateInvitedAccountForm({
           password,
           name: email.split("@")[0] || "",
         },
-        {
-          // The invite link's secret: sign-up is refused without it.
-          query: { invitationToken },
-        },
+        // The invite link's secret: an invite-only gateway refuses a
+        // sign-up without it.
+        invitationToken ? { query: { invitationToken } } : undefined,
       );
 
       if (signUpError) {
@@ -217,7 +225,11 @@ function CreateInvitedAccountForm({
     <AuthPageShell>
       <AuthCard
         title="Create account"
-        description="Create your account to join the invited organization."
+        description={
+          invitationToken
+            ? "Create your account to join the invited organization."
+            : "Create your Every App account."
+        }
         footer={<SignInInstead redirect={redirect} return_to={return_to} />}
       >
         <form.AppForm>

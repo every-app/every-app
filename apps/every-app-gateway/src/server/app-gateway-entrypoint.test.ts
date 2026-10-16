@@ -48,6 +48,7 @@ function app(
     hostname: "chef.example.com",
     workerName: "every-chef",
     tier: "service_binding",
+    scope: "org",
     organizationId: "org-1",
     status: "active",
     manifest: validateManifest({ id: "chef", providers }),
