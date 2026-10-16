@@ -104,7 +104,6 @@ Put two **hostname-based** self-hosted Access applications in front: one for you
 
 - `/mcp` and `/mcp/*` (Gateway and apps): MCP clients;
 - `/oauth/token`, `/oauth/register` and `/.well-known/*` (Gateway): the OAuth server MCP clients connect through. Keep `/oauth/authorize` and the consent pages behind Access: they're for people;
-- `/api/admin/has-owner` (Gateway): the CLI's check whether the Gateway is claimed;
 - each app's public routes (its `everyapp.config.ts` `public` list), on that app's host.
 
 Keep Access's cookie **HttpOnly** (the default) and turn on its **binding cookie** on both.
@@ -120,8 +119,7 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
       {"path_pattern": "/mcp/*", "behavior": "public"},
       {"path_pattern": "/oauth/token", "behavior": "public"},
       {"path_pattern": "/oauth/register", "behavior": "public"},
-      {"path_pattern": "/.well-known/*", "behavior": "public"},
-      {"path_pattern": "/api/admin/has-owner", "behavior": "public"}
+      {"path_pattern": "/.well-known/*", "behavior": "public"}
     ]}
   ],
   "policies": ["<policy id>"],

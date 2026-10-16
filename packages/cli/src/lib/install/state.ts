@@ -9,7 +9,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-export interface CachedInstall {
+interface CachedInstall {
   gatewayHost: string;
   accountId: string;
   zoneId: string;
@@ -49,14 +49,23 @@ async function readFile(): Promise<InstallsFile> {
   }
 }
 
-export async function listCachedInstalls(): Promise<CachedInstall[]> {
+async function listCachedInstalls(): Promise<CachedInstall[]> {
   return Object.values((await readFile()).installs);
 }
 
-export async function readCachedInstall(
+async function readCachedInstall(
   gatewayHost: string,
 ): Promise<CachedInstall | null> {
   return (await readFile()).installs[gatewayHost.toLowerCase()] ?? null;
+}
+
+/** The gateway this machine deployed: for `domain`, or the only one. */
+export async function rememberedInstall(
+  domain?: string,
+): Promise<CachedInstall | null> {
+  if (domain) return readCachedInstall(domain);
+  const installs = await listCachedInstalls();
+  return installs.length === 1 ? installs[0]! : null;
 }
 
 export async function writeCachedInstall(install: CachedInstall): Promise<void> {

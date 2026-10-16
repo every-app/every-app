@@ -24,7 +24,7 @@ pnpm test          # runs `pnpm -r --no-bail run test` across all packages
 | `packages/sdk` | `src/**/*.test.ts` (49) | fail-closed identity verification: alg/kid pinning, `alg:none`, algorithm-confusion (HS256-with-public-key), wrong key, expiry, audience mismatch, missing claims, public-route handling, `everyApp()` handler wrapper |
 | `apps/every-app-gateway` | `src/v2/**/*.test.ts` (70) | public-route glob matching incl. path-traversal + percent-encoding (`/p/%2e%2e/__everyapp/...`), header stripping, security headers, CSRF default-deny, JWT mint, Host parsing, the full `handleGatewayRequest` proxy core, the dev gateway-lite, and an end-to-end perimeter↔real-SDK integration test |
 | `apps/every-app-gateway` | legacy `src/**/*.test.ts` | pre-existing gateway tests (still green) |
-| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the gateway and app deploy pipelines end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1, Build Outputs validated with cf's schema), the app policy check, leases, remote migrations; what a person sees (`lib/output/events.test.ts`: milestones rendered from event data, problems with their next command) and that `app deploy --json` writes nothing but NDJSON to stdout, with a real child's output in its log file (`commands/app/deploy/stdout.test.ts`) |
+| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the gateway and app deploy pipelines end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1 with the gateway's real migrations, Build Outputs validated with cf's schema) and the deployed gateway Worker as far as the CLI meets it (`src/test/gatewayWorker.ts`: hostnames that answer, activation on the first request, the owner claim), the app registry the CLI writes in D1 and the live wait (`lib/gateway/registry.test.ts`), `setup`'s owner wait and `gateway status`, the app policy check, leases, remote migrations; what a person sees (`lib/output/events.test.ts`: milestones rendered from event data, problems with their next command) and that `app deploy --json` writes nothing but NDJSON to stdout, with a real child's output in its log file (`commands/app/deploy/stdout.test.ts`) |
 
 Run a single layer:
 
@@ -387,13 +387,18 @@ production.
      `previewUrls:false`, **no routes**, and refuses a built Worker that
      differs;
    - the gateway’s public **key set** is injected as
-     `EVERYAPP_IDENTITY_PUBLIC_KEYS` (JSON array, current + next);
+     `EVERYAPP_IDENTITY_PUBLIC_KEYS` (JSON array), from the install row’s
+     `jwt_public_key`, which the CLI wrote when it generated the keypair at
+     the gateway’s first deploy;
    - pending D1 migrations auto-apply;
    - the app row is written to the registry (`apps.hostname`, `worker_name`,
-     `tier`, `manifest`, `status`) via the `eak_` deploy-token endpoint;
+     `tier`, `manifest`, `status`, `deployed_by_actor`) by the CLI itself,
+     through `cf d1 query` with the operator's Cloudflare login (ADR-0003);
    - the gateway binds the app once a reconcile redeploys the live gateway
-     release with the registry's full list of apps; `everyapp gateway status`
-     shows whether the live bindings match.
+     release with the registry's full list of apps, and makes it `active` on
+     the first request that reaches it (the deploy's live wait sends it);
+     `everyapp gateway status` shows whether the live bindings match, from
+     D1 and cf alone.
 
 ### Probes — prove a sub-app is NOT directly reachable
 

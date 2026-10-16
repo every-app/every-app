@@ -24,6 +24,16 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] **A schema check drizzle-kit can't finish.** When `drizzle-kit generate` fails (most often a renamed column, which it asks about only at a terminal), the deploy stops with `SCHEMA_CHECK_FAILED`. Only a missing drizzle-kit or drizzle config is a warning.
 - [ ] **`dev --host` takes an address.** `everyapp dev` listens on 127.0.0.1; `--host 0.0.0.0` opens it to other machines. Vite's bare `--host` (no value) isn't supported.
 - [ ] **`app create -y`.** With nothing left to confirm, `-y` means "never ask": an app id is then required, as under `--json`. A failed `cf workers types` or local migration in `create` is a warning, since `dev` redoes both.
+- [ ] **The organization before an owner.** A deploy to a Gateway with no organization makes one named after the Cloudflare account (slug from that name, else "default"). Its org key, and so every app's Worker and resource names (`every-acme-todo`), comes from that slug for good, even after the claim renames the organization to the owner's name.
+- [ ] **Deployer access needs a verified email.** A new app is granted to the `users` row whose verified email is the cf login's. Password accounts are never verified (only Access sign-in verifies), so without Access "private to you" means owners and admins only.
+- [ ] **API-token deploys.** With `CLOUDFLARE_API_TOKEN` set the actor is `api-token:<account id>`, and nobody gets the new app as its deployer, even if cf reports the token's user's email.
+- [ ] **`--no-wait-cert` skips the whole live wait.** The app then goes live on its first visit. Rename it with the flat command tree (`--no-wait`?).
+- [ ] **The live wait's outcomes.** No certificate after 10 minutes is a warning and exit 0 (as the certificate wait was); the Gateway answering for 10 minutes without activating the app is `APP_NOT_LIVE` (exit 1, retryable).
+- [ ] **No SDK or CLI version check on app deploys.** `minSdk` and `minCli` came from `/api/deploy/whoami`. The redesign's "a checkout older than the live Gateway refuses" (step 3) may be enough; else read the checkout's build constants.
+- [ ] **Status reads certificates from Cloudflare's certificate packs** (active, exact host or one-label wildcard). A hostname covered only by Universal SSL could read as "no certificate yet".
+- [ ] **The release-identity probe went with `/api/deploy/status`.** An upgrade that stopped before recording itself is no longer recognized as newer: `deploy`/`upgrade`/`reconcile` stop unattended and ask at a terminal. Step 3's install row written before the upload closes that window.
+- [ ] **Setup's reachability check only warns.** A Gateway that doesn't answer over HTTPS yet, or answers with Cloudflare Access's sign-in, is a warning before the owner link, and setup waits for the claim all the same.
+- [ ] **App commands find the account without `--account-id`.** The remembered install, `CLOUDFLARE_ACCOUNT_ID`, the only account, or a prompt. Gateway discovery through the account replaces this.
 
 ## Build
 
@@ -72,11 +82,13 @@ Everything below needs a real Cloudflare account. The rest was checked locally: 
 - [ ] Rate limit namespace ids 4180 and 4181 don't collide with others in the account, and the limits behave in production.
 - [ ] `cf workers delete <name>`, and the D1 and KV deletes behind `--purge`.
 - [ ] Redeploying an app with Durable Objects from before cf (UserSyncDO) keeps its data, now that `exports` replaces wrangler's `v1` migration tag.
-- [ ] How long `/api/deploy/status` takes to show a new version, compared with the verify timeout.
+- [ ] Activation latency: from the Gateway deploy that binds a new app to the first request that makes it `active` in D1, against the live wait's 10 minutes, including a new hostname's certificate; and that a Cloudflare Access redirect is told from the Gateway's own answers.
+- [ ] The register batch on real D1: `WITH … INSERT OR IGNORE … SELECT … ORDER BY … LIMIT 1` (the org-key claim) and `UPDATE … RETURNING` through `cf d1 query --body @file`.
+- [ ] `cf ssl certificate-packs list` lists each Custom Domain's pack as `active` once issued (what `gateway status` reads).
 - [ ] The gateway's hourly cron (`17 * * * *`) publishes with the Custom Domains in one `cf deploy`, survives later deploys and reconciles, and logs `mcp.maintenance` at :17.
 - [ ] With `global_fetch_strictly_public` on the deployed gateway, claude.ai connects through CIMD (consent shows "Published by claude.ai"), not dynamic client registration.
 - [ ] `everyapp gateway secret set MCP_OAUTH_ENABLED` (and `MCP_DCR_ENABLED`) redeploys the live release, the switch takes effect, and the secret survives the next `gateway upgrade`.
-- [ ] An app deploy syncs its tools right after activation (no `TOOLS_SYNC_DEFERRED` in the common case), and `gateway deploy` syncs every active app in the token's organization.
+- [ ] The Gateway takes an app's tools on its first `/mcp` use, and again after a redeploy changes the app's `version_id` (the CLI no longer syncs them).
 - [ ] The #270 manual test plan end to end: Claude Code, claude.ai, ChatGPT, Cursor, revocation, offboarding, the switches, and the audit query.
 - [ ] An app with a cron and an app secret (RepoLens with `GITHUB_TOKEN`) deployed through `everyapp app deploy`: the cron publishes for an app Worker, and a secret set once survives redeploys.
 - [ ] An app with Workflows deployed through `everyapp app deploy`: cf creates them under the app's names, a redeploy updates them, they run, `everyapp app workflows` starts, lists and controls their instances, `--allow-delete-workflows` deletes a dropped one, and `--purge` deletes them. The read outputs and the missing-Workflow error were checked against the real API; `instances create`, the status changes and `workflows delete` weren't.

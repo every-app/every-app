@@ -1,7 +1,7 @@
 import type { LocalContext } from "@/context";
 import { deployApp } from "@/commands/app/deploy/deployApp";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
-import { resolveGatewayUrl } from "@/lib/gateway/resolve";
+import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import { eventSink, runReported } from "@/lib/output/run";
 
@@ -37,12 +37,10 @@ export async function deploy(
       const manifest = flags.access
         ? { ...loaded, access: flags.access }
         : loaded;
-      const gatewayUrl = await resolveGatewayUrl(flags.gateway);
-
       const result = await deployApp({
         cwd,
         manifest,
-        gatewayUrl,
+        gateway: requestedGatewayUrl(flags.gateway),
         out,
         json: flags.json,
         verbose: flags.verbose,
@@ -50,15 +48,17 @@ export async function deploy(
           flags["allow-delete-durable-object-data"],
         allowDeleteWorkflows: flags["allow-delete-workflows"],
         forceDns: flags["force-dns"],
-        waitForCertificate: !flags["no-wait-cert"],
+        waitForLive: !flags["no-wait-cert"],
       });
-      // `app.live` said it to a person already.
+      // `app.live` said it to a person already (or a warning, that it goes
+      // live on its first visit).
       out.emit({
         type: "done",
         data: {
           url: result.liveUrl,
           workerName: result.workerName,
           versionId: result.versionId,
+          live: result.live,
         },
       });
     },

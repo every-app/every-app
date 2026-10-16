@@ -1,16 +1,12 @@
 import enquirer from "enquirer";
 import type { LocalContext } from "@/context";
-import {
-  connectToGatewayAccount,
-  gatewayCall,
-  type ReconcileSeams,
-} from "@/commands/app/deploy/deployApp";
+import type { ReconcileSeams } from "@/commands/app/deploy/deployApp";
 import {
   describeResource,
   forgetOwnedResources,
   readOwnedResources,
 } from "@/lib/app/ownership";
-import { cfD1Database, type D1Database } from "@/lib/cf/d1";
+import type { D1Database } from "@/lib/cf/d1";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { CfError } from "@/lib/cf/errors";
 import {
@@ -19,16 +15,19 @@ import {
   findD1,
   findKv,
 } from "@/lib/cf/resources";
-import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
+import type { CfRunner } from "@/lib/cf/runner";
 import { deleteWorker, getWorkerDeployment } from "@/lib/cf/workers";
 import { deleteWorkflow, listWorkflows } from "@/lib/cf/workflows";
 import { deleteHostCertificates } from "@/lib/domains/certificates";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { EveryAppError } from "@/lib/errors";
-import { GatewayClient, type DeletedApp } from "@/lib/gateway/api";
+import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall } from "@/lib/gateway/install";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
-import { resolveGatewayUrl } from "@/lib/gateway/resolve";
+import {
+  deleteApp as deleteFromRegistry,
+  type RegisteredAppInfo,
+} from "@/lib/gateway/registry";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { eventSink, runReported } from "@/lib/output/run";
@@ -54,15 +53,14 @@ export async function deleteApp(
     async () => {
       const appId =
         appIdArgument ?? (await loadEveryAppManifest(process.cwd())).id;
-      const gatewayUrl = await resolveGatewayUrl(flags.gateway);
       const interactive = canPromptInTerminal(flags.json ?? false);
-      if (!(await confirmDelete({ appId, gatewayUrl, flags, interactive }))) {
+      if (!(await confirmDelete({ appId, flags, interactive }))) {
         out.emit({ type: "done", message: "Nothing deleted." });
         return;
       }
       const result = await removeApp({
         appId,
-        client: new GatewayClient({ gatewayUrl }),
+        gateway: requestedGatewayUrl(flags.gateway),
         out,
         interactive,
         purge: flags.purge ?? false,
@@ -74,37 +72,41 @@ export async function deleteApp(
 }
 
 /**
- * `everyapp app delete`: tombstone the app on the gateway (its names stay
- * reserved to its organization), drop its binding and its Custom Domain
- * with a reconcile, delete the certificate Cloudflare keeps for that
- * hostname, and with `purge` delete its Worker, D1 databases and KV
- * namespaces: only those the registry recorded as created by the app, never
- * whatever has its names; and the Workflows that run on its Worker.
- * `purged` says what was deleted and what was kept.
+ * `everyapp app delete`: tombstone the app in the gateway's D1 registry
+ * (its names stay reserved to its organization; everyone's access to it,
+ * its tokens, tools and place in AI connections go), drop its binding and
+ * its Custom Domain with a reconcile, delete the certificate Cloudflare
+ * keeps for that hostname, and with `purge` delete its Worker, D1
+ * databases and KV namespaces: only those the registry recorded as created
+ * by the app, never whatever has its names; and the Workflows that run on
+ * its Worker. `purged` says what was deleted and what was kept. An app
+ * deleted already is deleted again from the reconcile on, so a delete that
+ * stopped part-way can run again.
  */
 export async function removeApp({
   appId,
-  client,
+  gateway,
   out,
   interactive,
   purge,
-  createCf = (accountId?: string) => createCfRunner({ accountId }),
+  createCf,
   reconcile,
 }: {
   appId: string;
-  client: GatewayClient;
+  /** The gateway `--gateway` or EVERYAPP_GATEWAY_URL names. */
+  gateway?: string;
   out: EventSink;
   interactive: boolean;
   purge: boolean;
   createCf?: (accountId?: string) => CfRunner;
   reconcile?: ReconcileSeams;
-}): Promise<DeletedApp & { purged?: PurgeResult }> {
-  const { cf, accountId, gatewayDb } = await connectToGatewayAccount({
-    client,
+}): Promise<RegisteredAppInfo & { purged?: PurgeResult }> {
+  const { cf, accountId, db: registry } = await connectToGateway({
+    gateway,
     interactive,
     createCf,
   });
-  const deleted = await gatewayCall(() => client.deleteApp(appId));
+  const deleted = await deleteFromRegistry(registry, appId);
   out.emit({
     type: "step",
     step: "app.delete",
@@ -125,7 +127,6 @@ export async function removeApp({
   // Cloudflare keeps a removed Custom Domain's certificate. A hostname
   // outside the base was never the gateway's: whatever has a certificate
   // for it keeps it.
-  const registry = cfD1Database(cf, gatewayDb);
   const install = await readInstall(registry);
   if (
     install &&
@@ -154,7 +155,7 @@ interface PurgeResult {
 /** The last word: what was deleted, and with `--purge`, what was kept. */
 export function deletionSummary(
   appId: string,
-  { workerName, purged }: DeletedApp & { purged?: PurgeResult },
+  { workerName, purged }: RegisteredAppInfo & { purged?: PurgeResult },
 ): { message: string; data: Record<string, unknown> } {
   const message = !purged
     ? `Deleted ${appId}. Its Worker and data are kept, and the Worker's cron schedules and Workflows, if it has any, keep running; \`everyapp app delete ${appId} --purge\` removes them.`
@@ -181,7 +182,7 @@ async function purgeApp(
   registry: D1Database,
   out: EventSink,
   appId: string,
-  deleted: DeletedApp,
+  deleted: RegisteredAppInfo,
 ): Promise<PurgeResult> {
   const owned = await readOwnedResources(registry, deleted.workerName);
   const removed: string[] = [];
@@ -257,7 +258,7 @@ async function purgeApp(
 /** What exists under the app's assigned names without being recorded as its own. */
 async function unrecordedResources(
   cf: CfRunner,
-  deleted: DeletedApp,
+  deleted: RegisteredAppInfo,
   owned: ReadonlyArray<{ kind: string; name: string; resourceId: string | null }>,
 ): Promise<string[]> {
   const recorded = new Set(
@@ -283,12 +284,10 @@ async function unrecordedResources(
 
 async function confirmDelete({
   appId,
-  gatewayUrl,
   flags,
   interactive,
 }: {
   appId: string;
-  gatewayUrl: string;
   flags: DeleteCommandFlags;
   interactive: boolean;
 }): Promise<boolean> {
@@ -312,7 +311,7 @@ async function confirmDelete({
   const { confirmed } = await enquirer.prompt<{ confirmed: boolean }>({
     type: "confirm",
     name: "confirmed",
-    message: `Delete ${appId} from ${gatewayUrl}?`,
+    message: `Delete ${appId} from your gateway?`,
     initial: false,
   });
   return confirmed;

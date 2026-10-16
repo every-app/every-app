@@ -120,16 +120,16 @@ describe("cf's private directories", () => {
   });
 
   it.runIf(posix)("makes private again a ~/.everyapp an older CLI left open to its group", async () => {
-    // `everyapp login` under umask 002 (Ubuntu, Debian, Fedora) made it 0775.
+    // A mkdir under umask 002 (Ubuntu, Debian, Fedora) made it 0775.
     const everyapp = path.join(home, ".everyapp");
     fs.mkdirSync(everyapp);
     fs.chmodSync(everyapp, 0o775);
-    fs.writeFileSync(path.join(everyapp, "credentials.json"), "{}", { mode: 0o600 });
+    fs.writeFileSync(path.join(everyapp, "installs.json"), "{}", { mode: 0o600 });
 
     await expect(cfNeutralDir()).resolves.toBe(path.join(cfHome(), "neutral"));
 
     expect(mode(everyapp)).toBe(0o700);
-    expect(fs.readFileSync(path.join(everyapp, "credentials.json"), "utf8")).toBe("{}");
+    expect(fs.readFileSync(path.join(everyapp, "installs.json"), "utf8")).toBe("{}");
   });
 
   it("lets root run below a HOME another user owns, never one others can write to", () => {

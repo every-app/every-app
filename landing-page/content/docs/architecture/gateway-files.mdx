@@ -146,7 +146,7 @@ The perimeter is deliberately dependency-light (only Zod and the SDK's JWT inter
 | File                 | What it does                                                                                                      |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `auth/$.ts`          | Wildcard pass-through to the Better Auth handler.                                                                 |
-| `admin/has-owner.ts` | Unauthenticated bootstrap check for the CLI ("does an owner exist?").                                             |
+| `admin/has-owner.ts` | Unauthenticated bootstrap check ("does an owner exist?"); the CLI reads D1 instead and no longer calls it.        |
 | `setup/claim.ts`     | The setup page's claim: first owner from the one-time setup link.                                                 |
 | `dev/identity.ts`    | Dev-build-only: resolves a real session for the CLI's mirror-mode local perimeter. Hard-404 in production builds. |
 | `ai/$provider.$.ts`  | Routes to the legacy AI proxy.                                                                                    |

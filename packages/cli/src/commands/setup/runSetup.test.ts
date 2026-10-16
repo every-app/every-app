@@ -1,30 +1,28 @@
 /**
  * `everyapp setup` end to end against a fake Cloudflare account: real
  * gateway migrations on SQLite, Build Outputs checked with cf's schema,
- * the gateway's deploy API over the same registry, and the person's part
- * (approving a login, opening the setup link) played by the test.
+ * and the person's part (approving a login, opening the setup link on the
+ * deployed gateway) played by the test. setup asks nothing of the gateway
+ * but one plain request: the owner wait reads the setup link's row in D1.
  */
 import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GatewayApiError } from "@/lib/gateway/api";
-import { readGatewayCredential } from "@/lib/gateway/credentials";
 import { readInstall } from "@/lib/gateway/install";
-import { listPendingClaims } from "@/lib/gateway/pendingClaims";
 import { openRelease } from "@/lib/gateway/release";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { cfD1Database } from "@/lib/cf/d1";
 import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { reportFailure } from "@/lib/output/report";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
-import { FakeGateway } from "@/test/fakeGateway";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
+import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
 import { runSetup, type SetupDeps, type SetupFlags } from "./runSetup";
 
 const GW = "apps.example.com";
 
 let account: FakeCloudflare;
-let gateway: FakeGateway;
+let worker: GatewayWorker;
 let tarball: string;
 let home: string;
 let events: any[];
@@ -38,7 +36,7 @@ beforeEach(async () => {
   // GitHub Actions says for these tests too).
   vi.stubEnv("CI", "");
   account = new FakeCloudflare();
-  gateway = new FakeGateway(account, GW);
+  worker = new GatewayWorker(account);
   tarball = await buildGatewayRelease();
   events = [];
   opened = [];
@@ -56,17 +54,18 @@ function ownerOpensTheLink(): () => Promise<void> {
       (event) => event.type === "action_required" && event.action === "claim_owner",
     );
     try {
-      if (link) gateway.claim(link.data.url);
+      if (link) worker.claim(link.data.url);
     } catch {
       // Claimed already.
     }
   };
 }
 
+const nobodyOpensIt = { sleep: async () => undefined, timeoutMs: 0 };
+
 function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
   return {
     createCf: () => account.cf,
-    gatewayClient: () => gateway.client,
     openRelease: () => openRelease(tarball),
     interactive: false,
     prompts: {
@@ -82,12 +81,11 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
     },
     cliVersion: "0.3.0",
     seams: {
-      readStatus: () => account.gatewayStatus(),
       sleep: async () => undefined,
-      verifyTimeoutMs: 0,
       leaseWaitMs: 0,
       certificates: { isReady: async () => true, sleep: async () => undefined },
-      login: { sleep: ownerOpensTheLink(), timeoutMs: 60_000 },
+      fetch: worker.fetch,
+      owner: { sleep: ownerOpensTheLink(), timeoutMs: 60_000 },
     },
     ...overrides,
   };
@@ -112,15 +110,16 @@ const steps = () =>
     .filter((event) => String(event.step).startsWith("setup."))
     .map((event) => `${event.step} ${event.status}`);
 
+const gatewayD1 = () =>
+  cfD1Database(account.cf, [...account.databases].find(([, d]) => d.name === "every-app-gateway")![0]);
+
 /** A new setup link minted elsewhere (`gateway claim-link` on another machine). */
-const mintElsewhere = () =>
-  mintSetupLink({
-    db: cfD1Database(account.cf, [...account.databases].find(([, d]) => d.name === "every-app-gateway")![0]),
-    gatewayUrl: `https://${GW}`,
-  });
+const mintElsewhere = () => mintSetupLink({ db: gatewayD1(), gatewayUrl: `https://${GW}` });
+
+const links = () => events.filter((event) => event.action === "claim_owner");
 
 describe("everyapp setup", () => {
-  it("takes an empty account to a live gateway on a subdomain, its owner and a login", async () => {
+  it("takes an empty account to a live gateway on a subdomain and its owner", async () => {
     account.cf.override(["accounts", "subscriptions", "get"], {
       stdout: JSON.stringify([{ state: "Paid", rate_plan: { id: "workers_paid", public_name: "Workers Paid" } }]),
     });
@@ -136,42 +135,45 @@ describe("everyapp setup", () => {
       "setup.plan ok",
       "setup.domain ok",
       "setup.gateway ok",
-      "setup.login ok",
+      "setup.owner ok",
     ]);
-    expect(result).toEqual({ gatewayUrl: `https://${GW}`, organizationName: "Acme" });
+    expect(result).toEqual({ gatewayUrl: `https://${GW}`, organizationName: "Owner" });
 
     // The gateway, its own Custom Domain in the zone; no app yet.
     expect(account.gatewayDomains()).toEqual([GW]);
     expect(account.gatewayBindings()).toEqual([]);
     expect(account.dnsRecords).toHaveLength(1);
-    await expect(
-      readInstall(cfD1Database(account.cf, [...account.databases].find(([, d]) => d.name === "every-app-gateway")![0])),
-    ).resolves.toMatchObject({ gatewayHost: GW, appBaseDomain: GW });
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+      gatewayHost: GW,
+      appBaseDomain: GW,
+      jwtPublicKey: expect.stringContaining("BEGIN PUBLIC KEY"),
+    });
 
     // The owner link was handed out to the agent reading the events (never
     // opened by an unattended run, and never put in a CI log: see below),
-    // and the CLI logged itself in with its own secret, once.
-    const link = events.find((event) => event.action === "claim_owner");
-    expect(link).toMatchObject({
-      type: "action_required",
-      data: { url: expect.stringMatching(new RegExp(`^https://${GW}/setup#token=est_`)), waiting: true },
-    });
-    expect(JSON.stringify(events)).not.toContain("ecs_");
+    // after one plain request to the gateway.
+    expect(links()).toEqual([
+      expect.objectContaining({
+        type: "action_required",
+        data: expect.objectContaining({
+          url: expect.stringMatching(new RegExp(`^https://${GW}/setup#token=est_`)),
+          waiting: true,
+        }),
+      }),
+    ]);
+    expect(worker.requests).toEqual([`https://${GW}/`]);
     expect(opened).toEqual([]);
     // It says who claimed the link, so a person can tell it was them.
     expect(events).toContainEqual(
       expect.objectContaining({
-        step: "setup.login",
+        step: "setup.owner",
         status: "ok",
-        message: `Logged in to https://${GW} as owner@example.com (owner of Acme).`,
-        data: { organizationId: "org-1", organizationName: "Acme", ownerEmail: "owner@example.com" },
+        message: "Owner created: owner@example.com (Owner).",
+        data: { email: "owner@example.com", organizationName: "Owner" },
       }),
     );
-    await expect(readGatewayCredential(`https://${GW}`)).resolves.toMatchObject({
-      token: "eak_from-the-setup-link",
-      organizationId: "org-1",
-    });
-    await expect(listPendingClaims()).resolves.toEqual([]);
+    // Nothing is kept on this machine for the gateway but the install cache.
+    expect(fs.readdirSync(`${home}/.everyapp`).sort()).toEqual(["cf", "installs.json"]);
   });
 
   it("does nothing on a second run", async () => {
@@ -179,7 +181,7 @@ describe("everyapp setup", () => {
     const deploys = account.deploys.length;
     events = [];
 
-    const { exitCode } = await setup();
+    const { exitCode, result } = await setup();
 
     expect(exitCode).toBe(0);
     expect(steps()).toEqual([
@@ -189,36 +191,10 @@ describe("everyapp setup", () => {
       "setup.domain ok",
       "setup.gateway skip",
       "setup.owner skip",
-      "setup.login skip",
     ]);
+    expect(result).toMatchObject({ organizationName: "Owner" });
     expect(account.deploys).toHaveLength(deploys);
     expect(events.some((event) => event.type === "action_required")).toBe(false);
-  });
-
-  it("tells a revoked token from a gateway it can't reach yet", async () => {
-    await setup({ domain: GW });
-    const client = gateway.client as unknown as { whoami: () => Promise<unknown> };
-
-    client.whoami = async () => {
-      throw new GatewayApiError({ message: "revoked", status: 401 });
-    };
-    events = [];
-    expect((await setup()).exitCode).toBe(2);
-    expect(events.at(-1)).toMatchObject({
-      action: "create_deploy_token",
-      data: { url: `https://${GW}/admin/tokens` },
-    });
-
-    client.whoami = async () => {
-      throw new TypeError("fetch failed");
-    };
-    events = [];
-    expect((await setup()).exitCode).toBe(1);
-    expect(events.at(-1)).toMatchObject({
-      type: "error",
-      code: "GATEWAY_UNREACHABLE",
-      retryable: true,
-    });
   });
 
   it("never puts the owner setup link into a CI log, unless asked to", async () => {
@@ -232,6 +208,7 @@ describe("everyapp setup", () => {
       action: "claim_owner",
       message: expect.stringContaining("--printSetupLink"),
     });
+    expect(events.at(-1).message).toContain("apps deploy without one");
     // No link: only the command to run once someone took it.
     expect(events.at(-1).data).toEqual({ rerun: expect.stringMatching(/^pnpm everyapp/) });
     expect(JSON.stringify(events)).not.toContain("#token=");
@@ -242,85 +219,92 @@ describe("everyapp setup", () => {
     events = [];
     const asked = await setup({ printSetupLink: true });
     expect(asked.exitCode).toBe(0);
-    expect(events).toContainEqual(
+    expect(links()).toContainEqual(
       expect.objectContaining({
-        action: "claim_owner",
         data: expect.objectContaining({ url: expect.stringMatching(new RegExp(`^https://${GW}/setup#token=est_`)) }),
       }),
     );
-    expect(steps()).toContain("setup.login ok");
+    expect(steps()).toContain("setup.owner ok");
   });
 
-  it("exits 1 when a step fails after the owner link it waited for", async () => {
-    // Cloudflare Access goes in front of the gateway while the run waits.
-    const client = gateway.client as unknown as { setupDeployToken: () => Promise<unknown> };
-    client.setupDeployToken = async () => {
-      throw new GatewayApiError({ message: "Access answered", status: 302, code: "ACCESS_IN_FRONT" });
-    };
+  it("says what is in front of the gateway before handing out the link, and waits all the same", async () => {
+    worker.accessInFront.add(GW);
+
+    const behindAccess = await setup({ domain: GW });
+
+    expect(behindAccess.exitCode).toBe(0);
+    const warning = events.findIndex((event) => event.code === "ACCESS_IN_FRONT");
+    expect(warning).toBeGreaterThan(-1);
+    expect(warning).toBeLessThan(events.findIndex((event) => event.action === "claim_owner"));
+    expect(steps()).toContain("setup.owner ok");
+  });
+
+  it("warns when the gateway doesn't answer over HTTPS yet", async () => {
+    worker.certificatePending.add(GW);
 
     const { exitCode } = await setup({ domain: GW });
 
+    expect(exitCode).toBe(0);
     expect(events).toContainEqual(
-      expect.objectContaining({ action: "claim_owner", data: expect.objectContaining({ waiting: true }) }),
+      expect.objectContaining({
+        type: "warning",
+        code: "GATEWAY_UNREACHABLE",
+        message: expect.stringContaining("certificate may still be on its way"),
+      }),
     );
-    expect(events.at(-1)).toMatchObject({ type: "error", code: "ACCESS_IN_FRONT" });
-    expect(exitCode).toBe(1);
   });
 
-  it("stops when nobody opens the setup link, and the next run shows the same link and finishes", async () => {
-    const neverOpened = deps().seams!;
+  it("stops when nobody opens the setup link; the next run shows a new one, and the first stops working", async () => {
     const first = await setup(
       { domain: GW },
-      { seams: { ...neverOpened, login: { sleep: async () => undefined, timeoutMs: 0 } } },
+      { seams: { ...deps().seams!, owner: nobodyOpensIt } },
     );
 
     expect(first.exitCode).toBe(2);
-    const links = () => events.filter((event) => event.action === "claim_owner");
     expect(links()).toHaveLength(2);
     expect(links()[1]).toMatchObject({
-      message: expect.stringContaining("login --resume"),
+      message: expect.stringContaining("open it, then run `everyapp setup` again"),
+      data: { url: links()[0].data.url },
     });
     const url = links()[0].data.url;
-    await expect(readGatewayCredential(`https://${GW}`)).resolves.toBeNull();
 
-    // The link still works (unspent, unexpired): the next run shows it
-    // again, and the owner opening it logs this CLI in.
+    // A resumed setup mints a new link, and says the earlier one no longer
+    // works; the owner opening the new one finishes it.
     events = [];
     const second = await setup();
     expect(second.exitCode).toBe(0);
-    expect(links()[0].data.url).toBe(url);
-    expect(steps()).toContain("setup.login ok");
+    expect(links()[0].data.url).not.toBe(url);
+    expect(links()[0].message).toContain("The setup link shown before no longer works");
+    expect(() => worker.claim(url)).toThrow("INVALID_OR_EXPIRED_SETUP_LINK");
+    expect(steps()).toContain("setup.owner ok");
   });
 
-  it("shows a new setup link when the one an earlier run showed stopped working since", async () => {
-    const neverOpened = deps().seams!;
-    await setup(
-      { domain: GW },
-      { seams: { ...neverOpened, login: { sleep: async () => undefined, timeoutMs: 0 } } },
-    );
-    const first = events.find((event) => event.action === "claim_owner").data.url;
-    // Meanwhile someone mints a newer link elsewhere, which expires this one.
-    await mintElsewhere();
+  it("finishes once someone opens the link a run that gave up showed", async () => {
+    await setup({ domain: GW }, { seams: { ...deps().seams!, owner: nobodyOpensIt } });
+    worker.claim(links()[0].data.url, { email: "later@example.com", name: "Later" });
     events = [];
 
     const { exitCode } = await setup();
 
-    // Not the dead link again: a fresh one, opened, and the CLI logged in.
-    const shown = events.find((event) => event.action === "claim_owner");
-    expect(shown.data.url).not.toBe(first);
-    expect(shown.message).toContain("stopped working before anyone used it");
     expect(exitCode).toBe(0);
-    expect(steps()).toContain("setup.login ok");
+    expect(links()).toEqual([]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "setup.owner",
+        status: "skip",
+        data: { email: "later@example.com", organizationName: "Later" },
+      }),
+    );
   });
 
-  it("stops with a new link to get, not a token to create, when the link it waits on is replaced", async () => {
+  it("stops with a new link to get when the link it waits on is replaced", async () => {
     let replaced = false;
     const { exitCode } = await setup(
       { domain: GW },
       {
         seams: {
           ...deps().seams!,
-          login: {
+          owner: {
             timeoutMs: 60_000,
             sleep: async () => {
               if (!replaced) await mintElsewhere();
@@ -337,33 +321,40 @@ describe("everyapp setup", () => {
       action: "claim_owner",
       message: expect.stringContaining("stopped working before anyone used it"),
     });
-    expect(events.at(-1).message).not.toContain("Admin → Tokens");
     // Whoever has the newer link can still use it.
-    expect(account.database("every-app-gateway").all("SELECT id FROM owner_setup_tokens WHERE expires_at > ?", Date.now())).toHaveLength(1);
-    await expect(listPendingClaims()).resolves.toEqual([]);
+    expect(
+      account.database("every-app-gateway").all("SELECT id FROM owner_setup_tokens WHERE expires_at > ?", Date.now()),
+    ).toHaveLength(1);
   });
 
-  it("says to create a deploy token once the owner claimed the link more than 30 minutes ago", async () => {
-    const neverOpened = deps().seams!;
-    await setup(
+  it("finishes when the newer link that replaced its own is the one used", async () => {
+    let newer: string | undefined;
+    const { exitCode } = await setup(
       { domain: GW },
-      { seams: { ...neverOpened, login: { sleep: async () => undefined, timeoutMs: 0 } } },
+      {
+        seams: {
+          ...deps().seams!,
+          owner: {
+            timeoutMs: 60_000,
+            sleep: async () => {
+              if (!newer) {
+                newer = (await mintElsewhere()).url;
+                worker.claim(newer, { email: "elsewhere@example.com" });
+              }
+            },
+          },
+        },
+      },
     );
-    // The owner opens the link after this run gave up; setup runs again 31
-    // minutes later, past the gateway's window for handing over the token.
-    gateway.claim(events.find((event) => event.action === "claim_owner").data.url);
-    gateway.now = () => Date.now() + 31 * 60_000;
-    events = [];
 
-    const { exitCode } = await setup();
-
-    expect(exitCode).toBe(1);
-    expect(events.at(-1)).toMatchObject({
-      type: "error",
-      code: "SETUP_LOGIN_EXPIRED",
-      message: expect.stringContaining("Admin → Tokens"),
-    });
-    await expect(readGatewayCredential(`https://${GW}`)).resolves.toBeNull();
+    expect(exitCode).toBe(0);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "setup.owner",
+        status: "ok",
+        data: expect.objectContaining({ email: "elsewhere@example.com" }),
+      }),
+    );
   });
 
   it("logs in through cf's device link and code under --json", async () => {
@@ -393,7 +384,7 @@ describe("everyapp setup", () => {
         data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", waiting: true },
       }),
     );
-    expect(steps()).toContain("setup.login ok");
+    expect(steps()).toContain("setup.owner ok");
   });
 
   it("says how to buy a domain when the account has none, before installing anything", async () => {

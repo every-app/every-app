@@ -11,7 +11,6 @@ import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { checkoutRoot } from "@/lib/checkout";
 import { createCfRunner } from "@/lib/cf/runner";
 import { normalizeHostname } from "@/lib/domains/hostnames";
-import { GatewayClient } from "@/lib/gateway/api";
 import { openInBrowser } from "@/lib/gateway/setup-link";
 import { CLI } from "@/lib/output/command";
 import { handTerminalOver } from "@/lib/output/terminal";
@@ -27,7 +26,6 @@ export async function setup(
     async () => {
       const { gatewayUrl, organizationName } = await runSetup(flags, out, {
         createCf: (accountId) => createCfRunner({ accountId }),
-        gatewayClient: (gatewayUrl) => new GatewayClient({ gatewayUrl }),
         openRelease: () => openGatewayRelease({ out, verbose: flags.verbose }),
         interactive: canPromptInTerminal(flags.json ?? false),
         prompts: terminalPrompts,

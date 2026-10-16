@@ -30,8 +30,7 @@ export type RequiredAction =
   | "claim_owner"
   | "upgrade_workers_paid"
   | "rerun_interactive"
-  | "add_domain"
-  | "create_deploy_token";
+  | "add_domain";
 
 interface ActionData extends EventData {
   url?: string;
@@ -269,8 +268,11 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
       }
       return event.message ? { line: event.message } : null;
     },
-    "setup.login": (event) =>
-      event.status === "ok" && event.message ? { line: event.message } : null,
+    "setup.owner": (event) => {
+      if (event.status !== "ok") return null;
+      const email = text(event.data?.["email"]);
+      return email ? { line: `Owner created: ${email}` } : null;
+    },
     "gateway.migrations": migrated,
     "gateway.deploy": uploaded,
     "gateway.reconcile": (event) =>
@@ -292,7 +294,9 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
       const access =
         data["defaultAccess"] === true
           ? `open to everyone${organization ? ` in ${organization}` : ""}`
-          : "private to you, owners and admins";
+          : data["deployerAccess"] === false
+            ? "private to owners and admins"
+            : "private to you, owners and admins";
       return {
         line: `${first}\nRegistered ${appId}: ${access} (change it in Admin → Apps)`,
       };
@@ -335,16 +339,20 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
 const always = () => true;
 /**
  * The certificate wait, not each certificate as it comes (`data.host`):
- * the next line says the app is live.
+ * the next line says the gateway is live.
  */
 const waiting = (data: EventData) => data["host"] === undefined;
 
-/** Progress a person sees without --verbose, by step. */
+/**
+ * Progress a person sees without --verbose, by step: the waits (a lease,
+ * an app going live with its certificate, the gateway's certificates) and
+ * the Gateway build.
+ */
 const SHOWN_PROGRESS: Readonly<Record<string, (data: EventData) => boolean>> = {
   "app.lease": always,
   "gateway.lease": always,
   "gateway.release": always,
-  "app.tls": waiting,
+  "app.live": always,
   "gateway.tls": waiting,
 };
 

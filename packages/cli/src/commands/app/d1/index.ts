@@ -2,22 +2,18 @@ import type { LocalContext } from "@/context";
 import { localD1Id } from "@every-app/sdk/cloudflare";
 import { workerNameFor } from "@every-app/perimeter/manifest";
 import {
-  connectToGatewayAccount,
-  gatewayCall,
-} from "@/commands/app/deploy/deployApp";
-import {
   applyLocalMigrations,
   devRegistryEnv,
   legacyLocalStateNote,
 } from "@/lib/app/localD1";
 import { readOwnedResources } from "@/lib/app/ownership";
-import { cfD1Database, queryD1 } from "@/lib/cf/d1";
+import { queryD1 } from "@/lib/cf/d1";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { createCfRunner, runCfJson, type CfRunner } from "@/lib/cf/runner";
 import { D1RawOutput } from "@/lib/cf/schemas";
 import { EveryAppError } from "@/lib/errors";
-import { GatewayClient } from "@/lib/gateway/api";
-import { resolveGatewayUrl } from "@/lib/gateway/resolve";
+import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
+import { readApp } from "@/lib/gateway/registry";
 import { loadEveryAppManifest, resolveMigrationBinding } from "@/lib/manifest";
 import { thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
@@ -136,7 +132,7 @@ export async function query(
       sql,
       local: flags.local ?? false,
       binding: flags.binding,
-      gatewayUrl: flags.local ? undefined : await resolveGatewayUrl(flags.gateway),
+      gateway: flags.local ? undefined : requestedGatewayUrl(flags.gateway),
       json: flags.json,
     });
     out.emit({
@@ -152,10 +148,10 @@ interface QueryAppD1Options {
   sql: string;
   local: boolean;
   binding?: string;
-  gatewayUrl?: string;
+  /** The gateway `--gateway` or EVERYAPP_GATEWAY_URL names. */
+  gateway?: string;
   json?: boolean;
   cf?: CfRunner;
-  client?: GatewayClient;
   createCf?: (accountId?: string) => CfRunner;
 }
 
@@ -165,11 +161,10 @@ export async function queryAppD1({
   sql,
   local,
   binding,
-  gatewayUrl,
+  gateway,
   json,
   cf = createCfRunner(),
-  client,
-  createCf = (accountId?: string) => createCfRunner({ accountId }),
+  createCf,
 }: QueryAppD1Options): Promise<Array<Record<string, unknown>[]>> {
   const manifest = await loadEveryAppManifest(cwd);
   const bindings = manifest.resources?.d1 ?? [];
@@ -211,19 +206,15 @@ export async function queryAppD1({
     );
   }
 
-  const gateway = client ?? new GatewayClient({ gatewayUrl: gatewayUrl! });
-  const info = await gatewayCall(() => gateway.appInfo(manifest.id));
-  const name = info.resources.d1[target];
-  const { cf: accountCf, gatewayDb } = await connectToGatewayAccount({
-    client: gateway,
+  const { cf: accountCf, db } = await connectToGateway({
+    gateway,
     interactive: canPromptInTerminal(json ?? false),
     createCf,
   });
+  const app = await readApp(db, manifest.id);
+  const name = app.resources.d1[target];
   // The database the app created and recorded.
-  const owned = await readOwnedResources(
-    cfD1Database(accountCf, gatewayDb),
-    info.workerName,
-  );
+  const owned = await readOwnedResources(db, app.workerName);
   const databaseId = owned.find(
     (r) => r.kind === "d1" && r.binding === target,
   )?.resourceId;

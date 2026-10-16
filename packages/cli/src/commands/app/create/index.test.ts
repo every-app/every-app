@@ -82,6 +82,7 @@ function seams() {
       hostname: "my-app.apps.example.com",
       workerName: "every-my-app",
       versionId: "v1",
+      live: true,
     })),
   };
 }
@@ -164,7 +165,7 @@ describe("everyapp app create", () => {
     expect(deploy).toHaveBeenCalledWith(
       expect.objectContaining({
         cwd: path.join(cwd, "my-app"),
-        gatewayUrl: "https://apps.example.com",
+        gateway: "https://apps.example.com",
         manifest: expect.objectContaining({ id: "my-app" }),
         out,
       }),

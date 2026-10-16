@@ -148,7 +148,7 @@ async function refuseSudoInUsersHome(): Promise<void> {
 }
 
 /**
- * `~/.everyapp` also holds the deploy credentials, so it is never recreated:
+ * `~/.everyapp` also holds what cf runs with, so it is never recreated:
  * created 0700 when missing, refused when someone else could write to it.
  * Older CLIs created it with the umask's mode (0775 under umask 002): when
  * it is ours, and so is everything in it, it is made 0700. (It may be a
@@ -274,7 +274,7 @@ async function assertNoPlantableAncestor(dir: string): Promise<void> {
 function unsafe(dir: string, problem: string): EveryAppError {
   return new EveryAppError(
     "UNSAFE_CF_DIRECTORY",
-    `${dir} ${problem}. everyapp keeps your deploy credentials and the files it hands to cf there, so only you may be able to write to it. Fix or remove it, then run this again.`,
+    `${dir} ${problem}. everyapp runs cf and keeps the files it hands to cf (secrets among them) there, so only you may be able to write to it. Fix or remove it, then run this again.`,
   );
 }
 

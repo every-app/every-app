@@ -367,21 +367,17 @@ interface RegistryNaming {
   appId: string;
   /** The organization's immutable key (`organization_keys.org_key`). */
   orgKey: string | null;
-  /** Registered before org-scoped names: the row keeps `every-<appId>`. */
-  legacyNames?: boolean;
 }
 
 /**
  * The Worker name the gateway assigns an app at registration,
  * `every-<orgKey>-<appId>`, so two organizations never share a Worker, D1
- * database or KV namespace. Apps registered before that keep `every-<appId>`.
+ * database or KV namespace.
  */
 export function registryWorkerNameFor({
   appId,
   orgKey,
-  legacyNames,
 }: RegistryNaming): string {
-  if (legacyNames) return workerNameFor(appId);
   if (!orgKey) throw new Error("An org-scoped Worker name needs an org key.");
   return `every-${orgKey}-${appId}`;
 }
@@ -398,8 +394,8 @@ export function isRegistryWorkerName(
   if (
     isReservedName(row.workerName) ||
     row.workerName.length > MAX_WORKER_NAME_LENGTH ||
-    (!row.legacyNames &&
-      (!row.orgKey || row.appId.includes(RESOURCE_SEPARATOR)))
+    !row.orgKey ||
+    row.appId.includes(RESOURCE_SEPARATOR)
   ) {
     return false;
   }
@@ -409,21 +405,12 @@ export function isRegistryWorkerName(
 /**
  * The D1 database or KV namespace an app Worker's binding uses: `DB` and
  * `KV` take the Worker's name, any other binding appends its own after
- * {@link RESOURCE_SEPARATOR} (`every-acme-notes--archive`). Legacy apps keep
- * the single hyphen their resources were created with
- * (`every-notes-archive`), which another app's name can share; the CLI
- * never adopts or deletes a resource it didn't record as the app's.
+ * {@link RESOURCE_SEPARATOR} (`every-acme-notes--archive`).
  */
-export function resourceNameFor(
-  workerName: string,
-  binding: string,
-  { legacyNames = false }: { legacyNames?: boolean } = {},
-): string {
+export function resourceNameFor(workerName: string, binding: string): string {
   if (binding === "DB" || binding === "KV") return workerName;
-  const suffix = binding.toLowerCase();
-  return legacyNames
-    ? `${workerName}-${suffix}`
-    : `${workerName}${RESOURCE_SEPARATOR}${suffix.replaceAll("_", "-")}`;
+  const suffix = binding.toLowerCase().replaceAll("_", "-");
+  return `${workerName}${RESOURCE_SEPARATOR}${suffix}`;
 }
 
 /**

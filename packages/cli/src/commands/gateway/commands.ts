@@ -90,14 +90,14 @@ export const deployCommand = buildCommand({
       "  5. Binds every registered app, publishes the gateway's domain and each app's as",
       "     Workers Custom Domains, then uploads with cf deploy",
       "     (a first deploy sends the generated secrets with the upload)",
-      "  6. Waits for the new version to serve and records the install, then for new certificates",
+      "  6. Records the install (with the identity key's public half), then waits for new certificates",
       "  7. Mints a one-time owner setup link if the gateway has no owner yet",
       "     (in CI or with piped output it only says to run claim-link, unless --printSetupLink)",
       "",
       "The gateway serves at --domain, any hostname in a zone the account has (apps.example.com in",
       "example.com), and apps one label below it: todo.apps.example.com. Cloudflare creates their",
       "DNS records and certificates; nothing else in the zone changes. `everyapp setup` does all of",
-      "this, and the owner login, in one command.",
+      "this, and the owner account, in one command.",
     ].join("\n"),
   },
 });
@@ -146,7 +146,7 @@ const reconcileCommand = buildCommand({
   docs: {
     brief: "Bind and publish exactly the apps the gateway's registry lists",
     fullDescription:
-      "Redeploys the release the gateway runs (from the account's release cache, checked against its SHA-256) with a service binding for every uploaded app, and each app's hostname as a Workers Custom Domain. Never upgrades or downgrades the gateway. `app deploy` and `app delete` run it when the set of apps changes.",
+      "Redeploys the release the gateway runs (from the account's release cache, checked against its SHA-256) with a service binding for every uploaded app, and each app's hostname as a Workers Custom Domain, unless the install row says the live version binds them already. Never upgrades or downgrades the gateway. `app deploy` and `app delete` run it when the set of apps changes.",
   },
 });
 
@@ -164,7 +164,7 @@ const statusCommand = buildCommand({
     },
   },
   docs: {
-    brief: "Show the gateway's release, bindings, owner and certificate",
+    brief: "Show the gateway's release, apps, owner, certificates and what to fix, from its D1 and cf",
   },
 });
 

@@ -1,38 +1,48 @@
 /**
  * Deploying an app, shared by `everyapp app deploy` and `app create`:
  *
- *   1. ask the gateway who we deploy as, and in which Cloudflare account;
- *   2. register: the gateway assigns the Worker, resource and host names
- *      (a new app starts `pending`, unbound);
+ *   1. find the gateway through the Cloudflare login: its D1 database and
+ *      install row, in its account (lib/gateway/connect.ts);
+ *   2. register the app in the gateway's D1 (lib/gateway/registry.ts, with
+ *      the rules in @every-app/perimeter/registry): its Worker, resource
+ *      and host names, and for a new app (`pending`, unbound) who can open
+ *      it;
  *   3. under the app's deploy lease: find or create its D1 and KV (only
- *      ever the app's own), `cf build` with the deploy inputs and check the
- *      built Worker against the app policy and its Workflows' names (each
- *      new or already the app's), check that its drizzle migrations still
- *      describe its schema (steps/checkSchemaDrift.ts), make sure an
- *      unattended run may replace the Worker, and only then (the lease
- *      checked again before each) migrate D1 (bookmark, then
- *      `cf d1 migrations apply`) and upload it
- *      (`cf deploy --prebuilt`, with GATEWAY_URL and EVERY_APP_ORG_ID in
- *      the secrets file; cf creates or updates its Workflows), so a deploy
- *      that can't upload leaves the database alone. Workflows the app
- *      dropped (with --allow-delete-workflows) go once the upload is live;
- *   4. tell the gateway the version is up (`pending` → `binding`), have the
- *      gateway bind the Worker and publish the app's hostname as a Workers
- *      Custom Domain if it doesn't yet (a reconcile of the live gateway
- *      release), activate once the binding answers, and wait for a new
- *      hostname's certificate.
+ *      ever the app's own), `cf build` with the deploy inputs (the
+ *      gateway's identity key from the install row) and check the built
+ *      Worker against the app policy and its Workflows' names (each new or
+ *      already the app's), check that its drizzle migrations still describe
+ *      its schema (steps/checkSchemaDrift.ts), make sure an unattended run
+ *      may replace the Worker, and only then (the lease checked again
+ *      before each) migrate D1 (bookmark, then `cf d1 migrations apply`)
+ *      and upload it (`cf deploy --prebuilt`, with GATEWAY_URL and
+ *      EVERY_APP_ORG_ID in the secrets file; cf creates or updates its
+ *      Workflows), so a deploy that can't upload leaves the database alone.
+ *      Workflows the app dropped (with --allow-delete-workflows) go once
+ *      the upload is live; then the registry records the version, its
+ *      manifest and who deployed it (`pending` → `binding`);
+ *   4. bind the Worker on the gateway and publish the app's hostname as a
+ *      Workers Custom Domain if the install row says it doesn't yet (a
+ *      reconcile of the live gateway release), then wait for the app to go
+ *      live: the gateway activates it on the first request that reaches it
+ *      (steps/waitForLive.ts).
  *
  * A new hostname is checked (DNS records that answer it, the zone's room)
  * right after registering, before anything is created or uploaded.
  * A redeploy of an app the gateway already binds and serves never touches
- * the gateway.
+ * the gateway. The gateway takes the app's agent tools itself, on first use
+ * and whenever the app's version changes.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 import { version as cliVersion } from "../../../../package.json";
 import { appBindingName } from "@every-app/perimeter/manifest";
+import type { RegistrationPlan } from "@every-app/perimeter/registry";
 import { checkSchemaDrift } from "@/commands/app/deploy/steps/checkSchemaDrift";
-import { syncAppToolsWithGateway } from "@/commands/app/deploy/steps/syncTools";
+import {
+  waitForLive,
+  type LiveWaitSeams,
+} from "@/commands/app/deploy/steps/waitForLive";
 import { buildApp } from "@/lib/app/buildApp";
 import {
   MISSING_CLOUDFLARE_CONFIG,
@@ -49,8 +59,7 @@ import {
   droppedWorkflows,
   type AppWorkflow,
 } from "@/lib/app/workflows";
-import { ensureCfAuth } from "@/lib/cf/account";
-import { cfD1Database } from "@/lib/cf/d1";
+import type { D1Database } from "@/lib/cf/d1";
 import {
   assertReplaceable,
   canPromptInTerminal,
@@ -58,43 +67,30 @@ import {
   type Confirm,
 } from "@/lib/cf/deploy";
 import { CfError } from "@/lib/cf/errors";
-import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
+import type { CfRunner } from "@/lib/cf/runner";
 import { deleteWorkflow } from "@/lib/cf/workflows";
-import { waitForCertificates } from "@/lib/domains/certWait";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
 import { afterMigration, EveryAppError } from "@/lib/errors";
-import {
-  explainGatewayError,
-  GatewayApiError,
-  GatewayClient,
-  type GatewayStatusResponse,
-  type GatewayWhoamiResponse,
-  type RegisterAppResponse,
-} from "@/lib/gateway/api";
-import { notDeployedByEveryapp } from "@/lib/gateway/apply";
+import { connectToGateway } from "@/lib/gateway/connect";
 import { readInstall } from "@/lib/gateway/install";
 import { acquireLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
-import { compareVersions } from "@/lib/gateway/release";
-import { findGatewayDatabase } from "@/lib/gateway/resources";
+import { markDeployed, register } from "@/lib/gateway/registry";
 import {
   loadEveryAppManifest,
   resolveMigrationBinding,
   type EveryAppCliManifest,
 } from "@/lib/manifest";
 import { migrateRemoteD1 } from "@/lib/migrations/remote";
-import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { installDependencies } from "@/lib/package-manager";
-
-const ACTIVATE_TIMEOUT_MS = 90_000;
-const ACTIVATE_INTERVAL_MS = 3_000;
 
 interface DeployAppOptions {
   cwd: string;
   manifest?: EveryAppCliManifest;
-  gatewayUrl: string;
+  /** The gateway `--gateway` or EVERYAPP_GATEWAY_URL names, checked against the install. */
+  gateway?: string;
   out: EventSink;
   json?: boolean;
   verbose?: boolean;
@@ -103,8 +99,12 @@ interface DeployAppOptions {
   allowDeleteWorkflows?: boolean;
   /** Publish a new hostname over the DNS record that answers it (`--force-dns`). */
   forceDns?: boolean;
-  /** Wait for a new hostname's certificate (default true; `--no-wait-cert`). */
-  waitForCertificate?: boolean;
+  /**
+   * Wait for the app to go live, its new hostname's certificate included
+   * (default true; `--no-wait-cert`). Without the wait, it goes live on its
+   * first visit.
+   */
+  waitForLive?: boolean;
   /**
    * The app's own secrets to send with this version (`app secret set`).
    * They stay on the Worker through later deploys, which don't send them.
@@ -114,26 +114,15 @@ interface DeployAppOptions {
   interactive?: boolean;
   confirm?: Confirm;
   createCf?: (accountId?: string) => CfRunner;
-  client?: GatewayClient;
-  sleep?: (ms: number) => Promise<void>;
   installDeps?: typeof installDependencies;
   reconcile?: ReconcileSeams;
-  certificates?: CertificateSeams;
+  live?: LiveWaitSeams;
 }
 
-/** How a reconcile reads the live gateway, and how long it waits (tests). */
+/** How long a reconcile waits for the gateway's lease, and how it sleeps (tests). */
 export interface ReconcileSeams {
-  readStatus?: (gatewayUrl: string) => Promise<GatewayStatusResponse>;
   sleep?: (ms: number) => Promise<void>;
-  verifyTimeoutMs?: number;
   leaseWaitMs?: number;
-}
-
-/** How the certificate wait checks a hostname, sleeps, and how long it waits (tests). */
-interface CertificateSeams {
-  isReady?: (url: string) => Promise<boolean>;
-  sleep?: (ms: number) => Promise<void>;
-  maxWaitMs?: number;
 }
 
 interface DeployAppResult {
@@ -143,6 +132,8 @@ interface DeployAppResult {
   hostname: string;
   workerName: string;
   versionId: string;
+  /** The registry says the app is active (it can also go live on its first visit). */
+  live: boolean;
 }
 
 export async function deployApp(
@@ -166,9 +157,7 @@ async function deploySteps(
   options: DeployAppOptions,
   migrated: Migrated,
 ): Promise<DeployAppResult> {
-  const { cwd, out, gatewayUrl } = options;
-  const createCf = options.createCf ?? ((accountId?: string) => createCfRunner({ accountId }));
-  const client = options.client ?? new GatewayClient({ gatewayUrl });
+  const { cwd, out } = options;
   const interactive =
     options.interactive ?? canPromptInTerminal(options.json ?? false);
 
@@ -204,32 +193,34 @@ async function deploySteps(
     });
   }
 
-  // 1. Who we deploy as, and where.
-  const { whoami, accountId, cf, gatewayDb } = await connectToGatewayAccount({
-    client,
-    interactive,
-    createCf,
-  });
-
-  const sdkVersion = await installedSdkVersion(cwd);
-  if (sdkVersion && whoami.minSdk && compareVersions(sdkVersion, whoami.minSdk) < 0) {
+  // 1. The gateway, through the Cloudflare login: its account, D1 and install.
+  const { cf, accountId, accountName, db: registry, install, gatewayUrl, deployer } =
+    await connectToGateway({
+      gateway: options.gateway,
+      interactive,
+      createCf: options.createCf,
+    });
+  const identityKey = install.jwtPublicKey;
+  if (!identityKey) {
     throw new EveryAppError(
-      "SDK_TOO_OLD",
-      `This gateway needs @every-app/sdk ${whoami.minSdk} or newer; the app has ${sdkVersion}. Upgrade it in package.json.`,
+      "IDENTITY_KEY_UNKNOWN",
+      "The gateway's install row has no identity public key, which app Workers need to verify who is signed in. Write the gateway's JWT_PUBLIC_KEY into it as docs/runbooks/key-rotation.md shows, then deploy again.",
     );
   }
 
-  // 2. Register: the gateway names everything.
-  const registration = await gatewayCall(() =>
-    client.registerApp({
-      appId: manifest.id,
-      name: manifest.name ?? manifest.id,
-      description: manifest.description ?? manifest.id,
-      manifest,
-      cliVersion,
-      ...(sdkVersion ? { sdkVersion } : {}),
-    }),
-  );
+  // 2. Register: the rules name everything.
+  const { plan, organization, hasOwner, deployerGranted } = await register(registry, {
+    appSlug: manifest.id,
+    name: manifest.name ?? manifest.id,
+    description: manifest.description ?? manifest.id,
+    manifest,
+    appBaseDomain: install.appBaseDomain,
+    deployer,
+    organizationName: accountName ?? "",
+  });
+  const hostname = plan.app.hostname!;
+  const workerName = plan.app.workerName!;
+  const isNew = plan.kind !== "existing";
   // A person's first line: where this goes, and (secret set) what for. A
   // new app's says who can open it.
   const secretNames = Object.keys(options.secrets ?? {});
@@ -237,21 +228,23 @@ async function deploySteps(
     type: "step",
     step: "app.register",
     status: "ok",
-    message: `${registration.existingApp ? "Updating" : "Registered"} ${manifest.id} as ${registration.workerName} at https://${registration.hostname} (${registration.status}).${
-      registration.existingApp
+    message: `${isNew ? "Registered" : "Updating"} ${manifest.id} as ${workerName} at https://${hostname} (${plan.app.status}).${
+      !isNew
         ? ""
-        : registration.defaultAccess
+        : plan.app.isDefault
           ? " Everyone in the organization can open it."
-          : " New apps are private: only you and the organization's owners and admins can open it. Grant others in Admin → Apps."
-    }`,
+          : ` New apps are private: only ${deployerGranted ? "you and " : ""}the organization's owners and admins can open it. Grant others in Admin → Apps.`
+    }${isNew && !hasOwner ? " The gateway has no owner yet: its first owner gets the app (everyapp setup)." : ""}`,
     data: {
       appId: manifest.id,
-      workerName: registration.workerName,
-      hostname: registration.hostname,
-      status: registration.status,
-      existingApp: registration.existingApp,
-      defaultAccess: registration.defaultAccess,
-      organizationName: whoami.organizationName,
+      workerName,
+      hostname,
+      status: plan.app.status,
+      existingApp: !isNew,
+      defaultAccess: plan.app.isDefault,
+      deployerAccess: deployerGranted,
+      organizationId: organization.id,
+      organizationName: organization.name,
       ...(secretNames.length > 0 ? { secrets: secretNames } : {}),
     },
   });
@@ -260,21 +253,14 @@ async function deploySteps(
   // created or uploaded; the reconcile that publishes it checks again. One
   // that isn't one label below the base is never published, so it is
   // neither checked nor a reason to redeploy the gateway.
-  const registry = cfD1Database(cf, gatewayDb);
-  const install = await readInstall(registry);
-  if (!install) throw notDeployedByEveryapp();
-  const outsideBase = !isOneLabelBelow(
-    registration.hostname,
-    install.appBaseDomain,
-  );
-  const newHost =
-    !outsideBase && !install.liveDomains.includes(registration.hostname);
+  const outsideBase = !isOneLabelBelow(hostname, install.appBaseDomain);
+  const newHost = !outsideBase && !install.liveDomains.includes(hostname);
   if (outsideBase) {
     out.emit({
       type: "warning",
       code: "APP_HOST_OUTSIDE_BASE",
       step: "app.domain",
-      message: `${registration.hostname} isn't one label below ${install.appBaseDomain}, so the gateway doesn't publish it and ${manifest.id} can't be reached there.`,
+      message: `${hostname} isn't one label below ${install.appBaseDomain}, so the gateway doesn't publish it and ${manifest.id} can't be reached there.`,
     });
   }
   if (newHost) {
@@ -283,7 +269,7 @@ async function deploySteps(
       out,
       step: "app.domain",
       zone: { id: install.zoneId, name: install.zoneName },
-      domains: [...install.liveDomains, registration.hostname],
+      domains: [...install.liveDomains, hostname],
       liveDomains: install.liveDomains,
       forceDns: options.forceDns,
       interactive,
@@ -293,7 +279,7 @@ async function deploySteps(
   // 3. Everything that touches the app's Worker and data, one deploy at a time.
   const lease = await acquireLease({
     db: registry,
-    id: `app:${registration.workerName}`,
+    id: `app:${workerName}`,
     purpose: "app.deploy",
     onWait: (holder) =>
       out.emit({
@@ -307,13 +293,14 @@ async function deploySteps(
   let versionId: string;
   try {
     const deletedDurableObjects = checkDurableObjects(
-      registration,
+      plan,
       manifest,
       options.allowDeleteDurableObjectData ?? false,
     );
     const deletedWorkflows = await checkWorkflows({
       cf,
-      registration,
+      plan,
+      workerName,
       manifest,
       allowDelete: options.allowDeleteWorkflows ?? false,
     });
@@ -322,7 +309,7 @@ async function deploySteps(
     const ownership = {
       cf,
       gatewayDb: registry,
-      registration,
+      registration: { workerName, resources: plan.resources },
       onCreated: (description: string) =>
         out.emit({ type: "progress", step: "app.resources", message: `Created ${description}.` }),
       onRecreated: (description: string) =>
@@ -343,13 +330,12 @@ async function deploySteps(
       verbose: options.verbose ?? false,
     });
 
-    const identity = await gatewayCall(() => client.getIdentityKeys());
     const inputs: DeployInputs = {
-      workerName: registration.workerName,
-      organizationId: whoami.organizationId,
+      workerName,
+      organizationId: organization.id,
       gatewayUrl,
-      identityIssuer: identity.issuer ?? gatewayUrl,
-      identityPublicKeys: identity.keys,
+      identityIssuer: gatewayUrl,
+      identityPublicKeys: [identityKey],
       resources,
       ...(deletedDurableObjects.length ? { deletedDurableObjects } : {}),
     };
@@ -363,11 +349,7 @@ async function deploySteps(
       verbose: options.verbose ?? false,
     });
     const { workflows } = await prepareAppBuildOutput({ cwd, inputs });
-    await assertOwnWorkflows({
-      cf,
-      workerName: registration.workerName,
-      names: workflows,
-    });
+    await assertOwnWorkflows({ cf, workerName, names: workflows });
     out.emit({
       type: "step",
       step: "app.build",
@@ -379,13 +361,13 @@ async function deploySteps(
     await checkSchemaDrift({ cwd, manifest, out });
 
     // The database changes only once nothing else can stop the upload.
-    const workerRecord = (
-      await readOwnedResources(registry, registration.workerName)
-    ).find((resource) => resource.kind === "worker");
+    const workerRecord = (await readOwnedResources(registry, workerName)).find(
+      (resource) => resource.kind === "worker",
+    );
     await assertReplaceable({
       cf,
-      workerName: registration.workerName,
-      recordedVersionIds: [registration.versionId, workerRecord?.versionId],
+      workerName,
+      recordedVersionIds: [plan.versionId, workerRecord?.versionId],
       interactive,
       confirm: options.confirm,
     });
@@ -404,29 +386,29 @@ async function deploySteps(
       type: "step",
       step: "app.upload",
       status: "start",
-      message: `Uploading ${registration.workerName}...`,
+      message: `Uploading ${workerName}...`,
     });
     const uploaded = await cfDeploy({
       cf,
       cwd,
-      workerName: registration.workerName,
+      workerName,
       accountId,
       message: `everyapp ${cliVersion} ${manifest.id}`,
       secrets: {
         ...options.secrets,
         GATEWAY_URL: gatewayUrl,
-        EVERY_APP_ORG_ID: whoami.organizationId,
+        EVERY_APP_ORG_ID: organization.id,
       },
       interactive,
-      // Recorded at once, before the gateway hears of it: a retry must find
-      // this upload was everyapp's, however this run ends.
+      // Recorded at once, before the registry hears of it: a retry must
+      // find this upload was everyapp's, however this run ends.
       onUploaded: (uploadedVersion) =>
-        recordUploadedVersion(registry, registration.workerName, uploadedVersion),
+        recordUploadedVersion(registry, workerName, uploadedVersion),
     });
     if (!uploaded.versionId) {
       throw new EveryAppError(
         "VERSION_UNKNOWN",
-        `cf deployed ${registration.workerName}, but Cloudflare reports no version for it.`,
+        `cf deployed ${workerName}, but Cloudflare reports no version for it.`,
       );
     }
     versionId = uploaded.versionId;
@@ -437,7 +419,7 @@ async function deploySteps(
       message: `Uploaded version ${versionId}.`,
       data: { versionId },
     });
-    // The live version no longer defines them. Before the gateway records
+    // The live version no longer defines them. Before the registry records
     // the new manifest, so a retry after a failed delete deletes them still.
     for (const workflow of deletedWorkflows) {
       try {
@@ -451,164 +433,79 @@ async function deploySteps(
         message: `Deleted the Workflow ${workflow.binding} (${workflow.name}) with its instances.`,
       });
     }
-    await gatewayCall(() =>
-      client.markDeployed(manifest.id, { versionId, manifest }),
-    );
+    await markDeployed(registry, plan.app.id, {
+      versionId,
+      manifest,
+      actor: deployer.actor,
+    });
   } finally {
     await lease.release();
   }
 
-  // 4. Bind, publish and go live, under the gateway's lease.
-  const published = await bindIfNeeded({
-    client,
+  // 4. Bind and publish under the gateway's lease, then go live.
+  await bindIfNeeded({
     cf,
+    db: registry,
     out,
     accountId,
-    workerName: registration.workerName,
+    workerName,
     publishHost: newHost,
     interactive,
     forceDns: options.forceDns,
     seams: options.reconcile,
   });
-  await activate({ client, appId: manifest.id, sleep: options.sleep });
-
-  // The gateway reaches the app over the binding just made, so the tools
-  // snapshot comes once the app is active. It never throws: the app is
-  // already live.
-  await syncAppToolsWithGateway({
-    gatewayUrl,
-    appId: manifest.id,
-    mcpUrl: `https://${registration.hostname}/mcp`,
-    out,
-    verbose: options.verbose,
-    client,
-  });
-
-  if (published.includes(registration.hostname)) {
-    if (options.waitForCertificate ?? true) {
-      await waitForCertificates({
-        hosts: [registration.hostname],
-        out,
-        step: "app.tls",
-        ...options.certificates,
-      });
-    } else {
-      out.emit({
-        type: "progress",
-        step: "app.tls",
-        message: `https://${registration.hostname} gets its certificate within a few minutes; \`everyapp gateway status\` shows when.`,
-      });
-    }
+  // A hostname the gateway doesn't publish never answers (warned above).
+  const wait = !outsideBase && (options.waitForLive ?? true);
+  if (!outsideBase && !wait) {
+    out.emit({
+      type: "progress",
+      step: "app.live",
+      message: `${manifest.id} goes live on its first visit to https://${hostname}${newHost ? ", once its certificate comes (within a few minutes)" : ""}; \`everyapp gateway status\` shows it.`,
+      data: { hostname },
+    });
   }
-  out.emit({
-    type: "step",
-    step: "app.live",
-    status: "ok",
-    message: `${manifest.id} is live at https://${registration.hostname}.`,
-    data: {
-      hostname: registration.hostname,
-      url: `https://${registration.hostname}`,
-    },
-  });
+  const live =
+    wait &&
+    (await waitForLive({
+      db: registry,
+      appRowId: plan.app.id,
+      appId: manifest.id,
+      hostname,
+      out,
+      newHostname: newHost,
+      ...options.live,
+    })) === "live";
+  if (live) {
+    out.emit({
+      type: "step",
+      step: "app.live",
+      status: "ok",
+      message: `${manifest.id} is live at https://${hostname}.`,
+      data: { hostname, url: `https://${hostname}` },
+    });
+  }
 
   return {
-    liveUrl: `https://${registration.hostname}`,
+    liveUrl: `https://${hostname}`,
     gatewayUrl,
-    organizationId: whoami.organizationId,
-    hostname: registration.hostname,
-    workerName: registration.workerName,
+    organizationId: organization.id,
+    hostname,
+    workerName,
     versionId,
+    live,
   };
-}
-
-/**
- * The deploy token's organization and the gateway's Cloudflare account,
- * with cf logged in and pinned to that account: app deploys always run in
- * the gateway's own account.
- */
-export async function connectToGatewayAccount({
-  client,
-  interactive,
-  createCf,
-}: {
-  client: GatewayClient;
-  interactive: boolean;
-  createCf: (accountId?: string) => CfRunner;
-}): Promise<{
-  whoami: GatewayWhoamiResponse;
-  accountId: string;
-  cf: CfRunner;
-  gatewayDb: string;
-}> {
-  const whoami = await gatewayCall(() => client.whoami());
-  const accountId = checkGateway(whoami);
-  const cfLogin = await ensureCfAuth({ cf: createCf(), interactive });
-  if (
-    cfLogin.accounts?.length &&
-    !cfLogin.accounts.some((account) => account.id === accountId)
-  ) {
-    throw new EveryAppError(
-      "ACCOUNT_MISMATCH",
-      `The gateway runs in Cloudflare account ${accountId}, which cf${cfLogin.email ? ` (logged in as ${cfLogin.email})` : ""} can't use. Log in to that account: npx cf auth login`,
-    );
-  }
-  const cf = createCf(accountId);
-  const gatewayDb = await findGatewayDatabase(cf);
-  if (!gatewayDb) {
-    throw new EveryAppError(
-      "ACCOUNT_MISMATCH",
-      `Cloudflare account ${accountId} has no gateway database; is cf logged in to the gateway's account?`,
-    );
-  }
-  return { whoami, accountId, cf, gatewayDb };
-}
-
-/** The gateway's Cloudflare account, once it speaks this deploy protocol. */
-function checkGateway(whoami: GatewayWhoamiResponse): string {
-  if ((whoami.capabilities?.deployProtocol ?? 1) < 2) {
-    throw new EveryAppError(
-      "GATEWAY_OUTDATED",
-      "The gateway is too old for this everyapp. Upgrade it first: everyapp gateway upgrade",
-      { rerun: `${CLI} gateway upgrade` },
-    );
-  }
-  if (whoami.minCli && compareVersions(cliVersion, whoami.minCli) < 0) {
-    throw new EveryAppError(
-      "CLI_TOO_OLD",
-      `This gateway needs everyapp ${whoami.minCli} or newer; this is ${cliVersion}.`,
-    );
-  }
-  if (!whoami.accountId) {
-    throw new EveryAppError(
-      "GATEWAY_ACCOUNT_UNKNOWN",
-      "The gateway doesn't say which Cloudflare account it runs in. Redeploy it: everyapp gateway upgrade",
-      { rerun: `${CLI} gateway upgrade` },
-    );
-  }
-  return whoami.accountId;
-}
-
-export async function gatewayCall<T>(call: () => Promise<T>): Promise<T> {
-  try {
-    return await call();
-  } catch (error) {
-    throw explainGatewayError(error);
-  }
 }
 
 /** Durable Object classes the last deploy had and this one drops. */
 function checkDurableObjects(
-  registration: RegisterAppResponse,
+  plan: RegistrationPlan,
   manifest: EveryAppCliManifest,
   allowDelete: boolean,
 ): string[] {
-  const previous = registration.previousManifest as {
-    resources?: { durableObjects?: Array<{ className?: unknown }> };
-  } | null;
   const current = new Set(
     (manifest.resources?.durableObjects ?? []).map((d) => d.className),
   );
-  const removed = (previous?.resources?.durableObjects ?? [])
+  const removed = (plan.previousManifest?.resources?.durableObjects ?? [])
     .map((d) => String(d.className))
     .filter((className) => !current.has(className));
   if (removed.length > 0 && !allowDelete) {
@@ -627,22 +524,22 @@ function checkDurableObjects(
  */
 async function checkWorkflows({
   cf,
-  registration,
+  plan,
+  workerName,
   manifest,
   allowDelete,
 }: {
   cf: CfRunner;
-  registration: RegisterAppResponse;
+  plan: RegistrationPlan;
+  workerName: string;
   manifest: EveryAppCliManifest;
   allowDelete: boolean;
 }): Promise<AppWorkflow[]> {
   const removed = await droppedWorkflows({
     cf,
-    workerName: registration.workerName,
-    previousManifest: registration.previousManifest,
-    names: appWorkflows(registration.workerName, manifest).map(
-      (workflow) => workflow.name,
-    ),
+    workerName,
+    previousManifest: plan.previousManifest,
+    names: appWorkflows(workerName, manifest).map((workflow) => workflow.name),
   });
   if (removed.length > 0 && !allowDelete) {
     const one = removed.length === 1;
@@ -716,13 +613,12 @@ async function migrate({
 }
 
 /**
- * Reconcile the gateway when it doesn't bind this app's Worker yet, or
- * doesn't publish its hostname yet. Returns the hostnames that reconcile
- * published for the first time.
+ * Reconcile the gateway when the install row says it doesn't bind this
+ * app's Worker yet, or doesn't publish its hostname yet.
  */
 async function bindIfNeeded({
-  client,
   cf,
+  db,
   out,
   accountId,
   workerName,
@@ -731,8 +627,8 @@ async function bindIfNeeded({
   forceDns,
   seams,
 }: {
-  client: GatewayClient;
   cf: CfRunner;
+  db: D1Database;
   out: EventSink;
   accountId: string;
   workerName: string;
@@ -741,9 +637,9 @@ async function bindIfNeeded({
   interactive: boolean;
   forceDns?: boolean;
   seams?: ReconcileSeams;
-}): Promise<string[]> {
-  const live = await client.status({ auth: true }).catch(() => null);
-  if (live?.appBindings?.includes(workerName) && !publishHost) return [];
+}): Promise<void> {
+  const install = await readInstall(db);
+  if (install?.liveAppWorkers.includes(workerName) && !publishHost) return;
   out.emit({
     type: "step",
     step: "app.bind",
@@ -768,7 +664,6 @@ async function bindIfNeeded({
       message: `The gateway binds ${appBindingName(workerName)} (gateway version ${result.versionId ?? "unknown"}).`,
       data: { versionId: result.versionId, newHosts: result.newHosts },
     });
-    return result.newHosts;
   } catch (error) {
     if (error instanceof EveryAppError && error.code === "LEASE_HELD") {
       throw new EveryAppError(
@@ -778,51 +673,6 @@ async function bindIfNeeded({
       );
     }
     throw error;
-  }
-}
-
-/** Activate, retrying while the gateway version with the binding rolls out. */
-async function activate({
-  client,
-  appId,
-  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-}: {
-  client: GatewayClient;
-  appId: string;
-  sleep?: (ms: number) => Promise<void>;
-}): Promise<void> {
-  const deadline = Date.now() + ACTIVATE_TIMEOUT_MS;
-  for (;;) {
-    try {
-      await client.activateApp(appId);
-      return;
-    } catch (error) {
-      const notReady =
-        error instanceof GatewayApiError && error.code === "BINDING_NOT_READY";
-      if (!notReady) throw explainGatewayError(error);
-      if (Date.now() >= deadline) {
-        throw new EveryAppError(
-          "BINDING_NOT_READY",
-          `The gateway still can't reach ${appId}'s Worker. Run \`everyapp gateway status\`, then \`everyapp app deploy\` again; the upload is kept.`,
-          { retryable: true },
-        );
-      }
-      await sleep(ACTIVATE_INTERVAL_MS);
-    }
-  }
-}
-
-async function installedSdkVersion(cwd: string): Promise<string | null> {
-  try {
-    const manifest = JSON.parse(
-      await fs.readFile(
-        path.join(cwd, "node_modules", "@every-app", "sdk", "package.json"),
-        "utf8",
-      ),
-    ) as { version?: string };
-    return manifest.version ?? null;
-  } catch {
-    return null;
   }
 }
 

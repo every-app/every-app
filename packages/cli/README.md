@@ -22,7 +22,10 @@ Requires Node.js 22.18 or newer. The CLI runs Cloudflare's `cf` CLI for you:
 its own pinned copy, or the app's when the command is about one app. It never
 handles a Cloudflare token itself: `cf` keeps its own login (`cf auth login`,
 which the CLI offers when you're logged out), and CI passes
-`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` through.
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` through. That login is the
+only credential: the CLI reads and writes the gateway's app registry in the
+gateway's own D1 database with it (ADR-0003), and keeps nothing else on your
+machine but which account it deployed to (`~/.everyapp/installs.json`).
 
 Commands that deploy take `--json` to print NDJSON progress events (exit code
 0 when done, 2 when an action is required — do it and run the same command
@@ -33,7 +36,7 @@ again — and 1 on an error).
 ### Set up Every App
 
 From an empty Cloudflare account (on Workers Paid, with a domain) to a working
-gateway, its owner, and this machine logged in:
+gateway and its owner:
 
 ```bash
 everyapp setup --domain apps.example.com
@@ -41,9 +44,9 @@ everyapp setup --domain apps.example.com
 
 It builds the gateway from this checkout and deploys it at `--domain` (any
 hostname in a zone the account has; without the flag it asks), opens a
-one-time setup link for the owner account, and logs this machine in once that
-account exists. Run it again to resume: it does nothing once everything is
-there. `--json` prints NDJSON events for an agent. Then deploy apps from the
+one-time setup link for the owner account, and waits for the account by
+watching the link's row in the gateway's D1. Run it again to resume: it does
+nothing once everything is there (a run that gave up shows a new link). `--json` prints NDJSON events for an agent. Then deploy apps from the
 repository: `cd apps/todo-app && pnpm run deploy`.
 
 ### Deploy the Gateway
@@ -66,7 +69,7 @@ Other gateway commands:
 
 ```bash
 everyapp gateway upgrade        # deploy the gateway as this checkout builds it
-everyapp gateway status         # release, apps, addresses and certificates, owner
+everyapp gateway status         # release, apps, certificates, owner, what to fix (from D1 and cf)
 everyapp gateway reconcile      # bind and serve exactly the registered apps
 everyapp gateway claim-link     # a new owner setup link
 everyapp gateway secret set OPENAI_API_KEY
@@ -100,10 +103,14 @@ Deploy your app to Cloudflare:
 everyapp app deploy
 ```
 
-Run this from your app directory to build and deploy updates. The gateway
-names the app's Worker and resources; the deploy migrates the app's D1
-database, builds with `cf build`, checks the built Worker, uploads it with
-`cf deploy`, and has the gateway serve it.
+Run this from your app directory to build and deploy updates, on any machine
+with the Cloudflare login. The deploy registers the app in the gateway's D1
+(the rules in `@every-app/perimeter/registry` name its Worker and resources),
+migrates the app's D1 database, builds with `cf build`, checks the built
+Worker, uploads it with `cf deploy`, records the version and who deployed it,
+redeploys the gateway to bind a new app, and then requests the app's address
+until the gateway has made it live (behind Cloudflare Access, it goes live on
+its first visit instead).
 
 ### Delete an app
 

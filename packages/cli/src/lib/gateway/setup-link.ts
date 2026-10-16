@@ -1,19 +1,29 @@
+/**
+ * The owner setup link: how a person gets the gateway's first account. The
+ * CLI writes it straight into the gateway's D1 (`owner_setup_tokens`) with
+ * the operator's Cloudflare credentials, and learns it was used by reading
+ * the same row back: the gateway's claim creates the owner and their
+ * membership, then consumes the link, and undoes both if anything fails.
+ */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { execa } from "execa";
 import type { D1Database } from "@/lib/cf/d1";
-import { writePendingClaim } from "./pendingClaims";
 
 const SETUP_LINK_TTL_MS = 24 * 60 * 60 * 1000;
 
 export interface SetupLink {
+  /** The `owner_setup_tokens` row, to watch for the claim. */
+  id: string;
   url: string;
   expiresAt: Date;
-  /**
-   * The second secret, when asked for: never printed, never in the link,
-   * it retrieves the owner's first deploy token once the link is claimed
-   * (lib/gateway/autoLogin.ts).
-   */
-  cliSecret?: string;
+  /** An earlier link nobody used stopped working with this one. */
+  replaced: boolean;
+}
+
+/** Who owns the gateway, and the organization they own. */
+export interface GatewayOwner {
+  email: string;
+  organizationName: string;
 }
 
 const sha256 = (value: string) =>
@@ -21,13 +31,31 @@ const sha256 = (value: string) =>
 
 /** Whether the gateway has been claimed, read straight from its D1. */
 export async function gatewayHasOwner(db: D1Database): Promise<boolean> {
+  return (await readOwner(db)) !== null;
+}
+
+const OWNERS = `SELECT users.email AS email, organizations.name AS organization_name
+FROM members
+JOIN users ON users.id = members.user_id
+JOIN organizations ON organizations.id = members.organization_id
+WHERE members.role = 'owner'`;
+
+function toOwner(row: Record<string, unknown> | undefined): GatewayOwner | null {
+  if (!row || typeof row["email"] !== "string") return null;
+  return {
+    email: row["email"],
+    organizationName: String(row["organization_name"] ?? ""),
+  };
+}
+
+/** The gateway's first owner (of the oldest organization with one), or null. */
+export async function readOwner(db: D1Database): Promise<GatewayOwner | null> {
   const [rows = []] = await db.run([
     {
-      sql: "SELECT 1 AS found FROM members WHERE role = ? LIMIT 1",
-      params: ["owner"],
+      sql: `${OWNERS} ORDER BY organizations.created_at, organizations.id, members.created_at LIMIT 1`,
     },
   ]);
-  return rows.length > 0;
+  return toOwner(rows[0]);
 }
 
 /**
@@ -38,89 +66,104 @@ export async function gatewayHasOwner(db: D1Database): Promise<boolean> {
  * request that expires any earlier unused link. The secret lives in the URL
  * fragment, so it never reaches the gateway's logs or a Referer header, and
  * it is never on a command line: the statements travel in a private file.
- *
- * With `withCliSecret` (a gateway whose `owner_setup_tokens` has a
- * `cli_secret_hash` column), a second secret (`ecs_…`) is stored the same
- * way, for this CLI to log itself in with once the link is claimed.
  */
 export async function mintSetupLink({
   db,
   gatewayUrl,
-  withCliSecret = false,
   now = Date.now(),
 }: {
   db: D1Database;
   gatewayUrl: string;
-  withCliSecret?: boolean;
   now?: number;
 }): Promise<SetupLink> {
   const token = `est_${randomBytes(32).toString("base64url")}`;
-  const cliSecret = withCliSecret
-    ? `ecs_${randomBytes(32).toString("base64url")}`
-    : undefined;
+  const id = randomUUID();
   const expiresAt = now + SETUP_LINK_TTL_MS;
 
-  await db.run([
+  const [live = []] = await db.run([
+    {
+      sql: "SELECT id FROM owner_setup_tokens WHERE kind = 'claim' AND consumed_at IS NULL AND expires_at > ?1",
+      params: [now],
+    },
     {
       sql: "UPDATE owner_setup_tokens SET expires_at = ?1 WHERE kind = 'claim' AND consumed_at IS NULL AND expires_at > ?1",
       params: [now],
     },
-    cliSecret
-      ? {
-          sql: "INSERT INTO owner_setup_tokens (id, kind, token_hash, cli_secret_hash, expires_at) VALUES (?, 'claim', ?, ?, ?)",
-          params: [randomUUID(), sha256(token), sha256(cliSecret), expiresAt],
-        }
-      : {
-          sql: "INSERT INTO owner_setup_tokens (id, kind, token_hash, expires_at) VALUES (?, 'claim', ?, ?)",
-          params: [randomUUID(), sha256(token), expiresAt],
-        },
+    {
+      sql: "INSERT INTO owner_setup_tokens (id, kind, token_hash, expires_at) VALUES (?, 'claim', ?, ?)",
+      params: [id, sha256(token), expiresAt],
+    },
   ]);
 
   return {
+    id,
     url: `${gatewayUrl.replace(/\/$/, "")}/setup#token=${token}`,
     expiresAt: new Date(expiresAt),
-    ...(cliSecret ? { cliSecret } : {}),
+    replaced: live.length > 0,
   };
 }
 
-/**
- * Whether the gateway's database takes a CLI secret with a setup link (its
- * `owner_setup_tokens` has a `cli_secret_hash` column), so this CLI can log
- * itself in once the link is claimed.
- */
-async function storesCliSecrets(db: D1Database): Promise<boolean> {
-  const [columns = []] = await db.run([
-    { sql: `PRAGMA table_info("owner_setup_tokens")` },
+/** A setup link this run minted, as its row in D1 says. */
+type SetupLinkState =
+  /** Nobody has used it yet. */
+  | { status: "waiting" }
+  /** It made its owner. */
+  | { status: "claimed"; owner: GatewayOwner | null }
+  /** It expired, or a newer link replaced it, before anyone used it. */
+  | { status: "gone" };
+
+export async function readSetupLink(
+  db: D1Database,
+  id: string,
+  now = Date.now(),
+): Promise<SetupLinkState> {
+  const [links = [], owners = []] = await db.run([
+    {
+      sql: "SELECT consumed_at, expires_at FROM owner_setup_tokens WHERE id = ?",
+      params: [id],
+    },
+    // The user the claim made, with the organization it made them owner of.
+    {
+      sql: `${OWNERS} AND members.user_id = (SELECT consumed_by FROM owner_setup_tokens WHERE id = ?) LIMIT 1`,
+      params: [id],
+    },
   ]);
-  return columns.some((column) => column["name"] === "cli_secret_hash");
+  const link = links[0];
+  if (link && link["consumed_at"] !== null && link["consumed_at"] !== undefined) {
+    return { status: "claimed", owner: toOwner(owners[0]) };
+  }
+  if (!link || Number(link["expires_at"]) <= now) return { status: "gone" };
+  return { status: "waiting" };
 }
 
+const OWNER_WAIT_MS = 15 * 60 * 1000;
+const OWNER_POLL_MS = 5_000;
+
 /**
- * Mint a setup link for this machine's operator: with a CLI secret when
- * the gateway takes one, remembered as a pending claim, so that
- * `everyapp login --resume` logs in once someone claims the link.
+ * Read the link's row every five seconds, for up to fifteen minutes, until
+ * someone claims it or it is gone. Still `waiting` when time ran out.
  */
-export async function mintOperatorSetupLink({
+export async function waitForSetupLink({
   db,
-  gatewayUrl,
+  id,
+  timeoutMs = OWNER_WAIT_MS,
+  intervalMs = OWNER_POLL_MS,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  now = Date.now,
 }: {
   db: D1Database;
-  gatewayUrl: string;
-}): Promise<SetupLink> {
-  const link = await mintSetupLink({
-    db,
-    gatewayUrl,
-    withCliSecret: await storesCliSecrets(db),
-  });
-  if (link.cliSecret) {
-    await writePendingClaim({
-      gatewayUrl,
-      url: link.url,
-      cliSecret: link.cliSecret,
-      expiresAt: link.expiresAt.toISOString(),
-    });
+  id: string;
+  timeoutMs?: number;
+  intervalMs?: number;
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+}): Promise<SetupLinkState> {
+  const deadline = now() + timeoutMs;
+  for (;;) {
+    const state = await readSetupLink(db, id, now());
+    if (state.status !== "waiting" || now() >= deadline) return state;
+    await sleep(intervalMs);
   }
-  return link;
 }
 
 /** Whether a person is watching this run: a terminal, and not CI. */
@@ -175,7 +218,7 @@ export async function setupLinkForDeploy({
     onUnattended();
     return null;
   }
-  return mintOperatorSetupLink({ db, gatewayUrl });
+  return mintSetupLink({ db, gatewayUrl });
 }
 
 /** The link as a person reads it: what it does, the link, how long it works. */
@@ -183,11 +226,7 @@ export function describeSetupLink(link: SetupLink): string {
   return [
     "Create the owner account with this one-time setup link:",
     `  ${link.url}`,
-    `It works once and expires ${link.expiresAt.toLocaleString()}. Treat it like a password.${
-      link.cliSecret
-        ? " Once the owner account exists, `everyapp login --resume` logs this CLI in."
-        : ""
-    } Lost it? Run \`everyapp gateway claim-link\` for a new one.`,
+    `It works once and expires ${link.expiresAt.toLocaleString()}. Treat it like a password. Lost it? Run \`everyapp gateway claim-link\` for a new one.`,
   ].join("\n");
 }
 

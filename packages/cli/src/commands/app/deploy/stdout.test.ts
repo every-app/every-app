@@ -2,7 +2,7 @@
  * `everyapp app deploy --json`'s stdout is NDJSON and nothing else: the
  * CLI's own lines, pnpm's and the manifest commands' output (a real child
  * here) and cf's never land there. Against the same fake Cloudflare account
- * and gateway as deployApp.test.ts.
+ * and gateway Worker as deployApp.test.ts.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -16,8 +16,8 @@ import type { EveryAppCliManifest } from "@/lib/manifest";
 import { createNdjsonSink } from "@/lib/output/events";
 import { reportFailure } from "@/lib/output/report";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
-import { FakeGateway, GATEWAY_URL } from "@/test/fakeGateway";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
+import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
 import { deployApp } from "./deployApp";
 
@@ -31,7 +31,7 @@ const TODO: EveryAppCliManifest = {
 };
 
 let account: FakeCloudflare;
-let gateway: FakeGateway;
+let worker: GatewayWorker;
 let release: GatewayRelease;
 let appDir: string;
 let home: string;
@@ -39,9 +39,7 @@ let stdout: string;
 let stderr: string;
 
 const seams = {
-  readStatus: () => account.gatewayStatus(),
   sleep: async () => undefined,
-  verifyTimeoutMs: 0,
   leaseWaitMs: 0,
 };
 
@@ -49,7 +47,7 @@ beforeEach(async () => {
   home = makeTestHome();
   vi.stubEnv("HOME", home);
   account = new FakeCloudflare();
-  gateway = new FakeGateway(account);
+  worker = new GatewayWorker(account);
   release = await openRelease(await buildGatewayRelease());
   const resources = await ensureGatewayResources(account.cf);
   await applyGateway({
@@ -67,7 +65,6 @@ beforeEach(async () => {
     cliVersion: "0.3.0",
     ...seams,
   });
-  gateway.seedOrganization();
 
   appDir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-app-"));
   fs.writeFileSync(
@@ -119,14 +116,11 @@ async function deployJson(manifest: EveryAppCliManifest, verbose = false) {
     const result = await deployApp({
       cwd: appDir,
       manifest,
-      gatewayUrl: GATEWAY_URL,
       out,
       json: true,
       verbose,
       createCf: () => account.cf,
-      client: gateway.client,
-      sleep: async () => undefined,
-      certificates: { isReady: async () => true, sleep: async () => undefined },
+      live: { fetch: worker.fetch, sleep: async () => undefined },
       reconcile: seams,
     });
     out.emit({ type: "done", data: { url: result.liveUrl } });

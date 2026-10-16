@@ -1,6 +1,6 @@
 /**
- * An app's Worker, D1 databases and KV namespaces, under the names the
- * gateway assigned at registration (`every-<orgKey>-<appId>[--<binding>]`).
+ * An app's Worker, D1 databases and KV namespaces, under the names its
+ * registration assigned (`every-<orgKey>-<appId>[--<binding>]`).
  *
  * An existing one is used only when the gateway's D1 records it as the
  * app's (./ownership.ts): anything else under the app's name may belong to
@@ -9,6 +9,7 @@
  * before it is created, so a retry after any failure finds it again.
  */
 import { isReservedName } from "@every-app/perimeter/manifest";
+import type { AppResources } from "@every-app/perimeter/registry";
 import type { D1Database } from "@/lib/cf/d1";
 import { CfError } from "@/lib/cf/errors";
 import {
@@ -20,7 +21,6 @@ import {
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { EveryAppError } from "@/lib/errors";
-import type { AppResources } from "@/lib/gateway/api";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { DeployInputs } from "./deployInputs";
 import {

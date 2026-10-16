@@ -1,9 +1,10 @@
 /**
- * Removing a deleted app's certificate. Cloudflare issues each Workers
- * Custom Domain its own certificate pack and keeps it when the domain is
- * removed, so `everyapp app delete` deletes the packs that covered only the
- * app's hostname, once the gateway no longer publishes it. Never a pack
- * that also covers another name.
+ * The certificates of the gateway's hostnames. Cloudflare issues each
+ * Workers Custom Domain its own certificate pack and keeps it when the
+ * domain is removed, so `everyapp app delete` deletes the packs that
+ * covered only the app's hostname, once the gateway no longer publishes it
+ * (never a pack that also covers another name), and `gateway status` reads
+ * which hostnames have an active one.
  */
 import { CfError } from "@/lib/cf/errors";
 import { runCfJson, type CfRunner } from "@/lib/cf/runner";
@@ -38,6 +39,35 @@ async function listCertificatePacks(cf: CfRunner, zoneId: string) {
     if (batch.length < PACK_PAGE_SIZE) break;
   }
   return packs;
+}
+
+/** Whether a certificate for `pattern` (a host, or `*.<parent>`) covers `host`. */
+function covers(pattern: string, host: string): boolean {
+  const lower = pattern.toLowerCase();
+  if (lower === host) return true;
+  if (!lower.startsWith("*.")) return false;
+  const [, ...rest] = host.split(".");
+  return rest.join(".") === lower.slice(2);
+}
+
+/**
+ * Which of `hosts` have an active certificate in the zone, by Cloudflare's
+ * certificate packs.
+ */
+export async function certificateStatus(
+  cf: CfRunner,
+  zoneId: string,
+  hosts: readonly string[],
+): Promise<Array<{ host: string; ready: boolean }>> {
+  const active = (await listCertificatePacks(cf, zoneId)).filter(
+    (pack) => !pack.status || pack.status === "active",
+  );
+  return hosts.map((host) => ({
+    host,
+    ready: active.some((pack) =>
+      (pack.hosts ?? []).some((pattern) => covers(pattern, host.toLowerCase())),
+    ),
+  }));
 }
 
 /**

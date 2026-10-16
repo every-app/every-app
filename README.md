@@ -92,8 +92,9 @@ One command, from an empty account to a working Gateway:
 
 1. It logs in to Cloudflare with Cloudflare's own CLI (a link and a code, so it works over SSH), or uses `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and checks for Workers Paid.
 2. It builds the Gateway from `apps/every-app-gateway` and deploys it at `--domain` (leave the flag out and it asks, suggesting `apps.<your domain>`). Every address is a Workers Custom Domain: Cloudflare creates its DNS record and certificate. No wildcard records, no DNS to edit by hand.
-3. It opens a one-time setup link: create your owner account there. Nobody can sign up before you, and after you only people you invite.
-4. Once your account exists, it logs this terminal in to the Gateway by itself, so it can deploy apps.
+3. It opens a one-time setup link and waits for you to create your owner account there. Nobody can sign up before you, and after you only people you invite.
+
+Your Cloudflare login is the only credential: there is no Gateway token to create or paste. The CLI registers and deploys apps by writing the Gateway's own database with it, so apps deploy before the owner exists too (from CI, say).
 
 Stopped half-way (a login to approve, a domain to buy, a link you haven't opened yet)? Run it again: it picks up where it left off, and does nothing once everything is there. Coding agents can drive it with `--json` (NDJSON events).
 
@@ -101,13 +102,7 @@ Stopped half-way (a login to approve, a domain to buy, a link you haven't opened
 
 ### Deploy from another machine
 
-On your Gateway, go to **Admin → Tokens → Deploy token** (it's shown once), then, in a checkout of this repository:
-
-```bash
-pnpm everyapp login
-```
-
-Enter your Gateway URL, then paste the token when asked. Revoke it any time from the same page.
+Log in to the Gateway's Cloudflare account there (`npx cf auth login`, or the first `pnpm everyapp` command offers it), then deploy from a checkout of this repository. In CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Each app records who deployed it. To take someone's deploy access away, remove them from the Cloudflare account (or revoke the API token).
 
 ### Upgrading your Gateway
 

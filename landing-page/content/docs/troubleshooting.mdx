@@ -103,7 +103,7 @@ Nothing was uploaded: the Gateway that was serving keeps running. Before migrati
 
 ### "… has no certificate after …" / the address doesn't load yet
 
-**The certificate isn't issued yet.** Every new address (the Gateway's, and each app's) gets its own certificate from Cloudflare, usually within a minute or two and almost always within five. The CLI waits up to ten minutes, then says so and carries on: the address works as soon as the certificate arrives. `npx everyapp gateway status` shows which addresses have theirs. If one never arrives, check your domain's CAA records, if it has any (they say which certificate authorities may issue its certificates; records at a parent domain count too): one must allow a certificate authority Cloudflare issues these certificates from, such as Let's Encrypt (`0 issue "letsencrypt.org"`) or Google Trust Services (`0 issue "pki.goog"`).
+**The certificate isn't issued yet.** Every new address (the Gateway's, and each app's) gets its own certificate from Cloudflare, usually within a minute or two and almost always within five. The CLI waits up to ten minutes, then says so and carries on: the address works as soon as the certificate arrives, and a new app goes live on its first visit then. `npx everyapp gateway status` shows which addresses have theirs. If one never arrives, check your domain's CAA records, if it has any (they say which certificate authorities may issue its certificates; records at a parent domain count too): one must allow a certificate authority Cloudflare issues these certificates from, such as Let's Encrypt (`0 issue "letsencrypt.org"`) or Google Trust Services (`0 issue "pki.goog"`).
 
 **Nameservers haven't propagated.** If your domain shows "Pending Nameserver Update" in the Cloudflare dashboard, Cloudflare doesn't control DNS for it yet and nothing will resolve. This can take a few hours after you change nameservers at your registrar.
 
@@ -113,53 +113,51 @@ Nothing was uploaded: the Gateway that was serving keeps running. Before migrati
 
 ### "The gateway serves version …, not the … its install record names"
 
-A reconcile (run by `gateway reconcile`, `gateway secret set`, or an app deploy or delete that binds or unbinds an app) redeploys the release your Gateway's install record names, but only while the Gateway serves the version that record names. Here something else was deployed since (a rollback in the dashboard, a deploy by hand), and it isn't a newer release this account caches, so redeploying the recorded one could put an older release back. Nothing has changed. Check `npx everyapp gateway status`, then run the command in a terminal: it asks whether to redeploy the recorded release anyway.
+A reconcile (run by `gateway reconcile`, `gateway secret set`, or an app deploy or delete that binds or unbinds an app) redeploys the release your Gateway's install record names, but only while the Gateway serves the version that record names. Here something else was deployed since (a rollback in the dashboard, a deploy by hand, an upgrade that stopped before it recorded itself), so redeploying the recorded release could put an older one back. Nothing has changed. Check `npx everyapp gateway status`, then run the command in a terminal: it asks whether to redeploy the recorded release anyway.
 
 ### I lost the setup link, or it expired
 
-A new Gateway has no owner and accepts no sign-ups until someone opens the one-time setup link that `setup` (or `gateway deploy`) showed. Each link works once and expires after 24 hours. Running `npx everyapp setup` again shows the same link while the Gateway still waits on it, and a new one once it doesn't (it expired, or a newer link replaced it). To get a new one yourself, run this on a machine logged in to the Gateway's Cloudflare account:
+A new Gateway has no owner and accepts no sign-ups until someone opens the one-time setup link that `setup` (or `gateway deploy`) showed. Each link works once and expires after 24 hours. Running `npx everyapp setup` again shows a new link, and the earlier one stops working. You can also run this on any machine logged in to the Gateway's Cloudflare account:
 
 ```bash
 npx everyapp gateway claim-link
 ```
 
-Any earlier unused link stops working. Once the Gateway has an owner, `claim-link` refuses: sign in instead, or ask an owner or admin to invite you.
+Any earlier unused link stops working. Once the Gateway has an owner, `setup` says so and `claim-link` refuses: sign in instead, or ask an owner or admin to invite you.
 
-### "Nobody has finished the setup link yet"
+### "Nobody has used the setup link yet"
 
-`setup` waits ten minutes for the owner account to be created with the link, then stops (exit 2). The link keeps working: open it, create the account, then run `npx everyapp setup` again, or `npx everyapp login --resume` to only finish logging this terminal in.
+`setup` waits 15 minutes for the owner account to be created with the link, then stops (exit 2). The link keeps working until it expires: open it, create the account, then run `npx everyapp setup` again to finish (it sees the owner and is done). Running `setup` again before anyone opens the link shows a new link instead, and this one stops working.
 
 ### "The setup link stopped working before anyone used it"
 
-A newer link replaced it (`gateway claim-link`, `setup` or `gateway deploy` on another machine: each new link stops earlier unused ones working), or it expired. If someone has the newer link, create the owner account with it. Otherwise run `npx everyapp setup` again for a new link. A `setup` that is waiting doesn't mint one by itself, so it never takes the link away from whoever has the newer one.
+A newer link replaced it (`gateway claim-link`, `setup` or `gateway deploy` on another machine: each new link stops earlier unused ones working), or it expired. If someone has the newer link, create the owner account with it: a `setup` that is waiting notices the owner either way. Otherwise run `npx everyapp setup` again for a new link.
 
-### "The setup link's login was used already, or expired"
+### "Cloudflare Access answers … before the gateway"
 
-The terminal that minted a setup link can fetch the owner's first deploy token once, within 30 minutes of the account being created. After that, sign in to your Gateway, create a deploy token under **Admin → Tokens**, and run `npx everyapp login`.
+`setup` sends one plain request to your Gateway before it shows the owner link. With [Cloudflare Access](/docs/reference/cloudflare-access) in front of the Gateway, Access answers it with its sign-in page: whoever opens the link signs in to Access first. Nothing else changes; `setup` shows the link and waits as usual.
 
 ## Deploying an app
 
-### "The gateway is too old for this everyapp"
+### Deploying from another machine, or the CLI asks you to log in
 
-Upgrade the Gateway first, then deploy the app again:
+The only credential is your Cloudflare login for the Gateway's account: run `npx cf auth login` (the CLI starts it at a terminal), or set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in CI. There is no deploy token to create, paste or store; the CLI writes your Gateway's app registry itself, in the Gateway's database.
 
-```bash
-npx everyapp gateway upgrade
-```
+### "Cloudflare account … has no gateway" / "The gateway in Cloudflare account … is …, not …"
 
-### The CLI asks you to log in
+App commands find the Gateway in your Cloudflare account: the one this machine deployed it to, `CLOUDFLARE_ACCOUNT_ID`, or the only account your login has. Log in to the Gateway's account (`npx cf auth login`) or set `CLOUDFLARE_ACCOUNT_ID`. `GATEWAY_URL_MISMATCH` means `--gateway` (or `EVERYAPP_GATEWAY_URL`) names another address than the Gateway in that account: drop it, or log in to the account that Gateway runs in.
 
-You need a deploy token. `everyapp setup` gets one by itself for the machine that set the Gateway up. On any other machine: on your Gateway, **Admin → Tokens → Deploy token**, copy it (shown once), then:
+### "The gateway's install row has no identity public key"
 
-```bash
-npx everyapp login
-```
+App Workers verify who is signed in with the public half of the Gateway's identity key, which the CLI records in the Gateway's install record when it first deploys the Gateway. A Gateway deployed by an older CLI doesn't have it on record. Write the Gateway's `JWT_PUBLIC_KEY` (the SPKI PEM) into it with `npx cf d1 query <the every-app-gateway database id> --body @key.json`, where `key.json` is `{"sql": "UPDATE _everyapp_install SET jwt_public_key = ?1", "params": ["-----BEGIN PUBLIC KEY-----\n…"]}` (the repository's `docs/runbooks/key-rotation.md` has the whole procedure), then deploy again.
 
-Enter your Gateway URL, then paste the token when prompted. It's stored at `~/.everyapp/credentials.json` with `0600` permissions, scoped per Gateway URL.
+### Behind Cloudflare Access: "… goes live on its first visit"
 
-### "The gateway runs in Cloudflare account …, which cf can't use"
+A deploy ends by requesting the app's address until your Gateway has made the app live: the Gateway does that on the first request that reaches it. With Cloudflare Access in front of the Gateway, Access answers that request instead, so the deploy can't: it says so and ends successfully (exit 0). The app goes live the first time someone opens it through Access; until then `npx everyapp gateway status` lists it as going live on its first visit.
 
-App deploys run in the Gateway's own Cloudflare account. Log in to that account with `npx cf auth login`.
+### "The gateway answers … but hasn't made … live" (`APP_NOT_LIVE`)
+
+The app's address answers, but for ten minutes the Gateway never made the app live: the Gateway version that binds the app isn't serving there, or can't reach the app's Worker. Run `npx everyapp gateway status`, then deploy again; the upload is kept, so it only binds and waits again.
 
 ### "A D1 database / KV namespace / Worker named … already exists"
 

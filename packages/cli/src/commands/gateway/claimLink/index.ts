@@ -8,7 +8,7 @@ import { findGatewayDatabase } from "@/lib/gateway/resources";
 import {
   describeSetupLink,
   gatewayHasOwner,
-  mintOperatorSetupLink,
+  mintSetupLink,
   openSetupLinkHere,
   type SetupLink,
 } from "@/lib/gateway/setup-link";
@@ -78,5 +78,5 @@ export async function mintClaimLink(
       "Which gateway? Pass its domain: everyapp gateway claim-link --domain <domain>",
     );
   }
-  return mintOperatorSetupLink({ db, gatewayUrl: `https://${gatewayHost}` });
+  return mintSetupLink({ db, gatewayUrl: `https://${gatewayHost}` });
 }

@@ -80,7 +80,7 @@ export async function readOwnedResources(
 /**
  * The version a deploy just uploaded, recorded at once: the next unattended
  * deploy replaces only a version everyapp recorded (lib/cf/deploy.ts), even
- * when this run stops before the gateway hears about it.
+ * when this run stops before the registry records it.
  */
 export async function recordUploadedVersion(
   db: D1Database,

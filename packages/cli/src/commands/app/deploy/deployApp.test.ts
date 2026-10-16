@@ -1,8 +1,10 @@
 /**
  * `everyapp app deploy` and `app delete` end to end: a fake Cloudflare
  * account behind FakeCf (real SQLite D1, Build Outputs validated with cf's
- * schema, the app's Worker built by the SDK's real everyAppWorker()) and the
- * gateway's deploy API over the same registry database.
+ * schema, the app's Worker built by the SDK's real everyAppWorker()). The
+ * registry is the gateway's D1 there, which the CLI writes itself; the
+ * deployed gateway Worker answers the live wait and activates apps it binds
+ * (test/gatewayWorker.ts).
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -23,6 +25,8 @@ import { cfD1Database } from "@/lib/cf/d1";
 import { rollbackCommandFor } from "@/lib/errors";
 import { applyGateway } from "@/lib/gateway/apply";
 import { readInstall } from "@/lib/gateway/install";
+import { deleteApp as deleteFromRegistry } from "@/lib/gateway/registry";
+import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { handleInterrupt, resetInterruptsForTests } from "@/lib/interrupt";
 import { acquireLease, readLease } from "@/lib/gateway/lease";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
@@ -30,11 +34,14 @@ import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
-import { FakeGateway, GATEWAY_URL } from "@/test/fakeGateway";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
+import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
 import { loseLeaseAtCheck, OTHER_HOLDER } from "@/test/loseLease";
+import { sqliteD1Script } from "@/test/sqliteD1";
 import { deployApp } from "./deployApp";
+
+const GATEWAY_URL = "https://example.com";
 
 const REPO = fileURLToPath(new URL("../../../../../../", import.meta.url));
 
@@ -57,7 +64,7 @@ const WITH_WORKFLOW: EveryAppCliManifest = {
 };
 
 let account: FakeCloudflare;
-let gateway: FakeGateway;
+let worker: GatewayWorker;
 let release: GatewayRelease;
 let appDir: string;
 let home: string;
@@ -66,26 +73,24 @@ const otherDirs: string[] = [];
 
 const out = () => createNdjsonSink((line) => events.push(JSON.parse(line)));
 const seams = {
-  readStatus: () => account.gatewayStatus(),
   sleep: async () => undefined,
-  verifyTimeoutMs: 0,
   leaseWaitMs: 0,
 };
-/** Every new hostname has its certificate at once. */
-const readyCertificates = {
-  isReady: async () => true,
-  sleep: async () => undefined,
-};
+/** The live wait reaches the fake gateway Worker, and never sleeps. */
+const live = () => ({ fetch: worker.fetch, sleep: async () => undefined });
 
 beforeEach(async () => {
   events = [];
   home = makeTestHome();
   vi.stubEnv("HOME", home);
+  // A person's Cloudflare login, not CI's API token.
+  vi.stubEnv("CLOUDFLARE_API_TOKEN", "");
   account = new FakeCloudflare();
-  gateway = new FakeGateway(account);
+  worker = new GatewayWorker(account);
 
   // A gateway this CLI deployed at the zone's apex: each app is its own
-  // Custom Domain at <app>.example.com. (One on a subdomain is below.)
+  // Custom Domain at <app>.example.com. (One on a subdomain is below.) It
+  // has no owner, and no organization, yet.
   release = await openRelease(await buildGatewayRelease());
   const resources = await ensureGatewayResources(account.cf);
   await applyGateway({
@@ -103,7 +108,6 @@ beforeEach(async () => {
     cliVersion: "0.3.0",
     ...seams,
   });
-  gateway.seedOrganization();
 
   appDir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-app-"));
   fs.writeFileSync(
@@ -141,15 +145,24 @@ function deploy(
   return deployApp({
     cwd: appDir,
     manifest,
-    gatewayUrl: GATEWAY_URL,
     out: out(),
     createCf: () => account.cf,
-    client: gateway.client,
-    sleep: async () => undefined,
     installDeps: async () => undefined,
     reconcile: seams,
-    certificates: readyCertificates,
+    live: live(),
     ...options,
+  });
+}
+
+/** `app delete`, unattended, in the fake account. */
+function remove(appId: string, purge = false) {
+  return removeApp({
+    appId,
+    out: out(),
+    interactive: false,
+    purge,
+    createCf: () => account.cf,
+    reconcile: seams,
   });
 }
 
@@ -165,22 +178,33 @@ function deployOther(manifest: EveryAppCliManifest) {
   return deployApp({
     cwd: dir,
     manifest,
-    gatewayUrl: GATEWAY_URL,
     out: out(),
     createCf: () => account.cf,
-    client: gateway.client,
-    sleep: async () => undefined,
     installDeps: async () => undefined,
     reconcile: seams,
-    certificates: readyCertificates,
+    live: live(),
   });
 }
 
-const registry = () =>
-  cfD1Database(account.cf, [...account.databases].find(([, db]) => db.name === "every-app-gateway")![0]);
+const gatewayDatabaseId = () =>
+  [...account.databases].find(([, db]) => db.name === "every-app-gateway")![0];
+const registry = () => cfD1Database(account.cf, gatewayDatabaseId());
 
 const databaseId = (name: string) =>
   [...account.databases].find(([, db]) => db.name === name)?.[0];
+
+/** The registry's row for an app, as the gateway reads it. */
+const appRow = (appId: string) =>
+  account
+    .database("every-app-gateway")
+    .all(
+      "SELECT id, organization_id, worker_name, hostname, status, version_id, deployed_by_actor FROM apps WHERE app_slug = ?",
+      appId,
+    )[0];
+
+/** The install's organization, which the first deploy made. */
+const organizationId = () =>
+  String(account.database("every-app-gateway").all("SELECT id FROM organizations")[0]!["id"]);
 
 describe("app deploy", () => {
   it("takes a new app from registration to a live, bound Worker", async () => {
@@ -198,32 +222,49 @@ describe("app deploy", () => {
     expect(account.namespaceId("every-acme-todo")).toBeTruthy();
 
     // The upload: the Worker everyAppWorker() builds, with the deploy's ids,
-    // its source maps listed, and the secrets in the same version.
+    // the gateway's identity key from its install row, its source maps
+    // listed, and the secrets in the same version.
+    const install = (await readInstall(registry()))!;
     const upload = account.deploys.find((d) => d.workerName === "every-acme-todo")!;
     expect(upload.config["env"]).toMatchObject({
       DB: { type: "d1", name: "every-acme-todo" },
       EVERYAPP_IDENTITY_ISSUER: { type: "text", value: GATEWAY_URL },
+      EVERYAPP_IDENTITY_PUBLIC_KEYS: {
+        type: "text",
+        value: JSON.stringify([install.jwtPublicKey]),
+      },
       EVERY_APP_GATEWAY: {
         type: "worker",
         worker: "every-app-gateway",
         exportName: "AppGateway",
-        props: { organizationId: "org-1", appId: "todo", workerName: "every-acme-todo" },
+        props: { organizationId: organizationId(), appId: "todo", workerName: "every-acme-todo" },
       },
     });
+    // The very key the gateway signs with.
+    expect(install.jwtPublicKey).toBe(
+      account.deploys.find((d) => d.workerName === "every-app-gateway")!.secrets!["JWT_PUBLIC_KEY"],
+    );
     expect(upload.config["env"].EVERYAPP_DEV).toBeUndefined();
     expect(upload.config["manifest"].modules).toEqual({
       "assets/x.js.map": { type: "sourcemap" },
     });
     expect(upload.secrets).toEqual({
       GATEWAY_URL,
-      EVERY_APP_ORG_ID: "org-1",
+      EVERY_APP_ORG_ID: organizationId(),
     });
     // The deploy inputs exist only while cf builds.
     expect(fs.existsSync(path.join(appDir, ".everyapp", "deploy.json"))).toBe(false);
 
-    // The gateway now binds it, and the app is live.
+    // The gateway now binds it, and its first request made the app live; the
+    // registry records the version (the gateway takes its agent tools from
+    // it) and who deployed it.
     expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
-    expect(gateway.app("todo")).toMatchObject({ status: "active" });
+    expect(appRow("todo")).toMatchObject({
+      status: "active",
+      version_id: account.workers.get("every-acme-todo")!.versions.at(-1),
+      deployed_by_actor: "dev@example.com",
+    });
+    expect(worker.requests).toEqual(["https://todo.example.com/"]);
     // Migrations ran before the upload, the gateway was reconciled after it.
     const steps = events
       .filter((event) => event["type"] === "step" && event["status"] !== "start")
@@ -234,20 +275,22 @@ describe("app deploy", () => {
       "app.migrations",
       "app.upload",
       "gateway.deploy",
-      "gateway.verify",
       "app.bind",
-      "app.tools",
       "app.live",
     ]);
-    // What a person sees of it comes from these events' data.
+    // What a person sees of it comes from these events' data. Before the
+    // gateway has an owner, the app is in the organization named after the
+    // Cloudflare account, and nobody has access to it yet.
     expect(events.find((event) => event["step"] === "app.register")).toMatchObject({
       data: {
         appId: "todo",
         hostname: "todo.example.com",
         existingApp: false,
         defaultAccess: false,
+        deployerAccess: false,
         organizationName: "Acme",
       },
+      message: expect.stringContaining("its first owner gets the app"),
     });
     expect(events.find((event) => event["step"] === "app.migrations" && event["status"] === "ok")).toMatchObject({
       data: {
@@ -263,12 +306,46 @@ describe("app deploy", () => {
     expect(
       events.filter((event) => event["type"] === "progress" && String(event["message"]).includes("time-travel")),
     ).toEqual([]);
-    // Once it is live, the gateway snapshots its agent tools.
-    expect(gateway.toolSyncs).toEqual(["todo"]);
     const leases = account.database("every-app-gateway").all(
       "SELECT * FROM _everyapp_deploy_lease",
     );
     expect(leases).toEqual([]);
+    // Nothing went to the gateway over HTTPS but the live wait's request.
+    expect(account.cf.calls.some((call) => call.args.join(" ").includes("/api/"))).toBe(false);
+  });
+
+  it("gives the deployer access once the gateway has an owner and they are a verified member", async () => {
+    await deploy();
+    // The owner claims the gateway: they adopt the organization todo is in,
+    // and get todo, which nobody had access to.
+    const link = await mintSetupLink({ db: registry(), gatewayUrl: GATEWAY_URL });
+    const { userId: ownerId, organizationId: claimed } = worker.claim(link.url, {
+      email: "owner@example.com",
+    });
+    expect(claimed).toBe(organizationId());
+    // The Cloudflare login's email is a verified member's.
+    const db = account.database("every-app-gateway");
+    db.sqlite.exec(`
+      INSERT INTO users (id, name, email, email_verified, created_at, updated_at) VALUES ('dev', 'Dev', 'dev@example.com', 1, 0, 0);
+      INSERT INTO members (id, organization_id, user_id, role, created_at) VALUES ('member-dev', '${claimed}', 'dev', 'member', 0);
+    `);
+    events = [];
+
+    await deployOther({ id: "chef" });
+
+    const granted = (appId: string) =>
+      db
+        .all(
+          "SELECT user_id FROM user_app_access WHERE app_row_id = (SELECT id FROM apps WHERE app_slug = ?) ORDER BY user_id",
+          appId,
+        )
+        .map((row) => row["user_id"]);
+    expect(granted("todo")).toEqual([ownerId]);
+    expect(granted("chef").sort()).toEqual(["dev", ownerId].sort());
+    expect(events.find((event) => event["step"] === "app.register")).toMatchObject({
+      data: { deployerAccess: true, organizationName: "Owner" },
+      message: expect.stringContaining("only you and the organization's owners and admins"),
+    });
   });
 
   it("sends the app's own secrets with the version, and later deploys keep them", async () => {
@@ -278,13 +355,13 @@ describe("app deploy", () => {
     expect(uploads.at(-1)!.secrets).toEqual({
       GITHUB_TOKEN: "ghp_test",
       GATEWAY_URL,
-      EVERY_APP_ORG_ID: "org-1",
+      EVERY_APP_ORG_ID: organizationId(),
     });
     // A plain redeploy doesn't send it again; the Worker keeps it.
     await deploy();
     expect(account.deploys.filter((d) => d.workerName === "every-acme-todo").at(-1)!.secrets).toEqual({
       GATEWAY_URL,
-      EVERY_APP_ORG_ID: "org-1",
+      EVERY_APP_ORG_ID: organizationId(),
     });
   });
 
@@ -295,7 +372,7 @@ describe("app deploy", () => {
     await expect(
       deploy(TODO, { secrets: { EVERYAPP_DEV: "1" } }),
     ).rejects.toMatchObject({ code: "SECRET_NAME_RESERVED" });
-    expect(gateway.app("todo")).toBeUndefined();
+    expect(appRow("todo")).toBeUndefined();
     expect(account.deploys.filter((d) => d.workerName === "every-acme-todo")).toEqual([]);
   });
 
@@ -303,20 +380,26 @@ describe("app deploy", () => {
     await expect(
       deploy(TODO, { secrets: { DB: "not-a-database" } }),
     ).rejects.toMatchObject({ code: "SECRET_NAME_TAKEN" });
-    expect(gateway.app("todo")).toBeUndefined();
+    expect(appRow("todo")).toBeUndefined();
   });
 
   it("redeploys an app's code without touching the gateway", async () => {
     await deploy();
     const before = gatewayVersions();
+    worker.requests.length = 0;
 
     await deploy({ ...TODO, description: "v2" });
 
     expect(gatewayVersions()).toBe(before);
     expect(account.workers.get("every-acme-todo")!.versions).toHaveLength(2);
-    expect(gateway.app("todo")).toMatchObject({ status: "active" });
-    // New code may define other tools: every deploy syncs them.
-    expect(gateway.toolSyncs).toEqual(["todo", "todo"]);
+    // Live already: no request needed. The new version is recorded, which
+    // is how the gateway knows to take the new code's agent tools.
+    expect(worker.requests).toEqual([]);
+    expect(appRow("todo")).toMatchObject({
+      status: "active",
+      version_id: account.workers.get("every-acme-todo")!.versions[1],
+    });
+    expect(events.filter((event) => event["step"] === "app.live" && event["status"] === "ok")).toHaveLength(2);
   });
 
   it("refuses someone else's database on every attempt, not just the first", async () => {
@@ -325,7 +408,7 @@ describe("app deploy", () => {
 
     await expect(deploy()).rejects.toMatchObject({ code: "RESOURCE_NAME_TAKEN" });
     // The failed attempt left the app registered...
-    expect(gateway.app("todo")).toMatchObject({ status: "pending" });
+    expect(appRow("todo")).toMatchObject({ status: "pending" });
     // ...and running the deploy again still refuses.
     await expect(deploy()).rejects.toMatchObject({ code: "RESOURCE_NAME_TAKEN" });
 
@@ -384,15 +467,7 @@ describe("app deploy", () => {
     expect(archive).toMatchObject({ name: "every-acme-notes--archive" });
     expect(archive.id).not.toBe(databaseId("every-acme-notes-archive"));
 
-    await removeApp({
-      appId: "notes",
-      client: gateway.client,
-      out: out(),
-      interactive: false,
-      purge: true,
-      createCf: () => account.cf,
-      reconcile: seams,
-    });
+    await remove("notes", true);
     expect([...account.databases.values()].map((db) => db.name).sort()).toEqual([
       "every-acme-notes-archive",
       "every-app-gateway",
@@ -439,15 +514,21 @@ describe("app deploy", () => {
     await expect(deploy()).resolves.toMatchObject({ workerName: "every-acme-todo" });
   });
 
-  it("lets a retry go unattended after a deploy that uploaded but couldn't tell the gateway", async () => {
+  it("lets a retry go unattended after a deploy that uploaded but couldn't record it in the registry", async () => {
     await deploy();
-    // The next deploy uploads, then the gateway can't be reached.
-    const markDeployed = gateway.client.markDeployed;
-    (gateway.client as any).markDeployed = async () => {
-      throw new Error("fetch failed");
-    };
+    // The next deploy uploads, then D1 can't be reached to record it.
+    let failed = false;
+    account.cf.override(["d1", "query"], (call) => {
+      if (!failed && (call.files["query.json"] ?? "").includes("UPDATE apps SET manifest")) {
+        failed = true;
+        return { exitCode: 1, stderr: "┌ Error\n│ fetch failed\n└\n" };
+      }
+      const databaseId = call.args[2]!;
+      return sqliteD1Script({ [databaseId]: account.databases.get(databaseId)!.db })(call);
+    });
     await expect(deploy({ ...TODO, description: "v2" })).rejects.toThrow("fetch failed");
-    (gateway.client as any).markDeployed = markDeployed;
+    const uploaded = account.workers.get("every-acme-todo")!.versions.at(-1);
+    expect(appRow("todo")!["version_id"]).not.toBe(uploaded);
 
     // The upload was recorded on the spot, so this isn't a stranger's version.
     await expect(deploy({ ...TODO, description: "v2" })).resolves.toMatchObject({
@@ -625,7 +706,7 @@ describe("app deploy", () => {
     expect(rollbackCommandFor(failure)).toContain("d1 time-travel restore");
     // Registered and provisioned; the next run picks it up, with the same
     // database and namespace it created.
-    expect(gateway.app("todo")).toMatchObject({ status: "pending" });
+    expect(appRow("todo")).toMatchObject({ status: "pending" });
     const created = databaseId("every-acme-todo");
     await expect(deploy()).resolves.toMatchObject({ workerName: "every-acme-todo" });
     expect(
@@ -648,10 +729,80 @@ describe("app deploy", () => {
         cwd: appDir,
         sql: "SELECT title FROM todos",
         local: false,
-        client: gateway.client,
         createCf: () => account.cf,
       }),
     ).resolves.toEqual([[{ title: "ship it" }]]);
+  });
+
+  it("goes live on its first visit behind Cloudflare Access, and says so", async () => {
+    worker.accessInFront.add("todo.example.com");
+
+    await expect(deploy()).resolves.toMatchObject({
+      live: false,
+      liveUrl: "https://todo.example.com",
+    });
+
+    expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
+    expect(appRow("todo")).toMatchObject({ status: "binding" });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "warning", code: "ACCESS_IN_FRONT" }),
+    );
+    expect(events.some((event) => event["step"] === "app.live" && event["status"] === "ok")).toBe(false);
+
+    // The first visit through Access reaches the gateway, which activates it.
+    worker.accessInFront.clear();
+    await worker.fetch("https://todo.example.com/");
+    expect(appRow("todo")).toMatchObject({ status: "active" });
+  });
+
+  it("waits through a certificate on its way and a gateway version still rolling out", async () => {
+    worker.certificatePending.add("todo.example.com");
+    let requests = 0;
+    const rollingOut = (async (input: Parameters<typeof fetch>[0]) => {
+      requests += 1;
+      if (requests === 2) {
+        // The certificate came, but the edge still runs the gateway version
+        // without the binding.
+        worker.certificatePending.clear();
+        return Response.json({ code: "app_deploying" }, { status: 503 });
+      }
+      return worker.fetch(input);
+    }) as typeof fetch;
+
+    await expect(
+      deploy(TODO, { live: { fetch: rollingOut, sleep: async () => undefined } }),
+    ).resolves.toMatchObject({ live: true });
+    expect(requests).toBe(3);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "progress", step: "app.live" }),
+    );
+  });
+
+  it("records an API token as the deployer, and grants it nobody", async () => {
+    vi.stubEnv("CLOUDFLARE_API_TOKEN", "token-from-ci");
+
+    await deploy();
+
+    expect(appRow("todo")).toMatchObject({ deployed_by_actor: `api-token:${ACCOUNT_ID}` });
+  });
+
+  it("refuses a --gateway that isn't the one in the Cloudflare account, before anything happens", async () => {
+    await expect(deploy(TODO, { gateway: "https://other.example.net" })).rejects.toMatchObject({
+      code: "GATEWAY_URL_MISMATCH",
+    });
+    await expect(deploy(TODO, { gateway: `${GATEWAY_URL}/` })).resolves.toMatchObject({
+      gatewayUrl: GATEWAY_URL,
+    });
+  });
+
+  it("needs the gateway's identity key in its install row", async () => {
+    account.database("every-app-gateway").sqlite.exec("UPDATE _everyapp_install SET jwt_public_key = NULL");
+
+    await expect(deploy()).rejects.toMatchObject({
+      code: "IDENTITY_KEY_UNKNOWN",
+      message: expect.stringContaining("key-rotation.md"),
+    });
+    expect(appRow("todo")).toBeUndefined();
   });
 });
 
@@ -772,9 +923,7 @@ export default defineConfig({ dialect: "sqlite", schema: "./src/db/schema.ts", o
 describe("app workflows", () => {
   const options = () => ({
     cwd: appDir,
-    gatewayUrl: GATEWAY_URL,
     interactive: false,
-    client: gateway.client,
     createCf: () => account.cf,
   });
 
@@ -835,20 +984,11 @@ describe("app workflows", () => {
 
 describe("app deploy and delete with the gateway on a subdomain", () => {
   const GW = "apps.example.com";
-  const certificateChecks: string[] = [];
-  const certificates = {
-    isReady: async (url: string) => {
-      certificateChecks.push(url);
-      return true;
-    },
-    sleep: async () => undefined,
-  };
 
   /** A new install: the gateway at apps.example.com in zone example.com. */
   beforeEach(async () => {
-    certificateChecks.length = 0;
     account = new FakeCloudflare();
-    gateway = new FakeGateway(account, GW);
+    worker = new GatewayWorker(account);
     const resources = await ensureGatewayResources(account.cf);
     await applyGateway({
       cf: account.cf,
@@ -865,7 +1005,6 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
       cliVersion: "0.3.0",
       ...seams,
     });
-    gateway.seedOrganization();
     account.apps.set(appDir, TODO);
     account.cf.calls.length = 0;
     events = [];
@@ -875,14 +1014,11 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
     return deployApp({
       cwd: appDir,
       manifest: TODO,
-      gatewayUrl: gateway.gatewayUrl,
       out: out(),
       createCf: () => account.cf,
-      client: gateway.client,
-      sleep: async () => undefined,
       installDeps: async () => undefined,
       reconcile: seams,
-      certificates,
+      live: live(),
       ...options,
     });
   }
@@ -890,8 +1026,18 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
   const cfCommands = () =>
     account.cf.calls.map((call) => call.args.slice(0, 3).join(" "));
 
-  it("publishes a new app at <app>.<base> as its own Custom Domain, then waits for its certificate", async () => {
-    const result = await deployHere();
+  it("publishes a new app at <app>.<base> as its own Custom Domain, then waits for it to go live", async () => {
+    worker.certificatePending.add(`todo.${GW}`);
+    const live = {
+      fetch: (async (input: Parameters<typeof fetch>[0]) => {
+        // Cloudflare issues the certificate while the wait goes on.
+        if (worker.requests.length === 1) worker.certificatePending.clear();
+        return worker.fetch(input);
+      }) as typeof fetch,
+      sleep: async () => undefined,
+    };
+
+    const result = await deployHere({ live });
 
     expect(result).toMatchObject({
       liveUrl: `https://todo.${GW}`,
@@ -900,7 +1046,7 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
     });
     expect(account.gatewayDomains()).toEqual([GW, `todo.${GW}`]);
     expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
-    expect(gateway.app("todo")).toMatchObject({ status: "active" });
+    expect(appRow("todo")).toMatchObject({ status: "active" });
     await expect(readInstall(registry())).resolves.toMatchObject({
       liveDomains: [GW, `todo.${GW}`],
     });
@@ -910,15 +1056,16 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
     expect(checked).toBeGreaterThanOrEqual(0);
     expect(checked).toBeLessThan(commands.indexOf("d1 create --name"));
     expect(checked).toBeLessThan(commands.indexOf("build"));
-    // Its certificate, once the gateway serves it.
-    expect(certificateChecks).toEqual([`https://todo.${GW}/`]);
+    // It waited for the certificate, then the request made the app live.
+    expect(worker.requests).toEqual([`https://todo.${GW}/`, `https://todo.${GW}/`]);
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "progress",
-        step: "app.tls",
-        message: `https://todo.${GW} has its certificate.`,
+        step: "app.live",
+        message: expect.stringContaining("get its certificate"),
       }),
     );
+    expect(events.at(-1)).toMatchObject({ type: "step", step: "app.live", status: "ok" });
   });
 
   it("redeploys an app's code without touching the gateway or its domains", async () => {
@@ -930,12 +1077,13 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
 
     expect(gatewayVersions()).toBe(versions);
     expect(cfCommands()).not.toContain("dns records list");
-    expect(certificateChecks).toHaveLength(1);
+    expect(worker.requests).toHaveLength(1);
   });
 
   it("never redeploys the gateway for a hostname it doesn't publish, outside the base", async () => {
     // A registry row from before, at a host that isn't one label below the base.
     account.database("every-app-gateway").sqlite.exec(`
+      INSERT INTO organizations (id, name, slug, created_at) VALUES ('org-1', 'Acme', 'acme', 0);
       INSERT OR IGNORE INTO organization_keys (organization_id, org_key) VALUES ('org-1', 'acme');
       INSERT INTO apps (id, organization_id, app_slug, name, description, hostname, worker_name, manifest, status)
         VALUES ('row-todo', 'org-1', 'todo', 'todo', 'todo', 'todo.example.com', 'every-acme-todo', '{}', 'pending');
@@ -949,10 +1097,11 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
 
     await deployHere();
 
-    // Bound already, and its host is never published: nothing to redeploy.
+    // Bound already, and its host is never published: nothing to redeploy,
+    // and nothing to wait for.
     expect(gatewayVersions()).toBe(versions);
     expect(cfCommands()).not.toContain("dns records list");
-    expect(certificateChecks).toEqual([]);
+    expect(worker.requests).toEqual([]);
     expect(events).toContainEqual(
       expect.objectContaining({
         type: "warning",
@@ -963,15 +1112,7 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
 
     // Deleting it leaves a certificate for that host alone: not the gateway's.
     account.certificatePacks.push({ id: "pack-site", zoneId: "zone-1", hosts: ["todo.example.com"] });
-    await removeApp({
-      appId: "todo",
-      client: gateway.client,
-      out: out(),
-      interactive: false,
-      purge: false,
-      createCf: () => account.cf,
-      reconcile: seams,
-    });
+    await remove("todo", false);
     expect(account.gatewayBindings()).toEqual([]);
     expect(account.certificatePacks.map((pack) => pack.id)).toContain("pack-site");
   });
@@ -999,11 +1140,16 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
     expect(account.gatewayDomains()).toEqual([GW, `todo.${GW}`]);
   });
 
-  it("leaves the certificate to come on its own with --no-wait-cert, or after ten minutes", async () => {
-    await deployHere({ waitForCertificate: false });
-    expect(certificateChecks).toEqual([]);
+  it("leaves the app to go live on its first visit with --no-wait-cert, or once no certificate came in ten minutes", async () => {
+    await expect(deployHere({ waitForLive: false })).resolves.toMatchObject({ live: false });
+    expect(worker.requests).toEqual([]);
+    expect(appRow("todo")).toMatchObject({ status: "binding" });
     expect(events).toContainEqual(
-      expect.objectContaining({ step: "app.tls", type: "progress" }),
+      expect.objectContaining({
+        step: "app.live",
+        type: "progress",
+        message: expect.stringContaining("goes live on its first visit"),
+      }),
     );
 
     // Another app whose certificate doesn't come in time: a warning, not a failure.
@@ -1013,17 +1159,14 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
     otherDirs.push(dir);
     fs.writeFileSync(path.join(dir, "cloudflare.config.ts"), "everyAppWorker\n");
     account.apps.set(dir, notes);
+    worker.certificatePending.add(`notes.${GW}`);
     await expect(
       deployHere({
         cwd: dir,
         manifest: notes,
-        certificates: {
-          isReady: async () => false,
-          sleep: async () => undefined,
-          maxWaitMs: 0,
-        },
+        live: { fetch: worker.fetch, sleep: async () => undefined, maxWaitMs: 0 },
       }),
-    ).resolves.toMatchObject({ hostname: `notes.${GW}` });
+    ).resolves.toMatchObject({ hostname: `notes.${GW}`, live: false });
     expect(events).toContainEqual(
       expect.objectContaining({ type: "warning", code: "CERT_PENDING" }),
     );
@@ -1035,15 +1178,7 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
       `todo.${GW}`,
     ]);
 
-    await removeApp({
-      appId: "todo",
-      client: gateway.client,
-      out: out(),
-      interactive: false,
-      purge: false,
-      createCf: () => account.cf,
-      reconcile: seams,
-    });
+    await remove("todo", false);
 
     expect(account.gatewayDomains()).toEqual([GW]);
     expect(account.gatewayBindings()).toEqual([]);
@@ -1063,17 +1198,9 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
       stderr: "┌ Error\n│ Authentication error [code: 10000]\n└\n",
     });
 
-    await removeApp({
-      appId: "todo",
-      client: gateway.client,
-      out: out(),
-      interactive: false,
-      purge: false,
-      createCf: () => account.cf,
-      reconcile: seams,
-    });
+    await remove("todo", false);
 
-    expect(gateway.app("todo")).toMatchObject({ status: "deleted" });
+    expect(appRow("todo")).toMatchObject({ status: "deleted" });
     expect(account.gatewayDomains()).toEqual([GW]);
     expect(events).toContainEqual(
       expect.objectContaining({ type: "warning", code: "CERT_CLEANUP_FAILED" }),
@@ -1087,20 +1214,45 @@ describe("app delete", () => {
   });
 
   it("deletes the app and drops its binding, keeping its Worker and data", async () => {
-    await removeApp({
-      appId: "todo",
-      client: gateway.client,
-      out: out(),
-      interactive: false,
-      purge: false,
-      createCf: () => account.cf,
-      reconcile: seams,
-    });
+    await remove("todo", false);
 
-    expect(gateway.app("todo")).toMatchObject({ status: "deleted" });
+    expect(appRow("todo")).toMatchObject({ status: "deleted" });
     expect(account.gatewayBindings()).toEqual([]);
     expect(account.workers.has("every-acme-todo")).toBe(true);
     expect(account.namespaceId("every-acme-todo")).toBeTruthy();
+    expect(events).toContainEqual(
+      expect.objectContaining({ step: "app.delete", status: "ok", data: expect.objectContaining({ hostname: "todo.example.com" }) }),
+    );
+  });
+
+  it("runs again after a delete that stopped before the gateway dropped the app", async () => {
+    // The tombstone was written, then the run stopped.
+    await deleteFromRegistry(registry(), "todo");
+    expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
+
+    await remove("todo", false);
+
+    expect(account.gatewayBindings()).toEqual([]);
+    expect(appRow("todo")).toMatchObject({ status: "deleted" });
+  });
+
+  it("refuses an app the registry doesn't have", async () => {
+    await expect(remove("nope", false)).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
+  });
+
+  it("brings a deleted app back under the same names on its next deploy", async () => {
+    const before = appRow("todo")!;
+    await remove("todo", false);
+
+    await deploy();
+
+    expect(appRow("todo")).toMatchObject({
+      id: before["id"],
+      worker_name: "every-acme-todo",
+      hostname: "todo.example.com",
+      status: "active",
+    });
+    expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
   });
 
   it("purges only what the app recorded, never what merely has its names", async () => {
@@ -1110,15 +1262,7 @@ describe("app delete", () => {
     const theirs = account.createDatabase("every-acme-chef");
     await expect(deployOther(chef)).rejects.toMatchObject({ code: "RESOURCE_NAME_TAKEN" });
 
-    const result = await removeApp({
-      appId: "chef",
-      client: gateway.client,
-      out: out(),
-      interactive: false,
-      purge: true,
-      createCf: () => account.cf,
-      reconcile: seams,
-    });
+    const result = await remove("chef", true);
 
     expect(databaseId("every-acme-chef")).toBe(theirs.uuid);
     expect(events).toContainEqual(
@@ -1150,15 +1294,7 @@ describe("app delete", () => {
       instances: new Map(),
     });
 
-    const result = await removeApp({
-      appId: "todo",
-      client: gateway.client,
-      out: out(),
-      interactive: false,
-      purge: true,
-      createCf: () => account.cf,
-      reconcile: seams,
-    });
+    const result = await remove("todo", true);
 
     expect([...account.workflows.keys()].sort()).toEqual([
       "every-acme-todo--import",
@@ -1171,15 +1307,7 @@ describe("app delete", () => {
   });
 
   it("purges the Worker, database and namespace on request", async () => {
-    const result = await removeApp({
-      appId: "todo",
-      client: gateway.client,
-      out: out(),
-      interactive: false,
-      purge: true,
-      createCf: () => account.cf,
-      reconcile: seams,
-    });
+    const result = await remove("todo", true);
 
     expect(account.workers.has("every-acme-todo")).toBe(false);
     expect([...account.databases.values()].map((db) => db.name)).toEqual([

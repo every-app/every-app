@@ -65,9 +65,7 @@ async function deployGateway(
     db: cfD1Database(account.cf, [...account.databases][0]![0]),
     interactive: false,
     cliVersion: "0.3.0",
-    readStatus: () => account.gatewayStatus(),
     sleep: noSleep,
-    verifyTimeoutMs: 0,
     leaseWaitMs: 0,
     ...options,
   });
@@ -80,9 +78,7 @@ function reconcile(options: Partial<Parameters<typeof reconcileGateway>[0]> = {}
     accountId: ACCOUNT_ID,
     interactive: false,
     cliVersion: "0.3.0",
-    readStatus: () => account.gatewayStatus(),
     sleep: noSleep,
-    verifyTimeoutMs: 0,
     leaseWaitMs: 0,
     ...options,
   });
@@ -208,6 +204,8 @@ describe("gateway deploy", () => {
     );
     // The lease is free again, and the install is recorded.
     expect(db.all("SELECT * FROM _everyapp_deploy_lease")).toEqual([]);
+    // With the public half of the identity key, which app deploys hand their
+    // Workers: the CLI keeps neither half.
     await expect(readInstall(cfD1Database(account.cf, [...account.databases][0]![0]))).resolves.toMatchObject({
       accountId: ACCOUNT_ID,
       gatewayHost: "example.com",
@@ -216,7 +214,9 @@ describe("gateway deploy", () => {
       liveDomains: ["example.com"],
       releaseSha256: release.manifest.sha256,
       liveVersionId: account.workers.get("every-app-gateway")!.versions[0],
+      jwtPublicKey: deploy!.secrets!["JWT_PUBLIC_KEY"],
     });
+    expect(deploy!.secrets!["JWT_PUBLIC_KEY"]).toMatch(/^-----BEGIN PUBLIC KEY-----/);
     const cached = JSON.parse(
       fs.readFileSync(path.join(home, ".everyapp", "installs.json"), "utf8"),
     );
@@ -224,13 +224,17 @@ describe("gateway deploy", () => {
     expect(fs.statSync(path.join(home, ".everyapp", "installs.json")).mode & 0o777).toBe(0o600);
   });
 
-  it("redeploys without secrets, and confirms the live gateway serves it", async () => {
+  it("redeploys without secrets, keeping the identity key it recorded", async () => {
     await deployGateway();
+    const key = (await readInstall(gatewayD1()))!.jwtPublicKey;
     const result = await deployGateway();
 
     expect(account.deploys).toHaveLength(2);
     expect(account.deploys[1]!.secrets).toBeNull();
-    expect(result).toMatchObject({ firstDeploy: false, verified: true });
+    expect(result).toMatchObject({ firstDeploy: false });
+    expect((await readInstall(gatewayD1()))!.jwtPublicKey).toBe(key);
+    // What went live is the record: nothing was asked of the gateway.
+    expect(account.cf.calls.every((call) => !call.args.join(" ").includes("https://"))).toBe(true);
   });
 
   it("leaves the gateway that is serving alone when a migration fails", async () => {
@@ -365,7 +369,7 @@ describe("gateway deploy", () => {
     }
   });
 
-  it("never replaces a newer release an upgrade left unrecorded with an older one", async () => {
+  it("never replaces a release an upgrade left unrecorded unattended, and tells a person it may be newer", async () => {
     // A, A' (built later, as an older CLI bundles it) and B (later still).
     const middle = await laterBuild();
     const newest = await openRelease(
@@ -379,46 +383,25 @@ describe("gateway deploy", () => {
       await writeInstall(gatewayD1(), rowA!);
       const deploys = account.deploys.length;
 
-      // Even a person saying yes to replacing an unrecorded version.
+      await expect(
+        deployGateway({ reason: "upgrade", release: middle }),
+      ).rejects.toMatchObject({ action: "rerun_interactive" });
+      expect(account.deploys).toHaveLength(deploys);
+
+      const asked: string[] = [];
       await expect(
         deployGateway({
           reason: "upgrade",
           release: middle,
           interactive: true,
-          confirm: async () => true,
+          confirm: async (question) => (asked.push(question), false),
         }),
-      ).rejects.toMatchObject({ code: "DOWNGRADE_REFUSED" });
+      ).rejects.toMatchObject({ code: "DEPLOY_CANCELLED" });
+      expect(asked[0]).toContain("replaces it with an older one");
       expect(account.deploys).toHaveLength(deploys);
     } finally {
       await middle.cleanup();
       await newest.cleanup();
-    }
-  });
-
-  it("records what went live before verifying it", async () => {
-    await deployGateway();
-    const newer = await laterBuild();
-    try {
-      // Stopped while waiting for the edge to serve it (Ctrl+C, a crash).
-      await expect(
-        deployGateway({
-          reason: "upgrade",
-          release: newer,
-          readStatus: async () => Promise.reject(new Error("fetch failed")),
-          verifyTimeoutMs: 60_000,
-          sleep: async () => {
-            throw new Error("interrupted");
-          },
-        }),
-      ).rejects.toThrow("interrupted");
-
-      const row = (await readInstall(gatewayD1()))!;
-      expect(row.releaseSha256).toBe(newer.manifest.sha256);
-      expect(row.liveVersionId).toBe(
-        account.workers.get("every-app-gateway")!.versions.at(-1),
-      );
-    } finally {
-      await newer.cleanup();
     }
   });
 
@@ -480,7 +463,7 @@ describe("gateway deploy", () => {
       });
 
       await expect(waiting).rejects.toMatchObject({ code: "DOWNGRADE_REFUSED" });
-      expect((await account.gatewayStatus()).release?.sha256).toBe(newer.manifest.sha256);
+      expect(account.gatewayRelease()?.sha256).toBe(newer.manifest.sha256);
     } finally {
       await newer.cleanup();
     }
@@ -868,24 +851,22 @@ describe("gateway reconcile", () => {
     expect(account.deploys).toHaveLength(deploys);
   });
 
-  it("picks its release under the lease: after an upgrade, never the old one the edge still reports", async () => {
+  it("picks its release under the lease: after an upgrade, never the old one", async () => {
     seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
     const newer = await laterBuild();
     try {
-      // An upgrade holds the lease, and the edge still reports release A.
+      // An upgrade holds the lease; the install row still names release A.
       const upgrade = await acquireLease({
         db: gatewayD1(),
         id: "gateway",
         purpose: "gateway.upgrade",
         heartbeatMs: 0,
       });
-      const stale = await account.gatewayStatus();
       let upgraded = false;
 
       await reconcile({
         force: true,
         leaseWaitMs: 60_000,
-        readStatus: async () => stale,
         // While the reconcile waits for the lease, the upgrade finishes.
         sleep: async () => {
           if (upgraded) return;
@@ -923,37 +904,26 @@ describe("gateway reconcile", () => {
       account.workers.get("every-app-gateway")!.config["env"].EVERYAPP_RELEASE.value
         .sha256 as string;
 
-    it("reconciles the live release when it is the newer one", async () => {
-      await reconcile();
-
-      expect(liveRelease()).toBe(newer.manifest.sha256);
-      expect(events).toContainEqual(
-        expect.objectContaining({ type: "warning", code: "INSTALL_RECORD_STALE" }),
-      );
-      expect((await readInstall(gatewayD1()))!.releaseSha256).toBe(newer.manifest.sha256);
-    });
-
-    it("never redeploys the recorded release unattended when it can't tell", async () => {
+    it("never calls it in sync, and never redeploys the recorded release unattended", async () => {
       const deploys = account.deploys.length;
-      // The status endpoint doesn't answer.
-      await expect(
-        reconcile({ readStatus: async () => Promise.reject(new Error("fetch failed")) }),
-      ).rejects.toMatchObject({ action: "rerun_interactive" });
-      // The live release can't be fetched from the cache.
-      const kv = account.namespaces.get(account.namespaceId("every-app-gateway-deploy")!)!;
-      kv.keys.delete(`release/${newer.manifest.sha256}`);
-      await expect(reconcile()).rejects.toMatchObject({ action: "rerun_interactive" });
+      // Not even once the row names the Workers the gateway binds.
+      await writeInstall(gatewayD1(), { ...rowA!, liveAppWorkers: ["every-acme-todo"] });
+
+      await expect(reconcile()).rejects.toMatchObject({
+        action: "rerun_interactive",
+        message: expect.stringContaining("not the"),
+      });
 
       expect(account.deploys).toHaveLength(deploys);
       expect(liveRelease()).toBe(newer.manifest.sha256);
     });
 
     it("leaves no release it opened behind when it fails", async () => {
-      // The cache holds the wrong release under B's key.
+      // The cache holds the wrong release under A's key.
       const kv = account.namespaces.get(account.namespaceId("every-app-gateway-deploy")!)!;
       kv.keys.set(
-        `release/${newer.manifest.sha256}`,
-        kv.keys.get(`release/${release.manifest.sha256}`)!,
+        `release/${release.manifest.sha256}`,
+        kv.keys.get(`release/${newer.manifest.sha256}`)!,
       );
 
       await expect(reconcile()).rejects.toMatchObject({ code: "RELEASE_CACHE_MISMATCH" });
@@ -963,25 +933,6 @@ describe("gateway reconcile", () => {
           entry.startsWith("gateway-cached-"),
         ),
       ).toEqual([]);
-    });
-
-    it("never trusts an edge that still answers from the version before", async () => {
-      // The edge lags the upgrade: it still answers from A's version,
-      // reporting A, which is what the install row names.
-      const lagging = async () => ({
-        ...(await account.gatewayStatus()),
-        versionId: rowA!.liveVersionId,
-        release: { version: release.manifest.version, sha256: release.manifest.sha256 },
-      });
-      const deploys = account.deploys.length;
-
-      await expect(reconcile({ readStatus: lagging })).rejects.toMatchObject({
-        action: "rerun_interactive",
-        message: expect.stringContaining("didn't say, from that version"),
-      });
-
-      expect(account.deploys).toHaveLength(deploys);
-      expect(liveRelease()).toBe(newer.manifest.sha256);
     });
 
     it("leaves a release rolled back by hand alone unless a person says so", async () => {

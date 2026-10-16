@@ -1,9 +1,11 @@
 /**
  * `_everyapp_install`: the one row in the gateway's own D1 that records how
  * the CLI deployed it — account, zone, host, where app hosts live, resource
- * ids, the live release and what that deploy bound and published. The
- * Cloudflare account is the source of truth: any machine logged in to it can
- * redeploy or reconcile the gateway from this row, and
+ * ids, the live release and what that deploy bound and published, and the
+ * public half of the gateway's identity key, which app deploys give their
+ * Workers to verify the identities the gateway signs. The Cloudflare account
+ * is the source of truth: any machine logged in to it can redeploy or
+ * reconcile the gateway, or deploy an app, from this row, and
  * `~/.everyapp/installs.json` is only a cache of it.
  */
 import type { D1Database } from "@/lib/cf/d1";
@@ -27,13 +29,15 @@ const CREATE_INSTALL_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_install (
   updated_at INTEGER NOT NULL,
   updated_by TEXT,
   release_schema INTEGER,
-  release_built_at INTEGER
+  release_built_at INTEGER,
+  jwt_public_key TEXT
 )`;
 
 // Columns added after the table first shipped, for tables created before.
 const ADDED_COLUMNS = [
   ["release_schema", "INTEGER"],
   ["release_built_at", "INTEGER"],
+  ["jwt_public_key", "TEXT"],
 ] as const;
 
 export interface InstallRecord {
@@ -57,6 +61,12 @@ export interface InstallRecord {
   liveAppWorkers: string[];
   updatedAt: number;
   updatedBy: string | null;
+  /**
+   * The SPKI PEM of the gateway's identity key (`JWT_PUBLIC_KEY`), written
+   * when the CLI generates the key pair at the gateway's first deploy. A
+   * write without one keeps the one recorded.
+   */
+  jwtPublicKey: string | null;
 }
 
 function list(value: unknown): string[] {
@@ -107,6 +117,10 @@ export async function readInstall(
     liveAppWorkers: list(row["live_app_workers"]),
     updatedAt: Number(row["updated_at"]),
     updatedBy: row["updated_by"] === null ? null : String(row["updated_by"]),
+    jwtPublicKey:
+      typeof row["jwt_public_key"] === "string" && row["jwt_public_key"]
+        ? row["jwt_public_key"]
+        : null,
   };
 }
 
@@ -131,6 +145,7 @@ export async function writeInstall(
     record.updatedBy,
     record.releaseOrder?.schema ?? null,
     record.releaseOrder?.builtAt ?? null,
+    record.jwtPublicKey,
   ];
   await ensureInstallTable(db);
   await db.run([
@@ -138,8 +153,8 @@ export async function writeInstall(
       sql: `INSERT INTO _everyapp_install (id, account_id, zone_id, zone_name, gateway_host,
   app_base_domain, oauth_kv_id, deploy_kv_id, release_version, release_sha256,
   live_version_id, live_domains, live_app_workers, updated_at, updated_by,
-  release_schema, release_built_at)
-VALUES ('install', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+  release_schema, release_built_at, jwt_public_key)
+VALUES ('install', ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
 ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id,
   zone_id = excluded.zone_id, zone_name = excluded.zone_name,
   gateway_host = excluded.gateway_host, app_base_domain = excluded.app_base_domain,
@@ -148,7 +163,8 @@ ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id,
   live_version_id = excluded.live_version_id, live_domains = excluded.live_domains,
   live_app_workers = excluded.live_app_workers, updated_at = excluded.updated_at,
   updated_by = excluded.updated_by, release_schema = excluded.release_schema,
-  release_built_at = excluded.release_built_at`,
+  release_built_at = excluded.release_built_at,
+  jwt_public_key = COALESCE(excluded.jwt_public_key, _everyapp_install.jwt_public_key)`,
       params: values,
     },
   ]);

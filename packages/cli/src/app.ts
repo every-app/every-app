@@ -1,4 +1,4 @@
-import { buildApplication, buildCommand, buildRouteMap } from "@stricli/core";
+import { buildApplication, buildRouteMap } from "@stricli/core";
 import {
   buildInstallCommand,
   buildUninstallCommand,
@@ -9,61 +9,12 @@ import { gatewayRoutes } from "./commands/gateway/commands";
 import { devCommand } from "./commands/dev/command";
 import { setupCommand } from "./commands/setup/command";
 
-const loginCommand = buildCommand({
-  loader: async () => {
-    const { login } = await import("./commands/login");
-    return login;
-  },
-  parameters: {
-    positional: {
-      kind: "tuple",
-      parameters: [],
-    },
-    flags: {
-      resume: {
-        kind: "boolean",
-        brief:
-          "Finish the login `everyapp setup` was waiting for, once the owner opened its setup link",
-        optional: true,
-      },
-      gateway: {
-        kind: "parsed",
-        parse: String,
-        brief: "Which gateway's setup to finish, when several are waiting (--resume)",
-        optional: true,
-      },
-    },
-  },
-  docs: {
-    brief: "Store a gateway deploy token",
-  },
-});
-
-const logoutCommand = buildCommand({
-  loader: async () => {
-    const { logout } = await import("./commands/logout");
-    return logout;
-  },
-  parameters: {
-    positional: {
-      kind: "tuple",
-      parameters: [],
-    },
-    flags: {},
-  },
-  docs: {
-    brief: "Remove a stored gateway deploy token",
-  },
-});
-
 const routes = buildRouteMap({
   routes: {
     app: appRoutes,
     dev: devCommand,
     gateway: gatewayRoutes,
     setup: setupCommand,
-    login: loginCommand,
-    logout: logoutCommand,
     install: buildInstallCommand("everyapp", {
       bash: "__everyapp_bash_complete",
     }),

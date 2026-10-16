@@ -358,12 +358,10 @@ describe("serverFnBase manifest field", () => {
 });
 
 describe("registry Worker names", () => {
-  const legacy = { appId: "todo", orgKey: "acme", legacyNames: true };
-  const scoped = { appId: "todo", orgKey: "acme", legacyNames: false };
+  const scoped = { appId: "todo", orgKey: "acme" };
 
-  it("assigns every-<orgKey>-<appId>, and every-<appId> to legacy rows", () => {
+  it("assigns every-<orgKey>-<appId>", () => {
     expect(registryWorkerNameFor(scoped)).toBe("every-acme-todo");
-    expect(registryWorkerNameFor(legacy)).toBe("every-todo");
     expect(() => registryWorkerNameFor({ ...scoped, orgKey: null })).toThrow();
   });
 
@@ -371,19 +369,16 @@ describe("registry Worker names", () => {
     expect(
       isRegistryWorkerName({ ...scoped, workerName: "every-acme-todo" }),
     ).toBe(true);
-    expect(isRegistryWorkerName({ ...legacy, workerName: "every-todo" })).toBe(
-      true,
-    );
-    // A legacy name on a scoped row, another org's name, another app's.
+    // A name without the org key, another org's name, another app's.
     expect(isRegistryWorkerName({ ...scoped, workerName: "every-todo" })).toBe(
       false,
     );
     expect(
       isRegistryWorkerName({ ...scoped, workerName: "every-other-todo" }),
     ).toBe(false);
-    expect(isRegistryWorkerName({ ...legacy, workerName: "every-chef" })).toBe(
-      false,
-    );
+    expect(
+      isRegistryWorkerName({ ...scoped, workerName: "every-acme-chef" }),
+    ).toBe(false);
     expect(
       isRegistryWorkerName({
         ...scoped,
@@ -395,9 +390,8 @@ describe("registry Worker names", () => {
 
   it("never accepts the gateway's own names", () => {
     for (const row of [
-      { appId: "app-gateway", orgKey: null, legacyNames: true },
-      { appId: "gateway", orgKey: "app", legacyNames: false },
-      { appId: "gateway-deploy", orgKey: "app", legacyNames: false },
+      { appId: "gateway", orgKey: "app" },
+      { appId: "gateway-deploy", orgKey: "app" },
     ]) {
       expect(
         isRegistryWorkerName({
@@ -419,14 +413,6 @@ describe("registry Worker names", () => {
         workerName: "every-acme-notes--archive",
       }),
     ).toBe(false);
-    // A legacy row keeps working.
-    expect(
-      isRegistryWorkerName({
-        ...legacy,
-        appId: "notes--archive",
-        workerName: "every-notes--archive",
-      }),
-    ).toBe(true);
   });
 
   it("refuses names longer than Cloudflare allows", () => {
@@ -448,9 +434,6 @@ describe("registry Worker names", () => {
     );
     expect(resourceNameFor("every-acme-todo", "MY_CACHE")).toBe(
       "every-acme-todo--my-cache",
-    );
-    expect(resourceNameFor("every-todo", "CACHE", { legacyNames: true })).toBe(
-      "every-todo-cache",
     );
   });
 

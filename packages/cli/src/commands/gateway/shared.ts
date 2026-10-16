@@ -14,13 +14,9 @@ import {
   RELEASE_TARBALL,
   type GatewayRelease,
 } from "@/lib/gateway/release";
-import {
-  listCachedInstalls,
-  readCachedInstall,
-  type CachedInstall,
-} from "@/lib/install/state";
 import type { EventSink } from "@/lib/output/events";
 
+export { rememberedInstall } from "@/lib/install/state";
 export { eventSink, runReported } from "@/lib/output/run";
 export { cliVersion };
 
@@ -48,15 +44,6 @@ export async function connectToAccount({
     interactive,
   });
   return { cf: createCfRunner({ accountId: account.id }), account };
-}
-
-/** The gateway this machine deployed: for `domain`, or the only one. */
-export async function rememberedInstall(
-  domain?: string,
-): Promise<CachedInstall | null> {
-  if (domain) return readCachedInstall(domain);
-  const installs = await listCachedInstalls();
-  return installs.length === 1 ? installs[0]! : null;
 }
 
 /**

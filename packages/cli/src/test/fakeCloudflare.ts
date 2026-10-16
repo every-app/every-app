@@ -14,12 +14,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { OutputWorkerSchema } from "@cloudflare/config";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
-import {
-  APP_BINDING_PREFIX,
-  appBindingsDigest,
-} from "@every-app/perimeter/manifest";
+import { APP_BINDING_PREFIX } from "@every-app/perimeter/manifest";
 import { FakeCf, type FakeCfResponse, type RecordedCfCall } from "@/lib/cf/fakeCf";
-import type { GatewayStatusResponse } from "@/lib/gateway/api";
 import { loadEveryAppManifest, type EveryAppCliManifest } from "@/lib/manifest";
 import { createSqliteD1, sqliteD1Script, type SqliteD1 } from "./sqliteD1";
 
@@ -371,21 +367,12 @@ export class FakeCloudflare {
     return [...this.namespaces].find(([, ns]) => ns.title === title)?.[0];
   }
 
-  /** What the live gateway's /api/deploy/status would answer. */
-  async gatewayStatus(): Promise<GatewayStatusResponse> {
-    const gateway = this.workers.get("every-app-gateway");
-    if (!gateway) throw new Error("fetch failed: no gateway");
-    const bindings = Object.keys(gateway.config["env"])
-      .filter((name) => name.startsWith(APP_BINDING_PREFIX))
-      .sort();
-    return {
-      release: gateway.config["env"].EVERYAPP_RELEASE.value,
-      versionId: gateway.versions.at(-1)!,
-      appBindingsDigest: await appBindingsDigest(bindings),
-      gatewayHost: gateway.config["domains"]?.[0] ?? null,
-      appBaseDomain: gateway.config["env"].APP_BASE_DOMAIN?.value ?? null,
-      appBindings: bindings.map((name) => name.slice(APP_BINDING_PREFIX.length)),
-    };
+  /** The release the live gateway version runs (its EVERYAPP_RELEASE). */
+  gatewayRelease(): { version: string; sha256: string } | null {
+    return (
+      this.workers.get("every-app-gateway")?.config["env"]?.EVERYAPP_RELEASE?.value ??
+      null
+    );
   }
 
   /** The hostnames the gateway Worker is published under. */

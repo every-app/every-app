@@ -5,8 +5,8 @@
  * person at the other end: the gateway already serves the hostname, and a
  * browser works as soon as the certificate is there.
  */
-import { checkSslReady, GatewayUnreachableError } from "@/lib/gateway";
 import type { EventSink } from "@/lib/output/events";
+import { probeHttps } from "./https";
 
 const DEFAULT_MAX_WAIT_MS = 600_000;
 const DEFAULT_POLL_MS = 3_000;
@@ -32,13 +32,7 @@ interface CertificateWaitResult {
 
 /** HTTPS answers (any status): the certificate is there. */
 async function httpsAnswers(url: string): Promise<boolean> {
-  try {
-    return await checkSslReady(url);
-  } catch (error) {
-    // Not resolving yet, or refused: not ready either.
-    if (error instanceof GatewayUnreachableError) return false;
-    throw error;
-  }
+  return (await probeHttps(url)).answered;
 }
 
 function elapsed(ms: number): string {

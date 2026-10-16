@@ -7,10 +7,6 @@
  * dev's Local Explorer, which does the same for the Workflows it runs.
  */
 import type { LocalContext } from "@/context";
-import {
-  connectToGatewayAccount,
-  gatewayCall,
-} from "@/commands/app/deploy/deployApp";
 import { appWorkflows, type AppWorkflow } from "@/lib/app/workflows";
 import { canPromptInTerminal, confirmAtTerminal, type Confirm } from "@/lib/cf/deploy";
 import { createCfRunner, runCfJson, type CfRunner } from "@/lib/cf/runner";
@@ -22,8 +18,8 @@ import {
 } from "@/lib/cf/schemas";
 import { getWorkflow } from "@/lib/cf/workflows";
 import { EveryAppError } from "@/lib/errors";
-import { GatewayClient } from "@/lib/gateway/api";
-import { resolveGatewayUrl } from "@/lib/gateway/resolve";
+import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
+import { readApp } from "@/lib/gateway/registry";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import { eventSink, runReported } from "@/lib/output/run";
 
@@ -32,13 +28,13 @@ interface WorkflowFlags {
   json?: boolean;
 }
 
-/** Where a command runs; tests swap the gateway, cf and the terminal. */
+/** Where a command runs; tests swap cf and the terminal. */
 interface WorkflowCommandOptions {
   cwd: string;
-  gatewayUrl: string;
+  /** The gateway `--gateway` or EVERYAPP_GATEWAY_URL names. */
+  gateway?: string;
   json?: boolean;
   interactive?: boolean;
-  client?: GatewayClient;
   createCf?: (accountId?: string) => CfRunner;
 }
 
@@ -65,10 +61,9 @@ const DONE: Record<StatusChange, string> = {
 /** The app's Workflows and cf pinned to the gateway's account. */
 async function connect({
   cwd,
-  gatewayUrl,
+  gateway,
   json,
   interactive = canPromptInTerminal(json ?? false),
-  client = new GatewayClient({ gatewayUrl }),
   createCf = (accountId?: string) => createCfRunner({ accountId }),
 }: WorkflowCommandOptions): Promise<{
   cf: CfRunner;
@@ -82,12 +77,12 @@ async function connect({
       "everyapp.config.ts declares no Workflows (resources.workflows).",
     );
   }
-  const info = await gatewayCall(() => client.appInfo(manifest.id));
-  const { cf } = await connectToGatewayAccount({ client, interactive, createCf });
+  const { cf, db } = await connectToGateway({ gateway, interactive, createCf });
+  const { workerName } = await readApp(db, manifest.id);
   return {
     cf,
-    workerName: info.workerName,
-    workflows: appWorkflows(info.workerName, manifest),
+    workerName,
+    workflows: appWorkflows(workerName, manifest),
   };
 }
 
@@ -274,7 +269,7 @@ export async function changeInstanceStatus(
 async function commandOptions(flags: WorkflowFlags): Promise<WorkflowCommandOptions> {
   return {
     cwd: process.cwd(),
-    gatewayUrl: await resolveGatewayUrl(flags.gateway),
+    gateway: requestedGatewayUrl(flags.gateway),
     json: flags.json,
   };
 }

@@ -258,21 +258,9 @@ function firstDeploy(sink: EventSink) {
   });
   sink.emit({
     type: "step",
-    step: "gateway.verify",
-    status: "ok",
-    message: "The new gateway version is serving.",
-  });
-  sink.emit({
-    type: "step",
     step: "app.bind",
     status: "ok",
     message: "Bound.",
-  });
-  sink.emit({
-    type: "step",
-    step: "app.tools",
-    status: "ok",
-    message: "Agent tools for todo: 3 synced.",
   });
   sink.emit({
     type: "step",
@@ -302,6 +290,27 @@ describe("createHumanSink", () => {
     ]);
     expect(problems()).toEqual([]);
     expect(sink.exitCode).toBe(0);
+  });
+
+  it("says a new app is private to owners and admins when the login isn't a gateway user", () => {
+    const { sink, lines } = human();
+    sink.emit({
+      type: "step",
+      step: "app.register",
+      status: "ok",
+      data: {
+        appId: "todo",
+        hostname: "todo.apps.example.com",
+        existingApp: false,
+        defaultAccess: false,
+        deployerAccess: false,
+        organizationName: "Example Inc",
+      },
+    });
+    expect(lines()).toEqual([
+      "todo → https://todo.apps.example.com (Example Inc), first deploy",
+      "Registered todo: private to owners and admins (change it in Admin → Apps)",
+    ]);
   });
 
   it("shows a redeploy in three lines, and secret set's first line says what it redeploys", () => {
@@ -412,6 +421,13 @@ describe("createHumanSink", () => {
       data: { release: "0.4.0" },
     });
     sink.emit({
+      type: "step",
+      step: "setup.owner",
+      status: "ok",
+      message: "Owner created: ben@example.com (Example Inc).",
+      data: { email: "ben@example.com", organizationName: "Example Inc" },
+    });
+    sink.emit({
       type: "done",
       message: "Your Gateway is ready: https://apps.example.com",
       data: {
@@ -427,6 +443,7 @@ describe("createHumanSink", () => {
       "Building the Gateway from this checkout (a minute or two)...",
       "Upgrading the Gateway 0.3.0 → 0.4.0 · 2 migrations applied · uploaded 9c2e1b0d",
       `  restore point: ${RESTORE}`,
+      "Owner created: ben@example.com",
       "Your Gateway is ready: https://apps.example.com",
       "Next: pnpm everyapp app create my-app",
       "      AI for apps, any time: pnpm everyapp gateway secret set OPENAI_API_KEY",
@@ -451,7 +468,7 @@ describe("createHumanSink", () => {
     ]);
   });
 
-  it("shows progress only with --verbose, except lease and certificate waits and the Gateway build", () => {
+  it("shows progress only with --verbose, except lease and live waits and the Gateway build", () => {
     const emitAll = (sink: EventSink) => {
       sink.emit({
         type: "progress",
@@ -465,7 +482,7 @@ describe("createHumanSink", () => {
       });
       sink.emit({
         type: "progress",
-        step: "app.tls",
+        step: "app.live",
         message:
           "Waiting for a certificate: todo.apps.example.com (15s so far)...",
       });

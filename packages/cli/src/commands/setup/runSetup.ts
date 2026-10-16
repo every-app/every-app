@@ -1,7 +1,8 @@
 /**
- * `everyapp setup`: from an empty Cloudflare account to a working gateway,
- * its owner, and this CLI logged in, in one command. Apps are deployed
- * from the repository afterwards (`pnpm run deploy` in apps/<app>).
+ * `everyapp setup`: from an empty Cloudflare account to a working gateway
+ * and its owner, in one command. Apps are deployed afterwards (`everyapp
+ * app deploy`), with the same Cloudflare login, before or after the owner
+ * exists.
  *
  * Every step looks at what is there first and acts only on what is
  * missing, so running setup again picks up where it stopped (a login to
@@ -17,9 +18,8 @@
  *                zone picked at the terminal (apps.<zone>)
  *    gateway     deployed, or upgraded to this CLI's release
  *    owner       a one-time setup link, opened in the browser (never put
- *                into a CI log, unless --printSetupLink)
- *    login       the owner's first deploy token, handed to this CLI once
- *                the link is claimed (lib/gateway/autoLogin.ts)
+ *                into a CI log, unless --printSetupLink), and the wait for
+ *                the claim, read from the link's own row in D1
  *
  * What can be set up next (AI, email) is the command's `done.data.next`.
  * With --json, each step is an NDJSON event and what only a person can do
@@ -34,38 +34,22 @@ import {
 import { rememberedInstall } from "@/commands/gateway/shared";
 import { ensureCfAuth, resolveAccount } from "@/lib/cf/account";
 import { PINNED_CF_VERSION } from "@/lib/cf/bin";
-import { syncAppToolsWithGateway } from "@/commands/app/deploy/steps/syncTools";
-import { syncGatewayAppTools } from "@/commands/gateway/deploy/steps/syncAppTools";
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
 import { hasWorkersPaid } from "@/lib/cf/plan";
 import type { CfRunner } from "@/lib/cf/runner";
 import { normalizeHostname } from "@/lib/domains/hostnames";
+import { probeHttps } from "@/lib/domains/https";
 import { listZones, registerDomainUrl } from "@/lib/domains/zones";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
-import {
-  explainGatewayError,
-  GatewayApiError,
-  type GatewayClient,
-  type GatewayStatusResponse,
-} from "@/lib/gateway/api";
 import { olderThanInstalled } from "@/lib/gateway/apply";
-import {
-  checkSetupLink,
-  describeOwnerLogin,
-  setupLinkGone,
-  waitForOwnerLogin,
-} from "@/lib/gateway/autoLogin";
-import { readGatewayCredential } from "@/lib/gateway/credentials";
 import type { InstallRecord } from "@/lib/gateway/install";
-import {
-  readPendingClaim,
-  type PendingClaim,
-} from "@/lib/gateway/pendingClaims";
 import { compareVersions, type GatewayRelease } from "@/lib/gateway/release";
 import {
-  gatewayHasOwner,
   maySetupLinkBeShown,
-  mintOperatorSetupLink,
+  mintSetupLink,
+  readOwner,
+  waitForSetupLink,
+  type GatewayOwner,
 } from "@/lib/gateway/setup-link";
 import type { EventSink } from "@/lib/output/events";
 
@@ -95,25 +79,25 @@ interface SetupPrompts {
 /** Everything setup reaches outside itself; tests swap in fakes. */
 export interface SetupDeps {
   createCf: (accountId?: string) => CfRunner;
-  gatewayClient: (gatewayUrl: string) => GatewayClient;
   openRelease: () => Promise<GatewayRelease>;
   /** A person is at this terminal, and this isn't a --json run. */
   interactive: boolean;
   prompts: SetupPrompts;
   openBrowser: (url: string) => Promise<void>;
   cliVersion: string;
-  /** Seams for the deploys' waits and lookups (tests). */
+  /** Seams for the deploys' waits and requests (tests). */
   seams?: {
-    readStatus?: (gatewayUrl: string) => Promise<GatewayStatusResponse>;
     sleep?: (ms: number) => Promise<void>;
-    verifyTimeoutMs?: number;
     leaseWaitMs?: number;
     certificates?: {
       isReady?: (url: string) => Promise<boolean>;
       sleep?: (ms: number) => Promise<void>;
       maxWaitMs?: number;
     };
-    login?: {
+    /** The one plain request to the gateway before the owner link. */
+    fetch?: typeof fetch;
+    /** The wait for the owner link's claim. */
+    owner?: {
       timeoutMs?: number;
       intervalMs?: number;
       sleep?: (ms: number) => Promise<void>;
@@ -213,11 +197,10 @@ export async function runSetup(
     deps,
   });
 
-  // Its owner, and this CLI's login.
-  const claim = await ensureOwnerLink({ db, gatewayUrl, flags, out, deps });
-  const login = await ensureLogin({ db, gatewayUrl, claim, out, deps });
+  // Its owner.
+  const owner = await ensureOwner({ db, gatewayUrl, flags, out, deps });
 
-  return { gatewayUrl, organizationName: login };
+  return { gatewayUrl, organizationName: owner.organizationName || null };
 }
 
 function checkToolchain(out: EventSink): void {
@@ -374,9 +357,7 @@ async function deployOrSkipGateway({
       target,
       interactive: deps.interactive,
       forceDns: flags["force-dns"],
-      readStatus: deps.seams?.readStatus,
       sleep: deps.seams?.sleep,
-      verifyTimeoutMs: deps.seams?.verifyTimeoutMs,
       leaseWaitMs: deps.seams?.leaseWaitMs,
       certificates: deps.seams?.certificates,
     });
@@ -387,23 +368,6 @@ async function deployOrSkipGateway({
       message: `Gateway ${manifest.version} is live at https://${target.domain}.`,
       data: { versionId: result.versionId, release: manifest.version },
     });
-    if (install) {
-      // An upgrade: each app's tools catalog, taken by this gateway version,
-      // as `gateway upgrade` does. A new install has no apps yet.
-      const gatewayUrl = `https://${target.domain}`;
-      await syncGatewayAppTools({
-        gatewayUrl,
-        db,
-        out,
-        verbose: flags.verbose ?? false,
-        boundWorkers: result.appWorkers,
-        syncApp: (options) =>
-          syncAppToolsWithGateway({
-            ...options,
-            client: deps.gatewayClient(gatewayUrl),
-          }),
-      });
-    }
     return db;
   } finally {
     await release.cleanup();
@@ -411,11 +375,13 @@ async function deployOrSkipGateway({
 }
 
 /**
- * A gateway with no owner gets a setup link: the one minted before while
- * the gateway still waits on it (a resumed setup), else a new one with a
- * secret only this CLI keeps. Returns the pending claim, if any.
+ * The gateway's owner: there already, or made with a one-time setup link
+ * this run mints (and opens, at a terminal), waiting up to 15 minutes for
+ * the claim by reading the link's own row in D1. A resumed setup mints a
+ * new link, and the one shown before stops working. Apps don't need an
+ * owner; people do, to sign in.
  */
-async function ensureOwnerLink({
+async function ensureOwner({
   db,
   gatewayUrl,
   flags,
@@ -427,16 +393,17 @@ async function ensureOwnerLink({
   flags: SetupFlags;
   out: EventSink;
   deps: SetupDeps;
-}): Promise<PendingClaim | null> {
-  const host = new URL(gatewayUrl).host;
-  if (await gatewayHasOwner(db)) {
+}): Promise<GatewayOwner> {
+  const existing = await readOwner(db);
+  if (existing) {
     out.emit({
       type: "step",
       step: "setup.owner",
       status: "skip",
-      message: "The gateway has its owner.",
+      message: `The gateway's owner is ${existing.email}.`,
+      data: { ...existing },
     });
-    return readPendingClaim(host);
+    return existing;
   }
   // A CI log is no place for a link that makes whoever opens it the
   // owner: it goes to a person at this terminal, or in the --json events
@@ -450,131 +417,80 @@ async function ensureOwnerLink({
   ) {
     throw new ActionRequiredError(
       "claim_owner",
-      "The gateway has no owner yet. Create the owner account from your own machine: run `everyapp setup` (or `everyapp gateway claim-link`) in a terminal. To have this run print the link into its log instead, pass --printSetupLink.",
+      "The gateway has no owner yet. Run `everyapp setup` at a terminal on any machine with this Cloudflare login to create the owner account; apps deploy without one. To have this run print the link into its log instead, pass --printSetupLink.",
     );
   }
-  // The link an interrupted setup showed, if the gateway still waits on it:
-  // a newer link (`gateway claim-link`, a setup elsewhere) replaces it,
-  // and links expire. If it can't be reached to say, the link is shown.
-  let pending = await readPendingClaim(host);
-  let replacing = false;
-  if (pending) {
-    const state = await checkSetupLink({
-      claim: pending,
-      client: deps.gatewayClient(gatewayUrl),
-    });
-    if (state.status === "logged_in") {
-      out.emit({
-        type: "step",
-        step: "setup.owner",
-        status: "ok",
-        message: "The owner account was just created with the setup link.",
-      });
-      return null;
-    }
-    if (state.status === "gone") {
-      pending = null;
-      replacing = true;
-    }
-  }
-  const link = pending
-    ? { url: pending.url, expiresAt: pending.expiresAt }
-    : await mintOperatorSetupLink({ db, gatewayUrl }).then((minted) => ({
-        url: minted.url,
-        expiresAt: minted.expiresAt.toISOString(),
-      }));
+  await checkReachable(gatewayUrl, out, deps.seams?.fetch);
+
+  const link = await mintSetupLink({ db, gatewayUrl });
   out.emit({
     type: "action_required",
     action: "claim_owner",
     step: "setup.owner",
-    message: `${replacing ? "The setup link shown before stopped working before anyone used it (a newer one replaced it, or it expired), so here is a new one. " : ""}Create the owner account with this one-time setup link (it works once, until ${new Date(link.expiresAt).toLocaleString()}; treat it like a password). Waiting for it...`,
-    data: { url: link.url, expiresAt: link.expiresAt, waiting: true },
+    message: `${link.replaced ? "The setup link shown before no longer works; this one replaces it. " : ""}Create the owner account with this one-time setup link (it works once, until ${link.expiresAt.toLocaleString()}; treat it like a password). Waiting for it...`,
+    data: {
+      url: link.url,
+      expiresAt: link.expiresAt.toISOString(),
+      waiting: true,
+    },
   });
   if (deps.interactive && !flags["no-open"]) await deps.openBrowser(link.url);
-  return pending ?? (await readPendingClaim(host));
-}
 
-/**
- * Log this CLI in to the gateway: a deploy token it already has, or the
- * one the gateway hands over for the claimed link. Returns the
- * organization's name.
- */
-async function ensureLogin({
-  db,
-  gatewayUrl,
-  claim,
-  out,
-  deps,
-}: {
-  db: D1Database;
-  gatewayUrl: string;
-  claim: PendingClaim | null;
-  out: EventSink;
-  deps: SetupDeps;
-}): Promise<string | null> {
-  const client = deps.gatewayClient(gatewayUrl);
-  if (await readGatewayCredential(gatewayUrl)) {
-    const whoami = await client.whoami().catch((error: unknown) => {
-      // A token the gateway refuses (revoked, or another gateway's) means
-      // logging in again; anything else, that it isn't reachable yet.
-      if (error instanceof GatewayApiError && [401, 403].includes(error.status)) {
-        return null;
-      }
-      throw new EveryAppError(
-        "GATEWAY_UNREACHABLE",
-        `Couldn't reach ${gatewayUrl} (${error instanceof Error ? error.message : String(error)}); its certificate may still be on its way. Run \`everyapp setup\` again in a few minutes.`,
-        { retryable: true },
-      );
+  const state = await waitForSetupLink({ db, id: link.id, ...deps.seams?.owner });
+  // A newer link replaced this one: whoever has it may have used it.
+  const owner =
+    state.status === "claimed"
+      ? (state.owner ?? (await readOwner(db)))
+      : state.status === "gone"
+        ? await readOwner(db)
+        : null;
+  if (owner) {
+    out.emit({
+      type: "step",
+      step: "setup.owner",
+      status: "ok",
+      message: `Owner created: ${owner.email}${owner.organizationName ? ` (${owner.organizationName})` : ""}.`,
+      data: { ...owner },
     });
-    if (whoami) {
-      out.emit({
-        type: "step",
-        step: "setup.login",
-        status: "skip",
-        message: `Logged in to ${gatewayUrl} for ${whoami.organizationName}.`,
-      });
-      return whoami.organizationName;
-    }
-  }
-  if (!claim) {
-    throw new ActionRequiredError(
-      "create_deploy_token",
-      `The gateway has an owner, but this machine has no deploy token for it. Sign in at ${gatewayUrl}, create one under Admin → Tokens, run \`everyapp login\`, then \`everyapp setup\` again.`,
-      `${gatewayUrl}/admin/tokens`,
-    );
-  }
-  const state = await waitForOwnerLogin({
-    claim,
-    client,
-    ...deps.seams?.login,
-  }).catch((error: unknown) => {
-    // Cloudflare Access put in front meanwhile: say so, by its code.
-    throw explainGatewayError(error);
-  });
-  if (state.status === "gone") {
-    // Not minted again here: a link that dies while it is waited on was
-    // most likely replaced by whoever wants to use the newer one.
-    throw setupLinkGone(gatewayUrl, await gatewayHasOwner(db));
+    return owner;
   }
   if (state.status === "waiting") {
     throw new ActionRequiredError(
       "claim_owner",
-      `Nobody has finished the setup link yet. It works until ${new Date(claim.expiresAt).toLocaleString()}: open it, then run \`everyapp setup\` again (or \`everyapp login --resume\`).`,
-      claim.url,
+      `Nobody has used the setup link yet. It works until ${link.expiresAt.toLocaleString()}: open it, then run \`everyapp setup\` again to finish. (Run before anyone opens it, setup shows a new link, and this one stops working.)`,
+      link.url,
     );
   }
-  // Who claimed the link, so a person can tell it was who they expected.
-  const { login } = state;
-  out.emit({
-    type: "step",
-    step: "setup.login",
-    status: "ok",
-    message: describeOwnerLogin(gatewayUrl, login),
-    data: {
-      organizationId: login.organizationId,
-      organizationName: login.organizationName,
-      ownerEmail: login.ownerEmail,
-    },
-  });
-  return login.organizationName;
+  throw new ActionRequiredError(
+    "claim_owner",
+    "The setup link stopped working before anyone used it: a newer one replaced it (`everyapp gateway claim-link`, or setup on another machine), or it expired. If someone has the newer link, create the owner account with it; otherwise run `everyapp setup` again for a new one.",
+  );
+}
+
+/**
+ * One plain request to the gateway before the owner link goes out, so a
+ * certificate still on its way, or Cloudflare Access in front, shows up
+ * here rather than on the person's screen. The link is shown either way.
+ */
+async function checkReachable(
+  gatewayUrl: string,
+  out: EventSink,
+  fetchImpl?: typeof fetch,
+): Promise<void> {
+  const answer = await probeHttps(`${gatewayUrl}/`, fetchImpl);
+  if (!answer.answered) {
+    out.emit({
+      type: "warning",
+      code: "GATEWAY_UNREACHABLE",
+      step: "setup.owner",
+      message: `${gatewayUrl} doesn't answer over HTTPS yet (${answer.reason}); its certificate may still be on its way. The setup link works as soon as it does.`,
+    });
+  } else if (answer.access) {
+    out.emit({
+      type: "warning",
+      code: "ACCESS_IN_FRONT",
+      step: "setup.owner",
+      message: `Cloudflare Access answers ${gatewayUrl} before the gateway: whoever opens the setup link signs in to Access first.`,
+    });
+  }
 }

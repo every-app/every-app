@@ -21,14 +21,15 @@
  *      changes when it can, and always before the upload;
  *   6. `cf deploy --prebuilt`, with the secrets file on a first deploy,
  *      and record the install row as soon as the upload is known (on the
- *      way out of a Ctrl+C too). The hostnames are recorded only once cf
+ *      way out of a Ctrl+C too), with the public half of the identity key
+ *      a first deploy generates. The hostnames are recorded only once cf
  *      has published them: when it stops after the upload, only the
  *      version is (record());
- *   7. wait for /api/deploy/status to report the new release and bindings;
- *   8. if the registry changed meanwhile (an app registered), go again.
+ *   7. if the registry changed meanwhile (an app registered), go again.
  *
- * The caller waits for the new hostnames' certificates once the lease is
- * free (`newHosts`).
+ * Nothing is asked of the gateway over HTTPS: what cf deployed and the
+ * install row are the record. The caller waits for the new hostnames'
+ * certificates once the lease is free (`newHosts`).
  *
  * Reconcile redeploys exactly the release that is live, fetched from the
  * cache and checked against its SHA-256, so binding a new app never
@@ -52,7 +53,6 @@ import { onInterrupt } from "@/lib/interrupt";
 import { writeCachedInstall } from "@/lib/install/state";
 import { migrateRemoteD1 } from "@/lib/migrations/remote";
 import type { EventSink } from "@/lib/output/events";
-import { GatewayClient, type GatewayStatusResponse } from "./api";
 import {
   readDesiredState,
   sameBindings,
@@ -66,9 +66,7 @@ import {
   cacheRelease,
   compareReleaseOrder,
   compareVersions,
-  fetchCachedRelease,
   releaseOrder,
-  servingReleaseSha256,
   type GatewayRelease,
 } from "./release";
 import type { GatewayResources } from "./resources";
@@ -80,10 +78,6 @@ type ApplyReason = "deploy" | "upgrade" | "reconcile";
 type Publication = Pick<InstallRecord, "liveDomains">;
 
 const MAX_DEPLOYS = 3;
-const VERIFY_TIMEOUT_MS = 120_000;
-const VERIFY_INTERVAL_MS = 3_000;
-
-type StatusReader = (gatewayUrl: string) => Promise<GatewayStatusResponse>;
 
 export interface ApplyGatewayOptions {
   cf: CfRunner;
@@ -112,9 +106,7 @@ export interface ApplyGatewayOptions {
   allowDowngrade?: boolean;
   /** Patch and `cf deploy --dry-run` only: no lease, no writes. */
   dryRun?: boolean;
-  readStatus?: StatusReader;
   sleep?: (ms: number) => Promise<void>;
-  verifyTimeoutMs?: number;
   /** How long to wait for another deploy's lease. */
   leaseWaitMs?: number;
 }
@@ -127,14 +119,9 @@ export interface ApplyGatewayResult {
   domains: string[];
   /** Hostnames this run published for the first time: they wait for certificates. */
   newHosts: string[];
-  /** The live gateway confirmed it serves this release and these bindings. */
-  verified: boolean;
   /** cf's binding table, after a dry run. */
   dryRunOutput?: string;
 }
-
-const readPublicStatus: StatusReader = (gatewayUrl) =>
-  new GatewayClient({ gatewayUrl }).status();
 
 /** Take the `gateway` deploy lease, saying who has it while waiting. */
 export function acquireGatewayLease(
@@ -164,46 +151,6 @@ export function acquireGatewayLease(
         message,
       }),
   });
-}
-
-/**
- * The install record lags when an upgrade stopped between its upload and
- * its record: the Worker then serves a newer release than the record
- * names. Never replace that one with an older one either, when the live
- * gateway can say which it is (servingReleaseSha256).
- */
-async function refuseDowngradeOfServing(
-  options: ApplyGatewayOptions,
-  install: InstallRecord,
-): Promise<void> {
-  const serving = await getWorkerDeployment(options.cf, GATEWAY_WORKER_NAME);
-  if (!serving?.versionId || serving.versionId === install.liveVersionId) return;
-  const sha256 = await servingReleaseSha256(
-    options.readStatus ?? readPublicStatus,
-    `https://${options.gatewayHost}`,
-    serving.versionId,
-  );
-  if (
-    !sha256 ||
-    sha256 === install.releaseSha256 ||
-    sha256 === options.release.manifest.sha256
-  ) {
-    return;
-  }
-  const live = await fetchCachedRelease(options.cf, options.resources.deployKvId, sha256);
-  if (!live) return;
-  try {
-    if (
-      compareReleaseOrder(
-        releaseOrder(options.release.manifest),
-        releaseOrder(live.manifest),
-      ) < 0
-    ) {
-      throw downgradeRefused(options.release.manifest, live.manifest);
-    }
-  } finally {
-    await live.cleanup();
-  }
 }
 
 /** Whether a release is older than the one the install record names. */
@@ -316,9 +263,6 @@ export async function applyGateway(
         () => null,
       );
       await domainChecks.check(domainChecks.domainsFor(registered?.appHosts ?? []));
-      if (install && !options.allowDowngrade) {
-        await refuseDowngradeOfServing(options, install);
-      }
       await assertReplaceable({
         cf,
         workerName: GATEWAY_WORKER_NAME,
@@ -404,7 +348,6 @@ async function deployUntilSettled(
   const wasFirstDeploy = firstDeploy;
   let desired = await readDesiredState(db, workerExists);
   let versionId: string | null = null;
-  let verified = false;
   let domains: string[] = [];
   const published = new Set(domainChecks.liveDomains);
   const newHosts: string[] = [];
@@ -437,14 +380,18 @@ async function deployUntilSettled(
       message: `${options.dryRun ? "Checking" : "Deploying"} gateway ${release.manifest.version} with ${desired.appWorkers.length} app${desired.appWorkers.length === 1 ? "" : "s"}...`,
       data: { appWorkers: desired.appWorkers, domains },
     });
+    // A first deploy generates the gateway's keys; the public one goes into
+    // the install row with the upload, for app deploys to hand their Workers.
+    const generated = firstDeploy
+      ? firstDeploySecrets({ gatewayUrl, accountId: options.accountId })
+      : null;
     const deployed = await deployOnce(options, desired, domains, {
       before: lastPublished,
       secrets: {
-        ...(firstDeploy
-          ? firstDeploySecrets({ gatewayUrl, accountId: options.accountId })
-          : {}),
+        ...generated,
         ...(attempt === 1 ? options.stagedSecrets : {}),
       },
+      jwtPublicKey: generated?.["JWT_PUBLIC_KEY"] ?? null,
     });
     if (options.dryRun) {
       return {
@@ -453,7 +400,6 @@ async function deployUntilSettled(
         appWorkers: desired.appWorkers,
         domains,
         newHosts: domains.filter((host) => !published.has(host)),
-        verified: false,
         dryRunOutput: deployed.output,
       };
     }
@@ -473,14 +419,7 @@ async function deployUntilSettled(
     });
 
     // The install row already names what went live (deployOnce records it
-    // as soon as the upload is known), whatever happens next: an interrupt,
-    // an edge slow to serve it. Before its first certificate, the gateway
-    // can't answer over HTTPS; `cf workers deployments list` already
-    // confirmed the version.
-    verified = wasFirstDeploy
-      ? false
-      : await waitForStatus(options, gatewayUrl, desired);
-
+    // as soon as the upload is known), whatever happens next.
     const latest = await readDesiredState(db, workerExists);
     if (sameBindings(latest, desired)) break;
     if (attempt >= MAX_DEPLOYS) {
@@ -508,7 +447,6 @@ async function deployUntilSettled(
     // Published by this run and still published: a host an app gave up
     // during the loop has no certificate to wait for.
     newHosts: newHosts.filter((host) => domains.includes(host)),
-    verified,
   };
 }
 
@@ -519,10 +457,13 @@ function deployOnce(
   {
     before,
     secrets,
+    jwtPublicKey,
   }: {
     /** What stays recorded if cf stops after the upload. */
     before: Publication;
     secrets: Record<string, string>;
+    /** The identity key's public half, when this upload sets a new pair. */
+    jwtPublicKey: string | null;
   },
 ): Promise<{ versionId: string | null; output: string }> {
   return withPatchedRelease(options, desired, (workdir) =>
@@ -542,6 +483,7 @@ function deployOnce(
           desired,
           versionId,
           finished ? { liveDomains: domains } : before,
+          jwtPublicKey,
         ),
     }),
   );
@@ -583,47 +525,6 @@ async function withPatchedRelease<T>(
   }
 }
 
-/** Poll the live gateway until it reports this release and these bindings. */
-async function waitForStatus(
-  options: ApplyGatewayOptions,
-  gatewayUrl: string,
-  desired: DesiredState,
-): Promise<boolean> {
-  const readStatus = options.readStatus ?? readPublicStatus;
-  const sleep =
-    options.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
-  const deadline = Date.now() + (options.verifyTimeoutMs ?? VERIFY_TIMEOUT_MS);
-  for (;;) {
-    try {
-      const status = await readStatus(gatewayUrl);
-      if (
-        status.release?.sha256 === options.release.manifest.sha256 &&
-        status.appBindingsDigest === desired.appBindingsDigest
-      ) {
-        options.out.emit({
-          type: "step",
-          step: "gateway.verify",
-          status: "ok",
-          message: "The new gateway version is serving.",
-        });
-        return true;
-      }
-    } catch {
-      // Not reachable yet (or an older gateway without the endpoint).
-    }
-    if (Date.now() >= deadline) {
-      options.out.emit({
-        type: "warning",
-        code: "GATEWAY_NOT_VERIFIED",
-        step: "gateway.verify",
-        message: `Cloudflare took the deploy, but ${gatewayUrl}/api/deploy/status doesn't report it yet. Check again with \`everyapp gateway status\`.`,
-      });
-      return false;
-    }
-    await sleep(VERIFY_INTERVAL_MS);
-  }
-}
-
 /**
  * Record the version that went live: its release and the apps it binds,
  * and `publication`, the hostnames the gateway is published under. That is
@@ -631,13 +532,15 @@ async function waitForStatus(
  * couldn't publish a hostname: a move from another Worker declined, the
  * zone's limit, an API error; or Ctrl+C), it is what was recorded before:
  * the next deploy then checks this one's new hostnames again (DNS records,
- * who may hold them).
+ * who may hold them). The identity key's public half only when this upload
+ * set a new key pair; otherwise the row keeps the one it has.
  */
 async function record(
   options: ApplyGatewayOptions,
   desired: DesiredState,
   versionId: string | null,
   publication: Publication,
+  jwtPublicKey: string | null,
 ): Promise<void> {
   const updatedAt = Date.now();
   await writeInstall(options.db, {
@@ -656,6 +559,7 @@ async function record(
     liveAppWorkers: desired.appWorkers,
     updatedAt,
     updatedBy: `everyapp ${options.cliVersion} on ${os.hostname()}`,
+    jwtPublicKey,
   });
   await writeCachedInstall({
     gatewayHost: options.gatewayHost,

@@ -8,13 +8,14 @@ import {
   sqliteD1Script,
   type SqliteD1,
 } from "@/test/sqliteD1";
-import { readPendingClaim } from "./pendingClaims";
 import {
   gatewayHasOwner,
   maySetupLinkBeShown,
-  mintOperatorSetupLink,
   mintSetupLink,
+  readOwner,
+  readSetupLink,
   setupLinkForDeploy,
+  waitForSetupLink,
 } from "./setup-link";
 
 const DB_ID = "0123456789abcdef0123456789abcdef";
@@ -76,11 +77,13 @@ describe("mintSetupLink", () => {
     expect(JSON.stringify(cf.calls)).not.toContain(token);
   });
 
-  it("expires the earlier unused link in the same request", async () => {
+  it("expires the earlier unused link in the same request, and says it did", async () => {
     const first = await mintSetupLink({ db: db(), gatewayUrl: "https://g.x", now: 1000 });
     const second = await mintSetupLink({ db: db(), gatewayUrl: "https://g.x", now: 2000 });
 
     expect(first.url).not.toBe(second.url);
+    expect(first.replaced).toBe(false);
+    expect(second.replaced).toBe(true);
     expect(tokens().map((row) => row["expires_at"])).toEqual([
       2000,
       2000 + 24 * 60 * 60 * 1000,
@@ -88,45 +91,71 @@ describe("mintSetupLink", () => {
   });
 });
 
-describe("mintOperatorSetupLink", () => {
-  it("keeps a CLI secret for `everyapp login --resume`, never in the link", async () => {
-    const link = await mintOperatorSetupLink({
-      db: db(),
-      gatewayUrl: "https://apps.example.com",
-    });
+/** The gateway's claim: the owner, their organization and membership, then the link spent. */
+function claim(linkId: string, now: number): void {
+  sqlite.sqlite.exec(`
+    INSERT INTO organizations (id, name, slug, created_at) VALUES ('org', 'Acme', 'acme', 0);
+    INSERT INTO users (id, name, email, email_verified, created_at, updated_at) VALUES ('u', 'U', 'owner@x.co', 0, 0, 0);
+    INSERT INTO members (id, organization_id, user_id, role, created_at) VALUES ('m', 'org', 'u', 'owner', 0);
+    UPDATE owner_setup_tokens SET consumed_at = ${now}, consumed_by = 'u' WHERE id = '${linkId}';
+  `);
+}
 
-    expect(link.cliSecret).toMatch(/^ecs_[A-Za-z0-9_-]{43}$/);
-    expect(link.url).not.toContain(link.cliSecret!);
-    const [row] = sqlite.all("SELECT cli_secret_hash FROM owner_setup_tokens");
-    expect(row!["cli_secret_hash"]).toBe(
-      createHash("sha256").update(link.cliSecret!).digest("hex"),
-    );
-    await expect(readPendingClaim("apps.example.com")).resolves.toMatchObject({
-      url: link.url,
-      cliSecret: link.cliSecret,
+describe("readSetupLink", () => {
+  it("is waiting until its own row is spent, then names who it made the owner", async () => {
+    const link = await mintSetupLink({ db: db(), gatewayUrl: "https://g.x", now: 1000 });
+    await expect(readSetupLink(db(), link.id, 2000)).resolves.toEqual({ status: "waiting" });
+
+    claim(link.id, 3000);
+
+    await expect(readSetupLink(db(), link.id, 4000)).resolves.toEqual({
+      status: "claimed",
+      owner: { email: "owner@x.co", organizationName: "Acme" },
     });
   });
 
-  it("mints a plain link on a gateway from before CLI secrets", async () => {
-    const older = createSqliteD1();
-    older.sqlite.exec(
-      "CREATE TABLE owner_setup_tokens (id text PRIMARY KEY, kind text NOT NULL, token_hash text NOT NULL UNIQUE, created_at integer, expires_at integer NOT NULL, consumed_at integer, consumed_by text)",
-    );
+  it("is gone once a newer link replaced it, or it expired", async () => {
+    const link = await mintSetupLink({ db: db(), gatewayUrl: "https://g.x", now: 1000 });
+    await expect(
+      readSetupLink(db(), link.id, link.expiresAt.getTime()),
+    ).resolves.toEqual({ status: "gone" });
 
-    const link = await mintOperatorSetupLink({
-      db: older,
-      gatewayUrl: "https://old.example.com",
-    });
-
-    expect(link.cliSecret).toBeUndefined();
-    expect(older.all("SELECT kind FROM owner_setup_tokens")).toEqual([{ kind: "claim" }]);
-    await expect(readPendingClaim("old.example.com")).resolves.toBeNull();
+    await mintSetupLink({ db: db(), gatewayUrl: "https://g.x", now: 2000 });
+    await expect(readSetupLink(db(), link.id, 3000)).resolves.toEqual({ status: "gone" });
+    await expect(readSetupLink(db(), "unknown", 3000)).resolves.toEqual({ status: "gone" });
   });
 });
 
-describe("gatewayHasOwner", () => {
+describe("waitForSetupLink", () => {
+  it("reads the row every few seconds until the claim, for so long", async () => {
+    const link = await mintSetupLink({ db: db(), gatewayUrl: "https://g.x" });
+    const slept: number[] = [];
+    let now = Date.now();
+
+    const claimed = await waitForSetupLink({
+      db: db(),
+      id: link.id,
+      now: () => now,
+      sleep: async (ms) => {
+        slept.push(ms);
+        now += ms;
+        if (slept.length === 3) claim(link.id, now);
+      },
+    });
+    expect(claimed).toMatchObject({ status: "claimed" });
+    expect(slept).toEqual([5_000, 5_000, 5_000]);
+
+    const other = await mintSetupLink({ db: db(), gatewayUrl: "https://g.x" });
+    await expect(
+      waitForSetupLink({ db: db(), id: other.id, timeoutMs: 0 }),
+    ).resolves.toEqual({ status: "waiting" });
+  });
+});
+
+describe("readOwner", () => {
   it("reads owner memberships from D1", async () => {
     await expect(gatewayHasOwner(db())).resolves.toBe(false);
+    await expect(readOwner(db())).resolves.toBeNull();
 
     sqlite.sqlite.exec(`
       INSERT INTO organizations (id, name, slug, created_at) VALUES ('org', 'Org', 'org', 0);
@@ -134,6 +163,7 @@ describe("gatewayHasOwner", () => {
       INSERT INTO members (id, organization_id, user_id, role, created_at) VALUES ('m', 'org', 'u', 'owner', 0);
     `);
     await expect(gatewayHasOwner(db())).resolves.toBe(true);
+    await expect(readOwner(db())).resolves.toEqual({ email: "u@x.co", organizationName: "Org" });
   });
 });
 

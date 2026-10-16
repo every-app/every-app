@@ -247,15 +247,15 @@ credentials:
 | `/mcp`, `/mcp/*`                  | gateway and apps  | MCP clients, with OAuth or a personal access token     |
 | `/oauth/token`, `/oauth/register` | gateway           | The OAuth server's token, revocation and registration  |
 | `/.well-known/*`                  | gateway           | OAuth discovery documents                              |
-| `/api/admin/has-owner`            | gateway           | The CLI's check whether the gateway is claimed         |
 | Each app's public routes          | that app's host   | Whatever its `everyapp.config.ts` declares as `public` |
 
 Keep everything else behind Access, `/oauth/authorize` and the consent pages
 (`/oauth/consent*`) included: those are pages for people, signed in with
 the gateway's session. (This guide used to bypass all of `/oauth/*`; narrow
-such a bypass to the two paths above. It also bypassed `/api/deploy/*` and
-`/api/setup/deploy-token`, which no longer exist: the CLI deploys by
-writing the gateway's database, never through it. Remove those overrides.) Path overrides don't cover subpaths,
+such a bypass to the two paths above. It also bypassed `/api/deploy/*`,
+`/api/setup/deploy-token` and `/api/admin/has-owner`: the CLI deploys, and
+checks for an owner, by reading and writing the gateway's database, never
+through the gateway. Remove those overrides.) Path overrides don't cover subpaths,
 so use the `/*` forms; a destination takes at most 25.
 
 On both applications keep the `CF_Authorization` cookie **HttpOnly** (the
@@ -273,8 +273,7 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
       {"path_pattern": "/mcp/*", "behavior": "public"},
       {"path_pattern": "/oauth/token", "behavior": "public"},
       {"path_pattern": "/oauth/register", "behavior": "public"},
-      {"path_pattern": "/.well-known/*", "behavior": "public"},
-      {"path_pattern": "/api/admin/has-owner", "behavior": "public"}
+      {"path_pattern": "/.well-known/*", "behavior": "public"}
     ]}
   ],
   "policies": ["<policy id>"],

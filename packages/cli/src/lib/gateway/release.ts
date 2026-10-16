@@ -17,7 +17,6 @@ import { makeCfTempDir } from "@/lib/cf/privateDir";
 import { onInterrupt } from "@/lib/interrupt";
 import { runCfJson, type CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
-import type { GatewayStatusResponse } from "./api";
 
 export const RELEASE_TARBALL = "every-app-gateway-release.tar.gz";
 const SUPPORTED_BUILD_OUTPUT = "v0";
@@ -257,26 +256,6 @@ export async function fetchCachedRelease(
     await removeDir();
     throw error;
   }
-}
-
-/**
- * The SHA-256 of the release the gateway Worker serves, for when the
- * install record can't say (the Worker serves another version than the one
- * it names: an upgrade that stopped before recording itself, a rollback in
- * the dashboard). By the live gateway's own word, and only from that very
- * version: an edge that still answers from the version before (it lags a
- * deploy) says nothing about this one. Null when that can't be told.
- */
-export async function servingReleaseSha256(
-  readStatus: (gatewayUrl: string) => Promise<GatewayStatusResponse>,
-  gatewayUrl: string,
-  servingVersionId: string | null | undefined,
-): Promise<string | null> {
-  if (!servingVersionId) return null;
-  const status = await readStatus(gatewayUrl).catch(() => null);
-  if (!status || status.versionId !== servingVersionId) return null;
-  const sha256 = status.release?.sha256;
-  return sha256 && /^[0-9a-f]{64}$/.test(sha256) ? sha256 : null;
 }
 
 /**

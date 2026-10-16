@@ -46,6 +46,7 @@ describe("everyapp gateway claim-link", () => {
       liveAppWorkers: [],
       updatedAt: 0,
       updatedBy: null,
+      jwtPublicKey: null,
     });
 
     const link = await mintClaimLink(cf, "ignored.example.net");

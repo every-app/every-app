@@ -3,7 +3,7 @@ title: CLI Reference
 description: Every everyapp command and flag on one page
 ---
 
-While publishing is paused, everyapp runs from a checkout of the repository as `pnpm everyapp …`, and its output names the next command that way. Global help: `pnpm everyapp --help`. The CLI needs Node.js 22.18 or newer and drives Cloudflare's own CLI, `cf`: log in with `npx cf auth login` (the CLI offers it when you're logged out), or set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
+While publishing is paused, everyapp runs from a checkout of the repository as `pnpm everyapp …`, and its output names the next command that way. Global help: `pnpm everyapp --help`. The CLI needs Node.js 22.18 or newer and drives Cloudflare's own CLI, `cf`: log in with `npx cf auth login` (the CLI offers it when you're logged out), or set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. That login is the only credential, on every machine and in CI: there is no token to create, paste or renew, and the CLI keeps nothing on your machine but a note of which account it deployed to (`~/.everyapp/installs.json`).
 
 ## Output, `--json`, `--verbose` and `--yes`
 
@@ -19,21 +19,20 @@ Nothing asks before it acts: a command's first line says what happens (`todo →
 
 ### `everyapp setup`
 
-One command from an empty Cloudflare account to a working Gateway, its owner, this terminal logged in, and the starter app live. Each step looks at what is there before it acts, so running it again picks up where it stopped, and changes nothing once everything is there:
+One command from an empty Cloudflare account to a working Gateway and its owner. Each step looks at what is there before it acts, so running it again picks up where it stopped, and changes nothing once everything is there:
 
 1. logs in to Cloudflare: `cf auth login` at a terminal (a link and a code), the same link and code as a waited-for `action_required` under `--json`, or `CLOUDFLARE_API_TOKEN` with `CLOUDFLARE_ACCOUNT_ID`;
 2. picks the account, and warns when it can't confirm Workers Paid;
 3. picks where the Gateway lives: `--domain`, the installed Gateway's address, or (at a terminal) one of the account's domains, suggesting `apps.<domain>`; with no domain on Cloudflare, it says how to buy one and stops (exit 2);
-4. deploys the Gateway, or upgrades it to the release this CLI ships, and waits for its certificate;
-5. opens a one-time setup link for the owner account (at a terminal; with `--json` it is in the event, except in CI, where setup stops and says to run `npx everyapp gateway claim-link` on your own machine, unless you pass `--printSetupLink`), and once the account exists, logs this terminal in by itself: the link carries a second secret only this CLI keeps, which fetches the owner's first deploy token, once, and it says whose account that is (`Logged in to … as <email> (owner of <organization>)`);
-6. copies the starter app (a simple todo list, app `simple-todo`) to `./simple-todo` and deploys it.
+4. deploys the Gateway, or upgrades it to the release this checkout builds, and waits for its certificate;
+5. sends one plain request to the Gateway (so a certificate still on its way, or Cloudflare Access in front, shows up as a warning here), then opens a one-time setup link for the owner account (at a terminal; with `--json` it is in the event, except in CI, where setup stops with `claim_owner` and says to run `everyapp setup` on your own machine, unless you pass `--printSetupLink`), and waits up to 15 minutes for someone to use it, reading the link's own row in the Gateway's database every 5 seconds. Then it says whose account that is (`Owner created: <email>`). A setup run again before anyone used the link shows a new one, and the earlier one stops working.
+
+The owner is for people, who sign in with that account; apps deploy without one, from any machine or CI with the Cloudflare login. Apps deployed before the owner exists go to the organization the owner's account takes over, and the owner gets access to them.
 
 | Flag                  | Meaning                                                                                                                      |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `--domain <hostname>` | Where the Gateway lives: any hostname in a zone the account has, e.g. `apps.your-domain.dev`. Asked at a terminal otherwise. |
 | `--account-id <id>`   | The Cloudflare account, when your login has several.                                                                         |
-| `--dir <path>`        | Where to put the starter app (default `./simple-todo`).                                                                      |
-| `--no-starter`        | Set up the Gateway only.                                                                                                     |
 | `--allow-free-plan`   | Don't check for Workers Paid (demos; Every App needs it to run).                                                             |
 | `--force-dns`         | Publish the Gateway's address even where a DNS record answers it (one at the address is replaced).                           |
 | `--no-open`           | Print the setup link without opening a browser.                                                                              |
@@ -47,7 +46,7 @@ When there is nothing to do, it says `Gateway 0.4.0 at https://apps.example.com 
 
 ### `everyapp gateway deploy`
 
-Deploys (or redeploys) your Gateway on your Cloudflare account from the release bundled with the CLI: creates or links its D1 database and KV namespaces, migrates the database (after a Time Travel bookmark it prints with the restore command), binds every deployed app, publishes the Gateway's address and each app's as [Workers Custom Domains](/docs/reference/manage-your-gateway#where-apps-live), uploads the Worker with `cf deploy`, and records the install so later runs keep the address and account. A first deploy generates the Gateway's secrets and sends them with the upload. Before it adds an address, it checks for a DNS record that answers it (one at the address, or a wildcard above it) and room in the zone (100 Custom Domains), then waits for the new certificate. Deploys never overlap: each takes a lease in the Gateway's database, renewed every 30 seconds while it runs and expiring 3 minutes after its last renewal, so a deploy that died frees it within 3 minutes, however long a live one takes. Nothing takes a live lease over; `everyapp gateway status` shows who holds it. A deploy that can't renew its lease (another took it, or renewals kept failing for 90 seconds) stops with `LEASE_LOST` before it migrates or uploads. `everyapp setup` runs it for you.
+Deploys (or redeploys) your Gateway on your Cloudflare account from the release bundled with the CLI: creates or links its D1 database and KV namespaces, migrates the database (after a Time Travel bookmark it prints with the restore command), binds every deployed app, publishes the Gateway's address and each app's as [Workers Custom Domains](/docs/reference/manage-your-gateway#where-apps-live), uploads the Worker with `cf deploy`, and records the install in the Gateway's database so later runs keep the address and account. A first deploy generates the Gateway's secrets and sends them with the upload; the CLI keeps none of them, but writes the public half of the Gateway's identity key into the install record, where app deploys read it. Nothing is asked of the Gateway over HTTPS: what `cf deploy` reports and the install record are the record. Before it adds an address, it checks for a DNS record that answers it (one at the address, or a wildcard above it) and room in the zone (100 Custom Domains), then waits for the new certificate. Deploys never overlap: each takes a lease in the Gateway's database, renewed every 30 seconds while it runs and expiring 3 minutes after its last renewal, so a deploy that died frees it within 3 minutes, however long a live one takes. Nothing takes a live lease over; `everyapp gateway status` shows who holds it. A deploy that can't renew its lease (another took it, or renewals kept failing for 90 seconds) stops with `LEASE_LOST` before it migrates or uploads. `everyapp setup` runs it for you.
 
 | Flag                  | Meaning                                                                                                                                                                                                                                                         |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -66,11 +65,11 @@ Like `gateway deploy` for a Gateway the CLI deployed before: moves it to the rel
 
 ### `everyapp gateway reconcile`
 
-Makes the live Gateway bind and serve exactly the apps its registry lists, by redeploying the release it runs (fetched from the account's release cache and checked against its SHA-256), so it never upgrades or downgrades the Gateway. It picks that release only once it holds the deploy lease, so it never puts back the release an upgrade just replaced. `app deploy` and `app delete` run it when the set of apps changes. `--dry-run` shows the bindings, the addresses and cf's check without deploying; `--force` redeploys even when nothing changed; `--force-dns` as for `deploy`.
+Makes the live Gateway bind and serve exactly the apps its registry lists, by redeploying the release it runs (fetched from the account's release cache and checked against its SHA-256), so it never upgrades or downgrades the Gateway. Whether there is anything to do comes from the install record: the Worker serves the version it names, which bound the apps and published the addresses it lists. It picks the release only once it holds the deploy lease, so it never puts back the release an upgrade just replaced; when the Worker serves a version the install record doesn't name (deployed some other way), a person decides at a terminal. `app deploy` and `app delete` run it when the set of apps changes. `--dry-run` shows the bindings, the addresses and cf's check without deploying; `--force` redeploys even when nothing changed; `--force-dns` as for `deploy`.
 
 ### `everyapp gateway status`
 
-Shows the release the Gateway runs against the one the CLI ships, whether it binds and serves exactly the registered apps, every address and whether it has its certificate, whether it has an owner, and every deploy in progress (the Gateway's or an app's): who holds its lease, since when, and when the lease expires unless that deploy renews it.
+Everything from the Gateway's database and `cf`, nothing over HTTPS: the release its install record names and whether the Worker serves that version, its owner, each registered app (`id`, `hostname`, `workerName`, `status`, whether the live version binds it, and who deployed it last), whether the Gateway binds and publishes exactly the registered apps, each address and whether Cloudflare lists an active certificate for it, and every deploy in progress (the Gateway's or an app's): who holds its lease, since when, and when the lease expires unless that deploy renews it. `data.fixes` (and `To do:` at a terminal) says what to run about anything off: no owner (`everyapp setup`), bindings that differ from the registry (`everyapp gateway reconcile`), a Gateway changed outside everyapp, an app whose Worker is gone or that never finished a deploy, and what settles by itself (an app that goes live on its first visit, a certificate on its way, a running deploy).
 
 ### `everyapp gateway claim-link`
 
@@ -80,21 +79,11 @@ Mints a new one-time owner setup link for a Gateway nobody has claimed yet. Any 
 
 Sets one of the Gateway's optional settings — `OPENAI_API_KEY`, `AI_PROXY_EXTRA_ROUTES`, `EMAIL_REST_API_TOKEN`, `EMAIL_FROM`, `EMAIL_FROM_NAME`, the MCP connector's `MCP_OAUTH_ENABLED`, `MCP_DCR_ENABLED`, `MCP_ALLOWED_ORIGINS` and `MCP_AUDIT_RETENTION_DAYS`, or [Cloudflare Access sign-in](/docs/reference/cloudflare-access)'s `CLOUDFLARE_ACCESS_*` and `EMAIL_PASSWORD_SIGN_IN` — from a hidden prompt or `--from-env <VAR>`, never the command line, and redeploys the live release with it.
 
-## Authentication
-
-### `everyapp login`
-
-Stores a deploy token for your Gateway. Create the token first: **your Gateway → Admin → Tokens → Deploy token** (shown once). The CLI validates it and saves it per-gateway in `~/.everyapp/credentials.json`. Registration and app deploys authenticate with this token. `everyapp setup` does this by itself for the machine that sets the Gateway up.
-
-`everyapp login --resume` finishes the login an interrupted `setup` (or `gateway deploy`, or `claim-link`) was waiting for, once someone created the owner account with its setup link (`--gateway <url>` when several are waiting).
-
-### `everyapp logout`
-
-Removes the stored token for a gateway.
-
 ## Apps
 
-App commands find your Gateway from `--gateway <url>`, then `EVERYAPP_GATEWAY_URL`, then the only Gateway you're logged in to.
+App commands find your Gateway through your Cloudflare login: the Gateway's database (`every-app-gateway`) in the account this machine deployed it to, `CLOUDFLARE_ACCOUNT_ID`, or the only account the login has (at a terminal, it asks when there are several), and the install record in it. Any machine with the login can deploy, with nothing to set up first. `--gateway <url>` or `EVERYAPP_GATEWAY_URL` (meant for the hosted tier) only checks you reach the Gateway you mean: one that names another address stops with `GATEWAY_URL_MISMATCH`.
+
+**The registry.** An app's registration lives in the Gateway's own D1 database, and the CLI writes it there itself, with your Cloudflare login and the same rules the Gateway ships (`@every-app/perimeter/registry`): the app's names, who can open a new app, and on every deploy the version uploaded and who deployed it (your Cloudflare login's email, or `api-token:<account id>` with an API token), shown in **Admin → Apps** and `gateway status`. Write access to that database is what makes you the Gateway's operator. Apps register before the Gateway has an owner too: they go to an organization named after your Cloudflare account, which the owner's account takes over.
 
 ### `everyapp app create <app-id>`
 
@@ -102,7 +91,9 @@ Scaffolds a new app from the starter template (kebab-case id): copies it to `app
 
 ### `everyapp app deploy`
 
-Run from an app directory. Registers the app with your Gateway, which names its Worker and resources (`every-<org>-<app-id>`) and its address (`<app-id>.apps.your-domain.dev` for your own organization's apps, `<app-id>-<org>.apps.your-domain.dev` for another's); checks a new address (a DNS record that answers it, room in the zone) before it creates or uploads anything; creates or links the D1/KV resources in `everyapp.config.ts`; builds the Worker that `cloudflare.config.ts` defines (`cf build`) and checks it (private, its own identity keys, no other Workers or resources, and Workflows named after it that no other Worker runs); checks that the app's drizzle migrations still describe its schema (below); migrates its D1 database; uploads it with `cf deploy`, which creates or updates its Workflows; has the Gateway bind it and publish its address as a Custom Domain; and waits for a new address's certificate. Redeploying an app's code doesn't touch the Gateway.
+Run from an app directory. Registers the app in your Gateway's registry, which names its Worker and resources (`every-<org>-<app-id>`) and its address (`<app-id>.apps.your-domain.dev` for your own organization's apps, `<app-id>-<org>.apps.your-domain.dev` for another's); checks a new address (a DNS record that answers it, room in the zone) before it creates or uploads anything; creates or links the D1/KV resources in `everyapp.config.ts`; builds the Worker that `cloudflare.config.ts` defines (`cf build`), with the Gateway's public identity key from its install record, and checks it (private, its own identity keys, no other Workers or resources, and Workflows named after it that no other Worker runs); checks that the app's drizzle migrations still describe its schema (below); migrates its D1 database; uploads it with `cf deploy`, which creates or updates its Workflows; records the version in the registry; redeploys the Gateway to bind it and publish its address as a Custom Domain; and waits for it to go live (below). Redeploying an app's code doesn't touch the Gateway; the Gateway takes the new code's agent tools itself when it sees the new version.
+
+**The live wait.** The Gateway makes a newly bound app live itself, on the first request that reaches it over its new binding. So the deploy requests `https://<app-id>.apps.your-domain.dev/` (every 3 seconds, for up to ten minutes) until the registry says the app is active: the request makes it so, the database says it happened, and no answer by itself counts as live. A new address's certificate (usually a minute or two) and the Gateway version with the binding reaching every edge (seconds) are what it waits for. With Cloudflare Access in front of the Gateway, the request never reaches it: once the address answers, the deploy warns that the app goes live on its first visit through Access, and ends successfully. So does a certificate that hasn't come after ten minutes; the Gateway answering for ten minutes without making the app live is an error (`APP_NOT_LIVE`; deploy again, the upload is kept).
 
 | Flag                                 | Meaning                                                                                                    |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
@@ -110,9 +101,9 @@ Run from an app directory. Registers the app with your Gateway, which names its 
 | `--access everyone\|admins`          | Who can open a newly registered app (default: the deployer, owners and admins).                            |
 | `--allow-delete-durable-object-data` | Deploy even though Durable Object classes were removed, deleting their data.                               |
 | `--allow-delete-workflows`           | Deploy even though Workflows were removed, deleting them and their instances once the new version is live. |
-| `--gateway <url>`                    | The Gateway to deploy through.                                                                             |
+| `--gateway <url>`                    | The Gateway you mean, checked against the one in your Cloudflare account.                                  |
 | `--force-dns`                        | Publish a new address even where a DNS record answers it (one at the address is replaced).                 |
-| `--no-wait-cert`                     | Don't wait for a new address's certificate (it comes within minutes anyway).                               |
+| `--no-wait-cert`                     | Don't wait for the app to go live; it goes live on its first visit, once its certificate comes.            |
 | `--json`, `--verbose`                | Only NDJSON events on stdout; every step, and build output on stderr.                                      |
 
 **The schema check.** For an app on the drizzle migrations engine (the default), the deploy runs `drizzle-kit generate` with the app's own `drizzle.config.ts` against a copy of its migrations, after the build and before anything is migrated or uploaded. If that would write a new migration, the schema has changes no migration carries, and the deploy stops with `SCHEMA_DRIFT`: run `pnpm db:generate`, then deploy again. Otherwise it reports `schema in sync`. When drizzle-kit can't tell (it asks about a renamed column or table only at a terminal), the deploy stops with `SCHEMA_CHECK_FAILED`. An app without drizzle-kit installed or a drizzle config gets a `SCHEMA_CHECK_SKIPPED` warning and deploys anyway. Apps on `migrations.engine: "d1-sql"` aren't checked.
@@ -130,13 +121,15 @@ Binding to the Gateway · uploaded 7d20c4e1
 Live: https://todo.apps.example.com
 ```
 
+(`private to owners and admins` when your Cloudflare login's email isn't a verified account on the Gateway: only a verified account with the same email gets the app as its deployer.)
+
 ### `everyapp app secret set <NAME>`
 
 Run from an app directory. Sets one of the app's own secrets (an API key its Worker calls out with, say) from a hidden prompt or `--from-env <VAR>`, never the command line, and deploys the app with the secret in the same version, as `everyapp app deploy` does: its code and pending migrations go too, which its first line says (`Redeploying todo with GITHUB_TOKEN (code and pending migrations from this directory)`). Later deploys keep it. Setting a secret with `cf` directly makes a version everyapp didn't upload, which the next unattended deploy stops on; this doesn't. Names everyapp sets itself are refused (`GATEWAY_URL`, and the `EVERYAPP_*`, `EVERY_APP_*` and `APP__*` names), as are the app's own binding names. Flags: `-y`, `--from-env`, `--gateway`, `--json`, `--verbose`.
 
 ### `everyapp app delete [app-id]`
 
-Removes the app from your Gateway (its name and address stay reserved to your organization), drops the Gateway's binding to it and its address, and deletes the certificate Cloudflare keeps for that address. Its Worker and data, and any cron schedules and Workflows the Worker runs, are kept unless `--purge`, which asks you to type the app id and deletes only the Worker, databases and namespaces its deploys recorded creating, with the Workflows that run on that Worker; anything else with its names is kept and listed. At a terminal it asks first; unattended it needs `-y`, which also skips typing the id for `--purge`. Flags: `-y`, `--purge`, `--gateway`, `--json`, `--verbose`.
+Removes the app from your Gateway's registry (its name and address stay reserved to your organization; everyone's access to it, the personal access tokens bound to it, its agent tools and its place in AI connections go), drops the Gateway's binding to it and its address, and deletes the certificate Cloudflare keeps for that address. Its Worker and data, and any cron schedules and Workflows the Worker runs, are kept unless `--purge`, which asks you to type the app id and deletes only the Worker, databases and namespaces its deploys recorded creating, with the Workflows that run on that Worker; anything else with its names is kept and listed. At a terminal it asks first; unattended it needs `-y`, which also skips typing the id for `--purge`. Flags: `-y`, `--purge`, `--gateway`, `--json`, `--verbose`.
 
 ### `everyapp app d1 query "<sql>"`
 

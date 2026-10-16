@@ -23,7 +23,7 @@ import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { directoryExists } from "@/lib/file-operations";
-import { resolveGatewayUrl } from "@/lib/gateway/resolve";
+import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { initRepository } from "@/lib/git";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
@@ -176,7 +176,7 @@ export async function createApp({
   const deployed = await deploy({
     cwd: targetDir,
     manifest,
-    gatewayUrl: await resolveGatewayUrl(flags.gateway),
+    gateway: requestedGatewayUrl(flags.gateway),
     out,
     json: flags.json,
     verbose,

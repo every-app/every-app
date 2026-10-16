@@ -71,9 +71,10 @@ It asks where the Gateway should live (it suggests `apps.<your domain>`), then:
 1. **Logs in to Cloudflare** with Cloudflare's own CLI. It prints a link and a one-time code, so it works over SSH too: open the link, check the code and approve.
 2. **Checks for Workers Paid**, and says so if it can't confirm it.
 3. **Installs the Gateway** at your address: its database and storage, and the Worker on its own Workers Custom Domain. Cloudflare creates the DNS record and issues the certificate, usually within a minute or two; setup waits for it.
-4. **Opens a one-time setup link** in your browser. Create your owner account there. Nobody can sign up before you do, and after you, only people you invite.
-5. **Logs this terminal in** to your Gateway by itself, once your owner account exists, so it can deploy apps.
-6. **Deploys the starter app**, a simple todo list, from `./simple-todo` to `https://simple-todo.apps.your-domain.dev`.
+4. **Opens a one-time setup link** in your browser, and waits for you to create your owner account there (up to 15 minutes; it watches the Gateway's database, not the page). Nobody can sign up before you do, and after you, only people you invite.
+5. **Deploys the starter app**, a simple todo list, from `./simple-todo` to `https://simple-todo.apps.your-domain.dev`.
+
+There is nothing to log in to besides Cloudflare: your Cloudflare login is what deploys apps, from this machine or any other, and there is no token to create or paste.
 
 Interrupted, or stopped on something you had to do first (a domain to buy, a link you haven't opened yet)? Run `npx everyapp setup` again: it picks up where it stopped, and once everything is there it changes nothing.
 
@@ -83,7 +84,7 @@ Interrupted, or stopped on something you had to do first (a domain to buy, a lin
 
 Instead of logging in, set **both** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Create the token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) from the **Edit Cloudflare Workers** template, plus **Account → D1 → Edit**, **Zone → Zone → Read** and **Zone → DNS → Read** (the deploy checks that a new address won't replace a DNS record), and **Zone → SSL and Certificates → Edit** if you want `app delete` to remove an app's certificate too.
 
-An unattended setup never prints the owner setup link into a log, with `--json` or without, unless you pass `--printSetupLink`: run `npx everyapp gateway claim-link` on your own machine for it.
+The same token deploys apps, before or after the Gateway has an owner. An unattended setup never prints the owner setup link into a log, with `--json` or without, unless you pass `--printSetupLink`: it stops with `claim_owner` (exit 2), and you run `npx everyapp setup` on your own machine for the link.
 
 </div>
 </details>

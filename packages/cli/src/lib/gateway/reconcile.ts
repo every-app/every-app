@@ -4,16 +4,18 @@
  * set of APP__ bindings. Run after an app is added or deleted (`everyapp
  * app deploy|delete` do it themselves), never for a code-only app redeploy.
  *
+ * Whether there is anything to do comes from the install row, never from
+ * the gateway over HTTPS: the Worker serves the version the row names, and
+ * the row's bound Workers and published hostnames are the registry's.
+ *
  * The release is picked under the gateway lease, once no upgrade can be
  * running: the one the install record names, when the Worker serves the
  * version that record names too (each deploy records itself right after
- * the upload). Otherwise something deployed since, and the live gateway is
- * asked which release that is, from that version (servingReleaseSha256): a
- * newer one this account caches (an upgrade that stopped before recording
- * itself) is reconciled; anything else (an older release, one nobody can
- * resolve, no answer from that version) could put an older release back,
- * so a person decides. It comes from the deploy KV cache, checked against
- * its SHA-256: reconciling never deploys the gateway from this checkout.
+ * the upload). Otherwise something deployed since (an upgrade that stopped
+ * before recording itself, a rollback in the dashboard), and redeploying
+ * the recorded release could put an older one back, so a person decides.
+ * It comes from the deploy KV cache, checked against its SHA-256:
+ * reconciling never deploys the gateway from this checkout.
  */
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -23,7 +25,6 @@ import { getWorkerDeployment } from "@/lib/cf/workers";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import type { EventSink } from "@/lib/output/events";
-import { GatewayClient, type GatewayStatusResponse } from "./api";
 import {
   acquireGatewayLease,
   applyGateway,
@@ -31,15 +32,9 @@ import {
   type ApplyGatewayOptions,
   type ApplyGatewayResult,
 } from "./apply";
-import { readDesiredState, workerExistence } from "./desiredState";
+import { readDesiredState, workerExistence, type DesiredState } from "./desiredState";
 import { readInstall, type InstallRecord } from "./install";
-import {
-  compareReleaseOrder,
-  fetchCachedRelease,
-  releaseOrder,
-  servingReleaseSha256,
-  type GatewayRelease,
-} from "./release";
+import { fetchCachedRelease, type GatewayRelease } from "./release";
 import { findGatewayDatabase } from "./resources";
 
 interface ReconcileGatewayOptions {
@@ -56,9 +51,7 @@ interface ReconcileGatewayOptions {
   dryRun?: boolean;
   /** Deploy even when the live bindings already match. */
   force?: boolean;
-  readStatus?: (gatewayUrl: string) => Promise<GatewayStatusResponse>;
   sleep?: ApplyGatewayOptions["sleep"];
-  verifyTimeoutMs?: number;
   leaseWaitMs?: number;
 }
 
@@ -81,18 +74,10 @@ export async function reconcileGateway(
   const db = cfD1Database(cf, databaseId);
   const install = await readInstall(db);
   if (!install) throw notDeployedByEveryapp();
-  const gatewayUrl = `https://${install.gatewayHost}`;
 
-  const readStatus =
-    options.readStatus ??
-    ((url: string) => new GatewayClient({ gatewayUrl: url }).status());
   if (!options.force && !options.stagedSecrets) {
-    const live = await readStatus(gatewayUrl).catch(() => null);
     const desired = await readDesiredState(db, workerExistence(cf));
-    if (
-      live?.appBindingsDigest === desired.appBindingsDigest &&
-      publishesHosts(install, desired.appHosts)
-    ) {
+    if (await bindsAsRegistered(cf, install, desired)) {
       out.emit({
         type: "step",
         step: "gateway.reconcile",
@@ -100,12 +85,11 @@ export async function reconcileGateway(
         message: `The gateway already binds ${desired.appWorkers.length === 1 ? "the 1 app" : `all ${desired.appWorkers.length} apps`} its registry lists.`,
       });
       return {
-        versionId: live.versionId,
+        versionId: install.liveVersionId,
         firstDeploy: false,
         appWorkers: desired.appWorkers,
         domains: install.liveDomains,
         newHosts: [],
-        verified: true,
         changed: false,
       };
     }
@@ -126,12 +110,7 @@ export async function reconcileGateway(
     // Under the lease no upgrade runs, so the install record names the
     // release the last deploy put live, unless something else deployed since.
     const current = (await readInstall(db)) ?? install;
-    const release = await releaseToReconcile({
-      ...options,
-      install: current,
-      readStatus,
-      gatewayUrl,
-    });
+    const release = await releaseToReconcile({ ...options, install: current });
     try {
       const result = await applyGateway({
         cf,
@@ -155,9 +134,7 @@ export async function reconcileGateway(
         stagedSecrets: options.stagedSecrets,
         ...(lease ? { heldLease: lease } : {}),
         dryRun: options.dryRun,
-        readStatus: options.readStatus,
         sleep: options.sleep,
-        verifyTimeoutMs: options.verifyTimeoutMs,
       });
       return { ...result, changed: true };
     } finally {
@@ -166,6 +143,24 @@ export async function reconcileGateway(
   } finally {
     await lease?.release();
   }
+}
+
+/**
+ * Whether the live gateway binds and publishes exactly what the registry
+ * says, by the install row: the Worker serves the version the row names,
+ * which bound the row's Workers and published its hostnames.
+ */
+async function bindsAsRegistered(
+  cf: CfRunner,
+  install: InstallRecord,
+  desired: DesiredState,
+): Promise<boolean> {
+  const sameWorkers =
+    [...install.liveAppWorkers].sort().join("\n") ===
+    desired.appWorkers.join("\n");
+  if (!sameWorkers || !publishesHosts(install, desired.appHosts)) return false;
+  const serving = await getWorkerDeployment(cf, GATEWAY_WORKER_NAME);
+  return Boolean(serving?.versionId) && serving?.versionId === install.liveVersionId;
 }
 
 /** Whether the install already publishes exactly these app hosts. */
@@ -180,16 +175,11 @@ function publishesHosts(install: InstallRecord, appHosts: readonly string[]): bo
 /** The release to redeploy: see the top of this file. */
 async function releaseToReconcile({
   cf,
-  out,
   install,
-  readStatus,
-  gatewayUrl,
   interactive,
   confirm = confirmAtTerminal,
 }: ReconcileGatewayOptions & {
   install: InstallRecord;
-  readStatus: (gatewayUrl: string) => Promise<GatewayStatusResponse>;
-  gatewayUrl: string;
 }): Promise<GatewayRelease> {
   const recorded = await fetchCachedRelease(
     cf,
@@ -204,47 +194,12 @@ async function releaseToReconcile({
   }
   try {
     // The Worker serves the version the last deploy recorded: so it serves
-    // the recorded release, whatever a lagging edge says.
+    // the recorded release.
     const serving = await getWorkerDeployment(cf, GATEWAY_WORKER_NAME);
     if (serving?.versionId && serving.versionId === install.liveVersionId) {
       return recorded;
     }
-
-    const liveSha256 = await servingReleaseSha256(
-      readStatus,
-      gatewayUrl,
-      serving?.versionId,
-    );
-    // The same release in another version: a redeploy that stopped before
-    // recording itself.
-    if (liveSha256 === install.releaseSha256) return recorded;
-    const live = liveSha256
-      ? await fetchCachedRelease(cf, install.deployKvId, liveSha256)
-      : null;
-    if (
-      live &&
-      compareReleaseOrder(
-        releaseOrder(live.manifest),
-        releaseOrder(recorded.manifest),
-      ) > 0
-    ) {
-      await recorded.cleanup();
-      out.emit({
-        type: "warning",
-        code: "INSTALL_RECORD_STALE",
-        message: `The gateway runs release ${live.manifest.version} (${live.manifest.sha256.slice(0, 12)}), newer than the ${install.releaseVersion} (${install.releaseSha256.slice(0, 12)}) its install record names: an upgrade stopped before recording itself. Reconciling the live one.`,
-      });
-      return live;
-    }
-    await live?.cleanup();
-
-    const what = `The gateway serves version ${serving?.versionId ?? "(none)"}, not the ${install.liveVersionId ?? "(none)"} its install record names, and ${
-      !liveSha256
-        ? "the live gateway didn't say, from that version, which release it runs"
-        : live
-          ? `that is an older release (${live.manifest.version}, ${liveSha256.slice(0, 12)}; rolled back by hand?)`
-          : `its release (${liveSha256.slice(0, 12)}) isn't one this account caches`
-    }. Redeploying the recorded release ${install.releaseVersion} (${install.releaseSha256.slice(0, 12)}) could replace a newer one.`;
+    const what = `The gateway serves version ${serving?.versionId ?? "(none)"}, not the ${install.liveVersionId ?? "(none)"} its install record names: it was deployed some other way since, or an upgrade stopped before recording itself. Redeploying the recorded release ${install.releaseVersion} (${install.releaseSha256.slice(0, 12)}) could replace a newer one.`;
     if (!interactive) {
       throw new ActionRequiredError(
         "rerun_interactive",

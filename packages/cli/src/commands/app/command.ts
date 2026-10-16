@@ -23,7 +23,7 @@ export const createCommand = buildCommand({
         kind: "parsed",
         parse: String,
         brief:
-          "With --deploy: the Gateway URL (default: EVERYAPP_GATEWAY_URL, or the only gateway you're logged in to)",
+          "With --deploy: the Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)",
         optional: true,
       },
       json: {
@@ -69,7 +69,7 @@ const gatewayFlag = {
   kind: "parsed",
   parse: String,
   brief:
-    "Gateway URL (default: EVERYAPP_GATEWAY_URL, or the only gateway you're logged in to)",
+    "The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)",
   optional: true,
 } as const;
 
@@ -136,7 +136,8 @@ export const deployCommand = buildCommand({
       },
       "no-wait-cert": {
         kind: "boolean",
-        brief: "Don't wait for a new hostname's certificate",
+        brief:
+          "Don't wait for the app to go live (a new hostname's certificate included); it goes live on its first visit",
         optional: true,
       },
     },
@@ -147,8 +148,9 @@ export const deployCommand = buildCommand({
   docs: {
     brief: "Deploy an app to Cloudflare",
     fullDescription: [
-      "Deploys the current app as a private Cloudflare Worker defined by cloudflare.config.ts, with cf:",
-      "  1. Registers the app with the gateway, which names its Worker, resources and hostname",
+      "Deploys the current app as a private Cloudflare Worker defined by cloudflare.config.ts, with cf",
+      "and your Cloudflare login (or CLOUDFLARE_API_TOKEN), in the Gateway's account:",
+      "  1. Registers the app in the Gateway's D1 database, which names its Worker, resources and hostname",
       "     (a new hostname is checked first: no DNS record that answers it, room in the zone)",
       "  2. Creates or links the D1 databases and KV namespaces in everyapp.config.ts",
       "  3. Installs dependencies (the manifest's install setting, or auto-detected)",
@@ -156,8 +158,9 @@ export const deployCommand = buildCommand({
       "  5. Builds with cf build (or the manifest's build command) and checks the built Worker",
       "  6. Uploads it with cf deploy --prebuilt, its secrets in the same version, and",
       "     creates or updates its Workflows (refused if another Worker runs one of their names)",
-      "  7. Has the gateway bind the Worker and publish its hostname (new apps), makes the app",
-      "     live, and waits for a new hostname's certificate",
+      "  7. Redeploys the Gateway to bind the Worker and publish its hostname (new apps), then",
+      "     requests the app's hostname until the Gateway has made it live (a new hostname's",
+      "     certificate included); behind Cloudflare Access, it goes live on its first visit",
       "",
       "Nothing asks first: the first line says where the app goes. Install and build output goes to",
       "a log file (its last lines and path are shown if it fails), never to stdout.",
@@ -203,7 +206,7 @@ export const deleteCommand = buildCommand({
   docs: {
     brief: "Delete an app from the gateway",
     fullDescription: [
-      "Deletes the app on the gateway (its name stays reserved to your organization) and removes its gateway binding.",
+      "Deletes the app in the Gateway's D1 database (its name stays reserved to your organization) and removes its gateway binding.",
       "The app's Worker and data are kept unless --purge, which deletes them for good.",
     ].join("\n"),
   },

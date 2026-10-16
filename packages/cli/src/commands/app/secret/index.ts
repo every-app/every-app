@@ -2,7 +2,7 @@ import type { LocalContext } from "@/context";
 import { deployApp } from "@/commands/app/deploy/deployApp";
 import { assertAppSecretName } from "@/lib/app/secrets";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
-import { resolveGatewayUrl } from "@/lib/gateway/resolve";
+import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import { eventSink, runReported } from "@/lib/output/run";
 import { readSecretValue } from "@/lib/secretValue";
@@ -42,12 +42,10 @@ export async function set(
         fromEnv: flags["from-env"],
         json: flags.json,
       });
-      const gatewayUrl = await resolveGatewayUrl(flags.gateway);
-
       const result = await deployApp({
         cwd,
         manifest,
-        gatewayUrl,
+        gateway: requestedGatewayUrl(flags.gateway),
         out,
         json: flags.json,
         verbose: flags.verbose,

@@ -144,8 +144,8 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   only made for that person (a password or OIDC sign-in as anyone else is
   refused). So a person taken out of the Access policy loses browser access
   when their Access session ends. Access bypasses only machine endpoints
-  (`/mcp*`, `/oauth/token`, `/oauth/register`, `/.well-known/*`,
-  `/api/admin/has-owner`, apps' public routes), never `/oauth/authorize` or
+  (`/mcp*`, `/oauth/token`, `/oauth/register`, `/.well-known/*`, apps'
+  public routes), never `/oauth/authorize` or
   the consent pages. Bearer credentials (personal access and OAuth tokens)
   never pass through Access: offboarding is deactivation. The CLI never
   calls the gateway, so nothing is bypassed for it.
