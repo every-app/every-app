@@ -3,7 +3,7 @@
  * the CLI deployed it — account, zone, host, where app hosts live, resource
  * ids, the live release (and the checkout tree it was built from) and what
  * that deploy bound and published, and the public half of the gateway's
- * identity key, which app deploys give their Workers to verify the
+ * identity key, which the apps' deploys give their Workers to verify the
  * identities the gateway signs. The row is the source of truth for the live
  * release: any machine logged in to the account finds the Gateway and this
  * row (./discover.ts), and can redeploy or reconcile the gateway, or deploy

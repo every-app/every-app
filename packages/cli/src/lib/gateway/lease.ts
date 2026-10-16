@@ -9,7 +9,7 @@
  * it every 30 seconds, so a deploy that died frees it within 3 minutes. A
  * live deploy holds it as long as it runs (5-10 minutes is normal): the TTL
  * only decides how soon a dead holder is noticed. Nothing takes a live
- * lease over; `everyapp gateway status` shows who holds one.
+ * lease over; `everyapp status` shows who holds one.
  *
  * With a TTL that short, a deploy must notice when the lease stops being
  * its own. A renewal that finds the row gone, or renewals that keep failing
@@ -23,6 +23,7 @@ import os from "node:os";
 import type { D1Database } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 import { onInterrupt } from "@/lib/interrupt";
+import { CLI } from "@/lib/output/command";
 
 const CREATE_LEASE_TABLE = `CREATE TABLE IF NOT EXISTS _everyapp_deploy_lease (
   id TEXT PRIMARY KEY,
@@ -145,7 +146,7 @@ export async function readLiveLeases(
  * deploy that gave up waiting raises.
  */
 function describeHolder(current: LeaseHolder): string {
-  return `${current.holder} has held the ${current.id} deploy lease (${current.purpose}) since ${iso(current.acquiredAt)}; \`everyapp gateway status\` shows it while that deploy runs. If it died, the lease expires by ${iso(current.expiresAt)} and the next run takes it.`;
+  return `${current.holder} has held the deploy lease "${current.id}" (${current.purpose}) since ${iso(current.acquiredAt)}; \`${CLI} status\` shows it while that deploy runs. If it died, the lease expires by ${iso(current.expiresAt)} and the next run takes it.`;
 }
 
 export async function acquireLease({
@@ -179,7 +180,7 @@ export async function acquireLease({
         "LEASE_HELD",
         current
           ? `Another deploy is running: ${describeHolder(current)}`
-          : `Couldn't take the ${id} deploy lease.`,
+          : `Couldn't take the deploy lease "${id}".`,
         { retryable: true },
       );
     }
@@ -207,7 +208,7 @@ export async function acquireLease({
       if (renewed.length > 0) {
         renewedAt = at;
       } else {
-        lost = `The ${id} deploy lease is no longer this deploy's: it expired, and another deploy may hold it now.`;
+        lost = `The deploy lease "${id}" is no longer this deploy's: it expired, and another deploy may hold it now.`;
       }
     } catch (error) {
       if (released) return;
@@ -215,10 +216,10 @@ export async function acquireLease({
       const failingFor = now() - renewedAt;
       const expires = iso(renewedAt + LEASE_TTL_MS);
       if (failingFor > LEASE_TTL_MS / 2) {
-        lost = `Couldn't renew the ${id} deploy lease for ${Math.round(failingFor / 1000)} s (${reason}); it expires at ${expires}, and another deploy could take it then.`;
+        lost = `Couldn't renew the deploy lease "${id}" for ${Math.round(failingFor / 1000)} s (${reason}); it expires at ${expires}, and another deploy could take it then.`;
       } else {
         onHeartbeatProblem(
-          `Couldn't renew the ${id} deploy lease (${reason}); it expires at ${expires} unless a later try works.`,
+          `Couldn't renew the deploy lease "${id}" (${reason}); it expires at ${expires} unless a later try works.`,
         );
       }
     }

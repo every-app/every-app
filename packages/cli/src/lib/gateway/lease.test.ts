@@ -135,7 +135,7 @@ describe("deploy lease", () => {
     const held = await take("gateway.reconcile").catch((error: Error) => error);
     expect(held).toMatchObject({ code: "LEASE_HELD", retryable: true });
     expect((held as Error).message).toBe(
-      `Another deploy is running: ${live.holder} has held the gateway deploy lease (gateway.upgrade) since ${since}; \`everyapp gateway status\` shows it while that deploy runs. If it died, the lease expires by ${until} and the next run takes it.`,
+      `Another deploy is running: ${live.holder} has held the deploy lease "gateway" (gateway.upgrade) since ${since}; \`pnpm everyapp status\` shows it while that deploy runs. If it died, the lease expires by ${until} and the next run takes it.`,
     );
   });
 
@@ -221,12 +221,12 @@ describe("deploy lease", () => {
       state.failing = true;
       clock += TTL / 2;
       await expect(lease.check()).resolves.toBeUndefined();
-      expect(problems.at(-1)).toMatch(/Couldn't renew the gateway deploy lease \(network down\); it expires at/);
+      expect(problems.at(-1)).toMatch(/Couldn't renew the deploy lease "gateway" \(network down\); it expires at/);
 
       clock += 1;
       await expect(lease.check()).rejects.toMatchObject({
         code: "LEASE_LOST",
-        message: expect.stringMatching(/Couldn't renew the gateway deploy lease for 90 s \(network down\)/),
+        message: expect.stringMatching(/Couldn't renew the deploy lease "gateway" for 90 s \(network down\)/),
       });
       // It stays lost, even once D1 answers again.
       state.failing = false;

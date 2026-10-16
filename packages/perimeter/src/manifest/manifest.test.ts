@@ -391,7 +391,7 @@ describe("registry Worker names", () => {
   it("never accepts the gateway's own names", () => {
     for (const row of [
       { appId: "gateway", orgKey: "app" },
-      { appId: "gateway-deploy", orgKey: "app" },
+      { appId: "gateway-kv", orgKey: "app" },
     ]) {
       expect(
         isRegistryWorkerName({

@@ -1,5 +1,5 @@
 /**
- * `.everyapp/deploy.json` — the deploy-time inputs `everyapp app deploy`
+ * `.everyapp/deploy.json` — the deploy-time inputs `everyapp deploy`
  * writes just before `cf build --mode production` and deletes right after.
  * `everyAppWorker()` reads it in production mode, so a bare `cf build` or
  * `cf deploy` (no file) fails instead of shipping a Worker with no identity

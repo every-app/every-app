@@ -236,7 +236,7 @@ describe("planRegistration", () => {
   });
 
   it("never names an app Worker after the gateway's own resources", () => {
-    for (const appSlug of ["gateway", "gateway-deploy"]) {
+    for (const appSlug of ["gateway", "gateway-kv"]) {
       expect(
         thrown(() => planRegistration(forApp(appSlug, { orgKey: "app" }))),
       ).toMatchObject({

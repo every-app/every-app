@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /**
- * `everyapp gateway deploy` applies migrations before it uploads the new
+ * `everyapp setup` applies migrations before it uploads the new
  * code, so the gateway that is serving keeps running against the migrated
  * database: a migration may add, never take away. A migration that drops or
  * renames a table or column has to wait one release, until no live code

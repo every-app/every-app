@@ -111,7 +111,7 @@ in the gateway's Cloudflare account **is** operator authority.
 - The AI proxy only forwards inference endpoints (with `store: false` for
   responses and chat completions). The provider key is shared by every app,
   so anything else needs both the operator's allowlist (the
-  `AI_PROXY_EXTRA_ROUTES` gateway secret, e.g. `/v1/files`) and the app
+  `AI_PROXY_EXTRA_ROUTES` Gateway setting, e.g. `/v1/files`) and the app
   manifest's `ai.routes`; `ai.models` can restrict models.
 
 ## Sign-in with Cloudflare Access

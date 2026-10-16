@@ -26,7 +26,6 @@ import { Route as AppAdminAppsRouteImport } from './routes/_app/admin/apps'
 import { Route as AppAdminTokensRouteImport } from './routes/_app/admin/tokens'
 import { Route as AppAdminUsersRouteImport } from './routes/_app/admin/users'
 import { Route as AppSettingsConnectionsRouteImport } from './routes/_app/settings/connections'
-import { Route as ApiAdminHasOwnerRouteImport } from './routes/api/admin/has-owner'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDevIdentityRouteImport } from './routes/api/dev/identity'
 import { Route as ApiMeAppsRouteImport } from './routes/api/me/apps'
@@ -116,11 +115,6 @@ const AppSettingsConnectionsRoute = AppSettingsConnectionsRouteImport.update({
   path: '/settings/connections',
   getParentRoute: () => AppRoute,
 } as any)
-const ApiAdminHasOwnerRoute = ApiAdminHasOwnerRouteImport.update({
-  id: '/api/admin/has-owner',
-  path: '/api/admin/has-owner',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -158,7 +152,6 @@ export interface FileRoutesByFullPath {
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/settings/connections': typeof AppSettingsConnectionsRoute
-  '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
@@ -180,7 +173,6 @@ export interface FileRoutesByTo {
   '/admin/tokens': typeof AppAdminTokensRoute
   '/admin/users': typeof AppAdminUsersRoute
   '/settings/connections': typeof AppSettingsConnectionsRoute
-  '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
@@ -205,7 +197,6 @@ export interface FileRoutesById {
   '/_app/admin/tokens': typeof AppAdminTokensRoute
   '/_app/admin/users': typeof AppAdminUsersRoute
   '/_app/settings/connections': typeof AppSettingsConnectionsRoute
-  '/api/admin/has-owner': typeof ApiAdminHasOwnerRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/dev/identity': typeof ApiDevIdentityRoute
   '/api/me/apps': typeof ApiMeAppsRoute
@@ -230,7 +221,6 @@ export interface FileRouteTypes {
     | '/admin/tokens'
     | '/admin/users'
     | '/settings/connections'
-    | '/api/admin/has-owner'
     | '/api/auth/$'
     | '/api/dev/identity'
     | '/api/me/apps'
@@ -252,7 +242,6 @@ export interface FileRouteTypes {
     | '/admin/tokens'
     | '/admin/users'
     | '/settings/connections'
-    | '/api/admin/has-owner'
     | '/api/auth/$'
     | '/api/dev/identity'
     | '/api/me/apps'
@@ -276,7 +265,6 @@ export interface FileRouteTypes {
     | '/_app/admin/tokens'
     | '/_app/admin/users'
     | '/_app/settings/connections'
-    | '/api/admin/has-owner'
     | '/api/auth/$'
     | '/api/dev/identity'
     | '/api/me/apps'
@@ -294,7 +282,6 @@ export interface RootRouteChildren {
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
   OauthConsentRoute: typeof OauthConsentRoute
-  ApiAdminHasOwnerRoute: typeof ApiAdminHasOwnerRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiDevIdentityRoute: typeof ApiDevIdentityRoute
   ApiMeAppsRoute: typeof ApiMeAppsRoute
@@ -422,13 +409,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsConnectionsRouteImport
       parentRoute: typeof AppRoute
     }
-    '/api/admin/has-owner': {
-      id: '/api/admin/has-owner'
-      path: '/api/admin/has-owner'
-      fullPath: '/api/admin/has-owner'
-      preLoaderRoute: typeof ApiAdminHasOwnerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -504,7 +484,6 @@ const rootRouteChildren: RootRouteChildren = {
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
   OauthConsentRoute: OauthConsentRoute,
-  ApiAdminHasOwnerRoute: ApiAdminHasOwnerRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiDevIdentityRoute: ApiDevIdentityRoute,
   ApiMeAppsRoute: ApiMeAppsRoute,

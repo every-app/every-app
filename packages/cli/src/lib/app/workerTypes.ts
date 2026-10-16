@@ -1,7 +1,7 @@
 /**
  * The app's typed `Env`: `cf workers types` writes it to
  * `.cloudflare/types/index.d.ts` from cloudflare.config.ts, and the app's
- * tsconfig includes that file. `everyapp app create` generates it and
+ * tsconfig includes that file. `everyapp create` generates it and
  * `everyapp dev` does when a fresh clone has none yet.
  */
 import fs from "node:fs/promises";

@@ -1,8 +1,9 @@
 /**
  * The Gateway's code comes from the checkout the CLI runs in: every Gateway
- * deploy, a rebind for an app deploy or delete included, deploys a release
- * built from it (commands/gateway/shared.ts `buildReleaseFromCheckout`,
- * one to two minutes). So that a rebind after the first build takes
+ * deploy, a rebind for an app's deploy or delete included, deploys a release
+ * built from it (`openGatewayRelease` below: the SDK's build, then the
+ * Gateway's `build:release`, one to two minutes). So that a rebind after
+ * the first build takes
  * seconds, the built tarball is kept under the checkout's gitignored
  * `node_modules/.cache/everyapp/<tree>.tar.gz`, keyed by the tree hash of
  * every source the release is built from: the Gateway, the SDK, perimeter
@@ -20,11 +21,14 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { checkoutRoot } from "@/lib/checkout";
+import { runLogged } from "@/lib/childLog";
 import type { EventSink } from "@/lib/output/events";
 import {
   hashFiles,
   newestMigration,
   openRelease,
+  RELEASE_TARBALL,
   type GatewayRelease,
   type ReleaseSource,
 } from "./release";
@@ -211,4 +215,56 @@ async function exists(file: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * The Gateway release to deploy: the one this checkout builds, from the
+ * build cache when its sources haven't changed since. Nothing is published
+ * while we work from the repository, so there is no other release to
+ * deploy.
+ */
+export function openGatewayRelease({
+  out,
+  verbose,
+}: {
+  out: EventSink;
+  /** Stream the build's output to stderr too. */
+  verbose?: boolean;
+}): Promise<GatewayRelease> {
+  const root = checkoutRoot();
+  return openCheckoutRelease({
+    root,
+    out,
+    build: () => buildReleaseFromCheckout(root, out, verbose ?? false),
+  });
+}
+
+/**
+ * The only source of the Gateway's code: the SDK's build, then the
+ * Gateway's `build:release`. Their output goes to a log file
+ * (lib/childLog.ts).
+ */
+async function buildReleaseFromCheckout(
+  root: string,
+  out: EventSink,
+  verbose: boolean,
+): Promise<string> {
+  const gatewayDir = path.join(root, "apps", "every-app-gateway");
+  out.emit({
+    type: "progress",
+    step: "gateway.release",
+    message: "Building the Gateway from this checkout (a minute or two)...",
+    data: { dir: gatewayDir },
+  });
+  const build = (args: string[], cwd: string) =>
+    runLogged("pnpm", args, {
+      cwd,
+      echo: verbose,
+      what: "Building the Gateway",
+      code: "GATEWAY_BUILD_FAILED",
+    });
+  // The gateway build resolves @every-app/sdk from its dist/.
+  await build(["--filter", "@every-app/sdk", "build"], root);
+  await build(["run", "build:release"], gatewayDir);
+  return path.join(gatewayDir, RELEASE_TARBALL);
 }

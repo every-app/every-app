@@ -8,7 +8,9 @@
 import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readInstall } from "@/lib/gateway/install";
+import { markDeployed, register } from "@/lib/gateway/registry";
 import { openRelease } from "@/lib/gateway/release";
+import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { cfD1Database } from "@/lib/cf/d1";
 import { createNdjsonSink, type EventSink } from "@/lib/output/events";
@@ -114,7 +116,7 @@ const steps = () =>
 const gatewayD1 = () =>
   cfD1Database(account.cf, [...account.databases].find(([, d]) => d.name === "every-app-gateway")![0]);
 
-/** A new setup link minted elsewhere (`gateway claim-link` on another machine). */
+/** A new setup link minted elsewhere (setup on another machine). */
 const mintElsewhere = () => mintSetupLink({ db: gatewayD1(), gatewayUrl: `https://${GW}` });
 
 const links = () => events.filter((event) => event.action === "claim_owner");
@@ -138,7 +140,13 @@ describe("everyapp setup", () => {
       "setup.gateway ok",
       "setup.owner ok",
     ]);
-    expect(result).toEqual({ gatewayUrl: `https://${GW}`, organizationName: "Owner" });
+    expect(result).toEqual({
+      gatewayUrl: `https://${GW}`,
+      organizationName: "Owner",
+      release: "0.2.0",
+      gateway: "installed",
+      ownerCreated: true,
+    });
 
     // The gateway, its own Custom Domain in the zone; no app yet.
     expect(account.gatewayDomains()).toEqual([GW]);
@@ -229,7 +237,7 @@ describe("everyapp setup", () => {
       "setup.gateway skip",
       "setup.owner skip",
     ]);
-    expect(result).toMatchObject({ organizationName: "Owner" });
+    expect(result).toMatchObject({ organizationName: "Owner", gateway: "up-to-date", ownerCreated: false });
     expect(account.deploys).toHaveLength(deploys);
     expect(events.some((event) => event.type === "action_required")).toBe(false);
   });
@@ -258,6 +266,104 @@ describe("everyapp setup", () => {
         data: expect.objectContaining({ upToDate: true, release: "0.2.0" }),
       }),
     );
+  });
+
+  it("binds and publishes the registered apps a Gateway that is up to date doesn't", async () => {
+    await setup({ domain: GW });
+    // An app registered and uploaded whose rebind never ran (a deploy that
+    // stopped, a row written by hand).
+    const { plan } = await register(gatewayD1(), {
+      appSlug: "todo",
+      name: "todo",
+      description: "todo",
+      manifest: { id: "todo" },
+      appBaseDomain: GW,
+      deployer: { actor: "dev@example.com", email: "dev@example.com" },
+      organizationName: "Acme",
+    });
+    await markDeployed(gatewayD1(), plan.app.id, {
+      versionId: "todo-v1",
+      manifest: { id: "todo" },
+      actor: "dev@example.com",
+    });
+    account.workers.set(plan.app.workerName!, {
+      versions: ["todo-v1"],
+      config: { name: plan.app.workerName, env: {} },
+      secrets: {},
+    });
+    const deploys = account.deploys.length;
+    events = [];
+
+    const { exitCode, result } = await setup();
+
+    expect(exitCode).toBe(0);
+    expect(result).toMatchObject({ gateway: "repaired" });
+    expect(account.deploys).toHaveLength(deploys + 1);
+    expect(account.gatewayBindings()).toEqual([plan.app.workerName]);
+    expect(account.gatewayDomains().sort()).toEqual([GW, `todo.${GW}`].sort());
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "setup.gateway",
+        status: "start",
+        data: expect.objectContaining({ from: "0.2.0", release: "0.2.0", apps: 1, was: 0 }),
+      }),
+    );
+
+    // Then there is nothing to do.
+    events = [];
+    const again = await setup();
+    expect(again.result).toMatchObject({ gateway: "up-to-date" });
+    expect(account.deploys).toHaveLength(deploys + 1);
+  });
+
+  it("uploads a Gateway that is up to date with --redeploy (the key-rotation runbook)", async () => {
+    await setup({ domain: GW });
+    const deploys = account.deploys.length;
+    events = [];
+
+    const { exitCode, result } = await setup({ redeploy: true });
+
+    expect(exitCode).toBe(0);
+    expect(result).toMatchObject({ gateway: "repaired" });
+    expect(account.deploys).toHaveLength(deploys + 1);
+    // No new key pair: the Worker keeps the secrets it has.
+    expect(account.deploys.at(-1)!.secrets).toBeNull();
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "setup.gateway",
+        status: "start",
+        data: expect.objectContaining({ redeploy: true }),
+      }),
+    );
+  });
+
+  it("redeploys a Gateway changed in the dashboard, which a person confirms at the terminal", async () => {
+    await setup({ domain: GW });
+    // The key-rotation runbook: secrets replaced in the dashboard.
+    account.workers.get("every-app-gateway")!.versions.push("dashboard-1");
+    const deploys = account.deploys.length;
+    events = [];
+
+    const { exitCode, result } = await setup({ json: false }, { interactive: true });
+
+    expect(exitCode).toBe(0);
+    expect(result).toMatchObject({ gateway: "repaired" });
+    expect(account.deploys).toHaveLength(deploys + 1);
+    // cf ran attached to the terminal, to ask about the dashboard change.
+    expect(account.deploys.at(-1)!.mode).toBe("interactive");
+  });
+
+  it("installs at --domain a Gateway whose database has no install row, then mints the owner link", async () => {
+    // A Gateway installed by hand, or one whose install never got that far:
+    // the database is there, but nothing recorded where it serves.
+    await ensureGatewayResources(account.cf);
+
+    const { exitCode } = await setup({ domain: GW });
+
+    expect(exitCode).toBe(0);
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({ gatewayHost: GW });
+    expect(links()[0].data.url).toMatch(new RegExp(`^https://${GW}/setup#token=est_`));
+    expect(steps()).toContain("setup.owner ok");
   });
 
   it("refuses a checkout behind the live Gateway, offering --allow-downgrade for an agent to ask about", async () => {
@@ -293,7 +399,7 @@ describe("everyapp setup", () => {
     });
   });
 
-  it("never puts the owner setup link into a CI log, unless asked to", async () => {
+  it("never puts the owner setup link into a CI log", async () => {
     vi.stubEnv("CI", "true");
 
     const { exitCode } = await setup({ domain: GW });
@@ -302,25 +408,14 @@ describe("everyapp setup", () => {
     expect(events.at(-1)).toMatchObject({
       type: "action_required",
       action: "claim_owner",
-      message: expect.stringContaining("--printSetupLink"),
+      message: expect.stringContaining("Run `pnpm everyapp setup` at a terminal"),
     });
     expect(events.at(-1).message).toContain("apps deploy without one");
-    // No link: only the command to run once someone took it.
-    expect(events.at(-1).data).toEqual({ rerun: expect.stringMatching(/^pnpm everyapp/) });
+    // No link: only the command to run at a terminal.
+    expect(events.at(-1).data).toEqual({ rerun: "pnpm everyapp setup" });
     expect(JSON.stringify(events)).not.toContain("#token=");
     // None minted, so a link someone already has keeps working.
     expect(account.database("every-app-gateway").all("SELECT id FROM owner_setup_tokens")).toEqual([]);
-
-    // Asked for, it is printed like `gateway deploy --printSetupLink` does.
-    events = [];
-    const asked = await setup({ printSetupLink: true });
-    expect(asked.exitCode).toBe(0);
-    expect(links()).toContainEqual(
-      expect.objectContaining({
-        data: expect.objectContaining({ url: expect.stringMatching(new RegExp(`^https://${GW}/setup#token=est_`)) }),
-      }),
-    );
-    expect(steps()).toContain("setup.owner ok");
   });
 
   it("says what is in front of the gateway before handing out the link, and waits all the same", async () => {
@@ -359,7 +454,7 @@ describe("everyapp setup", () => {
     expect(first.exitCode).toBe(2);
     expect(links()).toHaveLength(2);
     expect(links()[1]).toMatchObject({
-      message: expect.stringContaining("open it, then run `everyapp setup` again"),
+      message: expect.stringContaining("open it, then run `pnpm everyapp setup` again"),
       data: { url: links()[0].data.url },
     });
     const url = links()[0].data.url;
@@ -540,7 +635,7 @@ describe("everyapp setup", () => {
     const asked: string[] = [];
 
     const { exitCode } = await setup(
-      { json: false, "allow-free-plan": true },
+      { json: false },
       {
         interactive: true,
         prompts: {

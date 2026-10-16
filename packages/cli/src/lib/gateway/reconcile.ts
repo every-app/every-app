@@ -1,21 +1,23 @@
 /**
- * `everyapp gateway reconcile`: make the live gateway bind exactly the apps
- * its registry says, by redeploying the gateway this checkout builds with a
- * fresh set of APP__ bindings. Run after an app is added or deleted
- * (`everyapp app deploy|delete` do it themselves), never for a code-only app
- * redeploy. A checkout newer than the live release upgrades the gateway on
- * the way, migrations first, as any gateway deploy does; one older than it
- * is refused (lib/gateway/apply.ts).
+ * Make the live gateway bind exactly the apps its registry says, by
+ * redeploying the gateway this checkout builds with a fresh set of APP__
+ * bindings. `everyapp deploy` and `delete` run it when the set of apps
+ * changes, never for a code-only app redeploy; `setup` runs it to repair a
+ * Gateway that is up to date but binds the wrong apps; `secret … --for
+ * gateway` runs it to send or drop a setting. A checkout newer than the
+ * live release upgrades the gateway on the way, migrations first, as any
+ * deploy of the gateway does; one older than it is refused (lib/gateway/apply.ts).
  *
  * Whether there is anything to do comes from the install row, never from
  * the gateway over HTTPS: the Worker serves the version the row names, and
  * the row's bound Workers and published hostnames are the registry's.
  */
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
-import { cfD1Database } from "@/lib/cf/d1";
+import { cfD1Database, type D1Database } from "@/lib/cf/d1";
 import type { Confirm } from "@/lib/cf/deploy";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
+import { deleteWorkerSecret } from "@/lib/cf/secrets";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import type { EventSink } from "@/lib/output/events";
 import {
@@ -26,7 +28,7 @@ import {
   type ApplyGatewayResult,
 } from "./apply";
 import { readDesiredState, workerExistence, type DesiredState } from "./desiredState";
-import { readInstall, type InstallRecord } from "./install";
+import { readInstall, writeInstall, type InstallRecord } from "./install";
 import type { GatewayRelease } from "./release";
 
 interface ReconcileGatewayOptions {
@@ -37,7 +39,7 @@ interface ReconcileGatewayOptions {
   databaseId: string;
   /**
    * The release to deploy: the one this checkout builds (the build cache's,
-   * or a new build: commands/gateway/shared.ts `openGatewayRelease`).
+   * or a new build: lib/gateway/checkoutRelease.ts `openGatewayRelease`).
    * Opened only when there is something to deploy.
    */
   openRelease: () => Promise<GatewayRelease>;
@@ -47,8 +49,10 @@ interface ReconcileGatewayOptions {
   /** Asks a person before replacing a version everyapp didn't record (tests). */
   confirm?: Confirm;
   cliVersion: string;
+  /** Settings to send with the upload (`secret set --for gateway`). */
   stagedSecrets?: Record<string, string>;
-  dryRun?: boolean;
+  /** Settings to drop first, under the lease (`secret unset --for gateway`). */
+  unsetSecrets?: readonly string[];
   /** Deploy even when the live bindings already match. */
   force?: boolean;
   sleep?: ApplyGatewayOptions["sleep"];
@@ -68,9 +72,9 @@ export async function reconcileGateway(
   const install = await readInstall(db);
   if (!install) throw notDeployedByEveryapp();
 
-  if (!options.force && !options.stagedSecrets) {
-    const desired = await readDesiredState(db, workerExistence(cf));
-    if (await bindsAsRegistered(cf, install, desired)) {
+  if (!options.force && !options.stagedSecrets && !options.unsetSecrets) {
+    const { inSync, desired } = await registryDrift(cf, db, install);
+    if (inSync) {
       out.emit({
         type: "step",
         step: "gateway.reconcile",
@@ -91,20 +95,22 @@ export async function reconcileGateway(
   // Before the lease: a build that misses the cache takes a minute or two.
   const release = await options.openRelease();
   try {
-    const lease = options.dryRun
-      ? null
-      : await acquireGatewayLease(
-          {
-            db,
-            out,
-            leaseWaitMs: options.leaseWaitMs,
-            sleep: options.sleep,
-          },
-          "gateway.reconcile",
-        );
+    const lease = await acquireGatewayLease(
+      {
+        db,
+        out,
+        leaseWaitMs: options.leaseWaitMs,
+        sleep: options.sleep,
+      },
+      "gateway.reconcile",
+    );
     try {
       // Under the lease, the install row is the last deploy's for sure.
-      const current = (await readInstall(db)) ?? install;
+      let current = (await readInstall(db)) ?? install;
+      if (options.unsetSecrets?.length) {
+        await lease.check();
+        current = await dropSecrets(cf, db, current, options.unsetSecrets);
+      }
       const result = await applyGateway({
         cf,
         out,
@@ -125,13 +131,12 @@ export async function reconcileGateway(
         confirm: options.confirm,
         cliVersion: options.cliVersion,
         stagedSecrets: options.stagedSecrets,
-        ...(lease ? { heldLease: lease } : {}),
-        dryRun: options.dryRun,
+        heldLease: lease,
         sleep: options.sleep,
       });
       return { ...result, changed: true };
     } finally {
-      await lease?.release();
+      await lease.release();
     }
   } finally {
     await release.cleanup();
@@ -143,17 +148,23 @@ export async function reconcileGateway(
  * says, by the install row: the Worker serves the version the row names,
  * which bound the row's Workers and published its hostnames.
  */
-async function bindsAsRegistered(
+export async function registryDrift(
   cf: CfRunner,
+  db: D1Database,
   install: InstallRecord,
-  desired: DesiredState,
-): Promise<boolean> {
+): Promise<{ inSync: boolean; desired: DesiredState }> {
+  const desired = await readDesiredState(db, workerExistence(cf));
   const sameWorkers =
     [...install.liveAppWorkers].sort().join("\n") ===
     desired.appWorkers.join("\n");
-  if (!sameWorkers || !publishesHosts(install, desired.appHosts)) return false;
+  if (!sameWorkers || !publishesHosts(install, desired.appHosts)) {
+    return { inSync: false, desired };
+  }
   const serving = await getWorkerDeployment(cf, GATEWAY_WORKER_NAME);
-  return Boolean(serving?.versionId) && serving?.versionId === install.liveVersionId;
+  return {
+    inSync: Boolean(serving?.versionId) && serving?.versionId === install.liveVersionId,
+    desired,
+  };
 }
 
 /** Whether the install already publishes exactly these app hosts. */
@@ -163,4 +174,23 @@ function publishesHosts(install: InstallRecord, appHosts: readonly string[]): bo
     isOneLabelBelow(host, install.appBaseDomain),
   );
   return [...live].sort().join("\n") === [...wanted].sort().join("\n");
+}
+
+/**
+ * Delete settings from the gateway Worker. Cloudflare makes a new version
+ * of the live one without them; the install row records it as the live
+ * version, so the redeploy that follows replaces it as everyapp's own.
+ */
+async function dropSecrets(
+  cf: CfRunner,
+  db: D1Database,
+  install: InstallRecord,
+  names: readonly string[],
+): Promise<InstallRecord> {
+  for (const name of names) await deleteWorkerSecret(cf, GATEWAY_WORKER_NAME, name);
+  const serving = await getWorkerDeployment(cf, GATEWAY_WORKER_NAME);
+  if (!serving?.versionId || serving.versionId === install.liveVersionId) return install;
+  const updated = { ...install, liveVersionId: serving.versionId, updatedAt: Date.now() };
+  await writeInstall(db, updated);
+  return updated;
 }

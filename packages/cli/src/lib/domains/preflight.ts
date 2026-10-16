@@ -18,6 +18,7 @@
 import { CfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
+import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { describeRecord, dnsRecordsAt, wildcardOver } from "./records";
 import type { Zone } from "./zones";
@@ -63,7 +64,7 @@ export async function preflightDomains(
   if (total > ZONE_CUSTOM_DOMAIN_LIMIT) {
     throw new EveryAppError(
       "ZONE_CUSTOM_DOMAIN_LIMIT",
-      `This would put ${total} Workers Custom Domains in ${zone.name}; Cloudflare allows ${ZONE_CUSTOM_DOMAIN_LIMIT} per zone. Delete apps you no longer use (everyapp app delete), or install a second gateway on another domain.`,
+      `This would put ${total} Workers Custom Domains in ${zone.name}; Cloudflare allows ${ZONE_CUSTOM_DOMAIN_LIMIT} per zone. Delete apps you no longer use (${CLI} delete <id>), or install a second gateway on another domain.`,
     );
   }
   if (total >= ZONE_CUSTOM_DOMAIN_WARN_AT) {

@@ -33,19 +33,19 @@ Each is labeled with what is true today. These docs only describe what has shipp
 | Promise                                                              | Today                                                                                                                                                                                                                                                                                                                                                                           |
 | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Apps have no address of their own.** Only the Gateway is public.   | True. Every app Worker is deployed without a `workers.dev` or preview URL, and the deploy refuses one that would have either, so a request reaches an app only through the Gateway, which checks who is asking first. The app's code also rejects any request without the Gateway's signed identity pass; its static files are served before that code runs (see Known limits). |
-| **Apps hold no keys.** AI and other services go through the Gateway. | True for AI: your OpenAI key lives on the Gateway (`everyapp gateway secret set OPENAI_API_KEY`), and apps call models through it. Email and third-party connections for apps are not there yet.                                                                                                                                                                                |
+| **Apps hold no keys.** AI and other services go through the Gateway. | True for AI: your OpenAI key lives on the Gateway (`everyapp secret set OPENAI_API_KEY --for gateway`), and apps call models through it. Email and third-party connections for apps are not there yet.                                                                                                                                                                          |
 | **One fix at the door protects every app.**                          | True. Cross-site request checks, header stripping, security headers and sign-in rate limits run in the Gateway, in front of every app, whatever each app's own code does.                                                                                                                                                                                                       |
 | **Every action is attributable.**                                    | Not yet. An audit log of what people and agents do is planned.                                                                                                                                                                                                                                                                                                                  |
 
 ## Before and after
 
-| Each internal app needs…           | Without Every App                    | With Every App                                                     |
-| ---------------------------------- | ------------------------------------ | ------------------------------------------------------------------ |
-| Sign-in, users, invitations, roles | Built and secured again in every app | The Gateway's, once                                                |
-| Who may use it                     | Its own permission code              | **Admin → Apps** on the Gateway                                    |
-| An address, DNS and a certificate  | Set up by hand for each app          | Created by `everyapp app deploy`                                   |
-| AI provider keys                   | Copied into each app                 | Kept on the Gateway only                                           |
-| A database, hosting, deploys       | A pipeline per app                   | `everyapp app deploy`: its own D1 and KV, migrated before the code |
+| Each internal app needs…           | Without Every App                    | With Every App                                                 |
+| ---------------------------------- | ------------------------------------ | -------------------------------------------------------------- |
+| Sign-in, users, invitations, roles | Built and secured again in every app | The Gateway's, once                                            |
+| Who may use it                     | Its own permission code              | **Admin → Apps** on the Gateway                                |
+| An address, DNS and a certificate  | Set up by hand for each app          | Created by `everyapp deploy`                                   |
+| AI provider keys                   | Copied into each app                 | Kept on the Gateway only                                       |
+| A database, hosting, deploys       | A pipeline per app                   | `everyapp deploy`: its own D1 and KV, migrated before the code |
 
 ## Why not just Cloudflare Access?
 
@@ -76,5 +76,5 @@ The Free plan can't run Every App: D1 stops answering for the rest of the day on
 - **Removing someone's access takes up to about 2 minutes** to reach every app: the identity pass an app received lasts that long, and the Gateway caches some lookups briefly.
 - **Your domain must be on Cloudflare.** A company whose DNS is hosted elsewhere can buy a cheap domain for Every App in the Cloudflare dashboard (Domains → Buy a domain).
 - **The Gateway uses one of the account's cron triggers** (its hourly MCP housekeeping), and an app with a schedule uses its own. Cloudflare limits cron triggers per account; on an account at the limit, a Gateway upgrade stops at upload, after migrating.
-- **Deleting an app keeps its Worker**, and with it any cron schedules, which keep running, until `everyapp app delete <app> --purge`.
+- **Deleting an app keeps its Worker**, and with it any cron schedules, which keep running, until `everyapp delete <app> --purge`.
 - **About 100 apps per domain.** Cloudflare allows 100 Workers Custom Domains in a zone; the Gateway's own address counts as one, and so does any other Worker's in that zone.

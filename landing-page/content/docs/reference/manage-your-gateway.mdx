@@ -1,6 +1,6 @@
 ---
 title: Manage Your Gateway
-description: Users, app access, deploying from other machines, addresses, updates, and upgrading an older install
+description: Users, app access, deploying from other machines, addresses, settings, and installing, upgrading and repairing the Gateway with setup
 ---
 
 Everything here happens in your Gateway's web UI (at its address, such as `apps.your-domain.dev`) unless noted. You're the **owner** — the account created with the Gateway's one-time setup link; signup is invite-only after that.
@@ -25,7 +25,7 @@ This is how to take someone off, also when your team signs in with Cloudflare Ac
 
 ## Control who sees which app
 
-**Admin → Apps.** A newly deployed app is private: only whoever deployed it (when their Cloudflare login's email is a verified account here) and your owners and admins can open it. Apps deployed before the Gateway had an owner go to the owner when they create their account. Each app row shows who deployed it last and its access count — click it (or ⋯ → Manage access) to grant or revoke per user. Editing an app changes its display name, description, and **Available to everyone** (every current and future member gets it). To make an app available to everyone from the start, set `access: "everyone"` in its `everyapp.config.ts` or deploy with `everyapp app deploy --access everyone`. Deploying decides _what exists_; this page decides _who can use it_.
+**Admin → Apps.** A newly deployed app is private: only whoever deployed it (when their Cloudflare login's email is a verified account here) and your owners and admins can open it. Apps deployed before the Gateway had an owner go to the owner when they create their account. Each app row shows who deployed it last and its access count — click it (or ⋯ → Manage access) to grant or revoke per user. Editing an app changes its display name, description, and **Available to everyone** (every current and future member gets it). To make an app available to everyone from the start, set `access: "everyone"` in its `everyapp.config.ts` before its first deploy. Deploying decides _what exists_; this page decides _who can use it_.
 
 ## Deploying from other machines
 
@@ -35,32 +35,46 @@ Deploying takes one credential: a Cloudflare login for the Gateway's account. On
 
 Your Gateway lives at its address (`apps.your-domain.dev`) and each app one level below it: `todo.apps.your-domain.dev` for your own organization's apps, and `todo-<org>.apps.your-domain.dev` for another organization's. An app keeps its address for good once it has one.
 
-Each address is a [Workers Custom Domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) on the Gateway's Worker: deploying a new app creates its DNS record and certificate (usually within five minutes), and `npx everyapp app delete` removes both. An app deleted in **Admin → Apps** instead loses its address with the next `npx everyapp gateway reconcile`, but Cloudflare keeps its certificate: delete that one in the dashboard (your domain → **SSL/TLS → Edge Certificates**). Nothing else in your domain is touched. Before it adds an address, the deploy checks that:
+Each address is a [Workers Custom Domain](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/) on the Gateway's Worker: deploying a new app creates its DNS record and certificate (usually within five minutes), and `npx everyapp delete` removes both. An app deleted in **Admin → Apps** instead loses its address with the next `npx everyapp setup` (or the next deploy or delete that rebinds the Gateway), but Cloudflare keeps its certificate: delete that one in the dashboard (your domain → **SSL/TLS → Edge Certificates**). Nothing else in your domain is touched. Before it adds an address, the deploy checks that:
 
 - no DNS record answers that name: neither one at the name itself (it would be replaced, along with whatever it served) nor a wildcard record above a name with no records of its own (the address would take that one name from it). `--force-dns` publishes the address anyway, on purpose;
 - the domain has room: Cloudflare allows 100 Custom Domains in a zone.
 
-`npx everyapp gateway status` lists every address, whether it is served yet, and whether it has its certificate.
+`npx everyapp status` lists every address, whether it is served yet, and whether it has its certificate.
 
-## Update the Gateway
+## Install, update and repair the Gateway: `setup`
 
-The Gateway is built from your checkout of the repository, so updating it is updating the checkout — your data, users, and apps carry over:
+`setup` is the one command for the Gateway: it installs it, upgrades it to what your checkout builds, and repairs it, and it is safe to run any time. The Gateway is built from your checkout of the repository, so updating it is updating the checkout — your data, users, and apps carry over:
 
 ```bash
 git pull
 pnpm everyapp setup
 ```
 
-`setup` (or `pnpm everyapp gateway upgrade`) builds the Gateway from the checkout (once per change to its sources: the build is kept by their tree hash under `node_modules/.cache/everyapp`), uses the address and Cloudflare account its install record holds, migrates the database before the new code goes live (after a Time Travel bookmark it prints, with the command that restores it), and keeps every app bound and served. You may not need to: an app deploy that binds a new app redeploys the Gateway from the same checkout, so it upgrades it on the way. A checkout behind the live Gateway refuses to deploy it (`Run git pull, then: …`); to put an older Gateway back on purpose, `pnpm everyapp setup --allow-downgrade`. `pnpm everyapp gateway status` says whether the live Gateway was built from your checkout's sources (`upToDate`), and what to run when not.
+`setup` builds the Gateway from the checkout (once per change to its sources: the build is kept by their tree hash under `node_modules/.cache/everyapp`), uses the address and Cloudflare account its install record holds, migrates the database before the new code goes live (after a Time Travel bookmark it prints, with the command that restores it), and keeps every app bound and served. You may not need to: deploying a new app redeploys the Gateway from the same checkout, so it upgrades it on the way. A checkout behind the live Gateway refuses to deploy it (`Run git pull, then: …`); to put an older Gateway back on purpose, `pnpm everyapp setup --allow-downgrade`. `pnpm everyapp status` says whether the live Gateway was built from your checkout's sources (`upToDate`), and what to run when not.
 
-Avoid changing the Gateway's Worker in the Cloudflare dashboard: the next unattended deploy stops and asks you to confirm in a terminal.
+When the Gateway already runs what your checkout builds, `setup` checks that it binds and publishes exactly the apps its registry lists and serves the version its install record names. If so it says `Gateway 0.4.0 at https://apps.your-domain.dev is up to date.` and changes nothing; if not (a deploy that stopped before it rebound the Gateway, an app deleted in **Admin → Apps**, a change made in the dashboard) it redeploys the Gateway with them. That is the repair `status` points at.
+
+Avoid changing the Gateway's Worker in the Cloudflare dashboard: the next unattended deploy stops and asks you to confirm in a terminal. If you must (replacing its key pair, say), run `pnpm everyapp setup` at a terminal afterwards and confirm `cf`'s question; the hidden `--redeploy` uploads it even when nothing else changed.
+
+## Gateway settings
+
+The Gateway's optional settings are secrets on its Worker, set with `secret … --for gateway`, from any directory of the checkout:
+
+```bash
+pnpm everyapp secret set OPENAI_API_KEY --for gateway   # hidden prompt, or --from-env VAR
+pnpm everyapp secret unset OPENAI_API_KEY --for gateway
+pnpm everyapp secret list --for gateway
+```
+
+`set` and `unset` redeploy the Gateway your checkout builds, with the change in the same version, and later deploys keep it. The settings are the AI proxy's `OPENAI_API_KEY` and `AI_PROXY_EXTRA_ROUTES`, email's `EMAIL_REST_API_TOKEN`, `EMAIL_FROM` and `EMAIL_FROM_NAME`, the MCP connector's `MCP_*`, and [Cloudflare Access sign-in](/docs/reference/cloudflare-access)'s `CLOUDFLARE_ACCESS_*` and `EMAIL_PASSWORD_SIGN_IN`; any other name lists them.
 
 ## Remove an app
 
-**Admin → Apps → ⋯ → Delete** stops serving it, removes it from the launcher and revokes everyone's access. Its name and address stay reserved to your organization. The app's worker and database stay on your Cloudflare account, so deleting in the Gateway is reversible by redeploying; run `npx everyapp gateway reconcile` afterwards to drop the Gateway's binding to it and its address.
+**Admin → Apps → ⋯ → Delete** stops serving it, removes it from the launcher and revokes everyone's access. Its name and address stay reserved to your organization. The app's worker and database stay on your Cloudflare account, so deleting in the Gateway is reversible by redeploying; run `npx everyapp setup` afterwards to drop the Gateway's binding to it and its address.
 
-From the terminal, `npx everyapp app delete <app-id>` does both, and removes the certificate Cloudflare keeps for the address. `--purge` also deletes the app's Worker, D1 database and KV namespace for good.
+From the terminal, `npx everyapp delete <app-id>` does both, and removes the certificate Cloudflare keeps for the address. `--purge` also deletes the app's Worker, D1 database and KV namespace for good.
 
 ## Move to a different domain
 
-Moving an installed Gateway to a different address isn't supported yet: `gateway deploy` and `setup` refuse an address other than the one it was installed at.
+Moving an installed Gateway to a different address isn't supported yet: `setup` refuses an address other than the one it was installed at.

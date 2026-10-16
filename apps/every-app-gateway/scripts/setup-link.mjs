@@ -1,11 +1,11 @@
 /**
  * Mint an owner setup link for a LOCAL gateway (`pnpm dev`, Docker self-host).
  *
- * Deployed gateways get their link from `everyapp gateway deploy` (or
- * `everyapp gateway claim-link`). This is the same thing against the local D1
- * database: it stores only the SHA-256 of a fresh `est_` secret, expires any
- * earlier unused link, and prints `<GATEWAY_URL>/setup#token=…`. It prints
- * nothing but a note once the gateway has an owner.
+ * Deployed gateways get their link from `everyapp setup`. This is the same
+ * thing against the local D1 database: it stores only the SHA-256 of a fresh
+ * `est_` secret, expires any earlier unused link, and prints
+ * `<GATEWAY_URL>/setup#token=…`. It prints nothing but a note once the
+ * gateway has an owner.
  *
  * Usage: pnpm setup-link
  */

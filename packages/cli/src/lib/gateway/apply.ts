@@ -1,6 +1,7 @@
 /**
- * Deploying the gateway, shared by `everyapp gateway deploy|upgrade|reconcile`
- * and the rebind of `app deploy|delete`. The release is always the one the
+ * Deploying the gateway, shared by `everyapp setup` (install, upgrade,
+ * repair), `secret … --for gateway` and the rebind of `deploy` and
+ * `delete`. The release is always the one the
  * checkout builds (./checkoutRelease.ts), so a rebind also upgrades the
  * gateway when the checkout is newer than the live release.
  *
@@ -98,7 +99,7 @@ export interface ApplyGatewayOptions {
   /** Asks that person before replacing a version everyapp didn't record (tests). */
   confirm?: Confirm;
   cliVersion: string;
-  /** Settings from `everyapp gateway secret set`, sent with the upload. */
+  /** Settings from `everyapp secret set --for gateway`, sent with the upload. */
   stagedSecrets?: Record<string, string>;
   /** The gateway lease the caller holds (a reconcile picks its release under it). */
   heldLease?: Lease;
@@ -106,8 +107,6 @@ export interface ApplyGatewayOptions {
   allowDowngrade?: boolean;
   /** The command takes --allow-downgrade (setup): a refusal offers it. */
   allowDowngradeFlag?: boolean;
-  /** Patch and `cf deploy --dry-run` only: no lease, no writes. */
-  dryRun?: boolean;
   sleep?: (ms: number) => Promise<void>;
   /** How long to wait for another deploy's lease. */
   leaseWaitMs?: number;
@@ -121,8 +120,6 @@ export interface ApplyGatewayResult {
   domains: string[];
   /** Hostnames this run published for the first time: they wait for certificates. */
   newHosts: string[];
-  /** cf's binding table, after a dry run. */
-  dryRunOutput?: string;
 }
 
 /** Take the `gateway` deploy lease, saying who has it while waiting. */
@@ -300,23 +297,18 @@ export async function applyGateway(
   options: ApplyGatewayOptions,
 ): Promise<ApplyGatewayResult> {
   const { cf, out, reason, release, db } = options;
-  const ownLease =
-    options.dryRun || options.heldLease
-      ? null
-      : await acquireGatewayLease(options, `gateway.${reason}`);
-  const lease = options.dryRun ? null : (options.heldLease ?? ownLease);
+  const ownLease = options.heldLease
+    ? null
+    : await acquireGatewayLease(options, `gateway.${reason}`);
+  const lease = options.heldLease ?? ownLease!;
   // Once the database is migrated, a failure says how to put it back.
   let rollbackCommand: string | null = null;
   try {
     // Only now is the install record the last deploy's for sure: another
     // upgrade may have finished while this one waited for the lease.
-    const install = await readInstall(db).catch((error: unknown) => {
-      if (options.dryRun) return null;
-      throw error;
-    });
+    const install = await readInstall(db);
     if (
       install &&
-      !options.dryRun &&
       !options.allowDowngrade &&
       olderThanInstalled(candidate(release), install)
     ) {
@@ -324,7 +316,7 @@ export async function applyGateway(
         allowDowngradeFlag: options.allowDowngradeFlag,
       });
     }
-    if (!options.dryRun && (!install || install.liveVersionId === null)) {
+    if (!install || install.liveVersionId === null) {
       // A new install is recorded before anything can stop it, so a run
       // that does (a DNS record in the way, no workers.dev subdomain yet)
       // resumes from the row, without --domain. Nothing is live yet, so a
@@ -344,7 +336,7 @@ export async function applyGateway(
     // A reconcile with the release that is live only rebinds; any other
     // deploy brings the database up to this release first.
     const sameRelease = install !== null && isLiveRelease(release, install);
-    if (!options.dryRun && (reason !== "reconcile" || !sameRelease)) {
+    if (reason !== "reconcile" || !sameRelease) {
       // Before migrating: the registry's newest columns may not exist yet,
       // so no app is bound in this check, and only the hosts a migrated
       // registry already lists are checked.
@@ -361,7 +353,7 @@ export async function applyGateway(
         confirm: options.confirm,
         note: "If it runs a newer gateway release (an upgrade that stopped before recording itself), this replaces it with an older one.",
       });
-      await lease?.check();
+      await lease.check();
       rollbackCommand = await migrate(options);
     }
     return await deploy(options, domainChecks, workerExists, {
@@ -415,7 +407,7 @@ async function migrate({
 
 /**
  * One upload, binding what the registry says now. No second one follows
- * when the registry changes meanwhile: whatever changes it (an app deploy
+ * when the registry changes meanwhile: whatever changes it (an app's deploy
  * or delete) rebinds the gateway itself, under this same lease, once this
  * deploy frees it.
  */
@@ -425,8 +417,8 @@ async function deploy(
   workerExists: (workerName: string) => Promise<boolean>,
   /** What the install row records before this run. */
   recorded: Publication,
-  /** Checked before the upload (none for a dry run). */
-  lease: Lease | null,
+  /** Checked before the upload. */
+  lease: Lease,
 ): Promise<ApplyGatewayResult> {
   const { cf, out, release, db, gatewayHost } = options;
   const firstDeploy =
@@ -448,16 +440,16 @@ async function deploy(
   }
   const domains = domainChecks.domainsFor(desired.appHosts);
   await domainChecks.check(domains);
-  await lease?.check();
+  await lease.check();
   out.emit({
     type: "step",
     step: "gateway.deploy",
     status: "start",
-    message: `${options.dryRun ? "Checking" : "Deploying"} gateway ${release.manifest.version} with ${desired.appWorkers.length} app${desired.appWorkers.length === 1 ? "" : "s"}...`,
+    message: `Deploying gateway ${release.manifest.version} with ${desired.appWorkers.length} app${desired.appWorkers.length === 1 ? "" : "s"}...`,
     data: { appWorkers: desired.appWorkers, domains },
   });
   // A Worker without a version yet gets a new identity key pair, and the
-  // install row the public half with the upload, for app deploys to hand
+  // install row the public half with the upload, for the apps' deploys to hand
   // their Workers.
   const keys = firstDeploy
     ? newGatewaySecrets({ gatewayUrl: `https://${gatewayHost}`, accountId: options.accountId })
@@ -468,16 +460,6 @@ async function deploy(
     jwtPublicKey: keys?.jwtPublicKey ?? null,
   });
   const newHosts = domains.filter((host) => !domainChecks.liveDomains.includes(host));
-  if (options.dryRun) {
-    return {
-      versionId: null,
-      firstDeploy,
-      appWorkers: desired.appWorkers,
-      domains,
-      newHosts,
-      dryRunOutput: deployed.output,
-    };
-  }
   out.emit({
     type: "step",
     step: "gateway.deploy",
@@ -522,7 +504,6 @@ function upload(
       message: `everyapp ${options.cliVersion} gateway ${options.release.manifest.version} (${options.reason})`,
       secrets,
       interactive: options.interactive,
-      dryRun: options.dryRun,
       cliCf: true,
       onUploaded: (versionId, finished) =>
         record(

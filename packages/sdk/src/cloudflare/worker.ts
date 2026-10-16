@@ -52,7 +52,7 @@ export interface EveryAppWorkerOptions<
   crons?: readonly string[];
   /**
    * The app's own secrets, e.g. an API key it calls out with. A deployed
-   * Worker gets them from `everyapp app secret set`, and later deploys keep
+   * Worker gets them from `everyapp secret set`, and later deploys keep
    * them, so production builds don't declare them. In development each one
    * that is set locally is declared, read as the Vite plugin reads secrets
    * (`.dev.vars[.<mode>]` alone when present, otherwise the `.env` files
@@ -244,7 +244,7 @@ export const EVERYAPP_OBSERVABILITY: Readonly<EveryAppObservability> =
   });
 
 const DEFAULT_COMPATIBILITY_DATE = "2026-06-01";
-/** Names the deploy sets itself (as `everyapp app secret set` refuses). */
+/** Names the deploy sets itself (as `everyapp secret set` refuses). */
 const RESERVED_SECRET_NAME =
   /^(GATEWAY_URL|CF_VERSION_METADATA|EVERYAPP_\w*|EVERY_APP_\w*|APP__\w*)$/i;
 const GATEWAY_WORKER_NAME = "every-app-gateway";
@@ -261,7 +261,7 @@ const MAX_WORKFLOW_NAME_LENGTH = 64;
  *   `.dev.vars`, and each D1 database gets a fixed local id (see
  *   {@link localD1Id}) that `cf d1 … --local` can address.
  * - `production`: everything deploy-specific comes from `.everyapp/deploy.json`,
- *   which only `everyapp app deploy` writes. Without it this throws, so a bare
+ *   which only `everyapp deploy` writes. Without it this throws, so a bare
  *   `cf deploy` can't ship a Worker without identity keys.
  */
 export function everyAppWorker<
@@ -278,7 +278,7 @@ export function everyAppWorker<
     deploy = readDeployInputs(options.root ?? process.cwd());
     if (!deploy) {
       throw new Error(
-        `${DEPLOY_INPUTS_FILE} not found. Every App Workers are built for production only by \`everyapp app deploy\` (\`pnpm run deploy\`); ` +
+        `${DEPLOY_INPUTS_FILE} not found. Every App Workers are built for production only by \`everyapp deploy\` (\`pnpm run deploy\`); ` +
           "a bare `cf build` or `cf deploy` would ship a Worker without identity keys or its gateway binding. " +
           "For a local build, run Vite in development mode (`vite build --mode development`).",
       );
@@ -564,6 +564,6 @@ function assertAppId(id: unknown): void {
 
 function missingResource(kind: string, binding: string): Error {
   return new Error(
-    `${DEPLOY_INPUTS_FILE} has no ${kind} for binding "${binding}". Deploy with \`everyapp app deploy\`, which provisions every resource in everyapp.config.ts.`,
+    `${DEPLOY_INPUTS_FILE} has no ${kind} for binding "${binding}". Deploy with \`everyapp deploy\`, which provisions every resource in everyapp.config.ts.`,
   );
 }

@@ -103,7 +103,7 @@ everyAppWorker({
 });
 ```
 
-Export `scheduled` next to `everyApp()`'s `fetch` (`export default { ...everyApp(handler, { tools }), scheduled }`). A scheduled run has no user. Set a secret on the deployed app with `npx everyapp app secret set GITHUB_TOKEN`, which deploys it with the secret and later deploys keep it. Locally, put it in `.dev.vars`: it is declared only when set there, so type it as optional in `src/env.d.ts`.
+Export `scheduled` next to `everyApp()`'s `fetch` (`export default { ...everyApp(handler, { tools }), scheduled }`). A scheduled run has no user. Set a secret on the deployed app with `npx everyapp secret set GITHUB_TOKEN`, which deploys it with the secret and later deploys keep it. Locally, put it in `.dev.vars`: it is declared only when set there, so type it as optional in `src/env.d.ts`.
 
 ## Workflows
 
@@ -143,9 +143,9 @@ export { RankCheckWorkflow } from "./rank-check";
 
 Start one from a request, a tool or a cron with `env.RANK_CHECK.create({ params: { siteId } })`. A Workflow run has no user, so pass what it needs in `params`.
 
-Workflow names are shared by the whole Cloudflare account, so each one is named after the app's Worker: `RANK_CHECK` becomes `every-<org>-<app-id>--rank-check`. `everyapp app deploy` creates or updates it with the Worker, and refuses a name another Worker already runs rather than taking it over. As with a Durable Object class, dropping a Workflow from the manifest (or renaming its binding, which renames it) stops the deploy unless you pass `--allow-delete-workflows`, which deletes it and its instances once the new version is live. `everyapp app delete --purge` deletes the app's Workflows with its Worker.
+Workflow names are shared by the whole Cloudflare account, so each one is named after the app's Worker: `RANK_CHECK` becomes `every-<org>-<app-id>--rank-check`. `everyapp deploy` creates or updates it with the Worker, and refuses a name another Worker already runs rather than taking it over. As with a Durable Object class, dropping a Workflow from the manifest (or renaming its binding, which renames it) stops the deploy unless you pass `--allow-delete-workflows`, which deletes it and its instances once the new version is live. `everyapp delete --purge` deletes the app's Workflows with its Worker.
 
-`everyapp dev` runs Workflows on your machine and links to the Local Explorer, where you start, inspect, pause and restart instances. For the deployed app, [`everyapp app workflows`](/docs/reference/cli#everyapp-app-workflows) does the same through Cloudflare.
+`everyapp dev` runs Workflows on your machine and links to the Local Explorer, where you start, inspect, pause and restart instances. For the deployed app, [`everyapp workflows`](/docs/reference/cli#everyapp-workflows) does the same through Cloudflare.
 
 ## `everyapp.config.ts` — the manifest
 
@@ -189,7 +189,7 @@ export default defineConfig((ctx) => ({
 }));
 ```
 
-`everyAppWorker()` always produces a private Worker (no routes, no `workers.dev` URL, no preview URLs) with the manifest's D1 databases, KV namespaces, Durable Objects and Workflows, logs, traces and Workers Issues turned on, and the identity settings the SDK checks. `cf` infers the Worker's `Env` type from it. In local dev it carries a well-known dev public key and issuer that only `everyapp dev` signs with, so nothing is written to `.dev.vars`; the SDK trusts them only in a development build and only from the dev issuer. A production build needs deploy inputs that only `everyapp app deploy` provides, so `cf build` and `cf deploy` refuse to build for production on their own — deploy with `everyapp app deploy`.
+`everyAppWorker()` always produces a private Worker (no routes, no `workers.dev` URL, no preview URLs) with the manifest's D1 databases, KV namespaces, Durable Objects and Workflows, logs, traces and Workers Issues turned on, and the identity settings the SDK checks. `cf` infers the Worker's `Env` type from it. In local dev it carries a well-known dev public key and issuer that only `everyapp dev` signs with, so nothing is written to `.dev.vars`; the SDK trusts them only in a development build and only from the dev issuer. A production build needs deploy inputs that only `everyapp deploy` provides, so `cf build` and `cf deploy` refuse to build for production on their own — deploy with `everyapp deploy`.
 
 To add a binding the manifest doesn't model, spread the result. Don't import anything here that the Worker also imports: in dev, the Vite plugin hides this file's imports from the Worker.
 

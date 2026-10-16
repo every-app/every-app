@@ -9,12 +9,15 @@ description: Build your first app with a coding agent
 Help me build an Every App application (docs: https://everyapp.com/llms.txt).
 
 1. Ask me what to call the app (a kebab-case id such as `tasks`), then run
-   `npx -y everyapp app create <that id> --json` and move into the folder it
+   `npx -y everyapp create <that id> --json` and move into the folder it
    created.
-2. Ask me what app I want to build, then build it.
+2. Read .agents/skills/everyapp/SKILL.md in that folder. Ask me what app I
+   want to build, then build it.
 3. Start local dev with `npx everyapp dev` and give me the local URL to open.
-4. When I say I'm happy with it, deploy with `npx -y everyapp app deploy -y`
-   and tell me to refresh my Gateway.
+4. When I say I'm happy with it, deploy with `npx -y everyapp deploy --json`
+   and tell me to refresh my Gateway. With no Gateway yet it stops with
+   action_required install_gateway: ask me for the address, run its
+   data.rerun (setup), then deploy again.
 
 Pause and tell me exactly what to do whenever a step needs me. If a command
 needs interactive input you can't provide, give me the exact command to run
@@ -26,13 +29,13 @@ The manual steps, if you'd rather drive:
 ## 1. Create the app
 
 ```bash
-npx everyapp app create your-app-name
+npx everyapp create your-app-name
 cd your-app-name
 ```
 
 Name your app with a kebab-case id such as `tasks` (leave it out and the command asks); `cd your-app-name` moves into the folder it created.
 
-This creates a working app from our starter template, installs it and sets up its local database. Before you write a line of code, you have a real full-stack app with a database that runs locally behind the same login checks as production. Nothing reaches your Cloudflare account until you deploy (`npx everyapp app create your-app-name --deploy` does both at once).
+This creates a working app from our starter template, installs it and sets up its local database. Before you write a line of code, you have a real full-stack app with a database that runs locally behind the same login checks as production. Nothing reaches your Cloudflare account until you deploy (`npx everyapp create your-app-name --deploy` does both at once).
 
 ## 2. Describe what you want
 
@@ -104,10 +107,10 @@ Restarting `everyapp dev` applies it to your local database automatically (or ru
 ## 4. Deploy
 
 ```bash
-npx everyapp app deploy
+npx everyapp deploy
 ```
 
-This builds the app, runs pending database migrations, and deploys to your Cloudflare account. Refresh your Gateway and the changes are live.
+This builds the app, runs pending database migrations, and deploys to your Cloudflare account. Refresh your Gateway and the changes are live. The first deploy, with no Gateway in your Cloudflare account yet, offers to install one first ([Quickstart](/docs/getting-started/quickstart)).
 
 ## What you can build
 

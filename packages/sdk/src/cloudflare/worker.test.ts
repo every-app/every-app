@@ -192,7 +192,7 @@ describe("everyAppWorker in production", () => {
 
   it("refuses to build without deploy inputs", () => {
     expect(worker).toThrow(/\.everyapp\/deploy\.json not found/);
-    expect(worker).toThrow(/everyapp app deploy/);
+    expect(worker).toThrow(/everyapp deploy/);
   });
 
   it("builds the deployed identity, gateway binding and resources", () => {
@@ -351,7 +351,7 @@ describe("everyAppWorker Workflows", () => {
   });
 });
 
-describe("everyAppWorker crons and app secrets", () => {
+describe("everyAppWorker crons and the app's own secrets", () => {
   it("runs the scheduled handler on the given crons, in dev and production", () => {
     const crons = ["17 */6 * * *"];
     expect(
@@ -397,7 +397,7 @@ describe("everyAppWorker crons and app secrets", () => {
     }
   });
 
-  it("declares an app secret in development only once it is set locally", () => {
+  it("declares a secret of the app in development only once it is set locally", () => {
     const env = (mode: "development" | "production") =>
       everyAppWorker({
         manifest,
@@ -416,7 +416,7 @@ describe("everyAppWorker crons and app secrets", () => {
     expect(env("development")["SDK_TEST_API_KEY"]).toEqual({ type: "secret" });
     expect(env("development")["STRIPE_KEY"]).toBeUndefined();
 
-    // A deployed Worker keeps the secret `everyapp app secret set` sent.
+    // A deployed Worker keeps the secret `everyapp secret set` sent.
     writeDeployInputs();
     expect(env("production")["SDK_TEST_API_KEY"]).toBeUndefined();
   });

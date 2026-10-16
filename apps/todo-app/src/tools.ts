@@ -1,6 +1,6 @@
 /**
  * The todo app's agent tools. The Every App gateway snapshots this catalog
- * when the app deploys and serves it to MCP clients at
+ * once the app is deployed, and serves it to MCP clients at
  * `https://<todo-host>/mcp`; the app itself never speaks MCP.
  *
  * Every call arrives with the verified user (`channel: "mcp"`), and every

@@ -343,8 +343,8 @@ export const MAX_WORKER_NAME_LENGTH = 63;
 
 /**
  * Names the gateway's own resources use: its Worker, D1 database and KV
- * namespaces (`every-app-gateway`, `every-app-gateway-OAUTH_KV`,
- * `every-app-gateway-deploy`). No app Worker may take one, and so no app
+ * namespace (`every-app-gateway`, `every-app-gateway-OAUTH_KV`). No app
+ * Worker may take one, and so no app
  * resource either, since a get-or-create by name would hand the app the
  * gateway's own.
  */

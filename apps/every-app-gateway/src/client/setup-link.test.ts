@@ -61,7 +61,7 @@ describe("claimGateway", () => {
     await expect(claimGateway(input)).resolves.toMatchObject({
       ok: false,
       retry: false,
-      message: expect.stringContaining("claim-link"),
+      message: expect.stringContaining("pnpm everyapp setup"),
     });
     await expect(claimGateway(input)).resolves.toEqual({
       ok: false,

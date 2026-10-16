@@ -22,6 +22,7 @@ import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { EveryAppError } from "@/lib/errors";
 import type { EveryAppCliManifest } from "@/lib/manifest";
+import { CLI } from "@/lib/output/command";
 import type { DeployInputs } from "./deployInputs";
 import {
   describeResource,
@@ -117,7 +118,7 @@ function assignedName(
   if (!name || isReservedName(name)) {
     throw new EveryAppError(
       "RESOURCE_NAME_MISSING",
-      `The gateway assigned no usable ${kind === "d1" ? "D1 database" : "KV namespace"} name for binding ${binding}. Upgrade the gateway (everyapp gateway upgrade).`,
+      `The gateway assigned no usable ${kind === "d1" ? "D1 database" : "KV namespace"} name for binding ${binding}. Upgrade the gateway: ${CLI} setup`,
     );
   }
   return name;

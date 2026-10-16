@@ -2321,7 +2321,7 @@ describe("personal access tokens on the gateway's /mcp", () => {
 describe("apps with no tool snapshot yet", () => {
   it("syncs them in the background when a client uses the tools, and lists them next time", async () => {
     clearCatalogSyncClaimsForTests();
-    // As for an app deployed before the gateway took snapshots.
+    // As for an app that was deployed before the gateway took snapshots.
     await db.delete(appTools).where(eq(appTools.appRowId, todoRowId));
     await db
       .delete(appToolCatalogs)

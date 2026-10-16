@@ -1,9 +1,9 @@
 /**
  * The certificates of the gateway's hostnames. Cloudflare issues each
  * Workers Custom Domain its own certificate pack and keeps it when the
- * domain is removed, so `everyapp app delete` deletes the packs that
+ * domain is removed, so `everyapp delete` deletes the packs that
  * covered only the app's hostname, once the gateway no longer publishes it
- * (never a pack that also covers another name), and `gateway status` reads
+ * (never a pack that also covers another name), and `everyapp status` reads
  * which hostnames have an active one.
  */
 import { CfError } from "@/lib/cf/errors";

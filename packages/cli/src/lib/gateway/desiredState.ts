@@ -8,7 +8,7 @@
  * at another Worker in the account, and only if
  * that Worker exists: a deploy moves a row to `binding` on the CLI's
  * word, and an `active` row outlives a Worker deleted by hand. Binding a
- * missing Worker fails the whole gateway deploy, so one stale row would
+ * missing Worker fails the whole deploy of the gateway, so one stale row would
  * hold up every app.
  */
 import { isRegistryWorkerName } from "@every-app/perimeter/manifest";

@@ -12,7 +12,8 @@ https://github.com/user-attachments/assets/7802f9ca-defd-4995-96f0-f46845cb3e83
 - [What is Every App?](#what-is-every-app)
 - [What is the Gateway?](#what-is-the-gateway)
 - [Work from This Checkout](#work-from-this-checkout)
-- [Deploy Your Gateway](#deploy-your-gateway)
+- [Your First App](#your-first-app)
+- [Your Gateway: `setup`](#your-gateway-setup)
 - [Deploy an Example App](#deploy-an-example-app)
 - [Build Your Own App](#build-your-own-app)
 - [Docs](#docs)
@@ -82,13 +83,31 @@ pnpm everyapp --help
 
 To type `everyapp` from anywhere, link it once: `pnpm -C packages/cli install:global` (an `npm link` of `packages/cli`).
 
-## Deploy Your Gateway
+## Your First App
+
+```bash
+pnpm everyapp create my-app
+cd apps/my-app
+pnpm dev
+```
+
+`create` copies the starter template (`templates/simple-todo`) to `apps/my-app`, installs it and sets up its local database, without contacting anything in Cloudflare. `pnpm dev` (`everyapp dev`) runs it behind a local Gateway that enforces the same security perimeter as production, signed in as a seeded dev user. Open the URL it prints — hot reload works as normal. When it should go live:
+
+```bash
+pnpm run deploy
+```
+
+The first deploy finds no Gateway in your Cloudflare account and offers to install one at `apps.<your domain>`: it runs `everyapp setup` (below) right there, owner account included, then deploys your app to `https://my-app.apps.your-company.com`. Refresh your Gateway and it's there. Coding agents get a one-page guide to the CLI in the new app's `.agents/skills/everyapp/SKILL.md` (and `.claude/skills/`).
+
+Need inspiration? Try the [example prompt](https://everyapp.com/docs/build-an-app/create-app/#example-prompt) to get started.
+
+## Your Gateway: `setup`
 
 ```bash
 pnpm everyapp setup --domain apps.your-company.com
 ```
 
-One command, from an empty account to a working Gateway:
+`setup` installs the Gateway where you choose, upgrades it after a `git pull`, and repairs it when `everyapp status` says something is off. It deploys no app. From an empty account to a working Gateway:
 
 1. It logs in to Cloudflare with Cloudflare's own CLI (a link and a code, so it works over SSH), or uses `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and checks for Workers Paid.
 2. It builds the Gateway from `apps/every-app-gateway` and deploys it at `--domain` (leave the flag out and it asks, suggesting `apps.<your domain>`). Every address is a Workers Custom Domain: Cloudflare creates its DNS record and certificate. No wildcard records, no DNS to edit by hand.
@@ -96,7 +115,7 @@ One command, from an empty account to a working Gateway:
 
 Your Cloudflare login is the only credential: there is no Gateway token to create or paste. The CLI registers and deploys apps by writing the Gateway's own database with it, so apps deploy before the owner exists too (from CI, say).
 
-Stopped half-way (a login to approve, a domain to buy, a link you haven't opened yet)? Run it again: it picks up where it left off, and does nothing once everything is there. Coding agents can drive it with `--json` (NDJSON events).
+Stopped half-way (a login to approve, a domain to buy, a link you haven't opened yet)? Run it again: it picks up where it left off, and once everything is there it says `Gateway 0.4.0 at https://apps.your-company.com is up to date.` and changes nothing. Coding agents can drive it with `--json` (NDJSON events).
 
 [What the Gateway does](https://everyapp.com/docs/how-it-works/gateway) explains, on one page, what it promises, what it costs, and its limits today; one to know now: deploying apps takes Cloudflare credentials that can also change the Gateway, so only let trusted admins deploy.
 
@@ -106,7 +125,7 @@ Log in to the Gateway's Cloudflare account there (`npx cf auth login`, or the fi
 
 ### Upgrading your Gateway
 
-The Gateway is built from this checkout, so upgrading it is `git pull` then `everyapp setup` (or `everyapp gateway upgrade`), keeping its data, users and apps. An app deploy that binds a new app does it too, since it redeploys the Gateway from the same checkout. The build is kept under `node_modules/.cache/everyapp` by the tree hash of the Gateway's sources (and the SDK, perimeter and toolbus it bundles), so it only happens again after they change. A checkout behind the live Gateway is refused with "run git pull"; `everyapp gateway status` says whether the live Gateway was built from your checkout's sources.
+The Gateway is built from this checkout, so upgrading it is `git pull` then `everyapp setup`, keeping its data, users and apps. Deploying a new app does it too, since that redeploys the Gateway from the same checkout. The build is kept under `node_modules/.cache/everyapp` by the tree hash of the Gateway's sources (and the SDK, perimeter and toolbus it bundles), so it only happens again after they change. A checkout behind the live Gateway is refused with "run git pull"; `everyapp status` says whether the live Gateway was built from your checkout's sources, and what to run when something is off.
 
 ## Deploy an Example App
 
@@ -124,22 +143,12 @@ Refresh your Gateway — the app appears, live at the URL the deploy prints (`ht
 - **Cooking Assistant** (`apps/chef`) — an AI cooking assistant and recipe manager. Chat needs an OpenAI key, which goes on your **Gateway**, not the app: the Gateway holds provider keys and proxies AI calls for every app that declares the provider.
 
   ```bash
-  pnpm everyapp gateway secret set OPENAI_API_KEY
+  pnpm everyapp secret set OPENAI_API_KEY --for gateway
   ```
 
 ## Build Your Own App
 
-```bash
-pnpm everyapp app create my-app
-cd apps/my-app
-pnpm dev
-```
-
-`app create` copies the starter template (`templates/simple-todo`) to `apps/my-app`, installs it and sets up its local database, without contacting your Gateway; `pnpm run deploy` (or `app create --deploy`) ships it.
-
-`pnpm dev` (`everyapp dev`) runs your app behind a local Gateway that enforces the same security perimeter as production, signed in as a seeded dev user. Open the URL it prints — hot reload works as normal.
-
-Need inspiration? Try the [example prompt](https://everyapp.com/docs/build-an-app/create-app/#example-prompt) to get started.
+Every command is on the [CLI reference](https://everyapp.com/docs/reference/cli): `setup`, `status`, `create`, `dev`, `deploy`, `delete`, `secret`, `db` and `workflows`.
 
 ### An app in its own repository
 
@@ -149,8 +158,8 @@ An app can live in its own repository, next to this checkout (RepoLens does). It
 {
   "scripts": {
     "dev": "everyapp dev",
-    "deploy": "everyapp app deploy",
-    "db:migrate:local": "everyapp app d1 migrate --local"
+    "deploy": "everyapp deploy",
+    "db:migrate:local": "everyapp db migrate"
   },
   "dependencies": {
     "@every-app/sdk": "link:../private-every-app/packages/sdk"
@@ -161,7 +170,7 @@ An app can live in its own repository, next to this checkout (RepoLens does). It
 }
 ```
 
-Then `pnpm install`, `pnpm dev` and `pnpm run deploy` work there as they do in `apps/`. `everyapp app create` run outside this repository sets a new app up this way.
+Then `pnpm install`, `pnpm dev` and `pnpm run deploy` work there as they do in `apps/`. `everyapp create` run outside this repository sets a new app up this way.
 
 ### Database Migrations
 
@@ -171,7 +180,7 @@ When you or your coding agent change the database schema:
 pnpm run db:generate
 ```
 
-`everyapp dev` applies pending migrations locally on startup. To push schema changes to production, deploy — `everyapp app deploy` runs migrations as part of the deploy.
+`everyapp dev` applies pending migrations locally on startup. To push schema changes to production, deploy — `everyapp deploy` runs migrations as part of the deploy.
 
 ### App Features
 
@@ -197,4 +206,4 @@ Reference the full docs to learn more:
 
 ### Self-Hosting with Docker
 
-To run the local Cloudflare-compatible runtime in containers instead of deploying to Cloudflare, see `SELF_HOSTING_DOCKER.md`. This is a local emulation path — it covers the Gateway and owner setup, not app deployment. If you expose ports beyond localhost, you are responsible for hardening access (reverse proxy, firewall rules, VPN/Zero Trust, etc.).
+To run the local Cloudflare-compatible runtime in containers instead of deploying to Cloudflare, see `SELF_HOSTING_DOCKER.md`. This is a local emulation path — it covers the Gateway and owner setup, not deploying apps. If you expose ports beyond localhost, you are responsible for hardening access (reverse proxy, firewall rules, VPN/Zero Trust, etc.).

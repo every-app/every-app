@@ -19,18 +19,18 @@ function report(error: unknown) {
 
 describe("thisCommand", () => {
   it("is the command as given, without --json, to paste into a shell", () => {
-    expect(thisCommand([], ["app", "deploy", "--json", "--verbose"])).toBe(
-      `${CLI} app deploy --verbose`,
+    expect(thisCommand([], ["deploy", "--json", "--verbose"])).toBe(
+      `${CLI} deploy --verbose`,
     );
-    expect(thisCommand(["--force-dns"], ["app", "deploy", "--json"])).toBe(
-      `${CLI} app deploy --force-dns`,
+    expect(thisCommand(["--force-dns"], ["deploy", "--json"])).toBe(
+      `${CLI} deploy --force-dns`,
     );
-    expect(thisCommand(["--yes"], ["app", "delete", "todo", "--yes"])).toBe(
-      `${CLI} app delete todo --yes`,
+    expect(thisCommand(["--yes"], ["delete", "todo", "--yes"])).toBe(
+      `${CLI} delete todo --yes`,
     );
     expect(
-      thisCommand([], ["app", "d1", "query", "SELECT * FROM t WHERE a = 'x'"]),
-    ).toBe(`${CLI} app d1 query 'SELECT * FROM t WHERE a = '\\''x'\\'''`);
+      thisCommand([], ["db", "query", "SELECT * FROM t WHERE a = 'x'"]),
+    ).toBe(`${CLI} db query 'SELECT * FROM t WHERE a = '\\''x'\\'''`);
   });
 });
 
@@ -86,10 +86,10 @@ describe("reportFailure", () => {
   it("keeps a rerun the error names", () => {
     const { event } = report(
       new EveryAppError("GATEWAY_OUTDATED", "Upgrade the gateway.", {
-        rerun: `${CLI} gateway upgrade`,
+        rerun: `${CLI} setup`,
       }),
     );
-    expect(event["data"]).toEqual({ rerun: `${CLI} gateway upgrade` });
+    expect(event["data"]).toEqual({ rerun: `${CLI} setup` });
   });
 
   it("repeats the database's restore command in a failure after a migration", () => {

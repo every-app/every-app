@@ -1,5 +1,5 @@
 /**
- * `everyapp gateway deploy|upgrade|reconcile` end to end, against a fake
+ * `everyapp setup` end to end, against a fake
  * Cloudflare account: real gateway migrations on SQLite, Build Outputs
  * validated with cf's schema, nothing spawned or sent.
  */
@@ -143,7 +143,7 @@ function seedApps(
   }
 }
 
-describe("gateway deploy", () => {
+describe("applyGateway", () => {
   it("installs a gateway: migrations first, then one upload with its secrets", async () => {
     const result = await deployGateway();
 
@@ -214,7 +214,7 @@ describe("gateway deploy", () => {
     );
     // The lease is free again, and the install is recorded.
     expect(db.all("SELECT * FROM _everyapp_deploy_lease")).toEqual([]);
-    // With the public half of the identity key, which app deploys hand their
+    // With the public half of the identity key, which the apps' deploys hand their
     // Workers: the CLI keeps neither half.
     await expect(readInstall(cfD1Database(account.cf, [...account.databases][0]![0]))).resolves.toMatchObject({
       accountId: ACCOUNT_ID,
@@ -286,7 +286,7 @@ describe("gateway deploy", () => {
   it("deploys once, even when an app registers meanwhile: that app's own rebind binds it", async () => {
     await deployGateway();
     const deploys = account.deploys.length;
-    // An app deploy marks its app deployed while this upload runs.
+    // An app's deploy marks the app as deployed while this upload runs.
     account.afterUpload = (worker) => {
       if (worker !== "every-app-gateway") return undefined;
       account.afterUpload = null;
@@ -334,8 +334,8 @@ describe("gateway deploy", () => {
 
     const held = await deployGateway().catch((error: Error) => error);
     expect(held).toMatchObject({ code: "LEASE_HELD", retryable: true });
-    expect((held as Error).message).toContain("laptop:42:abcd has held the gateway deploy lease (gateway.upgrade) since");
-    expect((held as Error).message).toContain("`everyapp gateway status` shows it");
+    expect((held as Error).message).toContain('laptop:42:abcd has held the deploy lease "gateway" (gateway.upgrade) since');
+    expect((held as Error).message).toContain("`pnpm everyapp status` shows it");
     expect((held as Error).message).not.toContain("--");
     expect(account.deploys).toEqual([]);
 
@@ -621,14 +621,6 @@ describe("gateway deploy", () => {
       expect(account.deploys).toEqual([]);
     });
   });
-
-  it("checks a dry run without taking the lease or deploying", async () => {
-    await deployGateway();
-    const result = await deployGateway({ dryRun: true, reason: "reconcile" });
-
-    expect(result.dryRunOutput).toContain("Dry run: every-app-gateway");
-    expect(account.deploys).toHaveLength(1);
-  });
 });
 
 describe("per-app Custom Domains", () => {
@@ -875,7 +867,7 @@ describe("per-app Custom Domains", () => {
   });
 });
 
-describe("gateway reconcile", () => {
+describe("reconcileGateway", () => {
   beforeEach(async () => {
     await deployGateway();
   });

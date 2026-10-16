@@ -23,7 +23,7 @@ too, and logs `mcp.oauth.flag_unrecognized`. To turn it off (the CLI sends
 the secret with a redeploy of the gateway its checkout builds):
 
 ```sh
-everyapp gateway secret set MCP_OAUTH_ENABLED
+everyapp secret set MCP_OAUTH_ENABLED --for gateway
 # enter: false
 ```
 
@@ -35,7 +35,7 @@ they work again when the switch is turned back on, unless they were revoked
 or lapsed meanwhile. To turn it back on:
 
 ```sh
-everyapp gateway secret set MCP_OAUTH_ENABLED
+everyapp secret set MCP_OAUTH_ENABLED --for gateway
 # enter: true
 ```
 
@@ -66,7 +66,7 @@ DCR is on by default, because Cursor has no other way in. To allow CIMD
 clients only:
 
 ```sh
-everyapp gateway secret set MCP_DCR_ENABLED
+everyapp secret set MCP_DCR_ENABLED --for gateway
 # enter: false
 ```
 
@@ -77,10 +77,10 @@ until their registration lapses. Set it to `true` to turn DCR back on.
 ## What the gateway needs
 
 All of it ships with the gateway (its `cloudflare.config.ts` and migrations)
-and `everyapp gateway deploy` sets it up; there is nothing to set by hand.
+and `everyapp setup` sets it up; there is nothing to set by hand.
 
 - The `OAUTH_KV` namespace (`every-app-gateway-OAUTH_KV`, provisioned by
-  `everyapp gateway deploy`): grants, tokens, registered clients, consent
+  `everyapp setup`): grants, tokens, registered clients, consent
   transactions, and the hourly sweep's cursor (`purge-cursor`).
 - The `global_fetch_strictly_public` compatibility flag. With it the server
   fetches clients' metadata documents (CIMD) as a request from the internet
@@ -98,14 +98,14 @@ and `everyapp gateway deploy` sets it up; there is nothing to set by hand.
   resuming from its cursor (after three failed runs in a row it starts a
   new sweep). Each run logs one `mcp.maintenance` line; `audit_behind: true`
   (a warning) means more calls arrive than a run deletes.
-- The gateway's migrations (run by `everyapp gateway deploy`), which create
+- The gateway's migrations (run by `everyapp setup`), which create
   `mcp_connections`, `mcp_connection_apps`, `mcp_tool_calls` and
   `rate_limit_counters`.
 - A `GATEWAY_URL` on `https`. It is the OAuth issuer and `<GATEWAY_URL>/mcp`
   the resource, so changing it invalidates every connection; clients ask
   their users to connect again on their next request.
 
-Optional settings (`everyapp gateway secret set <name>`; locally, in
+Optional settings (`everyapp secret set <name> --for gateway`; locally, in
 `.dev.vars`):
 
 | Name                       | Default | What it does                                                                                                                                                                                    |
@@ -114,7 +114,7 @@ Optional settings (`everyapp gateway secret set <name>`; locally, in
 | `MCP_DCR_ENABLED`          | on      | `false` turns dynamic client registration off: only clients with a metadata document connect (above).                                                                                           |
 | `MCP_ALLOWED_ORIGINS`      | none    | Browser origins, besides the gateway's, that may call `/mcp` (comma or space separated), e.g. `http://localhost:6274` for MCP Inspector's direct mode. AI apps call from servers and need none. |
 | `MCP_AUDIT_RETENTION_DAYS` | 90      | Days of `mcp_tool_calls` the cron keeps.                                                                                                                                                        |
-| `MCP_ACCESS_TOKEN_TTL`     | 3600    | Local testing only, in `.dev.vars` (`gateway secret set` refuses it): shorter access tokens, at least 60 seconds, honored only when `GATEWAY_URL` is `http://localhost` or `http://127.0.0.1`. |
+| `MCP_ACCESS_TOKEN_TTL`     | 3600    | Local testing only, in `.dev.vars` (`secret set --for gateway` refuses it): shorter access tokens, at least 60 seconds, honored only when `GATEWAY_URL` is `http://localhost` or `http://127.0.0.1`. |
 
 ## Upgrading from the 0.8.1 server
 

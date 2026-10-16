@@ -4,17 +4,27 @@ import {
   buildUninstallCommand,
 } from "@stricli/auto-complete";
 import { name, version, description } from "../package.json";
-import { appRoutes } from "./commands/app/command";
-import { gatewayRoutes } from "./commands/gateway/commands";
+import { createCommand } from "./commands/create/command";
+import { dbRoutes } from "./commands/db/command";
+import { deleteCommand } from "./commands/delete/command";
+import { deployCommand } from "./commands/deploy/command";
 import { devCommand } from "./commands/dev/command";
+import { secretRoutes } from "./commands/secret/command";
 import { setupCommand } from "./commands/setup/command";
+import { statusCommand } from "./commands/status/command";
+import { workflowsRoutes } from "./commands/workflows/command";
 
 const routes = buildRouteMap({
   routes: {
-    app: appRoutes,
-    dev: devCommand,
-    gateway: gatewayRoutes,
     setup: setupCommand,
+    status: statusCommand,
+    create: createCommand,
+    dev: devCommand,
+    deploy: deployCommand,
+    delete: deleteCommand,
+    secret: secretRoutes,
+    db: dbRoutes,
+    workflows: workflowsRoutes,
     install: buildInstallCommand("everyapp", {
       bash: "__everyapp_bash_complete",
     }),

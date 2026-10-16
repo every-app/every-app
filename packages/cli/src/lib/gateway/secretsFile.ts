@@ -1,13 +1,13 @@
 /**
  * The gateway's secrets. A first deploy generates them and sends them with
  * the upload (`cf deploy --secrets-file`), so the first version already has
- * them. Later deploys send only what `everyapp gateway secret set` sets;
+ * them. Later deploys send only what `everyapp secret set --for gateway` sets;
  * everything else stays as it is on the Worker.
  */
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { EveryAppError } from "@/lib/errors";
 
-/** Optional settings `everyapp gateway secret set` may change. */
+/** Optional settings `everyapp secret set --for gateway` may change. */
 const SETTABLE_GATEWAY_SECRETS = [
   "OPENAI_API_KEY",
   "AI_PROXY_EXTRA_ROUTES",

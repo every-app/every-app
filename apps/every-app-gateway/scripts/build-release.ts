@@ -12,7 +12,7 @@
  *
  * and refuses to ship local state (.cloudflare/state, .dev.vars, keys) or a
  * Build Output that already carries what the deploy patches in per install
- * (resource ids, app bindings, domains). `everyapp gateway deploy` checks
+ * (resource ids, app bindings, domains). `everyapp setup` checks
  * the sha256 before it patches and uploads the release.
  */
 import { spawnSync } from "node:child_process";

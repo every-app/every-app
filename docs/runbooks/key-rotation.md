@@ -14,13 +14,13 @@ After a gateway key rotation, apps that still have the old public key reject
 new identity and public-marker JWTs with `401` responses. This is intentional:
 identity verification fails closed until the app is redeployed.
 
-An app deploy that stops with `IDENTITY_KEY_UNKNOWN` is reading an install
+A deploy that stops with `IDENTITY_KEY_UNKNOWN` is reading an install
 row with no public key (a gateway first deployed by an older CLI): do step 3
 below with the gateway's current `JWT_PUBLIC_KEY`.
 
 ## Rotation
 
-1. Inventory every app registered with the gateway (`everyapp gateway
+1. Inventory every app registered with the gateway (`pnpm everyapp
    status`) and schedule the rotation as a maintenance window.
 2. Generate a new RSA key pair with
    `node apps/every-app-gateway/regenerate-secrets.js`, which emits the exact
@@ -28,13 +28,13 @@ below with the gateway's current `JWT_PUBLIC_KEY`.
    `importPKCS8`) and an SPKI public key (verification calls `importSPKI`),
    RS256, 2048-bit. Keys in other encodings — an OpenSSH public key or a
    PKCS#1 (`BEGIN RSA PRIVATE KEY`) private key — deploy without error and
-   then fail at runtime. Replace both gateway secrets, `JWT_PRIVATE_KEY` and
-   the matching `JWT_PUBLIC_KEY`, in one change: in the Cloudflare dashboard,
-   **Workers & Pages → every-app-gateway → Settings → Variables and
-   Secrets**. Never rotate only one half of the pair.
-3. Record the new public key in the install row, where app deploys read it.
-   Write the request body to a private file (`key.json`, with the PEM's line
-   breaks as `\n`):
+   then fail at runtime. Replace both of the gateway's secrets,
+   `JWT_PRIVATE_KEY` and the matching `JWT_PUBLIC_KEY`, in one change: in the
+   Cloudflare dashboard, **Workers & Pages → every-app-gateway → Settings →
+   Variables and Secrets**. Never rotate only one half of the pair.
+3. Record the new public key in the install row, where the apps' deploys
+   read it. Write the request body to a private file (`key.json`, with the
+   PEM's line breaks as `\n`):
 
    ```json
    {
@@ -51,14 +51,16 @@ below with the gateway's current `JWT_PUBLIC_KEY`.
    CLOUDFLARE_ACCOUNT_ID=<account id> npx cf@1.0.0-beta.14 d1 query <database id> --body @key.json
    ```
 
-   Delete `key.json` afterwards. Until this step is done, app deploys keep
-   handing apps the old key.
+   Delete `key.json` afterwards. Until this step is done, the apps' deploys
+   keep handing apps the old key.
 4. Because the gateway Worker then changed outside everyapp, its next deploy
-   asks for confirmation: run `everyapp gateway reconcile --force` in a
-   terminal and confirm cf's prompt, so later unattended deploys go through
-   again.
+   asks for confirmation: run `pnpm everyapp setup --redeploy` in a terminal
+   and confirm cf's prompt, so the version that serves is one everyapp
+   uploaded and later unattended deploys go through again. (Plain `setup`
+   redeploys it too, since the serving version is no longer the one the
+   install row names; `--redeploy` uploads it whatever `setup` finds.)
 5. From each registered app's directory, run
-   `everyapp app deploy`. This statically injects the new public key into
+   `pnpm everyapp deploy`. This statically injects the new public key into
    that app.
 
 ## Verification

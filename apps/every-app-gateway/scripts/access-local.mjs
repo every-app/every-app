@@ -15,7 +15,7 @@
  *    /cdn-cgi/access/logout forgets you. The paths the runbook says to
  *    bypass pass without the header (the browser's CF_Authorization cookie
  *    still goes along): on the gateway's host /mcp, /mcp/*, /oauth/token,
- *    /oauth/register, /.well-known/* and /api/admin/has-owner; on app hosts
+ *    /oauth/register and /.well-known/*; on app hosts
  *    (<app>.localhost:<proxy port>) /mcp and /mcp/*. With --apps-aud, app
  *    hosts are a separate Access application with that AUD, as the runbook
  *    recommends.
@@ -250,7 +250,6 @@ const GATEWAY_BYPASS = [
   /^\/mcp(\/|$)/,
   /^\/oauth\/(token|register)$/,
   /^\/\.well-known\//,
-  /^\/api\/admin\/has-owner$/,
 ];
 const APP_BYPASS = [/^\/mcp(\/|$)/];
 const COOKIE = "mock_access_email";

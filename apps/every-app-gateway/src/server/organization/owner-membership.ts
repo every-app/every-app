@@ -8,7 +8,7 @@ const OWNER_BOOTSTRAP_ID = "owner";
 const STALE_BOOTSTRAP_MS = 120_000;
 
 export async function hasAnyOwnerMembership(): Promise<boolean> {
-  // Deliberately global across the gateway deployment.
+  // Deliberately global across the whole Gateway install.
   // Bootstrap is a one-time system initialization, not per-organization.
   const ownerMembership = await db.query.members.findFirst({
     columns: { id: true },

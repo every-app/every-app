@@ -14,10 +14,11 @@ user's ID.
    `@every-app/sdk/server` (`apps/todo-app/src/tools.ts`,
    `templates/simple-todo/src/tools.ts`) and passes them to
    `everyApp(handler, { tools })`.
-2. `everyapp app deploy` asks the gateway to snapshot the tool catalog. The
-   gateway fetches it once, over the app's private service binding, and
-   stores it in D1. A redeploy re-syncs it; a tool call that reports a
-   different catalog re-syncs it in the background.
+2. The gateway snapshots the tool catalog the first time the app's tools are
+   used: it fetches it once, over the app's private service binding, and
+   stores it in D1 with the app's version. A redeploy (`everyapp deploy`)
+   changes the version, so the next use re-syncs it; a tool call that
+   reports a different catalog re-syncs it in the background.
 3. The gateway serves the tools from that snapshot twice: at
    `https://<todo-app-host>/mcp` under their own names, and at the gateway's
    own `https://<gateway>/mcp`, the one connector for every app, as

@@ -7,9 +7,10 @@ import * as entrypoint from "./src/server.ts" with { type: "cf-worker" };
 
 // The gateway Worker, for `cf dev` and the release build CI runs
 // (scripts/build-release.ts). It is never deployed from here:
-// `everyapp gateway deploy` patches the release's Build Output with the
-// install's resource ids, app bindings, domains and release stamp, and
-// refuses to upload if any PATCH placeholder survives.
+// `everyapp setup` (and the rebind in `everyapp deploy`) patches the
+// release's Build Output with the install's resource ids, app bindings,
+// domains and release stamp, and refuses to upload if any PATCH
+// placeholder survives.
 const NAME = "every-app-gateway";
 const PATCH = "__EVERYAPP_PATCH__";
 
@@ -21,7 +22,7 @@ const LOCAL_D1_ID = createHash("sha256")
   .slice(0, 32);
 
 // Settings the gateway reads only when they are set. Deployed gateways keep
-// them as plain secrets (`everyapp gateway secret set`), which survive every
+// them as plain secrets (`everyapp secret set --for gateway`), which survive every
 // deploy. In dev the Vite plugin passes a value through only for a declared
 // secret, so the ones set locally are declared.
 const OPTIONAL_SECRETS = [
@@ -158,7 +159,7 @@ export default defineConfig(({ mode }) => {
         BETTER_AUTH_SECRET: bindings.secret(),
         // RS256 keypair for the identity JWTs the perimeter mints per proxied
         // request (kid "everyapp-identity"); apps verify with the public key,
-        // which `everyapp app deploy` builds into them.
+        // which `everyapp deploy` builds into them.
         JWT_PRIVATE_KEY: bindings.secret(),
         JWT_PUBLIC_KEY: bindings.secret(),
         // Which gateway release this Worker runs, patched in by the deploy.

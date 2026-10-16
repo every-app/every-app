@@ -22,10 +22,11 @@ What does the Every App CLI do?
 The CLI turns your app's configuration into real infrastructure. It provisions databases, storage, and workers on your Cloudflare account, deploys code, and runs your local dev environment, so you never manage that by hand.
 
 ```bash
-npx everyapp setup            # Set up the Gateway in your Cloudflare account
-npx everyapp app create       # Scaffold a new app (--deploy ships it too)
-npx everyapp app deploy       # Deploy updates to your app
+npx everyapp create my-app    # Scaffold a new app (--deploy ships it too)
 npx everyapp dev              # Run your app locally behind a local gateway
+npx everyapp deploy           # Deploy your app (the first time, it offers to install the Gateway)
+npx everyapp setup            # Install, upgrade or repair the Gateway
+npx everyapp status           # The Gateway, its apps, and what to fix
 ```
 
 <div className="prompt-block">
@@ -33,7 +34,7 @@ npx everyapp dev              # Run your app locally behind a local gateway
 **Ask your agent:**
 
 ```text
-Explain what the Every App CLI does. How does it provision infrastructure? What happens on `app create` vs `app deploy` vs `dev`?
+Explain what the Every App CLI does. How does it provision infrastructure? What happens on `create` vs `deploy` vs `dev`?
 
 Response Guidelines for LLM:
 - Keep responses succinct so I can ask follow-up questions
@@ -175,7 +176,7 @@ How do I change my database schema?
 </summary>
 <div className="faq-content">
 
-Update your Drizzle schema, then generate and run migrations locally (`pnpm run db:generate`, `pnpm run db:migrate:local`). Test in local dev, then deploy — `everyapp app deploy` runs pending migrations in production as part of the deploy. Keep migrations additive when possible.
+Update your Drizzle schema, then generate and run migrations locally (`pnpm run db:generate`, `pnpm run db:migrate:local`). Test in local dev, then deploy — `everyapp deploy` runs pending migrations in production as part of the deploy. Keep migrations additive when possible.
 
 <div className="prompt-block">
 
@@ -217,7 +218,7 @@ How do I add an environment variable or secret?
 </summary>
 <div className="faq-content">
 
-Local development reads `.dev.vars`, for secrets your `cloudflare.config.ts` declares in development (as Chef does for its OpenAI key). A deployed app reads secrets from its Worker: set one with `npx everyapp app secret set <NAME>` from the app's directory, which deploys the app with the secret in the same version; later deploys keep it. Declare the names in `cloudflare.config.ts` with `everyAppWorker({ secrets: [...] })`, so local dev passes them through from `.dev.vars`. (A secret set in the Cloudflare dashboard works too, but the Worker then changed outside everyapp, so the next `everyapp app deploy` asks you to confirm in a terminal.)
+Local development reads `.dev.vars`, for secrets your `cloudflare.config.ts` declares in development (as Chef does for its OpenAI key). A deployed app reads secrets from its Worker: set one with `npx everyapp secret set <NAME>` from the app's directory, which deploys the app with the secret in the same version; later deploys keep it. Declare the names in `cloudflare.config.ts` with `everyAppWorker({ secrets: [...] })`, so local dev passes them through from `.dev.vars`. (A secret set in the Cloudflare dashboard works too, but the Worker then changed outside everyapp, so the next `everyapp deploy` asks you to confirm in a terminal.)
 
 Keep names identical in both places, and never hardcode secret fallbacks in app code.
 

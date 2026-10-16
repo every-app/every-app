@@ -5,6 +5,7 @@
  * person at the other end: the gateway already serves the hostname, and a
  * browser works as soon as the certificate is there.
  */
+import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { probeHttps } from "./https";
 
@@ -90,7 +91,7 @@ export async function waitForCertificates({
         type: "warning",
         code: "CERT_PENDING",
         step,
-        message: `${pending.map((host) => `https://${host}`).join(", ")} ${pending.length === 1 ? "has" : "have"} no certificate after ${elapsed(waited)}. It usually comes within five minutes; the gateway serves ${pending.length === 1 ? "it" : "them"} as soon as it does. If it never comes, check the zone's CAA records allow Cloudflare's certificate authorities. Check later with \`everyapp gateway status\`.`,
+        message: `${pending.map((host) => `https://${host}`).join(", ")} ${pending.length === 1 ? "has" : "have"} no certificate after ${elapsed(waited)}. It usually comes within five minutes; the gateway serves ${pending.length === 1 ? "it" : "them"} as soon as it does. If it never comes, check the zone's CAA records allow Cloudflare's certificate authorities. Check later with \`${CLI} status\`.`,
         data: { hosts: pending },
       });
       break;

@@ -50,7 +50,7 @@ export async function makeCfTempDir(prefix: string): Promise<string> {
 }
 
 // Far longer than a run lives: an unattended deploy times out after 15
-// minutes, and a gateway deploy that waits for the lease, migrates and
+// minutes, and a deploy of the gateway that waits for the lease, migrates and
 // deploys three times is still well under a day.
 const STALE_MS = 24 * 60 * 60_000;
 

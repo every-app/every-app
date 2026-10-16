@@ -56,7 +56,7 @@ pnpm run db:migrate:local
 pnpm run deploy
 ```
 
-Deploy only with `pnpm run deploy` (`everyapp app deploy`). A production build
-needs deploy inputs that only `everyapp app deploy` provides, so `cf build` and
+Deploy only with `pnpm run deploy` (`everyapp deploy`). A production build
+needs deploy inputs that only `everyapp deploy` provides, so `cf build` and
 `cf deploy` on their own refuse to build for production. `pnpm build` makes a
 development build to check that the app compiles.

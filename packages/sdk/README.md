@@ -24,7 +24,7 @@ For full API reference and usage guides, see the [Embedded SDK documentation](ht
   }));
   ```
 
-  Production builds read `.everyapp/deploy.json`, which only `everyapp app deploy` writes, so deploy with `everyapp app deploy` rather than `cf deploy`.
+  Production builds read `.everyapp/deploy.json`, which only `everyapp deploy` writes, so deploy with `everyapp deploy` rather than `cf deploy`.
 
   `localD1Path(root, id)` is the sqlite file `cf dev` keeps the local D1 database `id` in (`env.DB.id` of a development `everyAppWorker()`, or `localD1Id(workerName, binding)`), for drizzle-kit studio.
 
@@ -52,7 +52,7 @@ export default defineConfig((ctx) => ({
   `export default { ...everyApp(handler, { tools }), scheduled }`. A
   scheduled run has no user (identity is per request). Deploys keep the
   triggers; an app can't declare routes or domains.
-- **Secrets.** `everyapp app secret set GITHUB_TOKEN` deploys the app
+- **Secrets.** `everyapp secret set GITHUB_TOKEN` deploys the app
   with the secret in the same version, and later deploys keep it, so
   production builds don't declare it. In dev, put it in `.dev.vars`:
   `everyAppWorker()` declares it only when it is set there, since the Vite
@@ -113,7 +113,7 @@ export default everyApp(handler, { tools });
   `{ jsonSchema, validate }` pair works too. Both describe objects: a
   `z.object`, or a union of objects. A tool whose schema can't be described
   that way is left out of the catalog (the other tools keep working), and
-  `everyapp app deploy` prints why.
+  `everyapp deploy` prints why.
 - Throw `ToolError` for messages the model may read. Other errors are logged
   in the app and reported as "Internal error in <app> (ref <call id>)".
 - A handler's second argument carries `user`, `env` (typed as

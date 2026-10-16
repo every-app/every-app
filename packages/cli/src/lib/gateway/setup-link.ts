@@ -11,7 +11,7 @@ import type { D1Database } from "@/lib/cf/d1";
 
 const SETUP_LINK_TTL_MS = 24 * 60 * 60 * 1000;
 
-export interface SetupLink {
+interface SetupLink {
   /** The `owner_setup_tokens` row, to watch for the claim. */
   id: string;
   url: string;
@@ -28,11 +28,6 @@ export interface GatewayOwner {
 
 const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
-
-/** Whether the gateway has been claimed, read straight from its D1. */
-export async function gatewayHasOwner(db: D1Database): Promise<boolean> {
-  return (await readOwner(db)) !== null;
-}
 
 const OWNERS = `SELECT users.email AS email, organizations.name AS organization_name
 FROM members
@@ -166,73 +161,24 @@ export async function waitForSetupLink({
   }
 }
 
-/** Whether a person is watching this run: a terminal, and not CI. */
-function isInteractiveRun(): boolean {
-  return Boolean(process.stdout.isTTY) && !process.env["CI"];
-}
-
 /**
  * Whether a run may show an owner setup link, which makes whoever opens it
  * the gateway's owner: to a person at its terminal, or through the --json
  * events an agent on this machine hands on to one (`relayed`), but never
  * into CI or piped output, where it would sit in logs for anyone who can
- * read them, unless `printSetupLink` (`--printSetupLink`) asks for it.
+ * read them.
  */
 export function maySetupLinkBeShown({
-  printSetupLink = false,
   terminal = Boolean(process.stdout.isTTY),
   relayed = false,
 }: {
-  printSetupLink?: boolean;
   /** A person watches this run's terminal. */
   terminal?: boolean;
   /** The run's --json events go to an agent that hands the link on. */
   relayed?: boolean;
 } = {}): boolean {
-  if (printSetupLink) return true;
   if (process.env["CI"]) return false;
   return terminal || relayed;
-}
-
-/**
- * The setup link a deploy should show, or null: the gateway already has an
- * owner, or the deploy runs unattended (CI, output piped to a log), where the
- * link would sit in build logs for anyone who can read them. Then no link is
- * minted (an earlier unused one keeps working) and `onUnattended` says how
- * to get one, unless `printSetupLink` asks for it anyway.
- */
-export async function setupLinkForDeploy({
-  db,
-  gatewayUrl,
-  printSetupLink = false,
-  onUnattended,
-}: {
-  db: D1Database;
-  gatewayUrl: string;
-  printSetupLink?: boolean;
-  onUnattended: () => void;
-}): Promise<SetupLink | null> {
-  if (await gatewayHasOwner(db)) return null;
-
-  if (!maySetupLinkBeShown({ printSetupLink })) {
-    onUnattended();
-    return null;
-  }
-  return mintSetupLink({ db, gatewayUrl });
-}
-
-/** The link as a person reads it: what it does, the link, how long it works. */
-export function describeSetupLink(link: SetupLink): string {
-  return [
-    "Create the owner account with this one-time setup link:",
-    `  ${link.url}`,
-    `It works once and expires ${link.expiresAt.toLocaleString()}. Treat it like a password. Lost it? Run \`everyapp gateway claim-link\` for a new one.`,
-  ].join("\n");
-}
-
-/** Open the link in this machine's browser, when a person watches the run. */
-export async function openSetupLinkHere(link: SetupLink): Promise<void> {
-  if (isInteractiveRun()) await openInBrowser(link.url);
 }
 
 export async function openInBrowser(url: string): Promise<void> {

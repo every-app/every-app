@@ -5,7 +5,7 @@
  * checks, the actor, tombstones and their revival, and the live wait.
  */
 import { beforeEach, describe, expect, it } from "vitest";
-import { waitForLive } from "@/commands/app/deploy/steps/waitForLive";
+import { waitForLive } from "@/commands/deploy/steps/waitForLive";
 import { cfD1Database } from "@/lib/cf/d1";
 import { FakeCf } from "@/lib/cf/fakeCf";
 import { createNdjsonSink } from "@/lib/output/events";

@@ -295,6 +295,38 @@ export class FakeCloudflare {
           }),
         };
       })
+      .on(["workers", "secrets", "list"], (call) => {
+        const worker = this.workers.get(flag(call.args, "--worker")!);
+        if (!worker) {
+          return cfError("This Worker does not exist on your account. [code: 10007]");
+        }
+        return {
+          stdout: JSON.stringify(
+            Object.keys(worker.secrets).map((name) => ({ name, type: "secret_text" })),
+          ),
+        };
+      })
+      // Like the API: a new version of the live one, without the secret.
+      .on(["workers", "secrets", "delete"], (call) => {
+        const declined = unconfirmed(call, "This will permanently delete the Worker script secret.");
+        if (declined) return declined;
+        const workerName = flag(call.args, "--worker")!;
+        const worker = this.workers.get(workerName);
+        if (!worker) {
+          return cfError("This Worker does not exist on your account. [code: 10007]");
+        }
+        const name = call.args[3]!;
+        if (!(name in worker.secrets)) {
+          return cfError(`Secret ${name} not found. [code: 10056]`);
+        }
+        const { [name]: _deleted, ...secrets } = worker.secrets;
+        this.workers.set(workerName, {
+          ...worker,
+          versions: [...worker.versions, `${workerName}-api-${(this.counter += 1)}`],
+          secrets,
+        });
+        return { stdout: "{}" };
+      })
       .on(["workers", "delete"], (call) => {
         const declined = unconfirmed(call, "This will permanently delete the Worker and its associated versions and deployments.");
         if (declined) return declined;

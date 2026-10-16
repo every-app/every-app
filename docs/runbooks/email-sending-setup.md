@@ -32,8 +32,9 @@ Sending**, choose **Onboard Domain**, then **Add records and onboard**.
 
 ## Sender configuration
 
-Set these sender values on the gateway Worker (`everyapp gateway secret
-set EMAIL_FROM`, then `EMAIL_FROM_NAME`) or in the Docker gateway `.env`:
+Set these sender values on the gateway Worker (`pnpm everyapp secret set
+EMAIL_FROM --for gateway`, then `EMAIL_FROM_NAME`) or in the Docker gateway
+`.env`:
 
 - `EMAIL_FROM`: the sender address, for example `noreply@example.com`
 - `EMAIL_FROM_NAME`: the display name, for example `Every App`
@@ -56,9 +57,9 @@ unless you intentionally want REST to take precedence over its binding.
    `npx cf email-sending subdomains list -z example.com` gives its id, and
    `npx cf email-sending subdomains dns get <id> -z example.com` the records
    it expects.
-2. `everyapp gateway secret set` redeploys the gateway with each value; for
-   Docker, restart the gateway after setting the sender and REST values in
-   `.env`.
+2. `everyapp secret set … --for gateway` redeploys the gateway with each
+   value; for Docker, restart the gateway after setting the sender and REST
+   values in `.env`.
 3. Request a password reset and send an organization invitation to addresses
    you control.
 4. Confirm both messages arrive and check Worker logs for

@@ -26,7 +26,7 @@ Pausing removed what only a published CLI needs. Bring back:
 - **The CLI's use of that bundle:** the gateway release resolved as
   `--release`, then the bundled tarball, then a build from the checkout.
   Reconcile fell back to the bundled release when the live one wasn't cached
-  in KV, and `gateway status` compared the live release with it. All of that
+  in KV, and the Gateway's status command compared the live release with it. All of that
   is gone now, not only paused: the checkout is the one source of the
   Gateway, the downgrade guard orders releases by when their sources were
   committed, and `status` compares the checkout's tree hash with the install
@@ -35,7 +35,7 @@ Pausing removed what only a published CLI needs. Bring back:
   cache that redeploys the live release): design that when publishing
   resumes (`docs/cli-redesign.md` §6).
 - **Onboarding:** `everyapp setup` deployed a starter app (`--dir`,
-  `--no-starter`), and `app create` copied the bundled template, or cloned
+  `--no-starter`), and `create` copied the bundled template, or cloned
   the public repository for it.
 - **The cloneable apps and the template:** `@every-app/sdk` by semver range
   (with `linkWorkspacePackages: true` at the root), their own

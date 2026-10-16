@@ -17,7 +17,7 @@ gateway started by `pnpm dev`.
 
 The Worker is defined in `cloudflare.config.ts`, which builds it from
 `everyapp.config.ts` (D1, KV and the `UserSyncDO` Durable Object) with
-`everyAppWorker()`. Deploy only with `pnpm run deploy` (`everyapp app deploy`).
+`everyAppWorker()`. Deploy only with `pnpm run deploy` (`everyapp deploy`).
 
 ## Agent tools (MCP)
 

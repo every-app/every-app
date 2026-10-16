@@ -4,7 +4,7 @@ import { EveryAppError } from "@/lib/errors";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 
-/** The same step `everyapp app d1 migrate --local` reports. */
+/** The same step `everyapp db migrate` reports. */
 const STEP = "migrations.local";
 
 interface ApplyDevMigrationsOptions {

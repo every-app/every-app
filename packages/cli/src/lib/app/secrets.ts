@@ -2,7 +2,7 @@ import { EveryAppError } from "@/lib/errors";
 
 /**
  * The deploy sends GATEWAY_URL and EVERY_APP_ORG_ID itself and builds in
- * the identity settings and the gateway binding, so an app secret can't
+ * the identity settings and the gateway binding, so a secret of the app can't
  * take those names, nor any name in the platform's namespaces.
  */
 const RESERVED_NAMES = new Set(["GATEWAY_URL", "CF_VERSION_METADATA"]);

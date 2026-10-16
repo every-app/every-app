@@ -1,6 +1,6 @@
 /**
  * The starter app, `templates/simple-todo` in the checkout this CLI runs
- * from, and where `everyapp app create` puts a copy of it: in the
+ * from, and where `everyapp create` puts a copy of it: in the
  * checkout's apps/, a workspace package like the example apps, when it
  * runs inside the checkout; in the current directory anywhere else.
  */
@@ -9,7 +9,7 @@ import path from "node:path";
 import {
   updateEveryappManifestId,
   updatePackageJson,
-} from "@/commands/app/create/steps/updateConfiguration";
+} from "@/commands/create/steps/updateConfiguration";
 import { isInCheckout } from "@/lib/checkout";
 import { copyDirectory } from "@/lib/file-operations";
 

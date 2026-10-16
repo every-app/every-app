@@ -92,7 +92,7 @@ function Setup() {
             or create a new one with the Cloudflare login that deployed it:
           </p>
           <CodeBlock
-            code="everyapp gateway claim-link"
+            code="pnpm everyapp setup"
             successMessage="Command copied"
           />
         </AuthCard>

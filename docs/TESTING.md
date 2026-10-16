@@ -24,7 +24,7 @@ pnpm test          # runs `pnpm -r --no-bail run test` across all packages
 | `packages/sdk` | `src/**/*.test.ts` (49) | fail-closed identity verification: alg/kid pinning, `alg:none`, algorithm-confusion (HS256-with-public-key), wrong key, expiry, audience mismatch, missing claims, public-route handling, `everyApp()` handler wrapper |
 | `apps/every-app-gateway` | `src/v2/**/*.test.ts` (70) | public-route glob matching incl. path-traversal + percent-encoding (`/p/%2e%2e/__everyapp/...`), header stripping, security headers, CSRF default-deny, JWT mint, Host parsing, the full `handleGatewayRequest` proxy core, the dev gateway-lite, and an end-to-end perimeter↔real-SDK integration test |
 | `apps/every-app-gateway` | legacy `src/**/*.test.ts` | pre-existing gateway tests (still green) |
-| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the gateway and app deploy pipelines end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1 with the gateway's real migrations, Build Outputs validated with cf's schema) and the deployed gateway Worker as far as the CLI meets it (`src/test/gatewayWorker.ts`: hostnames that answer, activation on the first request, the owner claim), the app registry the CLI writes in D1 and the live wait (`lib/gateway/registry.test.ts`), finding the Gateway through the login's accounts (`lib/gateway/discover.test.ts`: one, several, a token scoped to one, none, a wrong `--account-id` or `--gateway`), the Gateway build cache by tree hash and the release order by commit time (`lib/gateway/checkoutRelease.test.ts`, in a scratch git repository with a fake build), the downgrade guard and one upload per bind (`lib/gateway/apply.test.ts`), `setup`'s owner wait and `gateway status` (with `upToDate` against a stand-in checkout), the app policy check, leases, remote migrations; what a person sees (`lib/output/events.test.ts`: milestones rendered from event data, problems with their next command) and that `app deploy --json` writes nothing but NDJSON to stdout, with a real child's output in its log file (`commands/app/deploy/stdout.test.ts`) |
+| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the Gateway pipeline (`setup`) and the app pipeline (`deploy`) end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1 with the gateway's real migrations, Build Outputs validated with cf's schema) and the deployed gateway Worker as far as the CLI meets it (`src/test/gatewayWorker.ts`: hostnames that answer, activation on the first request, the owner claim), the app registry the CLI writes in D1 and the live wait (`lib/gateway/registry.test.ts`), finding the Gateway through the login's accounts (`lib/gateway/discover.test.ts`: one, several, a token scoped to one, none, a wrong `--account-id` or `--gateway`), the Gateway build cache by tree hash and the release order by commit time (`lib/gateway/checkoutRelease.test.ts`, in a scratch git repository with a fake build), the downgrade guard and one upload per bind (`lib/gateway/apply.test.ts`), `setup` (install, upgrade, repair, the owner wait) and `status` (with `upToDate` against a stand-in checkout), `deploy`'s offer to install the Gateway, `secret unset`, the app policy check, leases, remote migrations; what a person sees (`lib/output/events.test.ts`: milestones rendered from event data, problems with their next command) and that `deploy --json` writes nothing but NDJSON to stdout, with a real child's output in its log file (`commands/deploy/stdout.test.ts`), and the everyapp skill `create` copies into a new app (`lib/app/skill.test.ts`) |
 
 Run a single layer:
 
@@ -51,9 +51,9 @@ Run a single layer:
 > `/api/session-token`, postMessage/expo machinery, `app_url`/`dev_url`
 > columns) is **deleted**, and the production worker entry
 > (`apps/every-app-gateway/src/server.ts`) now routes app subdomains through
-> the v2 perimeter; `everyapp app deploy` ships private workers and
-> `everyapp gateway deploy --domain` (or `everyapp setup`) publishes the gateway
-> host and each app host as Workers Custom Domains. Remaining
+> the v2 perimeter; `everyapp deploy` ships private workers and
+> `everyapp setup --domain` publishes the gateway host and each app host as
+> Workers Custom Domains. Remaining
 > follow-up: migrate `apps/workout-tracker`, `apps/chef`, and `templates/*` to
 > the v2 SDK/manifest (todo-app is migrated), per Phase 3 of
 > `docs/architecture-v2-recommendation.md §6`. The v2 model is proven
@@ -382,7 +382,7 @@ production.
    full list on every deploy, and holds the RS256 keypair (`JWT_PRIVATE_KEY` / `JWT_PUBLIC_KEY`, kid
    `everyapp-identity`).
 2. **Each app** is deployed PRIVATE from its manifest:
-   - `everyapp app deploy` builds the Worker `cloudflare.config.ts` defines
+   - `everyapp deploy` builds the Worker `cloudflare.config.ts` defines
      from `everyapp.config.ts` (`everyAppWorker()`) with `workersDev:false`,
      `previewUrls:false`, **no routes**, and refuses a built Worker that
      differs;
@@ -398,7 +398,7 @@ production.
      checkout builds (from the build cache under `node_modules/.cache/everyapp`
      when its sources haven't changed) with the registry's full list of apps,
      and makes it `active` on the first request that reaches it (the deploy's
-     live wait sends it); `everyapp gateway status` shows whether the live
+     live wait sends it); `everyapp status` shows whether the live
      bindings match, and whether the live release was built from this
      checkout (`upToDate`), from D1, cf and the checkout alone.
 
@@ -441,18 +441,19 @@ curl -sI https://todo.example.com/ | grep -iE \
 ```bash
 # The gateway reconstructs bindings from the registry on every deploy.
 # Verify the app row exists and is active:
-everyapp doctor        # (deferred in v2.0) — until then, inspect the apps table:
-#   SELECT app_id, hostname, worker_name, tier, status FROM apps;
+pnpm everyapp status --json   # data.apps: each app's status and whether the live gateway binds it
+# or inspect the apps table directly:
+#   SELECT app_slug, hostname, worker_name, status FROM apps;
 ```
 
-### Roll back a bad gateway deploy
+### Roll back a bad Gateway release
 
-The gateway is the single public worker, so a bad gateway deploy is the only
-change that can affect every app at once. The proxy core is small and
+The gateway is the single public worker, so a bad Gateway release is the
+only change that can affect every app at once. The proxy core is small and
 slow-changing; recover with Cloudflare’s instant rollback:
 
 ```bash
-# List recent gateway deployments and send all traffic back to a good version:
+# List the gateway Worker's recent deployments and send all traffic back to a good version:
 npx cf workers deployments list --worker every-app-gateway
 npx cf workers deployments create --worker every-app-gateway \
   --strategy percentage --versions '[{"version_id":"<VERSION_ID>","percentage":100}]'
@@ -468,7 +469,7 @@ put live, which stays the truth, so the next Gateway deploy or rebind puts
 the checkout's Gateway back (and, since the Worker then serves a version
 everyapp didn't record, an unattended one may stop for a terminal). For a
 lasting rollback, check out the good commit and run
-`everyapp setup --allow-downgrade`.
+`pnpm everyapp setup --allow-downgrade`.
 
 Sub-apps are unaffected by a rollback (their workers and the registry are
 unchanged); only the perimeter reverts. Because identity tokens live ≤120s,

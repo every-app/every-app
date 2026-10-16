@@ -207,17 +207,17 @@ identity providers, and copy the **Client ID**, **Client secret** and
 ### 2. Give them to the gateway
 
 ```sh
-everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_ISSUER
+everyapp secret set CLOUDFLARE_ACCESS_OIDC_ISSUER --for gateway
 # https://acme.cloudflareaccess.com/cdn-cgi/access/sso/oidc/<client id>
-everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_CLIENT_ID
-everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_CLIENT_SECRET
+everyapp secret set CLOUDFLARE_ACCESS_OIDC_CLIENT_ID --for gateway
+everyapp secret set CLOUDFLARE_ACCESS_OIDC_CLIENT_SECRET --for gateway
 # Optional: the button's label (default "Cloudflare Access")
-everyapp gateway secret set CLOUDFLARE_ACCESS_OIDC_LABEL
+everyapp secret set CLOUDFLARE_ACCESS_OIDC_LABEL --for gateway
 # Company SSO
 ```
 
 The sign-in page now shows **Continue with Company SSO**, and so does the
-mobile app. Secrets survive `everyapp gateway deploy`.
+mobile app. Secrets survive every deploy of the gateway (`everyapp setup`, and the rebinds of `everyapp deploy`).
 
 The mobile app runs the sign-in in the system browser and gets its session
 from the gateway in exchange for a one-time code and a secret only the app
@@ -320,11 +320,11 @@ app host's Access cookie is then a gateway login too.
 ### 2. Give the gateway your team domain and the AUD tags
 
 ```sh
-everyapp gateway secret set CLOUDFLARE_ACCESS_TEAM_DOMAIN
+everyapp secret set CLOUDFLARE_ACCESS_TEAM_DOMAIN --for gateway
 # acme.cloudflareaccess.com
-everyapp gateway secret set CLOUDFLARE_ACCESS_APPS_AUD
+everyapp secret set CLOUDFLARE_ACCESS_APPS_AUD --for gateway
 # the apps application's AUD tag (several: comma separated)
-everyapp gateway secret set CLOUDFLARE_ACCESS_AUD
+everyapp secret set CLOUDFLARE_ACCESS_AUD --for gateway
 # the gateway application's AUD tag
 ```
 
@@ -377,11 +377,11 @@ the outer ring set, no session counts without Access's word for it.
 ```sh
 # People with these email domains join as members, with the apps marked
 # "Available to everyone".
-everyapp gateway secret set CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS
+everyapp secret set CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS --for gateway
 # acme.com, acme.io
 
 # Outer ring only: everyone your Access policy lets in joins.
-everyapp gateway secret set CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN
+everyapp secret set CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN --for gateway
 # everyone
 ```
 
@@ -391,7 +391,7 @@ Access using the invited email.
 ## Turning passwords off
 
 ```sh
-everyapp gateway secret set EMAIL_PASSWORD_SIGN_IN
+everyapp secret set EMAIL_PASSWORD_SIGN_IN --for gateway
 # false
 ```
 
@@ -405,7 +405,7 @@ everyapp gateway secret set EMAIL_PASSWORD_SIGN_IN
 - The setup claim on a fresh gateway still works.
 - To turn passwords back on (say Access is down or misconfigured), set it to
   `true`; it takes effect once the redeploy is live:
-  `everyapp gateway secret set EMAIL_PASSWORD_SIGN_IN`.
+  `everyapp secret set EMAIL_PASSWORD_SIGN_IN --for gateway`.
 
 ## Test locally
 
@@ -467,9 +467,11 @@ The automated tests cover the same ground without a browser:
 
   (Deleting `CLOUDFLARE_ACCESS_AUD` turns the outer ring off at once if you
   need in first; Access still guards the hostnames, and passwords work as
-  without it. cf uploads a new version without the secret, so run the next
-  `everyapp gateway` command from a terminal: it asks before replacing a
-  version it didn't upload.)
+  without it. `pnpm everyapp secret unset CLOUDFLARE_ACCESS_AUD --for gateway`
+  deletes it and redeploys the gateway from your checkout. Without a
+  checkout at hand, delete it with cf, which uploads a new version without
+  the secret, then run `pnpm everyapp setup` from a terminal later: it asks
+  before replacing a version it didn't upload.)
 
   ```sh
   npx cf@1.0.0-beta.14 workers secrets delete CLOUDFLARE_ACCESS_AUD --worker every-app-gateway

@@ -9,12 +9,10 @@ import {
   type SqliteD1,
 } from "@/test/sqliteD1";
 import {
-  gatewayHasOwner,
   maySetupLinkBeShown,
   mintSetupLink,
   readOwner,
   readSetupLink,
-  setupLinkForDeploy,
   waitForSetupLink,
 } from "./setup-link";
 
@@ -154,7 +152,6 @@ describe("waitForSetupLink", () => {
 
 describe("readOwner", () => {
   it("reads owner memberships from D1", async () => {
-    await expect(gatewayHasOwner(db())).resolves.toBe(false);
     await expect(readOwner(db())).resolves.toBeNull();
 
     sqlite.sqlite.exec(`
@@ -162,7 +159,6 @@ describe("readOwner", () => {
       INSERT INTO users (id, name, email, email_verified, created_at, updated_at) VALUES ('u', 'U', 'u@x.co', 0, 0, 0);
       INSERT INTO members (id, organization_id, user_id, role, created_at) VALUES ('m', 'org', 'u', 'owner', 0);
     `);
-    await expect(gatewayHasOwner(db())).resolves.toBe(true);
     await expect(readOwner(db())).resolves.toEqual({ email: "u@x.co", organizationName: "Org" });
   });
 });
@@ -170,7 +166,7 @@ describe("readOwner", () => {
 describe("maySetupLinkBeShown", () => {
   afterEach(() => vi.unstubAllEnvs());
 
-  it("shows the link to a terminal or an agent on this machine, never into CI unless asked", () => {
+  it("shows the link to a terminal or an agent on this machine, never into CI", () => {
     vi.stubEnv("CI", "");
     expect(maySetupLinkBeShown({ terminal: true })).toBe(true);
     // `setup --json`: an agent hands the link on to the person it works for.
@@ -180,70 +176,5 @@ describe("maySetupLinkBeShown", () => {
 
     vi.stubEnv("CI", "true");
     expect(maySetupLinkBeShown({ terminal: true, relayed: true })).toBe(false);
-    expect(
-      maySetupLinkBeShown({
-        terminal: false,
-        relayed: true,
-        printSetupLink: true,
-      }),
-    ).toBe(true);
-  });
-});
-
-describe("setupLinkForDeploy", () => {
-  const isTTY = process.stdout.isTTY;
-  const deploy = (printSetupLink?: boolean, onUnattended = vi.fn()) =>
-    setupLinkForDeploy({
-      db: db(),
-      gatewayUrl: "https://gateway.example.com",
-      printSetupLink,
-      onUnattended,
-    });
-
-  function runIn(terminal: boolean, ci: boolean) {
-    Object.defineProperty(process.stdout, "isTTY", {
-      value: terminal,
-      configurable: true,
-    });
-    vi.stubEnv("CI", ci ? "true" : "");
-  }
-
-  afterEach(() => {
-    Object.defineProperty(process.stdout, "isTTY", {
-      value: isTTY,
-      configurable: true,
-    });
-    vi.unstubAllEnvs();
-  });
-
-  it("mints the link for someone at a terminal", async () => {
-    runIn(true, false);
-
-    const link = await deploy();
-    expect(link?.url).toMatch(/\/setup#token=est_/);
-    expect(tokens()).toHaveLength(1);
-  });
-
-  it("never mints a link into CI or piped logs, only says how to get one", async () => {
-    for (const [terminal, ci] of [
-      [true, true],
-      [false, false],
-    ] as const) {
-      runIn(terminal, ci);
-      const onUnattended = vi.fn();
-
-      await expect(deploy(false, onUnattended)).resolves.toBeNull();
-      expect(onUnattended).toHaveBeenCalledOnce();
-    }
-    // Nothing minted, so a link the deployer already has keeps working.
-    expect(tokens()).toEqual([]);
-  });
-
-  it("prints the link in CI when asked to", async () => {
-    runIn(false, true);
-
-    await expect(deploy(true)).resolves.toMatchObject({
-      url: expect.stringContaining("/setup#token=est_"),
-    });
   });
 });

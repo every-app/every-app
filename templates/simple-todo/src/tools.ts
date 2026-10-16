@@ -1,6 +1,6 @@
 /**
  * The starter's agent tools. The Every App gateway snapshots this catalog
- * when the app deploys and serves it to MCP clients (Claude, Cursor, …) at
+ * once the app is deployed, and serves it to MCP clients (Claude, Cursor, …) at
  * `https://<app-host>/mcp`; the app itself never speaks MCP.
  *
  * Every call arrives with the verified user, and every query is scoped to

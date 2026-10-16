@@ -1,0 +1,35 @@
+---
+name: everyapp
+description: Create, run, deploy and manage private web apps on Cloudflare with everyapp (Every App). Use before running any everyapp command, to deploy an app, set a secret, query its database or check the Gateway.
+---
+
+everyapp: self-hosted platform for private web apps on Cloudflare. While
+publishing is paused the command is `pnpm everyapp` (never `npx everyapp`).
+
+Pass --json. One JSON event per line; "done" = success; exit 2 = show the
+user the last action_required (url, code), then run its data.rerun (the same
+command, unless it names another); exit 1 = show the error; if data.authorize
+is set, ask before using data.rerun. waiting: true = keep reading (up to 15
+min: device login, owner link).
+
+State:   pnpm everyapp status --json   (data.fixes says what to run when something is off)
+Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair)
+New app: pnpm everyapp create <id> --json   then cd into it and edit src/; the
+         manifest is everyapp.config.ts
+Run:     pnpm everyapp dev   (long-running, human-facing: start it in the
+         background and read the printed URL; no --json)
+Ship:    pnpm everyapp deploy --json   (from the app directory; safe to repeat;
+         also upgrades the Gateway to this checkout when it has to rebind).
+         No Gateway yet: action_required install_gateway; ask the user, run
+         its data.rerun (setup), then deploy again.
+Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--local] --json
+Secrets: pnpm everyapp secret set NAME --from-env VAR -y --json   (redeploys the app)
+         secret unset NAME, secret list; add --for gateway for the Gateway's settings
+Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
+         --allow-delete-*, --allow-downgrade, or --yes to delete unless the
+         user asked.
+
+Only a person can: approve the Cloudflare login, open the owner link, pick
+a workers.dev subdomain, pay for Workers Paid, buy a domain. There are no
+tokens to paste.
+Full reference: https://everyapp.com/docs/reference/cli

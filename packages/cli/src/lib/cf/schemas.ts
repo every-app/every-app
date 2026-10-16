@@ -66,6 +66,14 @@ export const WorkerDeploymentsOutput = z
   ])
   .transform((value) => (Array.isArray(value) ? value : value.deployments));
 
+/** `cf workers secrets list`: names (and types), never values. */
+export const WorkerSecretListOutput = z
+  .union([
+    z.looseObject({ result: z.array(z.looseObject({ name: z.string() })) }),
+    z.array(z.looseObject({ name: z.string() })),
+  ])
+  .transform((value) => (Array.isArray(value) ? value : value.result));
+
 /** `cf zones list`. */
 export const ZoneListOutput = z.array(
   z.looseObject({

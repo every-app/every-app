@@ -14,7 +14,7 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] **Old invites.** Invites are now one-time links, so invites emailed before #268 stop working.
 - [ ] **Setup link expiring mid-wait.** If the owner setup link stops working while `everyapp setup` waits, setup doesn't make a new one.
 - [ ] **RepoLens badges.** Badges are public even for private repos. Keep that, or return 404 for private ones?
-- [ ] **RepoLens access.** Deploy it the first time with `--access everyone` if the whole org should see it.
+- [ ] **RepoLens access.** Set `access: "everyone"` in its manifest before its first deploy if the whole org should see it (`--access` went with the flat command tree).
 - [ ] **RepoLens retry backfill.** Left out of its MCP tools, because it deletes fetched history.
 - [ ] **TanStack Start 1.169.** The platform's apps are pinned to Start 1.168.61, because 1.169 needs Vite 8. RepoLens already runs 1.169 on Vite 8, so the upgrade looks safe.
 - [ ] **Gateway UI scope.** Only the gateway moved to OpenSEO's shadcn design system. The todo app, Chef, the workout tracker, the simple-todo template and the landing page still use daisyUI or their own styles.
@@ -27,29 +27,38 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] **The organization before an owner.** A deploy to a Gateway with no organization makes one named after the Cloudflare account (slug from that name, else "default"). Its org key, and so every app's Worker and resource names (`every-acme-todo`), comes from that slug for good, even after the claim renames the organization to the owner's name.
 - [ ] **Deployer access needs a verified email.** A new app is granted to the `users` row whose verified email is the cf login's. Password accounts are never verified (only Access sign-in verifies), so without Access "private to you" means owners and admins only.
 - [ ] **API-token deploys.** With `CLOUDFLARE_API_TOKEN` set the actor is `api-token:<account id>`, and nobody gets the new app as its deployer, even if cf reports the token's user's email.
-- [ ] **`--no-wait-cert` skips the whole live wait.** The app then goes live on its first visit. Rename it with the flat command tree (`--no-wait`?).
+- [ ] **`--no-wait` skips the whole live wait.** The app then goes live on its first visit. (Named after the certificate wait until the flat command tree.)
 - [ ] **The live wait's outcomes.** No certificate after 10 minutes is a warning and exit 0 (as the certificate wait was); the Gateway answering for 10 minutes without activating the app is `APP_NOT_LIVE` (exit 1, retryable).
-- [ ] **No SDK or CLI version check on app deploys.** `minSdk` and `minCli` came from `/api/deploy/whoami`. The redesign's "a checkout older than the live Gateway refuses" (step 3) may be enough; else read the checkout's build constants.
+- [ ] **No SDK or CLI version check when deploying an app.** `minSdk` and `minCli` came from `/api/deploy/whoami`. The redesign's "a checkout older than the live Gateway refuses" (step 3) may be enough; else read the checkout's build constants.
 - [ ] **Status reads certificates from Cloudflare's certificate packs** (active, exact host or one-label wildcard). A hostname covered only by Universal SSL could read as "no certificate yet".
-- [ ] **The release-identity probe went with `/api/deploy/status`.** An upgrade that stopped before recording itself is no longer recognized as newer: `deploy`/`upgrade`/`reconcile` stop unattended and ask at a terminal. Step 3's install row written before the upload closes that window. Since step 3 the install row is the only truth: a reconcile with the live release no longer checks which version the Worker serves (only cf's strict mode stops it over a dashboard edit).
+- [ ] **The release-identity probe went with `/api/deploy/status`.** An upgrade that stopped before recording itself is no longer recognized as newer: `setup` and the rebinds stop unattended and ask at a terminal. Step 3's install row written before the upload closes that window. Since step 3 the install row is the only truth: a reconcile with the live release no longer checks which version the Worker serves (only cf's strict mode stops it over a dashboard edit).
 - [ ] **Setup's reachability check only warns.** A Gateway that doesn't answer over HTTPS yet, or answers with Cloudflare Access's sign-in, is a warning before the owner link, and setup waits for the claim all the same.
 - [ ] **App commands find the account without `--account-id`.** Since step 3: Gateway discovery through every account the login sees; one Gateway is the one, several need `--account-id`, `CLOUDFLARE_ACCOUNT_ID`, the named host or a prompt.
 - [ ] **`--gateway` picks among several Gateways.** When the login sees several, the host `--gateway` (or `setup --domain`) names picks the one install with that host before anything asks; it is still `GATEWAY_URL_MISMATCH` when it names none.
 - [ ] **Several Gateways, unattended: `choose_account`.** A new `action_required` action (exit 2) with `data.choices` (account, name, Gateway URL, and each one's rerun with `--account-id`); its `data.rerun` is a template (`… --account-id <account-id>`).
-- [ ] **`CLOUDFLARE_ACCOUNT_ID` counts like `--account-id`.** Naming an account without a Gateway is `GATEWAY_NOT_FOUND` for app commands (saying where the Gateway is), not ignored; for `setup` and `gateway deploy` it is where to install a new one.
+- [ ] **`CLOUDFLARE_ACCOUNT_ID` counts like `--account-id`.** Naming an account without a Gateway is `GATEWAY_NOT_FOUND` for app commands (saying where the Gateway is), not ignored; for `setup` (and `deploy`'s offer to install) it is where to install a new one.
 - [ ] **Tokens that list no accounts.** An `--account-id` or `CLOUDFLARE_ACCOUNT_ID` that `cf auth whoami` doesn't list is probed anyway, for API tokens without account read access.
 - [ ] **Errors while probing an account.** `auth` and `not_found` (also when reading the install row) mean "no Gateway here"; any other failure (network, timeout) stops the command rather than calling the account empty. No probe timeout beyond the runner's 2 minutes yet (live check below).
-- [ ] **`gateway status` with no Gateway fails.** It stops with `GATEWAY_NOT_FOUND` (exit 1) like every other command, instead of a `done` with `deployed: false`; a database without an install row is still a `done` with `installed: false`.
-- [ ] **Device login under `--json` everywhere the connect path runs.** `app deploy` (and `app secret set`, `app create --deploy`), `app delete` and every `gateway` subcommand with `--json` wait for cf's device login; `app d1 query` and `app workflows` still stop with exit 2.
+- [ ] **`status` with no Gateway fails.** It stops with `GATEWAY_NOT_FOUND` (exit 1) like every other command, instead of a `done` with `deployed: false`; a database without an install row is still a `done` with `installed: false`.
+- [ ] **Device login under `--json` everywhere the connect path runs.** `setup`, `status`, `deploy` (and `secret`, `create --deploy`), `delete`, `db query` and `workflows` with `--json` wait for cf's device login.
 - [ ] **What the build cache hashes.** Every file `git ls-files --cached --others --exclude-standard` lists under `apps/every-app-gateway`, `packages/sdk`, `packages/perimeter`, `packages/toolbus` and `pnpm-workspace.yaml`, as on disk (ignored files such as `.env*` never count). Without git there is no cache: every deploy builds.
 - [ ] **The build cache keeps three builds**, the most recently used, under `node_modules/.cache/everyapp/<tree>.tar.gz`.
 - [ ] **Releases ordered by commit time.** The downgrade guard orders by newest migration, then the last commit touching the Gateway's sources (`git log -1` over the hashed paths), not build time, which an old checkout or a cache hit gets wrong. The install row keeps it as `release_committed_at`, with `source_tree_sha256`. A dirty tree orders as its base commit; without git, as now.
 - [ ] **Same version, different commits, in the refusal.** `DOWNGRADE_REFUSED` names versions, and adds each side's source commit date when the versions are equal (`0.2.0 of 2026-10-12`).
 - [ ] **App deploys and deletes refuse an older checkout even without a rebind.** Checked before the registry is touched, with no override; only `setup --allow-downgrade` rolls the Gateway back.
 - [ ] **A rebind with the live release skips migrations and the replace check**; one with a newer release (the checkout moved on) migrates first, as an upgrade.
-- [ ] **The tree hash is the Gateway's identity, not the release SHA-256.** Builds aren't reproducible (checked locally: two builds of one tree name their client chunks differently), so another machine at the same commit builds another SHA-256. "The live Gateway" means the same SHA-256 or the same source tree everywhere: `status`'s `upToDate`, `setup`'s and `gateway upgrade`'s nothing-to-do, the downgrade guard, and a rebind that skips migrations.
+- [ ] **The tree hash is the Gateway's identity, not the release SHA-256.** Builds aren't reproducible (checked locally: two builds of one tree name their client chunks differently), so another machine at the same commit builds another SHA-256. "The live Gateway" means the same SHA-256 or the same source tree everywhere: `status`'s `upToDate`, `setup`'s nothing-to-do, the downgrade guard, and a rebind that skips migrations.
 - [ ] **Status's checkout fixes.** `GATEWAY_OUTDATED` (sources changed since the live build) runs `everyapp setup`; `CHECKOUT_BEHIND` runs `git pull`. `upToDate` is `null` when either tree hash is unknown.
 - [ ] **The install row before the first upload** names the release being installed, with `live_version_id`, `live_domains` and `jwt_public_key` empty; app commands refuse it (`GATEWAY_NOT_INSTALLED`, run `setup`) and `status` says `GATEWAY_NOT_UPLOADED`.
+- [ ] **`deploy --yes` installs the Gateway without asking** (so does `create -y --deploy`). At a terminal, `-y` takes `apps.<zone>` (still asking which zone when the account has several); unattended (`--json`, CI, piped output) `deploy` never installs one, `-y` or not: it stops with `install_gateway`.
+- [ ] **The install offer proposes `apps.<zone>` only.** Another hostname means declining and running `setup --domain`; the offer doesn't ask for a hostname the way `setup` does.
+- [ ] **The inline install waits for the owner.** `deploy`'s install runs setup's owner step (up to 15 minutes) before the app goes up; if nobody opens the link, the deploy ends with `claim_owner`, and the next `deploy` puts the app up.
+- [ ] **`install_gateway`'s rerun names a host.** `pnpm everyapp setup --domain apps.<first active zone>` of the account setup would pick (with `--account-id` when one was given), or `<hostname>` when it can't tell (several accounts, no zone). `create --deploy` offers to install too; `secret set|unset` don't (`GATEWAY_NOT_FOUND`).
+- [ ] **What `setup` ends with.** "Your Gateway is ready" and `Next:` only after an install or when it just made the owner; an upgrade ends "Gateway X at … is up to date."; a repair or a run with nothing to do prints only its one line. `--force-dns` stays a visible `setup` flag, since `DNS_RECORD_CONFLICT`'s rerun adds it.
+- [ ] **`secret unset` deletes, then redeploys.** `cf workers secrets delete` first (under the app's lease, after the replace check; for the Gateway under its lease), the version Cloudflare makes recorded as everyapp's (the app's Worker record, or the install row's `live_version_id`), then the redeploy. A secret that is gone already only redeploys. Whether cf's strict mode treats that version as "changed through the API" is a live check below.
+- [ ] **`secret list` prints every name**, everyapp's own (`GATEWAY_URL`, `EVERY_APP_ORG_ID`) included; `--for` takes only `gateway`; `secret`'s `-y` is accepted and asks nothing (nothing asks).
+- [ ] **`db migrate` is local only.** `--local` is accepted, documented as the default; there is no production migrate outside `deploy`.
+- [ ] **The skill is copied, not linked**, into `.claude/skills/everyapp` and `.agents/skills/everyapp` of each new app (a standalone app is its own repository; git on Windows checks symlinks out as files). A missing `AGENTS.md` is written; an existing one that doesn't mention the skill gets a line only after a person agrees. The skill's "Ship" line has no `--yes` (nothing to skip under `--json`).
 - [ ] **`lib/interrupt.ts` kept whole.** Its upload record on Ctrl+C keeps the install row naming the live version (the downgrade guard, `status` and the replace check read it), and freeing the lease spares the rerun a wait of up to 3 minutes; the redesign expected both to go.
 
 ## Build
@@ -59,7 +68,6 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] An "Agent activity" page over the `mcp_tool_calls` audit table.
 - [ ] Access levels for personal access tokens.
 - [ ] `everyapp access enable` (was `gateway access enable`), to set up the Cloudflare Access application from the CLI.
-- [ ] `everyapp secret unset` (was `app secret delete`).
 - [ ] Owner recovery link and ownership transfer.
 - [ ] `everyapp setup --owner-email`.
 - [ ] `everyapp setup --target local`.
@@ -72,7 +80,7 @@ Each of these shipped with a default. Confirm it or change it.
 ## Paused while we work from the checkout
 
 - [ ] Publish again: npm for `everyapp` and `@every-app/sdk`, then the public repository sync. `.github/RELEASE.md` lists what pausing removed.
-- [ ] The docs site (`landing-page/content/docs`) still describes the published flow: `npx everyapp`, a starter app in `everyapp setup`, and `gitpick` for the examples. Update it when publishing resumes, or point it at the checkout flow until then.
+- [ ] The docs site (`landing-page/content/docs`) still describes the published flow: `npx everyapp`, and `gitpick` for the examples (its CLI reference says `pnpm everyapp`). Update it when publishing resumes, or point it at the checkout flow until then.
 
 ## Move the website to everyapp.com
 
@@ -100,14 +108,15 @@ Everything below needs a real Cloudflare account. The rest was checked locally: 
 - [ ] Redeploying an app with Durable Objects from before cf (UserSyncDO) keeps its data, now that `exports` replaces wrangler's `v1` migration tag.
 - [ ] Activation latency: from the Gateway deploy that binds a new app to the first request that makes it `active` in D1, against the live wait's 10 minutes, including a new hostname's certificate; and that a Cloudflare Access redirect is told from the Gateway's own answers.
 - [ ] The register batch on real D1: `WITH … INSERT OR IGNORE … SELECT … ORDER BY … LIMIT 1` (the org-key claim) and `UPDATE … RETURNING` through `cf d1 query --body @file`.
-- [ ] `cf ssl certificate-packs list` lists each Custom Domain's pack as `active` once issued (what `gateway status` reads).
+- [ ] `cf ssl certificate-packs list` lists each Custom Domain's pack as `active` once issued (what `status` reads).
 - [ ] The gateway's hourly cron (`17 * * * *`) publishes with the Custom Domains in one `cf deploy`, survives later deploys and reconciles, and logs `mcp.maintenance` at :17.
 - [ ] With `global_fetch_strictly_public` on the deployed gateway, claude.ai connects through CIMD (consent shows "Published by claude.ai"), not dynamic client registration.
-- [ ] `everyapp gateway secret set MCP_OAUTH_ENABLED` (and `MCP_DCR_ENABLED`) redeploys the Gateway the checkout builds, the switch takes effect, and the secret survives the next `gateway upgrade`.
+- [ ] `everyapp secret set MCP_OAUTH_ENABLED --for gateway` (and `MCP_DCR_ENABLED`) redeploys the Gateway the checkout builds, the switch takes effect, and the secret survives the next upgrade by `setup`.
+- [ ] `everyapp secret unset NAME` (and `--for gateway`): after `cf workers secrets delete`, the unattended redeploy that follows isn't stopped by cf's strict mode ("last updated via the script API"). If it is, delete through the deploy instead.
 - [ ] The Gateway takes an app's tools on its first `/mcp` use, and again after a redeploy changes the app's `version_id` (the CLI no longer syncs them).
 - [ ] The #270 manual test plan end to end: Claude Code, claude.ai, ChatGPT, Cursor, revocation, offboarding, the switches, and the audit query.
-- [ ] An app with a cron and an app secret (RepoLens with `GITHUB_TOKEN`) deployed through `everyapp app deploy`: the cron publishes for an app Worker, and a secret set once survives redeploys.
-- [ ] An app with Workflows deployed through `everyapp app deploy`: cf creates them under the app's names, a redeploy updates them, they run, `everyapp app workflows` starts, lists and controls their instances, `--allow-delete-workflows` deletes a dropped one, and `--purge` deletes them. The read outputs and the missing-Workflow error were checked against the real API; `instances create`, the status changes and `workflows delete` weren't.
+- [ ] An app with a cron and a secret of its own (RepoLens with `GITHUB_TOKEN`) deployed through `everyapp deploy`: the cron publishes for an app Worker, and a secret set once survives redeploys.
+- [ ] An app with Workflows deployed through `everyapp deploy`: cf creates them under the app's names, a redeploy updates them, they run, `everyapp workflows` starts, lists and controls their instances, `--allow-delete-workflows` deletes a dropped one, and `--purge` deletes them. The read outputs and the missing-Workflow error were checked against the real API; `instances create`, the status changes and `workflows delete` weren't.
 
 For the CLI redesign (`docs/cli-redesign.md` §5 "Live checks" has the commands and what each outcome decides):
 

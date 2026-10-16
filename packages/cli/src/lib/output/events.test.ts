@@ -176,7 +176,7 @@ function human(options: Parameters<typeof createHumanSink>[0] = {}) {
   };
 }
 
-/** What `app deploy` emits for a first deploy, abridged. */
+/** What `deploy` emits for a first deploy, abridged. */
 function firstDeploy(sink: EventSink) {
   sink.emit({
     type: "step",
@@ -432,8 +432,8 @@ describe("createHumanSink", () => {
       message: "Your Gateway is ready: https://apps.example.com",
       data: {
         next: [
-          "pnpm everyapp app create my-app",
-          "AI for apps, any time: pnpm everyapp gateway secret set OPENAI_API_KEY",
+          "pnpm everyapp create my-app",
+          "AI for apps, any time: pnpm everyapp secret set OPENAI_API_KEY --for gateway",
         ],
       },
     });
@@ -445,8 +445,8 @@ describe("createHumanSink", () => {
       `  restore point: ${RESTORE}`,
       "Owner created: ben@example.com",
       "Your Gateway is ready: https://apps.example.com",
-      "Next: pnpm everyapp app create my-app",
-      "      AI for apps, any time: pnpm everyapp gateway secret set OPENAI_API_KEY",
+      "Next: pnpm everyapp create my-app",
+      "      AI for apps, any time: pnpm everyapp secret set OPENAI_API_KEY --for gateway",
     ]);
   });
 
@@ -533,7 +533,7 @@ describe("createHumanSink", () => {
       message:
         "todo.apps.example.com already has a DNS record (A 203.0.113.7).",
       retryable: false,
-      data: { rerun: "pnpm everyapp app deploy --force-dns", authorize: true },
+      data: { rerun: "pnpm everyapp deploy --force-dns", authorize: true },
     });
 
     expect(lines()).toEqual(["todo → https://todo.apps.example.com"]);
@@ -541,7 +541,7 @@ describe("createHumanSink", () => {
       "! No certificate yet.",
       "  It usually comes within five minutes.",
       "✗ todo.apps.example.com already has a DNS record (A 203.0.113.7).",
-      "  To go ahead anyway: pnpm everyapp app deploy --force-dns",
+      "  To go ahead anyway: pnpm everyapp deploy --force-dns",
     ]);
     expect(sink.exitCode).toBe(1);
   });

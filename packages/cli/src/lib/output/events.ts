@@ -31,7 +31,8 @@ export type RequiredAction =
   | "upgrade_workers_paid"
   | "rerun_interactive"
   | "add_domain"
-  | "choose_account";
+  | "choose_account"
+  | "install_gateway";
 
 interface ActionData extends EventData {
   url?: string;
@@ -252,12 +253,14 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
       const release = text(data["release"]);
       const from = text(data["from"]);
       if (event.status === "start") {
+        if (!from) return { open: `Installing the Gateway at ${text(data["gatewayUrl"])}` };
+        if (from !== release) return { open: `Upgrading the Gateway ${from} → ${release}` };
+        // setup's repair of a Gateway that runs this release already.
+        if (data["redeploy"] === true) return { open: `Redeploying the Gateway ${release}` };
+        const apps = Number(data["apps"] ?? 0);
+        const was = Number(data["was"] ?? apps);
         return {
-          open: !from
-            ? `Installing the Gateway at ${text(data["gatewayUrl"])}`
-            : from === release
-              ? `Updating the Gateway ${release}`
-              : `Upgrading the Gateway ${from} → ${release}`,
+          open: `Gateway ${release} up to date · binding ${plural(apps, "app")}${was !== apps ? ` (was ${was})` : ""}`,
         };
       }
       if (event.status === "ok") return { close: true };
@@ -278,19 +281,18 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
     "gateway.deploy": uploaded,
     "gateway.reconcile": (event) =>
       event.status === "skip" && event.message ? { line: event.message } : null,
-    // What `gateway adopt` found: the point of its --dry-run.
-    "gateway.adopt": (event) =>
-      event.status === "ok" && event.message ? { line: event.message } : null,
     "app.register": (event) => {
       if (event.status !== "ok") return null;
       const data = event.data ?? {};
       const appId = text(data["appId"]) ?? "The app";
       const organization = text(data["organizationName"]);
       const secrets = strings(data["secrets"]);
+      const unset = strings(data["unsetSecrets"]);
       const isNew = data["existingApp"] === false;
-      const first = secrets.length
-        ? `${isNew ? "Deploying" : "Redeploying"} ${appId} with ${secrets.join(", ")} (code and pending migrations from this directory)`
-        : `${appId} → https://${text(data["hostname"])}${organization ? ` (${organization})` : ""}${isNew ? ", first deploy" : ""}`;
+      const first =
+        secrets.length || unset.length
+          ? `${isNew ? "Deploying" : "Redeploying"} ${appId} ${secrets.length ? `with ${secrets.join(", ")}` : `without ${unset.join(", ")}`} (code and pending migrations from this directory)`
+          : `${appId} → https://${text(data["hostname"])}${organization ? ` (${organization})` : ""}${isNew ? ", first deploy" : ""}`;
       if (!isNew) return { line: first };
       const access =
         data["defaultAccess"] === true

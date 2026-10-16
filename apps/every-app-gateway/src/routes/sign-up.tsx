@@ -328,10 +328,7 @@ function SetupPending({
           was printed when it was deployed, or create a new one on the machine
           that deployed it:
         </p>
-        <CodeBlock
-          code="everyapp gateway claim-link"
-          successMessage="Command copied"
-        />
+        <CodeBlock code="pnpm everyapp setup" successMessage="Command copied" />
       </AuthCard>
     </AuthPageShell>
   );

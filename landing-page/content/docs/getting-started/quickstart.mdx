@@ -1,18 +1,19 @@
 ---
 title: Quickstart
-description: Set up Every App in your Cloudflare account with one command
+description: From an empty Cloudflare account to your first app, live behind your own Gateway
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-One command takes an empty Cloudflare account to a working Gateway, your owner account, and a starter app you can open. Throughout these docs, `apps.your-domain.dev` stands for the Gateway's address and `todo.apps.your-domain.dev` for an app's.
+Three commands: `create` makes an app, `dev` runs it on your machine, and `deploy` puts it live. The first deploy finds no Gateway in your Cloudflare account and offers to install one, with your owner account. Throughout these docs, `apps.your-domain.dev` stands for the Gateway's address and `todo.apps.your-domain.dev` for an app's.
 
 ## What you need
 
 1. **[Node.js](https://nodejs.org/) 22.18 or newer.** It includes `npx`, which runs the commands below. Use Node, not Bun.
-2. **[pnpm](https://pnpm.io/installation)**, which builds the starter app: `npm install -g pnpm`.
+2. **[pnpm](https://pnpm.io/installation)**, which installs and builds your apps: `npm install -g pnpm`.
 3. **A Cloudflare account on Workers Paid.** It's the one thing you buy: $5 a month, plus usage above generous included amounts ([costs](/docs/how-it-works/gateway#what-it-costs)). [Sign up](https://dash.cloudflare.com/sign-up), then subscribe under **Workers & Pages → Plans**. The Free plan can't run Every App.
 4. **A domain on Cloudflare.** Every App lives at a subdomain of it, such as `apps.your-domain.dev`, with each app one level below that. Nothing else in your domain changes, so a domain your company already uses is fine.
+5. **A workers.dev subdomain**, picked once in the Cloudflare dashboard: Cloudflare wants one before an account's first Worker. If you haven't, the first install stops with a link to pick it, then you run the same command again.
 
 <Callout type="info">
   **No domain on Cloudflare?** Buy one in the Cloudflare dashboard: **Domains →
@@ -24,13 +25,14 @@ One command takes an empty Cloudflare account to a working Gateway, your owner a
 
 ## The fast path: let your agent set you up
 
-Paste this prompt into your coding agent. It runs the command; you step in for the few things only a person can do: approving a login, creating your owner account, paying for a plan.
+Paste this prompt into your coding agent. It runs the commands; you step in for the few things only a person can do: approving a login, creating your owner account, paying for a plan.
 
 Don't have a coding agent yet? Install [Claude Code](https://claude.com/claude-code) or [Cursor](https://cursor.com), open its chat, and paste the prompt there.
 
 ```text
 Help me set up Every App, a self-hosted platform for my company's private
-apps, in my own Cloudflare account. Docs for you: https://everyapp.com/llms.txt
+apps, in my own Cloudflare account, and ship my first app. Docs for you:
+https://everyapp.com/llms.txt
 
 Do these steps in order. Run the commands yourself. Pause and tell me exactly
 what to do whenever a step needs me.
@@ -51,10 +53,12 @@ what to do whenever a step needs me.
    "cloudflare_login" means I open the link, check the code and approve;
    "claim_owner" means I open the link and create my owner account.
    If the event has "waiting": true, the command keeps running: let it.
-   If the command exits with code 2, run the same command again once I've
-   done what it asked.
-6. When it ends with "type":"done", tell me my Gateway's address and the
-   starter app's, and that this machine can deploy apps now.
+   If the command exits with code 2, run its data.rerun once I've done what
+   it asked.
+6. Ask me what my first app should be called (kebab-case), run
+   `npx -y everyapp create <that id> --json`, and move into the folder it
+   prints. Read .agents/skills/everyapp/SKILL.md there.
+7. Run `npx -y everyapp deploy --json` and tell me the app's address.
 
 Keep responses short, one step at a time. If a command fails, show me the
 error and your suggested fix before retrying.
@@ -62,41 +66,44 @@ error and your suggested fix before retrying.
 
 ## The manual path
 
+Make an app and run it on your machine:
+
 ```bash
-npx everyapp setup
+npx everyapp create my-app
+cd my-app
+npx everyapp dev
 ```
 
-It asks where the Gateway should live (it suggests `apps.<your domain>`), then:
+`create` copies the starter template (a simple todo list), installs it and sets up its local database, without contacting anything in Cloudflare. `dev` runs it behind a local Gateway with the same security perimeter as production, signed in as a seeded dev user: open the URL it prints. Then put it live:
+
+```bash
+npx everyapp deploy
+```
+
+The first time, there is no Gateway in your Cloudflare account yet, so the deploy offers to install one at `apps.<your domain>` (it asks which domain when the account has several). Say yes, and it:
 
 1. **Logs in to Cloudflare** with Cloudflare's own CLI. It prints a link and a one-time code, so it works over SSH too: open the link, check the code and approve.
 2. **Checks for Workers Paid**, and says so if it can't confirm it.
-3. **Installs the Gateway** at your address: its database and storage, and the Worker on its own Workers Custom Domain. Cloudflare creates the DNS record and issues the certificate, usually within a minute or two; setup waits for it.
+3. **Installs the Gateway** at your address: its database and storage, and the Worker on its own Workers Custom Domain. Cloudflare creates the DNS record and issues the certificate, usually within a minute or two; the install waits for it.
 4. **Opens a one-time setup link** in your browser, and waits for you to create your owner account there (up to 15 minutes; it watches the Gateway's database, not the page). Nobody can sign up before you do, and after you, only people you invite.
-5. **Deploys the starter app**, a simple todo list, from `./simple-todo` to `https://simple-todo.apps.your-domain.dev`.
+5. **Deploys your app** to `https://my-app.apps.your-domain.dev`, which shows up in your Gateway.
+
+Want the Gateway somewhere else, or before you have an app? `npx everyapp setup --domain apps.your-domain.dev` installs it alone, at the address you choose, with your owner account; it deploys no app. `setup` is also how you upgrade the Gateway and repair it later.
 
 There is nothing to log in to besides Cloudflare: your Cloudflare login is what deploys apps, from this machine or any other, and there is no token to create or paste.
 
-Interrupted, or stopped on something you had to do first (a domain to buy, a link you haven't opened yet)? Run `npx everyapp setup` again: it picks up where it stopped, and once everything is there it changes nothing.
+Interrupted, or stopped on something you had to do first (a domain to buy, a link you haven't opened yet)? Run the same command again: it picks up where it stopped, and once everything is there it changes nothing.
 
 <details className="faq">
 <summary>Setting up from CI, or with an API token</summary>
 <div className="faq-content">
 
-Instead of logging in, set **both** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Create the token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) from the **Edit Cloudflare Workers** template, plus **Account → D1 → Edit**, **Zone → Zone → Read** and **Zone → DNS → Read** (the deploy checks that a new address won't replace a DNS record), and **Zone → SSL and Certificates → Edit** if you want `app delete` to remove an app's certificate too.
+Instead of logging in, set **both** `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Create the token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) from the **Edit Cloudflare Workers** template, plus **Account → D1 → Edit**, **Zone → Zone → Read** and **Zone → DNS → Read** (the deploy checks that a new address won't replace a DNS record), and **Zone → SSL and Certificates → Edit** if you want `delete` to remove an app's certificate too.
 
-The same token deploys apps, before or after the Gateway has an owner. An unattended setup never prints the owner setup link into a log, with `--json` or without, unless you pass `--printSetupLink`: it stops with `claim_owner` (exit 2), and you run `npx everyapp setup` on your own machine for the link.
+The same token deploys apps, before or after the Gateway has an owner. Unattended, `deploy` never installs a Gateway on its own: with none, it stops with `install_gateway` (exit 2) and names the `setup` command to run. An unattended `setup` never prints the owner setup link into a log, with `--json` or without: it stops with `claim_owner` (exit 2), and you run `npx everyapp setup` at a terminal on any machine with the Cloudflare login for the link.
 
 </div>
 </details>
-
-## Work on the starter
-
-```bash
-cd simple-todo
-npx everyapp dev
-```
-
-`everyapp dev` runs the app behind a local Gateway with the same security perimeter as production, signed in as a seeded dev user. When you're happy, `npx everyapp app deploy` ships it.
 
 <details className="faq">
 <summary>More example apps</summary>
@@ -107,7 +114,7 @@ npx everyapp dev
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/workout-tracker every-workout-tracker
 cd every-workout-tracker
-npx everyapp app deploy
+npx everyapp deploy
 ```
 
 **Chef** — an AI cooking assistant and recipe manager:
@@ -115,8 +122,8 @@ npx everyapp app deploy
 ```bash
 npx gitpick every-app/every-app/tree/main/apps/chef every-app-chef
 cd every-app-chef
-npx everyapp app deploy
-npx everyapp gateway secret set OPENAI_API_KEY
+npx everyapp deploy
+npx everyapp secret set OPENAI_API_KEY --for gateway
 # chat needs an OpenAI key; it lives on your Gateway, which proxies AI calls
 ```
 

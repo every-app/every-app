@@ -8,10 +8,10 @@ declare const __GATEWAY_BUILD__: string;
 declare namespace Cloudflare {
   interface Env {
     // The optional settings below are plain secrets on deployed gateways
-    // (`everyapp gateway secret set`); in dev cloudflare.config.ts declares
+    // (`everyapp secret set --for gateway`); in dev cloudflare.config.ts declares
     // the ones that are set locally.
 
-    // Cloudflare account that owns this gateway deployment
+    // Cloudflare account this Gateway is deployed in
     CLOUDFLARE_ACCOUNT_ID?: string;
 
     // "self_hosted" (the CLI sets it at install) or "hosted". Only a
