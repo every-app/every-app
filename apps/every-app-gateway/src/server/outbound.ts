@@ -9,8 +9,9 @@
  * hostname on that list, over HTTPS. Model and data providers are refused
  * even when listed: the gateway holds those keys and an app reaches them
  * through its AppGateway binding, metered, never directly. So are the
- * gateway's own hosts, which a dispatched app has no business calling from
- * outside the perimeter.
+ * gateway's own hosts, and every third-party app host (THIRD_PARTY_DOMAIN),
+ * which a dispatched app has no business calling from outside the
+ * perimeter.
  *
  * The hosted install wires it once the account has a dispatch namespace:
  * the gateway's DISPATCHER binding declares
@@ -38,6 +39,7 @@ const PROVIDER_HOSTS = [
 interface OutboundEnv {
   GATEWAY_URL?: string;
   APP_BASE_DOMAIN?: string;
+  THIRD_PARTY_DOMAIN?: string;
   [OUTBOUND_PARAMETER]?: unknown;
 }
 
@@ -76,6 +78,8 @@ function gatewayHosts(env: OutboundEnv): string[] {
   const hosts: string[] = [];
   const base = appBaseDomain(env);
   if (base) hosts.push(base);
+  // As set, unvalidated: whatever it names is denied.
+  if (env.THIRD_PARTY_DOMAIN?.trim()) hosts.push(env.THIRD_PARTY_DOMAIN);
   try {
     if (env.GATEWAY_URL) hosts.push(new URL(env.GATEWAY_URL).hostname);
   } catch {

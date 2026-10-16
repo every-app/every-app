@@ -30,6 +30,21 @@ async function increment(keys: string[], expiresAt: Date): Promise<void> {
   if (first) await db.batch([first, ...rest]);
 }
 
+/**
+ * Claim a key once: true for the one request that writes its row, false
+ * for every other, whichever isolate or location it runs in (a budget of
+ * one, e.g. a single-use handoff code). The row lives until `expiresAt`,
+ * which must outlast whatever the key stands for.
+ */
+async function claimOnce(key: string, expiresAt: Date): Promise<boolean> {
+  const claimed = await db
+    .insert(rateLimitCounters)
+    .values({ key, count: 1, expiresAt })
+    .onConflictDoNothing()
+    .returning({ key: rateLimitCounters.key });
+  return claimed.length === 1;
+}
+
 /** Delete counters whose window ended; returns how many. */
 async function deleteExpired(now = new Date()): Promise<number> {
   const deleted = await db
@@ -42,5 +57,6 @@ async function deleteExpired(now = new Date()): Promise<number> {
 export const RateLimitCounterRepository = {
   read,
   increment,
+  claimOnce,
   deleteExpired,
 } as const;

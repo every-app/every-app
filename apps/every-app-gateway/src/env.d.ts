@@ -113,8 +113,11 @@ declare namespace Cloudflare {
     // DISPATCHER binding (added by the hosted install) must name the same.
     DISPATCH_NAMESPACE?: string;
     // The registrable domain third-party apps are named on
-    // (<app>-<orgKey>.<domain>), never the gateway's own. Unset: they get no
-    // hostname, and nobody can open them.
+    // (<app>-<orgKey>.<domain>), each host with its own session
+    // (server/host-session.ts), reached through the route
+    // *.<domain>/* (docs/runbooks/hosted-install.md). Unset, or on the
+    // gateway's own site, or on a self-hosted gateway: ignored
+    // (server/app-hosts.ts), so they get no hostname and nobody can open them.
     THIRD_PARTY_DOMAIN?: string;
 
     // DEV ONLY (`everyapp dev --mode mirror`): parent domain to scope the

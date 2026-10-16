@@ -22,7 +22,7 @@ import {
   type Manifest,
 } from "@every-app/perimeter/manifest";
 import type { AppRow } from "@every-app/perimeter/registry";
-import { appBaseDomain } from "@/server/app-hosts";
+import { appBaseDomain, thirdPartyDomain } from "@/server/app-hosts";
 import { platformPolicy } from "@/server/platform-policy";
 import { AppRepository } from "@/server/repositories/AppRepository";
 import {
@@ -132,8 +132,12 @@ function register(caller: DeployCaller, manifest: Manifest) {
     description: manifest.description ?? manifest.id,
     manifest,
     deployerUserId: caller.userId,
-    thirdPartyDomain: env.THIRD_PARTY_DOMAIN ?? null,
+    // As set, so one overlapping the gateway's own domain is refused
+    // (registry.ts) rather than silently left unused.
+    configuredThirdPartyDomain: env.THIRD_PARTY_DOMAIN ?? null,
     appBaseDomain: appBaseDomain(env),
+    // Validated: never one that could share a site with the gateway.
+    thirdPartyDomain: thirdPartyDomain(env),
   });
 }
 

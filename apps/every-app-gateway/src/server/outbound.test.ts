@@ -113,6 +113,28 @@ describe("handleOutboundRequest", () => {
     vi.restoreAllMocks();
   });
 
+  it("always denies the third-party app hosts, even when listed", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const env = {
+      ...ENV,
+      THIRD_PARTY_DOMAIN: "EveryApp.dev",
+      everyapp: {
+        ...APP,
+        egress: ["todo-acme.everyapp.dev", "everyapp.dev"],
+      },
+    };
+    for (const url of [
+      "https://todo-acme.everyapp.dev/api",
+      "https://everyapp.dev/",
+    ]) {
+      const { response, send } = await outbound(url, env);
+      expect(response.status, url).toBe(403);
+      expect(await response.json()).toMatchObject({ reason: "reserved_host" });
+      expect(send).not.toHaveBeenCalled();
+    }
+    vi.restoreAllMocks();
+  });
+
   it("denies plain HTTP, and everything when the dispatcher named no app", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const http = await outbound("http://api.github.com/");

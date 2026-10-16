@@ -55,6 +55,7 @@ import {
   AppUnreachableError,
   type AppFetcher,
 } from "./getAppFetcher";
+import { stripThirdPartyAppHeaders } from "./hostSession";
 
 /** What {@link GatewayDeps.interceptMcp} receives. */
 export interface McpInterceptInput {
@@ -63,6 +64,15 @@ export interface McpInterceptInput {
   app: RegisteredApp;
   /** The authenticated caller, already checked for access to `app`. */
   session: AuthenticatedSession;
+}
+
+/** What {@link GatewayDeps.thirdParty} needs: see hostSession.ts. */
+export interface ThirdPartyHostDeps {
+  /**
+   * Answer an unauthenticated page navigation by starting the per-host
+   * session handoff with the control plane (in place of `loginUrl`).
+   */
+  startSession(request: Request): Promise<Response>;
 }
 
 export interface GatewayDeps {
@@ -113,6 +123,12 @@ export interface GatewayDeps {
    * leaves it "deploying", as does omitting the hook.
    */
   activate?(app: RegisteredApp): Promise<boolean>;
+  /**
+   * Set on a third-party host (hostRoutes.ts): sign-in is the per-host
+   * session handoff, and app responses lose credentialed CORS and the
+   * perimeter's reserved cookies.
+   */
+  thirdParty?: ThirdPartyHostDeps;
   now?: number;
 }
 
@@ -453,6 +469,9 @@ export async function handleGatewayRequest(
     const marker = await getPublicMarker(deps, app);
     outboundHeaders.set(PUBLIC_HEADER, marker);
   } else if (!session) {
+    if (wantsHtml(request) && deps.thirdParty) {
+      return withSecurityHeaders(await deps.thirdParty.startSession(request));
+    }
     if (wantsHtml(request) && deps.loginUrl) {
       return withSecurityHeaders(
         new Response(null, {
@@ -526,5 +545,7 @@ export async function handleGatewayRequest(
   if (response.status === 101) {
     return response;
   }
-  return withSecurityHeaders(response);
+  return withSecurityHeaders(
+    deps.thirdParty ? stripThirdPartyAppHeaders(response) : response,
+  );
 }

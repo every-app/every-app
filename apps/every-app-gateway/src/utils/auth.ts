@@ -14,11 +14,16 @@ export function getSafeRedirect(redirect?: string): string {
 
 /**
  * Whether a safe redirect path is served by the worker rather than the
- * client router (the OAuth authorization endpoint and consent page), so it
- * must be reached with a full page load, query string intact.
+ * client router (the OAuth authorization endpoint and consent page, and the
+ * third-party app host handoff), so it must be reached with a full page
+ * load, query string intact.
  */
 export function isWorkerRoute(path: string): boolean {
-  return path.startsWith("/oauth/");
+  return (
+    path.startsWith("/oauth/") ||
+    path === "/app-session" ||
+    path.startsWith("/app-session?")
+  );
 }
 
 /**

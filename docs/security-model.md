@@ -3,8 +3,9 @@
 ## Trust Zones
 
 - **Client zone:** untrusted browser, API, and webhook traffic.
-- **Gateway zone:** the only public Worker; terminates Better Auth sessions,
-  enforces app access, and injects signed identity.
+- **Gateway zone:** the only public Worker; terminates Better Auth sessions
+  (and, on third-party app hosts, per-host sessions), enforces app access,
+  and injects signed identity.
 - **App zone:** private Workers invoked by the gateway over service bindings,
   or (hosted, third-party apps) Workers in a Workers for Platforms dispatch
   namespace the gateway dispatches to. Either way through one seam,
@@ -264,7 +265,9 @@ in the gateway's Cloudflare account **is** operator authority.
   without `__Secure-`) more than once, however the copies are ordered or
   scoped, is refused with `401 duplicate_session_cookie` before anything is
   authenticated, on every app route (public ones included) and on the
-  gateway's own host. A single copy works as before.
+  gateway's own host. A single copy works as before. Third-party hosts
+  apply the same rule to their own session cookie, `__Host-everyapp_s`,
+  which no sibling host can plant (`__Host-` cookies carry no `Domain`).
 
 ## Control Plane
 
@@ -592,11 +595,110 @@ binding once the account has one. Until then every dispatch app answers
   `openrouter.ai`, `api.dataforseo.com`, `api.context.dev`,
   `gateway.ai.cloudflare.com`, and their subdomains) and the gateway's own
   hosts (`GATEWAY_URL`'s host, `APP_BASE_DOMAIN` and every app host under
-  it), and refuses everything when the dispatcher passed no app. Each
+  it), every third-party app host (`THIRD_PARTY_DOMAIN` and every name
+  under it, as set), and refuses everything when the dispatcher passed no
+  app. Each
   denial is a 403 to the app and an `egress.denied` log line naming the
   app, organization, Worker, host and reason. Service bindings (the
   AppGateway binding included) never pass through it, so apps reach models
   and data providers only through the gateway's metered proxies.
+
+## Third-Party Hosts and Per-Host Sessions
+
+Two classes of app host, decided from the Host header before any registry
+lookup or credential read (`routeHost`,
+`packages/perimeter/src/hostRoutes.ts`; the profile comes from
+`hostProfile` in `apps/every-app-gateway/src/server/app-hosts.ts`):
+
+| | First-party hosts | Third-party hosts |
+| --- | --- | --- |
+| Names | `<appId>.<APP_BASE_DOMAIN>`, `<appId>-<orgKey>.<APP_BASE_DOMAIN>` (every non-gateway host, looked up by full name) | `<appId>-<orgKey>.<THIRD_PARTY_DOMAIN>`, one label below it |
+| Rows served | `tier = 'service_binding'`, `scope` `org` or `shared` | `tier = 'dispatch'`, `scope = 'org'` |
+| Code | Workers our account (or the self-hoster) deployed | customer code in the dispatch namespace |
+| Browser credential | the Better Auth cookie, `Domain=<APP_BASE_DOMAIN>` | `__Host-everyapp_s`, host-only, one per host |
+| Personal access tokens | yes | yes, same rules (own organization, bound app) |
+
+- **The class decides the row.** A first-party host never serves a
+  dispatch row and a third-party host never serves a service-binding or
+  shared row (`hostAdmitsApp`): such a row answers 503 `app_unavailable`,
+  so a request carrying the shared session never reaches customer code,
+  and a per-host session never opens a first-party app. Under the
+  third-party domain, a host that is not one app label (the apex, deeper
+  names) or has no row is a 404 without falling back to anything.
+- **The cookie boundary.** `THIRD_PARTY_DOMAIN` must be another registrable
+  domain than the gateway's (`everyapp.dev` beside `app.everyapp.com`):
+  `thirdPartyDomain(env)` refuses one whose last two labels equal those of
+  `GATEWAY_URL`'s host or `APP_BASE_DOMAIN` (with no public suffix list
+  that is the sound test: names that differ there are different sites;
+  ones that share them might not be, so they are refused), and is null
+  on a self-hosted or invalid-mode gateway whatever the setting says.
+  Refused or unset, there are no third-party hosts, the handoff routes
+  don't exist, and the deploy API names no hostname. So the browser never
+  sends the Better Auth cookie to a third-party host, and the cookie's
+  `SameSite` protection holds between customer code and the control plane.
+  The third-party authenticator
+  (`apps/every-app-gateway/src/perimeter/hostSessionAuthenticator.ts`)
+  never reads the Better Auth cookie either, and the first-party one never
+  reads `__Host-everyapp_s`; the control plane reads only its own cookie.
+- **The handoff** (`apps/every-app-gateway/src/server/host-session.ts`):
+  1. An unauthenticated page navigation on a third-party host gets a random
+     32-byte nonce in `__Host-everyapp_n` (host-only, `Secure`, `HttpOnly`,
+     `SameSite=Lax`, 10 minutes; reused while present, so tabs share it) and
+     a 302 to `<gateway>/app-session?return_to=<page>&nonce_hash=<SHA-256>`.
+     Other unauthenticated requests get 401 as on first-party hosts.
+  2. `GET /app-session` on the control plane sends a signed-out browser to
+     sign in and back; signed in, it answers a page that posts the handoff
+     to `POST /app-session/start` from the gateway's own origin (the
+     control-plane guard refuses a cross-site POST that carries the
+     cookie; the page's CSP allows only its own script and a form action to
+     the gateway and the app's origin).
+  3. `POST /app-session/start` re-checks that `return_to` is https on a
+     third-party host, that the host's registry row is a dispatch app that
+     isn't disabled, and that the signed-in person is a member (not
+     deactivated) of its active organization with the app installed for
+     them; otherwise 400, 404 or 403 and no code. It answers 303 to
+     `https://<host>/__everyapp/session?code=…`: a MAC token (HMAC-SHA256,
+     key from `BETTER_AUTH_SECRET` through HKDF under its own label) naming
+     the gateway session id, the user, the app row, the host, the nonce
+     hash and the page, valid 60 seconds, with a single-use id.
+  4. The app host's perimeter answers `/__everyapp/session` itself (never
+     the app): the code must verify, be a code (never a session token), be
+     unexpired, name this host and this app row, and match the hash of the
+     browser's nonce cookie, so nobody can sign a victim in to the
+     attacker's account by sending a code; then its id is claimed once in
+     D1 (`rate_limit_counters`, an insert that only one request wins). It
+     sets `__Host-everyapp_s` (a MAC token bound to the gateway session id,
+     user, app row and host, 24 hours), clears the nonce and 303s to the
+     page path. Anything else is a 400 page with no cookie.
+- **Every request re-checks.** `__Host-everyapp_s` is verified (signature,
+  type, expiry, host, app row), then, live: the gateway session row still
+  exists and hasn't expired, the user isn't deactivated, they are a member
+  of the app's organization (the identity JWT carries that organization
+  and their role there, `aud` the Worker name), the organization is active
+  and the app is installed for them. Signing out of the gateway, an admin
+  revoking sessions, removing the member or their access ends the host
+  session on the next request (memberships and organization status are
+  cached per isolate up to 30 seconds, as on first-party hosts; the
+  session row is read every time). A request naming `__Host-everyapp_s`
+  twice is refused (`duplicate_session_cookie`). A bearer that isn't a
+  personal access token authenticates nobody here and never falls back to
+  the cookie.
+- **What an app may not say.** On third-party hosts the perimeter removes
+  `Access-Control-Allow-Credentials` from app responses (sibling apps on
+  the same domain are same-site, so a credentialed CORS grant would let one
+  read another's pages with the visitor's session) and every `Set-Cookie`
+  whose name starts with `__Host-everyapp_` in any case (only the
+  perimeter sets the session and nonce). `Domain` is stripped from app
+  cookies everywhere, so they stay host-only. State-changing requests must
+  be same-origin (`Sec-Fetch-Site: same-origin` or a matching `Origin`), so
+  a sibling app's page can't post with the visitor's session.
+- **Self-hosted gateways** have no third-party domain: every host but the
+  gateway's own is first-party and looked up as before, the handoff paths
+  are the control plane's and the app's as before, and only a dispatch row
+  (which no self-hosted deploy writes) is refused.
+- Third-party hosts reach the gateway Worker through a Workers route
+  `*.<THIRD_PARTY_DOMAIN>/*` on that zone, added by hand on the hosted
+  install (`docs/runbooks/hosted-install.md`), never a Custom Domain per app.
 
 ## Hosted Deploy API
 
@@ -664,9 +766,11 @@ hosted gateway's dispatch namespace only through its deploy API
 - **Registry.** Rows are `tier = 'dispatch'`, `scope = 'org'`, the Worker
   `every-<orgKey>-<appId>` (the only name `getAppFetcher` dispatches to),
   the hostname `<appId>-<orgKey>.<THIRD_PARTY_DOMAIN>` (none while the
-  domain is unset: nobody can open the app). A `THIRD_PARTY_DOMAIN` that
-  is `APP_BASE_DOMAIN`, or under or above it, refuses every registration
-  and deploy (`DEPLOYER_NOT_CONFIGURED`). An app keeps its tier: the
+  domain is unset, or treated as unset for sharing a site with the
+  gateway: nobody can open the app; see "Third-Party Hosts and Per-Host
+  Sessions"). A `THIRD_PARTY_DOMAIN` that is `APP_BASE_DOMAIN`, or under
+  or above it, refuses every registration and deploy
+  (`DEPLOYER_NOT_CONFIGURED`). An app keeps its tier: the
   CLI's self-host deploy refuses a dispatch row and the deploy API a
   service-binding one (`APP_TIER_MISMATCH`); a shared app is never a
   dispatch app. Each deploy is a `deploy_jobs` row, one running at a time

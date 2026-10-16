@@ -871,4 +871,20 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
     });
     expect(script()).toBeDefined();
   });
+
+  it.each([
+    ["the gateway's own site", "example.com"],
+    ["a domain under the gateway's host", "apps.gateway.example.com"],
+    ["no DNS name", "not a domain"],
+  ])(
+    "names no hostname on a third-party domain that is %s",
+    async (_, domain) => {
+      hoisted.env["THIRD_PARTY_DOMAIN"] = domain;
+      const registered = await register();
+      expect(((await registered.json()) as any).app).toMatchObject({
+        hostname: null,
+        url: null,
+      });
+    },
+  );
 });

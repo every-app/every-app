@@ -1101,6 +1101,79 @@ describe("handleGatewayRequest", () => {
     ]);
   });
 
+  it("starts the per-host session handoff for an unauthenticated page on a third-party host", async () => {
+    const startSession = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: "https://home.example.com/app-session" },
+        }),
+    );
+    const unauthenticated: SessionAuthenticator = {
+      sessionCookieNames: [],
+      authenticate: async () => null,
+      hasAppAccess: async () => true,
+    };
+    const page = await handleGatewayRequest(
+      req("/tasks", { headers: { accept: "text/html" } }),
+      deps({
+        authenticator: unauthenticated,
+        loginUrl: "https://home.example.com/sign-in",
+        thirdParty: { startSession },
+      }),
+    );
+    expect(page.status).toBe(302);
+    expect(page.headers.get("location")).toBe(
+      "https://home.example.com/app-session",
+    );
+    expectSecurityHeaders(page);
+    expect(startSession).toHaveBeenCalledTimes(1);
+
+    // Anything but a page navigation is told it is unauthenticated.
+    const api = await handleGatewayRequest(
+      req("/api/tasks"),
+      deps({ authenticator: unauthenticated, thirdParty: { startSession } }),
+    );
+    expect(api.status).toBe(401);
+    expect(startSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("strips credentialed CORS and reserved cookies from app responses on third-party hosts only", async () => {
+    const appResponse = () => {
+      const headers = new Headers({
+        "access-control-allow-origin": "https://sibling.example.dev",
+        "access-control-allow-credentials": "true",
+      });
+      headers.append("set-cookie", "prefs=dark; Path=/");
+      headers.append("set-cookie", "__Host-everyapp_s=planted; Path=/; Secure");
+      return new Response("ok", { headers });
+    };
+    const through = (thirdParty?: GatewayDeps["thirdParty"]) =>
+      handleGatewayRequest(
+        req("/tasks"),
+        deps({
+          fetcherFor: () => ({ fetch: async () => appResponse() }),
+          thirdParty,
+        }),
+      );
+
+    const thirdParty = await through({
+      startSession: async () => new Response(null, { status: 302 }),
+    });
+    expect(
+      thirdParty.headers.get("access-control-allow-credentials"),
+    ).toBeNull();
+    expect(thirdParty.headers.getSetCookie()).toEqual(["prefs=dark; Path=/"]);
+    expectSecurityHeaders(thirdParty);
+
+    // First-party hosts pass them through as before.
+    const firstParty = await through();
+    expect(firstParty.headers.get("access-control-allow-credentials")).toBe(
+      "true",
+    );
+    expect(firstParty.headers.getSetCookie()).toHaveLength(2);
+  });
+
   it("reaches a dispatch app through the namespace, and answers 503 when it can't", async () => {
     const consoleError = vi
       .spyOn(console, "error")

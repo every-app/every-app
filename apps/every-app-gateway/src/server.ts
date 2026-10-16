@@ -20,6 +20,13 @@
  *    Domains.
  *    An app host's `/mcp` is served by the ToolBus from the app's tool
  *    catalog instead (server/toolbus/app-host-mcp.ts);
+ *  - on a hosted gateway with a third-party domain, a host one label below
+ *    it → the same proxy for a third-party (dispatch) app, authenticated by
+ *    the host's own session (or a personal access token), never the Better
+ *    Auth cookie (perimeter/hostSessionAuthenticator.ts,
+ *    server/host-session.ts); the control plane hands the session off at
+ *    `/app-session`. Host classes are decided first (@every-app/perimeter's
+ *    hostRoutes.ts): a row on the wrong class of host is never served;
  *  - any other host → 404 (local dev serves the control plane there too).
  *
  * When GATEWAY_URL is not set on a fresh deploy (before secrets, local vite
@@ -35,8 +42,12 @@ import {
   DUPLICATE_SESSION_COOKIE_MESSAGE,
   handleGatewayRequest,
   hasDuplicateSessionCookie,
+  hostAdmitsApp,
+  HOST_SESSION_PATH,
   logEvent,
+  routeHost,
   type AppRegistry,
+  type GatewayDeps,
   type RegisteredApp,
   UnroutableAppError,
   unroutableAppResponse,
@@ -44,15 +55,22 @@ import {
 } from "@every-app/perimeter";
 import { SESSION_COOKIE_NAMES } from "./auth/session-cookie";
 import { createProdAuthenticator } from "./perimeter/betterAuthAuthenticator";
+import { createHostSessionAuthenticator } from "./perimeter/hostSessionAuthenticator";
 import { activateApp } from "./server/app-activation";
 import { DrizzleAppRegistry } from "./perimeter/drizzleAppRegistry";
 import {
   handleAppGatewayRequest,
   type AppCallerProps,
 } from "./server/app-gateway-entrypoint";
-import { appBaseDomain } from "./server/app-hosts";
+import { appBaseDomain, hostProfile } from "./server/app-hosts";
 import { rateLimitCredentialRequest } from "./server/auth-rate-limit";
 import { serveControlPlane } from "./server/control-plane";
+import {
+  exchangeHostSession,
+  hostSessionKey,
+  serveAppSessionRoute,
+  startHostSession,
+} from "./server/host-session";
 import {
   guardControlPlaneRequest,
   withControlPlaneHeaders,
@@ -125,7 +143,9 @@ function isMcpAuthPath(pathname: string): boolean {
 /**
  * The gateway host: its MCP and OAuth routes, the deploy API (only past
  * the launch gate: without it, its paths are the control plane's like any
- * other), else the control plane.
+ * other), the third-party host handoff (only with a third-party domain:
+ * without one, its paths are the control plane's too), else the control
+ * plane.
  */
 async function serveGatewayHost(request: Request): Promise<Response> {
   const { pathname } = new URL(request.url);
@@ -135,6 +155,18 @@ async function serveGatewayHost(request: Request): Promise<Response> {
   ) {
     const { serveDeployApi } = await import("./server/deploy/routes");
     return serveDeployApi(request);
+  }
+  if (pathname === "/app-session" || pathname === "/app-session/start") {
+    const profile = hostProfile(env, ownGatewayHost());
+    const key = hostSessionKey(env);
+    if (profile.thirdPartyDomain && key) {
+      const served = await serveAppSessionRoute(request, {
+        profile,
+        key: await key,
+        registry: new DrizzleAppRegistry(env.DB),
+      });
+      if (served) return served;
+    }
   }
   if (isMcpAuthPath(pathname)) {
     const { serveMcpAuthRoute } = await import("./server/mcp-auth/routes");
@@ -213,19 +245,58 @@ export class AppGateway extends WorkerEntrypoint<
 // Dispatched apps' outbound Worker (default-deny egress); no routes.
 export { Outbound } from "./server/outbound";
 
+/**
+ * A third-party app's host: the handoff's code exchange, else the perimeter
+ * with the host's own session. Without the key's secret nothing here can
+ * be authenticated, so nothing is served.
+ */
+async function serveThirdPartyHost(
+  request: Request,
+  host: string,
+  deps: Omit<GatewayDeps, "authenticator">,
+  app: RegisteredApp,
+): Promise<Response> {
+  const keyPromise = hostSessionKey(env);
+  if (!keyPromise) return notFound("gateway_misconfigured");
+  const key = await keyPromise;
+  if (new URL(request.url).pathname === HOST_SESSION_PATH) {
+    return withSecurityHeaders(
+      await exchangeHostSession(request, { app, host, key }),
+    );
+  }
+  return handleGatewayRequest(request, {
+    ...deps,
+    authenticator: createHostSessionAuthenticator({
+      app,
+      host,
+      key,
+      tokens: createProdAuthenticator(platformPolicy(env)),
+    }),
+    interceptMcp: serveAppHostMcp,
+    thirdParty: {
+      startSession: (navigation) =>
+        startHostSession(navigation, host, env.GATEWAY_URL),
+    },
+  });
+}
+
 export default {
   async fetch(request: Request): Promise<Response> {
     const gatewayHost = ownGatewayHost();
     const requestHost = (request.headers.get("host") ?? "")
       .trim()
       .toLowerCase();
+    const route = routeHost(requestHost, hostProfile(env, gatewayHost));
 
-    if (!requestHost || requestHost === gatewayHost) {
+    if (route.kind === "control_plane") {
       return serveGuarded(
         request,
         requestHost || new URL(request.url).host,
         serveGatewayHost,
       );
+    }
+    if (route.kind === "not_found") {
+      return notFound("unknown_app_host");
     }
 
     const registry = new DrizzleAppRegistry(env.DB);
@@ -269,6 +340,10 @@ export default {
       app = null;
     }
     if (!app) {
+      // An unregistered third-party host: there is nothing else there.
+      if (route.kind === "third_party") {
+        return notFound("unknown_app_host");
+      }
       // Below the gateway's own host or the app base domain, an unregistered
       // subdomain is a 404 — serving the control plane (auth/admin UI) on an
       // arbitrary app-shaped origin would let a stale origin or service
@@ -293,22 +368,37 @@ export default {
       );
     }
 
+    if (!hostAdmitsApp(route, app)) {
+      return unroutableAppResponse(
+        new UnroutableAppError(
+          app.appId,
+          `a ${app.tier} app on a ${route.kind} host`,
+        ),
+      );
+    }
+
+    const deps = {
+      env: env as unknown as Record<string, unknown>,
+      registry,
+      privateKeyPem: env.JWT_PRIVATE_KEY,
+      issuer: env.GATEWAY_URL,
+      resolveApp: async () => app,
+      activate: async (binding: RegisteredApp) => {
+        const active = await activateApp(env, binding);
+        // The cached row still says `binding`.
+        if (active) hostnameCache.delete(requestHost);
+        return active;
+      },
+    };
     try {
+      if (route.kind === "third_party") {
+        return await serveThirdPartyHost(request, requestHost, deps, app);
+      }
       return await handleGatewayRequest(request, {
-        env: env as unknown as Record<string, unknown>,
-        registry,
+        ...deps,
         authenticator: createProdAuthenticator(platformPolicy(env)),
-        privateKeyPem: env.JWT_PRIVATE_KEY,
-        issuer: env.GATEWAY_URL,
-        resolveApp: async () => app,
         loginUrl: `${env.GATEWAY_URL}/sign-in`,
         interceptMcp: serveAppHostMcp,
-        activate: async (binding) => {
-          const active = await activateApp(env, binding);
-          // The cached row still says `binding`.
-          if (active) hostnameCache.delete(requestHost);
-          return active;
-        },
       });
     } catch (error) {
       // The perimeter must never leak an uncaught exception (Cloudflare's

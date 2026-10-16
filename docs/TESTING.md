@@ -142,6 +142,29 @@ don't); the CLI side, `everyapp deploy --gateway` with
 EVERYAPP_DEPLOY_TOKEN, runs against a test double of the API in
 `packages/cli/src/commands/deploy/deployToGateway.test.ts`.
 
+### Third-party hosts and per-host sessions
+
+`apps/every-app-gateway/src/server/third-party-hosts.sqlite.test.ts` runs
+the real worker entry and Better Auth on SQLite on a hosted gateway at
+`app.everyapp.com` with the third-party domain `everyapp.dev`, two dispatch
+apps registered by the deploy API's rules behind a fake `DISPATCHER`, and a
+shared first-party app: the host classifier and the domain checks; the
+handoff end to end (app host redirect with its nonce cookie, the control
+plane's continue page and `POST /app-session/start`, the code exchange, the
+page with the identity JWT); a signed-out browser sent to sign in; a code
+refused in another browser, with another nonce, twice, on another host,
+after 60 seconds or tampered; the Better Auth cookie never honoured on a
+third-party host and the host session on no other host (nor another app's,
+nor twice); sign-out, a lost app and a lost membership ending the host
+session; no code for a member without the app, a non-member, a cross-site
+post or a page elsewhere; app responses stripped of credentialed CORS and
+the perimeter's cookies, and a sibling's post refused; personal access
+tokens under their own organization's rules; 404 for unknown third-party
+hosts and 503 for a row on the wrong class of host; and nothing of it on a
+self-hosted gateway. The classifier, the tokens and the response rules
+have unit tests in `packages/perimeter/src/hostRoutes.test.ts` and
+`hostSession.test.ts`, and the perimeter's handoff hook in `gateway.test.ts`.
+
 ### Shared apps and organizations
 
 `apps/every-app-gateway/src/server/shared-apps.sqlite.test.ts` runs the real

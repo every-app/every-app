@@ -215,11 +215,29 @@ gateway`):
   (`<app>-<orgKey>.everyapp.dev`), never `app.everyapp.com`: one that is,
   or is under or above, `APP_BASE_DOMAIN` makes every registration and
   deploy answer `DEPLOYER_NOT_CONFIGURED`. Unset, apps deploy but get no
-  hostname.
+  hostname. Any other value on the Gateway's own site (one whose last two
+  labels are `everyapp.com`) is treated as unset: the session cookie's
+  SameSite protection depends on the two being different sites.
 
 The deployer's account is the Gateway's own `CLOUDFLARE_ACCOUNT_ID`, which
 the install writes (`secret set` refuses it): the namespace must be in the
 Gateway's account.
+
+Third-party apps open on their own hosts, each with its own session handed
+over by the Gateway (`docs/security-model.md`, "Third-Party Hosts and
+Per-Host Sessions"). The CLI publishes only the Gateway's own Custom
+Domains, so the third-party domain is wired by hand, once:
+
+1. Add `everyapp.dev` as a zone in the Gateway's account.
+2. A proxied wildcard DNS record: `AAAA *` → `100::` (the Worker answers;
+   the address is never reached). Universal SSL covers `*.everyapp.dev`.
+3. A Workers route on that zone: `*.everyapp.dev/*` → `every-app-gateway`.
+   No route for the apex: it answers nothing.
+
+After each `everyapp setup` or Gateway redeploy, check the route is still
+listed on the Worker (Workers & Pages → every-app-gateway → Domains &
+Routes): the CLI declares no route, and whether its deploy keeps one made
+by hand is unverified against a live account.
 
 The gate itself, `THIRD_PARTY_DEPLOYS=on`, is never set by the CLI: set it
 by hand on the `every-app-gateway` Worker once the checks above pass, and
@@ -245,6 +263,12 @@ EVERYAPP_DEPLOY_TOKEN=<deploy key> EVERYAPP_GATEWAY_URL=https://app.everyapp.com
   503 on its host: fix the row, never the code.
 - A shared app opens at `https://<appId>.app.everyapp.com` for a member of
   any organization; `pnpm everyapp status` lists it.
+- With third-party deploys wired: a third-party app at
+  `https://<app>-<orgKey>.everyapp.dev` sends a signed-out browser through
+  `https://app.everyapp.com/app-session` and back, signed in, with a
+  `__Host-everyapp_s` cookie on the app host only; signing out of the
+  Gateway signs the app host out on its next request. An unknown name under
+  `everyapp.dev` answers 404 `unknown_app_host`.
 - To suspend an organization, set its status in the Gateway's D1; within
   30 seconds its members get 403 everywhere, and `'active'` restores it:
 

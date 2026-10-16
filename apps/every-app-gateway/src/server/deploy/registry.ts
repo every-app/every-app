@@ -126,10 +126,12 @@ interface RegisterDispatchAppInput {
   description: string;
   manifest: unknown;
   deployerUserId: string;
-  /** THIRD_PARTY_DOMAIN, when the gateway has one. */
-  thirdPartyDomain: string | null;
+  /** THIRD_PARTY_DOMAIN as set: one on, under or above appBaseDomain is refused. */
+  configuredThirdPartyDomain: string | null;
   /** The gateway's own APP_BASE_DOMAIN (appBaseDomain(env)). */
   appBaseDomain: string | null;
+  /** The domain apps are named on: thirdPartyDomain(env), null without a valid one. */
+  thirdPartyDomain: string | null;
 }
 
 /**
@@ -176,8 +178,10 @@ async function register(
   input: RegisterDispatchAppInput,
 ): Promise<RegistrationPlan> {
   const { organizationId, appSlug } = input;
-  const domain = input.thirdPartyDomain?.trim().toLowerCase() || null;
-  if (domain) assertOwnDomain(domain, input.appBaseDomain);
+  const configured =
+    input.configuredThirdPartyDomain?.trim().toLowerCase() || null;
+  if (configured) assertOwnDomain(configured, input.appBaseDomain);
+  const domain = input.thirdPartyDomain;
   const orgKey = await orgKeyFor(organizationId);
   const stored = await findOrgApp(organizationId, appSlug);
   const existingApp = stored ? toAppRow(stored) : null;

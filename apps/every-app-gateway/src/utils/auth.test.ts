@@ -30,6 +30,15 @@ describe("isWorkerRoute", () => {
     expect(isWorkerRoute("/admin")).toBe(false);
     expect(isWorkerRoute("/accept-invitation?token=t")).toBe(false);
   });
+
+  it("sends the third-party app handoff through a full page load", () => {
+    const handoff = getSafeRedirect(
+      `/app-session?${new URLSearchParams({ return_to: "https://todo-acme.everyapp.dev/tasks", nonce_hash: "h" })}`,
+    );
+    expect(handoff).not.toBe("/");
+    expect(isWorkerRoute(handoff)).toBe(true);
+    expect(isWorkerRoute("/app-sessions")).toBe(false);
+  });
 });
 
 describe("getSafeReturnTo", () => {

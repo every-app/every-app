@@ -6,6 +6,31 @@ export {
 } from "./gateway";
 export { parseHost, type ParsedHost } from "./host";
 export {
+  hostAdmitsApp,
+  routeHost,
+  type HostProfile,
+  type HostRoute,
+} from "./hostRoutes";
+export {
+  HANDOFF_CODE_TTL_SECONDS,
+  handoffReturnPath,
+  hashNonce,
+  HOST_NONCE_COOKIE,
+  HOST_NONCE_TTL_SECONDS,
+  HOST_SESSION_COOKIE,
+  HOST_SESSION_PATH,
+  HOST_SESSION_TTL_SECONDS,
+  hostCookie,
+  importHostSessionKey,
+  isNonceValue,
+  newCodeId,
+  newNonce,
+  readCookie,
+  signHostToken,
+  verifyHostToken,
+  type HostSessionKey,
+} from "./hostSession";
+export {
   DUPLICATE_SESSION_COOKIE_MESSAGE,
   hasDuplicateSessionCookie,
 } from "./cookies";

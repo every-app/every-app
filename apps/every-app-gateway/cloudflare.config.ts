@@ -132,6 +132,11 @@ export default defineConfig(({ mode }) => {
       assets: { runWorkerFirst: true },
       workersDev: false,
       previewUrls: false,
+      // No routes: the deploy publishes the gateway's own host and its apps'
+      // as Custom Domains. A hosted install with third-party apps adds one
+      // route by hand, `*.<THIRD_PARTY_DOMAIN>/*` (`*.everyapp.dev/*`) on that
+      // zone, for their hosts (src/server/app-hosts.ts,
+      // docs/runbooks/hosted-install.md).
       // Hourly MCP housekeeping (src/server/mcp-auth/maintenance.ts): prune
       // the tool-call audit table, expire idle connections, sweep OAuth
       // storage. The deploy keeps it next to the domains it publishes.
