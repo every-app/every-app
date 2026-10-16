@@ -28,7 +28,7 @@ It's built for experienced engineers who want to use their favorite AI tooling t
 - Set it up in your own Cloudflare account with one command: `pnpm everyapp setup`
 - Apps run on Cloudflare's serverless platform, so an idle app costs nothing beyond the $5/month Workers Paid plan.
 
-Start by vibe coding an idea, reimplementing an old side project, or trying the [example prompt](https://everyapp.dev/docs/build-an-app/create-app/#example-prompt). Once you've built something you love, stay in vibe coding mode forever, or dig deeper and build the best project of your life.
+Start by vibe coding an idea, reimplementing an old side project, or trying the [example prompt](https://everyapp.com/docs/build-an-app/create-app/#example-prompt). Once you've built something you love, stay in vibe coding mode forever, or dig deeper and build the best project of your life.
 
 <details>
 <summary><h2>What is the Gateway?</h2></summary>
@@ -65,7 +65,7 @@ Nothing is published right now: no npm packages, and no syncs to the public repo
 
 2. **pnpm** — https://pnpm.io/installation. The repository pins pnpm 10.34.5 (`packageManager` in `package.json`), and a newer pnpm switches to it by itself.
 
-3. **A Cloudflare account on Workers Paid** — the one thing you buy: $5 a month, plus usage above generous included amounts ([costs](https://everyapp.dev/docs/how-it-works/gateway#what-it-costs)). [Sign up](https://dash.cloudflare.com/sign-up), then subscribe under **Workers & Pages → Plans**. The Free plan can't run Every App: D1 stops answering for the rest of the day once an account reaches its daily limits (enforced since September 2026), and the Gateway reads D1 on every request; requests also get only 10 ms of CPU.
+3. **A Cloudflare account on Workers Paid** — the one thing you buy: $5 a month, plus usage above generous included amounts ([costs](https://everyapp.com/docs/how-it-works/gateway#what-it-costs)). [Sign up](https://dash.cloudflare.com/sign-up), then subscribe under **Workers & Pages → Plans**. The Free plan can't run Every App: D1 stops answering for the rest of the day once an account reaches its daily limits (enforced since September 2026), and the Gateway reads D1 on every request; requests also get only 10 ms of CPU.
 
 4. **A domain on Cloudflare.** Every App lives at a subdomain of it: the Gateway at `apps.your-company.com`, each app one level below (`todo.apps.your-company.com`). Nothing else in the domain changes, so one your company already has on Cloudflare is fine.
 
@@ -97,7 +97,7 @@ One command, from an empty account to a working Gateway:
 
 Stopped half-way (a login to approve, a domain to buy, a link you haven't opened yet)? Run it again: it picks up where it left off, and does nothing once everything is there. Coding agents can drive it with `--json` (NDJSON events).
 
-[What the Gateway does](https://everyapp.dev/docs/how-it-works/gateway) explains, on one page, what it promises, what it costs, and its limits today; one to know now: deploying apps takes Cloudflare credentials that can also change the Gateway, so only let trusted admins deploy.
+[What the Gateway does](https://everyapp.com/docs/how-it-works/gateway) explains, on one page, what it promises, what it costs, and its limits today; one to know now: deploying apps takes Cloudflare credentials that can also change the Gateway, so only let trusted admins deploy.
 
 ### Deploy from another machine
 
@@ -122,7 +122,7 @@ pnpm everyapp gateway upgrade                                     # confirm when
 pnpm everyapp gateway status
 ```
 
-Later, `everyapp gateway use-per-app-domains` gives each app its own Custom Domain, after which the wildcard record can go. Details: [Upgrading an existing install](https://everyapp.dev/docs/reference/manage-your-gateway#upgrading-an-existing-install).
+Later, `everyapp gateway use-per-app-domains` gives each app its own Custom Domain, after which the wildcard record can go. Details: [Upgrading an existing install](https://everyapp.com/docs/reference/manage-your-gateway#upgrading-an-existing-install).
 
 ## Deploy an Example App
 
@@ -155,7 +155,7 @@ pnpm dev
 
 `pnpm dev` (`everyapp dev`) runs your app behind a local Gateway that enforces the same security perimeter as production, signed in as a seeded dev user. Open the URL it prints — hot reload works as normal.
 
-Need inspiration? Try the [example prompt](https://everyapp.dev/docs/build-an-app/create-app/#example-prompt) to get started.
+Need inspiration? Try the [example prompt](https://everyapp.com/docs/build-an-app/create-app/#example-prompt) to get started.
 
 ### An app in its own repository
 
@@ -202,14 +202,14 @@ Anything you can build on Cloudflare, you can build in Every App.
 
 Our example apps follow well-defined patterns so that coding agents can help build high-quality apps.
 
-- [How It Works](https://everyapp.dev/docs/how-it-works/overview) - How the Gateway, perimeter, and your app fit together
-- [The SDK](https://everyapp.dev/docs/how-it-works/sdk) - How auth flows from the Gateway into your app's code
-- [Local Development](https://everyapp.dev/docs/build-an-app/local-dev) - `everyapp dev`, the seeded user, and migrations
+- [How It Works](https://everyapp.com/docs/how-it-works/overview) - How the Gateway, perimeter, and your app fit together
+- [The SDK](https://everyapp.com/docs/how-it-works/sdk) - How auth flows from the Gateway into your app's code
+- [Local Development](https://everyapp.com/docs/build-an-app/local-dev) - `everyapp dev`, the seeded user, and migrations
 
 ## Docs
 Reference the full docs to learn more:
-- https://everyapp.dev/docs
-- [Troubleshooting](https://everyapp.dev/docs/troubleshooting) — when a deploy fails
+- https://everyapp.com/docs
+- [Troubleshooting](https://everyapp.com/docs/troubleshooting) — when a deploy fails
 
 ### Self-Hosting with Docker
 

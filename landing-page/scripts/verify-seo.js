@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
-const BASE_URL = (process.env.BASE_URL ?? "https://everyapp.dev").replace(
+const BASE_URL = (process.env.BASE_URL ?? "https://everyapp.com").replace(
   /\/+$/,
   "",
 );
 const CANONICAL_BASE_URL = (
-  process.env.CANONICAL_BASE_URL ?? "https://everyapp.dev"
+  process.env.CANONICAL_BASE_URL ?? "https://everyapp.com"
 ).replace(/\/+$/, "");
 
 const checks = [

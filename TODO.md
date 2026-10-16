@@ -44,6 +44,17 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] Publish again: npm for `everyapp` and `@every-app/sdk`, then the public repository sync. `.github/RELEASE.md` lists what pausing removed.
 - [ ] The docs site (`landing-page/content/docs`) still describes the published flow: `npx everyapp`, a starter app in `everyapp setup`, and `gitpick` for the examples. Update it when publishing resumes, or point it at the checkout flow until then.
 
+## Move the website to everyapp.com
+
+In order. Steps 2 and 4 are dashboard work: the Cloudflare MCP token can read DNS but not edit it.
+
+- [ ] Registration transfer from Namecheap to Cloudflare finishes. It was requested on 2026-10-15 and completes on its own within 5–7 days. DNS is already on Cloudflare, so nothing waits on it.
+- [ ] Delete the 46 Afternic parking records in the everyapp.com zone (DNS → Records → select all → Delete).
+- [ ] Deploy the landing page (`pnpm deploy` in `landing-page/`). It attaches everyapp.com as the Worker's Custom Domain.
+- [ ] Redirect everyapp.dev: detach it from the Worker (Settings → Domains & Routes), add a proxied `AAAA @ 100::` record, then a Redirect Rule for all requests to `concat("https://everyapp.com", http.request.uri.path)`, 301, query string kept. Same for `www.everyapp.com` on the everyapp.com zone. Keep everyapp.dev renewed.
+- [ ] Google Search Console: verify everyapp.com, run Change of Address from everyapp.dev, submit `https://everyapp.com/sitemap.xml`.
+- [ ] Email still says `support@everyapp.dev` and `ben@everyapp.dev`. Move it only after mail works on everyapp.com.
+
 ## Check on the first live deploy
 
 Everything below needs a real Cloudflare account. The rest was checked locally: fake-cf end-to-end tests, `cf dev` smoke tests, and offline `cf deploy --prebuilt --dry-run`.

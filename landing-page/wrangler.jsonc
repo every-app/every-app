@@ -12,7 +12,7 @@
   "preview_urls": true,
   "routes": [
     {
-      "pattern": "everyapp.dev",
+      "pattern": "everyapp.com",
       "custom_domain": true,
     },
   ],

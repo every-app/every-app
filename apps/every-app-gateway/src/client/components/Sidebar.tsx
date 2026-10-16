@@ -235,7 +235,7 @@ function AccountFooter() {
             className={navButtonClass}
             render={
               <a
-                href="https://everyapp.dev"
+                href="https://everyapp.com"
                 target="_blank"
                 rel="noopener noreferrer"
               />

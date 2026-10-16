@@ -1,4 +1,4 @@
-const DEFAULT_SITE_URL = "https://everyapp.dev";
+const DEFAULT_SITE_URL = "https://everyapp.com";
 
 export const SITE_URL = (
   process.env.SITE_URL ??

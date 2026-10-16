@@ -11,7 +11,7 @@ const DIST_DIR = join(__dirname, "../dist/client");
 const DOCS_CONTENT_DIR = join(__dirname, "../content/docs");
 const BLOG_CONTENT_DIR = join(__dirname, "../content/blog");
 
-const DEFAULT_SITE_URL = "https://everyapp.dev";
+const DEFAULT_SITE_URL = "https://everyapp.com";
 const SITE_URL = (process.env.SITE_URL ?? DEFAULT_SITE_URL).replace(/\/+$/, "");
 
 const DOC_EXTENSIONS = new Set([".md", ".mdx"]);

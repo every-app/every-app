@@ -1,6 +1,6 @@
 # everyapp
 
-CLI for [Every App](https://everyapp.dev) - deploy and manage self-hosted apps on Cloudflare.
+CLI for [Every App](https://everyapp.com) - deploy and manage self-hosted apps on Cloudflare.
 
 ## Running it
 
@@ -156,4 +156,4 @@ This will:
 
 ## Documentation
 
-For full documentation, visit [everyapp.dev/docs](https://everyapp.dev/docs).
+For full documentation, visit [everyapp.com/docs](https://everyapp.com/docs).

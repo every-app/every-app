@@ -43,7 +43,7 @@ Features:
 - Native sign-in with secure credential storage
 - Managed sessions with automatic token refresh
 
-This app connects to your own Every App Gateway deployment. You need an existing Gateway account to sign in. Learn more at everyapp.dev.
+This app connects to your own Every App Gateway deployment. You need an existing Gateway account to sign in. Learn more at everyapp.com.
 
 ### What's New (for v1.0.0)
 
@@ -143,6 +143,6 @@ If Apple requires an account deletion mechanism, the argument is:
 
 - [ ] Create demo account with pre-loaded apps for Apple reviewer
 - [ ] Generate screenshots at required sizes
-- [x] Publish privacy policy at a public URL (everyapp.dev/privacy)
-- [x] Publish support page at a public URL (everyapp.dev/support)
+- [x] Publish privacy policy at a public URL (everyapp.com/privacy)
+- [x] Publish support page at a public URL (everyapp.com/support)
 - [x] Finalize app icon (1024x1024, no alpha channel)

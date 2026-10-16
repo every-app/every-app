@@ -48,7 +48,7 @@ function Home() {
           <div>
             <span className="font-medium">This the starter template.</span>{" "}
             <a
-              href="https://everyapp.dev/docs/build-an-app/create-app/"
+              href="https://everyapp.com/docs/build-an-app/create-app/"
               target="_blank"
               rel="noopener noreferrer"
               className="underline hover:opacity-80"
