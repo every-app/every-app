@@ -127,7 +127,23 @@ in the gateway's Cloudflare account **is** operator authority.
   request carries the gateway's key and none of the app's credentials or
   account selectors (`x-api-key`, `OpenAI-Organization`, `OpenAI-Project`),
   no AI Gateway header (`cf-aig-*`), no `x-everyapp-*` header, no cookie and
-  no forwarding headers.
+  no forwarding headers. OpenRouter (`/api/ai/openrouter`) gets inference
+  only: `AI_PROXY_EXTRA_ROUTES` and `ai.routes` never widen it, so its
+  account-wide credits and keys endpoints stay closed.
+- The capability proxy (`/api/integrations/<id>/<host>/<path>` on the
+  AppGateway binding, `docs/capabilities.md`) puts a key the gateway holds
+  on calls only for an app whose registry row's manifest lists the
+  capability, only to that provider's own https hosts, with no redirect
+  followed, and only with the methods the provider reads with. The key is
+  shared by every app in every organization, so paths that list or describe
+  the whole provider account (DataForSEO's `tasks_ready`, `id_list`,
+  `errors`, `appendix/user_data`, `appendix/webhook_resend`) are refused.
+  The upstream request carries none of the app's `Authorization`,
+  `x-api-key`, cookies, `x-everyapp-*` or forwarding headers, and the
+  response none of the provider's cookies. Only an app that lists a
+  capability learns whether the gateway holds its key. The call is
+  attributed to the person whose identity token the app forwards when it
+  verifies for the calling app's organization, otherwise to the app.
 
 ## Sign-in with Cloudflare Access
 

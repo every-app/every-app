@@ -10,6 +10,9 @@ import { EveryAppError } from "@/lib/errors";
 /** Optional settings `everyapp secret set --for gateway` may change. */
 const SETTABLE_GATEWAY_SECRETS = [
   "OPENAI_API_KEY",
+  "OPENROUTER_API_KEY",
+  "DATAFORSEO_API_KEY",
+  "CONTEXT_API_KEY",
   "AI_PROXY_EXTRA_ROUTES",
   "EMAIL_REST_API_TOKEN",
   "EMAIL_FROM",

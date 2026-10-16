@@ -8,10 +8,12 @@
  * JSON column on the gateway `apps` registry row.
  *
  * This module defines the manifest shape and validators. It is intentionally
- * dependency-light (zod only) so it can be shared by the perimeter package and
- * the CLI without duplicated schema definitions.
+ * dependency-light (zod, and the SDK's list of capabilities) so it can be
+ * shared by the perimeter package and the CLI without duplicated schema
+ * definitions.
  */
 import { z } from "zod";
+import { CAPABILITIES, isCapabilityId } from "@every-app/sdk/internal";
 
 /** A single declared public route. Methods default to GET-only when omitted. */
 export const PublicRouteSchema = z.object({
@@ -121,6 +123,48 @@ export const ProvidersSchema = z
     "duplicate provider",
   );
 
+/**
+ * One capability an app asks for (docs/capabilities.md). Approval is of the
+ * app: every call it makes may use the capability, attributed to the
+ * signed-in person whose identity it forwards, or to the app.
+ */
+export const CapabilityRequestSchema = z
+  .object({
+    /** What the app does with it; each capability says which levels it offers. */
+    access: z.enum(["read", "write"]),
+    /** Why the app needs it, for whoever approves it. */
+    why: z.string().min(1).max(200).optional(),
+  })
+  .passthrough();
+export type CapabilityRequest = z.infer<typeof CapabilityRequestSchema>;
+
+const CapabilitiesSchema = z.record(
+  ProviderNameSchema,
+  CapabilityRequestSchema,
+);
+
+const CapabilitiesSchemaStrict = z
+  .record(ProviderNameSchema, CapabilityRequestSchema.strict())
+  .superRefine((capabilities, ctx) => {
+    for (const [id, request] of Object.entries(capabilities)) {
+      if (!isCapabilityId(id)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [id],
+          message: `unknown capability (the gateway offers: ${Object.keys(CAPABILITIES).join(", ")})`,
+        });
+      } else if (
+        !(CAPABILITIES[id].access as readonly string[]).includes(request.access)
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [id, "access"],
+          message: `${CAPABILITIES[id].label} offers ${CAPABILITIES[id].access.join(" or ")} access`,
+        });
+      }
+    }
+  });
+
 export const AppAccessSchema = z.enum(["everyone", "admins"]);
 export type AppAccess = z.infer<typeof AppAccessSchema>;
 
@@ -172,6 +216,11 @@ export const ManifestSchema = z
     public: z.array(PublicRouteSchema).optional(),
     /** Provider APIs this app may call through the gateway. Default: none. */
     providers: ProvidersSchema.optional(),
+    /**
+     * Third-party APIs the gateway calls for this app with keys it holds,
+     * e.g. `dataforseo: { access: "read" }`. Default: none.
+     */
+    capabilities: CapabilitiesSchema.optional(),
     /** Opaque app-domain scopes that PATs may request. */
     scopes: ScopesSchema.optional(),
     /** Limits on what the app may do through the gateway's AI proxy. */
@@ -249,6 +298,7 @@ export const ManifestSchemaStrict = ManifestSchema.extend({
   public: z.array(PublicRouteSchemaStrict).optional(),
   scopes: ScopesSchemaStrict.optional(),
   ai: AiPolicySchema.strict().optional(),
+  capabilities: CapabilitiesSchemaStrict.optional(),
 }).strict();
 export type EveryAppManifest = z.infer<typeof ManifestSchemaStrict>;
 

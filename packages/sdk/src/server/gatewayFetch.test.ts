@@ -80,6 +80,48 @@ describe("createGatewayFetch", () => {
     expect(forwarded?.headers.get("x-everyapp-identity")).toBeNull();
   });
 
+  it("reaches OpenRouter with a developer key when the binding is absent", async () => {
+    const directFetch = vi.fn<(request: Request) => Promise<Response>>(
+      async () => Response.json({ via: "direct" }),
+    );
+    vi.stubGlobal("fetch", directFetch);
+    const gatewayFetch = createGatewayFetch({
+      env: { EVERYAPP_DEV: "1", OPENROUTER_API_KEY: "developer-key" },
+    });
+
+    await gatewayFetch(
+      "https://gateway.example.com/api/ai/openrouter/api/v1/chat/completions",
+      { method: "POST", body: "{}" },
+    );
+
+    const forwarded = directFetch.mock.calls[0]?.[0];
+    expect(forwarded?.url).toBe(
+      "https://openrouter.ai/api/v1/chat/completions",
+    );
+    expect(forwarded?.headers.get("authorization")).toBe(
+      "Bearer developer-key",
+    );
+  });
+
+  it("names the missing key when local dev has another provider's only", async () => {
+    const directFetch = vi.fn();
+    vi.stubGlobal("fetch", directFetch);
+    const gatewayFetch = createGatewayFetch({
+      env: { EVERYAPP_DEV: "1", OPENAI_API_KEY: "developer-key" },
+    });
+
+    await expect(
+      gatewayFetch(
+        "https://gateway.example.com/api/ai/openrouter/api/v1/chat/completions",
+        { method: "POST", body: "{}" },
+      ),
+    ).rejects.toThrow(/Set OPENROUTER_API_KEY in \.dev\.vars/);
+    await expect(
+      gatewayFetch("https://gateway.example.com/api/ai/anthropic/v1/messages"),
+    ).rejects.toThrow(/\/api\/ai\/openai and \/api\/ai\/openrouter/);
+    expect(directFetch).not.toHaveBeenCalled();
+  });
+
   it("rejects a production-shaped env even when a provider key is present", () => {
     const directFetch = vi.fn();
     vi.stubGlobal("fetch", directFetch);

@@ -384,3 +384,64 @@ describe("AI proxy lockdown", () => {
     expect(line).not.toContain("my secret prompt");
   });
 });
+
+describe("OpenRouter", () => {
+  function call(path: string, init: RequestInit, models?: string[]) {
+    const fetchUpstream = vi.fn(async (_request: Request) =>
+      Response.json({ id: "gen-1" }),
+    );
+    const response = handleAuthenticatedAiProxyRequest({
+      request: createRequest(`/api/ai/openrouter${path}`, init),
+      provider: "openrouter",
+      env: {
+        OPENAI_API_KEY: "openai-key",
+        OPENROUTER_API_KEY: "openrouter-key",
+        AI_PROXY_EXTRA_ROUTES: "/v1/files",
+      },
+      policy: models ? { models } : undefined,
+      fetchUpstream,
+    });
+    return { response, fetchUpstream };
+  }
+
+  const chat = (model: string): RequestInit => ({
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model, messages: [] }),
+  });
+
+  it("forwards inference to openrouter.ai with the OpenRouter key", async () => {
+    const { response, fetchUpstream } = call(
+      "/api/v1/chat/completions",
+      chat("openai/gpt-5-mini"),
+    );
+
+    expect((await response).status).toBe(200);
+    const upstream = fetchUpstream.mock.calls[0]![0];
+    expect(upstream.url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(upstream.headers.get("authorization")).toBe("Bearer openrouter-key");
+  });
+
+  it("allows inference only, whatever the operator allows for OpenAI", async () => {
+    for (const [method, path] of [
+      ["GET", "/api/v1/credits"],
+      ["GET", "/api/v1/keys"],
+      ["POST", "/v1/files"],
+    ] as const) {
+      const { response, fetchUpstream } = call(path, { method });
+      expect((await response).status).toBe(403);
+      expect(fetchUpstream).not.toHaveBeenCalled();
+    }
+  });
+
+  it("applies the manifest's model allowlist", async () => {
+    const { response, fetchUpstream } = call(
+      "/api/v1/chat/completions",
+      chat("anthropic/claude-opus"),
+      ["openai/gpt-5-mini"],
+    );
+
+    expect((await response).status).toBe(403);
+    expect(fetchUpstream).not.toHaveBeenCalled();
+  });
+});

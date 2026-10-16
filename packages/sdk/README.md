@@ -116,9 +116,41 @@ export default everyApp(handler, { tools });
   `everyapp deploy` prints why.
 - Throw `ToolError` for messages the model may read. Other errors are logged
   in the app and reported as "Internal error in <app> (ref <call id>)".
+- Return `toolResult({ text, structured })` to give the model a written
+  summary while clients get the data: `structured` is checked against the
+  tool's `output` schema. A plain value is sent as JSON text.
 - A handler's second argument carries `user`, `env` (typed as
   `Cloudflare.Env`, which `cf` generates from `cloudflare.config.ts`), `ctx`,
   `request` and `callId`.
+
+## Capabilities
+
+Third-party APIs whose key the gateway holds (`docs/capabilities.md`). List
+one in `everyapp.config.ts` (`capabilities: { dataforseo: { access: "read",
+why: "Keyword research" } }`) and call the provider's real URLs:
+
+```ts
+import { gatewayRefusal, integrationFetch } from "@every-app/sdk/server";
+
+const dataforseo = integrationFetch({ env, provider: "dataforseo", request });
+const response = await dataforseo(
+  "https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_ideas/live",
+  { method: "POST", body: JSON.stringify([{ keywords: ["seo"] }]) },
+);
+const refused = await gatewayRefusal(response); // null: DataForSEO answered
+```
+
+The call goes over the gateway binding, which puts the key on it. Pass
+`request` to attribute the call to its user; omit it for work no person
+started, and the call is attributed to the app. `gatewayRefusal(response)`
+tells the gateway's own refusals (`x-everyapp-error`: the manifest doesn't
+list the capability, the gateway holds no key) from the provider's answers.
+`integrationStatus({ env, provider })` says whether calls would go through,
+without making one. In local dev, with no binding, the key comes from
+`.dev.vars` under the gateway secret's name (`DATAFORSEO_API_KEY`), and so do
+the AI providers' (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`) for
+`createGatewayFetch`; list those names in `everyAppWorker()`'s `secrets` so
+the dev server passes them through.
 
 `createMcpHandler()` from 0.2 still works in 0.3 but is deprecated and goes
 away in 0.4. The gateway keeps proxying `/mcp` to an app that defines no

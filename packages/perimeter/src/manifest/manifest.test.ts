@@ -451,3 +451,66 @@ describe("registry Worker names", () => {
     expect(archive).not.toBe(resourceNameFor(notesArchive, "DB"));
   });
 });
+
+describe("capabilities manifest field", () => {
+  it("accepts the capabilities the gateway offers, with why", () => {
+    const capabilities = {
+      dataforseo: { access: "read", why: "Keyword research" },
+      context: { access: "read" },
+    };
+    expect(
+      validateManifestStrict({ id: "seo", capabilities }).capabilities,
+    ).toEqual(capabilities);
+  });
+
+  it.each([
+    [
+      "an unknown capability",
+      { github: { access: "read" } },
+      /capabilities\.github: unknown capability \(the gateway offers: dataforseo, context\)/,
+    ],
+    [
+      "an access level the capability doesn't offer",
+      { dataforseo: { access: "write" } },
+      /capabilities\.dataforseo\.access: DataForSEO offers read access/,
+    ],
+    [
+      "an entry without access",
+      { dataforseo: {} },
+      /capabilities\.dataforseo\.access/,
+    ],
+    [
+      "the retired `as` key",
+      { dataforseo: { as: "org", access: "read" } },
+      /Unrecognized key\(s\) in object: 'as'/,
+    ],
+    [
+      "the retired `background` key",
+      { dataforseo: { access: "read", background: true } },
+      /Unrecognized key\(s\) in object: 'background'/,
+    ],
+    ["an empty why", { dataforseo: { access: "read", why: "" } }, /why/],
+  ])("refuses %s", (_case, capabilities, problem) => {
+    expect(() => validateManifestStrict({ id: "seo", capabilities })).toThrow(
+      problem,
+    );
+  });
+
+  it("refuses the old `integrations` key", () => {
+    expect(() =>
+      validateManifestStrict({
+        id: "seo",
+        integrations: { dataforseo: { access: "read" } },
+      }),
+    ).toThrow(/integrations/);
+  });
+
+  it("stays tolerant at registration, so a newer CLI's capability never bricks a gateway", () => {
+    expect(
+      validateManifest({
+        id: "seo",
+        capabilities: { "new-provider": { access: "read", scopes: ["x"] } },
+      }).capabilities,
+    ).toEqual({ "new-provider": { access: "read", scopes: ["x"] } });
+  });
+});

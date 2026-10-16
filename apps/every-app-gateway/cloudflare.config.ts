@@ -27,6 +27,9 @@ const LOCAL_D1_ID = createHash("sha256")
 // secret, so the ones set locally are declared.
 const OPTIONAL_SECRETS = [
   "OPENAI_API_KEY",
+  "OPENROUTER_API_KEY",
+  "DATAFORSEO_API_KEY",
+  "CONTEXT_API_KEY",
   "AI_PROXY_EXTRA_ROUTES",
   "EMAIL_REST_API_TOKEN",
   "EMAIL_FROM",

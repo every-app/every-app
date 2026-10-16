@@ -144,10 +144,43 @@ export interface ToolDefinition<TInput = unknown> {
   /** The tool reaches systems outside this app (other APIs, the web). */
   openWorld?: boolean;
   /**
-   * Return a string (sent as text) or a JSON-serializable value (sent as a
-   * JSON text block). Throw {@link ToolError} for errors the model may see.
+   * Return a string (sent as text), a JSON-serializable value (sent as a
+   * JSON text block), or {@link toolResult} for text and data together.
+   * Throw {@link ToolError} for errors the model may see.
    */
   handler: (input: TInput, context: ToolContext) => unknown;
+}
+
+const TOOL_RESULT = Symbol.for("everyapp.toolResult");
+
+/** What {@link toolResult} returns; a handler returns it as is. */
+export interface ToolResult {
+  readonly [TOOL_RESULT]: true;
+  readonly text: string;
+  readonly structured: Record<string, unknown>;
+}
+
+/**
+ * Return a written result and the same result as data. The model reads
+ * `text` (a summary, a table); clients also get `structured`, checked
+ * against the tool's `output` schema. Without this, a tool with an `output`
+ * schema sends its value as JSON text.
+ */
+export function toolResult(result: {
+  text: string;
+  structured: Record<string, unknown>;
+}): ToolResult {
+  return {
+    [TOOL_RESULT]: true,
+    text: result.text,
+    structured: result.structured,
+  };
+}
+
+function isToolResult(value: unknown): value is ToolResult {
+  return (
+    isRecord(value) && (value as Partial<ToolResult>)[TOOL_RESULT] === true
+  );
 }
 
 export interface DefineToolsOptions {
@@ -489,6 +522,18 @@ export async function toToolResult(
   definition: ToolDefinition,
   value: unknown,
 ): Promise<ToolCallResultV1> {
+  if (isToolResult(value)) {
+    const structured = definition.output
+      ? (await toToolResult(definition, value.structured)).structuredContent
+      : value.structured;
+    if (!isRecord(structured) || Array.isArray(structured)) {
+      throw new Error("structured results must be JSON objects");
+    }
+    return {
+      content: [{ type: "text", text: value.text }],
+      structuredContent: structured,
+    };
+  }
   if (definition.output) {
     const checked = await validateWithSchema(definition.output, value);
     if (!checked.ok) {

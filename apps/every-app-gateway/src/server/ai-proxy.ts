@@ -3,8 +3,6 @@ import { logEvent } from "@every-app/perimeter";
 import type { AiPolicy } from "@every-app/perimeter/manifest";
 import { tapUsage } from "./ai-usage";
 
-const OPENAI_PROVIDER = "openai";
-const OPENAI_UPSTREAM_BASE_URL = "https://api.openai.com";
 const STRIPPED_PROXY_HEADERS = [
   "x-every-app-token",
   IDENTITY_HEADER,
@@ -36,31 +34,64 @@ const STRIPPED_PROXY_HEADERS = [
 // an app pick a gateway's cache, logging or metadata.
 const STRIPPED_PROXY_HEADER_PREFIXES = ["x-everyapp-", "cf-aig-"];
 
-/**
- * The one key is shared by every app in every organization, and OpenAI keeps
- * files, batches, fine-tunes, assistants and stored completions per account,
- * so any other endpoint would let one app read another's data or start
- * expensive jobs. Apps get inference only (POST to these exact paths). More
- * needs both the operator (AI_PROXY_EXTRA_ROUTES) and the app's manifest
- * (`ai.routes`): whoever can deploy an app writes its manifest.
- */
-const INFERENCE_ROUTES = new Set([
-  "/v1/responses",
-  "/v1/chat/completions",
-  "/v1/embeddings",
-  "/v1/audio/speech",
-  "/v1/audio/transcriptions",
-  "/v1/audio/translations",
-  "/v1/images/generations",
-  "/v1/images/edits",
-  "/v1/images/variations",
-]);
+interface AiProvider {
+  upstreamBaseUrl: string;
+  /** The gateway secret holding the provider key. */
+  keyEnv: "OPENAI_API_KEY" | "OPENROUTER_API_KEY";
+  /**
+   * The one key is shared by every app in every organization, and providers
+   * keep files, batches, fine-tunes and stored completions per account, so
+   * any other endpoint would let one app read another's data or start
+   * expensive jobs. Apps get inference only (POST to these exact paths).
+   */
+  inferenceRoutes: ReadonlySet<string>;
+  /** Inference results the provider keeps account-wide unless told not to. */
+  unstoredRoutes: ReadonlySet<string>;
+  /**
+   * More than inference needs both the operator (AI_PROXY_EXTRA_ROUTES) and
+   * the app's manifest (`ai.routes`): whoever can deploy an app writes its
+   * manifest. OpenAI paths only.
+   */
+  extraRoutes: boolean;
+}
 
-// OpenAI keeps these results account-wide unless told not to.
-const UNSTORED_ROUTES = new Set(["/v1/responses", "/v1/chat/completions"]);
+const AI_PROVIDERS: Record<string, AiProvider> = {
+  openai: {
+    upstreamBaseUrl: "https://api.openai.com",
+    keyEnv: "OPENAI_API_KEY",
+    inferenceRoutes: new Set([
+      "/v1/responses",
+      "/v1/chat/completions",
+      "/v1/embeddings",
+      "/v1/audio/speech",
+      "/v1/audio/transcriptions",
+      "/v1/audio/translations",
+      "/v1/images/generations",
+      "/v1/images/edits",
+      "/v1/images/variations",
+    ]),
+    unstoredRoutes: new Set(["/v1/responses", "/v1/chat/completions"]),
+    extraRoutes: true,
+  },
+  // OpenAI-compatible, in front of many model providers. Usage (with cost)
+  // comes back in the response, so apps can meter their own spend.
+  openrouter: {
+    upstreamBaseUrl: "https://openrouter.ai",
+    keyEnv: "OPENROUTER_API_KEY",
+    inferenceRoutes: new Set([
+      "/api/v1/chat/completions",
+      "/api/v1/completions",
+      "/api/v1/responses",
+      "/api/v1/embeddings",
+    ]),
+    unstoredRoutes: new Set(),
+    extraRoutes: false,
+  },
+};
 
 interface AiProxyEnv {
   OPENAI_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
   /**
    * OpenAI paths beyond inference that apps may use, set by the operator
    * (comma or space separated, e.g. "/v1/files"). Each also covers its
@@ -99,15 +130,19 @@ export async function handleAuthenticatedAiProxyRequest({
   caller,
   fetchUpstream = fetch,
 }: HandleAuthenticatedAiProxyRequestOptions): Promise<Response> {
-  if (provider !== OPENAI_PROVIDER) {
+  const aiProvider = Object.hasOwn(AI_PROVIDERS, provider)
+    ? AI_PROVIDERS[provider]
+    : undefined;
+  if (!aiProvider) {
     return jsonResponse({ error: "Provider not supported" }, 404);
   }
 
-  if (!env.OPENAI_API_KEY?.trim()) {
+  const providerKey = env[aiProvider.keyEnv]?.trim();
+  if (!providerKey) {
     return jsonResponse({ error: "Provider is not configured" }, 503);
   }
 
-  const upstreamUrl = buildOpenAiUpstreamUrl(request, provider);
+  const upstreamUrl = buildUpstreamUrl(request, provider, aiProvider);
   if (!upstreamUrl) {
     return jsonResponse({ error: "Invalid proxy request path" }, 400);
   }
@@ -115,6 +150,7 @@ export async function handleAuthenticatedAiProxyRequest({
 
   if (
     !isAllowedRoute(
+      aiProvider,
       request.method,
       upstreamPath,
       policy,
@@ -132,16 +168,21 @@ export async function handleAuthenticatedAiProxyRequest({
 
   const requestHeaders = new Headers(request.headers);
   stripProxyHeaders(requestHeaders);
-  requestHeaders.set("authorization", `Bearer ${env.OPENAI_API_KEY}`);
+  requestHeaders.set("authorization", `Bearer ${providerKey}`);
 
-  const prepared = await prepareBody(request, upstreamPath, requestHeaders);
+  const prepared = await prepareBody(
+    aiProvider,
+    request,
+    upstreamPath,
+    requestHeaders,
+  );
   if (!prepared.ok) return prepared.response;
 
   // The model allowlist covers inference, where the gateway reads the model.
   // Endpoints an app opted into with `ai.routes` stream through unread.
   if (
     policy?.models &&
-    INFERENCE_ROUTES.has(upstreamPath) &&
+    aiProvider.inferenceRoutes.has(upstreamPath) &&
     !policy.models.includes(prepared.model ?? "")
   ) {
     return jsonResponse(
@@ -213,15 +254,17 @@ function covers(route: string, path: string): boolean {
  * app's own `ai.routes` never widens what the shared key can do by itself.
  */
 function isAllowedRoute(
+  provider: AiProvider,
   method: string,
   path: string,
   policy: AiPolicy | undefined,
   allowedByOperator: string[],
 ): boolean {
-  if (method.toUpperCase() === "POST" && INFERENCE_ROUTES.has(path)) {
+  if (method.toUpperCase() === "POST" && provider.inferenceRoutes.has(path)) {
     return true;
   }
   return (
+    provider.extraRoutes &&
     (policy?.routes ?? []).some((route) => covers(route, path)) &&
     allowedByOperator.some((route) => covers(route, path))
   );
@@ -233,6 +276,7 @@ function isAllowedRoute(
  * `store` to false. Bodies the gateway does not need to see stream through.
  */
 async function prepareBody(
+  provider: AiProvider,
   request: Request,
   path: string,
   headers: Headers,
@@ -240,7 +284,7 @@ async function prepareBody(
   if (!canIncludeBody(request.method) || !request.body) {
     return { ok: true, body: null, model: null };
   }
-  if (!INFERENCE_ROUTES.has(path)) {
+  if (!provider.inferenceRoutes.has(path)) {
     return { ok: true, body: request.body, model: null };
   }
 
@@ -273,7 +317,7 @@ async function prepareBody(
   }
 
   const body = payload as Record<string, unknown>;
-  if (UNSTORED_ROUTES.has(path)) {
+  if (provider.unstoredRoutes.has(path)) {
     body.store = false;
   }
   headers.delete("content-length");
@@ -284,9 +328,10 @@ async function prepareBody(
   };
 }
 
-function buildOpenAiUpstreamUrl(
+function buildUpstreamUrl(
   request: Request,
   provider: string,
+  aiProvider: AiProvider,
 ): string | null {
   const incomingUrl = new URL(request.url);
   const routePrefix = `/api/ai/${provider}`;
@@ -300,7 +345,7 @@ function buildOpenAiUpstreamUrl(
     return null;
   }
 
-  const upstreamUrl = new URL(OPENAI_UPSTREAM_BASE_URL);
+  const upstreamUrl = new URL(aiProvider.upstreamBaseUrl);
   upstreamUrl.pathname = upstreamPath;
   upstreamUrl.search = incomingUrl.search;
 

@@ -22,6 +22,15 @@ export {
   type GatewayFetchEnv,
 } from "./gatewayFetch.js";
 export {
+  gatewayRefusal,
+  integrationFetch,
+  integrationStatus,
+  type GatewayRefusal,
+  type IntegrationFetchOptions,
+  type IntegrationStatus,
+} from "./integrationFetch.js";
+export type { CapabilityId } from "../internal/index.js";
+export {
   // Deprecated in 0.3.0 and removed in 0.4.0: use defineTools().
   createMcpHandler,
   type CreateMcpHandlerOptions,
@@ -32,11 +41,13 @@ export {
 export {
   ToolError,
   defineTools,
+  toolResult,
   type DefineToolsOptions,
   type PlainToolSchema,
   type StandardSchemaWithJSON,
   type ToolContext,
   type ToolDefinition,
+  type ToolResult,
   type ToolSchema,
   type ToolSet,
 } from "./tools.js";

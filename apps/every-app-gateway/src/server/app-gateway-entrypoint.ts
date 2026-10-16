@@ -1,10 +1,15 @@
 import {
+  GATEWAY_ERROR_HEADER,
   IDENTITY_HEADER,
   verifyIdentityJwt,
   type EveryAppUser,
 } from "@every-app/sdk/internal";
 import type { AppRegistry, RegisteredApp } from "@every-app/perimeter";
 import { handleAuthenticatedAiProxyRequest } from "./ai-proxy";
+import {
+  handleIntegrationProxyRequest,
+  type IntegrationProxyEnv,
+} from "./integration-proxy";
 
 const CALLER_CACHE_MAX_ENTRIES = 500;
 const CALLER_CACHE_HIT_TTL_MS = 30_000;
@@ -16,10 +21,11 @@ export interface AppCallerProps {
   workerName: string;
 }
 
-interface AppGatewayEnv {
+interface AppGatewayEnv extends IntegrationProxyEnv {
   GATEWAY_URL?: string;
   JWT_PUBLIC_KEY?: string;
   OPENAI_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
   AI_PROXY_EXTRA_ROUTES?: string;
 }
 
@@ -70,7 +76,7 @@ export async function handleAppGatewayRequest({
 }: HandleAppGatewayRequestOptions): Promise<Response> {
   try {
     const props = parseCallerProps(rawProps);
-    const provider = providerFromPath(request);
+    const route = routeFromPath(request);
     let app: RegisteredApp | null;
     try {
       app = await resolveCallerApp(registry, props);
@@ -111,6 +117,22 @@ export async function handleAppGatewayRequest({
         "Service-binding caller identity does not match the registry.",
       );
     }
+    const caller = {
+      organizationId: props.organizationId,
+      appId: props.appId,
+    };
+    if (route.kind === "integration") {
+      return handleIntegrationProxyRequest({
+        request,
+        capabilities: app.manifest.capabilities,
+        user: await resolveAttribution(request, props, env),
+        env,
+        caller,
+        fetchUpstream,
+      });
+    }
+
+    const { provider } = route;
     if (!app.manifest.providers?.includes(provider)) {
       throw new AppGatewayError(
         "provider_not_allowed",
@@ -135,7 +157,7 @@ export async function handleAppGatewayRequest({
       provider,
       env,
       policy: app.manifest.ai,
-      caller: { organizationId: props.organizationId, appId: props.appId },
+      caller,
       fetchUpstream,
     });
   } catch (error) {
@@ -191,18 +213,19 @@ function missingCallerIdentity(): AppGatewayError {
   );
 }
 
-function providerFromPath(request: Request): string {
-  const match = new URL(request.url).pathname.match(
-    /^\/api\/ai\/([a-z][a-z0-9-]*)(?:\/|$)/,
+type GatewayRoute = { kind: "ai"; provider: string } | { kind: "integration" };
+
+/** AI providers under /api/ai/<provider>, capabilities under /api/integrations/. */
+function routeFromPath(request: Request): GatewayRoute {
+  const { pathname } = new URL(request.url);
+  const ai = pathname.match(/^\/api\/ai\/([a-z][a-z0-9-]*)(?:\/|$)/);
+  if (ai?.[1]) return { kind: "ai", provider: ai[1] };
+  if (pathname.startsWith("/api/integrations/")) return { kind: "integration" };
+  throw new AppGatewayError(
+    "invalid_gateway_route",
+    404,
+    "The named gateway entrypoint only serves AI provider and capability proxy paths.",
   );
-  if (!match?.[1]) {
-    throw new AppGatewayError(
-      "invalid_gateway_route",
-      404,
-      "The named gateway entrypoint only serves provider proxy paths.",
-    );
-  }
-  return match[1];
 }
 
 async function resolveCallerApp(
@@ -274,6 +297,6 @@ function errorResponse(error: AppGatewayError): Response {
       code: error.code,
       message: error.message,
     },
-    { status: error.status },
+    { status: error.status, headers: { [GATEWAY_ERROR_HEADER]: error.code } },
   );
 }

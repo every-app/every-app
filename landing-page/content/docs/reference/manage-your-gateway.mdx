@@ -67,7 +67,7 @@ pnpm everyapp secret unset OPENAI_API_KEY --for gateway
 pnpm everyapp secret list --for gateway
 ```
 
-`set` and `unset` redeploy the Gateway your checkout builds, with the change in the same version, and later deploys keep it. The settings are the AI proxy's `OPENAI_API_KEY` and `AI_PROXY_EXTRA_ROUTES`, email's `EMAIL_REST_API_TOKEN`, `EMAIL_FROM` and `EMAIL_FROM_NAME`, the MCP connector's `MCP_*`, and [Cloudflare Access sign-in](/docs/reference/cloudflare-access)'s `CLOUDFLARE_ACCESS_*` and `EMAIL_PASSWORD_SIGN_IN`; any other name lists them.
+`set` and `unset` redeploy the Gateway your checkout builds, with the change in the same version, and later deploys keep it. The settings are the AI proxy's `OPENAI_API_KEY`, `OPENROUTER_API_KEY` and `AI_PROXY_EXTRA_ROUTES`, the keys the gateway holds for apps' capabilities (`DATAFORSEO_API_KEY`, `CONTEXT_API_KEY`), email's `EMAIL_REST_API_TOKEN`, `EMAIL_FROM` and `EMAIL_FROM_NAME`, the MCP connector's `MCP_*`, and [Cloudflare Access sign-in](/docs/reference/cloudflare-access)'s `CLOUDFLARE_ACCESS_*` and `EMAIL_PASSWORD_SIGN_IN`; any other name lists them.
 
 ## Remove an app
 

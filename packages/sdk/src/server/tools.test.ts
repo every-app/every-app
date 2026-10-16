@@ -6,6 +6,7 @@ import {
   SDK_VERSION,
   defineTools,
   toToolResult,
+  toolResult,
   toolSetInternals,
   validateWithSchema,
   type PlainToolSchema,
@@ -299,6 +300,22 @@ describe("tool results", () => {
     await expect(toToolResult(tool, { n: "2" })).rejects.toThrow(
       "does not match the output schema",
     );
+  });
+
+  it("sends a toolResult's text for the model and its checked data as structured content", async () => {
+    const tool = plainTool(z.object({ n: z.number() }));
+    await expect(
+      toToolResult(
+        tool,
+        toolResult({ text: "Two rows.", structured: { n: 2 } }),
+      ),
+    ).resolves.toEqual({
+      content: [{ type: "text", text: "Two rows." }],
+      structuredContent: { n: 2 },
+    });
+    await expect(
+      toToolResult(tool, toolResult({ text: "x", structured: { n: "2" } })),
+    ).rejects.toThrow("does not match the output schema");
   });
 });
 

@@ -25,6 +25,12 @@ export const PUBLIC_HEADER = "x-everyapp-public";
  * named by its `purpose` claim.
  */
 export const SYSTEM_HEADER = "x-everyapp-system";
+/**
+ * On a refusal the AppGateway binding makes itself (the app's manifest lacks
+ * the capability, the gateway holds no key), as opposed to the provider's
+ * own answer passed through: the refusal's code, also in the JSON body.
+ */
+export const GATEWAY_ERROR_HEADER = "x-everyapp-error";
 /** 120-second lifetime — caps revocation staleness while surviving clock skew. */
 export const IDENTITY_TTL_SECONDS = 120;
 /** System tokens are minted per call and live at most a minute. */

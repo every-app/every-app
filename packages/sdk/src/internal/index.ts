@@ -1,5 +1,7 @@
 export * from "./protocol.js";
 export * from "./tools.js";
+export * from "./capabilities.js";
+export * from "./aiProviders.js";
 export {
   ConfigurationError,
   IdentityError,

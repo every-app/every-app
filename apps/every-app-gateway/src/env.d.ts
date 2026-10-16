@@ -66,6 +66,10 @@ declare namespace Cloudflare {
 
     // Provider credentials used by gateway proxy routes
     OPENAI_API_KEY?: string;
+    OPENROUTER_API_KEY?: string;
+    // Integration keys the gateway holds for apps (src/server/integration-proxy.ts).
+    DATAFORSEO_API_KEY?: string;
+    CONTEXT_API_KEY?: string;
 
     // OpenAI paths beyond inference that apps may opt into with their
     // manifest's `ai.routes` (comma or space separated, e.g. "/v1/files").
