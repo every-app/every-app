@@ -26,6 +26,13 @@ export const createCommand = buildCommand({
           "With --deploy: the Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)",
         optional: true,
       },
+      "account-id": {
+        kind: "parsed",
+        parse: String,
+        brief:
+          "With --deploy: the Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)",
+        optional: true,
+      },
       json: {
         kind: "boolean",
         brief: "Print progress as NDJSON events on stdout (never asks anything)",
@@ -73,6 +80,14 @@ const gatewayFlag = {
   optional: true,
 } as const;
 
+const accountFlag = {
+  kind: "parsed",
+  parse: String,
+  brief:
+    "The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)",
+  optional: true,
+} as const;
+
 const jsonFlag = {
   kind: "boolean",
   brief:
@@ -106,6 +121,7 @@ export const deployCommand = buildCommand({
     },
     flags: {
       gateway: gatewayFlag,
+      "account-id": accountFlag,
       verbose: verboseFlag,
       yes: yesFlag,
       json: jsonFlag,
@@ -186,6 +202,7 @@ export const deleteCommand = buildCommand({
     },
     flags: {
       gateway: gatewayFlag,
+      "account-id": accountFlag,
       purge: {
         kind: "boolean",
         brief:
@@ -267,6 +284,7 @@ const d1QueryCommand = buildCommand({
         optional: true,
       },
       gateway: gatewayFlag,
+      "account-id": accountFlag,
       json: {
         kind: "boolean",
         brief: "Print the result as an NDJSON event",
@@ -311,6 +329,7 @@ const secretSetCommand = buildCommand({
         optional: true,
       },
       gateway: gatewayFlag,
+      "account-id": accountFlag,
       yes: yesFlag,
       json: jsonFlag,
       verbose: verboseFlag,
@@ -348,6 +367,7 @@ const instanceArgument = {
 };
 const workflowFlags = {
   gateway: gatewayFlag,
+  "account-id": accountFlag,
   json: {
     kind: "boolean",
     brief: "Print the result as an NDJSON event",

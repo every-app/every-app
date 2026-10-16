@@ -43,7 +43,15 @@ The token in your environment is invalid or expired. Recreate it as above, or un
 
 ### The deploy targets the wrong Cloudflare account
 
-`npx cf auth whoami` lists the accounts your login can use. Pass `--account-id <id>` or set `CLOUDFLARE_ACCOUNT_ID`. After the first deploy the CLI remembers the account.
+`npx cf auth whoami` lists the accounts your login can use. The CLI finds the Gateway by asking each of them for its database, so a login with one Gateway always gets that one. To install a new Gateway in another account, or pick among several, pass `--account-id <id>` or set `CLOUDFLARE_ACCOUNT_ID`.
+
+### "This Cloudflare login sees a Gateway in … accounts" (`choose_account`)
+
+More than one account your login can use has a Gateway, and nothing said which one. At a terminal the CLI asks; unattended it stops (exit 2) and lists them, each with its address and the command to run (`data.choices` under `--json`). Pass `--account-id <id>` (or set `CLOUDFLARE_ACCOUNT_ID`), or name the Gateway's address with `--gateway`.
+
+### "This checkout's Gateway (…) is older than the one live at …" (`DOWNGRADE_REFUSED`)
+
+The CLI deploys the Gateway from the checkout you run it in, and someone has deployed a newer one from theirs: their checkout has commits (or migrations) yours doesn't. Nothing was changed. Run `git pull`, then the same command again. App deploys and deletes refuse too, before they touch anything, since they write the registry with your checkout's rules and redeploy its Gateway. To put an older Gateway back on purpose, run `pnpm everyapp setup --allow-downgrade` (setup's own refusal offers it; an agent asks you first).
 
 ### "No zone in this Cloudflare account holds …" / "Every App needs a domain on Cloudflare"
 
@@ -107,13 +115,13 @@ Nothing was uploaded: the Gateway that was serving keeps running. Before migrati
 
 **Nameservers haven't propagated.** If your domain shows "Pending Nameserver Update" in the Cloudflare dashboard, Cloudflare doesn't control DNS for it yet and nothing will resolve. This can take a few hours after you change nameservers at your registrar.
 
-### "The live gateway release isn't cached in this account"
+### Building the Gateway takes a minute or two
 
-`gateway reconcile` redeploys exactly the release your Gateway runs, from a copy the deploy keeps in your account. A Gateway deployed by an older CLI has none: run `npx everyapp gateway upgrade` once.
+Every Gateway deploy, and the rebind an app deploy or delete does, deploys the Gateway your checkout builds. The first time after its sources change (a `git pull`, an edit under `apps/every-app-gateway`, `packages/sdk`, `packages/perimeter` or `packages/toolbus`) it is built; after that the build is reused from `node_modules/.cache/everyapp`, and a rebind takes seconds. Deleting that directory only costs one build. If the build fails, the error shows its last lines and the log file's path.
 
-### "The gateway serves version …, not the … its install record names"
+### "… stopped before its first upload finished" (`GATEWAY_NOT_INSTALLED`)
 
-A reconcile (run by `gateway reconcile`, `gateway secret set`, or an app deploy or delete that binds or unbinds an app) redeploys the release your Gateway's install record names, but only while the Gateway serves the version that record names. Here something else was deployed since (a rollback in the dashboard, a deploy by hand, an upgrade that stopped before it recorded itself), so redeploying the recorded release could put an older one back. Nothing has changed. Check `npx everyapp gateway status`, then run the command in a terminal: it asks whether to redeploy the recorded release anyway.
+A new install records itself in the Gateway's database before anything can stop it, then stopped before its first upload (no workers.dev subdomain yet, a DNS record in the way). Run `pnpm everyapp setup` again: it picks up the address and account from that record, without `--domain`. App commands wait for it to finish.
 
 ### I lost the setup link, or it expired
 
@@ -141,11 +149,15 @@ A newer link replaced it (`gateway claim-link`, `setup` or `gateway deploy` on a
 
 ### Deploying from another machine, or the CLI asks you to log in
 
-The only credential is your Cloudflare login for the Gateway's account: run `npx cf auth login` (the CLI starts it at a terminal), or set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in CI. There is no deploy token to create, paste or store; the CLI writes your Gateway's app registry itself, in the Gateway's database.
+The only credential is your Cloudflare login for the Gateway's account: run `npx cf auth login` (the CLI starts it at a terminal, and under `--json` hands its link and code to the agent and waits), or set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in CI. Nothing else needs setting up on another machine: there is no deploy token to create, paste or store, and no local record of the install; the CLI finds the Gateway through the login and writes your Gateway's app registry itself, in the Gateway's database.
 
-### "Cloudflare account … has no gateway" / "The gateway in Cloudflare account … is …, not …"
+### "No Gateway in the Cloudflare accounts this login sees" (`GATEWAY_NOT_FOUND`)
 
-App commands find the Gateway in your Cloudflare account: the one this machine deployed it to, `CLOUDFLARE_ACCOUNT_ID`, or the only account your login has. Log in to the Gateway's account (`npx cf auth login`) or set `CLOUDFLARE_ACCOUNT_ID`. `GATEWAY_URL_MISMATCH` means `--gateway` (or `EVERYAPP_GATEWAY_URL`) names another address than the Gateway in that account: drop it, or log in to the account that Gateway runs in.
+App commands find the Gateway by asking every account your login can use for its database (an account the login can't read counts as one without a Gateway). None had one: log in to the Gateway's account (`npx cf auth login`), or set the token and `CLOUDFLARE_ACCOUNT_ID` it needs; the error lists the accounts it asked. With no Gateway yet, `pnpm everyapp setup --domain <hostname>` installs one. `Cloudflare account … has no Gateway; this login's is in …` means `--account-id` (or `CLOUDFLARE_ACCOUNT_ID`) names another account than the Gateway's: pass that one, or drop it.
+
+### "The Gateway in Cloudflare account … is …, not …" (`GATEWAY_URL_MISMATCH`)
+
+`--gateway` (or `EVERYAPP_GATEWAY_URL`) names another address than the Gateway the CLI found: drop it, or pass the account that Gateway runs in with `--account-id`.
 
 ### "The gateway's install row has no identity public key"
 

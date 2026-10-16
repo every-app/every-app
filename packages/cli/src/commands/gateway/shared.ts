@@ -1,76 +1,96 @@
 /**
- * What the `everyapp gateway …` commands share: output, Cloudflare login
- * and account, the remembered install, and the release to deploy.
+ * What the `everyapp gateway …` commands share: output, the Gateway they
+ * act on (found through the Cloudflare login), and the release to deploy.
  */
 import path from "node:path";
 import { version as cliVersion } from "../../../package.json";
 import { runLogged } from "@/lib/childLog";
-import { ensureCfAuth, resolveAccount } from "@/lib/cf/account";
+import { deviceLoginAction } from "@/lib/cf/account";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
-import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
+import type { CfRunner } from "@/lib/cf/runner";
 import { checkoutRoot } from "@/lib/checkout";
+import { loginAndDiscover, requireInstall } from "@/lib/gateway/connect";
 import {
-  openRelease,
-  RELEASE_TARBALL,
-  type GatewayRelease,
-} from "@/lib/gateway/release";
+  requireGateway,
+  type FoundGateway,
+} from "@/lib/gateway/discover";
+import { openCheckoutRelease } from "@/lib/gateway/checkoutRelease";
+import type { InstallRecord } from "@/lib/gateway/install";
+import { RELEASE_TARBALL, type GatewayRelease } from "@/lib/gateway/release";
 import type { EventSink } from "@/lib/output/events";
 
-export { rememberedInstall } from "@/lib/install/state";
 export { eventSink, runReported } from "@/lib/output/run";
 export { cliVersion };
 
-interface Connected {
-  cf: CfRunner;
-  account: { id: string; name: string | null };
-}
-
-/** Log in to Cloudflare if needed, pick the account, and pin cf to it. */
-export async function connectToAccount({
-  json,
-  accountId,
-  remembered,
-}: {
+interface ExistingGatewayOptions {
+  /** --json: with `out`, cf's device login goes to the agent, and the run waits. */
   json?: boolean;
+  out?: EventSink;
   accountId?: string;
-  remembered?: string;
-}): Promise<Connected> {
-  const interactive = canPromptInTerminal(json ?? false);
-  const whoami = await ensureCfAuth({ cf: createCfRunner(), interactive });
-  const account = await resolveAccount({
-    whoami,
-    flag: accountId,
-    remembered,
-    interactive,
-  });
-  return { cf: createCfRunner({ accountId: account.id }), account };
+  /** cf per account (tests). */
+  createCf?: (accountId?: string) => CfRunner;
 }
 
 /**
- * The gateway release to deploy: `--release <tarball>`, or one built from
- * the checkout this CLI runs from. Nothing is published while we work from
- * the repository, so there is no release bundled with the CLI.
+ * The Gateway a command that needs one acts on, found through the
+ * Cloudflare login (GATEWAY_NOT_FOUND when there is none); with
+ * `installed`, one whose install is recorded and live.
  */
-export async function openGatewayRelease({
-  releasePath,
+export async function existingGateway(
+  options: ExistingGatewayOptions & { installed: true },
+): Promise<FoundGateway & { install: InstallRecord }>;
+export async function existingGateway(
+  options: ExistingGatewayOptions & { installed?: false },
+): Promise<FoundGateway>;
+export async function existingGateway({
+  json,
+  out,
+  accountId,
+  createCf,
+  installed,
+}: ExistingGatewayOptions & { installed?: boolean }): Promise<FoundGateway> {
+  const { whoami, discovery } = await loginAndDiscover({
+    createCf,
+    accountId,
+    interactive: canPromptInTerminal(json ?? false),
+    onDeviceLogin: json && out ? deviceLoginAction(out, "gateway.login") : undefined,
+  });
+  const gateway = requireGateway(discovery, whoami);
+  return installed ? requireInstall(gateway) : gateway;
+}
+
+/**
+ * The gateway release to deploy: the one this checkout builds, from the
+ * build cache when its sources haven't changed since
+ * (lib/gateway/checkoutRelease.ts). Nothing is published while we work
+ * from the repository, so there is no other release to deploy.
+ */
+export function openGatewayRelease({
   out,
   verbose,
 }: {
-  releasePath?: string;
   out: EventSink;
   /** Stream the build's output to stderr too. */
   verbose?: boolean;
 }): Promise<GatewayRelease> {
-  if (releasePath) return openRelease(path.resolve(releasePath));
-  return openRelease(await buildReleaseFromCheckout(out, verbose ?? false));
+  const root = checkoutRoot();
+  return openCheckoutRelease({
+    root,
+    out,
+    build: () => buildReleaseFromCheckout(root, out, verbose ?? false),
+  });
 }
 
-/** The release build's output goes to a log file (lib/childLog.ts). */
+/**
+ * The only source of the Gateway's code: the SDK's build, then the
+ * Gateway's `build:release`. Their output goes to a log file
+ * (lib/childLog.ts).
+ */
 async function buildReleaseFromCheckout(
+  root: string,
   out: EventSink,
   verbose: boolean,
 ): Promise<string> {
-  const root = checkoutRoot();
   const gatewayDir = path.join(root, "apps", "every-app-gateway");
   out.emit({
     type: "progress",

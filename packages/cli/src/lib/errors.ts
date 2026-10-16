@@ -10,14 +10,14 @@ import type { RequiredAction } from "@/lib/output/events";
 
 /**
  * Errors whose way on is a flag that takes something over (replaces a DNS
- * record, deletes data, puts an older Gateway back, skips a confirmation):
- * their rerun carries the flag and `authorize`, so an agent shows the error
- * and asks before using it, never retries with it on its own.
+ * record, deletes data, skips a confirmation): their rerun carries the flag
+ * and `authorize`, so an agent shows the error and asks before using it,
+ * never retries with it on its own. (DOWNGRADE_REFUSED sets its own: only
+ * `setup` takes --allow-downgrade; elsewhere the way on is `git pull`.)
  */
 const TAKEOVER_FLAGS: Readonly<Record<string, string>> = {
   DNS_RECORD_CONFLICT: "--force-dns",
   CAA_BLOCKS_ISSUANCE: "--force-dns",
-  DOWNGRADE_REFUSED: "--allow-downgrade",
   DURABLE_OBJECT_REMOVED: "--allow-delete-durable-object-data",
   WORKFLOW_REMOVED: "--allow-delete-workflows",
   CONFIRMATION_REQUIRED: "--yes",
@@ -31,11 +31,18 @@ export class EveryAppError extends Error {
   readonly rerun?: string;
   /** `rerun` takes something over: show it and ask before running it. */
   readonly authorize: boolean;
+  /** What else the error event carries for a script (`data`). */
+  readonly data?: Record<string, unknown>;
 
   constructor(
     code: string,
     message: string,
-    options: { retryable?: boolean; rerun?: string; authorize?: boolean } = {},
+    options: {
+      retryable?: boolean;
+      rerun?: string;
+      authorize?: boolean;
+      data?: Record<string, unknown>;
+    } = {},
   ) {
     super(message);
     this.name = "EveryAppError";
@@ -45,6 +52,7 @@ export class EveryAppError extends Error {
     this.rerun =
       options.rerun ?? (takeover ? thisCommand([takeover]) : undefined);
     this.authorize = options.authorize ?? takeover !== undefined;
+    this.data = options.data;
   }
 }
 
@@ -54,18 +62,21 @@ export class ActionRequiredError extends Error {
   readonly url?: string;
   /** The command to run once it is done, when it isn't this same one again. */
   readonly rerun?: string;
+  /** What else the event carries for a script (`data`), e.g. the choices. */
+  readonly data?: Record<string, unknown>;
 
   constructor(
     action: RequiredAction,
     message: string,
     url?: string,
-    options: { rerun?: string } = {},
+    options: { rerun?: string; data?: Record<string, unknown> } = {},
   ) {
     super(message);
     this.name = "ActionRequiredError";
     this.action = action;
     this.url = url;
     this.rerun = options.rerun;
+    this.data = options.data;
   }
 }
 

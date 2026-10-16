@@ -21,7 +21,7 @@ import { makeCfTempDir } from "@/lib/cf/privateDir";
 import { createCfRunner } from "@/lib/cf/runner";
 import { patchGatewayBuildOutput } from "@/lib/gateway/patchBuildOutput";
 import { openRelease } from "@/lib/gateway/release";
-import { firstDeploySecrets } from "@/lib/gateway/secretsFile";
+import { newGatewaySecrets } from "@/lib/gateway/secretsFile";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const RELEASE = path.join(REPO, "apps/every-app-gateway/every-app-gateway-release.tar.gz");
@@ -59,10 +59,10 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
           workerName: "every-app-gateway",
           accountId: ACCOUNT_ID,
           message: "dry run",
-          secrets: firstDeploySecrets({
+          secrets: newGatewaySecrets({
             gatewayUrl: "https://apps.example.com",
             accountId: ACCOUNT_ID,
-          }),
+          }).secrets,
           interactive: false,
           dryRun: true,
           cliCf: true,

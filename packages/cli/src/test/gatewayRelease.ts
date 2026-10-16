@@ -8,6 +8,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { CheckoutSource } from "@/lib/gateway/checkoutRelease";
+import { openRelease } from "@/lib/gateway/release";
 import { GATEWAY_MIGRATIONS_DIR } from "./sqliteD1";
 
 const BUILDER = "../../../../apps/every-app-gateway/scripts/build-release.ts";
@@ -77,4 +79,18 @@ export async function buildGatewayRelease({
   const tarball = path.join(work, "every-app-gateway-release.tar.gz");
   execFileSync("tar", ["-czf", tarball, "-C", stageDir, "."]);
   return tarball;
+}
+
+/**
+ * What a checkout that builds this release says of itself without
+ * building it (lib/gateway/checkoutRelease.ts `checkoutSource`): no tree
+ * hash, ordered by the release's build time.
+ */
+export async function releaseSource(tarball: string): Promise<CheckoutSource> {
+  const release = await openRelease(tarball);
+  try {
+    return { ...release.source, version: release.manifest.version };
+  } finally {
+    await release.cleanup();
+  }
 }

@@ -488,9 +488,9 @@ describe("createHumanSink", () => {
       });
       sink.emit({
         type: "step",
-        step: "gateway.release_cache",
+        step: "gateway.release",
         status: "ok",
-        message: "Cached gateway release 0.4.0.",
+        message: "Using the Gateway 0.4.0 built from this checkout before (3f9c1a2e0b4d).",
       });
     };
     const quiet = human();
@@ -506,7 +506,7 @@ describe("createHumanSink", () => {
       "Created KV namespace every-acme-todo.",
       "Waiting for another deploy of todo to finish: laptop:42...",
       "Waiting for a certificate: todo.apps.example.com (15s so far)...",
-      "Cached gateway release 0.4.0.",
+      "Using the Gateway 0.4.0 built from this checkout before (3f9c1a2e0b4d).",
     ]);
   });
 

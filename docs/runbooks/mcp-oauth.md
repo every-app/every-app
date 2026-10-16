@@ -20,7 +20,7 @@ pages' session only; it offers no OAuth.
 OAuth is on unless the `MCP_OAUTH_ENABLED` secret is `false` (or `0`, `off`,
 `no`). Any value other than those and `true` (`1`, `on`, `yes`) turns it off
 too, and logs `mcp.oauth.flag_unrecognized`. To turn it off (the CLI sends
-the secret with a redeploy of the live gateway release):
+the secret with a redeploy of the gateway its checkout builds):
 
 ```sh
 everyapp gateway secret set MCP_OAUTH_ENABLED

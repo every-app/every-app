@@ -4,9 +4,9 @@ import { waitForCertificates } from "@/lib/domains/certWait";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import {
   cliVersion,
-  connectToAccount,
   eventSink,
-  rememberedInstall,
+  existingGateway,
+  openGatewayRelease,
   runReported,
 } from "../shared";
 
@@ -20,8 +20,9 @@ interface ReconcileFlags {
 }
 
 /**
- * Bind exactly the apps the registry lists, redeploying the live gateway
- * release (never upgrading or downgrading it).
+ * Bind exactly the apps the registry lists, redeploying the gateway this
+ * checkout builds (an upgrade, when the checkout is newer than the live
+ * release; never a downgrade).
  */
 export async function reconcile(
   this: LocalContext,
@@ -31,16 +32,18 @@ export async function reconcile(
   await runReported(
     out,
     async () => {
-      const cached = await rememberedInstall();
-      const { cf, account } = await connectToAccount({
+      const { cf, account, databaseId } = await existingGateway({
         json: flags.json,
+        out,
         accountId: flags["account-id"],
-        remembered: cached?.accountId,
+        installed: true,
       });
       const result = await reconcileGateway({
         cf,
         out,
         accountId: account.id,
+        databaseId,
+        openRelease: () => openGatewayRelease({ out, verbose: flags.verbose }),
         interactive: canPromptInTerminal(flags.json ?? false),
         cliVersion,
         dryRun: flags["dry-run"],

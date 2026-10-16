@@ -5,9 +5,9 @@ import { assertSettableSecret } from "@/lib/gateway/secretsFile";
 import { readSecretValue } from "@/lib/secretValue";
 import {
   cliVersion,
-  connectToAccount,
   eventSink,
-  rememberedInstall,
+  existingGateway,
+  openGatewayRelease,
   runReported,
 } from "../shared";
 
@@ -21,8 +21,9 @@ interface SecretSetFlags {
 /**
  * `everyapp gateway secret set <NAME>`: change one of the gateway's optional
  * settings. The value comes from a hidden prompt or `--from-env VAR`, never
- * the command line, and ships with a redeploy of the live gateway release
- * (`cf deploy --secrets-file`), so it lands in the same version as the code.
+ * the command line, and ships with a redeploy of the gateway this checkout
+ * builds (`cf deploy --secrets-file`), so it lands in the same version as
+ * the code.
  */
 export async function set(
   this: LocalContext,
@@ -38,16 +39,18 @@ export async function set(
         fromEnv: flags["from-env"],
         json: flags.json,
       });
-      const cached = await rememberedInstall();
-      const { cf, account } = await connectToAccount({
+      const { cf, account, databaseId } = await existingGateway({
         json: flags.json,
+        out,
         accountId: flags["account-id"],
-        remembered: cached?.accountId,
+        installed: true,
       });
       const result = await reconcileGateway({
         cf,
         out,
         accountId: account.id,
+        databaseId,
+        openRelease: () => openGatewayRelease({ out, verbose: flags.verbose }),
         interactive: canPromptInTerminal(flags.json ?? false),
         cliVersion,
         stagedSecrets: { [name]: value },

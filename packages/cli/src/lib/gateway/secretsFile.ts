@@ -30,27 +30,37 @@ const SETTABLE_GATEWAY_SECRETS = [
   "EMAIL_PASSWORD_SIGN_IN",
 ] as const;
 
-export function firstDeploySecrets({
+/**
+ * A new gateway's secrets, with a new identity key pair. The public half
+ * comes with them, apart, because whatever sends these must record it in
+ * the install row with the upload (lib/gateway/apply.ts record()): app
+ * deploys hand it to their Workers, and a new pair the row doesn't name
+ * leaves every app rejecting the gateway's identities.
+ */
+export function newGatewaySecrets({
   gatewayUrl,
   accountId,
 }: {
   gatewayUrl: string;
   accountId: string;
-}): Record<string, string> {
+}): { secrets: Record<string, string>; jwtPublicKey: string } {
   const { privateKey, publicKey } = generateKeyPairSync("rsa", {
     modulusLength: 2048,
     publicKeyEncoding: { type: "spki", format: "pem" },
     privateKeyEncoding: { type: "pkcs8", format: "pem" },
   });
   return {
-    GATEWAY_URL: gatewayUrl,
-    // Session signing and encryption; HMAC key material for app tokens.
-    BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
-    // Signs the identity JWTs the gateway mints; apps verify with the public key.
-    JWT_PRIVATE_KEY: privateKey,
-    JWT_PUBLIC_KEY: publicKey,
-    GATEWAY_DEPLOYMENT_MODE: "self_hosted",
-    CLOUDFLARE_ACCOUNT_ID: accountId,
+    secrets: {
+      GATEWAY_URL: gatewayUrl,
+      // Session signing and encryption; HMAC key material for app tokens.
+      BETTER_AUTH_SECRET: randomBytes(32).toString("base64"),
+      // Signs the identity JWTs the gateway mints; apps verify with the public key.
+      JWT_PRIVATE_KEY: privateKey,
+      JWT_PUBLIC_KEY: publicKey,
+      GATEWAY_DEPLOYMENT_MODE: "self_hosted",
+      CLOUDFLARE_ACCOUNT_ID: accountId,
+    },
+    jwtPublicKey: publicKey,
   };
 }
 

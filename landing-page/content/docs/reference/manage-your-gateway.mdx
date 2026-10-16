@@ -29,7 +29,7 @@ This is how to take someone off, also when your team signs in with Cloudflare Ac
 
 ## Deploying from other machines
 
-Deploying takes one credential: a Cloudflare login for the Gateway's account. On another machine, run `npx cf auth login` (or let the first `everyapp` command start it), then deploy from the app's directory; in CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. There are no deploy tokens to create or paste. The CLI writes the app registry in your Gateway's database itself, so anyone with that login (or an API token that can edit D1 in the account) is an operator of the Gateway: they can deploy and delete any app, and redeploy the Gateway. Only give it to trusted admins, and take it away in Cloudflare (**Manage Account → Members**, or revoke the API token); nothing in the Gateway's own UI can. Each app records who deployed it last: the login's email, or `api-token:<account id>` for an API token.
+Deploying takes one credential: a Cloudflare login for the Gateway's account. On another machine with a checkout of the repository (the CLI, and the Gateway it deploys, come from it), run `npx cf auth login`, or let the first `pnpm everyapp` command start it, and nothing else: the CLI finds the Gateway by asking each account the login sees for its database, and reads its address from there. Nothing is kept on the machine, so there is no file to copy, domain to pass or account to remember. When the login sees a Gateway in more than one account, pass `--account-id`. In CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. There are no deploy tokens to create or paste. A checkout behind the live Gateway refuses to deploy until you `git pull`, since the CLI writes the registry with its checkout's rules and redeploys the Gateway from it. The CLI writes the app registry in your Gateway's database itself, so anyone with that login (or an API token that can edit D1 in the account) is an operator of the Gateway: they can deploy and delete any app, and redeploy the Gateway. Only give it to trusted admins, and take it away in Cloudflare (**Manage Account → Members**, or revoke the API token); nothing in the Gateway's own UI can. Each app records who deployed it last: the login's email, or `api-token:<account id>` for an API token.
 
 ## Where apps live
 
@@ -44,13 +44,14 @@ Each address is a [Workers Custom Domain](https://developers.cloudflare.com/work
 
 ## Update the Gateway
 
-Upgrade to the Gateway release your CLI ships — your data, users, and apps carry over:
+The Gateway is built from your checkout of the repository, so updating it is updating the checkout — your data, users, and apps carry over:
 
 ```bash
-npx everyapp gateway upgrade
+git pull
+pnpm everyapp setup
 ```
 
-It uses the address and Cloudflare account the Gateway was deployed with, migrates the database before the new code goes live (after a Time Travel bookmark it prints, with the command that restores it), and keeps every app bound and served. It refuses to move to an older release unless you pass `--allow-downgrade`. `npx everyapp gateway status` shows the release you run and the one your CLI ships. Running `npx everyapp setup` again does the same, and checks everything else along the way.
+`setup` (or `pnpm everyapp gateway upgrade`) builds the Gateway from the checkout (once per change to its sources: the build is kept by their tree hash under `node_modules/.cache/everyapp`), uses the address and Cloudflare account its install record holds, migrates the database before the new code goes live (after a Time Travel bookmark it prints, with the command that restores it), and keeps every app bound and served. You may not need to: an app deploy that binds a new app redeploys the Gateway from the same checkout, so it upgrades it on the way. A checkout behind the live Gateway refuses to deploy it (`Run git pull, then: …`); to put an older Gateway back on purpose, `pnpm everyapp setup --allow-downgrade`. `pnpm everyapp gateway status` says whether the live Gateway was built from your checkout's sources (`upToDate`), and what to run when not.
 
 Avoid changing the Gateway's Worker in the Cloudflare dashboard: the next unattended deploy stops and asks you to confirm in a terminal.
 

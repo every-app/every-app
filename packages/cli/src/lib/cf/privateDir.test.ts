@@ -124,12 +124,12 @@ describe("cf's private directories", () => {
     const everyapp = path.join(home, ".everyapp");
     fs.mkdirSync(everyapp);
     fs.chmodSync(everyapp, 0o775);
-    fs.writeFileSync(path.join(everyapp, "installs.json"), "{}", { mode: 0o600 });
+    fs.writeFileSync(path.join(everyapp, "notes.json"), "{}", { mode: 0o600 });
 
     await expect(cfNeutralDir()).resolves.toBe(path.join(cfHome(), "neutral"));
 
     expect(mode(everyapp)).toBe(0o700);
-    expect(fs.readFileSync(path.join(everyapp, "installs.json"), "utf8")).toBe("{}");
+    expect(fs.readFileSync(path.join(everyapp, "notes.json"), "utf8")).toBe("{}");
   });
 
   it("lets root run below a HOME another user owns, never one others can write to", () => {

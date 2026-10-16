@@ -34,6 +34,7 @@ import { resolveAppId } from "./steps/appId";
 interface CreateCommandFlags {
   deploy?: boolean;
   gateway?: string;
+  "account-id"?: string;
   json?: boolean;
   verbose?: boolean;
   yes?: boolean;
@@ -177,6 +178,7 @@ export async function createApp({
     cwd: targetDir,
     manifest,
     gateway: requestedGatewayUrl(flags.gateway),
+    accountId: flags["account-id"],
     out,
     json: flags.json,
     verbose,

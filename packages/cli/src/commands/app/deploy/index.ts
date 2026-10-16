@@ -7,6 +7,7 @@ import { eventSink, runReported } from "@/lib/output/run";
 
 interface DeployCommandFlags {
   gateway?: string;
+  "account-id"?: string;
   verbose?: boolean;
   yes?: boolean;
   json?: boolean;
@@ -41,6 +42,7 @@ export async function deploy(
         cwd,
         manifest,
         gateway: requestedGatewayUrl(flags.gateway),
+        accountId: flags["account-id"],
         out,
         json: flags.json,
         verbose: flags.verbose,

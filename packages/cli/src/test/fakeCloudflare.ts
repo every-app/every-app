@@ -1,7 +1,7 @@
 /**
  * A Cloudflare account for end-to-end tests of the deploy plane, behind
  * FakeCf: D1 databases are real SQLite (queries and `migrations apply` run
- * against them), KV namespaces hold values, `cf deploy --prebuilt` reads
+ * against them), KV namespaces exist by title, `cf deploy --prebuilt` reads
  * the Build Output it would upload and validates it with @cloudflare/config,
  * and `cf build` builds an app's Worker config with the SDK's real
  * everyAppWorker() from the deploy inputs. Zones hold DNS records, a
@@ -142,7 +142,7 @@ export class FakeCloudflare {
   readonly accountId = ACCOUNT_ID;
   readonly cf = new FakeCf();
   readonly databases = new Map<string, { name: string; db: SqliteD1 }>();
-  readonly namespaces = new Map<string, { title: string; keys: Map<string, string> }>();
+  readonly namespaces = new Map<string, { title: string }>();
   readonly workers = new Map<string, DeployedWorker>();
   /** Workflows by name: `cf deploy` creates or takes over a Worker's own. */
   readonly workflows = new Map<string, FakeWorkflow>();
@@ -278,7 +278,6 @@ export class FakeCloudflare {
         this.namespaces.delete(call.args[3]!);
         return { stdout: "{}" };
       })
-      .on(["kv", "keys"], (call) => this.kvKeys(call))
       .on(["workers", "deployments", "list"], (call) => {
         const worker = this.workers.get(flag(call.args, "--worker")!);
         if (!worker) {
@@ -353,7 +352,7 @@ export class FakeCloudflare {
 
   createNamespace(title: string): string {
     const id = (this.counter += 1).toString(16).padStart(32, "0");
-    this.namespaces.set(id, { title, keys: new Map() });
+    this.namespaces.set(id, { title });
     return id;
   }
 
@@ -428,28 +427,6 @@ export class FakeCloudflare {
     }
     instance.status = INSTANCE_STATUS[flag(call.args, "--status")!]!;
     return { stdout: JSON.stringify({ status: instance.status }) };
-  }
-
-  private kvKeys(call: RecordedCfCall): FakeCfResponse {
-    const ns = this.namespaces.get(flag(call.args, "--namespace-id")!);
-    if (!ns) return cfError("namespace not found [code: 10013]");
-    const [, , action, key] = call.args;
-    if (action === "list") {
-      const prefix = flag(call.args, "--prefix") ?? "";
-      return {
-        stdout: JSON.stringify(
-          [...ns.keys.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name })),
-        ),
-      };
-    }
-    if (action === "put") {
-      ns.keys.set(key!, call.files["release.b64"]!);
-      return { stdout: "{}" };
-    }
-    const value = ns.keys.get(key!);
-    return value === undefined
-      ? cfError("get: 'key not found' [code: 10009]")
-      : { stdout: value };
   }
 
   /**

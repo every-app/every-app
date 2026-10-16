@@ -30,7 +30,8 @@ export type RequiredAction =
   | "claim_owner"
   | "upgrade_workers_paid"
   | "rerun_interactive"
-  | "add_domain";
+  | "add_domain"
+  | "choose_account";
 
 interface ActionData extends EventData {
   url?: string;

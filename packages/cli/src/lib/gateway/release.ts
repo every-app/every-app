@@ -1,10 +1,8 @@
 /**
  * Gateway releases: the prebuilt Build Output, migrations and release.json
- * that apps/every-app-gateway/scripts/build-release.ts packs. The CLI builds
- * one from its checkout (commands/gateway/shared.ts), checks a release's
- * SHA-256 before using it, and keeps the live one in the account's
- * `every-app-gateway-deploy` KV namespace, so any checkout can redeploy
- * exactly the gateway that is live when it reconciles app bindings.
+ * that apps/every-app-gateway/scripts/build-release.ts packs. The CLI only
+ * deploys one built from the checkout it runs in (./checkoutRelease.ts),
+ * and checks its SHA-256 before using it.
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -12,10 +10,8 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { CfError } from "@/lib/cf/errors";
 import { makeCfTempDir } from "@/lib/cf/privateDir";
 import { onInterrupt } from "@/lib/interrupt";
-import { runCfJson, type CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 
 export const RELEASE_TARBALL = "every-app-gateway-release.tar.gz";
@@ -47,7 +43,20 @@ export interface GatewayRelease {
   dir: string;
   tarball: string;
   manifest: ReleaseManifest;
+  /** What it was built from. */
+  source: ReleaseSource;
   cleanup(): Promise<void>;
+}
+
+/** The checkout a release was built from, as far as the CLI knows it. */
+export interface ReleaseSource {
+  /**
+   * `hashCheckoutTree` of the Gateway's sources it was built from; null
+   * for a release that didn't come from this checkout (tests).
+   */
+  treeSha256: string | null;
+  /** Where it sits in the Gateway's history. */
+  order: ReleaseOrder;
 }
 
 /**
@@ -66,14 +75,30 @@ export async function hashReleaseTree(root: string): Promise<string> {
         .split(path.sep)
         .join("/"),
     )
-    .filter((file) => file !== "release.json")
-    .sort();
+    .filter((file) => file !== "release.json");
+  return hashFiles(root, files);
+}
+
+/**
+ * SHA-256 over `files` (relative to `root`, `/`-separated): each one's path
+ * and the SHA-256 of its contents, in path order. A file listed but gone
+ * counts as one with no contents.
+ */
+export async function hashFiles(
+  root: string,
+  files: readonly string[],
+): Promise<string> {
   const hash = createHash("sha256");
-  for (const file of files) {
-    const content = createHash("sha256")
-      .update(await fsp.readFile(path.join(root, file)))
-      .digest("hex");
-    hash.update(`${file}\0${content}\n`);
+  for (const file of [...files].sort()) {
+    let content: Buffer;
+    try {
+      content = await fsp.readFile(path.join(root, file));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      hash.update(`${file}\0-\n`);
+      continue;
+    }
+    hash.update(`${file}\0${createHash("sha256").update(content).digest("hex")}\n`);
   }
   return hash.digest("hex");
 }
@@ -95,7 +120,14 @@ function extractTarGz(tarball: string, dir: string): Promise<void> {
  * own files, in a format this CLI deploys, whose SHA-256 is the one
  * release.json records.
  */
-export async function openRelease(tarball: string): Promise<GatewayRelease> {
+export async function openRelease(
+  tarball: string,
+  /** What the checkout says of it; without, its build time orders it. */
+  checkout: { treeSha256: string | null; committedAt: number | null } = {
+    treeSha256: null,
+    committedAt: null,
+  },
+): Promise<GatewayRelease> {
   const dir = await makeCfTempDir("gateway-release-");
   const forget = onInterrupt({
     sync: () => fs.rmSync(dir, { recursive: true, force: true }),
@@ -138,7 +170,12 @@ export async function openRelease(tarball: string): Promise<GatewayRelease> {
         `Gateway release ${manifest.version} doesn't match its SHA-256 (expected ${manifest.sha256}, got ${actual}).`,
       );
     }
-    return { dir, tarball, manifest, cleanup };
+    const order = releaseOrder(manifest);
+    const source = {
+      treeSha256: checkout.treeSha256,
+      order: { ...order, committedAt: checkout.committedAt ?? order.committedAt },
+    };
+    return { dir, tarball, manifest, source, cleanup };
   } catch (error) {
     await cleanup();
     if (error instanceof SyntaxError || (error as NodeJS.ErrnoException).code === "ENOENT") {
@@ -151,139 +188,46 @@ export async function openRelease(tarball: string): Promise<GatewayRelease> {
   }
 }
 
-/** The KV key the live release's tarball is cached under. */
-function releaseCacheKey(sha256: string): string {
-  return `release/${sha256}`;
-}
-
-const KvKeyList = z.array(z.looseObject({ name: z.string() }));
-
-/** Store a release in the deploy KV namespace, unless it's there already. */
-export async function cacheRelease(
-  cf: CfRunner,
-  deployKvId: string,
-  release: GatewayRelease,
-): Promise<"stored" | "present"> {
-  const key = releaseCacheKey(release.manifest.sha256);
-  const existing = await runCfJson(
-    cf,
-    {
-      plane: "account",
-      args: ["kv", "keys", "list", "--namespace-id", deployKvId, "--prefix", key],
-    },
-    KvKeyList,
-  );
-  if (existing.some((entry) => entry.name === key)) return "present";
-
-  const encoded = (await fsp.readFile(release.tarball)).toString("base64");
-  await cf.run({
-    plane: "account",
-    mode: "json",
-    timeoutMs: 300_000,
-    files: { "release.b64": encoded },
-    args: (files) => [
-      "kv",
-      "keys",
-      "put",
-      key,
-      "--namespace-id",
-      deployKvId,
-      "--file",
-      files["release.b64"]!,
-    ],
-  });
-  return "stored";
-}
-
-/**
- * The live release from the deploy KV namespace, checked against the
- * SHA-256 the install recorded; null when it isn't cached.
- */
-export async function fetchCachedRelease(
-  cf: CfRunner,
-  deployKvId: string,
-  sha256: string,
-): Promise<GatewayRelease | null> {
-  let stdout: string;
-  try {
-    ({ stdout } = await cf.run({
-      plane: "account",
-      mode: "json",
-      timeoutMs: 300_000,
-      args: [
-        "kv",
-        "keys",
-        "get",
-        releaseCacheKey(sha256),
-        "--namespace-id",
-        deployKvId,
-      ],
-    }));
-  } catch (error) {
-    if (error instanceof CfError && error.kind === "not_found") return null;
-    throw error;
-  }
-  const trimmed = stdout.trim();
-  // Raw value, or a JSON string if cf ever quotes it.
-  const encoded = trimmed.startsWith('"') ? (JSON.parse(trimmed) as string) : trimmed;
-  const dir = await makeCfTempDir("gateway-cached-");
-  const forget = onInterrupt({
-    sync: () => fs.rmSync(dir, { recursive: true, force: true }),
-  });
-  const removeDir = async () => {
-    await fsp.rm(dir, { recursive: true, force: true });
-    forget();
-  };
-  const tarball = path.join(dir, RELEASE_TARBALL);
-  await fsp.writeFile(tarball, Buffer.from(encoded, "base64"));
-  try {
-    const release = await openRelease(tarball);
-    if (release.manifest.sha256 !== sha256) {
-      await release.cleanup();
-      throw new EveryAppError(
-        "RELEASE_CACHE_MISMATCH",
-        `The cached gateway release ${releaseCacheKey(sha256)} holds release ${release.manifest.sha256} instead.`,
-      );
-    }
-    return {
-      ...release,
-      cleanup: async () => {
-        await release.cleanup();
-        await removeDir();
-      },
-    };
-  } catch (error) {
-    await removeDir();
-    throw error;
-  }
-}
-
 /**
  * Where a release sits in the gateway's history. Not its version: the
- * gateway package's version doesn't change with every build, so an older
- * CLI's release can carry the same one. By its newest migration first
- * (drizzle's journal timestamps only grow along the history, and gateway
- * migrations only add), then by when it was built.
+ * gateway package's version doesn't change with every commit, so an older
+ * checkout's release can carry the same one. Nor when it was built: an
+ * old checkout builds today, and the build cache hands back a release built
+ * days ago. By its newest migration first (drizzle's journal timestamps
+ * only grow along the history, and gateway migrations only add), then by
+ * when its sources were last committed (checkoutRelease.ts), which is the
+ * same on every machine at the same commit.
  */
 export interface ReleaseOrder {
   /** `when` of the newest migration in the release's journal. */
   schema: number;
-  /** Build time, ms since the epoch. */
-  builtAt: number;
+  /**
+   * When the Gateway's sources were last committed, ms since the epoch;
+   * the build time for a release that came without its checkout.
+   */
+  committedAt: number;
 }
 
-export function releaseOrder(
+/** A release's order from its manifest alone: by build time. */
+function releaseOrder(
   manifest: Pick<ReleaseManifest, "migrations" | "builtAt">,
 ): ReleaseOrder {
   return {
-    schema: Math.max(0, ...manifest.migrations.map((entry) => entry.when)),
-    builtAt: Date.parse(manifest.builtAt) || 0,
+    schema: newestMigration(manifest.migrations),
+    committedAt: Date.parse(manifest.builtAt) || 0,
   };
+}
+
+/** `when` of the newest migration in a drizzle journal. */
+export function newestMigration(
+  migrations: ReadonlyArray<{ when: number }>,
+): number {
+  return Math.max(0, ...migrations.map((entry) => entry.when));
 }
 
 /** Negative when `a` is the older release. */
 export function compareReleaseOrder(a: ReleaseOrder, b: ReleaseOrder): number {
-  return a.schema - b.schema || a.builtAt - b.builtAt;
+  return a.schema - b.schema || a.committedAt - b.committedAt;
 }
 
 /** Compare dotted versions, prerelease suffixes ignored. */

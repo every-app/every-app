@@ -16,7 +16,7 @@ import type { EveryAppCliManifest } from "@/lib/manifest";
 import { createNdjsonSink } from "@/lib/output/events";
 import { reportFailure } from "@/lib/output/report";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
-import { buildGatewayRelease } from "@/test/gatewayRelease";
+import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
 import { deployApp } from "./deployApp";
@@ -32,6 +32,7 @@ const TODO: EveryAppCliManifest = {
 
 let account: FakeCloudflare;
 let worker: GatewayWorker;
+let tarball: string;
 let release: GatewayRelease;
 let appDir: string;
 let home: string;
@@ -42,13 +43,20 @@ const seams = {
   sleep: async () => undefined,
   leaseWaitMs: 0,
 };
+/** A rebind deploys the release "this checkout builds": the one installed. */
+const rebind = {
+  ...seams,
+  openRelease: () => openRelease(tarball),
+  source: () => releaseSource(tarball),
+};
 
 beforeEach(async () => {
   home = makeTestHome();
   vi.stubEnv("HOME", home);
   account = new FakeCloudflare();
   worker = new GatewayWorker(account);
-  release = await openRelease(await buildGatewayRelease());
+  tarball = await buildGatewayRelease();
+  release = await openRelease(tarball);
   const resources = await ensureGatewayResources(account.cf);
   await applyGateway({
     cf: account.cf,
@@ -121,7 +129,7 @@ async function deployJson(manifest: EveryAppCliManifest, verbose = false) {
       verbose,
       createCf: () => account.cf,
       live: { fetch: worker.fetch, sleep: async () => undefined },
-      reconcile: seams,
+      reconcile: rebind,
     });
     out.emit({ type: "done", data: { url: result.liveUrl } });
   } catch (error) {

@@ -23,9 +23,10 @@
  *      manifest and who deployed it (`pending` → `binding`);
  *   4. bind the Worker on the gateway and publish the app's hostname as a
  *      Workers Custom Domain if the install row says it doesn't yet (a
- *      reconcile of the live gateway release), then wait for the app to go
- *      live: the gateway activates it on the first request that reaches it
- *      (steps/waitForLive.ts).
+ *      reconcile: the gateway this checkout builds, from the build cache
+ *      when it can, which also upgrades a gateway older than the checkout),
+ *      then wait for the app to go live: the gateway activates it on the
+ *      first request that reaches it (steps/waitForLive.ts).
  *
  * A new hostname is checked (DNS records that answer it, the zone's room)
  * right after registering, before anything is created or uploaded.
@@ -39,6 +40,7 @@ import { version as cliVersion } from "../../../../package.json";
 import { appBindingName } from "@every-app/perimeter/manifest";
 import type { RegistrationPlan } from "@every-app/perimeter/registry";
 import { checkSchemaDrift } from "@/commands/app/deploy/steps/checkSchemaDrift";
+import { openGatewayRelease } from "@/commands/gateway/shared";
 import {
   waitForLive,
   type LiveWaitSeams,
@@ -59,6 +61,7 @@ import {
   droppedWorkflows,
   type AppWorkflow,
 } from "@/lib/app/workflows";
+import { deviceLoginAction } from "@/lib/cf/account";
 import type { D1Database } from "@/lib/cf/d1";
 import {
   assertReplaceable,
@@ -73,9 +76,16 @@ import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
 import { afterMigration, EveryAppError } from "@/lib/errors";
 import { connectToGateway } from "@/lib/gateway/connect";
+import { checkoutRoot } from "@/lib/checkout";
+import { refuseOlderCheckout } from "@/lib/gateway/apply";
+import {
+  checkoutSource,
+  type CheckoutSource,
+} from "@/lib/gateway/checkoutRelease";
 import { readInstall } from "@/lib/gateway/install";
 import { acquireLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
+import type { GatewayRelease } from "@/lib/gateway/release";
 import { markDeployed, register } from "@/lib/gateway/registry";
 import {
   loadEveryAppManifest,
@@ -91,6 +101,8 @@ interface DeployAppOptions {
   manifest?: EveryAppCliManifest;
   /** The gateway `--gateway` or EVERYAPP_GATEWAY_URL names, checked against the install. */
   gateway?: string;
+  /** The Gateway's Cloudflare account (`--account-id`), when the login sees several. */
+  accountId?: string;
   out: EventSink;
   json?: boolean;
   verbose?: boolean;
@@ -119,10 +131,22 @@ interface DeployAppOptions {
   live?: LiveWaitSeams;
 }
 
-/** How long a reconcile waits for the gateway's lease, and how it sleeps (tests). */
+/**
+ * The rebind's seams (tests): how long it waits for the gateway's lease,
+ * how it sleeps, and the release it deploys (default: the one this
+ * checkout builds, from the build cache when it can).
+ */
 export interface ReconcileSeams {
   sleep?: (ms: number) => Promise<void>;
   leaseWaitMs?: number;
+  openRelease?: () => Promise<GatewayRelease>;
+  /** What this checkout's Gateway is, without building it. */
+  source?: () => Promise<CheckoutSource>;
+}
+
+/** What this checkout's Gateway is, unless a test says. */
+export function checkoutGateway(seams?: ReconcileSeams): () => Promise<CheckoutSource> {
+  return seams?.source ?? (() => checkoutSource(checkoutRoot()));
 }
 
 interface DeployAppResult {
@@ -194,12 +218,17 @@ async function deploySteps(
   }
 
   // 1. The gateway, through the Cloudflare login: its account, D1 and install.
-  const { cf, accountId, accountName, db: registry, install, gatewayUrl, deployer } =
+  const { cf, accountId, accountName, databaseId, db: registry, install, gatewayUrl, deployer } =
     await connectToGateway({
       gateway: options.gateway,
+      accountId: options.accountId,
       interactive,
+      // An agent reading --json gets cf's device login, and the run waits.
+      onDeviceLogin: options.json ? deviceLoginAction(out, "app.login") : undefined,
       createCf: options.createCf,
     });
+  // Before anything is registered: never with a checkout behind the Gateway.
+  await refuseOlderCheckout(install, checkoutGateway(options.reconcile));
   const identityKey = install.jwtPublicKey;
   if (!identityKey) {
     throw new EveryAppError(
@@ -446,13 +475,17 @@ async function deploySteps(
   await bindIfNeeded({
     cf,
     db: registry,
+    databaseId,
     out,
     accountId,
     workerName,
     publishHost: newHost,
     interactive,
     forceDns: options.forceDns,
-    seams: options.reconcile,
+    seams: {
+      openRelease: () => openGatewayRelease({ out, verbose: options.verbose }),
+      ...options.reconcile,
+    },
   });
   // A hostname the gateway doesn't publish never answers (warned above).
   const wait = !outsideBase && (options.waitForLive ?? true);
@@ -619,6 +652,7 @@ async function migrate({
 async function bindIfNeeded({
   cf,
   db,
+  databaseId,
   out,
   accountId,
   workerName,
@@ -629,6 +663,7 @@ async function bindIfNeeded({
 }: {
   cf: CfRunner;
   db: D1Database;
+  databaseId: string;
   out: EventSink;
   accountId: string;
   workerName: string;
@@ -636,7 +671,7 @@ async function bindIfNeeded({
   publishHost: boolean;
   interactive: boolean;
   forceDns?: boolean;
-  seams?: ReconcileSeams;
+  seams: ReconcileSeams & Required<Pick<ReconcileSeams, "openRelease">>;
 }): Promise<void> {
   const install = await readInstall(db);
   if (install?.liveAppWorkers.includes(workerName) && !publishHost) return;
@@ -647,10 +682,12 @@ async function bindIfNeeded({
     message: `Binding ${appBindingName(workerName)} on the gateway${publishHost ? " and publishing its hostname" : ""}...`,
   });
   try {
+    // The gateway this checkout builds: an upgrade too, when it is newer.
     const result = await reconcileGateway({
       cf,
       out,
       accountId,
+      databaseId,
       interactive,
       cliVersion,
       force: true,

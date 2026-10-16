@@ -55,11 +55,11 @@ describe("KV namespaces", () => {
       stdout: JSON.stringify(
         call.args.at(-1) === "1"
           ? page(100)
-          : [{ id: "target", title: "every-app-gateway-deploy" }],
+          : [{ id: "target", title: "every-app-gateway-OAUTH_KV" }],
       ),
     }));
 
-    await expect(findKv(cf, "every-app-gateway-deploy")).resolves.toBe("target");
+    await expect(findKv(cf, "every-app-gateway-OAUTH_KV")).resolves.toBe("target");
     expect(cf.calls.map((call) => call.args.slice(-4))).toEqual([
       ["--per-page", "100", "--page", "1"],
       ["--per-page", "100", "--page", "2"],

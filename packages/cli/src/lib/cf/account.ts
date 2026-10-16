@@ -5,6 +5,7 @@
  */
 import enquirer from "enquirer";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
+import type { EventSink } from "@/lib/output/events";
 import { handTerminalOver } from "@/lib/output/terminal";
 import { runCfJson, type CfRunner } from "./runner";
 import { CfWhoamiOutput, type CfWhoami } from "./schemas";
@@ -28,6 +29,26 @@ const DEVICE_LOGIN_TIMEOUT_MS = 15 * 60 * 1000;
 interface DeviceLogin {
   url: string;
   code: string;
+}
+
+/**
+ * For `ensureCfAuth` under --json: cf's device link and code go to the
+ * agent reading the events as `action_required cloudflare_login` with
+ * `waiting: true`, and the run waits for a person to approve it.
+ */
+export function deviceLoginAction(
+  out: EventSink,
+  step: string,
+): (login: DeviceLogin) => void {
+  return (login) =>
+    out.emit({
+      type: "action_required",
+      action: "cloudflare_login",
+      step,
+      message:
+        "Log in to Cloudflare: open the link and enter the code (waiting for it).",
+      data: { url: login.url, code: login.code, waiting: true },
+    });
 }
 
 /**
@@ -113,20 +134,18 @@ interface ResolveAccountOptions {
   whoami: CfWhoami;
   /** --account-id */
   flag?: string;
-  /** The account a previous run of this install used. */
-  remembered?: string;
   interactive: boolean;
 }
 
 /**
- * The account to act on: --account-id, then CLOUDFLARE_ACCOUNT_ID, then the
- * one this install used before, then the only account cf can see, then a
- * choice at the terminal.
+ * The account to install a Gateway in, when none of the login's accounts
+ * has one (lib/gateway/discover.ts finds those): --account-id, then
+ * CLOUDFLARE_ACCOUNT_ID, then the only account cf can see, then a choice at
+ * the terminal.
  */
 export async function resolveAccount({
   whoami,
   flag,
-  remembered,
   interactive,
 }: ResolveAccountOptions): Promise<Account> {
   const accounts: Account[] = (whoami.accounts ?? []).map((account) => ({
@@ -136,8 +155,7 @@ export async function resolveAccount({
   const named = (id: string): Account =>
     accounts.find((account) => account.id === id) ?? { id, name: null };
 
-  const chosen =
-    flag || process.env["CLOUDFLARE_ACCOUNT_ID"] || remembered || undefined;
+  const chosen = flag || process.env["CLOUDFLARE_ACCOUNT_ID"] || undefined;
   if (chosen) {
     if (accounts.length > 0 && !accounts.some((a) => a.id === chosen)) {
       throw new EveryAppError(

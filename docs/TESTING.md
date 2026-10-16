@@ -24,7 +24,7 @@ pnpm test          # runs `pnpm -r --no-bail run test` across all packages
 | `packages/sdk` | `src/**/*.test.ts` (49) | fail-closed identity verification: alg/kid pinning, `alg:none`, algorithm-confusion (HS256-with-public-key), wrong key, expiry, audience mismatch, missing claims, public-route handling, `everyApp()` handler wrapper |
 | `apps/every-app-gateway` | `src/v2/**/*.test.ts` (70) | public-route glob matching incl. path-traversal + percent-encoding (`/p/%2e%2e/__everyapp/...`), header stripping, security headers, CSRF default-deny, JWT mint, Host parsing, the full `handleGatewayRequest` proxy core, the dev gateway-lite, and an end-to-end perimeter↔real-SDK integration test |
 | `apps/every-app-gateway` | legacy `src/**/*.test.ts` | pre-existing gateway tests (still green) |
-| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the gateway and app deploy pipelines end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1 with the gateway's real migrations, Build Outputs validated with cf's schema) and the deployed gateway Worker as far as the CLI meets it (`src/test/gatewayWorker.ts`: hostnames that answer, activation on the first request, the owner claim), the app registry the CLI writes in D1 and the live wait (`lib/gateway/registry.test.ts`), `setup`'s owner wait and `gateway status`, the app policy check, leases, remote migrations; what a person sees (`lib/output/events.test.ts`: milestones rendered from event data, problems with their next command) and that `app deploy --json` writes nothing but NDJSON to stdout, with a real child's output in its log file (`commands/app/deploy/stdout.test.ts`) |
+| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the gateway and app deploy pipelines end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1 with the gateway's real migrations, Build Outputs validated with cf's schema) and the deployed gateway Worker as far as the CLI meets it (`src/test/gatewayWorker.ts`: hostnames that answer, activation on the first request, the owner claim), the app registry the CLI writes in D1 and the live wait (`lib/gateway/registry.test.ts`), finding the Gateway through the login's accounts (`lib/gateway/discover.test.ts`: one, several, a token scoped to one, none, a wrong `--account-id` or `--gateway`), the Gateway build cache by tree hash and the release order by commit time (`lib/gateway/checkoutRelease.test.ts`, in a scratch git repository with a fake build), the downgrade guard and one upload per bind (`lib/gateway/apply.test.ts`), `setup`'s owner wait and `gateway status` (with `upToDate` against a stand-in checkout), the app policy check, leases, remote migrations; what a person sees (`lib/output/events.test.ts`: milestones rendered from event data, problems with their next command) and that `app deploy --json` writes nothing but NDJSON to stdout, with a real child's output in its log file (`commands/app/deploy/stdout.test.ts`) |
 
 Run a single layer:
 
@@ -394,11 +394,13 @@ production.
    - the app row is written to the registry (`apps.hostname`, `worker_name`,
      `tier`, `manifest`, `status`, `deployed_by_actor`) by the CLI itself,
      through `cf d1 query` with the operator's Cloudflare login (ADR-0003);
-   - the gateway binds the app once a reconcile redeploys the live gateway
-     release with the registry's full list of apps, and makes it `active` on
-     the first request that reaches it (the deploy's live wait sends it);
-     `everyapp gateway status` shows whether the live bindings match, from
-     D1 and cf alone.
+   - the gateway binds the app once a reconcile redeploys the gateway the
+     checkout builds (from the build cache under `node_modules/.cache/everyapp`
+     when its sources haven't changed) with the registry's full list of apps,
+     and makes it `active` on the first request that reaches it (the deploy's
+     live wait sends it); `everyapp gateway status` shows whether the live
+     bindings match, and whether the live release was built from this
+     checkout (`upToDate`), from D1, cf and the checkout alone.
 
 ### Probes — prove a sub-app is NOT directly reachable
 
@@ -460,6 +462,13 @@ A deploy also prints a D1 Time Travel bookmark before it migrates, with the
 `cf d1 time-travel restore` command that takes the database back. Gateway
 migrations only add, so the previous version runs against the migrated
 database.
+
+That rollback is a stopgap: the install row still names the release everyapp
+put live, which stays the truth, so the next Gateway deploy or rebind puts
+the checkout's Gateway back (and, since the Worker then serves a version
+everyapp didn't record, an unattended one may stop for a terminal). For a
+lasting rollback, check out the good commit and run
+`everyapp setup --allow-downgrade`.
 
 Sub-apps are unaffected by a rollback (their workers and the registry are
 unchanged); only the perimeter reverts. Because identity tokens live ≤120s,

@@ -37,6 +37,7 @@ export function reportFailure(
       message: withRollback(error.message),
       ...(step ? { step } : {}),
       data: {
+        ...error.data,
         ...(error.url ? { url: error.url } : {}),
         rerun: error.rerun ?? thisCommand(),
         ...rollbackData,
@@ -80,6 +81,7 @@ export function reportFailure(
         : error instanceof CfTimeoutError,
     ...(step ? { step } : {}),
     data: {
+      ...(error instanceof EveryAppError ? error.data : {}),
       rerun:
         (error instanceof EveryAppError ? error.rerun : undefined) ??
         thisCommand(),

@@ -19,7 +19,7 @@ export const setupCommand = buildCommand({
         kind: "parsed",
         parse: String,
         brief:
-          "Cloudflare account id (default: CLOUDFLARE_ACCOUNT_ID, the one used before, or the only one)",
+          "The Cloudflare account of the Gateway, or with none yet, the one to install it in (default: CLOUDFLARE_ACCOUNT_ID, or the only one)",
         optional: true,
       },
       "allow-free-plan": {
@@ -32,6 +32,13 @@ export const setupCommand = buildCommand({
         brief:
           "Publish the gateway's hostnames even where a DNS record answers them (one at a hostname is replaced)",
         optional: true,
+      },
+      "allow-downgrade": {
+        kind: "boolean",
+        brief:
+          "Deploy this checkout's Gateway even though it is older than the live one (a deliberate rollback)",
+        optional: true,
+        hidden: true,
       },
       "no-open": {
         kind: "boolean",

@@ -1,10 +1,8 @@
 import type { LocalContext } from "@/context";
-import { cfD1Database } from "@/lib/cf/d1";
-import type { CfRunner } from "@/lib/cf/runner";
+import type { D1Database } from "@/lib/cf/d1";
 import { normalizeHostname } from "@/lib/domains/hostnames";
 import { EveryAppError } from "@/lib/errors";
-import { readInstall } from "@/lib/gateway/install";
-import { findGatewayDatabase } from "@/lib/gateway/resources";
+import type { InstallRecord } from "@/lib/gateway/install";
 import {
   describeSetupLink,
   gatewayHasOwner,
@@ -12,12 +10,7 @@ import {
   openSetupLinkHere,
   type SetupLink,
 } from "@/lib/gateway/setup-link";
-import {
-  connectToAccount,
-  eventSink,
-  rememberedInstall,
-  runReported,
-} from "../shared";
+import { eventSink, existingGateway, runReported } from "../shared";
 
 interface ClaimLinkFlags {
   "account-id"?: string;
@@ -36,13 +29,10 @@ export async function claimLink(
 ): Promise<void> {
   const out = eventSink();
   await runReported(out, async () => {
-    const domain = normalizeHostname(flags.domain);
-    const cached = await rememberedInstall(domain);
-    const { cf } = await connectToAccount({
+    const { db, install } = await existingGateway({
       accountId: flags["account-id"],
-      remembered: cached?.accountId,
     });
-    const link = await mintClaimLink(cf, domain ?? cached?.gatewayHost);
+    const link = await mintClaimLink(db, install, normalizeHostname(flags.domain));
     out.emit({
       type: "done",
       message: describeSetupLink(link),
@@ -52,26 +42,19 @@ export async function claimLink(
   });
 }
 
-/** A new owner setup link for the unclaimed gateway in `cf`'s account. */
+/** A new owner setup link for an unclaimed Gateway, at its recorded host. */
 export async function mintClaimLink(
-  cf: CfRunner,
+  db: D1Database,
+  install: InstallRecord | null,
   fallbackHost: string | undefined,
 ): Promise<SetupLink> {
-  const databaseId = await findGatewayDatabase(cf);
-  if (!databaseId) {
-    throw new EveryAppError(
-      "GATEWAY_NOT_DEPLOYED",
-      "No gateway is deployed in this Cloudflare account. Run: everyapp gateway deploy --domain <domain>",
-    );
-  }
-  const db = cfD1Database(cf, databaseId);
   if (await gatewayHasOwner(db)) {
     throw new EveryAppError(
       "GATEWAY_CLAIMED",
       "This gateway already has an owner. Setup links only create the first owner: sign in, or ask an owner or admin to invite you.",
     );
   }
-  const gatewayHost = (await readInstall(db))?.gatewayHost ?? fallbackHost;
+  const gatewayHost = install?.gatewayHost ?? fallbackHost;
   if (!gatewayHost) {
     throw new EveryAppError(
       "DOMAIN_REQUIRED",

@@ -51,7 +51,6 @@ describe("reportFailure", () => {
   it("says when the rerun takes something over, for an agent to ask first", () => {
     for (const [code, flag] of [
       ["DNS_RECORD_CONFLICT", "--force-dns"],
-      ["DOWNGRADE_REFUSED", "--allow-downgrade"],
       ["CONFIRMATION_REQUIRED", "--yes"],
       ["WORKFLOW_REMOVED", "--allow-delete-workflows"],
     ] as const) {
@@ -61,6 +60,27 @@ describe("reportFailure", () => {
         authorize: true,
       });
     }
+    // A refused downgrade says which: `git pull`, or setup's flag.
+    const { event } = report(
+      new EveryAppError("DOWNGRADE_REFUSED", "Behind.", {
+        rerun: `${CLI} setup --allow-downgrade`,
+        authorize: true,
+      }),
+    );
+    expect(event["data"]).toEqual({ rerun: `${CLI} setup --allow-downgrade`, authorize: true });
+  });
+
+  it("carries what else an error says for a script", () => {
+    const { event } = report(
+      new EveryAppError("GATEWAY_NOT_FOUND", "No Gateway.", {
+        rerun: `${CLI} setup`,
+        data: { accounts: [{ id: "acct-1", name: "Acme" }] },
+      }),
+    );
+    expect(event["data"]).toEqual({
+      accounts: [{ id: "acct-1", name: "Acme" }],
+      rerun: `${CLI} setup`,
+    });
   });
 
   it("keeps a rerun the error names", () => {

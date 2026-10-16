@@ -10,6 +10,7 @@ import { readSecretValue } from "@/lib/secretValue";
 interface AppSecretSetFlags {
   "from-env"?: string;
   gateway?: string;
+  "account-id"?: string;
   yes?: boolean;
   json?: boolean;
   verbose?: boolean;
@@ -46,6 +47,7 @@ export async function set(
         cwd,
         manifest,
         gateway: requestedGatewayUrl(flags.gateway),
+        accountId: flags["account-id"],
         out,
         json: flags.json,
         verbose: flags.verbose,

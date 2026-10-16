@@ -25,6 +25,7 @@ import { eventSink, runReported } from "@/lib/output/run";
 
 interface WorkflowFlags {
   gateway?: string;
+  "account-id"?: string;
   json?: boolean;
 }
 
@@ -33,6 +34,8 @@ interface WorkflowCommandOptions {
   cwd: string;
   /** The gateway `--gateway` or EVERYAPP_GATEWAY_URL names. */
   gateway?: string;
+  /** The Gateway's Cloudflare account (`--account-id`). */
+  accountId?: string;
   json?: boolean;
   interactive?: boolean;
   createCf?: (accountId?: string) => CfRunner;
@@ -62,6 +65,7 @@ const DONE: Record<StatusChange, string> = {
 async function connect({
   cwd,
   gateway,
+  accountId,
   json,
   interactive = canPromptInTerminal(json ?? false),
   createCf = (accountId?: string) => createCfRunner({ accountId }),
@@ -77,7 +81,12 @@ async function connect({
       "everyapp.config.ts declares no Workflows (resources.workflows).",
     );
   }
-  const { cf, db } = await connectToGateway({ gateway, interactive, createCf });
+  const { cf, db } = await connectToGateway({
+    gateway,
+    accountId,
+    interactive,
+    createCf,
+  });
   const { workerName } = await readApp(db, manifest.id);
   return {
     cf,
@@ -270,6 +279,7 @@ async function commandOptions(flags: WorkflowFlags): Promise<WorkflowCommandOpti
   return {
     cwd: process.cwd(),
     gateway: requestedGatewayUrl(flags.gateway),
+    accountId: flags["account-id"],
     json: flags.json,
   };
 }

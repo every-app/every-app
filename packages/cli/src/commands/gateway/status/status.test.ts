@@ -7,6 +7,7 @@ import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
+import { discoverGateway } from "@/lib/gateway/discover";
 import { acquireLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { markDeployed, register } from "@/lib/gateway/registry";
@@ -15,12 +16,15 @@ import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
-import { buildGatewayRelease } from "@/test/gatewayRelease";
+import type { CheckoutSource } from "@/lib/gateway/checkoutRelease";
+import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
+import { existingGateway } from "../shared";
 import { reportStatus } from "./index";
 
 let account: FakeCloudflare;
+let tarball: string;
 let release: GatewayRelease;
 let home: string;
 let events: Array<Record<string, any>>;
@@ -38,7 +42,9 @@ beforeEach(async () => {
   vi.stubEnv("HOME", home);
   account = new FakeCloudflare();
   events = [];
-  release = await openRelease(await buildGatewayRelease());
+  tarball = await buildGatewayRelease();
+  release = await openRelease(tarball);
+  checkout = () => releaseSource(tarball);
   const resources = await ensureGatewayResources(account.cf);
   await applyGateway({
     cf: account.cf,
@@ -90,6 +96,8 @@ async function deployed(appSlug: string, { bind = true } = {}) {
       cf: account.cf,
       out: out(),
       accountId: ACCOUNT_ID,
+      databaseId: (await found()).databaseId,
+      openRelease: () => openRelease(tarball),
       interactive: false,
       cliVersion: "0.3.0",
       ...quick,
@@ -98,9 +106,22 @@ async function deployed(appSlug: string, { bind = true } = {}) {
   return plan.app;
 }
 
+/** The Gateway discovery finds in the fake account. */
+async function found(cloudflare = account) {
+  const { gateway } = await discoverGateway({
+    whoami: { authenticated: true, accounts: [{ id: ACCOUNT_ID, name: "Acme" }] },
+    createCf: () => cloudflare.cf,
+    interactive: false,
+  });
+  return gateway!;
+}
+
+/** This checkout's Gateway, as status reads it; a test can change it. */
+let checkout: () => Promise<CheckoutSource>;
+
 async function status() {
   events = [];
-  await reportStatus({ cf: account.cf, account: { id: ACCOUNT_ID, name: "Acme" }, out: out() });
+  await reportStatus({ gateway: await found(), out: out(), checkout });
   return events.at(-1)!;
 }
 
@@ -195,14 +216,138 @@ describe("gateway status", () => {
     expect(fixCodes(await status())).toContain("GATEWAY_CHANGED");
   });
 
-  it("says when there is no gateway", async () => {
-    const empty = new FakeCloudflare();
-    events = [];
-    await reportStatus({ cf: empty.cf, account: { id: ACCOUNT_ID, name: "Acme" }, out: out() });
+  it("says whether the live Gateway is the one this checkout builds, and what to run when not", async () => {
+    // The live release was built from sources that hash to "tree-1".
+    account.database("every-app-gateway").sqlite.exec(
+      "UPDATE _everyapp_install SET source_tree_sha256 = 'tree-1'",
+    );
+    const at = async (treeSha256: string | null, committedAt?: number) => {
+      const source = await releaseSource(tarball);
+      checkout = async () => ({
+        ...source,
+        treeSha256,
+        order: { ...source.order, committedAt: committedAt ?? source.order.committedAt },
+      });
+      return status();
+    };
+    const checkoutFixes = (done: Record<string, any>) =>
+      fixCodes(done).filter((code) => ["CHECKOUT_BEHIND", "GATEWAY_OUTDATED"].includes(code));
 
+    const same = await at("tree-1");
+    expect(same["data"]).toMatchObject({
+      upToDate: true,
+      checkout: { version: "0.2.0", treeSha256: "tree-1" },
+    });
+    expect(checkoutFixes(same)).toEqual([]);
+    expect(same["message"]).toContain("built from this checkout's sources");
+
+    // Committed since: the next rebind upgrades it, or setup does now.
+    const newer = await at("tree-2", Date.parse("2026-10-20T00:00:00Z"));
+    expect(newer["data"]["upToDate"]).toBe(false);
+    expect(newer["data"]["fixes"]).toContainEqual(
+      expect.objectContaining({ code: "GATEWAY_OUTDATED", run: "everyapp setup" }),
+    );
+
+    // Behind the live one: git pull.
+    const behind = await at("tree-0", Date.parse("2026-01-01T00:00:00Z"));
+    expect(behind["data"]["upToDate"]).toBe(false);
+    expect(checkoutFixes(behind)).toEqual(["CHECKOUT_BEHIND"]);
+    expect(behind["data"]["fixes"]).toContainEqual(
+      expect.objectContaining({ code: "CHECKOUT_BEHIND", run: "git pull" }),
+    );
+    expect(behind["message"]).toContain("newer than this checkout");
+
+    // Without a tree hash, it can't say.
+    const unknown = await at(null);
+    expect(unknown["data"]["upToDate"]).toBeNull();
+    expect(checkoutFixes(unknown)).toEqual([]);
+  });
+
+  it("logs in through cf's device link under --json, and waits for it", async () => {
+    vi.stubEnv("CLOUDFLARE_API_TOKEN", "");
+    vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "");
+    let approved = false;
+    account.cf
+      .override(["auth", "whoami"], () => ({
+        stdout: JSON.stringify(
+          approved
+            ? { authenticated: true, email: "dev@example.com", accounts: [{ id: ACCOUNT_ID, name: "Acme" }] }
+            : { authenticated: false },
+        ),
+      }))
+      .override(["auth", "login"], () => {
+        approved = true;
+        return {
+          stdout: "please visit:\n\n  https://dash.cloudflare.com/oauth2/device\n\nand enter the code:\n\n  ABCD-EFGH\n",
+        };
+      });
+    events = [];
+
+    const gateway = await existingGateway({
+      json: true,
+      out: out(),
+      createCf: () => account.cf,
+    });
+
+    expect(gateway.account.id).toBe(ACCOUNT_ID);
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: "action_required",
+        action: "cloudflare_login",
+        data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", waiting: true },
+      }),
+    ]);
+  });
+
+  it("says when the install stopped before its first upload, or before recording itself", async () => {
+    // A new install recorded itself, then stopped before the upload (no
+    // workers.dev subdomain yet, say).
+    const fresh = new FakeCloudflare();
+    await applyGatewayTo(fresh, { failUpload: true });
+
+    events = [];
+    await reportStatus({ gateway: await found(fresh), out: out(), checkout });
+    expect(fixCodes(events.at(-1)!)).toContain("GATEWAY_NOT_UPLOADED");
+    expect(fixCodes(events.at(-1)!)).not.toContain("GATEWAY_CHANGED");
+
+    // A database with no install row at all.
+    fresh.database("every-app-gateway").sqlite.exec("DROP TABLE _everyapp_install");
+    events = [];
+    await reportStatus({ gateway: await found(fresh), out: out(), checkout });
     expect(events.at(-1)).toMatchObject({
       type: "done",
-      data: { deployed: false, fixes: [expect.objectContaining({ run: expect.stringContaining("everyapp setup") })] },
+      data: {
+        installed: false,
+        fixes: [expect.objectContaining({ run: expect.stringContaining("everyapp setup") })],
+      },
     });
   });
 });
+
+/** A gateway install in another fake account; `failUpload` stops it at cf deploy. */
+async function applyGatewayTo(
+  cloudflare: FakeCloudflare,
+  { failUpload = false } = {},
+) {
+  const resources = await ensureGatewayResources(cloudflare.cf);
+  if (failUpload) {
+    cloudflare.failNextDeploy = `You need a workers.dev subdomain before your first upload. Register one: https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`;
+  }
+  await applyGateway({
+    cf: cloudflare.cf,
+    out: out(),
+    reason: "deploy",
+    release,
+    accountId: ACCOUNT_ID,
+    gatewayHost: "example.com",
+    zone: { id: "zone-1", name: "example.com" },
+    appBaseDomain: "example.com",
+    resources,
+    db: cfD1Database(cloudflare.cf, resources.d1Id),
+    interactive: false,
+    cliVersion: "0.3.0",
+    ...quick,
+  }).catch((error: unknown) => {
+    if (!failUpload) throw error;
+  });
+}

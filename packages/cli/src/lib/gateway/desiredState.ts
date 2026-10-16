@@ -11,11 +11,7 @@
  * missing Worker fails the whole gateway deploy, so one stale row would
  * hold up every app.
  */
-import {
-  appBindingName,
-  appBindingsDigest,
-  isRegistryWorkerName,
-} from "@every-app/perimeter/manifest";
+import { isRegistryWorkerName } from "@every-app/perimeter/manifest";
 import type { D1Database } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
@@ -41,8 +37,6 @@ export interface DesiredState {
   appWorkers: string[];
   /** The bound apps' hostnames, sorted, unique. */
   appHosts: string[];
-  /** Of the APP__ binding names: two states bind the same Workers when it matches. */
-  appBindingsDigest: string;
   /** Rows not bound because their Worker name breaks the naming rule. */
   skipped: Array<{ appId: string; workerName: string }>;
   /** Rows not bound because their Worker doesn't exist. */
@@ -106,16 +100,7 @@ export async function readDesiredState(
     apps,
     appWorkers,
     appHosts: [...new Set(apps.map((app) => app.hostname.toLowerCase()))].sort(),
-    appBindingsDigest: await appBindingsDigest(appWorkers.map(appBindingName)),
     skipped,
     missing,
   };
-}
-
-/** Whether two desired states bind the same Workers, at the same hosts. */
-export function sameBindings(a: DesiredState, b: DesiredState): boolean {
-  return (
-    a.appBindingsDigest === b.appBindingsDigest &&
-    a.appHosts.join("\n") === b.appHosts.join("\n")
-  );
 }

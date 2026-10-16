@@ -12,11 +12,18 @@
  *    toolchain   Node and cf
  *    auth        cf logged in: `cf auth login` at a terminal, cf's device
  *                link and code under --json, or CLOUDFLARE_API_TOKEN
- *    account     which Cloudflare account
+ *    account     the account whose Gateway the login finds
+ *                (lib/gateway/discover.ts), or with none, where to install
+ *                one: --account-id, CLOUDFLARE_ACCOUNT_ID, the only one, or
+ *                a choice at the terminal
  *    plan        Workers Paid: warned about, never required
- *    domain      where the gateway lives: --domain, the install's, or a
- *                zone picked at the terminal (apps.<zone>)
- *    gateway     deployed, or upgraded to this CLI's release
+ *    domain      where the gateway lives: --domain, the install row's (also
+ *                one an install wrote before it stopped), or a zone picked
+ *                at the terminal (apps.<zone>)
+ *    gateway     deployed, or upgraded to the release this checkout builds
+ *                (nothing built when the install row's tree hash is the
+ *                checkout's); a checkout behind the live one is refused
+ *                (git pull), unless --allow-downgrade
  *    owner       a one-time setup link, opened in the browser (never put
  *                into a CI log, unless --printSetupLink), and the wait for
  *                the claim, read from the link's own row in D1
@@ -28,11 +35,13 @@
  */
 import {
   deployGatewayRelease,
-  findInstall,
   gatewayTarget,
 } from "@/commands/gateway/deploy/deployGateway";
-import { rememberedInstall } from "@/commands/gateway/shared";
-import { ensureCfAuth, resolveAccount } from "@/lib/cf/account";
+import {
+  deviceLoginAction,
+  ensureCfAuth,
+  resolveAccount,
+} from "@/lib/cf/account";
 import { PINNED_CF_VERSION } from "@/lib/cf/bin";
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
 import { hasWorkersPaid } from "@/lib/cf/plan";
@@ -41,7 +50,14 @@ import { normalizeHostname } from "@/lib/domains/hostnames";
 import { probeHttps } from "@/lib/domains/https";
 import { listZones, registerDomainUrl } from "@/lib/domains/zones";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
-import { olderThanInstalled } from "@/lib/gateway/apply";
+import {
+  candidate,
+  downgradeRefused,
+  isLiveRelease,
+  olderThanInstalled,
+} from "@/lib/gateway/apply";
+import type { CheckoutSource } from "@/lib/gateway/checkoutRelease";
+import { discoverGateway } from "@/lib/gateway/discover";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { compareVersions, type GatewayRelease } from "@/lib/gateway/release";
 import {
@@ -58,6 +74,8 @@ export interface SetupFlags {
   "account-id"?: string;
   "allow-free-plan"?: boolean;
   "force-dns"?: boolean;
+  /** Put a Gateway older than the live one back on purpose (hidden). */
+  "allow-downgrade"?: boolean;
   "no-open"?: boolean;
   /** Show the owner setup link in CI or piped output too (`gateway deploy`'s flag). */
   printSetupLink?: boolean;
@@ -79,7 +97,10 @@ interface SetupPrompts {
 /** Everything setup reaches outside itself; tests swap in fakes. */
 export interface SetupDeps {
   createCf: (accountId?: string) => CfRunner;
+  /** The release this checkout builds (the build cache's, or a new build). */
   openRelease: () => Promise<GatewayRelease>;
+  /** What this checkout's Gateway is, without building it. */
+  source: () => Promise<CheckoutSource>;
   /** A person is at this terminal, and this isn't a --json run. */
   interactive: boolean;
   prompts: SetupPrompts;
@@ -121,17 +142,7 @@ export async function runSetup(
   const whoami = await ensureCfAuth({
     cf: deps.createCf(),
     interactive: deps.interactive,
-    onDeviceLogin: flags.json
-      ? (login) =>
-          out.emit({
-            type: "action_required",
-            action: "cloudflare_login",
-            step: "setup.auth",
-            message:
-              "Log in to Cloudflare: open the link and enter the code (waiting for it).",
-            data: { url: login.url, code: login.code, waiting: true },
-          })
-      : undefined,
+    onDeviceLogin: flags.json ? deviceLoginAction(out, "setup.auth") : undefined,
   });
   out.emit({
     type: "step",
@@ -141,15 +152,23 @@ export async function runSetup(
     data: { email: whoami.email ?? null },
   });
   const requestedDomain = normalizeHostname(flags.domain);
-  // The account this machine set the gateway up in before, for a re-run.
-  const cached = await rememberedInstall(requestedDomain);
-  const account = await resolveAccount({
+  // The Gateway the login's accounts have; with none, where to install one.
+  const discovery = await discoverGateway({
     whoami,
-    flag: flags["account-id"],
-    remembered: cached?.accountId,
+    createCf: deps.createCf,
+    accountId: flags["account-id"],
+    host: requestedDomain,
     interactive: deps.interactive,
   });
-  const cf = deps.createCf(account.id);
+  const found = discovery.gateway;
+  const account =
+    found?.account ??
+    (await resolveAccount({
+      whoami,
+      flag: flags["account-id"],
+      interactive: deps.interactive,
+    }));
+  const cf = found?.cf ?? deps.createCf(account.id);
   out.emit({
     type: "step",
     step: "setup.account",
@@ -160,7 +179,8 @@ export async function runSetup(
   await checkPlan(cf, account.id, flags, out);
 
   // Where the gateway lives.
-  const { databaseId, install } = await findInstall(cf);
+  const databaseId = found?.databaseId ?? null;
+  const install = found?.install ?? null;
   const domain =
     requestedDomain ??
     install?.gatewayHost ??
@@ -288,6 +308,12 @@ async function pickDomain(
   return normalizeHostname(await deps.prompts.hostname(zone));
 }
 
+/**
+ * The gateway the checkout builds, live: installed, upgraded, or left as it
+ * is when it already runs these sources (told by the install row's tree
+ * hash, before anything is built) or this very release. A checkout behind
+ * the live release is refused (`git pull`), unless --allow-downgrade.
+ */
 async function deployOrSkipGateway({
   cf,
   account,
@@ -307,6 +333,31 @@ async function deployOrSkipGateway({
   out: EventSink;
   deps: SetupDeps;
 }): Promise<D1Database> {
+  const gatewayUrl = `https://${target.domain}`;
+  // An install that stopped before its first upload isn't live yet.
+  const live = install?.liveVersionId ? install : null;
+  const allowDowngrade = flags["allow-downgrade"] ?? false;
+  const upToDate = (version: string) => {
+    out.emit({
+      type: "step",
+      step: "setup.gateway",
+      status: "skip",
+      message: `The gateway already runs release ${version}, built from these sources.`,
+      data: { release: version, gatewayUrl, upToDate: true },
+    });
+    return cfD1Database(cf, databaseId!);
+  };
+  if (live && databaseId) {
+    // Before building: a minute or two, for nothing, on a fresh machine.
+    const source = await deps.source();
+    if (source.treeSha256 && source.treeSha256 === live.sourceTreeSha256) {
+      return upToDate(live.releaseVersion);
+    }
+    if (!allowDowngrade && olderThanInstalled(source, live)) {
+      throw downgradeRefused(source, live, { allowDowngradeFlag: true });
+    }
+  }
+
   const release = await deps.openRelease();
   try {
     const manifest = release.manifest;
@@ -316,47 +367,36 @@ async function deployOrSkipGateway({
         `Gateway release ${manifest.version} needs everyapp ${manifest.minCli} or newer; this is ${deps.cliVersion}.`,
       );
     }
-    const gatewayUrl = `https://${target.domain}`;
-    if (install && databaseId) {
-      const upToDate = install.releaseSha256 === manifest.sha256;
-      const skip = upToDate
-        ? `The gateway already runs release ${manifest.version}.`
-        : olderThanInstalled(manifest, install)
-          ? `The gateway runs release ${install.releaseVersion}, newer than the ${manifest.version} built from this checkout; leaving it as it is.`
-          : null;
-      if (skip) {
-        out.emit({
-          type: "step",
-          step: "setup.gateway",
-          status: "skip",
-          message: skip,
-          data: { release: manifest.version, gatewayUrl, upToDate },
-        });
-        return cfD1Database(cf, databaseId);
+    if (live && databaseId) {
+      if (isLiveRelease(release, live)) return upToDate(manifest.version);
+      if (!allowDowngrade && olderThanInstalled(candidate(release), live)) {
+        throw downgradeRefused(candidate(release), live, { allowDowngradeFlag: true });
       }
     }
     out.emit({
       type: "step",
       step: "setup.gateway",
       status: "start",
-      message: install
+      message: live
         ? `Upgrading the gateway to release ${manifest.version}...`
         : `Installing the gateway at ${gatewayUrl} in ${account.name ?? account.id}...`,
       data: {
         release: manifest.version,
-        from: install?.releaseVersion ?? null,
+        from: live?.releaseVersion ?? null,
         gatewayUrl,
       },
     });
     const { result, db } = await deployGatewayRelease({
       cf,
       out,
-      reason: install ? "upgrade" : "deploy",
+      reason: live ? "upgrade" : "deploy",
       release,
       accountId: account.id,
       target,
       interactive: deps.interactive,
       forceDns: flags["force-dns"],
+      allowDowngrade,
+      allowDowngradeFlag: true,
       sleep: deps.seams?.sleep,
       leaseWaitMs: deps.seams?.leaseWaitMs,
       certificates: deps.seams?.certificates,

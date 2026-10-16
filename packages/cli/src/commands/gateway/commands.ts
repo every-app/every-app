@@ -4,7 +4,7 @@ const accountFlag = {
   kind: "parsed",
   parse: String,
   brief:
-    "Cloudflare account id (default: CLOUDFLARE_ACCOUNT_ID, the account used before, or the only one)",
+    "The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)",
   optional: true,
 } as const;
 const jsonFlag = {
@@ -36,15 +36,13 @@ const deployFlags = {
     kind: "parsed",
     parse: String,
     brief:
-      "Hostname the gateway serves at, in a zone the account has, e.g. apps.example.com (remembered after the first deploy)",
+      "Hostname the gateway serves at, in a zone the account has, e.g. apps.example.com (its install row keeps it after that)",
     optional: true,
   },
-  "account-id": accountFlag,
-  release: {
-    kind: "parsed",
-    parse: String,
-    brief: "Deploy this gateway release tarball instead of building one from this checkout",
-    optional: true,
+  "account-id": {
+    ...accountFlag,
+    brief:
+      "The Cloudflare account of the Gateway, or with none yet, the one to install it in (default: CLOUDFLARE_ACCOUNT_ID, or the only one)",
   },
   yes: {
     kind: "boolean",
@@ -56,11 +54,6 @@ const deployFlags = {
     kind: "boolean",
     brief:
       "Print the owner setup link even when not run from a terminal (CI logs keep it)",
-    optional: true,
-  },
-  "allow-downgrade": {
-    kind: "boolean",
-    brief: "Deploy a release older than the one the gateway runs",
     optional: true,
   },
   "force-dns": forceDnsFlag,
@@ -81,8 +74,10 @@ export const deployCommand = buildCommand({
   docs: {
     brief: "Deploy the gateway to Cloudflare",
     fullDescription: [
-      "Builds the gateway release from this checkout (apps/every-app-gateway), then deploys its Build Output with cf:",
-      "  1. Finds or creates the gateway's D1 database and KV namespaces",
+      "Builds the gateway release from this checkout (apps/every-app-gateway; kept by the tree hash of its",
+      "sources under node_modules/.cache/everyapp, so a rebuild only follows a change), then deploys its",
+      "Build Output with cf:",
+      "  1. Finds or creates the gateway's D1 database and OAuth KV namespace, and records the install",
       "  2. Takes the deploy lease, so deploys never overlap",
       "  3. Checks every new hostname: no DNS record that answers it (unless --force-dns),",
       "     room in the zone",
@@ -115,7 +110,7 @@ const upgradeCommand = buildCommand({
   docs: {
     brief: "Upgrade the gateway to a release built from this checkout",
     fullDescription:
-      "Like `gateway deploy` for a gateway this CLI deployed before, with its remembered domain and account. Does nothing when the gateway already runs the release this checkout builds, and refuses an older one without --allow-downgrade.",
+      "Like `gateway deploy` for the Gateway your Cloudflare login finds, at the domain its install row records. Does nothing when the gateway already runs the release this checkout builds, and refuses one older than the live release: run git pull first.",
   },
 });
 
@@ -146,7 +141,7 @@ const reconcileCommand = buildCommand({
   docs: {
     brief: "Bind and publish exactly the apps the gateway's registry lists",
     fullDescription:
-      "Redeploys the release the gateway runs (from the account's release cache, checked against its SHA-256) with a service binding for every uploaded app, and each app's hostname as a Workers Custom Domain, unless the install row says the live version binds them already. Never upgrades or downgrades the gateway. `app deploy` and `app delete` run it when the set of apps changes.",
+      "Redeploys the gateway this checkout builds with a service binding for every uploaded app, and each app's hostname as a Workers Custom Domain, unless the install row says the live version binds them already. A checkout newer than the live release upgrades it (migrations first); an older one is refused: run git pull. `app deploy` and `app delete` run it when the set of apps changes.",
   },
 });
 
@@ -225,7 +220,7 @@ const secretSetCommand = buildCommand({
   docs: {
     brief: "Set one of the gateway's optional settings",
     fullDescription:
-      "Sends the value with a redeploy of the live gateway release (cf deploy --secrets-file), never on the command line.",
+      "Sends the value with a redeploy of the gateway this checkout builds (cf deploy --secrets-file), never on the command line.",
   },
 });
 

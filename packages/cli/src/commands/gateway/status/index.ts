@@ -1,6 +1,5 @@
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import type { LocalContext } from "@/context";
-import { cfD1Database } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { certificateStatus } from "@/lib/domains/certificates";
@@ -10,19 +9,21 @@ import {
   workerExistence,
   type DesiredState,
 } from "@/lib/gateway/desiredState";
-import { readInstall, type InstallRecord } from "@/lib/gateway/install";
+import { checkoutRoot } from "@/lib/checkout";
+import { olderThanInstalled } from "@/lib/gateway/apply";
+import {
+  checkoutSource,
+  type CheckoutSource,
+} from "@/lib/gateway/checkoutRelease";
+import type { FoundGateway } from "@/lib/gateway/discover";
+import type { InstallRecord } from "@/lib/gateway/install";
 import { readLiveLeases, type LeaseHolder } from "@/lib/gateway/lease";
 import { gatewayDomains } from "@/lib/gateway/patchBuildOutput";
 import { listApps } from "@/lib/gateway/registry";
-import { findGatewayDatabase } from "@/lib/gateway/resources";
 import { readOwner, type GatewayOwner } from "@/lib/gateway/setup-link";
+import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import {
-  connectToAccount,
-  eventSink,
-  rememberedInstall,
-  runReported,
-} from "../shared";
+import { eventSink, existingGateway, runReported } from "../shared";
 
 interface StatusFlags {
   "account-id"?: string;
@@ -52,10 +53,12 @@ interface Fix {
 /**
  * How the gateway in this account stands, all of it from its D1 and cf,
  * nothing over HTTPS: the release its install row records and whether the
- * Worker serves the version that row names, its owner, the apps its
- * registry lists and whether the live version binds them, each published
- * hostname's certificate (Cloudflare's certificate packs), any deploy in
- * progress, and `fixes`: what to run when something is off.
+ * Worker serves the version that row names, whether it was built from this
+ * checkout's Gateway sources (`upToDate`, by tree hash, nothing built), its
+ * owner, the apps its registry lists and whether the live version binds
+ * them, each published hostname's certificate (Cloudflare's certificate
+ * packs), any deploy in progress, and `fixes`: what to run when something
+ * is off.
  */
 export async function status(
   this: LocalContext,
@@ -65,51 +68,42 @@ export async function status(
   await runReported(
     out,
     async () => {
-      const cached = await rememberedInstall();
-      const { cf, account } = await connectToAccount({
+      const gateway = await existingGateway({
         json: flags.json,
+        out,
         accountId: flags["account-id"],
-        remembered: cached?.accountId,
       });
-      await reportStatus({ cf, account, out });
+      await reportStatus({
+        gateway,
+        out,
+        checkout: () => checkoutSource(checkoutRoot()),
+      });
     },
     { verbose: flags.verbose },
   );
 }
 
-/** The status of the gateway in `cf`'s account, as the command's `done` event. */
+/** The status of the Gateway discovery found, as the command's `done` event. */
 export async function reportStatus({
-  cf,
-  account,
+  gateway,
   out,
+  checkout,
 }: {
-  cf: CfRunner;
-  account: { id: string; name: string | null };
+  gateway: FoundGateway;
   out: EventSink;
+  /** What this checkout's Gateway is, without building it. */
+  checkout: () => Promise<CheckoutSource>;
 }): Promise<void> {
-  const databaseId = await findGatewayDatabase(cf);
-  if (!databaseId) {
-    out.emit({
-      type: "done",
-      message: `No gateway is deployed in ${account.name ?? account.id}.`,
-      data: {
-        deployed: false,
-        fixes: [{ code: "NO_GATEWAY", message: "No gateway yet.", run: "everyapp setup --domain <hostname>" }],
-      },
-    });
-    return;
-  }
-  const db = cfD1Database(cf, databaseId);
-  const install = await readInstall(db);
+  const { cf, account, db, install } = gateway;
   if (!install) {
     out.emit({
       type: "done",
-      message:
-        "A gateway database exists, but this everyapp hasn't deployed the gateway yet: run `everyapp setup` (or `everyapp gateway deploy --domain <hostname>`).",
+      message: `${account.name ?? account.id} has the Gateway's database, but no install record: its install stopped before writing one. Finish it: ${CLI} setup --domain <hostname>`,
       data: {
         deployed: true,
         installed: false,
-        fixes: [{ code: "GATEWAY_NOT_INSTALLED", message: "The gateway has no install row.", run: "everyapp setup --domain <hostname>" }],
+        accountId: account.id,
+        fixes: [{ code: "GATEWAY_NOT_INSTALLED", message: "The Gateway has no install row.", run: "everyapp setup --domain <hostname>" }],
       },
     });
     return;
@@ -155,6 +149,7 @@ export async function reportStatus({
     deployedBy: app.deployedBy,
   }));
   const waiting = (certificates ?? []).filter((c) => !c.ready).map((c) => c.host);
+  const source = await checkoutAgainst(install, checkout);
   const fixes = fixesFor({
     install,
     desired,
@@ -164,11 +159,20 @@ export async function reportStatus({
     inSync,
     waitingCertificates: waiting,
     leases,
+    checkout: source,
   });
 
   const lines = [
     `Gateway:  ${gatewayUrl} (${account.name ?? account.id})`,
-    `Release:  ${install.releaseVersion} (${install.releaseSha256.slice(0, 12)})${servingRecorded ? "" : `; the Worker serves ${serving?.versionId ?? "no version"}, not the recorded ${install.liveVersionId ?? "(none)"}`}`,
+    `Release:  ${install.releaseVersion} (${install.releaseSha256.slice(0, 12)})${
+      source.upToDate === true
+        ? " · built from this checkout's sources"
+        : source.upToDate === false
+          ? source.behind
+            ? " · newer than this checkout"
+            : " · this checkout has changed since"
+          : ""
+    }${servingRecorded ? "" : `; the Worker serves ${serving?.versionId ?? "no version"}, not the recorded ${install.liveVersionId ?? "(none)"}`}`,
     `Owner:    ${owner ? `${owner.email}${owner.organizationName ? ` (${owner.organizationName})` : ""}` : "none yet"}`,
     `Apps:     ${apps.length === 0 ? "none" : apps.map((app) => `${app.id} (${app.status}${app.bound || app.status === "pending" ? "" : ", not bound"})`).join(", ")}${apps.length > 0 && inSync ? " · all bound" : ""}`,
     `TLS:      ${
@@ -212,12 +216,44 @@ export async function reportStatus({
       domains: wanted,
       liveDomains: install.liveDomains,
       inSync,
+      upToDate: source.upToDate,
+      checkout: source.checkout,
       tls: certificates === null ? null : !waiting.includes(install.gatewayHost),
       certificates,
       leases,
       fixes,
     },
   });
+}
+
+/** This checkout against the live release, by the install row. */
+interface CheckoutState {
+  /**
+   * The live release was built from this checkout's Gateway sources (their
+   * tree hash is the row's); null when either tree hash is unknown.
+   */
+  upToDate: boolean | null;
+  /** The checkout's Gateway is older than the live one: `git pull`. */
+  behind: boolean;
+  checkout: { version: string; treeSha256: string | null } | null;
+}
+
+async function checkoutAgainst(
+  install: InstallRecord,
+  checkout: () => Promise<CheckoutSource>,
+): Promise<CheckoutState> {
+  // A checkout that can't be read doesn't stop the rest of the report.
+  const source = await checkout().catch(() => null);
+  if (!source) return { upToDate: null, behind: false, checkout: null };
+  const upToDate =
+    source.treeSha256 && install.sourceTreeSha256
+      ? source.treeSha256 === install.sourceTreeSha256
+      : null;
+  return {
+    upToDate,
+    behind: upToDate === false && olderThanInstalled(source, install),
+    checkout: { version: source.version, treeSha256: source.treeSha256 },
+  };
 }
 
 /** The published hostnames' certificates; null when cf can't list them. */
@@ -248,6 +284,7 @@ function fixesFor({
   inSync,
   waitingCertificates,
   leases,
+  checkout,
 }: {
   install: InstallRecord;
   desired: DesiredState;
@@ -257,8 +294,22 @@ function fixesFor({
   inSync: boolean;
   waitingCertificates: string[];
   leases: LeaseHolder[];
+  checkout: CheckoutState;
 }): Fix[] {
   const fixes: Fix[] = [];
+  if (checkout.behind) {
+    fixes.push({
+      code: "CHECKOUT_BEHIND",
+      message: `This checkout's Gateway (${checkout.checkout?.version}) is older than the live one (${install.releaseVersion}); deploys from here are refused until it catches up.`,
+      run: "git pull",
+    });
+  } else if (checkout.upToDate === false && install.liveVersionId !== null) {
+    fixes.push({
+      code: "GATEWAY_OUTDATED",
+      message: "This checkout's Gateway sources changed since the live release was built; the next deploy or delete of an app that rebinds the gateway upgrades it.",
+      run: "everyapp setup",
+    });
+  }
   if (!owner) {
     fixes.push({
       code: "NO_OWNER",
@@ -266,7 +317,13 @@ function fixesFor({
       run: "everyapp setup",
     });
   }
-  if (servingVersionId !== install.liveVersionId) {
+  if (install.liveVersionId === null) {
+    fixes.push({
+      code: "GATEWAY_NOT_UPLOADED",
+      message: "The Gateway's install stopped before its first upload finished.",
+      run: "everyapp setup",
+    });
+  } else if (servingVersionId !== install.liveVersionId) {
     fixes.push({
       code: "GATEWAY_CHANGED",
       message: `The gateway Worker serves ${servingVersionId ?? "no version"}, not the ${install.liveVersionId ?? "(none)"} its install row names: it was deployed some other way.`,

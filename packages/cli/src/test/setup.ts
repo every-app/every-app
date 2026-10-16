@@ -1,7 +1,7 @@
 /**
  * Every test file runs with its own empty HOME, so no test reads or writes
- * the real `~/.everyapp` (credentials, installs, the private directories
- * cf runs in), and no test leaves signal handlers behind for the next. No
+ * the real `~/.everyapp` (the private directories cf runs in), and no test
+ * leaves signal handlers behind for the next. No
  * test reaches the network either: fetch answers only local addresses
  * unless a test stubs it (the DNS-over-HTTPS lookups and certificate waits
  * of a deploy take seams instead).

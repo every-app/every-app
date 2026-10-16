@@ -3,14 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FakeCf } from "@/lib/cf/fakeCf";
-import {
-  cacheRelease,
-  compareVersions,
-  fetchCachedRelease,
-  hashReleaseTree,
-  openRelease,
-} from "./release";
+import { compareVersions, hashReleaseTree, openRelease } from "./release";
 
 // The gateway's own release builder, loaded by path: it is another package.
 const BUILDER = "../../../../../apps/every-app-gateway/scripts/build-release.ts";
@@ -141,55 +134,6 @@ describe("openRelease", () => {
     await expect(openRelease(tarball)).rejects.toMatchObject({
       code: "RELEASE_INVALID",
     });
-  });
-});
-
-describe("the release cache", () => {
-  const KV = "0123456789abcdef0123456789abcdef";
-
-  it("stores the tarball once and hands back the same release", async () => {
-    const store = new Map<string, string>();
-    const cf = new FakeCf()
-      .on(["kv", "keys", "list"], (call) => ({
-        stdout: JSON.stringify(
-          [...store.keys()]
-            .filter((key) => key.startsWith(call.args.at(-1)!))
-            .map((name) => ({ name })),
-        ),
-      }))
-      .on(["kv", "keys", "put"], (call) => {
-        store.set(call.args[3]!, call.files["release.b64"]!);
-        return { stdout: "{}" };
-      })
-      .on(["kv", "keys", "get"], (call) => {
-        const value = store.get(call.args[3]!);
-        return value === undefined
-          ? { exitCode: 1, stderr: "┌ Error\n│ get: 'key not found' [code: 10009]\n└\n" }
-          : { stdout: value };
-      });
-    const release = await openRelease(tarball);
-    try {
-      await expect(cacheRelease(cf, KV, release)).resolves.toBe("stored");
-      await expect(cacheRelease(cf, KV, release)).resolves.toBe("present");
-      expect([...store.keys()]).toEqual([`release/${release.manifest.sha256}`]);
-
-      const cached = await fetchCachedRelease(cf, KV, release.manifest.sha256);
-      expect(cached?.manifest).toEqual(release.manifest);
-      await cached?.cleanup();
-
-      await expect(fetchCachedRelease(cf, KV, "f".repeat(64))).resolves.toBeNull();
-    } finally {
-      await release.cleanup();
-    }
-  });
-
-  it("refuses a cached tarball that isn't the release its key names", async () => {
-    const other = fs.readFileSync(tarball).toString("base64");
-    const cf = new FakeCf().on(["kv", "keys", "get"], { stdout: other });
-
-    await expect(
-      fetchCachedRelease(cf, KV, "e".repeat(64)),
-    ).rejects.toMatchObject({ code: "RELEASE_CACHE_MISMATCH" });
   });
 });
 

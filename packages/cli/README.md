@@ -24,8 +24,12 @@ handles a Cloudflare token itself: `cf` keeps its own login (`cf auth login`,
 which the CLI offers when you're logged out), and CI passes
 `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` through. That login is the
 only credential: the CLI reads and writes the gateway's app registry in the
-gateway's own D1 database with it (ADR-0003), and keeps nothing else on your
-machine but which account it deployed to (`~/.everyapp/installs.json`).
+gateway's own D1 database with it (ADR-0003), and keeps nothing on your
+machine. It finds the gateway by asking every account the login sees for the
+gateway's database, all at once, and reads its address from the install row
+there; when several accounts have one, `--account-id` (or
+`CLOUDFLARE_ACCOUNT_ID`) picks. Another machine needs this checkout and
+`cf auth login`, nothing else.
 
 Commands that deploy take `--json` to print NDJSON progress events (exit code
 0 when done, 2 when an action is required — do it and run the same command
@@ -56,10 +60,15 @@ everyapp gateway deploy --domain apps.example.com
 ```
 
 The deploy builds the gateway release from `apps/every-app-gateway` in this
-checkout (or takes `--release <tarball>`), migrates the gateway's D1 database
-before the new code goes live (after a Time Travel bookmark it prints, with
-the command to restore it), uploads with `cf deploy`, and remembers the
-address and account for later runs. The gateway serves at `--domain`, and each app one label below
+checkout (once per change to its sources, the SDK's, perimeter's or
+toolbus's: the build is kept by their tree hash under
+`node_modules/.cache/everyapp/`, so a later deploy or an app's rebind takes
+seconds), records the install in the gateway's D1 database (address, zone,
+release), migrates that database before the new code goes live (after a Time
+Travel bookmark it prints, with the command to restore it), and uploads with
+`cf deploy`. A checkout behind the live gateway is refused: run `git pull`.
+An app deploy that binds a new app redeploys the gateway from the same
+checkout, which upgrades it when the checkout is newer. The gateway serves at `--domain`, and each app one label below
 it (`todo.apps.example.com`) as its own Workers Custom Domain: Cloudflare
 creates the DNS record and certificate. Before it adds an address, the deploy
 checks for a DNS record that answers it, at the name or as a wildcard above it

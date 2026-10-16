@@ -26,6 +26,7 @@ import { openRelease, type GatewayRelease } from "./release";
 import { ensureGatewayResources } from "./resources";
 
 let account: FakeCloudflare;
+let tarball: string;
 let release: GatewayRelease;
 let events: Array<Record<string, any>>;
 let home: string;
@@ -39,7 +40,8 @@ beforeEach(async () => {
   events = [];
   home = makeTestHome();
   vi.stubEnv("HOME", home);
-  release = await openRelease(await buildGatewayRelease());
+  tarball = await buildGatewayRelease();
+  release = await openRelease(tarball);
 });
 
 afterEach(async () => {
@@ -71,11 +73,17 @@ async function deployGateway(
   });
 }
 
+/**
+ * A reconcile, which deploys the release this checkout builds: here
+ * `tarball`, the one the gateway was installed with, unless a test says.
+ */
 function reconcile(options: Partial<Parameters<typeof reconcileGateway>[0]> = {}) {
   return reconcileGateway({
     cf: account.cf,
     out: out(),
     accountId: ACCOUNT_ID,
+    databaseId: gatewayDatabaseId(),
+    openRelease: () => openRelease(tarball),
     interactive: false,
     cliVersion: "0.3.0",
     sleep: noSleep,
@@ -85,8 +93,9 @@ function reconcile(options: Partial<Parameters<typeof reconcileGateway>[0]> = {}
 }
 
 const gatewayDb = () => account.database("every-app-gateway");
-const gatewayD1 = () =>
-  cfD1Database(account.cf, [...account.databases].find(([, db]) => db.name === "every-app-gateway")![0]);
+const gatewayDatabaseId = () =>
+  [...account.databases].find(([, db]) => db.name === "every-app-gateway")![0];
+const gatewayD1 = () => cfD1Database(account.cf, gatewayDatabaseId());
 
 /** A later build of the same gateway version, as a newer CLI bundles it. */
 const laterBuild = async () =>
@@ -138,17 +147,18 @@ describe("gateway deploy", () => {
   it("installs a gateway: migrations first, then one upload with its secrets", async () => {
     const result = await deployGateway();
 
-    // The order that keeps a failure safe: lease, bookmark, history,
-    // migrations and the release cache all before the upload.
+    // The order that keeps a failure safe: lease, bookmark and migrations
+    // all before the upload. Nothing is kept in KV.
     const commands = account.cf.calls.map((call) => call.args.slice(0, 3).join(" "));
     const order = [
       "d1 query", // the lease (and its table)
       "d1 time-travel get-bookmark",
       "d1 migrations apply",
-      "kv keys put",
       "deploy --prebuilt --mode",
     ].map((command) => commands.findIndex((c) => c.startsWith(command)));
     expect(order.every((index, i) => i === 0 || index > order[i - 1]!)).toBe(true);
+    expect(commands.some((command) => command.startsWith("kv keys"))).toBe(false);
+    expect(account.namespaces.size).toBe(1);
 
     const [deploy] = account.deploys;
     expect(account.deploys).toHaveLength(1);
@@ -217,11 +227,33 @@ describe("gateway deploy", () => {
       jwtPublicKey: deploy!.secrets!["JWT_PUBLIC_KEY"],
     });
     expect(deploy!.secrets!["JWT_PUBLIC_KEY"]).toMatch(/^-----BEGIN PUBLIC KEY-----/);
-    const cached = JSON.parse(
-      fs.readFileSync(path.join(home, ".everyapp", "installs.json"), "utf8"),
-    );
-    expect(cached.installs["example.com"]).toMatchObject({ accountId: ACCOUNT_ID });
-    expect(fs.statSync(path.join(home, ".everyapp", "installs.json")).mode & 0o777).toBe(0o600);
+    // Nothing about the install is kept on this machine.
+    expect(fs.readdirSync(path.join(home, ".everyapp"))).toEqual(["cf"]);
+  });
+
+  it("records a new install before anything can stop it, so a resume needs no --domain", async () => {
+    account.failNextDeploy = `You need a workers.dev subdomain before your first upload. Register one: https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`;
+
+    await expect(deployGateway({ gatewayHost: "apps.example.com" })).rejects.toMatchObject({
+      action: "register_workers_subdomain",
+    });
+
+    // Where it goes, and nothing live yet.
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+      gatewayHost: "apps.example.com",
+      zoneName: "example.com",
+      appBaseDomain: "apps.example.com",
+      releaseSha256: release.manifest.sha256,
+      liveVersionId: null,
+      liveDomains: [],
+      jwtPublicKey: null,
+    });
+
+    // The resume migrates and uploads, and records the key it generated.
+    await deployGateway({ gatewayHost: "apps.example.com" });
+    const row = (await readInstall(gatewayD1()))!;
+    expect(row.liveVersionId).toBe(account.workers.get("every-app-gateway")!.versions[0]);
+    expect(row.jwtPublicKey).toBe(account.deploys.at(-1)!.secrets!["JWT_PUBLIC_KEY"]);
   });
 
   it("redeploys without secrets, keeping the identity key it recorded", async () => {
@@ -235,6 +267,42 @@ describe("gateway deploy", () => {
     expect((await readInstall(gatewayD1()))!.jwtPublicKey).toBe(key);
     // What went live is the record: nothing was asked of the gateway.
     expect(account.cf.calls.every((call) => !call.args.join(" ").includes("https://"))).toBe(true);
+  });
+
+  it("records the public half of every new key pair it sends, as when the Worker was deleted and comes back", async () => {
+    await deployGateway();
+    const before = (await readInstall(gatewayD1()))!.jwtPublicKey;
+    // The gateway Worker deleted by hand: the next deploy sets a new pair.
+    account.workers.delete("every-app-gateway");
+
+    await deployGateway();
+
+    const sent = account.deploys.at(-1)!.secrets!["JWT_PUBLIC_KEY"];
+    expect(sent).toMatch(/^-----BEGIN PUBLIC KEY-----/);
+    expect(sent).not.toBe(before);
+    expect((await readInstall(gatewayD1()))!.jwtPublicKey).toBe(sent);
+  });
+
+  it("deploys once, even when an app registers meanwhile: that app's own rebind binds it", async () => {
+    await deployGateway();
+    const deploys = account.deploys.length;
+    // An app deploy marks its app deployed while this upload runs.
+    account.afterUpload = (worker) => {
+      if (worker !== "every-app-gateway") return undefined;
+      account.afterUpload = null;
+      seedApps([{ slug: "todo", worker: "every-acme-todo", status: "binding" }]);
+      return undefined;
+    };
+
+    await deployGateway({ reason: "upgrade" });
+
+    expect(account.deploys).toHaveLength(deploys + 1);
+    expect(account.gatewayBindings()).toEqual([]);
+    // Its rebind, once this deploy freed the lease.
+    await expect(reconcile({ force: true })).resolves.toMatchObject({
+      appWorkers: ["every-acme-todo"],
+    });
+    expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
   });
 
   it("leaves the gateway that is serving alone when a migration fails", async () => {
@@ -356,11 +424,31 @@ describe("gateway deploy", () => {
     const newer = await laterBuild();
     try {
       await deployGateway({ release: newer });
-      // An older checkout's release: same version, built before.
-      await expect(deployGateway({ reason: "upgrade" })).rejects.toMatchObject({
+      // An older checkout's release: same version, from before.
+      const refused = await deployGateway({ reason: "upgrade" }).catch(
+        (error: unknown) => error,
+      );
+      expect(refused).toMatchObject({
         code: "DOWNGRADE_REFUSED",
+        message: expect.stringContaining(
+          "This checkout's Gateway (0.2.0 of 2026-10-12) is older than the one live at https://example.com (0.2.0 of 2026-10-13). Run git pull, then: pnpm everyapp",
+        ),
+        authorize: false,
       });
+      // Only setup offers the rollback.
+      expect((refused as Error).message).not.toContain("--allow-downgrade");
+      expect((refused as { rerun: string }).rerun).not.toContain("--allow-downgrade");
       expect(account.deploys).toHaveLength(1);
+
+      const offered = await deployGateway({
+        reason: "upgrade",
+        allowDowngradeFlag: true,
+      }).catch((error: unknown) => error);
+      expect(offered).toMatchObject({
+        code: "DOWNGRADE_REFUSED",
+        rerun: expect.stringContaining("--allow-downgrade"),
+        authorize: true,
+      });
 
       await deployGateway({ reason: "upgrade", allowDowngrade: true });
       expect((await readInstall(gatewayD1()))!.releaseSha256).toBe(release.manifest.sha256);
@@ -851,7 +939,63 @@ describe("gateway reconcile", () => {
     expect(account.deploys).toHaveLength(deploys);
   });
 
-  it("picks its release under the lease: after an upgrade, never the old one", async () => {
+  const migrations = () =>
+    account.cf.calls.filter(
+      (call) => call.args.slice(0, 3).join(" ") === "d1 time-travel get-bookmark",
+    ).length;
+
+  it("redeploys the release that is live without migrating anything", async () => {
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
+    const before = migrations();
+
+    await reconcile();
+
+    expect(migrations()).toBe(before);
+    expect(account.deploys.at(-1)!.config["env"].EVERYAPP_RELEASE.value).toEqual({
+      version: "0.2.0",
+      sha256: release.manifest.sha256,
+    });
+  });
+
+  it("takes another build of the live sources as the live release, since builds differ byte for byte", async () => {
+    // Installed from sources whose tree hash is "tree-1".
+    gatewayDb().sqlite.exec("UPDATE _everyapp_install SET source_tree_sha256 = 'tree-1'");
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
+    // Another machine's build of the same tree: another SHA-256.
+    const rebuilt = await buildGatewayRelease({ builtAt: "2026-10-12T06:00:00.000Z" });
+    const before = migrations();
+
+    await reconcile({
+      force: true,
+      openRelease: () => openRelease(rebuilt, { treeSha256: "tree-1", committedAt: null }),
+    });
+
+    // A rebind, not an upgrade: nothing migrated, nothing asked.
+    expect(migrations()).toBe(before);
+    expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
+  });
+
+  it("deploys the release this checkout builds, upgrading the gateway when it is newer", async () => {
+    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
+    const newer = await buildGatewayRelease({
+      version: "0.2.0",
+      builtAt: "2026-10-13T00:00:00.000Z",
+    });
+    const before = migrations();
+
+    await reconcile({ force: true, openRelease: () => openRelease(newer) });
+
+    // Bookmarked and migrated first, as any upgrade.
+    expect(migrations()).toBe(before + 1);
+    const live = account.deploys.at(-1)!.config["env"].EVERYAPP_RELEASE.value;
+    expect(live.sha256).not.toBe(release.manifest.sha256);
+    expect((await readInstall(gatewayD1()))!).toMatchObject({
+      releaseSha256: live.sha256,
+      liveAppWorkers: ["every-acme-todo"],
+    });
+  });
+
+  it("refuses, under the lease, to put back a release older than one an upgrade made live meanwhile", async () => {
     seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
     const newer = await laterBuild();
     try {
@@ -864,136 +1008,60 @@ describe("gateway reconcile", () => {
       });
       let upgraded = false;
 
-      await reconcile({
-        force: true,
-        leaseWaitMs: 60_000,
-        // While the reconcile waits for the lease, the upgrade finishes.
-        sleep: async () => {
-          if (upgraded) return;
-          upgraded = true;
-          await upgrade.release();
-          await deployGateway({ reason: "upgrade", release: newer });
-        },
-      });
+      await expect(
+        reconcile({
+          force: true,
+          leaseWaitMs: 60_000,
+          // While the reconcile waits for the lease, the upgrade finishes.
+          sleep: async () => {
+            if (upgraded) return;
+            upgraded = true;
+            await upgrade.release();
+            await deployGateway({ reason: "upgrade", release: newer });
+          },
+        }),
+      ).rejects.toMatchObject({ code: "DOWNGRADE_REFUSED" });
 
       expect(upgraded).toBe(true);
-      const live = account.deploys.at(-1)!.config["env"].EVERYAPP_RELEASE.value;
-      expect(live.sha256).toBe(newer.manifest.sha256);
-      expect(account.gatewayBindings()).toEqual(["every-acme-todo"]);
+      expect(account.gatewayRelease()?.sha256).toBe(newer.manifest.sha256);
       expect((await readInstall(gatewayD1()))!.releaseSha256).toBe(newer.manifest.sha256);
     } finally {
       await newer.cleanup();
     }
   });
 
-  describe("when the Worker serves another version than the install row names", () => {
-    let newer: GatewayRelease;
-    let rowA: Awaited<ReturnType<typeof readInstall>>;
-
-    // Release A is recorded; then B goes live, but its record is lost.
-    beforeEach(async () => {
-      rowA = await readInstall(gatewayD1());
-      newer = await laterBuild();
-      await deployGateway({ reason: "upgrade", release: newer });
-      await writeInstall(gatewayD1(), rowA!);
-      seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
-    });
-    afterEach(() => newer.cleanup());
-
-    const liveRelease = () =>
-      account.workers.get("every-app-gateway")!.config["env"].EVERYAPP_RELEASE.value
-        .sha256 as string;
-
-    it("never calls it in sync, and never redeploys the recorded release unattended", async () => {
-      const deploys = account.deploys.length;
-      // Not even once the row names the Workers the gateway binds.
-      await writeInstall(gatewayD1(), { ...rowA!, liveAppWorkers: ["every-acme-todo"] });
-
-      await expect(reconcile()).rejects.toMatchObject({
-        action: "rerun_interactive",
-        message: expect.stringContaining("not the"),
-      });
-
-      expect(account.deploys).toHaveLength(deploys);
-      expect(liveRelease()).toBe(newer.manifest.sha256);
-    });
-
-    it("leaves no release it opened behind when it fails", async () => {
-      // The cache holds the wrong release under A's key.
-      const kv = account.namespaces.get(account.namespaceId("every-app-gateway-deploy")!)!;
-      kv.keys.set(
-        `release/${release.manifest.sha256}`,
-        kv.keys.get(`release/${newer.manifest.sha256}`)!,
-      );
-
-      await expect(reconcile()).rejects.toMatchObject({ code: "RELEASE_CACHE_MISMATCH" });
-
-      expect(
-        fs.readdirSync(path.join(home, ".everyapp", "cf", "tmp")).filter((entry) =>
-          entry.startsWith("gateway-cached-"),
-        ),
-      ).toEqual([]);
-    });
-
-    it("leaves a release rolled back by hand alone unless a person says so", async () => {
-      // A rollback to A by hand: the Worker serves A, the row names B.
-      await writeInstall(gatewayD1(), {
-        ...(await readInstall(gatewayD1()))!,
-        releaseVersion: newer.manifest.version,
-        releaseSha256: newer.manifest.sha256,
-        releaseOrder: { schema: rowA!.releaseOrder!.schema, builtAt: Date.parse(newer.manifest.builtAt) },
-      });
-      account.workers.get("every-app-gateway")!.config["env"].EVERYAPP_RELEASE.value = {
-        version: release.manifest.version,
-        sha256: release.manifest.sha256,
-      };
-      account.workers.get("every-app-gateway")!.versions.push("rollback-by-hand");
-
-      await expect(reconcile()).rejects.toMatchObject({ action: "rerun_interactive" });
-      await expect(
-        reconcile({ interactive: true, confirm: async () => false }),
-      ).rejects.toMatchObject({ code: "DEPLOY_CANCELLED" });
-      await reconcile({ interactive: true, confirm: async () => true });
-      expect(liveRelease()).toBe(newer.manifest.sha256);
-    });
-  });
-
-  it("redeploys the live release from the cache", async () => {
+  it("takes the install row's word for what is live: cf alone stops it over a dashboard edit", async () => {
     seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
+    // A version the row doesn't name.
+    account.workers.get("every-app-gateway")!.versions.push("dashboard-2");
+    account.strictAbortNextDeploy = true;
 
-    await reconcile();
+    await expect(reconcile()).rejects.toMatchObject({ action: "rerun_interactive" });
 
-    expect(account.deploys.at(-1)!.config["env"].EVERYAPP_RELEASE.value).toEqual({
-      version: "0.2.0",
-      sha256: release.manifest.sha256,
-    });
-  });
-
-  it("refuses a cached release that doesn't hash to the live one", async () => {
-    const kv = account.namespaces.get(account.namespaceId("every-app-gateway-deploy")!)!;
-    const other = await buildGatewayRelease({ version: "6.6.6" });
-    kv.keys.set(
-      `release/${release.manifest.sha256}`,
-      fs.readFileSync(other).toString("base64"),
+    // At a terminal, cf asks its own question; the row's release goes live.
+    await reconcile({ interactive: true });
+    expect(account.deploys.at(-1)!.mode).toBe("interactive");
+    expect((await readInstall(gatewayD1()))!.liveVersionId).toBe(
+      account.workers.get("every-app-gateway")!.versions.at(-1),
     );
-    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
-
-    await expect(reconcile()).rejects.toMatchObject({
-      code: "RELEASE_CACHE_MISMATCH",
-    });
-    expect(account.deploys).toHaveLength(1);
   });
 
-  it("says to upgrade when the live release isn't cached", async () => {
-    const kv = account.namespaces.get(account.namespaceId("every-app-gateway-deploy")!)!;
-    kv.keys.clear();
-    seedApps([{ slug: "todo", worker: "every-acme-todo", status: "active" }]);
-
-    await expect(reconcile()).rejects.toMatchObject({
-      code: "RELEASE_NOT_CACHED",
-      message: expect.stringContaining("everyapp gateway upgrade"),
+  it("leaves no release it opened behind when it fails", async () => {
+    const older = await buildGatewayRelease({
+      version: "0.2.0",
+      builtAt: "2026-10-11T00:00:00.000Z",
     });
-    expect(account.deploys).toHaveLength(1);
+    const opened = () =>
+      fs
+        .readdirSync(path.join(home, ".everyapp", "cf", "tmp"))
+        .filter((entry) => entry.startsWith("gateway-release-"));
+    const before = opened();
+
+    await expect(
+      reconcile({ force: true, openRelease: () => openRelease(older) }),
+    ).rejects.toMatchObject({ code: "DOWNGRADE_REFUSED" });
+
+    expect(opened()).toEqual(before);
   });
 
   it("sends a setting with the redeploy, in the secrets file", async () => {

@@ -112,6 +112,7 @@ interface QueryCommandFlags {
   local?: boolean;
   binding?: string;
   gateway?: string;
+  "account-id"?: string;
   json?: boolean;
 }
 
@@ -133,6 +134,7 @@ export async function query(
       local: flags.local ?? false,
       binding: flags.binding,
       gateway: flags.local ? undefined : requestedGatewayUrl(flags.gateway),
+      accountId: flags["account-id"],
       json: flags.json,
     });
     out.emit({
@@ -150,6 +152,8 @@ interface QueryAppD1Options {
   binding?: string;
   /** The gateway `--gateway` or EVERYAPP_GATEWAY_URL names. */
   gateway?: string;
+  /** The Gateway's Cloudflare account (`--account-id`). */
+  accountId?: string;
   json?: boolean;
   cf?: CfRunner;
   createCf?: (accountId?: string) => CfRunner;
@@ -162,6 +166,7 @@ export async function queryAppD1({
   local,
   binding,
   gateway,
+  accountId,
   json,
   cf = createCfRunner(),
   createCf,
@@ -208,6 +213,7 @@ export async function queryAppD1({
 
   const { cf: accountCf, db } = await connectToGateway({
     gateway,
+    accountId,
     interactive: canPromptInTerminal(json ?? false),
     createCf,
   });

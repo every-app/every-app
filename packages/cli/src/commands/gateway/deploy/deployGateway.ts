@@ -1,12 +1,15 @@
 /**
- * `everyapp gateway deploy` and `upgrade`: deploy a release built from this
- * checkout. Deploy also installs a new gateway; upgrade needs one that this
- * CLI deployed before and does nothing when it already runs this release.
- * Neither moves a gateway to an older release without --allow-downgrade.
+ * `everyapp gateway deploy` and `upgrade`: deploy the release this checkout
+ * builds (from the build cache when its sources haven't changed). Deploy
+ * also installs a new gateway; upgrade needs one that is installed and does
+ * nothing when it already runs this release. Neither moves a gateway to an
+ * older release: a checkout behind the live one is told to `git pull`
+ * (only `setup --allow-downgrade` rolls back on purpose).
  */
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { deviceLoginAction, resolveAccount } from "@/lib/cf/account";
 import { cfD1Database } from "@/lib/cf/d1";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
+import { createCfRunner } from "@/lib/cf/runner";
 import { waitForCertificates } from "@/lib/domains/certWait";
 import { normalizeHostname } from "@/lib/domains/hostnames";
 import { resolveZone, type Zone } from "@/lib/domains/zones";
@@ -15,18 +18,18 @@ import type { D1Database } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
 import {
   applyGateway,
+  candidate,
   downgradeRefused,
-  notDeployedByEveryapp,
+  isLiveRelease,
   olderThanInstalled,
   type ApplyGatewayOptions,
   type ApplyGatewayResult,
 } from "@/lib/gateway/apply";
-import { readInstall, type InstallRecord } from "@/lib/gateway/install";
+import { loginAndDiscover, requireInstall } from "@/lib/gateway/connect";
+import { requireGateway } from "@/lib/gateway/discover";
+import type { InstallRecord } from "@/lib/gateway/install";
 import { compareVersions, type GatewayRelease } from "@/lib/gateway/release";
-import {
-  ensureGatewayResources,
-  findGatewayDatabase,
-} from "@/lib/gateway/resources";
+import { ensureGatewayResources } from "@/lib/gateway/resources";
 import {
   describeSetupLink,
   openInBrowser,
@@ -35,22 +38,18 @@ import {
 import type { EventSink } from "@/lib/output/events";
 import {
   cliVersion,
-  connectToAccount,
   eventSink,
   openGatewayRelease,
-  rememberedInstall,
   runReported,
 } from "../shared";
 
 export interface DeployGatewayFlags {
   domain?: string;
   "account-id"?: string;
-  release?: string;
   yes?: boolean;
   json?: boolean;
   verbose?: boolean;
   printSetupLink?: boolean;
-  "allow-downgrade"?: boolean;
   "force-dns"?: boolean;
 }
 
@@ -70,16 +69,24 @@ async function run(
   out: EventSink,
 ): Promise<void> {
   const requestedDomain = normalizeHostname(flags.domain);
-  const cached = await rememberedInstall(requestedDomain);
-  const { cf, account } = await connectToAccount({
-    json: flags.json,
+  const interactive = canPromptInTerminal(flags.json ?? false);
+  const { whoami, discovery } = await loginAndDiscover({
     accountId: flags["account-id"],
-    remembered: cached?.accountId,
+    host: requestedDomain,
+    interactive,
+    onDeviceLogin: flags.json ? deviceLoginAction(out, "gateway.login") : undefined,
   });
-
-  const { install } = await findInstall(cf);
-  if (reason === "upgrade" && !install) throw notDeployedByEveryapp();
-  const domain = requestedDomain ?? install?.gatewayHost ?? cached?.gatewayHost;
+  // The Gateway the login finds; with none, `deploy` installs one.
+  const found =
+    reason === "upgrade"
+      ? requireInstall(requireGateway(discovery, whoami))
+      : discovery.gateway;
+  const account =
+    found?.account ??
+    (await resolveAccount({ whoami, flag: flags["account-id"], interactive }));
+  const cf = found?.cf ?? createCfRunner({ accountId: account.id });
+  const install = found?.install ?? null;
+  const domain = requestedDomain ?? install?.gatewayHost;
   if (!domain) {
     throw new EveryAppError(
       "DOMAIN_REQUIRED",
@@ -87,13 +94,9 @@ async function run(
     );
   }
 
-  const release = await openGatewayRelease({
-    releasePath: flags.release,
-    out,
-    verbose: flags.verbose,
-  });
+  const release = await openGatewayRelease({ out, verbose: flags.verbose });
   try {
-    if (!checkRelease({ release, install, reason, flags, out })) return;
+    if (!checkRelease({ release, install, reason, out })) return;
     const target = await gatewayTarget({
       cf,
       accountId: account.id,
@@ -102,7 +105,6 @@ async function run(
       out,
     });
 
-    const interactive = canPromptInTerminal(flags.json ?? false);
     const { result, db, gatewayUrl } = await deployGatewayRelease({
       cf,
       out,
@@ -112,7 +114,6 @@ async function run(
       target,
       interactive,
       forceDns: flags["force-dns"],
-      allowDowngrade: flags["allow-downgrade"],
     });
 
     const setupLink = await setupLinkForDeploy({
@@ -153,15 +154,6 @@ async function run(
   }
 }
 
-/** The account's gateway database and install row. */
-export async function findInstall(
-  cf: CfRunner,
-): Promise<{ databaseId: string | null; install: InstallRecord | null }> {
-  const databaseId = await findGatewayDatabase(cf);
-  if (!databaseId) return { databaseId, install: null };
-  return { databaseId, install: await readInstall(cfD1Database(cf, databaseId)) };
-}
-
 /** Where a deploy goes: the install's own settings, or a new install's. */
 interface GatewayTarget {
   domain: string;
@@ -182,7 +174,8 @@ export async function gatewayTarget({
   domain: string;
   out: EventSink;
 }): Promise<GatewayTarget> {
-  if (install) {
+  // An install that never finished its first upload can still go elsewhere.
+  if (install && (install.liveVersionId !== null || install.gatewayHost === domain)) {
     if (install.gatewayHost !== domain) {
       throw new EveryAppError(
         "DOMAIN_CHANGE_UNSUPPORTED",
@@ -225,6 +218,7 @@ export async function deployGatewayRelease({
   ApplyGatewayOptions,
   | "forceDns"
   | "allowDowngrade"
+  | "allowDowngradeFlag"
   | "confirm"
   | "sleep"
   | "leaseWaitMs"
@@ -288,13 +282,11 @@ function checkRelease({
   release,
   install,
   reason,
-  flags,
   out,
 }: {
   release: GatewayRelease;
   install: InstallRecord | null;
   reason: "deploy" | "upgrade";
-  flags: DeployGatewayFlags;
   out: EventSink;
 }): boolean {
   if (compareVersions(release.manifest.minCli, cliVersion) > 0) {
@@ -304,21 +296,20 @@ function checkRelease({
     );
   }
   if (!install) return true;
-  if (install.releaseSha256 === release.manifest.sha256 && reason === "upgrade") {
+  // This release, or a build of the same sources.
+  if (reason === "upgrade" && isLiveRelease(release, install)) {
     out.emit({
       type: "done",
-      message: `The gateway already runs release ${release.manifest.version}.`,
+      message: `The gateway already runs release ${release.manifest.version}, built from these sources.`,
       data: { release: release.manifest.version },
     });
     return false;
   }
-  // By migrations and build time, not the version, which an older CLI's
-  // release can share. Checked again under the deploy lease.
-  if (olderThanInstalled(release.manifest, install) && !flags["allow-downgrade"]) {
-    throw downgradeRefused(release.manifest, {
-      version: install.releaseVersion,
-      sha256: install.releaseSha256,
-    });
+  // By migrations and when the sources were committed, not the version,
+  // which an older checkout can share. Checked again under the deploy
+  // lease. Only setup rolls back on purpose (--allow-downgrade).
+  if (olderThanInstalled(candidate(release), install)) {
+    throw downgradeRefused(candidate(release), install);
   }
   return true;
 }

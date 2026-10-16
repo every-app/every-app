@@ -1,11 +1,16 @@
 import enquirer from "enquirer";
 import type { LocalContext } from "@/context";
-import type { ReconcileSeams } from "@/commands/app/deploy/deployApp";
+import {
+  checkoutGateway,
+  type ReconcileSeams,
+} from "@/commands/app/deploy/deployApp";
+import { openGatewayRelease } from "@/commands/gateway/shared";
 import {
   describeResource,
   forgetOwnedResources,
   readOwnedResources,
 } from "@/lib/app/ownership";
+import { deviceLoginAction } from "@/lib/cf/account";
 import type { D1Database } from "@/lib/cf/d1";
 import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { CfError } from "@/lib/cf/errors";
@@ -21,6 +26,7 @@ import { deleteWorkflow, listWorkflows } from "@/lib/cf/workflows";
 import { deleteHostCertificates } from "@/lib/domains/certificates";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { EveryAppError } from "@/lib/errors";
+import { refuseOlderCheckout } from "@/lib/gateway/apply";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall } from "@/lib/gateway/install";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
@@ -36,6 +42,7 @@ import { version as cliVersion } from "../../../../package.json";
 
 interface DeleteCommandFlags {
   gateway?: string;
+  "account-id"?: string;
   purge?: boolean;
   yes?: boolean;
   json?: boolean;
@@ -61,7 +68,9 @@ export async function deleteApp(
       const result = await removeApp({
         appId,
         gateway: requestedGatewayUrl(flags.gateway),
+        accountId: flags["account-id"],
         out,
+        json: flags.json,
         interactive,
         purge: flags.purge ?? false,
       });
@@ -86,7 +95,9 @@ export async function deleteApp(
 export async function removeApp({
   appId,
   gateway,
+  accountId,
   out,
+  json,
   interactive,
   purge,
   createCf,
@@ -95,17 +106,26 @@ export async function removeApp({
   appId: string;
   /** The gateway `--gateway` or EVERYAPP_GATEWAY_URL names. */
   gateway?: string;
+  /** The Gateway's Cloudflare account (`--account-id`). */
+  accountId?: string;
   out: EventSink;
+  /** An agent reads the events: it gets cf's device login, and the run waits. */
+  json?: boolean;
   interactive: boolean;
   purge: boolean;
   createCf?: (accountId?: string) => CfRunner;
   reconcile?: ReconcileSeams;
 }): Promise<RegisteredAppInfo & { purged?: PurgeResult }> {
-  const { cf, accountId, db: registry } = await connectToGateway({
+  const connection = await connectToGateway({
     gateway,
+    accountId,
     interactive,
+    onDeviceLogin: json ? deviceLoginAction(out, "app.login") : undefined,
     createCf,
   });
+  const { cf, db: registry } = connection;
+  // Before the registry changes: never with a checkout behind the Gateway.
+  await refuseOlderCheckout(connection.install, checkoutGateway(reconcile));
   const deleted = await deleteFromRegistry(registry, appId);
   out.emit({
     type: "step",
@@ -115,12 +135,15 @@ export async function removeApp({
     data: { appId, hostname: deleted.hostname, workerName: deleted.workerName },
   });
 
+  // The gateway this checkout builds, without the app's binding.
   await reconcileGateway({
     cf,
     out,
-    accountId,
+    accountId: connection.accountId,
+    databaseId: connection.databaseId,
     interactive,
     cliVersion,
+    openRelease: () => openGatewayRelease({ out }),
     ...reconcile,
   });
 

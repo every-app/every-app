@@ -14,7 +14,7 @@ import { cfD1Database } from "@/lib/cf/d1";
 import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { reportFailure } from "@/lib/output/report";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
-import { buildGatewayRelease } from "@/test/gatewayRelease";
+import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
 import { runSetup, type SetupDeps, type SetupFlags } from "./runSetup";
@@ -67,6 +67,7 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
   return {
     createCf: () => account.cf,
     openRelease: () => openRelease(tarball),
+    source: () => releaseSource(tarball),
     interactive: false,
     prompts: {
       pickZone: async () => {
@@ -172,8 +173,44 @@ describe("everyapp setup", () => {
         data: { email: "owner@example.com", organizationName: "Owner" },
       }),
     );
-    // Nothing is kept on this machine for the gateway but the install cache.
-    expect(fs.readdirSync(`${home}/.everyapp`).sort()).toEqual(["cf", "installs.json"]);
+    // Nothing is kept on this machine: the next run finds the Gateway
+    // through the Cloudflare login.
+    expect(fs.readdirSync(`${home}/.everyapp`)).toEqual(["cf"]);
+  });
+
+  it("resumes an install that stopped before its first upload, without --domain", async () => {
+    account.failNextDeploy = `You need a workers.dev subdomain before your first upload. Register one: https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`;
+
+    const first = await setup({ domain: GW });
+    expect(first.exitCode).toBe(2);
+    expect(events.at(-1)).toMatchObject({ action: "register_workers_subdomain" });
+
+    events = [];
+    const { exitCode } = await setup();
+    expect(exitCode).toBe(0);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "setup.gateway",
+        status: "start",
+        data: expect.objectContaining({ gatewayUrl: `https://${GW}`, from: null }),
+      }),
+    );
+    expect(account.gatewayDomains()).toEqual([GW]);
+  });
+
+  it("lets an install that never uploaded go to another address", async () => {
+    account.failNextDeploy = `You need a workers.dev subdomain before your first upload. Register one: https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`;
+    await setup({ domain: "typo.example.com" });
+
+    events = [];
+    const { exitCode } = await setup({ domain: GW });
+
+    expect(exitCode).toBe(0);
+    expect(account.gatewayDomains()).toEqual([GW]);
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+      gatewayHost: GW,
+      appBaseDomain: GW,
+    });
   });
 
   it("does nothing on a second run", async () => {
@@ -195,6 +232,65 @@ describe("everyapp setup", () => {
     expect(result).toMatchObject({ organizationName: "Owner" });
     expect(account.deploys).toHaveLength(deploys);
     expect(events.some((event) => event.type === "action_required")).toBe(false);
+  });
+
+  it("knows the Gateway is up to date from the install row's tree hash, without building", async () => {
+    // Built from a checkout whose Gateway sources hash to "tree-1".
+    const fromCheckout = {
+      openRelease: () => openRelease(tarball, { treeSha256: "tree-1", committedAt: null }),
+      source: async () => ({ ...(await releaseSource(tarball)), treeSha256: "tree-1" }),
+    };
+    await setup({ domain: GW }, fromCheckout);
+    events = [];
+
+    const { exitCode } = await setup({}, {
+      ...fromCheckout,
+      openRelease: async () => {
+        throw new Error("built the Gateway");
+      },
+    });
+
+    expect(exitCode).toBe(0);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "setup.gateway",
+        status: "skip",
+        data: expect.objectContaining({ upToDate: true, release: "0.2.0" }),
+      }),
+    );
+  });
+
+  it("refuses a checkout behind the live Gateway, offering --allow-downgrade for an agent to ask about", async () => {
+    const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
+    await setup(
+      { domain: GW },
+      { openRelease: () => openRelease(newer), source: () => releaseSource(newer) },
+    );
+    events = [];
+
+    const { exitCode } = await setup();
+
+    expect(exitCode).toBe(1);
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      code: "DOWNGRADE_REFUSED",
+      message: expect.stringContaining("Run git pull, then: pnpm everyapp"),
+      data: {
+        rerun: expect.stringContaining("--allow-downgrade"),
+        authorize: true,
+      },
+    });
+    const deploys = account.deploys.length;
+
+    // Asked for: the older Gateway goes back.
+    events = [];
+    const rolledBack = await setup({ "allow-downgrade": true });
+    expect(rolledBack.exitCode).toBe(0);
+    expect(account.deploys).toHaveLength(deploys + 1);
+    const older = await releaseSource(tarball);
+    await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+      releaseOrder: older.order,
+    });
   });
 
   it("never puts the owner setup link into a CI log, unless asked to", async () => {

@@ -34,7 +34,7 @@ import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
-import { buildGatewayRelease } from "@/test/gatewayRelease";
+import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
 import { loseLeaseAtCheck, OTHER_HOLDER } from "@/test/loseLease";
@@ -65,6 +65,7 @@ const WITH_WORKFLOW: EveryAppCliManifest = {
 
 let account: FakeCloudflare;
 let worker: GatewayWorker;
+let tarball: string;
 let release: GatewayRelease;
 let appDir: string;
 let home: string;
@@ -75,6 +76,12 @@ const out = () => createNdjsonSink((line) => events.push(JSON.parse(line)));
 const seams = {
   sleep: async () => undefined,
   leaseWaitMs: 0,
+};
+/** A rebind deploys the release "this checkout builds": the one installed. */
+const rebind = {
+  ...seams,
+  openRelease: () => openRelease(tarball),
+  source: () => releaseSource(tarball),
 };
 /** The live wait reaches the fake gateway Worker, and never sleeps. */
 const live = () => ({ fetch: worker.fetch, sleep: async () => undefined });
@@ -91,7 +98,8 @@ beforeEach(async () => {
   // A gateway this CLI deployed at the zone's apex: each app is its own
   // Custom Domain at <app>.example.com. (One on a subdomain is below.) It
   // has no owner, and no organization, yet.
-  release = await openRelease(await buildGatewayRelease());
+  tarball = await buildGatewayRelease();
+  release = await openRelease(tarball);
   const resources = await ensureGatewayResources(account.cf);
   await applyGateway({
     cf: account.cf,
@@ -148,7 +156,7 @@ function deploy(
     out: out(),
     createCf: () => account.cf,
     installDeps: async () => undefined,
-    reconcile: seams,
+    reconcile: rebind,
     live: live(),
     ...options,
   });
@@ -162,7 +170,7 @@ function remove(appId: string, purge = false) {
     interactive: false,
     purge,
     createCf: () => account.cf,
-    reconcile: seams,
+    reconcile: rebind,
   });
 }
 
@@ -181,7 +189,7 @@ function deployOther(manifest: EveryAppCliManifest) {
     out: out(),
     createCf: () => account.cf,
     installDeps: async () => undefined,
-    reconcile: seams,
+    reconcile: rebind,
     live: live(),
   });
 }
@@ -786,6 +794,88 @@ describe("app deploy", () => {
     expect(appRow("todo")).toMatchObject({ deployed_by_actor: `api-token:${ACCOUNT_ID}` });
   });
 
+  it("logs in through cf's device link under --json, and waits for it, on deploy and delete", async () => {
+    let approved = false;
+    const logOut = () => {
+      approved = false;
+    };
+    account.cf
+      .override(["auth", "whoami"], () => ({
+        stdout: JSON.stringify(
+          approved
+            ? { authenticated: true, email: "dev@example.com", accounts: [{ id: ACCOUNT_ID, name: "Acme" }] }
+            : { authenticated: false },
+        ),
+      }))
+      .override(["auth", "login"], () => {
+        approved = true;
+        return {
+          stdout: "please visit:\n\n  https://dash.cloudflare.com/oauth2/device\n\nand enter the code:\n\n  ABCD-EFGH\n",
+        };
+      });
+    const login = expect.objectContaining({
+      type: "action_required",
+      action: "cloudflare_login",
+      data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", waiting: true },
+    });
+
+    await expect(deploy(TODO, { json: true })).resolves.toMatchObject({ live: true });
+    expect(events.filter((event) => event["type"] === "action_required")).toEqual([login]);
+
+    logOut();
+    events = [];
+    await removeApp({
+      appId: "todo",
+      out: out(),
+      json: true,
+      interactive: false,
+      purge: false,
+      createCf: () => account.cf,
+      reconcile: rebind,
+    });
+    expect(events.filter((event) => event["type"] === "action_required")).toEqual([login]);
+    expect(appRow("todo")).toMatchObject({ status: "deleted" });
+  });
+
+  it("refuses a checkout behind the live Gateway, before anything happens, and says git pull", async () => {
+    // A checkout that hasn't pulled the Gateway that is live.
+    const behind = {
+      ...rebind,
+      source: async () => ({
+        ...(await releaseSource(tarball)),
+        version: "0.1.0",
+        order: { schema: 0, committedAt: 0 },
+      }),
+    };
+
+    const refused = await deploy(TODO, { reconcile: behind }).catch((error: unknown) => error);
+
+    expect(refused).toMatchObject({
+      code: "DOWNGRADE_REFUSED",
+      message: expect.stringMatching(
+        /^This checkout's Gateway \(0\.1\.0\) is older than the one live at https:\/\/example\.com \(0\.2\.0\)\. Run git pull, then: pnpm everyapp/,
+      ),
+      authorize: false,
+    });
+    expect((refused as { rerun: string }).rerun).not.toContain("--allow-downgrade");
+    expect(appRow("todo")).toBeUndefined();
+    expect(account.workers.has("every-acme-todo")).toBe(false);
+
+    // Nor does a delete touch the registry.
+    await deploy();
+    await expect(
+      removeApp({
+        appId: "todo",
+        out: out(),
+        interactive: false,
+        purge: false,
+        createCf: () => account.cf,
+        reconcile: behind,
+      }),
+    ).rejects.toMatchObject({ code: "DOWNGRADE_REFUSED" });
+    expect(appRow("todo")).toMatchObject({ status: "active" });
+  });
+
   it("refuses a --gateway that isn't the one in the Cloudflare account, before anything happens", async () => {
     await expect(deploy(TODO, { gateway: "https://other.example.net" })).rejects.toMatchObject({
       code: "GATEWAY_URL_MISMATCH",
@@ -1017,7 +1107,7 @@ describe("app deploy and delete with the gateway on a subdomain", () => {
       out: out(),
       createCf: () => account.cf,
       installDeps: async () => undefined,
-      reconcile: seams,
+      reconcile: rebind,
       live: live(),
       ...options,
     });

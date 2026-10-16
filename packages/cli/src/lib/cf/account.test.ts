@@ -97,18 +97,14 @@ describe("resolveAccount", () => {
     accounts,
   });
 
-  it("prefers the flag, then CLOUDFLARE_ACCOUNT_ID, then the remembered account", async () => {
+  it("prefers the flag, then CLOUDFLARE_ACCOUNT_ID", async () => {
     vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "acct-2");
     await expect(
       resolveAccount({ whoami: whoami(), flag: "acct-1", interactive: false }),
     ).resolves.toEqual({ id: "acct-1", name: "Acme" });
     await expect(
-      resolveAccount({ whoami: whoami(), remembered: "acct-1", interactive: false }),
+      resolveAccount({ whoami: whoami(), interactive: false }),
     ).resolves.toEqual({ id: "acct-2", name: "Globex" });
-    vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "");
-    await expect(
-      resolveAccount({ whoami: whoami(), remembered: "acct-1", interactive: false }),
-    ).resolves.toEqual({ id: "acct-1", name: "Acme" });
   });
 
   it("uses the only account, and makes an unattended run choose among several", async () => {

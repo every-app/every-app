@@ -102,11 +102,11 @@ Stopped half-way (a login to approve, a domain to buy, a link you haven't opened
 
 ### Deploy from another machine
 
-Log in to the Gateway's Cloudflare account there (`npx cf auth login`, or the first `pnpm everyapp` command offers it), then deploy from a checkout of this repository. In CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Each app records who deployed it. To take someone's deploy access away, remove them from the Cloudflare account (or revoke the API token).
+Log in to the Gateway's Cloudflare account there (`npx cf auth login`, or the first `pnpm everyapp` command offers it), then deploy from a checkout of this repository. That's all: nothing is kept on the machine that set the Gateway up, and the CLI finds the Gateway by asking the accounts your login sees (`--account-id` picks when more than one has one). In CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Each app records who deployed it. To take someone's deploy access away, remove them from the Cloudflare account (or revoke the API token).
 
 ### Upgrading your Gateway
 
-`everyapp gateway upgrade` builds the Gateway from this checkout and deploys it, keeping its data, users and apps. Run it after you pull or change `apps/every-app-gateway`.
+The Gateway is built from this checkout, so upgrading it is `git pull` then `everyapp setup` (or `everyapp gateway upgrade`), keeping its data, users and apps. An app deploy that binds a new app does it too, since it redeploys the Gateway from the same checkout. The build is kept under `node_modules/.cache/everyapp` by the tree hash of the Gateway's sources (and the SDK, perimeter and toolbus it bundles), so it only happens again after they change. A checkout behind the live Gateway is refused with "run git pull"; `everyapp gateway status` says whether the live Gateway was built from your checkout's sources.
 
 ## Deploy an Example App
 
