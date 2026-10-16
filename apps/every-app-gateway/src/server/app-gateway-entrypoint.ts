@@ -1,7 +1,9 @@
 import {
   GATEWAY_ERROR_HEADER,
   IDENTITY_HEADER,
+  ORG_HEADER,
   verifyIdentityJwt,
+  type CapabilityId,
   type EveryAppUser,
 } from "@every-app/sdk/internal";
 import type { AppRegistry, RegisteredApp } from "@every-app/perimeter";
@@ -16,6 +18,9 @@ import { platformPolicy } from "./platform-policy";
 const CALLER_CACHE_MAX_ENTRIES = 500;
 const CALLER_CACHE_HIT_TTL_MS = 30_000;
 const CALLER_CACHE_MISS_TTL_MS = 5_000;
+const ORG_CACHE_MAX_ENTRIES = 500;
+const ORG_CACHE_HIT_TTL_MS = 30_000;
+const ORG_CACHE_MISS_TTL_MS = 5_000;
 
 export interface AppCallerProps {
   organizationId: string;
@@ -31,6 +36,16 @@ interface AppGatewayEnv extends IntegrationProxyEnv {
   AI_PROXY_EXTRA_ROUTES?: string;
   GATEWAY_DEPLOYMENT_MODE?: string;
   AI_PROXY_ORG_DAILY_LIMIT?: string;
+  INTEGRATION_ORG_DAILY_LIMIT?: string;
+}
+
+/**
+ * Which organizations background work from a shared app may be for: active,
+ * with at least one live (not deactivated) member.
+ * OrganizationRepository.isAttributable in the Worker.
+ */
+export interface OrganizationDirectory {
+  isAttributable(organizationId: string): Promise<boolean>;
 }
 
 interface HandleAppGatewayRequestOptions {
@@ -38,6 +53,7 @@ interface HandleAppGatewayRequestOptions {
   props: unknown;
   env: AppGatewayEnv;
   registry: AppRegistry;
+  organizations: OrganizationDirectory;
   /** Where the per-organization daily caps are counted (hosted only). */
   counters: DailyCounters;
   fetchUpstream?: (request: Request) => Promise<Response>;
@@ -50,6 +66,8 @@ type AppGatewayErrorCode =
   | "caller_identity_mismatch"
   | "caller_identity_required"
   | "caller_identity_invalid"
+  | "caller_org_mismatch"
+  | "caller_org_not_attributable"
   | "org_daily_cap_exceeded"
   | "provider_not_allowed"
   | "invalid_gateway_route"
@@ -73,8 +91,14 @@ const callerCache = new Map<
   { app: RegisteredApp | null; expiresAt: number }
 >();
 
+const organizationCache = new Map<
+  string,
+  { attributable: boolean; expiresAt: number }
+>();
+
 export function clearAppCallerCacheForTests(): void {
   callerCache.clear();
+  organizationCache.clear();
 }
 
 export async function handleAppGatewayRequest({
@@ -82,6 +106,7 @@ export async function handleAppGatewayRequest({
   props: rawProps,
   env,
   registry,
+  organizations,
   counters,
   fetchUpstream,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
@@ -137,18 +162,32 @@ export async function handleAppGatewayRequest({
       );
     }
     if (route.kind === "integration") {
-      const { organizationId, user } = await attributeCall(
-        request,
-        app,
-        props,
-        env,
-      );
-      return handleIntegrationProxyRequest({
+      // Awaited so a refusal `admit` throws is answered below.
+      return await handleIntegrationProxyRequest({
         request,
         capabilities: app.manifest.capabilities,
-        user,
         env,
-        caller: { organizationId, appId: props.appId },
+        admit: async (capability) => {
+          const { organizationId, orgSource, user } = await attributeCall(
+            request,
+            app,
+            props,
+            env,
+            organizations,
+          );
+          await spendDailyCap(counters, {
+            kind: "integration",
+            organizationId,
+            appId: props.appId,
+            orgSource,
+            capability,
+            limit: policy.orgDailyCaps.integrationProxyRequests,
+          });
+          return {
+            caller: { organizationId, appId: props.appId, orgSource },
+            user,
+          };
+        },
         fetchUpstream,
       });
     }
@@ -162,11 +201,12 @@ export async function handleAppGatewayRequest({
       );
     }
 
-    const { organizationId, user } = await attributeCall(
+    const { organizationId, orgSource, user } = await attributeCall(
       request,
       app,
       props,
       env,
+      organizations,
     );
     console.info("AI gateway request", {
       event: "ai.proxy.request",
@@ -174,12 +214,16 @@ export async function handleAppGatewayRequest({
       appId: props.appId,
       workerName: props.workerName,
       provider,
+      orgSource,
       attribution: user ? "user" : "app",
       ...(user ? { userId: user.id } : {}),
     });
 
     await spendDailyCap(counters, {
+      kind: "ai",
       organizationId,
+      appId: props.appId,
+      orgSource,
       limit: policy.orgDailyCaps.aiProxyRequests,
     });
 
@@ -288,56 +332,142 @@ async function resolveCallerApp(
 /** Whom a provider call is for: the organization it counts against, and the user. */
 interface Attribution {
   organizationId: string;
+  /**
+   * Where the organization came from: the caller's upload-time props (an
+   * organization's own app), the forwarded identity, or the shared app's
+   * `x-everyapp-org` for background work.
+   */
+  orgSource: "props" | "jwt" | "header";
   user: EveryAppUser | null;
 }
 
 /**
  * Attribute a provider call. An organization's own app calls for its
- * organization (the upload-time props); a forwarded identity of that
- * organization names the user, and one that doesn't verify is ignored (the
- * call is the app's). A shared app serves every organization, so the
- * forwarded identity (createGatewayFetch sends the request's) decides the
- * organization and must verify: an invalid or expired one is 401, never a
- * fallback to the platform organization, and a call without one is refused
- * for now (background work, which has no request, will assert its
- * organization another way).
+ * organization (the upload-time props): a forwarded identity of that
+ * organization names the user, one that doesn't verify is ignored (the call
+ * is the app's), and an `x-everyapp-org` naming another organization is
+ * refused. A shared app serves every organization: a forwarded identity
+ * (createGatewayFetch sends the request's) decides the organization and
+ * must verify (an invalid or expired one is 401, never a fallback to the
+ * platform organization); without one, background work names its
+ * organization in `x-everyapp-org`, which must be active with a live
+ * member; with both, they must agree.
  */
 async function attributeCall(
   request: Request,
   app: RegisteredApp,
   props: AppCallerProps,
   env: AppGatewayEnv,
+  organizations: OrganizationDirectory,
 ): Promise<Attribution> {
+  const asserted = request.headers.get(ORG_HEADER)?.trim() || null;
   if (app.scope !== "shared") {
+    if (asserted !== null && asserted !== props.organizationId) {
+      throw orgMismatch(props, "an organization's own app named another");
+    }
     return {
       organizationId: props.organizationId,
+      orgSource: "props",
       user: await resolveAttribution(request, props, env),
     };
   }
   const token = request.headers.get(IDENTITY_HEADER);
-  if (!token) {
+  if (token) {
+    const user = await verifyForwardedIdentity(token, props, env).catch(
+      (error: unknown) => {
+        console.warn("AI gateway identity attribution rejected", {
+          event: "ai.proxy.attribution.rejected",
+          organizationId: props.organizationId,
+          appId: props.appId,
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+        throw new AppGatewayError(
+          "caller_identity_invalid",
+          401,
+          "The forwarded identity is invalid or expired.",
+        );
+      },
+    );
+    if (asserted !== null && asserted !== user.orgId) {
+      throw orgMismatch(
+        props,
+        "the asserted organization isn't the identity's",
+      );
+    }
+    return { organizationId: user.orgId, orgSource: "jwt", user };
+  }
+  if (asserted === null) {
     throw new AppGatewayError(
       "caller_identity_required",
       403,
-      "A shared app's provider call needs the identity of the request it serves.",
+      `A shared app's provider call needs the identity of the request it serves, or for background work the organization in ${ORG_HEADER}.`,
     );
   }
-  const user = await verifyForwardedIdentity(token, props, env).catch(
-    (error: unknown) => {
-      console.warn("AI gateway identity attribution rejected", {
-        event: "ai.proxy.attribution.rejected",
-        organizationId: props.organizationId,
-        appId: props.appId,
-        message: error instanceof Error ? error.message : "Unknown error",
-      });
-      throw new AppGatewayError(
-        "caller_identity_invalid",
-        401,
-        "The forwarded identity is invalid or expired.",
-      );
-    },
+  let attributable: boolean;
+  try {
+    attributable = await isAttributable(organizations, asserted);
+  } catch (error) {
+    console.error("App gateway organization lookup failed", {
+      event: "ai.proxy.organization.failed",
+      appId: props.appId,
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+    throw new AppGatewayError(
+      "caller_registry_unavailable",
+      500,
+      "The gateway could not check the organization this call is for.",
+    );
+  }
+  if (!attributable) {
+    console.warn("AI gateway background organization refused", {
+      event: "ai.proxy.attribution.org_refused",
+      organizationId: asserted,
+      appId: props.appId,
+    });
+    throw new AppGatewayError(
+      "caller_org_not_attributable",
+      403,
+      "The organization this call is for is unknown, suspended or has no active members.",
+    );
+  }
+  return { organizationId: asserted, orgSource: "header", user: null };
+}
+
+function orgMismatch(props: AppCallerProps, why: string): AppGatewayError {
+  console.warn("AI gateway organization mismatch", {
+    event: "ai.proxy.attribution.org_mismatch",
+    organizationId: props.organizationId,
+    appId: props.appId,
+    message: why,
+  });
+  return new AppGatewayError(
+    "caller_org_mismatch",
+    403,
+    `The organization in ${ORG_HEADER} doesn't match whom this call is for.`,
   );
-  return { organizationId: user.orgId, user };
+}
+
+/** Whether background work may be for `organizationId`, cached like callers. */
+async function isAttributable(
+  organizations: OrganizationDirectory,
+  organizationId: string,
+): Promise<boolean> {
+  const now = Date.now();
+  const cached = organizationCache.get(organizationId);
+  if (cached && cached.expiresAt > now) return cached.attributable;
+  if (cached) organizationCache.delete(organizationId);
+
+  const attributable = await organizations.isAttributable(organizationId);
+  organizationCache.set(organizationId, {
+    attributable,
+    expiresAt:
+      now + (attributable ? ORG_CACHE_HIT_TTL_MS : ORG_CACHE_MISS_TTL_MS),
+  });
+  if (organizationCache.size > ORG_CACHE_MAX_ENTRIES) {
+    const oldest = organizationCache.keys().next().value;
+    if (oldest) organizationCache.delete(oldest);
+  }
+  return attributable;
 }
 
 function verifyForwardedIdentity(
@@ -355,31 +485,56 @@ function verifyForwardedIdentity(
   });
 }
 
+/** What each daily cap counts, and how its refusal names it. */
+const DAILY_CAPS = {
+  ai: { budget: "ai-proxy", unit: "AI requests" },
+  integration: { budget: "integration-proxy", unit: "capability calls" },
+} as const;
+
 /**
- * Count the call against its organization's daily cap (hosted only); a
- * spent cap is 429 until the UTC day ends, and a counter that can't be
- * read refuses too.
+ * Count the call against its organization's daily cap of its kind (hosted
+ * only); a spent cap is 429 until the UTC day ends, and a counter that
+ * can't be read refuses too.
  */
 async function spendDailyCap(
   counters: DailyCounters,
-  { organizationId, limit }: { organizationId: string; limit: number },
+  {
+    kind,
+    organizationId,
+    appId,
+    orgSource,
+    capability,
+    limit,
+  }: {
+    kind: keyof typeof DAILY_CAPS;
+    organizationId: string;
+    appId: string;
+    orgSource: Attribution["orgSource"];
+    capability?: CapabilityId;
+    limit: number;
+  },
 ): Promise<void> {
+  const { budget, unit } = DAILY_CAPS[kind];
   const decision = await spendOrgDailyCap({
     counters,
-    budget: "ai-proxy",
+    budget,
     organizationId,
     limit,
   });
   if (decision.allowed) return;
   console.warn("AI gateway daily cap reached", {
     event: "ai.proxy.daily_cap",
+    budget,
     organizationId,
+    appId,
+    orgSource,
+    ...(capability ? { capability } : {}),
     limit: decision.limit,
   });
   throw new AppGatewayError(
     "org_daily_cap_exceeded",
     429,
-    `This organization has used its ${decision.limit} AI requests for today.`,
+    `This organization has used its ${decision.limit} ${unit} for today.`,
     decision.retryAfterSeconds,
   );
 }

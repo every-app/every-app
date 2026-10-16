@@ -162,7 +162,7 @@ export const Route = createFileRoute("/api/chat")({
             // this placeholder before the binding receives the request.
             apiKey: "gateway-managed",
             baseURL: "https://every-app-gateway.invalid/api/ai/openai/v1",
-            fetch: createGatewayFetch({ env, request }),
+            fetch: createGatewayFetch({ env, for: request }),
           });
 
           // Stream text with AI SDK

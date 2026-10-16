@@ -2,11 +2,15 @@ import {
   CAPABILITIES,
   ConfigurationError,
   GATEWAY_ERROR_HEADER,
-  IDENTITY_HEADER,
   INTEGRATION_PROXY_PREFIX,
   integrationProxyPath,
   type CapabilityId,
 } from "../internal/index.js";
+import {
+  applyAttribution,
+  checkAttribution,
+  type GatewayCallFor,
+} from "./attribution.js";
 import {
   BINDING_ORIGIN,
   streamingRequest,
@@ -23,11 +27,13 @@ export interface IntegrationFetchOptions {
   /** A capability the app lists in its manifest's `capabilities`. */
   provider: CapabilityId;
   /**
-   * The inbound request, so the gateway attributes the call to its user.
-   * Omit it for work no person started (crons, workflows, queues): the call
-   * is attributed to the app.
+   * Whom the call is for: the inbound request (its user), or
+   * `{ background: true, organizationId }` for work no person started
+   * (crons, Workflows, queues). An organization's own app may omit it for
+   * background work, which is then the app's; a shared app's Worker must
+   * pass one or the other ({@link AttributionError}).
    */
-  request?: Request;
+  for?: GatewayCallFor;
 }
 
 /**
@@ -44,9 +50,10 @@ export interface IntegrationFetchOptions {
 export function integrationFetch({
   env,
   provider,
-  request: inboundRequest,
+  for: target,
 }: IntegrationFetchOptions): typeof fetch {
   const integration = capability(provider);
+  checkAttribution(env, target, `integrationFetch("${provider}")`);
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
     | GatewayServiceBinding
@@ -83,9 +90,7 @@ export function integrationFetch({
     headers.delete("cookie");
 
     if (binding) {
-      const identity = inboundRequest?.headers.get(IDENTITY_HEADER);
-      if (identity) headers.set(IDENTITY_HEADER, identity);
-      else headers.delete(IDENTITY_HEADER);
+      applyAttribution(headers, target);
       return binding.fetch(
         streamingRequest(
           `${BINDING_ORIGIN}${integrationProxyPath(provider, upstream)}`,
@@ -95,7 +100,7 @@ export function integrationFetch({
       );
     }
 
-    headers.delete(IDENTITY_HEADER);
+    applyAttribution(headers, undefined);
     headers.set("authorization", integration.authorization(devKey as string));
     return fetch(streamingRequest(upstream.toString(), outbound, headers));
   };

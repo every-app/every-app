@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ORG_HEADER } from "@every-app/sdk/internal";
 import {
   hasBearerCredential,
   hasEveryAppBearer,
@@ -28,6 +29,14 @@ describe("stripInboundHeaders", () => {
     // non-trust headers preserved
     expect(out.get("content-type")).toBe("application/json");
     expect(out.get("accept")).toBe("text/html");
+  });
+
+  it("removes x-everyapp-org, so a browser can't name the organization background work is for", () => {
+    const out = stripInboundHeaders(
+      new Headers({ [ORG_HEADER]: "org-victim", "X-EveryApp-Org": "org-2" }),
+    );
+    expect(out.get(ORG_HEADER)).toBeNull();
+    expect([...out.keys()]).toEqual([]);
   });
 
   it("removes Cloudflare Access's assertion, email and service-token headers", () => {

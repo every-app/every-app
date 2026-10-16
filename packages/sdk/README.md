@@ -172,7 +172,11 @@ why: "Keyword research" } }`) and call the provider's real URLs:
 ```ts
 import { gatewayRefusal, integrationFetch } from "@every-app/sdk/server";
 
-const dataforseo = integrationFetch({ env, provider: "dataforseo", request });
+const dataforseo = integrationFetch({
+  env,
+  provider: "dataforseo",
+  for: request,
+});
 const response = await dataforseo(
   "https://api.dataforseo.com/v3/dataforseo_labs/google/keyword_ideas/live",
   { method: "POST", body: JSON.stringify([{ keywords: ["seo"] }]) },
@@ -180,9 +184,8 @@ const response = await dataforseo(
 const refused = await gatewayRefusal(response); // null: DataForSEO answered
 ```
 
-The call goes over the gateway binding, which puts the key on it. Pass
-`request` to attribute the call to its user; omit it for work no person
-started, and the call is attributed to the app. `gatewayRefusal(response)`
+The call goes over the gateway binding, which puts the key on it.
+`gatewayRefusal(response)`
 tells the gateway's own refusals (`x-everyapp-error`: the manifest doesn't
 list the capability, the gateway holds no key) from the provider's answers.
 `integrationStatus({ env, provider })` says whether calls would go through,
@@ -192,6 +195,37 @@ the AI providers' (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`) for
 `createGatewayFetch`: `everyAppWorker()` declares the key of each capability
 and provider the manifest lists when it is set there, so the dev server
 passes it through.
+
+### Whom a call is for
+
+`createGatewayFetch` and `integrationFetch` take `for`, which decides the
+organization the call counts against (and its daily cap, on the hosted
+gateway):
+
+- `for: request`, the inbound request: the identity the gateway put on it
+  is forwarded, so the call is that person's, in their organization.
+- `for: { background: true, organizationId }`, for work no request started
+  (a cron, a Workflow step, a queue): sent as `x-everyapp-org` with no
+  identity. A shared app (one Worker for every organization, on the hosted
+  gateway) must name the organization; the gateway checks it is active and
+  has a live member, and refuses it if the call also forwards an identity
+  of another organization.
+- Omitted: allowed only in an organization's own app, whose background
+  calls are the app's, in its own organization (the same as
+  `{ background: true }`). Naming another organization is refused.
+
+In a shared app's Worker (`EVERYAPP_SHARED=1`, which `everyAppWorker()` sets
+on a shared deploy) a call that names neither throws `AttributionError`
+when the fetch is created:
+
+```ts
+// In a Workflow step of a shared app:
+const dataforseo = integrationFetch({
+  env,
+  provider: "dataforseo",
+  for: { background: true, organizationId: event.payload.organizationId },
+});
+```
 
 `createMcpHandler()` from 0.2 still works in 0.3 but is deprecated and goes
 away in 0.4. The gateway keeps proxying `/mcp` to an app that defines no

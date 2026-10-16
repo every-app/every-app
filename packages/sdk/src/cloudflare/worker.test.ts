@@ -249,6 +249,8 @@ describe("everyAppWorker in production", () => {
     const env = worker().env;
     expect(env).not.toHaveProperty("EVERY_APP_ORG_ID");
     expect(env).toMatchObject({
+      // So its gateway calls must say which organization they are for.
+      EVERYAPP_SHARED: { type: "text", value: "1" },
       GATEWAY_URL: { type: "secret" },
       EVERY_APP_GATEWAY: {
         props: { organizationId: "org_1", appId: "todo" },
@@ -739,6 +741,19 @@ describe("helper Workers", () => {
       },
     });
     expect(audit.env).not.toHaveProperty("EVERYAPP_DEV");
+    // An organization's own helper: its background calls are the app's.
+    expect(audit.env).not.toHaveProperty("EVERYAPP_SHARED");
+  });
+
+  it("marks a shared app's helper shared, like the app's Worker", () => {
+    writeDeployInputs({
+      workerName: "every-everyapp-seo",
+      shared: true,
+      resources: { d1: { DB: { name: "every-everyapp-seo", id: "d1-uuid" } } },
+    });
+    expect(helper("production").env).toMatchObject({
+      EVERYAPP_SHARED: { type: "text", value: "1" },
+    });
   });
 
   it("types the helper's service binding and leaves its classes out of the app's exports", () => {

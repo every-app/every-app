@@ -23,7 +23,7 @@ describe("integrationFetch", () => {
     const providerFetch = integrationFetch({
       env,
       provider: "dataforseo",
-      request: new Request("https://seo.example.com/_serverFn/x", {
+      for: new Request("https://seo.example.com/_serverFn/x", {
         headers: { "x-everyapp-identity": "signed-user-identity" },
       }),
     });
@@ -82,7 +82,7 @@ describe("integrationFetch", () => {
     const providerFetch = integrationFetch({
       env: { EVERYAPP_DEV: "1", DATAFORSEO_API_KEY: "login@example.com:pw" },
       provider: "dataforseo",
-      request: new Request("http://localhost/x", {
+      for: new Request("http://localhost/x", {
         headers: { "x-everyapp-identity": "local-identity" },
       }),
     });

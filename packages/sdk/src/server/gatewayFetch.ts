@@ -2,8 +2,12 @@ import {
   ConfigurationError,
   DEV_AI_PROVIDERS,
   devAiProvider,
-  IDENTITY_HEADER,
 } from "../internal/index.js";
+import {
+  applyAttribution,
+  checkAttribution,
+  type GatewayCallFor,
+} from "./attribution.js";
 
 export const BINDING_ORIGIN = "http://every-app-gateway.internal";
 const AI_PROXY_PREFIX = "/api/ai/";
@@ -15,6 +19,8 @@ export interface GatewayServiceBinding {
 export interface GatewayFetchEnv {
   EVERY_APP_GATEWAY?: GatewayServiceBinding;
   EVERYAPP_DEV?: string | boolean;
+  /** `1` on a shared app's Workers (`everyAppWorker()` sets it). */
+  EVERYAPP_SHARED?: string;
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
 }
@@ -22,11 +28,13 @@ export interface GatewayFetchEnv {
 export interface CreateGatewayFetchOptions {
   env: GatewayFetchEnv;
   /**
-   * The inbound app request whose verified identity is forwarded, so the
-   * gateway attributes the call to its user. Omit it for work no person
-   * started (crons, workflows, queues): the call is attributed to the app.
+   * Whom the call is for: the inbound request (its user), or
+   * `{ background: true, organizationId }` for work no person started
+   * (crons, Workflows, queues). An organization's own app may omit it for
+   * background work, which is then the app's; a shared app's Worker must
+   * pass one or the other ({@link AttributionError}).
    */
-  request?: Request;
+  for?: GatewayCallFor;
 }
 
 /**
@@ -37,8 +45,9 @@ export interface CreateGatewayFetchOptions {
  */
 export function createGatewayFetch({
   env,
-  request: inboundRequest,
+  for: target,
 }: CreateGatewayFetchOptions): typeof fetch {
+  checkAttribution(env, target, "createGatewayFetch");
   const binding = env.EVERY_APP_GATEWAY;
   const devKeys = env.EVERYAPP_DEV ? localProviderKeys(env) : {};
 
@@ -59,12 +68,10 @@ export function createGatewayFetch({
     headers.delete("authorization");
 
     if (binding) {
-      const identity = inboundRequest?.headers.get(IDENTITY_HEADER);
-      if (identity) headers.set(IDENTITY_HEADER, identity);
-      else headers.delete(IDENTITY_HEADER);
-      const target = new URL(outbound.url);
+      applyAttribution(headers, target);
+      const url = new URL(outbound.url);
       const bindingRequest = streamingRequest(
-        `${BINDING_ORIGIN}${target.pathname}${target.search}`,
+        `${BINDING_ORIGIN}${url.pathname}${url.search}`,
         outbound,
         headers,
       );
@@ -78,7 +85,7 @@ export function createGatewayFetch({
         `Set ${devAiProvider(provider)?.keyEnv} in .dev.vars to call ${provider} in local development.`,
       );
     }
-    headers.delete(IDENTITY_HEADER);
+    applyAttribution(headers, undefined);
     headers.set("authorization", `Bearer ${devKey}`);
     return fetch(streamingRequest(url, outbound, headers));
   };

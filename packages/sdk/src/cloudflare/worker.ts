@@ -240,6 +240,8 @@ export type EveryAppDeployEnv<M> = ResourceEnv<M> &
     GATEWAY_URL: SecretBinding;
     /** The owning organization; a shared app serves every one and has none. */
     EVERY_APP_ORG_ID?: SecretBinding;
+    /** `1` on a shared app's Workers: gateway calls say whom they are for. */
+    EVERYAPP_SHARED?: TextBinding;
   };
 
 /** The classes the app's own Worker defines: none a helper Worker does. */
@@ -361,6 +363,7 @@ export function everyAppWorker<
     // Sent by the deploy pipeline through `cf deploy --secrets-file`.
     env["GATEWAY_URL"] = { type: "secret" };
     if (!deploy.shared) env["EVERY_APP_ORG_ID"] = { type: "secret" };
+    else env["EVERYAPP_SHARED"] = { type: "text", value: "1" };
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
     env["EVERYAPP_IDENTITY_PUBLIC_KEYS"] = {
@@ -487,6 +490,7 @@ export function everyAppAuxiliaryWorker<
   if (deploy) {
     // The app's identity: the gateway treats its helper Workers as the app.
     env["EVERY_APP_GATEWAY"] = gatewayBinding(deploy, manifest.id, appWorker);
+    if (deploy.shared) env["EVERYAPP_SHARED"] = { type: "text", value: "1" };
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
   }

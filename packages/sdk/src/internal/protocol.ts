@@ -31,6 +31,15 @@ export const SYSTEM_HEADER = "x-everyapp-system";
  * own answer passed through: the refusal's code, also in the JSON body.
  */
 export const GATEWAY_ERROR_HEADER = "x-everyapp-error";
+/**
+ * On a shared app's call to the AppGateway binding for work no request
+ * started (a cron, a Workflow step): the organization the work is for. The
+ * gateway believes it only from a shared app's Worker, and only for an
+ * active organization with a live member; an organization's own app may
+ * only name its own. The perimeter strips it, with every `x-everyapp-*`,
+ * from what browsers send.
+ */
+export const ORG_HEADER = "x-everyapp-org";
 /** 120-second lifetime — caps revocation staleness while surviving clock skew. */
 export const IDENTITY_TTL_SECONDS = 120;
 /** System tokens are minted per call and live at most a minute. */
@@ -48,6 +57,11 @@ export const AUDIENCE_ENV = "EVERYAPP_AUDIENCE";
 export const PUBLIC_KEYS_ENV = "EVERYAPP_IDENTITY_PUBLIC_KEYS";
 /** Env var carrying the expected gateway issuer for user identity verification. */
 export const ISSUER_ENV = "EVERYAPP_IDENTITY_ISSUER";
+/**
+ * Env var set to `1` on a shared app's Workers (one Worker for every
+ * organization): a gateway call from them must say whom it is for.
+ */
+export const SHARED_ENV = "EVERYAPP_SHARED";
 /** When set to `1` or `true` in the worker env, the dev identity kid is accepted. */
 export const DEV_ENV = "EVERYAPP_DEV";
 /** `sub` claim the gateway mints public-route markers with. */

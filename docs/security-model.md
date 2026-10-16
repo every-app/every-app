@@ -126,16 +126,48 @@ first upload; ADR-0001) decides what the gateway does, once, in
   is the account's own authority, as below).
   A shared app's Worker gets no `EVERY_APP_ORG_ID`: nothing pins it to the
   platform organization.
-- The AppGateway entrypoint attributes a provider call from a shared app to
-  the organization in the identity JWT the app forwards (verified: an
-  invalid or expired one is 401, never a fallback to the platform
-  organization); a call with none is refused (403) until background work
-  can assert its organization. An organization's own app's calls count for
-  its organization (the binding's props).
-- The hosted gateway caps AI proxy requests per organization per UTC day
-  (`orgDailyCaps.aiProxyRequests`, 200 unless `AI_PROXY_ORG_DAILY_LIMIT`
-  says otherwise), counted in D1 (`rate_limit_counters`); past it, 429
-  `org_daily_cap_exceeded` with `Retry-After` until the day ends. A counter
+- Machine-path attribution: the AppGateway entrypoint decides which
+  organization a provider call (AI proxy or capability) counts against,
+  and logs where it came from (`orgSource`):
+  - An organization's own app (`scope = 'org'`: every self-hosted app, and
+    dispatched apps) calls for the organization in its binding's
+    upload-time props (`props`). A forwarded identity of that organization
+    names the user; one that doesn't verify or names another organization
+    is ignored (the call is the app's). An `x-everyapp-org` naming any
+    other organization is refused (403 `caller_org_mismatch`); the
+    directory of organizations is never consulted.
+  - A shared app serves every organization. With a forwarded identity
+    (`x-everyapp-identity`), the verified JWT's `org_id` decides (`jwt`): an
+    invalid or expired one is 401 `caller_identity_invalid`, never a
+    fallback to the platform organization. Without one, the call is
+    background work (a cron, a Workflow step) and must name its
+    organization in `x-everyapp-org` (`header`), else 403
+    `caller_identity_required`; the organization must exist, be `active`
+    and have at least one member who isn't deactivated, else 403
+    `caller_org_not_attributable` (cached per isolate like callers: 30
+    seconds for a yes, 5 for a no; a lookup that fails is 500). With both,
+    they must agree, else 403 `caller_org_mismatch`. The header is trusted
+    only because a shared app is first-party code we deploy; it names no
+    user, so the call is the app's.
+  - Browsers can't send it: the perimeter strips every inbound
+    `x-everyapp-*` (`x-everyapp-org` included) before an app sees the
+    request, and the gateway strips it before a provider does.
+  - A capability's status (`GET /api/integrations/<id>`) spends nothing and
+    names no organization's data, so it needs no attribution.
+  - The SDK's `createGatewayFetch` and `integrationFetch` take `for: request`
+    (forward the identity) or `for: { background: true, organizationId }`
+    (send `x-everyapp-org`, no identity), and in a shared app's Worker
+    (`EVERYAPP_SHARED=1`) throw `AttributionError` for a call that names
+    neither. The gateway enforces the rule either way.
+- The hosted gateway caps provider calls per organization per UTC day, AI
+  proxy requests (`orgDailyCaps.aiProxyRequests`, 200 unless
+  `AI_PROXY_ORG_DAILY_LIMIT` says otherwise) and capability calls
+  (`orgDailyCaps.integrationProxyRequests`, 500 unless
+  `INTEGRATION_ORG_DAILY_LIMIT` says otherwise) each on its own counter,
+  counted in D1 (`rate_limit_counters`) against the attributed
+  organization; past one, 429 `org_daily_cap_exceeded` with `Retry-After`
+  until the day ends. Only a capability call the proxy would forward
+  counts (not a status request or a call it refuses itself). A counter
   that can't be read refuses the call. Self-hosted gateways have no cap and
   read no counter; an invalid mode allows none.
 

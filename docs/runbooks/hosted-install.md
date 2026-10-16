@@ -161,12 +161,17 @@ event's `data.worker` lists what the Worker's own pipeline must give it:
   `AppGateway`, with the props in `gatewayBinding.props`
   (`organizationId` is the platform organization's): the AI proxy refuses
   any other;
-- `GATEWAY_URL`, and no `EVERY_APP_ORG_ID`.
+- `GATEWAY_URL`, and no `EVERY_APP_ORG_ID`;
+- the plain-text vars in `vars`: `EVERYAPP_SHARED=1`, so the SDK refuses a
+  gateway call that says nobody's.
 
-Provider calls from a shared app forward the identity of the request they
-serve (`createGatewayFetch` does): the Gateway counts the call, and the
-daily cap, against that member's organization. A call with no identity
-(cron, Workflow) is refused with 403 until background attribution lands.
+Provider calls from a shared app say whom they are for. Serving a request,
+they forward its identity (`for: request`): the Gateway counts the call,
+and the daily cap, against that member's organization. Background work
+(cron, Workflow) names the organization (`for: { background: true,
+organizationId }`, sent as `x-everyapp-org`), which the Gateway accepts
+for an active organization with a live member and refuses with 403
+otherwise; a call with neither is refused with 403.
 
 ## Checks
 

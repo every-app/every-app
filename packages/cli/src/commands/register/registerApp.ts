@@ -142,7 +142,7 @@ export async function registerApp(
     type: "step",
     step: "app.register",
     status: "ok",
-    message: `${isNew ? "Registered" : "Updating"} ${appId} as ${workerName} at https://${hostname} (${plan.app.status}). A shared app: every member of every organization can open it. Its Worker needs the identity keys, the issuer and the AppGateway binding's props in data.worker.`,
+    message: `${isNew ? "Registered" : "Updating"} ${appId} as ${workerName} at https://${hostname} (${plan.app.status}). A shared app: every member of every organization can open it. Its Worker needs the identity keys, the issuer, the vars and the AppGateway binding's props in data.worker.`,
     data: {
       appId,
       workerName,
@@ -156,6 +156,8 @@ export async function registerApp(
       worker: {
         identityIssuer: gatewayUrl,
         identityPublicKeys: install.jwtPublicKey ? [install.jwtPublicKey] : [],
+        // The SDK then refuses a gateway call that says nobody's.
+        vars: { EVERYAPP_SHARED: "1" },
         gatewayBinding: {
           service: "every-app-gateway",
           entrypoint: "AppGateway",

@@ -59,6 +59,7 @@ import {
 } from "./server/control-plane-guard";
 import { isOauthPath } from "./server/oauth-flag";
 import { platformPolicy } from "./server/platform-policy";
+import { OrganizationRepository } from "./server/repositories/OrganizationRepository";
 import { RateLimitCounterRepository } from "./server/repositories/RateLimitCounterRepository";
 import { serveAppHostMcp } from "./server/toolbus/app-host-mcp";
 
@@ -191,6 +192,7 @@ export class AppGateway extends WorkerEntrypoint<
       props: this.ctx.props,
       env: this.env,
       registry: new DrizzleAppRegistry(this.env.DB),
+      organizations: OrganizationRepository,
       counters: RateLimitCounterRepository,
     });
   }

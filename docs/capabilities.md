@@ -73,7 +73,11 @@ import {
   integrationStatus,
 } from "@every-app/sdk/server";
 
-const dataforseo = integrationFetch({ env, provider: "dataforseo", request });
+const dataforseo = integrationFetch({
+  env,
+  provider: "dataforseo",
+  for: request,
+});
 const response = await dataforseo(
   "https://api.dataforseo.com/v3/serp/google/organic/live/advanced",
   {
@@ -89,11 +93,15 @@ const { ready } = await integrationStatus({ env, provider: "dataforseo" });
 ```
 
 - Approval is of the app: listing the capability is the grant, for every
-  call the app makes. Pass the inbound `request` and the gateway attributes
-  the call to its user; omit it for background work (crons, Workflows,
-  queues) and the call is attributed to the app. A shared Worker's
-  background work will name its organization with `x-everyapp-org` once the
-  shared-apps work lands.
+  call the app makes. Pass `for: request` and the gateway attributes the
+  call to the request's user; for background work (crons, Workflows,
+  queues) an organization's own app omits it (or passes
+  `{ background: true }`) and the call is the app's. A shared app's Worker
+  serves every organization, so its background work passes
+  `for: { background: true, organizationId }`, sent as `x-everyapp-org`;
+  the gateway accepts it for an active organization with a live member and
+  counts the call against that organization's daily cap. A shared Worker's
+  call that names neither throws `AttributionError`.
 - In local dev (`everyapp dev`, no binding) the fetch calls the provider
   directly with the developer's own key from `.dev.vars`, under the same
   name as the gateway secret.

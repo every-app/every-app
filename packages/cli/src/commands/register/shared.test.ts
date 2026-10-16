@@ -358,6 +358,7 @@ describe("register", () => {
         worker: {
           identityIssuer: GATEWAY_URL,
           identityPublicKeys: [install["jwt_public_key"]],
+          vars: { EVERYAPP_SHARED: "1" },
           gatewayBinding: {
             service: "every-app-gateway",
             entrypoint: "AppGateway",

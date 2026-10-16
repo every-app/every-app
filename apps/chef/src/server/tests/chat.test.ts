@@ -158,7 +158,7 @@ describe("chat gateway streaming", () => {
     expect(response.headers.get("content-type")).toBe("text/event-stream");
     expect(mocks.createGatewayFetch).toHaveBeenCalledWith({
       env: mocks.env,
-      request,
+      for: request,
     });
     expect(providerOptions).toMatchObject({
       apiKey: "gateway-managed",

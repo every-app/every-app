@@ -90,7 +90,8 @@ function call(options: {
       GATEWAY_URL: "https://home.example.com",
       ...(options.env ?? { DATAFORSEO_API_KEY: "login@example.com:secret" }),
     },
-    // Capability calls spend no daily cap, so nothing reads these.
+    organizations: { isAttributable: async () => true },
+    // A self-hosted gateway has no daily cap, so nothing reads these.
     counters: { read: async () => new Map(), increment: async () => {} },
     fetchUpstream:
       options.fetchUpstream ?? vi.fn(async () => Response.json({ ok: true })),
@@ -142,7 +143,8 @@ describe("AppGateway capabilities", () => {
         "x-api-key": "app-supplied",
         cookie: "session=1",
         "x-everyapp-identity": "not-a-valid-token",
-        "x-everyapp-org": "org-2",
+        // Its own organization (another is refused): stripped all the same.
+        "x-everyapp-org": "org-1",
         "x-user-email": "someone@example.com",
         "content-type": "application/json",
       },

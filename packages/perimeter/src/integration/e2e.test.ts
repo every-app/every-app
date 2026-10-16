@@ -64,6 +64,7 @@ function buildFixtureApp(publicKeys: string[]) {
         email: user?.email ?? null,
         sawCookie: request.headers.get("cookie"),
         sawRawIdentity: request.headers.get("x-everyapp-anything"),
+        sawOrg: request.headers.get("x-everyapp-org"),
       });
     },
     { id: "todo" },
@@ -225,6 +226,8 @@ describe("perimeter end-to-end (gateway + real SDK app)", () => {
           ...LOGGED_IN,
           [IDENTITY_HEADER]: "spoofed.jwt.value",
           "x-everyapp-anything": "evil",
+          // What a shared app's background work names: never a browser.
+          "x-everyapp-org": "org_victim",
         },
       }),
       deps,
@@ -233,12 +236,14 @@ describe("perimeter end-to-end (gateway + real SDK app)", () => {
       userId: string;
       sawCookie: string | null;
       sawRawIdentity: string | null;
+      sawOrg: string | null;
     };
     // App still authenticates (gateway minted a real identity) ...
     expect(body.userId).toBe("user_1");
     // ... but never saw the user's cookie or the forged headers.
     expect(body.sawCookie).toBeNull();
     expect(body.sawRawIdentity).toBeNull();
+    expect(body.sawOrg).toBeNull();
   });
 
   it("(f) a token minted for one Worker is refused by another Worker of the same app id", async () => {

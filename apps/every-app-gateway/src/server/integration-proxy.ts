@@ -52,24 +52,34 @@ const STRIPPED_HEADER_PREFIX = "x-everyapp-";
 /** Bytes of a response read for its top-level `cost` (DataForSEO puts it first). */
 const COST_HEAD_BYTES = 2048;
 
+/** Whom a call that will reach the provider is for, once admitted. */
+interface IntegrationCallAdmission {
+  /** Who is calling, for the log line. */
+  caller: { organizationId: string; appId: string; orgSource: string };
+  /** The verified person behind the call, or null for background work. */
+  user: EveryAppUser | null;
+}
+
 interface HandleIntegrationProxyRequestOptions {
   request: Request;
   /** The calling app's registry manifest `capabilities`. */
   capabilities: Record<string, CapabilityRequest> | undefined;
-  /** The verified person behind the call, or null for background work. */
-  user: EveryAppUser | null;
   env: IntegrationProxyEnv;
-  /** Who is calling, for the log line. */
-  caller: { organizationId: string; appId: string };
+  /**
+   * Attribute a call the proxy would forward and count it against its
+   * organization's daily cap; throws to refuse it. Status requests and
+   * calls the proxy refuses on its own never reach it, so they spend
+   * nothing and need no organization.
+   */
+  admit: (capability: CapabilityId) => Promise<IntegrationCallAdmission>;
   fetchUpstream?: (request: Request) => Promise<Response>;
 }
 
 export async function handleIntegrationProxyRequest({
   request,
   capabilities,
-  user,
   env,
-  caller,
+  admit,
   fetchUpstream = fetch,
 }: HandleIntegrationProxyRequestOptions): Promise<Response> {
   const url = new URL(request.url);
@@ -133,6 +143,7 @@ export async function handleIntegrationProxyRequest({
       `${integration.label} isn't set up on this gateway. Its operator sets ${integration.secret} with: everyapp secret set ${integration.secret} --for gateway`,
     );
   }
+  const { caller, user } = await admit(route.id);
 
   const headers = new Headers(request.headers);
   for (const header of STRIPPED_HEADERS) headers.delete(header);

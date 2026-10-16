@@ -11,6 +11,7 @@ import {
   clearAppCallerCacheForTests,
   handleAppGatewayRequest,
   type AppCallerProps,
+  type OrganizationDirectory,
 } from "./app-gateway-entrypoint";
 import type { DailyCounters } from "./org-daily-cap";
 
@@ -95,6 +96,7 @@ function call(
     fetchUpstream?: (request: Request) => Promise<Response>;
     env?: Record<string, string>;
     counters?: DailyCounters;
+    organizations?: OrganizationDirectory;
   } = {},
 ) {
   const props = Object.hasOwn(options, "props") ? options.props : PROPS;
@@ -115,9 +117,24 @@ function call(
       GATEWAY_URL: "https://home.example.com",
       ...options.env,
     },
+    organizations: options.organizations ?? directory(),
     counters: options.counters ?? memoryCounters(),
     fetchUpstream,
   });
+}
+
+/**
+ * Organizations background work may be for: Acme and Beta are active with
+ * members; Gone is suspended; nothing else exists.
+ */
+function directory(): OrganizationDirectory & {
+  isAttributable: ReturnType<typeof vi.fn<(id: string) => Promise<boolean>>>;
+} {
+  return {
+    isAttributable: vi.fn(async (id: string) =>
+      ["org-acme", "org-beta"].includes(id),
+    ),
+  };
 }
 
 /** A gateway identity for the `every-chef` Worker, as the perimeter mints it. */
@@ -512,6 +529,428 @@ describe("AppGateway per-organization daily cap", () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     await expectError(
       call({ env: { GATEWAY_DEPLOYMENT_MODE: "" } }),
+      429,
+      "org_daily_cap_exceeded",
+    );
+  });
+});
+
+const SERP_URL =
+  "https://gateway.internal/api/integrations/dataforseo/api.dataforseo.com/v3/serp/google/organic/live/advanced";
+
+/** A capability call (DataForSEO), as integrationFetch sends it. */
+function capabilityRequest(headers?: HeadersInit, url = SERP_URL): Request {
+  return new Request(url, {
+    method: url === SERP_URL ? "POST" : "GET",
+    headers,
+    body: url === SERP_URL ? "[]" : undefined,
+  });
+}
+
+/** Chef with DataForSEO listed, an organization's own or shared. */
+function withCapability(scope: "org" | "shared" = "org"): RegisteredApp {
+  return app({
+    scope,
+    manifest: validateManifest({
+      id: "chef",
+      providers: ["openai"],
+      capabilities: { dataforseo: { access: "read", why: "Research" } },
+    }),
+  });
+}
+
+/** The integration proxy's `integration.proxy.call` log lines. */
+function capabilityLogLines(log: { mock: { calls: unknown[][] } }) {
+  return log.mock.calls
+    .map(([line]) => (typeof line === "string" ? line : ""))
+    .filter((line) => line.includes('"integration.proxy.call"'))
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+}
+
+const HOSTED = {
+  GATEWAY_DEPLOYMENT_MODE: "hosted",
+  DATAFORSEO_API_KEY: "login@example.com:secret",
+};
+
+describe("AppGateway organization attribution for a shared app", () => {
+  it("attributes each identity's calls to its own organization, AI and capabilities alike", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const counters = memoryCounters();
+    const upstream = vi.fn(async () => Response.json({ ok: true }));
+
+    for (const org of ["org-acme", "org-beta"]) {
+      const token = await identity(org);
+      for (const inbound of [
+        request({ "x-everyapp-identity": token }),
+        capabilityRequest({ "x-everyapp-identity": token }),
+      ]) {
+        const response = await call({
+          registeredApps: [withCapability("shared")],
+          env: HOSTED,
+          counters,
+          inbound,
+          fetchUpstream: upstream,
+        });
+        expect(response.status).toBe(200);
+        await response.text();
+      }
+    }
+
+    expect([...counters.counts.keys()].sort()).toEqual([
+      expect.stringMatching(/^org-daily:ai-proxy:org-acme:/),
+      expect.stringMatching(/^org-daily:ai-proxy:org-beta:/),
+      expect.stringMatching(/^org-daily:integration-proxy:org-acme:/),
+      expect.stringMatching(/^org-daily:integration-proxy:org-beta:/),
+    ]);
+    expect(
+      capabilityLogLines(log).map((line) => [
+        line["organizationId"],
+        line["orgSource"],
+        line["capability"],
+        line["appId"],
+      ]),
+    ).toEqual([
+      ["org-acme", "jwt", "dataforseo", "chef"],
+      ["org-beta", "jwt", "dataforseo", "chef"],
+    ]);
+  });
+
+  it("accepts background work's x-everyapp-org for an active organization, and strips it upstream", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const counters = memoryCounters();
+    const upstream = vi.fn<(request: Request) => Promise<Response>>(async () =>
+      Response.json({ ok: true }),
+    );
+
+    const capability = await call({
+      registeredApps: [withCapability("shared")],
+      env: HOSTED,
+      counters,
+      inbound: capabilityRequest({ "x-everyapp-org": "org-acme" }),
+      fetchUpstream: upstream,
+    });
+    expect(capability.status).toBe(200);
+    await capability.text();
+    const ai = await call({
+      registeredApps: [withCapability("shared")],
+      env: HOSTED,
+      counters,
+      inbound: request({ "x-everyapp-org": "org-beta" }),
+      fetchUpstream: upstream,
+    });
+    expect(ai.status).toBe(200);
+
+    for (const [sent] of upstream.mock.calls) {
+      expect(sent.headers.get("x-everyapp-org")).toBeNull();
+    }
+    expect(capabilityLogLines(log)[0]).toMatchObject({
+      organizationId: "org-acme",
+      orgSource: "header",
+      attribution: "app",
+    });
+    expect(info).toHaveBeenCalledWith(
+      "AI gateway request",
+      expect.objectContaining({
+        organizationId: "org-beta",
+        orgSource: "header",
+        attribution: "app",
+      }),
+    );
+    expect([...counters.counts.keys()].sort()).toEqual([
+      expect.stringMatching(/^org-daily:ai-proxy:org-beta:/),
+      expect.stringMatching(/^org-daily:integration-proxy:org-acme:/),
+    ]);
+  });
+
+  it("refuses background work for a suspended or unknown organization with 403", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const upstream = vi.fn(async () => Response.json({}));
+    for (const org of ["org-gone", "org-nobody", "org-1"]) {
+      for (const inbound of [
+        request({ "x-everyapp-org": org }),
+        capabilityRequest({ "x-everyapp-org": org }),
+      ]) {
+        await expectError(
+          call({
+            registeredApps: [withCapability("shared")],
+            env: HOSTED,
+            inbound,
+            organizations: {
+              // The platform organization ("org-1") is an organization too,
+              // but here it has no live member.
+              isAttributable: async (id) => id === "org-acme",
+            },
+            fetchUpstream: upstream,
+          }),
+          403,
+          "caller_org_not_attributable",
+        );
+      }
+    }
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("caches the organization check like the caller, and fails closed when it can't be made", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const organizations = directory();
+    for (let i = 0; i < 3; i += 1) {
+      const response = await call({
+        registeredApps: [withCapability("shared")],
+        env: HOSTED,
+        organizations,
+        inbound: capabilityRequest({ "x-everyapp-org": "org-acme" }),
+      });
+      expect(response.status).toBe(200);
+    }
+    expect(organizations.isAttributable).toHaveBeenCalledTimes(1);
+
+    clearAppCallerCacheForTests();
+    await expectError(
+      call({
+        registeredApps: [withCapability("shared")],
+        env: HOSTED,
+        organizations: {
+          isAttributable: async () => {
+            throw new Error("database unavailable");
+          },
+        },
+        inbound: capabilityRequest({ "x-everyapp-org": "org-acme" }),
+      }),
+      500,
+      "caller_registry_unavailable",
+    );
+  });
+
+  it("refuses an x-everyapp-org that disagrees with the forwarded identity", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const token = await identity("org-acme");
+    const upstream = vi.fn(async () => Response.json({ ok: true }));
+    for (const inbound of [
+      request({ "x-everyapp-identity": token, "x-everyapp-org": "org-beta" }),
+      capabilityRequest({
+        "x-everyapp-identity": token,
+        "x-everyapp-org": "org-beta",
+      }),
+    ]) {
+      await expectError(
+        call({
+          registeredApps: [withCapability("shared")],
+          env: HOSTED,
+          inbound,
+          fetchUpstream: upstream,
+        }),
+        403,
+        "caller_org_mismatch",
+      );
+    }
+    expect(upstream).not.toHaveBeenCalled();
+
+    // Agreeing, the identity decides (and names the user).
+    const agreed = await call({
+      registeredApps: [withCapability("shared")],
+      env: HOSTED,
+      inbound: capabilityRequest({
+        "x-everyapp-identity": token,
+        "x-everyapp-org": "org-acme",
+      }),
+      fetchUpstream: upstream,
+    });
+    expect(agreed.status).toBe(200);
+  });
+
+  it("answers a capability's status without needing an organization", async () => {
+    const organizations = directory();
+    const counters = memoryCounters();
+    const response = await call({
+      registeredApps: [withCapability("shared")],
+      env: HOSTED,
+      organizations,
+      counters,
+      inbound: capabilityRequest(
+        undefined,
+        "https://gateway.internal/api/integrations/dataforseo",
+      ),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ ready: true });
+    expect(organizations.isAttributable).not.toHaveBeenCalled();
+    expect(counters.counts.size).toBe(0);
+  });
+});
+
+describe("AppGateway organization attribution for an organization's own app", () => {
+  it("refuses an x-everyapp-org naming another organization, and never consults the directory", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const organizations = directory();
+    const upstream = vi.fn(async () => Response.json({ ok: true }));
+    for (const env of [{}, HOSTED]) {
+      for (const inbound of [
+        request({ "x-everyapp-org": "org-acme" }),
+        capabilityRequest({ "x-everyapp-org": "org-acme" }),
+      ]) {
+        await expectError(
+          call({
+            registeredApps: [withCapability()],
+            env: { DATAFORSEO_API_KEY: "login@example.com:secret", ...env },
+            organizations,
+            inbound,
+            fetchUpstream: upstream,
+          }),
+          403,
+          "caller_org_mismatch",
+        );
+      }
+    }
+    expect(upstream).not.toHaveBeenCalled();
+
+    // Its own organization, or none: as before, the props decide.
+    for (const headers of [{ "x-everyapp-org": "org-1" }, undefined]) {
+      const response = await call({
+        registeredApps: [withCapability()],
+        env: { DATAFORSEO_API_KEY: "login@example.com:secret" },
+        organizations,
+        inbound: capabilityRequest(headers),
+        fetchUpstream: upstream,
+      });
+      expect(response.status).toBe(200);
+    }
+    expect(organizations.isAttributable).not.toHaveBeenCalled();
+  });
+});
+
+describe("AppGateway per-organization daily cap on capability calls", () => {
+  it("refuses an organization's capability calls past the cap, apart from its AI cap and other organizations'", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const counters = memoryCounters();
+    const upstream = vi.fn(async () => Response.json({ ok: true }));
+    const env = {
+      ...HOSTED,
+      INTEGRATION_ORG_DAILY_LIMIT: "2",
+      AI_PROXY_ORG_DAILY_LIMIT: "1",
+    };
+    const shared = (inbound: Request) =>
+      call({
+        registeredApps: [withCapability("shared")],
+        env,
+        counters,
+        inbound,
+        fetchUpstream: upstream,
+      });
+
+    for (let i = 0; i < 2; i += 1) {
+      const ok = await shared(
+        capabilityRequest({ "x-everyapp-org": "org-acme" }),
+      );
+      expect(ok.status).toBe(200);
+      await ok.text();
+    }
+    const refused = await shared(
+      capabilityRequest({ "x-everyapp-identity": await identity("org-acme") }),
+    );
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get("x-everyapp-error")).toBe(
+      "org_daily_cap_exceeded",
+    );
+    await expect(refused.json()).resolves.toEqual({
+      error: "Too Many Requests",
+      code: "org_daily_cap_exceeded",
+      message: "This organization has used its 2 capability calls for today.",
+    });
+    const retryAfter = Number(refused.headers.get("retry-after"));
+    expect(retryAfter).toBeGreaterThan(0);
+    expect(retryAfter).toBeLessThanOrEqual(24 * 60 * 60);
+    expect(upstream).toHaveBeenCalledTimes(2);
+
+    // Its AI budget is a cap of its own, and so is Beta's.
+    expect(
+      (await shared(request({ "x-everyapp-org": "org-acme" }))).status,
+    ).toBe(200);
+    const beta = await shared(
+      capabilityRequest({ "x-everyapp-org": "org-beta" }),
+    );
+    expect(beta.status).toBe(200);
+    await beta.text();
+    await expectError(
+      shared(request({ "x-everyapp-org": "org-acme" })),
+      429,
+      "org_daily_cap_exceeded",
+    );
+  });
+
+  it("logs a refusal with the organization, app, capability and where the organization came from", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await call({
+      registeredApps: [withCapability("shared")],
+      env: { ...HOSTED, INTEGRATION_ORG_DAILY_LIMIT: "0" },
+      inbound: capabilityRequest({ "x-everyapp-org": "org-acme" }),
+    });
+    expect(warn).toHaveBeenCalledWith(
+      "AI gateway daily cap reached",
+      expect.objectContaining({
+        budget: "integration-proxy",
+        organizationId: "org-acme",
+        appId: "chef",
+        capability: "dataforseo",
+        orgSource: "header",
+        limit: 0,
+      }),
+    );
+  });
+
+  it("counts only calls that would reach the provider", async () => {
+    const counters = memoryCounters();
+    // Not listed in the manifest: refused before any count.
+    await expectError(
+      call({
+        registeredApps: [app()],
+        env: HOSTED,
+        counters,
+        inbound: capabilityRequest({
+          "x-everyapp-identity": await identity("org-1"),
+        }),
+      }),
+      403,
+      "capability_not_requested",
+    );
+    expect(counters.counts.size).toBe(0);
+  });
+
+  it("counts nothing on a self-hosted gateway", async () => {
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const counters = memoryCounters();
+    const read = vi.spyOn(counters, "read");
+    for (let i = 0; i < 3; i += 1) {
+      const response = await call({
+        registeredApps: [withCapability()],
+        counters,
+        env: {
+          DATAFORSEO_API_KEY: "login@example.com:secret",
+          INTEGRATION_ORG_DAILY_LIMIT: "1",
+        },
+        inbound: capabilityRequest(),
+      });
+      expect(response.status).toBe(200);
+      await response.text();
+    }
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("refuses every capability call when the deployment mode is invalid", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    await expectError(
+      call({
+        registeredApps: [withCapability()],
+        env: {
+          GATEWAY_DEPLOYMENT_MODE: "",
+          DATAFORSEO_API_KEY: "login@example.com:secret",
+        },
+        inbound: capabilityRequest(),
+      }),
       429,
       "org_daily_cap_exceeded",
     );

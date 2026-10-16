@@ -29,7 +29,7 @@ describe("createGatewayFetch", () => {
         EVERY_APP_GATEWAY: { fetch: bindingFetch },
         OPENAI_API_KEY: "developer-key",
       },
-      request: new Request("https://chef.example.com/api/chat", {
+      for: new Request("https://chef.example.com/api/chat", {
         headers: { "x-everyapp-identity": "signed-user-identity" },
       }),
     });
@@ -57,7 +57,7 @@ describe("createGatewayFetch", () => {
     vi.stubGlobal("fetch", directFetch);
     const gatewayFetch = createGatewayFetch({
       env: { EVERYAPP_DEV: "1", OPENAI_API_KEY: "developer-key" },
-      request: new Request("http://localhost/api/chat", {
+      for: new Request("http://localhost/api/chat", {
         headers: { "x-everyapp-identity": "local-identity" },
       }),
     });
@@ -129,7 +129,7 @@ describe("createGatewayFetch", () => {
     expect(() =>
       createGatewayFetch({
         env: { OPENAI_API_KEY: "production-key" },
-        request: new Request("https://chef.example.com/api/chat"),
+        for: new Request("https://chef.example.com/api/chat"),
       }),
     ).toThrowError(ConfigurationError);
     expect(directFetch).not.toHaveBeenCalled();
@@ -141,7 +141,7 @@ describe("createGatewayFetch", () => {
     );
     const gatewayFetch = createGatewayFetch({
       env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
-      request: new Request("https://chef.example.com/background-job"),
+      for: new Request("https://chef.example.com/background-job"),
     });
 
     await gatewayFetch(
@@ -169,7 +169,7 @@ describe("createGatewayFetch", () => {
     );
     const gatewayFetch = createGatewayFetch({
       env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
-      request: new Request("https://chef.example.com/api/chat"),
+      for: new Request("https://chef.example.com/api/chat"),
     });
 
     const response = await gatewayFetch(
@@ -199,7 +199,7 @@ describe("createGatewayFetch", () => {
     );
     const gatewayFetch = createGatewayFetch({
       env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
-      request: new Request("https://chef.example.com/api/chat"),
+      for: new Request("https://chef.example.com/api/chat"),
     });
     const controller = new AbortController();
 
@@ -222,13 +222,13 @@ describe("createGatewayFetch", () => {
     expect(() =>
       createGatewayFetch({
         env: {},
-        request: new Request("http://localhost/api/chat"),
+        for: new Request("http://localhost/api/chat"),
       }),
     ).toThrowError(ConfigurationError);
     expect(() =>
       createGatewayFetch({
         env: {},
-        request: new Request("http://localhost/api/chat"),
+        for: new Request("http://localhost/api/chat"),
       }),
     ).toThrow(/EVERY_APP_GATEWAY.*OPENAI_API_KEY/);
   });

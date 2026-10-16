@@ -1,7 +1,18 @@
 import { db } from "@/db";
-import { apps, members, organizations } from "@/db/schema";
+import { apps, members, organizations, users } from "@/db/schema";
 import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
-import { and, asc, eq, exists, ne, notExists } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  notExists,
+  or,
+} from "drizzle-orm";
 
 /** An organization's display fields (no members, no invitations). */
 async function findSummaryById(organizationId: string) {
@@ -78,6 +89,45 @@ async function adoptForOwner(
   ]);
 }
 
+/**
+ * Whether work no person started may be attributed to the organization (a
+ * shared app's `x-everyapp-org`): it exists, is active, and has at least
+ * one member who isn't deactivated (banned with no expiry, or one still to
+ * come, as isUserBanned reads it).
+ */
+async function isAttributable(
+  organizationId: string,
+  now = new Date(),
+): Promise<boolean> {
+  const rows = await db
+    .select({ id: organizations.id })
+    .from(organizations)
+    .where(
+      and(
+        eq(organizations.id, organizationId),
+        eq(organizations.status, "active"),
+        exists(
+          db
+            .select({ id: members.id })
+            .from(members)
+            .innerJoin(users, eq(users.id, members.userId))
+            .where(
+              and(
+                eq(members.organizationId, organizations.id),
+                or(
+                  isNull(users.banned),
+                  eq(users.banned, false),
+                  and(isNotNull(users.banExpires), lte(users.banExpires, now)),
+                ),
+              ),
+            ),
+        ),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
 /** Delete an organization; memberships, invitations and apps cascade. */
 async function deleteById(organizationId: string): Promise<void> {
   await db.delete(organizations).where(eq(organizations.id, organizationId));
@@ -87,5 +137,6 @@ export const OrganizationRepository = {
   findSummaryById,
   findAwaitingOwner,
   adoptForOwner,
+  isAttributable,
   deleteById,
 } as const;
