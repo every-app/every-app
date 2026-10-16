@@ -32,7 +32,10 @@ export function UserTokensTable({
         accessorFn: (token) => token.name,
         header: ({ column }) => <SortableHeader column={column} label="Name" />,
         meta: { cellClassName: "max-w-[240px] truncate font-medium" },
-        cell: ({ row }) => row.original.name,
+        cell: ({ row }) =>
+          row.original.scopes.includes("deploy")
+            ? `${row.original.name} (deploy key)`
+            : row.original.name,
       },
       {
         id: "prefix",
@@ -52,7 +55,11 @@ export function UserTokensTable({
               </p>
             </>
           ) : (
-            <span className="text-muted-foreground">All my apps</span>
+            <span className="text-muted-foreground">
+              {row.original.scopes.includes("deploy")
+                ? "Deploys any app"
+                : "All my apps"}
+            </span>
           ),
       },
       {

@@ -80,6 +80,19 @@ export function d1(transport: CloudflareTransport) {
         }),
         { context: `Create D1 database ${name}` },
       ),
+    /**
+     * The database named exactly `name`, or null. Cloudflare's `name`
+     * filter is a search, so the exact name is picked from its answer.
+     */
+    findByName: async (name: string): Promise<D1Database | null> => {
+      const query = new URLSearchParams({ name, per_page: "1000" });
+      const databases = await transport.request<D1Database[]>(
+        `${path()}?${query}`,
+        {},
+        { context: `Find D1 database ${name}` },
+      );
+      return databases.find((database) => database.name === name) ?? null;
+    },
     get: (databaseId: string) =>
       transport.request<D1Database>(
         path(databaseId),

@@ -308,4 +308,18 @@ CREATE TABLE `rate_limit_counters` (
 	`expires_at` integer NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX `rate_limit_counters_expires_at_idx` ON `rate_limit_counters` (`expires_at`);
+CREATE INDEX `rate_limit_counters_expires_at_idx` ON `rate_limit_counters` (`expires_at`);--> statement-breakpoint
+CREATE TABLE `deploy_jobs` (
+	`id` text PRIMARY KEY NOT NULL,
+	`organization_id` text NOT NULL,
+	`app_row_id` text NOT NULL,
+	`status` text NOT NULL,
+	`error` text,
+	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
+	`finished_at` integer,
+	FOREIGN KEY (`organization_id`) REFERENCES `organizations`(`id`) ON UPDATE no action ON DELETE cascade,
+	FOREIGN KEY (`app_row_id`) REFERENCES `apps`(`id`) ON UPDATE no action ON DELETE cascade
+);
+--> statement-breakpoint
+CREATE INDEX `deploy_jobs_organization_id_idx` ON `deploy_jobs` (`organization_id`);--> statement-breakpoint
+CREATE INDEX `deploy_jobs_app_row_id_status_idx` ON `deploy_jobs` (`app_row_id`,`status`);

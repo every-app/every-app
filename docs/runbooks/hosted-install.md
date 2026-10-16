@@ -16,7 +16,7 @@ Gateway a customer self-hosts, with the hosted policy
   resetting or deleting someone's account from an organization);
 - per-organization daily caps on the AI proxy (200 requests, a 429 with
   `Retry-After` past it) and the integration proxy (500, with its PR);
-- third-party deploys stay off (a launch gate).
+- third-party deploys stay off (a launch gate, section 5).
 
 Until Google verification and the wallet exist, the preview is invite-only:
 set `HOSTED_OPEN_SIGNUP=false` (below) and people join by invitation.
@@ -172,6 +172,63 @@ and the daily cap, against that member's organization. Background work
 organizationId }`, sent as `x-everyapp-org`), which the Gateway accepts
 for an active organization with a live member and refuses with 403
 otherwise; a call with neither is refused with 403.
+
+## 5. Third-party deploys (the launch gate)
+
+Customer code (forks of OpenSEO included) deploys through the Gateway's
+deploy API into a Workers for Platforms dispatch namespace, never into the
+account's own Workers (`docs/security-model.md`, "Hosted Deploy API").
+**It stays off** until each of these is verified against a live namespace:
+limits and the `Outbound` default-deny on every dispatch, the deployer's
+binding allowlist and its read-back, identities minted for the Worker's
+name, per-host sessions on the separate third-party domain, and the egress
+default-deny. Off, the API's routes don't exist and no deploy key can be
+made.
+
+For the read-back, deploy an app with a D1 database and a Durable Object
+class and check that the job succeeds: the comparison wants every field
+the deployer sent back unchanged and lets Cloudflare add its own (a
+service binding's `environment`, a Durable Object binding's
+`namespace_id` and `script_name`), but a field the live API renames or
+drops (a D1 binding's `id`, the gateway binding's `props`) fails every
+deploy with `BINDINGS_MISMATCH` until `bindingMismatches` in
+`src/server/deploy/metadata.ts` learns it.
+
+A deploy runs in the request that starts it and the 30 seconds of
+`waitUntil` after it: about 50 seconds in all. One that runs out (many
+assets, slow migrations) stops where it was; if that is after the upload,
+the Worker serves the new version while the registry row still records
+the last one (a new app stays `pending`). Its job reads
+`DEPLOY_ABANDONED` after 5 minutes, and the app can deploy again then. A
+Durable Object or Queue runner is the fix.
+
+What it needs, as Gateway settings (`pnpm everyapp secret set <NAME> --for
+gateway`):
+
+- `CF_DEPLOY_TOKEN`: an API token for this account with Workers for
+  Platforms (Workers Scripts) edit and D1 edit.
+- `CLOUDFLARE_ACCOUNT_ID`: the account the namespace is in.
+- `DISPATCH_NAMESPACE`: the namespace's name; the Gateway's `DISPATCHER`
+  binding (added to the hosted install with the namespace, with
+  `outbound = { service = "every-app-gateway", entrypoint = "Outbound",
+  parameters = ["everyapp"] }`) must name the same one.
+- `THIRD_PARTY_DOMAIN`: the registrable domain apps are named on
+  (`<app>-<orgKey>.everyapp.dev`), never `app.everyapp.com`. Unset, apps
+  deploy but get no hostname.
+
+The gate itself, `THIRD_PARTY_DEPLOYS=on`, is never set by the CLI: set it
+by hand on the `every-app-gateway` Worker once the checks above pass, and
+delete it to close the API again (deployed apps keep running; nobody can
+deploy).
+
+Then an organization's owner or admin makes a deploy key (Admin → Tokens →
+Create access token → Kind: Deploy key; 30 days by default, optionally
+bound to one app) and deploys from the app's directory, in CI too:
+
+```sh
+EVERYAPP_DEPLOY_TOKEN=<deploy key> EVERYAPP_GATEWAY_URL=https://app.everyapp.com \
+  pnpm everyapp deploy --json
+```
 
 ## Checks
 

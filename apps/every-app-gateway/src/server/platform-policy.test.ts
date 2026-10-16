@@ -14,6 +14,7 @@ describe("platformPolicy", () => {
       platformOrganizationName: null,
       sharedApps: false,
       thirdPartyDeploys: false,
+      thirdPartyLimits: { cpuMs: 0, subrequests: 0, durableObjectClasses: 0 },
       tenantAdminUserActions: true,
       bindingActivation: true,
       orgDailyCaps: {
@@ -42,6 +43,11 @@ describe("platformPolicy", () => {
       sharedApps: true,
       // The launch gate: off until third-party deploys may go live.
       thirdPartyDeploys: false,
+      thirdPartyLimits: {
+        cpuMs: 5_000,
+        subrequests: 200,
+        durableObjectClasses: 2,
+      },
       tenantAdminUserActions: false,
       bindingActivation: true,
       orgDailyCaps: { aiProxyRequests: 200, integrationProxyRequests: 500 },
@@ -81,6 +87,20 @@ describe("platformPolicy", () => {
         },
       });
     }
+  });
+
+  it("opens third-party deploys only on a hosted gateway whose gate is exactly on", () => {
+    const gate = (mode: string, value: string | undefined) =>
+      platformPolicy({
+        GATEWAY_DEPLOYMENT_MODE: mode,
+        THIRD_PARTY_DEPLOYS: value,
+      }).thirdPartyDeploys;
+    expect(gate("hosted", "on")).toBe(true);
+    for (const value of [undefined, "", "true", "ON", " on", "yes", "1"]) {
+      expect(gate("hosted", value), String(value)).toBe(false);
+    }
+    expect(gate("self_hosted", "on")).toBe(false);
+    expect(gate("prod", "on")).toBe(false);
   });
 
   it("opens hosted sign-up unless the operator keeps the preview invite-only", () => {

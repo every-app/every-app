@@ -11,7 +11,20 @@ describe("gateway settings `secret set --for gateway` changes", () => {
     expect(() => assertSettableSecret(name)).not.toThrow();
   });
 
-  it.each(["JWT_PRIVATE_KEY", "BETTER_AUTH_SECRET", "GATEWAY_DEPLOYMENT_MODE"])(
+  it.each(["CF_DEPLOY_TOKEN", "DISPATCH_NAMESPACE", "THIRD_PARTY_DOMAIN"])(
+    "include the deployer's setting %s",
+    (name) => {
+      expect(() => assertSettableSecret(name)).not.toThrow();
+    },
+  );
+
+  it.each([
+    "JWT_PRIVATE_KEY",
+    "BETTER_AUTH_SECRET",
+    "GATEWAY_DEPLOYMENT_MODE",
+    // The launch gate opens by hand only.
+    "THIRD_PARTY_DEPLOYS",
+  ])(
     "never include %s, which the install owns",
     (name) => {
       expect(() => assertSettableSecret(name)).toThrow(

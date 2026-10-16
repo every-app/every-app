@@ -318,7 +318,7 @@ describe("deploy of an app on Postgres through Hyperdrive", () => {
     expect(seoUploads()).toEqual([]);
   });
 
-  it("refuses Hyperdrive for an app on the dispatch tier", async () => {
+  it("creates no Hyperdrive for an app on the dispatch tier, which a CLI deploy refuses outright", async () => {
     const { migrations: _m, database: _d, ...plain } = SEO;
     await deploy({ ...plain, resources: { kv: ["KV"] } });
     account
@@ -326,9 +326,11 @@ describe("deploy of an app on Postgres through Hyperdrive", () => {
       .all("UPDATE apps SET tier = 'dispatch' WHERE app_slug = 'seo'");
     const uploads = seoUploads().length;
 
+    // Registration refuses the tier change before the Hyperdrive policy
+    // (manifest.test.ts covers the per-tier config limit) is even consulted.
     await expect(deploy()).rejects.toMatchObject({
-      code: "TIER_POLICY",
-      message: expect.stringContaining("at most 25 configs"),
+      code: "APP_TIER_MISMATCH",
+      message: expect.stringContaining("hosted deploy API"),
     });
     expect(account.hyperdrive.size).toBe(0);
     expect(seoUploads()).toHaveLength(uploads);

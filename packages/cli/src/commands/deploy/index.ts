@@ -3,6 +3,7 @@ import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import { eventSink, runReported } from "@/lib/output/run";
 import { deployApp } from "./deployApp";
+import { deployToGateway, hostedDeployTarget } from "./deployToGateway";
 
 interface DeployCommandFlags {
   gateway?: string;
@@ -18,7 +19,8 @@ interface DeployCommandFlags {
 }
 
 /**
- * `everyapp deploy`: no question first (unless there is no Gateway yet:
+ * `everyapp deploy`: with EVERYAPP_DEPLOY_TOKEN, through a hosted gateway's deploy
+ * API (deployToGateway.ts); otherwise no question first (unless there is no Gateway yet:
  * then it offers to install one). The first line says where the app goes
  * (`todo → https://todo.apps.example.com (Acme)`), and the last that it is
  * live.
@@ -32,6 +34,32 @@ export async function deploy(
     out,
     async () => {
       const cwd = process.cwd();
+      const hosted = hostedDeployTarget({
+        ...flags,
+        gateway: requestedGatewayUrl(flags.gateway),
+      });
+      if (hosted) {
+        const result = await deployToGateway({
+          cwd,
+          manifest: await loadEveryAppManifest(cwd),
+          ...hosted,
+          out,
+          verbose: flags.verbose,
+          wait: !flags["no-wait"],
+        });
+        out.emit({
+          type: "done",
+          data: {
+            url: result.liveUrl,
+            workerName: result.workerName,
+            versionId: result.versionId,
+            jobId: result.jobId,
+            status: result.status,
+            live: false,
+          },
+        });
+        return;
+      }
       const result = await deployApp({
         cwd,
         manifest: await loadEveryAppManifest(cwd),

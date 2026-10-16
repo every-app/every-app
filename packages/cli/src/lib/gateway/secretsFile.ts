@@ -36,6 +36,12 @@ const SETTABLE_GATEWAY_SECRETS = [
   "INTEGRATION_ORG_DAILY_LIMIT",
   // "false" keeps the hosted gateway's sign-up invite-only.
   "HOSTED_OPEN_SIGNUP",
+  // The hosted deploy API's deployer and the third-party domain. Its launch
+  // gate, THIRD_PARTY_DEPLOYS, is never set from here: it is opened by
+  // hand once the launch checks pass (docs/runbooks/hosted-install.md).
+  "CF_DEPLOY_TOKEN",
+  "DISPATCH_NAMESPACE",
+  "THIRD_PARTY_DOMAIN",
 ] as const;
 
 /**

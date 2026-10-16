@@ -45,8 +45,27 @@ interface PlatformPolicy {
   readonly platformOrganizationName: string | null;
   /** Apps any member of any active organization may open (first-party). */
   readonly sharedApps: boolean;
-  /** Customer code in a dispatch namespace: a launch gate, off tonight. */
+  /**
+   * Customer code in a dispatch namespace, through the deploy API
+   * (server/deploy/): the launch gate. Hosted only, and only while the
+   * THIRD_PARTY_DEPLOYS secret is exactly "on". It stays off until the
+   * isolation set (limits and the Outbound default-deny on every dispatch,
+   * the deployer's binding allowlist and its read-back), identities minted
+   * for the Worker's name (aud = workerName), per-host sessions on the
+   * separate third-party domain and the egress default-deny are verified
+   * against a live namespace. Off, the deploy API's routes don't exist.
+   */
   readonly thirdPartyDeploys: boolean;
+  /**
+   * What a third-party app's Worker gets: its CPU and subrequests per
+   * invocation (set on the script and on every dispatch), and how many
+   * Durable Object classes it may define.
+   */
+  readonly thirdPartyLimits: {
+    readonly cpuMs: number;
+    readonly subrequests: number;
+    readonly durableObjectClasses: number;
+  };
   /**
    * Organization admins may deactivate, reactivate, reset the password of
    * and delete the accounts of their members.
@@ -92,6 +111,7 @@ interface PlatformPolicyEnv {
   AI_PROXY_ORG_DAILY_LIMIT?: string;
   INTEGRATION_ORG_DAILY_LIMIT?: string;
   HOSTED_OPEN_SIGNUP?: string;
+  THIRD_PARTY_DEPLOYS?: string;
 }
 
 const HOSTED_AI_PROXY_ORG_DAILY_LIMIT = 200;
@@ -129,8 +149,21 @@ function mailBudgets(
   };
 }
 
+/**
+ * Generous enough for a server-rendered page with a few database calls
+ * (getAppFetcher's dispatch default), and room for a chat and a scratchpad
+ * class; never more than this until metering exists.
+ */
+const THIRD_PARTY_LIMITS = {
+  cpuMs: 5_000,
+  subrequests: 200,
+  durableObjectClasses: 2,
+};
+const NO_THIRD_PARTY = { cpuMs: 0, subrequests: 0, durableObjectClasses: 0 };
+
 function freeze(policy: PlatformPolicy): PlatformPolicy {
   Object.freeze(policy.orgDailyCaps);
+  Object.freeze(policy.thirdPartyLimits);
   Object.freeze(policy.dcr);
   for (const budget of Object.values(policy.mailDaily)) Object.freeze(budget);
   Object.freeze(policy.mailDaily);
@@ -152,6 +185,7 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         platformOrganizationName: null,
         sharedApps: false,
         thirdPartyDeploys: false,
+        thirdPartyLimits: { ...NO_THIRD_PARTY },
         tenantAdminUserActions: true,
         bindingActivation: true,
         orgDailyCaps: {
@@ -178,7 +212,9 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         setupClaim: true,
         platformOrganizationName: "Every App",
         sharedApps: true,
-        thirdPartyDeploys: false,
+        // Exactly "on": a typo, or anything else, keeps the gate shut.
+        thirdPartyDeploys: env.THIRD_PARTY_DEPLOYS === "on",
+        thirdPartyLimits: { ...THIRD_PARTY_LIMITS },
         tenantAdminUserActions: false,
         bindingActivation: true,
         orgDailyCaps: {
@@ -212,6 +248,7 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         platformOrganizationName: null,
         sharedApps: false,
         thirdPartyDeploys: false,
+        thirdPartyLimits: { ...NO_THIRD_PARTY },
         tenantAdminUserActions: false,
         bindingActivation: false,
         orgDailyCaps: { aiProxyRequests: 0, integrationProxyRequests: 0 },

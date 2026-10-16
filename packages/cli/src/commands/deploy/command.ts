@@ -87,6 +87,13 @@ export const deployCommand = buildCommand({
       "--shared (a hosted Gateway only) registers a first-party app every organization's members can",
       "open, owned by the platform organization; its Worker gets no EVERY_APP_ORG_ID. An app keeps the",
       "scope it was registered with: a redeploy without --shared (or a secret set) keeps it shared.",
+      "",
+      "Hosted gateway, third-party apps: with EVERYAPP_DEPLOY_TOKEN set to a deploy key (Admin → Tokens →",
+      "Deploy key; owners and admins), it deploys through the gateway's deploy API instead, with no",
+      "Cloudflare login: --gateway <url> or EVERYAPP_GATEWAY_URL names the gateway (required). It",
+      "registers the app, builds it with placeholder deploy inputs the gateway rewrites, uploads the",
+      "Build Output, manifest and migrations, and follows the deploy job (--no-wait: only starts it).",
+      "In CI: EVERYAPP_DEPLOY_TOKEN=<deploy key> EVERYAPP_GATEWAY_URL=https://app.everyapp.com pnpm everyapp deploy --json",
     ].join("\n"),
   },
 });

@@ -122,9 +122,21 @@ function isMcpAuthPath(pathname: string): boolean {
   );
 }
 
-/** The gateway host: its MCP and OAuth routes, else the control plane. */
+/**
+ * The gateway host: its MCP and OAuth routes, the deploy API (only past
+ * the launch gate: without it, its paths are the control plane's like any
+ * other), else the control plane.
+ */
 async function serveGatewayHost(request: Request): Promise<Response> {
-  if (isMcpAuthPath(new URL(request.url).pathname)) {
+  const { pathname } = new URL(request.url);
+  if (
+    pathname.startsWith("/api/v1/") &&
+    platformPolicy(env).thirdPartyDeploys
+  ) {
+    const { serveDeployApi } = await import("./server/deploy/routes");
+    return serveDeployApi(request);
+  }
+  if (isMcpAuthPath(pathname)) {
     const { serveMcpAuthRoute } = await import("./server/mcp-auth/routes");
     const served = await serveMcpAuthRoute(request);
     if (served) return served;

@@ -8,3 +8,4 @@ export * from "./invitation-link-tokens.schema";
 export * from "./organization-keys.schema";
 export * from "./mcp.schema";
 export * from "./rate-limit.schema";
+export * from "./deploy-jobs.schema";

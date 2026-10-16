@@ -22,6 +22,9 @@ importers:
       '@cloudflare/workers-oauth-provider':
         specifier: 1.2.3
         version: 1.2.3
+      '@every-app/cf-rest':
+        specifier: workspace:*
+        version: link:../../packages/cf-rest
       '@every-app/perimeter':
         specifier: workspace:*
         version: link:../../packages/perimeter

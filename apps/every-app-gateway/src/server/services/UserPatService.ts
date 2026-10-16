@@ -3,6 +3,8 @@ import { AppRepository } from "../repositories/AppRepository";
 import { UserPatRepository } from "../repositories/UserPatRepository";
 import { hashUserPat } from "../user-pat-hash";
 import { PublicError } from "@/server/errors";
+import { platformPolicy } from "@/server/platform-policy";
+import { DEPLOY_SCOPE } from "@/server/user-pat-scopes";
 
 type CreateUserPatInput = {
   userId: string;
@@ -15,7 +17,10 @@ type CreateUserPatInput = {
 
 const PAT_PREFIX_SCHEME = "epat_";
 const TOKEN_PREFIX_RANDOM_LENGTH = 4;
-const DEFAULT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_TTL_MS = 90 * DAY_MS;
+// CI holds a deploy key: shorter-lived by default.
+const DEPLOY_KEY_TTL_MS = 30 * DAY_MS;
 const SCOPE_RE = /^[a-z0-9][a-z0-9:_-]{0,63}$/;
 const MAX_SCOPES = 20;
 
@@ -60,12 +65,32 @@ function normalizeScopes(scopes: string[] | undefined): string[] {
     }
   }
 
+  if (normalized.includes(DEPLOY_SCOPE)) {
+    // A deploy key deploys and does nothing else (the perimeter and /mcp
+    // refuse it), and only where the deploy API exists.
+    if (normalized.length > 1) {
+      throw new PublicError(
+        "INVALID_TOKEN_SCOPE",
+        `A deploy key has the ${DEPLOY_SCOPE} scope only`,
+      );
+    }
+    if (!platformPolicy(env).thirdPartyDeploys) {
+      throw new PublicError(
+        "DEPLOY_KEYS_UNAVAILABLE",
+        "This gateway doesn't take third-party deploys",
+      );
+    }
+  }
+
   return normalized;
 }
 
-function parseExpiresAt(expiresAt: Date | string | null | undefined): Date {
+function parseExpiresAt(
+  expiresAt: Date | string | null | undefined,
+  defaultTtlMs: number,
+): Date {
   if (!expiresAt) {
-    return new Date(Date.now() + DEFAULT_TTL_MS);
+    return new Date(Date.now() + defaultTtlMs);
   }
 
   const parsed = expiresAt instanceof Date ? expiresAt : new Date(expiresAt);
@@ -99,7 +124,10 @@ async function create(data: CreateUserPatInput) {
   }
 
   const scopes = normalizeScopes(data.scopes);
-  const expiresAt = parseExpiresAt(data.expiresAt);
+  const expiresAt = parseExpiresAt(
+    data.expiresAt,
+    scopes.includes(DEPLOY_SCOPE) ? DEPLOY_KEY_TTL_MS : DEFAULT_TTL_MS,
+  );
   const plaintext = generatePlaintextToken();
   const tokenPrefixValue = tokenPrefix(plaintext);
   const tokenHash = await hashUserPat(plaintext, env.BETTER_AUTH_SECRET);
@@ -162,6 +190,8 @@ async function listForUser(userId: string, organizationId: string) {
       ...token,
       appId: appRowId,
     })),
+    // The tokens page offers deploy keys only where they deploy.
+    deployKeys: platformPolicy(env).thirdPartyDeploys,
   };
 }
 

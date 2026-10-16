@@ -70,6 +70,7 @@ function TokensPage() {
   const handleCreateUserToken = async (input: {
     name: string;
     appId?: string;
+    scopes?: string[];
     expiresAt?: string;
   }) => {
     await createUserTokenMutation.mutateAsync({ data: input });
@@ -121,6 +122,7 @@ function TokensPage() {
           <CreateUserTokenModal
             onClose={() => setShowCreateUserTokenModal(false)}
             apps={apps ?? []}
+            allowDeployKeys={userTokensQuery.data?.deployKeys ?? false}
             onCreate={handleCreateUserToken}
           />
         ) : null}

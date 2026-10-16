@@ -427,6 +427,59 @@ describe("shared apps", () => {
   });
 });
 
+describe("dispatch apps", () => {
+  it("registers a third-party app on the dispatch tier", () => {
+    expect(planRegistration({ ...input, tier: "dispatch" }).app).toMatchObject({
+      tier: "dispatch",
+      scope: "org",
+      status: "pending",
+    });
+  });
+
+  it("never changes an app's tier, tombstones included", () => {
+    for (const status of ["active", "deleted"]) {
+      expect(
+        thrown(() =>
+          planRegistration({
+            ...input,
+            tier: "dispatch",
+            existingApp: { ...registeredTodo, status },
+          }),
+        ),
+      ).toMatchObject({ status: 409, code: "APP_TIER_MISMATCH" });
+    }
+    // The CLI's own deploys ask for no tier: a dispatch app isn't theirs.
+    expect(
+      thrown(() =>
+        planRegistration({
+          ...input,
+          existingApp: { ...registeredTodo, tier: "dispatch" },
+        }),
+      ),
+    ).toMatchObject({ status: 409, code: "APP_TIER_MISMATCH" });
+    expect(
+      planRegistration({
+        ...input,
+        tier: "dispatch",
+        existingApp: { ...registeredTodo, tier: "dispatch" },
+      }).kind,
+    ).toBe("existing");
+  });
+
+  it("refuses a shared app on the dispatch tier", () => {
+    expect(
+      thrown(() =>
+        planRegistration({
+          ...forApp("openseo"),
+          isInstallOrganization: true,
+          scope: "shared",
+          tier: "dispatch",
+        }),
+      ),
+    ).toMatchObject({ status: 400, code: "APP_TIER_MISMATCH" });
+  });
+});
+
 describe("appNames", () => {
   it("gives the names a new app gets, and keeps a registered app's", () => {
     const names = {
@@ -537,6 +590,21 @@ describe("markDeployedUpdate", () => {
         }),
       ),
     ).toMatchObject({ status: 400, code: "INVALID_MANIFEST" });
+  });
+
+  it("records a dispatch app's upload before it has a hostname", () => {
+    const unnamed = { ...registeredTodo, hostname: null, status: "pending" };
+    expect(
+      markDeployedUpdate(
+        { ...unnamed, tier: "dispatch" },
+        { ...deployed, manifest: MANIFEST },
+      ),
+    ).toMatchObject({ status: "binding" });
+    expect(
+      thrown(() =>
+        markDeployedUpdate(unnamed, { ...deployed, manifest: MANIFEST }),
+      ),
+    ).toMatchObject({ status: 409, code: "APP_NOT_REGISTERED" });
   });
 });
 

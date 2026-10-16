@@ -19,7 +19,7 @@
  * ever the install organization's, the platform organization there, and
  * keeps its scope for good.
  */
-import type { AppScope } from "./apps";
+import type { AppScope, Tier } from "./apps";
 import {
   isRegistryWorkerName,
   isReservedAppId,
@@ -94,7 +94,8 @@ export type RegistrationErrorCode =
   | "APP_NOT_FOUND"
   | "APP_NOT_REGISTERED"
   | "SHARED_APP_NOT_PLATFORM"
-  | "APP_SCOPE_MISMATCH";
+  | "APP_SCOPE_MISMATCH"
+  | "APP_TIER_MISMATCH";
 
 /** A registration the rules refuse, with the HTTP status a server answers. */
 export class RegistrationError extends Error {
@@ -323,6 +324,13 @@ export interface RegistrationInput {
    * keeps its shape; a new app is `org`.
    */
   scope?: AppScope;
+  /**
+   * How the gateway reaches the app: `dispatch` for a third-party app in
+   * the hosted gateway's dispatch namespace (the deploy API), otherwise a
+   * service binding. A registered app keeps its tier: asking for another
+   * is refused, tombstones included.
+   */
+  tier?: Tier;
   appSlug: string;
   name: string;
   description: string;
@@ -437,6 +445,25 @@ export function planRegistration(input: RegistrationInput): RegistrationPlan {
           : `App "${input.appSlug}" is this organization's own app, not a shared one. Shared apps need an app id of their own.`,
     });
   }
+  const tier: Tier = input.tier ?? "service_binding";
+  if (tier === "dispatch" && scope === "shared") {
+    // First-party apps are ours, in our account: never customer code.
+    throw new RegistrationError({
+      status: 400,
+      code: "APP_TIER_MISMATCH",
+      message: `A shared app is reached over a service binding; "${input.appSlug}" can't be deployed through the hosted deploy API.`,
+    });
+  }
+  if (existingApp && existingApp.tier !== tier) {
+    throw new RegistrationError({
+      status: 409,
+      code: "APP_TIER_MISMATCH",
+      message:
+        existingApp.tier === "dispatch"
+          ? `App "${input.appSlug}" is deployed through the hosted deploy API; deploy it the same way, or give this app an id of its own.`
+          : `App "${input.appSlug}" is reached over a service binding, not deployed through the hosted deploy API; give the third-party app an id of its own.`,
+    });
+  }
   // Reserved and malformed ids first, as appNames would refuse them.
   const names = appNames(input);
   const manifest = validateRegistryManifest(input.manifest, input.appSlug);
@@ -514,7 +541,7 @@ export function planRegistration(input: RegistrationInput): RegistrationPlan {
         app: {
           id: appRowId,
           appSlug: input.appSlug,
-          tier: "service_binding",
+          tier,
           scope,
           versionId: null,
           deployedAt: null,
@@ -536,9 +563,17 @@ export interface DeployedUpdate {
   status: string;
 }
 
-function assertLiveApp(
-  app: Pick<AppRow, "appSlug" | "status" | "hostname" | "workerName">,
-): void {
+/**
+ * A dispatch app may have no hostname: the hosted gateway names it on the
+ * third-party domain only once one is set. It is uploaded and verified all
+ * the same, and unreachable until then.
+ */
+type DeployableApp = Pick<
+  AppRow,
+  "appSlug" | "status" | "hostname" | "workerName"
+> & { tier?: string };
+
+function assertLiveApp(app: DeployableApp): void {
   if (app.status === DELETED_APP_STATUS) {
     throw new RegistrationError({
       status: 404,
@@ -546,7 +581,7 @@ function assertLiveApp(
       message: `No app "${app.appSlug}" is registered for this organization.`,
     });
   }
-  if (!app.workerName || !app.hostname) {
+  if (!app.workerName || (!app.hostname && app.tier !== "dispatch")) {
     throw new RegistrationError({
       status: 409,
       code: "APP_NOT_REGISTERED",
@@ -562,7 +597,7 @@ function assertLiveApp(
  * to `binding`, for the gateway to activate; any other status stays.
  */
 export function markDeployedUpdate(
-  app: Pick<AppRow, "appSlug" | "status" | "hostname" | "workerName">,
+  app: DeployableApp,
   {
     versionId,
     manifest,

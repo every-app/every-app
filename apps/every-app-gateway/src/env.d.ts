@@ -100,6 +100,23 @@ declare namespace Cloudflare {
     // Workers Custom Domain. The deploy sets it; unset in local dev.
     APP_BASE_DOMAIN?: string;
 
+    // The hosted deploy API (server/deploy/), third-party apps only.
+    // THIRD_PARTY_DEPLOYS is the launch gate: exactly "on" opens it on a
+    // hosted gateway (server/platform-policy.ts), and it is set by hand
+    // only once the launch checks pass (docs/runbooks/hosted-install.md).
+    THIRD_PARTY_DEPLOYS?: string;
+    // A Cloudflare API token for this account with Workers for Platforms
+    // and D1 edit; the deployer uploads apps' Workers and creates their D1
+    // with it, in CLOUDFLARE_ACCOUNT_ID.
+    CF_DEPLOY_TOKEN?: string;
+    // The dispatch namespace third-party Workers go into; the gateway's
+    // DISPATCHER binding (added by the hosted install) must name the same.
+    DISPATCH_NAMESPACE?: string;
+    // The registrable domain third-party apps are named on
+    // (<app>-<orgKey>.<domain>), never the gateway's own. Unset: they get no
+    // hostname, and nobody can open them.
+    THIRD_PARTY_DOMAIN?: string;
+
     // DEV ONLY (`everyapp dev --mode mirror`): parent domain to scope the
     // session cookie to, so it rides from the gateway base host to sub-app
     // subdomains (e.g. "everyapp.localhost"). Ignored in production builds.

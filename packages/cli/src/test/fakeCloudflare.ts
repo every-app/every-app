@@ -526,6 +526,39 @@ export class FakeCloudflare {
     return cfError(`unknown command hyperdrive ${action}`);
   }
 
+  /**
+   * The gateway's DISPATCHER binding over one of this account's dispatch
+   * namespaces, as Workers for Platforms answers `get(name, args, options)`:
+   * "Worker not found" for a script the namespace doesn't hold, else a
+   * fetcher that `respond` answers with the script as its latest upload
+   * left it. Each call is recorded with its options (limits, outbound).
+   */
+  dispatcher(
+    namespace: string,
+    respond: (
+      request: Request,
+      script: { name: string; bindings: Record<string, any>[]; tags: string[] },
+    ) => Response | Promise<Response> = () => new Response("dispatched app"),
+  ) {
+    const calls: Array<{ name: string; options: Record<string, any> | undefined }> = [];
+    return {
+      calls,
+      get: (name: string, _args?: unknown, options?: Record<string, any>) => {
+        calls.push({ name, options });
+        const script = this.dispatchNamespaces.get(namespace)?.scripts.get(name);
+        if (!script) throw new Error(`Worker not found: ${name}`);
+        return {
+          fetch: async (request: Request) =>
+            respond(request, {
+              name,
+              bindings: script.bindings,
+              tags: script.tags,
+            }),
+        };
+      },
+    };
+  }
+
   /** `cf workflows instances create|list|get|<status change>`. */
   private workflowInstances(call: RecordedCfCall): FakeCfResponse {
     const action = call.args[2]!;

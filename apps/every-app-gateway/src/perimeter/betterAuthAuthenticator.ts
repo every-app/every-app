@@ -34,6 +34,7 @@ import { UserPatRepository } from "@/server/repositories/UserPatRepository";
 import { UserPatService } from "@/server/services/UserPatService";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 import { isUserBanned } from "@/server/user-ban";
+import { DEPLOY_SCOPE } from "@/server/user-pat-scopes";
 import {
   extractBearerCredential,
   extractEveryAppBearer,
@@ -51,7 +52,7 @@ type CredentialBoundSession = AuthenticatedSession & {
  * they are no longer a member or have been deactivated (banned): tokens
  * outlive sessions, so both are checked on every request.
  */
-async function resolveLiveOrgRole(
+export async function resolveLiveOrgRole(
   userId: string,
   organizationId: string,
 ): Promise<string | null> {
@@ -116,6 +117,9 @@ export function createProdAuthenticator(
         if (scopes.some((scope) => scope.startsWith("provider:"))) {
           return null;
         }
+        // A deploy key (server/deploy/) is CI's credential for the deploy
+        // API only: it opens no app.
+        if (scopes.includes(DEPLOY_SCOPE)) return null;
 
         void UserPatRepository.touchLastUsed(pat.id, pat.userId).catch(
           (error) => {

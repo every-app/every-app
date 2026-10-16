@@ -44,6 +44,7 @@ const PUBLIC_ERROR_CODES = [
   "ACCOUNT_ACTIONS_UNAVAILABLE",
   "EMAIL_NOT_VERIFIED",
   "SHARED_APP_ACCESS",
+  "DEPLOY_KEYS_UNAVAILABLE",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

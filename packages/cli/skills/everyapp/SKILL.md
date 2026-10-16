@@ -29,6 +29,10 @@ Shared:  hosted Gateway only, platform organization owners/admins, when the
          Worker deployed by other means: pnpm everyapp register <id>
          --worker <name> --shared --manifest <everyapp.config.ts> --json
          (WORKER_NAME_MISMATCH names the Worker name to deploy under).
+Hosted:  third-party apps on a hosted Gateway, only when the user has a deploy
+         key: EVERYAPP_DEPLOY_TOKEN=<key> pnpm everyapp deploy --gateway <url> --json
+         (no Cloudflare login; EVERYAPP_GATEWAY_URL works too; BUNDLE_REFUSED
+         lists what the hosted policy refuses)
 Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--local] --json
 Postgres: an app with resources.hyperdrive or migrations.dialect "postgresql"
          reads POSTGRES_DATABASE_URL (and <BINDING>_ORIGIN_URL) from
@@ -43,5 +47,5 @@ Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
 
 Only a person can: approve the Cloudflare login, open the owner link, pick
 a workers.dev subdomain, pay for Workers Paid, buy a domain. There are no
-tokens to paste.
+tokens to paste, except a hosted Gateway's deploy key the user gives you.
 Full reference: https://everyapp.com/docs/reference/cli

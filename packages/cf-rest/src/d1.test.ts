@@ -43,6 +43,25 @@ describe("D1", () => {
     });
   });
 
+  it("finds a database by its exact name, not the search's other matches", async () => {
+    const { fetch, requests } = mockFetch(
+      envelope([
+        { uuid: "db-2", name: "acme--todo--cache" },
+        { uuid: "db-1", name: "acme--todo" },
+      ]),
+      envelope([{ uuid: "db-2", name: "acme--todo--cache" }]),
+    );
+    const cf = client(fetch);
+    await expect(cf.d1.findByName("acme--todo")).resolves.toEqual({
+      uuid: "db-1",
+      name: "acme--todo",
+    });
+    await expect(cf.d1.findByName("acme--todo")).resolves.toBeNull();
+    expect(requests[0]!.url).toBe(
+      `${API}/d1/database?name=acme--todo&per_page=1000`,
+    );
+  });
+
   it("queries with parameters and returns the statement's result", async () => {
     const { fetch, requests } = mockFetch(
       envelope([{ results: [{ id: 1 }], success: true, meta: { changes: 0 } }]),

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DEPLOY_SCOPE } from "@/server/user-pat-scopes";
 
 const scopeRegex = /^[a-z0-9][a-z0-9:_-]{0,63}$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -27,7 +28,14 @@ const expiresAtSchema = z
 
 export const createUserTokenSchema = z.object({
   name: z.string().trim().min(1).max(64),
-  scopes: z.array(userTokenScopeSchema).max(20).optional(),
+  scopes: z
+    .array(userTokenScopeSchema)
+    .max(20)
+    // A deploy key (the tokens page's "Deploy key"): `deploy` alone.
+    .refine((scopes) => !scopes.includes(DEPLOY_SCOPE) || scopes.length === 1, {
+      message: "A deploy key has the deploy scope only",
+    })
+    .optional(),
   appId: z.string().uuid("Invalid app ID").optional(),
   expiresAt: expiresAtSchema.optional(),
 });

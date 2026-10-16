@@ -112,6 +112,32 @@ subscriptions (off), and prompts/resources (not served). Any other failure
 fails the run, and so does a baseline entry that starts passing (delete it).
 It needs the network, so it isn't part of `pnpm test` or CI.
 
+### Hosted deploy API (third-party apps)
+
+`apps/every-app-gateway/src/server/deploy/deploy-api.sqlite.test.ts` runs
+the real worker entry on SQLite with the launch gate open, and the CLI's
+fake Cloudflare (`packages/cli/src/test/fakeCloudflare.ts`, loaded by path)
+behind the deployer's REST calls and the gateway's `DISPATCHER` binding
+(`FakeCloudflare.dispatcher()`): an owner's deploy key registers and
+deploys an app built with everyAppWorker() from the sentinel deploy
+inputs; the registry row is `dispatch`, the app's D1 is created and
+migrated, the namespaced Worker's bindings are the deployer's own (none
+of the sentinel values left) and read back, and a request to its host
+dispatches through getAppFetcher with the Worker's audience. It refuses
+without the gate (and on a self-hosted gateway), a member's key, an access
+token, another organization, a bundle with a binding outside the
+allowlist (before anything is created), a stamp below the protocol floor,
+a key bound to another app, a second deploy while one runs (until it is
+past its deadline), and a database with the app's name that no deploy of
+it created; it deletes the Worker when the bindings read back differ,
+finishes a database a failed create left claimed (made by Cloudflare or
+not), and deploys without a third-party domain (no hostname).
+`metadata.test.ts` covers the allowlist, Durable Object migrations and the
+read-back comparison (fields Cloudflare adds pass, changed or missing ones
+don't); the CLI side, `everyapp deploy --gateway` with
+EVERYAPP_DEPLOY_TOKEN, runs against a test double of the API in
+`packages/cli/src/commands/deploy/deployToGateway.test.ts`.
+
 ### Shared apps and organizations
 
 `apps/every-app-gateway/src/server/shared-apps.sqlite.test.ts` runs the real

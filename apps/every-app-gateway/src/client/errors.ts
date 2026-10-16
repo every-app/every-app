@@ -63,6 +63,8 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
   EMAIL_NOT_VERIFIED: "Verify your email address before inviting anyone.",
   SHARED_APP_ACCESS:
     "Every member of every organization can open a shared app, so its access can't be changed.",
+  DEPLOY_KEYS_UNAVAILABLE:
+    "This gateway doesn't take third-party deploys, so it makes no deploy keys.",
 };
 
 const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {

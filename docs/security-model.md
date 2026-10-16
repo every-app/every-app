@@ -218,7 +218,9 @@ in the gateway's Cloudflare account **is** operator authority.
   gateway Worker or write `owner_setup_tokens`. Compromise of the Cloudflare
   credential carries account-wide blast radius.
 - This trust model is not valid for the hosted tier (ADR-0001), which needs
-  its own HTTP control plane and credentials.
+  its own HTTP control plane and credentials: the deploy API for
+  third-party apps ("Hosted Deploy API", below). A self-hosted gateway
+  never serves it.
 
 ## Perimeter Contract
 
@@ -595,6 +597,78 @@ binding once the account has one. Until then every dispatch app answers
   app, organization, Worker, host and reason. Service bindings (the
   AppGateway binding included) never pass through it, so apps reach models
   and data providers only through the gateway's metered proxies.
+
+## Hosted Deploy API
+
+Third-party apps (customer code, forks of OpenSEO included) reach the
+hosted gateway's dispatch namespace only through its deploy API
+(`apps/every-app-gateway/src/server/deploy/`), which `everyapp deploy
+--gateway <url>` with `EVERYAPP_DEPLOY_TOKEN` calls.
+
+- **The launch gate.** The routes (`/api/v1/…` on the gateway's host)
+  exist only while `platformPolicy(env).thirdPartyDeploys` holds: a hosted
+  gateway whose `THIRD_PARTY_DEPLOYS` secret is exactly `on`. Otherwise
+  the paths are the control plane's like any other (404), and no deploy
+  key can be made. The CLI never sets the gate; it is opened by hand, and
+  stays shut until the isolation set (limits and the `Outbound`
+  default-deny on every dispatch, this allowlist and its read-back),
+  identities minted for the Worker's name (`aud = workerName`), per-host
+  sessions on the separate third-party domain and the egress default-deny
+  are verified against a live namespace.
+- **Deploy keys.** A personal access token with the `deploy` scope and
+  nothing else (`*` doesn't count), bound to one organization and
+  optionally one app, 30 days by default. Every request checks it live:
+  unknown, revoked or expired is a 401; its owner must still be a member
+  (not deactivated) and an owner or admin of that organization, which must
+  not be suspended; a path naming another organization is a 404, and an
+  app-bound key deploys only its app. The API reads no cookie. A deploy
+  key opens no app on the perimeter and no `/mcp` connection.
+- **The deployer rewrites, or refuses.** The CLI builds with sentinel
+  deploy inputs (`HOSTED_DEPLOY_SENTINEL` in
+  `@every-app/perimeter/manifest`), so the bundle's bindings are
+  placeholders. The deployer builds the upload's bindings from the
+  manifest and the registry row only: the app id, the audience (the
+  registry's Worker name), the gateway's identity key and issuer, the
+  organization and `GATEWAY_URL` as plain text; the `EVERY_APP_GATEWAY`
+  service binding to the gateway's `AppGateway` with the props
+  `{organizationId, appId, workerName}`; the D1 databases it created (the
+  CLI's resource ledger records them as the app's, with the CLI's rules: a
+  name recorded for another app, or a database with the name that no
+  deploy of the app created, is refused; a name claimed by a deploy that
+  stopped before recording the id is finished by the next one); its own Durable Object classes (new ones get
+  the next `everyapp-v<n>` migration, a dropped one is refused); its
+  assets; version metadata. A bundle declaring anything else is refused
+  before anything is registered or created: service bindings to any other
+  Worker, dispatch namespaces, another Worker's Durable Objects, KV, R2,
+  Hyperdrive, rate limits, the secrets store, mTLS, Workers AI, email,
+  queues, other secrets or variables, unknown types; crons, routes,
+  domains, tail consumers, logpush, placement or limits of its own;
+  Workflows, helper Workers, dev mode, unlisted compatibility flags, more
+  Durable Object classes than the policy allows (2). The script gets the
+  policy's limits (5,000 ms CPU, 200 subrequests), the tags `org-<id>`,
+  `app-<id>` and `kind-org`, and observability on.
+- **Read-back.** After the upload the deployer reads the Worker's bindings
+  back from Cloudflare and compares them with what it sent: the same
+  names, once each, every field it sent unchanged (the type, ids, props),
+  and a Durable Object binding's Worker, when listed, the app's own.
+  Fields Cloudflare adds (a service binding's `environment`, a Durable
+  Object binding's `namespace_id`) don't count. On any difference it
+  deletes the Worker and fails the job, so a Worker whose bindings the
+  deployer didn't choose never serves.
+- **Registry.** Rows are `tier = 'dispatch'`, `scope = 'org'`, the Worker
+  `every-<orgKey>-<appId>` (the only name `getAppFetcher` dispatches to),
+  the hostname `<appId>-<orgKey>.<THIRD_PARTY_DOMAIN>` (none while the
+  domain is unset: nobody can open the app). An app keeps its tier: the
+  CLI's self-host deploy refuses a dispatch row and the deploy API a
+  service-binding one (`APP_TIER_MISMATCH`); a shared app is never a
+  dispatch app. Each deploy is a `deploy_jobs` row, one running at a time
+  per app; `deployed_by_actor` is `deploy-key:<token id>`.
+- **The CLI.** Only `EVERYAPP_DEPLOY_TOKEN` sends `everyapp deploy` to the
+  deploy API; `EVERYAPP_TOKEN` (a self-hoster's MCP bearer) and
+  `EVERYAPP_GATEWAY_URL` alone leave the self-host deploy as it was.
+- The Cloudflare token (`CF_DEPLOY_TOKEN`, Workers for Platforms and D1
+  edit) is a secret of the hosted gateway: whoever reads the gateway's
+  secrets can deploy into the namespace. The hosted gateway is ours alone.
 
 ## Response Contract
 

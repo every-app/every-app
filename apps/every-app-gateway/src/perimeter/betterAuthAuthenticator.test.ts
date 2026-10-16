@@ -183,6 +183,21 @@ describe("createProdAuthenticator PAT branch", () => {
     },
   );
 
+  it("opens no app with a deploy key, an owner's included", async () => {
+    mockUserPatService.verify.mockResolvedValue(
+      activePat({ scopes: ["deploy"] }),
+    );
+    mockMemberFindFirst.mockResolvedValue({
+      organizationId: "org-id",
+      role: "owner",
+    });
+
+    await expect(
+      createProdAuthenticator().authenticate(request()),
+    ).resolves.toBeNull();
+    expect(mockAuth.api.getSession).not.toHaveBeenCalled();
+  });
+
   it("rejects the PAT of a deactivated (banned) user", async () => {
     mockUserPatService.verify.mockResolvedValue(activePat());
     mockMemberFindFirst.mockResolvedValue({

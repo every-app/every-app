@@ -20,11 +20,14 @@ vi.mock("../user-pat-hash", () => ({
   hashUserPat: vi.fn(),
 }));
 
-vi.mock("cloudflare:workers", () => ({
-  env: {
-    BETTER_AUTH_SECRET: "test-secret",
-  },
-}));
+const workerEnv = vi.hoisted(
+  () =>
+    ({ BETTER_AUTH_SECRET: "test-secret" }) as Record<
+      string,
+      string | undefined
+    >,
+);
+vi.mock("cloudflare:workers", () => ({ env: workerEnv }));
 
 import { AppRepository } from "../repositories/AppRepository";
 import { UserPatRepository } from "../repositories/UserPatRepository";
@@ -120,5 +123,55 @@ describe("UserPatService", () => {
     await expect(UserPatService.verify("eat_wrong")).resolves.toBeNull();
 
     expect(mockHashUserPat).not.toHaveBeenCalled();
+  });
+
+  describe("deploy keys", () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+
+    beforeEach(() => {
+      mockHashUserPat.mockResolvedValue("token-hash");
+      mockUserPatRepository.create.mockResolvedValue(undefined);
+      mockUserPatRepository.findByIdForUser.mockResolvedValue({
+        id: "token-id",
+      } as any);
+      workerEnv["GATEWAY_DEPLOYMENT_MODE"] = "hosted";
+      workerEnv["THIRD_PARTY_DEPLOYS"] = "on";
+    });
+
+    const createDeployKey = (scopes = ["deploy"]) =>
+      UserPatService.create({
+        userId: "user-id",
+        organizationId: "org-id",
+        name: "CI",
+        scopes,
+      });
+
+    it("makes a deploy key last 30 days unless told otherwise", async () => {
+      await createDeployKey();
+      const [stored] = mockUserPatRepository.create.mock.calls[0]!;
+      expect(stored.scopes).toEqual(["deploy"]);
+      const ttl = stored.expiresAt.getTime() - Date.now();
+      expect(ttl).toBeGreaterThan(29 * DAY_MS);
+      expect(ttl).toBeLessThanOrEqual(30 * DAY_MS);
+    });
+
+    it("refuses a deploy key with any other scope", async () => {
+      await expect(
+        createDeployKey(["deploy", "mcp:read"]),
+      ).rejects.toMatchObject({ code: "INVALID_TOKEN_SCOPE" });
+    });
+
+    it("makes no deploy key where third-party deploys are off", async () => {
+      for (const gate of [
+        { GATEWAY_DEPLOYMENT_MODE: "hosted", THIRD_PARTY_DEPLOYS: undefined },
+        { GATEWAY_DEPLOYMENT_MODE: "self_hosted", THIRD_PARTY_DEPLOYS: "on" },
+      ]) {
+        Object.assign(workerEnv, gate);
+        await expect(createDeployKey()).rejects.toMatchObject({
+          code: "DEPLOY_KEYS_UNAVAILABLE",
+        });
+      }
+      expect(mockUserPatRepository.create).not.toHaveBeenCalled();
+    });
   });
 });

@@ -31,6 +31,15 @@ const MAX_NAME_LENGTH = 64;
 // The app scope select needs a real value for "no app".
 const ALL_APPS = "all";
 
+// A deploy key: `everyapp deploy --gateway` in CI, nothing else
+// (server/deploy/). It opens no app and no MCP connection.
+const DEPLOY_SCOPE = "deploy";
+
+const KIND_ITEMS = [
+  { value: "access", label: "Access token (MCP and API clients)" },
+  { value: "deploy", label: "Deploy key (everyapp deploy in CI)" },
+];
+
 const createUserTokenSchema = z
   .object({
     name: z
@@ -38,6 +47,7 @@ const createUserTokenSchema = z
       .trim()
       .min(1, "Enter a name.")
       .max(MAX_NAME_LENGTH, `Use ${MAX_NAME_LENGTH} characters or fewer.`),
+    kind: z.enum(["access", "deploy"]),
     appId: z.string(),
     expiry: z.enum(EXPIRY_CHOICES),
     customExpiresAt: z.string(),
@@ -61,9 +71,12 @@ const createUserTokenSchema = z
 interface CreateUserTokenModalProps {
   onClose: () => void;
   apps: AppWithAccessCount[];
+  /** The gateway takes third-party deploys, so deploy keys are offered. */
+  allowDeployKeys?: boolean;
   onCreate: (input: {
     name: string;
     appId?: string;
+    scopes?: string[];
     expiresAt?: string;
   }) => Promise<void>;
 }
@@ -72,6 +85,7 @@ interface CreateUserTokenModalProps {
 export function CreateUserTokenModal({
   onClose,
   apps,
+  allowDeployKeys = false,
   onCreate,
 }: CreateUserTokenModalProps) {
   const appItems = useMemo(
@@ -88,6 +102,7 @@ export function CreateUserTokenModal({
   const form = useAppForm({
     defaultValues: {
       name: "",
+      kind: "access" as "access" | "deploy",
       appId: ALL_APPS,
       expiry: "90" as ExpiryChoice,
       customExpiresAt: localDateTimeValue(90),
@@ -100,6 +115,7 @@ export function CreateUserTokenModal({
         await onCreate({
           name: value.name,
           appId: value.appId === ALL_APPS ? undefined : value.appId,
+          ...(value.kind === "deploy" ? { scopes: [DEPLOY_SCOPE] } : {}),
           expiresAt: expiryToIso(value.expiry, value.customExpiresAt),
         });
       } catch (err) {
@@ -136,11 +152,45 @@ export function CreateUserTokenModal({
                 />
               )}
             </form.AppField>
-            <form.AppField name="appId">
-              {(field) => (
-                <field.SelectField label="App scope" items={appItems} />
+            {allowDeployKeys ? (
+              <form.AppField
+                name="kind"
+                listeners={{
+                  // Deploy keys sit in CI: a shorter default.
+                  onChange: ({ value }) =>
+                    form.setFieldValue(
+                      "expiry",
+                      value === "deploy" ? "30" : "90",
+                    ),
+                }}
+              >
+                {(field) => (
+                  <field.SelectField label="Kind" items={KIND_ITEMS} />
+                )}
+              </form.AppField>
+            ) : null}
+            <form.Subscribe selector={(state) => state.values.kind}>
+              {(kind) => (
+                <form.AppField name="appId">
+                  {(field) => (
+                    <field.SelectField
+                      label={kind === "deploy" ? "Deploys" : "App scope"}
+                      items={
+                        kind === "deploy"
+                          ? [
+                              {
+                                value: ALL_APPS,
+                                label: "Any app of this organization",
+                              },
+                              ...appItems.slice(1),
+                            ]
+                          : appItems
+                      }
+                    />
+                  )}
+                </form.AppField>
               )}
-            </form.AppField>
+            </form.Subscribe>
             <form.AppField name="expiry">
               {(field) => (
                 <field.SelectField label="Expiration" items={EXPIRY_ITEMS} />
