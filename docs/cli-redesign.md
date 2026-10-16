@@ -1,12 +1,23 @@
 # CLI redesign: fewer concepts, less state, calmer output
 
-Status: proposal, 2026-10-15. Revised the same day twice: first after an
-adversarial review of every claim against the code and cf 1.0.0-beta.14's
-dist, then after the maintainer's decisions (§6). Those decisions set the
-ground rules: this is a proof of concept with no users, so nothing below
-keeps backwards compatibility, ships a transition release, or preserves the
-one pre-cf install. Nothing here is built. Line numbers are as of commit
-acad8b29.
+Status: implemented. Proposed 2026-10-15 and revised twice the same day
+(an adversarial review of every claim against the code and cf
+1.0.0-beta.14's dist, then the maintainer's decisions in §6), then built on
+2026-10-16 as ten stacked pull requests: #284 (this document and ADR-0003),
+#286 (one migration per project), #288 (the 3-minute lease and the
+schema-drift check), #289 (one routing mode), #290 (dev without files),
+#291 (calm output), #292 (the Gateway's shared registry rules,
+self-activation and no deploy API), #293 (the CLI writes the registry
+through D1), #294 (the checkout is the truth) and #295 (nine flat verbs,
+the skill and the docs), plus #296 (a docs build fix). The ground rules
+held throughout: a proof of concept with no users, so nothing keeps
+backwards compatibility, ships a transition release, or preserves the one
+pre-cf install.
+
+The sections below are the proposal as decided. Line numbers are as of
+commit acad8b29 and the code has moved since. Where the implementation
+differs from the text, §8 says how, and TODO.md's "Decide" list holds every
+default the builders chose.
 
 ## 1. The end state on one screen
 
@@ -845,3 +856,61 @@ stderr; the transcripts' "schema in sync" is this); TODO.md's
   bookmark is the better safety net.
 - **Secrets as `NAME=value` on the command line** (Void). Values never go
   on argv.
+
+## 8. Implementation notes (2026-10-16)
+
+What the build changed against the text above, beyond the defaults listed
+in TODO.md:
+
+- **The Gateway's identity is its source tree, not the release SHA-256.**
+  Builds are not reproducible (client chunk names differ per build), so the
+  install row records `source_tree_sha256`, `status`'s `upToDate` and
+  `setup`'s nothing-to-do compare tree hashes, and releases are ordered by
+  newest migration then the last commit touching the Gateway's sources
+  (`release_committed_at`, not build time). The build cache keeps the three
+  most recently used builds; without git there is no cache.
+- **The live wait is confirmed by D1, not by an HTTP status.** Fetching the
+  app's URL triggers the Gateway's activation; `apps.status` decides. A
+  redirect to Cloudflare Access means the Gateway never saw the request:
+  once TLS answers, the deploy warns that the app goes live on its first
+  visit and exits 0. `--no-wait` skips the whole wait.
+- **An organization exists before the owner does.** The seeded "Default
+  Organization" went with the migration squash, so the first registration
+  on an ownerless Gateway creates one named after the Cloudflare account,
+  and the setup claim adopts the oldest organization that has live apps and
+  no members. Deployer access requires a verified email; password accounts
+  never are, so without Cloudflare Access a new app is private to owners
+  and admins.
+- **The schema-drift check runs under the app's lease**, after the build
+  (the build needs the lease's resources and the deploy's installed
+  dependencies). drizzle-kit 0.31 refuses `--out` with `--config`, so the
+  check writes a two-line config extending the app's into an ignored
+  `.everyapp/schema-check-*` directory; a drizzle-kit run that fails stops
+  the deploy with `SCHEMA_CHECK_FAILED`, because drizzle-kit exits 0 on its
+  own errors.
+- **The lease re-checks itself**: `Lease.check()` runs before migrations
+  and before every `cf deploy`, and `status` lists every live lease
+  (`data.leases`), not only the Gateway's.
+- **Registry writes are per case, not one upsert**, so a concurrent admin
+  change or Gateway activation is never overwritten; a redeploy updates
+  only name and description.
+- **Removed beyond the plan**: the SDK and CLI minimum-version checks (they
+  came from the deleted `whoami` route), the `schema_version` column and
+  the added-columns shim on the install table, `deploying` as a status
+  value, and the reconcile confirm. Kept against the plan:
+  `lib/interrupt.ts` (its upload record on Ctrl+C keeps the install row
+  naming the live version, and freeing the lease spares the rerun a wait).
+- **Smaller choices**: `secret unset` deletes with cf and then redeploys;
+  `secret list` prints every name; `deploy -y` installs the Gateway without
+  asking at a terminal and never unattended; the install offer proposes
+  `apps.<zone>` only; the skill is copied into new apps rather than
+  symlinked; `status` reads certificates from Cloudflare's certificate
+  packs.
+- **Migrations**: the single baseline was regenerated at each schema change
+  during the build; the unique index on `accounts (provider_id,
+  account_id)` that a hand-written migration had added now lives in the
+  Cloudflare Access plugin's schema so regenerating keeps it.
+- **Still to do on a real account**: TODO.md's live checks (two new ones:
+  cf's strict mode after `cf workers secrets delete`, and a probe timeout
+  for Gateway discovery), and the reinstall of thecomeup.cc after its old
+  resources are deleted.
