@@ -541,9 +541,10 @@ export async function handleGatewayRequest(
     mode,
   });
 
-  // Never rewrap a WebSocket 101 (its body/webSocket cannot be reconstructed).
+  // Never rewrap a WebSocket 101 (its body/webSocket cannot be reconstructed),
+  // except to strip what a third-party app may not say on its handshake.
   if (response.status === 101) {
-    return response;
+    return deps.thirdParty ? stripThirdPartyAppHeaders(response) : response;
   }
   return withSecurityHeaders(
     deps.thirdParty ? stripThirdPartyAppHeaders(response) : response,

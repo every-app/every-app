@@ -30,6 +30,8 @@
  * from app responses (stripThirdPartyAppHeaders).
  */
 
+import { stripSetCookieDomains } from "./headers";
+
 export const HOST_SESSION_COOKIE = "__Host-everyapp_s";
 export const HOST_NONCE_COOKIE = "__Host-everyapp_n";
 /** Where the app host's perimeter exchanges a handoff code. */
@@ -267,6 +269,21 @@ export function stripThirdPartyAppHeaders(response: Response): Response {
     for (const cookie of setCookies) {
       if (!isReservedSetCookie(cookie)) headers.append("set-cookie", cookie);
     }
+  }
+  // Browsers honour a WebSocket handshake's Set-Cookie too; rebuilt around
+  // the same socket, as a 101 can't be rebuilt from its body. It never
+  // reaches withSecurityHeaders, so its cookies lose `Domain` here: a
+  // sibling app on the third-party domain would otherwise receive them.
+  if (response.status === 101) {
+    stripSetCookieDomains(headers);
+    // Typed loosely: the CLI compiles this file without the Workers types.
+    const { webSocket } = response as Response & { webSocket?: unknown };
+    return new Response(null, {
+      status: 101,
+      statusText: response.statusText,
+      webSocket,
+      headers,
+    } as ResponseInit);
   }
   return new Response(response.body, {
     status: response.status,

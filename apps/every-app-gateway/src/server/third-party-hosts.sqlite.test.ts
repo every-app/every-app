@@ -573,6 +573,34 @@ describe("third-party hosts with per-host sessions (SQLite)", () => {
     ).toBe(400);
   });
 
+  it("sends no Referer from the code exchange, so the app never sees a code", async () => {
+    const gatewayCookie = await signIn(alice.email);
+
+    // The redirect's policy governs the navigation it starts.
+    const { exchange, nonce } = await codeFor(gatewayCookie);
+    const exchanged = await get(exchange, {
+      cookie: `${HOST_NONCE_COOKIE}=${nonce}`,
+    });
+    expect(exchanged.status).toBe(303);
+    expect(exchanged.headers.get("referrer-policy")).toBe("no-referrer");
+
+    // So does the expired-link page's link back to the app.
+    const replayed = await get(exchange, {
+      cookie: `${HOST_NONCE_COOKIE}=${nonce}`,
+    });
+    expect(replayed.status).toBe(400);
+    expect(await replayed.text()).toContain('<a href="/">');
+    expect(replayed.headers.get("referrer-policy")).toBe("no-referrer");
+
+    // The app's own pages keep the perimeter's default.
+    const session = `${HOST_SESSION_COOKIE}=${cookieValue(exchanged, HOST_SESSION_COOKIE)}`;
+    const page = await get(`https://${TODO_HOST}/tasks`, { cookie: session });
+    expect(page.status).toBe(200);
+    expect(page.headers.get("referrer-policy")).toBe(
+      "strict-origin-when-cross-origin",
+    );
+  });
+
   it("never honours the gateway's cookie on a third-party host, nor a host session anywhere else", async () => {
     const gatewayCookie = await signIn(alice.email);
 

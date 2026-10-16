@@ -678,7 +678,9 @@ lookup or credential read (`routeHost`,
      D1 (`rate_limit_counters`, an insert that only one request wins). It
      sets `__Host-everyapp_s` (a MAC token bound to the gateway session id,
      user, app row and host, 24 hours), clears the nonce and 303s to the
-     page path. Anything else is a 400 page with no cookie.
+     page path. Anything else is a 400 page with no cookie. Both answer
+     `Referrer-Policy: no-referrer`, so neither the redirect nor the 400
+     page's link back to the app sends the app the code's URL as `Referer`.
 - **Every request re-checks.** `__Host-everyapp_s` is verified (signature,
   type, expiry, host, app row), then, live: the gateway session row still
   exists and hasn't expired, the user isn't deactivated, they are a member
@@ -697,8 +699,9 @@ lookup or credential read (`routeHost`,
   the same domain are same-site, so a credentialed CORS grant would let one
   read another's pages with the visitor's session) and every `Set-Cookie`
   whose name starts with `__Host-everyapp_` in any case (only the
-  perimeter sets the session and nonce). `Domain` is stripped from app
-  cookies everywhere, so they stay host-only. State-changing requests must
+  perimeter sets the session and nonce), WebSocket handshakes (101)
+  included. `Domain` is stripped from app cookies everywhere, so they stay
+  host-only (on third-party hosts, from 101s too). State-changing requests must
   be same-origin (`Sec-Fetch-Site: same-origin` or a matching `Origin`), so
   a sibling app's page can't post with the visitor's session.
 - **Self-hosted gateways** have no third-party domain: every host but the

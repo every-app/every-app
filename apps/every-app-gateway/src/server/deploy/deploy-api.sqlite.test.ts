@@ -824,6 +824,33 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
     finish.mockRestore();
   });
 
+  it("fails the job and logs once when registering a deploy throws an error the deployer didn't name", async () => {
+    await register();
+    // The registry write, after the job has started, fails as D1 might.
+    await db.run(
+      sql`CREATE TRIGGER apps_unavailable BEFORE UPDATE ON apps BEGIN SELECT RAISE(ABORT, 'D1 is unavailable'); END`,
+    );
+    vi.mocked(console.error).mockClear();
+    const response = await deploy();
+    expect(response.status).toBe(500);
+    expect(await response.json()).toEqual({
+      error: "INTERNAL_ERROR",
+      message: "The deploy API failed.",
+    });
+    const jobs = await db.select().from(deployJobs);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0]!.status).toBe("failed");
+    expect(JSON.parse(jobs[0]!.error!)).toMatchObject({
+      code: "DEPLOY_FAILED",
+    });
+    expect(script()).toBeUndefined();
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(console.error).toHaveBeenCalledWith(
+      "deploy API error:",
+      expect.any(Error),
+    );
+  });
+
   it("refuses a third-party domain on, under or above the gateway's own", async () => {
     hoisted.env["APP_BASE_DOMAIN"] = "app.everyapp.com";
     for (const domain of [

@@ -172,12 +172,14 @@ async function registerRoute(request: Request, caller: DeployCaller) {
 
 type JobOutcome = Parameters<typeof DeployJobRepository.finish>[1];
 
-/** A failed job's outcome; an error the deployer didn't name is logged. */
+/**
+ * A failed job's outcome. Logging an error the deployer didn't name is the
+ * caller's: once per error, by whoever is last to see it.
+ */
 function failedOutcome(error: unknown): JobOutcome {
   if (error instanceof DeployError) {
     return { status: "failed", code: error.code, message: error.message };
   }
-  console.error("deploy failed:", error);
   return {
     status: "failed",
     code: "DEPLOY_FAILED",
@@ -272,6 +274,7 @@ async function deployRoute(
   try {
     ({ app } = await register(caller, manifest));
   } catch (error) {
+    // Rethrown: serveDeployApi logs it as it answers.
     await finishJob(job.id, failedOutcome(error), fields);
     throw error;
   }
@@ -289,7 +292,13 @@ async function deployRoute(
     actor: `deploy-key:${caller.tokenId}`,
   }).then(
     () => finishJob(job.id, { status: "succeeded" }, fields),
-    (error: unknown) => finishJob(job.id, failedOutcome(error), fields),
+    (error: unknown) => {
+      // Only the job records this error; the request answers with the job.
+      if (!(error instanceof DeployError)) {
+        console.error("deploy failed:", error);
+      }
+      return finishJob(job.id, failedOutcome(error), fields);
+    },
   );
   waitUntil(run);
   let timer: ReturnType<typeof setTimeout> | undefined;

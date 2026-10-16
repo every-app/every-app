@@ -260,8 +260,11 @@ async function serveThirdPartyHost(
   if (!keyPromise) return notFound("gateway_misconfigured");
   const key = await keyPromise;
   if (new URL(request.url).pathname === HOST_SESSION_PATH) {
+    // No Referer from here: the page the exchange leads to (by redirect or
+    // the expired-link page's link) would hand the app the code's URL.
     return withSecurityHeaders(
       await exchangeHostSession(request, { app, host, key }),
+      { referrerPolicy: "no-referrer" },
     );
   }
   return handleGatewayRequest(request, {

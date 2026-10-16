@@ -1101,6 +1101,82 @@ describe("handleGatewayRequest", () => {
     ]);
   });
 
+  it("strips credentialed CORS and reserved cookies from a 101 on third-party hosts only, keeping its WebSocket", async () => {
+    // Node's Response constructor rejects status 101 and has no webSocket;
+    // the Workers runtime's takes both, as this stand-in does.
+    const socket = { accept: () => undefined };
+    class WorkersResponse extends Response {
+      constructor(
+        body?: BodyInit | null,
+        init?: ResponseInit & { webSocket?: unknown },
+      ) {
+        const { status, webSocket, ...rest } = init ?? {};
+        super(body, status === 101 ? rest : init);
+        if (status === 101) {
+          Object.defineProperty(this, "status", { value: 101 });
+          Object.defineProperty(this, "webSocket", { value: webSocket });
+        }
+      }
+    }
+    vi.stubGlobal("Response", WorkersResponse);
+    try {
+      const handshake = () => {
+        const headers = new Headers({
+          "access-control-allow-origin": "https://sibling.example.dev",
+          "access-control-allow-credentials": "true",
+        });
+        headers.append("set-cookie", "prefs=dark; Domain=example.dev; Path=/");
+        headers.append(
+          "set-cookie",
+          "__Host-everyapp_s=planted; Path=/; Secure",
+        );
+        return new Response(null, {
+          status: 101,
+          headers,
+          webSocket: socket,
+        } as ResponseInit);
+      };
+      const through = async (
+        original: Response,
+        thirdParty?: GatewayDeps["thirdParty"],
+      ) =>
+        handleGatewayRequest(
+          req("/ws", { headers: { upgrade: "websocket" } }),
+          deps({
+            fetcherFor: () => ({ fetch: async () => original }),
+            thirdParty,
+          }),
+        );
+
+      const thirdParty = await through(handshake(), {
+        startSession: async () => new Response(null, { status: 302 }),
+      });
+      expect(thirdParty.status).toBe(101);
+      expect(thirdParty.webSocket).toBe(socket);
+      expect(
+        thirdParty.headers.get("access-control-allow-credentials"),
+      ).toBeNull();
+      // Host-only, as withSecurityHeaders leaves every other app cookie.
+      expect(thirdParty.headers.getSetCookie()).toEqual(["prefs=dark; Path=/"]);
+      expect(thirdParty.headers.get("access-control-allow-origin")).toBe(
+        "https://sibling.example.dev",
+      );
+      // Still a handshake: no page security headers.
+      expect(thirdParty.headers.get("x-content-type-options")).toBeNull();
+
+      // First-party hosts pass the 101 itself through, untouched.
+      const original = handshake();
+      const firstParty = await through(original);
+      expect(firstParty).toBe(original);
+      expect(firstParty.headers.get("access-control-allow-credentials")).toBe(
+        "true",
+      );
+      expect(firstParty.headers.getSetCookie()).toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("starts the per-host session handoff for an unauthenticated page on a third-party host", async () => {
     const startSession = vi.fn(
       async () =>
