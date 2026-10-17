@@ -442,6 +442,47 @@ and `EMAIL_FROM` in `.dev.vars` to send for real from your own account. An
 `email()` handler (inbound mail) sits beside `everyApp()`'s `fetch` and
 passes `for: { background: true, organizationId }`.
 
+### Social networks' OAuth clients
+
+The gateway holds a client for each social network its operator set up
+(`docs/capabilities.md`, "OAuth clients": `linkedin`, `facebook`,
+`instagram`, `threads`, `youtube`, `tiktok`, `tiktok-business`, `reddit`,
+`pinterest`, `discord`, `slack`, `mastodon`, `kick`, `twitch`, `tumblr`,
+`dribbble`). List one for writing (`capabilities: { linkedin: { access:
+"write" } }`), build the authorize URL from its public id, and exchange or
+refresh tokens through the gateway without any client:
+
+```ts
+import { integrationFetch, integrationStatus } from "@every-app/sdk/server";
+
+const { ready, clientId } = await integrationStatus({
+  env,
+  provider: "linkedin",
+});
+// ...redirect to https://www.linkedin.com/oauth/v2/authorization?client_id=${clientId}&...
+const tokens = await integrationFetch({
+  env,
+  provider: "linkedin",
+  for: request,
+})("https://www.linkedin.com/oauth/v2/accessToken", {
+  method: "POST",
+  headers: { "content-type": "application/x-www-form-urlencoded" },
+  body: new URLSearchParams({
+    grant_type: "authorization_code",
+    code,
+    redirect_uri,
+  }),
+});
+```
+
+The gateway completes the network's token endpoints only, putting its client
+where each one takes it (form body, HTTP Basic, query string or JSON body);
+anything else throws a `TypeError` before it is sent. Call the network's API
+with the user's token directly. Mastodon's status also gives the instance as
+`origin`. In local dev, with no binding, `.dev.vars` holds your own client
+under the gateway's names (`LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`,
+`MASTODON_URL`, ...) and the same rule puts it on the call.
+
 ### Whom a call is for
 
 `createGatewayFetch`, `integrationFetch` and `sendEmail` take `for`, which

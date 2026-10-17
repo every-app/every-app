@@ -35,6 +35,42 @@ declare namespace Cloudflare {
     // In dev, the manifest's capabilities.email.senders as JSON
     // (everyAppWorker() sets it); sendEmail() checks a `from` against them.
     EVERYAPP_EMAIL_SENDERS?: string;
+    // integrationFetch() in dev for the OAuth clients' token endpoints: the
+    // developer's own clients, under the gateway's names (MASTODON_URL is
+    // the instance, https://mastodon.social when unset).
+    LINKEDIN_CLIENT_ID?: string;
+    LINKEDIN_CLIENT_SECRET?: string;
+    FACEBOOK_APP_ID?: string;
+    FACEBOOK_APP_SECRET?: string;
+    INSTAGRAM_APP_ID?: string;
+    INSTAGRAM_APP_SECRET?: string;
+    THREADS_APP_ID?: string;
+    THREADS_APP_SECRET?: string;
+    YOUTUBE_CLIENT_ID?: string;
+    YOUTUBE_CLIENT_SECRET?: string;
+    TIKTOK_CLIENT_ID?: string;
+    TIKTOK_CLIENT_SECRET?: string;
+    TIKTOK_BUSINESS_CLIENT_ID?: string;
+    TIKTOK_BUSINESS_CLIENT_SECRET?: string;
+    REDDIT_CLIENT_ID?: string;
+    REDDIT_CLIENT_SECRET?: string;
+    PINTEREST_CLIENT_ID?: string;
+    PINTEREST_CLIENT_SECRET?: string;
+    DISCORD_CLIENT_ID?: string;
+    DISCORD_CLIENT_SECRET?: string;
+    SLACK_CLIENT_ID?: string;
+    SLACK_CLIENT_SECRET?: string;
+    MASTODON_CLIENT_ID?: string;
+    MASTODON_CLIENT_SECRET?: string;
+    MASTODON_URL?: string;
+    KICK_CLIENT_ID?: string;
+    KICK_CLIENT_SECRET?: string;
+    TWITCH_CLIENT_ID?: string;
+    TWITCH_CLIENT_SECRET?: string;
+    TUMBLR_CLIENT_ID?: string;
+    TUMBLR_CLIENT_SECRET?: string;
+    DRIBBBLE_CLIENT_ID?: string;
+    DRIBBBLE_CLIENT_SECRET?: string;
   }
 }
 

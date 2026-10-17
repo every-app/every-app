@@ -8,10 +8,12 @@ no per-app settings.
 
 This is phase 0 of the integrations design (branch
 `research/app-integrations`, `docs/research/2026-10-integrations-hub/app-integrations.md`):
-**API-key providers whose key the gateway holds**, plus **gateway services**,
-things the gateway does itself for apps (sending email, [below](#gateway-services-email)).
-OAuth providers, per-organization accounts and admin approval come in later
-phases and keep the same manifest entry, binding route and SDK call.
+**API-key providers whose key the gateway holds**, **OAuth clients** the
+gateway holds for social networks, whose token endpoints it completes for
+apps ([below](#oauth-clients)), and **gateway services**, things the gateway
+does itself for apps (sending email, [below](#gateway-services-email)).
+Organization-held OAuth accounts and admin approval come in later phases and
+keep the same manifest entry, binding route and SDK call.
 
 AI providers stay separate: `providers: ["openai", "openrouter"]` and the
 `/api/ai/<provider>` proxy, with their model and route allowlists.
@@ -101,7 +103,7 @@ capabilities: {
 
 `everyapp deploy` refuses a capability the gateway doesn't offer and an
 access level it doesn't offer (`write`, for both providers today; `read`,
-for email).
+for email and the OAuth clients).
 
 Call the provider's real URLs with the SDK's fetch:
 
@@ -178,6 +180,170 @@ app can tell them from the provider's own errors.
 `{ capability, requested, configured, ready }` without calling the provider
 (`integrationStatus`); `configured` is false for an app that doesn't list the
 capability, so no app learns which keys the operator holds.
+
+## OAuth clients
+
+A social network's OAuth client is a capability too (`oauth_client`): the
+operator registers one client per network on the network's developer
+console and gives it to the gateway, and every app that lists the network
+connects people's accounts with it. The gateway completes the network's
+**token endpoints only**, putting its client on the request; the app builds
+the authorize URL from the client's public id, keeps the access and refresh
+tokens it gets back, and calls the network's API with them itself. The
+client secret never reaches an app. Postiz is the first app to use these.
+
+**For an operator.** For each network you want people to connect: register
+an app on its developer console, register the redirect URIs below (on the
+app's host, `https://<app>.<APP_BASE_DOMAIN>`), allow the scopes listed
+further down, then hand the client to the gateway:
+
+```bash
+pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET --for gateway
+```
+
+A network you skip is simply not offered: its status answers
+`configured: false`. Mastodon's client lives on one instance:
+`MASTODON_URL` names it (`https://mastodon.social` when unset), and the
+token endpoint, the authorize page and the API are on it. One client per
+network serves every organization on the gateway, so a network's limits
+(Meta's app review tiers, TikTok's user caps, Google's refresh tokens per
+user) are shared too. X is not here (OAuth 1.0a signs every API call with
+the user's token secret, which the gateway never holds): an app keeps
+`X_API_KEY`/`X_API_SECRET` as its own secrets.
+
+**For an app.** List each network for writing (obtaining and refreshing
+tokens with the operator's client writes):
+
+```ts
+capabilities: {
+  linkedin: { access: "write", why: "Connects LinkedIn profiles and pages." },
+  mastodon: { access: "write" },
+},
+```
+
+then build the authorize URL from the status, and exchange the code (or
+refresh a token) through the gateway without any client:
+
+```ts
+import { integrationFetch, integrationStatus } from "@every-app/sdk/server";
+
+const { ready, clientId } = await integrationStatus({ env, provider: "linkedin" });
+if (!ready) return showNotSetUp("LinkedIn");
+const authorize = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=...`;
+
+// The callback: the gateway adds client_id and client_secret.
+const linkedin = integrationFetch({ env, provider: "linkedin", for: request });
+const tokens = await linkedin("https://www.linkedin.com/oauth/v2/accessToken", {
+  method: "POST",
+  headers: { "content-type": "application/x-www-form-urlencoded" },
+  body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri }),
+});
+// A refresh from a cron or Workflow: for: { background: true, organizationId }.
+```
+
+Mastodon's status also carries `origin` (the instance). Twitch wants the
+public id as `Client-Id` on its API calls too: it is the status's
+`clientId`. In local dev (`everyapp dev`, no binding) the fetch calls the
+token endpoint directly and puts the developer's own client from
+`.dev.vars`, under the same names, on it by the same rule.
+
+**What the gateway checks**, in order, each a refusal with its code in
+`x-everyapp-error`:
+
+| Code                            | Status  | When                                                                                          |
+| ------------------------------- | ------- | --------------------------------------------------------------------------------------------- |
+| `integration_not_configured`    | 503     | `MASTODON_URL` is set but isn't an https origin                                               |
+| `integration_path_not_allowed`  | 403     | the call isn't one of the network's token endpoints (host, exact path, method): API calls go to the network directly |
+| `capability_not_requested`      | 403     | the deployed manifest doesn't list the network with `access: "write"`                         |
+| `caller_*`                      | 401/403 | the AppGateway entrypoint's attribution (a shared app's Worker names the organization)        |
+| `integration_agent_not_allowed` | 403     | an agent's identity (`chan: "mcp"`), with or without `mcp:write`: agents can't connect accounts or mint tokens |
+| `integration_not_configured`    | 503     | the gateway doesn't hold the client; the message names the `secret set` command               |
+| `integration_body_too_large`    | 413     | the body passes 64 KiB, counted as it streams                                                 |
+| `integration_body_invalid`      | 400     | the body isn't form-encoded or JSON, or not the one the endpoint takes                        |
+| `integration_upstream_failed`   | 502     | the network couldn't be reached                                                               |
+
+It then drops the app's `Authorization`, cookies and every `x-everyapp-*`
+header, removes any `client_id` or `client_secret` the app put in the query
+string or the body (in any case, under the endpoint's own names too), puts
+the gateway's client where the endpoint takes it (`form`: the form body;
+`basic`: HTTP Basic; `query`: the query string; `json`: the JSON body),
+re-serialises the body, refuses to follow redirects, drops the network's
+`set-cookie`, and streams the answer back. Each call is logged
+(`integration.proxy.call`) with the organization, app, host, path, method,
+the request's `grant_type`, status and attribution; never the query, the
+body or the answer, which carry the client, codes and tokens.
+
+`GET /api/integrations/<network>` answers
+`{ capability, requested, configured, ready, clientId?, origin? }`;
+`clientId` (and Mastodon's `origin`) only for an app that lists the network,
+once the gateway holds its client. A dispatched app's Worker can't reach the
+token endpoints directly either: the outbound Worker refuses them
+(`reserved_endpoint`), though not the networks' API hosts.
+
+<!-- oauth-clients:begin (generated from packages/sdk/src/internal/capabilities.ts by capabilitiesDoc.test.ts) -->
+
+| Capability | Network | Gateway secrets | Developer console | Redirect URIs to register | Token endpoints the gateway completes (where the client goes) |
+| --- | --- | --- | --- | --- | --- |
+| `linkedin` | LinkedIn | `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET` | https://www.linkedin.com/developers/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/linkedin`, `https://<app>.<APP_BASE_DOMAIN>/integrations/social/linkedin-page` | POST `www.linkedin.com/oauth/v2/accessToken` (form) |
+| `facebook` | Facebook | `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET` | https://developers.facebook.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/facebook`, `https://<app>.<APP_BASE_DOMAIN>/integrations/social/instagram` | GET/POST `graph.facebook.com/v<version>/oauth/access_token` (query) |
+| `instagram` | Instagram | `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET` | https://developers.facebook.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/instagram-standalone` | POST `api.instagram.com/oauth/access_token` (form); GET `graph.instagram.com/access_token` (query) |
+| `threads` | Threads | `THREADS_APP_ID`, `THREADS_APP_SECRET` | https://developers.facebook.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/threads` | GET/POST `graph.threads.net/oauth/access_token` (query); GET `graph.threads.net/access_token` (query) |
+| `youtube` | YouTube | `YOUTUBE_CLIENT_ID`, `YOUTUBE_CLIENT_SECRET` | https://console.cloud.google.com/apis/credentials | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/youtube`, `https://<app>.<APP_BASE_DOMAIN>/integrations/social/gmb` | POST `oauth2.googleapis.com/token` (form) |
+| `tiktok` | TikTok | `TIKTOK_CLIENT_ID`, `TIKTOK_CLIENT_SECRET` | https://developers.tiktok.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/tiktok` | POST `open.tiktokapis.com/v2/oauth/token/` (form, id as `client_key`) |
+| `tiktok-business` | TikTok Business | `TIKTOK_BUSINESS_CLIENT_ID`, `TIKTOK_BUSINESS_CLIENT_SECRET` | https://business-api.tiktok.com/portal/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/tiktok-business/` | POST `business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/token/` (json); POST `business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/refresh_token/` (json) |
+| `reddit` | Reddit | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | https://www.reddit.com/prefs/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/reddit` | POST `www.reddit.com/api/v1/access_token` (basic) |
+| `pinterest` | Pinterest | `PINTEREST_CLIENT_ID`, `PINTEREST_CLIENT_SECRET` | https://developers.pinterest.com/apps/ | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/pinterest` | POST `api.pinterest.com/v5/oauth/token` (basic) |
+| `discord` | Discord | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | https://discord.com/developers/applications | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/discord` | POST `discord.com/api/oauth2/token` (basic) |
+| `slack` | Slack | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | https://api.slack.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/slack` | POST `slack.com/api/oauth.v2.access` (form) |
+| `mastodon` | Mastodon | `MASTODON_CLIENT_ID`, `MASTODON_CLIENT_SECRET`, `MASTODON_URL` | `<MASTODON_URL>/settings/applications` | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/mastodon` | POST `<MASTODON_URL>/oauth/token` (form) |
+| `kick` | Kick | `KICK_CLIENT_ID`, `KICK_CLIENT_SECRET` | https://kick.com/settings/developer | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/kick` | POST `id.kick.com/oauth/token` (form) |
+| `twitch` | Twitch | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | https://dev.twitch.tv/console/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/twitch` | POST `id.twitch.tv/oauth2/token` (form) |
+| `tumblr` | Tumblr | `TUMBLR_CLIENT_ID`, `TUMBLR_CLIENT_SECRET` | https://www.tumblr.com/oauth/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/tumblr` | POST `api.tumblr.com/v2/oauth2/token` (form) |
+| `dribbble` | Dribbble | `DRIBBBLE_CLIENT_ID`, `DRIBBBLE_CLIENT_SECRET` | https://dribbble.com/account/applications | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/dribbble` | POST `dribbble.com/oauth/token` (query) |
+
+The commands, one per network you offer (each prompts for the values):
+
+```bash
+pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET --for gateway
+pnpm everyapp secret set FACEBOOK_APP_ID FACEBOOK_APP_SECRET --for gateway
+pnpm everyapp secret set INSTAGRAM_APP_ID INSTAGRAM_APP_SECRET --for gateway
+pnpm everyapp secret set THREADS_APP_ID THREADS_APP_SECRET --for gateway
+pnpm everyapp secret set YOUTUBE_CLIENT_ID YOUTUBE_CLIENT_SECRET --for gateway
+pnpm everyapp secret set TIKTOK_CLIENT_ID TIKTOK_CLIENT_SECRET --for gateway
+pnpm everyapp secret set TIKTOK_BUSINESS_CLIENT_ID TIKTOK_BUSINESS_CLIENT_SECRET --for gateway
+pnpm everyapp secret set REDDIT_CLIENT_ID REDDIT_CLIENT_SECRET --for gateway
+pnpm everyapp secret set PINTEREST_CLIENT_ID PINTEREST_CLIENT_SECRET --for gateway
+pnpm everyapp secret set DISCORD_CLIENT_ID DISCORD_CLIENT_SECRET --for gateway
+pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET --for gateway
+pnpm everyapp secret set MASTODON_CLIENT_ID MASTODON_CLIENT_SECRET MASTODON_URL --for gateway
+pnpm everyapp secret set KICK_CLIENT_ID KICK_CLIENT_SECRET --for gateway
+pnpm everyapp secret set TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET --for gateway
+pnpm everyapp secret set TUMBLR_CLIENT_ID TUMBLR_CLIENT_SECRET --for gateway
+pnpm everyapp secret set DRIBBBLE_CLIENT_ID DRIBBBLE_CLIENT_SECRET --for gateway
+```
+
+The authorize page each client sends people to, and the scopes the app asks for there (the client must be allowed them):
+
+| Capability | Authorize URL | Scopes |
+| --- | --- | --- |
+| `linkedin` | `https://www.linkedin.com/oauth/v2/authorization` | `openid`, `profile`, `w_member_social`, `r_basicprofile`, `rw_organization_admin`, `w_organization_social`, `r_organization_social` |
+| `facebook` | `https://www.facebook.com/v25.0/dialog/oauth` | `pages_show_list`, `business_management`, `pages_manage_posts`, `pages_manage_engagement`, `pages_read_engagement`, `read_insights`, `instagram_basic`, `instagram_content_publish`, `instagram_manage_comments`, `instagram_manage_insights` |
+| `instagram` | `https://www.instagram.com/oauth/authorize` | `instagram_business_basic`, `instagram_business_content_publish`, `instagram_business_manage_comments`, `instagram_business_manage_insights` |
+| `threads` | `https://threads.net/oauth/authorize` | `threads_basic`, `threads_content_publish`, `threads_manage_replies`, `threads_manage_insights` |
+| `youtube` | `https://accounts.google.com/o/oauth2/v2/auth` | `https://www.googleapis.com/auth/userinfo.profile`, `https://www.googleapis.com/auth/userinfo.email`, `https://www.googleapis.com/auth/youtube`, `https://www.googleapis.com/auth/youtube.force-ssl`, `https://www.googleapis.com/auth/youtube.readonly`, `https://www.googleapis.com/auth/youtube.upload`, `https://www.googleapis.com/auth/youtubepartner`, `https://www.googleapis.com/auth/yt-analytics.readonly`, `https://www.googleapis.com/auth/business.manage` |
+| `tiktok` | `https://www.tiktok.com/v2/auth/authorize/` | `video.list`, `user.info.basic`, `video.publish`, `video.upload`, `user.info.profile`, `user.info.stats` |
+| `tiktok-business` | `https://www.tiktok.com/v2/auth/authorize/` | `user.info.basic`, `user.info.username`, `user.info.stats`, `video.list`, `video.upload`, `video.publish` |
+| `reddit` | `https://www.reddit.com/api/v1/authorize` | `read`, `identity`, `submit`, `flair` |
+| `pinterest` | `https://www.pinterest.com/oauth/` | `boards:read`, `boards:write`, `pins:read`, `pins:write`, `user_accounts:read` |
+| `discord` | `https://discord.com/oauth2/authorize` | `bot`, `identify`, `guilds` |
+| `slack` | `https://slack.com/oauth/v2/authorize` | `channels:read`, `chat:write`, `users:read`, `groups:read`, `channels:join`, `chat:write.customize` |
+| `mastodon` | `<MASTODON_URL>/oauth/authorize` | `write:statuses`, `profile`, `write:media` |
+| `kick` | `https://id.kick.com/oauth/authorize` | `chat:write`, `user:read`, `channel:read` |
+| `twitch` | `https://id.twitch.tv/oauth2/authorize` | `user:write:chat`, `user:read:chat`, `moderator:manage:announcements` |
+| `tumblr` | `https://www.tumblr.com/oauth2/authorize` | `write`, `offline_access` |
+| `dribbble` | `https://dribbble.com/oauth/authorize` | `public`, `upload` |
+
+<!-- oauth-clients:end -->
 
 ## Gateway services: email
 

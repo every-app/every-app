@@ -339,3 +339,242 @@ describe("the email capability", () => {
     });
   });
 });
+
+describe("OAuth clients", () => {
+  const LINKEDIN_TOKEN = "https://www.linkedin.com/oauth/v2/accessToken";
+  const DEV_CLIENTS = {
+    EVERYAPP_DEV: "1",
+    LINKEDIN_CLIENT_ID: "dev-linkedin-id",
+    LINKEDIN_CLIENT_SECRET: "dev-linkedin-secret",
+    REDDIT_CLIENT_ID: "dev-reddit-id",
+    REDDIT_CLIENT_SECRET: "dev-reddit-secret",
+    FACEBOOK_APP_ID: "dev-facebook-id",
+    FACEBOOK_APP_SECRET: "dev-facebook-secret",
+    TIKTOK_BUSINESS_CLIENT_ID: "dev-tiktok-id",
+    TIKTOK_BUSINESS_CLIENT_SECRET: "dev-tiktok-secret",
+    MASTODON_CLIENT_ID: "dev-mastodon-id",
+    MASTODON_CLIENT_SECRET: "dev-mastodon-secret",
+    MASTODON_URL: "https://fosstodon.org",
+  };
+
+  function directFetch() {
+    const sent = vi.fn<(request: Request) => Promise<Response>>(async () =>
+      Response.json({ access_token: "user-token" }),
+    );
+    vi.stubGlobal("fetch", sent);
+    return sent;
+  }
+
+  it("sends a token call over the binding with no client, for the gateway to add", async () => {
+    const { env, bindingFetch } = bindingEnv();
+    const linkedin = integrationFetch({
+      env,
+      provider: "linkedin",
+      for: new Request("https://postiz.example.com/x", {
+        headers: { "x-everyapp-identity": "signed-user-identity" },
+      }),
+    });
+
+    await linkedin(LINKEDIN_TOKEN, {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded",
+        authorization: "Basic app",
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: "c",
+      }),
+    });
+
+    const forwarded = bindingFetch.mock.calls[0]?.[0];
+    expect(forwarded?.url).toBe(
+      "http://every-app-gateway.internal/api/integrations/linkedin/www.linkedin.com/oauth/v2/accessToken",
+    );
+    expect(forwarded?.method).toBe("POST");
+    expect(forwarded?.headers.get("authorization")).toBeNull();
+    expect(forwarded?.headers.get("x-everyapp-identity")).toBe(
+      "signed-user-identity",
+    );
+    expect(await forwarded?.text()).toBe(
+      "grant_type=authorization_code&code=c",
+    );
+  });
+
+  it("refuses anything but the provider's token endpoints, before the gateway sees it", async () => {
+    const { env, bindingFetch } = bindingEnv();
+    const linkedin = integrationFetch({ env, provider: "linkedin" });
+    await expect(linkedin("https://api.linkedin.com/v2/me")).rejects.toThrow(
+      /only reaches LinkedIn's token endpoints \(POST https:\/\/www\.linkedin\.com\/oauth\/v2\/accessToken\)/,
+    );
+    // The token endpoint, with a method it doesn't take.
+    await expect(linkedin(LINKEDIN_TOKEN)).rejects.toThrow(TypeError);
+    expect(bindingFetch).not.toHaveBeenCalled();
+  });
+
+  it("leaves the instance of a provider with none fixed to the gateway", async () => {
+    const { env, bindingFetch } = bindingEnv();
+    await integrationFetch({ env, provider: "mastodon" })(
+      "https://fosstodon.org/oauth/token",
+      { method: "POST", body: "" },
+    );
+    expect(bindingFetch.mock.calls[0]?.[0].url).toBe(
+      "http://every-app-gateway.internal/api/integrations/mastodon/fosstodon.org/oauth/token",
+    );
+  });
+
+  it("in local dev, puts the developer's client on by the gateway's rule: form", async () => {
+    const sent = directFetch();
+    await integrationFetch({ env: DEV_CLIENTS, provider: "linkedin" })(
+      LINKEDIN_TOKEN,
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "grant_type=refresh_token&refresh_token=r&client_secret=app-secret",
+      },
+    );
+    const request = sent.mock.calls[0]![0];
+    expect(request.url).toBe(LINKEDIN_TOKEN);
+    expect(request.redirect).toBe("manual");
+    expect(await request.text()).toBe(
+      "grant_type=refresh_token&refresh_token=r&client_id=dev-linkedin-id&client_secret=dev-linkedin-secret",
+    );
+  });
+
+  it("in local dev: basic, query and json", async () => {
+    const sent = directFetch();
+    await integrationFetch({ env: DEV_CLIENTS, provider: "reddit" })(
+      "https://www.reddit.com/api/v1/access_token",
+      {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: "grant_type=authorization_code&code=c",
+      },
+    );
+    await integrationFetch({ env: DEV_CLIENTS, provider: "facebook" })(
+      "https://graph.facebook.com/v25.0/oauth/access_token?code=c",
+    );
+    await integrationFetch({ env: DEV_CLIENTS, provider: "tiktok-business" })(
+      "https://business-api.tiktok.com/open_api/v1.3/tt_user/oauth2/token/",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "authorization_code",
+          auth_code: "c",
+        }),
+      },
+    );
+    const [reddit, facebook, tiktok] = sent.mock.calls.map(([r]) => r);
+    expect(reddit?.headers.get("authorization")).toBe(
+      `Basic ${btoa("dev-reddit-id:dev-reddit-secret")}`,
+    );
+    expect(await reddit?.text()).toBe("grant_type=authorization_code&code=c");
+    expect(facebook?.method).toBe("GET");
+    expect(facebook?.url).toBe(
+      "https://graph.facebook.com/v25.0/oauth/access_token?code=c&client_id=dev-facebook-id&client_secret=dev-facebook-secret",
+    );
+    expect(JSON.parse(await tiktok!.text())).toEqual({
+      grant_type: "authorization_code",
+      auth_code: "c",
+      client_id: "dev-tiktok-id",
+      client_secret: "dev-tiktok-secret",
+    });
+  });
+
+  it("in local dev, reaches the instance MASTODON_URL names and no other", async () => {
+    const sent = directFetch();
+    const mastodon = integrationFetch({
+      env: DEV_CLIENTS,
+      provider: "mastodon",
+    });
+    await mastodon("https://fosstodon.org/oauth/token", {
+      method: "POST",
+      body: "",
+    });
+    expect(sent.mock.calls[0]?.[0].url).toBe(
+      "https://fosstodon.org/oauth/token",
+    );
+    await expect(
+      mastodon("https://mastodon.social/oauth/token", { method: "POST" }),
+    ).rejects.toThrow(TypeError);
+  });
+
+  it("in local dev, refuses a body it can't put the client in, and one too large", async () => {
+    directFetch();
+    const linkedin = integrationFetch({
+      env: DEV_CLIENTS,
+      provider: "linkedin",
+    });
+    await expect(
+      linkedin(LINKEDIN_TOKEN, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+    ).rejects.toThrow(/form-encoded/);
+    await expect(
+      linkedin(LINKEDIN_TOKEN, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: `code=${"x".repeat(64 * 1024)}`,
+      }),
+    ).rejects.toThrow(/at most 64 KiB/);
+  });
+
+  it("in local dev, needs both of the client's settings", () => {
+    expect(() =>
+      integrationFetch({
+        env: { EVERYAPP_DEV: "1", LINKEDIN_CLIENT_ID: "id" },
+        provider: "linkedin",
+      }),
+    ).toThrowError(
+      /set LINKEDIN_CLIENT_ID, LINKEDIN_CLIENT_SECRET in \.dev\.vars/,
+    );
+  });
+
+  it("reads the client id (and instance) from the gateway's status", async () => {
+    const bindingFetch = vi.fn(async () =>
+      Response.json({
+        capability: "linkedin",
+        requested: true,
+        configured: true,
+        ready: true,
+        clientId: "gateway-linkedin-id",
+      }),
+    );
+    const status = await integrationStatus({
+      env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
+      provider: "linkedin",
+    });
+    expect(status.clientId).toBe("gateway-linkedin-id");
+    expectTypeOf(status.clientId).toEqualTypeOf<string | undefined>();
+    expectTypeOf(status.origin).toEqualTypeOf<string | undefined>();
+  });
+
+  it("in local dev, gives the developer's client id once both settings are set", async () => {
+    await expect(
+      integrationStatus({ env: DEV_CLIENTS, provider: "linkedin" }),
+    ).resolves.toEqual({
+      requested: true,
+      configured: true,
+      ready: true,
+      clientId: "dev-linkedin-id",
+    });
+    await expect(
+      integrationStatus({ env: DEV_CLIENTS, provider: "mastodon" }),
+    ).resolves.toEqual({
+      requested: true,
+      configured: true,
+      ready: true,
+      clientId: "dev-mastodon-id",
+      origin: "https://fosstodon.org",
+    });
+    await expect(
+      integrationStatus({
+        env: { EVERYAPP_DEV: "1", SLACK_CLIENT_ID: "id" },
+        provider: "slack",
+      }),
+    ).resolves.toEqual({ requested: true, configured: false, ready: false });
+  });
+});

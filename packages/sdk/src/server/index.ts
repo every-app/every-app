@@ -32,6 +32,7 @@ export {
   type IntegrationFetchOptions,
   type IntegrationStatus,
   type IntegrationStatusOf,
+  type OAuthClientIntegrationStatus,
 } from "./integrationFetch.js";
 export {
   nodeServerHandler,
@@ -42,6 +43,7 @@ export { sendEmail, type SendEmailOptions } from "./sendEmail.js";
 export type {
   ApiKeyCapabilityId,
   CapabilityId,
+  OAuthClientCapabilityId,
   EmailAddressInput,
   EmailAttachmentInput,
   SendEmailMessage,

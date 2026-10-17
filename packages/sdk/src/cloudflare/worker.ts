@@ -279,6 +279,27 @@ const DEV_GATEWAY_KEYS = {
       "EMAIL_REST_API_TOKEN",
       "CLOUDFLARE_ACCOUNT_ID",
     ],
+    // OAuth clients: the id, the secret, and the instance a provider with
+    // no fixed host is on.
+    linkedin: ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"],
+    facebook: ["FACEBOOK_APP_ID", "FACEBOOK_APP_SECRET"],
+    instagram: ["INSTAGRAM_APP_ID", "INSTAGRAM_APP_SECRET"],
+    threads: ["THREADS_APP_ID", "THREADS_APP_SECRET"],
+    youtube: ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET"],
+    tiktok: ["TIKTOK_CLIENT_ID", "TIKTOK_CLIENT_SECRET"],
+    "tiktok-business": [
+      "TIKTOK_BUSINESS_CLIENT_ID",
+      "TIKTOK_BUSINESS_CLIENT_SECRET",
+    ],
+    reddit: ["REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET"],
+    pinterest: ["PINTEREST_CLIENT_ID", "PINTEREST_CLIENT_SECRET"],
+    discord: ["DISCORD_CLIENT_ID", "DISCORD_CLIENT_SECRET"],
+    slack: ["SLACK_CLIENT_ID", "SLACK_CLIENT_SECRET"],
+    mastodon: ["MASTODON_CLIENT_ID", "MASTODON_CLIENT_SECRET", "MASTODON_URL"],
+    kick: ["KICK_CLIENT_ID", "KICK_CLIENT_SECRET"],
+    twitch: ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET"],
+    tumblr: ["TUMBLR_CLIENT_ID", "TUMBLR_CLIENT_SECRET"],
+    dribbble: ["DRIBBBLE_CLIENT_ID", "DRIBBBLE_CLIENT_SECRET"],
   },
 } as const;
 type DevProviderKeys = typeof DEV_GATEWAY_KEYS.providers;

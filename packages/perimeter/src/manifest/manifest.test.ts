@@ -469,7 +469,7 @@ describe("capabilities manifest field", () => {
     [
       "an unknown capability",
       { github: { access: "read" } },
-      /capabilities\.github: unknown capability \(the gateway offers: dataforseo, context, email\)/,
+      /capabilities\.github: unknown capability \(the gateway offers: dataforseo, context, email, linkedin, facebook, .*, dribbble\)/,
     ],
     [
       "an access level the capability doesn't offer",
@@ -532,10 +532,31 @@ describe("capabilities manifest field", () => {
       { dataforseo: { access: "read", senders: ["*@mail.example.com"] } },
       /capabilities\.dataforseo: Unrecognized key\(s\) in object: 'senders'/,
     ],
+    [
+      "an OAuth client for reading",
+      { linkedin: { access: "read" } },
+      /capabilities\.linkedin\.access: LinkedIn offers write access/,
+    ],
+    [
+      "a field an OAuth client doesn't take",
+      { mastodon: { access: "write", scopes: ["write:statuses"] } },
+      /capabilities\.mastodon: Unrecognized key\(s\) in object: 'scopes'/,
+    ],
   ])("refuses %s", (_case, capabilities, problem) => {
     expect(() => validateManifestStrict({ id: "seo", capabilities })).toThrow(
       problem,
     );
+  });
+
+  it("accepts the OAuth clients for writing, with why", () => {
+    const capabilities = {
+      linkedin: { access: "write", why: "Connects LinkedIn channels." },
+      "tiktok-business": { access: "write" },
+      mastodon: { access: "write", why: "Connects Mastodon accounts." },
+    };
+    expect(
+      validateManifestStrict({ id: "postiz", capabilities }).capabilities,
+    ).toEqual(capabilities);
   });
 
   it("accepts email with the senders an app may send as", () => {

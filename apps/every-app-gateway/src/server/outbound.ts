@@ -8,10 +8,11 @@
  * (getAppFetcher's dispatch branch); a request goes out only to an exact
  * hostname on that list, over HTTPS. Model and data providers are refused
  * even when listed: the gateway holds those keys and an app reaches them
- * through its AppGateway binding, metered, never directly. So are the
- * gateway's own hosts, and every third-party app host (THIRD_PARTY_DOMAIN),
- * which a dispatched app has no business calling from outside the
- * perimeter.
+ * through its AppGateway binding, metered, never directly. So are the token
+ * endpoints of the OAuth clients the gateway holds (not their hosts, which
+ * serve the APIs apps call with their users' tokens), the gateway's own
+ * hosts, and every third-party app host (THIRD_PARTY_DOMAIN), which a
+ * dispatched app has no business calling from outside the perimeter.
  *
  * The hosted install wires it once the account has a dispatch namespace:
  * the gateway's DISPATCHER binding declares
@@ -20,6 +21,11 @@
  * never invoke it.
  */
 import { WorkerEntrypoint } from "cloudflare:workers";
+import {
+  CAPABILITIES,
+  oauthClientOrigin,
+  type Capability,
+} from "@every-app/sdk/internal";
 import {
   logEvent,
   OUTBOUND_PARAMETER,
@@ -42,6 +48,8 @@ interface OutboundEnv {
   GATEWAY_URL?: string;
   APP_BASE_DOMAIN?: string;
   THIRD_PARTY_DOMAIN?: string;
+  /** The Mastodon instance whose OAuth client the gateway holds. */
+  MASTODON_URL?: string;
   [OUTBOUND_PARAMETER]?: unknown;
 }
 
@@ -49,7 +57,12 @@ type EgressDecision =
   | { allowed: true }
   | {
       allowed: false;
-      reason: "no_app" | "not_https" | "reserved_host" | "not_allowed";
+      reason:
+        | "no_app"
+        | "not_https"
+        | "reserved_host"
+        | "reserved_endpoint"
+        | "not_allowed";
     };
 
 function normalizeHost(host: string): string {
@@ -90,6 +103,58 @@ function gatewayHosts(env: OutboundEnv): string[] {
   return hosts.map(normalizeHost);
 }
 
+/** Times a path may decode to something new before it counts as hiding one. */
+const MAX_PATH_DECODES = 3;
+
+/**
+ * `pathname` as a lenient server might route it: percent-decoded until it
+ * stops changing, lowercased, separators merged, no trailing slash; null
+ * when it won't decode.
+ */
+function loosePath(pathname: string): string | null {
+  let current = pathname;
+  for (let round = 0; round <= MAX_PATH_DECODES; round++) {
+    let next: string;
+    try {
+      next = decodeURIComponent(current);
+    } catch {
+      return null;
+    }
+    if (next === current) {
+      return current
+        .toLowerCase()
+        .replace(/[/\\]+/g, "/")
+        .replace(/\/$/, "");
+    }
+    current = next;
+  }
+  return null;
+}
+
+/**
+ * Whether `url` is a token endpoint of an OAuth client the gateway holds,
+ * however its path is spelled: a dispatched app gets tokens through its
+ * AppGateway binding, with the gateway's client, never directly.
+ */
+function isTokenEndpoint(url: URL, env: OutboundEnv): boolean {
+  const host = normalizeHost(url.hostname);
+  const path = loosePath(url.pathname);
+  return Object.values<Capability>(CAPABILITIES).some((capability) => {
+    if (capability.mode !== "oauth_client") return false;
+    const origin = oauthClientOrigin(capability, { ...env });
+    const settingHost = origin ? new URL(origin).hostname : null;
+    return capability.token.some((endpoint) => {
+      if (normalizeHost(endpoint.host ?? settingHost ?? "") !== host) {
+        return false;
+      }
+      if (path === null) return true;
+      return typeof endpoint.path === "string"
+        ? loosePath(endpoint.path) === path
+        : new RegExp(endpoint.path.source, "i").test(path);
+    });
+  });
+}
+
 function decide(
   url: URL,
   app: OutboundParameters | null,
@@ -104,6 +169,9 @@ function decide(
     )
   ) {
     return { allowed: false, reason: "reserved_host" };
+  }
+  if (isTokenEndpoint(url, env)) {
+    return { allowed: false, reason: "reserved_endpoint" };
   }
   return app.egress.some((allowed) => normalizeHost(allowed) === host)
     ? { allowed: true }

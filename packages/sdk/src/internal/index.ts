@@ -3,6 +3,7 @@ export * from "./tools.js";
 export * from "./capabilities.js";
 export * from "./aiProviders.js";
 export * from "./email.js";
+export * from "./oauthClient.js";
 export {
   ConfigurationError,
   IdentityError,

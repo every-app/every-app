@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   aiProviderSettings,
   CAPABILITIES,
+  capabilitySettings,
   DEV_AI_PROVIDERS,
 } from "@every-app/sdk/internal";
 import { assertSettableSecret, newGatewaySecrets } from "./secretsFile";
@@ -35,6 +36,13 @@ describe("gateway settings `secret set --for gateway` changes", () => {
         expect(() => assertSettableSecret(capability.secret)).not.toThrow();
         continue;
       }
+      // An OAuth client's id, secret and instance are all the operator's.
+      if (capability.mode === "oauth_client") {
+        for (const setting of capabilitySettings(capability)) {
+          expect(() => assertSettableSecret(setting), setting).not.toThrow();
+        }
+        continue;
+      }
       // A service's sender is the operator's; its REST transport's account
       // is the gateway's own, set at install.
       for (const setting of capability.settings) {
@@ -50,6 +58,27 @@ describe("gateway settings `secret set --for gateway` changes", () => {
         expect(settable || secrets[setting] !== undefined, setting).toBe(true);
       }
     }
+  });
+
+  it("include the 33 names of the 16 OAuth clients", () => {
+    const names = Object.values(CAPABILITIES).flatMap((capability) =>
+      capability.mode === "oauth_client" ? capabilitySettings(capability) : [],
+    );
+    expect(names).toHaveLength(33);
+    expect(new Set(names).size).toBe(33);
+    for (const name of names) {
+      expect(() => assertSettableSecret(name), name).not.toThrow();
+    }
+    expect(names).toEqual(
+      expect.arrayContaining([
+        "LINKEDIN_CLIENT_ID",
+        "LINKEDIN_CLIENT_SECRET",
+        "FACEBOOK_APP_ID",
+        "SLACK_CLIENT_ID",
+        "KICK_CLIENT_SECRET",
+        "MASTODON_URL",
+      ]),
+    );
   });
 
   it.each(["CF_DEPLOY_TOKEN", "DISPATCH_NAMESPACE", "THIRD_PARTY_DOMAIN"])(

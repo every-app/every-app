@@ -117,6 +117,61 @@ describe("handleOutboundRequest", () => {
     vi.restoreAllMocks();
   });
 
+  it("always denies the token endpoints of the OAuth clients the gateway holds, however spelled", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const social = {
+      ...ENV,
+      MASTODON_URL: "https://fosstodon.org",
+      everyapp: {
+        ...APP,
+        egress: [
+          "www.linkedin.com",
+          "graph.facebook.com",
+          "open.tiktokapis.com",
+          "slack.com",
+          "dribbble.com",
+          "fosstodon.org",
+          "mastodon.social",
+        ],
+      },
+    };
+    for (const url of [
+      "https://www.linkedin.com/oauth/v2/accessToken",
+      "https://WWW.LinkedIn.com./oauth/v2/accesstoken/",
+      "https://www.linkedin.com/oauth//v2/%61ccessToken",
+      "https://graph.facebook.com/v25.0/oauth/access_token?code=c",
+      "https://graph.facebook.com/V19.0/OAuth/Access_Token",
+      "https://open.tiktokapis.com/v2/oauth/token",
+      "https://slack.com/api/oauth.v2.access",
+      "https://dribbble.com/oauth/token?code=c",
+      // The instance the gateway's Mastodon client is on.
+      "https://fosstodon.org/oauth/token",
+      // A path that won't decode, on a token host.
+      "https://slack.com/api/%E0%A4%A",
+    ]) {
+      const { response, send } = await outbound(url, social);
+      expect(response.status, url).toBe(403);
+      expect(await response.json(), url).toMatchObject({
+        reason: "reserved_endpoint",
+      });
+      expect(send).not.toHaveBeenCalled();
+    }
+    // Their hosts serve the APIs apps call with their users' tokens.
+    for (const url of [
+      "https://graph.facebook.com/v25.0/me/accounts",
+      "https://slack.com/api/chat.postMessage",
+      "https://open.tiktokapis.com/v2/post/publish/video/init/",
+      "https://www.linkedin.com/oauth/v2/authorization",
+      // Another instance than the gateway's client is on.
+      "https://mastodon.social/oauth/token",
+    ]) {
+      const { response, send } = await outbound(url, social);
+      expect(response.status, url).toBe(200);
+      expect(send).toHaveBeenCalledOnce();
+    }
+    vi.restoreAllMocks();
+  });
+
   it("always denies the third-party app hosts, even when listed", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const env = {

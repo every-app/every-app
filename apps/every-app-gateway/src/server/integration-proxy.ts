@@ -5,18 +5,19 @@
  *
  *  - `api_key`: puts the gateway's key on the request and forwards it to
  *    the provider, so the app never sees the key;
+ *  - `oauth_client`: completes a provider's token endpoint call with the
+ *    gateway's OAuth client (capabilities/oauthClient.ts);
  *  - `service`: the gateway does the work itself (capabilities/email.ts).
  */
 import {
   CAPABILITIES,
-  IDENTITY_HEADER,
-  PUBLIC_HEADER,
   isAccountWidePath,
   isCapabilityId,
   parseIntegrationProxyPath,
   type CapabilityId,
   type CapabilitySecret,
   type EveryAppUser,
+  type OAuthClientCapabilityId,
 } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import type { CapabilityRequest } from "@every-app/perimeter/manifest";
@@ -26,39 +27,17 @@ import {
   loadGatewayMail,
   type GatewayMail,
 } from "./capabilities/email";
+import { forwardableHeaders } from "./capabilities/forward";
+import {
+  handleOAuthClientCall,
+  oauthClientStatus,
+} from "./capabilities/oauthClient";
 import { capabilityRefusal as refusal } from "./capabilities/refusal";
 import { platformPolicy } from "./platform-policy";
 
 export type IntegrationProxyEnv = Partial<Record<CapabilitySecret, string>> & {
   GATEWAY_DEPLOYMENT_MODE?: string;
 };
-
-const STRIPPED_HEADERS = [
-  // The gateway's key decides the account, never the app.
-  "authorization",
-  "x-api-key",
-  "cookie",
-  IDENTITY_HEADER,
-  PUBLIC_HEADER,
-  "x-user-id",
-  "x-user-email",
-  "x-user-sub",
-  "connection",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "proxy-connection",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade",
-  "forwarded",
-  "x-forwarded-for",
-  "x-forwarded-host",
-  "x-forwarded-proto",
-];
-// Every gateway trust header: none of them is the provider's business.
-const STRIPPED_HEADER_PREFIX = "x-everyapp-";
 
 /** Bytes of a response read for its top-level `cost` (DataForSEO puts it first). */
 const COST_HEAD_BYTES = 2048;
@@ -115,6 +94,13 @@ export async function handleIntegrationProxyRequest({
         mail,
       });
     }
+    if (capability.mode === "oauth_client") {
+      return oauthClientStatus({
+        id: status as OAuthClientCapabilityId,
+        entry: capabilities?.[status],
+        env,
+      });
+    }
     const requested = Boolean(capabilities?.[status]);
     const configured = requested && Boolean(env[capability.secret]?.trim());
     return Response.json({
@@ -124,8 +110,19 @@ export async function handleIntegrationProxyRequest({
       ready: requested && configured,
     });
   }
+  const oauthClient = oauthClientCallId(url.pathname);
+  if (oauthClient) {
+    return handleOAuthClientCall({
+      request,
+      id: oauthClient,
+      entry: capabilities?.[oauthClient],
+      env,
+      admit,
+      fetchUpstream,
+    });
+  }
   const route = parseIntegrationProxyPath(url.pathname, url.search);
-  if (!route) {
+  if (!route || route.kind === "oauth_client") {
     return refusal(
       400,
       "invalid_integration_route",
@@ -180,11 +177,7 @@ export async function handleIntegrationProxyRequest({
   }
   const { caller, user } = await admit();
 
-  const headers = new Headers(request.headers);
-  for (const header of STRIPPED_HEADERS) headers.delete(header);
-  for (const header of [...headers.keys()]) {
-    if (header.startsWith(STRIPPED_HEADER_PREFIX)) headers.delete(header);
-  }
+  const headers = forwardableHeaders(request.headers);
   headers.set("authorization", integration.authorization(key));
   const body = method === "GET" || method === "HEAD" ? null : request.body;
   const upstreamRequest = new Request(route.upstream, {
@@ -285,4 +278,12 @@ function tapCost(
 function integrationStatusPath(pathname: string): CapabilityId | null {
   const id = /^\/api\/integrations\/([a-z][a-z0-9-]*)\/?$/.exec(pathname)?.[1];
   return isCapabilityId(id) ? id : null;
+}
+
+/** The OAuth client a call (`/api/integrations/<id>/...`) names, if it names one. */
+function oauthClientCallId(pathname: string): OAuthClientCapabilityId | null {
+  const id = /^\/api\/integrations\/([a-z][a-z0-9-]*)\//.exec(pathname)?.[1];
+  return isCapabilityId(id) && CAPABILITIES[id].mode === "oauth_client"
+    ? (id as OAuthClientCapabilityId)
+    : null;
 }
