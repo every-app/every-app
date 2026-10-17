@@ -800,3 +800,150 @@ describe("AppGateway and Workers AI", () => {
     });
   });
 });
+
+describe("AppGateway and the email capability", () => {
+  const EMAIL_SEND = "https://gateway.internal/api/integrations/email/send";
+  const MAILER = validateManifest({
+    id: "chef",
+    capabilities: { email: { access: "write", why: "Order receipts." } },
+  });
+
+  function fakeMail() {
+    const send = vi.fn(async () => ({
+      messageId: "<m1@example.com>",
+      status: "delivered" as const,
+    }));
+    return {
+      send,
+      mail: async () => ({
+        isConfigured: () => true,
+        sender: () => ({ address: "noreply@example.com", name: "Every App" }),
+        send,
+        recipientHash: async () => "0".repeat(32),
+      }),
+    };
+  }
+
+  function sendRequest(headers: Record<string, string> = {}) {
+    return new Request(EMAIL_SEND, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify({
+        to: "diner@example.net",
+        subject: "Your receipt",
+        text: "Thanks.",
+      }),
+    });
+  }
+
+  function mailCall(options: {
+    registered: RegisteredApp;
+    inbound: Request;
+    mode?: string;
+    mail: () =>
+      | Promise<never>
+      | ReturnType<ReturnType<typeof fakeMail>["mail"]>;
+  }) {
+    return handleAppGatewayRequest({
+      request: options.inbound,
+      props: PROPS,
+      registry: new InMemoryAppRegistry([options.registered]),
+      env: {
+        GATEWAY_DEPLOYMENT_MODE: options.mode ?? "self_hosted",
+        JWT_PUBLIC_KEY: publicKeyPem,
+        GATEWAY_URL: "https://home.example.com",
+      },
+      organizations: directory(),
+      mail: options.mail,
+    });
+  }
+
+  it("admits the send for an app whose manifest grants email", async () => {
+    const { send, mail } = fakeMail();
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    const response = await mailCall({
+      registered: app({ manifest: MAILER }),
+      inbound: sendRequest(),
+      mail,
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      messageId: "<m1@example.com>",
+      status: "delivered",
+    });
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "app", to: ["diner@example.net"] }),
+    );
+    const line = log.mock.calls
+      .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      .find((entry) => entry["evt"] === "email.app.send");
+    expect(line).toMatchObject({
+      organizationId: "org-1",
+      appId: "chef",
+      worker: "every-chef",
+      orgSource: "props",
+      attribution: "app",
+      status: "delivered",
+    });
+  });
+
+  it("refuses the send without the grant, before loading the gateway's mail", async () => {
+    const mail = vi.fn(async () => {
+      throw new Error("not loaded for a refused app");
+    });
+    const response = await mailCall({
+      registered: app({ providers: ["openai"] }),
+      inbound: sendRequest(),
+      mail,
+    });
+    expect(response.status).toBe(403);
+    expect(response.headers.get("x-everyapp-error")).toBe(
+      "capability_not_requested",
+    );
+    expect(mail).not.toHaveBeenCalled();
+  });
+
+  it("attributes a shared app's background mail to the organization it names", async () => {
+    const { send, mail } = fakeMail();
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const shared = app({ manifest: MAILER, scope: "shared" });
+
+    const response = await mailCall({
+      registered: shared,
+      inbound: sendRequest({ "x-everyapp-org": "org-acme" }),
+      mode: "hosted",
+      mail,
+    });
+
+    expect(response.status).toBe(200);
+    expect(send).toHaveBeenCalledOnce();
+    const line = log.mock.calls
+      .map(([entry]) => JSON.parse(String(entry)) as Record<string, unknown>)
+      .find((entry) => entry["evt"] === "email.app.send");
+    expect(line).toMatchObject({
+      organizationId: "org-acme",
+      orgSource: "header",
+      attribution: "app",
+    });
+
+    // Naming nobody, or an organization that can't be attributed, is refused.
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    for (const [headers, code] of [
+      [{}, "caller_identity_required"],
+      [{ "x-everyapp-org": "org-gone" }, "caller_org_not_attributable"],
+    ] as const) {
+      clearAppCallerCacheForTests();
+      const refused = await mailCall({
+        registered: shared,
+        inbound: sendRequest(headers),
+        mode: "hosted",
+        mail,
+      });
+      expect(refused.status).toBe(403);
+      expect(refused.headers.get("x-everyapp-error")).toBe(code);
+    }
+    expect(send).toHaveBeenCalledOnce();
+  });
+});

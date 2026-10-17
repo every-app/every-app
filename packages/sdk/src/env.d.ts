@@ -26,6 +26,15 @@ declare namespace Cloudflare {
     CLOUDFLARE_ACCOUNT_ID?: string;
     DATAFORSEO_API_KEY?: string;
     CONTEXT_API_KEY?: string;
+    // sendEmail() in dev: with the REST token, CLOUDFLARE_ACCOUNT_ID and
+    // EMAIL_FROM it sends from the developer's own Email Sending account;
+    // otherwise it prints the message.
+    EMAIL_REST_API_TOKEN?: string;
+    EMAIL_FROM?: string;
+    EMAIL_FROM_NAME?: string;
+    // In dev, the manifest's capabilities.email.senders as JSON
+    // (everyAppWorker() sets it); sendEmail() checks a `from` against them.
+    EVERYAPP_EMAIL_SENDERS?: string;
   }
 }
 

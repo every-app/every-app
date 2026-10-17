@@ -1,26 +1,38 @@
 import { env } from "cloudflare:workers";
+import {
+  emailRestBody,
+  emailRestUrl,
+  parseEmailSender,
+  readEmailRestResponse,
+  type CheckedEmailAttachment,
+  type EmailAddressInput,
+} from "@every-app/sdk/internal";
 import { type MailKind, platformPolicy } from "@/server/platform-policy";
 import { RateLimitCounterRepository } from "@/server/repositories/RateLimitCounterRepository";
 
-type SendEmailOptions = {
+export type SendEmailOptions = {
   /** What the mail is for: each kind has its own daily budgets. */
   kind: MailKind;
-  to: string;
+  to: string | readonly string[];
+  cc?: readonly string[];
+  bcc?: readonly string[];
   subject: string;
-  text: string;
-  html: string;
+  /** At least one of `text` and `html`. */
+  text?: string;
+  html?: string;
+  /** Absent: the configured sender (EMAIL_FROM, EMAIL_FROM_NAME). */
+  from?: EmailAddressInput;
+  /** Absent: replies go to the sender. */
+  replyTo?: EmailAddressInput;
+  headers?: Record<string, string>;
+  /** Base64 content, which both transports take as is. */
+  attachments?: readonly CheckedEmailAttachment[];
 };
 
-type RestEmailResult = {
-  delivered: string[];
-  permanent_bounces: string[];
-  queued: string[];
-};
-
-type RestEmailResponse = {
-  success: boolean;
-  errors?: Array<{ code?: string | number; message?: string }>;
-  result?: RestEmailResult | null;
+/** What Email Sending said: accepted (and delivered), or queued for some recipients. */
+export type SendEmailResult = {
+  messageId?: string;
+  status: "delivered" | "queued";
 };
 
 type EmailDeliveryErrorCode =
@@ -35,45 +47,42 @@ const ADDRESS_KEY_CONTEXT = "every-app-gateway:mail-recipient:v1";
 
 class EmailDeliveryError extends Error {
   readonly code: EmailDeliveryErrorCode;
+  /** Email Sending's own code (`E_SENDER_NOT_VERIFIED`, `10004`, ...), when it gave one. */
+  readonly providerCode: string | undefined;
+  /** When a spent budget refills: the next UTC midnight. */
+  readonly retryAt: Date | undefined;
 
   constructor(
     code: EmailDeliveryErrorCode,
     message: string,
-    options?: ErrorOptions,
+    options?: ErrorOptions & { providerCode?: string; retryAt?: Date },
   ) {
     super(message, options);
     this.name = "EmailDeliveryError";
     this.code = code;
+    this.providerCode = options?.providerCode;
+    this.retryAt = options?.retryAt;
   }
 }
 
-function parseConfiguredSender(): EmailAddress {
-  const configuredFrom = env.EMAIL_FROM?.trim();
-  const configuredName = env.EMAIL_FROM_NAME?.trim();
+type ConfiguredSender = { address: string; name: string };
 
-  if (!configuredFrom) {
+/** The configured sender, or null when EMAIL_FROM (and a name) aren't set. */
+export function configuredSender(): ConfiguredSender | null {
+  return parseEmailSender(env.EMAIL_FROM, env.EMAIL_FROM_NAME);
+}
+
+function parseConfiguredSender(): ConfiguredSender {
+  const sender = configuredSender();
+  if (!sender) {
     throw new EmailDeliveryError(
       "EMAIL_SENDER_NOT_CONFIGURED",
-      "Email sender is not configured. Set EMAIL_FROM and EMAIL_FROM_NAME.",
+      env.EMAIL_FROM?.trim()
+        ? 'Email sender is not configured. Set EMAIL_FROM and EMAIL_FROM_NAME, or use EMAIL_FROM="Name <email@example.com>".'
+        : "Email sender is not configured. Set EMAIL_FROM and EMAIL_FROM_NAME.",
     );
   }
-
-  const combinedFrom = configuredFrom.match(/^(.*?)\s*<([^<>]+)>$/);
-  const email = (combinedFrom?.[2] ?? configuredFrom).trim();
-  const combinedName = combinedFrom?.[1]
-    ?.trim()
-    .replace(/^(["'])(.*)\1$/, "$2")
-    .trim();
-  const name = configuredName || combinedName;
-
-  if (!email || !name) {
-    throw new EmailDeliveryError(
-      "EMAIL_SENDER_NOT_CONFIGURED",
-      'Email sender is not configured. Set EMAIL_FROM and EMAIL_FROM_NAME, or use EMAIL_FROM="Name <email@example.com>".',
-    );
-  }
-
-  return { email, name };
+  return sender;
 }
 
 function requireEmailBinding(): SendEmail {
@@ -125,58 +134,112 @@ function asDeliveryError(error: unknown): EmailDeliveryError {
   return new EmailDeliveryError(
     "EMAIL_SEND_FAILED",
     `Cloudflare Email Service failed to send the message${suffix}.`,
-    { cause: error },
+    { cause: error, ...(providerCode ? { providerCode } : {}) },
   );
+}
+
+/** The recipients as lists, for the transports. */
+function recipientLists(options: SendEmailOptions) {
+  return {
+    to: typeof options.to === "string" ? [options.to] : [...options.to],
+    cc: [...(options.cc ?? [])],
+    bcc: [...(options.bcc ?? [])],
+  };
 }
 
 async function sendWithRest(
   options: SendEmailOptions,
-  from: EmailAddress,
+  from: EmailAddressInput,
   configuration: { accountId: string; apiToken: string },
-): Promise<void> {
-  const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(configuration.accountId)}/email/sending/send`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${configuration.apiToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        to: options.to,
-        from: { address: from.email, name: from.name },
-        reply_to: { address: from.email, name: from.name },
-        subject: options.subject,
-        html: options.html,
-        text: options.text,
-      }),
+): Promise<SendEmailResult> {
+  const response = await fetch(emailRestUrl(configuration.accountId), {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${configuration.apiToken}`,
+      "Content-Type": "application/json",
     },
-  );
+    body: JSON.stringify(
+      emailRestBody({
+        ...recipientLists(options),
+        subject: options.subject,
+        ...(options.text ? { text: options.text } : {}),
+        ...(options.html ? { html: options.html } : {}),
+        from,
+        ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+        ...(options.headers ? { headers: options.headers } : {}),
+        ...(options.attachments
+          ? { attachments: [...options.attachments] }
+          : {}),
+      }),
+    ),
+  });
 
-  let body: RestEmailResponse | undefined;
+  let body: unknown;
   try {
-    body = (await response.json()) as RestEmailResponse;
+    body = await response.json();
   } catch {
     // The HTTP status below still determines whether this send failed.
   }
 
-  const providerError = body?.errors?.[0];
-  if (!response.ok || body?.success === false) {
+  const result = readEmailRestResponse(response.status, body);
+  if (!result.ok) {
     throw Object.assign(
-      new Error(
-        providerError?.message ?? `Email API returned ${response.status}.`,
-      ),
-      providerError?.code === undefined ? {} : { code: providerError.code },
+      new Error(result.message),
+      result.providerCode === undefined ? {} : { code: result.providerCode },
     );
   }
+  return {
+    status: result.status,
+    ...(result.messageId ? { messageId: result.messageId } : {}),
+  };
+}
 
-  if (!body?.result) {
-    throw new Error("Email API returned no delivery result.");
-  }
-
-  if (body.result.permanent_bounces.length > 0) {
-    throw new Error("Email API permanently bounced one or more recipients.");
-  }
+async function sendWithBinding(
+  binding: SendEmail,
+  options: SendEmailOptions,
+  from: EmailAddressInput,
+): Promise<SendEmailResult> {
+  const { to, cc, bcc } = recipientLists(options);
+  const address = (value: EmailAddressInput) =>
+    value.name ? { email: value.address, name: value.name } : value.address;
+  const result = (await binding.send({
+    to: to.length === 1 ? to[0]! : to,
+    ...(cc.length > 0 ? { cc } : {}),
+    ...(bcc.length > 0 ? { bcc } : {}),
+    from: address(from),
+    ...(options.replyTo ? { replyTo: address(options.replyTo) } : {}),
+    subject: options.subject,
+    ...(options.html ? { html: options.html } : {}),
+    ...(options.text ? { text: options.text } : {}),
+    ...(options.headers && Object.keys(options.headers).length > 0
+      ? { headers: options.headers }
+      : {}),
+    ...(options.attachments && options.attachments.length > 0
+      ? {
+          attachments: options.attachments.map((attachment) =>
+            attachment.disposition === "inline"
+              ? {
+                  disposition: "inline" as const,
+                  contentId: attachment.contentId ?? attachment.filename,
+                  filename: attachment.filename,
+                  type: attachment.contentType,
+                  content: attachment.content,
+                }
+              : {
+                  disposition: "attachment" as const,
+                  filename: attachment.filename,
+                  type: attachment.contentType,
+                  content: attachment.content,
+                },
+          ),
+        }
+      : {}),
+  })) as EmailSendResult | undefined;
+  // Older local simulators resolve without a result.
+  return {
+    status: "delivered",
+    ...(result?.messageId ? { messageId: result.messageId } : {}),
+  };
 }
 
 /**
@@ -186,11 +249,7 @@ async function sendWithRest(
  * link to share instead.
  */
 export function isEmailConfigured(): boolean {
-  try {
-    parseConfiguredSender();
-  } catch {
-    return false;
-  }
+  if (!configuredSender()) return false;
   if (getRestConfiguration()) return true;
   const binding = env.EMAIL as SendEmail | undefined;
   return Boolean(binding && typeof binding.send === "function");
@@ -198,9 +257,9 @@ export function isEmailConfigured(): boolean {
 
 /**
  * The recipient as a counter key: an HMAC of the address, so the counters
- * table never holds anyone's email.
+ * table never holds anyone's email (nor do logs that name a recipient).
  */
-async function recipientKey(address: string): Promise<string> {
+export async function recipientKey(address: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(env.BETTER_AUTH_SECRET),
@@ -223,26 +282,35 @@ async function recipientKey(address: string): Promise<string> {
 
 /**
  * Count this mail against its kind's daily budgets (platformPolicy's
- * mailDaily), to its address and for the whole gateway, in D1
- * (`rate_limit_counters`) so they hold across isolates. Counted before it
- * is sent, so a send that fails still counts: a flood of failures is
- * bounded too. A budget that can't be read or written refuses the mail.
+ * mailDaily), once for each distinct recipient: to that address, and for
+ * the whole gateway, in D1 (`rate_limit_counters`) so they hold across
+ * isolates. Counted before it is sent, so a send that fails still counts:
+ * a flood of failures is bounded too. A budget that can't be read or
+ * written refuses the mail; one any recipient has spent refuses all of it.
  */
 async function spendMailBudget(
   kind: MailKind,
-  to: string,
+  recipients: readonly string[],
   now = new Date(),
 ): Promise<void> {
   const day = now.toISOString().slice(0, 10);
   const dayEnds = new Date(Date.parse(day) + DAY_MS);
   const gatewayKey = `mail:${kind}:gateway:${day}`;
-  const addressKey = `mail:${kind}:to:${await recipientKey(to)}:${day}`;
+  const addresses = [
+    ...new Set(recipients.map((address) => address.trim().toLowerCase())),
+  ];
+  const addressKeys = await Promise.all(
+    addresses.map(
+      async (address) =>
+        `mail:${kind}:to:${await recipientKey(address)}:${day}`,
+    ),
+  );
   const { perAddress, perGateway } = platformPolicy(env).mailDaily[kind];
 
   let counts: Map<string, number>;
   try {
     counts = await RateLimitCounterRepository.read(
-      [gatewayKey, addressKey],
+      [gatewayKey, ...addressKeys],
       now,
     );
   } catch (error) {
@@ -253,9 +321,9 @@ async function spendMailBudget(
     );
   }
   const exhausted =
-    (counts.get(gatewayKey) ?? 0) >= perGateway
+    (counts.get(gatewayKey) ?? 0) + addressKeys.length > perGateway
       ? "gateway"
-      : (counts.get(addressKey) ?? 0) >= perAddress
+      : addressKeys.some((key) => (counts.get(key) ?? 0) >= perAddress)
         ? "address"
         : null;
   if (exhausted) {
@@ -263,12 +331,16 @@ async function spendMailBudget(
       "EMAIL_BUDGET_EXHAUSTED",
       exhausted === "gateway"
         ? `The gateway has sent all the ${kind} emails it may today. Try again tomorrow.`
-        : `This address has been sent all the ${kind} emails it may get today. Try again tomorrow.`,
+        : addressKeys.length === 1
+          ? `This address has been sent all the ${kind} emails it may get today. Try again tomorrow.`
+          : `A recipient has been sent all the ${kind} emails they may get today, so nothing was sent. Try again tomorrow.`,
+      { retryAt: dayEnds },
     );
   }
   try {
+    // The gateway's count goes up once for each recipient.
     await RateLimitCounterRepository.increment(
-      [gatewayKey, addressKey],
+      [...addressKeys.map(() => gatewayKey), ...addressKeys],
       dayEnds,
     );
   } catch (error) {
@@ -285,28 +357,23 @@ async function spendMailBudget(
  * EmailDeliveryError (logged here) when email isn't configured, a budget is
  * spent or the provider refuses.
  */
-export async function sendEmail(options: SendEmailOptions): Promise<void> {
+export async function sendEmail(
+  options: SendEmailOptions,
+): Promise<SendEmailResult> {
+  const { to, cc, bcc } = recipientLists(options);
   try {
     const restConfiguration = getRestConfiguration();
 
     if (restConfiguration) {
-      const from = parseConfiguredSender();
-      await spendMailBudget(options.kind, options.to);
-      await sendWithRest(options, from, restConfiguration);
-      return;
+      const from = options.from ?? parseConfiguredSender();
+      await spendMailBudget(options.kind, [...to, ...cc, ...bcc]);
+      return await sendWithRest(options, from, restConfiguration);
     }
 
     const binding = requireEmailBinding();
-    const from = parseConfiguredSender();
-    await spendMailBudget(options.kind, options.to);
-
-    await binding.send({
-      to: options.to,
-      from,
-      subject: options.subject,
-      html: options.html,
-      text: options.text,
-    });
+    const from = options.from ?? parseConfiguredSender();
+    await spendMailBudget(options.kind, [...to, ...cc, ...bcc]);
+    return await sendWithBinding(binding, options, from);
   } catch (error) {
     const deliveryError = asDeliveryError(error);
 
@@ -314,7 +381,7 @@ export async function sendEmail(options: SendEmailOptions): Promise<void> {
       event: "email.send.failed",
       kind: options.kind,
       code: deliveryError.code,
-      providerCode: getProviderErrorCode(deliveryError.cause),
+      providerCode: deliveryError.providerCode,
       message: deliveryError.message,
     });
 

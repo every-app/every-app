@@ -408,10 +408,44 @@ the AI providers' (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`) for
 and provider the manifest lists when it is set there, so the dev server
 passes it through.
 
+### Email
+
+The gateway sends mail for apps (`docs/capabilities.md`, "Gateway services:
+email"). List `capabilities: { email: { access: "write" } }`, adding
+`senders: ["*@mail.example.com"]` to send as your own addresses (each domain
+onboarded to Email Sending in the gateway's account), and send:
+
+```ts
+import { GatewayRefusalError, sendEmail } from "@every-app/sdk/server";
+
+const { messageId, status } = await sendEmail({
+  env,
+  for: request,
+  message: {
+    to: ["customer@example.net"],
+    subject: "Re: your question",
+    text: "Thanks for writing.",
+    from: { address: "support@mail.example.com", name: "Acme Support" },
+    headers: { "In-Reply-To": "<original@example.net>" },
+  },
+});
+```
+
+Leave `from` out to send as the gateway's sender. A refusal throws
+`GatewayRefusalError` with its `code` (`email_sender_not_allowed`,
+`email_budget_exhausted`, `integration_not_configured`, ...) and a message to
+show. `integrationStatus({ env, provider: "email" })` adds the gateway's
+`sender` and the `senders` the app may use. In local dev, with no binding,
+the message is checked as the gateway would, then printed and answered
+`{ status: "logged" }`; set `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`
+and `EMAIL_FROM` in `.dev.vars` to send for real from your own account. An
+`email()` handler (inbound mail) sits beside `everyApp()`'s `fetch` and
+passes `for: { background: true, organizationId }`.
+
 ### Whom a call is for
 
-`createGatewayFetch` and `integrationFetch` take `for`, which decides the
-organization the call is attributed to:
+`createGatewayFetch`, `integrationFetch` and `sendEmail` take `for`, which
+decides the organization the call is attributed to:
 
 - `for: request`, the inbound request: the identity the gateway put on it
   is forwarded, so the call is that person's, in their organization.

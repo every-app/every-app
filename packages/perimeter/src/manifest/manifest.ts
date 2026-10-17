@@ -13,7 +13,13 @@
  * definitions.
  */
 import { z } from "zod";
-import { CAPABILITIES, isCapabilityId } from "@every-app/sdk/internal";
+import {
+  CAPABILITIES,
+  EMAIL_LIMITS,
+  EMAIL_SENDER_PATTERN,
+  isCapabilityId,
+  type CapabilityId,
+} from "@every-app/sdk/internal";
 
 /** A single declared public route. Methods default to GET-only when omitted. */
 export const PublicRouteSchema = z.object({
@@ -215,15 +221,63 @@ export const ProvidersSchema = z
  * app: every call it makes may use the capability, attributed to the
  * signed-in person whose identity it forwards, or to the app.
  */
-export const CapabilityRequestSchema = z
-  .object({
-    /** What the app does with it; each capability says which levels it offers. */
-    access: z.enum(["read", "write"]),
-    /** Why the app needs it, for whoever approves it. */
-    why: z.string().min(1).max(200).optional(),
-  })
-  .passthrough();
+const CapabilityEntryBaseSchema = z.object({
+  /** What the app does with it; each capability says which levels it offers. */
+  access: z.enum(["read", "write"]),
+  /** Why the app needs it, for whoever approves it. */
+  why: z.string().min(1).max(200).optional(),
+});
+
+export const CapabilityRequestSchema = CapabilityEntryBaseSchema.passthrough();
 export type CapabilityRequest = z.infer<typeof CapabilityRequestSchema>;
+
+/**
+ * The addresses an app may send email as (`capabilities.email.senders`):
+ * `*@<domain>` for any address on exactly that domain, or one address, in
+ * lowercase. The gateway refuses any other `from`; each domain must also be
+ * onboarded to Email Sending in the gateway's Cloudflare account.
+ */
+const EmailSendersSchema = z
+  .array(
+    z
+      .string()
+      .regex(
+        EMAIL_SENDER_PATTERN,
+        'a sender is "*@<domain>" or "<local>@<domain>", in lowercase',
+      ),
+  )
+  .max(EMAIL_LIMITS.senders)
+  .refine(
+    (senders) => new Set(senders).size === senders.length,
+    "duplicate sender",
+  );
+
+/**
+ * What one capability's manifest entry takes: `access` and `why`, plus the
+ * fields that capability defines (email's `senders`). Strict: a field
+ * another capability takes is unknown here.
+ */
+export function capabilityEntrySchema(id: CapabilityId) {
+  const capability = CAPABILITIES[id];
+  const access = z
+    .enum(["read", "write"])
+    .refine(
+      (level) => (capability.access as readonly string[]).includes(level),
+      `${capability.label} offers ${capability.access.join(" or ")} access`,
+    );
+  const base = CapabilityEntryBaseSchema.extend({ access });
+  switch (id) {
+    case "email":
+      return base.extend({ senders: EmailSendersSchema.optional() }).strict();
+    default:
+      return base.strict();
+  }
+}
+
+/** One authored capability entry, whichever capability it is for. */
+export type CapabilityEntry = z.infer<typeof CapabilityEntryBaseSchema> & {
+  senders?: string[];
+};
 
 const CapabilitiesSchema = z.record(
   ProviderNameSchema,
@@ -231,26 +285,25 @@ const CapabilitiesSchema = z.record(
 );
 
 const CapabilitiesSchemaStrict = z
-  .record(ProviderNameSchema, CapabilityRequestSchema.strict())
+  .record(ProviderNameSchema, z.unknown())
   .superRefine((capabilities, ctx) => {
-    for (const [id, request] of Object.entries(capabilities)) {
+    for (const [id, entry] of Object.entries(capabilities)) {
       if (!isCapabilityId(id)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: [id],
           message: `unknown capability (the gateway offers: ${Object.keys(CAPABILITIES).join(", ")})`,
         });
-      } else if (
-        !(CAPABILITIES[id].access as readonly string[]).includes(request.access)
-      ) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [id, "access"],
-          message: `${CAPABILITIES[id].label} offers ${CAPABILITIES[id].access.join(" or ")} access`,
-        });
+        continue;
+      }
+      const parsed = capabilityEntrySchema(id).safeParse(entry);
+      if (parsed.success) continue;
+      for (const issue of parsed.error.issues) {
+        ctx.addIssue({ ...issue, path: [id, ...issue.path] });
       }
     }
-  });
+  })
+  .transform((capabilities) => capabilities as Record<string, CapabilityEntry>);
 
 /**
  * Cloudflare's limits for one of the app's Workers. `cpuMs` raises the CPU

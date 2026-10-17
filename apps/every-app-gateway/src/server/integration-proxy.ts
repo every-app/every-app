@@ -1,13 +1,14 @@
 /**
- * Capability calls from apps, phase 0 of docs/capabilities.md: API-key
- * providers whose key the gateway holds. The AppGateway entrypoint has
- * already proven which app is calling; this checks the app's registry row
- * lists the capability, puts the gateway's key on the request and forwards
- * it, so the app never sees the key.
+ * Capability calls from apps (docs/capabilities.md). The AppGateway
+ * entrypoint has already proven which app is calling; this checks the
+ * app's registry row lists the capability, then dispatches on its kind:
+ *
+ *  - `api_key`: puts the gateway's key on the request and forwards it to
+ *    the provider, so the app never sees the key;
+ *  - `service`: the gateway does the work itself (capabilities/email.ts).
  */
 import {
   CAPABILITIES,
-  GATEWAY_ERROR_HEADER,
   IDENTITY_HEADER,
   PUBLIC_HEADER,
   isAccountWidePath,
@@ -19,8 +20,18 @@ import {
 } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import type { CapabilityRequest } from "@every-app/perimeter/manifest";
+import {
+  emailCapabilityStatus,
+  handleEmailSend,
+  loadGatewayMail,
+  type GatewayMail,
+} from "./capabilities/email";
+import { capabilityRefusal as refusal } from "./capabilities/refusal";
+import { platformPolicy } from "./platform-policy";
 
-export type IntegrationProxyEnv = Partial<Record<CapabilitySecret, string>>;
+export type IntegrationProxyEnv = Partial<Record<CapabilitySecret, string>> & {
+  GATEWAY_DEPLOYMENT_MODE?: string;
+};
 
 const STRIPPED_HEADERS = [
   // The gateway's key decides the account, never the app.
@@ -53,9 +64,14 @@ const STRIPPED_HEADER_PREFIX = "x-everyapp-";
 const COST_HEAD_BYTES = 2048;
 
 /** Whom a call that will reach the provider is for, once admitted. */
-interface IntegrationCallAdmission {
+export interface IntegrationCallAdmission {
   /** Who is calling, for the log line. */
-  caller: { organizationId: string; appId: string; orgSource: string };
+  caller: {
+    organizationId: string;
+    appId: string;
+    worker: string;
+    orgSource: string;
+  };
   /** The verified person behind the call, or null for background work. */
   user: EveryAppUser | null;
 }
@@ -72,6 +88,8 @@ interface HandleIntegrationProxyRequestOptions {
    */
   admit: () => Promise<IntegrationCallAdmission>;
   fetchUpstream?: (request: Request) => Promise<Response>;
+  /** The gateway's mail, for the `email` capability (loaded on first use). */
+  mail?: () => Promise<GatewayMail>;
 }
 
 export async function handleIntegrationProxyRequest({
@@ -80,16 +98,25 @@ export async function handleIntegrationProxyRequest({
   env,
   admit,
   fetchUpstream = fetch,
+  mail = loadGatewayMail,
 }: HandleIntegrationProxyRequestOptions): Promise<Response> {
   const url = new URL(request.url);
+  const hosted = platformPolicy(env).hosted;
   const status = integrationStatusPath(url.pathname);
   if (status) {
     // Whether calls would go through, without calling the provider: apps
     // show "ask the operator to set it up" instead of failing mid-task.
     // Only an app that lists the capability learns whether a key is held.
+    const capability = CAPABILITIES[status];
+    if (capability.mode === "service") {
+      return emailCapabilityStatus({
+        entry: capabilities?.[status],
+        hosted,
+        mail,
+      });
+    }
     const requested = Boolean(capabilities?.[status]);
-    const configured =
-      requested && Boolean(env[CAPABILITIES[status].secret]?.trim());
+    const configured = requested && Boolean(env[capability.secret]?.trim());
     return Response.json({
       capability: status,
       requested,
@@ -102,8 +129,17 @@ export async function handleIntegrationProxyRequest({
     return refusal(
       400,
       "invalid_integration_route",
-      "Integration calls go to /api/integrations/<provider>/<provider host>/<path>, for a host the provider uses.",
+      "Integration calls go to /api/integrations/<provider>/<provider host>/<path>, for a host the provider uses, or to a route a gateway service declares (/api/integrations/email/send).",
     );
+  }
+  if (route.kind === "service") {
+    return handleEmailSend({
+      request,
+      entry: capabilities?.[route.id],
+      hosted,
+      admit,
+      mail,
+    });
   }
 
   const integration = CAPABILITIES[route.id];
@@ -249,20 +285,4 @@ function tapCost(
 function integrationStatusPath(pathname: string): CapabilityId | null {
   const id = /^\/api\/integrations\/([a-z][a-z0-9-]*)\/?$/.exec(pathname)?.[1];
   return isCapabilityId(id) ? id : null;
-}
-
-const STATUS_LABELS: Record<number, string> = {
-  400: "Bad Request",
-  403: "Forbidden",
-  405: "Method Not Allowed",
-  502: "Bad Gateway",
-  503: "Service Unavailable",
-};
-
-/** The AppGateway error shape: `{ error, code, message }`, code also in a header. */
-function refusal(status: number, code: string, message: string): Response {
-  return Response.json(
-    { error: STATUS_LABELS[status] ?? "Error", code, message },
-    { status, headers: { [GATEWAY_ERROR_HEADER]: code } },
-  );
 }

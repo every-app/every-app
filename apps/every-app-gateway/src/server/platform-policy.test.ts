@@ -22,6 +22,7 @@ describe("platformPolicy", () => {
         verification: { perAddress: 10, perGateway: 1_000 },
         reset: { perAddress: 10, perGateway: 1_000 },
         invitation: { perAddress: 10, perGateway: 1_000 },
+        app: { perAddress: 100, perGateway: 5_000 },
       },
     });
   });
@@ -51,6 +52,7 @@ describe("platformPolicy", () => {
         verification: { perAddress: 5, perGateway: 2_000 },
         reset: { perAddress: 5, perGateway: 1_000 },
         invitation: { perAddress: 5, perGateway: 2_000 },
+        app: { perAddress: 20, perGateway: 5_000 },
       },
     });
   });
@@ -78,6 +80,7 @@ describe("platformPolicy", () => {
           verification: { perAddress: 0, perGateway: 0 },
           reset: { perAddress: 0, perGateway: 0 },
           invitation: { perAddress: 0, perGateway: 0 },
+          app: { perAddress: 0, perGateway: 0 },
         },
       });
     }
@@ -143,6 +146,20 @@ describe("platformPolicy", () => {
     expect(Object.isFrozen(policy.dcr)).toBe(true);
     expect(Object.isFrozen(policy.mailDaily)).toBe(true);
     expect(Object.isFrozen(policy.mailDaily.verification)).toBe(true);
+    expect(Object.isFrozen(policy.mailDaily.app)).toBe(true);
+  });
+
+  it("budgets app mail per address and per gateway, never per organization", () => {
+    for (const mode of ["self_hosted", "hosted", "invalid"]) {
+      const { app } = platformPolicy({
+        GATEWAY_DEPLOYMENT_MODE: mode,
+      }).mailDaily;
+      expect(Object.keys(app).sort(), mode).toEqual([
+        "perAddress",
+        "perGateway",
+      ]);
+      expect(app).not.toHaveProperty("perOrganization");
+    }
   });
 });
 

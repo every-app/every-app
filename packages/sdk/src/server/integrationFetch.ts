@@ -4,7 +4,14 @@ import {
   GATEWAY_ERROR_HEADER,
   INTEGRATION_PROXY_PREFIX,
   integrationProxyPath,
+  type ApiKeyCapability,
+  type ApiKeyCapabilityId,
+  type Capability,
   type CapabilityId,
+  type EmailCapabilityStatus,
+  EMAIL_SENDERS_ENV,
+  parseEmailSender,
+  parseEmailSendersEnv,
 } from "../internal/index.js";
 import {
   applyAttribution,
@@ -24,8 +31,11 @@ export interface IntegrationFetchOptions {
    * `.dev.vars`).
    */
   env: object;
-  /** A capability the app lists in its manifest's `capabilities`. */
-  provider: CapabilityId;
+  /**
+   * A provider the app lists in its manifest's `capabilities`. The `email`
+   * capability is sent with `sendEmail()` instead.
+   */
+  provider: ApiKeyCapabilityId;
   /**
    * Whom the call is for: the inbound request (its user), or
    * `{ background: true, organizationId }` for work no person started
@@ -52,7 +62,7 @@ export function integrationFetch({
   provider,
   for: target,
 }: IntegrationFetchOptions): typeof fetch {
-  const integration = capability(provider);
+  const integration = apiKeyCapability(provider);
   checkAttribution(env, target, `integrationFetch("${provider}")`);
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
@@ -107,11 +117,22 @@ export function integrationFetch({
 }
 
 /** The capability `provider` names, from plain JavaScript or a stale type too. */
-function capability(provider: CapabilityId) {
+function capability(provider: CapabilityId): Capability {
   if (!Object.hasOwn(CAPABILITIES, provider)) {
     throw new ConfigurationError(`Unknown capability "${String(provider)}".`);
   }
   return CAPABILITIES[provider];
+}
+
+/** The provider `integrationFetch()` calls: one whose key the gateway holds. */
+function apiKeyCapability(provider: ApiKeyCapabilityId): ApiKeyCapability {
+  const found = capability(provider);
+  if (found.mode !== "api_key") {
+    throw new ConfigurationError(
+      `${String(provider)} is sent with sendEmail() from @every-app/sdk/server, not integrationFetch().`,
+    );
+  }
+  return found;
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -128,35 +149,91 @@ export interface IntegrationStatus {
 }
 
 /**
- * Whether the app can use an integration right now, without calling the
- * provider: show "an admin needs to set up DataForSEO" up front instead of
- * failing mid-task.
+ * The email capability's status: as {@link IntegrationStatus}, plus the
+ * From a message without `from` gets and the `from` patterns the gateway
+ * accepts from this app (its manifest's `capabilities.email.senders`).
  */
-export async function integrationStatus({
+export type EmailIntegrationStatus = IntegrationStatus &
+  Pick<EmailCapabilityStatus, "sender" | "senders">;
+
+/** The status of a capability: email's carries its senders. */
+export type IntegrationStatusOf<P extends CapabilityId> = P extends "email"
+  ? EmailIntegrationStatus
+  : IntegrationStatus;
+
+/**
+ * Whether the app can use an integration right now, without calling the
+ * provider: show "an admin needs to set up DataForSEO" (or "sending isn't
+ * set up") up front instead of failing mid-task.
+ */
+export async function integrationStatus<P extends CapabilityId>({
   env,
   provider,
-}: Pick<
-  IntegrationFetchOptions,
-  "env" | "provider"
->): Promise<IntegrationStatus> {
+}: {
+  env: object;
+  provider: P;
+}): Promise<IntegrationStatusOf<P>> {
   const integration = capability(provider);
   const values = env as Record<string, unknown>;
   const binding = values["EVERY_APP_GATEWAY"] as
     | GatewayServiceBinding
     | undefined;
+  const unavailable = (): IntegrationStatusOf<P> =>
+    (integration.mode === "service"
+      ? {
+          requested: false,
+          configured: false,
+          ready: false,
+          sender: null,
+          senders: [],
+        }
+      : {
+          requested: false,
+          configured: false,
+          ready: false,
+        }) as IntegrationStatusOf<P>;
   if (binding && typeof binding.fetch === "function") {
     const response = await binding.fetch(
       `${BINDING_ORIGIN}${INTEGRATION_PROXY_PREFIX}/${provider}`,
     );
-    if (!response.ok) {
-      return { requested: false, configured: false, ready: false };
-    }
-    return (await response.json()) as IntegrationStatus;
+    if (!response.ok) return unavailable();
+    return (await response.json()) as IntegrationStatusOf<P>;
+  }
+  if (integration.mode === "service") {
+    return devEmailStatus(values) as IntegrationStatusOf<P>;
   }
   const configured = Boolean(
     values["EVERYAPP_DEV"] && stringValue(values[integration.secret]),
   );
-  return { requested: true, configured, ready: configured };
+  return {
+    requested: true,
+    configured,
+    ready: configured,
+  } as IntegrationStatusOf<P>;
+}
+
+/**
+ * Email in local dev, with no gateway: sends are printed unless `.dev.vars`
+ * sets EMAIL_FROM (and the REST settings), and the senders are the
+ * manifest's, which `everyAppWorker()` passes in EVERYAPP_EMAIL_SENDERS.
+ */
+function devEmailStatus(
+  values: Record<string, unknown>,
+): EmailIntegrationStatus {
+  const dev = Boolean(values["EVERYAPP_DEV"]);
+  const configured = dev && Boolean(stringValue(values["EMAIL_FROM"]));
+  return {
+    requested: true,
+    configured,
+    ready: configured,
+    sender: configured
+      ? parseEmailSender(
+          stringValue(values["EMAIL_FROM"]),
+          stringValue(values["EMAIL_FROM_NAME"]),
+        )
+      : null,
+    senders: dev ? parseEmailSendersEnv(values[EMAIL_SENDERS_ENV]) : [],
+  };
 }
 
 /** A refusal the AppGateway binding made itself, not the provider. */
@@ -165,6 +242,23 @@ export interface GatewayRefusal {
   /** e.g. `capability_not_requested`, `integration_not_configured`. */
   code: string;
   message: string;
+}
+
+/**
+ * A refusal the AppGateway binding made, thrown: what `sendEmail()` throws
+ * when the gateway won't send (`email_sender_not_allowed`,
+ * `email_budget_exhausted`, ...). The thrown twin of {@link gatewayRefusal}.
+ */
+export class GatewayRefusalError extends Error implements GatewayRefusal {
+  readonly status: number;
+  readonly code: string;
+
+  constructor({ status, code, message }: GatewayRefusal) {
+    super(message);
+    this.name = "GatewayRefusalError";
+    this.status = status;
+    this.code = code;
+  }
 }
 
 /**

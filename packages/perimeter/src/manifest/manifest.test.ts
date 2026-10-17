@@ -469,7 +469,7 @@ describe("capabilities manifest field", () => {
     [
       "an unknown capability",
       { github: { access: "read" } },
-      /capabilities\.github: unknown capability \(the gateway offers: dataforseo, context\)/,
+      /capabilities\.github: unknown capability \(the gateway offers: dataforseo, context, email\)/,
     ],
     [
       "an access level the capability doesn't offer",
@@ -492,10 +492,70 @@ describe("capabilities manifest field", () => {
       /Unrecognized key\(s\) in object: 'background'/,
     ],
     ["an empty why", { dataforseo: { access: "read", why: "" } }, /why/],
+    [
+      "email for reading",
+      { email: { access: "read" } },
+      /capabilities\.email\.access: Email offers write access/,
+    ],
+    [
+      "a sender that isn't an address or a domain pattern",
+      { email: { access: "write", senders: ["bad"] } },
+      /capabilities\.email\.senders\.0: a sender is "\*@<domain>" or "<local>@<domain>", in lowercase/,
+    ],
+    [
+      "an uppercase sender",
+      { email: { access: "write", senders: ["*@Mail.Example.com"] } },
+      /capabilities\.email\.senders\.0: a sender is/,
+    ],
+    [
+      "a duplicate sender",
+      {
+        email: {
+          access: "write",
+          senders: ["*@mail.example.com", "*@mail.example.com"],
+        },
+      },
+      /capabilities\.email\.senders: duplicate sender/,
+    ],
+    [
+      "more than 20 senders",
+      {
+        email: {
+          access: "write",
+          senders: Array.from({ length: 21 }, (_, i) => `s${i}@example.com`),
+        },
+      },
+      /capabilities\.email\.senders/,
+    ],
+    [
+      "senders on a capability that doesn't send mail",
+      { dataforseo: { access: "read", senders: ["*@mail.example.com"] } },
+      /capabilities\.dataforseo: Unrecognized key\(s\) in object: 'senders'/,
+    ],
   ])("refuses %s", (_case, capabilities, problem) => {
     expect(() => validateManifestStrict({ id: "seo", capabilities })).toThrow(
       problem,
     );
+  });
+
+  it("accepts email with the senders an app may send as", () => {
+    const capabilities = {
+      email: {
+        access: "write",
+        why: "Sends mail from the organization's mailboxes.",
+        senders: ["*@mail.example.com", "support@example.com"],
+      },
+    };
+    expect(
+      validateManifestStrict({ id: "inbox", capabilities }).capabilities,
+    ).toEqual(capabilities);
+    // Without senders, the gateway's own sender only.
+    expect(
+      validateManifestStrict({
+        id: "inbox",
+        capabilities: { email: { access: "write" } },
+      }).capabilities,
+    ).toEqual({ email: { access: "write" } });
   });
 
   it("refuses the old `integrations` key", () => {
@@ -514,6 +574,15 @@ describe("capabilities manifest field", () => {
         capabilities: { "new-provider": { access: "read", scopes: ["x"] } },
       }).capabilities,
     ).toEqual({ "new-provider": { access: "read", scopes: ["x"] } });
+    // And the gateway keeps an entry's fields as sent, senders included.
+    expect(
+      validateManifest({
+        id: "inbox",
+        capabilities: {
+          email: { access: "write", senders: ["*@mail.example.com"] },
+        },
+      }).capabilities,
+    ).toEqual({ email: { access: "write", senders: ["*@mail.example.com"] } });
   });
 });
 

@@ -269,8 +269,16 @@ const DEV_GATEWAY_KEYS = {
     "workers-ai": ["WORKERS_AI_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
   },
   capabilities: {
-    dataforseo: "DATAFORSEO_API_KEY",
-    context: "CONTEXT_API_KEY",
+    dataforseo: ["DATAFORSEO_API_KEY"],
+    context: ["CONTEXT_API_KEY"],
+    // The sender, and the developer's own Email Sending account: set all
+    // but the name and sendEmail() really sends; otherwise it prints.
+    email: [
+      "EMAIL_FROM",
+      "EMAIL_FROM_NAME",
+      "EMAIL_REST_API_TOKEN",
+      "CLOUDFLARE_ACCOUNT_ID",
+    ],
   },
 } as const;
 type DevProviderKeys = typeof DEV_GATEWAY_KEYS.providers;
@@ -286,7 +294,7 @@ type DevGatewayKeys<M> =
   | (M extends { capabilities: infer C }
       ? keyof C extends infer K
         ? K extends keyof DevCapabilityKeys
-          ? DevCapabilityKeys[K]
+          ? DevCapabilityKeys[K][number]
           : never
         : never
       : never);
@@ -336,6 +344,11 @@ type SharedEnv = {
  */
 type HyperdriveEnv<M> = { [B in AppHyperdriveNames<M>]: HyperdriveBinding };
 
+/** In dev, an app that lists `email` gets its manifest's senders. */
+type DevEmailEnv<M> = M extends { capabilities: { email: unknown } }
+  ? { EVERYAPP_EMAIL_SENDERS: TextBinding }
+  : unknown;
+
 /**
  * Bindings in development: the well-known dev identity, as plain text, and
  * the developer's own gateway keys (when set).
@@ -345,7 +358,8 @@ export type EveryAppDevEnv<M, TEntrypoint = string> = ResourceEnv<
   TEntrypoint
 > &
   SharedEnv &
-  DatabaseEnv<M> & {
+  DatabaseEnv<M> &
+  DevEmailEnv<M> & {
     EVERYAPP_DEV: TextBinding;
     EVERYAPP_IDENTITY_PUBLIC_KEYS: TextBinding;
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
@@ -512,6 +526,7 @@ export function everyAppWorker<
       value: JSON.stringify([DEV_PUBLIC_KEY_PEM]),
     };
     env["EVERYAPP_IDENTITY_ISSUER"] = { type: "text", value: DEV_ISSUER };
+    addDevEmailSenders(env, manifest);
   }
 
   Object.assign(env, storageBindings(manifest, name, deploy));
@@ -664,6 +679,7 @@ export function everyAppAuxiliaryWorker<
     if (deploy.shared) env["EVERYAPP_SHARED"] = { type: "text", value: "1" };
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
+    addDevEmailSenders(env, manifest);
   }
   addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
@@ -990,12 +1006,34 @@ function addSecrets(
   }
 }
 
+/**
+ * In dev, the senders the manifest's `capabilities.email` allows, for
+ * sendEmail()'s local check (EMAIL_SENDERS_ENV in ../internal/email.ts);
+ * deployed, the gateway reads them from the registry.
+ */
+function addDevEmailSenders(
+  env: Record<string, EveryAppBinding>,
+  manifest: EveryAppWorkerManifest,
+): void {
+  const email = manifest.capabilities?.["email"];
+  if (!email || typeof email !== "object") return;
+  const senders = (email as { senders?: unknown }).senders;
+  env["EVERYAPP_EMAIL_SENDERS"] = {
+    type: "text",
+    value: JSON.stringify(
+      Array.isArray(senders)
+        ? senders.filter((sender) => typeof sender === "string")
+        : [],
+    ),
+  };
+}
+
 /** The {@link DEV_GATEWAY_KEYS} of the manifest's providers and capabilities. */
 function devGatewayKeys(manifest: EveryAppWorkerManifest): string[] {
   const keysOf = (
-    table: Record<string, string | readonly string[]>,
+    table: Record<string, readonly string[]>,
     id: string,
-  ): readonly string[] => (Object.hasOwn(table, id) ? [table[id]!].flat() : []);
+  ): readonly string[] => (Object.hasOwn(table, id) ? table[id]! : []);
   return [
     ...(manifest.providers ?? []).flatMap((provider) =>
       keysOf(DEV_GATEWAY_KEYS.providers, provider),

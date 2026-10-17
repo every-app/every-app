@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   aiProviderSettings,
   CAPABILITIES,
+  capabilitySettings,
   DEV_AI_PROVIDERS,
 } from "@every-app/sdk/internal";
 import { OPTIONAL_SECRETS } from "../cloudflare.config";
@@ -28,13 +29,18 @@ describe("OPTIONAL_SECRETS", () => {
 
   it("declares every capability's key and settings", () => {
     for (const [id, capability] of Object.entries(CAPABILITIES)) {
-      const settings = Object.entries(capability)
-        .filter(
-          ([field, value]) =>
-            typeof value === "string" &&
-            (field === "secret" || field.endsWith("Setting")),
-        )
-        .map(([, value]) => value as string);
+      // A kind's settings (email's sender and REST transport), and any
+      // string field naming one (`secret`, `...Setting`).
+      const settings = [
+        ...capabilitySettings(capability),
+        ...Object.entries(capability)
+          .filter(
+            ([field, value]) =>
+              typeof value === "string" &&
+              (field === "secret" || field.endsWith("Setting")),
+          )
+          .map(([, value]) => value as string),
+      ];
       expect(settings.length, id).toBeGreaterThan(0);
       for (const setting of settings) {
         expect(declared.has(setting), `${id}: ${setting}`).toBe(true);

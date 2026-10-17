@@ -1,11 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   CAPABILITIES,
   CAPABILITY_IDS,
+  capabilitySettings,
   integrationProxyPath,
   isAccountWidePath,
   isCapabilityId,
   parseIntegrationProxyPath,
+  serviceRoutePath,
+  type ApiKeyCapabilityId,
+  type Capability,
+  type CapabilitySecret,
+  type ServiceCapabilityId,
 } from "./capabilities";
 
 describe("integration proxy paths", () => {
@@ -19,9 +25,33 @@ describe("integration proxy paths", () => {
     );
 
     expect(parseIntegrationProxyPath(url.pathname, url.search)).toEqual({
+      kind: "api_key",
       id: "dataforseo",
       upstream,
     });
+  });
+
+  it("names a service capability's declared route", () => {
+    expect(serviceRoutePath("email", "send")).toBe(
+      "/api/integrations/email/send",
+    );
+    expect(
+      parseIntegrationProxyPath("/api/integrations/email/send", ""),
+    ).toEqual({ kind: "service", id: "email", route: "send" });
+    // A query string doesn't change the route.
+    expect(
+      parseIntegrationProxyPath("/api/integrations/email/send", "?x=1"),
+    ).toEqual({ kind: "service", id: "email", route: "send" });
+  });
+
+  it.each([
+    ["a route email doesn't declare", "/api/integrations/email/other"],
+    ["a path under the route", "/api/integrations/email/send/more"],
+    ["a trailing slash", "/api/integrations/email/send/"],
+    ["an inherited property", "/api/integrations/email/toString"],
+    ["a host-shaped route", "/api/integrations/email/api.cloudflare.com/x"],
+  ])("refuses %s", (_name, pathname) => {
+    expect(parseIntegrationProxyPath(pathname, "")).toBeNull();
   });
 
   it.each([
@@ -133,7 +163,11 @@ describe("Context.dev credentials", () => {
 });
 
 describe("the capability registry", () => {
-  it.each(CAPABILITY_IDS)(
+  const apiKeyIds = CAPABILITY_IDS.filter(
+    (id): id is ApiKeyCapabilityId => CAPABILITIES[id].mode === "api_key",
+  );
+
+  it.each(apiKeyIds)(
     "%s sends its key only to https hosts and reads only with read methods",
     (id) => {
       const capability = CAPABILITIES[id];
@@ -145,6 +179,32 @@ describe("the capability registry", () => {
       expect(capability.readMethods).not.toContain("DELETE");
     },
   );
+
+  it("offers email as a service the gateway performs, write only", () => {
+    const email: Capability = CAPABILITIES.email;
+    expect(email).toMatchObject({
+      mode: "service",
+      access: ["write"],
+      routes: { send: ["POST"] },
+    });
+    expect(capabilitySettings(email)).toEqual([
+      "EMAIL_FROM",
+      "EMAIL_FROM_NAME",
+      "EMAIL_REST_API_TOKEN",
+      "CLOUDFLARE_ACCOUNT_ID",
+    ]);
+    expect(capabilitySettings(CAPABILITIES.dataforseo)).toEqual([
+      "DATAFORSEO_API_KEY",
+    ]);
+    // The types follow the kinds.
+    expectTypeOf<ServiceCapabilityId>().toEqualTypeOf<"email">();
+    expectTypeOf<ApiKeyCapabilityId>().toEqualTypeOf<
+      "dataforseo" | "context"
+    >();
+    expectTypeOf<"EMAIL_FROM">().toExtend<CapabilitySecret>();
+    expectTypeOf<"CLOUDFLARE_ACCOUNT_ID">().toExtend<CapabilitySecret>();
+    expectTypeOf<"DATAFORSEO_API_KEY">().toExtend<CapabilitySecret>();
+  });
 
   it("knows only its own ids", () => {
     expect(isCapabilityId("dataforseo")).toBe(true);

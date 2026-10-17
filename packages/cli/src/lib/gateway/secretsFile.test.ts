@@ -30,8 +30,25 @@ describe("gateway settings `secret set --for gateway` changes", () => {
         expect(secrets[setting], setting).toBeDefined();
       }
     }
-    for (const { secret } of Object.values(CAPABILITIES)) {
-      expect(() => assertSettableSecret(secret)).not.toThrow();
+    for (const capability of Object.values(CAPABILITIES)) {
+      if (capability.mode === "api_key") {
+        expect(() => assertSettableSecret(capability.secret)).not.toThrow();
+        continue;
+      }
+      // A service's sender is the operator's; its REST transport's account
+      // is the gateway's own, set at install.
+      for (const setting of capability.settings) {
+        expect(() => assertSettableSecret(setting), setting).not.toThrow();
+      }
+      for (const setting of capability.optionalSettings) {
+        let settable = true;
+        try {
+          assertSettableSecret(setting);
+        } catch {
+          settable = false;
+        }
+        expect(settable || secrets[setting] !== undefined, setting).toBe(true);
+      }
     }
   });
 

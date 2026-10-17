@@ -23,19 +23,30 @@ export {
   type GatewayFetchEnv,
 } from "./gatewayFetch.js";
 export {
+  GatewayRefusalError,
   gatewayRefusal,
   integrationFetch,
   integrationStatus,
+  type EmailIntegrationStatus,
   type GatewayRefusal,
   type IntegrationFetchOptions,
   type IntegrationStatus,
+  type IntegrationStatusOf,
 } from "./integrationFetch.js";
 export {
   nodeServerHandler,
   type NodeServer,
   type NodeServerHandlerOptions,
 } from "./nodeServer.js";
-export type { CapabilityId } from "../internal/index.js";
+export { sendEmail, type SendEmailOptions } from "./sendEmail.js";
+export type {
+  ApiKeyCapabilityId,
+  CapabilityId,
+  EmailAddressInput,
+  EmailAttachmentInput,
+  SendEmailMessage,
+  SendEmailResult,
+} from "../internal/index.js";
 export {
   // Deprecated in 0.3.0 and removed in 0.4.0: use defineTools().
   createMcpHandler,

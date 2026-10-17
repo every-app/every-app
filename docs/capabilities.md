@@ -8,9 +8,10 @@ no per-app settings.
 
 This is phase 0 of the integrations design (branch
 `research/app-integrations`, `docs/research/2026-10-integrations-hub/app-integrations.md`):
-**API-key providers whose key the gateway holds.** OAuth providers,
-per-organization accounts and admin approval come in later phases and keep
-the same manifest entry, binding route and SDK call.
+**API-key providers whose key the gateway holds**, plus **gateway services**,
+things the gateway does itself for apps (sending email, [below](#gateway-services-email)).
+OAuth providers, per-organization accounts and admin approval come in later
+phases and keep the same manifest entry, binding route and SDK call.
 
 AI providers stay separate: `providers: ["openai", "openrouter"]` and the
 `/api/ai/<provider>` proxy, with their model and route allowlists.
@@ -99,7 +100,8 @@ capabilities: {
 ```
 
 `everyapp deploy` refuses a capability the gateway doesn't offer and an
-access level it doesn't offer (`write`, for both providers today).
+access level it doesn't offer (`write`, for both providers today; `read`,
+for email).
 
 Call the provider's real URLs with the SDK's fetch:
 
@@ -176,6 +178,147 @@ app can tell them from the provider's own errors.
 `{ capability, requested, configured, ready }` without calling the provider
 (`integrationStatus`); `configured` is false for an app that doesn't list the
 capability, so no app learns which keys the operator holds.
+
+## Gateway services: email
+
+`email` is a capability the gateway performs itself: apps send mail through
+the gateway's own sender and transport (its `EMAIL` binding, or Email
+Sending's REST API on a gateway outside Workers), within its daily budgets.
+One sending domain onboarded per gateway serves every app, and every message
+is attributed and logged. Apps get no `send-email` binding (the deploy
+refuses one); they call `sendEmail()`.
+
+| Capability | Gateway settings                                                                   | Route                               | Access  |
+| ---------- | ---------------------------------------------------------------------------------- | ----------------------------------- | ------- |
+| `email`    | `EMAIL_FROM`, `EMAIL_FROM_NAME` (REST: `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) | `POST /api/integrations/email/send` | `write` |
+
+The operator's side is the email runbook
+([docs/runbooks/email-sending-setup.md](runbooks/email-sending-setup.md)):
+onboard the gateway's sending domain, then set the sender. The gateway's own
+invitation and password-reset mail uses the same setup.
+
+An app lists it, with the addresses it may send as:
+
+```ts
+capabilities: {
+  email: {
+    access: "write",
+    why: "Sends replies from the organization's mailboxes.",
+    // Optional: without senders, mail goes out as the gateway's sender only.
+    senders: ["*@mail.example.com", "billing@example.com"],
+  },
+},
+```
+
+and sends:
+
+```ts
+import { GatewayRefusalError, sendEmail } from "@every-app/sdk/server";
+
+try {
+  const { messageId, status } = await sendEmail({
+    env,
+    for: request, // or { background: true, organizationId } from a cron or email()
+    message: {
+      to: "customer@example.net",
+      subject: "Your order shipped",
+      text: "It's on its way.",
+      from: { address: "orders@mail.example.com", name: "Acme" },
+    },
+  });
+} catch (error) {
+  if (error instanceof GatewayRefusalError) {
+    // error.code: email_sender_not_allowed, email_budget_exhausted, ...
+  }
+  throw error;
+}
+```
+
+**The message** (`POST /api/integrations/email/send`, JSON, at most 5 MiB
+as sent, attachments included):
+
+| Field         | Type                                                                                 | Rule                                                              |
+| ------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| `to`          | address or list                                                                      | at least one; 50 recipients at most across `to`, `cc` and `bcc`   |
+| `cc`, `bcc`   | address or list                                                                      | plain addresses (no display names)                                |
+| `subject`     | string                                                                               | one line, 998 characters at most                                  |
+| `text`, `html`| string                                                                               | at least one                                                      |
+| `from`        | address or `{ address, name? }`                                                      | absent: the gateway's sender; present: must match a `senders` pattern |
+| `replyTo`     | address or `{ address, name? }`                                                      | absent: replies go to the sender                                  |
+| `headers`     | `{ name: value }`                                                                    | 20 at most, values one line of 2,048 bytes at most; `From`, `To`, `Cc`, `Bcc`, `Reply-To`, `Subject`, `Sender`, `Return-Path`, `Date`, MIME and DKIM headers are refused (the message's own fields set them) |
+| `attachments` | `[{ filename, contentType, content (base64), disposition?: "attachment" \| "inline", contentId? }]` | 32 at most; an inline one needs a `contentId` (`cid:` in the HTML) |
+
+Unknown fields are refused. The answer is `200 { messageId?, status }`:
+`delivered` (Email Sending accepted it) or `queued` (the REST transport will
+retry some recipients). In local dev the SDK answers `logged` (below).
+
+**The sender rule.** Without `from`, the message goes out as `EMAIL_FROM`
+(with `EMAIL_FROM_NAME`). With one, the address must match a pattern in the
+deployed manifest's `capabilities.email.senders`: `*@<domain>` takes any
+address on exactly that domain (not its subdomains), anything else that one
+address; patterns are lowercase, unique, 20 at most, and `everyapp deploy`
+checks them. Each domain an app sends from must also be onboarded to Email
+Sending in the gateway's Cloudflare account (on Cloudflare DNS), or the
+provider refuses it: `email_sender_not_verified`, whose message names the
+onboarding command. A hosted gateway sends app mail from its own sender
+only, for now: any `from` is refused.
+
+**Budgets.** App mail (`app` kind) counts against daily budgets in
+`rate_limit_counters`, once for each distinct recipient, before it is sent:
+100 per recipient address and 5,000 for the whole gateway a day when
+self-hosted, 20 and 5,000 when hosted, none when the mode is invalid. There
+is no per-organization budget (usage limits are a later feature). A message
+any of whose recipients has had its share is refused whole, with
+`Retry-After` until the next UTC midnight.
+
+**Checks, in order**, each a refusal with its code in `x-everyapp-error`:
+
+| Code                             | Status | When                                                                                         |
+| -------------------------------- | ------ | -------------------------------------------------------------------------------------------- |
+| `integration_method_not_allowed` | 405    | anything but `POST` on `send`                                                                |
+| `capability_not_requested`       | 403    | the manifest doesn't list `email` with `access: "write"`                                     |
+| `caller_*`                       | 401/403 | the AppGateway entrypoint's attribution (a shared app's Worker names the organization)      |
+| `integration_read_only`          | 403    | an agent's identity (`chan: "mcp"`) without `mcp:write`                                      |
+| `email_message_too_large`        | 413    | the body passes 5 MiB, counted as it streams                                                 |
+| `email_invalid_message`          | 400    | the message breaks a rule above, or Email Sending refuses it as malformed                    |
+| `email_sender_not_allowed`       | 403    | `from` matches no `senders` pattern, or the gateway is hosted                                |
+| `integration_not_configured`     | 503    | the gateway has no sender or transport; the message names `EMAIL_FROM`, `EMAIL_FROM_NAME` and the runbook |
+| `email_budget_exhausted`         | 429    | a recipient or the gateway has had its day's app mail (`Retry-After`)                        |
+| `email_budget_unavailable`       | 503    | the budget couldn't be read or written, so nothing was sent                                  |
+| `email_sender_not_verified`      | 422    | Email Sending: the sender's domain isn't onboarded (`E_SENDER_NOT_VERIFIED`, `E_SENDER_DOMAIN_NOT_AVAILABLE`) |
+| `email_provider_limited`         | 429    | Email Sending: the account's rate or daily limit (`E_RATE_LIMIT_EXCEEDED`, `E_DAILY_LIMIT_EXCEEDED`) |
+| `email_send_failed`              | 502    | anything else Email Sending answered                                                         |
+
+Every send is logged as `email.app.send` with the organization, app,
+Worker, number of recipients, an HMAC of the first recipient, whether the
+sender was the gateway's or the app's, the status (or `refused` and the
+reason) and the attribution; never the subject, the bodies, the
+attachments or an address.
+
+`GET /api/integrations/email` (`integrationStatus({ env, provider: "email" })`)
+answers `{ capability, requested, configured, ready, sender, senders }`
+without sending: `sender` is the From a message without `from` gets (null
+unless configured), `senders` the patterns the gateway accepts from this
+app (empty on a hosted gateway). An app shows "sending isn't set up" from
+`ready`, and offers only addresses `senders` allows.
+
+**Local dev.** With no gateway, `sendEmail()` checks the message and the
+sender the same way (the manifest's `senders` reach the Worker in dev as
+`EVERYAPP_EMAIL_SENDERS`), then prints
+`[everyapp dev] email to <n> recipients subject "<subject>"` and answers
+`{ status: "logged", messageId: "dev-<uuid>" }`. With
+`EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `EMAIL_FROM` in
+`.dev.vars` it really sends, through Email Sending's REST API from the
+developer's own account.
+
+**Inbound mail** is not a capability: the app exports an `email()` handler
+beside `everyApp()`'s `fetch`, and an Email Routing rule sends the
+domain's mail to the app's Worker. The deploy policy keeps refusing the
+`email` trigger, so for now the rule is a manual step
+([docs/runbooks/email-sending-setup.md](runbooks/email-sending-setup.md#inbound-mail-to-an-app)).
+The handler runs with no identity: its gateway calls pass
+`for: { background: true, organizationId }` and treat the message as
+untrusted.
 
 ## Limits today
 

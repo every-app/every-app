@@ -304,6 +304,133 @@ describe("sendEmail", () => {
   });
 });
 
+describe("sendEmail for apps", () => {
+  const send = vi.fn();
+  const attachment = {
+    filename: "invoice.pdf",
+    contentType: "application/pdf",
+    content: "JVBERi0xLjQK",
+    disposition: "attachment" as const,
+  };
+  const appMail = {
+    kind: "app" as const,
+    to: ["a@example.net", "b@example.net"],
+    cc: ["c@example.net"],
+    bcc: ["d@example.net"],
+    subject: "Re: hello",
+    text: "Hi",
+    from: { address: "support@mail.example.com", name: "Support" },
+    replyTo: { address: "help@mail.example.com" },
+    headers: { "In-Reply-To": "<prev@example.net>" },
+    attachments: [attachment],
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    counters.values.clear();
+    counters.unreadable = false;
+    send.mockReset().mockResolvedValue({ messageId: "<b1@example.com>" });
+    workerEnv.GATEWAY_DEPLOYMENT_MODE = "self_hosted";
+    workerEnv.EMAIL = { send };
+    workerEnv.EMAIL_REST_API_TOKEN = undefined;
+    workerEnv.CLOUDFLARE_ACCOUNT_ID = undefined;
+    workerEnv.EMAIL_FROM = "noreply@example.com";
+    workerEnv.EMAIL_FROM_NAME = "Every App";
+  });
+
+  it("hands the binding the app's sender, recipients, headers and base64 attachments", async () => {
+    await expect(sendEmail(appMail)).resolves.toEqual({
+      messageId: "<b1@example.com>",
+      status: "delivered",
+    });
+    expect(send).toHaveBeenCalledWith({
+      to: ["a@example.net", "b@example.net"],
+      cc: ["c@example.net"],
+      bcc: ["d@example.net"],
+      from: { email: "support@mail.example.com", name: "Support" },
+      replyTo: "help@mail.example.com",
+      subject: "Re: hello",
+      text: "Hi",
+      headers: { "In-Reply-To": "<prev@example.net>" },
+      attachments: [
+        {
+          disposition: "attachment",
+          filename: "invoice.pdf",
+          type: "application/pdf",
+          content: "JVBERi0xLjQK",
+        },
+      ],
+    });
+  });
+
+  it("guards a local simulator that resolves without a result", async () => {
+    send.mockResolvedValue(undefined);
+    await expect(sendEmail(appMail)).resolves.toEqual({ status: "delivered" });
+  });
+
+  it("puts the same fields in the REST body, attachments included, and reads the message id", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({
+        success: true,
+        errors: [],
+        result: {
+          message_id: "<r1@example.com>",
+          delivered: ["a@example.net"],
+          queued: ["b@example.net", "c@example.net", "d@example.net"],
+          permanent_bounces: [],
+        },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    workerEnv.EMAIL_REST_API_TOKEN = "rest-token";
+    workerEnv.CLOUDFLARE_ACCOUNT_ID = "account-id";
+
+    await expect(sendEmail(appMail)).resolves.toEqual({
+      messageId: "<r1@example.com>",
+      status: "queued",
+    });
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(request.body as string)).toEqual({
+      to: ["a@example.net", "b@example.net"],
+      cc: ["c@example.net"],
+      bcc: ["d@example.net"],
+      from: { address: "support@mail.example.com", name: "Support" },
+      reply_to: "help@mail.example.com",
+      subject: "Re: hello",
+      text: "Hi",
+      headers: { "In-Reply-To": "<prev@example.net>" },
+      attachments: [
+        {
+          content: "JVBERi0xLjQK",
+          filename: "invoice.pdf",
+          type: "application/pdf",
+          disposition: "attachment",
+        },
+      ],
+    });
+  });
+
+  it("carries the provider's code and the budget's refill time on its errors", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    send.mockRejectedValue(
+      Object.assign(new Error("nope"), { code: "E_SENDER_NOT_VERIFIED" }),
+    );
+    await expect(sendEmail(appMail)).rejects.toMatchObject({
+      code: "EMAIL_SEND_FAILED",
+      providerCode: "E_SENDER_NOT_VERIFIED",
+    });
+
+    const day = new Date().toISOString().slice(0, 10);
+    counters.values.set(`mail:app:gateway:${day}`, 5_000);
+    const error = await sendEmail(appMail).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "EMAIL_BUDGET_EXHAUSTED" });
+    expect((error as { retryAt: Date }).retryAt.toISOString()).toBe(
+      new Date(Date.parse(day) + 24 * 60 * 60 * 1000).toISOString(),
+    );
+  });
+});
+
 describe("sendEmail's daily budgets", () => {
   const send = vi.fn();
 

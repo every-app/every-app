@@ -91,6 +91,26 @@ first upload; ADR-0001) decides what the gateway does, once, in
 - Every value interpolated into an email is HTML-escaped, and kept to one
   line in subjects and text (`server/email/templates.ts`): organization
   names and inviter addresses are user input.
+- Apps send mail through the gateway's `email` capability
+  (`server/capabilities/email.ts`), never a `send-email` binding of their
+  own (the deploy refuses one): the deployed manifest must list `email`
+  with `write`, an agent's identity needs `mcp:write`, and app mail counts
+  against its own `app` budgets, once per distinct recipient (100 per
+  address and 5,000 per gateway a day self-hosted, 20 and 5,000 hosted; no
+  per-organization budget). Recipients are the app's to choose. The From is
+  the gateway's sender unless it matches the manifest's
+  `capabilities.email.senders` (`*@domain` or one address); a hosted
+  gateway refuses any app sender, so one organization's app can't send as
+  the platform or as another's domain. Headers that would set the sender,
+  recipients or subject (`From`, `Sender`, `Reply-To`, ...) are refused,
+  values with line breaks too, and the rest pass through to Email Sending.
+  Logs (`email.app.send`) carry counts, an HMAC of the first recipient and
+  the outcome, never subjects, bodies, attachments or addresses.
+- Inbound mail reaches an app's `email()` handler from an Email Routing rule
+  that names its Worker, outside the perimeter: no identity, and anyone can
+  mail the address. The deploy keeps refusing the `email` trigger, so no
+  deploy can claim the account's routing addresses; the rule is the
+  operator's (docs/runbooks/email-sending-setup.md).
 
 ## Organizations and Shared Apps
 

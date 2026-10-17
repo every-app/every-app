@@ -7,6 +7,7 @@ import {
 } from "@every-app/sdk/internal";
 import type { AppRegistry, RegisteredApp } from "@every-app/perimeter";
 import { aiRefusal, handleAuthenticatedAiProxyRequest } from "./ai-proxy";
+import type { GatewayMail } from "./capabilities/email";
 import {
   handleIntegrationProxyRequest,
   type IntegrationProxyEnv,
@@ -53,6 +54,8 @@ interface HandleAppGatewayRequestOptions {
   registry: AppRegistry;
   organizations: OrganizationDirectory;
   fetchUpstream?: (request: Request) => Promise<Response>;
+  /** The gateway's mail for the `email` capability; its own module by default. */
+  mail?: () => Promise<GatewayMail>;
 }
 
 type AppGatewayErrorCode =
@@ -102,6 +105,7 @@ export async function handleAppGatewayRequest({
   registry,
   organizations,
   fetchUpstream,
+  mail,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
   try {
     const policy = platformPolicy(env);
@@ -169,11 +173,17 @@ export async function handleAppGatewayRequest({
             organizations,
           );
           return {
-            caller: { organizationId, appId: props.appId, orgSource },
+            caller: {
+              organizationId,
+              appId: props.appId,
+              worker: props.workerName,
+              orgSource,
+            },
             user,
           };
         },
         fetchUpstream,
+        ...(mail ? { mail } : {}),
       });
     }
 

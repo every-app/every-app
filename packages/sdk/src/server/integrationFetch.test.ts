@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { ConfigurationError } from "../internal/index";
 import {
   gatewayRefusal,
@@ -253,5 +253,89 @@ describe("gatewayRefusal", () => {
 
     await expect(gatewayRefusal(providerError)).resolves.toBeNull();
     expect(providerError.bodyUsed).toBe(false);
+  });
+});
+
+describe("the email capability", () => {
+  it("isn't reached with integrationFetch: it has sendEmail()", () => {
+    const { env } = bindingEnv();
+    expect(() =>
+      integrationFetch({
+        env,
+        // @ts-expect-error email is a service, not a provider with a key.
+        provider: "email",
+      }),
+    ).toThrow(
+      new ConfigurationError(
+        "email is sent with sendEmail() from @every-app/sdk/server, not integrationFetch().",
+      ),
+    );
+  });
+
+  it("asks the gateway for its status, senders included", async () => {
+    const status = {
+      capability: "email",
+      requested: true,
+      configured: true,
+      ready: true,
+      sender: { address: "noreply@example.com", name: "Every App" },
+      senders: ["*@mail.example.com"],
+    };
+    const bindingFetch = vi.fn(async () => Response.json(status));
+    const result = await integrationStatus({
+      env: { EVERY_APP_GATEWAY: { fetch: bindingFetch } },
+      provider: "email",
+    });
+    expect(result).toEqual(status);
+    expectTypeOf(result.senders).toEqualTypeOf<string[]>();
+    expect(bindingFetch).toHaveBeenCalledWith(
+      "http://every-app-gateway.internal/api/integrations/email",
+    );
+  });
+
+  it("is unavailable, with no sender or senders, when the gateway refuses the status call", async () => {
+    const result = await integrationStatus({
+      env: {
+        EVERY_APP_GATEWAY: {
+          fetch: async () => new Response(null, { status: 403 }),
+        },
+      },
+      provider: "email",
+    });
+    expect(result).toEqual({
+      requested: false,
+      configured: false,
+      ready: false,
+      sender: null,
+      senders: [],
+    });
+  });
+
+  it("in local dev, is configured by EMAIL_FROM and reads the manifest's senders", async () => {
+    const dev = {
+      EVERYAPP_DEV: "1",
+      EVERYAPP_EMAIL_SENDERS: '["*@mail.example.com"]',
+    };
+    await expect(
+      integrationStatus({ env: dev, provider: "email" }),
+    ).resolves.toEqual({
+      requested: true,
+      configured: false,
+      ready: false,
+      sender: null,
+      senders: ["*@mail.example.com"],
+    });
+    await expect(
+      integrationStatus({
+        env: { ...dev, EMAIL_FROM: "Every App <noreply@example.com>" },
+        provider: "email",
+      }),
+    ).resolves.toEqual({
+      requested: true,
+      configured: true,
+      ready: true,
+      sender: { address: "noreply@example.com", name: "Every App" },
+      senders: ["*@mail.example.com"],
+    });
   });
 });

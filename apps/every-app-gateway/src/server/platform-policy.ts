@@ -84,14 +84,22 @@ interface PlatformPolicy {
   /**
    * Emails a UTC day, per kind of mail, to one address and from the whole
    * gateway (server/email/sendEmail.ts): what a sign-up form, a resend
-   * button or a careless admin can make the gateway send, and so what they
-   * can do to its sender reputation.
+   * button, a careless admin or an app can make the gateway send, and so
+   * what they can do to its sender reputation. Never per organization
+   * (usage limits are a later feature).
    */
   readonly mailDaily: Readonly<Record<MailKind, MailBudget>>;
 }
 
-/** The mail the gateway sends, each kind with its own daily budgets. */
-export type MailKind = "verification" | "reset" | "invitation";
+/**
+ * The mail the gateway sends, each kind with its own daily budgets: its own
+ * account mail, and `app`, what apps send through the `email` capability
+ * (server/capabilities/email.ts).
+ */
+export type MailKind = "verification" | "reset" | "invitation" | "app";
+
+/** The gateway's own account mail. */
+type AccountMailKind = Exclude<MailKind, "app">;
 
 interface MailBudget {
   readonly perAddress: number;
@@ -116,12 +124,14 @@ function hostedOpenSignUp(raw: string | undefined): boolean {
 
 function mailBudgets(
   perAddress: number,
-  perGateway: Record<MailKind, number>,
+  perGateway: Record<AccountMailKind, number>,
+  app: MailBudget,
 ): Record<MailKind, MailBudget> {
   return {
     verification: { perAddress, perGateway: perGateway.verification },
     reset: { perAddress, perGateway: perGateway.reset },
     invitation: { perAddress, perGateway: perGateway.invitation },
+    app: { ...app },
   };
 }
 
@@ -165,12 +175,14 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         bindingActivation: true,
         dcr: { perAddress: 20, perGateway: 200 },
         // An operator's own members: far above what an install sends, so
-        // only a loop or a script ever meets them.
-        mailDaily: mailBudgets(10, {
-          verification: 1_000,
-          reset: 1_000,
-          invitation: 1_000,
-        }),
+        // only a loop or a script ever meets them. Apps write to the same
+        // customer many times a day (an inbox's thread), so their mail gets
+        // more per address.
+        mailDaily: mailBudgets(
+          10,
+          { verification: 1_000, reset: 1_000, invitation: 1_000 },
+          { perAddress: 100, perGateway: 5_000 },
+        ),
       });
     case "hosted":
       return freeze({
@@ -190,12 +202,14 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         bindingActivation: true,
         dcr: { perAddress: 200, perGateway: 20_000 },
         // Anyone can type an address into the sign-up or resend form: a
-        // few mails a day reach any one address, whoever asks.
-        mailDaily: mailBudgets(5, {
-          verification: 2_000,
-          reset: 1_000,
-          invitation: 2_000,
-        }),
+        // few mails a day reach any one address, whoever asks. Apps, which
+        // anyone with an account can reach, send from the platform's own
+        // sender only, and fewer to any one address than self-hosted.
+        mailDaily: mailBudgets(
+          5,
+          { verification: 2_000, reset: 1_000, invitation: 2_000 },
+          { perAddress: 20, perGateway: 5_000 },
+        ),
       });
     default:
       return freeze({
@@ -213,7 +227,11 @@ export function platformPolicy(env: PlatformPolicyEnv): PlatformPolicy {
         tenantAdminUserActions: false,
         bindingActivation: false,
         dcr: { perAddress: 0, perGateway: 0 },
-        mailDaily: mailBudgets(0, { verification: 0, reset: 0, invitation: 0 }),
+        mailDaily: mailBudgets(
+          0,
+          { verification: 0, reset: 0, invitation: 0 },
+          { perAddress: 0, perGateway: 0 },
+        ),
       });
   }
 }

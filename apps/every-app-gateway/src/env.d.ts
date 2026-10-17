@@ -90,7 +90,9 @@ declare namespace Cloudflare {
     // Optional REST transport for email delivery outside deployed Workers.
     EMAIL_REST_API_TOKEN?: string;
 
-    // Sender identity for Better Auth invitation and password-reset flows.
+    // Sender identity for Better Auth invitation and password-reset flows,
+    // and for apps' mail through the `email` capability when they don't send
+    // as an address of their own (src/server/capabilities/email.ts).
     // EMAIL_FROM may also use the legacy display format "Name <email>".
     EMAIL_FROM?: string;
     EMAIL_FROM_NAME?: string;
