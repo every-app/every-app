@@ -1,10 +1,10 @@
 # Capabilities the gateway holds
 
 An app often needs a third-party API that isn't AI: DataForSEO for SEO data,
-Context.dev for rendering pages, later GitHub, Google or Slack. The gateway
-holds the credential once, an app lists the capability in its manifest, and
-the app calls through the gateway. No app holds the key, and a deploy needs
-no per-app settings.
+Context.dev for rendering pages, a social network's OAuth client, a way to
+send email, later GitHub or Google. The gateway holds the credential once, an
+app lists the capability in its manifest, and the app calls through the
+gateway. No app holds the key, and a deploy needs no per-app settings.
 
 This is phase 0 of the integrations design (branch
 `research/app-integrations`, `docs/research/2026-10-integrations-hub/app-integrations.md`):
@@ -15,8 +15,8 @@ does itself for apps (sending email, [below](#gateway-services-email)).
 Organization-held OAuth accounts and admin approval come in later phases and
 keep the same manifest entry, binding route and SDK call.
 
-AI providers stay separate: `providers: ["openai", "openrouter"]` and the
-`/api/ai/<provider>` proxy, with their model and route allowlists.
+AI providers stay separate: `providers: ["openai", "openrouter", "workers-ai"]`
+and the `/api/ai/<provider>` proxy, with their model and route allowlists.
 
 What comes next is designed, not built: the October 2026 redesign review
 ([docs/design/2026-10-redesign-review.md](design/2026-10-redesign-review.md))
@@ -31,26 +31,73 @@ learns the organization per call. Both documents were written when the
 manifest key was `integrations` with `as` and `background` on each entry; read
 them with this document's `capabilities` and `{ access, why }`.
 
+## The three kinds
+
+One registry (`packages/sdk/src/internal/capabilities.ts`) defines every
+capability; its `mode` is the kind. All three take the same manifest entry,
+`capabilities: { <id>: { access, why } }`, travel the app's private binding
+to the gateway under `/api/integrations/<id>/...`, and answer
+`GET /api/integrations/<id>` (`integrationStatus`) without calling out.
+
+| Kind           | Capabilities                                          | What the gateway does                                                             | The app calls                                                                            | Access  | Status adds                     |
+| -------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------- | ------------------------------- |
+| `api_key`      | `dataforseo`, `context`                               | puts its key on calls to the provider's own hosts, with the methods it reads with | `integrationFetch({ env, provider, for })` on the provider's real URLs                   | `read`  |                                 |
+| `oauth_client` | 16 social networks ([OAuth clients](#oauth-clients))  | completes the network's token endpoints only, putting its client on the request   | `integrationFetch` on the token endpoint; the authorize URL from the status's `clientId` | `write` | `clientId` (Mastodon: `origin`) |
+| `service`      | `email` ([Gateway services](#gateway-services-email)) | does the work itself: sends the mail from its sender, within its budgets          | `sendEmail({ env, for, message })`, which posts to `/api/integrations/email/send`        | `write` | `sender`, `senders`             |
+
+Every status answers `{ capability, requested, configured, ready }`;
+`configured` is false for an app that doesn't list the capability, so no app
+learns what the operator holds. The AI providers are not a kind yet: an app
+lists them in `providers` (and limits them with `ai.models`) and calls
+`/api/ai/<provider>/...` with `createGatewayFetch()`.
+
 ## For an operator
 
-Set the key once on the gateway:
+Every key, client and sender lives in the gateway Worker's secrets; nothing
+is set per app. Set them from the platform checkout, as many names at once
+as you like:
 
 ```bash
 pnpm everyapp secret set DATAFORSEO_API_KEY --for gateway
 ```
 
-DataForSEO takes the API login and password, as `login:password` or the
-base64 of it. The command redeploys the live gateway release with the key;
-every app that lists DataForSEO can use it from then on.
+Each value comes from a hidden prompt, or from an environment variable with
+`--from-env VAR` (one name). The command changes the live gateway Worker in
+one new version and never deploys; every app that lists the capability can
+use it from then on. A capability you skip is simply not offered: its
+status answers `configured: false`, and calls `integration_not_configured`
+(AI: `ai_provider_not_configured`), naming the command.
+
+Everything the gateway holds for apps, in one table:
+
+| What                        | Kind                | Gateway settings                                                                                                           | Set with (`pnpm everyapp secret set … --for gateway`)                                                          | Used by                                              |
+| --------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `openai`                    | AI provider         | `OPENAI_API_KEY`                                                                                                           | `OPENAI_API_KEY`                                                                                               | Postiz                                               |
+| `openrouter`                | AI provider         | `OPENROUTER_API_KEY`                                                                                                       | `OPENROUTER_API_KEY`                                                                                           | OpenSEO; agentic-inbox with `AI_PROVIDER=openrouter` |
+| `workers-ai`                | AI provider         | `WORKERS_AI_API_TOKEN`, with `CLOUDFLARE_ACCOUNT_ID` (which `everyapp setup` sets)                                         | `WORKERS_AI_API_TOKEN` (a "Workers AI" template token: Read and Edit)                                          | agentic-inbox                                        |
+| the AI proxy's extra routes | AI provider setting | `AI_PROXY_EXTRA_ROUTES` (optional; OpenAI only, e.g. `/v1/files`)                                                          | `AI_PROXY_EXTRA_ROUTES`                                                                                        |                                                      |
+| `dataforseo`                | `api_key`           | `DATAFORSEO_API_KEY` (`login:password`, or its base64)                                                                     | `DATAFORSEO_API_KEY`                                                                                           | OpenSEO                                              |
+| `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
+| `email`                     | `service`           | `EMAIL_FROM`, `EMAIL_FROM_NAME`; a gateway outside Workers also `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`            | `EMAIL_FROM EMAIL_FROM_NAME`, after onboarding the sending domain ([runbook](runbooks/email-sending-setup.md)) | Postiz, agentic-inbox, and the gateway's own mail    |
+| 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | Postiz                                               |
+
+X is not in the table: OAuth 1.0a signs every API call with the user's token
+secret, which the gateway never holds, so an app keeps `X_API_KEY` and
+`X_API_SECRET` as its own secrets (`pnpm everyapp secret set X_API_KEY
+X_API_SECRET` in the app's directory, after its first deploy).
+
+### API-key providers
 
 | Capability   | Gateway secret       | Hosts the key may reach                        | Access |
 | ------------ | -------------------- | ---------------------------------------------- | ------ |
 | `dataforseo` | `DATAFORSEO_API_KEY` | `api.dataforseo.com`, `sandbox.dataforseo.com` | `read` |
 | `context`    | `CONTEXT_API_KEY`    | `api.context.dev`                              | `read` |
 
-The AI proxy's keys are set the same way. An app lists the provider in its
-manifest's `providers` and calls `/api/ai/<provider>/...` with
-`createGatewayFetch()`; `ai.models` limits the models it may ask for.
+### AI providers
+
+An app lists the provider in its manifest's `providers` and calls
+`/api/ai/<provider>/...` with `createGatewayFetch()`; `ai.models` limits the
+models it may ask for.
 
 | AI provider  | Gateway setting                                  | Upstream                                             | Routes apps may call                                      |
 | ------------ | ------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------- |
@@ -147,7 +194,7 @@ const { ready } = await integrationStatus({ env, provider: "dataforseo" });
   directly with the developer's own key from `.dev.vars`, under the same
   name as the gateway secret.
 
-## What the gateway checks
+## What the gateway checks on an API-key call
 
 `AppGateway` serves `/api/integrations/<capability>/<host>/<path>` over the
 app's private binding (`apps/every-app-gateway/src/server/integration-proxy.ts`):
@@ -493,10 +540,16 @@ untrusted.
 
 ## Limits today
 
-- One key per provider, shared by every app that lists it, with no spend
-  caps. Whoever can deploy an app can list any capability, as for AI
+- One key, client or sender per capability, shared by every app and every
+  organization that lists it, so a provider's limits are shared too (Meta's
+  app review tiers, TikTok's user caps, Workers AI's per-account rate
+  limits). Whoever can deploy an app can list any capability, as for AI
   providers (deploying already takes credentials that can change the
   gateway).
-- Calls are logged, not metered.
-- The key lives in a gateway Worker secret, not encrypted in D1 with
+- Calls are logged, not metered, and have no spend caps. App mail is the
+  one capability with budgets (per recipient address and per gateway, not
+  per organization).
+- A hosted gateway sends app mail from its own sender only, and apps on the
+  dispatch tier take no inbound addresses.
+- Keys and clients live in gateway Worker secrets, not encrypted in D1 with
   rotation in the UI, as the full design has it.

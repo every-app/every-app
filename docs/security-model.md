@@ -18,6 +18,12 @@
   each one against the same policy as the app's Worker (private, no routes
   or domains, only the app's own resources, Workflows named after the app's
   Worker) and refuses a built Worker the manifest doesn't declare.
+  Helpers verify no identities: the gateway never calls one, so the app's
+  Worker verifies the request and hands the helper what it needs (ids as
+  headers, RPC arguments or Workflow params; Postiz's API helper reads the
+  app's `x-postiz-identity` header). The rule that only the app's own Worker
+  may bind a helper is what makes that safe, and a helper's `scheduled` and
+  Workflow code runs with no identity, as an app's does.
   A Hyperdrive binding is allowed only to a config the deploy provisioned
   for the app (`<app worker>--<binding>`, recorded in the app's resource
   ledger): created from, or adopted only when it connects to, the origin in
@@ -108,7 +114,11 @@ first upload; ADR-0001) decides what the gateway does, once, in
   the outcome, never subjects, bodies, attachments or addresses.
 - Inbound mail reaches an app's `email()` handler from an Email Routing rule
   that names its Worker, outside the perimeter: no identity, and anyone can
-  mail the address. The deploy keeps refusing the `email` trigger; the CLI
+  mail the address, so the handler treats the message as untrusted input
+  (its `From` is whatever the sender wrote) and its gateway calls name the
+  organization with `for: { background: true, organizationId }`; a reply
+  sent from it goes through the `email` capability and its budgets like any
+  other. The deploy keeps refusing the `email` trigger; the CLI
   makes the rules from the manifest's `email.inbound` instead, recorded in
   the ownership ledger, so a deploy takes only an address no other app
   recorded and no foreign rule or catch-all delivers, never turns Email
@@ -151,12 +161,15 @@ first upload; ADR-0001) decides what the gateway does, once, in
 - The registration rules give a shared app only to the install
   organization and never change an app's scope (a redeploy that names none
   keeps the row's; the same id asked for as the other scope is refused,
-  tombstones included). The CLI registers, redeploys (`secret set|unset`
-  included) or deletes one (`everyapp deploy --shared`, `everyapp register
-  --shared`, `everyapp delete`) only on a gateway whose install row records
-  `hosted` (deletes aside), and only for a Cloudflare login that is an owner
-  or admin of the platform organization by its verified email (an API token
-  is the account's own authority, as below).
+  tombstones included). The CLI registers, redeploys or deletes one
+  (`everyapp deploy --shared`, `everyapp register --shared`,
+  `everyapp delete`) only on a gateway whose install row records `hosted`
+  (deletes aside), and only for a Cloudflare login that is an owner or admin
+  of the platform organization by its verified email (an API token is the
+  account's own authority, as below). `secret set|unset` change the live
+  Worker without a deploy since #321 and check neither yet; the Cloudflare
+  login they take can change the Worker's secrets through cf directly
+  (TODO.md, Build).
   A shared app's Worker gets no `EVERY_APP_ORG_ID`: nothing pins it to the
   platform organization.
 - Machine-path attribution: the AppGateway entrypoint decides which
@@ -359,6 +372,23 @@ in the gateway's Cloudflare account **is** operator authority.
   forwards when it verifies for the app's organization, otherwise to the
   app; a shared app's calls follow the attribution rule under
   "Organizations and Shared Apps".
+- Social networks' OAuth clients (`oauth_client` capabilities,
+  `server/capabilities/oauthClient.ts`) are the operator's, one per network
+  for every organization. The gateway completes only each network's token
+  endpoints (host, exact path, method) for an app whose manifest lists the
+  network with `write`, refuses agents' identities outright
+  (`integration_agent_not_allowed`, `mcp:write` or not: an agent can't
+  connect accounts or mint tokens), removes any client id, secret or
+  `Authorization` the app sent (query, body, header, in any case) before it
+  puts its own where the endpoint takes it, buffers the body (64 KiB, form
+  or JSON only), follows no redirect and drops the network's `set-cookie`.
+  The client secret never reaches an app; the public `clientId` reaches only
+  an app that lists the network. Logs name the grant type from a known
+  list, never the query, body or answer, which carry codes and tokens. The
+  access and refresh tokens the exchange returns are the app's, stored and
+  used by the app (Postiz encrypts them at rest with its own `JWT_SECRET`).
+  X stays an app secret: OAuth 1.0a signs every call with the user's token
+  secret, which the gateway never holds.
 
 ## Sign-in with Cloudflare Access
 
@@ -631,7 +661,12 @@ binding once the account has one. Until then every dispatch app answers
   declares one, so today everything is denied). It always denies the
   providers whose keys the gateway holds (`api.openai.com`,
   `openrouter.ai`, `api.dataforseo.com`, `api.context.dev`,
-  `gateway.ai.cloudflare.com`, and their subdomains) and the gateway's own
+  `gateway.ai.cloudflare.com`, `api.cloudflare.com` for Workers AI and the
+  rest of Cloudflare's API, and their subdomains: `reserved_host`), the
+  token endpoints of the OAuth clients the gateway holds, however the path
+  is spelled, though not those networks' API hosts, which apps call with
+  their users' tokens (`reserved_endpoint`; Mastodon's on `MASTODON_URL`),
+  and the gateway's own
   hosts (`GATEWAY_URL`'s host, `APP_BASE_DOMAIN` and every app host under
   it), every third-party app host (`THIRD_PARTY_DOMAIN` and every name
   under it, as set), and refuses everything when the dispatcher passed no

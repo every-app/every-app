@@ -311,6 +311,43 @@ To try it by hand against a local gateway, `scripts/access-local.mjs` runs a
 mock Access with an outer-ring proxy: `docs/runbooks/cloudflare-access.md`,
 "Test locally".
 
+### The platform side of the Postiz and agentic-inbox ports
+
+The ports (#322 to #327) run Postiz as two Workers (a vinext frontend and a
+NestJS helper with a Workflow and a cron) and agentic-inbox as one Worker
+with two Durable Objects. Nothing of theirs can deploy from here, so these
+suites stand in for a live account:
+
+```bash
+# Both ports' manifests through register → provision → build → policy →
+# migrate (Postiz's 171-statement Prisma init on SQLite) → upload, in the
+# fake account; and inbound mail routes in the same fake account
+( cd packages/cli && pnpm exec vitest run src/commands/deploy/deployApp.ports.test.ts \
+    src/commands/deploy/deployApp.email.test.ts src/lib/app/emailRoutes.test.ts \
+    src/lib/migrations/prisma.test.ts )
+
+# The gateway's capability routes: email and OAuth clients, unit and on
+# migrated SQLite; Workers AI in the AI proxy (the live SSE captures as
+# fixtures); OPTIONAL_SECRETS covers every setting the registry names
+( cd apps/every-app-gateway && pnpm exec vitest run src/server/capabilities \
+    src/server/email-capability.sqlite.test.ts src/server/oauth-client.sqlite.test.ts \
+    src/server/ai-proxy.test.ts src/optional-secrets.test.ts )
+
+# The SDK's halves: sendEmail, the shared email and OAuth wire rules, the
+# Workers AI normaliser, nodeServerHandler, and docs/capabilities.md's
+# generated OAuth tables (UPDATE_DOCS=1 regenerates them)
+( cd packages/sdk && pnpm exec vitest run src/server/sendEmail.test.ts \
+    src/internal/email.test.ts src/internal/oauthClient.test.ts \
+    src/internal/aiProviders.test.ts src/server/nodeServer.test.ts \
+    src/internal/capabilitiesDoc.test.ts )
+
+# The gateway's config loads with every optional setting
+pnpm -C apps/every-app-gateway build    # cf build && tsc --noEmit
+```
+
+What only a live account can show is in [TODO.md](../TODO.md), "Check on
+the first live deploy", under the ports.
+
 ---
 
 ## B. Local testing with `everyapp dev`
@@ -354,7 +391,8 @@ the gateway-lite listens on 127.0.0.1 unless `--host`.
    hardcoded base host:
 
    - `http://todo.localhost:8787/` (browsers resolve `*.localhost` natively;
-     for curl add `--connect-to todo.localhost:8787:127.0.0.1:8787`)
+     for curl add `--connect-to todo.localhost:8787:127.0.0.1:8787` or
+     `--resolve todo.localhost:8787:127.0.0.1`, [below](#probing-the-perimeter-with-curl))
    - `http://todo.fix-ui.everyapp.localhost/` (portless, per-worktree)
 
    Each git worktree gets its own `.cloudflare/state` and dev registry
@@ -378,9 +416,17 @@ the gateway-lite listens on 127.0.0.1 unless `--host`.
    curl -s -o /dev/null -w '%{http_code}\n' \
      -H 'x-everyapp-identity: forged' http://127.0.0.1:<vite-port>/          # 401
 
-   # POST without an Origin header → CSRF default-deny
+   # POST without Origin or a cookie → anonymous: 401 {"error":"unauthenticated"}
    curl -s $C -o /dev/null -w '%{http_code}\n' \
-     -X POST http://todo.localhost:8787/anything                             # 403
+     -X POST http://todo.localhost:8787/anything                             # 401
+
+   # The same POST with the app's Origin → reaches the app (todo-app: 404)
+   curl -s $C -o /dev/null -w '%{http_code}\n' -X POST \
+     -H 'Origin: http://todo.localhost:8787' http://todo.localhost:8787/anything  # 404
+
+   # A cookie without Origin → CSRF default-deny
+   curl -s $C -o /dev/null -w '%{http_code}\n' -X POST -H 'Cookie: a=1' \
+     http://todo.localhost:8787/anything                                     # 403
 
    # Unknown app label → 404 from the registry
    curl -s -o /dev/null -w '%{http_code}\n' \
@@ -402,6 +448,89 @@ the gateway-lite listens on 127.0.0.1 unless `--host`.
    the DO.)
 
 4. **Run the suites** as in section A.
+
+### Probing the perimeter with curl
+
+Browsers send what the perimeter needs on their own; curl and scripts don't.
+Three things to add (checked with `pnpm everyapp dev --port 9080` in
+`apps/todo-app`, curl 8.7.1 and Node 24 on macOS):
+
+- **Pin `*.localhost` to 127.0.0.1.** The gateway-lite listens on
+  127.0.0.1 only, and the system resolver answers `::1` first for
+  `*.localhost` (`dscacheutil -q host -a name todo.localhost`). curl and
+  Node's `fetch` fall back to 127.0.0.1 after the refused `::1` attempt, but
+  a client that takes the first address fails (`ECONNREFUSED ::1`, as
+  `http.get` with `autoSelectFamily: false` does). Pin it:
+
+  ```bash
+  curl --resolve todo.localhost:8787:127.0.0.1 http://todo.localhost:8787/
+  # or: --connect-to todo.localhost:8787:127.0.0.1:8787
+  ```
+
+- **Send `Origin` on state-changing requests.** A POST (PUT, PATCH,
+  DELETE) needs `Sec-Fetch-Site: same-origin` or an `Origin` whose host is
+  the app's to count as the signed-in dev user. Without either it is
+  anonymous: a private route answers `401 {"error":"unauthenticated"}`, the
+  challenge a programmatic client needs, never a 403, because a request
+  without a cookie has nothing a forger could ride. Only a request that
+  carries a cookie gets the CSRF refusal, `403 csrf_denied`. So:
+
+  ```bash
+  curl --resolve todo.localhost:8787:127.0.0.1 -X POST \
+    -H 'Origin: http://todo.localhost:8787' \
+    -H 'content-type: application/json' -d '{}' \
+    http://todo.localhost:8787/api/...
+  ```
+
+  | Request (no `Authorization`)                | Answer                          |
+  | ------------------------------------------- | ------------------------------- |
+  | no cookie, no `Origin`, no `Sec-Fetch-Site` | 401 `unauthenticated`           |
+  | no cookie, another host's `Origin`          | 401 `unauthenticated`           |
+  | no cookie, the app's `Origin`               | reaches the app as the dev user |
+  | no cookie, `Sec-Fetch-Site: same-origin`    | reaches the app as the dev user |
+  | a cookie, no `Origin`                       | 403 `csrf_denied`               |
+  | a cookie, the app's `Origin`                | reaches the app as the dev user |
+
+  The same holds behind the production gateway, with a real session.
+
+- **Anonymous requests** to a public route: `-H 'x-everyapp-dev-anon: 1'`
+  (or the cookie `everyapp_dev_anon=1` in a browser).
+
+### Mail in local dev
+
+`everyapp dev` has no gateway, so neither direction goes through Email
+Sending or Email Routing:
+
+- **Outbound** (`sendEmail()` from `@every-app/sdk/server`, the `email`
+  capability): the SDK checks the message and the sender the way the gateway
+  does (the manifest's `senders` reach the Worker as
+  `EVERYAPP_EMAIL_SENDERS`), then prints
+  `[everyapp dev] email to <n> recipients subject "<subject>"` and answers
+  `{ status: "logged" }`. With `EMAIL_REST_API_TOKEN`,
+  `CLOUDFLARE_ACCOUNT_ID` and `EMAIL_FROM` in the app's `.dev.vars` it
+  really sends, from the developer's own account
+  ([docs/capabilities.md](capabilities.md#gateway-services-email)).
+- **Inbound** (an app's `email()` handler): with `email.inbound` in the
+  manifest, `everyapp dev` prints an `Email:` line in its ready block. It
+  posts a raw RFC 5322 message to the app's **internal** port, where the
+  Cloudflare Vite plugin's miniflare runs the handler:
+
+  ```bash
+  curl -X POST "http://127.0.0.1:<app port>/cdn-cgi/local/email?from=someone@example.net&to=hello@example.com" \
+    --data-binary @message.eml
+  # HTTP/1.1 200 OK
+  # Worker successfully processed email
+  ```
+
+  `message.eml` needs `From`, `To`, `Subject` and a `Message-ID` header
+  (without one: `400 Email could not be parsed: invalid or no message id
+  provided`); miniflare refuses one over production's 25 MiB. The path is
+  the one miniflare 5 serves under `@cloudflare/vite-plugin` 2.x; wrangler 4
+  (miniflare 4) serves `/cdn-cgi/handler/email` instead, which on the Vite
+  port is just an app route (`401`, no identity). Through the gateway-lite's
+  host the path is an app route too, refused by the perimeter, so use the
+  app port the ready block prints. The handler runs with no identity, as in
+  production.
 
 ### Mirror mode (`--mode mirror`) — real login against a local gateway
 

@@ -403,10 +403,13 @@ list the capability, the gateway holds no key) from the provider's answers.
 `integrationStatus({ env, provider })` says whether calls would go through,
 without making one. In local dev, with no binding, the key comes from
 `.dev.vars` under the gateway secret's name (`DATAFORSEO_API_KEY`), and so do
-the AI providers' (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`) for
-`createGatewayFetch`: `everyAppWorker()` declares the key of each capability
-and provider the manifest lists when it is set there, so the dev server
-passes it through.
+the AI providers' (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, or
+`WORKERS_AI_API_TOKEN` with `CLOUDFLARE_ACCOUNT_ID` for Workers AI, which is
+billed to that account) for `createGatewayFetch`: `everyAppWorker()` declares
+the settings of each capability and provider the manifest lists when they
+are set there, so the dev server passes them through.
+
+<!-- TODO(integration): PR 7 (port/ports-todo-and-docs) adds Workers AI's dev settings, as PR 1's report asked; this README is PR 2's file. -->
 
 ### Email
 
