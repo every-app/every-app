@@ -13,6 +13,10 @@
  * It runs after the build (dependencies installed) and before the database
  * or the Worker changes. A Postgres app (migrations.dialect "postgresql")
  * is checked the same way: generate needs no database.
+ *
+ * A Postgres app on Prisma (migrations.engine "prisma") isn't checked:
+ * Prisma compares migrations with a schema only against a shadow database,
+ * which the deploy doesn't have. It says so, with the command to run.
  */
 import { rmSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -41,7 +45,6 @@ export async function checkSchemaDrift({
   // An absent `migrations` field means drizzle (lib/manifest.ts).
   const engine = manifest.migrations?.engine ?? "drizzle";
   const postgres = manifest.migrations?.dialect === "postgresql";
-  if ((!postgres && !manifest.resources?.d1?.length) || engine !== "drizzle") return;
   const skip = (why: string) =>
     out.emit({
       type: "warning",
@@ -49,6 +52,13 @@ export async function checkSchemaDrift({
       step: "app.schema",
       message: `${why}, so this deploy can't check that ${manifest.id}'s migrations match its schema.`,
     });
+  if (engine === "prisma") {
+    skip(
+      "Prisma compares a schema with its migrations only against a shadow database (run `prisma migrate diff --from-migrations <dir> --to-schema <schema> --exit-code` with datasource.shadowDatabaseUrl set in prisma.config.ts)",
+    );
+    return;
+  }
+  if ((!postgres && !manifest.resources?.d1?.length) || engine !== "drizzle") return;
 
   let drizzleKit: string;
   try {

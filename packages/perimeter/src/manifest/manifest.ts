@@ -51,6 +51,13 @@ const ClassResourceSchema = z.object({
 const HyperdriveResourceSchema = z.object({
   name: z.string(),
   worker: z.string().optional(),
+  /**
+   * Whether Hyperdrive caches the config's read queries: "off" (the
+   * default), since Hyperdrive never invalidates a cached read when the
+   * app writes, and app code reads its own writes; "default" turns on
+   * Cloudflare's own caching (60 s, stale for 15 s more).
+   */
+  caching: z.enum(["off", "default"]).optional(),
 });
 
 export const ResourcesSchema = z
@@ -66,6 +73,12 @@ export const ResourcesSchema = z
     workflows: z.array(ClassResourceSchema).optional(),
     /** Hyperdrive configs to a Postgres database the app owns. */
     hyperdrive: z.array(HyperdriveResourceSchema).optional(),
+    /**
+     * R2 buckets, by binding, which every one of the app's Workers binds:
+     * `R2` is named after the app's Worker, any other binding
+     * `<worker>--<binding>` ({@link bucketNameFor}).
+     */
+    r2: z.array(z.string()).optional(),
   })
   .passthrough();
 export type Resources = z.infer<typeof ResourcesSchema>;
@@ -99,20 +112,31 @@ const ScopesSchemaStrict = ScopesSchema;
 
 export const MigrationsSchema = z
   .object({
-    engine: z.enum(["drizzle", "d1-sql"]),
+    /**
+     * What writes and applies the migrations: "drizzle" (drizzle-kit),
+     * "d1-sql" (SQL files written some other way, e.g. Prisma's generated
+     * SQL for D1), or "prisma" (`prisma migrate deploy`, Postgres only).
+     */
+    engine: z.enum(["drizzle", "d1-sql", "prisma"]),
     /**
      * The database the migrations are for: "sqlite" (the default), the D1
      * database `binding` names; "postgresql", the Postgres database at
      * POSTGRES_DATABASE_URL in the app's secrets file, which the deploy
-     * migrates with `drizzle-kit migrate` before it uploads.
+     * migrates before it uploads (`drizzle-kit migrate`, or
+     * `prisma migrate deploy` on the "prisma" engine).
      */
     dialect: z.enum(["sqlite", "postgresql"]).optional(),
-    /** Directory of SQL migration files, relative to the app root. */
+    /**
+     * Directory of SQL migration files, relative to the app root. On the
+     * "prisma" engine the deploy skips the migration when it is set and
+     * missing; unset, Prisma finds its migrations through its config.
+     */
     dir: z.string().optional(),
     /**
-     * The app's drizzle config, relative to the app root, when it isn't
-     * drizzle.config.ts: the schema check and the Postgres migration run
-     * drizzle-kit with it.
+     * The app's drizzle config (or, on the "prisma" engine, its
+     * prisma.config.ts), relative to the app root, when it isn't the
+     * tool's default: the schema check and the Postgres migration run the
+     * tool with it.
      */
     config: z.string().min(1).optional(),
     /** D1 binding to migrate. Defaults to the first declared D1 binding. */
@@ -120,12 +144,21 @@ export const MigrationsSchema = z
   })
   .strict()
   .superRefine((value, ctx) => {
+    if (value.engine === "prisma" && value.dialect !== "postgresql") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["engine"],
+        message:
+          'Prisma migrations run on Postgres (dialect "postgresql"); D1 takes the generated SQL through "d1-sql"',
+      });
+    }
     if (value.dialect === "postgresql") {
-      if (value.engine !== "drizzle") {
+      if (value.engine === "d1-sql") {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["engine"],
-          message: 'Postgres migrations run on the "drizzle" engine',
+          message:
+            'Postgres migrations run on the "drizzle" or "prisma" engine',
         });
       }
       if (value.binding !== undefined) {
@@ -384,7 +417,7 @@ export const ManifestSchema = z
 export type Manifest = z.infer<typeof ManifestSchema>;
 
 export const PublicRouteSchemaStrict = PublicRouteSchema.strict();
-/** A D1, KV or Workflow binding: the name the Worker reads from `env`. */
+/** A D1, KV, R2 or Workflow binding: the name the Worker reads from `env`. */
 const BindingNameSchema = z
   .string()
   .regex(
@@ -394,6 +427,7 @@ const BindingNameSchema = z
 export const ResourcesSchemaStrict = ResourcesSchema.extend({
   d1: z.array(BindingNameSchema).optional(),
   kv: z.array(BindingNameSchema).optional(),
+  r2: z.array(BindingNameSchema).optional(),
   durableObjects: z.array(ClassResourceSchema.strict()).optional(),
   workflows: z
     .array(ClassResourceSchema.extend({ name: BindingNameSchema }).strict())
@@ -546,6 +580,7 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
   for (const name of [
     ...(manifest.resources?.d1 ?? []),
     ...(manifest.resources?.kv ?? []),
+    ...(manifest.resources?.r2 ?? []),
     ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
   ]) {
     if (names.has(name)) {
@@ -561,7 +596,8 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
  * What a manifest asks for that an app on `tier` can't have, as sentences.
  * The dispatch tier (customer code in a Workers for Platforms namespace)
  * gets no Hyperdrive: an account holds at most 25 configs, so they are
- * kept for first-party apps.
+ * kept for first-party apps. Nor R2 buckets yet: the hosted deployer
+ * refuses R2 bindings.
  */
 export function manifestTierProblems(
   manifest: Pick<Manifest, "resources">,
@@ -569,11 +605,18 @@ export function manifestTierProblems(
 ): string[] {
   if (tier === "service_binding") return [];
   if (tier !== "dispatch") return [`apps on tier "${tier}" can't be deployed`];
-  return manifest.resources?.hyperdrive?.length
-    ? [
-        "resources.hyperdrive: Hyperdrive isn't available to apps in a dispatch namespace (an account holds at most 25 configs)",
-      ]
-    : [];
+  const problems: string[] = [];
+  if (manifest.resources?.hyperdrive?.length) {
+    problems.push(
+      "resources.hyperdrive: Hyperdrive isn't available to apps in a dispatch namespace (an account holds at most 25 configs)",
+    );
+  }
+  if (manifest.resources?.r2?.length) {
+    problems.push(
+      "resources.r2: R2 buckets aren't available to apps in a dispatch namespace yet",
+    );
+  }
+  return problems;
 }
 
 /** Typed identity helper for everyapp.config.ts authors. */
@@ -663,6 +706,23 @@ export function isRegistryWorkerName(
  */
 export function resourceNameFor(workerName: string, binding: string): string {
   if (binding === "DB" || binding === "KV") return workerName;
+  return suffixedName(workerName, binding);
+}
+
+/** Cloudflare's limit on an R2 bucket's name. */
+export const MAX_BUCKET_NAME_LENGTH = 63;
+
+/**
+ * The R2 bucket an app Worker's binding uses: `R2` takes the Worker's name
+ * (the bucket apps bound by hand before `resources.r2`), any other binding
+ * appends its own after {@link RESOURCE_SEPARATOR}
+ * (`every-acme-postiz--media`).
+ */
+export function bucketNameFor(workerName: string, binding: string): string {
+  return binding === "R2" ? workerName : suffixedName(workerName, binding);
+}
+
+function suffixedName(workerName: string, binding: string): string {
   const suffix = binding.toLowerCase().replaceAll("_", "-");
   return `${workerName}${RESOURCE_SEPARATOR}${suffix}`;
 }

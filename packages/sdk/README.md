@@ -106,8 +106,8 @@ cloudflare({
 
 It deploys as `every-acme-seo--audit`, private like the app: only the app's
 Worker reaches it, through `env.AUDIT` and the bindings of the classes it
-defines. It shares the app's D1 databases and KV namespaces, and calls the
-gateway as the app. `everyapp deploy` checks and uploads helpers before the
+defines. It shares the app's D1 databases, KV namespaces and R2 buckets, and
+calls the gateway as the app. `everyapp deploy` checks and uploads helpers before the
 app's Worker, and `everyapp delete --purge` deletes them, and the Workflows
 they run, with it. A class stays in the Worker that first defined it.
 
@@ -146,6 +146,51 @@ development, set `CLOUDFLARE_HYPERDRIVE_LOCAL_CONNECTION_STRING_HYPERDRIVE`
 in `.dev.vars` to a local Postgres; without it the binding is absent. Apps on
 the dispatch tier (customer code in a Workers for Platforms namespace) can't
 use Hyperdrive.
+
+The configs `everyapp deploy` creates cache no queries: Hyperdrive never
+invalidates a cached read when the app writes, and app code reads its own
+writes. A deploy turns caching back off on a config that caches. For a
+read-heavy config that tolerates reads up to a minute old,
+`hyperdrive: [{ name: "HYPERDRIVE", caching: "default" }]` keeps Cloudflare's
+own caching (60 s, served stale for 15 s more).
+
+An app on Prisma migrates with `prisma migrate deploy` instead:
+
+```ts
+migrations: { engine: "prisma", dialect: "postgresql", config: "prisma.config.ts" },
+```
+
+The deploy runs the app's own `prisma` (a devDependency) with
+`POSTGRES_DATABASE_URL` in its environment, so `prisma.config.ts` reads it:
+`datasource: { url: process.env.POSTGRES_DATABASE_URL }`. Prisma finds its
+migrations through its config; a `dir` in the manifest only makes the deploy
+skip the migration when that directory is missing. The deploy can't check the
+schema against the migrations (Prisma needs a shadow database for that) and
+says so; run `prisma migrate diff --from-migrations <dir> --to-schema
+<schema> --exit-code` yourself. Prisma on D1 is no engine of its own: generate
+the SQL (`prisma migrate diff --from-empty --to-schema schema.prisma
+--script`), put `--> statement-breakpoint` between its statements, and ship it
+with `migrations: { engine: "d1-sql", dir: "migrations", binding: "DB" }`.
+
+## R2 buckets
+
+Declare the app's buckets by binding, and every one of its Workers (helpers
+included) binds them:
+
+```ts
+resources: { r2: ["R2", "MEDIA"] },
+```
+
+`R2` is the bucket named after the app's Worker (`every-acme-postiz`), any
+other binding `<worker>--<binding>` (`every-acme-postiz--media`); the
+gateway assigns the names when it registers the app, and the deploy's policy
+refuses any other bucket. The deploy doesn't create, record or purge buckets
+yet: `cf deploy` should create a bound bucket that doesn't exist (not yet
+confirmed on a live account), and the dashboard can create one before the
+first deploy. A bucket bound by hand in
+`cloudflare.config.ts`, `bindings.r2({ name: worker.name })`, keeps working
+while the manifest declares none. Apps on the dispatch tier can't have
+buckets yet.
 
 ## Agent tools
 

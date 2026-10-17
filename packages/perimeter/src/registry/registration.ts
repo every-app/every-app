@@ -11,7 +11,7 @@
  * `binding` app's Worker is uploaded, and the gateway makes it `active` on
  * the first request that reaches it over a service binding. Names are
  * assigned once, at first registration: the Worker `every-<orgKey>-<appId>`,
- * its D1 and KV resources after it (`every-<orgKey>-<appId>--<binding>`), and
+ * its D1, KV and R2 resources after it (`every-<orgKey>-<appId>--<binding>`), and
  * the hostname, `<appId>.<base>` for the install's own organization and
  * `<appId>-<orgKey>.<base>` for any other. Deleted apps keep their row (a
  * tombstone), so their names stay taken. A `shared` app (a first-party app
@@ -21,9 +21,11 @@
  */
 import type { AppScope, Tier } from "./apps";
 import {
+  bucketNameFor,
   isRegistryWorkerName,
   isReservedAppId,
   ManifestError,
+  MAX_BUCKET_NAME_LENGTH,
   MAX_WORKER_NAME_LENGTH,
   registryWorkerNameFor,
   RESOURCE_SEPARATOR,
@@ -75,10 +77,11 @@ export interface AccessGrant {
   grantedBy: null;
 }
 
-/** The D1 databases and KV namespaces for an app's bindings, by binding. */
+/** The D1 databases, KV namespaces and R2 buckets for an app's bindings, by binding. */
 export type AppResources = {
   d1: Record<string, string>;
   kv: Record<string, string>;
+  r2: Record<string, string>;
 };
 
 export type RegistrationErrorCode =
@@ -259,16 +262,20 @@ function resourcesFor(
   workerName: string,
   manifest: Manifest | null,
 ): AppResources {
-  const names = (bindings: readonly string[] | undefined) =>
+  const names = (
+    bindings: readonly string[] | undefined,
+    nameFor: (workerName: string, binding: string) => string = resourceNameFor,
+  ) =>
     Object.fromEntries(
       (bindings ?? []).map((binding) => [
         binding,
-        resourceNameFor(workerName, binding),
+        nameFor(workerName, binding),
       ]),
     );
   return {
     d1: names(manifest?.resources?.d1),
     kv: names(manifest?.resources?.kv),
+    r2: names(manifest?.resources?.r2, bucketNameFor),
   };
 }
 
@@ -279,13 +286,30 @@ function resourcesFor(
 export function appResources(
   app: Pick<AppRow, "workerName" | "manifest">,
 ): AppResources {
-  if (!app.workerName) return { d1: {}, kv: {} };
+  if (!app.workerName) return { d1: {}, kv: {}, r2: {} };
   return resourcesFor(app.workerName, parseStoredManifest(app.manifest));
 }
 
-/** Two bindings of one kind that would share a database or namespace. */
+const RESOURCE_LABELS: Record<keyof AppResources, string> = {
+  d1: "D1 database",
+  kv: "KV namespace",
+  r2: "R2 bucket",
+};
+
+/**
+ * Cloudflare's rule for an R2 bucket's name: lowercase letters, digits and
+ * hyphens, starting and ending with a letter or digit.
+ */
+const BUCKET_NAME = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
+
+/**
+ * Two bindings of one kind that would share a database, namespace or
+ * bucket, or a bucket name Cloudflare refuses.
+ */
 function assertDistinctResources(resources: AppResources): void {
-  for (const [kind, names] of Object.entries(resources)) {
+  for (const [kind, names] of Object.entries(resources) as Array<
+    [keyof AppResources, Record<string, string>]
+  >) {
     const seen = new Map<string, string>();
     for (const [binding, name] of Object.entries(names)) {
       const other = seen.get(name);
@@ -293,7 +317,17 @@ function assertDistinctResources(resources: AppResources): void {
         throw new RegistrationError({
           status: 400,
           code: "RESOURCE_NAME_CONFLICT",
-          message: `Bindings ${other} and ${binding} would share the ${kind === "d1" ? "D1 database" : "KV namespace"} "${name}". Rename one of them in everyapp.config.ts.`,
+          message: `Bindings ${other} and ${binding} would share the ${RESOURCE_LABELS[kind]} "${name}". Rename one of them in everyapp.config.ts.`,
+        });
+      }
+      if (
+        kind === "r2" &&
+        (name.length > MAX_BUCKET_NAME_LENGTH || !BUCKET_NAME.test(name))
+      ) {
+        throw new RegistrationError({
+          status: 400,
+          code: "INVALID_MANIFEST",
+          message: `resources.r2: ${binding} would be the R2 bucket "${name}", which Cloudflare refuses (at most ${MAX_BUCKET_NAME_LENGTH} lowercase letters, digits and hyphens, starting and ending with a letter or digit). Rename the binding in everyapp.config.ts.`,
         });
       }
       seen.set(name, binding);

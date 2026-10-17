@@ -153,7 +153,8 @@ export const D1RawOutput = z.array(
 
 /**
  * `cf hyperdrive create`, and each entry of `cf hyperdrive list`: the
- * config and where it connects (never the password, which the API keeps).
+ * config, where it connects (never the password, which the API keeps) and
+ * whether it caches reads.
  */
 export const HyperdriveConfigOutput = z.looseObject({
   id: z.string(),
@@ -167,6 +168,8 @@ export const HyperdriveConfigOutput = z.looseObject({
       scheme: z.string().nullish(),
     })
     .nullish(),
+  // TODO(integration): PR 5 (port/port-resources) reads caching to keep it off.
+  caching: z.looseObject({ disabled: z.boolean().nullish() }).nullish(),
 });
 export type HyperdriveConfig = z.infer<typeof HyperdriveConfigOutput>;
 export const HyperdriveConfigListOutput = z.array(HyperdriveConfigOutput);

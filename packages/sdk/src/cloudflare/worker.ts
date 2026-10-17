@@ -22,6 +22,8 @@ interface HyperdriveResource {
   readonly name: string;
   /** A helper Worker (`workers`) that alone binds it; every Worker when unset. */
   readonly worker?: string;
+  /** Whether Hyperdrive caches its reads (the deploy's concern; "off" by default). */
+  readonly caching?: "off" | "default";
 }
 
 /** Cloudflare's limits for one of the app's Workers. */
@@ -36,6 +38,11 @@ export interface EveryAppWorkerManifest {
   resources?: {
     d1?: readonly string[];
     kv?: readonly string[];
+    /**
+     * R2 buckets every one of the app's Workers binds: `R2` named after the
+     * app's Worker, any other binding `<app worker>--<binding>`.
+     */
+    r2?: readonly string[];
     durableObjects?: readonly ClassResource[];
     workflows?: readonly ClassResource[];
     /** Hyperdrive configs, named `<app worker>--<binding>` by the deploy. */
@@ -124,6 +131,10 @@ export interface KvBinding {
   type: "kv";
   id?: string;
 }
+export interface R2Binding {
+  type: "r2";
+  name: string;
+}
 export interface HyperdriveBinding {
   type: "hyperdrive";
   id: string;
@@ -159,6 +170,7 @@ export type EveryAppBinding =
   | SecretBinding
   | D1Binding
   | KvBinding
+  | R2Binding
   | HyperdriveBinding
   | DurableObjectBinding
   | WorkflowBinding
@@ -180,6 +192,9 @@ type D1Names<M> = M extends { resources: { d1: readonly (infer B)[] } }
   ? B & string
   : never;
 type KvNames<M> = M extends { resources: { kv: readonly (infer B)[] } }
+  ? B & string
+  : never;
+type R2Names<M> = M extends { resources: { r2: readonly (infer B)[] } }
   ? B & string
   : never;
 type DurableObjects<M> = M extends {
@@ -250,6 +265,8 @@ type DevGatewayKeys<M> =
 
 type ResourceEnv<M> = { [B in D1Names<M>]: D1Binding } & {
   [B in KvNames<M>]: KvBinding;
+} & {
+  [B in R2Names<M>]: R2Binding;
 } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
@@ -535,7 +552,7 @@ export interface EveryAppAuxiliaryWorkerConfig<TEntrypoint> {
  * Build the definition of one of the app's helper Workers (the manifest's
  * `workers`), e.g. one that runs a memory-hungry job away from the app's
  * Worker. It is named `<app worker>--<worker>`, is private like the app, and
- * binds the app's D1 databases and KV namespaces, the classes it defines, and
+ * binds the app's D1 databases, KV namespaces and R2 buckets, the classes it defines, and
  * the gateway (with the app's identity, for capabilities). Only the app's
  * Worker reaches it. Pass it to the Vite plugin:
  *
@@ -664,13 +681,16 @@ function gatewayBinding(
   };
 }
 
-/** The app's D1 databases and KV namespaces, which all its Workers share. */
+/**
+ * The app's D1 databases, KV namespaces and R2 buckets, which all its
+ * Workers share.
+ */
 function storageBindings(
   manifest: EveryAppWorkerManifest,
   appWorker: string,
   deploy: EveryAppDeployInputs | undefined,
-): Record<string, D1Binding | KvBinding> {
-  const env: Record<string, D1Binding | KvBinding> = {};
+): Record<string, D1Binding | KvBinding | R2Binding> {
+  const env: Record<string, D1Binding | KvBinding | R2Binding> = {};
   for (const binding of manifest.resources?.d1 ?? []) {
     if (deploy) {
       const d1 = deploy.resources.d1?.[binding];
@@ -695,6 +715,22 @@ function storageBindings(
       env[binding] = { type: "kv", id: `${binding}-${appWorker}` };
     } else {
       env[binding] = { type: "kv" };
+    }
+  }
+  // Deployed, the names the gateway assigned at registration; in dev the
+  // same rule, so a local bucket is named like the deployed one.
+  for (const binding of manifest.resources?.r2 ?? []) {
+    if (env[binding]) {
+      throw new Error(
+        `r2: ${binding} reuses a binding name the Worker already has.`,
+      );
+    }
+    if (deploy) {
+      const r2 = deploy.resources.r2?.[binding];
+      if (!r2) throw missingResource("R2 bucket", binding);
+      env[binding] = { type: "r2", name: r2.name };
+    } else {
+      env[binding] = { type: "r2", name: bucketNameFor(appWorker, binding) };
     }
   }
   return env;
@@ -1020,10 +1056,23 @@ function workerNameFor(appId: string): string {
   return appId.startsWith("every-") ? appId : `every-${appId}`;
 }
 
+/**
+ * Copies of the gateway's naming rules (@every-app/perimeter/manifest's
+ * resourceNameFor and bucketNameFor): `DB` and `KV` (`R2` for a bucket) take
+ * the Worker's name, any other binding `<worker>--<binding>`.
+ */
 function resourceNameFor(workerName: string, binding: string): string {
   return binding === "DB" || binding === "KV"
     ? workerName
-    : `${workerName}-${binding.toLowerCase()}`;
+    : suffixedName(workerName, binding);
+}
+
+function bucketNameFor(workerName: string, binding: string): string {
+  return binding === "R2" ? workerName : suffixedName(workerName, binding);
+}
+
+function suffixedName(workerName: string, binding: string): string {
+  return `${workerName}--${binding.toLowerCase().replaceAll("_", "-")}`;
 }
 
 function assertAppId(id: unknown): void {

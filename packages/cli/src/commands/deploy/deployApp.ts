@@ -11,18 +11,21 @@
  *      it;
  *   3. under the app's deploy lease: find or create its D1, KV and
  *      Hyperdrive configs (only ever the app's own; a config from the
- *      origin in the app's secrets file, lib/app/deploySecrets.ts),
- *      `cf build` with the deploy inputs (the
- *      gateway's identity key from the install row) and check the built
- *      Worker against the app policy and its Workflows' names (each new or
- *      already the app's), check that its drizzle migrations still describe
- *      its schema (steps/checkSchemaDrift.ts), make sure an unattended run
- *      may replace the Worker, and only then (the lease checked again
- *      before each) migrate D1 (bookmark, then `cf d1 migrations apply`),
- *      or Postgres (`drizzle-kit migrate`, lib/migrations/postgres.ts),
- *      and upload it (`cf deploy --prebuilt`, with GATEWAY_URL and
- *      EVERY_APP_ORG_ID in the secrets file; cf creates or updates its
- *      Workflows), so a deploy that can't upload leaves the database alone.
+ *      origin in the app's secrets file, lib/app/deploySecrets.ts, with
+ *      query caching off unless the manifest says otherwise), name its R2
+ *      buckets (left to `cf deploy` to create), `cf build` with the
+ *      deploy inputs (the gateway's identity key from the install row) and
+ *      check the built Worker against the app policy and its Workflows'
+ *      names (each new or already the app's), check that its drizzle
+ *      migrations still describe its schema (steps/checkSchemaDrift.ts),
+ *      make sure an unattended run may replace the Worker, and only then
+ *      (the lease checked again before each) migrate D1 (bookmark, then
+ *      `cf d1 migrations apply`),
+ *      or Postgres (`drizzle-kit migrate`, lib/migrations/postgres.ts, or
+ *      `prisma migrate deploy`, lib/migrations/prisma.ts), and upload it
+ *      (`cf deploy --prebuilt`, with GATEWAY_URL and EVERY_APP_ORG_ID in
+ *      the secrets file; cf creates or updates its Workflows), so a
+ *      deploy that can't upload leaves the database alone.
  *      Workflows the app dropped (with --allow-delete-workflows) go once
  *      the upload is live; then the registry records the version, its
  *      manifest and who deployed it (`pending` → `binding`). The app's
@@ -118,6 +121,7 @@ import {
   type EveryAppCliManifest,
 } from "@/lib/manifest";
 import { migratePostgres, type DrizzleKitRunner } from "@/lib/migrations/postgres";
+import { migratePrismaPostgres, type PrismaRunner } from "@/lib/migrations/prisma";
 import { migrateRemoteD1 } from "@/lib/migrations/remote";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
@@ -175,6 +179,8 @@ interface DeployAppOptions {
   installDeps?: typeof installDependencies;
   /** Runs drizzle-kit for Postgres migrations (default: the app's own). */
   drizzleKit?: DrizzleKitRunner;
+  /** Runs the Prisma CLI for migrations.engine "prisma" (default: the app's own). */
+  prisma?: PrismaRunner;
   reconcile?: ReconcileSeams;
   live?: LiveWaitSeams;
 }
@@ -239,6 +245,7 @@ async function deploySteps(
   const bindings = new Set([
     ...(manifest.resources?.d1 ?? []),
     ...(manifest.resources?.kv ?? []),
+    ...(manifest.resources?.r2 ?? []),
     ...(manifest.resources?.durableObjects ?? []).map((d) => d.name),
     ...(manifest.resources?.workflows ?? []).map((w) => w.name),
     ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
@@ -574,6 +581,7 @@ async function deploySteps(
       accountId,
       appSecrets,
       drizzleKit: options.drizzleKit,
+      prisma: options.prisma,
     });
 
     // Helper Workers first: the app's Worker binds them, so each must be
@@ -830,6 +838,7 @@ async function migrate({
   accountId,
   appSecrets,
   drizzleKit,
+  prisma,
 }: {
   cf: CfRunner;
   out: EventSink;
@@ -839,9 +848,10 @@ async function migrate({
   accountId: string;
   appSecrets: AppSecrets;
   drizzleKit?: DrizzleKitRunner;
+  prisma?: PrismaRunner;
 }): Promise<string | null> {
   if (manifest.migrations?.dialect === "postgresql") {
-    await migratePostgresDatabase({ out, cwd, manifest, appSecrets, drizzleKit });
+    await migratePostgresDatabase({ out, cwd, manifest, appSecrets, drizzleKit, prisma });
     return null;
   }
   const bindings = manifest.resources?.d1 ?? [];
@@ -889,21 +899,31 @@ async function migrate({
   return changed ? result.rollbackCommand : null;
 }
 
-/** Postgres has no restore point to offer: its own backups are the way back. */
+/**
+ * Postgres has no restore point to offer: its own backups are the way
+ * back. drizzle-kit runs when the migrations directory is there; Prisma
+ * finds its migrations through its config, so its run is skipped only for
+ * a `dir` the manifest names that is missing.
+ */
 async function migratePostgresDatabase({
   out,
   cwd,
   manifest,
   appSecrets,
   drizzleKit,
+  prisma,
 }: {
   out: EventSink;
   cwd: string;
   manifest: EveryAppCliManifest;
   appSecrets: AppSecrets;
   drizzleKit?: DrizzleKitRunner;
+  prisma?: PrismaRunner;
 }): Promise<void> {
-  if (!(await isDirectory(path.resolve(cwd, manifest.migrations?.dir ?? "drizzle")))) {
+  const engine = manifest.migrations?.engine === "prisma" ? "prisma" : "drizzle";
+  const dir =
+    manifest.migrations?.dir ?? (engine === "drizzle" ? "drizzle" : undefined);
+  if (dir !== undefined && !(await isDirectory(path.resolve(cwd, dir)))) {
     out.emit({
       type: "step",
       step: "app.migrations",
@@ -918,19 +938,23 @@ async function migratePostgresDatabase({
     status: "start",
     message: "Migrating the app's Postgres database...",
   });
-  await migratePostgres({
+  const migration = {
     cwd,
     // Checked before anything was created (deploySteps).
     databaseUrl: appSecrets[POSTGRES_URL_VARIABLE]!,
     config: manifest.migrations?.config,
-    ...(drizzleKit ? { run: drizzleKit } : {}),
-  });
+  };
+  if (engine === "prisma") {
+    await migratePrismaPostgres({ ...migration, ...(prisma ? { run: prisma } : {}) });
+  } else {
+    await migratePostgres({ ...migration, ...(drizzleKit ? { run: drizzleKit } : {}) });
+  }
   out.emit({
     type: "step",
     step: "app.migrations",
     status: "ok",
-    message: "Migrated the app's Postgres database (drizzle-kit migrate).",
-    data: { dialect: "postgresql" },
+    message: `Migrated the app's Postgres database (${engine === "prisma" ? "prisma migrate deploy" : "drizzle-kit migrate"}).`,
+    data: { dialect: "postgresql", engine },
   });
 }
 

@@ -266,6 +266,77 @@ describe("appPolicyProblems", () => {
     config["env"].UPLOADS = { type: "r2", name: "every-acme-todo--uploads" };
     expect(appPolicyProblems(config, INPUTS)).toEqual([]);
   });
+
+  describe("with resources.r2", () => {
+    const WITH_R2: DeployInputs = {
+      ...INPUTS,
+      resources: {
+        ...INPUTS.resources,
+        r2: {
+          R2: { name: "every-acme-todo" },
+          MEDIA: { name: "every-acme-todo--media" },
+        },
+      },
+    };
+
+    it("accepts the declared buckets everyAppWorker() binds, on the app and its helpers", async () => {
+      const manifest = {
+        ...MANIFEST,
+        resources: { ...MANIFEST.resources, r2: ["R2", "MEDIA"] },
+        workers: [{ name: "api", binding: "API" }],
+      } as const;
+      await writeDeployInputs(appDir, WITH_R2);
+      const build = (config: Record<string, any>) => {
+        const { entrypoint: _entrypoint, ...worker } = config;
+        return structuredClone(worker);
+      };
+      const app = build(
+        everyAppWorker({
+          manifest,
+          entrypoint: "./src/entry.worker.ts",
+          ctx: { mode: "production" },
+          root: appDir,
+        }),
+      );
+      const helper = build(
+        everyAppAuxiliaryWorker({
+          manifest,
+          worker: "api",
+          entrypoint: "./src/api.ts",
+          ctx: { mode: "production" },
+          root: appDir,
+        }),
+      );
+      for (const config of [app, helper]) {
+        expect(config["env"]).toMatchObject({
+          R2: { type: "r2", name: "every-acme-todo" },
+          MEDIA: { type: "r2", name: "every-acme-todo--media" },
+        });
+      }
+      const inputs = { ...WITH_R2, helperWorkers: ["every-acme-todo--api"] };
+      expect(appPolicyProblems(app, inputs)).toEqual([]);
+      expect(helperPolicyProblems(helper, "every-acme-todo--api", inputs)).toEqual([]);
+    });
+
+    it("refuses a bucket the manifest doesn't declare, even one named after the Worker", async () => {
+      const config = await builtConfig();
+      config["env"].UPLOADS = { type: "r2", name: "every-acme-todo--uploads" };
+      config["env"].BACKUPS = { type: "r2", name: "company-backups" };
+      expect(appPolicyProblems(config, WITH_R2)).toEqual([
+        'UPLOADS is bucket "every-acme-todo--uploads", which isn\'t one of the app\'s buckets in resources.r2 (every-acme-todo, every-acme-todo--media)',
+        'BACKUPS is bucket "company-backups", which isn\'t one of the app\'s buckets in resources.r2 (every-acme-todo, every-acme-todo--media)',
+      ]);
+    });
+
+    it("keeps accepting a bucket bound by hand when the manifest declares none", async () => {
+      // chef's and OpenSEO's `bindings.r2({ name: worker.name })`.
+      const config = await builtConfig();
+      config["env"].BUCKET = { type: "r2", name: "every-acme-todo" };
+      const none = { ...INPUTS, resources: { ...INPUTS.resources, r2: {} } };
+      expect(appPolicyProblems(config, none)).toEqual([]);
+      expect(appPolicyProblems(config, INPUTS)).toEqual([]);
+    });
+  });
 });
 
 describe("prepareAppBuildOutput", () => {

@@ -1172,3 +1172,117 @@ describe("Postgres through Hyperdrive", () => {
     expect(config.env).not.toHaveProperty("DATABASE_PROVIDER");
   });
 });
+
+describe("R2 buckets (resources.r2)", () => {
+  const postiz = {
+    id: "postiz",
+    resources: {
+      d1: ["DB"],
+      r2: ["R2", "MEDIA_FILES"],
+      workflows: [
+        {
+          name: "PUBLISH_POST",
+          className: "PublishPostWorkflow",
+          worker: "api",
+        },
+      ],
+    },
+    workers: [{ name: "api", binding: "API" }],
+  } as const;
+
+  const build = (mode: "development" | "production") => {
+    const { entrypoint: _app, ...app } = everyAppWorker({
+      manifest: postiz,
+      entrypoint,
+      ctx: { mode },
+      root,
+    });
+    const { entrypoint: _api, ...api } = everyAppAuxiliaryWorker({
+      manifest: postiz,
+      worker: "api",
+      entrypoint: "/app/src/api.ts",
+      ctx: { mode },
+      root,
+    });
+    return { app, api };
+  };
+
+  it("binds the assigned buckets on the app's Worker and every helper", () => {
+    writeDeployInputs({
+      workerName: "every-acme-postiz",
+      resources: {
+        d1: { DB: { name: "every-acme-postiz", id: "d1-uuid" } },
+        r2: {
+          R2: { name: "every-acme-postiz" },
+          MEDIA_FILES: { name: "every-acme-postiz--media-files" },
+        },
+      },
+    });
+    const { app, api } = build("production");
+    for (const env of [app.env, api.env] as Record<string, unknown>[]) {
+      expect(env["R2"]).toEqual({ type: "r2", name: "every-acme-postiz" });
+      expect(env["MEDIA_FILES"]).toEqual({
+        type: "r2",
+        name: "every-acme-postiz--media-files",
+      });
+    }
+  });
+
+  it("names dev buckets by the gateway's rule: R2 after the Worker, others <worker>--<binding>", () => {
+    const { app, api } = build("development");
+    expect(app.env).toMatchObject({
+      R2: { type: "r2", name: "every-postiz" },
+      MEDIA_FILES: { type: "r2", name: "every-postiz--media-files" },
+    });
+    expect((api.env as Record<string, unknown>)["MEDIA_FILES"]).toEqual(
+      (app.env as Record<string, unknown>)["MEDIA_FILES"],
+    );
+    // D1 databases other than DB follow the same separator in dev.
+    const { env } = everyAppWorker({
+      manifest: { id: "seo", resources: { d1: ["DB", "CRAWL_LOG"] } },
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    });
+    expect((env as Record<string, unknown>)["CRAWL_LOG"]).toMatchObject({
+      name: "every-seo--crawl-log",
+    });
+  });
+
+  it("types each bucket under its own binding name", () => {
+    const { app } = build("development");
+    expectTypeOf(app.env.R2).toEqualTypeOf<{ type: "r2"; name: string }>();
+    expectTypeOf(app.env.MEDIA_FILES).toEqualTypeOf<{
+      type: "r2";
+      name: string;
+    }>();
+  });
+
+  it("refuses deploy inputs that miss a bucket", () => {
+    writeDeployInputs({
+      workerName: "every-acme-postiz",
+      resources: {
+        d1: { DB: { name: "every-acme-postiz", id: "d1-uuid" } },
+        r2: { R2: { name: "every-acme-postiz" } },
+      },
+    });
+    expect(() => build("production")).toThrow(
+      /no R2 bucket for binding "MEDIA_FILES"/,
+    );
+  });
+
+  it("leaves a manifest without buckets with none, so a hand-written binding stays the app's", () => {
+    writeDeployInputs();
+    const config = everyAppWorker({
+      manifest,
+      entrypoint,
+      ctx: { mode: "production" },
+      root,
+    });
+    expect(
+      Object.values(config.env as Record<string, { type: string }>).filter(
+        (binding) => binding.type === "r2",
+      ),
+    ).toEqual([]);
+  });
+});

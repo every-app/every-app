@@ -40,6 +40,17 @@ describe("parseDeployInputs", () => {
     expect(parseDeployInputs(valid).resources).not.toHaveProperty("hyperdrive");
   });
 
+  it("carries R2 buckets only when the manifest declares some", () => {
+    const resources = {
+      ...valid.resources,
+      r2: { R2: { name: "every-todo" }, MEDIA: { name: "every-todo--media" } },
+    };
+    expect(parseDeployInputs({ ...valid, resources }).resources).toEqual(
+      resources,
+    );
+    expect(parseDeployInputs(valid).resources).not.toHaveProperty("r2");
+  });
+
   it("rejects other schema versions with an upgrade hint", () => {
     expect(() => parseDeployInputs({ ...valid, schema: 2 })).toThrow(
       /schema 2.*Upgrade/,
@@ -56,6 +67,7 @@ describe("parseDeployInputs", () => {
       "a Hyperdrive entry without an id",
       { resources: { hyperdrive: { HYPERDRIVE: {} } } },
     ],
+    ["an R2 entry without a name", { resources: { r2: { R2: { id: "x" } } } }],
     ["non-string deleted classes", { deletedDurableObjects: [1] }],
   ])("rejects %s", (_label, override) => {
     expect(() => parseDeployInputs({ ...valid, ...override })).toThrow();

@@ -2,6 +2,10 @@
  * Hyperdrive configs, by exact name. The origin's password goes to cf only
  * in a request body file (a private temp file, `--body @<file>`), never on
  * the command line, and Cloudflare never returns it.
+ *
+ * Query caching is off unless the manifest asks for Cloudflare's default
+ * (`caching: "default"`): Hyperdrive never invalidates a cached read when
+ * the app writes, and app code reads its own writes.
  */
 import type { HyperdriveOrigin } from "@/lib/app/deploySecrets";
 import { runCfJson, type CfRunner } from "./runner";
@@ -10,6 +14,9 @@ import {
   HyperdriveConfigOutput,
   type HyperdriveConfig,
 } from "./schemas";
+
+/** The manifest's `resources.hyperdrive[].caching`. */
+export type HyperdriveCaching = "off" | "default";
 
 const PAGE_SIZE = 20;
 const MAX_PAGES = 10;
@@ -51,17 +58,28 @@ export async function findHyperdrive(
   return (await listHyperdrive(cf)).find((config) => config.name === name) ?? null;
 }
 
-/** Create a config; fails (`already_exists`) when the name is taken. */
+/**
+ * Create a config; fails (`already_exists`) when the name is taken. With
+ * caching "off" (the default) it caches nothing; "default" leaves caching
+ * to Cloudflare's defaults.
+ */
 export async function createHyperdrive(
   cf: CfRunner,
   name: string,
   origin: HyperdriveOrigin,
+  caching: HyperdriveCaching = "off",
 ): Promise<string> {
   const config = await runCfJson(
     cf,
     {
       plane: "account",
-      files: { "hyperdrive.json": { name, origin } },
+      files: {
+        "hyperdrive.json": {
+          name,
+          origin,
+          ...(caching === "off" ? { caching: { disabled: true } } : {}),
+        },
+      },
       args: (files) => [
         "hyperdrive",
         "create",
@@ -74,17 +92,27 @@ export async function createHyperdrive(
   return config.id;
 }
 
-/** Point a config at a new origin (a moved database, new credentials). */
-export async function updateHyperdriveOrigin(
+/**
+ * Change a config in place (`cf hyperdrive update`, a PATCH: what the body
+ * leaves out stays as it is): point it at a new origin (a moved database,
+ * new credentials), turn its caching off, or back on.
+ */
+export async function updateHyperdrive(
   cf: CfRunner,
   id: string,
-  origin: HyperdriveOrigin,
+  change: { origin?: HyperdriveOrigin; caching?: HyperdriveCaching },
 ): Promise<void> {
+  const body = {
+    ...(change.origin ? { origin: change.origin } : {}),
+    ...(change.caching
+      ? { caching: { disabled: change.caching === "off" } }
+      : {}),
+  };
   await runCfJson(
     cf,
     {
       plane: "account",
-      files: { "hyperdrive.json": { origin } },
+      files: { "hyperdrive.json": body },
       args: (files) => [
         "hyperdrive",
         "update",
@@ -107,6 +135,14 @@ export async function deleteHyperdrive(cf: CfRunner, id: string): Promise<void> 
     mode: "json",
     args: ["hyperdrive", "delete", id, "--force"],
   });
+}
+
+/** Whether a config's query caching is as the manifest says. */
+export function cachesAs(
+  config: HyperdriveConfig,
+  caching: HyperdriveCaching,
+): boolean {
+  return (config.caching?.disabled === true) === (caching === "off");
 }
 
 /** Whether a config connects to `origin` (all but the password, which it never shows). */

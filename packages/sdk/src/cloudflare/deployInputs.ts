@@ -33,6 +33,8 @@ export interface EveryAppDeployInputs {
     d1?: Record<string, { name: string; id: string }>;
     kv?: Record<string, { id: string }>;
     hyperdrive?: Record<string, { id: string }>;
+    /** R2 buckets by binding, under the names the registry assigned. */
+    r2?: Record<string, { name: string }>;
   };
   /** Durable Object classes removed from the app; their data is deleted. */
   deletedDurableObjects?: string[];
@@ -101,6 +103,14 @@ export function parseDeployInputs(value: unknown): EveryAppDeployInputs {
                 return { id: string(entry, "id") };
               },
             ),
+          }
+        : {}),
+      ...(resources["r2"] !== undefined
+        ? {
+            r2: mapValues(record(resources["r2"], "resources.r2"), (v, k) => {
+              const entry = record(v, `resources.r2.${k}`);
+              return { name: string(entry, "name") };
+            }),
           }
         : {}),
     },

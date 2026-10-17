@@ -38,8 +38,9 @@ type Export = Record<string, unknown> & { type?: string; state?: string };
  * app's queue, dispatch namespace, private network, secrets store,
  * rate-limit counters, …), or account-wide capabilities the gateway is
  * meant to broker (Workers AI, email). Buckets and Workflows are allowed
- * only under the app's own names, and Hyperdrive configs only as the ones
- * the deploy provisioned.
+ * only under the app's own names (buckets only as the manifest's
+ * `resources.r2`, when it declares any), and Hyperdrive configs only as the
+ * ones the deploy provisioned.
  */
 const ALLOWED_BINDINGS = new Set([
   "text",
@@ -196,6 +197,9 @@ function bindingProblems(
   const hyperdriveIds = new Set(
     Object.values(resources.hyperdrive ?? {}).map((config) => config.id),
   );
+  // The manifest's buckets, when it declares any; otherwise any bucket
+  // named after the app's Worker (one bound by hand in cloudflare.config.ts).
+  const buckets = Object.values(resources.r2 ?? {}).map((bucket) => bucket.name);
   for (const [name, binding] of Object.entries(env)) {
     if (!ALLOWED_BINDINGS.has(String(binding.type))) {
       problems.push(
@@ -236,7 +240,13 @@ function bindingProblems(
         break;
       case "r2": {
         const bucket = String(binding["name"] ?? "");
-        if (!isOwnResourceName(bucket, workerName)) {
+        if (buckets.length > 0) {
+          if (!buckets.includes(bucket)) {
+            problems.push(
+              `${name} is bucket "${bucket}", which isn't one of the app's buckets in resources.r2 (${buckets.join(", ")})`,
+            );
+          }
+        } else if (!isOwnResourceName(bucket, workerName)) {
           problems.push(
             `${name} is bucket "${bucket}"; an app's buckets are named after its Worker (${workerName} or ${workerName}${RESOURCE_SEPARATOR}<name>)`,
           );

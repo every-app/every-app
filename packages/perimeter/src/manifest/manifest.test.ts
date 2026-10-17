@@ -9,6 +9,7 @@ import {
   isReservedName,
   registryWorkerNameFor,
   resourceNameFor,
+  bucketNameFor,
   isReservedAppId,
   manifestTierProblems,
 } from "./manifest";
@@ -631,7 +632,7 @@ describe("Postgres, Hyperdrive and Worker limits", () => {
     [
       "Postgres migrations on the d1-sql engine",
       { migrations: { engine: "d1-sql", dialect: "postgresql", dir: "sql" } },
-      /migrations\.engine: Postgres migrations run on the "drizzle" engine/,
+      /migrations\.engine: Postgres migrations run on the "drizzle" or "prisma" engine/,
     ],
     [
       "Postgres migrations naming a D1 binding",
@@ -668,7 +669,7 @@ describe("Postgres, Hyperdrive and Worker limits", () => {
     );
   });
 
-  it("refuses Hyperdrive on the dispatch tier, and any tier it doesn't know", () => {
+  it("refuses Hyperdrive and R2 on the dispatch tier, and any tier it doesn't know", () => {
     expect(manifestTierProblems(openseo, "service_binding")).toEqual([]);
     expect(manifestTierProblems(openseo, "dispatch")).toEqual([
       expect.stringMatching(/at most 25 configs/),
@@ -676,8 +677,133 @@ describe("Postgres, Hyperdrive and Worker limits", () => {
     expect(
       manifestTierProblems({ resources: { kv: ["KV"] } }, "dispatch"),
     ).toEqual([]);
+    expect(
+      manifestTierProblems({ resources: { r2: ["R2"] } }, "dispatch"),
+    ).toEqual([
+      "resources.r2: R2 buckets aren't available to apps in a dispatch namespace yet",
+    ]);
+    expect(
+      manifestTierProblems({ resources: { r2: ["R2"] } }, "service_binding"),
+    ).toEqual([]);
     expect(manifestTierProblems({}, "edge")).toEqual([
       'apps on tier "edge" can\'t be deployed',
     ]);
+  });
+});
+
+describe("Prisma migrations, Hyperdrive caching and R2 buckets", () => {
+  // Postiz's Postgres variant (plan increment I10).
+  const postiz = {
+    id: "postiz",
+    resources: {
+      r2: ["R2", "MEDIA"],
+      hyperdrive: [{ name: "HYPERDRIVE", caching: "off" }],
+    },
+    database: { provider: "postgres" },
+    migrations: {
+      engine: "prisma",
+      dialect: "postgresql",
+      config: "prisma.config.ts",
+    },
+  };
+
+  it("accepts Prisma on Postgres, a caching choice and declared buckets in both schemas", () => {
+    expect(validateManifestStrict(postiz)).toEqual(postiz);
+    expect(validateManifest(postiz)).toEqual(postiz);
+    const cached = {
+      ...postiz,
+      resources: { hyperdrive: [{ name: "HYPERDRIVE", caching: "default" }] },
+      migrations: {
+        engine: "prisma",
+        dialect: "postgresql",
+        dir: "prisma/migrations",
+      },
+    };
+    expect(validateManifestStrict(cached)).toEqual(cached);
+  });
+
+  it.each([
+    [
+      "Prisma migrations without a dialect (D1)",
+      { migrations: { engine: "prisma" } },
+      /migrations\.engine: Prisma migrations run on Postgres \(dialect "postgresql"\); D1 takes the generated SQL through "d1-sql"/,
+    ],
+    [
+      "Prisma migrations on sqlite",
+      { migrations: { engine: "prisma", dialect: "sqlite" } },
+      /Prisma migrations run on Postgres/,
+    ],
+    [
+      "Prisma migrations naming a D1 binding",
+      {
+        migrations: { engine: "prisma", dialect: "postgresql", binding: "DB" },
+      },
+      /migrations\.binding/,
+    ],
+    [
+      "a Prisma config outside the app",
+      {
+        migrations: {
+          engine: "prisma",
+          dialect: "postgresql",
+          config: "../../libraries/prisma.config.ts",
+        },
+      },
+      /migrations\.config/,
+    ],
+    [
+      "a caching choice Hyperdrive doesn't have",
+      { resources: { hyperdrive: [{ name: "HYPERDRIVE", caching: "on" }] } },
+      /resources\.hyperdrive\.0\.caching/,
+    ],
+    [
+      "an R2 binding that isn't an identifier",
+      { resources: { r2: ["media-files"] } },
+      /resources\.r2\.0/,
+    ],
+    [
+      "an R2 binding named like a D1 database",
+      { resources: { d1: ["DB"], r2: ["DB"] } },
+      /the binding DB is declared twice/,
+    ],
+    [
+      "an R2 binding named like a Hyperdrive config",
+      {
+        resources: { r2: ["HYPERDRIVE"], hyperdrive: [{ name: "HYPERDRIVE" }] },
+      },
+      /the binding HYPERDRIVE is declared twice/,
+    ],
+  ])("refuses %s", (_case, change, problem) => {
+    expect(() => validateManifestStrict({ ...postiz, ...change })).toThrow(
+      problem,
+    );
+  });
+
+  it("keeps Prisma on D1 on d1-sql, with Prisma's generated SQL", () => {
+    const d1 = {
+      id: "postiz",
+      resources: { d1: ["DB"] },
+      database: { provider: "d1" },
+      migrations: { engine: "d1-sql", dir: "migrations", binding: "DB" },
+    };
+    expect(validateManifestStrict(d1)).toEqual(d1);
+  });
+
+  it("stays tolerant of R2 entries at registration", () => {
+    expect(
+      validateManifest({ id: "postiz", resources: { r2: ["media-files"] } })
+        .resources?.r2,
+    ).toEqual(["media-files"]);
+  });
+
+  it("names buckets after the Worker: R2 takes its name, others <worker>--<binding>", () => {
+    expect(bucketNameFor("every-acme-postiz", "R2")).toBe("every-acme-postiz");
+    expect(bucketNameFor("every-acme-postiz", "MEDIA_FILES")).toBe(
+      "every-acme-postiz--media-files",
+    );
+    // DB and KV are database and namespace names, not bucket names.
+    expect(bucketNameFor("every-acme-postiz", "DB")).toBe(
+      "every-acme-postiz--db",
+    );
   });
 });

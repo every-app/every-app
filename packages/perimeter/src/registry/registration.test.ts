@@ -87,6 +87,7 @@ describe("planRegistration", () => {
       resources: {
         d1: { DB: "every-acme-todo" },
         kv: { KV: "every-acme-todo", CACHE: "every-acme-todo--cache" },
+        r2: {},
       },
       previousManifest: null,
       versionId: null,
@@ -178,6 +179,7 @@ describe("planRegistration", () => {
       resources: {
         d1: { DB: "every-acme-todo" },
         kv: { KV: "every-acme-todo", CACHE: "every-acme-todo--cache" },
+        r2: {},
       },
       previousManifest: { id: "todo" },
       versionId: "version-1",
@@ -226,6 +228,53 @@ describe("planRegistration", () => {
       status: 400,
       code: "RESOURCE_NAME_CONFLICT",
     });
+  });
+
+  it("names the app's R2 buckets after its Worker", () => {
+    expect(
+      planRegistration({
+        ...input,
+        manifest: { id: "todo", resources: { r2: ["R2", "MEDIA_FILES"] } },
+      }).resources,
+    ).toEqual({
+      d1: {},
+      kv: {},
+      r2: {
+        R2: "every-acme-todo",
+        MEDIA_FILES: "every-acme-todo--media-files",
+      },
+    });
+  });
+
+  it("refuses buckets that would share a name, or a name Cloudflare refuses", () => {
+    expect(
+      thrown(() =>
+        planRegistration({
+          ...input,
+          manifest: { id: "todo", resources: { r2: ["MEDIA", "Media"] } },
+        }),
+      ),
+    ).toMatchObject({
+      status: 400,
+      code: "RESOURCE_NAME_CONFLICT",
+      message: expect.stringContaining(
+        'share the R2 bucket "every-acme-todo--media"',
+      ),
+    });
+    for (const binding of ["MEDIA_", "A".repeat(50)]) {
+      expect(
+        thrown(() =>
+          planRegistration({
+            ...input,
+            manifest: { id: "todo", resources: { r2: [binding] } },
+          }),
+        ),
+      ).toMatchObject({
+        status: 400,
+        code: "INVALID_MANIFEST",
+        message: expect.stringContaining("which Cloudflare refuses"),
+      });
+    }
   });
 
   it("refuses a manifest that doesn't parse or names another app", () => {
@@ -628,10 +677,12 @@ describe("appResources", () => {
     ).toEqual({
       d1: { DB: "every-acme-todo" },
       kv: { KV: "every-acme-todo", CACHE: "every-acme-todo--cache" },
+      r2: {},
     });
     expect(appResources({ workerName: null, manifest: null })).toEqual({
       d1: {},
       kv: {},
+      r2: {},
     });
   });
 });

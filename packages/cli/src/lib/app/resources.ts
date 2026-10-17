@@ -1,7 +1,11 @@
 /**
  * An app's Worker, D1 databases and KV namespaces, under the names its
  * registration assigned (`every-<orgKey>-<appId>[--<binding>]`), and its
- * Hyperdrive configs, named `<worker>--<binding>` after its Worker.
+ * Hyperdrive configs, named `<worker>--<binding>` after its Worker. Its R2
+ * buckets (`resources.r2`) only get their assigned names here: creating
+ * one is left to cf's prebuilt deploy, which should create a bucket a
+ * Worker binds (unconfirmed on a live account), and recording and purging
+ * them is a later change.
  *
  * An existing one is used only when the gateway's D1 records it as the
  * app's (./ownership.ts): anything else under the app's name may belong to
@@ -23,12 +27,15 @@ import {
   findKv,
 } from "@/lib/cf/resources";
 import {
+  cachesAs,
   connectsTo,
   createHyperdrive,
   findHyperdrive,
-  updateHyperdriveOrigin,
+  updateHyperdrive,
+  type HyperdriveCaching,
 } from "@/lib/cf/hyperdrive";
 import type { CfRunner } from "@/lib/cf/runner";
+import type { HyperdriveConfig } from "@/lib/cf/schemas";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { EveryAppError } from "@/lib/errors";
 import type { EveryAppCliManifest } from "@/lib/manifest";
@@ -138,8 +145,19 @@ export async function provisionAppResources(
   for (const binding of manifest.resources?.kv ?? []) {
     kv[binding] = { id: await provision("kv", binding) };
   }
+  const buckets = manifest.resources?.r2 ?? [];
+  const r2 = buckets.length
+    ? {
+        r2: Object.fromEntries(
+          buckets.map((binding) => [
+            binding,
+            { name: assignedName(registration, "r2", binding) },
+          ]),
+        ),
+      }
+    : {};
   const configs = manifest.resources?.hyperdrive ?? [];
-  if (configs.length === 0) return { d1, kv };
+  if (configs.length === 0) return { d1, kv, ...r2 };
   // Every origin is checked before any config is created or changed.
   const origins = new Map(
     configs.map(({ name: binding }) => {
@@ -151,7 +169,7 @@ export async function provisionAppResources(
     }),
   );
   const hyperdrive: NonNullable<DeployInputs["resources"]["hyperdrive"]> = {};
-  for (const { name: binding } of configs) {
+  for (const { name: binding, caching = "off" } of configs) {
     hyperdrive[binding] = {
       id: await provisionHyperdrive({
         ...options,
@@ -159,10 +177,11 @@ export async function provisionAppResources(
         binding,
         name: hyperdriveNameFor(registration.workerName, binding),
         origin: origins.get(binding) ?? null,
+        caching,
       }),
     };
   }
-  return { d1, kv, hyperdrive };
+  return { d1, kv, ...r2, hyperdrive };
 }
 
 /**
@@ -175,11 +194,13 @@ function hyperdriveNameFor(workerName: string, binding: string): string {
 
 /**
  * The app's Hyperdrive config for one binding, as for its D1 databases
- * (./resources.ts provisionOne) with two differences. One not recorded as
+ * (./resources.ts provisionOne) with three differences. One not recorded as
  * the app's is adopted when it connects to the origin in the app's secrets
  * file: whoever holds that URL holds the database already, so binding the
- * config gives the app nothing more. And a recorded one whose host, port,
- * database or user differ from that origin is pointed at it.
+ * config gives the app nothing more. A recorded one whose host, port,
+ * database or user differ from that origin is pointed at it. And its query
+ * caching is kept as the manifest says (`caching`, off by default): the
+ * deploy creates it that way and turns it back if it changed.
  */
 async function provisionHyperdrive({
   cf,
@@ -189,6 +210,7 @@ async function provisionHyperdrive({
   binding,
   name,
   origin,
+  caching,
   onCreated,
   onRecreated,
   onChanged,
@@ -197,6 +219,7 @@ async function provisionHyperdrive({
   binding: string;
   name: string;
   origin: HyperdriveOrigin | null;
+  caching: HyperdriveCaching;
 }): Promise<string> {
   const { workerName } = registration;
   const resource = { kind: "hyperdrive" as const, binding, name };
@@ -209,13 +232,31 @@ async function provisionHyperdrive({
       entry.name === name,
   );
   const existing = await findHyperdrive(cf, name);
+  /** Point the app's config at `origin` and its caching, where either differs. */
+  const reconcile = async (config: HyperdriveConfig) => {
+    const repoint = origin !== null && !connectsTo(config, origin);
+    const recache = !cachesAs(config, caching);
+    if (!repoint && !recache) return;
+    // A config that caches nothing says so with every change.
+    await updateHyperdrive(cf, config.id, {
+      ...(repoint ? { origin } : {}),
+      ...(recache || caching === "off" ? { caching } : {}),
+    });
+    if (repoint) {
+      onChanged?.(`Pointed ${description} at the database in ${APP_SECRETS_FILE}.`);
+    }
+    if (recache) {
+      onChanged?.(
+        caching === "off"
+          ? `Turned off query caching on ${description} (Hyperdrive never invalidates a cached read when the app writes; caching: "default" in everyapp.config.ts turns it on).`
+          : `Turned on Hyperdrive's query caching on ${description} (caching: "default").`,
+      );
+    }
+  };
 
   if (recorded?.resourceId) {
     if (existing?.id === recorded.resourceId) {
-      if (origin && !connectsTo(existing, origin)) {
-        await updateHyperdriveOrigin(cf, existing.id, origin);
-        onChanged?.(`Pointed ${description} at the database in ${APP_SECRETS_FILE}.`);
-      }
+      await reconcile(existing);
       return existing.id;
     }
     if (existing) {
@@ -232,6 +273,7 @@ async function provisionHyperdrive({
         ...resource,
         resourceId: existing.id,
       });
+      await reconcile(existing);
       return existing.id;
     }
   } else if (existing) {
@@ -241,6 +283,7 @@ async function provisionHyperdrive({
         resourceId: existing.id,
       });
       onChanged?.(`Adopted ${description}, which connects to the database in ${APP_SECRETS_FILE}.`);
+      await reconcile(existing);
       return existing.id;
     }
     throw new EveryAppError(
@@ -263,7 +306,7 @@ async function provisionHyperdrive({
   });
   let id: string;
   try {
-    id = await createHyperdrive(cf, name, origin);
+    id = await createHyperdrive(cf, name, origin, caching);
   } catch (error) {
     if (error instanceof CfError && error.kind === "already_exists") {
       await forgetOwnedResources(gatewayDb, workerName, {
@@ -285,16 +328,18 @@ async function provisionHyperdrive({
   return id;
 }
 
+const KIND_LABELS = { d1: "D1 database", kv: "KV namespace", r2: "R2 bucket" } as const;
+
 function assignedName(
   registration: AppNaming,
-  kind: "d1" | "kv",
+  kind: keyof typeof KIND_LABELS,
   binding: string,
 ): string {
   const name = registration.resources[kind][binding];
   if (!name || isReservedName(name)) {
     throw new EveryAppError(
       "RESOURCE_NAME_MISSING",
-      `The gateway assigned no usable ${kind === "d1" ? "D1 database" : "KV namespace"} name for binding ${binding}. Upgrade the gateway: ${CLI} setup`,
+      `The gateway assigned no usable ${KIND_LABELS[kind]} name for binding ${binding}. Upgrade the gateway: ${CLI} setup`,
     );
   }
   return name;

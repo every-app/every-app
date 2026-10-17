@@ -1,10 +1,11 @@
 /**
  * `everyapp deploy` and `delete --purge` of an app on Postgres, end to end
  * in the fake Cloudflare account (test/fakeCloudflare.ts): its Hyperdrive
- * config created, adopted or repointed from the app's secrets file, bound
- * to its Workers with DATABASE_PROVIDER, placement and CPU limits, its
- * migrations run by a stub drizzle-kit before the upload, and the config
- * deleted with the app.
+ * config created (caching off unless the manifest says otherwise), adopted
+ * or repointed from the app's secrets file, bound to its Workers with
+ * DATABASE_PROVIDER, placement and CPU limits, its migrations run by a stub
+ * drizzle-kit (or Prisma CLI, migrations.engine "prisma") before the
+ * upload, and the config deleted with the app.
  */
 import fs from "node:fs";
 import os from "node:os";
@@ -18,6 +19,7 @@ import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { DrizzleKitRunner } from "@/lib/migrations/postgres";
+import type { PrismaRunner } from "@/lib/migrations/prisma";
 import { createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
@@ -51,8 +53,9 @@ let release: GatewayRelease;
 let appDir: string;
 let home: string;
 let events: Array<Record<string, any>>;
-/** What the stub drizzle-kit was asked, and how many uploads had happened. */
+/** What the stub drizzle-kit (or Prisma CLI) was asked, and how many uploads had happened. */
 let migrations: Array<{ args: string[]; env: Record<string, string>; uploadsBefore: number }>;
+let prismaMigrations: typeof migrations;
 let migrationResult: Awaited<ReturnType<DrizzleKitRunner>>;
 
 const out = () => createNdjsonSink((line) => events.push(JSON.parse(line)));
@@ -66,10 +69,15 @@ const drizzleKit: DrizzleKitRunner = async ({ args, env }) => {
   migrations.push({ args, env, uploadsBefore: seoUploads().length });
   return migrationResult;
 };
+const prisma: PrismaRunner = async ({ args, env }) => {
+  prismaMigrations.push({ args, env, uploadsBefore: seoUploads().length });
+  return migrationResult;
+};
 
 beforeEach(async () => {
   events = [];
   migrations = [];
+  prismaMigrations = [];
   migrationResult = { exitCode: 0, stdout: "[✓] migrations applied successfully!", stderr: "" };
   home = makeTestHome();
   vi.stubEnv("HOME", home);
@@ -130,6 +138,7 @@ function deploy(manifest: EveryAppCliManifest = SEO) {
     createCf: () => account.cf,
     installDeps: async () => undefined,
     drizzleKit,
+    prisma,
     reconcile: rebind,
     live: { fetch: worker.fetch, sleep: async () => undefined },
   });
@@ -334,6 +343,147 @@ describe("deploy of an app on Postgres through Hyperdrive", () => {
     });
     expect(account.hyperdrive.size).toBe(0);
     expect(seoUploads()).toHaveLength(uploads);
+  });
+
+  it("creates the config with query caching off, and keeps it off when it is repointed", async () => {
+    await deploy();
+    expect(JSON.parse(hyperdriveCalls("create")[0]!.files["hyperdrive.json"]!)).toMatchObject({
+      name: CONFIG,
+      caching: { disabled: true },
+    });
+    expect(account.hyperdriveConfig(CONFIG)!.caching).toEqual({ disabled: true });
+
+    writeSecrets(`POSTGRES_DATABASE_URL=postgres://openseo:${PASSWORD}@db2.example.net:5432/openseo\n`);
+    await deploy();
+    expect(JSON.parse(hyperdriveCalls("update")[0]!.files["hyperdrive.json"]!)).toEqual({
+      origin: expect.objectContaining({ host: "db2.example.net" }),
+      caching: { disabled: true },
+    });
+    // Only the origin changed, so only that is said.
+    expect(events.filter((event) => /caching/.test(String(event["message"])))).toEqual([]);
+  });
+
+  it("turns caching back off on a config that caches, and on for caching \"default\"", async () => {
+    await deploy();
+    const { id } = account.hyperdriveConfig(CONFIG)!;
+    // Someone turned caching on in the dashboard.
+    account.hyperdrive.set(id, { ...account.hyperdrive.get(id)!, caching: { disabled: false } });
+
+    events = [];
+    await deploy();
+    expect(account.hyperdriveConfig(CONFIG)!.caching).toEqual({ disabled: true });
+    expect(JSON.parse(hyperdriveCalls("update")[0]!.files["hyperdrive.json"]!)).toEqual({
+      caching: { disabled: true },
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "app.resources",
+        message: expect.stringMatching(/^Turned off query caching on Hyperdrive config/),
+      }),
+    );
+
+    const cached: EveryAppCliManifest = {
+      ...SEO,
+      resources: { kv: ["KV"], hyperdrive: [{ name: "HYPERDRIVE", caching: "default" }] },
+    };
+    await deploy(cached);
+    expect(account.hyperdriveConfig(CONFIG)!.caching).toEqual({ disabled: false });
+    expect(JSON.parse(hyperdriveCalls("update")[1]!.files["hyperdrive.json"]!)).toEqual({
+      caching: { disabled: false },
+    });
+    // In step: nothing more to change.
+    await deploy(cached);
+    expect(hyperdriveCalls("update")).toHaveLength(2);
+  });
+
+  it("creates a config for caching \"default\" without a caching setting, as Cloudflare's own", async () => {
+    await deploy({
+      ...SEO,
+      resources: { kv: ["KV"], hyperdrive: [{ name: "HYPERDRIVE", caching: "default" }] },
+    });
+    const body = JSON.parse(hyperdriveCalls("create")[0]!.files["hyperdrive.json"]!);
+    expect(body).not.toHaveProperty("caching");
+    expect(hyperdriveCalls("update")).toHaveLength(0);
+  });
+
+  it("turns caching off on a config it adopts", async () => {
+    account.hyperdrive.set("adopted", {
+      name: CONFIG,
+      origin: { scheme: "postgres", host: "db.example.net", port: 6432, database: "openseo", user: "openseo" },
+      password: PASSWORD,
+    });
+    await deploy();
+    expect(account.hyperdriveConfig(CONFIG)).toMatchObject({ id: "adopted", caching: { disabled: true } });
+  });
+
+  describe('on the "prisma" engine', () => {
+    const PRISMA: EveryAppCliManifest = {
+      ...SEO,
+      migrations: { engine: "prisma", dialect: "postgresql", config: "prisma.config.ts" },
+    };
+
+    it("runs prisma migrate deploy with the URL in its environment, before anything is uploaded", async () => {
+      await deploy(PRISMA);
+
+      expect(prismaMigrations).toEqual([
+        {
+          args: ["migrate", "deploy", "--config", "prisma.config.ts"],
+          env: { POSTGRES_DATABASE_URL: DATABASE_URL },
+          uploadsBefore: 0,
+        },
+      ]);
+      expect(migrations).toEqual([]);
+      expect(seoUploads()).toHaveLength(2);
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          step: "app.migrations",
+          status: "ok",
+          message: "Migrated the app's Postgres database (prisma migrate deploy).",
+          data: { dialect: "postgresql", engine: "prisma" },
+        }),
+      );
+    });
+
+    it("says it can't check the schema against the migrations, and why", async () => {
+      await deploy(PRISMA);
+      expect(events.filter((event) => event["step"] === "app.schema")).toEqual([
+        expect.objectContaining({
+          type: "warning",
+          code: "SCHEMA_CHECK_SKIPPED",
+          message: expect.stringContaining("shadow database"),
+        }),
+      ]);
+    });
+
+    it("leaves the migrations' place to Prisma's config, unless the manifest names a dir that's missing", async () => {
+      // No drizzle/ directory is needed: Prisma knows where its migrations are.
+      fs.rmSync(path.join(appDir, "drizzle"), { recursive: true });
+      await deploy(PRISMA);
+      expect(prismaMigrations).toHaveLength(1);
+
+      await deploy({ ...PRISMA, migrations: { ...PRISMA.migrations!, dir: "prisma/migrations" } });
+      expect(prismaMigrations).toHaveLength(1);
+      expect(events).toContainEqual(
+        expect.objectContaining({ step: "app.migrations", status: "skip" }),
+      );
+    });
+
+    it("stops on a failed migration without uploading, and never repeats the password", async () => {
+      migrationResult = {
+        exitCode: 1,
+        stdout: `Datasource "db": PostgreSQL database "openseo" at "${DATABASE_URL}"`,
+        stderr: `Error: P1000: Authentication failed against database server, the provided database credentials for \`openseo\` (${PASSWORD}) are not valid.`,
+      };
+      await expect(deploy(PRISMA)).rejects.toMatchObject({
+        code: "MIGRATION_FAILED",
+        message: expect.stringContaining("Error: P1000: Authentication failed"),
+      });
+      expect(JSON.stringify(events)).not.toContain(PASSWORD);
+      await expect(deploy(PRISMA)).rejects.toMatchObject({
+        message: expect.not.stringContaining(PASSWORD),
+      });
+      expect(seoUploads()).toEqual([]);
+    });
   });
 
   it("deletes the config with the app on --purge, and leaves the database alone", async () => {

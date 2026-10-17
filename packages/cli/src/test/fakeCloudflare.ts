@@ -80,7 +80,41 @@ interface FakeHyperdrive {
   };
   /** Kept apart: `list` never shows it, like Cloudflare's API. */
   password: string;
+  /** As the API keeps it: absent until a body sets it (Cloudflare caches by default). */
+  caching?: { disabled?: boolean };
 }
+
+/**
+ * An app's cloudflare.config.ts as `cf build` evaluates it in production:
+ * its Worker and its helper Workers (the Vite plugin's auxiliaryWorkers),
+ * built with the SDK from the manifest and the app root.
+ */
+export type FakeAppConfig = (options: {
+  manifest: EveryAppCliManifest;
+  root: string;
+}) => {
+  worker: Record<string, any>;
+  auxiliaryWorkers?: Record<string, any>[];
+};
+
+/** An app whose cloudflare.config.ts is everyAppWorker() and its helpers, as they are. */
+const plainAppConfig: FakeAppConfig = ({ manifest, root }) => ({
+  worker: everyAppWorker({
+    manifest,
+    entrypoint: "./src/entry.worker.ts",
+    ctx: { mode: "production" },
+    root,
+  }),
+  auxiliaryWorkers: (manifest.workers ?? []).map((helper) =>
+    everyAppAuxiliaryWorker({
+      manifest,
+      worker: helper.name,
+      entrypoint: `./src/${helper.name}.ts`,
+      ctx: { mode: "production" },
+      root,
+    }),
+  ),
+});
 
 /** What each `cf workflows instances <action>` makes of an instance. */
 const INSTANCE_STATUS: Record<string, string> = {
@@ -173,6 +207,12 @@ export class FakeCloudflare {
   readonly deploys: RecordedDeploy[] = [];
   /** Apps `cf build` can build, by app root. */
   readonly apps = new Map<string, EveryAppCliManifest>();
+  /**
+   * An app's own cloudflare.config.ts (and Vite plugin's auxiliaryWorkers),
+   * by app root, for `cf build` to run instead of the plain everyAppWorker()
+   * build: what a port with extra bindings, crons or secrets builds.
+   */
+  readonly appConfigs = new Map<string, FakeAppConfig>();
   /** The next `cf deploy` fails with this stderr box message. */
   failNextDeploy: string | null = null;
   /**
@@ -498,6 +538,7 @@ export class FakeCloudflare {
       id,
       name: config.name,
       origin: config.origin,
+      caching: { disabled: config.caching?.disabled ?? false },
     });
     const body = () => {
       const file = flag(call.args, "--body") ?? "";
@@ -505,6 +546,7 @@ export class FakeCloudflare {
       return JSON.parse(call.files[path.basename(file.slice(1))]!) as {
         name?: string;
         origin?: FakeHyperdrive["origin"] & { password: string };
+        caching?: FakeHyperdrive["caching"];
       };
     };
     const action = call.args[1];
@@ -527,18 +569,30 @@ export class FakeCloudflare {
       }
       const { password, ...origin } = request.origin;
       const id = (this.counter += 1).toString(16).padStart(32, "0");
-      this.hyperdrive.set(id, { name: request.name, origin, password });
+      this.hyperdrive.set(id, {
+        name: request.name,
+        origin,
+        password,
+        ...(request.caching ? { caching: request.caching } : {}),
+      });
       return { stdout: JSON.stringify(listed(id, this.hyperdrive.get(id)!)) };
     }
     const id = call.args[2]!;
     const config = this.hyperdrive.get(id);
     if (!config) return cfError(`Hyperdrive config ${id} not found [code: 2005]`);
+    // A PATCH: what the body leaves out stays as it was.
     if (action === "update") {
-      const { password, ...origin } = body()?.origin ?? {
+      const request = body();
+      const { password, ...origin } = request?.origin ?? {
         ...config.origin,
         password: config.password,
       };
-      this.hyperdrive.set(id, { ...config, origin, password });
+      this.hyperdrive.set(id, {
+        ...config,
+        origin,
+        password,
+        ...(request?.caching ? { caching: request.caching } : {}),
+      });
       return { stdout: JSON.stringify(listed(id, this.hyperdrive.get(id)!)) };
     }
     if (action === "delete") {
@@ -622,9 +676,10 @@ export class FakeCloudflare {
   }
 
   /**
-   * `cf build`: the app's Worker as everyAppWorker() defines it for
-   * production, from the manifest registered for its directory, or its own
-   * everyapp.config.ts.
+   * `cf build`: the app's Worker (and helper Workers) as its
+   * cloudflare.config.ts defines them for production (`appConfigs`, or
+   * everyAppWorker() and everyAppAuxiliaryWorker() as they are), from the
+   * manifest registered for its directory, or its own everyapp.config.ts.
    */
   private async build(call: RecordedCfCall): Promise<FakeCfResponse> {
     const cwd = call.cwd!;
@@ -636,23 +691,12 @@ export class FakeCloudflare {
     // its own directory, named after the Worker.
     const helpers: Record<string, any>[] = [];
     try {
-      const { entrypoint: _entrypoint, ...definition } = everyAppWorker({
-        manifest,
-        entrypoint: "./src/entry.worker.ts",
-        ctx: { mode: "production" },
-        root: cwd,
-      });
+      const built = (this.appConfigs.get(cwd) ?? plainAppConfig)({ manifest, root: cwd });
+      const { entrypoint: _entrypoint, ...definition } = built.worker;
       worker = structuredClone(definition) as Record<string, any>;
       this.editBuild?.(worker);
-      for (const helper of manifest.workers ?? []) {
-        const { entrypoint: _helperEntry, ...helperDefinition } =
-          everyAppAuxiliaryWorker({
-            manifest,
-            worker: helper.name,
-            entrypoint: `./src/${helper.name}.ts`,
-            ctx: { mode: "production" },
-            root: cwd,
-          });
+      for (const helper of built.auxiliaryWorkers ?? []) {
+        const { entrypoint: _helperEntry, ...helperDefinition } = helper;
         helpers.push(structuredClone(helperDefinition) as Record<string, any>);
       }
     } catch (error) {
