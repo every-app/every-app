@@ -14,6 +14,7 @@ interface DeployCommandFlags {
   "allow-delete-durable-object-data"?: boolean;
   "allow-delete-workflows"?: boolean;
   "force-dns"?: boolean;
+  "enable-email-routing"?: boolean;
   "no-wait"?: boolean;
   shared?: boolean;
 }
@@ -72,6 +73,8 @@ export async function deploy(
           flags["allow-delete-durable-object-data"],
         allowDeleteWorkflows: flags["allow-delete-workflows"],
         forceDns: flags["force-dns"],
+        // TODO(integration): PR 6 passes its flag through; deploy/index.ts isn't on its file list.
+        enableEmailRouting: flags["enable-email-routing"],
         shared: flags.shared,
         waitForLive: !flags["no-wait"],
         offerInstall: { yes: flags.yes },

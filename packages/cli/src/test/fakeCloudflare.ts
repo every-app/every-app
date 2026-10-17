@@ -9,7 +9,10 @@
  * whole list, taken from other Workers, each with its own certificate pack
  * that outlives it, listing the zone apex, the hostname and its wildcard) and creates or takes over the Workflows the Worker
  * defines. Hyperdrive configs keep their origin, password apart, as the
- * API does (it never returns one). `api.fetch` is the account's REST API, for the hosted
+ * API does (it never returns one). Each zone has Email Routing: its
+ * settings, rules and catch-all (`emailRouting`), enabled on a domain by
+ * adding Cloudflare's MX records there, with rules that may send mail only
+ * to a Worker that exists. `api.fetch` is the account's REST API, for the hosted
  * deployer: Workers for Platforms dispatch namespaces (`dispatchNamespaces`),
  * D1 and the account's Workers (fakeCloudflareApi.ts). Nothing is spawned
  * or sent.
@@ -83,6 +86,29 @@ interface FakeHyperdrive {
   /** As the API keeps it: absent until a body sets it (Cloudflare caches by default). */
   caching?: { disabled?: boolean };
 }
+
+/** A routing rule or a zone's catch-all, as Email Routing keeps it. */
+interface FakeEmailRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  matchers: Array<{ type: string; field?: string; value?: string }>;
+  actions: Array<{ type: string; value?: string[] }>;
+}
+
+/** A zone's Email Routing. */
+interface FakeEmailRouting {
+  enabled: boolean;
+  rules: Map<string, FakeEmailRule>;
+  catchAll: FakeEmailRule;
+}
+
+/** The MX records Email Routing adds (and locks) on a domain it routes. */
+const EMAIL_ROUTING_MX = [
+  "route1.mx.cloudflare.net",
+  "route2.mx.cloudflare.net",
+  "route3.mx.cloudflare.net",
+];
 
 /**
  * An app's cloudflare.config.ts as `cf build` evaluates it in production:
@@ -236,6 +262,8 @@ export class FakeCloudflare {
   ];
   /** Records the operator made; Custom Domains' own aren't listed (unverified). */
   readonly dnsRecords: FakeDnsRecord[] = [];
+  /** Email Routing, by zone id; a zone's starts off, its catch-all dropping mail. */
+  readonly emailRouting = new Map<string, FakeEmailRouting>();
   /** Hostname → the Worker it is a Custom Domain of. */
   readonly customDomains = new Map<string, string>();
   readonly certificatePacks: FakeCertificatePack[] = [];
@@ -471,6 +499,7 @@ export class FakeCloudflare {
       })
       .on(["workflows", "instances"], (call) => this.workflowInstances(call))
       .on(["hyperdrive"], (call) => this.hyperdriveCommand(call))
+      .on(["email-routing"], (call) => this.emailRoutingCommand(call))
       .on(["build"], (call) => this.build(call))
       .on(["deploy"], (call) => this.deploy(call));
   }
@@ -527,6 +556,144 @@ export class FakeCloudflare {
   hyperdriveConfig(name: string): (FakeHyperdrive & { id: string }) | undefined {
     const entry = [...this.hyperdrive].find(([, config]) => config.name === name);
     return entry ? { id: entry[0], ...entry[1] } : undefined;
+  }
+
+  /** A zone's Email Routing, as the API has it before anyone changes it. */
+  emailRoutingOf(zoneId: string): FakeEmailRouting {
+    let routing = this.emailRouting.get(zoneId);
+    if (!routing) {
+      routing = {
+        enabled: false,
+        rules: new Map(),
+        catchAll: {
+          id: `catch-all-${zoneId}`,
+          name: "",
+          enabled: true,
+          matchers: [{ type: "all" }],
+          actions: [{ type: "drop" }],
+        },
+      };
+      this.emailRouting.set(zoneId, routing);
+    }
+    return routing;
+  }
+
+  /** The rules in a zone that take `address`, in the order they were made. */
+  emailRulesFor(zoneId: string, address: string): FakeEmailRule[] {
+    return [...this.emailRoutingOf(zoneId).rules.values()].filter((rule) =>
+      rule.matchers.some((matcher) => matcher.value === address),
+    );
+  }
+
+  /**
+   * `cf email-routing settings get|enable` and `rules
+   * create|get|update|delete|list-account|catch-all get|update`, zone by
+   * zone (`-z <zone id>`). Enabling a domain adds Email Routing's MX
+   * records there (the apex turns the zone's routing on); a rule's Worker
+   * must exist, and two rules can't take one address.
+   */
+  private emailRoutingCommand(call: RecordedCfCall): FakeCfResponse {
+    const zoneId = flag(call.args, "-z");
+    const zone = this.zones.find((candidate) => candidate.id === zoneId);
+    if (!zone) return cfError(`Could not route to /zones/${zoneId}, perhaps your object identifier is invalid? [code: 7003]`);
+    const routing = this.emailRoutingOf(zone.id);
+    const settings = () => ({
+      id: `settings-${zone.id}`,
+      name: zone.name,
+      enabled: routing.enabled,
+      status: routing.enabled ? "ready" : "unconfigured",
+    });
+    const body = (): Omit<FakeEmailRule, "id"> | null => {
+      const file = flag(call.args, "--body") ?? "";
+      if (!file.startsWith("@")) return null;
+      return JSON.parse(call.files[path.basename(file.slice(1))]!);
+    };
+    const checkWorker = (rule: Omit<FakeEmailRule, "id">): FakeCfResponse | null => {
+      for (const action of rule.actions) {
+        const worker = action.type === "worker" ? action.value?.[0] : undefined;
+        if (worker !== undefined && !this.workers.has(worker)) {
+          return cfError(`Worker ${worker} does not exist on this account [code: 2020]`);
+        }
+      }
+      return null;
+    };
+    const [, group, action] = call.args;
+    if (group === "settings" && action === "get") {
+      return { stdout: JSON.stringify(settings()) };
+    }
+    if (group === "enable") {
+      const domain = flag(call.args, "--name") ?? zone.name;
+      if (domain !== zone.name && !domain.endsWith(`.${zone.name}`)) {
+        return cfError(`${domain} is not in the zone ${zone.name} [code: 2007]`);
+      }
+      if (domain === zone.name) routing.enabled = true;
+      for (const content of EMAIL_ROUTING_MX) {
+        if (
+          !this.dnsRecords.some(
+            (record) =>
+              record.zoneId === zone.id &&
+              record.name === domain &&
+              record.type === "MX" &&
+              record.content === content,
+          )
+        ) {
+          this.dnsRecords.push({ zoneId: zone.id, name: domain, type: "MX", content });
+        }
+      }
+      return { stdout: JSON.stringify(settings()) };
+    }
+    if (group !== "rules") return cfError(`unknown command email-routing ${group}`);
+    if (action === "catch-all") {
+      if (call.args[3] === "get") return { stdout: JSON.stringify(routing.catchAll) };
+      const request = body();
+      if (!request) return cfError("A body is required");
+      const refused = checkWorker(request);
+      if (refused) return refused;
+      routing.catchAll = { ...routing.catchAll, ...request };
+      return { stdout: JSON.stringify(routing.catchAll) };
+    }
+    if (action === "list-account") {
+      const perPage = Number(flag(call.args, "--per-page") ?? "20");
+      const page = Number(flag(call.args, "--page") ?? "1");
+      return {
+        stdout: JSON.stringify(
+          [...routing.rules.values()].slice((page - 1) * perPage, page * perPage),
+        ),
+      };
+    }
+    if (action === "create") {
+      const request = body();
+      if (!request) return cfError("A body is required");
+      const refused = checkWorker(request);
+      if (refused) return refused;
+      const address = request.matchers.find((matcher) => matcher.value)?.value;
+      if (address && this.emailRulesFor(zone.id, address).length > 0) {
+        return cfError(`A rule for ${address} already exists [code: 2032]`);
+      }
+      const id = (this.counter += 1).toString(16).padStart(32, "0");
+      const rule = { id, ...request };
+      routing.rules.set(id, rule);
+      return { stdout: JSON.stringify(rule) };
+    }
+    const id = call.args[3]!;
+    const rule = routing.rules.get(id);
+    if (!rule) return cfError(`Rule not found [code: 2020]`);
+    if (action === "get") return { stdout: JSON.stringify(rule) };
+    if (action === "update") {
+      const request = body();
+      if (!request) return cfError("A body is required");
+      const refused = checkWorker(request);
+      if (refused) return refused;
+      routing.rules.set(id, { ...request, id });
+      return { stdout: JSON.stringify(routing.rules.get(id)) };
+    }
+    if (action === "delete") {
+      const declined = unconfirmed(call, "This operation permanently deletes an Email Routing rule.");
+      if (declined) return declined;
+      routing.rules.delete(id);
+      return { stdout: JSON.stringify(rule) };
+    }
+    return cfError(`unknown command email-routing rules ${action}`);
   }
 
   /**

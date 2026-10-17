@@ -897,3 +897,65 @@ describe("Prisma migrations, Hyperdrive caching and R2 buckets", () => {
     );
   });
 });
+
+describe("email.inbound manifest field", () => {
+  const inbox = {
+    id: "agentic-inbox",
+    email: { inbound: ["*@example.com", "support@mail.example.com"] },
+  };
+
+  it("accepts apex catch-alls and literal addresses in both schemas", () => {
+    expect(validateManifestStrict(inbox).email).toEqual(inbox.email);
+    expect(validateManifest(inbox).email).toEqual(inbox.email);
+    expect(
+      validateManifestStrict({
+        id: "inbox",
+        email: { inbound: ["first.last+tag@example.co.uk", "a_b-c@x.io"] },
+      }).email?.inbound,
+    ).toHaveLength(2);
+    expect(validateManifestStrict({ id: "inbox", email: {} }).email).toEqual(
+      {},
+    );
+  });
+
+  it.each([
+    ["an uppercase address", ["Support@example.com"]],
+    ["a bare domain", ["example.com"]],
+    ["a wildcard inside the local part", ["sup*@example.com"]],
+    ["a wildcard domain", ["*@*.example.com"]],
+    ["a single-label domain", ["support@localhost"]],
+    ["a duplicate", ["support@example.com", "support@example.com"]],
+    [
+      "an address over Email Routing's 90 characters",
+      [`${"a".repeat(80)}@example.com`],
+    ],
+    [
+      "more than 50 addresses",
+      Array.from({ length: 51 }, (_, i) => `a${i}@example.com`),
+    ],
+  ])("refuses %s", (_case, inbound) => {
+    expect(() =>
+      validateManifestStrict({ id: "inbox", email: { inbound } }),
+    ).toThrow(/email\.inbound/);
+  });
+
+  it("refuses unknown email keys when authored, and keeps them at registration", () => {
+    expect(() =>
+      validateManifestStrict({ id: "inbox", email: { outbound: [] } }),
+    ).toThrow(/email/);
+    expect(
+      validateManifest({ id: "inbox", email: { inbound: ["X"], later: 1 } })
+        .email,
+    ).toEqual({ inbound: ["X"], later: 1 });
+  });
+
+  it("refuses inbound mail on the dispatch tier", () => {
+    expect(manifestTierProblems(inbox, "service_binding")).toEqual([]);
+    expect(manifestTierProblems(inbox, "dispatch")).toEqual([
+      "email.inbound: apps in a dispatch namespace don't receive mail",
+    ]);
+    expect(
+      manifestTierProblems({ email: { inbound: [] } }, "dispatch"),
+    ).toEqual([]);
+  });
+});

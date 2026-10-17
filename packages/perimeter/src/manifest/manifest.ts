@@ -306,6 +306,55 @@ const CapabilitiesSchemaStrict = z
   .transform((capabilities) => capabilities as Record<string, CapabilityEntry>);
 
 /**
+ * An address Email Routing delivers to the app's Worker: `*@<domain>`, the
+ * catch-all of a zone's apex, or one address (`<local>@<domain>`), in
+ * lowercase. The deploy finds the zone; a catch-all on a subdomain is
+ * refused there, since Email Routing has catch-alls on apex domains only.
+ */
+export const EMAIL_INBOUND_PATTERN =
+  /^(\*|[a-z0-9._+-]+)@([a-z0-9-]+\.)+[a-z]{2,}$/;
+
+/** How many addresses `email.inbound` takes (Email Routing allows 200 rules a domain). */
+export const MAX_EMAIL_INBOUND = 50;
+
+/** Email Routing's limit on a rule's address (its matcher's value). */
+const MAX_EMAIL_ADDRESS_LENGTH = 90;
+
+/**
+ * Mail the app receives, through its `email()` handler. Registration
+ * passes it through; nothing in the gateway acts on it.
+ */
+const EmailSchema = z
+  .object({ inbound: z.array(z.string()).optional() })
+  .passthrough();
+
+const EmailSchemaStrict = z
+  .object({
+    /**
+     * The addresses Email Routing delivers to this Worker's email()
+     * handler, which `everyapp deploy` routes: "*@example.com" (an apex
+     * zone's catch-all) or "support@mail.example.com".
+     */
+    inbound: z
+      .array(
+        z
+          .string()
+          .max(MAX_EMAIL_ADDRESS_LENGTH)
+          .regex(
+            EMAIL_INBOUND_PATTERN,
+            'an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase',
+          ),
+      )
+      .max(MAX_EMAIL_INBOUND)
+      .refine(
+        (addresses) => new Set(addresses).size === addresses.length,
+        "duplicate address",
+      )
+      .optional(),
+  })
+  .strict();
+
+/**
  * Cloudflare's limits for one of the app's Workers. `cpuMs` raises the CPU
  * time an invocation may use (a Workflow step that crawls for minutes, say),
  * up to Cloudflare's 5 minutes.
@@ -422,6 +471,11 @@ export const ManifestSchema = z
     /** Limits on what the app may do through the gateway's AI proxy. */
     ai: AiPolicySchema.optional(),
     /**
+     * Mail the app's `email()` handler receives: `inbound` addresses, which
+     * `everyapp deploy` routes to its Worker with Email Routing rules.
+     */
+    email: EmailSchema.optional(),
+    /**
      * Who can open the app once it is first registered. "admins" (the
      * default) grants the deployer and the organization's owners and admins;
      * "everyone" grants every member, including future ones. Redeploys never
@@ -505,6 +559,7 @@ export const ManifestSchemaStrict = ManifestSchema.extend({
   scopes: ScopesSchemaStrict.optional(),
   ai: AiPolicySchema.strict().optional(),
   capabilities: CapabilitiesSchemaStrict.optional(),
+  email: EmailSchemaStrict.optional(),
   database: DatabaseSchema.strict().optional(),
   limits: WorkerLimitsSchema.strict().optional(),
 }).strict();
@@ -650,10 +705,11 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
  * The dispatch tier (customer code in a Workers for Platforms namespace)
  * gets no Hyperdrive: an account holds at most 25 configs, so they are
  * kept for first-party apps. Nor R2 buckets yet: the hosted deployer
- * refuses R2 bindings.
+ * refuses R2 bindings. Nor inbound mail: the platform's zones aren't an
+ * organization's to route.
  */
 export function manifestTierProblems(
-  manifest: Pick<Manifest, "resources">,
+  manifest: Pick<Manifest, "resources" | "email">,
   tier: string,
 ): string[] {
   if (tier === "service_binding") return [];
@@ -667,6 +723,11 @@ export function manifestTierProblems(
   if (manifest.resources?.r2?.length) {
     problems.push(
       "resources.r2: R2 buckets aren't available to apps in a dispatch namespace yet",
+    );
+  }
+  if (manifest.email?.inbound?.length) {
+    problems.push(
+      "email.inbound: apps in a dispatch namespace don't receive mail",
     );
   }
   return problems;

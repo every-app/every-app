@@ -4,6 +4,7 @@ import {
   checkoutGateway,
   type ReconcileSeams,
 } from "@/commands/deploy/deployApp";
+import { removeEmailRoutes } from "@/lib/app/emailRoutes";
 import {
   describeResource,
   forgetOwnedResources,
@@ -89,8 +90,9 @@ export async function deleteApp(
  * its Custom Domain with a reconcile, delete the certificate Cloudflare
  * keeps for that hostname, and with `purge` delete its Worker, D1
  * databases and KV namespaces: only those the registry recorded as created
- * by the app, never whatever has its names; and the Workflows that run on
- * its Worker. Its helper Workers are recorded beside its Worker, so they
+ * by the app, never whatever has its names; the Workflows that run on
+ * its Worker; and its Email Routing routes (a catch-all drops mail
+ * again). Its helper Workers are recorded beside its Worker, so they
  * and their Workflows go with it. `purged` says what was deleted and what
  * was kept. An app deleted already is deleted again from the reconcile on,
  * so a delete that stopped part-way can run again.
@@ -169,7 +171,7 @@ export async function removeApp({
   }
 
   if (!purge) return deleted;
-  const purged = await purgeApp(cf, registry, out, appId, deleted);
+  const purged = await purgeApp(cf, registry, connection.accountId, out, appId, deleted);
   return { ...deleted, purged };
 }
 
@@ -184,7 +186,7 @@ export function deletionSummary(
   { workerName, purged }: RegisteredAppInfo & { purged?: PurgeResult },
 ): { message: string; data: Record<string, unknown> } {
   const message = !purged
-    ? `Deleted ${appId}. Its Worker and data are kept, and the Worker's cron schedules and Workflows, if it has any, keep running; \`${CLI} delete ${appId} --purge\` removes them.`
+    ? `Deleted ${appId}. Its Worker and data are kept, and the Worker's cron schedules, Workflows and mail routes, if it has any, keep running; \`${CLI} delete ${appId} --purge\` removes them.`
     : purged.kept.length > 0
       ? `Deleted ${appId}${purged.removed.length > 0 ? ` and ${purged.removed.join(", ")}` : ""}; kept ${purged.kept.join(", ")} (see above).`
       : purged.removed.length > 0
@@ -206,12 +208,21 @@ export function deletionSummary(
 async function purgeApp(
   cf: CfRunner,
   registry: D1Database,
+  accountId: string,
   out: EventSink,
   appId: string,
   deleted: RegisteredAppInfo,
 ): Promise<PurgeResult> {
-  const owned = await readOwnedResources(registry, deleted.workerName);
-  const removed: string[] = [];
+  const recorded = await readOwnedResources(registry, deleted.workerName);
+  // Its mail routes first, so no rule names a Worker that is gone.
+  const removed = await removeEmailRoutes({
+    cf,
+    gatewayDb: registry,
+    accountId,
+    workerName: deleted.workerName,
+    routes: recorded.filter((resource) => resource.kind === "email-route"),
+  });
+  const owned = recorded.filter((resource) => resource.kind !== "email-route");
   const workflowsKept: string[] = [];
   // The app's Worker and its helper Workers (`<worker>--<name>`), as recorded.
   const ownWorkers = new Set(

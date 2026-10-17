@@ -312,6 +312,16 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
     "app.build": (event) => (event.status === "ok" ? { join: "Built" } : null),
     "app.migrations": migrated,
     "app.upload": uploaded,
+    // TODO(integration): PR 6's deploy step (lib/app/emailRoutes.ts); events.ts isn't on its file list.
+    "app.email": (event) => {
+      if (event.status !== "ok") return null;
+      const addresses = strings(event.data?.["addresses"]);
+      return {
+        join: addresses.length
+          ? `mail to ${addresses.join(", ")} routed`
+          : "mail routes removed",
+      };
+    },
     "app.bind": (event) =>
       event.status === "start"
         ? { open: "Binding to the Gateway" }
@@ -331,6 +341,10 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
             open: `Removed ${text(event.data?.["appId"]) ?? "the app"} from the Gateway`,
           }
         : null,
+    // TODO(integration): PR 6 needs dev's ready block (its local mail hint) on screen; no
+    // milestone showed it, so `everyapp dev` printed neither the app's URL nor its hints.
+    "dev.ready": (event) =>
+      event.status === "ok" && event.message ? { line: event.message } : null,
     "migrations.local": (event) => {
       if (event.status === "skip" && event.message)
         return { line: event.message };

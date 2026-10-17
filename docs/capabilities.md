@@ -478,9 +478,14 @@ sender the same way (the manifest's `senders` reach the Worker in dev as
 developer's own account.
 
 **Inbound mail** is not a capability: the app exports an `email()` handler
-beside `everyApp()`'s `fetch`, and an Email Routing rule sends the
-domain's mail to the app's Worker. The deploy policy keeps refusing the
-`email` trigger, so for now the rule is a manual step
+beside `everyApp()`'s `fetch` and lists its addresses in the manifest,
+`email: { inbound: ["*@example.com", "support@mail.example.com"] }`
+(`*@` is a zone apex's catch-all; subdomains take literal addresses).
+`everyapp deploy` creates the Email Routing rules that send them to the
+app's Worker, records them as the app's, deletes those the manifest
+drops, and asks (or takes `--enable-email-routing`) before it turns
+routing on for a domain; `delete --purge` removes them. The deploy policy
+keeps refusing the `email` trigger
 ([docs/runbooks/email-sending-setup.md](runbooks/email-sending-setup.md#inbound-mail-to-an-app)).
 The handler runs with no identity: its gateway calls pass
 `for: { background: true, organizationId }` and treat the message as

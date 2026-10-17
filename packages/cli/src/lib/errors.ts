@@ -20,6 +20,7 @@ const TAKEOVER_FLAGS: Readonly<Record<string, string>> = {
   CAA_BLOCKS_ISSUANCE: "--force-dns",
   DURABLE_OBJECT_REMOVED: "--allow-delete-durable-object-data",
   WORKFLOW_REMOVED: "--allow-delete-workflows",
+  EMAIL_ROUTING_DISABLED: "--enable-email-routing",
   CONFIRMATION_REQUIRED: "--yes",
 };
 

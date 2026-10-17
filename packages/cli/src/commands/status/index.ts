@@ -1,5 +1,7 @@
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import type { LocalContext } from "@/context";
+import { emailRouteProblems, type EmailRouteProblem } from "@/lib/app/emailRoutes";
+import { readResourcesOfKind } from "@/lib/app/ownership";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { certificateStatus } from "@/lib/domains/certificates";
@@ -42,6 +44,8 @@ interface AppState {
   bound: boolean;
   /** Who deployed it last: an email, or `api-token:<account id>`. */
   deployedBy: string | null;
+  /** The addresses its deploys route to its Worker (`email.inbound`). */
+  email: string[];
 }
 
 /** Something off, and what to run about it (null: it settles by itself, wait). */
@@ -57,7 +61,8 @@ interface Fix {
  * records, whether the Worker serves the version that row names, whether
  * it was built from this checkout's Gateway sources (`upToDate`, by tree
  * hash, nothing built), its owner, the apps its registry lists and whether the live version binds
- * them, each published hostname's certificate (Cloudflare's certificate
+ * them, the mail addresses each app's deploys route to it (and whether
+ * Email Routing still delivers them), each published hostname's certificate (Cloudflare's certificate
  * packs), any deploy in progress, and `fixes`: what to run when something
  * is off.
  */
@@ -109,14 +114,16 @@ export async function reportStatus({
     });
     return;
   }
-  const [desired, registered, leases, owner, serving] = await Promise.all([
+  const [desired, registered, leases, owner, serving, emailRoutes] = await Promise.all([
     readDesiredState(db, workerExistence(cf)),
     listApps(db),
     readLiveLeases(db),
     readOwner(db),
     getWorkerDeployment(cf, GATEWAY_WORKER_NAME),
+    readResourcesOfKind(db, "email-route"),
   ]);
   const certificates = await readCertificates(cf, install, out);
+  const emailProblems = await readEmailProblems(cf, emailRoutes, out);
 
   const gatewayUrl = `https://${install.gatewayHost}`;
   const wanted = gatewayDomains({
@@ -148,7 +155,11 @@ export async function reportStatus({
     status: app.status,
     bound: install.liveAppWorkers.includes(app.workerName),
     deployedBy: app.deployedBy,
+    email: emailRoutes
+      .filter((route) => route.workerName === app.workerName)
+      .map((route) => route.name),
   }));
+  const receiving = apps.filter((app) => app.email.length > 0);
   const waiting = (certificates ?? []).filter((c) => !c.ready).map((c) => c.host);
   const source = await checkoutAgainst(install, checkout);
   const fixes = fixesFor({
@@ -161,6 +172,7 @@ export async function reportStatus({
     waitingCertificates: waiting,
     leases,
     checkout: source,
+    emailProblems,
   });
 
   const lines = [
@@ -179,6 +191,10 @@ export async function reportStatus({
     }${servingRecorded ? "" : `; the Worker serves ${serving?.versionId ?? "no version"}, not the recorded ${install.liveVersionId ?? "(none)"}`}`,
     `Owner:    ${owner ? `${owner.email}${owner.organizationName ? ` (${owner.organizationName})` : ""}` : "none yet"}`,
     `Apps:     ${apps.length === 0 ? "none" : apps.map((app) => `${app.id} (${app.status}${app.bound || app.status === "pending" ? "" : ", not bound"})`).join(", ")}${apps.length > 0 && inSync ? " · all bound" : ""}`,
+    ...receiving.map(
+      (app, index) =>
+        `${index === 0 ? "Email:    " : "          "}${app.id}: ${app.email.join(", ")}`,
+    ),
     `TLS:      ${
       certificates === null
         ? "unknown (Cloudflare didn't list the zone's certificates)"
@@ -279,6 +295,28 @@ async function readCertificates(
   }
 }
 
+/**
+ * The recorded mail routes that don't deliver to their app's Worker; null
+ * (with a warning) when cf can't read them. The rest of the report goes on.
+ */
+async function readEmailProblems(
+  cf: CfRunner,
+  routes: Awaited<ReturnType<typeof readResourcesOfKind>>,
+  out: EventSink,
+): Promise<EmailRouteProblem[] | null> {
+  if (routes.length === 0) return [];
+  try {
+    return await emailRouteProblems(cf, routes);
+  } catch (error) {
+    out.emit({
+      type: "warning",
+      code: "EMAIL_ROUTES_UNKNOWN",
+      message: `Couldn't read the apps' Email Routing rules (${error instanceof Error ? error.message : String(error)}).`,
+    });
+    return null;
+  }
+}
+
 /** What to run about what is off: from the registry, the install row and cf disagreeing. */
 function fixesFor({
   install,
@@ -290,6 +328,7 @@ function fixesFor({
   waitingCertificates,
   leases,
   checkout,
+  emailProblems,
 }: {
   install: InstallRecord;
   desired: DesiredState;
@@ -300,6 +339,7 @@ function fixesFor({
   waitingCertificates: string[];
   leases: LeaseHolder[];
   checkout: CheckoutState;
+  emailProblems: EmailRouteProblem[] | null;
 }): Fix[] {
   const fixes: Fix[] = [];
   if (checkout.behind) {
@@ -371,6 +411,17 @@ function fixesFor({
         run: null,
       });
     }
+  }
+  for (const app of apps) {
+    const problems = (emailProblems ?? []).filter(
+      (problem) => problem.workerName === app.workerName,
+    );
+    if (problems.length === 0) continue;
+    fixes.push({
+      code: "EMAIL_ROUTE_MISSING",
+      message: `Mail for ${app.id} doesn't reach it: ${problems.map((problem) => `${problem.address} (${problem.problem})`).join(", ")}.`,
+      run: `${CLI} deploy (in ${app.id}'s directory)`,
+    });
   }
   if (waitingCertificates.length > 0) {
     fixes.push({

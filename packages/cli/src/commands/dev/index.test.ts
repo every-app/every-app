@@ -10,7 +10,7 @@ import type { CfProcess, CfStartCall } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { getFreePort } from "./proxy";
-import { runDev } from "./index";
+import { emailHint, runDev } from "./index";
 
 const manifest = {
   id: "todo",
@@ -190,6 +190,35 @@ describe("everyapp dev", () => {
 
     cf.exitApp();
     await running;
+  });
+
+  it("prints how to deliver mail to the app's email() handler, on the app's own dev server", async () => {
+    await fs.writeFile(
+      path.join(cwd, "everyapp.config.ts"),
+      `export default ${JSON.stringify({ ...manifest, email: { inbound: ["*@example.com", "support@example.com"] } })};\n`,
+    );
+    const cf = new DevCf(cwd);
+    const port = await getFreePort();
+    const running = runDev({ port, "skip-migrations": true }, out, { cwd, cf });
+
+    const ready = await until(() =>
+      events.find((event) => event["step"] === "dev.ready"),
+    );
+    const appPort = Number(cf.started[0]!.env?.["PORT"]);
+    expect(String(ready["message"])).toContain(
+      `  Email:     curl -X POST "http://127.0.0.1:${appPort}/cdn-cgi/local/email?from=someone@example.net&to=hello@example.com" --data-binary @message.eml`,
+    );
+
+    cf.exitApp();
+    await running;
+  });
+
+  it("prints no mail hint for an app that receives none", () => {
+    expect(emailHint({}, 5173)).toEqual([]);
+    expect(emailHint({ email: { inbound: [] } }, 5173)).toEqual([]);
+    expect(emailHint({ email: { inbound: ["support@mail.example.com"] } }, 5173)[0]).toContain(
+      "to=support@mail.example.com",
+    );
   });
 
   it("refuses an unknown mode before starting anything", async () => {

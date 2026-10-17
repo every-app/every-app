@@ -24,7 +24,7 @@ export const deleteCommand = buildCommand({
       purge: {
         kind: "boolean",
         brief:
-          "Also delete the app's Worker and helper Workers, D1 databases, KV namespaces and Workflows",
+          "Also delete the app's Worker and helper Workers, D1 databases, KV namespaces, Workflows and Email Routing routes",
         optional: true,
       },
       yes: {

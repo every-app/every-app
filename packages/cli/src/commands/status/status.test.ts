@@ -5,6 +5,7 @@
  */
 import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { applyEmailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
 import { discoverGateway } from "@/lib/gateway/discover";
@@ -171,6 +172,45 @@ describe("everyapp status", () => {
       expect.objectContaining({ code: "NO_OWNER", run: "pnpm everyapp setup" }),
     ]);
     expect(done["message"]).toContain("Apps:     todo (active) · all bound");
+  });
+
+  it("lists the mail each app's deploys route to it, and what to run when a route stops delivering", async () => {
+    const inbox = await deployed("inbox");
+    await deployed("todo");
+    account.emailRoutingOf("zone-1").enabled = true;
+    const plan = await planEmailRoutes({
+      cf: account.cf,
+      gatewayDb: db(),
+      accountId: ACCOUNT_ID,
+      workerName: inbox.workerName!,
+      manifest: { email: { inbound: ["*@example.com", "support@example.com"] } },
+      interactive: false,
+    });
+    await applyEmailRoutes({ cf: account.cf, gatewayDb: db(), plan: plan! });
+
+    const done = await status();
+    expect(done["data"]["apps"]).toContainEqual(
+      expect.objectContaining({ id: "inbox", email: ["*@example.com", "support@example.com"] }),
+    );
+    expect(done["data"]["apps"]).toContainEqual(expect.objectContaining({ id: "todo", email: [] }));
+    expect(done["message"]).toContain("Email:    inbox: *@example.com, support@example.com");
+    expect(fixCodes(done)).not.toContain("EMAIL_ROUTE_MISSING");
+
+    // Someone deleted the rule by hand.
+    const [rule] = account.emailRulesFor("zone-1", "support@example.com");
+    account.emailRoutingOf("zone-1").rules.delete(rule!.id);
+    expect((await status())["data"]["fixes"]).toContainEqual({
+      code: "EMAIL_ROUTE_MISSING",
+      message: "Mail for inbox doesn't reach it: support@example.com (its Email Routing rule is gone).",
+      run: "pnpm everyapp deploy (in inbox's directory)",
+    });
+
+    // cf can't read the rules: said, and the rest of the report stands.
+    account.cf.override(["email-routing"], { exitCode: 1, stderr: "┌ Error\n│ boom\n└\n" });
+    const unknown = await status();
+    expect(events).toContainEqual(expect.objectContaining({ type: "warning", code: "EMAIL_ROUTES_UNKNOWN" }));
+    expect(fixCodes(unknown)).not.toContain("EMAIL_ROUTE_MISSING");
+    expect(unknown["data"]["apps"]).toHaveLength(2);
   });
 
   it("prints the deployment mode the install recorded", async () => {

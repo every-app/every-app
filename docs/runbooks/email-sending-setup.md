@@ -108,17 +108,55 @@ needs; apps get no `send-email` binding of their own.
 ## Inbound mail to an app
 
 An app that receives mail (agentic-inbox, say) exports an `email()` handler
-beside its `fetch`. The deploy policy refuses the `email` trigger (it would
-let a deploy claim the account's Email Routing addresses), so for now the
-operator routes the domain's mail to the app's Worker by hand, once per
-domain, after the app's first deploy. The Worker's name, `every-<org>-<app>`,
-is printed by `everyapp deploy` and `everyapp status`.
+beside its `fetch` and lists the addresses it receives in its manifest:
 
-1. Enable Email Routing on the zone. It adds and locks the zone's MX and SPF
-   records, so mail for the domain moves to Cloudflare:
+```ts
+email: {
+  // "*@<apex>" is the zone's catch-all; any other address is one rule.
+  inbound: ["*@example.com", "support@mail.example.com"],
+},
+```
+
+`everyapp deploy` then routes them to the app's Worker, `every-<org>-<app>`,
+with Email Routing rules that name it. The deploy policy keeps refusing the
+`email` trigger (cf would reconcile the account's addresses itself, with no
+record of whose they are), so these rules are the only link.
+
+- **Before anything is uploaded** the deploy finds each domain's zone in the
+  account (`EMAIL_ZONE_NOT_FOUND` if none holds it), refuses a catch-all on a
+  subdomain (`EMAIL_CATCH_ALL_NOT_APEX`: Email Routing has catch-alls on an
+  apex only; list each subdomain address instead), an address another app's
+  deploy recorded or a rule it didn't make delivers elsewhere
+  (`EMAIL_ADDRESS_TAKEN`), and a catch-all that already sends the zone's mail
+  somewhere (`EMAIL_CATCH_ALL_TAKEN`). A rule named `everyapp:<worker>`, or
+  one that already sends the address to the app's Worker (the manual step
+  below), is adopted.
+- **Email Routing off for a domain** (the zone's setting for its apex,
+  Cloudflare's MX records for a subdomain): turning it on adds and locks the
+  domain's MX and SPF records, so its mail moves to Cloudflare. At a terminal
+  the deploy asks; unattended it stops with `EMAIL_ROUTING_DISABLED` and
+  uploads nothing, and `everyapp deploy --enable-email-routing` turns it on
+  without asking. The deploy only turns it on for domains `email.inbound`
+  names.
+- **After the upload** it creates a rule per address
+  (`{"name":"everyapp:<worker>","matchers":[{"type":"literal","field":"to","value":"support@mail.example.com"}],"actions":[{"type":"worker","value":["<worker>"]}]}`)
+  and points the catch-all at the Worker, each recorded in the gateway's D1 as
+  the app's (`email-route`). An address dropped from `email.inbound` loses its
+  rule on the next deploy, a dropped catch-all drops mail again, and
+  `everyapp delete --purge` removes every route the app recorded.
+- **Check.** `everyapp status` lists each app's addresses and says
+  `EMAIL_ROUTE_MISSING` (run `everyapp deploy`) when a rule is gone, off or
+  sends mail elsewhere, or routing is off for the domain.
+
+Hosted organizations' apps (the dispatch tier) take no `email.inbound`.
+
+By hand, for an app without `email.inbound` (the Worker's name is printed by
+`everyapp deploy` and `everyapp status`):
+
+1. Enable Email Routing on the zone:
 
    ```sh
-   npx cf email-routing enable -z example.com
+   npx cf email-routing enable -z example.com --name example.com
    ```
 
 2. Send the mail to the Worker. In the dashboard: **Email Routing > Routing
@@ -129,22 +167,27 @@ is printed by `everyapp deploy` and `everyapp status`.
    npx cf email-routing rules catch-all update -z example.com --body '{"enabled":true,"matchers":[{"type":"all"}],"actions":[{"type":"worker","value":["every-<org>-<app>"]}]}'
    ```
 
-A catch-all works on an apex zone only (`*@example.com`). For addresses on a
-subdomain (`support@mail.example.com`), create one literal rule per address
-instead (**Routing rules > Create address > Send to a Worker**, or
-`npx cf email-routing rules create -z example.com --body '{"name":"everyapp:every-<org>-<app>","enabled":true,"matchers":[{"type":"literal","field":"to","value":"support@mail.example.com"}],"actions":[{"type":"worker","value":["every-<org>-<app>"]}]}'`).
+   For addresses on a subdomain, add the subdomain to the zone's Email
+   Routing (`npx cf email-routing enable -z example.com --name mail.example.com`),
+   then create one literal rule per address (**Routing rules > Create address
+   > Send to a Worker**, or
+   `npx cf email-routing rules create -z example.com --body '{"name":"everyapp:every-<org>-<app>","enabled":true,"matchers":[{"type":"literal","field":"to","value":"support@mail.example.com"}],"actions":[{"type":"worker","value":["every-<org>-<app>"]}]}'`).
+   Adding these addresses to `email.inbound` later adopts the rules.
 
 To reply from those addresses, onboard the same domain for sending (above)
 and list it in the app's `senders`. The `email()` handler runs with no
 identity and anyone can mail the address: it treats the message as untrusted
 and calls the gateway with `for: { background: true, organizationId }`.
 
-Locally, `everyapp dev` delivers a message to the handler with
-`curl -X POST "http://127.0.0.1:<app port>/cdn-cgi/local/email?from=a@sender.test&to=inbox@example.com" --data-binary @message.eml`
+Locally, `everyapp dev` prints, for an app with `email.inbound`, how to
+deliver a message to the handler:
+`curl -X POST "http://127.0.0.1:<app port>/cdn-cgi/local/email?from=someone@example.net&to=support@example.com" --data-binary @message.eml`
 (the raw message needs a `Message-ID` header), on the app's own dev port,
 not the gateway's.
 
 Not yet verified on a live account: that a rule delivers to a Worker with no
-routes and no workers.dev subdomain (every app Worker), and that it survives
-redeploys. If it doesn't, the fallback is a gateway-owned trigger that relays
-the message to the app over its binding.
+routes and no workers.dev subdomain (every app Worker), that it survives
+redeploys, the exact output of `cf email-routing rules create`, and whether
+Email Routing takes a subdomain while the zone's apex has it off. If delivery
+doesn't work, the fallback is a gateway-owned trigger that relays the message
+to the app over its binding.

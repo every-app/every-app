@@ -108,9 +108,14 @@ first upload; ADR-0001) decides what the gateway does, once, in
   the outcome, never subjects, bodies, attachments or addresses.
 - Inbound mail reaches an app's `email()` handler from an Email Routing rule
   that names its Worker, outside the perimeter: no identity, and anyone can
-  mail the address. The deploy keeps refusing the `email` trigger, so no
-  deploy can claim the account's routing addresses; the rule is the
-  operator's (docs/runbooks/email-sending-setup.md).
+  mail the address. The deploy keeps refusing the `email` trigger; the CLI
+  makes the rules from the manifest's `email.inbound` instead, recorded in
+  the ownership ledger, so a deploy takes only an address no other app
+  recorded and no foreign rule or catch-all delivers, never turns Email
+  Routing on for a domain without a person's yes (or
+  `--enable-email-routing`), and `--purge` removes only the routes the app
+  recorded. Apps on the dispatch tier take no inbound addresses
+  (docs/runbooks/email-sending-setup.md).
 
 ## Organizations and Shared Apps
 

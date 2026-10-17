@@ -34,6 +34,12 @@ export const deployCommand = buildCommand({
         brief:
           "Publish the app's new hostname even where a DNS record answers it (one at the hostname is replaced)",
       },
+      "enable-email-routing": {
+        kind: "boolean",
+        brief:
+          "Turn on Email Routing for the domains email.inbound names that don't route mail yet (locks their MX and SPF records to Cloudflare)",
+        optional: true,
+      },
       shared: {
         kind: "boolean",
         brief:
@@ -71,7 +77,9 @@ export const deployCommand = buildCommand({
       "  5. Bookmarks the production D1 database, then applies its migrations",
       "  6. Uploads it with cf deploy --prebuilt, its secrets in the same version, and",
       "     creates or updates its Workflows (refused if another Worker runs one of their names);",
-      "     its helper Workers (everyapp.config.ts workers, <worker>--<name>) go up first",
+      "     its helper Workers (everyapp.config.ts workers, <worker>--<name>) go up first; then routes",
+      "     the mail to email.inbound's addresses to it with Email Routing rules (checked before",
+      "     anything is created; turning routing on for a domain asks first, or --enable-email-routing)",
       "  7. Redeploys the Gateway from this checkout to bind the Worker and publish its hostname (new",
       "     apps; it upgrades the Gateway too when the checkout is newer), then requests the app's",
       "     hostname until it is live (a new hostname's certificate included); behind Cloudflare",

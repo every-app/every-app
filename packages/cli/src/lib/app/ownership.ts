@@ -38,19 +38,22 @@ const CREATE_TABLE: D1Statement[] = [
   },
 ];
 
-type ResourceKind = "worker" | "d1" | "kv" | "hyperdrive";
+type ResourceKind = "worker" | "d1" | "kv" | "hyperdrive" | "email-route";
 
 export interface OwnedResource {
   kind: ResourceKind;
   /**
    * The manifest binding; for a Worker, empty for the app's own and the
-   * helper Worker's name (`workers`) for a helper.
+   * helper Worker's name (`workers`) for a helper; for an Email Routing
+   * route, its address in `email.inbound`.
    */
   binding: string;
-  /** D1 name, KV title, Hyperdrive config name or Worker name. */
+  /** D1 name, KV title, Hyperdrive config name, Worker name or the route's address. */
   name: string;
   /**
-   * D1 uuid, KV id, Hyperdrive config id or Worker name. Null while a create is in flight: the
+   * D1 uuid, KV id, Hyperdrive config id or Worker name; for a route, its
+   * rule as `<zone id>/<rule id>`, or `catch_all:<zone id>` for a zone's
+   * catch-all (lib/app/emailRoutes.ts). Null while a create is in flight: the
    * name was free when the claim was written, so a resource that has the
    * name now is the one this app created.
    */
@@ -77,6 +80,30 @@ export async function readOwnedResources(
     name: String(row["name"]),
     resourceId: row["resource_id"] === null ? null : String(row["resource_id"]),
     versionId: row["version_id"] == null ? null : String(row["version_id"]),
+  }));
+}
+
+/**
+ * Every app's records of one kind, with the Worker of the app that made
+ * each: who holds an Email Routing address, say.
+ */
+export async function readResourcesOfKind(
+  db: D1Database,
+  kind: ResourceKind,
+): Promise<Array<OwnedResource & { workerName: string }>> {
+  const results = await db.run([
+    ...CREATE_TABLE,
+    {
+      sql: "SELECT worker_name, binding, name, resource_id FROM _everyapp_app_resources WHERE kind = ? ORDER BY worker_name, binding",
+      params: [kind],
+    },
+  ]);
+  return (results.at(-1) ?? []).map((row) => ({
+    workerName: String(row["worker_name"]),
+    kind,
+    binding: String(row["binding"]),
+    name: String(row["name"]),
+    resourceId: row["resource_id"] === null ? null : String(row["resource_id"]),
   }));
 }
 
@@ -167,7 +194,9 @@ export function describeResource({
         ? "D1 database"
         : kind === "hyperdrive"
           ? "Hyperdrive config"
-          : "KV namespace";
+          : kind === "email-route"
+            ? "Email Routing route for"
+            : "KV namespace";
   return `${label} "${name}"`;
 }
 
