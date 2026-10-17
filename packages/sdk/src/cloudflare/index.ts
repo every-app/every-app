@@ -40,6 +40,7 @@ export {
   type EveryAppWorkerConfig,
   type EveryAppWorkerManifest,
   type EveryAppWorkerOptions,
+  type EveryAppWorkerReference,
   type GatewayBinding,
   type HyperdriveBinding,
   type KvBinding,

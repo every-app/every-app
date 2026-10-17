@@ -102,7 +102,8 @@ const tools = defineTools(
 let keys: Awaited<ReturnType<typeof testKeys>>;
 let app: ReturnType<typeof everyApp>;
 let snapshotApp: ToolBusApp;
-const ctx = { waitUntil: () => undefined };
+// TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
+const ctx = { waitUntil: () => undefined } as unknown as ExecutionContext;
 // The Worker's name is the audience everyAppWorker() deploys it with.
 const WORKER = "every-acme-todo";
 const WORKER_ENV = { EVERYAPP_AUDIENCE: WORKER };

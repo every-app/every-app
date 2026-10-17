@@ -103,7 +103,10 @@ async function callTool(
       body: JSON.stringify({ v: 1, name, arguments: args, callId }),
     }),
     testEnv(events),
-    { waitUntil: (promise) => background.push(promise) },
+    // TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
+    {
+      waitUntil: (promise: Promise<unknown>) => void background.push(promise),
+    } as unknown as ExecutionContext,
   );
   const body = (await response.json()) as {
     result?: { content: Array<{ text: string }>; isError?: boolean };
@@ -135,7 +138,8 @@ describe("todo agent tools", () => {
         body: JSON.stringify({ v: 1 }),
       }),
       testEnv([]),
-      { waitUntil: () => undefined },
+      // TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
+      { waitUntil: () => undefined } as unknown as ExecutionContext,
     );
     const catalog = (await response.json()) as {
       instructions: string;
@@ -298,7 +302,8 @@ describe("todo agent tools", () => {
         }),
       }),
       testEnv([]),
-      { waitUntil: () => undefined },
+      // TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
+      { waitUntil: () => undefined } as unknown as ExecutionContext,
     );
     expect(response.status).toBe(401);
     expect(mockedTodos.list).not.toHaveBeenCalled();

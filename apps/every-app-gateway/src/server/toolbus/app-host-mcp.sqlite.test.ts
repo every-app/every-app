@@ -199,7 +199,8 @@ function deployApp(
         request,
         // Deployed as everyAppWorker() does: its name is the audience.
         { EVERYAPP_AUDIENCE: WORKER },
-        { waitUntil: () => undefined },
+        // TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
+        { waitUntil: () => undefined } as unknown as ExecutionContext,
       );
     },
   };

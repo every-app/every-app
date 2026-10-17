@@ -10,7 +10,7 @@ For full API reference and usage guides, see the [Embedded SDK documentation](ht
 
 ## Entry points
 
-- `@every-app/sdk/server`: runs in the Worker. `everyApp()` verifies the identity the gateway injects. Tokens carry the app's Worker name as their audience, which `everyAppWorker()` sets as `env.EVERYAPP_AUDIENCE` at deploy (in development, where `everyapp dev` mints for the app id, `env.EVERYAPP_APP_ID` stands in); the app id comes from `env.EVERYAPP_APP_ID`.
+- `@every-app/sdk/server`: runs in the Worker. `everyApp()` verifies the identity the gateway injects. Tokens carry the app's Worker name as their audience, which `everyAppWorker()` sets as `env.EVERYAPP_AUDIENCE` at deploy (in development, where `everyapp dev` mints for the app id, `env.EVERYAPP_APP_ID` stands in); the app id comes from `env.EVERYAPP_APP_ID`. The handler gets the runtime's `ExecutionContext` as the Worker received it, so it goes on to Hono's `app.fetch(request, env, ctx)` or React Router's request handler without a cast.
 - `@every-app/sdk/cloudflare`: runs in Node while `cf` loads `cloudflare.config.ts`. `everyAppWorker()` builds the Worker definition from `everyapp.config.ts`:
 
   ```ts
@@ -59,6 +59,44 @@ export default defineConfig((ctx) => ({
   plugin passes a `.dev.vars` value through only for a declared secret.
   Type it as optional in `src/env.d.ts` (`GITHUB_TOKEN?: string` in
   `Cloudflare.Env`).
+
+## Compatibility flags
+
+Every Worker `everyAppWorker()` and `everyAppAuxiliaryWorker()` build has
+`nodejs_compat` and the compatibility date `2026-06-01` (or the manifest's
+`compatibilityDate`). `compatibilityFlags` adds flags after `nodejs_compat`,
+each once:
+
+```ts
+everyAppWorker({
+  manifest,
+  entrypoint,
+  ctx,
+  // fetch() reaches only the public internet: no private or local addresses.
+  compatibilityFlags: ["global_fetch_strictly_public"],
+});
+```
+
+## Durable Objects
+
+Declare a Durable Object by binding and class,
+`resources: { durableObjects: [{ name: "MAILBOX", className: "MailboxDO" }] }`,
+and export the class from the Worker entry. When `entrypoint` is the entry
+imported as a `cf-worker` module (as above), `cf workers types` types the
+binding with the class, `env.MAILBOX: DurableObjectNamespace<MailboxDO>`, so
+RPC calls on a stub type-check: the binding names the Worker by its
+definition (`worker: { name, compatibilityDate, entrypoint }`), which cf
+resolves to the Worker's name. With a path entrypoint, and for a class a
+helper Worker defines, the binding names the Worker by name and the
+namespace is untyped. Retype it in `src/env.d.ts` (a plain cast is refused):
+
+```ts
+import type { Scratchpad } from "./audit.worker";
+
+export type AppEnv = Omit<Env, "SCRATCHPAD"> & {
+  SCRATCHPAD: DurableObjectNamespace<Scratchpad>;
+};
+```
 
 ## Workflows
 
@@ -191,6 +229,99 @@ first deploy. A bucket bound by hand in
 `cloudflare.config.ts`, `bindings.r2({ name: worker.name })`, keeps working
 while the manifest declares none. Apps on the dispatch tier can't have
 buckets yet.
+
+## Node frameworks (Express, NestJS)
+
+A Node HTTP framework runs in the Worker on workerd's `node:http` bridge
+(`cloudflare:node`), which `nodejs_compat` and the compatibility date turn
+on. `nodeServerHandler()` starts the server on the isolate's first request
+and hands it every request `everyApp()` lets through:
+
+```ts
+// src/entry.worker.ts
+import "reflect-metadata";
+import { NestFactory } from "@nestjs/core";
+import { everyApp, nodeServerHandler } from "@every-app/sdk/server";
+import { AppModule } from "./app.module";
+
+const handler = nodeServerHandler({
+  boot: async () => {
+    const app = await NestFactory.create(AppModule, { rawBody: true });
+    await app.listen(0);
+    return { port: app.getHttpServer().address().port };
+  },
+});
+
+export default { ...everyApp(handler), scheduled };
+```
+
+- **`listen(0)`.** workerd picks the port. A fixed port is still held by the
+  server of the module graph a Vite reload replaced, so the next boot fails
+  with `EADDRINUSE`.
+- **Identity.** `everyApp()` has verified the identity before the Node app
+  sees the request, which still carries it as `x-everyapp-identity`. To know
+  the user in Node code, verify it again from the request's headers with the
+  Worker's text bindings, which `nodejs_compat` puts on `process.env`:
+  `await getEveryAppUser(new Request(url, { headers }), process.env)`.
+- **What comes back.** `Set-Cookie` is dropped: the gateway owns the
+  session and strips cookies from what reaches the app. Drop `compression()`
+  too (Cloudflare compresses at the edge); a body Node encodes anyway is
+  passed through as is, since the bridge alone would encode it a second
+  time.
+- **No identity outside `fetch`.** `scheduled` (and `email`) handlers sit
+  beside `fetch` and run with no user; they reach the Node app only if they
+  call it themselves.
+
+Three rules decide whether such a Worker runs at all:
+
+1. **Minify the Worker.** A Node framework's dependency graph is large, and
+   the isolate's heap grows with the source it loads (about 2.5 MB per MiB
+   locally), against a 128 MB limit. `unplugin-swc` (for Nest's decorator
+   metadata) sets `esbuild: false`, which also silently skips Vite's esbuild
+   minifier: `build.minify: true` changes nothing. Use
+   `build.minify: "terser"` (with `terser` installed), or minify the Worker's
+   chunks yourself:
+
+   ```ts
+   // vite.config.ts
+   import { transform } from "esbuild";
+
+   const minifyWorker = {
+     name: "minify-worker",
+     apply: "build" as const,
+     enforce: "post" as const,
+     applyToEnvironment: (environment: { name: string }) =>
+       environment.name !== "client",
+     async renderChunk(code: string) {
+       const result = await transform(code, {
+         minify: true,
+         format: "esm",
+         target: "es2022",
+         legalComments: "none",
+       });
+       return { code: result.code, map: null };
+     },
+   };
+   ```
+
+   Check that the bundle's size actually changed. On Vite 8 (oxc instead of
+   SWC) measure it again before and after.
+
+2. **No work at module scope.** workerd refuses random values
+   (`crypto.randomUUID`, `getRandomValues`), timers and I/O (`fetch`,
+   sockets) outside a request ("Disallowed operation called within global
+   scope"), and `import.meta.url` is undefined, so
+   `createRequire(import.meta.url)` and `fileURLToPath(import.meta.url)`
+   throw. Nothing reachable from a module's top level may do these: make
+   every client (`new Stripe()`, `new OpenAI()`, SDK singletons) a lazy
+   factory, and create the app in `boot`.
+
+3. **Stay inside the heap budget.** After `boot` and a few requests, the
+   isolate's used heap should be at most about 64 MB locally, half the
+   limit, leaving room for request bodies and caches. Read it from
+   miniflare's inspector (`inspectorPort`, then `Runtime.getHeapUsage` over
+   the websocket); `v8.getHeapStatistics()` reads zero in workerd.
+   `wrangler check startup` is only a smoke test for module-scope work.
 
 ## Agent tools
 

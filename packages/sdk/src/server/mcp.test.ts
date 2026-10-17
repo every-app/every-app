@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { createMcpHandler } from "./mcp";
-import type { ExecutionContextLike } from "./everyApp";
 import type { EveryAppUser } from "../internal";
 
-const ctx: ExecutionContextLike = { waitUntil: () => {} };
+// TODO(integration): PR 2 types ctx as the runtime ExecutionContext.
+const ctx = { waitUntil: () => {} } as unknown as ExecutionContext;
 
 function user(scopes: string[] = ["*"]): EveryAppUser {
   return {

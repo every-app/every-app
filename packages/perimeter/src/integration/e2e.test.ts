@@ -26,7 +26,10 @@ import { generateTestKeyPair, type TestKeyPair } from "../test-helpers";
 import { IDENTITY_HEADER } from "../headers";
 
 let keys: TestKeyPair;
-const ctx = { waitUntil: (_promise: Promise<unknown>) => {} };
+// TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
+const ctx = {
+  waitUntil: (_promise: Promise<unknown>) => {},
+} as unknown as ExecutionContext;
 
 /** A Worker's env as everyAppWorker() deploys it: its name is the audience. */
 function workerEnv(workerName: string) {

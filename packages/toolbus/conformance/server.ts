@@ -92,7 +92,11 @@ export async function startConformanceServer(port = 0): Promise<{
         name: "Notes",
         baseUrl: "http://notes.localhost",
         fetcher: {
-          fetch: (request) => app.fetch(request, {}, { waitUntil() {} }),
+          // TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
+          fetch: (request) =>
+            app.fetch(request, {}, {
+              waitUntil() {},
+            } as unknown as ExecutionContext),
         },
       },
     ],

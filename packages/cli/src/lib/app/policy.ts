@@ -276,8 +276,9 @@ function bindingProblems(
  * Durable Object exports may create, rename or keep classes. Deleting one
  * deletes its data, so only the classes the deploy dropped with
  * --allow-delete-durable-object-data may be; moving one's data to another
- * Worker, or taking another Worker's, never. Workflows must be named after
- * the app's Worker.
+ * Worker, or taking another Worker's, never. None may be backed by a
+ * container, which the deploy doesn't build, own or bill to an app.
+ * Workflows must be named after the app's Worker.
  */
 function exportProblems(
   exports: Record<string, Export>,
@@ -301,6 +302,11 @@ function exportProblems(
         `export ${name} is a ${String(entry.type)}, which Every App apps can't declare`,
       );
       continue;
+    }
+    if (entry["container"] !== undefined) {
+      problems.push(
+        `Durable Object class ${name} is backed by a container, which Every App apps can't run`,
+      );
     }
     switch (entry.state ?? "created") {
       case "created":

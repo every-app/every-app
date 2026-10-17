@@ -34,10 +34,13 @@ import { handleToolsRequest } from "./toolsEndpoint.js";
 export { ConfigurationError, IdentityError };
 export type { EveryAppUser, IdentityResult };
 
-export interface ExecutionContextLike {
-  waitUntil(promise: Promise<unknown>): void;
-  passThroughOnException?(): void;
-}
+/**
+ * The runtime's `ExecutionContext`, which `everyApp()` passes to the handler
+ * as the Worker received it, so it goes on to Hono's `app.fetch(request,
+ * env, ctx)` or React Router's request handler as is. Tests that call
+ * `fetch` themselves pass a stub cast to it.
+ */
+export type ExecutionContextLike = ExecutionContext;
 
 export interface EveryAppManifestLike {
   id: string;
@@ -65,20 +68,22 @@ export interface EveryAppOptions {
   now?: number;
 }
 
-/** The handler accepted by everyApp, with the verified user as a 4th argument. */
-export type EveryAppHandler<TEnv = Record<string, unknown>> = (
+/**
+ * The handler accepted by everyApp, with the verified user as a 4th argument.
+ * `TCtx` narrows the context, e.g. to `ExecutionContext<Props>`.
+ */
+export type EveryAppHandler<
+  TEnv = Record<string, unknown>,
+  TCtx extends ExecutionContextLike = ExecutionContext,
+> = (
   request: Request,
   env: TEnv,
-  ctx: ExecutionContextLike,
+  ctx: TCtx,
   user: EveryAppUser | null,
 ) => Response | Promise<Response>;
 
-interface EveryAppExport<TEnv> {
-  fetch(
-    request: Request,
-    env: TEnv,
-    ctx: ExecutionContextLike,
-  ): Promise<Response>;
+interface EveryAppExport<TEnv, TCtx extends ExecutionContextLike> {
+  fetch(request: Request, env: TEnv, ctx: TCtx): Promise<Response>;
 }
 
 interface VerificationConfig {
@@ -251,25 +256,34 @@ function isManifest(value: unknown): value is EveryAppManifestLike {
 }
 
 /** Wrap a Worker fetch handler with Every App identity verification. */
-export function everyApp<TEnv = Record<string, unknown>>(
-  handler: EveryAppHandler<TEnv>,
+export function everyApp<
+  TEnv = Record<string, unknown>,
+  TCtx extends ExecutionContextLike = ExecutionContext,
+>(
+  handler: EveryAppHandler<TEnv, TCtx>,
   options?: EveryAppOptions,
-): EveryAppExport<TEnv>;
+): EveryAppExport<TEnv, TCtx>;
 /**
  * @deprecated Drop the manifest: the app id now comes from
  *   `env.EVERYAPP_APP_ID` and the audience from `env.EVERYAPP_AUDIENCE`.
  *   When passed, it must match the app id.
  */
-export function everyApp<TEnv = Record<string, unknown>>(
-  handler: EveryAppHandler<TEnv>,
+export function everyApp<
+  TEnv = Record<string, unknown>,
+  TCtx extends ExecutionContextLike = ExecutionContext,
+>(
+  handler: EveryAppHandler<TEnv, TCtx>,
   manifest: EveryAppManifestLike | undefined,
   options?: EveryAppOptions,
-): EveryAppExport<TEnv>;
-export function everyApp<TEnv = Record<string, unknown>>(
-  handler: EveryAppHandler<TEnv>,
+): EveryAppExport<TEnv, TCtx>;
+export function everyApp<
+  TEnv = Record<string, unknown>,
+  TCtx extends ExecutionContextLike = ExecutionContext,
+>(
+  handler: EveryAppHandler<TEnv, TCtx>,
   manifestOrOptions?: EveryAppManifestLike | EveryAppOptions,
   legacyOptions: EveryAppOptions = {},
-): EveryAppExport<TEnv> {
+): EveryAppExport<TEnv, TCtx> {
   const manifest = isManifest(manifestOrOptions)
     ? manifestOrOptions
     : undefined;
@@ -280,7 +294,7 @@ export function everyApp<TEnv = Record<string, unknown>>(
   const config = configFrom(manifest, options);
 
   return {
-    async fetch(request: Request, env: TEnv, ctx: ExecutionContextLike) {
+    async fetch(request: Request, env: TEnv, ctx: TCtx) {
       let audience: string;
       let appId: string;
       try {

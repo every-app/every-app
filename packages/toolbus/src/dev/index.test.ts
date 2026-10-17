@@ -50,7 +50,10 @@ function devApp(withTools = true) {
         if (new URL(request.url).pathname === TOOLS_LIST_PATH) {
           listCalls.count += 1;
         }
-        return app.fetch(request, {}, { waitUntil: () => undefined });
+        // TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
+        return app.fetch(request, {}, {
+          waitUntil: () => undefined,
+        } as unknown as ExecutionContext);
       },
     },
   };

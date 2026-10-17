@@ -12,11 +12,12 @@ import {
   type IdentityChannel,
   type ToolsListResponseV1,
 } from "../internal";
-import { everyApp, type ExecutionContextLike } from "./everyApp";
+import { everyApp } from "./everyApp";
 import { ToolError, defineTools, type ToolContext } from "./tools";
 
 const ISSUER = "https://home.example.com";
-const ctx: ExecutionContextLike = { waitUntil: () => {} };
+// TODO(integration): PR 2 types ctx as the runtime ExecutionContext.
+const ctx = { waitUntil: () => {} } as unknown as ExecutionContext;
 let privateKeyPem: string;
 let publicKeyPem: string;
 

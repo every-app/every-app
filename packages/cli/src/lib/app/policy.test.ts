@@ -211,6 +211,16 @@ describe("appPolicyProblems", () => {
       /Stolen would take the data of Worker "every-other-todo"/,
     ],
     [
+      "a Durable Object backed by a container",
+      (c: any) =>
+        (c.exports.UserSyncDO = {
+          type: "durable-object",
+          storage: "sqlite",
+          container: "every-acme-todo-sandbox",
+        }),
+      /UserSyncDO is backed by a container, which Every App apps can't run/,
+    ],
+    [
       "a Workflow export not named after it",
       (c: any) => (c.exports.Billing = { type: "workflow", name: "billing" }),
       /Workflow Billing is named "billing"/,

@@ -109,6 +109,13 @@ export interface EveryAppWorkerOptions<
    * is declared for the SDK's direct fallback.
    */
   secrets?: readonly string[];
+  /**
+   * Compatibility flags beyond `nodejs_compat`, which every Every App Worker
+   * has, e.g. `["global_fetch_strictly_public"]` so the Worker's `fetch()`
+   * reaches only the public internet. Appended to `nodejs_compat`, without
+   * duplicates. The compatibility date is the manifest's.
+   */
+  compatibilityFlags?: readonly string[];
 }
 
 // Structural copies of the `cf/config` binding and export shapes this helper
@@ -140,10 +147,31 @@ export interface HyperdriveBinding {
   id: string;
   dev?: { connectionString?: string };
 }
-export interface DurableObjectBinding {
+/**
+ * The app's own Worker, as the bindings of the Durable Objects it defines
+ * name it when its entrypoint is a `cf-worker` module import. cf reads each
+ * class from that module, so the `Env` it generates types the namespace
+ * with it (`DurableObjectNamespace<UserSyncDO>`) and RPC calls on a stub
+ * type-check, and it resolves the reference to the Worker's name.
+ */
+export interface EveryAppWorkerReference<TEntrypoint extends object> {
+  name: string;
+  compatibilityDate: string;
+  entrypoint: TEntrypoint;
+}
+/**
+ * A Durable Object binding. `worker` names the Worker defining the class:
+ * the app's own Worker by its definition (see
+ * {@link EveryAppWorkerReference}), or a Worker by name, which cf types as
+ * an untyped `DurableObjectNamespace`.
+ */
+export interface DurableObjectBinding<
+  TWorker extends string | EveryAppWorkerReference<object> = string,
+  TClassName extends string = string,
+> {
   type: "durable-object";
-  worker: string;
-  exportName: string;
+  worker: TWorker;
+  exportName: TClassName;
 }
 export interface WorkflowBinding {
   type: "workflow";
@@ -172,7 +200,7 @@ export type EveryAppBinding =
   | KvBinding
   | R2Binding
   | HyperdriveBinding
-  | DurableObjectBinding
+  | DurableObjectBinding<string | EveryAppWorkerReference<object>>
   | WorkflowBinding
   | GatewayBinding
   | ServiceBinding
@@ -263,14 +291,28 @@ type DevGatewayKeys<M> =
         : never
       : never);
 
-type ResourceEnv<M> = { [B in D1Names<M>]: D1Binding } & {
+/**
+ * A manifest Durable Object's binding: named after the app's own Worker by
+ * its definition when that Worker defines the class and its entrypoint is a
+ * module import, so cf types the namespace with the class; a helper
+ * Worker's class, or any class behind a path entrypoint, by name.
+ */
+type DurableObjectBindingFor<D, TEntrypoint> = D extends { worker: string }
+  ? DurableObjectBinding
+  : TEntrypoint extends object
+    ? D extends { className: infer C extends string }
+      ? DurableObjectBinding<EveryAppWorkerReference<TEntrypoint>, C>
+      : DurableObjectBinding
+    : DurableObjectBinding;
+
+type ResourceEnv<M, TEntrypoint> = { [B in D1Names<M>]: D1Binding } & {
   [B in KvNames<M>]: KvBinding;
 } & {
   [B in R2Names<M>]: R2Binding;
 } & {
   [D in DurableObjects<M> as D extends { name: infer N extends string }
     ? N
-    : never]: DurableObjectBinding;
+    : never]: DurableObjectBindingFor<D, TEntrypoint>;
 } & {
   [W in Workflows<M> as W extends { name: infer N extends string }
     ? N
@@ -298,7 +340,10 @@ type HyperdriveEnv<M> = { [B in AppHyperdriveNames<M>]: HyperdriveBinding };
  * Bindings in development: the well-known dev identity, as plain text, and
  * the developer's own gateway keys (when set).
  */
-export type EveryAppDevEnv<M> = ResourceEnv<M> &
+export type EveryAppDevEnv<M, TEntrypoint = string> = ResourceEnv<
+  M,
+  TEntrypoint
+> &
   SharedEnv &
   DatabaseEnv<M> & {
     EVERYAPP_DEV: TextBinding;
@@ -307,7 +352,10 @@ export type EveryAppDevEnv<M> = ResourceEnv<M> &
   } & { [K in DevGatewayKeys<M>]: SecretBinding };
 
 /** Bindings in production: the deployed identity and the gateway binding. */
-export type EveryAppDeployEnv<M> = ResourceEnv<M> &
+export type EveryAppDeployEnv<M, TEntrypoint = string> = ResourceEnv<
+  M,
+  TEntrypoint
+> &
   SharedEnv &
   DatabaseEnv<M> &
   HyperdriveEnv<M> & {
@@ -371,7 +419,7 @@ export interface EveryAppWorkerConfig<M, TEntrypoint> {
   limits?: { cpuMs?: number };
   observability: EveryAppObservability;
   /** Either branch, so `Env` marks dev-only and deploy-only bindings optional. */
-  env: EveryAppDevEnv<M> | EveryAppDeployEnv<M>;
+  env: EveryAppDevEnv<M, TEntrypoint> | EveryAppDeployEnv<M, TEntrypoint>;
   exports: EveryAppExports<M>;
 }
 
@@ -508,18 +556,43 @@ export function everyAppWorker<
 
   addSecrets(env, options, deploy);
   const triggers = cronTriggers(options.crons);
+  const compatibilityDate =
+    manifest.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE;
+
+  // cf types a Durable Object namespace with its class only when the binding
+  // names the defining Worker by a definition whose module it can read, so
+  // the classes this Worker defines name it that way; cf resolves the
+  // reference to the Worker's name. A path entrypoint gives cf no module.
+  const { entrypoint } = options;
+  if (typeof entrypoint === "object") {
+    const self: EveryAppWorkerReference<object> = {
+      name,
+      compatibilityDate,
+      entrypoint,
+    };
+    for (const durableObject of manifest.resources?.durableObjects ?? []) {
+      if (durableObject.worker !== undefined) continue;
+      env[durableObject.name] = {
+        type: "durable-object",
+        worker: self,
+        exportName: durableObject.className,
+      };
+    }
+  }
 
   return {
     name,
-    entrypoint: options.entrypoint,
-    compatibilityDate: manifest.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE,
-    compatibilityFlags: ["nodejs_compat"],
+    entrypoint,
+    compatibilityDate,
+    compatibilityFlags: compatibilityFlags(options.compatibilityFlags),
     workersDev: false,
     previewUrls: false,
     ...(triggers.length ? { triggers } : {}),
     ...runtimeSettings(manifest, manifest.limits, deploy),
     observability: observability(),
-    env: env as EveryAppDevEnv<M> | EveryAppDeployEnv<M>,
+    env: env as
+      | EveryAppDevEnv<M, TEntrypoint>
+      | EveryAppDeployEnv<M, TEntrypoint>,
     exports: exports as EveryAppExports<M>,
   };
 }
@@ -602,7 +675,7 @@ export function everyAppAuxiliaryWorker<
     name,
     entrypoint: options.entrypoint,
     compatibilityDate: manifest.compatibilityDate ?? DEFAULT_COMPATIBILITY_DATE,
-    compatibilityFlags: ["nodejs_compat"],
+    compatibilityFlags: compatibilityFlags(options.compatibilityFlags),
     workersDev: false,
     previewUrls: false,
     ...(triggers.length ? { triggers } : {}),
@@ -931,6 +1004,11 @@ function devGatewayKeys(manifest: EveryAppWorkerManifest): string[] {
       keysOf(DEV_GATEWAY_KEYS.capabilities, id),
     ),
   ];
+}
+
+/** `nodejs_compat`, then the app's own flags, each once. */
+function compatibilityFlags(flags: readonly string[] | undefined): string[] {
+  return [...new Set(["nodejs_compat", ...(flags ?? [])])];
 }
 
 function cronTriggers(

@@ -21,6 +21,7 @@ import {
   type DurableObjectExport,
   type EveryAppDeployInputs,
   type EveryAppDevEnv,
+  type EveryAppWorkerReference,
   type HyperdriveBinding,
   type KvBinding,
   type ServiceBinding,
@@ -125,7 +126,11 @@ describe("everyAppWorker in development", () => {
   it("binds Durable Objects through declarative sqlite exports", () => {
     expect(worker().env["USER_SYNC"]).toEqual({
       type: "durable-object",
-      worker: "every-todo",
+      worker: {
+        name: "every-todo",
+        compatibilityDate: "2026-06-01",
+        entrypoint,
+      },
       exportName: "UserSyncDO",
     });
     expect(worker().exports).toEqual({
@@ -149,10 +154,79 @@ describe("everyAppWorker in development", () => {
     const config = worker();
     expectTypeOf(config.env.DB).toEqualTypeOf<D1Binding>();
     expectTypeOf(config.env.KV).toEqualTypeOf<KvBinding>();
-    expectTypeOf(config.env.USER_SYNC).toEqualTypeOf<DurableObjectBinding>();
+    expectTypeOf(config.env.USER_SYNC).toEqualTypeOf<
+      DurableObjectBinding<
+        EveryAppWorkerReference<typeof entrypoint>,
+        "UserSyncDO"
+      >
+    >();
     expectTypeOf(config.exports).toEqualTypeOf<{
       UserSyncDO: DurableObjectExport;
     }>();
+  });
+
+  it("names itself in its own classes' bindings by definition, so cf types each namespace with its class", () => {
+    class UserSyncDO {
+      ping(): string {
+        return "pong";
+      }
+    }
+    // A `cf-worker` import of the entry module, as cf hands it to the config.
+    const workerModule = {
+      default: { fetch: () => new Response() },
+      UserSyncDO,
+    };
+    // What cf's InferEnv makes of a durable-object binding: the class's
+    // instance when `worker` is a definition whose module exports it, an
+    // untyped namespace when `worker` is a name.
+    type CfNamespace<B> = B extends {
+      worker: infer W;
+      exportName: infer E extends string;
+    }
+      ? W extends string
+        ? "untyped"
+        : W extends { entrypoint: infer TModule }
+          ? E extends keyof TModule
+            ? TModule[E] extends new (...args: never[]) => infer I
+              ? I
+              : never
+            : never
+          : never
+      : never;
+
+    const typed = everyAppWorker({
+      manifest,
+      entrypoint: workerModule,
+      ctx: { mode: "development" },
+      root,
+    });
+    expect(typed.env.USER_SYNC.worker).toEqual({
+      name: "every-todo",
+      compatibilityDate: "2026-06-01",
+      entrypoint: workerModule,
+    });
+    expectTypeOf<
+      CfNamespace<typeof typed.env.USER_SYNC>
+    >().toEqualTypeOf<UserSyncDO>();
+    // Serializable: no cycle back to the Worker definition.
+    expect(() => JSON.stringify(typed)).not.toThrow();
+
+    // A path entrypoint gives cf no module to read the class from.
+    const byPath = everyAppWorker({
+      manifest,
+      entrypoint: "./src/entry.worker.ts",
+      ctx: { mode: "development" },
+      root,
+    });
+    expect(byPath.env.USER_SYNC).toEqual({
+      type: "durable-object",
+      worker: "every-todo",
+      exportName: "UserSyncDO",
+    });
+    expectTypeOf(byPath.env.USER_SYNC).toEqualTypeOf<DurableObjectBinding>();
+    expectTypeOf<
+      CfNamespace<typeof byPath.env.USER_SYNC>
+    >().toEqualTypeOf<"untyped">();
   });
 
   it("ignores deploy inputs outside production", () => {
@@ -237,7 +311,11 @@ describe("everyAppWorker in production", () => {
       KV: { type: "kv", id: "kv-id" },
       USER_SYNC: {
         type: "durable-object",
-        worker: "every-acme-todo",
+        worker: {
+          name: "every-acme-todo",
+          compatibilityDate: "2026-06-01",
+          entrypoint,
+        },
         exportName: "UserSyncDO",
       },
     });
@@ -574,6 +652,69 @@ describe("everyAppWorker crons and the app's own secrets", () => {
   });
 });
 
+describe("everyAppWorker compatibility flags", () => {
+  const withHelper = {
+    id: "seo",
+    workers: [{ name: "audit" }],
+  } as const;
+
+  it("appends the app's flags to nodejs_compat, each once, on the app and its helpers", () => {
+    const compatibilityFlags = [
+      "global_fetch_strictly_public",
+      "nodejs_compat",
+      "global_fetch_strictly_public",
+    ];
+    for (const mode of ["development", "production"] as const) {
+      if (mode === "production") {
+        writeDeployInputs({ workerName: "every-acme-seo", resources: {} });
+      }
+      const app = everyAppWorker({
+        manifest: withHelper,
+        entrypoint,
+        ctx: { mode },
+        root,
+        compatibilityFlags,
+      });
+      const audit = everyAppAuxiliaryWorker({
+        manifest: withHelper,
+        worker: "audit",
+        entrypoint: "/app/src/audit.ts",
+        ctx: { mode },
+        root,
+        compatibilityFlags,
+      });
+      expect(app.compatibilityFlags).toEqual([
+        "nodejs_compat",
+        "global_fetch_strictly_public",
+      ]);
+      expect(audit.compatibilityFlags).toEqual([
+        "nodejs_compat",
+        "global_fetch_strictly_public",
+      ]);
+    }
+  });
+
+  it("keeps nodejs_compat alone and the date as it was without any", () => {
+    const app = everyAppWorker({
+      manifest: withHelper,
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    });
+    const audit = everyAppAuxiliaryWorker({
+      manifest: withHelper,
+      worker: "audit",
+      entrypoint: "/app/src/audit.ts",
+      ctx: { mode: "development" },
+      root,
+      compatibilityFlags: [],
+    });
+    expect(app.compatibilityFlags).toEqual(["nodejs_compat"]);
+    expect(audit.compatibilityFlags).toEqual(["nodejs_compat"]);
+    expect(app.compatibilityDate).toBe("2026-06-01");
+  });
+});
+
 describe("everyAppWorker guards", () => {
   it("rejects modes other than development and production", () => {
     expect(() =>
@@ -846,7 +987,13 @@ describe("helper Workers", () => {
             "CHAT": {
               "exportName": "ChatAgent",
               "type": "durable-object",
-              "worker": "every-acme-seo",
+              "worker": {
+                "compatibilityDate": "2026-06-01",
+                "entrypoint": {
+                  "default": "/app/src/entry.worker.ts",
+                },
+                "name": "every-acme-seo",
+              },
             },
             "DB": {
               "id": "d1-uuid",

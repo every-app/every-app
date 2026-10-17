@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, expectTypeOf, beforeAll, vi } from "vitest";
 import {
   SignJWT,
   generateKeyPair,
@@ -11,7 +11,7 @@ import {
   getEveryAppUser,
   hasScope,
   requireEveryAppUser,
-  type ExecutionContextLike,
+  type EveryAppHandler,
   type EveryAppUser,
 } from "./everyApp";
 import {
@@ -29,7 +29,8 @@ import {
 
 let privatePem: string;
 let publicPem: string;
-const ctx: ExecutionContextLike = { waitUntil: () => {} };
+// The runtime hands everyApp() a real ExecutionContext; a stub stands in.
+const ctx = { waitUntil: () => {} } as unknown as ExecutionContext;
 const issuer = "https://home.example.com";
 
 async function mint(
@@ -98,6 +99,50 @@ describe("everyApp", () => {
     );
     expect(res.status).toBe(200);
     expect(((await res.json()) as { id: string }).id).toBe("user_1");
+  });
+
+  it("hands the handler the runtime's ExecutionContext as the Worker got it", async () => {
+    // What Hono's app.fetch(request, env, ctx) and React Router's load
+    // context take: the runtime's ExecutionContext, with props.
+    const honoFetch = (
+      _request: Request,
+      _env?: unknown,
+      _executionCtx?: {
+        waitUntil(promise: Promise<unknown>): void;
+        passThroughOnException(): void;
+        props: unknown;
+      },
+    ) => new Response("ok");
+    let seen: ExecutionContext | undefined;
+    const app = everyApp(
+      async (request, handlerEnv, handlerCtx) => {
+        seen = handlerCtx;
+        return honoFetch(request, handlerEnv, handlerCtx);
+      },
+      { publicKeys: [publicPem] },
+    );
+    expectTypeOf<
+      Parameters<typeof app.fetch>[2]
+    >().toEqualTypeOf<ExecutionContext>();
+    expectTypeOf<
+      Parameters<EveryAppHandler>[2]
+    >().toEqualTypeOf<ExecutionContext>();
+    // A Worker with props narrows it.
+    expectTypeOf<
+      Parameters<
+        EveryAppHandler<unknown, ExecutionContext<{ tenant: string }>>
+      >[2]["props"]
+    >().toEqualTypeOf<{ tenant: string }>();
+
+    const res = await app.fetch(
+      new Request("https://todo.example.com/tasks", {
+        headers: { [IDENTITY_HEADER]: await mint() },
+      }),
+      env,
+      ctx,
+    );
+    expect(res.status).toBe(200);
+    expect(seen).toBe(ctx);
   });
 
   it("returns 401 when the identity token is missing", async () => {

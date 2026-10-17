@@ -506,8 +506,11 @@ function bindApp(binding: string, app: ReturnType<typeof everyApp>) {
   // Deployed as everyAppWorker() does: the Worker's name is its audience.
   const env = { EVERYAPP_AUDIENCE: binding.slice("APP__".length) };
   hoisted.env[binding] = {
+    // TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
     fetch: (request: Request) =>
-      app.fetch(request, env, { waitUntil: () => undefined }),
+      app.fetch(request, env, {
+        waitUntil: () => undefined,
+      } as unknown as ExecutionContext),
   };
 }
 
