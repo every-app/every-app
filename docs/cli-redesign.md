@@ -764,6 +764,27 @@ Gateway. Deploying the Gateway any other way is unsupported.
 certificate. The rare zone with a blocking CAA record waits ten minutes to
 hear why.
 
+**The waits resolve new hostnames at the zone's nameservers.** The
+certificate wait, the live wait and setup's one request before the owner
+link look each hostname up at its zone's authoritative nameservers (found
+through 1.1.1.1), not through the operating system's resolver, and connect
+to those addresses with the hostname as SNI and Host. A resolver on the way
+(the computer's, the router's) asked for a name before its record existed,
+as between a teardown and a reinstall, remembers "no such name" for up to
+the zone's SOA minimum (30 minutes on Cloudflare), and the wait sat out
+those minutes labelled as a certificate wait. The nameservers that hold the
+zone serve a new Custom Domain's record at once, so the first probe goes out
+with no pause. Any failure on that path (UDP 53 blocked, no zone found)
+falls back to the operating system's resolver, and the path has a 3 s
+deadline: servers that fail without ever having answered aren't asked again
+in that run, so a network that drops DNS packets costs the first probe 3 s
+and every later one nothing. Each progress line says what
+the last probe waited for: a certificate (TLS fails), DNS (no record at the
+zone's nameservers yet) or an answer. A hostname that answers while the
+operating system still can't resolve it gets `LOCAL_DNS_STALE`, a warning:
+it works, a browser with its own DNS such as Chrome opens it now, and the
+remembered answer clears within the SOA minimum.
+
 **The lease stays: 3-minute TTL, 30-second heartbeat, no flag.** With the
 work that makes a short TTL safe: today `renew()` swallows failures
 (`lease.test.ts` asserts warn-and-continue), runs on an unguarded

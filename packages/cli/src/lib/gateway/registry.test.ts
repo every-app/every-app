@@ -421,7 +421,6 @@ describe("the live wait", () => {
       appId: "todo",
       hostname: `todo.${BASE}`,
       out: out(),
-      newHostname: true,
       sleep: async () => undefined,
       ...seams,
     });
@@ -445,6 +444,75 @@ describe("the live wait", () => {
 
     expect(live.requests).toEqual([`https://todo.${BASE}/`, `https://todo.${BASE}/`]);
     expect(app("todo")).toMatchObject({ status: "active" });
+  });
+
+  it("sends the first request at once, with no pause for DNS", async () => {
+    const id = await uploaded();
+    const order: string[] = [];
+    const live = gateway();
+
+    await expect(
+      wait(id, {
+        fetch: (async (input: Parameters<typeof fetch>[0]) => {
+          order.push("request");
+          return live.fetch(input);
+        }) as typeof fetch,
+        sleep: async () => {
+          order.push("sleep");
+        },
+      }),
+    ).resolves.toBe("live");
+    expect(order).toEqual(["request"]);
+  });
+
+  it("warns, once live, when this computer still remembers the hostname as missing", async () => {
+    const id = await uploaded();
+    const asked: string[] = [];
+
+    await expect(
+      wait(id, {
+        fetch: gateway().fetch,
+        localDns: {
+          lookup: async (hostname) => {
+            asked.push(hostname);
+            throw Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), { code: "ENOTFOUND" });
+          },
+          negativeCacheTtlSeconds: async () => 1800,
+        },
+      }),
+    ).resolves.toBe("live");
+    expect(asked).toEqual([`todo.${BASE}`]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "warning",
+        code: "LOCAL_DNS_STALE",
+        step: "app.live",
+        message: expect.stringMatching(
+          /^todo is live at https:\/\/todo\.apps\.example\.com, but this computer's DNS resolver.*within 30 minutes; a browser with its own DNS, such as Chrome, works now\./,
+        ),
+      }),
+    );
+  });
+
+  it("asks this computer nothing for an app that was live already", async () => {
+    const id = await uploaded();
+    sqlite.sqlite.exec("UPDATE apps SET status = 'active'");
+    const asked: string[] = [];
+
+    await expect(
+      wait(id, {
+        fetch: gateway().fetch,
+        localDns: {
+          lookup: async (hostname) => {
+            asked.push(hostname);
+            throw Object.assign(new Error("ENOTFOUND"), { code: "ENOTFOUND" });
+          },
+          negativeCacheTtlSeconds: async () => null,
+        },
+      }),
+    ).resolves.toBe("live");
+    expect(asked).toEqual([]);
+    expect(events.filter((event) => event["type"] === "warning")).toEqual([]);
   });
 
   it("never takes an answer for activation: only D1 says live", async () => {

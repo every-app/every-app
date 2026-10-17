@@ -86,7 +86,10 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
     seams: {
       sleep: async () => undefined,
       leaseWaitMs: 0,
-      certificates: { isReady: async () => true, sleep: async () => undefined },
+      certificates: {
+        probe: async () => ({ answered: true, status: 200, access: false }),
+        sleep: async () => undefined,
+      },
       fetch: worker.fetch,
       owner: { sleep: ownerOpensTheLink(), timeoutMs: 60_000 },
     },
@@ -484,6 +487,23 @@ describe("everyapp setup", () => {
         message: expect.stringContaining("certificate may still be on its way"),
       }),
     );
+  });
+
+  it("names DNS, not the certificate, when the gateway's name doesn't resolve yet", async () => {
+    const noName = (async () => {
+      throw new TypeError("fetch failed", {
+        cause: Object.assign(new Error(`${GW} has no address at its zone's nameservers yet`), {
+          code: "ENOTFOUND",
+        }),
+      });
+    }) as typeof fetch;
+
+    const { exitCode } = await setup({ domain: GW }, { seams: { ...deps().seams!, fetch: noName } });
+
+    expect(exitCode).toBe(0);
+    const warning = events.find((event) => event.code === "GATEWAY_UNREACHABLE");
+    expect(warning.message).toContain("DNS has no address for it yet");
+    expect(warning.message).not.toContain("certificate");
   });
 
   it("stops when nobody opens the setup link; the next run shows a new one, and the first stops working", async () => {

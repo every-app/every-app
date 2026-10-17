@@ -241,7 +241,6 @@ export async function registerApp(
       appId,
       hostname,
       out,
-      newHostname: newHost,
       ...options.live,
     })) === "live";
   if (live) {

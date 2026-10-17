@@ -54,6 +54,7 @@
     "enquirer": "^2.4.1",
     "execa": "^9.6.0",
     "jiti": "^2.6.1",
+    "undici": "^7.30.1",
     "zod": "^4.2.0"
   },
   "devDependencies": {

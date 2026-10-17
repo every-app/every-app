@@ -710,7 +710,6 @@ async function deploySteps(
       appId: manifest.id,
       hostname,
       out,
-      newHostname: newHost,
       ...options.live,
     })) === "live";
   if (live) {

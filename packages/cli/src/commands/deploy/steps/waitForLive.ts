@@ -14,10 +14,17 @@
  * gateway never sees this request), and running out of time with no
  * certificate yet. Running out of time while the gateway answers is an
  * error: it can't reach the app.
+ *
+ * The request resolves the hostname at its zone's nameservers, which serve
+ * a new record at once, so it goes out with no pause first. An app that
+ * goes live while this computer's resolver still has no address for its
+ * hostname gets a LOCAL_DNS_STALE warning: it is live, but this computer's
+ * browser may not reach it yet.
  */
 import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
 import type { D1Database } from "@/lib/cf/d1";
 import { probeHttps } from "@/lib/domains/https";
+import { osLocalDns, warnIfLocalDnsStale, type LocalDns } from "@/lib/domains/localDns";
 import { EveryAppError } from "@/lib/errors";
 import { readAppById } from "@/lib/gateway/registry";
 import { CLI } from "@/lib/output/command";
@@ -31,6 +38,11 @@ const PROGRESS_EVERY_MS = 15_000;
 /** How the wait reaches the app, sleeps, and how long it waits (tests). */
 export interface LiveWaitSeams {
   fetch?: typeof fetch;
+  /**
+   * This computer's resolver, asked once the app is live. None with a fake
+   * fetch: the computer knows nothing of a fake network's names.
+   */
+  localDns?: LocalDns;
   sleep?: (ms: number) => Promise<void>;
   maxWaitMs?: number;
   intervalMs?: number;
@@ -57,8 +69,8 @@ export async function waitForLive({
   appId,
   hostname,
   out,
-  newHostname,
-  fetch: fetchImpl = fetch,
+  fetch: fetchImpl,
+  localDns = fetchImpl ? undefined : osLocalDns,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   maxWaitMs = DEFAULT_MAX_WAIT_MS,
   intervalMs = DEFAULT_INTERVAL_MS,
@@ -69,20 +81,28 @@ export async function waitForLive({
   appId: string;
   hostname: string;
   out: EventSink;
-  /** Published by this deploy: DNS gets a moment before the first request. */
-  newHostname: boolean;
 } & LiveWaitSeams): Promise<LiveOutcome> {
   const url = `https://${hostname}/`;
   const started = now();
   let answered = false;
   let lastProgress: number | null = null;
-  // A moment for Cloudflare's DNS to serve a new record before the first
-  // lookup, which a resolver could otherwise remember as "no such name".
-  let pause = newHostname;
+  const live = async (): Promise<LiveOutcome> => {
+    // Only a request this run made says the hostname resolves at its zone.
+    if (answered && localDns) {
+      await warnIfLocalDnsStale({
+        host: hostname,
+        lead: `${appId} is live at https://${hostname}`,
+        out,
+        step: STEP,
+        localDns,
+      });
+    }
+    return "live";
+  };
 
   for (;;) {
     const status = await appStatus(db, appRowId, appId);
-    if (status === "active") return "live";
+    if (status === "active") return live();
     if (status === "disabled") {
       out.emit({
         type: "warning",
@@ -93,8 +113,6 @@ export async function waitForLive({
       return "disabled";
     }
 
-    if (pause) await sleep(intervalMs);
-    pause = false;
     const answer = await probeHttps(url, fetchImpl);
     if (answer.answered) {
       answered = true;
@@ -109,7 +127,7 @@ export async function waitForLive({
         return "first_visit";
       }
       // The request reached the gateway, which activates a bound app on it.
-      if ((await appStatus(db, appRowId, appId)) === "active") return "live";
+      if ((await appStatus(db, appRowId, appId)) === "active") return live();
     }
 
     const waited = now() - started;

@@ -93,7 +93,7 @@ export async function deployGatewayRelease({
 > & {
     certificates?: Pick<
       Parameters<typeof waitForCertificates>[0],
-      "isReady" | "sleep" | "maxWaitMs"
+      "probe" | "sleep" | "maxWaitMs"
     >;
   }): Promise<{ result: ApplyGatewayResult; db: D1Database }> {
   const { certificates, ...applyOptions } = options;

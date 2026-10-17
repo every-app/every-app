@@ -1922,7 +1922,10 @@ describe("deploy with no Gateway in the account yet", () => {
     cliVersion: "0.3.0",
     seams: {
       ...seams,
-      certificates: { isReady: async () => true, sleep: async () => undefined },
+      certificates: {
+        probe: async () => ({ answered: true as const, status: 200, access: false }),
+        sleep: async () => undefined,
+      },
       fetch: worker.fetch,
       owner: { sleep: async () => undefined, timeoutMs: 60_000 },
     },

@@ -54,7 +54,11 @@ import type { CfWhoami } from "@/lib/cf/schemas";
 import { checkoutRoot } from "@/lib/checkout";
 import { waitForCertificates } from "@/lib/domains/certWait";
 import { normalizeHostname } from "@/lib/domains/hostnames";
-import { probeHttps } from "@/lib/domains/https";
+import {
+  probeHttps,
+  type HttpsAnswer,
+  type NoAnswerKind,
+} from "@/lib/domains/https";
 import { listZones, registerDomainUrl } from "@/lib/domains/zones";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import {
@@ -128,7 +132,7 @@ export interface SetupDeps {
     sleep?: (ms: number) => Promise<void>;
     leaseWaitMs?: number;
     certificates?: {
-      isReady?: (url: string) => Promise<boolean>;
+      probe?: (url: string) => Promise<HttpsAnswer>;
       sleep?: (ms: number) => Promise<void>;
       maxWaitMs?: number;
     };
@@ -688,10 +692,18 @@ async function ensureOwner({
   );
 }
 
+/** What a gateway that doesn't answer may be waiting for. */
+const unreachableBecause: Record<NoAnswerKind, string> = {
+  tls: "; its certificate may still be on its way",
+  dns: "; DNS has no address for it yet",
+  other: "",
+};
+
 /**
  * One plain request to the gateway before the owner link goes out, so a
- * certificate still on its way, or Cloudflare Access in front, shows up
- * here rather than on the person's screen. The link is shown either way.
+ * certificate still on its way, a name that doesn't resolve, or Cloudflare
+ * Access in front, shows up here rather than on the person's screen. The
+ * link is shown either way.
  */
 async function checkReachable(
   gatewayUrl: string,
@@ -704,7 +716,7 @@ async function checkReachable(
       type: "warning",
       code: "GATEWAY_UNREACHABLE",
       step: "setup.owner",
-      message: `${gatewayUrl} doesn't answer over HTTPS yet (${answer.reason}); its certificate may still be on its way. The setup link works as soon as it does.`,
+      message: `${gatewayUrl} doesn't answer over HTTPS yet (${answer.reason})${unreachableBecause[answer.kind]}. The setup link works as soon as it does.`,
     });
   } else if (answer.access) {
     out.emit({

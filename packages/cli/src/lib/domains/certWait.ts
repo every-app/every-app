@@ -4,10 +4,16 @@
  * always under five; until then HTTPS to it fails. Waiting is only for the
  * person at the other end: the gateway already serves the hostname, and a
  * browser works as soon as the certificate is there.
+ *
+ * The probes resolve each hostname at its zone's nameservers, which serve
+ * a Custom Domain's record as soon as it exists: the first one goes out at
+ * once. A hostname this computer still can't resolve once it answers gets
+ * a LOCAL_DNS_STALE warning (localDns.ts).
  */
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { probeHttps } from "./https";
+import { probeHttps, type HttpsAnswer, type NoAnswerKind } from "./https";
+import { osLocalDns, warnIfLocalDnsStale, type LocalDns } from "./localDns";
 
 const DEFAULT_MAX_WAIT_MS = 600_000;
 const DEFAULT_POLL_MS = 3_000;
@@ -20,8 +26,13 @@ interface CertificateWaitOptions {
   maxWaitMs?: number;
   pollMs?: number;
   progressEveryMs?: number;
-  /** True once HTTPS to the URL works at all (tests replace it). */
-  isReady?: (url: string) => Promise<boolean>;
+  /** One HTTPS request to the URL; any answer means it works (tests replace it). */
+  probe?: (url: string) => Promise<HttpsAnswer>;
+  /**
+   * This computer's resolver, asked once a hostname answers. None with a
+   * fake probe: the computer knows nothing of a fake network's names.
+   */
+  localDns?: LocalDns;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
 }
@@ -29,11 +40,8 @@ interface CertificateWaitOptions {
 interface CertificateWaitResult {
   ready: string[];
   pending: string[];
-}
-
-/** HTTPS answers (any status): the certificate is there. */
-async function httpsAnswers(url: string): Promise<boolean> {
-  return (await probeHttps(url)).answered;
+  /** Ready, but this computer's resolver still has no address for them. */
+  staleLocally: string[];
 }
 
 function elapsed(ms: number): string {
@@ -43,10 +51,32 @@ function elapsed(ms: number): string {
     : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
 }
 
+/** What the hostnames are waiting for, from each one's last probe. */
+function waitingFor(kinds: Map<string, NoAnswerKind>): string {
+  const of = (kind: NoAnswerKind) =>
+    [...kinds].filter(([, k]) => k === kind).map(([host]) => host);
+  const parts: string[] = [];
+  const tls = of("tls");
+  if (tls.length > 0) {
+    parts.push(`Waiting for ${tls.length === 1 ? "a certificate" : "certificates"}: ${tls.join(", ")}`);
+  }
+  const dns = of("dns");
+  if (dns.length > 0) {
+    parts.push(
+      `Waiting for DNS: ${dns.join(", ")} ${dns.length === 1 ? "has" : "have"} no record at the zone's nameservers yet`,
+    );
+  }
+  const other = of("other");
+  if (other.length > 0) {
+    parts.push(`Waiting for ${other.map((host) => `https://${host}`).join(", ")} to answer`);
+  }
+  return parts.join("; ");
+}
+
 /**
  * Poll every new hostname until HTTPS to it works, for up to ten minutes,
- * saying how long it has been every 15 seconds. Hostnames still waiting
- * then get a CERT_PENDING warning; nothing fails.
+ * saying what it waits for and how long it has been every 15 seconds.
+ * Hostnames still waiting then get a CERT_PENDING warning; nothing fails.
  */
 export async function waitForCertificates({
   hosts,
@@ -55,25 +85,29 @@ export async function waitForCertificates({
   maxWaitMs = DEFAULT_MAX_WAIT_MS,
   pollMs = DEFAULT_POLL_MS,
   progressEveryMs = DEFAULT_PROGRESS_EVERY_MS,
-  isReady = httpsAnswers,
+  probe,
+  localDns = probe ? undefined : osLocalDns,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now = Date.now,
 }: CertificateWaitOptions): Promise<CertificateWaitResult> {
   const started = now();
   const ready: string[] = [];
+  const staleLocally: string[] = [];
   let pending = [...new Set(hosts)];
   let lastProgress: number | null = null;
+  const request = probe ?? ((url: string) => probeHttps(url));
 
-  if (pending.length === 0) return { ready, pending };
-  // A moment for Cloudflare's DNS to serve the new record before the first
-  // lookup, which a resolver could otherwise remember as "no such name".
-  await sleep(pollMs);
   while (pending.length > 0) {
-    const answered = await Promise.all(
-      pending.map((host) => isReady(`https://${host}/`)),
+    const answers = await Promise.all(
+      pending.map((host) => request(`https://${host}/`)),
     );
+    const waiting = new Map<string, NoAnswerKind>();
     for (const [index, host] of pending.entries()) {
-      if (!answered[index]) continue;
+      const answer = answers[index]!;
+      if (!answer.answered) {
+        waiting.set(host, answer.kind);
+        continue;
+      }
       ready.push(host);
       out.emit({
         type: "progress",
@@ -81,8 +115,20 @@ export async function waitForCertificates({
         message: `https://${host} has its certificate.`,
         data: { host },
       });
+      if (
+        localDns &&
+        (await warnIfLocalDnsStale({
+          host,
+          lead: `https://${host} has its certificate and the gateway serves it`,
+          out,
+          step,
+          localDns,
+        }))
+      ) {
+        staleLocally.push(host);
+      }
     }
-    pending = pending.filter((_host, index) => !answered[index]);
+    pending = [...waiting.keys()];
     if (pending.length === 0) break;
 
     const waited = now() - started;
@@ -100,12 +146,12 @@ export async function waitForCertificates({
       out.emit({
         type: "progress",
         step,
-        message: `Waiting for ${pending.length === 1 ? "a certificate" : "certificates"}: ${pending.join(", ")} (${elapsed(waited)} so far; usually under five minutes)...`,
-        data: { hosts: pending, waitedMs: waited },
+        message: `${waitingFor(waiting)} (${elapsed(waited)} so far; usually under five minutes)...`,
+        data: { hosts: pending, waitedMs: waited, waitingFor: Object.fromEntries(waiting) },
       });
       lastProgress = now();
     }
     await sleep(pollMs);
   }
-  return { ready, pending };
+  return { ready, pending, staleLocally };
 }
