@@ -748,7 +748,10 @@ checkout refuses with "git pull". The right answer changes once there are
 published versions and people on different ones; that is when a release
 cache comes back, if ever.
 
-**`secret set` keeps redeploying, and says so.** It is `deploy` with one
+**`secret set` keeps redeploying, and says so.** (Reversed on 2026-10-17 by
+Ben: `secret set|unset` now change the live Worker with `cf workers secrets
+bulk`, record the version, and say which command deploys the code, so
+several secrets no longer cost a build each.) It is `deploy` with one
 more secret: one mental model, works unattended, secrets travel in
 `--secrets-file`, no strict-mode gamble. Its first line names the app and
 the secret and says the code and pending migrations come from this

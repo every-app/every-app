@@ -1,8 +1,10 @@
 /**
- * A Worker's secrets through `cf workers secrets`: their names, and
- * deleting one. Setting one never goes this way: values travel with a
- * deploy, in `cf deploy --secrets-file` (lib/cf/deploy.ts), so they land in
- * a version everyapp uploaded.
+ * A Worker's secrets through `cf workers secrets`: their names, deleting
+ * one, and setting or removing several at once. A change makes Cloudflare
+ * create a new version of the live one; the caller records that version as
+ * the Worker's own (the install row, or the app's resource records), so the
+ * next deploy replaces it unattended. A first deploy still sends its secrets
+ * with the upload (`cf deploy --secrets-file`, lib/cf/deploy.ts).
  */
 import { CfError } from "./errors";
 import { runCfJson, type CfRunner } from "./runner";
@@ -48,4 +50,36 @@ export async function deleteWorkerSecret(
     }
     throw error;
   }
+}
+
+/**
+ * Set or remove several of the Worker's secrets in one new version
+ * (`cf workers secrets bulk`, a JSON merge patch: a string sets, null
+ * removes). The body travels in a private temp file, never on argv.
+ */
+export async function patchWorkerSecrets(
+  cf: CfRunner,
+  workerName: string,
+  changes: Readonly<Record<string, string | null>>,
+): Promise<void> {
+  const body = Object.fromEntries(
+    Object.entries(changes).map(([name, value]) => [
+      name,
+      value === null ? null : { type: "secret_text", text: value },
+    ]),
+  );
+  await cf.run({
+    plane: "account",
+    mode: "json",
+    files: { "secrets.json": body },
+    args: (files) => [
+      "workers",
+      "secrets",
+      "bulk",
+      "--worker",
+      workerName,
+      "--file",
+      files["secrets.json"]!,
+    ],
+  });
 }

@@ -48,8 +48,8 @@ when you are ready: a new run shows a new owner link.
 ## 2. Secrets
 
 Each is a Gateway setting (`pnpm everyapp secret set <NAME> --for gateway`,
-which redeploys the Gateway with it). Apps never hold provider keys: the
-Gateway proxies them.
+live as soon as it is set; the Gateway's code comes from `pnpm everyapp
+setup`). Apps never hold provider keys: the Gateway proxies them.
 
 Email, needed for verification, invitations and password resets
 (`docs/runbooks/email-sending-setup.md`). Without it the hosted Gateway

@@ -36,7 +36,7 @@ const setCommand = buildCommand({
     return set;
   },
   parameters: {
-    positional: { kind: "tuple", parameters: [nameArgument] },
+    positional: { kind: "array", parameter: nameArgument },
     flags: {
       ...changeFlags,
       "from-env": {
@@ -50,16 +50,16 @@ const setCommand = buildCommand({
     aliases: { y: "yes" },
   },
   docs: {
-    brief: "Set a secret, with a redeploy",
+    brief: "Set one or more secrets on the live Worker, without a deploy",
     fullDescription: [
-      "Sets a secret the app's Worker reads from env (an API key it calls out with, say), from a hidden",
-      "prompt or --from-env <VAR>, never the command line. It redeploys the app in this directory, code",
-      "and pending migrations included, with the secret in the same version (see `everyapp deploy`),",
-      "and its first line says so. Later deploys keep it. Names everyapp sets itself are refused:",
+      "Sets secrets the app's Worker reads from env (an API key it calls out with, say), each from a",
+      "hidden prompt, or one from --from-env <VAR>, never the command line. The app's Worker and its",
+      "helpers each get one new version with the change, live at once; nothing is built or deployed,",
+      "and the next `everyapp deploy` keeps the secrets. Names everyapp sets itself are refused:",
       "GATEWAY_URL and the EVERYAPP_*, EVERY_APP_* and APP__* names.",
       "",
-      "With --for gateway, sets one of the Gateway's optional settings instead (any other name lists",
-      "them), with a redeploy of the Gateway this checkout builds.",
+      "With --for gateway, sets the Gateway's optional settings instead (any other name lists them)",
+      "on the live Gateway; `everyapp setup` deploys this checkout's Gateway code.",
     ].join("\n"),
   },
 });
@@ -70,16 +70,16 @@ const unsetCommand = buildCommand({
     return unset;
   },
   parameters: {
-    positional: { kind: "tuple", parameters: [nameArgument] },
+    positional: { kind: "array", parameter: nameArgument },
     flags: changeFlags,
     aliases: { y: "yes" },
   },
   docs: {
-    brief: "Remove a secret, with a redeploy",
+    brief: "Remove one or more secrets from the live Worker, without a deploy",
     fullDescription: [
-      "Deletes the secret from the app's Worker (cf workers secrets delete), then redeploys the app in",
-      "this directory as `secret set` does, so the version that serves is one everyapp uploaded.",
-      "With --for gateway, removes one of the Gateway's optional settings, then redeploys the Gateway.",
+      "Removes the secrets from the app's Worker and its helpers in one new version each, live at",
+      "once, as `secret set` does; nothing is built or deployed. With --for gateway, removes the",
+      "Gateway's optional settings instead.",
     ].join("\n"),
   },
 });

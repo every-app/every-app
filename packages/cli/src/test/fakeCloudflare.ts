@@ -341,6 +341,30 @@ export class FakeCloudflare {
           ),
         };
       })
+      // Like the API: one new version of the live one with every change.
+      .on(["workers", "secrets", "bulk"], (call) => {
+        const workerName = flag(call.args, "--worker")!;
+        const worker = this.workers.get(workerName);
+        if (!worker) {
+          return cfError("This Worker does not exist on your account. [code: 10007]");
+        }
+        const file = flag(call.args, "--file")!;
+        const patch = JSON.parse(call.files[path.basename(file)]!) as Record<
+          string,
+          { type: string; text: string } | null
+        >;
+        const secrets = { ...worker.secrets };
+        for (const [name, change] of Object.entries(patch)) {
+          if (change === null) delete secrets[name];
+          else secrets[name] = change.text;
+        }
+        this.workers.set(workerName, {
+          ...worker,
+          versions: [...worker.versions, `${workerName}-api-${(this.counter += 1)}`],
+          secrets,
+        });
+        return { stdout: "{}" };
+      })
       // Like the API: a new version of the live one, without the secret.
       .on(["workers", "secrets", "delete"], (call) => {
         const declined = unconfirmed(call, "This will permanently delete the Worker script secret.");
