@@ -70,10 +70,14 @@ Provider keys:
 
 - `OPENAI_API_KEY`: the AI proxy's OpenAI key.
 - `OPENROUTER_API_KEY`: the AI proxy's OpenRouter key (OpenSEO's models).
+- `WORKERS_AI_API_TOKEN`: the AI proxy's Workers AI token, an API token
+  from the "Workers AI" template (Workers AI Read and Edit) on this
+  account; inference runs and bills in `CLOUDFLARE_ACCOUNT_ID`, which
+  `setup` already set.
 - `DATAFORSEO_API_KEY`: the integration proxy's DataForSEO credential.
 - `CONTEXT_API_KEY`: the integration proxy's Context.dev key.
 
-All four are settable (the integration proxy landed in #303).
+All five are settable (the integration proxy landed in #303).
 
 Optional:
 

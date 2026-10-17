@@ -34,6 +34,8 @@ const PROVIDER_HOSTS = [
   "api.dataforseo.com",
   "api.context.dev",
   "gateway.ai.cloudflare.com",
+  // Workers AI, and the rest of Cloudflare's API.
+  "api.cloudflare.com",
 ];
 
 interface OutboundEnv {

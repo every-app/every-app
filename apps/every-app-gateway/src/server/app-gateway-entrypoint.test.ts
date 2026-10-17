@@ -715,3 +715,88 @@ describe("AppGateway organization attribution for an organization's own app", ()
     expect(organizations.isAttributable).not.toHaveBeenCalled();
   });
 });
+
+describe("AppGateway and Workers AI", () => {
+  const WORKERS_AI_ENV = {
+    WORKERS_AI_API_TOKEN: "workers-ai-token",
+    CLOUDFLARE_ACCOUNT_ID: "acc123",
+  };
+
+  function workersAiRequest(): Request {
+    return new Request(
+      "https://gateway.internal/api/ai/workers-ai/v1/chat/completions",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: "@cf/meta/llama-4-scout-17b-16e-instruct",
+          stream: true,
+          messages: [],
+        }),
+      },
+    );
+  }
+
+  it("admits an app whose manifest grants workers-ai", async () => {
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const fetchUpstream = vi.fn<(request: Request) => Promise<Response>>(
+      async () => Response.json({ id: "chat-1" }),
+    );
+
+    const response = await call({
+      registeredApps: [app({ providers: ["workers-ai"] })],
+      inbound: workersAiRequest(),
+      env: WORKERS_AI_ENV,
+      fetchUpstream,
+    });
+
+    expect(response.status).toBe(200);
+    const upstream = fetchUpstream.mock.calls[0]![0];
+    expect(upstream.url).toBe(
+      "https://api.cloudflare.com/client/v4/accounts/acc123/ai/v1/chat/completions",
+    );
+    expect(upstream.headers.get("authorization")).toBe(
+      "Bearer workers-ai-token",
+    );
+  });
+
+  it("refuses provider_not_allowed without the grant, in OpenAI's error shape", async () => {
+    const fetchUpstream = vi.fn();
+
+    const response = await call({
+      registeredApps: [app({ providers: ["openai", "openrouter"] })],
+      inbound: workersAiRequest(),
+      env: WORKERS_AI_ENV,
+      fetchUpstream,
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("x-everyapp-error")).toBe(
+      "provider_not_allowed",
+    );
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        message: "The app manifest does not allow this provider.",
+        code: "provider_not_allowed",
+        type: "gateway_refusal",
+      },
+      code: "provider_not_allowed",
+      message: "The app manifest does not allow this provider.",
+    });
+    expect(fetchUpstream).not.toHaveBeenCalled();
+  });
+
+  it("keeps the capability routes' refusal shape", async () => {
+    const response = await call({
+      registeredApps: [app({ status: "disabled" })],
+      inbound: capabilityRequest(),
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({
+      error: "Forbidden",
+      code: "caller_not_active",
+    });
+  });
+});

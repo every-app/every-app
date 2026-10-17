@@ -91,6 +91,7 @@ describe("handleOutboundRequest", () => {
           "api.dataforseo.com",
           "api.context.dev",
           "gateway.ai.cloudflare.com",
+          "api.cloudflare.com",
           "app.everyapp.com",
           "todo.app.everyapp.com",
         ],
@@ -102,6 +103,9 @@ describe("handleOutboundRequest", () => {
       "https://api.dataforseo.com/v3/serp",
       "https://api.context.dev/v1/scrape",
       "https://gateway.ai.cloudflare.com/v1/acct/gw/openai",
+      // Workers AI, whose token the gateway holds, and the rest of the API.
+      "https://api.cloudflare.com/client/v4/accounts/acc/ai/v1/chat/completions",
+      "https://API.Cloudflare.com./client/v4/zones",
       "https://app.everyapp.com/api/ai/openai",
       "https://todo.app.everyapp.com/",
     ]) {

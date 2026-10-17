@@ -24,10 +24,13 @@ const LOCAL_D1_ID = createHash("sha256")
 // Settings the gateway reads only when they are set. Deployed gateways keep
 // them as plain secrets (`everyapp secret set --for gateway`), which survive every
 // deploy. In dev the Vite plugin passes a value through only for a declared
-// secret, so the ones set locally are declared.
-const OPTIONAL_SECRETS = [
+// secret, so the ones set locally are declared. A test checks every AI
+// provider's and capability's settings are here (src/optional-secrets.test.ts).
+export const OPTIONAL_SECRETS = [
   "OPENAI_API_KEY",
   "OPENROUTER_API_KEY",
+  // Workers AI (`/api/ai/workers-ai`), with CLOUDFLARE_ACCOUNT_ID below.
+  "WORKERS_AI_API_TOKEN",
   "DATAFORSEO_API_KEY",
   "CONTEXT_API_KEY",
   "AI_PROXY_EXTRA_ROUTES",

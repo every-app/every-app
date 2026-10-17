@@ -73,6 +73,11 @@ declare namespace Cloudflare {
     // Provider credentials used by gateway proxy routes
     OPENAI_API_KEY?: string;
     OPENROUTER_API_KEY?: string;
+    // Workers AI (`/api/ai/workers-ai`): a Cloudflare API token with
+    // Workers AI Read and Edit (the "Workers AI" template) on
+    // CLOUDFLARE_ACCOUNT_ID, the account it runs and bills in. Unset: the
+    // provider answers ai_provider_not_configured.
+    WORKERS_AI_API_TOKEN?: string;
     // Integration keys the gateway holds for apps (src/server/integration-proxy.ts).
     DATAFORSEO_API_KEY?: string;
     CONTEXT_API_KEY?: string;

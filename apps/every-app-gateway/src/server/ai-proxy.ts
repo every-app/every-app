@@ -1,4 +1,11 @@
-import { IDENTITY_HEADER, PUBLIC_HEADER } from "@every-app/sdk/internal";
+import {
+  GATEWAY_ERROR_HEADER,
+  IDENTITY_HEADER,
+  joinProviderUrl,
+  normalizeWorkersAiResponse,
+  PUBLIC_HEADER,
+  workersAiBasePath,
+} from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import type { AiPolicy } from "@every-app/perimeter/manifest";
 import { tapUsage } from "./ai-usage";
@@ -35,9 +42,16 @@ const STRIPPED_PROXY_HEADERS = [
 const STRIPPED_PROXY_HEADER_PREFIXES = ["x-everyapp-", "cf-aig-"];
 
 interface AiProvider {
-  upstreamBaseUrl: string;
+  /**
+   * Where the provider's API lives. App paths are joined onto its path,
+   * never replace it. A function when it depends on a gateway setting
+   * (null while that is unset).
+   */
+  upstreamBaseUrl: string | ((env: AiProxyEnv) => string | null);
   /** The gateway secret holding the provider key. */
-  keyEnv: "OPENAI_API_KEY" | "OPENROUTER_API_KEY";
+  keyEnv: "OPENAI_API_KEY" | "OPENROUTER_API_KEY" | "WORKERS_AI_API_TOKEN";
+  /** Gateway settings the provider needs besides its key. */
+  alsoNeeds?: readonly (keyof AiProxyEnv)[];
   /**
    * The one key is shared by every app in every organization, and providers
    * keep files, batches, fine-tunes and stored completions per account, so
@@ -53,6 +67,8 @@ interface AiProvider {
    * manifest. OpenAI paths only.
    */
   extraRoutes: boolean;
+  /** Turns the provider's answer at a path into what OpenAI clients parse. */
+  normalizeResponse?: (path: string, response: Response) => Response;
 }
 
 const AI_PROVIDERS: Record<string, AiProvider> = {
@@ -87,11 +103,35 @@ const AI_PROVIDERS: Record<string, AiProvider> = {
     unstoredRoutes: new Set(),
     extraRoutes: false,
   },
+  // Workers AI's OpenAI-compatible REST API, in the gateway's own account
+  // (`/v1/run/...` and the native `/run/<model>` stay closed). Its chat
+  // streams send all-digit tokens as JSON numbers, which the gateway turns
+  // back into strings (normalizeWorkersAiResponse).
+  "workers-ai": {
+    upstreamBaseUrl: (env) =>
+      env.CLOUDFLARE_ACCOUNT_ID?.trim()
+        ? `https://api.cloudflare.com${workersAiBasePath(env.CLOUDFLARE_ACCOUNT_ID)}`
+        : null,
+    keyEnv: "WORKERS_AI_API_TOKEN",
+    alsoNeeds: ["CLOUDFLARE_ACCOUNT_ID"],
+    inferenceRoutes: new Set([
+      "/v1/chat/completions",
+      "/v1/embeddings",
+      "/v1/responses",
+    ]),
+    unstoredRoutes: new Set(),
+    extraRoutes: false,
+    normalizeResponse: normalizeWorkersAiResponse,
+  },
 };
 
 interface AiProxyEnv {
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
+  /** A Cloudflare API token with Workers AI Read and Edit, for `workers-ai`. */
+  WORKERS_AI_API_TOKEN?: string;
+  /** The account Workers AI runs (and bills) in: the gateway's own. */
+  CLOUDFLARE_ACCOUNT_ID?: string;
   /**
    * OpenAI paths beyond inference that apps may use, set by the operator
    * (comma or space separated, e.g. "/v1/files"). Each also covers its
@@ -134,19 +174,32 @@ export async function handleAuthenticatedAiProxyRequest({
     ? AI_PROVIDERS[provider]
     : undefined;
   if (!aiProvider) {
-    return jsonResponse({ error: "Provider not supported" }, 404);
+    return aiRefusal(
+      "ai_provider_not_supported",
+      404,
+      `Provider not supported: the gateway has no AI provider "${provider}".`,
+    );
   }
 
   const providerKey = env[aiProvider.keyEnv]?.trim();
-  if (!providerKey) {
-    return jsonResponse({ error: "Provider is not configured" }, 503);
+  const baseUrl =
+    typeof aiProvider.upstreamBaseUrl === "function"
+      ? aiProvider.upstreamBaseUrl(env)
+      : aiProvider.upstreamBaseUrl;
+  if (!providerKey || !baseUrl) {
+    const settings = [aiProvider.keyEnv, ...(aiProvider.alsoNeeds ?? [])];
+    return aiRefusal(
+      "ai_provider_not_configured",
+      503,
+      `Provider is not configured: the gateway needs ${settings.join(" and ")} for ${provider}.`,
+    );
   }
 
-  const upstreamUrl = buildUpstreamUrl(request, provider, aiProvider);
-  if (!upstreamUrl) {
-    return jsonResponse({ error: "Invalid proxy request path" }, 400);
+  const upstream = buildUpstreamUrl(request, provider, baseUrl);
+  if (!upstream) {
+    return aiRefusal("ai_request_invalid", 400, "Invalid proxy request path");
   }
-  const upstreamPath = new URL(upstreamUrl).pathname;
+  const { url: upstreamUrl, path: upstreamPath } = upstream;
 
   if (
     !isAllowedRoute(
@@ -157,12 +210,10 @@ export async function handleAuthenticatedAiProxyRequest({
       operatorRoutes(env.AI_PROXY_EXTRA_ROUTES),
     )
   ) {
-    return jsonResponse(
-      {
-        error: "This provider endpoint is not available to apps",
-        code: "ai_route_not_allowed",
-      },
+    return aiRefusal(
+      "ai_route_not_allowed",
       403,
+      "This provider endpoint is not available to apps",
     );
   }
 
@@ -185,12 +236,12 @@ export async function handleAuthenticatedAiProxyRequest({
     aiProvider.inferenceRoutes.has(upstreamPath) &&
     !policy.models.includes(prepared.model ?? "")
   ) {
-    return jsonResponse(
-      {
-        error: "The app manifest does not allow this model",
-        code: "model_not_allowed",
-      },
+    return aiRefusal(
+      "model_not_allowed",
       403,
+      prepared.model
+        ? `The app manifest does not allow this model (${prepared.model}); list it in ai.models.`
+        : "The app manifest does not allow this model: the request names none.",
     );
   }
 
@@ -219,8 +270,13 @@ export async function handleAuthenticatedAiProxyRequest({
       },
       "error",
     );
-    return jsonResponse({ error: "Upstream provider request failed" }, 502);
+    return aiRefusal(
+      "ai_upstream_failed",
+      502,
+      "Upstream provider request failed",
+    );
   }
+  response = aiProvider.normalizeResponse?.(upstreamPath, response) ?? response;
 
   const logUsage = (usage: unknown) =>
     logEvent("ai.proxy.usage", {
@@ -312,7 +368,11 @@ async function prepareBody(
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return {
       ok: false,
-      response: jsonResponse({ error: "Expected a JSON object body" }, 400),
+      response: aiRefusal(
+        "ai_request_invalid",
+        400,
+        "Expected a JSON object body",
+      ),
     };
   }
 
@@ -328,11 +388,16 @@ async function prepareBody(
   };
 }
 
+/**
+ * The provider URL for an app's `/api/ai/<provider>/<path>`: `<path>` joined
+ * onto the provider's base (whose own path, like Workers AI's account path,
+ * is kept), and `<path>` itself, which the route checks read.
+ */
 function buildUpstreamUrl(
   request: Request,
   provider: string,
-  aiProvider: AiProvider,
-): string | null {
+  baseUrl: string,
+): { url: string; path: string } | null {
   const incomingUrl = new URL(request.url);
   const routePrefix = `/api/ai/${provider}`;
 
@@ -345,11 +410,14 @@ function buildUpstreamUrl(
     return null;
   }
 
-  const upstreamUrl = new URL(aiProvider.upstreamBaseUrl);
-  upstreamUrl.pathname = upstreamPath;
-  upstreamUrl.search = incomingUrl.search;
-
-  return upstreamUrl.toString();
+  const upstreamUrl = joinProviderUrl(
+    baseUrl,
+    upstreamPath,
+    incomingUrl.search,
+  );
+  return upstreamUrl
+    ? { url: upstreamUrl.toString(), path: upstreamPath }
+    : null;
 }
 
 function matchesProviderRoute(pathname: string, routePrefix: string): boolean {
@@ -384,11 +452,23 @@ function canIncludeBody(method: string): boolean {
   return normalized !== "GET" && normalized !== "HEAD";
 }
 
-function jsonResponse(payload: unknown, status: number): Response {
-  return new Response(JSON.stringify(payload), {
-    status,
-    headers: {
-      "content-type": "application/json",
-    },
-  });
+/**
+ * A refusal the AI proxy makes itself, as opposed to the provider's answer
+ * (`ai_provider_not_supported`, `ai_provider_not_configured`,
+ * `ai_request_invalid`, `ai_route_not_allowed`, `model_not_allowed`,
+ * `ai_upstream_failed`, and the AppGateway entrypoint's own on AI routes):
+ * `x-everyapp-error` names it (gatewayRefusal reads it), and the body is
+ * OpenAI's error shape, so OpenAI SDKs and ai-sdk clients show the message.
+ * `code` and `message` are at the top level too, as the gateway's other
+ * refusals have them.
+ */
+export function aiRefusal(
+  code: string,
+  status: number,
+  message: string,
+): Response {
+  return Response.json(
+    { error: { message, code, type: "gateway_refusal" }, code, message },
+    { status, headers: { [GATEWAY_ERROR_HEADER]: code } },
+  );
 }

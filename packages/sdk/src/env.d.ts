@@ -20,6 +20,10 @@ declare namespace Cloudflare {
     // (createGatewayFetch) and the capabilities' keys (integrationFetch).
     OPENAI_API_KEY?: string;
     OPENROUTER_API_KEY?: string;
+    // Workers AI needs both: an API token (Workers AI Read and Edit) and
+    // the account it bills.
+    WORKERS_AI_API_TOKEN?: string;
+    CLOUDFLARE_ACCOUNT_ID?: string;
     DATAFORSEO_API_KEY?: string;
     CONTEXT_API_KEY?: string;
   }

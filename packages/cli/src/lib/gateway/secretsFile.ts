@@ -11,6 +11,8 @@ import { EveryAppError } from "@/lib/errors";
 const SETTABLE_GATEWAY_SECRETS = [
   "OPENAI_API_KEY",
   "OPENROUTER_API_KEY",
+  // Workers AI's API token; its account is the install's CLOUDFLARE_ACCOUNT_ID.
+  "WORKERS_AI_API_TOKEN",
   "DATAFORSEO_API_KEY",
   "CONTEXT_API_KEY",
   "AI_PROXY_EXTRA_ROUTES",

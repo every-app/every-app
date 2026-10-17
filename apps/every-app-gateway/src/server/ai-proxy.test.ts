@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { handleAuthenticatedAiProxyRequest } from "./ai-proxy";
 
@@ -17,7 +18,8 @@ describe("handleAuthenticatedAiProxyRequest", () => {
 
     expect(response.status).toBe(404);
     await expect(response.json()).resolves.toMatchObject({
-      error: "Provider not supported",
+      code: "ai_provider_not_supported",
+      error: { message: expect.stringContaining("Provider not supported") },
     });
   });
 
@@ -30,7 +32,11 @@ describe("handleAuthenticatedAiProxyRequest", () => {
 
     expect(response.status).toBe(503);
     await expect(response.json()).resolves.toMatchObject({
-      error: "Provider is not configured",
+      code: "ai_provider_not_configured",
+      error: {
+        message:
+          "Provider is not configured: the gateway needs OPENAI_API_KEY for openai.",
+      },
     });
   });
 
@@ -48,7 +54,8 @@ describe("handleAuthenticatedAiProxyRequest", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
-      error: "Invalid proxy request path",
+      code: "ai_request_invalid",
+      message: "Invalid proxy request path",
     });
     expect(fetchUpstream).not.toHaveBeenCalled();
   });
@@ -443,5 +450,368 @@ describe("OpenRouter", () => {
 
     expect((await response).status).toBe(403);
     expect(fetchUpstream).not.toHaveBeenCalled();
+  });
+});
+
+/** Live captures from Workers AI's /v1/chat/completions (llama-4-scout, 2026-10-17). */
+function fixture(name: string): string {
+  return readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8");
+}
+
+/** An SSE answer delivered in small byte pieces, splitting events and characters. */
+function sseResponse(text: string, pieceSize = 7): Response {
+  const bytes = new TextEncoder().encode(text);
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let i = 0; i < bytes.length; i += pieceSize) {
+          controller.enqueue(bytes.slice(i, i + pieceSize));
+        }
+        controller.close();
+      },
+    }),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+}
+
+const sseEvents = (text: string) => text.split("\n\n").filter(Boolean);
+
+describe("Workers AI", () => {
+  const WORKERS_AI_ENV = {
+    WORKERS_AI_API_TOKEN: "workers-ai-token",
+    CLOUDFLARE_ACCOUNT_ID: "acc123",
+  };
+  const LLAMA = "@cf/meta/llama-4-scout-17b-16e-instruct";
+
+  function call(
+    path: string,
+    init: RequestInit,
+    options: {
+      env?: Record<string, string>;
+      policy?: { models?: string[]; routes?: string[] };
+      provider?: string;
+      upstream?: () => Response;
+    } = {},
+  ) {
+    const fetchUpstream = vi.fn(async (_request: Request) =>
+      options.upstream ? options.upstream() : Response.json({ id: "chat-1" }),
+    );
+    const provider = options.provider ?? "workers-ai";
+    const response = handleAuthenticatedAiProxyRequest({
+      request: createRequest(`/api/ai/${provider}${path}`, init),
+      provider,
+      env: options.env ?? WORKERS_AI_ENV,
+      policy: options.policy,
+      caller: { organizationId: "org-1", appId: "agentic-inbox" },
+      fetchUpstream,
+    });
+    return { response, fetchUpstream };
+  }
+
+  const chat = (model = LLAMA, stream = true): RequestInit => ({
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ model, stream, messages: [] }),
+  });
+
+  it("forwards chat completions under the gateway's account with its token", async () => {
+    const { response, fetchUpstream } = call("/v1/chat/completions", chat());
+
+    expect((await response).status).toBe(200);
+    const upstream = fetchUpstream.mock.calls[0]![0];
+    expect(upstream.url).toBe(
+      "https://api.cloudflare.com/client/v4/accounts/acc123/ai/v1/chat/completions",
+    );
+    expect(upstream.headers.get("authorization")).toBe(
+      "Bearer workers-ai-token",
+    );
+    // Workers AI stores nothing, so the body goes as the app sent it.
+    await expect(upstream.json()).resolves.toEqual({
+      model: LLAMA,
+      stream: true,
+      messages: [],
+    });
+  });
+
+  it("refuses 503 ai_provider_not_configured, naming both settings, while either is unset", async () => {
+    for (const env of [
+      {},
+      { WORKERS_AI_API_TOKEN: "workers-ai-token" },
+      { CLOUDFLARE_ACCOUNT_ID: "acc123" },
+      { WORKERS_AI_API_TOKEN: "workers-ai-token", CLOUDFLARE_ACCOUNT_ID: " " },
+      // Another provider's key is no help.
+      { OPENAI_API_KEY: "openai-key", CLOUDFLARE_ACCOUNT_ID: "acc123" },
+    ] as Record<string, string>[]) {
+      const { response, fetchUpstream } = call("/v1/chat/completions", chat(), {
+        env,
+      });
+      const result = await response;
+      expect(result.status, JSON.stringify(env)).toBe(503);
+      expect(result.headers.get("x-everyapp-error")).toBe(
+        "ai_provider_not_configured",
+      );
+      await expect(result.json()).resolves.toMatchObject({
+        code: "ai_provider_not_configured",
+        error: {
+          message:
+            "Provider is not configured: the gateway needs WORKERS_AI_API_TOKEN and CLOUDFLARE_ACCOUNT_ID for workers-ai.",
+          code: "ai_provider_not_configured",
+          type: "gateway_refusal",
+        },
+      });
+      expect(fetchUpstream).not.toHaveBeenCalled();
+    }
+  });
+
+  it("enforces the manifest's ai.models on @cf model ids", async () => {
+    const policy = { models: [LLAMA] };
+    const allowed = call("/v1/chat/completions", chat(LLAMA), { policy });
+    expect((await allowed.response).status).toBe(200);
+
+    const denied = call(
+      "/v1/chat/completions",
+      chat("@cf/moonshotai/kimi-k2.6"),
+      {
+        policy,
+      },
+    );
+    const result = await denied.response;
+    expect(result.status).toBe(403);
+    expect(result.headers.get("x-everyapp-error")).toBe("model_not_allowed");
+    await expect(result.json()).resolves.toMatchObject({
+      error: {
+        message: expect.stringContaining("@cf/moonshotai/kimi-k2.6"),
+        code: "model_not_allowed",
+      },
+    });
+    expect(denied.fetchUpstream).not.toHaveBeenCalled();
+  });
+
+  it("serves the OpenAI-compatible inference routes only", async () => {
+    for (const path of ["/v1/embeddings", "/v1/responses"]) {
+      const { response } = call(path, chat());
+      expect((await response).status, path).toBe(200);
+    }
+    for (const [method, path] of [
+      ["POST", `/v1/run/${LLAMA}`],
+      ["POST", `/run/${LLAMA}`],
+      ["GET", "/v1/chat/completions"],
+      ["GET", "/v1/models"],
+      ["POST", "/v1/files"],
+      ["GET", "/finetunes"],
+    ] as const) {
+      const { response, fetchUpstream } = call(
+        path,
+        method === "POST" ? { ...chat(), method } : { method },
+        {
+          // Neither the operator nor the manifest widens Workers AI.
+          env: { ...WORKERS_AI_ENV, AI_PROXY_EXTRA_ROUTES: "/v1/files" },
+          policy: { routes: ["/v1/files"] },
+        },
+      );
+      const result = await response;
+      expect(result.status, `${method} ${path}`).toBe(403);
+      expect(result.headers.get("x-everyapp-error")).toBe(
+        "ai_route_not_allowed",
+      );
+      expect(fetchUpstream).not.toHaveBeenCalled();
+    }
+  });
+
+  it("turns the captured numeric token into a string and keeps every other event byte for byte", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const captured = fixture("workers-ai-llama-step2.sse");
+    expect(captured).toContain('"delta":{"content":18}');
+    const { response } = call("/v1/chat/completions", chat(), {
+      upstream: () => sseResponse(captured),
+    });
+
+    const result = await response;
+    expect(result.headers.get("content-type")).toBe("text/event-stream");
+    const out = sseEvents(await result.text());
+    const input = sseEvents(captured);
+    expect(out).toHaveLength(input.length);
+    const chunks = out
+      .filter((event) => event !== "data: [DONE]")
+      .map((event) => JSON.parse(event.slice("data: ".length)));
+    for (const chunk of chunks) {
+      const content = chunk.choices[0].delta.content;
+      if (content !== undefined) expect(typeof content).toBe("string");
+    }
+    expect(
+      chunks.map((chunk) => chunk.choices[0].delta.content ?? "").join(""),
+    ).toBe(
+      "The current weather in Paris is light rain with a temperature of 18°C.",
+    );
+    // Only the numeric event changed; [DONE] and the usage chunks did not.
+    const changed = out.filter((event, i) => event !== input[i]);
+    expect(changed).toHaveLength(1);
+    expect(changed[0]).toContain('"delta":{"content":"18"}');
+    expect(out.at(-1)).toBe("data: [DONE]");
+
+    // Usage is still read off the tail.
+    const usage = log.mock.calls
+      .map((args) => String(args[0]))
+      .find((line) => line.includes("ai.proxy.usage"));
+    expect(JSON.parse(usage!)).toMatchObject({
+      provider: "workers-ai",
+      route: "/v1/chat/completions",
+      model: LLAMA,
+      usage: { input: 206, output: 17, total: 223 },
+    });
+  });
+
+  it("leaves streamed tool calls, usage and [DONE] byte for byte", async () => {
+    const captured = fixture("workers-ai-llama-step1.sse");
+    expect(captured).toContain('"tool_calls"');
+    const { response } = call("/v1/chat/completions", chat(), {
+      upstream: () => sseResponse(captured, 3),
+    });
+
+    await expect((await response).text()).resolves.toBe(captured);
+  });
+
+  it("leaves reasoning_content byte for byte", async () => {
+    // kimi-k2.6's shape: reasoning first (null, then text), then a tool call.
+    const kimi =
+      [
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"role":"assistant","content":null,"reasoning_content":null},"matched_stop":null}]}',
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":null,"reasoning_content":" The user wants 18 things"}}]}',
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"id":"functions.get_weather:0","index":0,"type":"function","function":{"name":"get_weather","arguments":""}}]}}]}',
+        'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"limit\\": 25}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":80,"completion_tokens":60,"total_tokens":140}}',
+        "data: [DONE]",
+      ].join("\n\n") + "\n\n";
+    const { response } = call("/v1/chat/completions", chat(), {
+      upstream: () => sseResponse(kimi),
+    });
+
+    await expect((await response).text()).resolves.toBe(kimi);
+  });
+
+  it("does not normalise OpenAI's or OpenRouter's answers", async () => {
+    const captured = fixture("workers-ai-llama-step2.sse");
+    for (const [provider, path, env] of [
+      ["openai", "/v1/chat/completions", { OPENAI_API_KEY: "openai-key" }],
+      [
+        "openrouter",
+        "/api/v1/chat/completions",
+        { OPENROUTER_API_KEY: "openrouter-key" },
+      ],
+    ] as const) {
+      const { response } = call(path, chat("gpt-5.2"), {
+        provider,
+        env,
+        upstream: () => sseResponse(captured),
+      });
+      await expect((await response).text(), provider).resolves.toBe(captured);
+    }
+  });
+});
+
+describe("AI proxy refusals", () => {
+  it("carry x-everyapp-error and OpenAI's error shape, code and message", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const json = (body: unknown): RequestInit => ({
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const cases: [
+      provider: string,
+      path: string,
+      init: RequestInit,
+      policy: { models?: string[] },
+      status: number,
+      code: string,
+    ][] = [
+      [
+        "anthropic",
+        "/v1/messages",
+        json({}),
+        {},
+        404,
+        "ai_provider_not_supported",
+      ],
+      [
+        "workers-ai",
+        "/v1/chat/completions",
+        json({}),
+        {},
+        503,
+        "ai_provider_not_configured",
+      ],
+      ["openai", "//evil.example/x", json({}), {}, 400, "ai_request_invalid"],
+      [
+        "openai",
+        "/v1/responses",
+        { method: "POST", body: "not json" },
+        {},
+        400,
+        "ai_request_invalid",
+      ],
+      [
+        "openai",
+        "/v1/files",
+        { method: "GET" },
+        {},
+        403,
+        "ai_route_not_allowed",
+      ],
+      [
+        "openai",
+        "/v1/responses",
+        json({ model: "o3-pro" }),
+        { models: ["gpt-5.2"] },
+        403,
+        "model_not_allowed",
+      ],
+      [
+        "openai",
+        "/v1/responses",
+        json({ model: "gpt-5.2" }),
+        {},
+        502,
+        "ai_upstream_failed",
+      ],
+    ];
+    for (const [provider, path, init, policy, status, code] of cases) {
+      const response = await handleAuthenticatedAiProxyRequest({
+        request: createRequest(`/api/ai/${provider}${path}`, init),
+        provider,
+        env: { OPENAI_API_KEY: "gateway-secret-key" },
+        policy,
+        fetchUpstream: async () => {
+          throw new Error("network down");
+        },
+      });
+      expect(response.status, code).toBe(status);
+      expect(response.headers.get("x-everyapp-error"), code).toBe(code);
+      const body = (await response.json()) as { message: string };
+      expect(body, code).toEqual({
+        error: { message: body.message, code, type: "gateway_refusal" },
+        code,
+        message: expect.any(String),
+      });
+      expect(body.message.length, code).toBeGreaterThan(0);
+    }
+  });
+
+  it("are not added to the provider's own errors", async () => {
+    const response = await handleAuthenticatedAiProxyRequest({
+      request: createRequest("/api/ai/openai/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "gpt-5.2" }),
+      }),
+      provider: "openai",
+      env: { OPENAI_API_KEY: "gateway-secret-key" },
+      fetchUpstream: async () =>
+        Response.json(
+          { error: { message: "Rate limited", type: "requests" } },
+          { status: 429 },
+        ),
+    });
+    expect(response.status).toBe(429);
+    expect(response.headers.get("x-everyapp-error")).toBeNull();
   });
 });

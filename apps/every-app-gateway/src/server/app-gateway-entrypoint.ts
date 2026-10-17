@@ -6,7 +6,7 @@ import {
   type EveryAppUser,
 } from "@every-app/sdk/internal";
 import type { AppRegistry, RegisteredApp } from "@every-app/perimeter";
-import { handleAuthenticatedAiProxyRequest } from "./ai-proxy";
+import { aiRefusal, handleAuthenticatedAiProxyRequest } from "./ai-proxy";
 import {
   handleIntegrationProxyRequest,
   type IntegrationProxyEnv,
@@ -31,6 +31,8 @@ interface AppGatewayEnv extends IntegrationProxyEnv {
   JWT_PUBLIC_KEY?: string;
   OPENAI_API_KEY?: string;
   OPENROUTER_API_KEY?: string;
+  WORKERS_AI_API_TOKEN?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
   AI_PROXY_EXTRA_ROUTES?: string;
   GATEWAY_DEPLOYMENT_MODE?: string;
 }
@@ -212,7 +214,7 @@ export async function handleAppGatewayRequest({
     });
   } catch (error) {
     if (error instanceof AppGatewayError) {
-      return errorResponse(error);
+      return errorResponse(error, request);
     }
 
     console.error("App gateway request failed", {
@@ -225,6 +227,7 @@ export async function handleAppGatewayRequest({
         500,
         "The app gateway could not complete this request.",
       ),
+      request,
     );
   }
 }
@@ -485,7 +488,11 @@ async function resolveAttribution(
   }
 }
 
-function errorResponse(error: AppGatewayError): Response {
+function errorResponse(error: AppGatewayError, request: Request): Response {
+  // On AI routes, OpenAI's error shape: the app's OpenAI client shows it.
+  if (new URL(request.url).pathname.startsWith("/api/ai/")) {
+    return aiRefusal(error.code, error.status, error.message);
+  }
   const errorLabel =
     error.status === 401
       ? "Unauthorized"

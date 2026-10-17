@@ -28,7 +28,7 @@ import {
   type WorkflowExport,
 } from "./index";
 import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/index";
-import { DEV_AI_PROVIDERS } from "../internal/aiProviders";
+import { aiProviderSettings, DEV_AI_PROVIDERS } from "../internal/aiProviders";
 import { CAPABILITIES } from "../internal/capabilities";
 
 const PUBLIC_KEY =
@@ -498,14 +498,14 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     expect(env("production")["DATAFORSEO_API_KEY"]).toBeUndefined();
   });
 
-  it("knows the key of every provider and capability the SDK reaches in dev", () => {
-    const keys = [
-      ...Object.values(DEV_AI_PROVIDERS).map(({ keyEnv }) => keyEnv),
+  it("knows every setting of every provider and capability the SDK reaches in dev", () => {
+    const keys = new Set([
+      ...Object.values(DEV_AI_PROVIDERS).flatMap(aiProviderSettings),
       ...Object.values(CAPABILITIES).map(({ secret }) => secret),
-    ];
+    ]);
     fs.writeFileSync(
       path.join(root, ".dev.vars"),
-      keys.map((key) => `${key}=set`).join("\n"),
+      [...keys, "UNRELATED_SETTING"].map((key) => `${key}=set`).join("\n"),
     );
     const env = everyAppWorker({
       manifest: {
@@ -519,7 +519,36 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       ctx: { mode: "development" },
       root,
     }).env as Record<string, unknown>;
-    for (const key of keys) expect(env[key], key).toEqual({ type: "secret" });
+    // Exactly these: whatever else .dev.vars sets stays undeclared.
+    const declared = Object.entries(env)
+      .filter(([, binding]) => (binding as { type?: string }).type === "secret")
+      .map(([name]) => name);
+    expect(new Set(declared)).toEqual(keys);
+  });
+
+  it("declares Workers AI's token and account in dev when .dev.vars sets them", () => {
+    const workersAi = { ...manifest, providers: ["workers-ai"] } as const;
+    fs.writeFileSync(
+      path.join(root, ".dev.vars"),
+      "WORKERS_AI_API_TOKEN=token\nCLOUDFLARE_ACCOUNT_ID=acc123\n",
+    );
+    const env = everyAppWorker({
+      manifest: workersAi,
+      entrypoint,
+      ctx: { mode: "development" },
+      root,
+    }).env as Record<string, unknown>;
+
+    expect(env).toMatchObject({
+      WORKERS_AI_API_TOKEN: { type: "secret" },
+      CLOUDFLARE_ACCOUNT_ID: { type: "secret" },
+    });
+    expectTypeOf<EveryAppDevEnv<typeof workersAi>>().toHaveProperty(
+      "WORKERS_AI_API_TOKEN",
+    );
+    expectTypeOf<EveryAppDevEnv<typeof workersAi>>().toHaveProperty(
+      "CLOUDFLARE_ACCOUNT_ID",
+    );
   });
 
   it("refuses a secret named like a binding it builds or one the deploy sets", () => {

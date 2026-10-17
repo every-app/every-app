@@ -212,13 +212,19 @@ type DatabaseEnv<M> = M extends { database: object }
 
 /**
  * The gateway secrets holding the keys of the AI providers and capabilities
- * an app may ask for. With no gateway in development, the SDK reaches them
- * with the developer's own keys under the same names. A copy of the tables
- * in ../internal, which the Worker loads: the Vite plugin hides whatever
- * cloudflare.config.ts imports from the Worker. A test keeps them in step.
+ * an app may ask for, with the settings a provider needs besides its key
+ * (Workers AI's account). With no gateway in development, the SDK reaches
+ * them with the developer's own values under the same names. A copy of the
+ * tables in ../internal, which the Worker loads: the Vite plugin hides
+ * whatever cloudflare.config.ts imports from the Worker. A test keeps them
+ * in step.
  */
 const DEV_GATEWAY_KEYS = {
-  providers: { openai: "OPENAI_API_KEY", openrouter: "OPENROUTER_API_KEY" },
+  providers: {
+    openai: ["OPENAI_API_KEY"],
+    openrouter: ["OPENROUTER_API_KEY"],
+    "workers-ai": ["WORKERS_AI_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
+  },
   capabilities: {
     dataforseo: "DATAFORSEO_API_KEY",
     context: "CONTEXT_API_KEY",
@@ -231,7 +237,7 @@ type DevCapabilityKeys = typeof DEV_GATEWAY_KEYS.capabilities;
 type DevGatewayKeys<M> =
   | (M extends { providers: readonly (infer P)[] }
       ? P extends keyof DevProviderKeys
-        ? DevProviderKeys[P]
+        ? DevProviderKeys[P][number]
         : never
       : never)
   | (M extends { capabilities: infer C }
@@ -877,14 +883,16 @@ function addSecrets(
 
 /** The {@link DEV_GATEWAY_KEYS} of the manifest's providers and capabilities. */
 function devGatewayKeys(manifest: EveryAppWorkerManifest): string[] {
-  const keyOf = (table: Record<string, string>, id: string) =>
-    Object.hasOwn(table, id) ? [table[id]!] : [];
+  const keysOf = (
+    table: Record<string, string | readonly string[]>,
+    id: string,
+  ): readonly string[] => (Object.hasOwn(table, id) ? [table[id]!].flat() : []);
   return [
     ...(manifest.providers ?? []).flatMap((provider) =>
-      keyOf(DEV_GATEWAY_KEYS.providers, provider),
+      keysOf(DEV_GATEWAY_KEYS.providers, provider),
     ),
     ...Object.keys(manifest.capabilities ?? {}).flatMap((id) =>
-      keyOf(DEV_GATEWAY_KEYS.capabilities, id),
+      keysOf(DEV_GATEWAY_KEYS.capabilities, id),
     ),
   ];
 }

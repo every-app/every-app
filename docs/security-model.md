@@ -309,7 +309,15 @@ in the gateway's Cloudflare account **is** operator authority.
   no AI Gateway header (`cf-aig-*`), no `x-everyapp-*` header, no cookie and
   no forwarding headers. OpenRouter (`/api/ai/openrouter`) gets inference
   only: `AI_PROXY_EXTRA_ROUTES` and `ai.routes` never widen it, so its
-  account-wide credits and keys endpoints stay closed.
+  account-wide credits and keys endpoints stay closed. Workers AI
+  (`/api/ai/workers-ai`) runs in the gateway's own account with its
+  `WORKERS_AI_API_TOKEN`, joined under `/client/v4/accounts/<id>/ai` (an
+  app path can't leave it), and only its OpenAI-compatible
+  `/v1/chat/completions`, `/v1/embeddings` and `/v1/responses` are open:
+  the native `/run/<model>`, fine-tunes and the rest of Cloudflare's API
+  stay closed, and dispatched Workers can't reach `api.cloudflare.com`
+  directly. The proxy's own refusals carry `x-everyapp-error` and
+  OpenAI's error body; the provider's errors pass through without it.
 - The capability proxy (`/api/integrations/<id>/<host>/<path>` on the
   AppGateway binding, `docs/capabilities.md`) puts a key the gateway holds
   on calls only for an app whose registry row's manifest lists the

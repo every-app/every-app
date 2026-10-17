@@ -45,8 +45,45 @@ every app that lists DataForSEO can use it from then on.
 | `dataforseo` | `DATAFORSEO_API_KEY` | `api.dataforseo.com`, `sandbox.dataforseo.com` | `read` |
 | `context`    | `CONTEXT_API_KEY`    | `api.context.dev`                              | `read` |
 
-`OPENROUTER_API_KEY` is set the same way and serves the AI proxy
-(`/api/ai/openrouter`), beside `OPENAI_API_KEY`.
+The AI proxy's keys are set the same way. An app lists the provider in its
+manifest's `providers` and calls `/api/ai/<provider>/...` with
+`createGatewayFetch()`; `ai.models` limits the models it may ask for.
+
+| AI provider  | Gateway setting                                  | Upstream                                             | Routes apps may call                                      |
+| ------------ | ------------------------------------------------ | ---------------------------------------------------- | --------------------------------------------------------- |
+| `openai`     | `OPENAI_API_KEY`                                 | `api.openai.com`                                     | inference, plus what `AI_PROXY_EXTRA_ROUTES` allows       |
+| `openrouter` | `OPENROUTER_API_KEY`                             | `openrouter.ai`                                      | inference                                                 |
+| `workers-ai` | `WORKERS_AI_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | `api.cloudflare.com/client/v4/accounts/<account>/ai` | `/v1/chat/completions`, `/v1/embeddings`, `/v1/responses` |
+
+Workers AI runs in the gateway's own account (`CLOUDFLARE_ACCOUNT_ID`, which
+`everyapp setup` sets) with an API token made from the "Workers AI"
+template (Workers AI Read and Edit):
+
+```bash
+pnpm everyapp secret set WORKERS_AI_API_TOKEN --for gateway
+```
+
+Apps reach its OpenAI-compatible API, never the native `/ai/run/<model>`, so
+an OpenAI client works unchanged with `baseURL`
+`http://every-app-gateway.internal/api/ai/workers-ai/v1` and models such as
+`@cf/meta/llama-4-scout-17b-16e-instruct`. Meta's models send a token made
+only of digits as a JSON number (`"content":18`), which OpenAI clients
+refuse; the gateway turns those back into strings in chat completions.
+Without the token or the account, calls answer 503
+`ai_provider_not_configured`.
+
+Workers AI never runs locally, and it is billed: with no gateway in
+`everyapp dev`, an app calls it with `WORKERS_AI_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID` in its `.dev.vars` (the developer's own token and
+account; the SDK applies the same fix to the stream), or switches to
+another provider (an `AI_PROVIDER=openrouter` setting of the app's own).
+
+The AI proxy's refusals carry the `x-everyapp-error` header and OpenAI's
+error body, `{ "error": { "message", "code", "type": "gateway_refusal" } }`,
+so OpenAI SDKs and ai-sdk show the message: `provider_not_allowed`,
+`ai_provider_not_supported`, `ai_provider_not_configured`,
+`ai_request_invalid`, `ai_route_not_allowed`, `model_not_allowed` and
+`ai_upstream_failed`.
 
 ## For an app
 

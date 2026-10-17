@@ -118,8 +118,110 @@ describe("createGatewayFetch", () => {
     ).rejects.toThrow(/Set OPENROUTER_API_KEY in \.dev\.vars/);
     await expect(
       gatewayFetch("https://gateway.example.com/api/ai/anthropic/v1/messages"),
-    ).rejects.toThrow(/\/api\/ai\/openai and \/api\/ai\/openrouter/);
+    ).rejects.toThrow(
+      /\/api\/ai\/openai, \/api\/ai\/openrouter and \/api\/ai\/workers-ai/,
+    );
     expect(directFetch).not.toHaveBeenCalled();
+  });
+
+  it("reaches Workers AI under the account's path with the developer's token", async () => {
+    const directFetch = vi.fn<(request: Request) => Promise<Response>>(
+      async () => Response.json({ via: "direct" }),
+    );
+    vi.stubGlobal("fetch", directFetch);
+    const gatewayFetch = createGatewayFetch({
+      env: {
+        EVERYAPP_DEV: "1",
+        WORKERS_AI_API_TOKEN: " developer-token ",
+        CLOUDFLARE_ACCOUNT_ID: "acc123",
+      },
+    });
+
+    await gatewayFetch(
+      "http://every-app-gateway.internal/api/ai/workers-ai/v1/chat/completions",
+      { method: "POST", body: "{}" },
+    );
+
+    const forwarded = directFetch.mock.calls[0]?.[0];
+    expect(forwarded?.url).toBe(
+      "https://api.cloudflare.com/client/v4/accounts/acc123/ai/v1/chat/completions",
+    );
+    expect(forwarded?.headers.get("authorization")).toBe(
+      "Bearer developer-token",
+    );
+  });
+
+  it("needs both Workers AI settings in local dev, and names them", async () => {
+    const directFetch = vi.fn();
+    vi.stubGlobal("fetch", directFetch);
+
+    // The token alone: no provider is reachable.
+    expect(() =>
+      createGatewayFetch({
+        env: { EVERYAPP_DEV: "1", WORKERS_AI_API_TOKEN: "developer-token" },
+      }),
+    ).toThrow(/WORKERS_AI_API_TOKEN with CLOUDFLARE_ACCOUNT_ID/);
+
+    // Another provider's key: Workers AI calls name what is missing.
+    const gatewayFetch = createGatewayFetch({
+      env: {
+        EVERYAPP_DEV: "1",
+        OPENAI_API_KEY: "developer-key",
+        CLOUDFLARE_ACCOUNT_ID: "acc123",
+      },
+    });
+    await expect(
+      gatewayFetch(
+        "https://gateway.example.com/api/ai/workers-ai/v1/chat/completions",
+        { method: "POST", body: "{}" },
+      ),
+    ).rejects.toThrow(
+      new ConfigurationError(
+        "Set WORKERS_AI_API_TOKEN and CLOUDFLARE_ACCOUNT_ID in .dev.vars to call workers-ai in local development.",
+      ),
+    );
+    expect(directFetch).not.toHaveBeenCalled();
+  });
+
+  it("stringifies Workers AI's numeric tokens in dev as the gateway does", async () => {
+    const sse = [
+      'data: {"choices":[{"index":0,"delta":{"content":" of "}}]}',
+      'data: {"choices":[{"index":0,"delta":{"content":18}}]}',
+      "data: [DONE]",
+    ];
+    const upstream = () =>
+      new Response(sse.join("\n\n") + "\n\n", {
+        headers: { "content-type": "text/event-stream" },
+      });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => upstream()),
+    );
+    const gatewayFetch = createGatewayFetch({
+      env: {
+        EVERYAPP_DEV: "1",
+        WORKERS_AI_API_TOKEN: "developer-token",
+        CLOUDFLARE_ACCOUNT_ID: "acc123",
+        OPENROUTER_API_KEY: "developer-key",
+      },
+    });
+
+    const workersAi = await gatewayFetch(
+      "https://gateway.example.com/api/ai/workers-ai/v1/chat/completions",
+      { method: "POST", body: "{}" },
+    );
+    expect((await workersAi.text()).split("\n\n").slice(0, 3)).toEqual([
+      sse[0],
+      'data: {"choices":[{"index":0,"delta":{"content":"18"}}]}',
+      sse[2],
+    ]);
+
+    // Only Workers AI's answers.
+    const openrouter = await gatewayFetch(
+      "https://gateway.example.com/api/ai/openrouter/api/v1/chat/completions",
+      { method: "POST", body: "{}" },
+    );
+    await expect(openrouter.text()).resolves.toBe(sse.join("\n\n") + "\n\n");
   });
 
   it("rejects a production-shaped env even when a provider key is present", () => {
