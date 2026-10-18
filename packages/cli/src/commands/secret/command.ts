@@ -59,7 +59,7 @@ const setCommand = buildCommand({
       "GATEWAY_URL and the EVERYAPP_*, EVERY_APP_* and APP__* names.",
       "",
       "With --for gateway, sets the Gateway's optional settings instead (any other name lists them)",
-      "on the live Gateway; `everyapp setup` deploys this checkout's Gateway code.",
+      "on the live Gateway, which reads them on its next request.",
     ].join("\n"),
   },
 });

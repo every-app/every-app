@@ -9,8 +9,8 @@
  * the Worker's lease and after the replace check, and that version is
  * recorded as everyapp's own (the app's Worker record, or the install row's
  * `live_version_id`), so the next `deploy` or `setup` replaces it
- * unattended. The secret is live at once; the code comes from the next
- * deploy, which the output names. `list` prints names, never values.
+ * unattended. The secret is live at once, and nothing more to run: the
+ * next deploy or setup is for code. `list` prints names, never values.
  */
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import type { LocalContext } from "@/context";
@@ -76,12 +76,12 @@ export async function set(
           json: flags.json,
         });
       }
-      const { versions, next } = await changeSecrets(flags, out, changes);
+      const versions = await changeSecrets(flags, out, changes);
       const list = names.join(", ");
       out.emit({
         type: "done",
-        message: `Set ${list} on ${describe(versions)}: live now, no deploy. ${next}`,
-        data: { names, for: flags.for ?? "app", versions, deploy: next },
+        message: `Set ${list} on ${describe(versions)}: live now, no deploy needed.`,
+        data: { names, for: flags.for ?? "app", versions },
       });
     },
     { verbose: flags.verbose },
@@ -99,11 +99,11 @@ export async function unset(
     async () => {
       assertNames(flags, names);
       const changes = Object.fromEntries(names.map((name) => [name, null]));
-      const { versions, next } = await changeSecrets(flags, out, changes);
+      const versions = await changeSecrets(flags, out, changes);
       out.emit({
         type: "done",
-        message: `Removed ${names.join(", ")} from ${describe(versions)}: live now, no deploy. ${next}`,
-        data: { names, for: flags.for ?? "app", versions, deploy: next },
+        message: `Removed ${names.join(", ")} from ${describe(versions)}: live now, no deploy needed.`,
+        data: { names, for: flags.for ?? "app", versions },
       });
     },
     { verbose: flags.verbose },
@@ -161,13 +161,13 @@ function describe(versions: Record<string, string | null>): string {
 /**
  * Apply the changes to the Gateway, or to the app's Worker and each of its
  * helpers: one new version each, recorded as everyapp's. Returns each
- * Worker's new version and the command that deploys code next.
+ * Worker's new version.
  */
 async function changeSecrets(
   flags: SecretFlags,
   out: EventSink,
   changes: Readonly<Record<string, string | null>>,
-): Promise<{ versions: Record<string, string | null>; next: string }> {
+): Promise<Record<string, string | null>> {
   const interactive = canPromptInTerminal(flags.json ?? false);
   if (flags.for === "gateway") {
     const { cf, databaseId } = await existingGateway({
@@ -186,7 +186,7 @@ async function changeSecrets(
           "No Gateway install record: run `everyapp setup` first.",
         );
       }
-      const versions = await applyChanges(
+      return await applyChanges(
         cf,
         [
           {
@@ -200,7 +200,6 @@ async function changeSecrets(
         interactive,
         out,
       );
-      return { versions, next: "`everyapp setup` deploys this checkout's Gateway code." };
     } finally {
       await lease.release();
     }
@@ -239,8 +238,7 @@ async function changeSecrets(
         })),
     ];
     const recorded = records.map((record) => record.versionId);
-    const versions = await applyChanges(cf, targets, recorded, changes, interactive, out);
-    return { versions, next: "`everyapp deploy` deploys this directory's code." };
+    return await applyChanges(cf, targets, recorded, changes, interactive, out);
   } finally {
     await lease.release();
   }
