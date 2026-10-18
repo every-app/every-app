@@ -80,7 +80,7 @@ export async function set(
       const list = names.join(", ");
       out.emit({
         type: "done",
-        message: `Set ${list} on ${describe(versions)}: live now, no deploy needed.`,
+        message: `Set ${list} on ${describe(versions)}.`,
         data: { names, for: flags.for ?? "app", versions },
       });
     },
@@ -102,7 +102,7 @@ export async function unset(
       const versions = await changeSecrets(flags, out, changes);
       out.emit({
         type: "done",
-        message: `Removed ${names.join(", ")} from ${describe(versions)}: live now, no deploy needed.`,
+        message: `Removed ${names.join(", ")} from ${describe(versions)}.`,
         data: { names, for: flags.for ?? "app", versions },
       });
     },
