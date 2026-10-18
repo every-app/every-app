@@ -1313,13 +1313,16 @@ describe("apps with helper Workers", () => {
         SiteAuditWorkflow: { type: "workflow", name: "every-acme-seo--site-audit" },
       },
     });
-    // The app's own secrets reach both; the gateway's only the app's Worker.
-    expect(helper!.secrets).toEqual({ CRAWLER_SECRET: "s" });
-    expect(Object.keys(app!.secrets!).sort()).toEqual([
-      "CRAWLER_SECRET",
-      "EVERY_APP_ORG_ID",
-      "GATEWAY_URL",
-    ]);
+    // The app's own secrets, the gateway and the organization reach both:
+    // a helper's gateway calls are the organization's like the app's.
+    for (const upload of [helper!, app!]) {
+      expect(Object.keys(upload.secrets!).sort()).toEqual([
+        "CRAWLER_SECRET",
+        "EVERY_APP_ORG_ID",
+        "GATEWAY_URL",
+      ]);
+    }
+    expect(helper!.secrets!["EVERY_APP_ORG_ID"]).toBe(app!.secrets!["EVERY_APP_ORG_ID"]);
     expect(app!.config["env"]).toMatchObject({
       AUDIT_ENGINE: { type: "worker", worker: HELPER },
       SCRATCHPAD: { type: "durable-object", worker: HELPER, exportName: "Scratchpad" },

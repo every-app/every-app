@@ -993,6 +993,9 @@ describe("helper Workers", () => {
           workerName: "every-acme-seo",
         },
       },
+      // What names the gateway and the organization, like the app's Worker.
+      GATEWAY_URL: { type: "secret" },
+      EVERY_APP_ORG_ID: { type: "secret" },
     });
     expect(audit.env).not.toHaveProperty("EVERYAPP_DEV");
     // An organization's own helper: its background calls are the app's.
@@ -1005,9 +1008,12 @@ describe("helper Workers", () => {
       shared: true,
       resources: { d1: { DB: { name: "every-everyapp-seo", id: "d1-uuid" } } },
     });
-    expect(helper("production").env).toMatchObject({
+    const env = helper("production").env;
+    expect(env).toMatchObject({
       EVERYAPP_SHARED: { type: "text", value: "1" },
+      GATEWAY_URL: { type: "secret" },
     });
+    expect(env).not.toHaveProperty("EVERY_APP_ORG_ID");
   });
 
   it("types the helper's service binding and leaves its classes out of the app's exports", () => {
@@ -1165,6 +1171,12 @@ describe("helper Workers", () => {
               },
               "type": "worker",
               "worker": "every-app-gateway",
+            },
+            "EVERY_APP_ORG_ID": {
+              "type": "secret",
+            },
+            "GATEWAY_URL": {
+              "type": "secret",
             },
             "SCRATCHPAD": {
               "exportName": "Scratchpad",

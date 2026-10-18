@@ -416,10 +416,12 @@ bounds an organization's provider spend until the wallet.
   (`<worker>--<binding>`). Walk back: name them after the defining Worker in
   `classBindings` and `appWorkflows`.
 - **Helpers share the app's D1 and KV, call the gateway with the app's props,
-  and receive the app's secrets** on deploy and `secret set|unset`;
-  `GATEWAY_URL` and `EVERY_APP_ORG_ID` go only to the app's Worker. Walk back:
-  drop `secrets` from the helper deploy and the helper unset loop in
-  `deployApp.ts`.
+  and receive the app's secrets** on deploy and `secret set|unset`, with
+  `GATEWAY_URL` and `EVERY_APP_ORG_ID` like the app's Worker (2026-10-18: a
+  helper's gateway calls named the app's own organization id without the pin,
+  which the gateway refused, so OpenSEO's audit Worker could not render a
+  page). Walk back: drop `secrets` from the helper deploy and the helper unset
+  loop in `deployApp.ts`.
 - **A deploy never deletes a helper the manifest dropped**; it warns
   `HELPER_WORKER_KEPT` and `delete --purge` removes it. Walk back: delete it
   after the upload behind a flag.

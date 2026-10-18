@@ -44,7 +44,7 @@
  *
  * With `shared` (`--shared`, the hosted gateway's first-party apps) the app
  * registers as one Worker every organization's members may open, owned by
- * the platform organization; its Worker gets no EVERY_APP_ORG_ID. A
+ * the platform organization; its Workers get no EVERY_APP_ORG_ID. A
  * redeploy without it (`secret set|unset` too) keeps the app's scope.
  *
  * A new hostname is checked (DNS records that answer it, the zone's room)
@@ -606,9 +606,20 @@ async function deploySteps(
       prisma: options.prisma,
     });
 
+    // What every Worker of the app gets with its version: the app's own
+    // secrets, as all of them are the app's code, and what names the
+    // gateway and the organization to the SDK. A helper calls the gateway
+    // too (a crawl's rendering, say), and without EVERY_APP_ORG_ID it would
+    // name the app's own organization id, which the gateway refuses.
+    const versionSecrets = {
+      ...options.secrets,
+      GATEWAY_URL: gatewayUrl,
+      // A shared app serves every organization: nothing pins it to one.
+      ...(shared ? {} : { EVERY_APP_ORG_ID: organization.id }),
+    };
+
     // Helper Workers first: the app's Worker binds them, so each must be
-    // there (with any new class) before the version that uses it. The
-    // app's own secrets go to each, as all of them are the app's code.
+    // there (with any new class) before the version that uses it.
     for (const helper of helpers) {
       await lease.check();
       out.emit({
@@ -624,7 +635,7 @@ async function deploySteps(
         buildOutputWorker: helper.workerName,
         accountId,
         message: `everyapp ${cliVersion} ${manifest.id} ${helper.name}`,
-        secrets: options.secrets,
+        secrets: versionSecrets,
         interactive,
         onUploaded: (uploadedVersion) =>
           recordUploadedVersion(registry, workerName, uploadedVersion, helper.name),
@@ -644,12 +655,7 @@ async function deploySteps(
       workerName,
       accountId,
       message: `everyapp ${cliVersion} ${manifest.id}`,
-      secrets: {
-        ...options.secrets,
-        GATEWAY_URL: gatewayUrl,
-        // A shared app serves every organization: nothing pins it to one.
-        ...(shared ? {} : { EVERY_APP_ORG_ID: organization.id }),
-      },
+      secrets: versionSecrets,
       interactive,
       // Recorded at once, before the registry hears of it: a retry must
       // find this upload was everyapp's, however this run ends.

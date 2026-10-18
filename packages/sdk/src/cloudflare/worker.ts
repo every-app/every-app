@@ -703,7 +703,11 @@ export function everyAppAuxiliaryWorker<
   if (deploy) {
     // The app's identity: the gateway treats its helper Workers as the app.
     env["EVERY_APP_GATEWAY"] = gatewayBinding(deploy, manifest.id, appWorker);
-    if (deploy.shared) env["EVERYAPP_SHARED"] = { type: "text", value: "1" };
+    // Sent by the deploy pipeline through `cf deploy --secrets-file`, like
+    // the app's Worker: a helper's gateway calls name the organization too.
+    env["GATEWAY_URL"] = { type: "secret" };
+    if (!deploy.shared) env["EVERY_APP_ORG_ID"] = { type: "secret" };
+    else env["EVERYAPP_SHARED"] = { type: "text", value: "1" };
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
     addDevEmailSenders(env, manifest);

@@ -145,7 +145,9 @@ cloudflare({
 It deploys as `every-acme-seo--audit`, private like the app: only the app's
 Worker reaches it, through `env.AUDIT` and the bindings of the classes it
 defines. It shares the app's D1 databases, KV namespaces and R2 buckets, and
-calls the gateway as the app. `everyapp deploy` checks and uploads helpers before the
+calls the gateway as the app, with the app's `GATEWAY_URL` and
+`EVERY_APP_ORG_ID`, so its background calls (a Workflow's, say) are the
+organization's like the app's. `everyapp deploy` checks and uploads helpers before the
 app's Worker, and `everyapp delete --purge` deletes them, and the Workflows
 they run, with it. A class stays in the Worker that first defined it.
 

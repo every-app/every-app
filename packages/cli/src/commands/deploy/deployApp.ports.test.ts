@@ -250,11 +250,15 @@ describe("deploy of Postiz (two Workers, D1 with Prisma's SQL, a Workflow and a 
       EVERYAPP_HEADER_AUTH: { type: "text", value: "true" },
     });
     // A production build declares none of the app's own secrets: `everyapp
-    // secret set` puts them on the Worker after the first deploy.
+    // secret set` puts them on the Worker after the first deploy. The
+    // deploy's own two reach the helper as they reach the app's Worker.
     expect(
       Object.entries(config["env"]).filter(([, binding]: any) => binding.type === "secret"),
-    ).toEqual([]);
-    expect(helper!.secrets).toBeNull();
+    ).toEqual([
+      ["GATEWAY_URL", { type: "secret" }],
+      ["EVERY_APP_ORG_ID", { type: "secret" }],
+    ]);
+    expect(Object.keys(helper!.secrets ?? {}).sort()).toEqual(["EVERY_APP_ORG_ID", "GATEWAY_URL"]);
   });
 
   it("builds the app Worker with its assets, the API service binding, the helper's Workflow and no cron", async () => {
