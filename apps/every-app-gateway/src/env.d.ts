@@ -127,6 +127,15 @@ declare namespace Cloudflare {
     // Optional REST transport for email delivery outside deployed Workers.
     EMAIL_REST_API_TOKEN?: string;
 
+    // Resend's API key: the gateway sends mail through Resend instead of
+    // Cloudflare Email Sending (src/server/email/providers/resend.ts).
+    RESEND_API_KEY?: string;
+
+    // "cloudflare" or "resend": which provider sends when both are set up.
+    // Unset: Cloudflare's REST pair, else RESEND_API_KEY, else the EMAIL
+    // binding (src/server/email/providers/index.ts).
+    EMAIL_PROVIDER?: string;
+
     // Sender identity for Better Auth invitation and password-reset flows,
     // and for apps' mail through the `email` capability when they don't send
     // as an address of their own (src/server/capabilities/email.ts).

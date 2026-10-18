@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMAIL_SENDER_PATTERN,
+  chooseEmailProvider,
   distinctRecipients,
   emailProviderRefusal,
   emailRestBody,
@@ -297,6 +298,87 @@ describe("provider refusals", () => {
     ).toContain(
       "cf email-sending subdomains create -z mail.example.com --name mail.example.com",
     );
+  });
+
+  it("words a Resend refusal for Resend, with the same statuses and codes", () => {
+    expect(
+      emailProviderRefusal(
+        "E_SENDER_NOT_VERIFIED",
+        "mail.example.com",
+        "resend",
+      ),
+    ).toEqual({
+      status: 422,
+      code: "email_sender_not_verified",
+      message: expect.stringContaining(
+        "Its operator adds mail.example.com at https://resend.com/domains",
+      ),
+    });
+    for (const [providerCode, status, code] of [
+      ["E_RATE_LIMIT_EXCEEDED", 429, "email_provider_limited"],
+      ["E_VALIDATION_ERROR", 400, "email_invalid_message"],
+      ["application_error", 502, "email_send_failed"],
+    ] as const) {
+      const refusal = emailProviderRefusal(
+        providerCode,
+        "mail.example.com",
+        "resend",
+      );
+      expect(refusal).toMatchObject({ status, code });
+      expect(refusal.message).toMatch(/^Resend /);
+      expect(refusal.message).not.toContain("Cloudflare");
+    }
+  });
+});
+
+describe("choosing the email provider", () => {
+  const setUp =
+    (cloudflare: "settings" | "binding" | null, resend: "settings" | null) =>
+    (provider: "cloudflare" | "resend") =>
+      provider === "cloudflare" ? cloudflare : resend;
+
+  it("takes EMAIL_PROVIDER, trimmed and in any case, when it is set up", () => {
+    expect(
+      chooseEmailProvider(" Resend ", setUp("settings", "settings")),
+    ).toEqual({ ok: true, provider: "resend" });
+    expect(
+      chooseEmailProvider("CLOUDFLARE", setUp("binding", "settings")),
+    ).toEqual({ ok: true, provider: "cloudflare" });
+  });
+
+  it("refuses an EMAIL_PROVIDER that isn't set up, or isn't a provider", () => {
+    expect(chooseEmailProvider("resend", setUp("binding", null))).toEqual({
+      ok: false,
+      error: "not_configured",
+      requested: "resend",
+    });
+    expect(
+      chooseEmailProvider("sendgrid", setUp("binding", "settings")),
+    ).toEqual({ ok: false, error: "unknown_provider", requested: "sendgrid" });
+  });
+
+  it("without EMAIL_PROVIDER, takes the first with settings, then a binding alone", () => {
+    const choose = (
+      cloudflare: "settings" | "binding" | null,
+      resend: "settings" | null,
+    ) => chooseEmailProvider(undefined, setUp(cloudflare, resend));
+    expect(choose("settings", "settings")).toMatchObject({
+      provider: "cloudflare",
+    });
+    // The EMAIL binding every gateway declares doesn't outrank a key the
+    // operator set.
+    expect(choose("binding", "settings")).toMatchObject({ provider: "resend" });
+    expect(choose("binding", null)).toMatchObject({ provider: "cloudflare" });
+    expect(choose(null, "settings")).toMatchObject({ provider: "resend" });
+    expect(choose(null, null)).toEqual({
+      ok: false,
+      error: "not_configured",
+      requested: null,
+    });
+    // A blank EMAIL_PROVIDER is no choice.
+    expect(chooseEmailProvider("  ", setUp(null, "settings"))).toMatchObject({
+      provider: "resend",
+    });
   });
 });
 

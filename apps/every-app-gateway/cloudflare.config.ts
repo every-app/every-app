@@ -68,7 +68,11 @@ export const OPTIONAL_SECRETS = [
   "DRIBBBLE_CLIENT_ID",
   "DRIBBBLE_CLIENT_SECRET",
   "AI_PROXY_EXTRA_ROUTES",
+  // Email's providers (src/server/email/providers): Cloudflare's REST pair
+  // (with CLOUDFLARE_ACCOUNT_ID below), Resend's key, and the choice.
   "EMAIL_REST_API_TOKEN",
+  "RESEND_API_KEY",
+  "EMAIL_PROVIDER",
   "EMAIL_FROM",
   "EMAIL_FROM_NAME",
   "CLOUDFLARE_ACCOUNT_ID",

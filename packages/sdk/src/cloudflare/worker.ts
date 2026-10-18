@@ -273,11 +273,17 @@ const DEV_GATEWAY_KEYS = {
     context: ["CONTEXT_API_KEY"],
     // The sender, and the developer's own Email Sending account: set all
     // but the name and sendEmail() really sends; otherwise it prints.
+    // Resend's key and EMAIL_PROVIDER pick the provider integrationStatus()
+    // names, as the gateway would.
+    // TODO(integration): the last two added by the email-providers lane
+    // (this file is outside its ownership list).
     email: [
       "EMAIL_FROM",
       "EMAIL_FROM_NAME",
       "EMAIL_REST_API_TOKEN",
       "CLOUDFLARE_ACCOUNT_ID",
+      "RESEND_API_KEY",
+      "EMAIL_PROVIDER",
     ],
     // OAuth clients: the id, the secret, and the instance a provider with
     // no fixed host is on.

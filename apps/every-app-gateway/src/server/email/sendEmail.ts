@@ -1,14 +1,18 @@
 import { env } from "cloudflare:workers";
 import {
-  emailRestBody,
-  emailRestUrl,
+  EMAIL_PROVIDER_LABELS,
   parseEmailSender,
-  readEmailRestResponse,
   type CheckedEmailAttachment,
   type EmailAddressInput,
+  type EmailProviderId,
 } from "@every-app/sdk/internal";
 import { type MailKind, platformPolicy } from "@/server/platform-policy";
 import { RateLimitCounterRepository } from "@/server/repositories/RateLimitCounterRepository";
+import { EmailDeliveryError } from "./errors";
+import { selectEmailProvider } from "./providers";
+import type { SendEmailResult } from "./providers/types";
+
+export type { SendEmailResult };
 
 export type SendEmailOptions = {
   /** What the mail is for: each kind has its own daily budgets. */
@@ -25,45 +29,12 @@ export type SendEmailOptions = {
   /** Absent: replies go to the sender. */
   replyTo?: EmailAddressInput;
   headers?: Record<string, string>;
-  /** Base64 content, which both transports take as is. */
+  /** Base64 content, which every provider takes as is. */
   attachments?: readonly CheckedEmailAttachment[];
 };
 
-/** What Email Sending said: accepted (and delivered), or queued for some recipients. */
-export type SendEmailResult = {
-  messageId?: string;
-  status: "delivered" | "queued";
-};
-
-type EmailDeliveryErrorCode =
-  | "EMAIL_BINDING_UNAVAILABLE"
-  | "EMAIL_SENDER_NOT_CONFIGURED"
-  | "EMAIL_SEND_FAILED"
-  | "EMAIL_BUDGET_EXHAUSTED"
-  | "EMAIL_BUDGET_UNAVAILABLE";
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ADDRESS_KEY_CONTEXT = "every-app-gateway:mail-recipient:v1";
-
-class EmailDeliveryError extends Error {
-  readonly code: EmailDeliveryErrorCode;
-  /** Email Sending's own code (`E_SENDER_NOT_VERIFIED`, `10004`, ...), when it gave one. */
-  readonly providerCode: string | undefined;
-  /** When a spent budget refills: the next UTC midnight. */
-  readonly retryAt: Date | undefined;
-
-  constructor(
-    code: EmailDeliveryErrorCode,
-    message: string,
-    options?: ErrorOptions & { providerCode?: string; retryAt?: Date },
-  ) {
-    super(message, options);
-    this.name = "EmailDeliveryError";
-    this.code = code;
-    this.providerCode = options?.providerCode;
-    this.retryAt = options?.retryAt;
-  }
-}
 
 type ConfiguredSender = { address: string; name: string };
 
@@ -85,60 +56,20 @@ function parseConfiguredSender(): ConfiguredSender {
   return sender;
 }
 
-function requireEmailBinding(): SendEmail {
-  // The generated Env type declares EMAIL, but deployed/self-hosted configs can
-  // still omit it. Keep the runtime guard so auth can initialize everywhere.
-  const binding = env.EMAIL as SendEmail | undefined;
-
-  if (!binding || typeof binding.send !== "function") {
-    throw new EmailDeliveryError(
-      "EMAIL_BINDING_UNAVAILABLE",
-      "Email delivery is unavailable because the EMAIL send_email binding is not configured.",
-    );
-  }
-
-  return binding;
-}
-
-function getRestConfiguration(): {
-  accountId: string;
-  apiToken: string;
-} | null {
-  const apiToken = env.EMAIL_REST_API_TOKEN?.trim();
-  const accountId = env.CLOUDFLARE_ACCOUNT_ID?.trim();
-
-  return apiToken && accountId ? { accountId, apiToken } : null;
-}
-
-function getProviderErrorCode(error: unknown): string | undefined {
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (typeof error.code === "string" || typeof error.code === "number")
-  ) {
-    return String(error.code);
-  }
-
-  return undefined;
-}
-
-function asDeliveryError(error: unknown): EmailDeliveryError {
-  if (error instanceof EmailDeliveryError) {
-    return error;
-  }
-
-  const providerCode = getProviderErrorCode(error);
-  const suffix = providerCode ? ` (${providerCode})` : "";
-
+/** A provider's unexpected throw, as the gateway's error. */
+function asDeliveryError(
+  error: unknown,
+  provider: EmailProviderId | undefined,
+): EmailDeliveryError {
+  if (error instanceof EmailDeliveryError) return error;
   return new EmailDeliveryError(
     "EMAIL_SEND_FAILED",
-    `Cloudflare Email Service failed to send the message${suffix}.`,
-    { cause: error, ...(providerCode ? { providerCode } : {}) },
+    `${provider ? EMAIL_PROVIDER_LABELS[provider] : "The email provider"} failed to send the message.`,
+    { cause: error, ...(provider ? { provider } : {}) },
   );
 }
 
-/** The recipients as lists, for the transports. */
+/** The recipients as lists, for the providers. */
 function recipientLists(options: SendEmailOptions) {
   return {
     to: typeof options.to === "string" ? [options.to] : [...options.to],
@@ -147,112 +78,21 @@ function recipientLists(options: SendEmailOptions) {
   };
 }
 
-async function sendWithRest(
-  options: SendEmailOptions,
-  from: EmailAddressInput,
-  configuration: { accountId: string; apiToken: string },
-): Promise<SendEmailResult> {
-  const response = await fetch(emailRestUrl(configuration.accountId), {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${configuration.apiToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(
-      emailRestBody({
-        ...recipientLists(options),
-        subject: options.subject,
-        ...(options.text ? { text: options.text } : {}),
-        ...(options.html ? { html: options.html } : {}),
-        from,
-        ...(options.replyTo ? { replyTo: options.replyTo } : {}),
-        ...(options.headers ? { headers: options.headers } : {}),
-        ...(options.attachments
-          ? { attachments: [...options.attachments] }
-          : {}),
-      }),
-    ),
-  });
-
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    // The HTTP status below still determines whether this send failed.
-  }
-
-  const result = readEmailRestResponse(response.status, body);
-  if (!result.ok) {
-    throw Object.assign(
-      new Error(result.message),
-      result.providerCode === undefined ? {} : { code: result.providerCode },
-    );
-  }
-  return {
-    status: result.status,
-    ...(result.messageId ? { messageId: result.messageId } : {}),
-  };
-}
-
-async function sendWithBinding(
-  binding: SendEmail,
-  options: SendEmailOptions,
-  from: EmailAddressInput,
-): Promise<SendEmailResult> {
-  const { to, cc, bcc } = recipientLists(options);
-  const address = (value: EmailAddressInput) =>
-    value.name ? { email: value.address, name: value.name } : value.address;
-  const result = (await binding.send({
-    to: to.length === 1 ? to[0]! : to,
-    ...(cc.length > 0 ? { cc } : {}),
-    ...(bcc.length > 0 ? { bcc } : {}),
-    from: address(from),
-    ...(options.replyTo ? { replyTo: address(options.replyTo) } : {}),
-    subject: options.subject,
-    ...(options.html ? { html: options.html } : {}),
-    ...(options.text ? { text: options.text } : {}),
-    ...(options.headers && Object.keys(options.headers).length > 0
-      ? { headers: options.headers }
-      : {}),
-    ...(options.attachments && options.attachments.length > 0
-      ? {
-          attachments: options.attachments.map((attachment) =>
-            attachment.disposition === "inline"
-              ? {
-                  disposition: "inline" as const,
-                  contentId: attachment.contentId ?? attachment.filename,
-                  filename: attachment.filename,
-                  type: attachment.contentType,
-                  content: attachment.content,
-                }
-              : {
-                  disposition: "attachment" as const,
-                  filename: attachment.filename,
-                  type: attachment.contentType,
-                  content: attachment.content,
-                },
-          ),
-        }
-      : {}),
-  })) as EmailSendResult | undefined;
-  // Older local simulators resolve without a result.
-  return {
-    status: "delivered",
-    ...(result?.messageId ? { messageId: result.messageId } : {}),
-  };
-}
-
 /**
  * Whether the gateway can attempt to send email at all: a sender is set and
- * there is a transport (the REST API or the EMAIL binding). Email is
- * optional; without it, invitations and password resets hand the admin a
- * link to share instead.
+ * a provider is selectable (providers/index.ts). Email is optional; without
+ * it, invitations and password resets hand the admin a link to share
+ * instead.
  */
 export function isEmailConfigured(): boolean {
-  if (!configuredSender()) return false;
-  if (getRestConfiguration()) return true;
-  const binding = env.EMAIL as SendEmail | undefined;
-  return Boolean(binding && typeof binding.send === "function");
+  return configuredEmailProvider() !== null;
+}
+
+/** The provider mail goes out with, or null when the gateway can't send. */
+export function configuredEmailProvider(): EmailProviderId | null {
+  if (!configuredSender()) return null;
+  const selected = selectEmailProvider(env);
+  return "provider" in selected ? selected.provider.id : null;
 }
 
 /**
@@ -353,33 +193,45 @@ async function spendMailBudget(
 }
 
 /**
- * Send one email, within its kind's daily budgets. Throws an
- * EmailDeliveryError (logged here) when email isn't configured, a budget is
- * spent or the provider refuses.
+ * Send one email, within its kind's daily budgets, through the selected
+ * provider. Throws an EmailDeliveryError (logged here) when email isn't
+ * configured, a budget is spent or the provider refuses.
  */
 export async function sendEmail(
   options: SendEmailOptions,
 ): Promise<SendEmailResult> {
   const { to, cc, bcc } = recipientLists(options);
+  let provider: EmailProviderId | undefined;
   try {
-    const restConfiguration = getRestConfiguration();
-
-    if (restConfiguration) {
-      const from = options.from ?? parseConfiguredSender();
-      await spendMailBudget(options.kind, [...to, ...cc, ...bcc]);
-      return await sendWithRest(options, from, restConfiguration);
+    const selected = selectEmailProvider(env);
+    if (!("provider" in selected)) {
+      throw new EmailDeliveryError(
+        "EMAIL_BINDING_UNAVAILABLE",
+        selected.message,
+      );
     }
-
-    const binding = requireEmailBinding();
+    provider = selected.provider.id;
     const from = options.from ?? parseConfiguredSender();
     await spendMailBudget(options.kind, [...to, ...cc, ...bcc]);
-    return await sendWithBinding(binding, options, from);
+    return await selected.provider.send(env, {
+      from,
+      to,
+      cc,
+      bcc,
+      subject: options.subject,
+      ...(options.text ? { text: options.text } : {}),
+      ...(options.html ? { html: options.html } : {}),
+      ...(options.replyTo ? { replyTo: options.replyTo } : {}),
+      ...(options.headers ? { headers: options.headers } : {}),
+      ...(options.attachments ? { attachments: options.attachments } : {}),
+    });
   } catch (error) {
-    const deliveryError = asDeliveryError(error);
+    const deliveryError = asDeliveryError(error, provider);
 
     console.error("Email delivery failed", {
       event: "email.send.failed",
       kind: options.kind,
+      provider: deliveryError.provider ?? provider,
       code: deliveryError.code,
       providerCode: deliveryError.providerCode,
       message: deliveryError.message,

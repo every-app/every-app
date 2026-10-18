@@ -17,6 +17,7 @@ import {
   isPasswordSignInOn,
 } from "./cloudflare-access";
 import { logEvent } from "@every-app/perimeter";
+import { EMAIL_TRANSPORTS_TEXT } from "@/server/email/providers";
 import { isEmailConfigured, sendEmail } from "@/server/email/sendEmail";
 import { passwordResetUrl } from "@/server/email/links";
 import {
@@ -119,7 +120,9 @@ async function enforceSignUpPolicy(ctx: {
     throw new APIError("SERVICE_UNAVAILABLE", {
       code: "EMAIL_NOT_CONFIGURED",
       message:
-        "Sign-up is unavailable: this gateway can't send the email that verifies new accounts. Its operator must set EMAIL_FROM and an email transport (EMAIL_REST_API_TOKEN, or the EMAIL binding).",
+        // TODO(integration): wording changed by the email-providers lane
+        // (outside its ownership list; its brief names this message).
+        `Sign-up is unavailable: this gateway can't send the email that verifies new accounts. Its operator must set EMAIL_FROM and EMAIL_FROM_NAME and ${EMAIL_TRANSPORTS_TEXT}.`,
     });
   }
 

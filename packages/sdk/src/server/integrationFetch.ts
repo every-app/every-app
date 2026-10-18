@@ -20,6 +20,7 @@ import {
   type OAuthClientCapabilityId,
   type OAuthClientCredentials,
   EMAIL_SENDERS_ENV,
+  chooseEmailProvider,
   parseEmailSender,
   parseEmailSendersEnv,
 } from "../internal/index.js";
@@ -275,11 +276,12 @@ export interface IntegrationStatus {
 
 /**
  * The email capability's status: as {@link IntegrationStatus}, plus the
- * From a message without `from` gets and the `from` patterns the gateway
- * accepts from this app (its manifest's `capabilities.email.senders`).
+ * From a message without `from` gets, the `from` patterns the gateway
+ * accepts from this app (its manifest's `capabilities.email.senders`) and
+ * the provider mail goes out with (`cloudflare` or `resend`).
  */
 export type EmailIntegrationStatus = IntegrationStatus &
-  Pick<EmailCapabilityStatus, "sender" | "senders">;
+  Pick<EmailCapabilityStatus, "sender" | "senders" | "provider">;
 
 /**
  * An OAuth client's status: as {@link IntegrationStatus}, plus what the app
@@ -329,6 +331,7 @@ export async function integrationStatus<P extends CapabilityId>({
           ready: false,
           sender: null,
           senders: [],
+          provider: null,
         }
       : {
           requested: false,
@@ -380,12 +383,25 @@ function devOAuthClientStatus(
  * Email in local dev, with no gateway: sends are printed unless `.dev.vars`
  * sets EMAIL_FROM (and the REST settings), and the senders are the
  * manifest's, which `everyAppWorker()` passes in EVERYAPP_EMAIL_SENDERS.
+ * The provider is the one the gateway would pick from the same settings:
+ * `cloudflare` for the REST pair, `resend` for RESEND_API_KEY, EMAIL_PROVIDER
+ * choosing when both are set.
  */
 function devEmailStatus(
   values: Record<string, unknown>,
 ): EmailIntegrationStatus {
   const dev = Boolean(values["EVERYAPP_DEV"]);
   const configured = dev && Boolean(stringValue(values["EMAIL_FROM"]));
+  const choice = chooseEmailProvider(values["EMAIL_PROVIDER"], (provider) =>
+    (
+      provider === "cloudflare"
+        ? stringValue(values["EMAIL_REST_API_TOKEN"]) &&
+          stringValue(values["CLOUDFLARE_ACCOUNT_ID"])
+        : stringValue(values["RESEND_API_KEY"])
+    )
+      ? "settings"
+      : null,
+  );
   return {
     requested: true,
     configured,
@@ -397,6 +413,7 @@ function devEmailStatus(
         )
       : null,
     senders: dev ? parseEmailSendersEnv(values[EMAIL_SENDERS_ENV]) : [],
+    provider: configured && choice.ok ? choice.provider : null,
   };
 }
 

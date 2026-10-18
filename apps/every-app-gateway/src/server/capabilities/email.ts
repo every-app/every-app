@@ -1,8 +1,8 @@
 /**
  * The `email` capability (docs/capabilities.md "Gateway services"): apps
- * send mail through the gateway's own sender and transport, the EMAIL
- * binding or Email Sending's REST API (server/email/sendEmail.ts), within
- * the gateway's daily `app` budgets. One sending domain onboarded per
+ * send mail through the gateway's own sender and provider, Cloudflare Email
+ * Sending or Resend (server/email/sendEmail.ts, server/email/providers),
+ * within the gateway's daily `app` budgets. One sending domain set up per
  * gateway serves every app, and every message is attributed and logged
  * (never its subject or body).
  *
@@ -12,8 +12,8 @@
  * Without `from` a message goes out as the gateway's sender. With one, the
  * address must match a pattern in the app's manifest
  * (`capabilities.email.senders`), and its domain must be onboarded to Email
- * Sending in the gateway's account. A hosted gateway sends app mail from
- * its own sender only, for now.
+ * Sending in the gateway's account (or verified in its Resend account). A
+ * hosted gateway sends app mail from its own sender only, for now.
  */
 import {
   CAPABILITIES,
@@ -25,6 +25,7 @@ import {
   parseSendEmailMessage,
   senderAllowed,
   type EmailCapabilityStatus,
+  type EmailProviderId,
 } from "@every-app/sdk/internal";
 import { logEvent } from "@every-app/perimeter";
 import type { CapabilityRequest } from "@every-app/perimeter/manifest";
@@ -32,6 +33,7 @@ import type {
   SendEmailOptions,
   SendEmailResult,
 } from "@/server/email/sendEmail";
+import { EMAIL_TRANSPORTS_TEXT } from "@/server/email/providers";
 import type { IntegrationCallAdmission } from "@/server/integration-proxy";
 import { capabilityRefusal } from "./refusal";
 
@@ -40,14 +42,17 @@ const RUNBOOK = "docs/runbooks/email-sending-setup.md";
 
 /** The gateway's mail, as the capability uses it. */
 export interface GatewayMail {
-  /** A sender is set and there is a transport. */
+  /** A sender is set and a provider is selectable. */
   isConfigured(): boolean;
   /** EMAIL_FROM and its name, or null. */
   sender(): { address: string; name: string } | null;
+  /** The provider mail goes out with, or null when the gateway can't send. */
+  provider(): EmailProviderId | null;
   /**
    * Send within the `app` budgets. Throws an error with the gateway's
-   * `code` (`EMAIL_BUDGET_EXHAUSTED`, `EMAIL_SEND_FAILED`, ...), Email
-   * Sending's `providerCode` and, for a spent budget, `retryAt`.
+   * `code` (`EMAIL_BUDGET_EXHAUSTED`, `EMAIL_SEND_FAILED`, ...), the
+   * `provider` that refused and its `providerCode` and, for a spent
+   * budget, `retryAt`.
    */
   send(options: SendEmailOptions): Promise<SendEmailResult>;
   /** An HMAC of an address: what logs name a recipient by. */
@@ -63,6 +68,7 @@ export async function loadGatewayMail(): Promise<GatewayMail> {
   return {
     isConfigured: mail.isEmailConfigured,
     sender: mail.configuredSender,
+    provider: mail.configuredEmailProvider,
     send: mail.sendEmail,
     recipientHash: mail.recipientKey,
   };
@@ -113,6 +119,7 @@ export async function emailCapabilityStatus({
     ready: isRequested && configured,
     sender: configured ? (gatewayMail?.sender() ?? null) : null,
     senders: effectiveSenders(entry, hosted),
+    provider: configured ? (gatewayMail?.provider() ?? null) : null,
   };
   return Response.json(status);
 }
@@ -221,12 +228,12 @@ export async function handleEmailSend({
     }
   }
 
-  // 6. A sender and a transport on the gateway.
+  // 6. A sender and a provider on the gateway.
   if (!gatewayMail.isConfigured()) {
     return refuse(
       503,
       "integration_not_configured",
-      `Email isn't set up on this gateway. Its operator onboards a sending domain and sets EMAIL_FROM and EMAIL_FROM_NAME with: everyapp secret set EMAIL_FROM EMAIL_FROM_NAME --for gateway (${RUNBOOK}).`,
+      `Email isn't set up on this gateway. Its operator sets up a sending domain, then sets EMAIL_FROM and EMAIL_FROM_NAME and ${EMAIL_TRANSPORTS_TEXT}, with everyapp secret set … --for gateway (${RUNBOOK}).`,
     );
   }
 
@@ -260,11 +267,12 @@ export async function handleEmailSend({
         return refuse(503, "integration_not_configured", failure.message);
       default: {
         const sender = message.from?.address ?? gatewayMail.sender()?.address;
-        const provider = emailProviderRefusal(
+        const refusal = emailProviderRefusal(
           failure.providerCode,
           sender ? emailDomain(sender) : "<your domain>",
+          failure.provider ?? gatewayMail.provider() ?? "cloudflare",
         );
-        return refuse(provider.status, provider.code, provider.message);
+        return refuse(refusal.status, refusal.code, refusal.message);
       }
     }
   }
@@ -276,9 +284,10 @@ export async function handleEmailSend({
   });
 }
 
-/** What a failed send threw: the gateway's code, the provider's, the refill time. */
+/** What a failed send threw: the gateway's code, the provider and its code, the refill time. */
 function deliveryFailure(error: unknown): {
   code: string | undefined;
+  provider: EmailProviderId | undefined;
   providerCode: string | undefined;
   retryAt: Date | undefined;
   message: string;
@@ -288,6 +297,10 @@ function deliveryFailure(error: unknown): {
   ) as Record<string, unknown>;
   return {
     code: typeof fields["code"] === "string" ? fields["code"] : undefined,
+    provider:
+      fields["provider"] === "cloudflare" || fields["provider"] === "resend"
+        ? fields["provider"]
+        : undefined,
     providerCode:
       typeof fields["providerCode"] === "string"
         ? fields["providerCode"]

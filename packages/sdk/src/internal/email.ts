@@ -1,8 +1,9 @@
 /**
  * The `email` capability's wire contract (docs/capabilities.md "Gateway
  * services"): what an app sends to `POST /api/integrations/email/send`,
- * how the request is checked, which senders a manifest may name, and how
- * Cloudflare Email Sending's answers map onto the gateway's refusals.
+ * how the request is checked, which senders a manifest may name, which
+ * provider a gateway sends with (Cloudflare Email Sending or Resend), and
+ * how the provider's answers map onto the gateway's refusals.
  *
  * The gateway enforces these, the manifest validator reads the sender
  * pattern, and the SDK's local-dev fallback applies the same checks and
@@ -93,6 +94,71 @@ export interface EmailCapabilityStatus {
   sender: { address: string; name: string } | null;
   /** The `from` patterns the gateway accepts from this app; empty for none. */
   senders: string[];
+  /**
+   * The provider mail goes out with; null unless configured. In local dev,
+   * the one the gateway would pick from `.dev.vars` (only Cloudflare's REST
+   * API really sends from dev; otherwise sends are printed).
+   */
+  provider: EmailProviderId | null;
+}
+
+/**
+ * The providers a gateway sends mail with, in the order it prefers them
+ * (docs/runbooks/email-sending-setup.md, "Choosing a provider"). One serves
+ * the whole gateway: its own mail and every app's.
+ */
+export const EMAIL_PROVIDER_IDS = ["cloudflare", "resend"] as const;
+export type EmailProviderId = (typeof EMAIL_PROVIDER_IDS)[number];
+
+/** Each provider's name, as messages give it. */
+export const EMAIL_PROVIDER_LABELS: Readonly<Record<EmailProviderId, string>> =
+  {
+    cloudflare: "Cloudflare Email Sending",
+    resend: "Resend",
+  };
+
+/**
+ * How far a provider is set up: by settings the operator gave it (Email
+ * Sending's REST pair, RESEND_API_KEY), only by a binding every gateway
+ * Worker declares (Cloudflare's EMAIL), or not at all.
+ */
+export type EmailProviderSetup = "settings" | "binding" | null;
+
+/** The provider {@link chooseEmailProvider} picked, or why there is none. */
+export type EmailProviderChoice =
+  | { ok: true; provider: EmailProviderId }
+  | { ok: false; error: "unknown_provider"; requested: string }
+  | { ok: false; error: "not_configured"; requested: EmailProviderId | null };
+
+/**
+ * Which provider sends. EMAIL_PROVIDER (trimmed, any case), when set, names
+ * it, and it must be set up. Without it: the first provider, in
+ * {@link EMAIL_PROVIDER_IDS} order, the operator gave settings to, else one
+ * a binding alone sets up. The EMAIL binding is declared on every gateway
+ * Worker, so it can't be what makes Cloudflare win over a RESEND_API_KEY
+ * the operator set.
+ */
+export function chooseEmailProvider(
+  emailProvider: unknown,
+  setup: (provider: EmailProviderId) => EmailProviderSetup,
+): EmailProviderChoice {
+  const requested =
+    typeof emailProvider === "string" ? emailProvider.trim() : "";
+  if (requested) {
+    const provider = EMAIL_PROVIDER_IDS.find(
+      (id) => id === requested.toLowerCase(),
+    );
+    if (!provider) return { ok: false, error: "unknown_provider", requested };
+    return setup(provider)
+      ? { ok: true, provider }
+      : { ok: false, error: "not_configured", requested: provider };
+  }
+  const provider =
+    EMAIL_PROVIDER_IDS.find((id) => setup(id) === "settings") ??
+    EMAIL_PROVIDER_IDS.find((id) => setup(id) !== null);
+  return provider
+    ? { ok: true, provider }
+    : { ok: false, error: "not_configured", requested: null };
 }
 
 /** Cloudflare Email Sending's limits the gateway checks before sending. */
@@ -456,7 +522,10 @@ export interface EmailRefusal {
   message: string;
 }
 
-/** Binding codes (`E_*`) for a message the provider found malformed. */
+/**
+ * Codes for a message the provider found malformed: the binding's `E_*`
+ * (Resend's validation errors map onto `E_VALIDATION_ERROR`).
+ */
 const INVALID_MESSAGE_CODES = new Set([
   "E_VALIDATION_ERROR",
   "E_FIELD_MISSING",
@@ -477,14 +546,17 @@ const INVALID_MESSAGE_CODES = new Set([
 ]);
 
 /**
- * The refusal for an error Cloudflare Email Sending answered with, by its
- * code: the binding's `E_*` or the REST API's numeric one. `senderDomain`
- * is the From's domain, for the onboarding command.
+ * The refusal for an error the provider answered with, by its code:
+ * Cloudflare's binding `E_*` or REST numeric one, or the `E_*` code the
+ * gateway's Resend provider maps Resend's errors onto. `senderDomain` is
+ * the From's domain, for the step that verifies it with `provider`.
  */
 export function emailProviderRefusal(
   providerCode: string | undefined,
   senderDomain: string,
+  provider: EmailProviderId = "cloudflare",
 ): EmailRefusal {
+  const label = EMAIL_PROVIDER_LABELS[provider];
   const suffix = providerCode ? ` (${providerCode})` : "";
   switch (providerCode) {
     case "E_SENDER_NOT_VERIFIED":
@@ -492,7 +564,10 @@ export function emailProviderRefusal(
       return {
         status: 422,
         code: "email_sender_not_verified",
-        message: `Cloudflare Email Sending won't send from ${senderDomain}${suffix}: the domain must be onboarded in the gateway's Cloudflare account. Its operator runs: cf email-sending subdomains create -z ${senderDomain} --name ${senderDomain} (or Compute > Email Service > Email Sending > Onboard Domain in the dashboard).`,
+        message:
+          provider === "resend"
+            ? `Resend won't send from ${senderDomain}${suffix}: the domain must be verified in the gateway's Resend account. Its operator adds ${senderDomain} at https://resend.com/domains and publishes the DNS records Resend lists.`
+            : `Cloudflare Email Sending won't send from ${senderDomain}${suffix}: the domain must be onboarded in the gateway's Cloudflare account. Its operator runs: cf email-sending subdomains create -z ${senderDomain} --name ${senderDomain} (or Compute > Email Service > Email Sending > Onboard Domain in the dashboard).`,
       };
     case "E_RATE_LIMIT_EXCEEDED":
     case "E_DAILY_LIMIT_EXCEEDED":
@@ -500,20 +575,20 @@ export function emailProviderRefusal(
       return {
         status: 429,
         code: "email_provider_limited",
-        message: `Cloudflare Email Sending refused the message: the gateway's account has reached its sending limit${suffix}. Try again later.`,
+        message: `${label} refused the message: the gateway's account has reached its sending limit${suffix}. Try again later.`,
       };
     default:
       if (providerCode && INVALID_MESSAGE_CODES.has(providerCode)) {
         return {
           status: 400,
           code: "email_invalid_message",
-          message: `Cloudflare Email Sending refused the message as invalid${suffix}.`,
+          message: `${label} refused the message as invalid${suffix}.`,
         };
       }
       return {
         status: 502,
         code: "email_send_failed",
-        message: `Cloudflare Email Sending failed to send the message${suffix}.`,
+        message: `${label} failed to send the message${suffix}.`,
       };
   }
 }

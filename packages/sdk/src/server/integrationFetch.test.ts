@@ -280,6 +280,7 @@ describe("the email capability", () => {
       ready: true,
       sender: { address: "noreply@example.com", name: "Every App" },
       senders: ["*@mail.example.com"],
+      provider: "resend",
     };
     const bindingFetch = vi.fn(async () => Response.json(status));
     const result = await integrationStatus({
@@ -288,6 +289,9 @@ describe("the email capability", () => {
     });
     expect(result).toEqual(status);
     expectTypeOf(result.senders).toEqualTypeOf<string[]>();
+    expectTypeOf(result.provider).toEqualTypeOf<
+      "cloudflare" | "resend" | null
+    >();
     expect(bindingFetch).toHaveBeenCalledWith(
       "http://every-app-gateway.internal/api/integrations/email",
     );
@@ -308,6 +312,7 @@ describe("the email capability", () => {
       ready: false,
       sender: null,
       senders: [],
+      provider: null,
     });
   });
 
@@ -324,6 +329,7 @@ describe("the email capability", () => {
       ready: false,
       sender: null,
       senders: ["*@mail.example.com"],
+      provider: null,
     });
     await expect(
       integrationStatus({
@@ -336,7 +342,45 @@ describe("the email capability", () => {
       ready: true,
       sender: { address: "noreply@example.com", name: "Every App" },
       senders: ["*@mail.example.com"],
+      // Printed, not sent: no provider is set up.
+      provider: null,
     });
+  });
+
+  it("in local dev, names the provider the gateway would pick from .dev.vars", async () => {
+    const provider = async (settings: Record<string, string>) =>
+      (
+        await integrationStatus({
+          env: {
+            EVERYAPP_DEV: "1",
+            EMAIL_FROM: "Every App <noreply@example.com>",
+            ...settings,
+          },
+          provider: "email",
+        })
+      ).provider;
+    const rest = {
+      EMAIL_REST_API_TOKEN: "token",
+      CLOUDFLARE_ACCOUNT_ID: "account",
+    };
+    expect(await provider(rest)).toBe("cloudflare");
+    expect(await provider({ RESEND_API_KEY: "re_key" })).toBe("resend");
+    // Both: Cloudflare first, unless EMAIL_PROVIDER says otherwise.
+    expect(await provider({ ...rest, RESEND_API_KEY: "re_key" })).toBe(
+      "cloudflare",
+    );
+    expect(
+      await provider({
+        ...rest,
+        RESEND_API_KEY: "re_key",
+        EMAIL_PROVIDER: "Resend",
+      }),
+    ).toBe("resend");
+    // A choice that isn't set up, or isn't a provider, picks none.
+    expect(await provider({ ...rest, EMAIL_PROVIDER: "resend" })).toBeNull();
+    expect(await provider({ ...rest, EMAIL_PROVIDER: "sendgrid" })).toBeNull();
+    // Half the REST pair is no provider.
+    expect(await provider({ EMAIL_REST_API_TOKEN: "token" })).toBeNull();
   });
 });
 

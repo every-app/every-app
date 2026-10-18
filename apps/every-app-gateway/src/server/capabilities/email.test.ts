@@ -1,7 +1,7 @@
 /**
  * The `email` capability end to end through the AppGateway entrypoint, with
  * the gateway's real mail module (server/email/sendEmail.ts) on a fake
- * EMAIL binding and in-memory budget counters.
+ * EMAIL binding (or a mocked Resend API) and in-memory budget counters.
  */
 import { generateKeyPairSync } from "node:crypto";
 import {
@@ -20,6 +20,8 @@ const workerEnv = vi.hoisted(() => ({
   EMAIL: undefined as { send: ReturnType<typeof vi.fn> } | undefined,
   EMAIL_REST_API_TOKEN: undefined as string | undefined,
   CLOUDFLARE_ACCOUNT_ID: undefined as string | undefined,
+  RESEND_API_KEY: undefined as string | undefined,
+  EMAIL_PROVIDER: undefined as string | undefined,
   EMAIL_FROM: undefined as string | undefined,
   EMAIL_FROM_NAME: undefined as string | undefined,
 }));
@@ -75,6 +77,8 @@ beforeEach(() => {
   workerEnv.EMAIL = { send };
   workerEnv.EMAIL_REST_API_TOKEN = undefined;
   workerEnv.CLOUDFLARE_ACCOUNT_ID = undefined;
+  workerEnv.RESEND_API_KEY = undefined;
+  workerEnv.EMAIL_PROVIDER = undefined;
   workerEnv.EMAIL_FROM = "noreply@gateway.example.com";
   workerEnv.EMAIL_FROM_NAME = "Every App";
   log = vi.spyOn(console, "log").mockImplementation(() => undefined);
@@ -425,7 +429,17 @@ describe("POST /api/integrations/email/send", () => {
     const body = await expectRefusal(call(), 503, "integration_not_configured");
     expect(body["message"]).toContain("EMAIL_FROM");
     expect(body["message"]).toContain("EMAIL_FROM_NAME");
+    expect(body["message"]).toContain(
+      "Cloudflare Email Sending (the EMAIL binding, or EMAIL_REST_API_TOKEN with CLOUDFLARE_ACCOUNT_ID) or Resend (RESEND_API_KEY); EMAIL_PROVIDER picks one when both are set",
+    );
     expect(body["message"]).toContain("docs/runbooks/email-sending-setup.md");
+  });
+
+  it("refuses when EMAIL_PROVIDER picks a provider that isn't set up, sending nothing", async () => {
+    workerEnv.EMAIL_PROVIDER = "resend";
+    await expectRefusal(call(), 503, "integration_not_configured");
+    expect(send).not.toHaveBeenCalled();
+    expect(counters.size).toBe(0);
   });
 
   it("spends one per recipient, per address and for the gateway, and refuses with Retry-After once an address is spent", async () => {
@@ -582,6 +596,132 @@ describe("POST /api/integrations/email/send", () => {
   });
 });
 
+describe("app mail through Resend", () => {
+  const resendAnswer = (status: number, body: unknown) => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(Response.json(body, { status }));
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  };
+
+  beforeEach(() => {
+    workerEnv.RESEND_API_KEY = "re_test_key";
+  });
+
+  it("sends through Resend, not the binding, with the app's sender, cc and attachments", async () => {
+    const fetchMock = resendAnswer(200, { id: "resend-msg-1" });
+    const response = await call({
+      body: {
+        ...MESSAGE,
+        cc: "c@example.net",
+        from: { address: "support@mail.example.com", name: "Acme Support" },
+        attachments: [
+          {
+            filename: "invoice.pdf",
+            contentType: "application/pdf",
+            content: "JVBERi0xLjQK",
+          },
+        ],
+      },
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      messageId: "resend-msg-1",
+      status: "delivered",
+    });
+    expect(send).not.toHaveBeenCalled();
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.resend.com/emails");
+    expect(JSON.parse(init.body as string)).toEqual({
+      from: "Acme Support <support@mail.example.com>",
+      to: ["customer@example.net"],
+      cc: ["c@example.net"],
+      subject: MESSAGE.subject,
+      text: MESSAGE.text,
+      html: MESSAGE.html,
+      attachments: [
+        {
+          filename: "invoice.pdf",
+          content: "JVBERi0xLjQK",
+          content_type: "application/pdf",
+        },
+      ],
+    });
+    expect(mailLogs().at(-1)).toMatchObject({
+      status: "delivered",
+      sender: "app",
+    });
+  });
+
+  it.each([
+    [
+      403,
+      {
+        name: "validation_error",
+        message: "The mail.example.com domain is not verified.",
+      },
+      422,
+      "email_sender_not_verified",
+    ],
+    [
+      429,
+      {
+        name: "daily_quota_exceeded",
+        message: "You have exceeded your daily email sending quota.",
+      },
+      429,
+      "email_provider_limited",
+    ],
+    [
+      422,
+      { name: "invalid_attachment", message: "Attachment must have content." },
+      400,
+      "email_invalid_message",
+    ],
+    [
+      401,
+      { name: "missing_api_key", message: "Missing API Key" },
+      502,
+      "email_send_failed",
+    ],
+    [
+      500,
+      { name: "application_error", message: "An unexpected error occurred." },
+      502,
+      "email_send_failed",
+    ],
+  ])(
+    "refuses Resend's %i %o as %i %s, in Resend's words",
+    async (resendStatus, error, status, code) => {
+      resendAnswer(resendStatus, { statusCode: resendStatus, ...error });
+      const body = await expectRefusal(
+        call({ body: { ...MESSAGE, from: "support@mail.example.com" } }),
+        status,
+        code,
+      );
+      expect(body["message"]).toMatch(/^Resend /);
+      if (code === "email_sender_not_verified") {
+        expect(body["message"]).toContain(
+          "Its operator adds mail.example.com at https://resend.com/domains",
+        );
+      }
+      expect(mailLogs().at(-1)).toMatchObject({
+        status: "refused",
+        reason: code,
+      });
+    },
+  );
+
+  it("goes back to the binding when EMAIL_PROVIDER picks Cloudflare", async () => {
+    const fetchMock = resendAnswer(200, { id: "never" });
+    workerEnv.EMAIL_PROVIDER = "cloudflare";
+    expect((await call()).status).toBe(200);
+    expect(send).toHaveBeenCalledOnce();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
 describe("GET /api/integrations/email", () => {
   it("tells the app whether it can send, as whom, and which senders it may name", async () => {
     const response = await call({ path: STATUS });
@@ -592,8 +732,30 @@ describe("GET /api/integrations/email", () => {
       ready: true,
       sender: { address: "noreply@gateway.example.com", name: "Every App" },
       senders: ["*@mail.example.com", "ceo@example.com"],
+      provider: "cloudflare",
     });
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("names the provider the gateway sends with", async () => {
+    workerEnv.RESEND_API_KEY = "re_test_key";
+    await expect((await call({ path: STATUS })).json()).resolves.toMatchObject({
+      ready: true,
+      provider: "resend",
+    });
+    workerEnv.EMAIL_PROVIDER = "cloudflare";
+    await expect((await call({ path: STATUS })).json()).resolves.toMatchObject({
+      ready: true,
+      provider: "cloudflare",
+    });
+    // A choice that isn't a provider leaves the gateway unable to send.
+    workerEnv.EMAIL_PROVIDER = "sendgrid";
+    await expect((await call({ path: STATUS })).json()).resolves.toMatchObject({
+      configured: false,
+      ready: false,
+      sender: null,
+      provider: null,
+    });
   });
 
   it("says sending isn't set up when the gateway has no sender", async () => {
@@ -604,6 +766,7 @@ describe("GET /api/integrations/email", () => {
       ready: false,
       sender: null,
       senders: ["*@mail.example.com", "ceo@example.com"],
+      provider: null,
     });
   });
 
@@ -617,6 +780,7 @@ describe("GET /api/integrations/email", () => {
       ready: false,
       sender: null,
       senders: [],
+      provider: null,
     });
   });
 

@@ -50,7 +50,10 @@ const SETTABLE_GATEWAY_SECRETS = [
   "DRIBBBLE_CLIENT_ID",
   "DRIBBBLE_CLIENT_SECRET",
   "AI_PROXY_EXTRA_ROUTES",
+  // Email's providers: Cloudflare's REST token, Resend's key, the choice.
   "EMAIL_REST_API_TOKEN",
+  "RESEND_API_KEY",
+  "EMAIL_PROVIDER",
   "EMAIL_FROM",
   "EMAIL_FROM_NAME",
   "MCP_OAUTH_ENABLED",

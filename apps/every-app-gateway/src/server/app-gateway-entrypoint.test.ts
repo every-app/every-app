@@ -818,6 +818,9 @@ describe("AppGateway and the email capability", () => {
       mail: async () => ({
         isConfigured: () => true,
         sender: () => ({ address: "noreply@example.com", name: "Every App" }),
+        // TODO(integration): GatewayMail.provider() added by the
+        // email-providers lane (this file is outside its ownership list).
+        provider: () => "cloudflare" as const,
         send,
         recipientHash: async () => "0".repeat(32),
       }),

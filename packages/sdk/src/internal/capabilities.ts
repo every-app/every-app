@@ -179,9 +179,18 @@ export const CAPABILITIES = {
     access: ["write"],
     routes: { send: ["POST"] },
     settings: ["EMAIL_FROM", "EMAIL_FROM_NAME"],
-    // Set both and mail goes through Email Sending's REST API instead of
-    // the gateway's EMAIL binding (a gateway outside Workers, local dev).
-    optionalSettings: ["EMAIL_REST_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID"],
+    // The providers' settings (internal/email.ts chooseEmailProvider):
+    // Cloudflare's REST pair, sent instead of the gateway's EMAIL binding
+    // (a gateway outside Workers, local dev); Resend's key; and the choice
+    // between them when both are set.
+    // TODO(integration): RESEND_API_KEY and EMAIL_PROVIDER added by the
+    // email-providers lane (this file is outside its ownership list).
+    optionalSettings: [
+      "EMAIL_REST_API_TOKEN",
+      "CLOUDFLARE_ACCOUNT_ID",
+      "RESEND_API_KEY",
+      "EMAIL_PROVIDER",
+    ],
   },
   // Social networks' OAuth clients (docs/capabilities.md "OAuth clients"):
   // the gateway completes their token endpoints only. Postiz connects its

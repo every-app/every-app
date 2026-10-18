@@ -198,6 +198,8 @@ describe("the capability registry", () => {
       "EMAIL_FROM_NAME",
       "EMAIL_REST_API_TOKEN",
       "CLOUDFLARE_ACCOUNT_ID",
+      "RESEND_API_KEY",
+      "EMAIL_PROVIDER",
     ]);
     expect(capabilitySettings(CAPABILITIES.dataforseo)).toEqual([
       "DATAFORSEO_API_KEY",

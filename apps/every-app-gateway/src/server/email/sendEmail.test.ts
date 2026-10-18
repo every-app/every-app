@@ -6,6 +6,8 @@ const workerEnv = vi.hoisted(() => ({
   EMAIL: undefined as { send: ReturnType<typeof vi.fn> } | undefined,
   EMAIL_REST_API_TOKEN: undefined as string | undefined,
   CLOUDFLARE_ACCOUNT_ID: undefined as string | undefined,
+  RESEND_API_KEY: undefined as string | undefined,
+  EMAIL_PROVIDER: undefined as string | undefined,
   EMAIL_FROM: undefined as string | undefined,
   EMAIL_FROM_NAME: undefined as string | undefined,
 }));
@@ -35,7 +37,11 @@ vi.mock("@/server/repositories/RateLimitCounterRepository", () => ({
   },
 }));
 
-import { isEmailConfigured, sendEmail } from "./sendEmail";
+import {
+  configuredEmailProvider,
+  isEmailConfigured,
+  sendEmail,
+} from "./sendEmail";
 
 describe("sendEmail", () => {
   beforeEach(() => {
@@ -47,6 +53,8 @@ describe("sendEmail", () => {
     workerEnv.EMAIL = undefined;
     workerEnv.EMAIL_REST_API_TOKEN = undefined;
     workerEnv.CLOUDFLARE_ACCOUNT_ID = undefined;
+    workerEnv.RESEND_API_KEY = undefined;
+    workerEnv.EMAIL_PROVIDER = undefined;
     workerEnv.EMAIL_FROM = undefined;
     workerEnv.EMAIL_FROM_NAME = undefined;
   });
@@ -261,10 +269,11 @@ describe("sendEmail", () => {
     expect(consoleError).toHaveBeenCalledWith("Email delivery failed", {
       event: "email.send.failed",
       kind: "reset",
+      provider: undefined,
       code: "EMAIL_BINDING_UNAVAILABLE",
       providerCode: undefined,
       message:
-        "Email delivery is unavailable because the EMAIL send_email binding is not configured.",
+        "Email delivery is unavailable: no email provider is set up. Give the gateway one transport: Cloudflare Email Sending (the EMAIL binding, or EMAIL_REST_API_TOKEN with CLOUDFLARE_ACCOUNT_ID) or Resend (RESEND_API_KEY); EMAIL_PROVIDER picks one when both are set.",
     });
   });
 
@@ -297,10 +306,154 @@ describe("sendEmail", () => {
       "Email delivery failed",
       expect.objectContaining({
         event: "email.send.failed",
+        provider: "cloudflare",
         code: "EMAIL_SEND_FAILED",
         providerCode: "E_SENDER_NOT_VERIFIED",
       }),
     );
+  });
+});
+
+describe("sendEmail's provider", () => {
+  const bindingSend = vi.fn();
+  const mail = () =>
+    sendEmail({
+      kind: "invitation",
+      to: "user@example.net",
+      subject: "Invitation",
+      html: "<p>Join us</p>",
+      text: "Join us",
+    });
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    counters.values.clear();
+    counters.unreadable = false;
+    bindingSend.mockReset().mockResolvedValue({ messageId: "binding-1" });
+    workerEnv.GATEWAY_DEPLOYMENT_MODE = "self_hosted";
+    // Every gateway Worker declares the EMAIL binding.
+    workerEnv.EMAIL = { send: bindingSend };
+    workerEnv.EMAIL_REST_API_TOKEN = undefined;
+    workerEnv.CLOUDFLARE_ACCOUNT_ID = undefined;
+    workerEnv.RESEND_API_KEY = undefined;
+    workerEnv.EMAIL_PROVIDER = undefined;
+    workerEnv.EMAIL_FROM = "noreply@example.com";
+    workerEnv.EMAIL_FROM_NAME = "Every App";
+  });
+
+  it("sends through Resend once RESEND_API_KEY is set, the binding notwithstanding", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(Response.json({ id: "resend-1" }, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    workerEnv.RESEND_API_KEY = "re_key";
+
+    await expect(mail()).resolves.toEqual({
+      messageId: "resend-1",
+      status: "delivered",
+    });
+    expect(bindingSend).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.resend.com/emails",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const request = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(request.body as string)).toEqual({
+      from: "Every App <noreply@example.com>",
+      to: ["user@example.net"],
+      subject: "Invitation",
+      html: "<p>Join us</p>",
+      text: "Join us",
+    });
+    expect(configuredEmailProvider()).toBe("resend");
+  });
+
+  it("follows EMAIL_PROVIDER when both providers are set up", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    workerEnv.RESEND_API_KEY = "re_key";
+    workerEnv.EMAIL_PROVIDER = " Cloudflare ";
+
+    await expect(mail()).resolves.toEqual({
+      messageId: "binding-1",
+      status: "delivered",
+    });
+    expect(bindingSend).toHaveBeenCalledOnce();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(configuredEmailProvider()).toBe("cloudflare");
+  });
+
+  it("sends nothing, and spends no budget, when EMAIL_PROVIDER names a provider that isn't set up", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    workerEnv.EMAIL_PROVIDER = "resend";
+
+    await expect(mail()).rejects.toMatchObject({
+      code: "EMAIL_BINDING_UNAVAILABLE",
+      message:
+        "Email delivery is unavailable: EMAIL_PROVIDER picks Resend, which isn't set up on this gateway. Set RESEND_API_KEY.",
+    });
+    expect(bindingSend).not.toHaveBeenCalled();
+    expect(counters.values.size).toBe(0);
+    expect(consoleError).toHaveBeenCalledWith(
+      "Email delivery failed",
+      expect.objectContaining({ code: "EMAIL_BINDING_UNAVAILABLE" }),
+    );
+    expect(isEmailConfigured()).toBe(false);
+    expect(configuredEmailProvider()).toBeNull();
+  });
+
+  it("sends nothing when EMAIL_PROVIDER isn't a provider", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    workerEnv.EMAIL_PROVIDER = "sendgrid";
+
+    await expect(mail()).rejects.toMatchObject({
+      code: "EMAIL_BINDING_UNAVAILABLE",
+      message: expect.stringContaining(
+        'EMAIL_PROVIDER is "sendgrid", which isn\'t an email provider. Set it to cloudflare or resend',
+      ),
+    });
+    expect(bindingSend).not.toHaveBeenCalled();
+    expect(isEmailConfigured()).toBe(false);
+  });
+
+  it("logs which provider refused, and Resend's mapped code", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        Response.json(
+          {
+            statusCode: 403,
+            name: "validation_error",
+            message:
+              "The example.com domain is not verified. Please, add and verify your domain on https://resend.com/domains",
+          },
+          { status: 403 },
+        ),
+      ),
+    );
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    workerEnv.RESEND_API_KEY = "re_key";
+
+    await expect(mail()).rejects.toMatchObject({
+      code: "EMAIL_SEND_FAILED",
+      provider: "resend",
+      providerCode: "E_SENDER_NOT_VERIFIED",
+    });
+    expect(consoleError).toHaveBeenCalledWith(
+      "Email delivery failed",
+      expect.objectContaining({
+        provider: "resend",
+        code: "EMAIL_SEND_FAILED",
+        providerCode: "E_SENDER_NOT_VERIFIED",
+      }),
+    );
+    // A send the provider refuses still counts against the budgets.
+    expect(counters.values.size).toBe(2);
   });
 });
 
@@ -335,6 +488,8 @@ describe("sendEmail for apps", () => {
     workerEnv.EMAIL = { send };
     workerEnv.EMAIL_REST_API_TOKEN = undefined;
     workerEnv.CLOUDFLARE_ACCOUNT_ID = undefined;
+    workerEnv.RESEND_API_KEY = undefined;
+    workerEnv.EMAIL_PROVIDER = undefined;
     workerEnv.EMAIL_FROM = "noreply@example.com";
     workerEnv.EMAIL_FROM_NAME = "Every App";
   });
@@ -443,6 +598,8 @@ describe("sendEmail's daily budgets", () => {
     workerEnv.EMAIL = { send };
     workerEnv.EMAIL_REST_API_TOKEN = undefined;
     workerEnv.CLOUDFLARE_ACCOUNT_ID = undefined;
+    workerEnv.RESEND_API_KEY = undefined;
+    workerEnv.EMAIL_PROVIDER = undefined;
     workerEnv.EMAIL_FROM = "noreply@example.com";
     workerEnv.EMAIL_FROM_NAME = "Every App";
     vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -536,6 +693,8 @@ describe("isEmailConfigured", () => {
     workerEnv.EMAIL = undefined;
     workerEnv.EMAIL_REST_API_TOKEN = undefined;
     workerEnv.CLOUDFLARE_ACCOUNT_ID = undefined;
+    workerEnv.RESEND_API_KEY = undefined;
+    workerEnv.EMAIL_PROVIDER = undefined;
     workerEnv.EMAIL_FROM = undefined;
     workerEnv.EMAIL_FROM_NAME = undefined;
   });
@@ -559,5 +718,13 @@ describe("isEmailConfigured", () => {
     workerEnv.EMAIL_REST_API_TOKEN = "token";
     workerEnv.CLOUDFLARE_ACCOUNT_ID = "account";
     expect(isEmailConfigured()).toBe(true);
+  });
+
+  it("is true with a sender and Resend's key alone", () => {
+    workerEnv.RESEND_API_KEY = "re_key";
+    expect(isEmailConfigured()).toBe(false);
+    workerEnv.EMAIL_FROM = "Every App <noreply@example.com>";
+    expect(isEmailConfigured()).toBe(true);
+    expect(configuredEmailProvider()).toBe("resend");
   });
 });

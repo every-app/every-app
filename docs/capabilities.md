@@ -43,7 +43,7 @@ to the gateway under `/api/integrations/<id>/...`, and answer
 | -------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------- | ------------------------------- |
 | `api_key`      | `dataforseo`, `context`                               | puts its key on calls to the provider's own hosts, with the methods it reads with | `integrationFetch({ env, provider, for })` on the provider's real URLs                   | `read`  |                                 |
 | `oauth_client` | 16 social networks ([OAuth clients](#oauth-clients))  | completes the network's token endpoints only, putting its client on the request   | `integrationFetch` on the token endpoint; the authorize URL from the status's `clientId` | `write` | `clientId` (Mastodon: `origin`) |
-| `service`      | `email` ([Gateway services](#gateway-services-email)) | does the work itself: sends the mail from its sender, within its budgets          | `sendEmail({ env, for, message })`, which posts to `/api/integrations/email/send`        | `write` | `sender`, `senders`             |
+| `service`      | `email` ([Gateway services](#gateway-services-email)) | does the work itself: sends the mail from its sender, within its budgets          | `sendEmail({ env, for, message })`, which posts to `/api/integrations/email/send`        | `write` | `sender`, `senders`, `provider` |
 
 Every status answers `{ capability, requested, configured, ready }`;
 `configured` is false for an app that doesn't list the capability, so no app
@@ -78,7 +78,7 @@ Everything the gateway holds for apps, in one table:
 | the AI proxy's extra routes | AI provider setting | `AI_PROXY_EXTRA_ROUTES` (optional; OpenAI only, e.g. `/v1/files`)                                                          | `AI_PROXY_EXTRA_ROUTES`                                                                                        |                                                      |
 | `dataforseo`                | `api_key`           | `DATAFORSEO_API_KEY` (`login:password`, or its base64)                                                                     | `DATAFORSEO_API_KEY`                                                                                           | OpenSEO                                              |
 | `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
-| `email`                     | `service`           | `EMAIL_FROM`, `EMAIL_FROM_NAME`; a gateway outside Workers also `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`            | `EMAIL_FROM EMAIL_FROM_NAME`, after onboarding the sending domain ([runbook](runbooks/email-sending-setup.md)) | Postiz, agentic-inbox, and the gateway's own mail    |
+| `email`                     | `service`           | `EMAIL_FROM`, `EMAIL_FROM_NAME`, and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)) | Postiz, agentic-inbox, and the gateway's own mail    |
 | 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | Postiz                                               |
 
 X is not in the table: OAuth 1.0a signs every API call with the user's token
@@ -395,20 +395,27 @@ The authorize page each client sends people to, and the scopes the app asks for 
 ## Gateway services: email
 
 `email` is a capability the gateway performs itself: apps send mail through
-the gateway's own sender and transport (its `EMAIL` binding, or Email
-Sending's REST API on a gateway outside Workers), within its daily budgets.
-One sending domain onboarded per gateway serves every app, and every message
+the gateway's own sender and provider, within its daily budgets. The
+provider is the operator's, one per gateway: Cloudflare Email Sending (its
+`EMAIL` binding, or the REST API on a gateway outside Workers) or Resend.
+One sending domain set up per gateway serves every app, and every message
 is attributed and logged. Apps get no `send-email` binding (the deploy
 refuses one); they call `sendEmail()`.
 
 | Capability | Gateway settings                                                                   | Route                               | Access  |
 | ---------- | ---------------------------------------------------------------------------------- | ----------------------------------- | ------- |
-| `email`    | `EMAIL_FROM`, `EMAIL_FROM_NAME` (REST: `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) | `POST /api/integrations/email/send` | `write` |
+| `email`    | `EMAIL_FROM`, `EMAIL_FROM_NAME`; Cloudflare: the `EMAIL` binding, or `EMAIL_REST_API_TOKEN` with `CLOUDFLARE_ACCOUNT_ID`; Resend: `RESEND_API_KEY`; `EMAIL_PROVIDER` (`cloudflare` or `resend`) when both are set | `POST /api/integrations/email/send` | `write` |
+
+Without `EMAIL_PROVIDER` the gateway picks Cloudflare when its REST pair is
+set, else Resend when `RESEND_API_KEY` is, else Cloudflare's `EMAIL`
+binding; an `EMAIL_PROVIDER` that isn't a provider, or isn't set up,
+leaves the gateway unable to send.
 
 The operator's side is the email runbook
 ([docs/runbooks/email-sending-setup.md](runbooks/email-sending-setup.md)):
-onboard the gateway's sending domain, then set the sender. The gateway's own
-invitation and password-reset mail uses the same setup.
+set up the gateway's sending domain with its provider, then set the sender.
+The gateway's own invitation and password-reset mail uses the same setup
+and the same provider.
 
 An app lists it, with the addresses it may send as:
 
@@ -462,19 +469,21 @@ as sent, attachments included):
 | `attachments` | `[{ filename, contentType, content (base64), disposition?: "attachment" \| "inline", contentId? }]` | 32 at most; an inline one needs a `contentId` (`cid:` in the HTML) |
 
 Unknown fields are refused. The answer is `200 { messageId?, status }`:
-`delivered` (Email Sending accepted it) or `queued` (the REST transport will
-retry some recipients). In local dev the SDK answers `logged` (below).
+`delivered` (the provider accepted it) or `queued` (Cloudflare's REST
+transport will retry some recipients). In local dev the SDK answers
+`logged` (below).
 
 **The sender rule.** Without `from`, the message goes out as `EMAIL_FROM`
 (with `EMAIL_FROM_NAME`). With one, the address must match a pattern in the
 deployed manifest's `capabilities.email.senders`: `*@<domain>` takes any
 address on exactly that domain (not its subdomains), anything else that one
 address; patterns are lowercase, unique, 20 at most, and `everyapp deploy`
-checks them. Each domain an app sends from must also be onboarded to Email
-Sending in the gateway's Cloudflare account (on Cloudflare DNS), or the
+checks them. Each domain an app sends from must also be set up with the
+gateway's provider, onboarded to Email Sending in the gateway's Cloudflare
+account (on Cloudflare DNS) or verified in its Resend account, or the
 provider refuses it: `email_sender_not_verified`, whose message names the
-onboarding command. A hosted gateway sends app mail from its own sender
-only, for now: any `from` is refused.
+step. A hosted gateway sends app mail from its own sender only, for now:
+any `from` is refused.
 
 **Budgets.** App mail (`app` kind) counts against daily budgets in
 `rate_limit_counters`, once for each distinct recipient, before it is sent:
@@ -493,14 +502,14 @@ any of whose recipients has had its share is refused whole, with
 | `caller_*`                       | 401/403 | the AppGateway entrypoint's attribution (a shared app's Worker names the organization)      |
 | `integration_read_only`          | 403    | an agent's identity (`chan: "mcp"`) without `mcp:write`                                      |
 | `email_message_too_large`        | 413    | the body passes 5 MiB, counted as it streams                                                 |
-| `email_invalid_message`          | 400    | the message breaks a rule above, or Email Sending refuses it as malformed                    |
+| `email_invalid_message`          | 400    | the message breaks a rule above, or the provider refuses it as malformed (Resend: other 400s and 422s) |
 | `email_sender_not_allowed`       | 403    | `from` matches no `senders` pattern, or the gateway is hosted                                |
-| `integration_not_configured`     | 503    | the gateway has no sender or transport; the message names `EMAIL_FROM`, `EMAIL_FROM_NAME` and the runbook |
+| `integration_not_configured`     | 503    | the gateway has no sender or provider (or `EMAIL_PROVIDER` names one that isn't set up); the message names the settings and the runbook |
 | `email_budget_exhausted`         | 429    | a recipient or the gateway has had its day's app mail (`Retry-After`)                        |
 | `email_budget_unavailable`       | 503    | the budget couldn't be read or written, so nothing was sent                                  |
-| `email_sender_not_verified`      | 422    | Email Sending: the sender's domain isn't onboarded (`E_SENDER_NOT_VERIFIED`, `E_SENDER_DOMAIN_NOT_AVAILABLE`) |
-| `email_provider_limited`         | 429    | Email Sending: the account's rate or daily limit (`E_RATE_LIMIT_EXCEEDED`, `E_DAILY_LIMIT_EXCEEDED`) |
-| `email_send_failed`              | 502    | anything else Email Sending answered                                                         |
+| `email_sender_not_verified`      | 422    | the sender's domain isn't set up: Email Sending's `E_SENDER_NOT_VERIFIED`, `E_SENDER_DOMAIN_NOT_AVAILABLE`; Resend's 403 naming the domain |
+| `email_provider_limited`         | 429    | the account's rate or daily limit: Email Sending's `E_RATE_LIMIT_EXCEEDED`, `E_DAILY_LIMIT_EXCEEDED`; Resend's 429 (`rate_limit_exceeded`, `daily_quota_exceeded`, `monthly_quota_exceeded`) |
+| `email_send_failed`              | 502    | anything else the provider answered (Resend: a refused API key too)                          |
 
 Every send is logged as `email.app.send` with the organization, app,
 Worker, number of recipients, an HMAC of the first recipient, whether the
@@ -509,11 +518,12 @@ reason) and the attribution; never the subject, the bodies, the
 attachments or an address.
 
 `GET /api/integrations/email` (`integrationStatus({ env, provider: "email" })`)
-answers `{ capability, requested, configured, ready, sender, senders }`
+answers `{ capability, requested, configured, ready, sender, senders, provider }`
 without sending: `sender` is the From a message without `from` gets (null
 unless configured), `senders` the patterns the gateway accepts from this
-app (empty on a hosted gateway). An app shows "sending isn't set up" from
-`ready`, and offers only addresses `senders` allows.
+app (empty on a hosted gateway), `provider` the one mail goes out with
+(`cloudflare` or `resend`; null unless configured). An app shows "sending
+isn't set up" from `ready`, and offers only addresses `senders` allows.
 
 **Local dev.** With no gateway, `sendEmail()` checks the message and the
 sender the same way (the manifest's `senders` reach the Worker in dev as
@@ -522,7 +532,9 @@ sender the same way (the manifest's `senders` reach the Worker in dev as
 `{ status: "logged", messageId: "dev-<uuid>" }`. With
 `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `EMAIL_FROM` in
 `.dev.vars` it really sends, through Email Sending's REST API from the
-developer's own account.
+developer's own account. The dev status's `provider` is the one the gateway
+would pick from the same `.dev.vars` (`RESEND_API_KEY` and `EMAIL_PROVIDER`
+count), though only Cloudflare's REST API sends from dev for now.
 
 **Inbound mail** is not a capability: the app exports an `email()` handler
 beside `everyApp()`'s `fetch` and lists its addresses in the manifest,

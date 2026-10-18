@@ -121,6 +121,16 @@ async function main() {
     process.env.CLOUDFLARE_ACCOUNT_ID,
     localEnv.CLOUDFLARE_ACCOUNT_ID,
   );
+  // TODO(integration): Resend's key and EMAIL_PROVIDER kept across restarts
+  // by the email-providers lane (this file is outside its ownership list).
+  const resendApiKey = firstNonEmpty(
+    process.env.RESEND_API_KEY,
+    localEnv.RESEND_API_KEY,
+  );
+  const emailProvider = firstNonEmpty(
+    process.env.EMAIL_PROVIDER,
+    localEnv.EMAIL_PROVIDER,
+  );
   const emailFrom = firstNonEmpty(process.env.EMAIL_FROM, localEnv.EMAIL_FROM);
   const emailFromName = firstNonEmpty(
     process.env.EMAIL_FROM_NAME,
@@ -134,6 +144,8 @@ async function main() {
   process.env.OPENAI_API_KEY = openAiApiKey;
   process.env.EMAIL_REST_API_TOKEN = emailRestApiToken;
   process.env.CLOUDFLARE_ACCOUNT_ID = cloudflareAccountId;
+  process.env.RESEND_API_KEY = resendApiKey;
+  process.env.EMAIL_PROVIDER = emailProvider;
   process.env.EMAIL_FROM = emailFrom;
   process.env.EMAIL_FROM_NAME = emailFromName;
 
@@ -145,6 +157,8 @@ async function main() {
     "OPENAI_API_KEY",
     "EMAIL_REST_API_TOKEN",
     "CLOUDFLARE_ACCOUNT_ID",
+    "RESEND_API_KEY",
+    "EMAIL_PROVIDER",
     "EMAIL_FROM",
     "EMAIL_FROM_NAME",
   ]);
