@@ -28,10 +28,14 @@ describe("patchWorkerSecrets", () => {
     const call = account.cf.calls.find((c) => c.args.includes("bulk"))!;
     expect(call.args).not.toContain("new");
     expect(call.args).not.toContain("d");
+    expect(call.args).not.toContain("--file");
+    expect(call.args[call.args.indexOf("--body") + 1]).toMatch(/^@.*secrets\.json$/);
     expect(JSON.parse(call.files["secrets.json"]!)).toEqual({
-      GITHUB_TOKEN: { type: "secret_text", text: "new" },
-      DATAFORSEO_API_KEY: { type: "secret_text", text: "d" },
-      OPENAI_API_KEY: null,
+      secrets: {
+        GITHUB_TOKEN: { name: "GITHUB_TOKEN", type: "secret_text", text: "new" },
+        DATAFORSEO_API_KEY: { name: "DATAFORSEO_API_KEY", type: "secret_text", text: "d" },
+        OPENAI_API_KEY: null,
+      },
     });
     await expect(listWorkerSecrets(account.cf, "every-acme-todo")).resolves.toEqual([
       "DATAFORSEO_API_KEY",

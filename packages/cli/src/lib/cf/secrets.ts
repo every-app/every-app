@@ -54,20 +54,26 @@ export async function deleteWorkerSecret(
 
 /**
  * Set or remove several of the Worker's secrets in one new version
- * (`cf workers secrets bulk`, a JSON merge patch: a string sets, null
- * removes). The body travels in a private temp file, never on argv.
+ * (`cf workers secrets bulk`). The API takes a JSON merge patch under
+ * `secrets`: a secret object (with its own `name`) sets, null removes, and
+ * a body of any other shape is a patch of nothing, which makes a version
+ * with no change. It travels in a private temp file cf reads as JSON
+ * (`--body @<file>`, never `--file`, which uploads an octet stream the API
+ * takes the same way), so a value is never on argv.
  */
 export async function patchWorkerSecrets(
   cf: CfRunner,
   workerName: string,
   changes: Readonly<Record<string, string | null>>,
 ): Promise<void> {
-  const body = Object.fromEntries(
-    Object.entries(changes).map(([name, value]) => [
-      name,
-      value === null ? null : { type: "secret_text", text: value },
-    ]),
-  );
+  const body = {
+    secrets: Object.fromEntries(
+      Object.entries(changes).map(([name, value]) => [
+        name,
+        value === null ? null : { name, type: "secret_text", text: value },
+      ]),
+    ),
+  };
   await cf.run({
     plane: "account",
     mode: "json",
@@ -78,8 +84,8 @@ export async function patchWorkerSecrets(
       "bulk",
       "--worker",
       workerName,
-      "--file",
-      files["secrets.json"]!,
+      "--body",
+      `@${files["secrets.json"]!}`,
     ],
   });
 }

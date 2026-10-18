@@ -416,15 +416,21 @@ export class FakeCloudflare {
         if (!worker) {
           return cfError("This Worker does not exist on your account. [code: 10007]");
         }
-        const file = flag(call.args, "--file")!;
-        const patch = JSON.parse(call.files[path.basename(file)]!) as Record<
-          string,
-          { type: string; text: string } | null
-        >;
+        // Like the API: the patch is read as JSON only from `--body @<file>`
+        // (`--file` uploads an octet stream), under `secrets`, each entry
+        // naming itself; anything else is a patch of nothing.
+        const body = flag(call.args, "--body") ?? "";
+        const patch = body.startsWith("@")
+          ? (JSON.parse(call.files[path.basename(body.slice(1))]!) as {
+              secrets?: Record<string, { name: string; type: string; text: string } | null>;
+            })
+          : {};
         const secrets = { ...worker.secrets };
-        for (const [name, change] of Object.entries(patch)) {
+        for (const [name, change] of Object.entries(patch.secrets ?? {})) {
           if (change === null) delete secrets[name];
-          else secrets[name] = change.text;
+          else if (change.name === name && change.type === "secret_text") {
+            secrets[name] = change.text;
+          }
         }
         this.workers.set(workerName, {
           ...worker,
