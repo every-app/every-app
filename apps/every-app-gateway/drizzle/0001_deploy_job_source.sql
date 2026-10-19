@@ -1,0 +1,1 @@
+ALTER TABLE `deploy_jobs` ADD `source` text;

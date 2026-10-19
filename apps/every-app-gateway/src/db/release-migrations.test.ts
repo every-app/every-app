@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -11,7 +12,18 @@ import { describe, expect, it } from "vitest";
  *
  * Every migration is checked, the generated baseline included (it only
  * creates).
+ *
+ * A migration a live gateway has applied is frozen: `setup` tracks applied
+ * migrations by file name in D1's `d1_migrations` table, so renaming or
+ * regenerating one makes setup replay it from the top ("table `accounts`
+ * already exists"). Schema changes append a new file; when one ships to
+ * everyapp.team, add it to SHIPPED_MIGRATIONS.
  */
+const SHIPPED_MIGRATIONS: Record<string, string> = {
+  // everyapp.team, release 0.2.0 (31a85593, 2026-10-16)
+  "0000_lyrical_wild_child.sql":
+    "80937eb7b5570112ac24ad01a178491f42c4fb2f9126411ca44ce2a38e562ecf",
+};
 const FIRST_CHECKED_MIGRATION = 0;
 const MIGRATIONS_DIR = fileURLToPath(new URL("../../drizzle", import.meta.url));
 const CONTRACTING = /\bDROP\s+(TABLE|COLUMN)\b|\bRENAME\b/i;
@@ -28,6 +40,21 @@ describe("gateway migrations", () => {
     .readdirSync(MIGRATIONS_DIR)
     .filter((file) => file.endsWith(".sql"))
     .filter((file) => Number.parseInt(file, 10) >= FIRST_CHECKED_MIGRATION);
+
+  it.each(Object.entries(SHIPPED_MIGRATIONS))(
+    "%s is unchanged since it shipped",
+    (file, sha256) => {
+      const path = `${MIGRATIONS_DIR}/${file}`;
+      expect(
+        fs.existsSync(path),
+        `${file} was applied to a live gateway: keep it and append a new migration instead`,
+      ).toBe(true);
+      expect(
+        createHash("sha256").update(fs.readFileSync(path)).digest("hex"),
+        `${file} was applied to a live gateway: revert the edit and append a new migration instead`,
+      ).toBe(sha256);
+    },
+  );
 
   it.each(checked)("%s only expands the schema", (file) => {
     const sql = fs.readFileSync(`${MIGRATIONS_DIR}/${file}`, "utf8");
