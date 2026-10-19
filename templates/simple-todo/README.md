@@ -57,6 +57,7 @@ pnpm run deploy
 ```
 
 Deploy only with `pnpm run deploy` (`everyapp deploy`). A production build
-needs deploy inputs that only `everyapp deploy` provides, so `cf build` and
-`cf deploy` on their own refuse to build for production. `pnpm build` makes a
+holds placeholders for the Worker's name, keys and resources that only
+`everyapp deploy` installs, so `cf build` and `cf deploy` on their own refuse
+to build for production. `pnpm build` makes a
 development build to check that the app compiles.

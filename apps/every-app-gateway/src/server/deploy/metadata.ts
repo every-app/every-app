@@ -1,10 +1,12 @@
 /**
  * What a third-party app's Worker is allowed to be, and the upload
  * metadata the deployer sends for it: built from the app's manifest and its
- * registry row, never from what the bundle says. The bundle is built with
- * the sentinel deploy inputs (HOSTED_DEPLOY_SENTINEL), so every binding it
- * declares is a placeholder; the deployer REWRITES each binding it allows
- * and REFUSES the bundle when it declares any other:
+ * registry row, never from what the bundle says. Every app build is
+ * tenant-neutral (BUILD_SENTINEL, @every-app/sdk/cloudflare/sentinel), so
+ * every binding it declares is a placeholder (Worker name, organization,
+ * gateway URL and issuer, identity key, resource ids); the deployer
+ * REWRITES each binding it allows and REFUSES the bundle when it declares
+ * any other:
  *
  *   allowed, rewritten         the app's id, audience (its Worker name),
  *                              identity keys and issuer, organization and
@@ -28,9 +30,9 @@
  */
 import {
   GATEWAY_WORKER_NAME,
-  HOSTED_DEPLOY_SENTINEL,
   type Manifest,
 } from "@every-app/perimeter/manifest";
+import { BUILD_SENTINEL } from "@every-app/sdk/cloudflare/sentinel";
 import type {
   WorkerAssetsConfig,
   WorkerBinding,
@@ -157,9 +159,9 @@ export function bundleProblems(
 ): string[] {
   const built = config(worker);
   const problems = manifestProblems(manifest, limits);
-  if (built.name !== HOSTED_DEPLOY_SENTINEL.workerName) {
+  if (built.name !== BUILD_SENTINEL.workerName) {
     problems.push(
-      `its Worker is named "${String(built.name)}": a deploy through the gateway builds with the hosted sentinel inputs (everyapp deploy --gateway)`,
+      `its Worker is named "${String(built.name)}": a deploy through the gateway uploads the tenant-neutral build, uninstalled (everyapp deploy --gateway)`,
     );
   }
   for (const key of Object.keys(worker)) {

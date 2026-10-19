@@ -119,10 +119,10 @@ the real worker entry on SQLite with the launch gate open, and the CLI's
 fake Cloudflare (`packages/cli/src/test/fakeCloudflare.ts`, loaded by path)
 behind the deployer's REST calls and the gateway's `DISPATCHER` binding
 (`FakeCloudflare.dispatcher()`): an owner's deploy key registers and
-deploys an app built with everyAppWorker() from the sentinel deploy
-inputs; the registry row is `dispatch`, the app's D1 is created and
-migrated, the namespaced Worker's bindings are the deployer's own (none
-of the sentinel values left) and read back, and a request to its host
+deploys an app built with everyAppWorker() (the tenant-neutral build,
+placeholders throughout); the registry row is `dispatch`, the app's D1 is
+created and migrated, the namespaced Worker's bindings are the deployer's
+own (none of the placeholders left) and read back, and a request to its host
 dispatches through getAppFetcher with the Worker's audience. It refuses
 without the gate (and on a self-hosted gateway), a member's key, an access
 token, a key holding any scope beside `deploy`, another organization, a

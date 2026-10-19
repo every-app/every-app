@@ -1,5 +1,6 @@
 /**
- * What an app's built Workers may be, checked on its Build Output before
+ * What an app's built Workers may be, checked on its Build Output (once
+ * installed for the deploy, ./installBuildOutput.ts) before
  * `cf deploy --prebuilt` uploads them. An app's cloudflare.config.ts is the
  * app author's code; this keeps it from shipping a Worker the gateway's
  * model doesn't allow: public on workers.dev or a domain of its own,
@@ -23,7 +24,7 @@ import {
   listSourceMaps,
   validateWorkerConfig,
 } from "@/lib/gateway/patchBuildOutput";
-import type { DeployInputs } from "./deployInputs";
+import type { InstallTarget } from "./installBuildOutput";
 
 const OUTPUT_DIR = path.join(".cloudflare", "output", "v0");
 const WORKERS_DIR = path.join(OUTPUT_DIR, "workers");
@@ -85,12 +86,9 @@ interface BuiltWorkerConfig extends Record<string, unknown> {
 }
 
 type PolicyInputs = Pick<
-  DeployInputs,
-  "workerName" | "resources" | "deletedDurableObjects"
-> & {
-  /** The app's helper Workers, by full name (`<app worker>--<name>`). */
-  helperWorkers?: readonly string[];
-};
+  InstallTarget,
+  "workerName" | "resources" | "deletedDurableObjects" | "helperWorkers"
+>;
 
 /** Everything wrong with the app's built Worker, as sentences; empty when it's fine. */
 export function appPolicyProblems(

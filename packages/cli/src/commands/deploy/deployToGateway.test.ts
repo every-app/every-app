@@ -3,14 +3,14 @@
  * double of the hosted gateway's deploy API (the API itself is tested end
  * to end in apps/every-app-gateway/src/server/deploy/): the app is built
  * by the fake Cloudflare's `cf build` with the SDK's real everyAppWorker()
- * from the sentinel deploy inputs, and the double reads the multipart
+ * tenant-neutral (the SDK's placeholders), and the double reads the multipart
  * upload the CLI sends.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { HOSTED_DEPLOY_SENTINEL } from "@every-app/perimeter/manifest";
+import { BUILD_SENTINEL, resourceSentinel } from "@every-app/sdk/cloudflare";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { createNdjsonSink } from "@/lib/output/events";
 import { FakeCloudflare } from "@/test/fakeCloudflare";
@@ -130,7 +130,7 @@ afterEach(() => {
 });
 
 describe("everyapp deploy --gateway (hosted deploy API)", () => {
-  it("registers, builds with the sentinel inputs, uploads and follows the job", async () => {
+  it("registers, builds tenant-neutral, uploads uninstalled and follows the job", async () => {
     const result = await run();
     expect(result).toEqual({
       liveUrl: "https://todo-acme.everyapp.dev",
@@ -148,23 +148,22 @@ describe("everyapp deploy --gateway (hosted deploy API)", () => {
     expect(gateway.requests.every((r) => r.authorization === `Bearer ${TOKEN}`)).toBe(true);
     expect(gateway.registered).toEqual({ appId: "todo", manifest: TODO });
 
-    // Placeholders only, for the deployer to rewrite.
+    // Placeholders only, for the deployer to install.
     const worker = JSON.parse(await part("worker"));
-    expect(worker.name).toBe(HOSTED_DEPLOY_SENTINEL.workerName);
-    expect(worker.env.EVERYAPP_AUDIENCE.value).toBe(HOSTED_DEPLOY_SENTINEL.workerName);
+    expect(worker.name).toBe(BUILD_SENTINEL.workerName);
+    expect(worker.env.EVERYAPP_AUDIENCE.value).toBe(BUILD_SENTINEL.workerName);
+    expect(worker.env.EVERYAPP_IDENTITY_ISSUER.value).toBe(BUILD_SENTINEL.gatewayUrl);
     expect(worker.env.EVERY_APP_GATEWAY.props).toEqual({
-      organizationId: HOSTED_DEPLOY_SENTINEL.organizationId,
+      organizationId: BUILD_SENTINEL.organizationId,
       appId: "todo",
-      workerName: HOSTED_DEPLOY_SENTINEL.workerName,
+      workerName: BUILD_SENTINEL.workerName,
     });
-    expect(worker.env.DB.id).toBe(HOSTED_DEPLOY_SENTINEL.d1Id);
+    expect(worker.env.DB).toEqual({ type: "d1", name: resourceSentinel("DB"), id: resourceSentinel("DB") });
     expect(JSON.parse(await part("manifest"))).toEqual(TODO);
     expect(JSON.parse(await part("stamp"))).toMatchObject({ protocol: 1, cliVersion: expect.any(String) });
     expect(await part("module:index.js")).toBe("export {}");
     expect(await part("module:assets/x.js.map")).toBe("{}");
     expect(await part("migration:0000_init.sql")).toContain("CREATE TABLE todos");
-    // The build's inputs never outlive it.
-    expect(fs.existsSync(path.join(appDir, ".everyapp", "deploy.json"))).toBe(false);
     expect(events.find((e) => e["step"] === "app.register")?.["data"]).toMatchObject({
       workerName: "every-acme-todo",
       organizationId: "org-acme",

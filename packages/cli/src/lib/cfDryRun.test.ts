@@ -1,7 +1,8 @@
 /**
  * `cf deploy --prebuilt --dry-run` with the real cf, of what everyapp
  * deploys: the gateway release, patched as for an install, and the starter
- * template, built with deploy inputs and checked against the app policy.
+ * template, built tenant-neutral, installed and checked against the app
+ * policy.
  * A dry run reads the Build Output and prints its bindings without any
  * Cloudflare account, credentials or network, so a cf or Vite plugin bump
  * that changes the Build Output fails here instead of in a live deploy.
@@ -15,6 +16,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildApp } from "@/lib/app/buildApp";
+import { installAppBuildOutput } from "@/lib/app/installBuildOutput";
 import { prepareAppBuildOutput } from "@/lib/app/policy";
 import { cfDeploy } from "@/lib/cf/deploy";
 import { makeCfTempDir } from "@/lib/cf/privateDir";
@@ -87,13 +89,12 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
       }
     });
 
-    it("takes the starter template, built with deploy inputs", async () => {
+    it("takes the starter template, built and installed", async () => {
       const cf = createCfRunner({ accountId: ACCOUNT_ID });
       const inputs = {
         workerName: "every-acme-simple-todo",
         organizationId: "org-1",
         gatewayUrl: "https://apps.example.com",
-        identityIssuer: "https://apps.example.com",
         identityPublicKeys: [PUBLIC_KEY],
         resources: {
           d1: {
@@ -106,7 +107,8 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
         },
       };
 
-      await buildApp({ cwd: TEMPLATE, cf, inputs, env: {}, verbose: false });
+      await buildApp({ cwd: TEMPLATE, cf, verbose: false });
+      await installAppBuildOutput({ cwd: TEMPLATE, target: inputs });
       await prepareAppBuildOutput({ cwd: TEMPLATE, inputs });
       const { output } = await cfDeploy({
         cf,
@@ -127,7 +129,7 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
       ]) {
         expect(output).toContain(binding);
       }
-      expect(fs.existsSync(path.join(TEMPLATE, ".everyapp", "deploy.json"))).toBe(false);
+      expect(output).not.toContain("sentinel");
     });
   },
 );

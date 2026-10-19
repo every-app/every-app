@@ -17,6 +17,10 @@
       "types": "./dist/cloudflare/index.d.ts",
       "default": "./dist/cloudflare/index.js"
     },
+    "./cloudflare/sentinel": {
+      "types": "./dist/cloudflare/sentinel.d.ts",
+      "default": "./dist/cloudflare/sentinel.js"
+    },
     "./dev": {
       "types": "./dist/dev/index.d.ts",
       "default": "./dist/dev/index.js"

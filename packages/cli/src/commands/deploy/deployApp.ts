@@ -13,10 +13,14 @@
  *      Hyperdrive configs (only ever the app's own; a config from the
  *      origin in the app's secrets file, lib/app/deploySecrets.ts, with
  *      query caching off unless the manifest says otherwise), name its R2
- *      buckets (left to `cf deploy` to create), `cf build` with the
- *      deploy inputs (the gateway's identity key from the install row) and
- *      check the built Worker against the app policy and its Workflows'
- *      names (each new or already the app's), check that its drizzle
+ *      buckets (left to `cf deploy` to create), `cf build` the app
+ *      (tenant-neutral: placeholders for everything install-specific),
+ *      install the Build Output for this deploy (lib/app/
+ *      installBuildOutput.ts: the Worker name, organization, gateway, the
+ *      gateway's identity key from the install row, the resources' names
+ *      and ids, a shared app's shape, deleted Durable Object classes) and
+ *      check the installed Workers against the app policy and their
+ *      Workflows' names (each new or already the app's), check that its drizzle
  *      migrations still describe its schema (steps/checkSchemaDrift.ts),
  *      make sure an unattended run may replace the Worker, and only then
  *      (the lease checked again before each) migrate D1 (bookmark, then
@@ -71,7 +75,10 @@ import {
   MISSING_CLOUDFLARE_CONFIG,
   readCloudflareConfig,
 } from "@/lib/app/cloudflareConfig";
-import type { DeployInputs } from "@/lib/app/deployInputs";
+import {
+  installAppBuildOutput,
+  type InstallTarget,
+} from "@/lib/app/installBuildOutput";
 import {
   APP_SECRETS_FILE,
   POSTGRES_URL_VARIABLE,
@@ -514,31 +521,27 @@ async function deploySteps(
       verbose: options.verbose ?? false,
     });
 
-    const inputs: DeployInputs = {
+    const target: InstallTarget = {
       workerName,
       organizationId: organization.id,
       gatewayUrl,
-      identityIssuer: gatewayUrl,
       identityPublicKeys: [identityKey],
       resources,
-      ...(shared ? { shared: true as const } : {}),
-      ...(deletedDurableObjects.length ? { deletedDurableObjects } : {}),
+      shared,
+      deletedDurableObjects,
+      helperWorkers: helpers.map((helper) => helper.workerName),
     };
     out.emit({ type: "step", step: "app.build", status: "start", message: "Building the app..." });
     await buildApp({
       cwd,
       cf,
-      inputs,
       buildCommand: manifest.build,
-      env: {},
       verbose: options.verbose ?? false,
     });
+    await installAppBuildOutput({ cwd, target });
     const { workflows, helperWorkflows } = await prepareAppBuildOutput({
       cwd,
-      inputs: {
-        ...inputs,
-        helperWorkers: helpers.map((helper) => helper.workerName),
-      },
+      inputs: target,
     });
     await assertOwnWorkflows({ cf, workerName, names: workflows });
     for (const helper of helpers) {
@@ -922,7 +925,7 @@ async function migrate({
   out: EventSink;
   cwd: string;
   manifest: EveryAppCliManifest;
-  resources: DeployInputs["resources"];
+  resources: InstallTarget["resources"];
   accountId: string;
   appSecrets: AppSecrets;
   drizzleKit?: DrizzleKitRunner;

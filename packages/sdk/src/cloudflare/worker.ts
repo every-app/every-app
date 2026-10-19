@@ -3,11 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseEnv } from "node:util";
 import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/keypair.js";
-import {
-  DEPLOY_INPUTS_FILE,
-  readDeployInputs,
-  type EveryAppDeployInputs,
-} from "./deployInputs.js";
+import { sentinelDeployTarget, type EveryAppDeployTarget } from "./sentinel.js";
 
 /** A Durable Object or Workflow class, and the helper Worker defining it. */
 interface ClassResource {
@@ -86,7 +82,7 @@ export interface EveryAppWorkerOptions<
   /** The Worker entry, usually a `cf-worker` namespace import of `src/entry.worker.ts`. */
   entrypoint: TEntrypoint;
   ctx: EveryAppConfigContext;
-  /** App root holding `.everyapp/deploy.json`. Defaults to the working directory. */
+  /** App root holding `.dev.vars` and `.env` files. Defaults to the working directory. */
   root?: string;
   /**
    * Cron schedules (UTC) that run the Worker's `scheduled` handler, e.g.
@@ -405,9 +401,15 @@ export type EveryAppDeployEnv<M, TEntrypoint = string> = ResourceEnv<
     EVERYAPP_IDENTITY_ISSUER: TextBinding;
     EVERY_APP_GATEWAY: GatewayBinding;
     GATEWAY_URL: SecretBinding;
-    /** The owning organization; a shared app serves every one and has none. */
+    /**
+     * The owning organization. The build always declares it; installing a
+     * shared app, which serves every organization, drops it.
+     */
     EVERY_APP_ORG_ID?: SecretBinding;
-    /** `1` on a shared app's Workers: gateway calls say whom they are for. */
+    /**
+     * `1` on a shared app's Workers, added when it is installed: gateway
+     * calls say whom they are for.
+     */
     EVERYAPP_SHARED?: TextBinding;
   };
 
@@ -489,6 +491,8 @@ export const EVERYAPP_OBSERVABILITY: Readonly<EveryAppObservability> =
   });
 
 const DEFAULT_COMPATIBILITY_DATE = "2026-06-01";
+/** Set by `everyapp deploy` around the production build it installs. */
+const BUILD_ENV = "EVERYAPP_BUILD";
 /** Names the deploy sets itself (as `everyapp secret set` refuses). */
 const RESERVED_SECRET_NAME =
   /^(GATEWAY_URL|CF_VERSION_METADATA|EVERYAPP_\w*|EVERY_APP_\w*|APP__\w*)$/i;
@@ -513,9 +517,13 @@ const LOCAL_HYPERDRIVE_PREFIX =
  *   ones (`@every-app/sdk/dev`) as plain text, so nothing needs writing to
  *   `.dev.vars`, and each D1 database gets a fixed local id (see
  *   {@link localD1Id}) that `cf d1 … --local` can address.
- * - `production`: everything deploy-specific comes from `.everyapp/deploy.json`,
- *   which only `everyapp deploy` writes. Without it this throws, so a bare
- *   `cf deploy` can't ship a Worker without identity keys.
+ * - `production`: tenant-neutral. Everything install-specific (the Worker
+ *   name, organization, gateway URL, identity keys, resource names and ids)
+ *   is a placeholder from {@link sentinelDeployTarget}, which the installer
+ *   rewrites (`everyapp deploy`, or a hosted gateway's deployer), so every
+ *   build of an app is the same. Only with EVERYAPP_BUILD=1, which
+ *   `everyapp deploy` sets: a bare `cf deploy` would upload the
+ *   placeholders.
  */
 export function everyAppWorker<
   const M extends EveryAppWorkerManifest,
@@ -539,13 +547,12 @@ export function everyAppWorker<
     };
     env["EVERYAPP_IDENTITY_ISSUER"] = {
       type: "text",
-      value: deploy.identityIssuer,
+      value: deploy.gatewayUrl,
     };
     env["EVERY_APP_GATEWAY"] = gatewayBinding(deploy, manifest.id, name);
     // Sent by the deploy pipeline through `cf deploy --secrets-file`.
     env["GATEWAY_URL"] = { type: "secret" };
-    if (!deploy.shared) env["EVERY_APP_ORG_ID"] = { type: "secret" };
-    else env["EVERYAPP_SHARED"] = { type: "text", value: "1" };
+    env["EVERY_APP_ORG_ID"] = { type: "secret" };
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
     env["EVERYAPP_IDENTITY_PUBLIC_KEYS"] = {
@@ -560,21 +567,8 @@ export function everyAppWorker<
   addDatabaseBindings(env, options, name, undefined, deploy);
   // The app binds every class, a helper Worker's in that Worker, and
   // exports only its own.
-  const { bindings, exports: ownClasses } = classBindings(
-    manifest,
-    name,
-    undefined,
-    env,
-  );
+  const { bindings, exports } = classBindings(manifest, name, undefined, env);
   Object.assign(env, bindings);
-  // Deleted classes are tombstones the deploy adds at runtime; they bind
-  // nothing, so the exports type only names the live classes.
-  const exports: Record<
-    string,
-    | DurableObjectExport
-    | WorkflowExport
-    | { type: "durable-object"; state: "deleted" }
-  > = { ...ownClasses };
   for (const helper of manifest.workers ?? []) {
     if (!helper.binding) continue;
     if (env[helper.binding]) {
@@ -587,15 +581,6 @@ export function everyAppWorker<
       worker: helperWorkerName(name, helper.name),
     };
   }
-  for (const className of deploy?.deletedDurableObjects ?? []) {
-    if (exports[className]) {
-      throw new Error(
-        `Durable Object class "${className}" is both declared in everyapp.config.ts and marked deleted.`,
-      );
-    }
-    exports[className] = { type: "durable-object", state: "deleted" };
-  }
-
   addSecrets(env, options, deploy);
   const triggers = cronTriggers(options.crons);
   const compatibilityDate =
@@ -706,8 +691,7 @@ export function everyAppAuxiliaryWorker<
     // Sent by the deploy pipeline through `cf deploy --secrets-file`, like
     // the app's Worker: a helper's gateway calls name the organization too.
     env["GATEWAY_URL"] = { type: "secret" };
-    if (!deploy.shared) env["EVERY_APP_ORG_ID"] = { type: "secret" };
-    else env["EVERYAPP_SHARED"] = { type: "text", value: "1" };
+    env["EVERY_APP_ORG_ID"] = { type: "secret" };
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
     addDevEmailSenders(env, manifest);
@@ -748,27 +732,27 @@ export function helperWorkerName(appWorker: string, helper: string): string {
   return name;
 }
 
-/** The deploy inputs (in production) and the app Worker's name. */
+/** The placeholder target (in production) and the app Worker's name. */
 function appWorkerName(
   options: Pick<
     EveryAppWorkerOptions<EveryAppWorkerManifest, unknown>,
     "manifest" | "ctx" | "root"
   >,
   builder: string,
-): { deploy: EveryAppDeployInputs | undefined; name: string } {
+): { deploy: EveryAppDeployTarget | undefined; name: string } {
   const { manifest, ctx } = options;
   assertAppId(manifest.id);
 
-  let deploy: EveryAppDeployInputs | undefined;
+  let deploy: EveryAppDeployTarget | undefined;
   if (ctx.mode === "production") {
-    deploy = readDeployInputs(options.root ?? process.cwd());
-    if (!deploy) {
+    if (process.env[BUILD_ENV] !== "1") {
       throw new Error(
-        `${DEPLOY_INPUTS_FILE} not found. Every App Workers are built for production only by \`everyapp deploy\` (\`pnpm run deploy\`); ` +
-          "a bare `cf build` or `cf deploy` would ship a Worker without identity keys or its gateway binding. " +
+        `Every App Workers are built for production only by \`everyapp deploy\` (\`pnpm run deploy\`), which sets ${BUILD_ENV}=1 and installs the build: ` +
+          "a bare `cf build` or `cf deploy` would ship a Worker whose name, identity keys, gateway binding and resources are placeholders. " +
           "For a local build, run Vite in development mode (`vite build --mode development`).",
       );
     }
+    deploy = sentinelDeployTarget(manifest);
   } else if (ctx.mode !== undefined && ctx.mode !== "development") {
     throw new Error(
       `${builder}() builds in the "development" or "production" mode, not "${ctx.mode}".`,
@@ -785,7 +769,7 @@ function appWorkerName(
 }
 
 function gatewayBinding(
-  deploy: EveryAppDeployInputs,
+  deploy: EveryAppDeployTarget,
   appId: string,
   appWorker: string,
 ): GatewayBinding {
@@ -808,13 +792,12 @@ function gatewayBinding(
 function storageBindings(
   manifest: EveryAppWorkerManifest,
   appWorker: string,
-  deploy: EveryAppDeployInputs | undefined,
+  deploy: EveryAppDeployTarget | undefined,
 ): Record<string, D1Binding | KvBinding | R2Binding> {
   const env: Record<string, D1Binding | KvBinding | R2Binding> = {};
   for (const binding of manifest.resources?.d1 ?? []) {
     if (deploy) {
-      const d1 = deploy.resources.d1?.[binding];
-      if (!d1) throw missingResource("D1 database", binding);
+      const d1 = provisioned(deploy.resources.d1, binding);
       env[binding] = { type: "d1", name: d1.name, id: d1.id };
     } else {
       env[binding] = {
@@ -826,9 +809,10 @@ function storageBindings(
   }
   for (const binding of manifest.resources?.kv ?? []) {
     if (deploy) {
-      const kv = deploy.resources.kv?.[binding];
-      if (!kv) throw missingResource("KV namespace", binding);
-      env[binding] = { type: "kv", id: kv.id };
+      env[binding] = {
+        type: "kv",
+        id: provisioned(deploy.resources.kv, binding).id,
+      };
     } else if (manifest.workers?.length) {
       // The Vite plugin's own default for the app's Worker, named so that
       // its helpers share the namespace in dev, as deployed ones do.
@@ -837,8 +821,9 @@ function storageBindings(
       env[binding] = { type: "kv" };
     }
   }
-  // Deployed, the names the gateway assigned at registration; in dev the
-  // same rule, so a local bucket is named like the deployed one.
+  // Deployed, the names the gateway assigns at registration (placeholders
+  // until installed); in dev its rule, so a local bucket is named like a
+  // deployed one.
   for (const binding of manifest.resources?.r2 ?? []) {
     if (env[binding]) {
       throw new Error(
@@ -846,9 +831,10 @@ function storageBindings(
       );
     }
     if (deploy) {
-      const r2 = deploy.resources.r2?.[binding];
-      if (!r2) throw missingResource("R2 bucket", binding);
-      env[binding] = { type: "r2", name: r2.name };
+      env[binding] = {
+        type: "r2",
+        name: provisioned(deploy.resources.r2, binding).name,
+      };
     } else {
       env[binding] = { type: "r2", name: bucketNameFor(appWorker, binding) };
     }
@@ -871,7 +857,7 @@ function addDatabaseBindings(
   >,
   appWorker: string,
   forWorker: string | undefined,
-  deploy: EveryAppDeployInputs | undefined,
+  deploy: EveryAppDeployTarget | undefined,
 ): void {
   const { manifest } = options;
   if (manifest.database) {
@@ -897,9 +883,10 @@ function addDatabaseBindings(
       );
     }
     if (deploy) {
-      const provisioned = deploy.resources.hyperdrive?.[config.name];
-      if (!provisioned) throw missingResource("Hyperdrive config", config.name);
-      env[config.name] = { type: "hyperdrive", id: provisioned.id };
+      env[config.name] = {
+        type: "hyperdrive",
+        id: provisioned(deploy.resources.hyperdrive, config.name).id,
+      };
       continue;
     }
     const connectionString = local[`${LOCAL_HYPERDRIVE_PREFIX}${config.name}`];
@@ -920,7 +907,7 @@ function addDatabaseBindings(
 function runtimeSettings(
   manifest: EveryAppWorkerManifest,
   limits: WorkerLimits | undefined,
-  deploy: EveryAppDeployInputs | undefined,
+  deploy: EveryAppDeployTarget | undefined,
 ): { placement?: EveryAppPlacement; limits?: { cpuMs?: number } } {
   const region = manifest.database?.region;
   return {
@@ -1010,7 +997,7 @@ function addSecrets(
     EveryAppWorkerOptions<EveryAppWorkerManifest, unknown>,
     "manifest" | "secrets" | "root" | "ctx"
   >,
-  deploy: EveryAppDeployInputs | undefined,
+  deploy: EveryAppDeployTarget | undefined,
 ): void {
   for (const secret of options.secrets ?? []) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(secret)) {
@@ -1230,8 +1217,14 @@ function assertAppId(id: unknown): void {
   }
 }
 
-function missingResource(kind: string, binding: string): Error {
-  return new Error(
-    `${DEPLOY_INPUTS_FILE} has no ${kind} for binding "${binding}". Deploy with \`everyapp deploy\`, which provisions every resource in everyapp.config.ts.`,
-  );
+/** The target's resource for a manifest binding, which it always has. */
+function provisioned<T>(
+  resources: Record<string, T> | undefined,
+  binding: string,
+): T {
+  const resource = resources?.[binding];
+  if (resource === undefined) {
+    throw new Error(`The build has no placeholder for binding "${binding}".`);
+  }
+  return resource;
 }

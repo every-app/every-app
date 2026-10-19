@@ -179,8 +179,10 @@ describe("deploy of Postiz (two Workers, D1 with Prisma's SQL, a Workflow and a 
         data: { workflows: [PUBLISH_POST] },
       }),
     );
-    // The deploy inputs the build read are gone.
-    expect(fs.existsSync(path.join(appDir, ".everyapp", "deploy.json"))).toBe(false);
+    // The build was tenant-neutral; the deploy installed every placeholder.
+    for (const upload of uploads(POSTIZ_WORKER)) {
+      expect(JSON.stringify(upload.config)).not.toContain("sentinel");
+    }
 
     // Migrate: Prisma's 171 statements on D1, before any upload.
     const db = account.database(POSTIZ_WORKER);

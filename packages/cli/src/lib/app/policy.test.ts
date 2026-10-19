@@ -5,8 +5,8 @@ import {
   everyAppAuxiliaryWorker,
   everyAppWorker,
 } from "@every-app/sdk/cloudflare";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { writeDeployInputs, type DeployInputs } from "./deployInputs";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { installWorkerConfig, type InstallTarget } from "./installBuildOutput";
 import {
   appPolicyProblems,
   helperPolicyProblems,
@@ -16,11 +16,10 @@ import {
 const PUBLIC_KEY =
   "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA\n-----END PUBLIC KEY-----";
 
-const INPUTS: DeployInputs = {
+const INPUTS: InstallTarget = {
   workerName: "every-acme-todo",
   organizationId: "org-1",
   gatewayUrl: "https://apps.example.com",
-  identityIssuer: "https://apps.example.com",
   identityPublicKeys: [PUBLIC_KEY],
   resources: {
     d1: { DB: { name: "every-acme-todo", id: "11111111-2222-4333-8444-555555555555" } },
@@ -41,21 +40,24 @@ const MANIFEST = {
 let appDir: string;
 
 /**
- * The worker.config.json `cf build` writes for an app: everyAppWorker()'s
- * production definition, with the bundle manifest instead of the entrypoint.
+ * The worker.config.json `cf build` writes for an app, installed for
+ * INPUTS: everyAppWorker()'s production definition, with the bundle
+ * manifest instead of the entrypoint.
  */
 async function builtConfig(): Promise<Record<string, any>> {
-  await writeDeployInputs(appDir, INPUTS);
   const { entrypoint: _entrypoint, ...worker } = everyAppWorker({
     manifest: MANIFEST,
     entrypoint: "./src/entry.worker.ts",
     ctx: { mode: "production" },
     root: appDir,
   });
-  return {
-    ...structuredClone(worker),
-    manifest: { type: "partial", mainModule: "index.js", modules: {} },
-  };
+  return installWorkerConfig(
+    {
+      ...structuredClone(worker),
+      manifest: { type: "partial", mainModule: "index.js", modules: {} },
+    },
+    INPUTS,
+  );
 }
 
 function writeOutput(config: object, mode = "production"): void {
@@ -76,8 +78,13 @@ function writeOutput(config: object, mode = "production"): void {
 
 beforeEach(() => {
   appDir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-policy-"));
+  // The production build, as `everyapp deploy` runs it.
+  vi.stubEnv("EVERYAPP_BUILD", "1");
 });
-afterEach(() => fs.rmSync(appDir, { recursive: true, force: true }));
+afterEach(() => {
+  vi.unstubAllEnvs();
+  fs.rmSync(appDir, { recursive: true, force: true });
+});
 
 describe("appPolicyProblems", () => {
   it("accepts what everyAppWorker() builds for production", async () => {
@@ -278,7 +285,7 @@ describe("appPolicyProblems", () => {
   });
 
   describe("with resources.r2", () => {
-    const WITH_R2: DeployInputs = {
+    const WITH_R2: InstallTarget = {
       ...INPUTS,
       resources: {
         ...INPUTS.resources,
@@ -295,10 +302,9 @@ describe("appPolicyProblems", () => {
         resources: { ...MANIFEST.resources, r2: ["R2", "MEDIA"] },
         workers: [{ name: "api", binding: "API" }],
       } as const;
-      await writeDeployInputs(appDir, WITH_R2);
       const build = (config: Record<string, any>) => {
         const { entrypoint: _entrypoint, ...worker } = config;
-        return structuredClone(worker);
+        return installWorkerConfig(structuredClone(worker), WITH_R2);
       };
       const app = build(
         everyAppWorker({
@@ -414,7 +420,6 @@ describe("helper Workers", () => {
   const WITH_HELPER = { ...INPUTS, helperWorkers: [HELPER] };
 
   async function builtPair() {
-    await writeDeployInputs(appDir, INPUTS);
     const options = { manifest: SEO, ctx: { mode: "production" }, root: appDir } as const;
     const { entrypoint: _app, ...app } = everyAppWorker({
       ...options,
@@ -426,10 +431,9 @@ describe("helper Workers", () => {
       entrypoint: "./src/audit.ts",
     });
     const bundle = { type: "partial", mainModule: "index.js", modules: {} };
-    return {
-      app: { ...structuredClone(app), manifest: bundle } as Record<string, any>,
-      helper: { ...structuredClone(helper), manifest: bundle } as Record<string, any>,
-    };
+    const installed = (config: object): Record<string, any> =>
+      installWorkerConfig({ ...structuredClone(config), manifest: bundle }, WITH_HELPER);
+    return { app: installed(app), helper: installed(helper) };
   }
 
   function writeHelper(config: object, directory = HELPER): void {

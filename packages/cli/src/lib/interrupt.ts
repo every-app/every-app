@@ -2,13 +2,13 @@
  * What Ctrl+C (SIGINT) or SIGTERM must not leave behind. Piped cf children
  * run in their own process groups, so the terminal's Ctrl+C reaches only
  * everyapp: cf would go on deploying, and the `finally` blocks that delete
- * secrets files and deploy inputs and release the deploy lease would never
+ * secrets files and release the deploy lease would never
  * run (the next deploy would wait for the lease, then fail).
  *
  * While anything is registered here, the first SIGINT or SIGTERM:
  *  1. forwards the signal to every running cf child (its process group);
  *  2. waits for them to exit, then kills what's left;
- *  3. runs the synchronous cleanups (temp directories, deploy inputs);
+ *  3. runs the synchronous cleanups (temp directories, secrets files);
  *  4. runs the asynchronous ones (recording an upload, then releasing the
  *     deploy lease it was made under) one at a time, last registered
  *     first, as `finally` blocks unwind, for a few seconds at most;
@@ -134,8 +134,8 @@ export async function handleInterrupt(
 
   runSyncCleanups();
   await settlesWithin(runAsyncCleanups(), ASYNC_CLEANUP_MS);
-  // What the interrupted code registered meanwhile (a deploy.json, a
-  // secrets file it went on to write).
+  // What the interrupted code registered meanwhile (a secrets file it
+  // went on to write).
   runSyncCleanups();
   exit(code);
 }

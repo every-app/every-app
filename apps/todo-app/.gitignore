@@ -27,8 +27,8 @@ yarn.lock
 /playwright/.cache/
 .tanstack
 
-# everyapp's local state: the dev registry, and the deploy inputs while a
-# deploy builds
+# everyapp's local state: the dev registry, the app's secrets file and the
+# schema check's scratch copy
 .everyapp/
 
 # Regenerated on install; would contain link: entries pointing into the

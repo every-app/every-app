@@ -6,12 +6,12 @@
  *   1. ask the gateway who the deploy key is (its organization), then
  *      register the app id with its manifest, which the gateway checks
  *      against the hosted policy before anything is built;
- *   2. build the app as `deploy` does, but with the sentinel deploy inputs
- *      (lib/app/hostedBundle.ts): the Worker name, organization, identity
- *      key and D1 ids are placeholders the gateway's deployer rewrites, so
- *      no SDK change is needed and nothing secret is in the build; check
- *      the Build Output against the app policy and the schema against the
- *      migrations;
+ *   2. build the app as `deploy` does: the tenant-neutral build, whose
+ *      Worker name, organization, gateway, identity key and resource ids
+ *      are placeholders (`sentinelDeployTarget()`, @every-app/sdk/cloudflare)
+ *      the gateway's deployer installs, so nothing secret is in the build;
+ *      check the Build Output, uninstalled, against the app policy and the
+ *      schema against the migrations;
  *   3. upload the Build Output, manifest, migrations and stamp, and follow
  *      the deploy job until it ends.
  *
@@ -19,9 +19,10 @@
  * Worker into the dispatch namespace and records it; nothing here touches
  * Cloudflare.
  */
+import { sentinelDeployTarget } from "@every-app/sdk/cloudflare";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { buildApp } from "@/lib/app/buildApp";
-import { sentinelDeployInputs, packageHostedBundle } from "@/lib/app/hostedBundle";
+import { packageHostedBundle } from "@/lib/app/hostedBundle";
 import { prepareAppBuildOutput } from "@/lib/app/policy";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
@@ -177,24 +178,21 @@ export async function deployToGateway(
     data: { appId: manifest.id, workerName: app.workerName, hostname: app.hostname, organizationId: key.organizationId },
   });
 
-  // 2. The build, with placeholders for everything the deployer sets.
+  // 2. The build, with placeholders for everything the deployer installs.
   await (options.installDeps ?? installDependencies)({
     cwd,
     description: "Installing dependencies...",
     install: manifest.install,
     verbose: options.verbose ?? false,
   });
-  const inputs = sentinelDeployInputs(manifest, gatewayUrl);
   out.emit({ type: "step", step: "app.build", status: "start", message: "Building the app..." });
   await buildApp({
     cwd,
     cf: (options.createCf ?? (() => createCfRunner()))(),
-    inputs,
     buildCommand: manifest.build,
-    env: {},
     verbose: options.verbose ?? false,
   });
-  await prepareAppBuildOutput({ cwd, inputs: { ...inputs, helperWorkers: [] } });
+  await prepareAppBuildOutput({ cwd, inputs: sentinelDeployTarget(manifest) });
   out.emit({ type: "step", step: "app.build", status: "ok", message: "Built the app and checked its Worker." });
   await checkSchemaDrift({ cwd, manifest, out });
 

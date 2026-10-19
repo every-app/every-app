@@ -5,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { removeDeployInputs, writeDeployInputs } from "@/lib/app/deployInputs";
 import { acquireLease, readLease } from "@/lib/gateway/lease";
 import { createSqliteD1 } from "@/test/sqliteD1";
 import { handleInterrupt, onInterrupt, trackChild } from "./interrupt";
@@ -166,18 +165,13 @@ describe("interrupts", () => {
     expect(exit).toHaveBeenCalledTimes(2);
   });
 
-  it("free a held deploy lease and remove the deploy inputs", async () => {
+  it("free a held deploy lease and remove a temporary file", async () => {
     const db = createSqliteD1();
     await acquireLease({ db, id: "gateway", purpose: "gateway.upgrade", heartbeatMs: 0 });
     const app = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-interrupt-app-"));
-    const file = await writeDeployInputs(app, {
-      workerName: "every-acme-todo",
-      organizationId: "org-1",
-      gatewayUrl: "https://apps.example.com",
-      identityIssuer: "https://apps.example.com",
-      identityPublicKeys: ["-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----"],
-      resources: {},
-    });
+    const file = path.join(app, "secrets.json");
+    fs.writeFileSync(file, "{}");
+    onInterrupt({ sync: () => fs.rmSync(file, { force: true }) });
 
     await handleInterrupt("SIGTERM", { exit: vi.fn() });
 
@@ -188,16 +182,9 @@ describe("interrupts", () => {
 
   it("forget what was cleaned up normally", async () => {
     const app = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-interrupt-app-"));
-    await writeDeployInputs(app, {
-      workerName: "every-acme-todo",
-      organizationId: "org-1",
-      gatewayUrl: "https://apps.example.com",
-      identityIssuer: "https://apps.example.com",
-      identityPublicKeys: ["-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----"],
-      resources: {},
-    });
+    const forget = onInterrupt({ sync: () => fs.rmSync(app, { recursive: true, force: true }) });
     const before = process.listenerCount("SIGINT");
-    await removeDeployInputs(app);
+    forget();
     expect(process.listenerCount("SIGINT")).toBe(before - 1);
     fs.rmSync(app, { recursive: true, force: true });
   });

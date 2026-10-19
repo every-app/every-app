@@ -264,8 +264,8 @@ describe("deploy", () => {
       GATEWAY_URL,
       EVERY_APP_ORG_ID: organizationId(),
     });
-    // The deploy inputs exist only while cf builds.
-    expect(fs.existsSync(path.join(appDir, ".everyapp", "deploy.json"))).toBe(false);
+    // The build was tenant-neutral; the deploy installed every placeholder.
+    expect(JSON.stringify(upload.config)).not.toContain("sentinel");
 
     // The gateway now binds it, and its first request made the app live; the
     // registry records the version (the gateway takes its agent tools from

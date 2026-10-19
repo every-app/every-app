@@ -198,7 +198,7 @@ the reconcile confirm, `setup --release`.
 | Gateway D1 registry (`apps`, `user_app_access`, `organization_keys`, …) | the apps, their names, access, who deployed them | The product's own data. |
 | cf's own login, profiles and account cache | | cf's, not ours. The runner passes `--profile` on every call and sets `CLOUDFLARE_ACCOUNT_ID` once the account is known, because `cf auth activate` binds a profile to a directory and its ancestors (live check 7). |
 | Checkout: `node_modules/.cache/everyapp/` | built Gateway releases by tree hash | A build cache. |
-| Per app: `.everyapp/deploy.json` (transient, every build), `.everyapp/registry` (dev), `.cloudflare/state`, `.cloudflare/types` | | Build and dev artefacts, all gitignored already. |
+| Per app: `.everyapp/secrets.env` (the app's secrets), `.everyapp/registry` (dev), `.cloudflare/state`, `.cloudflare/types` | | Build and dev artefacts, all gitignored already. |
 
 Gone: `~/.everyapp/installs.json`, `~/.everyapp/credentials.json`,
 `~/.everyapp/pending-claims/`, per-app `.everyapp/dev-keys.json`, the lines

@@ -203,6 +203,8 @@ describe("deploy --shared", () => {
     const upload = account.deploys.find((d) => d.workerName === "every-everyapp-todo")!;
     expect(upload.secrets).toEqual({ GATEWAY_URL });
     expect(upload.config["env"]).not.toHaveProperty("EVERY_APP_ORG_ID");
+    // So its gateway calls must say which organization they are for.
+    expect(upload.config["env"]["EVERYAPP_SHARED"]).toEqual({ type: "text", value: "1" });
     expect(upload.config["env"]["EVERY_APP_GATEWAY"]).toMatchObject({
       props: { organizationId, appId: "todo", workerName: "every-everyapp-todo" },
     });

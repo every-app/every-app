@@ -6,8 +6,8 @@
  * bindings, D1 on SQLite) and behind the gateway's DISPATCHER binding.
  *
  * An owner registers and deploys a third-party app built the way `everyapp
- * deploy --gateway` builds it (everyAppWorker() with the sentinel deploy
- * inputs): the row is written on the dispatch tier, the bindings uploaded
+ * deploy --gateway` builds it (everyAppWorker()'s tenant-neutral production
+ * build, placeholders throughout): the row is written on the dispatch tier, the bindings uploaded
  * are the deployer's own and read back, and a request to the app's host
  * dispatches through getAppFetcher. A gateway without the launch gate has
  * no deploy API; a member, an access token, a foreign binding and a
@@ -47,13 +47,9 @@ vi.mock("@tanstack/react-start/server-entry", () => ({
   },
 }));
 
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { generateKeyPairSync } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { decodeJwt } from "jose";
-import { HOSTED_DEPLOY_SENTINEL } from "@every-app/perimeter/manifest";
 import { createCloudflareRest } from "@every-app/cf-rest";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
 import {
@@ -139,41 +135,21 @@ beforeAll(() => {
 
 /** The app's Build Output config, as `everyapp deploy --gateway` builds it. */
 function builtWorker(manifest: Record<string, unknown> = TODO) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-hosted-"));
-  fs.mkdirSync(path.join(root, ".everyapp"));
-  fs.writeFileSync(
-    path.join(root, ".everyapp/deploy.json"),
-    JSON.stringify({
-      schema: 1,
-      workerName: HOSTED_DEPLOY_SENTINEL.workerName,
-      organizationId: HOSTED_DEPLOY_SENTINEL.organizationId,
-      gatewayUrl: GATEWAY,
-      identityIssuer: GATEWAY,
-      identityPublicKeys: [HOSTED_DEPLOY_SENTINEL.publicKey],
-      resources: {
-        d1: Object.fromEntries(
-          ((manifest["resources"] as { d1?: string[] })?.d1 ?? []).map((b) => [
-            b,
-            {
-              name: HOSTED_DEPLOY_SENTINEL.d1Name,
-              id: HOSTED_DEPLOY_SENTINEL.d1Id,
-            },
-          ]),
-        ),
-      },
-    }),
-  );
-  const { entrypoint: _entrypoint, ...worker } = everyAppWorker({
-    manifest: manifest as typeof TODO,
-    entrypoint: "./src/entry.worker.ts",
-    ctx: { mode: "production" },
-    root,
-  });
-  fs.rmSync(root, { recursive: true, force: true });
-  return {
-    ...structuredClone(worker),
-    manifest: { type: "partial", mainModule: "index.js", modules: {} },
-  } as Record<string, any>;
+  // The tenant-neutral production build, as `everyapp deploy` runs it.
+  vi.stubEnv("EVERYAPP_BUILD", "1");
+  try {
+    const { entrypoint: _entrypoint, ...worker } = everyAppWorker({
+      manifest: manifest as typeof TODO,
+      entrypoint: "./src/entry.worker.ts",
+      ctx: { mode: "production" },
+    });
+    return {
+      ...structuredClone(worker),
+      manifest: { type: "partial", mainModule: "index.js", modules: {} },
+    } as Record<string, any>;
+  } finally {
+    vi.unstubAllEnvs();
+  }
 }
 
 function upload(worker = builtWorker(), manifest: unknown = TODO): FormData {

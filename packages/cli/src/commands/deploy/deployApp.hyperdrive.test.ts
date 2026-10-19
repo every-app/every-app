@@ -216,8 +216,10 @@ describe("deploy of an app on Postgres through Hyperdrive", () => {
     }
     expect(hyperdriveCalls("create")[0]!.files["hyperdrive.json"]).toContain(PASSWORD);
     expect(JSON.stringify(events)).not.toContain(PASSWORD);
-    // The deploy inputs the build read are gone, and never held it.
-    expect(fs.existsSync(path.join(appDir, ".everyapp", "deploy.json"))).toBe(false);
+    // Nor in the Workers it built.
+    for (const upload of account.deploys) {
+      expect(JSON.stringify(upload.config)).not.toContain(PASSWORD);
+    }
     expect(fs.readFileSync(path.join(appDir, ".gitignore"), "utf8")).toContain(".everyapp/");
   });
 

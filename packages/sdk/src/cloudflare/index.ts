@@ -52,8 +52,8 @@ export {
   type WorkflowExport,
 } from "./worker.js";
 export {
-  DEPLOY_INPUTS_FILE,
-  DeployInputsError,
-  parseDeployInputs,
-  type EveryAppDeployInputs,
-} from "./deployInputs.js";
+  BUILD_SENTINEL,
+  resourceSentinel,
+  sentinelDeployTarget,
+  type EveryAppDeployTarget,
+} from "./sentinel.js";

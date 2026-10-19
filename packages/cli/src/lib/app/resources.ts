@@ -40,7 +40,7 @@ import { getWorkerDeployment } from "@/lib/cf/workers";
 import { EveryAppError } from "@/lib/errors";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
-import type { DeployInputs } from "./deployInputs";
+import type { InstallTarget } from "./installBuildOutput";
 import {
   APP_SECRETS_FILE,
   hyperdriveOriginUrl,
@@ -116,7 +116,7 @@ export async function provisionAppResources(
     /** The app's secrets file: the origins of its Hyperdrive configs. */
     secrets?: AppSecrets;
   },
-): Promise<DeployInputs["resources"]> {
+): Promise<InstallTarget["resources"]> {
   const { cf, registration, manifest } = options;
   const owned = await readOwnedResources(
     options.gatewayDb,
@@ -134,14 +134,14 @@ export async function provisionAppResources(
         kind === "d1" ? (name) => createD1(cf, name) : (name) => createKv(cf, name),
     });
 
-  const d1: NonNullable<DeployInputs["resources"]["d1"]> = {};
+  const d1: NonNullable<InstallTarget["resources"]["d1"]> = {};
   for (const binding of manifest.resources?.d1 ?? []) {
     d1[binding] = {
       name: assignedName(registration, "d1", binding),
       id: await provision("d1", binding),
     };
   }
-  const kv: NonNullable<DeployInputs["resources"]["kv"]> = {};
+  const kv: NonNullable<InstallTarget["resources"]["kv"]> = {};
   for (const binding of manifest.resources?.kv ?? []) {
     kv[binding] = { id: await provision("kv", binding) };
   }
@@ -168,7 +168,7 @@ export async function provisionAppResources(
       ] as const;
     }),
   );
-  const hyperdrive: NonNullable<DeployInputs["resources"]["hyperdrive"]> = {};
+  const hyperdrive: NonNullable<InstallTarget["resources"]["hyperdrive"]> = {};
   for (const { name: binding, caching = "off" } of configs) {
     hyperdrive[binding] = {
       id: await provisionHyperdrive({

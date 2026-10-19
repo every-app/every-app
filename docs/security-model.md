@@ -607,9 +607,10 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   app (user identities and public markers in the perimeter, ToolBus call
   identities and catalog system tokens) carries `aud` = the registry row's
   `worker_name` (`every-<orgKey>-<appId>`), never the app id. A deployed
-  app expects exactly that: `everyAppWorker()` sets `EVERYAPP_AUDIENCE` to
-  the Worker's name at deploy, the CLI refuses a build whose
-  `EVERYAPP_AUDIENCE` is anything else, and the SDK answers 500 when it is
+  app expects exactly that: `everyAppWorker()` declares `EVERYAPP_AUDIENCE`
+  as the Worker's name (a placeholder the deploy installs as the registry's
+  name), the CLI refuses an installed build whose `EVERYAPP_AUDIENCE` is
+  anything else, and the SDK answers 500 when it is
   unset. So a token minted for one organization's copy of an app is refused
   by another organization's copy of the same app id. The AppGateway
   entrypoint verifies a forwarded identity against the calling Worker's
@@ -803,10 +804,9 @@ hosted gateway's dispatch namespace only through its deploy API
   not be suspended; a path naming another organization is a 404, and an
   app-bound key deploys only its app. The API reads no cookie. A deploy
   key opens no app on the perimeter and no `/mcp` connection.
-- **The deployer rewrites, or refuses.** The CLI builds with sentinel
-  deploy inputs (`HOSTED_DEPLOY_SENTINEL` in
-  `@every-app/perimeter/manifest`), so the bundle's bindings are
-  placeholders. The deployer builds the upload's bindings from the
+- **The deployer rewrites, or refuses.** Every app build is tenant-neutral
+  (`BUILD_SENTINEL` in `@every-app/sdk/cloudflare/sentinel`) and the CLI
+  uploads it uninstalled, so the bundle's bindings are placeholders. The deployer builds the upload's bindings from the
   manifest and the registry row only: the app id, the audience (the
   registry's Worker name), the gateway's identity key and issuer, the
   organization and `GATEWAY_URL` as plain text; the `EVERY_APP_GATEWAY`

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HOSTED_DEPLOY_SENTINEL } from "@every-app/perimeter/manifest";
+import { BUILD_SENTINEL } from "@every-app/sdk/cloudflare/sentinel";
 import {
   bindingMismatches,
   buildUserWorkerMetadata,
@@ -13,16 +13,25 @@ const MANIFEST = {
   resources: { durableObjects: [{ name: "SYNC", className: "SyncDO" }] },
 };
 const WORKER = {
-  name: HOSTED_DEPLOY_SENTINEL.workerName,
+  name: BUILD_SENTINEL.workerName,
   compatibilityDate: "2026-06-01",
   compatibilityFlags: ["nodejs_compat"],
   workersDev: false,
   previewUrls: false,
   env: {
     EVERYAPP_APP_ID: { type: "text", value: "notes" },
+    // The tenant-neutral build's placeholders, which the deployer rewrites.
+    EVERYAPP_IDENTITY_ISSUER: {
+      type: "text",
+      value: BUILD_SENTINEL.gatewayUrl,
+    },
+    EVERYAPP_IDENTITY_PUBLIC_KEYS: {
+      type: "text",
+      value: JSON.stringify([BUILD_SENTINEL.publicKey]),
+    },
     SYNC: {
       type: "durable-object",
-      worker: HOSTED_DEPLOY_SENTINEL.workerName,
+      worker: BUILD_SENTINEL.workerName,
       exportName: "SyncDO",
     },
   },
@@ -41,7 +50,7 @@ const TARGET: DeployTarget = {
 };
 
 describe("bundleProblems", () => {
-  it("lets an everyAppWorker() build with the sentinel inputs through", () => {
+  it("lets an everyAppWorker() build, placeholders and all, through", () => {
     expect(bundleProblems(WORKER, MANIFEST, LIMITS, false)).toEqual([]);
   });
 

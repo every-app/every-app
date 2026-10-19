@@ -1,6 +1,6 @@
 /**
- * An app's upload for the hosted deploy API: its Build Output (built with
- * the sentinel deploy inputs, which the gateway's deployer rewrites), its
+ * An app's upload for the hosted deploy API: its Build Output (the
+ * tenant-neutral build, uninstalled: the gateway's deployer installs it), its
  * evaluated manifest, its migrations and the stamp the gateway checks, as
  * the multipart body HOSTED_DEPLOY_PARTS names
  * (@every-app/perimeter/manifest).
@@ -12,41 +12,12 @@ import {
   bundleModuleType,
   HOSTED_DEPLOY_PARTS,
   HOSTED_DEPLOY_PROTOCOL,
-  HOSTED_DEPLOY_SENTINEL,
 } from "@every-app/perimeter/manifest";
 import { version as cliVersion } from "../../../package.json";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { resolveMigrationBinding } from "@/lib/manifest";
-import type { DeployInputs } from "./deployInputs";
 
 const WORKER_DIR = path.join(".cloudflare", "output", "v0", "workers", "default");
-
-/**
- * The deploy inputs a hosted build uses: placeholders for the Worker
- * name, organization, identity key and D1 ids, which the gateway's
- * deployer replaces in every binding (and refuses the upload if it can't).
- * The gateway URL is the real one: it is also the identity issuer.
- */
-export function sentinelDeployInputs(
-  manifest: EveryAppCliManifest,
-  gatewayUrl: string,
-): DeployInputs {
-  return {
-    workerName: HOSTED_DEPLOY_SENTINEL.workerName,
-    organizationId: HOSTED_DEPLOY_SENTINEL.organizationId,
-    gatewayUrl,
-    identityIssuer: gatewayUrl,
-    identityPublicKeys: [HOSTED_DEPLOY_SENTINEL.publicKey],
-    resources: {
-      d1: Object.fromEntries(
-        (manifest.resources?.d1 ?? []).map((binding) => [
-          binding,
-          { name: HOSTED_DEPLOY_SENTINEL.d1Name, id: HOSTED_DEPLOY_SENTINEL.d1Id },
-        ]),
-      ),
-    },
-  };
-}
 
 async function filesUnder(dir: string): Promise<string[]> {
   let entries;

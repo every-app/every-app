@@ -8,18 +8,20 @@ import {
   expect,
   expectTypeOf,
   it,
+  vi,
 } from "vitest";
 import {
-  DEPLOY_INPUTS_FILE,
+  BUILD_SENTINEL,
   EVERYAPP_OBSERVABILITY,
   everyAppAuxiliaryWorker,
   everyAppWorker,
   localD1Id,
   localD1Path,
+  resourceSentinel,
+  sentinelDeployTarget,
   type D1Binding,
   type DurableObjectBinding,
   type DurableObjectExport,
-  type EveryAppDeployInputs,
   type EveryAppDevEnv,
   type EveryAppWorkerReference,
   type HyperdriveBinding,
@@ -33,8 +35,8 @@ import { aiProviderSettings, DEV_AI_PROVIDERS } from "../internal/aiProviders";
 import { CAPABILITIES, capabilitySettings } from "../internal/capabilities";
 import { EMAIL_SENDERS_ENV } from "../internal/email";
 
-const PUBLIC_KEY =
-  "-----BEGIN PUBLIC KEY-----\nMIIBIjANBg\n-----END PUBLIC KEY-----\n";
+/** The placeholder Worker name every production build has. */
+const BUILT = BUILD_SENTINEL.workerName;
 
 const manifest = {
   id: "todo",
@@ -52,30 +54,14 @@ let root: string;
 
 beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-sdk-cf-"));
+  // What `everyapp deploy` sets around a production build.
+  vi.stubEnv("EVERYAPP_BUILD", "1");
 });
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   fs.rmSync(root, { recursive: true, force: true });
 });
-
-function writeDeployInputs(overrides: Partial<EveryAppDeployInputs> = {}) {
-  const inputs: EveryAppDeployInputs = {
-    schema: 1,
-    workerName: "every-acme-todo",
-    organizationId: "org_1",
-    gatewayUrl: "https://apps.example.com",
-    identityIssuer: "https://apps.example.com",
-    identityPublicKeys: [PUBLIC_KEY],
-    resources: {
-      d1: { DB: { name: "every-acme-todo", id: "d1-uuid" } },
-      kv: { KV: { id: "kv-id" } },
-    },
-    ...overrides,
-  };
-  const file = path.join(root, DEPLOY_INPUTS_FILE);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(inputs));
-}
 
 describe("everyAppWorker in development", () => {
   const worker = () =>
@@ -230,11 +216,6 @@ describe("everyAppWorker in development", () => {
     >().toEqualTypeOf<"untyped">();
   });
 
-  it("ignores deploy inputs outside production", () => {
-    writeDeployInputs();
-    expect(worker().name).toBe("every-todo");
-  });
-
   it("honors the manifest's compatibility date", () => {
     expect(
       everyAppWorker({
@@ -274,46 +255,51 @@ describe("everyAppWorker in production", () => {
       root,
     });
 
-  it("refuses to build without deploy inputs", () => {
-    expect(worker).toThrow(/\.everyapp\/deploy\.json not found/);
+  it("refuses to build unless `everyapp deploy` runs the build", () => {
+    vi.stubEnv("EVERYAPP_BUILD", "");
+    expect(worker).toThrow(/EVERYAPP_BUILD=1/);
     expect(worker).toThrow(/everyapp deploy/);
   });
 
-  it("builds the deployed identity, gateway binding and resources", () => {
-    writeDeployInputs();
+  it("builds tenant-neutral: placeholders for everything install-specific", () => {
     const config = worker();
 
-    expect(config.name).toBe("every-acme-todo");
+    expect(config.name).toBe(BUILT);
     expect(config.env).toEqual({
       EVERYAPP_APP_ID: { type: "text", value: "todo" },
       CF_VERSION_METADATA: { type: "version-metadata" },
-      EVERYAPP_AUDIENCE: { type: "text", value: "every-acme-todo" },
+      EVERYAPP_AUDIENCE: { type: "text", value: BUILT },
       EVERYAPP_IDENTITY_PUBLIC_KEYS: {
         type: "text",
-        value: JSON.stringify([PUBLIC_KEY]),
+        value: JSON.stringify([BUILD_SENTINEL.publicKey]),
       },
       EVERYAPP_IDENTITY_ISSUER: {
         type: "text",
-        value: "https://apps.example.com",
+        value: BUILD_SENTINEL.gatewayUrl,
       },
       EVERY_APP_GATEWAY: {
         type: "worker",
         worker: "every-app-gateway",
         exportName: "AppGateway",
         props: {
-          organizationId: "org_1",
+          organizationId: BUILD_SENTINEL.organizationId,
           appId: "todo",
-          workerName: "every-acme-todo",
+          workerName: BUILT,
         },
       },
       GATEWAY_URL: { type: "secret" },
+      // Always: installing a shared app swaps it for EVERYAPP_SHARED.
       EVERY_APP_ORG_ID: { type: "secret" },
-      DB: { type: "d1", name: "every-acme-todo", id: "d1-uuid" },
-      KV: { type: "kv", id: "kv-id" },
+      DB: {
+        type: "d1",
+        name: resourceSentinel("DB"),
+        id: resourceSentinel("DB"),
+      },
+      KV: { type: "kv", id: resourceSentinel("KV") },
       USER_SYNC: {
         type: "durable-object",
         worker: {
-          name: "every-acme-todo",
+          name: BUILT,
           compatibilityDate: "2026-06-01",
           entrypoint,
         },
@@ -322,55 +308,49 @@ describe("everyAppWorker in production", () => {
     });
     expect(config.workersDev).toBe(false);
     expect(config.previewUrls).toBe(false);
+    // Tombstones for deleted classes are the installer's too.
+    expect(config.exports).toEqual({
+      UserSyncDO: { type: "durable-object", storage: "sqlite" },
+    });
   });
 
-  it("gives a shared app no organization to pin itself to", () => {
-    writeDeployInputs({ shared: true });
-    const env = worker().env;
-    expect(env).not.toHaveProperty("EVERY_APP_ORG_ID");
-    expect(env).toMatchObject({
-      // So its gateway calls must say which organization they are for.
-      EVERYAPP_SHARED: { type: "text", value: "1" },
-      GATEWAY_URL: { type: "secret" },
-      EVERY_APP_GATEWAY: {
-        props: { organizationId: "org_1", appId: "todo" },
-      },
+  it("builds the same Worker whoever builds it, wherever", () => {
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-sdk-cf-"));
+    try {
+      fs.writeFileSync(path.join(other, ".dev.vars"), "EVERYAPP_X=1\n");
+      expect(
+        everyAppWorker({
+          manifest,
+          entrypoint,
+          ctx: { mode: "production" },
+          root: other,
+        }),
+      ).toEqual(worker());
+    } finally {
+      fs.rmSync(other, { recursive: true, force: true });
+    }
+  });
+
+  it("builds from sentinelDeployTarget(), the placeholders installers rewrite", () => {
+    const target = sentinelDeployTarget(manifest);
+    const env = worker().env as Record<string, { id?: string; name?: string }>;
+    expect(env["DB"]).toMatchObject(target.resources.d1!["DB"]!);
+    expect(env["KV"]).toMatchObject(target.resources.kv!["KV"]!);
+    expect(target).toMatchObject({
+      workerName: BUILT,
+      organizationId: BUILD_SENTINEL.organizationId,
+      gatewayUrl: BUILD_SENTINEL.gatewayUrl,
+      identityPublicKeys: [BUILD_SENTINEL.publicKey],
     });
   });
 
   it("never enables dev identities", () => {
-    writeDeployInputs();
     const env = worker().env;
     expect(env).not.toHaveProperty("EVERYAPP_DEV");
     expect(JSON.stringify(env)).not.toContain(DEV_ISSUER);
     expect(JSON.stringify(env)).not.toContain(
       JSON.stringify(DEV_PUBLIC_KEY_PEM).slice(1, -1),
     );
-  });
-
-  it("refuses deploy inputs that miss a declared resource", () => {
-    writeDeployInputs({ resources: { d1: {}, kv: { KV: { id: "kv-id" } } } });
-    expect(worker).toThrow(/no D1 database for binding "DB"/);
-  });
-
-  it("deletes the Durable Object classes the deploy marks deleted", () => {
-    writeDeployInputs({ deletedDurableObjects: ["OldSyncDO"] });
-    expect(worker().exports).toEqual({
-      UserSyncDO: { type: "durable-object", storage: "sqlite" },
-      OldSyncDO: { type: "durable-object", state: "deleted" },
-    });
-  });
-
-  it("refuses to delete a class the manifest still declares", () => {
-    writeDeployInputs({ deletedDurableObjects: ["UserSyncDO"] });
-    expect(worker).toThrow(/both declared/);
-  });
-
-  it("refuses malformed deploy inputs", () => {
-    const file = path.join(root, DEPLOY_INPUTS_FILE);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, "{not json");
-    expect(worker).toThrow(/not valid JSON/);
   });
 });
 
@@ -406,7 +386,6 @@ describe("everyAppWorker Workflows", () => {
       RankCheckWorkflow: WorkflowExport;
     }>();
 
-    writeDeployInputs();
     const deployed = everyAppWorker({
       manifest: withWorkflow,
       entrypoint,
@@ -414,12 +393,12 @@ describe("everyAppWorker Workflows", () => {
       root,
     });
     expect(deployed.env.RANK_CHECK).toMatchObject({
-      name: "every-acme-todo--rank-check",
-      worker: "every-acme-todo",
+      name: `${BUILT}--rank-check`,
+      worker: BUILT,
     });
     expect(deployed.exports.RankCheckWorkflow).toEqual({
       type: "workflow",
-      name: "every-acme-todo--rank-check",
+      name: `${BUILT}--rank-check`,
     });
   });
 
@@ -466,7 +445,6 @@ describe("everyAppWorker crons and the app's own secrets", () => {
         crons,
       }).triggers,
     ).toEqual([{ type: "scheduled", schedule: "17 */6 * * *" }]);
-    writeDeployInputs();
     expect(
       everyAppWorker({
         manifest,
@@ -520,7 +498,6 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     expect(env("development")["STRIPE_KEY"]).toBeUndefined();
 
     // A deployed Worker keeps the secret `everyapp secret set` sent.
-    writeDeployInputs();
     expect(env("production")["SDK_TEST_API_KEY"]).toBeUndefined();
   });
 
@@ -572,7 +549,6 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     );
 
     // Deployed, the gateway holds them.
-    writeDeployInputs();
     expect(env("production")["OPENROUTER_API_KEY"]).toBeUndefined();
     expect(env("production")["DATAFORSEO_API_KEY"]).toBeUndefined();
   });
@@ -644,7 +620,6 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     );
 
     // Deployed, the gateway holds the sender and reads the senders itself.
-    writeDeployInputs();
     expect(env("production")["EMAIL_FROM"]).toBeUndefined();
     expect(env("production")[EMAIL_SENDERS_ENV]).toBeUndefined();
   });
@@ -731,9 +706,6 @@ describe("everyAppWorker compatibility flags", () => {
       "global_fetch_strictly_public",
     ];
     for (const mode of ["development", "production"] as const) {
-      if (mode === "production") {
-        writeDeployInputs({ workerName: "every-acme-seo", resources: {} });
-      }
       const app = everyAppWorker({
         manifest: withHelper,
         entrypoint,
@@ -974,23 +946,23 @@ describe("helper Workers", () => {
   });
 
   it("gives a deployed helper the gateway binding with the app's identity", () => {
-    writeDeployInputs({
-      workerName: "every-acme-seo",
-      resources: { d1: { DB: { name: "every-acme-seo", id: "d1-uuid" } } },
-    });
     const audit = helper("production");
 
-    expect(audit.name).toBe("every-acme-seo--audit");
+    expect(audit.name).toBe(`${BUILT}--audit`);
     expect(audit.env).toMatchObject({
-      DB: { type: "d1", name: "every-acme-seo", id: "d1-uuid" },
+      DB: {
+        type: "d1",
+        name: resourceSentinel("DB"),
+        id: resourceSentinel("DB"),
+      },
       EVERY_APP_GATEWAY: {
         type: "worker",
         worker: "every-app-gateway",
         exportName: "AppGateway",
         props: {
-          organizationId: "org_1",
+          organizationId: BUILD_SENTINEL.organizationId,
           appId: "seo",
-          workerName: "every-acme-seo",
+          workerName: BUILT,
         },
       },
       // What names the gateway and the organization, like the app's Worker.
@@ -998,22 +970,8 @@ describe("helper Workers", () => {
       EVERY_APP_ORG_ID: { type: "secret" },
     });
     expect(audit.env).not.toHaveProperty("EVERYAPP_DEV");
-    // An organization's own helper: its background calls are the app's.
+    // Whether the app is shared is the installer's to say.
     expect(audit.env).not.toHaveProperty("EVERYAPP_SHARED");
-  });
-
-  it("marks a shared app's helper shared, like the app's Worker", () => {
-    writeDeployInputs({
-      workerName: "every-everyapp-seo",
-      shared: true,
-      resources: { d1: { DB: { name: "every-everyapp-seo", id: "d1-uuid" } } },
-    });
-    const env = helper("production").env;
-    expect(env).toMatchObject({
-      EVERYAPP_SHARED: { type: "text", value: "1" },
-      GATEWAY_URL: { type: "secret" },
-    });
-    expect(env).not.toHaveProperty("EVERY_APP_ORG_ID");
   });
 
   it("types the helper's service binding and leaves its classes out of the app's exports", () => {
@@ -1032,10 +990,6 @@ describe("helper Workers", () => {
   });
 
   it("builds the deployed app and helper Workers", () => {
-    writeDeployInputs({
-      workerName: "every-acme-seo",
-      resources: { d1: { DB: { name: "every-acme-seo", id: "d1-uuid" } } },
-    });
     const withOwnWorkflow = {
       ...seo,
       resources: {
@@ -1068,7 +1022,7 @@ describe("helper Workers", () => {
           "env": {
             "AUDIT_ENGINE": {
               "type": "worker",
-              "worker": "every-acme-seo--audit",
+              "worker": "every-hosted--sentinel--audit",
             },
             "CF_VERSION_METADATA": {
               "type": "version-metadata",
@@ -1081,12 +1035,12 @@ describe("helper Workers", () => {
                 "entrypoint": {
                   "default": "/app/src/entry.worker.ts",
                 },
-                "name": "every-acme-seo",
+                "name": "every-hosted--sentinel",
               },
             },
             "DB": {
-              "id": "d1-uuid",
-              "name": "every-acme-seo",
+              "id": "every-hosted--sentinel--DB",
+              "name": "every-hosted--sentinel--DB",
               "type": "d1",
             },
             "EVERYAPP_APP_ID": {
@@ -1095,22 +1049,22 @@ describe("helper Workers", () => {
             },
             "EVERYAPP_AUDIENCE": {
               "type": "text",
-              "value": "every-acme-seo",
+              "value": "every-hosted--sentinel",
             },
             "EVERYAPP_IDENTITY_ISSUER": {
               "type": "text",
-              "value": "https://apps.example.com",
+              "value": "https://every-hosted--sentinel.invalid",
             },
             "EVERYAPP_IDENTITY_PUBLIC_KEYS": {
               "type": "text",
-              "value": "["-----BEGIN PUBLIC KEY-----\\nMIIBIjANBg\\n-----END PUBLIC KEY-----\\n"]",
+              "value": "["-----BEGIN PUBLIC KEY-----\\nEVERYAPPHOSTEDDEPLOYSENTINEL\\n-----END PUBLIC KEY-----\\n"]",
             },
             "EVERY_APP_GATEWAY": {
               "exportName": "AppGateway",
               "props": {
                 "appId": "seo",
-                "organizationId": "org_1",
-                "workerName": "every-acme-seo",
+                "organizationId": "everyapp-hosted-deploy-sentinel",
+                "workerName": "every-hosted--sentinel",
               },
               "type": "worker",
               "worker": "every-app-gateway",
@@ -1123,20 +1077,20 @@ describe("helper Workers", () => {
             },
             "RANK_CHECK": {
               "exportName": "RankCheckWorkflow",
-              "name": "every-acme-seo--rank-check",
+              "name": "every-hosted--sentinel--rank-check",
               "type": "workflow",
-              "worker": "every-acme-seo",
+              "worker": "every-hosted--sentinel",
             },
             "SCRATCHPAD": {
               "exportName": "Scratchpad",
               "type": "durable-object",
-              "worker": "every-acme-seo--audit",
+              "worker": "every-hosted--sentinel--audit",
             },
             "SITE_AUDIT": {
               "exportName": "SiteAuditWorkflow",
-              "name": "every-acme-seo--site-audit",
+              "name": "every-hosted--sentinel--site-audit",
               "type": "workflow",
-              "worker": "every-acme-seo--audit",
+              "worker": "every-hosted--sentinel--audit",
             },
           },
           "exports": {
@@ -1145,17 +1099,17 @@ describe("helper Workers", () => {
               "type": "durable-object",
             },
             "RankCheckWorkflow": {
-              "name": "every-acme-seo--rank-check",
+              "name": "every-hosted--sentinel--rank-check",
               "type": "workflow",
             },
           },
-          "name": "every-acme-seo",
+          "name": "every-hosted--sentinel",
         },
         "audit": {
           "env": {
             "DB": {
-              "id": "d1-uuid",
-              "name": "every-acme-seo",
+              "id": "every-hosted--sentinel--DB",
+              "name": "every-hosted--sentinel--DB",
               "type": "d1",
             },
             "EVERYAPP_APP_ID": {
@@ -1166,8 +1120,8 @@ describe("helper Workers", () => {
               "exportName": "AppGateway",
               "props": {
                 "appId": "seo",
-                "organizationId": "org_1",
-                "workerName": "every-acme-seo",
+                "organizationId": "everyapp-hosted-deploy-sentinel",
+                "workerName": "every-hosted--sentinel",
               },
               "type": "worker",
               "worker": "every-app-gateway",
@@ -1181,13 +1135,13 @@ describe("helper Workers", () => {
             "SCRATCHPAD": {
               "exportName": "Scratchpad",
               "type": "durable-object",
-              "worker": "every-acme-seo--audit",
+              "worker": "every-hosted--sentinel--audit",
             },
             "SITE_AUDIT": {
               "exportName": "SiteAuditWorkflow",
-              "name": "every-acme-seo--site-audit",
+              "name": "every-hosted--sentinel--site-audit",
               "type": "workflow",
-              "worker": "every-acme-seo--audit",
+              "worker": "every-hosted--sentinel--audit",
             },
           },
           "exports": {
@@ -1196,11 +1150,11 @@ describe("helper Workers", () => {
               "type": "durable-object",
             },
             "SiteAuditWorkflow": {
-              "name": "every-acme-seo--site-audit",
+              "name": "every-hosted--sentinel--site-audit",
               "type": "workflow",
             },
           },
-          "name": "every-acme-seo--audit",
+          "name": "every-hosted--sentinel--audit",
         },
       }
     `);
@@ -1279,17 +1233,7 @@ describe("Postgres through Hyperdrive", () => {
     return { app, audit };
   };
 
-  it("binds each Worker's provisioned configs, near the database, with its CPU limit", () => {
-    writeDeployInputs({
-      workerName: "every-acme-seo",
-      resources: {
-        kv: { KV: { id: "kv-id" } },
-        hyperdrive: {
-          HYPERDRIVE: { id: "hd-app" },
-          CRAWL_DB: { id: "hd-crawl" },
-        },
-      },
-    });
+  it("binds each Worker's configs, near the database, with its CPU limit", () => {
     const { app, audit } = build("production");
     const pick = (config: {
       env: object;
@@ -1314,7 +1258,7 @@ describe("Postgres through Hyperdrive", () => {
             "value": "postgres",
           },
           "HYPERDRIVE": {
-            "id": "hd-app",
+            "id": "every-hosted--sentinel--HYPERDRIVE",
             "type": "hyperdrive",
           },
           "limits": {
@@ -1326,7 +1270,7 @@ describe("Postgres through Hyperdrive", () => {
         },
         "audit": {
           "CRAWL_DB": {
-            "id": "hd-crawl",
+            "id": "every-hosted--sentinel--CRAWL_DB",
             "type": "hyperdrive",
           },
           "DATABASE_PROVIDER": {
@@ -1334,7 +1278,7 @@ describe("Postgres through Hyperdrive", () => {
             "value": "postgres",
           },
           "HYPERDRIVE": {
-            "id": "hd-app",
+            "id": "every-hosted--sentinel--HYPERDRIVE",
             "type": "hyperdrive",
           },
           "limits": {
@@ -1388,21 +1332,7 @@ describe("Postgres through Hyperdrive", () => {
     >().not.toHaveProperty("CRAWL_DB");
   });
 
-  it("refuses deploy inputs that miss a Hyperdrive config", () => {
-    writeDeployInputs({
-      workerName: "every-acme-seo",
-      resources: {
-        kv: { KV: { id: "kv-id" } },
-        hyperdrive: { CRAWL_DB: { id: "hd-crawl" } },
-      },
-    });
-    expect(() => build("production")).toThrow(
-      /no Hyperdrive config for binding "HYPERDRIVE"/,
-    );
-  });
-
   it("leaves a Worker without a database, limits or Hyperdrive as it was", () => {
-    writeDeployInputs();
     const config = everyAppWorker({
       manifest,
       entrypoint,
@@ -1449,23 +1379,13 @@ describe("R2 buckets (resources.r2)", () => {
     return { app, api };
   };
 
-  it("binds the assigned buckets on the app's Worker and every helper", () => {
-    writeDeployInputs({
-      workerName: "every-acme-postiz",
-      resources: {
-        d1: { DB: { name: "every-acme-postiz", id: "d1-uuid" } },
-        r2: {
-          R2: { name: "every-acme-postiz" },
-          MEDIA_FILES: { name: "every-acme-postiz--media-files" },
-        },
-      },
-    });
+  it("binds each bucket's placeholder on the app's Worker and every helper", () => {
     const { app, api } = build("production");
     for (const env of [app.env, api.env] as Record<string, unknown>[]) {
-      expect(env["R2"]).toEqual({ type: "r2", name: "every-acme-postiz" });
+      expect(env["R2"]).toEqual({ type: "r2", name: resourceSentinel("R2") });
       expect(env["MEDIA_FILES"]).toEqual({
         type: "r2",
-        name: "every-acme-postiz--media-files",
+        name: resourceSentinel("MEDIA_FILES"),
       });
     }
   });
@@ -1500,21 +1420,7 @@ describe("R2 buckets (resources.r2)", () => {
     }>();
   });
 
-  it("refuses deploy inputs that miss a bucket", () => {
-    writeDeployInputs({
-      workerName: "every-acme-postiz",
-      resources: {
-        d1: { DB: { name: "every-acme-postiz", id: "d1-uuid" } },
-        r2: { R2: { name: "every-acme-postiz" } },
-      },
-    });
-    expect(() => build("production")).toThrow(
-      /no R2 bucket for binding "MEDIA_FILES"/,
-    );
-  });
-
   it("leaves a manifest without buckets with none, so a hand-written binding stays the app's", () => {
-    writeDeployInputs();
     const config = everyAppWorker({
       manifest,
       entrypoint,

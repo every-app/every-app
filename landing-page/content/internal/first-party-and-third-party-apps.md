@@ -145,7 +145,7 @@ the API.
 | Who may run it       | Owners and admins of the platform organization, by their Cloudflare login's email; a Cloudflare API token also passes, so CI can deploy | A live owner or admin of the organization, with a personal access token whose only scope is `deploy`; refused while the organization is suspended |
 | Worker name          | `every-everyapp-<app>` (the platform organization's key)                                                                                | `every-<orgKey>-<app>`, written by the deployer                                                                                                   |
 | Bindings             | Whatever the app's config declares, within the binding policy                                                                           | Rewritten by the deployer; anything outside the allowlist is refused                                                                              |
-| What the deploy sets | `GATEWAY_URL` as a secret; the SDK adds `EVERYAPP_SHARED=1` as plain text; no `EVERY_APP_ORG_ID`                                        | `GATEWAY_URL` and `EVERY_APP_ORG_ID`, as plain text                                                                                               |
+| What the deploy sets | `GATEWAY_URL` as a secret; installing the build adds `EVERYAPP_SHARED=1` as plain text; no `EVERY_APP_ORG_ID`                           | `GATEWAY_URL` and `EVERY_APP_ORG_ID`, as plain text                                                                                               |
 
 An app's scope and tier never change after its first registration.
 
@@ -154,8 +154,9 @@ An app's scope and tier never change after its first registration.
 1. **Manifest and Worker config.** `everyapp.config.ts` declares resources,
    helper Workers, providers and capabilities. `cloudflare.config.ts` builds
    the Worker with `everyAppWorker()`, and each helper with
-   `everyAppAuxiliaryWorker()`. The SDK adds the identity settings, the
-   gateway binding and `EVERYAPP_SHARED` on a shared deploy.
+   `everyAppAuxiliaryWorker()`. The SDK adds the identity settings and the
+   gateway binding (placeholders the deploy installs), and the deploy adds
+   `EVERYAPP_SHARED` to a shared app's Workers.
 2. **Scope every table by organization.** Decide the tenant key up front and
    make it non-nullable. Index it. Review every query for it.
 3. **Map the token to your rows.** Verify with `getEveryAppUser()`, then

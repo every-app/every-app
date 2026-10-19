@@ -28,23 +28,6 @@ export async function appBindingsDigest(
 }
 
 /**
- * The hosted deploy API's contract (third-party apps on the hosted
- * gateway): the CLI builds an app with these sentinel deploy inputs, and
- * the gateway's deployer rewrites every binding they reach. Nothing the
- * build makes of them may survive the upload: the deployer refuses a
- * bundle whose bindings it can't rewrite.
- */
-export const HOSTED_DEPLOY_SENTINEL = Object.freeze({
-  // Holds the resource separator, so no registry Worker is ever named so.
-  workerName: "every-hosted--sentinel",
-  organizationId: "everyapp-hosted-deploy-sentinel",
-  d1Name: "every-hosted--sentinel--d1",
-  d1Id: "everyapp-hosted-deploy-sentinel-d1",
-  publicKey:
-    "-----BEGIN PUBLIC KEY-----\nEVERYAPPHOSTEDDEPLOYSENTINEL\n-----END PUBLIC KEY-----\n",
-});
-
-/**
  * The deploy API's protocol, stamped by the CLI on every upload. The
  * gateway refuses a stamp below its floor, so a CLI that packages a bundle
  * the gateway no longer reads the same way is told to upgrade.

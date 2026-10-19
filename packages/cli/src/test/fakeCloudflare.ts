@@ -3,8 +3,8 @@
  * FakeCf: D1 databases are real SQLite (queries and `migrations apply` run
  * against them), KV namespaces exist by title, `cf deploy --prebuilt` reads
  * the Build Output it would upload and validates it with @cloudflare/config,
- * and `cf build` builds an app's Worker config with the SDK's real
- * everyAppWorker() from the deploy inputs. Zones hold DNS records, a
+ * and `cf build` builds an app's tenant-neutral Worker config with the SDK's
+ * real everyAppWorker(), in the environment the build is given. Zones hold DNS records, a
  * deploy publishes its Worker's Custom Domains the way Cloudflare does (the
  * whole list, taken from other Workers, each with its own certificate pack
  * that outlives it, listing the zone apex, the hostname and its wildcard) and creates or takes over the Workflows the Worker
@@ -852,7 +852,8 @@ export class FakeCloudflare {
    * `cf build`: the app's Worker (and helper Workers) as its
    * cloudflare.config.ts defines them for production (`appConfigs`, or
    * everyAppWorker() and everyAppAuxiliaryWorker() as they are), from the
-   * manifest registered for its directory, or its own everyapp.config.ts.
+   * manifest registered for its directory, or its own everyapp.config.ts,
+   * with the build's environment (EVERYAPP_BUILD) as the config sees it.
    */
   private async build(call: RecordedCfCall): Promise<FakeCfResponse> {
     const cwd = call.cwd!;
@@ -863,7 +864,10 @@ export class FakeCloudflare {
     // Helper Workers, as the Vite plugin builds auxiliary Workers: each in
     // its own directory, named after the Worker.
     const helpers: Record<string, any>[] = [];
+    const buildEnv = process.env["EVERYAPP_BUILD"];
     try {
+      if (call.env["EVERYAPP_BUILD"] === undefined) delete process.env["EVERYAPP_BUILD"];
+      else process.env["EVERYAPP_BUILD"] = call.env["EVERYAPP_BUILD"];
       const built = (this.appConfigs.get(cwd) ?? plainAppConfig)({ manifest, root: cwd });
       const { entrypoint: _entrypoint, ...definition } = built.worker;
       worker = structuredClone(definition) as Record<string, any>;
@@ -874,6 +878,9 @@ export class FakeCloudflare {
       }
     } catch (error) {
       return cfError((error as Error).message);
+    } finally {
+      if (buildEnv === undefined) delete process.env["EVERYAPP_BUILD"];
+      else process.env["EVERYAPP_BUILD"] = buildEnv;
     }
     const out = path.join(cwd, ".cloudflare/output/v0");
     fs.rmSync(out, { recursive: true, force: true });
@@ -921,15 +928,20 @@ export class FakeCloudflare {
       this.declineNextDeploy = false;
       return { stdout: "" };
     }
+    // `--worker` picks a Worker by its name, as cf does, not by its directory.
     const selected = flag(call.args, "--worker");
-    const config = JSON.parse(
-      fs.readFileSync(
-        selected
-          ? path.join(call.cwd!, WORKERS_OUTPUT, selected, "worker.config.json")
-          : path.join(call.cwd!, WORKER_CONFIG),
-        "utf8",
-      ),
-    ) as Record<string, any>;
+    const config = selected
+      ? fs
+          .readdirSync(path.join(call.cwd!, WORKERS_OUTPUT))
+          .map(
+            (dir) =>
+              JSON.parse(
+                fs.readFileSync(path.join(call.cwd!, WORKERS_OUTPUT, dir, "worker.config.json"), "utf8"),
+              ) as Record<string, any>,
+          )
+          .find((worker) => worker["name"] === selected)
+      : (JSON.parse(fs.readFileSync(path.join(call.cwd!, WORKER_CONFIG), "utf8")) as Record<string, any>);
+    if (!config) return cfError(`The Build Output has no Worker named "${selected}".`);
     const parsed = OutputWorkerSchema.safeParse(config);
     if (!parsed.success) return cfError(`Invalid Build Output: ${parsed.error.message}`);
     const secrets = call.files["secrets.json"]

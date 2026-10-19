@@ -10,7 +10,7 @@ For full API reference and usage guides, see the [How Apps Work](https://everyap
 
 ## Entry points
 
-- `@every-app/sdk/server`: runs in the Worker. `everyApp()` verifies the identity the gateway injects. Tokens carry the app's Worker name as their audience, which `everyAppWorker()` sets as `env.EVERYAPP_AUDIENCE` at deploy (in development, where `everyapp dev` mints for the app id, `env.EVERYAPP_APP_ID` stands in); the app id comes from `env.EVERYAPP_APP_ID`. The handler gets the runtime's `ExecutionContext` as the Worker received it, so it goes on to Hono's `app.fetch(request, env, ctx)` or React Router's request handler without a cast.
+- `@every-app/sdk/server`: runs in the Worker. `everyApp()` verifies the identity the gateway injects. Tokens carry the app's Worker name as their audience, which `everyAppWorker()` declares as `env.EVERYAPP_AUDIENCE` and the deploy fills in (in development, where `everyapp dev` mints for the app id, `env.EVERYAPP_APP_ID` stands in); the app id comes from `env.EVERYAPP_APP_ID`. The handler gets the runtime's `ExecutionContext` as the Worker received it, so it goes on to Hono's `app.fetch(request, env, ctx)` or React Router's request handler without a cast.
 - `@every-app/sdk/cloudflare`: runs in Node while `cf` loads `cloudflare.config.ts`. `everyAppWorker()` builds the Worker definition from `everyapp.config.ts`:
 
   ```ts
@@ -24,7 +24,7 @@ For full API reference and usage guides, see the [How Apps Work](https://everyap
   }));
   ```
 
-  Production builds read `.everyapp/deploy.json`, which only `everyapp deploy` writes, so deploy with `everyapp deploy` rather than `cf deploy`.
+  Production builds are tenant-neutral: the same Build Output whoever builds the app, with placeholders (`sentinelDeployTarget()`, `BUILD_SENTINEL` in `@every-app/sdk/cloudflare/sentinel`) wherever an install's Worker name, organization, gateway URL, identity keys and resource names or ids go. `everyapp deploy` builds with `EVERYAPP_BUILD=1` and then installs the output (rewrites every placeholder, refusing one that survives); without that variable a production build throws, so deploy with `everyapp deploy` rather than `cf deploy`. Installing a shared app also swaps `EVERY_APP_ORG_ID` for `EVERYAPP_SHARED`, and a deploy that deletes Durable Object classes adds their tombstones.
 
   `localD1Path(root, id)` is the sqlite file `cf dev` keeps the local D1 database `id` in (`env.DB.id` of a development `everyAppWorker()`, or `localD1Id(workerName, binding)`), for drizzle-kit studio.
 
@@ -505,8 +505,8 @@ decides the organization the call is attributed to:
   calls are the app's, in its own organization (the same as
   `{ background: true }`). Naming another organization is refused.
 
-In a shared app's Worker (`EVERYAPP_SHARED=1`, which `everyAppWorker()` sets
-on a shared deploy) a call that names neither throws `AttributionError`
+In a shared app's Worker (`EVERYAPP_SHARED=1`, which `everyapp deploy` sets
+when it installs a shared app) a call that names neither throws `AttributionError`
 when the fetch is created:
 
 ```ts
