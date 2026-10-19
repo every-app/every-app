@@ -19,6 +19,7 @@ import { Route as BlogsSplatRouteImport } from './routes/blogs/$'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as DocsBuildAnAppRouteImport } from './routes/docs/build-an-app'
+import { Route as DocsInternalSplatRouteImport } from './routes/docs/internal/$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -70,6 +71,11 @@ const DocsBuildAnAppRoute = DocsBuildAnAppRouteImport.update({
   path: '/docs/build-an-app',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DocsInternalSplatRoute = DocsInternalSplatRouteImport.update({
+  id: '/docs/internal/$',
+  path: '/docs/internal/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -82,6 +88,7 @@ export interface FileRoutesByFullPath {
   '/docs/build-an-app': typeof DocsBuildAnAppRoute
   '/blogs/': typeof BlogsIndexRoute
   '/docs/': typeof DocsIndexRoute
+  '/docs/internal/$': typeof DocsInternalSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -94,6 +101,7 @@ export interface FileRoutesByTo {
   '/docs/build-an-app': typeof DocsBuildAnAppRoute
   '/blogs': typeof BlogsIndexRoute
   '/docs': typeof DocsIndexRoute
+  '/docs/internal/$': typeof DocsInternalSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -107,6 +115,7 @@ export interface FileRoutesById {
   '/docs/build-an-app': typeof DocsBuildAnAppRoute
   '/blogs/': typeof BlogsIndexRoute
   '/docs/': typeof DocsIndexRoute
+  '/docs/internal/$': typeof DocsInternalSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -121,6 +130,7 @@ export interface FileRouteTypes {
     | '/docs/build-an-app'
     | '/blogs/'
     | '/docs/'
+    | '/docs/internal/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -133,6 +143,7 @@ export interface FileRouteTypes {
     | '/docs/build-an-app'
     | '/blogs'
     | '/docs'
+    | '/docs/internal/$'
   id:
     | '__root__'
     | '/'
@@ -145,6 +156,7 @@ export interface FileRouteTypes {
     | '/docs/build-an-app'
     | '/blogs/'
     | '/docs/'
+    | '/docs/internal/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -158,6 +170,7 @@ export interface RootRouteChildren {
   DocsBuildAnAppRoute: typeof DocsBuildAnAppRoute
   BlogsIndexRoute: typeof BlogsIndexRoute
   DocsIndexRoute: typeof DocsIndexRoute
+  DocsInternalSplatRoute: typeof DocsInternalSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -232,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsBuildAnAppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/docs/internal/$': {
+      id: '/docs/internal/$'
+      path: '/docs/internal/$'
+      fullPath: '/docs/internal/$'
+      preLoaderRoute: typeof DocsInternalSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -246,6 +266,7 @@ const rootRouteChildren: RootRouteChildren = {
   DocsBuildAnAppRoute: DocsBuildAnAppRoute,
   BlogsIndexRoute: BlogsIndexRoute,
   DocsIndexRoute: DocsIndexRoute,
+  DocsInternalSplatRoute: DocsInternalSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

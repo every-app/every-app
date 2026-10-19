@@ -26,3 +26,19 @@ export const docs = {
     }
   }))
 };
+
+export const internal = {
+  doc: create.doc("internal", "./content/internal", import.meta.glob(["./**/*.{mdx,md}"], {
+    "base": "./content/internal",
+    "query": {
+      "collection": "internal"
+    }
+  })),
+  meta: create.meta("internal", "./content/internal", import.meta.glob(["./**/*.{json,yaml}"], {
+    "import": "default",
+    "base": "./content/internal",
+    "query": {
+      "collection": "internal"
+    }
+  }))
+};

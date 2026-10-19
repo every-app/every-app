@@ -23,6 +23,7 @@ type BuildSeoParams = {
   description?: string;
   titleSuffix?: string;
   ogType?: "website" | "article";
+  noindex?: boolean;
 };
 
 export function buildPageSeo({
@@ -31,6 +32,7 @@ export function buildPageSeo({
   description,
   titleSuffix,
   ogType = "website",
+  noindex = false,
 }: BuildSeoParams) {
   const fullTitle = titleSuffix ? `${title} - ${titleSuffix}` : title;
   const canonicalUrl = toCanonicalUrl(path);
@@ -45,6 +47,7 @@ export function buildPageSeo({
         ? [{ property: "og:description", content: description }]
         : []),
       { property: "og:url", content: canonicalUrl },
+      ...(noindex ? [{ name: "robots", content: "noindex" }] : []),
     ],
     links: [{ rel: "canonical", href: canonicalUrl }],
   };
