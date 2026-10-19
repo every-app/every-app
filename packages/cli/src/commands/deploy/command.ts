@@ -13,7 +13,18 @@ export const deployCommand = buildCommand({
     return deploy;
   },
   parameters: {
-    positional: { kind: "tuple", parameters: [] },
+    positional: {
+      kind: "tuple",
+      parameters: [
+        {
+          brief:
+            "An app release to deploy instead of the app in this directory: a GitHub repository URL (its latest release), a release tarball's URL, or a downloaded everyapp-release.tar.gz",
+          parse: String,
+          placeholder: "source",
+          optional: true,
+        },
+      ],
+    },
     flags: {
       gateway: gatewayFlag,
       "account-id": accountFlag,
@@ -58,13 +69,25 @@ export const deployCommand = buildCommand({
           "With no Gateway yet, install one at apps.<zone> without asking (never cf's questions, or the one before replacing a Worker changed outside everyapp)",
         optional: true,
       },
+      "bundle-only": {
+        kind: "boolean",
+        brief:
+          "Build the app in this directory and pack it as a release (everyapp-release.tar.gz) without deploying it: no Gateway or Cloudflare login (CI)",
+        optional: true,
+      },
+      out: {
+        kind: "parsed",
+        parse: String,
+        brief: "With --bundle-only: where to write the release (default: ./everyapp-release.tar.gz)",
+        optional: true,
+      },
       json: jsonFlag,
       verbose: verboseFlag,
     },
     aliases: { y: "yes" },
   },
   docs: {
-    brief: "Deploy the app in this directory",
+    brief: "Deploy the app in this directory, or an app's release",
     fullDescription: [
       "Deploys the app in this directory as a private Cloudflare Worker defined by cloudflare.config.ts,",
       "with cf and your Cloudflare login (or CLOUDFLARE_API_TOKEN), in the Gateway's account:",
@@ -95,6 +118,19 @@ export const deployCommand = buildCommand({
       "goes to a log file (its last lines and path are shown if it fails), never to stdout.",
       "Safe to run again: a redeploy of an app the Gateway already serves never touches the Gateway.",
       "",
+      "From a release, with no checkout of the app: `everyapp deploy https://github.com/<owner>/<repo>`",
+      "deploys the everyapp-release.tar.gz on the repository's latest release (…/releases/tag/<tag>: that",
+      "one); a tarball's HTTPS URL or a local file works too. The release holds the app's tenant-neutral",
+      "Build Output, migrations and manifest, checked against its SHA-256: steps 3 and 4 install and",
+      "check it instead of building (the publisher's build checked the schema). Postgres migrations need",
+      "the app's source, so their releases are refused. A repository without a release is never built",
+      "from its URL: clone it, then run pnpm install && pnpm everyapp deploy.",
+      "",
+      "--bundle-only [--out <file>] builds the app in this directory, checks its Build Output against the",
+      "app policy and its migrations against its schema, and packs the release (default",
+      "./everyapp-release.tar.gz) without deploying it: no Gateway or Cloudflare login, for CI. New apps",
+      "get .github/workflows/release.yml, which runs it on every v* tag and publishes the release.",
+      "",
       "--shared (a hosted Gateway only) registers a first-party app every organization's members can",
       "open, owned by the platform organization; its Worker gets no EVERY_APP_ORG_ID. An app keeps the",
       "scope it was registered with: a redeploy without --shared (or a secret set) keeps it shared.",
@@ -104,6 +140,7 @@ export const deployCommand = buildCommand({
       "Cloudflare login: --gateway <url> or EVERYAPP_GATEWAY_URL names the gateway (required). It",
       "registers the app, builds it tenant-neutral (placeholders the gateway installs), uploads the",
       "Build Output, manifest and migrations, and follows the deploy job (--no-wait: only starts it).",
+      "With a <source>, it uploads that release's instead of building.",
       "In CI: EVERYAPP_DEPLOY_TOKEN=<deploy key> EVERYAPP_GATEWAY_URL=https://app.everyapp.com pnpm everyapp deploy --json",
     ].join("\n"),
   },

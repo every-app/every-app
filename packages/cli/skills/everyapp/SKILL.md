@@ -23,6 +23,13 @@ Ship:    pnpm everyapp deploy --json   (from the app directory; safe to repeat;
          also upgrades the Gateway to this checkout when it has to rebind).
          No Gateway yet: action_required install_gateway; ask the user, run
          its data.rerun (setup), then deploy again.
+Release: someone else's app, without a clone: pnpm everyapp deploy
+         https://github.com/<owner>/<repo> --json (its latest release's
+         everyapp-release.tar.gz; a tarball URL or file works too). NO_RELEASE:
+         the repository publishes none; clone it, then pnpm install && pnpm
+         everyapp deploy. Never build a repository from its URL yourself.
+         To publish one: pnpm everyapp deploy --bundle-only (new apps' release
+         workflow runs it on every v* tag).
 Shared:  hosted Gateway only, platform organization owners/admins, when the
          user asks for a first-party app every organization opens:
          deploy --shared --json (redeploys and secret set keep it shared), or for a

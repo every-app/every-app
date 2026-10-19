@@ -50,7 +50,7 @@ async function migrationFiles(
 }
 
 /** The app's own @every-app/sdk version, when it has one installed. */
-function appSdkVersion(cwd: string): string | null {
+export function appSdkVersion(cwd: string): string | null {
   try {
     const require = createRequire(path.join(cwd, "package.json"));
     return (require("@every-app/sdk/package.json") as { version?: string }).version ?? null;
@@ -63,12 +63,23 @@ async function file(name: string, at: string): Promise<File> {
   return new File([await fs.readFile(at)], path.basename(name));
 }
 
-/** The upload of the app built in `cwd`. */
-export async function packageHostedBundle(
-  cwd: string,
-  manifest: EveryAppCliManifest,
-): Promise<{ form: FormData; modules: number; assets: number; migrations: number }> {
-  const workerDir = path.join(cwd, WORKER_DIR);
+/**
+ * The upload of an app's Build Output: the app built in its directory, or
+ * an extracted app release (lib/app/release.ts). Its migrations are where
+ * the manifest says, under the same root.
+ */
+export async function packageHostedBundle({
+  root,
+  manifest,
+  sdkVersion,
+}: {
+  /** Where `.cloudflare/output` is. */
+  root: string;
+  manifest: EveryAppCliManifest;
+  /** The app's @every-app/sdk version, for the stamp. */
+  sdkVersion: string | null;
+}): Promise<{ form: FormData; modules: number; assets: number; migrations: number }> {
+  const workerDir = path.join(root, WORKER_DIR);
   const configText = await fs.readFile(path.join(workerDir, "worker.config.json"), "utf8");
   const config = JSON.parse(configText) as {
     manifest?: { modules?: Record<string, { type?: string }> };
@@ -80,7 +91,7 @@ export async function packageHostedBundle(
     HOSTED_DEPLOY_PARTS.stamp,
     JSON.stringify({
       protocol: HOSTED_DEPLOY_PROTOCOL,
-      sdkVersion: appSdkVersion(cwd),
+      sdkVersion,
       cliVersion,
     }),
   );
@@ -99,7 +110,7 @@ export async function packageHostedBundle(
   for (const name of assets) {
     form.set(`${HOSTED_DEPLOY_PARTS.assetPrefix}/${name}`, await file(name, path.join(assetsDir, name)));
   }
-  const migrations = await migrationFiles(cwd, manifest);
+  const migrations = await migrationFiles(root, manifest);
   for (const migration of migrations) {
     form.set(`${HOSTED_DEPLOY_PARTS.migrationPrefix}${migration.name}`, await file(migration.name, migration.file));
   }

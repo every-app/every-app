@@ -23,29 +23,40 @@ export const RELEASE_TARBALL = "every-app-gateway-release.tar.gz";
  */
 export const GATEWAY_RELEASE_REPO = "https://github.com/every-app/every-app";
 const SUPPORTED_BUILD_OUTPUT = "v0";
-/**
- * All a release holds at its top level. cf deploys from a copy of it, so
- * anything else there (a cloudflare.config.ts above all) would be run.
- */
-const RELEASE_ENTRIES = new Set([".cloudflare", "drizzle", "release.json"]);
+/** What a release deploys: the Gateway, or an app (lib/app/release.ts). */
+type ReleaseKind = "gateway" | "app";
 
-const ReleaseManifestSchema = z.looseObject({
+/**
+ * All a release of each kind holds at its top level. cf deploys from a
+ * copy of it, so anything else there (a cloudflare.config.ts above all)
+ * would be run.
+ */
+const RELEASE_ENTRIES: Record<ReleaseKind, ReadonlySet<string>> = {
+  gateway: new Set([".cloudflare", "drizzle", "release.json"]),
+  app: new Set([".cloudflare", "migrations", "release.json"]),
+};
+
+/** release.json's fields every kind of release has. */
+export const BaseReleaseSchema = z.looseObject({
   schema: z.literal(1),
   /** What the release deploys; a Gateway when absent. */
   kind: z.string().optional(),
   version: z.string(),
   gitSha: z.string(),
   builtAt: z.string(),
-  /** When the Gateway's sources were last committed (ISO), if git said. */
-  committedAt: z.string().optional(),
   cfVersion: z.string(),
-  pluginVersion: z.string(),
-  configVersion: z.string(),
   buildOutputVersion: z.string(),
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
   migrations: z.array(z.object({ tag: z.string(), when: z.number() })),
   minCli: z.string(),
   minSdk: z.string(),
+});
+
+const ReleaseManifestSchema = BaseReleaseSchema.extend({
+  /** When the Gateway's sources were last committed (ISO), if git said. */
+  committedAt: z.string().optional(),
+  pluginVersion: z.string(),
+  configVersion: z.string(),
 });
 type ReleaseManifest = z.infer<typeof ReleaseManifestSchema>;
 
@@ -148,11 +159,88 @@ function extractTarGz(tarball: string, dir: string): Promise<void> {
   });
 }
 
+const RELEASE_NAMES: Record<ReleaseKind, { a: string; the: string }> = {
+  gateway: { a: "a gateway release", the: "Gateway release" },
+  app: { a: "an app release", the: "App release" },
+};
+
 /**
- * Extract a release into a private temp dir and check it: only a release's
- * own files, in a format this CLI deploys, whose SHA-256 is the one
- * release.json records.
+ * Extract a release of `kind` into a private temp dir and check what every
+ * release must be: only that kind's own files, a release.json of that kind
+ * that `schema` reads, in a Build Output format this CLI deploys, whose
+ * SHA-256 is the one release.json records.
  */
+export async function extractRelease<T extends z.infer<typeof BaseReleaseSchema>>(
+  tarball: string,
+  kind: ReleaseKind,
+  schema: z.ZodType<T>,
+): Promise<{ dir: string; manifest: T; cleanup(): Promise<void> }> {
+  const names = RELEASE_NAMES[kind];
+  const dir = await makeCfTempDir(`${kind}-release-`);
+  const forget = onInterrupt({
+    sync: () => fs.rmSync(dir, { recursive: true, force: true }),
+  });
+  const cleanup = async () => {
+    await fsp.rm(dir, { recursive: true, force: true });
+    forget();
+  };
+  try {
+    await extractTarGz(tarball, dir);
+    const json: unknown = JSON.parse(
+      await fsp.readFile(path.join(dir, "release.json"), "utf8"),
+    );
+    const said = (json as { kind?: unknown } | null)?.kind ?? "gateway";
+    if (said !== kind) {
+      const other = said === "app" || said === "gateway" ? RELEASE_NAMES[said].a : `a ${String(said)} release`;
+      throw new EveryAppError(
+        "RELEASE_INVALID",
+        `${tarball} is ${other}, not ${kind === "gateway" ? "a Gateway release" : names.a}.`,
+      );
+    }
+    const unexpected = (await fsp.readdir(dir)).filter(
+      (entry) => !RELEASE_ENTRIES[kind].has(entry),
+    );
+    if (unexpected.length > 0) {
+      throw new EveryAppError(
+        "RELEASE_INVALID",
+        `${tarball} holds more than ${names.a}: ${unexpected.join(", ")}.`,
+      );
+    }
+    const parsed = schema.safeParse(json);
+    if (!parsed.success) {
+      throw new EveryAppError(
+        "RELEASE_INVALID",
+        `${tarball} has no valid release.json: ${parsed.error.issues[0]?.message}`,
+      );
+    }
+    const manifest = parsed.data;
+    if (manifest.buildOutputVersion !== SUPPORTED_BUILD_OUTPUT) {
+      throw new EveryAppError(
+        "RELEASE_UNSUPPORTED",
+        `${names.the} ${manifest.version} uses Build Output ${manifest.buildOutputVersion}; this everyapp deploys ${SUPPORTED_BUILD_OUTPUT}. Upgrade everyapp.`,
+      );
+    }
+    const actual = await hashReleaseTree(dir);
+    if (actual !== manifest.sha256) {
+      throw new EveryAppError(
+        "RELEASE_CORRUPT",
+        `${names.the} ${manifest.version} doesn't match its SHA-256 (expected ${manifest.sha256}, got ${actual}).`,
+      );
+    }
+    return { dir, manifest, cleanup };
+  } catch (error) {
+    await cleanup();
+    if (error instanceof SyntaxError || (error as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new EveryAppError(
+        "RELEASE_INVALID",
+        `${tarball} isn't ${names.a}: ${(error as Error).message}`,
+      );
+    }
+    throw error;
+  }
+}
+
+/** Open a Gateway release and check it (see {@link extractRelease}). */
 export async function openRelease(
   tarball: string,
   /**
@@ -165,71 +253,18 @@ export async function openRelease(
     committedAt?: number | null;
   } = { origin: { kind: "file", path: tarball } },
 ): Promise<GatewayRelease> {
-  const dir = await makeCfTempDir("gateway-release-");
-  const forget = onInterrupt({
-    sync: () => fs.rmSync(dir, { recursive: true, force: true }),
-  });
-  const cleanup = async () => {
-    await fsp.rm(dir, { recursive: true, force: true });
-    forget();
+  const { dir, manifest, cleanup } = await extractRelease(
+    tarball,
+    "gateway",
+    ReleaseManifestSchema,
+  );
+  const order = releaseOrder(manifest);
+  const source = {
+    treeSha256: from.treeSha256 ?? null,
+    order: { ...order, committedAt: from.committedAt ?? order.committedAt },
+    origin: from.origin,
   };
-  try {
-    await extractTarGz(tarball, dir);
-    const unexpected = (await fsp.readdir(dir)).filter(
-      (entry) => !RELEASE_ENTRIES.has(entry),
-    );
-    if (unexpected.length > 0) {
-      throw new EveryAppError(
-        "RELEASE_INVALID",
-        `${tarball} holds more than a gateway release: ${unexpected.join(", ")}.`,
-      );
-    }
-    const parsed = ReleaseManifestSchema.safeParse(
-      JSON.parse(await fsp.readFile(path.join(dir, "release.json"), "utf8")),
-    );
-    if (!parsed.success) {
-      throw new EveryAppError(
-        "RELEASE_INVALID",
-        `${tarball} has no valid release.json: ${parsed.error.issues[0]?.message}`,
-      );
-    }
-    const manifest = parsed.data;
-    if ((manifest.kind ?? "gateway") !== "gateway") {
-      throw new EveryAppError(
-        "RELEASE_INVALID",
-        `${tarball} is ${manifest.kind === "app" ? "an app" : `a ${manifest.kind}`} release, not a Gateway release.`,
-      );
-    }
-    if (manifest.buildOutputVersion !== SUPPORTED_BUILD_OUTPUT) {
-      throw new EveryAppError(
-        "RELEASE_UNSUPPORTED",
-        `Gateway release ${manifest.version} uses Build Output ${manifest.buildOutputVersion}; this everyapp deploys ${SUPPORTED_BUILD_OUTPUT}. Upgrade everyapp.`,
-      );
-    }
-    const actual = await hashReleaseTree(dir);
-    if (actual !== manifest.sha256) {
-      throw new EveryAppError(
-        "RELEASE_CORRUPT",
-        `Gateway release ${manifest.version} doesn't match its SHA-256 (expected ${manifest.sha256}, got ${actual}).`,
-      );
-    }
-    const order = releaseOrder(manifest);
-    const source = {
-      treeSha256: from.treeSha256 ?? null,
-      order: { ...order, committedAt: from.committedAt ?? order.committedAt },
-      origin: from.origin,
-    };
-    return { dir, tarball, manifest, source, cleanup };
-  } catch (error) {
-    await cleanup();
-    if (error instanceof SyntaxError || (error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new EveryAppError(
-        "RELEASE_INVALID",
-        `${tarball} isn't a gateway release: ${(error as Error).message}`,
-      );
-    }
-    throw error;
-  }
+  return { dir, tarball, manifest, source, cleanup };
 }
 
 /**
@@ -271,11 +306,13 @@ function releaseOrder(
 export function refuseNewerThanCli(
   manifest: Pick<ReleaseManifest, "version" | "minCli">,
   cliVersion: string,
+  /** What the release is, as the message names it. */
+  what = `Gateway release ${manifest.version}`,
 ): void {
   if (compareVersions(manifest.minCli, cliVersion) > 0) {
     throw new EveryAppError(
       "CLI_TOO_OLD",
-      `Gateway release ${manifest.version} needs everyapp ${manifest.minCli} or newer; this is ${cliVersion}. Update everyapp (in a checkout: git pull), then run the same command again.`,
+      `${what} needs everyapp ${manifest.minCli} or newer; this is ${cliVersion}. Update everyapp (in a checkout: git pull), then run the same command again.`,
     );
   }
 }

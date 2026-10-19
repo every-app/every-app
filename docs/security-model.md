@@ -31,6 +31,15 @@
   it couldn't already reach. The origin URL reaches `cf` and drizzle-kit only
   in a private file or the environment, never argv or output. The dispatch
   tier refuses Hyperdrive (`manifestTierProblems`).
+  An app deployed from a release (`everyapp deploy <github url | tarball>`)
+  is held to the same rules: its tenant-neutral Build Output gets the same
+  install rewrite and policy check as a local build, and its manifest the
+  strict parser. The release's SHA-256 proves only that the tarball is
+  whole, not who built it: whoever deploys a release trusts its publisher
+  as they would trust the repository's code. The CLI never builds a
+  repository from its URL (a repository without a release is cloned and
+  deployed from its directory), so no one else's build scripts run on a
+  deployer's machine.
 
 ## Deployment Mode
 

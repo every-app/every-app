@@ -18,14 +18,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { findCheckoutRoot } from "@/lib/checkout";
-import { EveryAppError } from "@/lib/errors";
 import type { EventSink } from "@/lib/output/events";
-import {
-  downloadRelease,
-  fetchGithubReleaseAsset,
-  parseGithubRepo,
-  type DownloadedRelease,
-} from "@/lib/release/github";
+import { fetchReleaseTarball } from "@/lib/release/fetch";
 import { candidate, type CandidateRelease } from "./apply";
 import { checkoutSource, openCheckoutGatewayRelease } from "./checkoutRelease";
 import {
@@ -111,60 +105,17 @@ async function fetchRelease(
   out: EventSink,
   fetchImpl?: typeof fetch,
 ): Promise<{ tarball: string; origin: ReleaseOrigin }> {
-  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(target)) {
-    const file = path.resolve(target);
-    if (!fs.existsSync(file)) {
-      throw new EveryAppError(
-        "RELEASE_NOT_FOUND",
-        `${target} is neither a URL nor a file: pass --release a GitHub repository, a release tarball's URL, or a downloaded ${RELEASE_TARBALL}.`,
-      );
-    }
-    return { tarball: file, origin: { kind: "file", path: file } };
-  }
-  const repo = githubRepository(target);
-  out.emit({
-    type: "progress",
+  const { tarball, origin } = await fetchReleaseTarball(target, {
+    asset: RELEASE_TARBALL,
+    what: "the Gateway",
     step: "gateway.release",
-    message: `Downloading the Gateway from ${repo ? `${repo.repo}${repo.tag ? ` release ${repo.tag}` : "'s latest release"}` : target}...`,
-    data: { url: target },
+    missing: `${target} is neither a URL nor a file: pass --release a GitHub repository, a release tarball's URL, or a downloaded ${RELEASE_TARBALL}.`,
+    out,
+    fetch: fetchImpl,
   });
-  let download: DownloadedRelease;
-  let origin: ReleaseOrigin;
-  if (repo) {
-    const github = await fetchGithubReleaseAsset({
-      repo: repo.repo,
-      asset: RELEASE_TARBALL,
-      tag: repo.tag,
-      fetch: fetchImpl,
-    });
-    download = github;
-    origin = { kind: "github", repo: github.repo, tag: github.tag };
-  } else {
-    download = await downloadRelease(target, { fetch: fetchImpl });
-    const named = download.tag ? parseGithubRepo(target) : null;
-    origin =
-      named && download.tag
-        ? { kind: "github", repo: named, tag: download.tag }
-        : { kind: "url", url: target };
-  }
   // Opened again for every deploy of this run; gone once it exits.
-  process.once("exit", () => fs.rmSync(path.dirname(download.tarball), { recursive: true, force: true }));
-  return { tarball: download.tarball, origin };
-}
-
-/**
- * A github.com URL of a repository (its latest release) or of one of its
- * releases (`/releases/tag/<tag>`); null for any other URL, a tarball's
- * among them.
- */
-function githubRepository(target: string): { repo: string; tag?: string } | null {
-  const repo = parseGithubRepo(target);
-  if (!repo) return null;
-  const rest = new URL(target).pathname.split("/").filter(Boolean).slice(2);
-  if (rest.length === 0 || (rest.length === 1 && rest[0] === "releases")) return { repo };
-  if (rest.length === 3 && rest[0] === "releases" && rest[1] === "tag") {
-    return { repo, tag: decodeURIComponent(rest[2]!) };
+  if (origin.kind !== "file") {
+    process.once("exit", () => fs.rmSync(path.dirname(tarball), { recursive: true, force: true }));
   }
-  if (rest.length === 2 && rest[0] === "releases" && rest[1] === "latest") return { repo };
-  return null;
+  return { tarball, origin };
 }

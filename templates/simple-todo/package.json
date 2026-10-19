@@ -1,6 +1,7 @@
 {
   "name": "simple-todo-template",
   "private": true,
+  "version": "0.1.0",
   "sideEffects": false,
   "type": "module",
   "packageManager": "pnpm@10.34.5",

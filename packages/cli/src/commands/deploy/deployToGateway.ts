@@ -15,6 +15,11 @@
  *   3. upload the Build Output, manifest, migrations and stamp, and follow
  *      the deploy job until it ends.
  *
+ * From an app release (`everyapp deploy <github url | tarball>`, ./
+ * index.ts) there is nothing to build: its Build Output is checked against
+ * the policy the same way, its manifest registers the app, and it uploads
+ * the same way; the schema check ran where the release was packed.
+ *
  * The gateway creates the app's D1, applies its migrations, uploads its
  * Worker into the dispatch namespace and records it; nothing here touches
  * Cloudflare.
@@ -22,7 +27,8 @@
 import { sentinelDeployTarget } from "@every-app/sdk/cloudflare";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { buildApp } from "@/lib/app/buildApp";
-import { packageHostedBundle } from "@/lib/app/hostedBundle";
+import { appSdkVersion, packageHostedBundle } from "@/lib/app/hostedBundle";
+import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
 import { prepareAppBuildOutput } from "@/lib/app/policy";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
@@ -82,6 +88,8 @@ export function hostedDeployTarget(
 interface DeployToGatewayOptions {
   cwd: string;
   manifest: EveryAppCliManifest;
+  /** Deploy this app release instead of building the app in `cwd`. */
+  release?: AppRelease;
   gatewayUrl: string;
   /** EVERYAPP_DEPLOY_TOKEN: a deploy key. */
   token: string;
@@ -178,26 +186,42 @@ export async function deployToGateway(
     data: { appId: manifest.id, workerName: app.workerName, hostname: app.hostname, organizationId: key.organizationId },
   });
 
-  // 2. The build, with placeholders for everything the deployer installs.
-  await (options.installDeps ?? installDependencies)({
-    cwd,
-    description: "Installing dependencies...",
-    install: manifest.install,
-    verbose: options.verbose ?? false,
-  });
-  out.emit({ type: "step", step: "app.build", status: "start", message: "Building the app..." });
-  await buildApp({
-    cwd,
-    cf: (options.createCf ?? (() => createCfRunner()))(),
-    buildCommand: manifest.build,
-    verbose: options.verbose ?? false,
-  });
-  await prepareAppBuildOutput({ cwd, inputs: sentinelDeployTarget(manifest) });
-  out.emit({ type: "step", step: "app.build", status: "ok", message: "Built the app and checked its Worker." });
-  await checkSchemaDrift({ cwd, manifest, out });
+  // 2. The build, with placeholders for everything the deployer installs;
+  // a release's was built where it was packed.
+  const release = options.release;
+  if (release) {
+    await prepareAppBuildOutput({ cwd: release.dir, inputs: sentinelDeployTarget(manifest) });
+    out.emit({
+      type: "step",
+      step: "app.build",
+      status: "ok",
+      message: `Checked the Worker of ${manifest.id} ${release.release.version} from ${describeAppOrigin(release.origin)}; its publisher's build checked its migrations against its schema.`,
+    });
+  } else {
+    await (options.installDeps ?? installDependencies)({
+      cwd,
+      description: "Installing dependencies...",
+      install: manifest.install,
+      verbose: options.verbose ?? false,
+    });
+    out.emit({ type: "step", step: "app.build", status: "start", message: "Building the app..." });
+    await buildApp({
+      cwd,
+      cf: (options.createCf ?? (() => createCfRunner()))(),
+      buildCommand: manifest.build,
+      verbose: options.verbose ?? false,
+    });
+    await prepareAppBuildOutput({ cwd, inputs: sentinelDeployTarget(manifest) });
+    out.emit({ type: "step", step: "app.build", status: "ok", message: "Built the app and checked its Worker." });
+    await checkSchemaDrift({ cwd, manifest, out });
+  }
 
   // 3. The upload, then the job.
-  const bundle = await packageHostedBundle(cwd, manifest);
+  const bundle = await packageHostedBundle({
+    root: release?.dir ?? cwd,
+    manifest,
+    sdkVersion: release ? release.release.sdkVersion : appSdkVersion(cwd),
+  });
   out.emit({
     type: "step",
     step: "app.upload",

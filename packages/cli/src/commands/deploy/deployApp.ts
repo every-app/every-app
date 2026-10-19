@@ -46,6 +46,14 @@
  *      then wait for the app to go live: the gateway activates it on the
  *      first request that reaches it (steps/waitForLive.ts).
  *
+ * From an app release (`release`: `everyapp deploy <github url | tarball>`,
+ * lib/app/release.ts) the pipeline is the same with the extracted release
+ * as the Build Output root and its manifest as the app's: nothing is
+ * installed or built, and the schema check is left to the publisher's
+ * build, which ran it when it packed the release. Its D1 migrations come
+ * from the release's migrations/; Postgres migrations need the app's
+ * source (drizzle-kit, Prisma), so a release with them is refused.
+ *
  * With `shared` (`--shared`, the hosted gateway's first-party apps) the app
  * registers as one Worker every organization's members may open, owned by
  * the platform organization; its Workers get no EVERY_APP_ORG_ID. A
@@ -86,6 +94,7 @@ import {
   type AppSecrets,
 } from "@/lib/app/deploySecrets";
 import { prepareAppBuildOutput } from "@/lib/app/policy";
+import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
 import { assertAppSecretName } from "@/lib/app/secrets";
 import { readOwnedResources, recordUploadedVersion } from "@/lib/app/ownership";
 import { claimAppWorker, provisionAppResources } from "@/lib/app/resources";
@@ -134,8 +143,14 @@ import type { EventSink } from "@/lib/output/events";
 import { installDependencies } from "@/lib/package-manager";
 
 interface DeployAppOptions {
+  /** The app's directory; with `release`, where its secrets file is read. */
   cwd: string;
   manifest?: EveryAppCliManifest;
+  /**
+   * Deploy this app release (its manifest the app's) instead of building
+   * the app in `cwd`.
+   */
+  release?: AppRelease;
   /** The gateway `--gateway` or EVERYAPP_GATEWAY_URL names, checked against the install. */
   gateway?: string;
   /** The Gateway's Cloudflare account (`--account-id`), when the login sees several. */
@@ -262,7 +277,27 @@ async function deploySteps(
   const interactive =
     options.interactive ?? canPromptInTerminal(options.json ?? false);
 
-  const manifest = options.manifest ?? (await loadEveryAppManifest(cwd));
+  const release = options.release;
+  const manifest =
+    release?.manifest ?? options.manifest ?? (await loadEveryAppManifest(cwd));
+  // Where the Build Output and the migrations are.
+  const root = release?.dir ?? cwd;
+  if (release) {
+    refuseReleaseMigrations(manifest);
+    out.emit({
+      type: "step",
+      step: "app.release",
+      status: "ok",
+      message: `Deploying ${manifest.id} ${release.release.version} from ${describeAppOrigin(release.origin)}.`,
+      data: {
+        appId: manifest.id,
+        version: release.release.version,
+        gitSha: release.release.gitSha,
+        origin: release.origin,
+        sha256: release.release.sha256,
+      },
+    });
+  }
   // Before anything is created, migrated or uploaded: a secret named like
   // one of the app's bindings would only fail at upload.
   const bindings = new Set([
@@ -298,11 +333,12 @@ async function deploySteps(
       `${manifest.id} migrates a Postgres database, and the deploy needs its URL: set ${POSTGRES_URL_VARIABLE} in ${APP_SECRETS_FILE} to postgres://<user>:<password>@<host>:<port>/<database>, then deploy again.`,
     );
   }
-  const cloudflareConfig = await readCloudflareConfig(cwd);
-  if (!cloudflareConfig) {
+  // A release's Build Output is checked against the policy all the same.
+  const cloudflareConfig = release ? null : await readCloudflareConfig(cwd);
+  if (!release && !cloudflareConfig) {
     throw new EveryAppError("MISSING_CLOUDFLARE_CONFIG", MISSING_CLOUDFLARE_CONFIG);
   }
-  if (!cloudflareConfig.usesEveryAppWorker) {
+  if (cloudflareConfig && !cloudflareConfig.usesEveryAppWorker) {
     out.emit({
       type: "warning",
       code: "NONSTANDARD_CLOUDFLARE_CONFIG",
@@ -514,12 +550,14 @@ async function deploySteps(
       secrets: appSecrets,
     });
 
-    await (options.installDeps ?? installDependencies)({
-      cwd,
-      description: "Installing dependencies...",
-      install: manifest.install,
-      verbose: options.verbose ?? false,
-    });
+    if (!release) {
+      await (options.installDeps ?? installDependencies)({
+        cwd,
+        description: "Installing dependencies...",
+        install: manifest.install,
+        verbose: options.verbose ?? false,
+      });
+    }
 
     const target: InstallTarget = {
       workerName,
@@ -531,16 +569,18 @@ async function deploySteps(
       deletedDurableObjects,
       helperWorkers: helpers.map((helper) => helper.workerName),
     };
-    out.emit({ type: "step", step: "app.build", status: "start", message: "Building the app..." });
-    await buildApp({
-      cwd,
-      cf,
-      buildCommand: manifest.build,
-      verbose: options.verbose ?? false,
-    });
-    await installAppBuildOutput({ cwd, target });
+    if (!release) {
+      out.emit({ type: "step", step: "app.build", status: "start", message: "Building the app..." });
+      await buildApp({
+        cwd,
+        cf,
+        buildCommand: manifest.build,
+        verbose: options.verbose ?? false,
+      });
+    }
+    await installAppBuildOutput({ cwd: root, target });
     const { workflows, helperWorkflows } = await prepareAppBuildOutput({
-      cwd,
+      cwd: root,
       inputs: target,
     });
     await assertOwnWorkflows({ cf, workerName, names: workflows });
@@ -555,15 +595,21 @@ async function deploySteps(
       type: "step",
       step: "app.build",
       status: "ok",
-      message: helpers.length
-        ? "Built the app and checked its Workers."
-        : "Built the app and checked its Worker.",
+      message: `${release ? "Installed the release" : "Built the app"} and checked its Worker${helpers.length ? "s" : ""}.`,
       data: {
         workflows: [...workflows, ...Object.values(helperWorkflows).flat()],
       },
     });
     // Migrations that lag the schema would go live with code that needs more.
-    await checkSchemaDrift({ cwd, manifest, out });
+    if (release) {
+      out.emit({
+        type: "progress",
+        step: "app.schema",
+        message: `The release's publisher checked its migrations against its schema when it packed ${manifest.id} ${release.release.version}.`,
+      });
+    } else {
+      await checkSchemaDrift({ cwd, manifest, out });
+    }
 
     // The database changes only once nothing else can stop the upload.
     const workerRecords = (await readOwnedResources(registry, workerName)).filter(
@@ -605,7 +651,7 @@ async function deploySteps(
     migrated.rollbackCommand = await migrate({
       cf,
       out,
-      cwd,
+      cwd: root,
       manifest,
       resources,
       accountId,
@@ -638,7 +684,7 @@ async function deploySteps(
       });
       await cfDeploy({
         cf,
-        cwd,
+        cwd: root,
         workerName: helper.workerName,
         buildOutputWorker: helper.workerName,
         accountId,
@@ -659,7 +705,7 @@ async function deploySteps(
     });
     const uploaded = await cfDeploy({
       cf,
-      cwd,
+      cwd: root,
       workerName,
       accountId,
       message: `everyapp ${cliVersion} ${manifest.id}`,
@@ -820,6 +866,21 @@ function emailRouteSummary(
     ? ` To reply from ${unsent.join(", ")}, onboard ${unsent.length === 1 ? "it" : "them"} to Email Sending and list ${unsent.length === 1 ? "it" : "them"} in capabilities.email.senders (docs/runbooks/email-sending-setup.md).`
     : "";
   return `Mail to ${routed.join(", ")} goes to ${workerName}.${gone}${replies}`;
+}
+
+/**
+ * A release carries SQL migration files, which only the D1 migration
+ * applies by itself: Postgres migrations run the app's own drizzle-kit or
+ * Prisma CLI with its config, which a release doesn't have.
+ */
+function refuseReleaseMigrations(manifest: EveryAppCliManifest): void {
+  if (manifest.migrations?.dialect !== "postgresql") return;
+  const engine =
+    manifest.migrations.engine === "prisma" ? "Prisma (prisma migrate deploy)" : "drizzle-kit (drizzle-kit migrate)";
+  throw new EveryAppError(
+    "RELEASE_MIGRATIONS_UNSUPPORTED",
+    `${manifest.id} migrates a Postgres database with ${engine}, which needs the app's source: a release can't. Clone it, then run: pnpm install && pnpm everyapp deploy`,
+  );
 }
 
 /**

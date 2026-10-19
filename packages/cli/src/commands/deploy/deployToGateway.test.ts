@@ -13,7 +13,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BUILD_SENTINEL, resourceSentinel } from "@every-app/sdk/cloudflare";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { createNdjsonSink } from "@/lib/output/events";
+import { openAppRelease } from "@/lib/app/release";
 import { FakeCloudflare } from "@/test/fakeCloudflare";
+import { bundleApp } from "./bundleApp";
 import { deployToGateway, hostedDeployTarget } from "./deployToGateway";
 
 const GATEWAY = "https://app.everyapp.com";
@@ -174,6 +176,45 @@ describe("everyapp deploy --gateway (hosted deploy API)", () => {
     expect(done?.["message"]).toBe(
       "Deployed version etag-1; todo is at https://todo-acme.everyapp.dev.",
     );
+  });
+
+  it("uploads an app release as it is, without building anything", async () => {
+    const { tarball } = await bundleApp({
+      cwd: appDir,
+      manifest: TODO,
+      outFile: "everyapp-release.tar.gz",
+      out: createNdjsonSink(() => undefined),
+      createCf: () => account.cf,
+      installDeps: async () => undefined,
+    });
+    const release = await openAppRelease(tarball);
+    const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-elsewhere-"));
+    const builds = account.cf.calls.length;
+    try {
+      const result = await run({
+        cwd: elsewhere,
+        manifest: release.manifest,
+        release,
+        installDeps: async () => {
+          throw new Error("a release installs no dependencies");
+        },
+      });
+      expect(result.status).toBe("succeeded");
+    } finally {
+      await release.cleanup();
+      fs.rmSync(elsewhere, { recursive: true, force: true });
+    }
+    expect(account.cf.calls.length).toBe(builds);
+    expect(gateway.registered).toEqual({ appId: "todo", manifest: release.manifest });
+    expect(JSON.parse(await part("manifest"))).toEqual({
+      ...TODO,
+      migrations: { engine: "drizzle", dir: "migrations" },
+    });
+    expect(JSON.parse(await part("worker")).name).toBe(BUILD_SENTINEL.workerName);
+    expect(await part("module:index.js")).toBe("export {}");
+    expect(await part("migration:0000_init.sql")).toContain("CREATE TABLE todos");
+    expect(JSON.parse(await part("stamp"))).toMatchObject({ protocol: 1, sdkVersion: release.release.sdkVersion });
+    expect(events.find((e) => e["step"] === "app.build")?.["message"]).toContain(`todo 0.0.0 from ${tarball}`);
   });
 
   it("only starts the job with --no-wait", async () => {
