@@ -10,100 +10,31 @@
  *   POST /api/v1/orgs/{orgId}/apps/{appId}/deploys   deploy it (multipart, ./bundle.ts)
  *   GET  /api/v1/orgs/{orgId}/deploys/{id}           a deploy job
  *
- * A deploy runs in the request that starts it (and `waitUntil` after):
- * the answer is the job, finished when the deploy took under
- * {@link INLINE_WAIT_MS}, else `running`, for the CLI to poll.
+ * A deploy runs in the request that starts it (and `waitUntil` after,
+ * ./run.ts): the answer is the job, finished when the deploy took under
+ * 20 seconds, else `running`, for the CLI to poll. The admin's install from
+ * GitHub (./install.ts) deploys through the same pipeline with a session.
  */
-import { env, waitUntil } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
-import {
-  ManifestError,
-  validateManifest,
-  type Manifest,
-} from "@every-app/perimeter/manifest";
-import type { AppRow } from "@every-app/perimeter/registry";
-import { appBaseDomain, thirdPartyDomain } from "@/server/app-hosts";
-import { platformPolicy } from "@/server/platform-policy";
-import { AppRepository } from "@/server/repositories/AppRepository";
-import {
-  DeployJobRepository,
-  type DeployJob,
-} from "@/server/repositories/DeployJobRepository";
 import { authenticateDeployKey, type DeployCaller } from "./auth";
 import { parseDeployUpload } from "./bundle";
-import { CfRestDeployer } from "./cfRestDeployer";
-import { bundleRefused, DeployError } from "./errors";
-import { bundleProblems, manifestProblems } from "./metadata";
-import { runDeploy } from "./pipeline";
-import { findOrgApp, registerDispatchApp, toAppRow } from "./registry";
+import { DeployError } from "./errors";
+import { findOrgApp } from "./registry";
+import {
+  appView,
+  failure,
+  jobAnswer,
+  json,
+  parseManifest,
+  registerApp,
+  startDeploy,
+} from "./run";
 
 // server.ts routes this prefix here.
 const DEPLOY_API_PREFIX = "/api/v1/";
 
-const INLINE_WAIT_MS = 20_000;
-
-function json(body: unknown, status = 200): Response {
-  return Response.json(body, {
-    status,
-    headers: { "cache-control": "no-store" },
-  });
-}
-
-function failure(error: DeployError): Response {
-  return json({ error: error.code, message: error.message }, error.status);
-}
-
 const notFound = () =>
   new DeployError("NOT_FOUND", 404, "No such deploy API route.");
-
-function appView(app: AppRow) {
-  return {
-    id: app.appSlug,
-    workerName: app.workerName,
-    hostname: app.hostname,
-    url: app.hostname ? `https://${app.hostname}` : null,
-    status: app.status,
-    tier: app.tier,
-    versionId: app.versionId,
-  };
-}
-
-function jobView(job: DeployJob, app: AppRow | null) {
-  return {
-    id: job.id,
-    status: job.status,
-    error: job.error,
-    createdAt: job.createdAt.toISOString(),
-    finishedAt: job.finishedAt?.toISOString() ?? null,
-    app: app ? appView(app) : null,
-  };
-}
-
-function parseManifest(raw: unknown, appId: string): Manifest {
-  let manifest: Manifest;
-  try {
-    manifest = validateManifest(raw);
-  } catch (error) {
-    throw new DeployError(
-      "INVALID_MANIFEST",
-      400,
-      error instanceof ManifestError ? error.message : "Invalid manifest",
-    );
-  }
-  if (manifest.id !== appId) {
-    throw new DeployError(
-      "INVALID_MANIFEST",
-      400,
-      `manifest.id "${manifest.id}" does not match the app id "${appId}".`,
-    );
-  }
-  const problems = manifestProblems(
-    manifest,
-    platformPolicy(env).thirdPartyLimits,
-  );
-  if (problems.length > 0) throw bundleRefused(problems);
-  return manifest;
-}
 
 /** The path's organization is the key's, or the route doesn't exist for it. */
 function assertOrganization(caller: DeployCaller, orgId: string): void {
@@ -122,23 +53,6 @@ function assertBoundApp(
       "This deploy key is bound to another app.",
     );
   }
-}
-
-function register(caller: DeployCaller, manifest: Manifest) {
-  return registerDispatchApp({
-    organizationId: caller.organizationId,
-    appSlug: manifest.id,
-    name: manifest.name ?? manifest.id,
-    description: manifest.description ?? manifest.id,
-    manifest,
-    deployerUserId: caller.userId,
-    // As set, so one overlapping the gateway's own domain is refused
-    // (registry.ts) rather than silently left unused.
-    configuredThirdPartyDomain: env.THIRD_PARTY_DOMAIN ?? null,
-    appBaseDomain: appBaseDomain(env),
-    // Validated: never one that could share a site with the gateway.
-    thirdPartyDomain: thirdPartyDomain(env),
-  });
 }
 
 async function registerRoute(request: Request, caller: DeployCaller) {
@@ -161,62 +75,13 @@ async function registerRoute(request: Request, caller: DeployCaller) {
   );
   const existing = await findOrgApp(caller.organizationId, manifest.id);
   assertBoundApp(caller, existing);
-  const plan = await register(caller, manifest);
+  const plan = await registerApp(caller, manifest);
   logEvent("deploy_api.app_registered", {
     org: caller.organizationId,
     app: manifest.id,
     kind: plan.kind,
   });
   return json({ app: appView(plan.app) }, plan.kind === "existing" ? 200 : 201);
-}
-
-type JobOutcome = Parameters<typeof DeployJobRepository.finish>[1];
-
-/**
- * A failed job's outcome. Logging an error the deployer didn't name is the
- * caller's: once per error, by whoever is last to see it.
- */
-function failedOutcome(error: unknown): JobOutcome {
-  if (error instanceof DeployError) {
-    return { status: "failed", code: error.code, message: error.message };
-  }
-  return {
-    status: "failed",
-    code: "DEPLOY_FAILED",
-    message: "The deploy failed in the gateway. Deploy again.",
-  };
-}
-
-/**
- * Record a job's outcome. One that can't be recorded is logged: the job
- * stays `running` and reads DEPLOY_ABANDONED at its deadline, and the
- * request that started it still answers with the job.
- */
-async function finishJob(
-  id: string,
-  outcome: JobOutcome,
-  fields: Record<string, unknown>,
-): Promise<void> {
-  try {
-    await DeployJobRepository.finish(id, outcome);
-  } catch (error) {
-    console.error("deploy job outcome not recorded:", error);
-    logEvent(
-      "deploy_api.deploy_unrecorded",
-      { ...fields, status: outcome.status },
-      "error",
-    );
-    return;
-  }
-  if (outcome.status === "succeeded") {
-    logEvent("deploy_api.deploy_succeeded", fields);
-  } else {
-    logEvent(
-      "deploy_api.deploy_failed",
-      { ...fields, code: outcome.code },
-      "warn",
-    );
-  }
 }
 
 async function deployRoute(
@@ -235,91 +100,15 @@ async function deployRoute(
     );
   }
   assertBoundApp(caller, existing);
-  const gatewayUrl = env.GATEWAY_URL?.trim();
-  // As the gateway holds it: apps verify with exactly this PEM.
-  const identityPublicKey = env.JWT_PUBLIC_KEY;
-  if (!gatewayUrl || !identityPublicKey?.trim()) {
-    throw new DeployError(
-      "DEPLOYER_NOT_CONFIGURED",
-      503,
-      "This gateway has no GATEWAY_URL or JWT_PUBLIC_KEY to give apps.",
-    );
-  }
-  // Refused before anything is registered, created or queued; the
-  // pipeline checks again before it uploads.
-  const limits = platformPolicy(env).thirdPartyLimits;
-  const problems = bundleProblems(
-    bundle.worker,
-    manifest,
-    limits,
-    bundle.assets.size > 0,
-  );
-  if (problems.length > 0) throw bundleRefused(problems);
-  const deployer = CfRestDeployer.fromEnv(env);
-  // The job before the row: a deploy refused as already running leaves the
-  // registry as the running one has it.
-  const job = await DeployJobRepository.start(
-    caller.organizationId,
-    existing.id,
-  );
-  if (!job) {
-    throw new DeployError(
-      "DEPLOY_IN_PROGRESS",
-      409,
-      `Another deploy of ${appId} is running; wait for it, then deploy again.`,
-    );
-  }
-  const fields = { org: caller.organizationId, app: appId, job: job.id };
-  let app: AppRow;
-  try {
-    ({ app } = await register(caller, manifest));
-  } catch (error) {
-    // Rethrown: serveDeployApi logs it as it answers.
-    await finishJob(job.id, failedOutcome(error), fields);
-    throw error;
-  }
-  logEvent("deploy_api.deploy_started", fields);
-
-  // Never rejects: the answer is the job, however its outcome was recorded.
-  const run = runDeploy({
-    app,
+  const jobId = await startDeploy({
+    organizationId: caller.organizationId,
+    userId: caller.userId,
+    appRowId: existing.id,
     manifest,
     bundle,
-    deployer,
-    gatewayUrl,
-    identityPublicKey,
-    limits,
     actor: `deploy-key:${caller.tokenId}`,
-  }).then(
-    () => finishJob(job.id, { status: "succeeded" }, fields),
-    (error: unknown) => {
-      // Only the job records this error; the request answers with the job.
-      if (!(error instanceof DeployError)) {
-        console.error("deploy failed:", error);
-      }
-      return finishJob(job.id, failedOutcome(error), fields);
-    },
-  );
-  waitUntil(run);
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  await Promise.race([
-    run,
-    new Promise((resolve) => {
-      timer = setTimeout(resolve, INLINE_WAIT_MS);
-    }),
-  ]);
-  clearTimeout(timer);
-  return jobRoute(caller, job.id, 202);
-}
-
-async function jobRoute(caller: DeployCaller, id: string, status = 200) {
-  const job = await DeployJobRepository.findForOrganization(
-    id,
-    caller.organizationId,
-  );
-  if (!job) throw new DeployError("DEPLOY_NOT_FOUND", 404, "No such deploy.");
-  const row = await AppRepository.findById(job.appRowId, caller.organizationId);
-  return json({ job: jobView(job, row ? toAppRow(row) : null) }, status);
+  });
+  return jobAnswer(caller.organizationId, jobId, 202);
 }
 
 /** Serve a deploy API request; the caller checked the launch gate. */
@@ -360,7 +149,7 @@ export async function serveDeployApi(request: Request): Promise<Response> {
       sub === undefined &&
       method === "GET"
     ) {
-      return await jobRoute(caller, id);
+      return await jobAnswer(caller.organizationId, id);
     }
     throw notFound();
   } catch (error) {

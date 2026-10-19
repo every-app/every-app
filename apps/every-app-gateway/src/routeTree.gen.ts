@@ -31,6 +31,8 @@ import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiDevIdentityRouteImport } from './routes/api/dev/identity'
 import { Route as ApiMeAppsRouteImport } from './routes/api/me/apps'
 import { Route as ApiSetupClaimRouteImport } from './routes/api/setup/claim'
+import { Route as ApiAdminAppsInstallRouteImport } from './routes/api/admin/apps/install'
+import { Route as ApiAdminDeploysIdRouteImport } from './routes/api/admin/deploys/$id'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -141,6 +143,16 @@ const ApiSetupClaimRoute = ApiSetupClaimRouteImport.update({
   path: '/api/setup/claim',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAdminAppsInstallRoute = ApiAdminAppsInstallRouteImport.update({
+  id: '/api/admin/apps/install',
+  path: '/api/admin/apps/install',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdminDeploysIdRoute = ApiAdminDeploysIdRouteImport.update({
+  id: '/api/admin/deploys/$id',
+  path: '/api/admin/deploys/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -164,6 +176,8 @@ export interface FileRoutesByFullPath {
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/admin/': typeof AppAdminIndexRoute
+  '/api/admin/apps/install': typeof ApiAdminAppsInstallRoute
+  '/api/admin/deploys/$id': typeof ApiAdminDeploysIdRoute
 }
 export interface FileRoutesByTo {
   '/accept-invitation': typeof AcceptInvitationRoute
@@ -186,6 +200,8 @@ export interface FileRoutesByTo {
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/admin': typeof AppAdminIndexRoute
+  '/api/admin/apps/install': typeof ApiAdminAppsInstallRoute
+  '/api/admin/deploys/$id': typeof ApiAdminDeploysIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -211,6 +227,8 @@ export interface FileRoutesById {
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/_app/admin/': typeof AppAdminIndexRoute
+  '/api/admin/apps/install': typeof ApiAdminAppsInstallRoute
+  '/api/admin/deploys/$id': typeof ApiAdminDeploysIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -236,6 +254,8 @@ export interface FileRouteTypes {
     | '/api/me/apps'
     | '/api/setup/claim'
     | '/admin/'
+    | '/api/admin/apps/install'
+    | '/api/admin/deploys/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/accept-invitation'
@@ -258,6 +278,8 @@ export interface FileRouteTypes {
     | '/api/me/apps'
     | '/api/setup/claim'
     | '/admin'
+    | '/api/admin/apps/install'
+    | '/api/admin/deploys/$id'
   id:
     | '__root__'
     | '/_app'
@@ -282,6 +304,8 @@ export interface FileRouteTypes {
     | '/api/me/apps'
     | '/api/setup/claim'
     | '/_app/admin/'
+    | '/api/admin/apps/install'
+    | '/api/admin/deploys/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -299,6 +323,8 @@ export interface RootRouteChildren {
   ApiDevIdentityRoute: typeof ApiDevIdentityRoute
   ApiMeAppsRoute: typeof ApiMeAppsRoute
   ApiSetupClaimRoute: typeof ApiSetupClaimRoute
+  ApiAdminAppsInstallRoute: typeof ApiAdminAppsInstallRoute
+  ApiAdminDeploysIdRoute: typeof ApiAdminDeploysIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -457,6 +483,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiSetupClaimRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/admin/apps/install': {
+      id: '/api/admin/apps/install'
+      path: '/api/admin/apps/install'
+      fullPath: '/api/admin/apps/install'
+      preLoaderRoute: typeof ApiAdminAppsInstallRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/admin/deploys/$id': {
+      id: '/api/admin/deploys/$id'
+      path: '/api/admin/deploys/$id'
+      fullPath: '/api/admin/deploys/$id'
+      preLoaderRoute: typeof ApiAdminDeploysIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -509,6 +549,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiDevIdentityRoute: ApiDevIdentityRoute,
   ApiMeAppsRoute: ApiMeAppsRoute,
   ApiSetupClaimRoute: ApiSetupClaimRoute,
+  ApiAdminAppsInstallRoute: ApiAdminAppsInstallRoute,
+  ApiAdminDeploysIdRoute: ApiAdminDeploysIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

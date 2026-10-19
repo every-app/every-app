@@ -142,6 +142,22 @@ don't); the CLI side, `everyapp deploy --gateway` with
 EVERYAPP_DEPLOY_TOKEN, runs against a test double of the API in
 `packages/cli/src/commands/deploy/deployToGateway.test.ts`.
 
+`install-api.sqlite.test.ts` covers Admin → Apps → Install from GitHub the
+same way, calling the admin routes (`src/routes/api/admin/`) with a
+session and a fake GitHub that serves an app release packed in the test
+(`src/test/app-release.ts`: a tiny tar writer and Node's zlib): an admin
+installs it (the job records the repository, tag, version and commit), and
+the namespaced Worker gets exactly what a multipart deploy of the same
+bundle gives it. It refuses without the gate (and on a self-hosted
+gateway), a member, a signed-out caller, a suspended organization, a URL
+that isn't a GitHub repository, a repository with no release (with the
+clone-and-deploy advice), a tampered release and a bundle the policy
+refuses, all before anything is registered, and a second deploy while one
+runs. `release.test.ts` covers the tar reader (links, devices, absolute
+and `..` paths, duplicates, bad checksums), the sha256 check, helper
+Workers, the redirects to the tag, and the size caps (by length and as a
+gzip bomb).
+
 ### Third-party hosts and per-host sessions
 
 `apps/every-app-gateway/src/server/third-party-hosts.sqlite.test.ts` runs

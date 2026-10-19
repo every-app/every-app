@@ -315,6 +315,7 @@ CREATE TABLE `deploy_jobs` (
 	`app_row_id` text NOT NULL,
 	`status` text NOT NULL,
 	`error` text,
+	`source` text,
 	`created_at` integer DEFAULT (cast(unixepoch('subsecond') * 1000 as integer)) NOT NULL,
 	`finished_at` integer,
 	FOREIGN KEY (`organization_id`) REFERENCES `organizations`(`id`) ON UPDATE no action ON DELETE cascade,

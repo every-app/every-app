@@ -8,7 +8,9 @@ import { apps } from "./apps.schema";
  * app's bundle on its way into the dispatch namespace. `running` while the
  * deployer works (one at a time per app), then `succeeded` or `failed`
  * with `error` (JSON `{ code, message }`). A job left `running` past the
- * deployer's deadline (its isolate went away) reads as failed.
+ * deployer's deadline (its isolate went away) reads as failed. `source`
+ * (JSON `{ repoUrl, tag, version, gitSha }`) is the GitHub release an
+ * admin installed it from (server/deploy/install.ts); null for an upload.
  */
 export const deployJobs = sqliteTable(
   "deploy_jobs",
@@ -22,6 +24,7 @@ export const deployJobs = sqliteTable(
       .references(() => apps.id, { onDelete: "cascade" }),
     status: text("status").notNull(),
     error: text("error"),
+    source: text("source"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .default(sql`(cast(unixepoch('subsecond') * 1000 as integer))`)
       .notNull(),

@@ -256,6 +256,37 @@ EVERYAPP_DEPLOY_TOKEN=<deploy key> EVERYAPP_GATEWAY_URL=https://app.everyapp.com
   pnpm everyapp deploy --json
 ```
 
+### Installing apps from GitHub
+
+With the gate open, an organization's owner or admin can also install an
+app without the CLI: Admin → Apps → **Install from GitHub**, paste
+`https://github.com/<owner>/<repo>`, Install. The Gateway downloads the
+repository's latest release asset `everyapp-release.tar.gz` (what
+`everyapp` packs for a release: `release.json`, the tenant-neutral Build
+Output and the migrations), checks its SHA-256 against `release.json`,
+registers the app in the admin's organization and deploys it through the
+same pipeline as the deploy API; the dialog follows the deploy job and
+ends with the app's hostname. It is the same as a deploy key's deploy in
+every rule above (policy, read-back, one deploy at a time, the 50-second
+budget); `deployed_by_actor` is the admin's email and the job's `source`
+column records the repository, tag, version and commit.
+
+- `NO_RELEASE`: the repository's latest GitHub release has no
+  `everyapp-release.tar.gz` (or it has no releases, or it is private: the
+  Gateway sends no credentials). Clone it and deploy with a deploy key as
+  above.
+- `RELEASE_CORRUPT`, `RELEASE_INVALID`, `RELEASE_UNSUPPORTED`: the asset
+  isn't an app release this Gateway reads (a file doesn't match the
+  SHA-256, a link or a path outside the archive, a Gateway release, a Build
+  Output other than `v0`). `RELEASE_TOO_LARGE`: over 100 MB compressed or
+  unpacked.
+- The Gateway fetches from `github.com` and GitHub's release storage
+  (`release-assets.githubusercontent.com` / `objects.githubusercontent.com`)
+  from its own Worker: nothing to configure.
+
+On a self-hosted Gateway, or with the gate shut, the button isn't shown and
+the route answers `APP_INSTALL_NOT_AVAILABLE`.
+
 ## Checks
 
 - `pnpm everyapp status --json`: `data.mode` is `"hosted"`.

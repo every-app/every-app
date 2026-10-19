@@ -12,12 +12,22 @@ const DEPLOY_JOB_DEADLINE_MS = 5 * 60 * 1000;
 
 type DeployJobStatus = "running" | "succeeded" | "failed";
 
+/** The GitHub release a job deploys (server/deploy/install.ts). */
+export interface DeployJobSource {
+  repoUrl: string;
+  /** The release's tag, as GitHub's redirect named it. */
+  tag: string | null;
+  version: string;
+  gitSha: string;
+}
+
 export interface DeployJob {
   id: string;
   organizationId: string;
   appRowId: string;
   status: DeployJobStatus;
   error: { code: string; message: string } | null;
+  source: DeployJobSource | null;
   createdAt: Date;
   finishedAt: Date | null;
 }
@@ -29,6 +39,15 @@ function parseError(raw: string | null): DeployJob["error"] {
     return { code: String(parsed.code), message: String(parsed.message) };
   } catch {
     return { code: "DEPLOY_FAILED", message: raw };
+  }
+}
+
+function parseSource(raw: string | null): DeployJobSource | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as DeployJobSource;
+  } catch {
+    return null;
   }
 }
 
@@ -51,6 +70,7 @@ function toJob(
             "The deploy stopped without finishing: the gateway gives a deploy about 50 seconds, and a large app (many assets, slow migrations) can run out of them. Deploy again.",
         }
       : parseError(row.error),
+    source: parseSource(row.source),
     createdAt: row.createdAt,
     finishedAt: row.finishedAt,
   };
@@ -64,12 +84,13 @@ function toJob(
 async function start(
   organizationId: string,
   appRowId: string,
+  source: DeployJobSource | null,
 ): Promise<DeployJob | null> {
   const id = crypto.randomUUID();
   const now = Date.now();
   const inserted = (await db.all(
-    sql`INSERT INTO deploy_jobs (id, organization_id, app_row_id, status, created_at)
-SELECT ${id}, ${organizationId}, ${appRowId}, 'running', ${now}
+    sql`INSERT INTO deploy_jobs (id, organization_id, app_row_id, status, source, created_at)
+SELECT ${id}, ${organizationId}, ${appRowId}, 'running', ${source ? JSON.stringify(source) : null}, ${now}
 WHERE NOT EXISTS (
   SELECT 1 FROM deploy_jobs WHERE app_row_id = ${appRowId} AND status = 'running'
     AND created_at > ${now - DEPLOY_JOB_DEADLINE_MS}
@@ -83,6 +104,7 @@ RETURNING id`,
     appRowId,
     status: "running",
     error: null,
+    source,
     createdAt: new Date(now),
     finishedAt: null,
   };

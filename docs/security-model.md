@@ -780,9 +780,10 @@ lookup or credential read (`routeHost`,
 ## Hosted Deploy API
 
 Third-party apps (customer code, forks of OpenSEO included) reach the
-hosted gateway's dispatch namespace only through its deploy API
-(`apps/every-app-gateway/src/server/deploy/`), which `everyapp deploy
---gateway <url>` with `EVERYAPP_DEPLOY_TOKEN` calls.
+hosted gateway's dispatch namespace only through its deploy pipeline
+(`apps/every-app-gateway/src/server/deploy/`): the deploy API, which
+`everyapp deploy --gateway <url>` with `EVERYAPP_DEPLOY_TOKEN` calls, and
+an admin's install from GitHub.
 
 - **The launch gate.** The routes (`/api/v1/…` on the gateway's host)
   exist only while `platformPolicy(env).thirdPartyDeploys` holds: a hosted
@@ -852,7 +853,26 @@ hosted gateway's dispatch namespace only through its deploy API
   dispatch app. Each deploy is a `deploy_jobs` row, one running at a time
   per app, started before the deploy touches the row (one refused as
   `DEPLOY_IN_PROGRESS` changes nothing); `deployed_by_actor` is
-  `deploy-key:<token id>`.
+  `deploy-key:<token id>` (an install from GitHub: the admin's email).
+- **Install from GitHub.** An owner or admin (the role read live, as a
+  deploy key's is; the organization not suspended) can also deploy from
+  Admin → Apps: `POST /api/admin/apps/install` with a session, a
+  control-plane route behind its CSRF guard, behind the same launch gate
+  (`APP_INSTALL_NOT_AVAILABLE` otherwise, and on every self-hosted
+  gateway). The gateway downloads `https://github.com/<owner>/<repo>/releases/latest/download/everyapp-release.tar.gz`
+  with no credentials (https redirects only, 100 MB compressed and again
+  unpacked), reads the tar itself (regular files and directories only: a
+  link, a device, an absolute or `..` path, a bad header checksum or a
+  file listed twice refuses the archive; nothing but `release.json`,
+  `.cloudflare` and `migrations` at the top), checks every file against
+  `release.json`'s `sha256` and refuses helper Workers in the Build
+  Output. The release is untrusted as an upload is: its bundle meets the
+  same policy, rewrite and read-back, refused before the app is
+  registered. The sha256 proves the archive is whole, not who built it:
+  whoever can publish a release on the repository chooses the code, so
+  an admin installs a repository they trust. `deployed_by_actor` is the
+  admin's email, and the job records the repository, tag, version and
+  commit it came from (`deploy_jobs.source`).
 - **The CLI.** Only `EVERYAPP_DEPLOY_TOKEN` sends `everyapp deploy` to the
   deploy API; `EVERYAPP_TOKEN` (a self-hoster's MCP bearer) and
   `EVERYAPP_GATEWAY_URL` alone leave the self-host deploy as it was.

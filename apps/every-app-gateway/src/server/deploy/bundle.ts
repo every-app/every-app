@@ -64,7 +64,7 @@ async function jsonPart(form: FormData, name: string): Promise<unknown> {
   }
 }
 
-function parseStamp(value: unknown): DeployStamp {
+export function parseStamp(value: unknown): DeployStamp {
   const stamp = (value ?? {}) as Record<string, unknown>;
   const { protocol, sdkVersion, cliVersion } = stamp;
   if (typeof protocol !== "number" || !Number.isInteger(protocol)) {
