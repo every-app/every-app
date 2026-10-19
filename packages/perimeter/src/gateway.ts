@@ -497,6 +497,10 @@ export async function handleGatewayRequest(
     headers: outboundHeaders,
     body: request.body,
     redirect: "manual",
+    // A new Request has no `cf`: pass the visitor's (country, ASN, …) on, so
+    // the app sees what Cloudflare saw.
+    // (Typed loosely: the CLI compiles this file without Workers types.)
+    cf: (request as { cf?: unknown }).cf,
     // Preserve the WebSocket upgrade so 101s pass through the binding.
     ...(request.body ? { duplex: "half" } : {}),
   } as RequestInit);
