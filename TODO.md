@@ -223,7 +223,7 @@ Defaults the overnight build of the hosted platform shipped without Ben. Each it
 
 ### Ports of Postiz and agentic-inbox (2026-10-17)
 
-Platform defaults the ports shipped with, in #322 to #327: Postiz as two Workers (its vinext frontend and a NestJS helper) and agentic-inbox as one. Each entry says what shipped; where a PR changed the ports plan's default, the entry names the plan's choice. The apps' own defaults are in their ports' `TODO.md`.
+Platform defaults the ports shipped with, in #322 to #327: Postiz as two Workers (its frontend and a NestJS helper) and agentic-inbox as one. Postiz's frontend, a vinext build when these shipped, is a TanStack Start host since 2026-10-18 (round 2's lane S1; the verdict and the measurements are in the port's `docs/every-app/TANSTACK-START-POC.md` and `docs/every-app/BOOT.md`); the helper is unchanged. Each entry says what shipped; where a PR changed the ports plan's default, the entry names the plan's choice. The apps' own defaults are in their ports' `TODO.md`.
 
 **Workers AI through the gateway (#322)**
 
@@ -298,7 +298,8 @@ Platform defaults the ports shipped with, in #322 to #327: Postiz as two Workers
 
 **Across the ports**
 
-- [ ] **No platform support for OpenNext/non-Vite Build Outputs**; OpenNext is over the 64 MiB limit as built and emits no Build Output. Postiz's frontend builds with vinext under Vite 8.
+- [ ] **No platform support for OpenNext/non-Vite Build Outputs**; OpenNext emits no Build Output, and Postiz's OpenNext build was over the 64 MiB limit. Postiz's frontend built with vinext under Vite 8 until 2026-10-18; since then it is a TanStack Start host, a Vite build like the gateway's and OpenSEO's.
+- [x] **Postiz's backend stays NestJS + Prisma and keeps merging upstream (Ben, 2026-10-18); step 2 of the TanStack verdict is off.** The Postiz port's `TODO.md` has the decision and what would reopen it ("Frontend: the TanStack Start host", the step 2 entry, added in a9c018c6 on its `everyapp` branch).
 - [ ] **Helper Workers verify no identities**; apps hand them ids as headers/RPC arguments/Workflow params; the policy's "only the app's Worker may bind a helper" rule is what makes that safe. Alternative: identity keys on helpers (Postiz's helper reads the app's `x-postiz-identity` today).
 - [ ] **Cookieless POSTs without `Origin`/`Sec-Fetch-Site` stay anonymous** (documented for curl in [docs/TESTING.md](docs/TESTING.md)): with no cookie there is nothing to forge, so a private route answers 401 `unauthenticated`, the challenge a programmatic client needs, and one carrying a cookie answers 403 `csrf_denied`. An app without `defineTools()` keeps having its own `/mcp` proxied.
 - [ ] **The 171-statement Prisma init migration goes through the gateway's single `{ batch }` REST request** on the first live deploy (precedent: 35 statements; `everyapp deploy` applies it with `cf d1 migrations apply --remote`, which the fake account runs against SQLite in `deployApp.ports.test.ts`); fallback: split the init into several files.
@@ -480,7 +481,7 @@ For the ports of Postiz and agentic-inbox (#322 to #327; each port's own first-d
 - [ ] The Workflow on Postiz's helper: `cf workflows get every-<org>-postiz--publish-post` names the helper's script, and the app Worker's cross-script `PUBLISH_POST` binding to the helper's class resolves (scheduling a post creates an instance, which `pnpm everyapp workflows` lists). Fallback: drop `worker: "api"` and export the class from the app's entry.
 - [ ] Redeploying Postiz's helper with one `PublishPostWorkflow` instance sleeping and one mid-publish, against a call-recording fake provider: 0 or 1 provider calls, never 2; the `lastProgressAt` rule catches a stall within 35 minutes; and `sendEvent` to a finished instance throws as documented (before `ProviderSlots` ships).
 - [ ] `pnpm everyapp secret set JWT_SECRET` in Postiz's `apps/frontend` sets it on both Workers, one version each, and `pnpm everyapp secret list` shows it on both.
-- [ ] Static assets for service-binding requests: Postiz's `/_next/static/*` answers 200 through the gateway (`curl -I https://postiz.<APP_BASE_DOMAIN>/_next/static/<chunk>.js` signed in). Fallback: the app's entry serves them with `env.ASSETS.fetch`.
+- [ ] Static assets for service-binding requests: Postiz's client build under `/assets/*` answers 200 through the gateway with `immutable` from the client build's `_headers` (`curl -sI -b '<session cookie>' https://postiz.<APP_BASE_DOMAIN>/assets/<chunk>.js`, a chunk the page names). Fallback: `runWorkerFirst` and the app's entry serving them through an `ASSETS` binding after `everyApp()`.
 - [ ] Real edge memory and cold start of both Postiz Workers against the local gates (the helper's heap about 46 MB minified, 64 MB the budget): no `exceededMemory` outcome and the first request's wall time after a deploy, in the Workers' logs.
 - [ ] Postiz's 171-statement Prisma init (`0001_init.sql`, 38 KB) applies on its first `everyapp deploy` and through the gateway's single `{ batch }` REST request on the deploy API (precedent: 35 statements; fallback: split the init into several files), and then a Prisma redefine-table migration (`PRAGMA defer_foreign_keys`) applies the same ways with child rows present (`pnpm everyapp db query "SELECT name FROM d1_migrations"`).
 - [ ] Hyperdrive caching (#324): `cf hyperdrive create --body @file` accepts `caching: { disabled: true }` and `cf hyperdrive list` returns `caching.disabled`; otherwise every deploy resends the update.

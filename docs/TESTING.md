@@ -313,10 +313,11 @@ mock Access with an outer-ring proxy: `docs/runbooks/cloudflare-access.md`,
 
 ### The platform side of the Postiz and agentic-inbox ports
 
-The ports (#322 to #327) run Postiz as two Workers (a vinext frontend and a
-NestJS helper with a Workflow and a cron) and agentic-inbox as one Worker
-with two Durable Objects. Nothing of theirs can deploy from here, so these
-suites stand in for a live account:
+The ports (#322 to #327) run Postiz as two Workers (a TanStack Start
+frontend, built with vinext until 2026-10-18, and a NestJS helper with a
+Workflow and a cron) and agentic-inbox as one Worker with two Durable
+Objects. Nothing of theirs can deploy from here, so these suites stand in
+for a live account:
 
 ```bash
 # Both ports' manifests through register → provision → build → policy →
