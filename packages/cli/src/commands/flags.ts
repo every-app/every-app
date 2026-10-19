@@ -33,7 +33,7 @@ export const resultJsonFlag = {
 export const verboseFlag = {
   kind: "boolean",
   brief:
-    "Show every step and progress line, and stream build and install output to stderr",
+    "Show every step and progress line, stream build and install output to stderr, and attach cf deploy to the terminal",
   optional: true,
 } as const;
 

@@ -67,6 +67,7 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
             deploymentMode: "self_hosted",
           }).secrets,
           interactive: false,
+          attach: false,
           dryRun: true,
           cliCf: true,
         });
@@ -118,6 +119,7 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
         message: "dry run",
         secrets: { GATEWAY_URL: inputs.gatewayUrl, EVERY_APP_ORG_ID: "org-1" },
         interactive: false,
+        attach: false,
         dryRun: true,
       });
 

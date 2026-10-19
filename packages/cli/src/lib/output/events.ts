@@ -93,6 +93,8 @@ export interface EventSink {
    * or while it waits for one (until it is done); else 0.
    */
   readonly exitCode: number;
+  /** A person passed --verbose: cf deploys run attached to their terminal. */
+  readonly verbose: boolean;
 }
 
 /** Emit events as NDJSON lines on `write` (stdout by default). */
@@ -102,7 +104,7 @@ export function createNdjsonSink(
 ): EventSink {
   return trackExitCode((event) => {
     write(`${JSON.stringify({ v: 1, ts: now().toISOString(), ...event })}\n`);
-  });
+  }, false);
 }
 
 /**
@@ -223,7 +225,7 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
         return;
       }
     }
-  });
+  }, verbose);
 }
 
 type StepEvent = Extract<EventInput<EveryAppEvent>, { type: "step" }>;
@@ -570,6 +572,7 @@ class Screen {
 
 function trackExitCode(
   write: (event: EventInput<EveryAppEvent>) => void,
+  verbose: boolean,
 ): EventSink {
   let failed = false;
   let stopped = false;
@@ -589,5 +592,6 @@ function trackExitCode(
       if (failed) return 1;
       return stopped || waiting ? 2 : 0;
     },
+    verbose,
   };
 }

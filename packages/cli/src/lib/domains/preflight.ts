@@ -12,8 +12,8 @@
  *      own, whose answer for that name publishing takes over;
  *   2. the zone must have room: Cloudflare allows 100 Custom Domains in a
  *      zone.
- * cf can't list which Worker holds a Custom Domain: at a terminal cf asks
- * before moving one, and an unattended run says it can't check.
+ * cf can't list which Worker holds a Custom Domain: attached to a terminal
+ * (--verbose) cf asks before moving one, and otherwise this warns.
  */
 import { CfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
@@ -43,8 +43,8 @@ interface DomainPreflightOptions {
   liveDomains: readonly string[];
   /** Publish new hostnames over the DNS records that answer them. */
   forceDns?: boolean;
-  /** A person is at a terminal, where cf asks before taking a hostname. */
-  interactive: boolean;
+  /** cf runs attached to a person's terminal, where it asks before taking a hostname. */
+  cfAsks: boolean;
 }
 
 /**
@@ -78,12 +78,12 @@ export async function preflightDomains(
 
   await checkDnsRecords(options, added);
 
-  if (!options.interactive) {
+  if (!options.cfAsks) {
     out.emit({
       type: "warning",
       code: "CUSTOM_DOMAIN_OWNER_UNCHECKED",
       step,
-      message: `Publishing ${added.join(", ")} on the gateway. cf can't list which Worker holds a Custom Domain, and unattended it moves one to the gateway without asking: if another Worker in this account serves ${added.length === 1 ? "this hostname" : "one of these"}, it stops serving it. A run in a terminal asks first.`,
+      message: `If another Worker already serves ${added.length === 1 ? added[0] : `any of ${added.join(", ")}`}, it will be replaced by this deployment.`,
       data: { hosts: added },
     });
   }

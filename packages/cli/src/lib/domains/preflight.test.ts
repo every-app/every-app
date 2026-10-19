@@ -14,7 +14,7 @@ function run(cf: FakeCf, options: Partial<Parameters<typeof preflightDomains>[0]
     zone: ZONE,
     domains: ["apps.example.com", "todo.apps.example.com"],
     liveDomains: ["apps.example.com"],
-    interactive: true,
+    cfAsks: true,
     ...options,
   });
   return { result, events };
@@ -105,13 +105,13 @@ describe("preflightDomains", () => {
     ]);
   });
 
-  it("warns unattended that cf can't tell which Worker holds a hostname", async () => {
+  it("warns that a hostname another Worker serves is replaced when cf can't ask", async () => {
     const cf = new FakeCf().on(["dns", "records", "list"], { stdout: "[]" });
     const attended = run(cf);
     await attended.result;
     expect(attended.events.some((e) => e.code === "CUSTOM_DOMAIN_OWNER_UNCHECKED")).toBe(false);
 
-    const unattended = run(cf, { interactive: false });
+    const unattended = run(cf, { cfAsks: false });
     await unattended.result;
     expect(unattended.events).toContainEqual(
       expect.objectContaining({ code: "CUSTOM_DOMAIN_OWNER_UNCHECKED", data: { hosts: ["todo.apps.example.com"] } }),

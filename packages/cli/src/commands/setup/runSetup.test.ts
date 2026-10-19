@@ -387,6 +387,7 @@ describe("everyapp setup", () => {
     await setup({ domain: GW });
     // The key-rotation runbook: secrets replaced in the dashboard.
     account.workers.get("every-app-gateway")!.versions.push("dashboard-1");
+    account.strictAbortNextDeploy = true;
     const deploys = account.deploys.length;
     events = [];
 
@@ -395,7 +396,8 @@ describe("everyapp setup", () => {
     expect(exitCode).toBe(0);
     expect(result).toMatchObject({ gateway: "repaired" });
     expect(account.deploys).toHaveLength(deploys + 1);
-    // cf ran attached to the terminal, to ask about the dashboard change.
+    // cf aborted piped, then ran attached to the terminal to ask about the
+    // dashboard change.
     expect(account.deploys.at(-1)!.mode).toBe("interactive");
   });
 

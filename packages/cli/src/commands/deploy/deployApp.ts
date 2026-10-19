@@ -474,7 +474,7 @@ async function deploySteps(
       domains: [...install.liveDomains, hostname],
       liveDomains: install.liveDomains,
       forceDns: options.forceDns,
-      interactive,
+      cfAsks: interactive && out.verbose,
     });
   }
 
@@ -691,6 +691,7 @@ async function deploySteps(
         message: `everyapp ${cliVersion} ${manifest.id} ${helper.name}`,
         secrets: versionSecrets,
         interactive,
+        attach: out.verbose,
         onUploaded: (uploadedVersion) =>
           recordUploadedVersion(registry, workerName, uploadedVersion, helper.name),
       });
@@ -711,6 +712,7 @@ async function deploySteps(
       message: `everyapp ${cliVersion} ${manifest.id}`,
       secrets: versionSecrets,
       interactive,
+      attach: out.verbose,
       // Recorded at once, before the registry hears of it: a retry must
       // find this upload was everyapp's, however this run ends.
       onUploaded: (uploadedVersion) =>

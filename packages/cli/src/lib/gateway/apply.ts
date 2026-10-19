@@ -300,7 +300,7 @@ class DomainChecks {
       domains,
       liveDomains: [...this.liveDomains, ...this.checked],
       forceDns: this.options.forceDns,
-      interactive: this.options.interactive,
+      cfAsks: this.options.interactive && this.options.out.verbose,
     });
     for (const host of domains) this.checked.add(host);
   }
@@ -531,6 +531,7 @@ function upload(
       message: `everyapp ${options.cliVersion} gateway ${options.release.manifest.version} (${options.reason})`,
       secrets,
       interactive: options.interactive,
+      attach: options.out.verbose,
       cliCf: true,
       onUploaded: (versionId, finished) =>
         record(

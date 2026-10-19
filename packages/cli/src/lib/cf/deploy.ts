@@ -2,11 +2,15 @@
  * Uploading a prebuilt Build Output with `cf deploy --prebuilt`.
  *
  * Secrets travel only in `--secrets-file` (a private temp file), so they ship
- * in the same Worker version as the code. A person at a terminal runs cf
- * attached to it and answers cf's own prompts: a Worker last changed in the
- * dashboard or through the API, a DNS record or Custom Domain held by
- * something else. Unattended runs can't answer them: cf aborts, and this
- * says what to do.
+ * in the same Worker version as the code. cf's output stays in memory (a
+ * failure carries its message) unless --verbose attaches cf to a person's
+ * terminal: then cf shows it and asks its own questions (a Worker last
+ * changed in the dashboard or through the API, a DNS record or Custom
+ * Domain held by something else). Piped, cf takes over hostnames without
+ * asking (../domains/preflight.ts warns first), and aborts before uploading
+ * over a Worker changed outside everyapp: at a terminal, it then runs again
+ * attached to ask. Unattended runs can't answer: cf aborts, and this says
+ * what to do.
  */
 import enquirer from "enquirer";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
@@ -26,8 +30,10 @@ interface CfDeployOptions {
   accountId: string;
   message: string;
   secrets?: Record<string, string>;
-  /** Run attached to the terminal, so cf can ask its questions. */
+  /** A person at the terminal can answer cf's questions. */
   interactive: boolean;
+  /** With `interactive`, run cf attached to the terminal: it shows its output and asks its own questions. */
+  attach: boolean;
   dryRun?: boolean;
   /** Deploy with the CLI's own cf: `cwd` is a gateway release, not an app. */
   cliCf?: boolean;
@@ -134,13 +140,13 @@ async function deployAndRecord(
   before: { versionId: string | null } | null,
   onFinished: () => void,
 ): Promise<CfDeployResult> {
-  let output: string;
-  try {
-    const result = await options.cf.run({
+  const attached = options.interactive && options.attach && !options.dryRun;
+  const deploy = (mode: "interactive" | "text") =>
+    options.cf.run({
       plane: "project",
       cwd: options.cwd,
       cliCf: options.cliCf,
-      mode: options.interactive && !options.dryRun ? "interactive" : "text",
+      mode,
       timeoutMs: DEPLOY_TIMEOUT_MS,
       ...(secrets ? { files: { "secrets.json": secrets } } : {}),
       args: (files) => [
@@ -157,6 +163,22 @@ async function deployAndRecord(
         ...(options.dryRun ? ["--dry-run"] : []),
       ],
     });
+  let output: string;
+  try {
+    const result = await deploy(attached ? "interactive" : "text").catch(
+      (error: unknown) => {
+        // Piped, cf can't ask before replacing a Worker changed outside
+        // everyapp and aborts before uploading: a person is asked attached.
+        if (
+          options.interactive &&
+          error instanceof CfError &&
+          error.kind === "strict_conflict"
+        ) {
+          return deploy("interactive");
+        }
+        throw error;
+      },
+    );
     output = result.stdout;
   } catch (error) {
     throw explainDeployFailure(error, options);

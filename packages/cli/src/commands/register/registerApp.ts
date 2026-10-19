@@ -178,7 +178,7 @@ export async function registerApp(
       domains: [...install.liveDomains, hostname],
       liveDomains: install.liveDomains,
       forceDns: options.forceDns,
-      interactive,
+      cfAsks: interactive && out.verbose,
     });
   }
 

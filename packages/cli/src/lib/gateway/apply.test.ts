@@ -407,7 +407,8 @@ describe("applyGateway", () => {
       message: expect.stringContaining("Run this command again in a terminal"),
     });
 
-    // At a terminal, cf runs attached and asks its own question.
+    // At a terminal, cf runs again attached and asks its own question.
+    account.strictAbortNextDeploy = true;
     await deployGateway({ interactive: true });
     expect(account.deploys.at(-1)!.mode).toBe("interactive");
   });
@@ -1037,7 +1038,9 @@ describe("reconcileGateway", () => {
 
     await expect(reconcile()).rejects.toMatchObject({ action: "rerun_interactive" });
 
-    // At a terminal, cf asks its own question; the row's release goes live.
+    // At a terminal, cf runs again attached and asks its own question; the
+    // row's release goes live.
+    account.strictAbortNextDeploy = true;
     await reconcile({ interactive: true });
     expect(account.deploys.at(-1)!.mode).toBe("interactive");
     expect((await readInstall(gatewayD1()))!.liveVersionId).toBe(
