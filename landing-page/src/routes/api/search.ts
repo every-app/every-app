@@ -9,10 +9,7 @@ const server = createFromSource(source, {
 export const Route = createFileRoute("/api/search")({
   server: {
     handlers: {
-      // TEMPORARY: docs search isn't public yet. Restore
-      // `({ request }) => server.GET(request)` to re-enable.
-      GET: async ({ request }) =>
-        Response.redirect(new URL("/", request.url), 302),
+      GET: ({ request }) => server.GET(request),
     },
   },
 });

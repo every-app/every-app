@@ -15,10 +15,7 @@ const DEFAULT_SITE_URL = "https://everyapp.com";
 const SITE_URL = (process.env.SITE_URL ?? DEFAULT_SITE_URL).replace(/\/+$/, "");
 
 const DOC_EXTENSIONS = new Set([".md", ".mdx"]);
-// TEMPORARY: only the homepage is live; every other path redirects to "/".
-// Set this back to ["/", "/docs", "/blogs"] and re-enable the content paths
-// in main() when the other pages return.
-const STATIC_PATHS = new Set(["/"]);
+const STATIC_PATHS = new Set(["/", "/docs"]);
 
 function walkMarkdownFiles(directory) {
   if (!existsSync(directory)) return [];
@@ -82,8 +79,8 @@ function main() {
 
   const urlPaths = new Set(STATIC_PATHS);
 
-  // addContentPaths(urlPaths, "/docs", DOCS_CONTENT_DIR);
-  // addContentPaths(urlPaths, "/blogs", BLOG_CONTENT_DIR);
+  addContentPaths(urlPaths, "/docs", DOCS_CONTENT_DIR);
+  addContentPaths(urlPaths, "/blogs", BLOG_CONTENT_DIR);
 
   const urls = Array.from(urlPaths)
     .map((path) => toCanonicalUrl(path))

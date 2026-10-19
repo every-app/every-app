@@ -5,7 +5,7 @@ export const Route = createFileRoute("/docs/build-an-app")({
     throw redirect({
       to: "/docs/$",
       params: {
-        _splat: "build-an-app/create-app",
+        _splat: "build-your-own-app",
       },
       statusCode: 301,
     });

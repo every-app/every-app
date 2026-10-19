@@ -1,7 +1,6 @@
----
-title: "Gateway: CLI & Deployment"
-description: How the CLI provisions, deploys, registers, and runs everything locally
----
+# Gateway: CLI & Deployment
+
+How the CLI provisions, deploys, registers, and runs everything locally.
 
 > Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-10-15.
 

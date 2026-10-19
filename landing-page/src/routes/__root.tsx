@@ -2,7 +2,6 @@ import {
   createRootRoute,
   HeadContent,
   Outlet,
-  redirect,
   Scripts,
 } from "@tanstack/react-router";
 import * as React from "react";
@@ -10,13 +9,6 @@ import appCss from "@/styles/app.css?url";
 import { RootProvider } from "fumadocs-ui/provider/tanstack";
 
 export const Route = createRootRoute({
-  // TEMPORARY: the site is landing-page only for now. Every page path other
-  // than "/" redirects home. Remove this block to bring docs/blogs/etc. back.
-  beforeLoad: ({ location }) => {
-    if (location.pathname !== "/") {
-      throw redirect({ to: "/", statusCode: 302 });
-    }
-  },
   head: () => ({
     meta: [
       {

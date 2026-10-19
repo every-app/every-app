@@ -19,7 +19,6 @@ import { Route as BlogsSplatRouteImport } from './routes/blogs/$'
 import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as DocsBuildAnAppRouteImport } from './routes/docs/build-an-app'
-import { Route as DocsQuickstartRouteImport } from './routes/docs/quickstart'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -71,11 +70,6 @@ const DocsBuildAnAppRoute = DocsBuildAnAppRouteImport.update({
   path: '/docs/build-an-app',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DocsQuickstartRoute = DocsQuickstartRouteImport.update({
-  id: '/docs/quickstart',
-  path: '/docs/quickstart',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -86,7 +80,6 @@ export interface FileRoutesByFullPath {
   '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/build-an-app': typeof DocsBuildAnAppRoute
-  '/docs/quickstart': typeof DocsQuickstartRoute
   '/blogs/': typeof BlogsIndexRoute
   '/docs/': typeof DocsIndexRoute
 }
@@ -99,7 +92,6 @@ export interface FileRoutesByTo {
   '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/build-an-app': typeof DocsBuildAnAppRoute
-  '/docs/quickstart': typeof DocsQuickstartRoute
   '/blogs': typeof BlogsIndexRoute
   '/docs': typeof DocsIndexRoute
 }
@@ -113,7 +105,6 @@ export interface FileRoutesById {
   '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
   '/docs/build-an-app': typeof DocsBuildAnAppRoute
-  '/docs/quickstart': typeof DocsQuickstartRoute
   '/blogs/': typeof BlogsIndexRoute
   '/docs/': typeof DocsIndexRoute
 }
@@ -128,7 +119,6 @@ export interface FileRouteTypes {
     | '/blogs/$'
     | '/docs/$'
     | '/docs/build-an-app'
-    | '/docs/quickstart'
     | '/blogs/'
     | '/docs/'
   fileRoutesByTo: FileRoutesByTo
@@ -141,7 +131,6 @@ export interface FileRouteTypes {
     | '/blogs/$'
     | '/docs/$'
     | '/docs/build-an-app'
-    | '/docs/quickstart'
     | '/blogs'
     | '/docs'
   id:
@@ -154,7 +143,6 @@ export interface FileRouteTypes {
     | '/blogs/$'
     | '/docs/$'
     | '/docs/build-an-app'
-    | '/docs/quickstart'
     | '/blogs/'
     | '/docs/'
   fileRoutesById: FileRoutesById
@@ -168,7 +156,6 @@ export interface RootRouteChildren {
   BlogsSplatRoute: typeof BlogsSplatRoute
   DocsSplatRoute: typeof DocsSplatRoute
   DocsBuildAnAppRoute: typeof DocsBuildAnAppRoute
-  DocsQuickstartRoute: typeof DocsQuickstartRoute
   BlogsIndexRoute: typeof BlogsIndexRoute
   DocsIndexRoute: typeof DocsIndexRoute
 }
@@ -245,13 +232,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsBuildAnAppRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/docs/quickstart': {
-      id: '/docs/quickstart'
-      path: '/docs/quickstart'
-      fullPath: '/docs/quickstart'
-      preLoaderRoute: typeof DocsQuickstartRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -264,7 +244,6 @@ const rootRouteChildren: RootRouteChildren = {
   BlogsSplatRoute: BlogsSplatRoute,
   DocsSplatRoute: DocsSplatRoute,
   DocsBuildAnAppRoute: DocsBuildAnAppRoute,
-  DocsQuickstartRoute: DocsQuickstartRoute,
   BlogsIndexRoute: BlogsIndexRoute,
   DocsIndexRoute: DocsIndexRoute,
 }

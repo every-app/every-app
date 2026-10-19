@@ -11,47 +11,37 @@ const CANONICAL_BASE_URL = (
 const checks = [
   {
     type: "redirect",
-    from: "/docs/quickstart",
-    to: "/docs/getting-started/quickstart",
+    from: "/docs/getting-started/quickstart",
+    to: "/docs/quickstart",
     expectedCodes: [301, 308],
   },
   {
     type: "redirect",
     from: "/docs/build-an-app",
-    to: "/docs/build-an-app/create-app",
+    to: "/docs/build-your-own-app",
     expectedCodes: [301, 308],
   },
   {
     type: "redirect",
-    from: "/docs/getting-started/quickstart/",
-    to: "/docs/getting-started/quickstart",
+    from: "/docs/quickstart/",
+    to: "/docs/quickstart",
     expectedCodes: [301, 307, 308],
   },
   {
     type: "status",
-    path: "/docs/getting-started/quickstart",
+    path: "/docs/quickstart",
     expectedCode: 200,
   },
   {
     type: "status",
-    path: "/docs/build-an-app/create-app",
-    expectedCode: 200,
-  },
-  {
-    type: "status",
-    path: "/blogs/welcome",
+    path: "/docs/build-your-own-app",
     expectedCode: 200,
   },
   { type: "status", path: "/robots.txt", expectedCode: 200 },
   { type: "status", path: "/sitemap.xml", expectedCode: 200 },
 ];
 
-const seoPages = [
-  "/docs/getting-started/quickstart",
-  "/docs/build-an-app/create-app",
-  "/docs/coding-agents",
-  "/blogs/welcome",
-];
+const seoPages = ["/docs/quickstart", "/docs/build-your-own-app"];
 
 function toUrl(path) {
   return new URL(path, `${BASE_URL}/`).toString();

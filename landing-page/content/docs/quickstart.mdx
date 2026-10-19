@@ -1,0 +1,73 @@
+---
+title: Quickstart
+description: Set up your Gateway and put your first app live in about 20 minutes.
+---
+
+## What you need
+
+1. **Node.js 22.18 or newer** and **pnpm** (`npm install -g pnpm`).
+2. **A Cloudflare account on Workers Paid** ($5 a month). The free plan can't run Every App. [Sign up](https://dash.cloudflare.com/sign-up), then subscribe under **Workers & Pages → Plans**.
+3. **A domain on Cloudflare.** No domain? Buy one in the Cloudflare dashboard under **Domains → Buy a domain**.
+
+## The easy way: ask your agent
+
+Paste this into Claude Code, Cursor or any coding agent:
+
+```text
+Set up Every App for me and deploy my first app.
+Docs: https://everyapp.com/llms.txt
+
+1. Clone https://github.com/every-app/every-app.git, run `pnpm install`,
+   and run every command from that folder. Always use `pnpm everyapp`,
+   never npx.
+2. Ask me which domain to use, then run
+   `pnpm everyapp setup --domain apps.<my domain> --json`.
+3. Ask me for an app name, then run `pnpm everyapp create <name> --json`,
+   then `pnpm everyapp deploy --json` from apps/<name>.
+
+The --json output has one event per line. When an event has
+"type":"action_required", show me its message, data.url and data.code.
+If it says "waiting": true, keep reading. If the command exits with
+code 2, run its data.rerun once I'm done.
+
+Keep it short and tell me exactly what to do when you need me.
+```
+
+You'll do three things yourself: approve the Cloudflare login, create your owner account, and pay for anything you don't have yet.
+
+## The manual way
+
+### 1. Get the code
+
+{/* TODO(publishing): replace the clone and install steps with the published npm command once the CLI is on npm again */}
+
+```bash
+git clone https://github.com/every-app/every-app.git && cd every-app && pnpm install
+```
+
+### 2. Make an app
+
+```bash
+pnpm everyapp create my-app
+cd apps/my-app
+pnpm dev
+```
+
+Open `http://my-app.localhost:8787`. It's a simple todo list, running on your computer, and you're signed in as a test user.
+
+### 3. Put it live
+
+```bash
+pnpm run deploy
+```
+
+The first time, it offers to set up your Gateway. Say yes. It will:
+
+1. Show a link and a code to log in to Cloudflare. No tokens to copy.
+2. Install your Gateway at `apps.yourdomain.com`.
+3. Open a one-time link to create your owner account.
+4. Put your app live at `my-app.apps.yourdomain.com`.
+
+If anything stops half-way, fix it and run the same command again. It picks up where it left off.
+
+**Next:** [The Gateway](/docs/gateway)

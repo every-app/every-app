@@ -1,0 +1,31 @@
+---
+title: Deploy the Todo App
+description: Put the finished todo app on your Gateway with one command.
+---
+
+Your copy of the code comes with a finished todo app in `apps/todo-app`. It syncs live across your devices.
+
+## Deploy it
+
+From your `every-app` folder:
+
+```bash
+cd apps/todo-app
+pnpm run deploy
+```
+
+It goes live at `todo.apps.yourdomain.com`. Open your Gateway and it's in your list of apps.
+
+No Gateway yet? The deploy offers to set one up first.
+
+## Update it
+
+```bash
+git pull && pnpm install
+cd apps/todo-app
+pnpm run deploy
+```
+
+Your todos are kept.
+
+**Next:** [Architecture](/docs/architecture)

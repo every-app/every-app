@@ -1,0 +1,49 @@
+---
+title: Build Your Own App
+description: Create an app, describe it to your agent, try it, and put it live.
+---
+
+You'll need the code from the [Quickstart](/docs/quickstart). Your Gateway can wait: the first deploy offers to set it up.
+
+## 1. Create the app
+
+```bash
+pnpm everyapp create my-app
+cd apps/my-app
+```
+
+Run this in your `every-app` folder. You get a copy of the starter, a simple todo list. The name becomes the address: `my-app.apps.yourdomain.com`.
+
+## 2. Describe what you want
+
+Open the app folder in your coding agent and tell it what to build. A few sentences is plenty:
+
+```md
+Turn this into a shared todo list for my household. I want separate lists
+for groceries and chores, due dates on each todo, and a way to invite
+people to a list by email.
+```
+
+You never need to ask for a login page. Every App already knows who the user is.
+
+## 3. Try it
+
+```bash
+pnpm dev
+```
+
+Open `http://my-app.localhost:8787`. Leave it running and watch your agent's changes appear.
+
+## 4. Put it live
+
+```bash
+pnpm run deploy
+```
+
+Your app is now at `my-app.apps.yourdomain.com`. Run the same command whenever you want to ship a change.
+
+## Share it
+
+New apps are private to you. To share, go to **Admin → Apps** on your Gateway and use the app's **⋯** menu. [More on sharing](/docs/gateway#choose-who-opens-which-app).
+
+**Next:** [Deploy the todo app](/docs/deploy-existing-apps)

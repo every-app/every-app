@@ -1,284 +1,42 @@
 ---
 title: Troubleshooting
-description: What went wrong, and what to do about it
+description: The most common problems and how to fix them.
 ---
 
-import { Callout } from "fumadocs-ui/components/callout";
+Two things fix most problems. **Run the command again:** `setup` and `deploy` pick up where they stopped. **Ask `pnpm everyapp status`:** it tells you what's wrong and what to run.
 
-Find your error message below. Most failures are safe to fix and re-run — `setup`, `deploy` and `delete` are all idempotent, so running them again after fixing the cause picks up where you left off. Every error ends with the command to run next.
+## Odd errors after using npx
 
-## Before anything else
+Running the CLI through npx downloads an old version that doesn't work. Always run `pnpm everyapp` from your `every-app` folder.
 
-Four things cause most failures. Check them in order:
+## "Every App needs a domain on Cloudflare"
 
-```bash
-node --version          # must be 22.18 or newer
-npx cf auth whoami      # must show the account you expect
-```
+The Cloudflare account you're logged in to doesn't have that domain. Add it to Cloudflare, or buy one under **Domains → Buy a domain**, then run the command again.
 
-Then confirm your domain is **active** on that Cloudflare account (dashboard → your domain shows "Active", not "Pending Nameserver Update"), that the account is on **Workers Paid**, and that you're running the command from the right directory — `deploy` must run from inside the app folder, next to `everyapp.config.ts`.
+## "Couldn't confirm this account is on Workers Paid"
 
-`npx everyapp status` shows what your Gateway runs, whether it serves every app it should, and what to run when not. When it says `setup`, run `npx everyapp setup`: it installs, upgrades and repairs the Gateway, and says when there is nothing to do.
+Subscribe under **Workers & Pages → Plans** in the Cloudflare dashboard. If you already have, setup carries on anyway.
 
-## Setting up the Gateway
+## "No workers.dev subdomain yet"
 
-### "Log in to Cloudflare first"
+Cloudflare wants every account to pick one name once. Open the link the CLI shows, pick any name, and run the command again.
 
-The CLI uses Cloudflare's own CLI, `cf`, and it isn't logged in. Run it in your terminal:
+## You lost the owner account link
 
-```bash
-npx cf auth login
-```
+Run `pnpm everyapp setup` again for a new one.
 
-It prints a link and a one-time code (so it works over SSH too); open the link, check the code and approve. Run in a terminal, `everyapp` offers this login itself, and `everyapp setup --json` hands an agent the same link and code. In CI, create an API token at [dash.cloudflare.com/profile/api-tokens](https://dash.cloudflare.com/profile/api-tokens) from the **Edit Cloudflare Workers** template plus **Account → D1 → Edit**, **Zone → Zone → Read** and **Zone → DNS → Read** (and **Zone → SSL and Certificates → Edit** for `delete` to remove certificates), then export **both**:
+## The address doesn't load yet
 
-```bash
-export CLOUDFLARE_API_TOKEN=...
-export CLOUDFLARE_ACCOUNT_ID=...
-```
+New addresses need an HTTPS certificate from Cloudflare. It usually takes a minute or two, sometimes up to ten.
 
-### "cf can't authenticate with CLOUDFLARE_API_TOKEN"
+## "Schema has changes its migrations don't"
 
-The token in your environment is invalid or expired. Recreate it as above, or unset it to use your `cf auth login` session.
+Your database changed but nobody wrote down the change. In the app folder, run `pnpm run db:generate`, then `pnpm run deploy`.
 
-### The deploy targets the wrong Cloudflare account
+## "No everyapp.config.ts found"
 
-`npx cf auth whoami` lists the accounts your login can use. The CLI finds the Gateway by asking each of them for its database, so a login with one Gateway always gets that one. To install a new Gateway in another account, or pick among several, pass `--account-id <id>` or set `CLOUDFLARE_ACCOUNT_ID`.
-
-### "This Cloudflare login sees a Gateway in … accounts" (`choose_account`)
-
-More than one account your login can use has a Gateway, and nothing said which one. At a terminal the CLI asks; unattended it stops (exit 2) and lists them, each with its address and the command to run (`data.choices` under `--json`). Pass `--account-id <id>` (or set `CLOUDFLARE_ACCOUNT_ID`), or name the Gateway's address with `--gateway`.
-
-### "This checkout's Gateway (…) is older than the one live at …" (`DOWNGRADE_REFUSED`)
-
-The CLI deploys the Gateway from the checkout you run it in, and someone has deployed a newer one from theirs: their checkout has commits (or migrations) yours doesn't. Nothing was changed. Run `git pull`, then the same command again. App deploys and deletes refuse too, before they touch anything, since they write the registry with your checkout's rules and redeploy its Gateway. To put an older Gateway back on purpose, run `pnpm everyapp setup --allow-downgrade` (setup's own refusal offers it; an agent asks you first).
-
-### "No zone in this Cloudflare account holds …" / "Every App needs a domain on Cloudflare"
-
-No domain in the account you're deploying to holds the address you gave (`apps.your-domain.dev` needs `your-domain.dev`, or `apps.your-domain.dev` itself, as a zone there). Either it was never [added to Cloudflare](https://developers.cloudflare.com/fundamentals/manage-domains/add-site/), or it lives in another account — `npx cf auth whoami` shows which ones you can use.
-
-No domain at all? Buy one in the Cloudflare dashboard: **Domains → Buy a domain** (about $10 a year for a `.com`; it's ready in minutes). Then run `npx everyapp setup` again.
-
-### "The Cloudflare zone … is pending"
-
-Cloudflare doesn't serve DNS for the domain yet: point its nameservers at Cloudflare at your registrar (the dashboard's domain overview shows the two names), wait for it to show **Active**, and re-run. This can take a few hours.
-
-### "Couldn't confirm this account is on Workers Paid"
-
-Every App needs the Workers Paid plan ($5 a month): on the Free plan D1 stops answering for the rest of the day once the account reaches its daily limits, and the Gateway reads D1 on every request. Subscribe under **Workers & Pages → Plans**, then re-run. It is a warning, not a question: setup goes on either way, and if the account is on Workers Paid already, the check couldn't read its subscription. When Cloudflare itself refuses something for the Free plan, the command stops there (`action_required` `upgrade_workers_paid` under `--json`) with the link to subscribe; run it again afterwards.
-
-### "…already has a DNS record" / "already have DNS records"
-
-The Gateway's address, or a new app's, already has an A, AAAA, CNAME or NS record, or has no record of its own but a wildcard record above it (`*.apps.your-domain.dev: CNAME …`, say) answers it. Publishing the Gateway there would take that name from whatever the record serves (a website, another service; a wildcard keeps answering every other name), so nothing was deployed. Pick another address, delete the record in the Cloudflare dashboard (your domain → DNS), or, if the name should go to the Gateway, pass `--force-dns`. Mail and TXT records at the same name are fine.
-
-### "Can't read …'s DNS records with this Cloudflare login"
-
-The deploy checks that a new address won't replace a DNS record, and the API token in use can't read DNS. Give it **Zone → DNS → Read**, or pass `--force-dns` to publish without checking.
-
-### "This would put … Workers Custom Domains in …"
-
-Cloudflare allows 100 Workers Custom Domains in a zone, the Gateway's own address and other Workers' included. Delete apps you no longer use (`npx everyapp delete <app-id>`), or set up a second Gateway on another domain.
-
-### "This Cloudflare account has no workers.dev subdomain yet"
-
-Cloudflare wants a workers.dev subdomain on the account before its first Worker upload. Open the link the CLI prints (Workers & Pages → your subdomain), pick one, and run the same command again. Your apps never use it: they stay private behind the Gateway.
-
-### "…is serving a version everyapp didn't record deploying"
-
-The Worker serves a version everyapp didn't record uploading: it was last changed in the Cloudflare dashboard or through the API, or uploaded by a deploy killed before it could record it. `cf` won't replace a Worker changed in the dashboard unattended, and can't be asked first, so the command stops before it migrates anything. Run the same command in a terminal: everyapp asks before it migrates, and `cf` may ask again before it uploads. everyapp records the versions it uploads (also when a deploy is stopped with Ctrl+C, or fails after the upload), so later runs can be unattended again.
-
-### "…was last changed outside everyapp"
-
-`cf` itself refused, at the upload, to replace the Worker unattended: Cloudflare says it was last changed in the dashboard or through the API. If the run migrated a database, it stays migrated. Run the same command in a terminal and confirm `cf`'s prompt.
-
-### "Another deploy is running: … has held the deploy lease …"
-
-Deploys of the Gateway (and of each app) never overlap: each holds a lease in the Gateway's database while it runs, and a deploy that finds it taken waits up to 5 minutes. The error names the holder (machine, process) and when it started; `npx everyapp status` lists every deploy running and when its lease expires. Wait for it and run the command again. If that deploy died, its lease expires within 3 minutes of its last heartbeat and the next run takes it; there is nothing to break by hand. A deploy stopped with Ctrl+C frees its lease on the way out.
-
-When binding a new app waits too long for the Gateway's lease, the app's upload is kept: run `deploy` again once the other deploy finishes, and it binds the app and makes it live.
-
-### "The deploy lease … is no longer this deploy's" / "Couldn't renew the deploy lease …"
-
-The deploy lost its lease while it ran: its renewals failed for more than 90 seconds (the network, or Cloudflare's API), or the lease expired and another deploy took it. It stopped before its next migration or upload so the two can't overlap. Run the same command again. If it had migrated the database already, the database stays migrated; the restore command printed before the migration rolls it back.
-
-### "Migrating the database failed"
-
-Nothing was uploaded: the Gateway that was serving keeps running. Before migrating, the CLI bookmarked the database; the error ends with the command that restores it (`cf d1 time-travel restore … --force`, in PowerShell syntax on Windows outside Git Bash; `--force` answers cf's own confirmation, which it otherwise declines wherever no one can type). Fix the cause and re-run.
-
-### "cf finished without uploading a new version"
-
-`cf` asked a question in the terminal (a Worker changed in the dashboard, a DNS record or Custom Domain held by something else) and it was answered no, so `cf` exited without deploying. The version that was serving still is. If the run had migrated the database, it stays migrated: run the command again and answer yes, or roll the database back with the restore command the error repeats (it is also under the migration's line, `restore point: …`, and in `data.rollbackCommand` under `--json`).
-
-### "… has no certificate after …" / the address doesn't load yet
-
-**The certificate isn't issued yet.** Every new address (the Gateway's, and each app's) gets its own certificate from Cloudflare, usually within a minute or two and almost always within five. The CLI waits up to ten minutes, then says so and carries on: the address works as soon as the certificate arrives, and a new app goes live on its first visit then. `npx everyapp status` shows which addresses have theirs. If one never arrives, check your domain's CAA records, if it has any (they say which certificate authorities may issue its certificates; records at a parent domain count too): one must allow a certificate authority Cloudflare issues these certificates from, such as Let's Encrypt (`0 issue "letsencrypt.org"`) or Google Trust Services (`0 issue "pki.goog"`).
-
-**This computer, or this network, remembers the address as missing.** A DNS resolver that was asked for the address before it existed (between deleting a Gateway and installing it again, say) keeps that "no such name" for up to half an hour. The CLI looks addresses up at your domain's own nameservers, so it isn't held back, and says so with `LOCAL_DNS_STALE` ("… still remembers … as missing from before it existed"): the address works, and a browser with its own DNS, such as Chrome, opens it now. It clears by itself within the time the warning names. On macOS, `sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder` clears the computer's own cache, but not the router's.
-
-**Nameservers haven't propagated.** If your domain shows "Pending Nameserver Update" in the Cloudflare dashboard, Cloudflare doesn't control DNS for it yet and nothing will resolve. This can take a few hours after you change nameservers at your registrar.
-
-### Building the Gateway takes a minute or two
-
-`setup`, and the rebind a `deploy` or `delete` does, deploy the Gateway your checkout builds. The first time after its sources change (a `git pull`, an edit under `apps/every-app-gateway`, `packages/sdk`, `packages/perimeter` or `packages/toolbus`) it is built; after that the build is reused from `node_modules/.cache/everyapp`, and a rebind takes seconds. Deleting that directory only costs one build. If the build fails, the error shows its last lines and the log file's path.
-
-### "… stopped before its first upload finished" (`GATEWAY_NOT_INSTALLED`)
-
-A new install records itself in the Gateway's database before anything can stop it, then stopped before its first upload (no workers.dev subdomain yet, a DNS record in the way). Run `pnpm everyapp setup` again: it picks up the address and account from that record, without `--domain`. App commands wait for it to finish.
-
-### I lost the setup link, or it expired
-
-A new Gateway has no owner and accepts no sign-ups until someone opens the one-time setup link that `setup` (or the install a first `deploy` offers) showed. Each link works once and expires after 24 hours. Run this on any machine logged in to the Gateway's Cloudflare account for a new one:
-
-```bash
-npx everyapp setup
-```
-
-Any earlier unused link stops working. Once the Gateway has an owner, `setup` says who it is and shows no link: sign in instead, or ask an owner or admin to invite you. A Gateway whose database has no install record (one installed some other way) gets its link from `npx everyapp setup --domain <its address>`, which installs it there first.
-
-### "Nobody has used the setup link yet"
-
-`setup` waits 15 minutes for the owner account to be created with the link, then stops (exit 2). The link keeps working until it expires: open it, create the account, then run `npx everyapp setup` again to finish (it sees the owner and is done). Running `setup` again before anyone opens the link shows a new link instead, and this one stops working.
-
-### "The setup link stopped working before anyone used it"
-
-A newer link replaced it (`setup` on another machine: each new link stops earlier unused ones working), or it expired. If someone has the newer link, create the owner account with it: a `setup` that is waiting notices the owner either way. Otherwise run `npx everyapp setup` again for a new link.
-
-### "Cloudflare Access answers … before the gateway"
-
-`setup` sends one plain request to your Gateway before it shows the owner link. With [Cloudflare Access](/docs/reference/cloudflare-access) in front of the Gateway, Access answers it with its sign-in page: whoever opens the link signs in to Access first. Nothing else changes; `setup` shows the link and waits as usual.
-
-## Deploying an app
-
-### Deploying from another machine, or the CLI asks you to log in
-
-The only credential is your Cloudflare login for the Gateway's account: run `npx cf auth login` (the CLI starts it at a terminal, and under `--json` hands its link and code to the agent and waits), or set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in CI. Nothing else needs setting up on another machine: there is no deploy token to create, paste or store, and no local record of the install; the CLI finds the Gateway through the login and writes your Gateway's app registry itself, in the Gateway's database.
-
-### "No Gateway in the Cloudflare accounts this login sees" (`GATEWAY_NOT_FOUND`) / `install_gateway`
-
-App commands find the Gateway by asking every account your login can use for its database (an account the login can't read counts as one without a Gateway). None had one: log in to the Gateway's account (`npx cf auth login`), or set the token and `CLOUDFLARE_ACCOUNT_ID` it needs; the error lists the accounts it asked. With no Gateway yet, `npx everyapp setup --domain <hostname>` installs one. `deploy` offers to install it for you at a terminal; under `--json`, in CI or with piped output it stops with `action_required install_gateway` (exit 2) instead, whose `data.rerun` is that setup command: run it, then deploy again. `Cloudflare account … has no Gateway; this login's is in …` means `--account-id` (or `CLOUDFLARE_ACCOUNT_ID`) names another account than the Gateway's: pass that one, or drop it.
-
-### "The Gateway in Cloudflare account … is …, not …" (`GATEWAY_URL_MISMATCH`)
-
-`--gateway` (or `EVERYAPP_GATEWAY_URL`) names another address than the Gateway the CLI found: drop it, or pass the account that Gateway runs in with `--account-id`.
-
-### "The gateway's install row has no identity public key"
-
-App Workers verify who is signed in with the public half of the Gateway's identity key, which the CLI records in the Gateway's install record when it first deploys the Gateway. A Gateway deployed by an older CLI doesn't have it on record. Write the Gateway's `JWT_PUBLIC_KEY` (the SPKI PEM) into it with `npx cf d1 query <the every-app-gateway database id> --body @key.json`, where `key.json` is `{"sql": "UPDATE _everyapp_install SET jwt_public_key = ?1", "params": ["-----BEGIN PUBLIC KEY-----\n…"]}` (the repository's `docs/runbooks/key-rotation.md` has the whole procedure), then deploy again.
-
-### Behind Cloudflare Access: "… goes live on its first visit"
-
-A deploy ends by requesting the app's address until your Gateway has made the app live: the Gateway does that on the first request that reaches it. With Cloudflare Access in front of the Gateway, Access answers that request instead, so the deploy can't: it says so and ends successfully (exit 0). The app goes live the first time someone opens it through Access; until then `npx everyapp status` lists it as going live on its first visit.
-
-### "The gateway answers … but hasn't made … live" (`APP_NOT_LIVE`)
-
-The app's address answers, but for ten minutes the Gateway never made the app live: the Gateway version that binds the app isn't serving there, or can't reach the app's Worker. Run `npx everyapp status`, then deploy again; the upload is kept, so it only binds and waits again.
-
-### "A D1 database / KV namespace / Worker named … already exists"
-
-The Gateway just registered this app, but a resource with the name it assigned already exists in your account, perhaps from another project. Deploying would take it over, so the CLI stops. Delete or rename that resource, then deploy again.
-
-### "… is a … binding, which Every App apps can't use"
-
-An app may bind only text, JSON and secret values, version metadata, its assets, D1, KV, R2 (a bucket named after its Worker), its own Durable Objects and the Gateway's `EVERY_APP_GATEWAY`. Other types (Workers AI, `send_email`, queues, Hyperdrive, workflows, rate limits, …) reach things outside the app, or capabilities the Gateway brokers, so the deploy stops before it changes anything; there is no flag to allow them. For an AI model, call it through the Gateway's AI proxy (`everyapp secret set OPENAI_API_KEY --for gateway`).
-
-### "…no longer declares the Durable Object class …"
-
-Removing a Durable Object class from `everyapp.config.ts` deletes its data for good. If that's what you want, deploy with `--allow-delete-durable-object-data`.
-
-### "…'s schema has changes its migrations don't" (`SCHEMA_DRIFT`)
-
-You changed the database schema (`src/db/schema.ts`) without generating its migration, so the code would go live expecting tables or columns the database doesn't have. The deploy checks this after the build, before it migrates or uploads anything, by running `drizzle-kit generate` against a copy of your migrations. Generate the migration, look it over, commit it, and deploy again:
-
-```bash
-pnpm db:generate
-npx everyapp deploy
-```
-
-`SCHEMA_CHECK_FAILED` means drizzle-kit couldn't tell: most often a renamed column or table, which it asks about only at a terminal, or a schema file that doesn't load. Run `pnpm db:generate` in a terminal, answer its questions, and deploy again. `SCHEMA_CHECK_SKIPPED` is a warning: the app has no drizzle-kit installed or no `drizzle.config.ts`, so the deploy couldn't check; an app that writes its SQL by hand sets `migrations: { engine: "d1-sql", dir: "…" }` in `everyapp.config.ts`.
-
-### The app's address doesn't resolve yet
-
-A new app's address is a Custom Domain the deploy creates, with its own DNS record and certificate: give it a few minutes (`npx everyapp status` shows its certificate). To check the record yourself:
-
-```bash
-dig +short todo.apps.your-domain.dev
-```
-
-You want an answer, not an empty response.
-
-### "Not inside an Every App project" / "No everyapp.config.ts found"
-
-`deploy` must run from inside the app folder, next to `everyapp.config.ts`. `cd` into the app directory and re-run.
-
-### The app is deployed but shows 401 or a blank screen
-
-Reach the app through your Gateway at the URL the deploy printed (`https://todo.apps.your-domain.dev`), not through any direct worker URL. Apps are private by design: they're only reachable through the perimeter, which is what attaches your identity. A direct hit returning 401 is the security model working. Right after a first deploy the app may answer "deploying" for a few seconds while the Gateway starts serving it.
-
-## Creating an app
-
-### "Could not find an id field in everyapp.config.ts"
-
-Thrown by `create` when the fetched template's `everyapp.config.ts` doesn't declare an `id`. Re-fetch the starter — if it persists, the template itself is broken; report it.
-
-## Local development
-
-### "pnpm is required but not installed"
-
-The CLI uses pnpm to install and run app projects. Install it from https://pnpm.io/installation and re-run.
-
-### "pnpm runs this project's tools on Node.js …"
-
-`cf build` and `cf dev` run Vite through your package manager, and everyapp makes them use its own Node. A Volta pin (`"volta": { "node": … }` in `package.json`) or pnpm's `use-node-version` puts another Node first again, and below 22.18 it can't load `cloudflare.config.ts`. Raise the pin (`volta pin node@22`), then run the command again.
-
-### "everyapp won't run cf below …"
-
-`cf` runs any `cloudflare.config.ts` it finds in its working directory or a parent, so everyapp runs it only in `~/.everyapp/cf`, whose every parent must be writable by you alone (and hold no `cloudflare.config.ts`). Fix the directory the message names (`chmod go-w <dir>`), or run everyapp with a `HOME` that is. A `~/.everyapp` an older CLI left group-writable is made private again by itself.
-
-### The first page load crashes with a database error
-
-Your local database has no tables yet. `everyapp dev` applies pending migrations on startup; if you're on an older CLI, or you passed `--skip-migrations`, run them manually:
-
-```bash
-pnpm run db:migrate:local
-```
-
-### Hitting the Vite port directly returns 401
-
-Expected. Use the URL `everyapp dev` prints (`http://your-app-id.localhost:8787`), not the raw Vite port. The local Gateway in front of Vite is what signs you in as the seeded dev user.
-
-### `pnpm install` fails in a copied app
-
-If you copied a directory out of the monorepo, its dependencies may point at workspace packages that only resolve inside it. Use the starter instead:
-
-```bash
-npx everyapp create <app-id>
-```
-
-### Schema changes don't show up
-
-Generate the migration first, then restart:
-
-```bash
-pnpm run db:generate
-```
-
-`db:generate` writes the migration file; it doesn't apply it. Restarting `everyapp dev` applies it locally, and `everyapp deploy` applies it in production (and refuses to deploy a schema change without one: `SCHEMA_DRIFT` above).
+You're not in an app folder. Run `cd apps/my-app` and try again.
 
 ## Still stuck
 
-Collect these before asking for help — they identify almost any problem on sight:
-
-```bash
-node --version
-npx everyapp --version
-npx cf auth whoami
-npx everyapp status
-dig +short apps.your-domain.dev
-```
-
-Plus the full command you ran and its complete output (with `--verbose`, which also shows every step and the build and install output), the log file a failed build or install names (`$TMPDIR/everyapp/…log`), and whether your domain shows **Active** in the Cloudflare dashboard.
-
-<Callout type="info">
-  Re-running a failed deploy is safe. Resources are created get-or-create,
-  migrations run once each, and app registration is an upsert.
-</Callout>
+Run the command again with `--verbose`, then open an issue on [GitHub](https://github.com/every-app/every-app/issues) with the output.

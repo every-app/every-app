@@ -396,7 +396,7 @@ From the ports of Postiz and agentic-inbox (2026-10-17):
 
 - [ ] Publish again: npm for `everyapp` and `@every-app/sdk`, then the public repository sync. `.github/RELEASE.md` lists what pausing removed.
 - [ ] OpenSEO links `@every-app/sdk` and `everyapp` from a checkout, so its CI can't install them until they're published.
-- [ ] The docs site (`landing-page/content/docs`) still describes the published flow: `npx everyapp`, and `gitpick` for the examples (its CLI reference says `pnpm everyapp`). Update it when publishing resumes, or point it at the checkout flow until then.
+- [ ] The docs site (`landing-page/content/docs`, rewritten 2026-10-16) describes the checkout flow: clone `every-app/every-app`, `pnpm install`, `pnpm everyapp`. When publishing resumes, swap the clone step in the Quickstart (marked `TODO(publishing)` in `quickstart.mdx`) and the agent prompts for the npm command, and re-check the public repository is synced before the docs go live, since they link to it.
 
 ## Move the website to everyapp.com
 

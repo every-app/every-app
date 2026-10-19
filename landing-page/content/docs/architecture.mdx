@@ -1,0 +1,55 @@
+---
+title: Architecture
+description: How Every App works under the hood, in plain English.
+---
+
+You don't need this page to use Every App. It's here if you're curious.
+
+## Why a Gateway
+
+Every app needs a login, a list of users and rules about who can open what. Building that into each app is slow, and easy to get wrong.
+
+So Every App does it once, in the Gateway. Every request goes through it first. Your apps just get told who the user is.
+
+## Why Cloudflare
+
+Cloudflare runs small programs, called Workers, on its servers around the world. The Gateway is one Worker. The todo app is another.
+
+Cloudflare also gives each Worker a web address and HTTPS on your domain, and a database to go with it. That's everything an app needs, in one account you own.
+
+## Why Workers Paid
+
+The free plan can't run Every App:
+
+- When a free account hits its daily database limit, the database stops answering until the next day. The Gateway reads its database on every request, so every app would go down.
+- Free requests get very little computing time. Checking a password safely can take longer.
+- The free plan allows only 10 databases, and each app has its own.
+
+## How your app knows who you are
+
+Say you open `todo.apps.yourdomain.com`:
+
+1. The Gateway checks you're signed in and allowed to open the todo app.
+2. It attaches a short-lived signed note saying who you are. It's valid for about two minutes, and only for that one app.
+3. It hands the request to the todo app over a private connection inside Cloudflare.
+4. The todo app checks the note's signature and runs as you.
+
+The todo app has no public address. It can't be reached from the internet at all, only through the Gateway. A request without a valid note is turned away before any of the app's code runs.
+
+## Why one database per app
+
+Each app gets its own database. One app can't read or break another app's data. And deleting an app never touches the others.
+
+## Who can deploy
+
+Anyone who can log in to your Cloudflare account can deploy apps and change the Gateway. Only give that access to people you fully trust.
+
+## What's missing today
+
+- Deploying from the Gateway's web pages. You deploy from the command line for now.
+- An activity log of who did what.
+- Sending email from your apps.
+- Removing someone takes up to two minutes to reach every app.
+- The Gateway can't move to a new address once it's installed.
+
+**Next:** [CLI reference](/docs/cli)

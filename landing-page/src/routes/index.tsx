@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toCanonicalUrl } from "@/lib/seo";
 import { joinWaitlist } from "@/lib/waitlist.functions";
@@ -130,7 +130,7 @@ function Home() {
   return (
     <main className="relative min-h-screen bg-[#0a0f0d] text-stone-100">
       <header className="absolute top-0 left-0 right-0 px-6 py-6">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between">
           <img
             src="/transparent-logo-256.png"
             alt="Every App Logo"
@@ -138,6 +138,23 @@ function Home() {
             width={48}
             height={48}
           />
+          <nav aria-label="Primary" className="flex items-center gap-6 text-sm">
+            <Link
+              to="/docs/$"
+              params={{ _splat: "introduction" }}
+              className="text-stone-400 transition-colors hover:text-white"
+            >
+              Docs
+            </Link>
+            <a
+              href="https://github.com/every-app/every-app"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-stone-400 transition-colors hover:text-white"
+            >
+              GitHub
+            </a>
+          </nav>
         </div>
       </header>
 
@@ -156,6 +173,16 @@ function Home() {
 
             <div className="landing-reveal" style={{ animationDelay: "200ms" }}>
               <WaitlistForm />
+              <p className="mt-4 text-sm text-stone-400">
+                Want to set it up yourself today?{" "}
+                <Link
+                  to="/docs/$"
+                  params={{ _splat: "introduction" }}
+                  className="text-stone-300 underline decoration-stone-600 underline-offset-4 transition-colors hover:text-white hover:decoration-stone-400"
+                >
+                  Read the docs
+                </Link>
+              </p>
             </div>
 
             <div

@@ -1,7 +1,6 @@
----
-title: "Gateway: Security Boundary"
-description: Where trust is established, what apps receive, and what is deliberately not protected
----
+# Gateway: Security Boundary
+
+Where trust is established, what apps receive, and what is deliberately not protected.
 
 > Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-07-15.
 

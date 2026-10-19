@@ -1,0 +1,50 @@
+---
+title: The Gateway
+description: Your front door, where people sign in and you decide who opens what.
+---
+
+The Gateway lives at `apps.yourdomain.com`. It's the only part the internet can see. Your apps sit behind it.
+
+It does four jobs:
+
+- **Sign-in.** People sign in once and can open every app you've given them.
+- **A home screen** that lists their apps.
+- **Privacy.** Nobody reaches an app unless they're signed in and allowed.
+- **AI keys.** Apps use your key through the Gateway and never hold it.
+
+## Invite people
+
+Go to **Admin → Users → Invite user** and type their email. If your Gateway can't send email, it shows you an invite link to send yourself.
+
+## Choose who opens which app
+
+A new app is private to you and your admins. In **Admin → Apps**, open the app's **⋯** menu. **Manage access** picks people one by one. **Edit app** can make it available to everyone.
+
+## Add your AI key
+
+```bash
+pnpm everyapp secret set OPENAI_API_KEY --for gateway
+```
+
+It asks for the key without showing it. Use `OPENROUTER_API_KEY` for OpenRouter.
+
+## Keep it up to date
+
+```bash
+git pull && pnpm install && pnpm everyapp setup
+```
+
+Run this in your `every-app` folder. Your users, apps and data stay.
+
+## What it costs
+
+Workers Paid is **$5 a month**. That includes plenty for a few apps and a small group of people:
+
+| Included each month | Above that               |
+| ------------------- | ------------------------ |
+| 10 million requests | $0.30 per million        |
+| 30 million CPU-ms   | $0.02 per million CPU-ms |
+
+A `.com` domain from Cloudflare is about $10 a year. Web addresses and HTTPS are free. See Cloudflare's [pricing page](https://developers.cloudflare.com/workers/platform/pricing/) for more.
+
+**Next:** [How apps work](/docs/apps)

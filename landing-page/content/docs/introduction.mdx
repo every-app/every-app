@@ -1,35 +1,30 @@
 ---
-title: Introduction
-description: What is Every App?
+title: Why Every App
+description: A real home for the apps you build with AI, in your own Cloudflare account.
 ---
 
-Every App is a platform for self-hosting apps. You can install popular open-source apps or build your own.
+You can build an app with Claude Code or Cursor in an afternoon. The hard part is putting it online for real people.
 
-Everything runs in your own Cloudflare account, on the Workers Paid plan: $5 a month, plus usage above generous included amounts ([what it costs](/docs/how-it-works/gateway#what-it-costs)).
+Every app needs a login, a database, hosting, a web address and a safe place for your AI keys. Every App sets all of that up once. After that, each new app gets it for free.
 
-You don't need to be an engineer. `npx everyapp setup` sets everything up in one command, and the [Quickstart](/docs/getting-started/quickstart) gives you a prompt to paste into your coding agent, which runs it for you.
+## What you get
 
-## The Gateway
+- **One sign-in for all your apps**, at `apps.yourdomain.com`.
+- **No login code to write.** Your app is simply told who the user is.
+- **A database and a web address for each app**, like `todo.apps.yourdomain.com`.
+- **Private by default.** Only people you invite can open your apps.
+- **AI keys in one place.** Add your OpenAI key once and every app can use it.
+- **One command to go live:** `pnpm run deploy`.
 
-The Gateway is where you access all your apps. It sits in front of them, so they are secure by default.
+## What it costs
 
-_The Gateway (left) showing your self-hosted apps, and a Workout Tracker app on mobile._
+$5 a month for Cloudflare's Workers Paid plan, plus a domain (about $10 a year). There's no Every App bill. It's open source and runs in your own Cloudflare account. [Details](/docs/gateway#what-it-costs).
 
-![Gateway and Workout Tracker](./_assets/gateway-and-workout-tracker.png)
+## How it fits together
 
-You sign in to the Gateway once. Each app gets its own web address, such as `todo.apps.your-domain.dev`, but you use the same account for all of them. The Gateway checks who you are before letting you into an app. Your apps never see your password or need their own login system.
+- **The Gateway** is your front door. People sign in there, and it decides who can open what. You set it up once. [More](/docs/gateway).
+- **Apps** are what you build. Each one sits behind the Gateway. [More](/docs/apps).
 
-Apps only accept requests that come through the Gateway. If an app is missing an auth check, the Gateway still keeps it from being exposed directly to the internet.
+You don't need to know anything about servers. You just need to be OK pasting commands into a terminal, or letting your coding agent do it.
 
-### What the Gateway gives you
-
-- Open all your apps from one place, on desktop or mobile.
-- Sign in once instead of setting up login for every app.
-- Invite teammates and choose which apps they can use.
-
-## Where to go next
-
-1. [Quickstart](/docs/getting-started/quickstart) to set up your Gateway with one command.
-1. [What the Gateway does](/docs/how-it-works/gateway): its promises, costs and limits on one page.
-1. [Build an App](/docs/build-an-app/create-app) to create your first app with a coding agent.
-1. [How It Works](/docs/how-it-works/overview) to learn about the architecture.
+**Next:** [Quickstart](/docs/quickstart)

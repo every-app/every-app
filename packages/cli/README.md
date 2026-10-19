@@ -170,4 +170,4 @@ uses. `db migrate` applies the app's migrations to that local database
 ## Documentation
 
 For full documentation, visit [everyapp.com/docs](https://everyapp.com/docs);
-every command and flag is on the [CLI reference](https://everyapp.com/docs/reference/cli).
+every command and flag is on the [CLI reference](https://everyapp.com/docs/cli).

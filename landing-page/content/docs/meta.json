@@ -3,22 +3,17 @@
   "pages": [
     "---Start Here---",
     "introduction",
-    "getting-started/quickstart",
+    "quickstart",
+    "---Learn---",
+    "gateway",
+    "apps",
+    "architecture",
     "---Build---",
-    "build-an-app/create-app",
-    "build-an-app/local-dev",
-    "---How It Works---",
-    "how-it-works/gateway",
-    "how-it-works/overview",
-    "how-it-works/security",
-    "how-it-works/sdk",
+    "build-your-own-app",
+    "deploy-existing-apps",
     "---Reference---",
-    "reference/cli",
-    "reference/manage-your-gateway",
-    "reference/cloudflare-access",
-    "[llms.txt — docs for your coding agent](/llms.txt)",
-    "---Help---",
+    "cli",
     "troubleshooting",
-    "learn-more"
+    "[llms.txt — docs for your coding agent](/llms.txt)"
   ]
 }

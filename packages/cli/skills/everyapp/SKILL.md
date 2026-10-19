@@ -48,4 +48,4 @@ Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
 Only a person can: approve the Cloudflare login, open the owner link, pick
 a workers.dev subdomain, pay for Workers Paid, buy a domain. There are no
 tokens to paste, except a hosted Gateway's deploy key the user gives you.
-Full reference: https://everyapp.com/docs/reference/cli
+Full reference: https://everyapp.com/docs/cli

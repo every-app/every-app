@@ -1,7 +1,6 @@
----
-title: "Gateway: End-User Experience"
-description: What users actually see — from first visit to admin — and what's still half-built
----
+# Gateway: End-User Experience
+
+What users actually see — from first visit to admin — and what's still half-built.
 
 > Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-07-15.
 

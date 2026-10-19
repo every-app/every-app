@@ -1,0 +1,36 @@
+---
+title: CLI Reference
+description: The everyapp commands and the few flags you'll use.
+---
+
+Run commands from your `every-app` folder as `pnpm everyapp <command>`. Add `--help` to any command to see everything.
+
+| Command         | What it does                               |
+| --------------- | ------------------------------------------ |
+| `setup`         | Installs, upgrades or repairs the Gateway. |
+| `status`        | Shows what's wrong and what to run.        |
+| `create <name>` | Makes a new app from the starter.          |
+| `dev`, `deploy` | Runs an app locally, or puts it live.      |
+| `secret set`    | Stores a key, like your OpenAI key.        |
+
+## The details
+
+- **`pnpm everyapp setup --domain apps.yourdomain.com`** installs the Gateway and opens a link to create your owner account. Run it again any time to upgrade or repair.
+- **`pnpm everyapp status`** shows your Gateway, your apps, and what to run if something is off.
+- **`pnpm everyapp create my-app`** copies the starter into `apps/my-app`. It doesn't touch Cloudflare.
+- **`pnpm dev`**, in the app folder, runs it at `http://my-app.localhost:8787`.
+- **`pnpm run deploy`**, in the app folder, puts it live. Safe to repeat.
+- **`pnpm everyapp secret set OPENAI_API_KEY --for gateway`** stores a key on the Gateway so every app can use it. Leave out `--for gateway` to store a key for just the app you're in.
+- **`pnpm everyapp delete my-app`** takes an app offline. Add `--purge` to delete its data for good.
+
+There's also `db` (database migrations and queries), `workflows` (background jobs) and `register` (hosted Gateways only, you won't need it).
+
+## Logging in and CI
+
+The first command that needs Cloudflare shows a link and a code to approve. In CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` instead.
+
+## For coding agents
+
+Add `--json` to get one event per line. When an event has `"type":"action_required"`, a person needs to act. If the command exits with code 2, run the event's `data.rerun` once they're done.
+
+**Next:** [Troubleshooting](/docs/troubleshooting)

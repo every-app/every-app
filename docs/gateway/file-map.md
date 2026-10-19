@@ -1,7 +1,6 @@
----
-title: "Gateway: File Map"
-description: What each production source file in the v2 gateway and perimeter package does
----
+# Gateway: File Map
+
+What each production source file in the v2 gateway and perimeter package does.
 
 > Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-07-15.
 
