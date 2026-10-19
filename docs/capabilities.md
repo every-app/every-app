@@ -6,8 +6,8 @@ send email, later GitHub or Google. The gateway holds the credential once, an
 app lists the capability in its manifest, and the app calls through the
 gateway. No app holds the key, and a deploy needs no per-app settings.
 
-This is phase 0 of the integrations design (branch
-`research/app-integrations`, `docs/research/2026-10-integrations-hub/app-integrations.md`):
+This is phase 0 of the integrations design
+([research/2026-10-integrations-hub/app-integrations.md](research/2026-10-integrations-hub/app-integrations.md)):
 **API-key providers whose key the gateway holds**, **OAuth clients** the
 gateway holds for social networks, whose token endpoints it completes for
 apps ([below](#oauth-clients)), and **gateway services**, things the gateway
