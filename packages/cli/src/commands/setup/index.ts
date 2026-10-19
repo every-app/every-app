@@ -40,8 +40,8 @@ export async function setup(
             next: [
               `${CLI} create my-app`,
               `Invite people, and decide who opens which app: ${gatewayUrl}/admin`,
-              `AI for apps, any time: ${CLI} secret set OPENAI_API_KEY --for gateway`,
-              `Email for invitations and password resets (until then they are links to share): onboard the domain for Cloudflare Email Sending, then ${CLI} secret set EMAIL_FROM --for gateway`,
+              `AI for apps, any time: ${CLI} secret set OPENAI_API_KEY`,
+              `Email for invitations and password resets (until then they are links to share): onboard the domain for Cloudflare Email Sending, then ${CLI} secret set EMAIL_FROM`,
             ],
           },
         });

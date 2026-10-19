@@ -126,8 +126,8 @@ function requireInstall(
 }
 
 /**
- * The Gateway a command that needs one acts on (`status`, `secret … --for
- * gateway`), found through the Cloudflare login: GATEWAY_NOT_FOUND when
+ * The Gateway a command that needs one acts on (`status`), found through
+ * the Cloudflare login: GATEWAY_NOT_FOUND when
  * there is none; with `installed`, one whose install is recorded and live.
  * Under --json, cf's device login goes to the agent, and the run waits.
  */

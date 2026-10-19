@@ -316,10 +316,10 @@ describe("the OAuth clients", () => {
 
   it("names the command that gives the gateway each client", () => {
     expect(oauthClientSecretSetCommand(client("linkedin"))).toBe(
-      "pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET --for gateway",
+      "pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET",
     );
     expect(oauthClientSecretSetCommand(client("mastodon"))).toBe(
-      "pnpm everyapp secret set MASTODON_CLIENT_ID MASTODON_CLIENT_SECRET MASTODON_URL --for gateway",
+      "pnpm everyapp secret set MASTODON_CLIENT_ID MASTODON_CLIENT_SECRET MASTODON_URL",
     );
     expect(describeTokenEndpoints(client("facebook"))).toBe(
       "GET/POST https://graph.facebook.com/v<version>/oauth/access_token",

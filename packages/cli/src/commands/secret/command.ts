@@ -7,22 +7,14 @@ import {
   yesFlag,
 } from "../flags";
 
-const forFlag = {
-  kind: "enum",
-  values: ["gateway"],
-  brief:
-    "The Gateway's settings instead of the app's secrets (OPENAI_API_KEY, EMAIL_FROM, MCP_OAUTH_ENABLED, CLOUDFLARE_ACCESS_AUD, …)",
-  optional: true,
-} as const;
-
 const nameArgument = {
-  brief: "The secret's name, e.g. GITHUB_TOKEN (with --for gateway, the setting's)",
+  brief:
+    "A Gateway setting (OPENAI_API_KEY, EMAIL_FROM, LINKEDIN_CLIENT_ID, …), or a secret the app in this directory lists under `secrets` in everyapp.config.ts (GITHUB_TOKEN, say)",
   parse: String,
   placeholder: "name",
 };
 
 const changeFlags = {
-  for: forFlag,
   gateway: gatewayFlag,
   "account-id": accountFlag,
   yes: yesFlag,
@@ -50,16 +42,18 @@ const setCommand = buildCommand({
     aliases: { y: "yes" },
   },
   docs: {
-    brief: "Set one or more secrets on the live Worker, without a deploy",
+    brief: "Set one or more secrets on the live Worker they belong to, without a deploy",
     fullDescription: [
-      "Sets secrets the app's Worker reads from env (an API key it calls out with, say), each from a",
-      "hidden prompt, or one from --from-env <VAR>, never the command line. The app's Worker and its",
-      "helpers each get one new version with the change, live at once; nothing is built or deployed,",
-      "and the next `everyapp deploy` keeps the secrets. Names everyapp sets itself are refused:",
-      "GATEWAY_URL and the EVERYAPP_*, EVERY_APP_* and APP__* names.",
+      "Each name goes where it belongs: a Gateway setting (an AI provider's key, a capability's",
+      "client, EMAIL_FROM, the MCP and Cloudflare Access switches, …) to the Gateway, from any",
+      "directory; any other name to the app whose everyapp.config.ts is in this directory, which",
+      "must list it under `secrets`. A name that is neither is refused before a value is read.",
       "",
-      "With --for gateway, sets the Gateway's optional settings instead (any other name lists them)",
-      "on the live Gateway, which reads them on its next request.",
+      "Each value comes from a hidden prompt, or one from --from-env <VAR>, never the command line.",
+      "The Worker (the app's and its helpers, or the Gateway) gets one new version with the change,",
+      "live at once; nothing is built or deployed, and the next `everyapp deploy` or `setup` keeps",
+      "the secrets. Names everyapp sets itself are refused: GATEWAY_URL and the EVERYAPP_*,",
+      "EVERY_APP_* and APP__* names.",
     ].join("\n"),
   },
 });
@@ -75,11 +69,12 @@ const unsetCommand = buildCommand({
     aliases: { y: "yes" },
   },
   docs: {
-    brief: "Remove one or more secrets from the live Worker, without a deploy",
+    brief: "Remove one or more secrets from the live Worker they belong to, without a deploy",
     fullDescription: [
-      "Removes the secrets from the app's Worker and its helpers in one new version each, live at",
-      "once, as `secret set` does; nothing is built or deployed. With --for gateway, removes the",
-      "Gateway's optional settings instead.",
+      "Removes each name from where it belongs, as `secret set` routes them: a Gateway setting from",
+      "the Gateway, any other name from the app in this directory (its Worker and helpers), whether",
+      "or not everyapp.config.ts still lists it. One new version each, live at once; nothing is built",
+      "or deployed.",
     ].join("\n"),
   },
 });
@@ -92,7 +87,6 @@ const listCommand = buildCommand({
   parameters: {
     positional: { kind: "tuple", parameters: [] },
     flags: {
-      for: forFlag,
       gateway: gatewayFlag,
       "account-id": accountFlag,
       json: jsonFlag,
@@ -101,8 +95,11 @@ const listCommand = buildCommand({
   },
   docs: {
     brief: "List the secrets' names (never their values)",
-    fullDescription:
-      "Lists the names of the secrets on the app's deployed Worker (cf workers secrets list), everyapp's own included; with --for gateway, the Gateway's.",
+    fullDescription: [
+      "In an app's directory: the names on its deployed Worker (cf workers secrets list, everyapp's",
+      "own included), the ones everyapp.config.ts lists under `secrets` that nobody set yet, and the",
+      "Gateway settings its providers and capabilities need, set or not. Elsewhere: the Gateway's.",
+    ].join("\n"),
   },
 });
 
@@ -113,6 +110,6 @@ export const secretRoutes = buildRouteMap({
     list: listCommand,
   },
   docs: {
-    brief: "The app's secrets, or the Gateway's settings with --for gateway",
+    brief: "The app's secrets and the Gateway's settings, each by name",
   },
 });

@@ -32,9 +32,19 @@ For full API reference and usage guides, see the [How Apps Work](https://everyap
 
 ## Scheduled work and secrets
 
-`everyAppWorker()` also takes cron schedules and the app's own secrets:
+`everyAppWorker()` also takes cron schedules, and the manifest names the
+app's own secrets:
 
 ```ts
+// everyapp.config.ts
+export default {
+  id: "repolens",
+  // The app's own secrets, set with `everyapp secret set GITHUB_TOKEN`
+  // in this directory; in dev, declared when .dev.vars sets them.
+  secrets: ["GITHUB_TOKEN"],
+} as const;
+
+// cloudflare.config.ts
 export default defineConfig((ctx) => ({
   worker: everyAppWorker({
     manifest,
@@ -42,8 +52,6 @@ export default defineConfig((ctx) => ({
     ctx,
     // Runs the Worker's scheduled handler every six hours (UTC).
     crons: ["17 */6 * * *"],
-    // The app's own secrets: in dev, declared when .dev.vars sets them.
-    secrets: ["GITHUB_TOKEN"],
   }),
 }));
 ```
@@ -52,13 +60,16 @@ export default defineConfig((ctx) => ({
   `export default { ...everyApp(handler, { tools }), scheduled }`. A
   scheduled run has no user (identity is per request). Deploys keep the
   triggers; an app can't declare routes or domains.
-- **Secrets.** `everyapp secret set GITHUB_TOKEN` deploys the app
-  with the secret in the same version, and later deploys keep it, so
-  production builds don't declare it. In dev, put it in `.dev.vars`:
-  `everyAppWorker()` declares it only when it is set there, since the Vite
-  plugin passes a `.dev.vars` value through only for a declared secret.
-  Type it as optional in `src/env.d.ts` (`GITHUB_TOKEN?: string` in
-  `Cloudflare.Env`).
+- **Secrets.** The manifest's `secrets` lists the app's own by name; a
+  name that is one of the Gateway's settings (`OPENAI_API_KEY`, say) is
+  refused there, since the app reaches those through `providers` and
+  `capabilities`. `everyapp secret set GITHUB_TOKEN` in the app's directory
+  puts it on the live Worker (and each helper) in a new version, and later
+  deploys keep it, so production builds don't declare it. In dev, put it
+  in `.dev.vars`: `everyAppWorker()` declares it only when it is set there,
+  since the Vite plugin passes a `.dev.vars` value through only for a
+  declared secret. Type it as optional in `src/env.d.ts`
+  (`GITHUB_TOKEN?: string` in `Cloudflare.Env`).
 
 ## Compatibility flags
 

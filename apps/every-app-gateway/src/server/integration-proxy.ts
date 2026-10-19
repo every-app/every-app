@@ -172,7 +172,7 @@ export async function handleIntegrationProxyRequest({
     return refusal(
       503,
       "integration_not_configured",
-      `${integration.label} isn't set up on this gateway. Its operator sets ${integration.secret} with: everyapp secret set ${integration.secret} --for gateway`,
+      `${integration.label} isn't set up on this gateway. Its operator sets ${integration.secret} with: everyapp secret set ${integration.secret}`,
     );
   }
   const { caller, user } = await admit();

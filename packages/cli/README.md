@@ -47,7 +47,7 @@ the one page that says how (`everyapp create` copies it into each new app).
 | `everyapp dev`                       | The app in this directory, behind a local gateway                                      |
 | `everyapp deploy`                    | Deploys the app in this directory (offers to install the gateway when there is none)   |
 | `everyapp delete [id] [--purge]`     | Removes an app                                                                         |
-| `everyapp secret set\|unset\|list`   | The app's secrets, or the gateway's settings with `--for gateway`                      |
+| `everyapp secret set\|unset\|list`   | The app's secrets and the gateway's settings, each by name                             |
 | `everyapp db migrate`, `db query`    | Local migrations; SQL against the app's production (or `--local`) database             |
 | `everyapp workflows …`               | The deployed app's Workflows                                                           |
 
@@ -127,7 +127,7 @@ a wildcard above it (`--force-dns` publishes anyway), and room in the zone.
 
 ```bash
 everyapp status                                    # release, apps, certificates, owner, what to fix (from D1 and cf)
-everyapp secret set OPENAI_API_KEY --for gateway   # a gateway setting, with a redeploy of the gateway
+everyapp secret set OPENAI_API_KEY                 # a gateway setting: live on the next request, no deploy
 ```
 
 ### Delete an app
@@ -143,15 +143,23 @@ deploys recorded creating.
 ### Secrets
 
 ```bash
-everyapp secret set GITHUB_TOKEN [--from-env VAR]
+everyapp secret set GITHUB_TOKEN [--from-env VAR]   # the app's own: listed under `secrets` in everyapp.config.ts
+everyapp secret set OPENAI_API_KEY                  # a gateway setting, from any directory
 everyapp secret unset GITHUB_TOKEN
 everyapp secret list
 ```
 
-`set` and `unset` redeploy the app in this directory (code and pending
-migrations included, as its first line says), so the secret change lands in a
-version everyapp uploaded. With `--for gateway` they act on the gateway's
-settings instead, and redeploy the gateway.
+The name says where a secret goes; there is no target flag. A gateway
+setting (an AI provider's key, a capability's client, `EMAIL_FROM`, the MCP
+and Cloudflare Access switches, …) lands on the live gateway Worker, which
+reads it on its next request. Any other name lands on the app in this
+directory, on its Worker and each helper, which must be deployed and must
+list the name under `secrets` in `everyapp.config.ts`; a name that is
+neither is refused before a value is read. `set` and `unset` change the live
+Worker in one new version and never deploy; the next `deploy` or `setup`
+keeps the secrets. `list` in an app's directory shows each Worker's secrets,
+the ones the manifest lists that nobody set, and the gateway settings the
+app's providers and capabilities need; elsewhere, the gateway's.
 
 ### Query or migrate the app's D1 database
 

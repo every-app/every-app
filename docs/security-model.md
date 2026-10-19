@@ -178,7 +178,9 @@ first upload; ADR-0001) decides what the gateway does, once, in
   account's own authority, as below). `secret set|unset` change the live
   Worker without a deploy since #321 and check neither yet; the Cloudflare
   login they take can change the Worker's secrets through cf directly
-  (TODO.md, Build).
+  (TODO.md, Build). A shared app's manifest, the names under `secrets`
+  included, is read-only visible to every organization's admins in Admin →
+  Apps (names, never values).
   A shared app's Worker gets no `EVERY_APP_ORG_ID`: nothing pins it to the
   platform organization.
 - Machine-path attribution: the AppGateway entrypoint decides which

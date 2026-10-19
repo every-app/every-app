@@ -17,7 +17,11 @@ import {
   CAPABILITIES,
   EMAIL_LIMITS,
   EMAIL_SENDER_PATTERN,
+  gatewaySettingOwner,
   isCapabilityId,
+  isReservedAppSecretName,
+  isSettableGatewaySetting,
+  RESERVED_APP_SECRET_NAMES_TEXT,
   type CapabilityId,
 } from "@every-app/sdk/internal";
 
@@ -466,6 +470,19 @@ export const ManifestSchema = z
      * e.g. `dataforseo: { access: "read" }`. Default: none.
      */
     capabilities: CapabilitiesSchema.optional(),
+    /**
+     * The names of the app's own secrets (an API key it calls out with),
+     * which `everyapp secret set <NAME>` sets on its Workers. Default: none.
+     */
+    secrets: z
+      .array(
+        z
+          .string()
+          .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "a secret's name is an identifier")
+          .max(64),
+      )
+      .max(100)
+      .optional(),
     /** Opaque app-domain scopes that PATs may request. */
     scopes: ScopesSchema.optional(),
     /** Limits on what the app may do through the gateway's AI proxy. */
@@ -531,6 +548,43 @@ const BindingNameSchema = z
     /^[A-Za-z_][A-Za-z0-9_]*$/,
     "binding names must be JavaScript identifiers",
   );
+
+/**
+ * The app's own secrets by name: identifiers, each once, none the deploy
+ * sets itself, and none of the Gateway's settings, which an app reaches
+ * through `providers` and `capabilities` rather than holding its own copy
+ * (and which `everyapp secret set` would set on the Gateway). Both rules
+ * read the name without regard to case. A name that is also one of the
+ * app's bindings is refused by {@link validateManifestStrict}, which sees
+ * the whole manifest.
+ */
+const AppSecretsSchemaStrict = z
+  .array(BindingNameSchema)
+  .superRefine((names, ctx) => {
+    const seen = new Set<string>();
+    names.forEach((name, index) => {
+      const issue = (message: string) =>
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index], message });
+      if (seen.has(name)) issue(`duplicate secret ${name}`);
+      seen.add(name);
+      if (isReservedAppSecretName(name)) {
+        issue(
+          `${name} is set by everyapp itself (${RESERVED_APP_SECRET_NAMES_TEXT})`,
+        );
+        return;
+      }
+      const upper = name.toUpperCase();
+      if (!isSettableGatewaySetting(upper)) return;
+      const owner = gatewaySettingOwner(upper);
+      const instead = owner
+        ? `list \`${owner.id}\` under ${owner.kind === "provider" ? "providers" : "capabilities"} instead`
+        : "give the app's secret another name";
+      issue(
+        `${name} is a Gateway setting, which \`everyapp secret set ${upper}\` sets on the Gateway for every app; ${instead}`,
+      );
+    });
+  });
+
 export const ResourcesSchemaStrict = ResourcesSchema.extend({
   d1: z.array(BindingNameSchema).optional(),
   kv: z.array(BindingNameSchema).optional(),
@@ -559,6 +613,7 @@ export const ManifestSchemaStrict = ManifestSchema.extend({
   scopes: ScopesSchemaStrict.optional(),
   ai: AiPolicySchema.strict().optional(),
   capabilities: CapabilitiesSchemaStrict.optional(),
+  secrets: AppSecretsSchemaStrict.optional(),
   email: EmailSchemaStrict.optional(),
   database: DatabaseSchema.strict().optional(),
   limits: WorkerLimitsSchema.strict().optional(),
@@ -623,6 +678,15 @@ export function validateManifestStrict(input: unknown): EveryAppManifest {
     );
   }
   const manifest = parsed.data;
+  // A secret named like one of the app's bindings would only fail at
+  // upload, or shadow the binding.
+  const bindings = bindingNamesOf(manifest);
+  const taken = (manifest.secrets ?? []).find((name) => bindings.has(name));
+  if (taken) {
+    throw new ManifestError(
+      `Invalid everyapp.config: secrets: ${taken} is one of the app's bindings; pick another name for the secret`,
+    );
+  }
   if (isReservedAppId(manifest.id)) {
     throw new ManifestError(
       `Invalid everyapp.config: id "${manifest.id}" is reserved for the platform.`,
@@ -701,15 +765,37 @@ function assertDatabaseIsConsistent(manifest: EveryAppManifest): void {
 }
 
 /**
+ * The names the app's Workers read their bindings from `env` by: the
+ * manifest's resources, helper Worker bindings, DATABASE_PROVIDER when a
+ * database is named, and ASSETS. A secret can't take one of them.
+ */
+export function bindingNamesOf(
+  manifest: Pick<Manifest, "resources" | "workers" | "database">,
+): Set<string> {
+  return new Set([
+    ...(manifest.resources?.d1 ?? []),
+    ...(manifest.resources?.kv ?? []),
+    ...(manifest.resources?.r2 ?? []),
+    ...(manifest.resources?.durableObjects ?? []).map((d) => d.name),
+    ...(manifest.resources?.workflows ?? []).map((w) => w.name),
+    ...(manifest.resources?.hyperdrive ?? []).map((h) => h.name),
+    ...(manifest.workers ?? []).flatMap((w) => (w.binding ? [w.binding] : [])),
+    ...(manifest.database ? ["DATABASE_PROVIDER"] : []),
+    "ASSETS",
+  ]);
+}
+
+/**
  * What a manifest asks for that an app on `tier` can't have, as sentences.
  * The dispatch tier (customer code in a Workers for Platforms namespace)
  * gets no Hyperdrive: an account holds at most 25 configs, so they are
  * kept for first-party apps. Nor R2 buckets yet: the hosted deployer
  * refuses R2 bindings. Nor inbound mail: the platform's zones aren't an
- * organization's to route.
+ * organization's to route. Nor secrets of its own: a third-party Worker
+ * gets GATEWAY_URL and EVERY_APP_ORG_ID only, and nothing sets another.
  */
 export function manifestTierProblems(
-  manifest: Pick<Manifest, "resources" | "email">,
+  manifest: Pick<Manifest, "resources" | "email" | "secrets">,
   tier: string,
 ): string[] {
   if (tier === "service_binding") return [];
@@ -728,6 +814,11 @@ export function manifestTierProblems(
   if (manifest.email?.inbound?.length) {
     problems.push(
       "email.inbound: apps in a dispatch namespace don't receive mail",
+    );
+  }
+  if (manifest.secrets?.length) {
+    problems.push(
+      "secrets: third-party apps can't have secrets of their own yet",
     );
   }
   return problems;

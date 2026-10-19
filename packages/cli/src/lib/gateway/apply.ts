@@ -1,7 +1,6 @@
 /**
  * Deploying the gateway, shared by `everyapp setup` (install, upgrade,
- * repair), `secret … --for gateway` and the rebind of `deploy` and
- * `delete`. The release is always the one the
+ * repair) and the rebind of `deploy` and `delete`. The release is always the one the
  * checkout builds (./checkoutRelease.ts), so a rebind also upgrades the
  * gateway when the checkout is newer than the live release.
  *
@@ -100,7 +99,7 @@ export interface ApplyGatewayOptions {
   /** Asks that person before replacing a version everyapp didn't record (tests). */
   confirm?: Confirm;
   cliVersion: string;
-  /** Settings from `everyapp secret set --for gateway`, sent with the upload. */
+  /** Gateway settings sent with the upload (tests; `everyapp secret set` changes the live Worker instead). */
   stagedSecrets?: Record<string, string>;
   /**
    * GATEWAY_DEPLOYMENT_MODE for a Worker's first upload (default

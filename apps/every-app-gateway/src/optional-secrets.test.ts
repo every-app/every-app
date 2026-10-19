@@ -4,6 +4,7 @@ import {
   CAPABILITIES,
   capabilitySettings,
   DEV_AI_PROVIDERS,
+  SETTABLE_GATEWAY_SETTINGS,
 } from "@every-app/sdk/internal";
 import { OPTIONAL_SECRETS } from "../cloudflare.config";
 
@@ -18,6 +19,12 @@ vi.mock("./server.ts", () => ({}));
  */
 describe("OPTIONAL_SECRETS", () => {
   const declared = new Set<string>(OPTIONAL_SECRETS);
+
+  it("declares every setting `everyapp secret set` changes on a deployed gateway", () => {
+    for (const setting of SETTABLE_GATEWAY_SETTINGS) {
+      expect(declared.has(setting), setting).toBe(true);
+    }
+  });
 
   it("declares every setting of every AI provider", () => {
     for (const [provider, spec] of Object.entries(DEV_AI_PROVIDERS)) {

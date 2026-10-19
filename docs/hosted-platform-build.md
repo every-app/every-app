@@ -189,7 +189,7 @@ parsing (#302), the AI proxy's cap of 200 requests a day (#307), the
 capability proxy's cap of 500 calls a day (#310), `org-daily-cap.ts`, the
 `org_daily_cap_exceeded` 429 with `Retry-After`, and the
 `AI_PROXY_ORG_DAILY_LIMIT` and `INTEGRATION_ORG_DAILY_LIMIT` settings (gateway
-env, `everyapp secret set --for gateway`, docs). Nothing is counted or refused
+env, `everyapp secret set`, docs). Nothing is counted or refused
 on volume in any mode; `rate_limit_counters` stays for the host-session code
 exchange, the dynamic-registration limit and the mail budgets. Walk back:
 revert #316.
@@ -544,7 +544,7 @@ bounds an organization's provider spend until the wallet.
 As of its fix round (second review approved at `961ad2b2`).
 
 - **The gate is a hand edit**: `thirdPartyDeploys` needs a hosted gateway and
-  `THIRD_PARTY_DEPLOYS` exactly `on`, which `secret set --for gateway` refuses
+  `THIRD_PARTY_DEPLOYS` exactly `on`, which `secret set` refuses
   to set; without it `/api/v1/*` falls through to the control plane as before,
   so self-host is unchanged. Walk back: add the name to
   `SETTABLE_GATEWAY_SECRETS`.
@@ -877,7 +877,7 @@ In order. Each step points at the document that has the commands.
    `EMAIL_FROM_NAME`, `EMAIL_REST_API_TOKEN`), the provider keys
    (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `DATAFORSEO_API_KEY`,
    `CONTEXT_API_KEY`) and `HOSTED_OPEN_SIGNUP=false` for the preview, each with
-   `pnpm everyapp secret set <NAME> --for gateway`.
+   `pnpm everyapp secret set <NAME>`.
 4. **Claim the owner** (§3): the platform organization is created and named
    Every App; `pnpm everyapp status` shows `Mode: hosted`.
 5. **First-party apps from this repository** (§4):
@@ -1006,7 +1006,7 @@ deploy"):
 - [x] #314: third-party host sessions name their cookie (`__Host-everyapp_s`) to
       the duplicate-cookie refusal.
 - [x] Checked: the OpenSEO runbook's SQL for the identity key matches `main`'s
-      install table, and `everyapp secret set NAME --for gateway` is `main`'s
+      install table, and `everyapp secret set NAME` is `main`'s
       command; the #984 reviewer read the older handed-over CLI.
 
 ### The OpenSEO follow-up PR: open-seo #990 (open)

@@ -143,7 +143,7 @@ Refresh your Gateway — the app appears, live at the URL the deploy prints (`ht
 - **Cooking Assistant** (`apps/chef`) — an AI cooking assistant and recipe manager. Chat needs an OpenAI key, which goes on your **Gateway**, not the app: the Gateway holds provider keys and proxies AI calls for every app that declares the provider.
 
   ```bash
-  pnpm everyapp secret set OPENAI_API_KEY --for gateway
+  pnpm everyapp secret set OPENAI_API_KEY
   ```
 
 ## Build Your Own App

@@ -38,24 +38,16 @@ export const postiz = {
   migrations: { engine: "d1-sql", dir: "migrations", binding: "DB" },
   providers: ["openai"],
   ai: { models: ["gpt-4.1", "gpt-4o-2024-08-06", "gpt-5.2", "chatgpt-image-latest"] },
+  // The app's own secrets: required JWT_SECRET, and X's OAuth 1.0a client,
+  // which the gateway never holds. The other networks' clients are the
+  // gateway's (`capabilities`, PR 3 and PR 4).
+  secrets: ["JWT_SECRET", "X_API_KEY", "X_API_SECRET"],
   public: [],
   access: "everyone",
   install: "pnpm install --frozen-lockfile",
   build: "pnpm exec vite build",
   dev: "pnpm exec vite build --mode development && pnpm exec vite preview --host 127.0.0.1 --port $PORT",
 } as const satisfies EveryAppCliManifest;
-
-/** The app's own secrets: required JWT_SECRET, optional X, interim LinkedIn/Mastodon. */
-const POSTIZ_SECRETS = [
-  "JWT_SECRET",
-  "X_API_KEY",
-  "X_API_SECRET",
-  "LINKEDIN_CLIENT_ID",
-  "LINKEDIN_CLIENT_SECRET",
-  "MASTODON_CLIENT_ID",
-  "MASTODON_CLIENT_SECRET",
-  "MASTODON_URL",
-] as const;
 
 export const POSTIZ_FEATURES = {
   ai: true,
@@ -111,7 +103,6 @@ export const postizConfig: FakeAppConfig = ({ manifest, root }) => {
     entrypoint: "../api/src/entry.worker.ts",
     ctx,
     root,
-    secrets: POSTIZ_SECRETS,
     crons: [POSTIZ_CRON],
   });
   const worker = withPostizRuntime(app, app.name, handWrittenR2);

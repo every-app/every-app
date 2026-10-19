@@ -233,7 +233,7 @@ export async function handleEmailSend({
     return refuse(
       503,
       "integration_not_configured",
-      `Email isn't set up on this gateway. Its operator sets up a sending domain, then sets EMAIL_FROM and EMAIL_FROM_NAME and ${EMAIL_TRANSPORTS_TEXT}, with everyapp secret set … --for gateway (${RUNBOOK}).`,
+      `Email isn't set up on this gateway. Its operator sets up a sending domain, then sets EMAIL_FROM and EMAIL_FROM_NAME and ${EMAIL_TRANSPORTS_TEXT}, with everyapp secret set <NAME> (${RUNBOOK}).`,
     );
   }
 

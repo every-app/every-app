@@ -607,6 +607,120 @@ describe("capabilities manifest field", () => {
   });
 });
 
+describe("secrets manifest field", () => {
+  it("accepts the app's own secret names in both schemas", () => {
+    const secrets = ["GITHUB_TOKEN", "STRIPE_KEY", "BETTER_AUTH_SECRET"];
+    expect(validateManifestStrict({ id: "repolens", secrets }).secrets).toEqual(
+      secrets,
+    );
+    expect(validateManifest({ id: "repolens", secrets }).secrets).toEqual(
+      secrets,
+    );
+    expect(validateManifestStrict({ id: "repolens" }).secrets).toBeUndefined();
+  });
+
+  it.each([
+    [
+      "a name that isn't an identifier",
+      ["GITHUB-TOKEN"],
+      /secrets\.0: binding names must be JavaScript identifiers/,
+    ],
+    [
+      "a duplicate",
+      ["GITHUB_TOKEN", "GITHUB_TOKEN"],
+      /secrets\.1: duplicate secret GITHUB_TOKEN/,
+    ],
+    [
+      "a name the deploy sets",
+      ["GATEWAY_URL"],
+      /secrets\.0: GATEWAY_URL is set by everyapp itself/,
+    ],
+    [
+      "a name in the platform's namespaces, whatever its case",
+      ["every_app_org_id"],
+      /secrets\.0: every_app_org_id is set by everyapp itself/,
+    ],
+    [
+      "the gateway binding's namespace",
+      ["APP__todo"],
+      /secrets\.0: APP__todo is set by everyapp itself/,
+    ],
+    [
+      "an AI provider's key, naming the provider to list",
+      ["OPENAI_API_KEY"],
+      /secrets\.0: OPENAI_API_KEY is a Gateway setting, which `everyapp secret set OPENAI_API_KEY` sets on the Gateway for every app; list `openai` under providers instead/,
+    ],
+    [
+      "an OAuth client's secret, whatever its case, naming the capability",
+      ["linkedin_client_secret"],
+      /secrets\.0: linkedin_client_secret is a Gateway setting, which `everyapp secret set LINKEDIN_CLIENT_SECRET` sets on the Gateway for every app; list `linkedin` under capabilities instead/,
+    ],
+    [
+      "a Gateway switch no capability owns",
+      ["MCP_OAUTH_ENABLED"],
+      /secrets\.0: MCP_OAUTH_ENABLED is a Gateway setting, which `everyapp secret set MCP_OAUTH_ENABLED` sets on the Gateway for every app; give the app's secret another name/,
+    ],
+  ])("refuses %s when authored", (_what, secrets, message) => {
+    expect(() => validateManifestStrict({ id: "repolens", secrets })).toThrow(
+      message,
+    );
+  });
+
+  it("refuses a secret named like one of the app's bindings", () => {
+    const manifest = {
+      id: "seo",
+      resources: {
+        d1: ["DB"],
+        kv: ["KV"],
+        workflows: [{ name: "RUN", className: "Run" }],
+      },
+      workers: [{ name: "audit", binding: "AUDIT_ENGINE" }],
+      database: { provider: "d1" },
+    };
+    for (const name of [
+      "DB",
+      "KV",
+      "RUN",
+      "AUDIT_ENGINE",
+      "DATABASE_PROVIDER",
+      "ASSETS",
+    ]) {
+      expect(
+        () => validateManifestStrict({ ...manifest, secrets: [name] }),
+        name,
+      ).toThrow(`secrets: ${name} is one of the app's bindings`);
+    }
+    expect(
+      validateManifestStrict({ ...manifest, secrets: ["GITHUB_TOKEN"] })
+        .secrets,
+    ).toEqual(["GITHUB_TOKEN"]);
+  });
+
+  it("stays tolerant at registration, within bounds", () => {
+    expect(
+      validateManifest({
+        id: "repolens",
+        secrets: ["OPENAI_API_KEY", "GATEWAY_URL", "DB"],
+      }).secrets,
+    ).toEqual(["OPENAI_API_KEY", "GATEWAY_URL", "DB"]);
+    expect(() =>
+      validateManifest({ id: "repolens", secrets: ["not a name"] }),
+    ).toThrow(/secrets\.0: a secret's name is an identifier/);
+  });
+
+  it("is refused for third-party apps on the dispatch tier", () => {
+    expect(
+      manifestTierProblems({ secrets: ["GITHUB_TOKEN"] }, "dispatch"),
+    ).toEqual([
+      "secrets: third-party apps can't have secrets of their own yet",
+    ]);
+    expect(manifestTierProblems({ secrets: [] }, "dispatch")).toEqual([]);
+    expect(
+      manifestTierProblems({ secrets: ["GITHUB_TOKEN"] }, "service_binding"),
+    ).toEqual([]);
+  });
+});
+
 describe("helper Workers", () => {
   const withAudit = {
     id: "seo",

@@ -55,23 +55,25 @@ lists them in `providers` (and limits them with `ai.models`) and calls
 ## For an operator
 
 Every key, client and sender lives in the gateway Worker's secrets; nothing
-is set per app. Set them from the platform checkout, as many names at once
-as you like:
+is set per app. Set them from any directory, as many names at once as you
+like; the name says it is the gateway's (an app's own secrets are the names
+its `everyapp.config.ts` lists under `secrets`, set from the app's directory):
 
 ```bash
-pnpm everyapp secret set DATAFORSEO_API_KEY --for gateway
+pnpm everyapp secret set DATAFORSEO_API_KEY
 ```
 
 Each value comes from a hidden prompt, or from an environment variable with
 `--from-env VAR` (one name). The command changes the live gateway Worker in
 one new version and never deploys; every app that lists the capability can
-use it from then on. A capability you skip is simply not offered: its
+use it from then on. `pnpm everyapp secret list` in an app's directory shows
+which of the gateway settings its manifest needs are set. A capability you skip is simply not offered: its
 status answers `configured: false`, and calls `integration_not_configured`
 (AI: `ai_provider_not_configured`), naming the command.
 
 Everything the gateway holds for apps, in one table:
 
-| What                        | Kind                | Gateway settings                                                                                                           | Set with (`pnpm everyapp secret set … --for gateway`)                                                          | Used by                                              |
+| What                        | Kind                | Gateway settings                                                                                                           | Set with (`pnpm everyapp secret set …`)                                                          | Used by                                              |
 | --------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | `openai`                    | AI provider         | `OPENAI_API_KEY`                                                                                                           | `OPENAI_API_KEY`                                                                                               | Postiz                                               |
 | `openrouter`                | AI provider         | `OPENROUTER_API_KEY`                                                                                                       | `OPENROUTER_API_KEY`                                                                                           | OpenSEO; agentic-inbox with `AI_PROVIDER=openrouter` |
@@ -112,7 +114,7 @@ Workers AI runs in the gateway's own account (`CLOUDFLARE_ACCOUNT_ID`, which
 template (Workers AI Read and Edit):
 
 ```bash
-pnpm everyapp secret set WORKERS_AI_API_TOKEN --for gateway
+pnpm everyapp secret set WORKERS_AI_API_TOKEN
 ```
 
 Apps reach its OpenAI-compatible API, never the native `/ai/run/<model>`, so
@@ -258,7 +260,7 @@ app's host, `https://<app>.<APP_BASE_DOMAIN>`), allow the scopes listed
 further down, then hand the client to the gateway:
 
 ```bash
-pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET --for gateway
+pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET
 ```
 
 A network you skip is simply not offered: its status answers
@@ -366,24 +368,24 @@ token endpoints directly either: the outbound Worker refuses them
 The commands, one per network you offer (each prompts for the values):
 
 ```bash
-pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET --for gateway
-pnpm everyapp secret set FACEBOOK_APP_ID FACEBOOK_APP_SECRET --for gateway
-pnpm everyapp secret set INSTAGRAM_APP_ID INSTAGRAM_APP_SECRET --for gateway
-pnpm everyapp secret set THREADS_APP_ID THREADS_APP_SECRET --for gateway
-pnpm everyapp secret set YOUTUBE_CLIENT_ID YOUTUBE_CLIENT_SECRET --for gateway
-pnpm everyapp secret set TIKTOK_CLIENT_ID TIKTOK_CLIENT_SECRET --for gateway
-pnpm everyapp secret set TIKTOK_BUSINESS_CLIENT_ID TIKTOK_BUSINESS_CLIENT_SECRET --for gateway
-pnpm everyapp secret set REDDIT_CLIENT_ID REDDIT_CLIENT_SECRET --for gateway
-pnpm everyapp secret set PINTEREST_CLIENT_ID PINTEREST_CLIENT_SECRET --for gateway
-pnpm everyapp secret set DISCORD_CLIENT_ID DISCORD_CLIENT_SECRET --for gateway
-pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET --for gateway
-pnpm everyapp secret set MASTODON_CLIENT_ID MASTODON_CLIENT_SECRET MASTODON_URL --for gateway
-pnpm everyapp secret set KICK_CLIENT_ID KICK_CLIENT_SECRET --for gateway
-pnpm everyapp secret set TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET --for gateway
-pnpm everyapp secret set TUMBLR_CLIENT_ID TUMBLR_CLIENT_SECRET --for gateway
-pnpm everyapp secret set DRIBBBLE_CLIENT_ID DRIBBBLE_CLIENT_SECRET --for gateway
-pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET --for gateway
-pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET --for gateway
+pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET
+pnpm everyapp secret set FACEBOOK_APP_ID FACEBOOK_APP_SECRET
+pnpm everyapp secret set INSTAGRAM_APP_ID INSTAGRAM_APP_SECRET
+pnpm everyapp secret set THREADS_APP_ID THREADS_APP_SECRET
+pnpm everyapp secret set YOUTUBE_CLIENT_ID YOUTUBE_CLIENT_SECRET
+pnpm everyapp secret set TIKTOK_CLIENT_ID TIKTOK_CLIENT_SECRET
+pnpm everyapp secret set TIKTOK_BUSINESS_CLIENT_ID TIKTOK_BUSINESS_CLIENT_SECRET
+pnpm everyapp secret set REDDIT_CLIENT_ID REDDIT_CLIENT_SECRET
+pnpm everyapp secret set PINTEREST_CLIENT_ID PINTEREST_CLIENT_SECRET
+pnpm everyapp secret set DISCORD_CLIENT_ID DISCORD_CLIENT_SECRET
+pnpm everyapp secret set SLACK_CLIENT_ID SLACK_CLIENT_SECRET
+pnpm everyapp secret set MASTODON_CLIENT_ID MASTODON_CLIENT_SECRET MASTODON_URL
+pnpm everyapp secret set KICK_CLIENT_ID KICK_CLIENT_SECRET
+pnpm everyapp secret set TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET
+pnpm everyapp secret set TUMBLR_CLIENT_ID TUMBLR_CLIENT_SECRET
+pnpm everyapp secret set DRIBBBLE_CLIENT_ID DRIBBBLE_CLIENT_SECRET
+pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET
+pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET
 ```
 
 The authorize page each client sends people to, and the scopes the app asks for there (the client must be allowed them):

@@ -8,7 +8,7 @@ declare const __GATEWAY_BUILD__: string;
 declare namespace Cloudflare {
   interface Env {
     // The optional settings below are plain secrets on deployed gateways
-    // (`everyapp secret set --for gateway`); in dev cloudflare.config.ts declares
+    // (`everyapp secret set <NAME>`); in dev cloudflare.config.ts declares
     // the ones that are set locally.
 
     // Cloudflare account this Gateway is deployed in

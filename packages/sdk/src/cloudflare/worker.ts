@@ -65,6 +65,21 @@ export interface EveryAppWorkerManifest {
   providers?: readonly string[];
   /** Capabilities the app calls through the gateway (`integrationFetch()`). */
   capabilities?: { readonly [id: string]: unknown };
+  /**
+   * The app's own secrets, e.g. an API key it calls out with. A deployed
+   * Worker gets them from `everyapp secret set <NAME>`, and later deploys
+   * keep them, so production builds don't declare them. In development each
+   * one that is set locally is declared, read as the Vite plugin reads
+   * secrets (`.dev.vars[.<mode>]` alone when present, otherwise the `.env`
+   * files and the environment), so the plugin passes it through. Type them
+   * as optional in `src/env.d.ts`.
+   *
+   * The keys of `providers` and `capabilities` need no listing: there's no
+   * gateway in development, so each one set locally under the gateway
+   * secret's name (OPENAI_API_KEY, DATAFORSEO_API_KEY, …) is declared for
+   * the SDK's direct fallback.
+   */
+  secrets?: readonly string[];
 }
 
 /** The context cf passes to a `defineConfig((ctx) => …)` factory. */
@@ -90,21 +105,6 @@ export interface EveryAppWorkerOptions<
    * routes.
    */
   crons?: readonly string[];
-  /**
-   * The app's own secrets, e.g. an API key it calls out with. A deployed
-   * Worker gets them from `everyapp secret set`, and later deploys keep
-   * them, so production builds don't declare them. In development each one
-   * that is set locally is declared, read as the Vite plugin reads secrets
-   * (`.dev.vars[.<mode>]` alone when present, otherwise the `.env` files
-   * and the environment), so the plugin passes it through. Type them as
-   * optional in `src/env.d.ts`.
-   *
-   * The keys of the manifest's `providers` and `capabilities` need no
-   * listing: there's no gateway in development, so each one set locally
-   * under the gateway secret's name (OPENAI_API_KEY, DATAFORSEO_API_KEY, …)
-   * is declared for the SDK's direct fallback.
-   */
-  secrets?: readonly string[];
   /**
    * Compatibility flags beyond `nodejs_compat`, which every Every App Worker
    * has, e.g. `["global_fetch_strictly_public"]` so the Worker's `fetch()`
@@ -992,19 +992,20 @@ function classBindings(
 }
 
 /**
- * Check the app's secret names, and in dev declare the ones set locally,
- * with the developer's own keys for the manifest's providers and
- * capabilities.
+ * Check the names of the manifest's `secrets`, and in dev declare the ones
+ * set locally, with the developer's own keys for the manifest's providers
+ * and capabilities.
  */
 function addSecrets(
   env: Record<string, EveryAppBinding>,
   options: Pick<
     EveryAppWorkerOptions<EveryAppWorkerManifest, unknown>,
-    "manifest" | "secrets" | "root" | "ctx"
+    "manifest" | "root" | "ctx"
   >,
   deploy: EveryAppDeployTarget | undefined,
 ): void {
-  for (const secret of options.secrets ?? []) {
+  const secrets = options.manifest.secrets ?? [];
+  for (const secret of secrets) {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(secret)) {
       throw new Error(`secrets: "${secret}" isn't a valid binding name.`);
     }
@@ -1015,10 +1016,7 @@ function addSecrets(
     }
   }
   if (!deploy) {
-    const names = new Set([
-      ...(options.secrets ?? []),
-      ...devGatewayKeys(options.manifest),
-    ]);
+    const names = new Set([...secrets, ...devGatewayKeys(options.manifest)]);
     for (const secret of locallySetSecrets(
       options.root ?? process.cwd(),
       options.ctx.mode ?? "development",

@@ -65,12 +65,13 @@ describe("bundleProblems", () => {
     ]);
   });
 
-  it("refuses helper Workers, Workflows, KV and too many classes", () => {
+  it("refuses helper Workers, Workflows, KV, secrets and too many classes", () => {
     const problems = bundleProblems(
       WORKER,
       {
         id: "notes",
         workers: [{ name: "audit" }],
+        secrets: ["GITHUB_TOKEN"],
         resources: {
           kv: ["KV"],
           workflows: [{ name: "RUN", className: "Run" }],
@@ -84,7 +85,7 @@ describe("bundleProblems", () => {
       false,
     );
     expect(problems.join("\n")).toMatch(
-      /helper Workers[\s\S]*Workflows[\s\S]*KV[\s\S]*3 Durable Object classes/,
+      /helper Workers[\s\S]*Workflows[\s\S]*KV[\s\S]*secrets[\s\S]*3 Durable Object classes/,
     );
   });
 

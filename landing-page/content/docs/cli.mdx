@@ -22,7 +22,7 @@ Run commands from your `every-app` folder as `pnpm everyapp <command>`. Add `--h
 - **`pnpm run deploy`**, in the app folder, puts it live. Safe to repeat.
 - **`pnpm everyapp deploy https://github.com/owner/repo`** installs someone's published app without cloning it: the `everyapp-release.tar.gz` on its latest GitHub release. A release tarball's URL or a downloaded file works too.
 - **`pnpm everyapp deploy --bundle-only`**, in the app folder, builds and checks the app and packs that release (`everyapp-release.tar.gz`) without deploying it. New apps come with a GitHub workflow that runs it whenever you push a `v*` tag.
-- **`pnpm everyapp secret set OPENAI_API_KEY --for gateway`** stores a key on the Gateway so every app can use it. Leave out `--for gateway` to store a key for just the app you're in.
+- **`pnpm everyapp secret set OPENAI_API_KEY`** stores a key on the Gateway so every app can use it. A name the Gateway doesn't know (say `GITHUB_TOKEN`) is stored for the app you're in, once its `everyapp.config.ts` lists it under `secrets`.
 - **`pnpm everyapp delete my-app`** takes an app offline. Add `--purge` to delete its data for good.
 
 There's also `db` (database migrations and queries), `workflows` (background jobs) and `register` (hosted Gateways only, you won't need it).

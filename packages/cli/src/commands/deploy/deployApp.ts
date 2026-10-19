@@ -1,6 +1,5 @@
 /**
- * Deploying an app, shared by `everyapp deploy`, `secret set|unset` and
- * `create --deploy`:
+ * Deploying an app, shared by `everyapp deploy` and `create --deploy`:
  *
  *   1. find the gateway through the Cloudflare login: its D1 database and
  *      install row, in its account (lib/gateway/connect.ts); with none in
@@ -57,7 +56,7 @@
  * With `shared` (`--shared`, the hosted gateway's first-party apps) the app
  * registers as one Worker every organization's members may open, owned by
  * the platform organization; its Workers get no EVERY_APP_ORG_ID. A
- * redeploy without it (`secret set|unset` too) keeps the app's scope.
+ * redeploy without it keeps the app's scope.
  *
  * A new hostname is checked (DNS records that answer it, the zone's room)
  * right after registering, before anything is created or uploaded.
@@ -181,8 +180,9 @@ interface DeployAppOptions {
    */
   waitForLive?: boolean;
   /**
-   * The app's own secrets to send with this version (`secret set`). They
-   * stay on the Worker through later deploys, which don't send them.
+   * The app's own secrets to send with this version (tests; `secret set`
+   * changes the live Worker instead). They stay on the Worker through later
+   * deploys, which don't send them.
    */
   secrets?: Record<string, string>;
   /**
@@ -418,8 +418,8 @@ async function deploySteps(
       `${manifest.id} can't be deployed as it is: ${tierProblems.join("; ")}.`,
     );
   }
-  // A person's first line: where this goes, and (secret set|unset) what
-  // for. A new app's says who can open it.
+  // A person's first line: where this goes, and with secrets, what for. A
+  // new app's says who can open it.
   const secretNames = Object.keys(options.secrets ?? {});
   const unsetNames = [...(options.unsetSecrets ?? [])];
   out.emit({

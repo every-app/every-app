@@ -32,6 +32,7 @@ import {
 } from "./index";
 import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/index";
 import { aiProviderSettings, DEV_AI_PROVIDERS } from "../internal/aiProviders";
+import { isReservedAppSecretName } from "../internal/gatewaySettings";
 import { CAPABILITIES, capabilitySettings } from "../internal/capabilities";
 import { EMAIL_SENDERS_ENV } from "../internal/email";
 
@@ -478,14 +479,13 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     }
   });
 
-  it("declares a secret of the app in development only once it is set locally", () => {
+  it("declares a secret of the manifest in development only once it is set locally", () => {
     const env = (mode: "development" | "production") =>
       everyAppWorker({
-        manifest,
+        manifest: { ...manifest, secrets: ["SDK_TEST_API_KEY", "STRIPE_KEY"] },
         entrypoint,
         ctx: { mode },
         root,
-        secrets: ["SDK_TEST_API_KEY", "STRIPE_KEY"],
       }).env as Record<string, unknown>;
 
     expect(env("development")["SDK_TEST_API_KEY"]).toBeUndefined();
@@ -507,11 +507,10 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       "SDK_TEST_API_KEY=env-value\n",
     );
     const worker = everyAppWorker({
-      manifest,
+      manifest: { ...manifest, secrets: ["SDK_TEST_API_KEY"] },
       entrypoint,
       ctx: { mode: "development" },
       root,
-      secrets: ["SDK_TEST_API_KEY"],
     });
     expect((worker.env as Record<string, unknown>)["SDK_TEST_API_KEY"]).toEqual(
       {
@@ -681,15 +680,20 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       expect(
         () =>
           everyAppWorker({
-            manifest,
+            manifest: { ...manifest, secrets: [secret] },
             entrypoint,
             ctx: { mode: "development" },
             root,
-            secrets: [secret],
           }),
         secret,
       ).toThrow(/secrets:/);
     }
+    // The names the deploy sets follow the rule the manifest validator and
+    // the CLI apply (a binding's name is the config's own business).
+    for (const secret of ["EVERYAPP_DEV", "GATEWAY_URL", "every_app_org_id"]) {
+      expect(isReservedAppSecretName(secret), secret).toBe(true);
+    }
+    expect(isReservedAppSecretName("DB")).toBe(false);
   });
 });
 

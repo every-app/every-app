@@ -135,6 +135,9 @@ export function manifestProblems(
       "it declares KV namespaces, which third-party apps can't have; use D1",
     );
   }
+  if (manifest.secrets?.length) {
+    problems.push("it declares secrets, which third-party apps can't have yet");
+  }
   const classes = durableObjects(manifest);
   if (classes.some((durableObject) => durableObject.worker)) {
     problems.push("a Durable Object class names a helper Worker");

@@ -67,8 +67,8 @@ With Resend, verify the domain in Resend instead ([Resend](#resend)).
 ## Sender configuration
 
 Set these sender values on the gateway Worker (`pnpm everyapp secret set
-EMAIL_FROM --for gateway`, then `EMAIL_FROM_NAME`) or in the Docker gateway
-`.env`:
+EMAIL_FROM EMAIL_FROM_NAME`; a Gateway setting's name says where it goes) or
+in the Docker gateway `.env`:
 
 - `EMAIL_FROM`: the sender address, for example `noreply@example.com`
 - `EMAIL_FROM_NAME`: the display name, for example `Every App`
@@ -97,17 +97,17 @@ unless you intentionally want REST to take precedence over its binding.
 3. Give it to the gateway, with the sender if it isn't set yet:
 
    ```sh
-   pnpm everyapp secret set RESEND_API_KEY --for gateway
-   pnpm everyapp secret set EMAIL_FROM EMAIL_FROM_NAME --for gateway
+   pnpm everyapp secret set RESEND_API_KEY
+   pnpm everyapp secret set EMAIL_FROM EMAIL_FROM_NAME
    ```
 
    For Docker, set `RESEND_API_KEY` (and the sender) in the gateway's
    `.env`; the container keeps it across restarts. In local dev, put it in
    `apps/every-app-gateway/.dev.vars`.
 4. Optionally pin the choice, for example while both providers are set up:
-   `pnpm everyapp secret set EMAIL_PROVIDER --for gateway` and answer the
+   `pnpm everyapp secret set EMAIL_PROVIDER` and answer the
    hidden prompt with `resend` (or `cloudflare`). `pnpm everyapp secret
-   unset EMAIL_PROVIDER --for gateway` goes back to the automatic choice.
+   unset EMAIL_PROVIDER` goes back to the automatic choice.
 
 Every domain an app sends from (`capabilities.email.senders`) must be
 verified in the same Resend account, the way the gateway's own is; until it
@@ -128,9 +128,9 @@ answers an id, not per-recipient queues).
    email-sending subdomains list -z example.com` gives its id, and `npx cf
    email-sending subdomains dns get <id> -z example.com` the records it
    expects; in Resend, the domain shows **Verified**.
-2. `everyapp secret set … --for gateway` redeploys the gateway with each
-   value; for Docker, restart the gateway after setting the sender and
-   provider values in `.env`.
+2. `everyapp secret set …` changes the live gateway Worker, which reads each
+   value on its next request; for Docker, restart the gateway after setting the
+   sender and provider values in `.env`.
 3. Request a password reset and send an organization invitation to addresses
    you control.
 4. Confirm both messages arrive and check Worker logs for

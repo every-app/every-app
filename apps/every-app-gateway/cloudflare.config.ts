@@ -22,7 +22,7 @@ const LOCAL_D1_ID = createHash("sha256")
   .slice(0, 32);
 
 // Settings the gateway reads only when they are set. Deployed gateways keep
-// them as plain secrets (`everyapp secret set --for gateway`), which survive every
+// them as plain secrets (`everyapp secret set <NAME>`), which survive every
 // deploy. In dev the Vite plugin passes a value through only for a declared
 // secret, so the ones set locally are declared. A test checks every AI
 // provider's and capability's settings are here (src/optional-secrets.test.ts).
@@ -103,6 +103,12 @@ export const OPTIONAL_SECRETS = [
   "APP_BASE_DOMAIN",
   // The hosted gateway's sign-up switch (src/server/platform-policy.ts).
   "HOSTED_OPEN_SIGNUP",
+  // The hosted deploy API's gate, deployer and third-party domain
+  // (src/server/deploy, docs/runbooks/hosted-install.md).
+  "THIRD_PARTY_DEPLOYS",
+  "CF_DEPLOY_TOKEN",
+  "DISPATCH_NAMESPACE",
+  "THIRD_PARTY_DOMAIN",
 ] as const;
 
 /**

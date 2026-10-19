@@ -3,8 +3,7 @@
  * kinds:
  *
  *  - `api_key`: a provider whose key the gateway holds. The operator sets
- *    the key once on the gateway (`everyapp secret set <secret> --for
- *    gateway`), an app lists the provider in its manifest's `capabilities`,
+ *    the key once on the gateway (`everyapp secret set <secret>`), an app lists the provider in its manifest's `capabilities`,
  *    and the app calls the provider through the AppGateway binding
  *    (`integrationFetch()`), so no app ever holds the key.
  *  - `oauth_client`: a provider's OAuth client (a social network's), held
@@ -1025,12 +1024,12 @@ export function tokenPathText(path: string | RegExp): string {
 
 /**
  * The command that gives the gateway `capability`'s client:
- * `pnpm everyapp secret set <ID> <SECRET> [<HOST SETTING>] --for gateway`.
+ * `pnpm everyapp secret set <ID> <SECRET> [<HOST SETTING>]`.
  */
 export function oauthClientSecretSetCommand(
   capability: OAuthClientCapability,
 ): string {
-  return `pnpm everyapp secret set ${capabilitySettings(capability).join(" ")} --for gateway`;
+  return `pnpm everyapp secret set ${capabilitySettings(capability).join(" ")}`;
 }
 
 /** Times a path may decode to something new before it counts as hiding one. */

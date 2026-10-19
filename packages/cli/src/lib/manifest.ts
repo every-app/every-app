@@ -22,6 +22,25 @@ export async function loadEveryAppManifest(
 }
 
 /**
+ * The manifest of the app in `cwd`, or null when there is no
+ * everyapp.config.ts there (a command that works outside an app directory
+ * too, like `secret`). One that is there but invalid still throws.
+ */
+export async function loadEveryAppManifestIfPresent(
+  cwd: string,
+): Promise<EveryAppCliManifest | null> {
+  try {
+    await fs.access(path.join(cwd, "everyapp.config.ts"));
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+  return loadEveryAppManifest(cwd);
+}
+
+/**
  * An app's manifest from its file (`register --manifest`), validated as a
  * deploy validates the app's own.
  */

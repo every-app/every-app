@@ -220,12 +220,12 @@ describe("deploy --shared", () => {
     expect(appRow("todo")).toMatchObject({ scope: "shared", status: "active" });
   });
 
-  it("keeps a shared app shared through `secret set`'s redeploy, which has no --shared", async () => {
+  it("keeps a shared app shared through a redeploy that sends secrets, which has no --shared", async () => {
     await installGateway("hosted");
     await deploy(TODO, { shared: true });
     account.deploys.length = 0;
 
-    // What `secret set FOO` runs: deployApp with the secret, and no `shared`.
+    // deployApp with a secret, and no `shared`.
     await expect(deploy(TODO, { secrets: { FOO: "bar" } })).resolves.toMatchObject({
       live: true,
     });

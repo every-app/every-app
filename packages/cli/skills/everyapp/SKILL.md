@@ -46,8 +46,15 @@ Postgres: an app with resources.hyperdrive or migrations.dialect "postgresql"
          .everyapp/secrets.env, which the user writes; never print, commit or
          ask for its values in chat. deploy runs drizzle-kit migrate before
          the upload.
-Secrets: pnpm everyapp secret set NAME --from-env VAR -y --json   (redeploys the app)
-         secret unset NAME, secret list; add --for gateway for the Gateway's settings
+Secrets: pnpm everyapp secret set NAME --from-env VAR --json   (live at once, no deploy)
+         The name decides where it goes. A Gateway setting (OPENAI_API_KEY,
+         EMAIL_FROM, LINKEDIN_CLIENT_ID, …) is set on the Gateway from any
+         directory. An app's own secret must be listed under `secrets` in
+         its everyapp.config.ts and is set from the app's directory after
+         its first deploy (SECRET_NOT_DECLARED: add it there first). Never
+         put a value on the command line. secret unset NAME; secret list
+         (in an app directory: the app's secrets and the Gateway settings it
+         needs, set or not; elsewhere: the Gateway's).
 Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
          --allow-delete-*, --allow-downgrade, or --yes to delete unless the
          user asked.

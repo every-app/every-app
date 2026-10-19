@@ -4,9 +4,8 @@
  * checkout's, or the latest release) with a fresh set of APP__
  * bindings. `everyapp deploy` and `delete` run it when the set of apps
  * changes, never for a code-only app redeploy; `setup` runs it to repair a
- * Gateway that is up to date but binds the wrong apps; `secret … --for
- * gateway` runs it to send or drop a setting. A Gateway newer than the
- * live release upgrades it on the way, migrations first, as any
+ * Gateway that is up to date but binds the wrong apps. A Gateway newer than
+ * the live release upgrades it on the way, migrations first, as any
  * deploy of the gateway does; one older than it is refused (lib/gateway/apply.ts).
  *
  * Whether there is anything to do comes from the install row, never from
@@ -49,9 +48,9 @@ interface ReconcileGatewayOptions {
   /** Asks a person before replacing a version everyapp didn't record (tests). */
   confirm?: Confirm;
   cliVersion: string;
-  /** Settings to send with the upload (`secret set --for gateway`). */
+  /** Settings to send with the upload (tests; `secret set` changes the live Worker instead). */
   stagedSecrets?: Record<string, string>;
-  /** Settings to drop first, under the lease (`secret unset --for gateway`). */
+  /** Settings to drop first, under the lease (tests; `secret unset` changes the live Worker instead). */
   unsetSecrets?: readonly string[];
   /** Deploy even when the live bindings already match. */
   force?: boolean;

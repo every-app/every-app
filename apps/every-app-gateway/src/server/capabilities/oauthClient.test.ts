@@ -448,7 +448,7 @@ describe("Mastodon's instance", () => {
       "integration_not_configured",
     );
     expect(body["message"]).toContain(
-      "pnpm everyapp secret set MASTODON_CLIENT_ID MASTODON_CLIENT_SECRET MASTODON_URL --for gateway",
+      "pnpm everyapp secret set MASTODON_CLIENT_ID MASTODON_CLIENT_SECRET MASTODON_URL",
     );
   });
 });
@@ -559,7 +559,7 @@ describe("refusals", () => {
         "integration_not_configured",
       );
       expect(body["message"]).toContain(
-        "pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET --for gateway",
+        "pnpm everyapp secret set LINKEDIN_CLIENT_ID LINKEDIN_CLIENT_SECRET",
       );
     }
     expect(upstream).not.toHaveBeenCalled();

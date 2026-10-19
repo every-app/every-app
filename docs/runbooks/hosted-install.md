@@ -47,7 +47,7 @@ when you are ready: a new run shows a new owner link.
 
 ## 2. Secrets
 
-Each is a Gateway setting (`pnpm everyapp secret set <NAME> --for gateway`,
+Each is a Gateway setting (`pnpm everyapp secret set <NAME>`,
 live as soon as it is set; the Gateway's code comes from `pnpm everyapp
 setup`). Apps never hold provider keys: the Gateway proxies them.
 

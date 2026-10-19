@@ -267,7 +267,7 @@ describe("AppGateway capabilities", () => {
     await expect(refused.json()).resolves.toMatchObject({
       code: "integration_not_configured",
       message: expect.stringContaining(
-        "everyapp secret set DATAFORSEO_API_KEY --for gateway",
+        "everyapp secret set DATAFORSEO_API_KEY",
       ),
     });
     expect(fetchUpstream).not.toHaveBeenCalled();

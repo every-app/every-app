@@ -23,7 +23,7 @@ too, and logs `mcp.oauth.flag_unrecognized`. To turn it off (the CLI sends
 the secret with a redeploy of the gateway its checkout builds):
 
 ```sh
-everyapp secret set MCP_OAUTH_ENABLED --for gateway
+everyapp secret set MCP_OAUTH_ENABLED
 # enter: false
 ```
 
@@ -35,7 +35,7 @@ they work again when the switch is turned back on, unless they were revoked
 or lapsed meanwhile. To turn it back on:
 
 ```sh
-everyapp secret set MCP_OAUTH_ENABLED --for gateway
+everyapp secret set MCP_OAUTH_ENABLED
 # enter: true
 ```
 
@@ -66,7 +66,7 @@ DCR is on by default, because Cursor has no other way in. To allow CIMD
 clients only:
 
 ```sh
-everyapp secret set MCP_DCR_ENABLED --for gateway
+everyapp secret set MCP_DCR_ENABLED
 # enter: false
 ```
 
@@ -106,7 +106,7 @@ and `everyapp setup` sets it up; there is nothing to set by hand.
   the resource, so changing it invalidates every connection; clients ask
   their users to connect again on their next request.
 
-Optional settings (`everyapp secret set <name> --for gateway`; locally, in
+Optional settings (`everyapp secret set <name>`; locally, in
 `.dev.vars`):
 
 | Name                       | Default | What it does                                                                                                                                                                                    |
@@ -115,7 +115,7 @@ Optional settings (`everyapp secret set <name> --for gateway`; locally, in
 | `MCP_DCR_ENABLED`          | on      | `false` turns dynamic client registration off: only clients with a metadata document connect (above).                                                                                           |
 | `MCP_ALLOWED_ORIGINS`      | none    | Browser origins, besides the gateway's, that may call `/mcp` (comma or space separated), e.g. `http://localhost:6274` for MCP Inspector's direct mode. AI apps call from servers and need none. |
 | `MCP_AUDIT_RETENTION_DAYS` | 90      | Days of `mcp_tool_calls` the cron keeps.                                                                                                                                                        |
-| `MCP_ACCESS_TOKEN_TTL`     | 3600    | Local testing only, in `.dev.vars` (`secret set --for gateway` refuses it): shorter access tokens, at least 60 seconds, honored only when `GATEWAY_URL` is `http://localhost` or `http://127.0.0.1`. |
+| `MCP_ACCESS_TOKEN_TTL`     | 3600    | Local testing only, in `.dev.vars` (`secret set` refuses it): shorter access tokens, at least 60 seconds, honored only when `GATEWAY_URL` is `http://localhost` or `http://127.0.0.1`. |
 
 ## Upgrading from the 0.8.1 server
 

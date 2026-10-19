@@ -4,10 +4,12 @@ import {
   CAPABILITIES,
   capabilitySettings,
   DEV_AI_PROVIDERS,
+  isSettableGatewaySetting,
 } from "@every-app/sdk/internal";
-import { assertSettableSecret, newGatewaySecrets } from "./secretsFile";
+import { newGatewaySecrets } from "./secretsFile";
 
-describe("gateway settings `secret set --for gateway` changes", () => {
+/** What `everyapp secret set <NAME>` changes on the Gateway, against what the install sets. */
+describe("gateway settings `secret set` changes", () => {
   it.each([
     "OPENAI_API_KEY",
     "OPENROUTER_API_KEY",
@@ -15,7 +17,7 @@ describe("gateway settings `secret set --for gateway` changes", () => {
     "DATAFORSEO_API_KEY",
     "CONTEXT_API_KEY",
   ])("include the provider key %s", (name) => {
-    expect(() => assertSettableSecret(name)).not.toThrow();
+    expect(isSettableGatewaySetting(name)).toBe(true);
   });
 
   it("include every AI provider's and capability's key, and the install sets the rest", () => {
@@ -25,7 +27,7 @@ describe("gateway settings `secret set --for gateway` changes", () => {
       deploymentMode: "self_hosted",
     });
     for (const spec of Object.values(DEV_AI_PROVIDERS)) {
-      expect(() => assertSettableSecret(spec.keyEnv)).not.toThrow();
+      expect(isSettableGatewaySetting(spec.keyEnv)).toBe(true);
       // Workers AI's account is the gateway's own, set at install.
       for (const setting of aiProviderSettings(spec).slice(1)) {
         expect(secrets[setting], setting).toBeDefined();
@@ -33,29 +35,26 @@ describe("gateway settings `secret set --for gateway` changes", () => {
     }
     for (const capability of Object.values(CAPABILITIES)) {
       if (capability.mode === "api_key") {
-        expect(() => assertSettableSecret(capability.secret)).not.toThrow();
+        expect(isSettableGatewaySetting(capability.secret)).toBe(true);
         continue;
       }
       // An OAuth client's id, secret and instance are all the operator's.
       if (capability.mode === "oauth_client") {
         for (const setting of capabilitySettings(capability)) {
-          expect(() => assertSettableSecret(setting), setting).not.toThrow();
+          expect(isSettableGatewaySetting(setting), setting).toBe(true);
         }
         continue;
       }
       // A service's sender is the operator's; its REST transport's account
       // is the gateway's own, set at install.
       for (const setting of capability.settings) {
-        expect(() => assertSettableSecret(setting), setting).not.toThrow();
+        expect(isSettableGatewaySetting(setting), setting).toBe(true);
       }
       for (const setting of capability.optionalSettings) {
-        let settable = true;
-        try {
-          assertSettableSecret(setting);
-        } catch {
-          settable = false;
-        }
-        expect(settable || secrets[setting] !== undefined, setting).toBe(true);
+        expect(
+          isSettableGatewaySetting(setting) || secrets[setting] !== undefined,
+          setting,
+        ).toBe(true);
       }
     }
   });
@@ -67,7 +66,7 @@ describe("gateway settings `secret set --for gateway` changes", () => {
     expect(names).toHaveLength(37);
     expect(new Set(names).size).toBe(37);
     for (const name of names) {
-      expect(() => assertSettableSecret(name), name).not.toThrow();
+      expect(isSettableGatewaySetting(name), name).toBe(true);
     }
     expect(names).toEqual(
       expect.arrayContaining([
@@ -84,7 +83,7 @@ describe("gateway settings `secret set --for gateway` changes", () => {
   it.each(["CF_DEPLOY_TOKEN", "DISPATCH_NAMESPACE", "THIRD_PARTY_DOMAIN"])(
     "include the deployer's setting %s",
     (name) => {
-      expect(() => assertSettableSecret(name)).not.toThrow();
+      expect(isSettableGatewaySetting(name)).toBe(true);
     },
   );
 
@@ -98,9 +97,7 @@ describe("gateway settings `secret set --for gateway` changes", () => {
   ])(
     "never include %s, which the install owns",
     (name) => {
-      expect(() => assertSettableSecret(name)).toThrow(
-        expect.objectContaining({ code: "SECRET_NOT_SETTABLE" }),
-      );
+      expect(isSettableGatewaySetting(name)).toBe(false);
     },
   );
 });

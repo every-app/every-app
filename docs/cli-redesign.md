@@ -31,7 +31,7 @@ default the builders chose.
 | `everyapp create <id> [--deploy]` | New app from the template: copy, `pnpm install`, `cf workers types`, `git init` outside the checkout. No Gateway contact; `dev` works at once. | `app create`, `app setup-local` |
 | `everyapp deploy` | Deploys the app in `cwd`. With no Gateway in any account the login sees: at a terminal it offers to install one; under `--json`, `action_required install_gateway`. | `app deploy` |
 | `everyapp delete [id] [--purge]` | Removes an app. | `app delete` |
-| `everyapp secret set\|unset\|list NAME [--for gateway]` | App secrets; the Gateway's settings with `--for gateway` (`--gateway <url>` keeps its hosted-tier meaning). `set` redeploys the app from `cwd` and says so on its first line (§6). `unset` supersedes TODO.md's `secret delete`. | `app secret set`, `gateway secret set` |
+| `everyapp secret set\|unset\|list NAME [--for gateway]` | App secrets; the Gateway's settings with `--for gateway` (`--gateway <url>` keeps its hosted-tier meaning). `set` redeploys the app from `cwd` and says so on its first line (§6). `unset` supersedes TODO.md's `secret delete`. (The flag went on 2026-10-19: a name that is a Gateway setting goes to the Gateway, any other to the app in `cwd`, which lists its own under `secrets` in everyapp.config.ts.) | `app secret set`, `gateway secret set` |
 | `everyapp db migrate\|query "<sql>" [--local]` | `migrate` applies migrations to the local database `dev` uses (production migrations stay inside `deploy`); `query` runs against production D1, `--local` for the dev database. | `app d1 …` |
 | `everyapp workflows …` | Unchanged. | `app workflows …` |
 | hidden: `setup --redeploy`, `setup --allow-downgrade` | The key-rotation runbook's forced redeploy; a deliberate Gateway rollback past the downgrade guard. | |
@@ -220,7 +220,7 @@ Create your owner account with this one-time link (opened in your browser):
 Waiting … owner created: ben@example.com
 Your Gateway is ready: https://apps.example.com
 Next: pnpm everyapp create my-app
-      AI for apps, any time: pnpm everyapp secret set OPENAI_API_KEY --for gateway
+      AI for apps, any time: pnpm everyapp secret set OPENAI_API_KEY
 ```
 
 On a brand-new account the install stops once, before the upload:

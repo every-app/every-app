@@ -313,7 +313,7 @@ describe("createHumanSink", () => {
     ]);
   });
 
-  it("shows a redeploy in three lines, and secret set's first line says what it redeploys", () => {
+  it("shows a redeploy in three lines, and one that sends secrets says so on its first line", () => {
     const redeploy = (secrets?: string[]) => {
       const { sink, lines } = human();
       sink.emit({
@@ -433,7 +433,7 @@ describe("createHumanSink", () => {
       data: {
         next: [
           "pnpm everyapp create my-app",
-          "AI for apps, any time: pnpm everyapp secret set OPENAI_API_KEY --for gateway",
+          "AI for apps, any time: pnpm everyapp secret set OPENAI_API_KEY",
         ],
       },
     });
@@ -446,7 +446,7 @@ describe("createHumanSink", () => {
       "Owner created: ben@example.com",
       "Your Gateway is ready: https://apps.example.com",
       "Next: pnpm everyapp create my-app",
-      "      AI for apps, any time: pnpm everyapp secret set OPENAI_API_KEY --for gateway",
+      "      AI for apps, any time: pnpm everyapp secret set OPENAI_API_KEY",
     ]);
   });
 
