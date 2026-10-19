@@ -469,7 +469,7 @@ describe("capabilities manifest field", () => {
     [
       "an unknown capability",
       { github: { access: "read" } },
-      /capabilities\.github: unknown capability \(the gateway offers: dataforseo, context, email, linkedin, facebook, .*, dribbble\)/,
+      /capabilities\.github: unknown capability \(the gateway offers: dataforseo, context, email, linkedin, facebook, .*, microsoft-365\)/,
     ],
     [
       "an access level the capability doesn't offer",

@@ -302,6 +302,11 @@ const DEV_GATEWAY_KEYS = {
     twitch: ["TWITCH_CLIENT_ID", "TWITCH_CLIENT_SECRET"],
     tumblr: ["TUMBLR_CLIENT_ID", "TUMBLR_CLIENT_SECRET"],
     dribbble: ["DRIBBBLE_CLIENT_ID", "DRIBBBLE_CLIENT_SECRET"],
+    "google-workspace": [
+      "GOOGLE_WORKSPACE_CLIENT_ID",
+      "GOOGLE_WORKSPACE_CLIENT_SECRET",
+    ],
+    "microsoft-365": ["MICROSOFT_365_CLIENT_ID", "MICROSOFT_365_CLIENT_SECRET"],
   },
 } as const;
 type DevProviderKeys = typeof DEV_GATEWAY_KEYS.providers;

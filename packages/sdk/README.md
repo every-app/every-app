@@ -453,7 +453,8 @@ The gateway holds a client for each social network its operator set up
 (`docs/capabilities.md`, "OAuth clients": `linkedin`, `facebook`,
 `instagram`, `threads`, `youtube`, `tiktok`, `tiktok-business`, `reddit`,
 `pinterest`, `discord`, `slack`, `mastodon`, `kick`, `twitch`, `tumblr`,
-`dribbble`). List one for writing (`capabilities: { linkedin: { access:
+`dribbble`; and for mail and calendar, `google-workspace` and
+`microsoft-365`). List one for writing (`capabilities: { linkedin: { access:
 "write" } }`), build the authorize URL from its public id, and exchange or
 refresh tokens through the gateway without any client:
 

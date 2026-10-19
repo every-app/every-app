@@ -232,7 +232,7 @@ describe("the OAuth clients", () => {
   const client = (id: OAuthClientCapabilityId): OAuthClientCapability =>
     CAPABILITIES[id];
 
-  it("are the 16 social networks' clients, with 33 gateway settings", () => {
+  it("are the 16 social networks' clients and the 2 mail and calendar clients, with 37 gateway settings", () => {
     expect(ids).toEqual([
       "linkedin",
       "facebook",
@@ -250,10 +250,12 @@ describe("the OAuth clients", () => {
       "twitch",
       "tumblr",
       "dribbble",
+      "google-workspace",
+      "microsoft-365",
     ]);
     const settings = ids.flatMap((id) => capabilitySettings(client(id)));
-    expect(settings).toHaveLength(33);
-    expect(new Set(settings).size).toBe(33);
+    expect(settings).toHaveLength(37);
+    expect(new Set(settings).size).toBe(37);
     expect(capabilitySettings(client("mastodon"))).toEqual([
       "MASTODON_CLIENT_ID",
       "MASTODON_CLIENT_SECRET",
@@ -307,7 +309,7 @@ describe("the OAuth clients", () => {
       expect(capability.authorize.scopes.length).toBeGreaterThan(0);
       expect(capability.redirectPaths.length).toBeGreaterThan(0);
       for (const path of capability.redirectPaths) {
-        expect(path).toMatch(/^\/integrations\/social\/[a-z-]+\/?$/);
+        expect(path).toMatch(/^\/integrations(?:\/[a-z-]+)+\/?$/);
       }
     },
   );
@@ -365,6 +367,11 @@ describe("OAuth client paths", () => {
     ["twitch", "https://id.twitch.tv/oauth2/token"],
     ["tumblr", "https://api.tumblr.com/v2/oauth2/token"],
     ["dribbble", "https://dribbble.com/oauth/token?code=x"],
+    ["google-workspace", "https://oauth2.googleapis.com/token"],
+    [
+      "microsoft-365",
+      "https://login.microsoftonline.com/common/oauth2/v2.0/token",
+    ],
   ])("%s takes %s", (provider, url) => {
     const route = parse(provider, url);
     expect(route).toMatchObject({

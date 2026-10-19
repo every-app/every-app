@@ -67,6 +67,11 @@ export const OPTIONAL_SECRETS = [
   "TUMBLR_CLIENT_SECRET",
   "DRIBBBLE_CLIENT_ID",
   "DRIBBBLE_CLIENT_SECRET",
+  // Mail and calendar clients.
+  "GOOGLE_WORKSPACE_CLIENT_ID",
+  "GOOGLE_WORKSPACE_CLIENT_SECRET",
+  "MICROSOFT_365_CLIENT_ID",
+  "MICROSOFT_365_CLIENT_SECRET",
   "AI_PROXY_EXTRA_ROUTES",
   // Email's providers (src/server/email/providers): Cloudflare's REST pair
   // (with CLOUDFLARE_ACCOUNT_ID below), Resend's key, and the choice.

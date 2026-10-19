@@ -118,6 +118,10 @@ declare namespace Cloudflare {
     TUMBLR_CLIENT_SECRET?: string;
     DRIBBBLE_CLIENT_ID?: string;
     DRIBBBLE_CLIENT_SECRET?: string;
+    GOOGLE_WORKSPACE_CLIENT_ID?: string;
+    GOOGLE_WORKSPACE_CLIENT_SECRET?: string;
+    MICROSOFT_365_CLIENT_ID?: string;
+    MICROSOFT_365_CLIENT_SECRET?: string;
 
     // OpenAI paths beyond inference that apps may opt into with their
     // manifest's `ai.routes` (comma or space separated, e.g. "/v1/files").

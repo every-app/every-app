@@ -9,7 +9,8 @@ gateway. No app holds the key, and a deploy needs no per-app settings.
 This is phase 0 of the integrations design
 ([research/2026-10-integrations-hub/app-integrations.md](research/2026-10-integrations-hub/app-integrations.md)):
 **API-key providers whose key the gateway holds**, **OAuth clients** the
-gateway holds for social networks, whose token endpoints it completes for
+gateway holds for social networks and for Google's and Microsoft's mail and
+calendar, whose token endpoints it completes for
 apps ([below](#oauth-clients)), and **gateway services**, things the gateway
 does itself for apps (sending email, [below](#gateway-services-email)).
 Organization-held OAuth accounts and admin approval come in later phases and
@@ -42,7 +43,7 @@ to the gateway under `/api/integrations/<id>/...`, and answer
 | Kind           | Capabilities                                          | What the gateway does                                                             | The app calls                                                                            | Access  | Status adds                     |
 | -------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------- | ------------------------------- |
 | `api_key`      | `dataforseo`, `context`                               | puts its key on calls to the provider's own hosts, with the methods it reads with | `integrationFetch({ env, provider, for })` on the provider's real URLs                   | `read`  |                                 |
-| `oauth_client` | 16 social networks ([OAuth clients](#oauth-clients))  | completes the network's token endpoints only, putting its client on the request   | `integrationFetch` on the token endpoint; the authorize URL from the status's `clientId` | `write` | `clientId` (Mastodon: `origin`) |
+| `oauth_client` | 16 social networks, Google and Microsoft mail and calendar ([OAuth clients](#oauth-clients))  | completes the network's token endpoints only, putting its client on the request   | `integrationFetch` on the token endpoint; the authorize URL from the status's `clientId` | `write` | `clientId` (Mastodon: `origin`) |
 | `service`      | `email` ([Gateway services](#gateway-services-email)) | does the work itself: sends the mail from its sender, within its budgets          | `sendEmail({ env, for, message })`, which posts to `/api/integrations/email/send`        | `write` | `sender`, `senders`, `provider` |
 
 Every status answers `{ capability, requested, configured, ready }`;
@@ -80,6 +81,7 @@ Everything the gateway holds for apps, in one table:
 | `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
 | `email`                     | `service`           | `EMAIL_FROM`, `EMAIL_FROM_NAME`, and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)) | Postiz, agentic-inbox, and the gateway's own mail    |
 | 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | Postiz                                               |
+| `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-clients) | Open CRM (mail and calendar capture) |
 
 X is not in the table: OAuth 1.0a signs every API call with the user's token
 secret, which the gateway never holds, so an app keeps `X_API_KEY` and
@@ -239,6 +241,17 @@ the authorize URL from the client's public id, keeps the access and refresh
 tokens it gets back, and calls the network's API with them itself. The
 client secret never reaches an app. Postiz is the first app to use these.
 
+Two clients serve mail and calendar rather than a social network:
+`google-workspace` (Gmail and Google Calendar, read-only) and
+`microsoft-365` (Outlook mail through Microsoft Graph, read-only). Open CRM
+reads each member's own mailbox and calendar with them. Gmail's read scope is
+one of Google's restricted scopes: an *Internal* consent screen (every
+mailbox in the operator's Workspace) needs no review, while an *External*
+one needs Google's verification and a yearly security assessment before
+other people's mailboxes can connect. Register the Microsoft client for
+accounts in any organization and personal accounts: the gateway completes
+the `common` token endpoint only.
+
 **For an operator.** For each network you want people to connect: register
 an app on its developer console, register the redirect URIs below (on the
 app's host, `https://<app>.<APP_BASE_DOMAIN>`), allow the scopes listed
@@ -341,12 +354,14 @@ token endpoints directly either: the outbound Worker refuses them
 | `reddit` | Reddit | `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET` | https://www.reddit.com/prefs/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/reddit` | POST `www.reddit.com/api/v1/access_token` (basic) |
 | `pinterest` | Pinterest | `PINTEREST_CLIENT_ID`, `PINTEREST_CLIENT_SECRET` | https://developers.pinterest.com/apps/ | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/pinterest` | POST `api.pinterest.com/v5/oauth/token` (basic) |
 | `discord` | Discord | `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET` | https://discord.com/developers/applications | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/discord` | POST `discord.com/api/oauth2/token` (basic) |
-| `slack` | Slack | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | https://api.slack.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/slack` | POST `slack.com/api/oauth.v2.access` (form) |
+| `slack` | Slack | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | https://api.slack.com/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/slack`, `https://<app>.<APP_BASE_DOMAIN>/integrations/slack/callback` | POST `slack.com/api/oauth.v2.access` (form) |
 | `mastodon` | Mastodon | `MASTODON_CLIENT_ID`, `MASTODON_CLIENT_SECRET`, `MASTODON_URL` | `<MASTODON_URL>/settings/applications` | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/mastodon` | POST `<MASTODON_URL>/oauth/token` (form) |
 | `kick` | Kick | `KICK_CLIENT_ID`, `KICK_CLIENT_SECRET` | https://kick.com/settings/developer | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/kick` | POST `id.kick.com/oauth/token` (form) |
 | `twitch` | Twitch | `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` | https://dev.twitch.tv/console/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/twitch` | POST `id.twitch.tv/oauth2/token` (form) |
 | `tumblr` | Tumblr | `TUMBLR_CLIENT_ID`, `TUMBLR_CLIENT_SECRET` | https://www.tumblr.com/oauth/apps | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/tumblr` | POST `api.tumblr.com/v2/oauth2/token` (form) |
 | `dribbble` | Dribbble | `DRIBBBLE_CLIENT_ID`, `DRIBBBLE_CLIENT_SECRET` | https://dribbble.com/account/applications | `https://<app>.<APP_BASE_DOMAIN>/integrations/social/dribbble` | POST `dribbble.com/oauth/token` (query) |
+| `google-workspace` | Google (Gmail and Calendar) | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET` | https://console.cloud.google.com/apis/credentials | `https://<app>.<APP_BASE_DOMAIN>/integrations/google/callback` | POST `oauth2.googleapis.com/token` (form) |
+| `microsoft-365` | Microsoft 365 (Outlook) | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade | `https://<app>.<APP_BASE_DOMAIN>/integrations/microsoft/callback` | POST `login.microsoftonline.com/common/oauth2/v2.0/token` (form) |
 
 The commands, one per network you offer (each prompts for the values):
 
@@ -367,6 +382,8 @@ pnpm everyapp secret set KICK_CLIENT_ID KICK_CLIENT_SECRET --for gateway
 pnpm everyapp secret set TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET --for gateway
 pnpm everyapp secret set TUMBLR_CLIENT_ID TUMBLR_CLIENT_SECRET --for gateway
 pnpm everyapp secret set DRIBBBLE_CLIENT_ID DRIBBBLE_CLIENT_SECRET --for gateway
+pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET --for gateway
+pnpm everyapp secret set MICROSOFT_365_CLIENT_ID MICROSOFT_365_CLIENT_SECRET --for gateway
 ```
 
 The authorize page each client sends people to, and the scopes the app asks for there (the client must be allowed them):
@@ -383,12 +400,14 @@ The authorize page each client sends people to, and the scopes the app asks for 
 | `reddit` | `https://www.reddit.com/api/v1/authorize` | `read`, `identity`, `submit`, `flair` |
 | `pinterest` | `https://www.pinterest.com/oauth/` | `boards:read`, `boards:write`, `pins:read`, `pins:write`, `user_accounts:read` |
 | `discord` | `https://discord.com/oauth2/authorize` | `bot`, `identify`, `guilds` |
-| `slack` | `https://slack.com/oauth/v2/authorize` | `channels:read`, `chat:write`, `users:read`, `groups:read`, `channels:join`, `chat:write.customize` |
+| `slack` | `https://slack.com/oauth/v2/authorize` | `channels:read`, `chat:write`, `users:read`, `groups:read`, `channels:join`, `chat:write.customize`, `users:read.email`, `channels:history`, `groups:history`, `chat:write.public`, `im:write`, `channels:manage`, `groups:write`, `channels:write.invites`, `groups:write.invites`, `conversations.connect:write`, `links:write`, `channels:write` |
 | `mastodon` | `<MASTODON_URL>/oauth/authorize` | `write:statuses`, `profile`, `write:media` |
 | `kick` | `https://id.kick.com/oauth/authorize` | `chat:write`, `user:read`, `channel:read` |
 | `twitch` | `https://id.twitch.tv/oauth2/authorize` | `user:write:chat`, `user:read:chat`, `moderator:manage:announcements` |
 | `tumblr` | `https://www.tumblr.com/oauth2/authorize` | `write`, `offline_access` |
 | `dribbble` | `https://dribbble.com/oauth/authorize` | `public`, `upload` |
+| `google-workspace` | `https://accounts.google.com/o/oauth2/v2/auth` | `https://www.googleapis.com/auth/gmail.readonly`, `https://www.googleapis.com/auth/calendar.readonly` |
+| `microsoft-365` | `https://login.microsoftonline.com/common/oauth2/v2.0/authorize` | `offline_access`, `User.Read`, `Mail.Read` |
 
 <!-- oauth-clients:end -->
 

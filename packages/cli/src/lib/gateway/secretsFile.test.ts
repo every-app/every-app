@@ -60,12 +60,12 @@ describe("gateway settings `secret set --for gateway` changes", () => {
     }
   });
 
-  it("include the 33 names of the 16 OAuth clients", () => {
+  it("include the 37 names of the 18 OAuth clients", () => {
     const names = Object.values(CAPABILITIES).flatMap((capability) =>
       capability.mode === "oauth_client" ? capabilitySettings(capability) : [],
     );
-    expect(names).toHaveLength(33);
-    expect(new Set(names).size).toBe(33);
+    expect(names).toHaveLength(37);
+    expect(new Set(names).size).toBe(37);
     for (const name of names) {
       expect(() => assertSettableSecret(name), name).not.toThrow();
     }

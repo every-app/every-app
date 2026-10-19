@@ -552,6 +552,10 @@ export const CAPABILITIES = {
     console: "https://api.slack.com/apps",
     authorize: {
       url: "https://slack.com/oauth/v2/authorize",
+      // Postiz's bot scopes, then Open CRM's: its team agents post to
+      // approved channels, manage the channels they post to and match
+      // members to Slack users by email (bot scopes), and invite the bot to
+      // private channels (user scopes `channels:write`, `groups:write`).
       scopes: [
         "channels:read",
         "chat:write",
@@ -559,10 +563,25 @@ export const CAPABILITIES = {
         "groups:read",
         "channels:join",
         "chat:write.customize",
+        "users:read.email",
+        "channels:history",
+        "groups:history",
+        "chat:write.public",
+        "im:write",
+        "channels:manage",
+        "groups:write",
+        "channels:write.invites",
+        "groups:write.invites",
+        "conversations.connect:write",
+        "links:write",
+        "channels:write",
       ],
     },
     api: ["slack.com"],
-    redirectPaths: ["/integrations/social/slack"],
+    redirectPaths: [
+      "/integrations/social/slack",
+      "/integrations/slack/callback",
+    ],
   },
   mastodon: {
     mode: "oauth_client",
@@ -682,6 +701,70 @@ export const CAPABILITIES = {
     },
     api: ["api.dribbble.com"],
     redirectPaths: ["/integrations/social/dribbble"],
+  },
+  // Mail and calendar clients: Open CRM reads a member's own mailbox and
+  // calendar with them. Google's is its own client, apart from YouTube's
+  // and from the planned gateway-held Google integration (Search Console,
+  // Analytics), because Gmail's read scope is restricted and needs its own
+  // verification.
+  "google-workspace": {
+    mode: "oauth_client",
+    label: "Google (Gmail and Calendar)",
+    secrets: {
+      clientId: "GOOGLE_WORKSPACE_CLIENT_ID",
+      clientSecret: "GOOGLE_WORKSPACE_CLIENT_SECRET",
+    },
+    token: [
+      {
+        host: "oauth2.googleapis.com",
+        path: "/token",
+        methods: ["POST"],
+        inject: "form",
+      },
+    ],
+    access: ["write"],
+    console: "https://console.cloud.google.com/apis/credentials",
+    authorize: {
+      url: "https://accounts.google.com/o/oauth2/v2/auth",
+      scopes: [
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/calendar.readonly",
+      ],
+    },
+    api: [
+      "gmail.googleapis.com",
+      "www.googleapis.com",
+      "oauth2.googleapis.com",
+    ],
+    redirectPaths: ["/integrations/google/callback"],
+  },
+  "microsoft-365": {
+    mode: "oauth_client",
+    label: "Microsoft 365 (Outlook)",
+    secrets: {
+      clientId: "MICROSOFT_365_CLIENT_ID",
+      clientSecret: "MICROSOFT_365_CLIENT_SECRET",
+    },
+    token: [
+      {
+        // The multi-tenant endpoint: register the client for accounts in
+        // any organization and personal accounts. A single-tenant client
+        // answers only on its tenant's path, which this does not complete.
+        host: "login.microsoftonline.com",
+        path: "/common/oauth2/v2.0/token",
+        methods: ["POST"],
+        inject: "form",
+      },
+    ],
+    access: ["write"],
+    console:
+      "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+    authorize: {
+      url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
+      scopes: ["offline_access", "User.Read", "Mail.Read"],
+    },
+    api: ["graph.microsoft.com"],
+    redirectPaths: ["/integrations/microsoft/callback"],
   },
 } as const satisfies Record<string, Capability>;
 
