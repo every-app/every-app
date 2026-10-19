@@ -34,7 +34,15 @@ It asks for the key without showing it. Use `OPENROUTER_API_KEY` for OpenRouter.
 git pull && pnpm install && pnpm everyapp setup
 ```
 
-Run this in your `every-app` folder. Your users, apps and data stay.
+Run this in your `every-app` folder. Your users, apps and data stay. Setup builds the Gateway from that folder. Deploying an app updates the Gateway too when the folder has a newer one.
+
+To install a Gateway release you downloaded instead, pass it to setup:
+
+```bash
+pnpm everyapp setup --release ./every-app-gateway-release.tar.gz
+```
+
+`--release` also takes a release's URL, or a GitHub repository's for its latest release. A CLI that runs outside an `every-app` folder takes the latest release of [every-app/every-app](https://github.com/every-app/every-app).
 
 ## What it costs
 

@@ -11,7 +11,7 @@ import {
   workerExistence,
   type DesiredState,
 } from "@/lib/gateway/desiredState";
-import { checkoutRoot } from "@/lib/checkout";
+import { findCheckoutRoot } from "@/lib/checkout";
 import { olderThanInstalled } from "@/lib/gateway/apply";
 import {
   checkoutSource,
@@ -79,10 +79,11 @@ export async function status(
         out,
         accountId: flags["account-id"],
       });
+      const root = findCheckoutRoot();
       await reportStatus({
         gateway,
         out,
-        checkout: () => checkoutSource(checkoutRoot()),
+        checkout: root ? () => checkoutSource(root) : null,
       });
     },
     { verbose: flags.verbose },
@@ -97,8 +98,11 @@ export async function reportStatus({
 }: {
   gateway: FoundGateway;
   out: EventSink;
-  /** What this checkout's Gateway is, without building it. */
-  checkout: () => Promise<CheckoutSource>;
+  /**
+   * What this checkout's Gateway is, without building it; null when
+   * everyapp doesn't run from a checkout.
+   */
+  checkout: (() => Promise<CheckoutSource>) | null;
 }): Promise<void> {
   const { cf, account, db, install } = gateway;
   if (!install) {
@@ -261,10 +265,10 @@ interface CheckoutState {
 
 async function checkoutAgainst(
   install: InstallRecord,
-  checkout: () => Promise<CheckoutSource>,
+  checkout: (() => Promise<CheckoutSource>) | null,
 ): Promise<CheckoutState> {
   // A checkout that can't be read doesn't stop the rest of the report.
-  const source = await checkout().catch(() => null);
+  const source = checkout ? await checkout().catch(() => null) : null;
   if (!source) return { upToDate: null, behind: false, checkout: null };
   const upToDate =
     source.treeSha256 && install.sourceTreeSha256

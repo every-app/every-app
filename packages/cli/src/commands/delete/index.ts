@@ -1,9 +1,6 @@
 import enquirer from "enquirer";
 import type { LocalContext } from "@/context";
-import {
-  checkoutGateway,
-  type ReconcileSeams,
-} from "@/commands/deploy/deployApp";
+import { gatewayFor, type ReconcileSeams } from "@/commands/deploy/deployApp";
 import { removeEmailRoutes } from "@/lib/app/emailRoutes";
 import {
   describeResource,
@@ -28,7 +25,6 @@ import { deleteHostCertificates } from "@/lib/domains/certificates";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { EveryAppError } from "@/lib/errors";
 import { refuseOlderCheckout } from "@/lib/gateway/apply";
-import { openGatewayRelease } from "@/lib/gateway/checkoutRelease";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall } from "@/lib/gateway/install";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
@@ -129,8 +125,9 @@ export async function removeApp({
     createCf,
   });
   const { cf, db: registry } = connection;
-  // Before the registry changes: never with a checkout behind the Gateway.
-  await refuseOlderCheckout(connection.install, checkoutGateway(reconcile));
+  // Before the registry changes: never with a Gateway behind the live one.
+  const newGateway = gatewayFor(reconcile, out);
+  await refuseOlderCheckout(connection.install, newGateway.source);
   const deleted = await deleteFromRegistry(registry, appId, connection.deployer);
   out.emit({
     type: "step",
@@ -140,7 +137,7 @@ export async function removeApp({
     data: { appId, hostname: deleted.hostname, workerName: deleted.workerName },
   });
 
-  // The gateway this checkout builds, without the app's binding.
+  // The Gateway this run deploys, without the app's binding.
   await reconcileGateway({
     cf,
     out,
@@ -148,8 +145,8 @@ export async function removeApp({
     databaseId: connection.databaseId,
     interactive,
     cliVersion,
-    openRelease: () => openGatewayRelease({ out }),
     ...reconcile,
+    openRelease: newGateway.openRelease,
   });
 
   // Cloudflare keeps a removed Custom Domain's certificate. A hostname

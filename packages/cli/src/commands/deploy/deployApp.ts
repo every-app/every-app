@@ -106,17 +106,12 @@ import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
 import { afterMigration, EveryAppError } from "@/lib/errors";
 import { connectToGateway } from "@/lib/gateway/connect";
-import { checkoutRoot } from "@/lib/checkout";
-import { refuseOlderCheckout } from "@/lib/gateway/apply";
-import {
-  checkoutSource,
-  openGatewayRelease,
-  type CheckoutSource,
-} from "@/lib/gateway/checkoutRelease";
+import { refuseOlderCheckout, type CandidateRelease } from "@/lib/gateway/apply";
 import { readInstall } from "@/lib/gateway/install";
 import { acquireLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import type { GatewayRelease } from "@/lib/gateway/release";
+import { gatewayReleaseSource } from "@/lib/gateway/source";
 import { markDeployed, register } from "@/lib/gateway/registry";
 import type { InstallRecord } from "@/lib/gateway/install";
 import {
@@ -196,20 +191,32 @@ interface DeployAppOptions {
 
 /**
  * The rebind's seams (tests): how long it waits for the gateway's lease,
- * how it sleeps, and the release it deploys (default: the one this
- * checkout builds, from the build cache when it can).
+ * how it sleeps, and the release it deploys (default: lib/gateway/source.ts,
+ * the checkout's build or the latest release).
  */
 export interface ReconcileSeams {
   sleep?: (ms: number) => Promise<void>;
   leaseWaitMs?: number;
   openRelease?: () => Promise<GatewayRelease>;
-  /** What this checkout's Gateway is, without building it. */
-  source?: () => Promise<CheckoutSource>;
+  /** What that release is, without building it from a checkout. */
+  source?: () => Promise<CandidateRelease>;
 }
 
-/** What this checkout's Gateway is, unless a test says. */
-export function checkoutGateway(seams?: ReconcileSeams): () => Promise<CheckoutSource> {
-  return seams?.source ?? (() => checkoutSource(checkoutRoot()));
+/**
+ * The Gateway an app command's rebind deploys, unless a test says: one
+ * source for the downgrade guard and the rebind, so a release is fetched
+ * once.
+ */
+export function gatewayFor(
+  seams: ReconcileSeams | undefined,
+  out: EventSink,
+  verbose?: boolean,
+): Required<Pick<ReconcileSeams, "openRelease" | "source">> {
+  const gateway = gatewayReleaseSource({ out, verbose });
+  return {
+    openRelease: seams?.openRelease ?? gateway.open,
+    source: seams?.source ?? gateway.describe,
+  };
 }
 
 interface DeployAppResult {
@@ -300,6 +307,7 @@ async function deploySteps(
   // 1. The gateway, through the Cloudflare login: its account, D1 and
   // install. With none anywhere, `deploy` offers to install one first.
   const offer = options.offerInstall;
+  const gateway = gatewayFor(options.reconcile, out, options.verbose);
   const { cf, accountId, accountName, databaseId, db: registry, install, gatewayUrl, deployer } =
     await connectToGateway({
       gateway: options.gateway,
@@ -324,18 +332,15 @@ async function deploySteps(
                   ...setupDeps({ out, json: options.json, verbose: options.verbose }),
                   interactive,
                   ...(options.createCf ? { createCf: options.createCf } : {}),
-                  ...(options.reconcile?.openRelease
-                    ? { openRelease: options.reconcile.openRelease }
-                    : {}),
-                  source: checkoutGateway(options.reconcile),
+                  ...gateway,
                   ...offer.setup,
                 },
               },
             })
         : undefined,
     });
-  // Before anything is registered: never with a checkout behind the Gateway.
-  await refuseOlderCheckout(install, checkoutGateway(options.reconcile));
+  // Before anything is registered: never with a Gateway behind the live one.
+  await refuseOlderCheckout(install, gateway.source);
   const identityKey = install.jwtPublicKey;
   if (!identityKey) {
     throw new EveryAppError(
@@ -748,10 +753,7 @@ async function deploySteps(
     publishHost: newHost,
     interactive,
     forceDns: options.forceDns,
-    seams: {
-      openRelease: () => openGatewayRelease({ out, verbose: options.verbose }),
-      ...options.reconcile,
-    },
+    seams: { ...options.reconcile, openRelease: gateway.openRelease },
   });
   // A hostname the gateway doesn't publish never answers (warned above).
   const wait = !outsideBase && (options.waitForLive ?? true);
@@ -1074,7 +1076,7 @@ export async function bindIfNeeded({
     message: `Binding ${appBindingName(workerName)} on the gateway${publishHost ? " and publishing its hostname" : ""}...`,
   });
   try {
-    // The gateway this checkout builds: an upgrade too, when it is newer.
+    // The Gateway this run deploys: an upgrade too, when it is newer.
     const result = await reconcileGateway({
       cf,
       out,

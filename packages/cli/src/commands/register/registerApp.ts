@@ -24,7 +24,7 @@ import { appBindingName } from "@every-app/perimeter/manifest";
 import {
   assertSharedApps,
   bindIfNeeded,
-  checkoutGateway,
+  gatewayFor,
   type ReconcileSeams,
 } from "@/commands/deploy/deployApp";
 import { waitForLive, type LiveWaitSeams } from "@/commands/deploy/steps/waitForLive";
@@ -36,7 +36,6 @@ import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
 import { EveryAppError } from "@/lib/errors";
 import { refuseOlderCheckout } from "@/lib/gateway/apply";
-import { openGatewayRelease } from "@/lib/gateway/checkoutRelease";
 import { connectToGateway } from "@/lib/gateway/connect";
 import { acquireLease } from "@/lib/gateway/lease";
 import { markDeployed, register } from "@/lib/gateway/registry";
@@ -105,7 +104,8 @@ export async function registerApp(
       onDeviceLogin: options.json ? deviceLoginAction(out, "app.login") : undefined,
       createCf: options.createCf,
     });
-  await refuseOlderCheckout(install, checkoutGateway(options.reconcile));
+  const gateway = gatewayFor(options.reconcile, out, options.verbose);
+  await refuseOlderCheckout(install, gateway.source);
   assertSharedApps(install);
 
   // 2. The Worker, deployed by other means, is there.
@@ -218,10 +218,7 @@ export async function registerApp(
     publishHost: newHost,
     interactive,
     forceDns: options.forceDns,
-    seams: {
-      openRelease: () => openGatewayRelease({ out, verbose: options.verbose }),
-      ...options.reconcile,
-    },
+    seams: { ...options.reconcile, openRelease: gateway.openRelease },
     rerun,
   });
   const wait = !outsideBase && (options.waitForLive ?? true);

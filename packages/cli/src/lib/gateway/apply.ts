@@ -69,6 +69,7 @@ import { acquireLease, type Lease } from "./lease";
 import { gatewayDomains, patchGatewayBuildOutput } from "./patchBuildOutput";
 import {
   compareReleaseOrder,
+  describeOrigin,
   type GatewayRelease,
   type ReleaseSource,
 } from "./release";
@@ -159,7 +160,7 @@ export function acquireGatewayLease(
 }
 
 /** A Gateway as the downgrade guard compares it with the live one. */
-interface CandidateRelease extends ReleaseSource {
+export interface CandidateRelease extends ReleaseSource {
   version: string;
   /** Its SHA-256, once it is built. */
   sha256?: string;
@@ -193,8 +194,8 @@ export function isLiveRelease(
 }
 
 /**
- * Whether this checkout's Gateway is older than the one the install row
- * says is live: not the same release or the same sources, and earlier in
+ * Whether a Gateway (this checkout's, or a release's) is older than the
+ * one the install row says is live: not the same release or the same sources, and earlier in
  * the history (`compareReleaseOrder`: its newest migration, then when its
  * sources were last committed).
  */
@@ -210,9 +211,10 @@ export function olderThanInstalled(
 }
 
 /**
- * App commands write the Gateway's registry with this checkout's rules and
- * rebind it with this checkout's Gateway, so none runs against a Gateway
- * newer than the checkout: they stop before anything changes.
+ * App commands write the Gateway's registry with this CLI's rules and
+ * rebind it with the Gateway this run deploys (lib/gateway/source.ts: the
+ * checkout's, or the latest release), so none runs against a Gateway newer
+ * than that: they stop before anything changes.
  */
 export async function refuseOlderCheckout(
   install: InstallRecord,
@@ -226,8 +228,9 @@ export async function refuseOlderCheckout(
 
 /**
  * This checkout is behind the live Gateway: `git pull`, then the same
- * command. Only `setup` puts an older Gateway back on purpose, with
- * --allow-downgrade (`allowDowngradeFlag`), which an agent asks about first.
+ * command; a release is: a newer one, or a checkout at least as new. Only
+ * `setup` puts an older Gateway back on purpose, with --allow-downgrade
+ * (`allowDowngradeFlag`), which an agent asks about first.
  */
 export function downgradeRefused(
   release: CandidateRelease,
@@ -241,9 +244,14 @@ export function downgradeRefused(
       ? `${version} of ${new Date(order.committedAt).toISOString().slice(0, 10)}`
       : version;
   const again = thisCommand();
+  const live = `the one live at https://${install.gatewayHost} (${describe(install.releaseVersion, install.releaseOrder)})`;
+  const behind =
+    release.origin.kind === "checkout"
+      ? `This checkout's Gateway (${describe(release.version, release.order)}) is older than ${live}. Run git pull, then: ${again}`
+      : `The Gateway from ${describeOrigin(release.origin)} (${describe(release.version, release.order)}) is older than ${live}. ${allowDowngradeFlag ? "Pass --release a newer one, or run" : "Run"} everyapp from a checkout at least as new, then: ${again}`;
   return new EveryAppError(
     "DOWNGRADE_REFUSED",
-    `This checkout's Gateway (${describe(release.version, release.order)}) is older than the one live at https://${install.gatewayHost} (${describe(install.releaseVersion, install.releaseOrder)}). Run git pull, then: ${again}${allowDowngradeFlag ? `\nTo put this older Gateway back on purpose instead: ${thisCommand(["--allow-downgrade"])}` : ""}`,
+    `${behind}${allowDowngradeFlag ? `\nTo put this older Gateway back on purpose instead: ${thisCommand(["--allow-downgrade"])}` : ""}`,
     allowDowngradeFlag
       ? { rerun: thisCommand(["--allow-downgrade"]), authorize: true }
       : { rerun: again },

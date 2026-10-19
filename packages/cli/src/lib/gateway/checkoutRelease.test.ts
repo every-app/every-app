@@ -192,6 +192,7 @@ describe("the Gateway build cache", () => {
     expect(cachedAgain.source.order.committedAt).toBe(committedAt);
     await expect(checkoutSource(root)).resolves.toEqual({
       treeSha256: await hashCheckoutTree(root),
+      origin: { kind: "checkout" },
       version: "0.2.0",
       order: { schema: 0, committedAt },
     });

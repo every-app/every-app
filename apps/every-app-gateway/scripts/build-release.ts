@@ -29,12 +29,31 @@ const PATCH_PLACEHOLDER = "__EVERYAPP_PATCH__";
 /** The oldest everyapp CLI and SDK that can deploy and talk to this release. */
 const MIN_CLI_VERSION = "0.3.0";
 const MIN_SDK_VERSION = "0.3.0";
+/**
+ * What the release is built from, from the repository's root: the CLI's
+ * GATEWAY_SOURCES (packages/cli/src/lib/gateway/checkoutRelease.ts), whose
+ * last commit orders a checkout the same way.
+ */
+const GATEWAY_SOURCES = [
+  "apps/every-app-gateway",
+  "packages/sdk",
+  "packages/perimeter",
+  "packages/toolbus",
+  "pnpm-workspace.yaml",
+];
 
 export interface ReleaseManifest {
   schema: 1;
+  /** What the release deploys (the CLI reads a missing one as a Gateway). */
+  kind: "gateway";
   version: string;
   gitSha: string;
   builtAt: string;
+  /**
+   * When the Gateway's sources were last committed (ISO): the CLI's
+   * downgrade guard orders a release by it, as it orders a checkout.
+   */
+  committedAt?: string;
   cfVersion: string;
   pluginVersion: string;
   configVersion: string;
@@ -53,7 +72,7 @@ export interface StageReleaseOptions {
   /** Everything release.json records besides what staging computes. */
   build: Omit<
     ReleaseManifest,
-    "schema" | "sha256" | "migrations" | "buildOutputVersion"
+    "schema" | "kind" | "sha256" | "migrations" | "buildOutputVersion"
   >;
 }
 
@@ -102,6 +121,7 @@ export function stageRelease({
 
   const manifest: ReleaseManifest = {
     schema: 1,
+    kind: "gateway",
     ...build,
     buildOutputVersion,
     sha256: hashTree(stageDir),
@@ -291,6 +311,13 @@ function main(): void {
     fs.readFileSync(path.join(GATEWAY_DIR, "package.json"), "utf8"),
   ) as { version: string };
   const sha = git(["rev-parse", "HEAD"]) ?? "unknown";
+  const committedAt = git([
+    "log",
+    "-1",
+    "--format=%cI",
+    "--",
+    ...GATEWAY_SOURCES.map((source) => `:(top)${source}`),
+  ]);
   const dirty = Boolean(git(["status", "--porcelain"]));
 
   const stageDir = fs.mkdtempSync(
@@ -304,6 +331,9 @@ function main(): void {
         version: gatewayPackage.version,
         gitSha: dirty ? `${sha}-dirty` : sha,
         builtAt: new Date().toISOString(),
+        ...(committedAt
+          ? { committedAt: new Date(committedAt).toISOString() }
+          : {}),
         cfVersion: packageVersion("cf", GATEWAY_DIR),
         pluginVersion: packageVersion("@cloudflare/vite-plugin", GATEWAY_DIR),
         configVersion: packageVersion("@cloudflare/config", cfDir),

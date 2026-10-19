@@ -28,11 +28,14 @@ interface Builder {
 export async function buildGatewayRelease({
   version = "0.2.0",
   builtAt = "2026-10-12T00:00:00.000Z",
+  minCli = "0.3.0",
   extraMigration,
 }: {
   version?: string;
   /** Two builds of one version differ by it. */
   builtAt?: string;
+  /** The oldest everyapp that may deploy it. */
+  minCli?: string;
   /** Appended after the real migrations, e.g. one that fails. */
   extraMigration?: { file: string; sql: string };
 } = {}): Promise<string> {
@@ -72,7 +75,7 @@ export async function buildGatewayRelease({
       cfVersion: "1.0.0-beta.14",
       pluginVersion: "2.0.0-beta.sha-91c870c02",
       configVersion: "0.24.1",
-      minCli: "0.3.0",
+      minCli,
       minSdk: "0.3.0",
     },
   });
@@ -89,7 +92,7 @@ export async function buildGatewayRelease({
 export async function releaseSource(tarball: string): Promise<CheckoutSource> {
   const release = await openRelease(tarball);
   try {
-    return { ...release.source, version: release.manifest.version };
+    return { ...release.source, origin: { kind: "checkout" }, version: release.manifest.version };
   } finally {
     await release.cleanup();
   }

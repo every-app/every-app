@@ -1,11 +1,12 @@
 /**
  * Make the live gateway bind exactly the apps its registry says, by
- * redeploying the gateway this checkout builds with a fresh set of APP__
+ * redeploying the Gateway this run deploys (lib/gateway/source.ts: the
+ * checkout's, or the latest release) with a fresh set of APP__
  * bindings. `everyapp deploy` and `delete` run it when the set of apps
  * changes, never for a code-only app redeploy; `setup` runs it to repair a
  * Gateway that is up to date but binds the wrong apps; `secret … --for
- * gateway` runs it to send or drop a setting. A checkout newer than the
- * live release upgrades the gateway on the way, migrations first, as any
+ * gateway` runs it to send or drop a setting. A Gateway newer than the
+ * live release upgrades it on the way, migrations first, as any
  * deploy of the gateway does; one older than it is refused (lib/gateway/apply.ts).
  *
  * Whether there is anything to do comes from the install row, never from
@@ -29,7 +30,7 @@ import {
 } from "./apply";
 import { readDesiredState, workerExistence, type DesiredState } from "./desiredState";
 import { readInstall, writeInstall, type InstallRecord } from "./install";
-import type { GatewayRelease } from "./release";
+import { refuseNewerThanCli, type GatewayRelease } from "./release";
 
 interface ReconcileGatewayOptions {
   cf: CfRunner;
@@ -38,9 +39,8 @@ interface ReconcileGatewayOptions {
   /** The gateway's D1 database. */
   databaseId: string;
   /**
-   * The release to deploy: the one this checkout builds (the build cache's,
-   * or a new build: lib/gateway/checkoutRelease.ts `openGatewayRelease`).
-   * Opened only when there is something to deploy.
+   * The release to deploy (lib/gateway/source.ts). Opened only when there
+   * is something to deploy.
    */
   openRelease: () => Promise<GatewayRelease>;
   interactive: boolean;
@@ -95,6 +95,7 @@ export async function reconcileGateway(
   // Before the lease: a build that misses the cache takes a minute or two.
   const release = await options.openRelease();
   try {
+    refuseNewerThanCli(release.manifest, options.cliVersion);
     const lease = await acquireGatewayLease(
       {
         db,

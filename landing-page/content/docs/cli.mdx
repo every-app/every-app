@@ -15,7 +15,7 @@ Run commands from your `every-app` folder as `pnpm everyapp <command>`. Add `--h
 
 ## The details
 
-- **`pnpm everyapp setup --domain apps.yourdomain.com`** installs the Gateway and opens a link to create your owner account. Run it again any time to upgrade or repair.
+- **`pnpm everyapp setup --domain apps.yourdomain.com`** installs the Gateway and opens a link to create your owner account. Run it again any time to upgrade or repair. It builds the Gateway from your `every-app` folder; `--release <file or URL>` installs a published release instead.
 - **`pnpm everyapp status`** shows your Gateway, your apps, and what to run if something is off.
 - **`pnpm everyapp create my-app`** copies the starter into `apps/my-app`. It doesn't touch Cloudflare.
 - **`pnpm dev`**, in the app folder, runs it at `http://my-app.localhost:8787`.

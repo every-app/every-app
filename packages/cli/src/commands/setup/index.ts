@@ -14,7 +14,12 @@ export async function setup(
       const result = await runSetup(
         flags,
         out,
-        setupDeps({ out, json: flags.json, verbose: flags.verbose }),
+        setupDeps({
+          out,
+          json: flags.json,
+          verbose: flags.verbose,
+          release: flags.release,
+        }),
       );
       const { gatewayUrl, organizationName, release } = result;
       const data = {

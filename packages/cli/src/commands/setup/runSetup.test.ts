@@ -9,17 +9,19 @@ import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readInstall } from "@/lib/gateway/install";
 import { markDeployed, register } from "@/lib/gateway/registry";
-import { openRelease } from "@/lib/gateway/release";
+import { openRelease, RELEASE_TARBALL } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
+import { gatewayReleaseSource } from "@/lib/gateway/source";
 import { cfD1Database } from "@/lib/cf/d1";
 import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { reportFailure } from "@/lib/output/report";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
+import { fakeGithubReleases } from "@/test/fakeGithub";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
-import { runSetup, type SetupDeps, type SetupFlags } from "./runSetup";
+import { runSetup, setupDeps, type SetupDeps, type SetupFlags } from "./runSetup";
 
 const GW = "apps.example.com";
 
@@ -289,7 +291,7 @@ describe("everyapp setup", () => {
   it("knows the Gateway is up to date from the install row's tree hash, without building", async () => {
     // Built from a checkout whose Gateway sources hash to "tree-1".
     const fromCheckout = {
-      openRelease: () => openRelease(tarball, { treeSha256: "tree-1", committedAt: null }),
+      openRelease: () => openRelease(tarball, { origin: { kind: "checkout" }, treeSha256: "tree-1", committedAt: null }),
       source: async () => ({ ...(await releaseSource(tarball)), treeSha256: "tree-1" }),
     };
     await setup({ domain: GW }, fromCheckout);
@@ -440,6 +442,105 @@ describe("everyapp setup", () => {
     const older = await releaseSource(tarball);
     await expect(readInstall(gatewayD1())).resolves.toMatchObject({
       releaseOrder: older.order,
+    });
+  });
+
+  describe("from a published release, with no checkout", () => {
+    /** The events a Gateway source emits, among the run's. */
+    const sink = () => createNdjsonSink((line) => events.push(JSON.parse(line)));
+    const fromSource = (source: { open: SetupDeps["openRelease"]; describe: SetupDeps["source"] }) => ({
+      openRelease: source.open,
+      source: source.describe,
+    });
+
+    it("installs the latest release of every-app/every-app, and says where it came from", async () => {
+      const github = fakeGithubReleases({
+        "every-app/every-app": [{ tag: "gateway-v0.2.0", assets: { [RELEASE_TARBALL]: tarball } }],
+      });
+      const source = gatewayReleaseSource({ out: sink(), checkoutRoot: () => null, fetch: github.fetch });
+
+      const { result, exitCode } = await setup({ domain: GW }, fromSource(source));
+
+      expect(exitCode).toBe(0);
+      expect(result).toMatchObject({ gateway: "installed", release: "0.2.0" });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          step: "gateway.release",
+          message: "Using Gateway 0.2.0 from every-app/every-app release gateway-v0.2.0.",
+        }),
+      );
+      // No checkout: no tree hash, ordered by the release's release.json.
+      await expect(readInstall(gatewayD1())).resolves.toMatchObject({
+        sourceTreeSha256: null,
+        releaseOrder: { committedAt: Date.parse("2026-10-12T00:00:00.000Z") },
+      });
+
+      // Run again, the same release is up to date, by its SHA-256.
+      events = [];
+      const again = await setup({}, fromSource(
+        gatewayReleaseSource({ out: sink(), checkoutRoot: () => null, fetch: github.fetch }),
+      ));
+      expect(again.exitCode).toBe(0);
+      expect(again.result).toMatchObject({ gateway: "up-to-date" });
+    });
+
+    it("installs --release <file>", async () => {
+      const deps = setupDeps({ out: sink(), json: true, release: tarball });
+
+      const { result, exitCode } = await setup(
+        { domain: GW, release: tarball },
+        { openRelease: deps.openRelease, source: deps.source },
+      );
+
+      expect(exitCode).toBe(0);
+      expect(result).toMatchObject({ gateway: "installed", release: "0.2.0" });
+      expect(events).toContainEqual(
+        expect.objectContaining({ step: "gateway.release", message: `Using Gateway 0.2.0 from ${tarball}.` }),
+      );
+      expect(account.deploys).toHaveLength(1);
+    });
+
+    it("refuses a release that needs a newer everyapp, before anything is deployed", async () => {
+      const needsNewer = await buildGatewayRelease({ version: "0.4.0", minCli: "0.4.0" });
+      const source = gatewayReleaseSource({ out: sink(), release: needsNewer, checkoutRoot: () => null });
+
+      const { exitCode } = await setup({ domain: GW, release: needsNewer }, fromSource(source));
+
+      expect(exitCode).toBe(1);
+      expect(events.at(-1)).toMatchObject({
+        type: "error",
+        code: "CLI_TOO_OLD",
+        message: expect.stringContaining(
+          "Gateway release 0.4.0 needs everyapp 0.4.0 or newer; this is 0.3.0. Update everyapp",
+        ),
+      });
+      expect(account.deploys).toHaveLength(0);
+    });
+
+    it("refuses a release older than the live Gateway, by its release.json", async () => {
+      const newer = await buildGatewayRelease({ builtAt: "2026-10-13T00:00:00.000Z" });
+      await setup(
+        { domain: GW, release: newer },
+        fromSource(gatewayReleaseSource({ out: sink(), release: newer, checkoutRoot: () => null })),
+      );
+      const deploys = account.deploys.length;
+      events = [];
+
+      const { exitCode } = await setup(
+        { release: tarball },
+        fromSource(gatewayReleaseSource({ out: sink(), release: tarball, checkoutRoot: () => null })),
+      );
+
+      expect(exitCode).toBe(1);
+      expect(events.at(-1)).toMatchObject({
+        type: "error",
+        code: "DOWNGRADE_REFUSED",
+        message: expect.stringContaining(
+          `The Gateway from ${tarball} (0.2.0 of 2026-10-12) is older than the one live at https://${GW} (0.2.0 of 2026-10-13). Pass --release a newer one, or run everyapp from a checkout at least as new`,
+        ),
+        data: { rerun: expect.stringContaining("--allow-downgrade"), authorize: true },
+      });
+      expect(account.deploys).toHaveLength(deploys);
     });
   });
 

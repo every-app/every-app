@@ -124,6 +124,7 @@ describe("stageRelease", () => {
     ]);
     expect(manifest).toEqual({
       schema: 1,
+      kind: "gateway",
       ...BUILD,
       buildOutputVersion: "v0",
       sha256: hashTree(stageDir),

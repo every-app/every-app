@@ -1,10 +1,10 @@
 /**
- * The Gateway's code comes from the checkout the CLI runs in: every Gateway
- * deploy, a rebind for an app's deploy or delete included, deploys a release
- * built from it (`openGatewayRelease` below: the SDK's build, then the
- * Gateway's `build:release`, one to two minutes). So that a rebind after
- * the first build takes
- * seconds, the built tarball is kept under the checkout's gitignored
+ * When everyapp runs from a checkout (and `setup` has no --release:
+ * ./source.ts), every Gateway deploy, a rebind for an app's deploy or
+ * delete included, deploys a release built from it
+ * (`openCheckoutGatewayRelease` below: the SDK's build, then the Gateway's
+ * `build:release`, one to two minutes). So that a rebind after the first
+ * build takes seconds, the built tarball is kept under the checkout's gitignored
  * `node_modules/.cache/everyapp/<tree>.tar.gz`, keyed by the tree hash of
  * every source the release is built from: the Gateway, the SDK, perimeter
  * and toolbus (which it bundles), and the workspace settings their
@@ -21,7 +21,6 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { checkoutRoot } from "@/lib/checkout";
 import { runLogged } from "@/lib/childLog";
 import type { EventSink } from "@/lib/output/events";
 import {
@@ -115,6 +114,7 @@ export async function checkoutSource(root: string): Promise<CheckoutSource> {
   ]);
   return {
     treeSha256,
+    origin: { kind: "checkout" },
     version: String((pkg as { version?: unknown }).version ?? "unknown"),
     order: {
       schema: newestMigration((journal as { entries?: Array<{ when: number }> }).entries ?? []),
@@ -146,7 +146,7 @@ export async function openCheckoutRelease({
   ]);
   const cacheDir = releaseCacheDir(root);
   const cached = tree ? path.join(cacheDir, `${tree}.tar.gz`) : null;
-  const source = { treeSha256: tree, committedAt };
+  const source = { origin: { kind: "checkout" } as const, treeSha256: tree, committedAt };
 
   if (cached && (await exists(cached))) {
     try {
@@ -173,6 +173,7 @@ export async function openCheckoutRelease({
     await store(tarball, cached, keep);
   }
   const release = await openRelease(tarball, {
+    origin: { kind: "checkout" },
     treeSha256: cached && (await exists(cached)) ? tree : null,
     committedAt,
   });
@@ -218,20 +219,19 @@ async function exists(file: string): Promise<boolean> {
 }
 
 /**
- * The Gateway release to deploy: the one this checkout builds, from the
- * build cache when its sources haven't changed since. Nothing is published
- * while we work from the repository, so there is no other release to
- * deploy.
+ * The Gateway release the checkout at `root` builds, from the build cache
+ * when its sources haven't changed since.
  */
-export function openGatewayRelease({
+export function openCheckoutGatewayRelease({
+  root,
   out,
   verbose,
 }: {
+  root: string;
   out: EventSink;
   /** Stream the build's output to stderr too. */
   verbose?: boolean;
 }): Promise<GatewayRelease> {
-  const root = checkoutRoot();
   return openCheckoutRelease({
     root,
     out,
@@ -240,7 +240,7 @@ export function openGatewayRelease({
 }
 
 /**
- * The only source of the Gateway's code: the SDK's build, then the
+ * A Gateway release from the checkout: the SDK's build, then the
  * Gateway's `build:release`. Their output goes to a log file
  * (lib/childLog.ts).
  */

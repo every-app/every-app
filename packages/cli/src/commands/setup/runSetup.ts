@@ -21,13 +21,15 @@
  *    domain      where the gateway lives: --domain, the install row's (also
  *                one an install wrote before it stopped), or a zone picked
  *                at the terminal (apps.<zone>)
- *    gateway     installed, or upgraded to the release this checkout builds;
- *                when it runs that release already (told by the install
- *                row's tree hash, before anything is built), repaired:
+ *    gateway     installed, or upgraded to the release --release names,
+ *                this checkout builds, or without a checkout, the latest
+ *                published one (lib/gateway/source.ts); when it runs that
+ *                release already (told by the install row's tree hash
+ *                before anything is built, or the release's SHA-256), repaired:
  *                redeployed only if it doesn't bind and publish exactly the
  *                apps its registry lists, or serves a version the row
  *                doesn't name (lib/gateway/reconcile.ts), or --redeploy. A
- *                checkout behind the live one is refused (git pull), unless
+ *                Gateway behind the live one is refused (git pull), unless
  *                --allow-downgrade
  *    owner       a one-time setup link, opened in the browser (never put
  *                into a CI log), and the wait for the claim, read from the
@@ -51,7 +53,6 @@ import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { hasWorkersPaid } from "@/lib/cf/plan";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
-import { checkoutRoot } from "@/lib/checkout";
 import { waitForCertificates } from "@/lib/domains/certWait";
 import { normalizeHostname } from "@/lib/domains/hostnames";
 import {
@@ -66,17 +67,13 @@ import {
   downgradeRefused,
   isLiveRelease,
   olderThanInstalled,
+  type CandidateRelease,
 } from "@/lib/gateway/apply";
-import {
-  checkoutSource,
-  openGatewayRelease,
-  type CheckoutSource,
-} from "@/lib/gateway/checkoutRelease";
 import { discoverGateway, type Discovery } from "@/lib/gateway/discover";
 import type { InstallRecord } from "@/lib/gateway/install";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { reconcileGateway, registryDrift } from "@/lib/gateway/reconcile";
-import { compareVersions, type GatewayRelease } from "@/lib/gateway/release";
+import { refuseNewerThanCli, type GatewayRelease } from "@/lib/gateway/release";
 import {
   maySetupLinkBeShown,
   mintSetupLink,
@@ -85,6 +82,7 @@ import {
   waitForSetupLink,
   type GatewayOwner,
 } from "@/lib/gateway/setup-link";
+import { gatewayReleaseSource } from "@/lib/gateway/source";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { handTerminalOver } from "@/lib/output/terminal";
@@ -92,6 +90,8 @@ import { deployGatewayRelease, gatewayTarget } from "./deployGateway";
 
 export interface SetupFlags {
   domain?: string;
+  /** The Gateway release to deploy: a GitHub repository, a tarball's URL, or a file. */
+  release?: string;
   /** What a new Gateway is: self_hosted (the default) or hosted. */
   mode?: DeploymentMode;
   "account-id"?: string;
@@ -118,10 +118,10 @@ interface SetupPrompts {
 /** Everything setup reaches outside itself; tests swap in fakes. */
 export interface SetupDeps {
   createCf: (accountId?: string) => CfRunner;
-  /** The release this checkout builds (the build cache's, or a new build). */
+  /** The release to deploy (lib/gateway/source.ts). */
   openRelease: () => Promise<GatewayRelease>;
-  /** What this checkout's Gateway is, without building it. */
-  source: () => Promise<CheckoutSource>;
+  /** What that release is, without building it from a checkout. */
+  source: () => Promise<CandidateRelease>;
   /** A person is at this terminal, and this isn't a --json run. */
   interactive: boolean;
   prompts: SetupPrompts;
@@ -165,15 +165,19 @@ export function setupDeps({
   out,
   json,
   verbose,
+  release,
 }: {
   out: EventSink;
   json?: boolean;
   verbose?: boolean;
+  /** --release */
+  release?: string;
 }): SetupDeps {
+  const gateway = gatewayReleaseSource({ release, out, verbose });
   return {
     createCf: (accountId) => createCfRunner({ accountId }),
-    openRelease: () => openGatewayRelease({ out, verbose }),
-    source: () => checkoutSource(checkoutRoot()),
+    openRelease: gateway.open,
+    source: gateway.describe,
     interactive: canPromptInTerminal(json ?? false),
     prompts: terminalPrompts,
     openBrowser: openInBrowser,
@@ -387,11 +391,11 @@ async function pickDomain(
 }
 
 /**
- * The gateway the checkout builds, live: installed, upgraded, or when it
- * already runs these sources (told by the install row's tree hash, before
- * anything is built) or this very release, repaired if its bindings or
- * hostnames aren't the registry's. A checkout behind the live release is
- * refused (`git pull`), unless --allow-downgrade.
+ * The Gateway this run deploys (lib/gateway/source.ts), live: installed,
+ * upgraded, or when it already runs these sources (told by the install
+ * row's tree hash, before anything is built) or this very release,
+ * repaired if its bindings or hostnames aren't the registry's. A Gateway
+ * behind the live release is refused, unless --allow-downgrade.
  */
 async function deployOrRepairGateway({
   cf,
@@ -430,7 +434,10 @@ async function deployOrRepairGateway({
   if (live && databaseId) {
     // Before building: a minute or two, for nothing, on a fresh machine.
     const source = await deps.source();
-    if (source.treeSha256 && source.treeSha256 === live.sourceTreeSha256) {
+    if (
+      (source.treeSha256 && source.treeSha256 === live.sourceTreeSha256) ||
+      (source.sha256 && source.sha256 === live.releaseSha256)
+    ) {
       return repair(deps.openRelease);
     }
     if (!allowDowngrade && olderThanInstalled(source, live)) {
@@ -441,12 +448,7 @@ async function deployOrRepairGateway({
   const release = await deps.openRelease();
   try {
     const manifest = release.manifest;
-    if (compareVersions(manifest.minCli, deps.cliVersion) > 0) {
-      throw new EveryAppError(
-        "CLI_TOO_OLD",
-        `Gateway release ${manifest.version} needs everyapp ${manifest.minCli} or newer; this is ${deps.cliVersion}.`,
-      );
-    }
+    refuseNewerThanCli(manifest, deps.cliVersion);
     if (live && databaseId) {
       if (isLiveRelease(release, live)) return await repair(async () => release);
       if (!allowDowngrade && olderThanInstalled(candidate(release), live)) {
@@ -518,7 +520,7 @@ function assertModeUnchanged(
 }
 
 /**
- * A Gateway that runs this checkout's release: left alone when it binds and
+ * A Gateway that runs the release this run deploys: left alone when it binds and
  * publishes exactly the apps its registry lists and serves the version its
  * install row names; otherwise (or with --redeploy) redeployed with them.
  */
@@ -550,7 +552,7 @@ async function repairGateway({
       type: "step",
       step: "setup.gateway",
       status: "skip",
-      message: `Gateway ${release} at ${gatewayUrl} is up to date: built from these sources, binding the ${desired.appWorkers.length} app${desired.appWorkers.length === 1 ? "" : "s"} its registry lists.`,
+      message: `Gateway ${release} at ${gatewayUrl} is up to date: the release this run deploys, binding the ${desired.appWorkers.length} app${desired.appWorkers.length === 1 ? "" : "s"} its registry lists.`,
       data: { release, gatewayUrl, upToDate: true },
     });
     return { db, release, outcome: "up-to-date" };

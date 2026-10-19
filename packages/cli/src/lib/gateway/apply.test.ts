@@ -436,8 +436,9 @@ describe("applyGateway", () => {
       );
       expect(refused).toMatchObject({
         code: "DOWNGRADE_REFUSED",
-        message: expect.stringContaining(
-          "This checkout's Gateway (0.2.0 of 2026-10-12) is older than the one live at https://example.com (0.2.0 of 2026-10-13). Run git pull, then: pnpm everyapp",
+        // A release opened from a file, not a checkout's build.
+        message: expect.stringMatching(
+          /^The Gateway from \/.+\.tar\.gz \(0\.2\.0 of 2026-10-12\) is older than the one live at https:\/\/example\.com \(0\.2\.0 of 2026-10-13\)\. Run everyapp from a checkout at least as new, then: pnpm everyapp/,
         ),
         authorize: false,
       });
@@ -965,7 +966,7 @@ describe("reconcileGateway", () => {
 
     await reconcile({
       force: true,
-      openRelease: () => openRelease(rebuilt, { treeSha256: "tree-1", committedAt: null }),
+      openRelease: () => openRelease(rebuilt, { origin: { kind: "checkout" }, treeSha256: "tree-1", committedAt: null }),
     });
 
     // A rebind, not an upgrade: nothing migrated, nothing asked.

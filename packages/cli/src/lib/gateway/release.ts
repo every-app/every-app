@@ -1,8 +1,9 @@
 /**
  * Gateway releases: the prebuilt Build Output, migrations and release.json
- * that apps/every-app-gateway/scripts/build-release.ts packs. The CLI only
- * deploys one built from the checkout it runs in (./checkoutRelease.ts),
- * and checks its SHA-256 before using it.
+ * that apps/every-app-gateway/scripts/build-release.ts packs. One comes
+ * from the checkout the CLI runs in (./checkoutRelease.ts), a GitHub
+ * release, a URL or a file (./source.ts); either way the CLI checks its
+ * SHA-256 before using it.
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -15,6 +16,12 @@ import { onInterrupt } from "@/lib/interrupt";
 import { EveryAppError } from "@/lib/errors";
 
 export const RELEASE_TARBALL = "every-app-gateway-release.tar.gz";
+/**
+ * Where a CLI with no checkout takes the Gateway from: the latest release
+ * of this repository with a {@link RELEASE_TARBALL} asset
+ * (.github/workflows/release.yml publishes them).
+ */
+export const GATEWAY_RELEASE_REPO = "https://github.com/every-app/every-app";
 const SUPPORTED_BUILD_OUTPUT = "v0";
 /**
  * All a release holds at its top level. cf deploys from a copy of it, so
@@ -24,9 +31,13 @@ const RELEASE_ENTRIES = new Set([".cloudflare", "drizzle", "release.json"]);
 
 const ReleaseManifestSchema = z.looseObject({
   schema: z.literal(1),
+  /** What the release deploys; a Gateway when absent. */
+  kind: z.string().optional(),
   version: z.string(),
   gitSha: z.string(),
   builtAt: z.string(),
+  /** When the Gateway's sources were last committed (ISO), if git said. */
+  committedAt: z.string().optional(),
   cfVersion: z.string(),
   pluginVersion: z.string(),
   configVersion: z.string(),
@@ -48,15 +59,37 @@ export interface GatewayRelease {
   cleanup(): Promise<void>;
 }
 
-/** The checkout a release was built from, as far as the CLI knows it. */
+/** Where a release came from, as setup and the downgrade guard say it. */
+export type ReleaseOrigin =
+  | { kind: "checkout" }
+  | { kind: "github"; repo: string; tag: string }
+  | { kind: "url"; url: string }
+  | { kind: "file"; path: string };
+
+/** What a release was built from, as far as the CLI knows it. */
 export interface ReleaseSource {
   /**
    * `hashCheckoutTree` of the Gateway's sources it was built from; null
-   * for a release that didn't come from this checkout (tests).
+   * for a release that didn't come from this checkout.
    */
   treeSha256: string | null;
   /** Where it sits in the Gateway's history. */
   order: ReleaseOrder;
+  origin: ReleaseOrigin;
+}
+
+/** "this checkout", "every-app/every-app release gateway-v0.3.0", a URL or a path. */
+export function describeOrigin(origin: ReleaseOrigin): string {
+  switch (origin.kind) {
+    case "checkout":
+      return "this checkout";
+    case "github":
+      return `${origin.repo} release ${origin.tag}`;
+    case "url":
+      return origin.url;
+    case "file":
+      return origin.path;
+  }
 }
 
 /**
@@ -122,11 +155,15 @@ function extractTarGz(tarball: string, dir: string): Promise<void> {
  */
 export async function openRelease(
   tarball: string,
-  /** What the checkout says of it; without, its build time orders it. */
-  checkout: { treeSha256: string | null; committedAt: number | null } = {
-    treeSha256: null,
-    committedAt: null,
-  },
+  /**
+   * Where it came from (the file itself, unless said), and what a checkout
+   * says of it; without one, release.json orders it.
+   */
+  from: {
+    origin: ReleaseOrigin;
+    treeSha256?: string | null;
+    committedAt?: number | null;
+  } = { origin: { kind: "file", path: tarball } },
 ): Promise<GatewayRelease> {
   const dir = await makeCfTempDir("gateway-release-");
   const forget = onInterrupt({
@@ -157,6 +194,12 @@ export async function openRelease(
       );
     }
     const manifest = parsed.data;
+    if ((manifest.kind ?? "gateway") !== "gateway") {
+      throw new EveryAppError(
+        "RELEASE_INVALID",
+        `${tarball} is ${manifest.kind === "app" ? "an app" : `a ${manifest.kind}`} release, not a Gateway release.`,
+      );
+    }
     if (manifest.buildOutputVersion !== SUPPORTED_BUILD_OUTPUT) {
       throw new EveryAppError(
         "RELEASE_UNSUPPORTED",
@@ -172,8 +215,9 @@ export async function openRelease(
     }
     const order = releaseOrder(manifest);
     const source = {
-      treeSha256: checkout.treeSha256,
-      order: { ...order, committedAt: checkout.committedAt ?? order.committedAt },
+      treeSha256: from.treeSha256 ?? null,
+      order: { ...order, committedAt: from.committedAt ?? order.committedAt },
+      origin: from.origin,
     };
     return { dir, tarball, manifest, source, cleanup };
   } catch (error) {
@@ -202,20 +246,38 @@ export interface ReleaseOrder {
   /** `when` of the newest migration in the release's journal. */
   schema: number;
   /**
-   * When the Gateway's sources were last committed, ms since the epoch;
-   * the build time for a release that came without its checkout.
+   * When the Gateway's sources were last committed, ms since the epoch:
+   * the checkout's, or for a release without one, its release.json's (the
+   * build time, from a builder that couldn't ask git).
    */
   committedAt: number;
 }
 
-/** A release's order from its manifest alone: by build time. */
+/** A release's order from its manifest alone. */
 function releaseOrder(
-  manifest: Pick<ReleaseManifest, "migrations" | "builtAt">,
+  manifest: Pick<ReleaseManifest, "migrations" | "builtAt" | "committedAt">,
 ): ReleaseOrder {
   return {
     schema: newestMigration(manifest.migrations),
-    committedAt: Date.parse(manifest.builtAt) || 0,
+    committedAt:
+      Date.parse(manifest.committedAt ?? "") || Date.parse(manifest.builtAt) || 0,
   };
+}
+
+/**
+ * A release that needs a newer everyapp than this one to deploy it is
+ * refused before anything changes.
+ */
+export function refuseNewerThanCli(
+  manifest: Pick<ReleaseManifest, "version" | "minCli">,
+  cliVersion: string,
+): void {
+  if (compareVersions(manifest.minCli, cliVersion) > 0) {
+    throw new EveryAppError(
+      "CLI_TOO_OLD",
+      `Gateway release ${manifest.version} needs everyapp ${manifest.minCli} or newer; this is ${cliVersion}. Update everyapp (in a checkout: git pull), then run the same command again.`,
+    );
+  }
 }
 
 /** `when` of the newest migration in a drizzle journal. */

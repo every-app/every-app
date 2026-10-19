@@ -118,7 +118,7 @@ async function found(cloudflare = account) {
 }
 
 /** This checkout's Gateway, as status reads it; a test can change it. */
-let checkout: () => Promise<CheckoutSource>;
+let checkout: (() => Promise<CheckoutSource>) | null;
 
 async function status() {
   events = [];
@@ -307,6 +307,12 @@ describe("everyapp status", () => {
     const unknown = await at(null);
     expect(unknown["data"]["upToDate"]).toBeNull();
     expect(checkoutFixes(unknown)).toEqual([]);
+
+    // Nor without a checkout (a CLI installed from npm): nothing to compare.
+    checkout = null;
+    const published = await status();
+    expect(published["data"]).toMatchObject({ upToDate: null, checkout: null });
+    expect(checkoutFixes(published)).toEqual([]);
   });
 
   it("logs in through cf's device link under --json, and waits for it", async () => {

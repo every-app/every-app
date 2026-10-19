@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { compareVersions, hashReleaseTree, openRelease } from "./release";
+import { compareVersions, hashReleaseTree, openRelease, refuseNewerThanCli } from "./release";
 
 // The gateway's own release builder, loaded by path: it is another package.
 const BUILDER = "../../../../../apps/every-app-gateway/scripts/build-release.ts";
@@ -129,11 +129,73 @@ describe("openRelease", () => {
     });
   });
 
+  it("refuses a release of something other than the Gateway, and reads one that doesn't say as the Gateway", async () => {
+    const rewrite = (change: (manifest: Record<string, unknown>) => void) =>
+      repack((dir) => {
+        const file = path.join(dir, "release.json");
+        const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+        change(manifest);
+        fs.writeFileSync(file, JSON.stringify(manifest));
+      });
+    rewrite((manifest) => {
+      manifest["kind"] = "app";
+    });
+    await expect(openRelease(tarball)).rejects.toMatchObject({
+      code: "RELEASE_INVALID",
+      message: expect.stringContaining("is an app release, not a Gateway release"),
+    });
+
+    rewrite((manifest) => {
+      delete manifest["kind"];
+    });
+    const release = await openRelease(tarball);
+    await release.cleanup();
+    expect(release.manifest.kind).toBeUndefined();
+  });
+
+  it("orders a release without a checkout by when its sources were committed, else when it was built", async () => {
+    const built = await openRelease(tarball);
+    await built.cleanup();
+    expect(built.source).toEqual({
+      treeSha256: null,
+      order: { schema: 1000, committedAt: Date.parse("2026-10-12T00:00:00.000Z") },
+      origin: { kind: "file", path: tarball },
+    });
+
+    repack((dir) => {
+      const file = path.join(dir, "release.json");
+      const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+      fs.writeFileSync(file, JSON.stringify({ ...manifest, committedAt: "2026-10-01T00:00:00.000Z" }));
+    });
+    const committed = await openRelease(tarball, {
+      origin: { kind: "github", repo: "every-app/every-app", tag: "gateway-v0.2.0" },
+    });
+    await committed.cleanup();
+    expect(committed.source.order.committedAt).toBe(Date.parse("2026-10-01T00:00:00.000Z"));
+    expect(committed.source.origin).toEqual({
+      kind: "github",
+      repo: "every-app/every-app",
+      tag: "gateway-v0.2.0",
+    });
+  });
+
   it("refuses a tarball that isn't a release", async () => {
     repack((dir) => fs.rmSync(path.join(dir, "release.json")));
     await expect(openRelease(tarball)).rejects.toMatchObject({
       code: "RELEASE_INVALID",
     });
+  });
+});
+
+describe("refuseNewerThanCli", () => {
+  it("refuses a release that needs a newer everyapp, and says to update it", () => {
+    expect(() => refuseNewerThanCli({ version: "0.4.0", minCli: "0.3.0" }, "0.3.0")).not.toThrow();
+    expect(() => refuseNewerThanCli({ version: "0.4.0", minCli: "0.4.0" }, "0.3.0")).toThrow(
+      expect.objectContaining({
+        code: "CLI_TOO_OLD",
+        message: expect.stringContaining("needs everyapp 0.4.0 or newer; this is 0.3.0. Update everyapp"),
+      }),
+    );
   });
 });
 

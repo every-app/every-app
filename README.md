@@ -125,7 +125,7 @@ Log in to the Gateway's Cloudflare account there (`npx cf auth login`, or the fi
 
 ### Upgrading your Gateway
 
-The Gateway is built from this checkout, so upgrading it is `git pull` then `everyapp setup`, keeping its data, users and apps. Deploying a new app does it too, since that redeploys the Gateway from the same checkout. The build is kept under `node_modules/.cache/everyapp` by the tree hash of the Gateway's sources (and the SDK, perimeter and toolbus it bundles), so it only happens again after they change. A checkout behind the live Gateway is refused with "run git pull"; `everyapp status` says whether the live Gateway was built from your checkout's sources, and what to run when something is off.
+The Gateway is built from this checkout, so upgrading it is `git pull` then `everyapp setup`, keeping its data, users and apps. Deploying a new app does it too, since that redeploys the Gateway from the same checkout. The build is kept under `node_modules/.cache/everyapp` by the tree hash of the Gateway's sources (and the SDK, perimeter and toolbus it bundles), so it only happens again after they change. A checkout behind the live Gateway is refused with "run git pull"; `everyapp status` says whether the live Gateway was built from your checkout's sources, and what to run when something is off. `everyapp setup --release <file|url>` installs a published Gateway release instead, and a CLI with no checkout takes the latest release of `every-app/every-app` (.github/RELEASE.md).
 
 ## Deploy an Example App
 

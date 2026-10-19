@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { checkoutRoot, isInCheckout } from "./checkout";
+import { checkoutRoot, findCheckoutRoot, isInCheckout } from "./checkout";
 
 describe("the checkout this CLI runs from", () => {
   it("is found up from the CLI's own files", () => {
@@ -14,6 +14,7 @@ describe("the checkout this CLI runs from", () => {
 
   it("says so when the CLI isn't in one", () => {
     const outside = pathToFileURL(path.join(os.tmpdir(), "everyapp", "dist", "index.js")).href;
+    expect(findCheckoutRoot(outside)).toBeNull();
     expect(() => checkoutRoot(outside)).toThrow(expect.objectContaining({ code: "CHECKOUT_MISSING" }));
   });
 
