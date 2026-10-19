@@ -76,8 +76,10 @@ import { UserPatService } from "@/server/services/UserPatService";
 import { deployLiveApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import {
+  claimCatalogSync,
   clearCatalogSyncClaimsForTests,
   syncAppTools,
+  syncCatalogsWithin,
   type SyncableApp,
 } from "./catalog-sync";
 import { resetAppHostMcpForTests, serveAppHostMcp } from "./app-host-mcp";
@@ -372,7 +374,10 @@ async function deployLive(
   return app.id;
 }
 
-beforeAll(() => {
+beforeAll(async () => {
+  // The first sync pays for loading the ToolBus; no test should pay it
+  // against a budget.
+  await import("@every-app/toolbus");
   const pair = generateKeyPairSync("rsa", {
     modulusLength: 2048,
     publicKeyEncoding: { type: "spki", format: "pem" },
@@ -529,6 +534,87 @@ describe("catalog sync", () => {
     );
     expect(await db.select().from(appToolCatalogs)).toEqual([]);
     expect(await db.select().from(appTools)).toEqual([]);
+  });
+
+  it("syncs several apps at once within a budget, and finishes a slow one after it", async () => {
+    // A second app whose catalog answers only once the test lets it.
+    const notesRowId = await deployLive("notes", {
+      id: "notes",
+      name: "Notes",
+    });
+    const [notesRow] = await db
+      .select()
+      .from(apps)
+      .where(eq(apps.id, notesRowId));
+    const notesWorker = everyApp(
+      async () => new Response("notes app page"),
+      { id: "notes" },
+      {
+        publicKeys: [keys.publicKeyPem],
+        issuer: "https://gateway.example.com",
+        tools: defineTools({
+          list_notes: {
+            description: "List notes.",
+            risk: "read",
+            input: objectInput<Record<string, never>>({}, []),
+            handler: () => ({ notes: [] }),
+          },
+        }),
+      },
+    );
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const notesRequests: Request[] = [];
+    hoisted.env[`APP__${notesRow!.workerName}`] = {
+      fetch: async (request: Request) => {
+        notesRequests.push(request);
+        await released;
+        return notesWorker.fetch(
+          request,
+          { EVERYAPP_AUDIENCE: notesRow!.workerName },
+          { waitUntil: () => undefined } as unknown as ExecutionContext,
+        );
+      },
+    };
+    const notes: SyncableApp = {
+      rowId: notesRowId,
+      organizationId,
+      appSlug: "notes",
+      hostname: notesRow!.hostname!,
+      workerName: notesRow!.workerName!,
+      tier: "service_binding",
+      versionId: notesRow!.versionId,
+    };
+
+    const statuses = await syncCatalogsWithin(
+      [syncable(), notes],
+      250,
+      "consent",
+    );
+    expect([...statuses]).toEqual([[appRowId, "ok"]]);
+    expect(notesRequests).toHaveLength(1);
+    expect(hoisted.waitUntil).toHaveBeenCalledTimes(1);
+    expect(await db.select().from(appToolCatalogs)).toHaveLength(1);
+
+    release();
+    await Promise.all(hoisted.waitUntil.mock.calls.map(([task]) => task));
+    const rows = await db.select().from(appToolCatalogs);
+    expect(rows.map((row) => [row.appRowId, row.status]).sort()).toEqual(
+      [
+        [appRowId, "ok"],
+        [notesRowId, "ok"],
+      ].sort(),
+    );
+  });
+
+  it("skips an app another request claimed moments ago", async () => {
+    expect(claimCatalogSync(appRowId)).toBe(true);
+    const statuses = await syncCatalogsWithin([syncable()], 250, "first_use");
+    expect(statuses.size).toBe(0);
+    expect(appRequests).toHaveLength(0);
+    expect(hoisted.waitUntil).not.toHaveBeenCalled();
   });
 });
 

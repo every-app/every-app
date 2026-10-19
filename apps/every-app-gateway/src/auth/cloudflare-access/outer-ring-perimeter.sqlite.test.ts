@@ -138,6 +138,11 @@ beforeEach(async () => {
   });
   hoisted.env[`APP__${todo.workerName}`] = {
     fetch: async (request: Request) => {
+      // The gateway's own catalog fetch, with its system token: not a
+      // visitor's request, so not what the app "received" here.
+      if (new URL(request.url).pathname === "/__everyapp/tools/list") {
+        return new Response("not found", { status: 404 });
+      }
       received.push(Object.fromEntries(request.headers));
       return new Response("todo app", {
         headers: { "content-type": "text/plain" },

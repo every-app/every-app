@@ -479,10 +479,14 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   the read-only built-ins `everyapp_whoami` and `everyapp_list_apps`), and
   each app host's `/mcp`, for that app alone under its tools' own names.
   Both are served by the gateway's ToolBus from the tool catalogs it
-  snapshots in D1 on first use and again once an app runs a new version
+  snapshots in D1 when an app is activated, when a hosted deploy goes live,
+  when the app's host sees it run a new version, when the consent page
+  shows an app without one, and within a `/mcp` request that finds none
   (apps declare them with `defineTools()`).
-  Listing tools never calls an app; each tool call is one call over the
-  app's service binding.
+  Listing tools serves those snapshots; the gateway calls an app only to
+  take one it lacks (at most 20 apps within a request, for 3 s, with the
+  one-minute system token that opens nothing but the catalog). Each tool
+  call is one call over the app's service binding.
 - The gateway's `/mcp` takes an OAuth access token issued by the gateway
   (see below) or a personal access token, never a cookie. It serves the
   active apps of the caller's organization they have access to, narrowed to

@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   serveAppHostMcp: vi.fn(),
   runMcpMaintenance: vi.fn(),
   activateApp: vi.fn(),
+  followAppVersion: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({
@@ -57,6 +58,7 @@ vi.mock("./server/toolbus/app-host-mcp", () => ({
 
 vi.mock("./server/app-activation", () => ({
   activateApp: mocks.activateApp,
+  followAppVersion: mocks.followAppVersion,
 }));
 
 vi.mock("./perimeter/betterAuthAuthenticator", () => ({
@@ -848,6 +850,7 @@ describe("activating an app on its first request", () => {
     mocks.findByHostname.mockReset();
     mocks.findByHostname.mockResolvedValue(BINDING_TODO);
     mocks.activateApp.mockReset();
+    mocks.followAppVersion.mockReset();
     mocks.authenticate.mockReset();
     mocks.authenticate.mockResolvedValue({
       sub: "user-1",
@@ -872,12 +875,16 @@ describe("activating an app on its first request", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("todo page");
     expect(mocks.activateApp).toHaveBeenCalledWith(mocks.env, BINDING_TODO);
+    // Every app-host request offers the resolved app to the version check.
+    expect(mocks.followAppVersion).toHaveBeenCalledWith(BINDING_TODO);
 
     // The cached row said binding; the next request looks it up afresh.
-    mocks.findByHostname.mockResolvedValue({ ...TODO, rowId: "row-1" });
+    const active = { ...TODO, rowId: "row-1" };
+    mocks.findByHostname.mockResolvedValue(active);
     await appRequest();
     expect(mocks.findByHostname).toHaveBeenCalledTimes(2);
     expect(mocks.activateApp).toHaveBeenCalledTimes(1);
+    expect(mocks.followAppVersion).toHaveBeenLastCalledWith(active);
   });
 
   it("answers deploying, with Retry-After, while the binding isn't reachable", async () => {

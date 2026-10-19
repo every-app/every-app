@@ -5,6 +5,8 @@
  * bundle its own way; from there a deploy is the same: the manifest under
  * the hosted policy, the registration, one job at a time per app, and the
  * pipeline (./pipeline.ts) inside the request and `waitUntil` after it.
+ * A deploy that went live takes the new version's tool snapshot, since
+ * only here does the gateway itself learn of a new `apps.version_id`.
  */
 import { env, waitUntil } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
@@ -17,6 +19,7 @@ import type { AppRow } from "@every-app/perimeter/registry";
 import { appBaseDomain, thirdPartyDomain } from "@/server/app-hosts";
 import { platformPolicy } from "@/server/platform-policy";
 import { AppRepository } from "@/server/repositories/AppRepository";
+import { scheduleCatalogResync } from "@/server/toolbus/catalog-sync";
 import {
   DeployJobRepository,
   type DeployJob,
@@ -262,7 +265,23 @@ export async function startDeploy(input: StartDeployInput): Promise<string> {
     limits,
     actor: input.actor,
   }).then(
-    () => finishJob(job.id, { status: "succeeded" }, fields),
+    (deployed) => {
+      if (deployed.hostname && deployed.workerName) {
+        scheduleCatalogResync(
+          {
+            rowId: deployed.id,
+            organizationId: deployed.organizationId,
+            appSlug: deployed.appSlug,
+            hostname: deployed.hostname,
+            workerName: deployed.workerName,
+            tier: deployed.tier,
+            versionId: deployed.versionId,
+          },
+          "new_version",
+        );
+      }
+      return finishJob(job.id, { status: "succeeded" }, fields);
+    },
     (error: unknown) => {
       // Only the job records this error; the request answers with the job.
       if (!(error instanceof DeployError)) {

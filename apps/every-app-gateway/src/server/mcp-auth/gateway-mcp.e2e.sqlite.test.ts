@@ -102,10 +102,11 @@ import {
   rateLimitCounters,
   users,
 } from "@/db/schema";
-import server from "@/server";
+import server, { clearHostnameCacheForTests } from "@/server";
 import { AdminService } from "@/server/services/AdminService";
 import { AppAccessService } from "@/server/services/AppAccessService";
 import { AppService } from "@/server/services/AppService";
+import { AppToolRepository } from "@/server/repositories/AppToolRepository";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
 import { McpToolCallRepository } from "@/server/repositories/McpToolCallRepository";
 import { McpConnectionService } from "@/server/services/McpConnectionService";
@@ -117,7 +118,7 @@ import {
 } from "@/server/toolbus/catalog-sync";
 import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
 import { createKvFake } from "@/test/kv-fake";
-import { deployLiveApp } from "@/test/registry";
+import { deployLiveApp, markAppDeployed, registerApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
 import { getMcpAuth } from "./config";
 import { buildConsentContext, type ConsentContext } from "./consent";
@@ -163,7 +164,7 @@ function objectInput<T>(
 
 const seen: EveryAppUser[] = [];
 
-function todoApp(publicKeyPem: string) {
+function todoApp(publicKeyPem: string, extraTool = false) {
   return everyApp(
     async () => new Response("todo page"),
     { id: "todo" },
@@ -197,7 +198,49 @@ function todoApp(publicKeyPem: string) {
           input: objectInput(),
           handler: () => "deleted",
         },
+        ...(extraTool
+          ? {
+              archive_todos: {
+                description: "Archive completed todos.",
+                risk: "write" as const,
+                input: objectInput(),
+                handler: () => "archived",
+              },
+            }
+          : {}),
       }),
+    },
+  );
+}
+
+/** Another app with one read tool, `ping`, deployed beside the two above. */
+function pingApp(id: string, publicKeyPem: string) {
+  return everyApp(
+    async () => new Response(`${id} page`),
+    { id },
+    {
+      publicKeys: [publicKeyPem],
+      issuer: GATEWAY,
+      tools: defineTools({
+        ping: {
+          description: "Ping.",
+          risk: "read",
+          input: objectInput(),
+          handler: () => "pong",
+        },
+      }),
+    },
+  );
+}
+
+/** An app on the SDK that declares no tools. */
+function blankApp(publicKeyPem: string) {
+  return everyApp(
+    async () => new Response("blank page"),
+    { id: "blank" },
+    {
+      publicKeys: [publicKeyPem],
+      issuer: GATEWAY,
     },
   );
 }
@@ -235,7 +278,12 @@ let ownerId: string;
 let memberId: string;
 let todoRowId: string;
 let notesRowId: string;
+let todoHost: string;
+let todoBinding: string;
+let notesBinding: string;
 const env = hoisted.env as unknown as Cloudflare.Env;
+/** The requests each app's binding received since it was bound. */
+const appRequests = new Map<string, Request[]>();
 
 /** Everything the requests scheduled after their responses. */
 async function settle(): Promise<void> {
@@ -476,14 +524,19 @@ function mcp(
   });
 }
 
-async function toolNames(token: string): Promise<string[]> {
-  const response = await mcp(token, "tools/list");
+/** The tool names a tools/list answered with. */
+async function listedNames(response: Response): Promise<string[]> {
   expect(response.status).toBe(200);
   const body = (await response.json()) as {
     result: { tools: { name: string }[] };
   };
-  await settle();
   return body.result.tools.map((tool) => tool.name);
+}
+
+async function toolNames(token: string): Promise<string[]> {
+  const names = await listedNames(await mcp(token, "tools/list"));
+  await settle();
+  return names;
 }
 
 async function callTool(
@@ -502,16 +555,111 @@ async function callTool(
   };
 }
 
-function bindApp(binding: string, app: ReturnType<typeof everyApp>) {
+type BindOptions = {
+  /** The catalog answers only once this resolves. */
+  heldUntil?: Promise<void>;
+  /** The catalog answers 500. */
+  failing?: boolean;
+  /** An app from before the tools contract: `/__everyapp/*` is 404. */
+  legacy?: boolean;
+};
+
+function bindApp(
+  binding: string,
+  app: ReturnType<typeof everyApp>,
+  options: BindOptions = {},
+) {
   // Deployed as everyAppWorker() does: the Worker's name is its audience.
   const env = { EVERYAPP_AUDIENCE: binding.slice("APP__".length) };
+  const requests: Request[] = [];
+  appRequests.set(binding, requests);
   hoisted.env[binding] = {
-    // TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
-    fetch: (request: Request) =>
-      app.fetch(request, env, {
+    fetch: async (request: Request) => {
+      requests.push(request);
+      const { pathname } = new URL(request.url);
+      if (options.legacy && pathname.startsWith("/__everyapp/")) {
+        return new Response("not found", { status: 404 });
+      }
+      if (pathname === "/__everyapp/tools/list") {
+        if (options.failing) {
+          return new Response("catalog broke", { status: 500 });
+        }
+        if (options.heldUntil) await options.heldUntil;
+      }
+      // TODO(integration): PR 2 types everyApp()'s ctx as the runtime ExecutionContext.
+      return app.fetch(request, env, {
         waitUntil: () => undefined,
-      } as unknown as ExecutionContext),
+      } as unknown as ExecutionContext);
+    },
   };
+}
+
+/** How many times an app's catalog was fetched in the test so far. */
+function listCalls(binding: string): number {
+  return (appRequests.get(binding) ?? []).filter(
+    (request) => new URL(request.url).pathname === "/__everyapp/tools/list",
+  ).length;
+}
+
+/** A hold on an app's catalog answer, until the test releases it. */
+function gate(): { opened: Promise<void>; release: () => void } {
+  let release!: () => void;
+  const opened = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { opened, release };
+}
+
+/** Another app, live as `everyapp deploy` leaves it, with no snapshot yet. */
+async function deployAnotherApp(
+  appSlug: string,
+  worker: ReturnType<typeof everyApp>,
+  options: BindOptions = {},
+) {
+  const name = appSlug[0]!.toUpperCase() + appSlug.slice(1);
+  const { app } = await deployLiveApp(db, {
+    organizationId: orgId,
+    deployerUserId: ownerId,
+    appBaseDomain: HOST,
+    isInstallOrganization: false,
+    appSlug,
+    name,
+    description: name,
+    manifest: { id: appSlug, name },
+  });
+  const binding = `APP__${app.workerName}`;
+  bindApp(binding, worker, options);
+  return { rowId: app.id, hostname: app.hostname!, binding };
+}
+
+/** Each app's tool state on the consent page, by slug. */
+function toolStates(context: Consent): Record<string, string> {
+  return Object.fromEntries(
+    context.organizations[0]!.apps.map((app) => [app.slug, app.tools]),
+  );
+}
+
+async function catalogRow(rowId: string) {
+  const [row] = await db
+    .select()
+    .from(appToolCatalogs)
+    .where(eq(appToolCatalogs.appRowId, rowId));
+  return row;
+}
+
+async function storedToolNames(rowId: string): Promise<string[]> {
+  const rows = await db
+    .select({ name: appTools.name })
+    .from(appTools)
+    .where(eq(appTools.appRowId, rowId));
+  return rows.map((row) => row.name).sort();
+}
+
+/** A request to an app's host, as the CLI's live wait sends one. */
+function openAppHost(hostname: string): Promise<Response> {
+  return server.fetch(
+    new Request(`https://${hostname}/`, { headers: { host: hostname } }),
+  );
 }
 
 beforeAll(() => {
@@ -545,8 +693,11 @@ beforeEach(async () => {
   hoisted.sessions.clear();
   hoisted.background.length = 0;
   seen.length = 0;
+  appRequests.clear();
   resetAppHostMcpForTests();
   resetRegistrationLimitsForTests();
+  clearCatalogSyncClaimsForTests();
+  clearHostnameCacheForTests();
 
   db = await createTestDb();
   hoisted.testDb.current = db;
@@ -601,8 +752,11 @@ beforeEach(async () => {
   });
   todoRowId = todo.id;
   notesRowId = notes.id;
-  bindApp(`APP__${todo.workerName}`, todoApp(keys.publicKeyPem));
-  bindApp(`APP__${notes.workerName}`, notesApp(keys.publicKeyPem));
+  todoHost = todo.hostname!;
+  todoBinding = `APP__${todo.workerName}`;
+  notesBinding = `APP__${notes.workerName}`;
+  bindApp(todoBinding, todoApp(keys.publicKeyPem));
+  bindApp(notesBinding, notesApp(keys.publicKeyPem));
   for (const [app, rowId] of [
     [todo, todoRowId],
     [notes, notesRowId],
@@ -623,6 +777,8 @@ beforeEach(async () => {
     todoRowId,
     [ownerId, memberId],
   );
+  // The tests count the catalog fetches they cause themselves.
+  for (const requests of appRequests.values()) requests.length = 0;
 });
 
 describe("discovery", () => {
@@ -714,8 +870,8 @@ describe("a DCR client (Codex-style)", () => {
           name: "acme",
           role: "owner",
           apps: expect.arrayContaining([
-            { rowId: notesRowId, slug: "notes", name: "Notes", hasTools: true },
-            { rowId: todoRowId, slug: "todo", name: "Todos", hasTools: true },
+            { rowId: notesRowId, slug: "notes", name: "Notes", tools: "ready" },
+            { rowId: todoRowId, slug: "todo", name: "Todos", tools: "ready" },
           ]),
         },
       ],
@@ -2447,39 +2603,279 @@ describe("personal access tokens on the gateway's /mcp", () => {
   });
 });
 
-describe("apps with no tool snapshot yet", () => {
-  it("syncs them in the background when a client uses the tools, and lists them next time", async () => {
-    clearCatalogSyncClaimsForTests();
-    // As for an app that was deployed before the gateway took snapshots.
-    await db.delete(appTools).where(eq(appTools.appRowId, todoRowId));
-    await db
-      .delete(appToolCatalogs)
-      .where(eq(appToolCatalogs.appRowId, todoRowId));
-    const { plaintext: token } = await UserPatService.create({
-      userId: ownerId,
-      organizationId: orgId,
-      name: "claude code",
-    });
+describe("the consent page's tool states", () => {
+  it("fetches the snapshots it is missing while the page loads", async () => {
+    // As for apps deployed before the gateway took snapshots.
+    await db.delete(appTools);
+    await db.delete(appToolCatalogs);
+    const client = await registerClient();
 
-    expect(await toolNames(token)).toEqual([
+    const { context } = await openConsent(
+      new Browser(ownerId),
+      client.client_id,
+      CODEX_REDIRECT,
+    );
+    expect(toolStates(context)).toEqual({ notes: "ready", todo: "ready" });
+    const rows = await db.select().from(appToolCatalogs);
+    expect(rows.map((row) => row.status)).toEqual(["ok", "ok"]);
+    expect(listCalls(todoBinding)).toBe(1);
+    expect(listCalls(notesBinding)).toBe(1);
+  });
+
+  it("greys out an app that reported no tools, and doesn't ask it again", async () => {
+    const blank = await deployAnotherApp("blank", blankApp(keys.publicKeyPem));
+    const legacy = await deployAnotherApp(
+      "legacy",
+      pingApp("legacy", keys.publicKeyPem),
+      { legacy: true },
+    );
+    const client = await registerClient();
+    const browser = new Browser(ownerId);
+
+    const first = await openConsent(browser, client.client_id, CODEX_REDIRECT);
+    expect(toolStates(first.context)).toEqual({
+      blank: "none",
+      legacy: "none",
+      notes: "ready",
+      todo: "ready",
+    });
+    expect((await catalogRow(blank.rowId))?.status).toBe("empty");
+    expect((await catalogRow(legacy.rowId))?.status).toBe("unsupported");
+
+    // Another page load, past this isolate's claim window.
+    clearCatalogSyncClaimsForTests();
+    const second = await openConsent(browser, client.client_id, CODEX_REDIRECT);
+    expect(toolStates(second.context)).toEqual(toolStates(first.context));
+    expect(listCalls(blank.binding)).toBe(1);
+    expect(listCalls(legacy.binding)).toBe(1);
+  });
+
+  it(
+    "gives a slow app a few seconds, shows it as unknown, and finishes after the page",
+    { timeout: 15_000 },
+    async () => {
+      const hold = gate();
+      const slow = await deployAnotherApp(
+        "slow",
+        pingApp("slow", keys.publicKeyPem),
+        { heldUntil: hold.opened },
+      );
+      const client = await registerClient();
+
+      const started = Date.now();
+      const { context } = await openConsent(
+        new Browser(ownerId),
+        client.client_id,
+        CODEX_REDIRECT,
+      );
+      expect(Date.now() - started).toBeGreaterThanOrEqual(2_500);
+      expect(toolStates(context)).toEqual({
+        notes: "ready",
+        slow: "unknown",
+        todo: "ready",
+      });
+      expect(await catalogRow(slow.rowId)).toBeUndefined();
+
+      hold.release();
+      await settle();
+      expect(await catalogRow(slow.rowId)).toMatchObject({
+        status: "ok",
+        toolCount: 1,
+      });
+      expect(listCalls(slow.binding)).toBe(1);
+    },
+  );
+
+  it("lets a failing app be chosen, and doesn't ask it again for five minutes", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const broken = await deployAnotherApp(
+      "broken",
+      pingApp("broken", keys.publicKeyPem),
+      { failing: true },
+    );
+    const client = await registerClient();
+    const browser = new Browser(ownerId);
+
+    const { context } = await openConsent(
+      browser,
+      client.client_id,
+      CODEX_REDIRECT,
+    );
+    expect(toolStates(context)["broken"]).toBe("unknown");
+    expect(await catalogRow(broken.rowId)).toMatchObject({
+      status: "error",
+      lastError: expect.stringContaining("500"),
+    });
+    const decision = await browser.postForm(
+      "/oauth/consent/decision",
+      approvalForm(context, { app_mode: "selected", app_ids: [broken.rowId] }),
+    );
+    expect(decision.status).toBe(302);
+
+    clearCatalogSyncClaimsForTests();
+    await openConsent(new Browser(ownerId), client.client_id, CODEX_REDIRECT);
+    expect(listCalls(broken.binding)).toBe(1);
+  });
+});
+
+describe("apps with no tool snapshot yet", () => {
+  it("lists an app it never fetched on a new connection's very first tools/list", async () => {
+    const client = await registerClient();
+    const { tokens } = await connect({
+      clientId: client.client_id,
+      redirectUri: CODEX_REDIRECT,
+    });
+    // Deployed after the connection was made, and never used since.
+    const chef = await deployAnotherApp(
+      "chef",
+      pingApp("chef", keys.publicKeyPem),
+    );
+
+    expect(await toolNames(tokens.access_token)).toEqual([
       "everyapp_list_apps",
       "everyapp_whoami",
-      "notes_add_note",
-      "notes_list_notes",
-    ]);
-    // The first request's background sync has run by now.
-    expect(await toolNames(token)).toEqual([
-      "everyapp_list_apps",
-      "everyapp_whoami",
+      "chef_ping",
       "notes_add_note",
       "notes_list_notes",
       "todo_create_todo",
       "todo_list_todos",
     ]);
+    expect(listCalls(chef.binding)).toBe(1);
   });
 
-  it("re-syncs an app in the background once it runs a newer version", async () => {
+  it(
+    "answers without a slow app's tools after the budget, then lists them",
+    { timeout: 15_000 },
+    async () => {
+      const client = await registerClient();
+      const { tokens } = await connect({
+        clientId: client.client_id,
+        redirectUri: CODEX_REDIRECT,
+      });
+      const hold = gate();
+      const slow = await deployAnotherApp(
+        "slow",
+        pingApp("slow", keys.publicKeyPem),
+        { heldUntil: hold.opened },
+      );
+
+      const started = Date.now();
+      const names = await listedNames(
+        await mcp(tokens.access_token, "tools/list"),
+      );
+      expect(Date.now() - started).toBeGreaterThanOrEqual(2_500);
+      expect(names).not.toContain("slow_ping");
+      expect(listCalls(slow.binding)).toBe(1);
+
+      hold.release();
+      await settle();
+      expect(await toolNames(tokens.access_token)).toContain("slow_ping");
+      expect(listCalls(slow.binding)).toBe(1);
+    },
+  );
+
+  it("doesn't wait for an app whose last sync failed, and retries it after the answer", async () => {
+    const client = await registerClient();
+    const { tokens } = await connect({
+      clientId: client.client_id,
+      redirectUri: CODEX_REDIRECT,
+    });
+    const hold = gate();
+    const flaky = await deployAnotherApp(
+      "flaky",
+      pingApp("flaky", keys.publicKeyPem),
+      { heldUntil: hold.opened },
+    );
+    // Its last sync failed, over five minutes ago.
+    await AppToolRepository.recordError({
+      appRowId: flaky.rowId,
+      organizationId: orgId,
+      versionId: "flaky-version",
+      message: "the app answered 500",
+    });
+    await db
+      .update(appToolCatalogs)
+      .set({ fetchedAt: new Date(Date.now() - 6 * 60_000) })
+      .where(eq(appToolCatalogs.appRowId, flaky.rowId));
+
+    const started = Date.now();
+    const names = await listedNames(
+      await mcp(tokens.access_token, "tools/list"),
+    );
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(names).not.toContain("flaky_ping");
+    // The retry reaches the app after the answer.
+    await vi.waitFor(() => expect(listCalls(flaky.binding)).toBe(1));
+
+    hold.release();
+    await settle();
+    expect(await toolNames(tokens.access_token)).toContain("flaky_ping");
+    expect(listCalls(flaky.binding)).toBe(1);
+  });
+
+  it("keeps serving a snapshot whose newer version can't be fetched, and retries after the answer", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const client = await registerClient();
+    const { tokens } = await connect({
+      clientId: client.client_id,
+      redirectUri: CODEX_REDIRECT,
+    });
+    const listTodoTools = async () => {
+      const started = Date.now();
+      const names = await listedNames(
+        await mcp(tokens.access_token, "tools/list"),
+      );
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(names).toContain("todo_create_todo");
+    };
+
+    // Redeployed with a catalog that breaks: tried once within the request,
+    // and the old snapshot keeps serving, marked with the failure.
+    bindApp(todoBinding, todoApp(keys.publicKeyPem), { failing: true });
+    await db
+      .update(apps)
+      .set({ versionId: "todo-version-2" })
+      .where(eq(apps.id, todoRowId));
+    await listTodoTools();
+    await settle();
+    expect(listCalls(todoBinding)).toBe(1);
+    expect(await catalogRow(todoRowId)).toMatchObject({
+      status: "ok",
+      versionId: "todo-version",
+      lastError: expect.stringContaining("500"),
+    });
+
+    // From then on the new version is tried after the answer: neither the
+    // consent page nor /mcp waits for it, even when it hangs.
+    const hold = gate();
+    bindApp(todoBinding, todoApp(keys.publicKeyPem), {
+      heldUntil: hold.opened,
+    });
     clearCatalogSyncClaimsForTests();
+    const started = Date.now();
+    const { context } = await openConsent(
+      new Browser(ownerId),
+      client.client_id,
+      CODEX_REDIRECT,
+    );
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(toolStates(context)["todo"]).toBe("ready");
+    await vi.waitFor(() => expect(listCalls(todoBinding)).toBe(1));
+
+    clearCatalogSyncClaimsForTests();
+    await listTodoTools();
+    await vi.waitFor(() => expect(listCalls(todoBinding)).toBe(2));
+
+    hold.release();
+    await settle();
+    expect(await catalogRow(todoRowId)).toMatchObject({
+      status: "ok",
+      versionId: "todo-version-2",
+      lastError: null,
+    });
+  });
+
+  it("re-syncs an app within the request once it runs a newer version", async () => {
     await db
       .update(apps)
       .set({ versionId: "todo-version-2" })
@@ -2489,17 +2885,67 @@ describe("apps with no tool snapshot yet", () => {
       organizationId: orgId,
       name: "claude code",
     });
-    const catalogVersion = async () =>
-      (
-        await db
-          .select({ versionId: appToolCatalogs.versionId })
-          .from(appToolCatalogs)
-          .where(eq(appToolCatalogs.appRowId, todoRowId))
-      )[0]?.versionId;
 
-    // Served from the snapshot it has meanwhile.
     expect(await toolNames(token)).toContain("todo_create_todo");
-    expect(await catalogVersion()).toBe("todo-version-2");
+    expect((await catalogRow(todoRowId))?.versionId).toBe("todo-version-2");
+    expect(listCalls(todoBinding)).toBe(1);
+  });
+});
+
+describe("snapshots taken at deploy time", () => {
+  it("snapshots an app when its first request activates it", async () => {
+    const manifest = { id: "chef", name: "Chef" };
+    const { app } = await registerApp(db, {
+      organizationId: orgId,
+      deployerUserId: ownerId,
+      appBaseDomain: HOST,
+      isInstallOrganization: false,
+      appSlug: "chef",
+      name: "Chef",
+      description: "Chef",
+      manifest,
+    });
+    await markAppDeployed(db, app.id, { versionId: "chef-version", manifest });
+    const binding = `APP__${app.workerName}`;
+    bindApp(binding, pingApp("chef", keys.publicKeyPem));
+
+    // The CLI's live wait: the first request over the new binding.
+    await openAppHost(app.hostname!);
+    const [row] = await db.select().from(apps).where(eq(apps.id, app.id));
+    expect(row?.status).toBe("active");
+    await settle();
+    expect(await catalogRow(app.id)).toMatchObject({
+      status: "ok",
+      versionId: "chef-version",
+      toolCount: 1,
+    });
+    expect(await storedToolNames(app.id)).toEqual(["ping"]);
+    expect(listCalls(binding)).toBe(1);
+  });
+
+  it("follows a self-host redeploy from the app host's next request, once", async () => {
+    // `everyapp deploy` again: new code behind the binding, the new version
+    // in the row, and the gateway told nothing.
+    bindApp(todoBinding, todoApp(keys.publicKeyPem, true));
+    await db
+      .update(apps)
+      .set({ versionId: "todo-version-2" })
+      .where(eq(apps.id, todoRowId));
+    clearHostnameCacheForTests();
+
+    await openAppHost(todoHost);
+    await settle();
+    expect(await catalogRow(todoRowId)).toMatchObject({
+      status: "ok",
+      versionId: "todo-version-2",
+      toolCount: 4,
+    });
+    expect(await storedToolNames(todoRowId)).toContain("archive_todos");
+    expect(listCalls(todoBinding)).toBe(1);
+
+    await openAppHost(todoHost);
+    await settle();
+    expect(listCalls(todoBinding)).toBe(1);
   });
 });
 

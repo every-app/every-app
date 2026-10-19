@@ -1,9 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ activate: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  activate: vi.fn(),
+  scheduleCatalogResync: vi.fn(),
+}));
 
+vi.mock("cloudflare:workers", () => ({ env: {}, waitUntil: () => undefined }));
 vi.mock("@/server/repositories/AppRepository", () => ({
   AppRepository: { activate: mocks.activate },
+}));
+vi.mock("@/server/toolbus/catalog-sync", () => ({
+  scheduleCatalogResync: mocks.scheduleCatalogResync,
 }));
 
 import type { RegisteredApp } from "@every-app/perimeter";
@@ -91,14 +98,27 @@ describe("activateApp", () => {
   beforeEach(() => {
     mocks.activate.mockReset();
     mocks.activate.mockResolvedValue(true);
+    mocks.scheduleCatalogResync.mockReset();
     vi.spyOn(console, "log").mockImplementation(() => undefined);
   });
 
-  it("marks the app active once this isolate reaches its Worker", async () => {
+  it("marks the app active once this isolate reaches its Worker, and snapshots its tools", async () => {
     const { env, fetch } = boundEnv("self_hosted");
     await expect(activateApp(env, TODO)).resolves.toBe(true);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(mocks.activate).toHaveBeenCalledWith("row-1", "org-1");
+    expect(mocks.scheduleCatalogResync).toHaveBeenCalledWith(
+      {
+        rowId: "row-1",
+        organizationId: "org-1",
+        appSlug: "todo",
+        hostname: "todo-acme.gateway.example.com",
+        workerName: "every-acme-todo",
+        tier: "service_binding",
+        versionId: "version-1",
+      },
+      "first_use",
+    );
   });
 
   it("leaves it deploying while this gateway version has no binding to it", async () => {
@@ -106,6 +126,7 @@ describe("activateApp", () => {
       activateApp({ GATEWAY_DEPLOYMENT_MODE: "self_hosted" }, TODO),
     ).resolves.toBe(false);
     expect(mocks.activate).not.toHaveBeenCalled();
+    expect(mocks.scheduleCatalogResync).not.toHaveBeenCalled();
   });
 
   it("serves nothing when the row changed meanwhile (deleted or disabled)", async () => {

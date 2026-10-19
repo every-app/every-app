@@ -272,6 +272,11 @@ beforeEach(async () => {
     DISPATCHER: {
       get: (name: string) => ({
         fetch: async (request: Request) => {
+          // The gateway's own catalog fetch, with its system token: not a
+          // visitor's request, so not what the app "received" here.
+          if (new URL(request.url).pathname === "/__everyapp/tools/list") {
+            return new Response("not found", { status: 404 });
+          }
           received.push({
             app: name,
             identity: request.headers.get("x-everyapp-identity"),
@@ -338,6 +343,10 @@ beforeEach(async () => {
   sharedHost = shared.hostname!;
   hoisted.env[`APP__${shared.workerName}`] = {
     fetch: async (request: Request) => {
+      // The gateway's own catalog fetch, as above: not a visitor's request.
+      if (new URL(request.url).pathname === "/__everyapp/tools/list") {
+        return new Response("not found", { status: 404 });
+      }
       received.push({
         app: "openseo",
         identity: request.headers.get("x-everyapp-identity"),

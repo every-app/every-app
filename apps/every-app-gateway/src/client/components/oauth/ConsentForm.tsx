@@ -29,6 +29,19 @@ import { domainCoversRedirect } from "./clientSite";
 import { useDeliberateAllow } from "./useDeliberateAllow";
 
 type Context = Extract<ConsentContext, { ok: true }>;
+type ToolState = Context["organizations"][number]["apps"][number]["tools"];
+
+/** Beside an app that can't serve tools yet, or may not be able to. */
+function toolHint(tools: ToolState): string | undefined {
+  switch (tools) {
+    case "none":
+      return "(no AI tools yet)";
+    case "unknown":
+      return "(tools load on first use)";
+    default:
+      return undefined;
+  }
+}
 
 function initials(name: string): string {
   const letters = name
@@ -259,7 +272,7 @@ export function ConsentForm({
                           type="checkbox"
                           name={CONSENT_FIELDS.appIds}
                           value={app.rowId}
-                          disabled={!app.hasTools}
+                          disabled={app.tools === "none"}
                           checked={selected.has(app.rowId)}
                           onChange={(event) => {
                             const next = new Set(selected);
@@ -267,7 +280,7 @@ export function ConsentForm({
                             else next.delete(app.rowId);
                             setSelected(next);
                           }}
-                          hint={app.hasTools ? undefined : "(no AI tools yet)"}
+                          hint={toolHint(app.tools)}
                         >
                           {app.name}
                         </Choice>

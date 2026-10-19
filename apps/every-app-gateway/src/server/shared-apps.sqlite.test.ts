@@ -212,6 +212,11 @@ async function deployApp(
   rows[slug] = app.id;
   hoisted.env[`APP__${app.workerName}`] = {
     fetch: async (request: Request) => {
+      // The gateway's own catalog fetch, with its system token: not a
+      // visitor's request, so not what the app "received" here.
+      if (new URL(request.url).pathname === "/__everyapp/tools/list") {
+        return new Response("not found", { status: 404 });
+      }
       received.push({
         app: slug,
         identity: request.headers.get("x-everyapp-identity"),

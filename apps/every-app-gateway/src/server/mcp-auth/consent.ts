@@ -7,6 +7,12 @@
  * a Client ID Metadata Document, where the tokens will be sent, and what the
  * user can grant: one of their organizations, all of its apps they can use
  * (including future ones) or a chosen few, and read & write or read only.
+ *
+ * Each app is shown with whether it has tools, read from its snapshot in
+ * D1. An app with no snapshot yet (nothing has used its tools; the first
+ * client can't, before it is allowed) is fetched while the page loads, for
+ * a few seconds; one that doesn't answer in time stays selectable, and its
+ * tools load on first use.
  */
 import {
   AuthorizationError,
@@ -18,15 +24,31 @@ import { logEvent } from "@every-app/perimeter";
 import type { ConsentDecision } from "@/schemas/consent-decision";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 import { platformPolicy } from "@/server/platform-policy";
+import {
+  AppToolRepository,
+  type UnsyncedApp,
+} from "@/server/repositories/AppToolRepository";
 import { McpConnectionRepository } from "@/server/repositories/McpConnectionRepository";
+import {
+  INLINE_SYNCS_MAX,
+  RETRY_FAILED_SYNC_MS,
+  syncUnsyncedCatalogs,
+} from "@/server/toolbus/catalog-sync";
 import { OFFLINE_ACCESS_SCOPE, type McpAuth } from "./config";
 import { ON_PLATFORM_DOMAIN, onPlatformDomain } from "./own-domain";
+
+/**
+ * Whether an app has tools to serve: it does, its snapshot says it has
+ * none, or there is no snapshot that says (none yet, or the last try
+ * failed).
+ */
+type ToolState = "ready" | "none" | "unknown";
 
 type ConsentOrganization = {
   id: string;
   name: string;
   role: string;
-  apps: { rowId: string; slug: string; name: string; hasTools: boolean }[];
+  apps: { rowId: string; slug: string; name: string; tools: ToolState }[];
 };
 
 export type ConsentContext =
@@ -51,6 +73,18 @@ const START_AGAIN =
   "This authorization link is missing or no longer valid. Start connecting again from your AI app.";
 
 const MAX_CLIENT_NAME_LENGTH = 80;
+
+function toolState(catalogStatus: string | null): ToolState {
+  switch (catalogStatus) {
+    case "ok":
+      return "ready";
+    case "empty":
+    case "unsupported":
+      return "none";
+    default:
+      return "unknown";
+  }
+}
 
 /**
  * A client's self-chosen name as Every App shows it: without control,
@@ -100,11 +134,70 @@ export async function consentChoices(
           rowId: app.appRowId,
           slug: app.appSlug,
           name: app.name,
-          hasTools: app.catalogStatus === "ok",
+          tools: toolState(app.catalogStatus),
         })),
       },
     ];
   });
+}
+
+/**
+ * The organizations' apps again, with the tool state of every app whose
+ * tools weren't snapshotted fetched now, within the page's budget: never
+ * synced, synced from another version than the app runs, or failed over
+ * five minutes ago, the same apps /mcp syncs on use, with the same budget
+ * (and, as there, one whose last sync failed is retried after the page).
+ * Up to {@link INLINE_SYNCS_MAX} across the organizations (a shared app
+ * shows in every one, and is fetched once). An app that didn't answer in
+ * time keeps what its row says. Never fails the page: without the
+ * snapshots, it shows what it knows.
+ */
+async function syncUnknownCatalogs(
+  userId: string,
+  organizations: ConsentOrganization[],
+): Promise<ConsentOrganization[]> {
+  const unsynced = new Map<string, UnsyncedApp>();
+  try {
+    for (const organization of organizations) {
+      if (unsynced.size >= INLINE_SYNCS_MAX) break;
+      const apps = await AppToolRepository.findVisibleUnsyncedApps(
+        {
+          organizationId: organization.id,
+          userId,
+          sharedApps: platformPolicy(env).sharedApps,
+        },
+        {
+          failedBefore: new Date(Date.now() - RETRY_FAILED_SYNC_MS),
+          limit: INLINE_SYNCS_MAX,
+        },
+      );
+      for (const app of apps) {
+        if (unsynced.size >= INLINE_SYNCS_MAX) break;
+        unsynced.set(app.rowId, app);
+      }
+    }
+  } catch (error) {
+    logEvent(
+      "mcp.catalog.unavailable",
+      {
+        surface: "consent",
+        user_id: userId,
+        message: error instanceof Error ? error.message : String(error),
+      },
+      "warn",
+    );
+    return organizations;
+  }
+  if (unsynced.size === 0) return organizations;
+  const synced = await syncUnsyncedCatalogs([...unsynced.values()], "consent");
+  if (synced.size === 0) return organizations;
+  return organizations.map((organization) => ({
+    ...organization,
+    apps: organization.apps.map((app) => {
+      const status = synced.get(app.rowId);
+      return status ? { ...app, tools: toolState(status) } : app;
+    }),
+  }));
 }
 
 /** Why a client can't be shown, as the page can say it. */
@@ -158,7 +251,10 @@ export async function buildConsentContext(
     throw error;
   }
 
-  const organizations = await consentChoices(user.id);
+  const organizations = await syncUnknownCatalogs(
+    user.id,
+    await consentChoices(user.id),
+  );
   const defaultOrganizationId =
     organizations.find((org) => org.id === user.activeOrganizationId)?.id ??
     organizations[0]?.id ??

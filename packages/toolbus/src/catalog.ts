@@ -2,11 +2,11 @@
  * Catalog snapshots: fetch an app's tools over the internal contract and
  * normalize them into what the ToolBus may serve.
  *
- * The gateway never asks apps for their tools while serving a client (a
- * request may make at most 32 Worker invocations, and one slow app would slow
- * every list). It snapshots at deploy and re-syncs on drift; `everyapp dev`
- * refetches live. Both go through here, so a tool that would be refused in
- * production is refused locally too.
+ * The gateway serves clients from snapshots: taken at deploy, re-taken on
+ * drift, and taken within a request only for an app that has none, with a
+ * budget of a few seconds, so one slow app can't slow every list.
+ * `everyapp dev` refetches live. Both go through here, so a tool that would
+ * be refused in production is refused locally too.
  */
 import {
   SYSTEM_HEADER,

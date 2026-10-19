@@ -54,6 +54,7 @@ import { createCloudflareRest } from "@every-app/cf-rest";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
 import {
   apps,
+  appToolCatalogs,
   deployJobs,
   members,
   organizations,
@@ -122,6 +123,26 @@ let ownerAccessToken: string;
 let memberDeployKey: string;
 /** The identities the dispatched app received. */
 const received: Array<string | null> = [];
+/** The paths the gateway dispatched to the app, in order. */
+const dispatched: string[] = [];
+/** What the app answers the gateway's catalog request with. */
+const CATALOG = {
+  v: 1,
+  hash: `sha256:${"a".repeat(64)}`,
+  sdk: "0.3.0",
+  tools: [
+    {
+      name: "list_todos",
+      description: "List todos.",
+      risk: "read",
+      inputSchema: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+    },
+  ],
+};
 /** Rewrites the API's answers, as a Cloudflare that misbehaves would. */
 let tamper: ((url: URL, response: Response) => Promise<Response>) | null = null;
 
@@ -253,6 +274,7 @@ beforeEach(async () => {
   for (const key of Object.keys(hoisted.env)) delete hoisted.env[key];
   hoisted.pending.length = 0;
   received.length = 0;
+  dispatched.length = 0;
   tamper = null;
   clearHostnameCacheForTests();
   clearOrgContextCacheForTests();
@@ -286,6 +308,9 @@ beforeEach(async () => {
     },
   );
   dispatcher = account.dispatcher(NAMESPACE, (request) => {
+    const { pathname } = new URL(request.url);
+    dispatched.push(pathname);
+    if (pathname === "/__everyapp/tools/list") return Response.json(CATALOG);
     received.push(request.headers.get("x-everyapp-identity"));
     return new Response("todo app");
   });
@@ -357,6 +382,19 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
     const polled = await api(`/api/v1/orgs/${acme}/deploys/${job["id"]}`);
     expect(((await polled.json()) as { job: unknown }).job).toMatchObject({
       status: "succeeded",
+    });
+
+    // The deploy took the app's tool snapshot once it went live, before
+    // anyone opens the consent page or calls /mcp.
+    expect(dispatched).toEqual(["/__everyapp/tools/list"]);
+    const live = (await row())!;
+    expect(live.versionId).toEqual(expect.any(String));
+    const [catalog] = await db.select().from(appToolCatalogs);
+    expect(catalog).toMatchObject({
+      appRowId: live.id,
+      versionId: live.versionId,
+      status: "ok",
+      toolCount: 1,
     });
 
     // Its own database, created, named after its Worker and migrated.

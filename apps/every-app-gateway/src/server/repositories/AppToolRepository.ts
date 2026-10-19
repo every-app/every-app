@@ -22,7 +22,7 @@ import {
 } from "@/db/schema";
 import type { ToolBusTool } from "@every-app/toolbus";
 
-type CatalogStatus = "ok" | "empty" | "unsupported" | "error";
+export type CatalogStatus = "ok" | "empty" | "unsupported" | "error";
 
 export type StoredCatalog = {
   appRowId: string;
@@ -400,26 +400,37 @@ async function recordError(input: {
     });
 }
 
+/** An app whose tools aren't snapshotted, with what its snapshot row says. */
+export type UnsyncedApp = {
+  rowId: string;
+  organizationId: string;
+  appSlug: string;
+  hostname: string;
+  workerName: string;
+  tier: string;
+  versionId: string | null;
+  /** The snapshot row's status, or null without a row. */
+  catalogStatus: string | null;
+  /**
+   * The row's last sync error, null after a sync that stored a snapshot. A
+   * serving row keeps serving when a newer version can't be fetched, so
+   * this is what says its last sync failed.
+   */
+  lastError: string | null;
+};
+
 /**
  * Apps a caller of the gateway /mcp reaches whose tools aren't snapshotted:
  * never synced, synced from another version than the app runs now, or last
  * tried and failed before `failedBefore`. An app that has no tools, or
- * doesn't serve them, stays as its version's sync recorded it.
+ * doesn't serve them, stays as its version's sync recorded it. Each comes
+ * with what its snapshot row says, if there is one, so a caller can treat
+ * a failed snapshot apart from a missing one.
  */
 async function findVisibleUnsyncedApps(
   scope: VisibilityScope,
   { failedBefore, limit }: { failedBefore: Date; limit: number },
-): Promise<
-  {
-    rowId: string;
-    organizationId: string;
-    appSlug: string;
-    hostname: string;
-    workerName: string;
-    tier: string;
-    versionId: string | null;
-  }[]
-> {
+): Promise<UnsyncedApp[]> {
   const rows = await db
     .select({
       rowId: apps.id,
@@ -429,6 +440,8 @@ async function findVisibleUnsyncedApps(
       workerName: apps.workerName,
       tier: apps.tier,
       versionId: apps.versionId,
+      catalogStatus: appToolCatalogs.status,
+      lastError: appToolCatalogs.lastError,
     })
     .from(apps)
     .leftJoin(userAppAccess, accessFor(scope))

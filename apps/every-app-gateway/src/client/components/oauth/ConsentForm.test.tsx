@@ -30,9 +30,10 @@ const CONTEXT: Context = {
       name: "Acme",
       role: "owner",
       apps: [
-        { rowId: "app-todo", slug: "todo", name: "Todos", hasTools: true },
-        { rowId: "app-notes", slug: "notes", name: "Notes", hasTools: true },
-        { rowId: "app-chef", slug: "chef", name: "Chef", hasTools: false },
+        { rowId: "app-todo", slug: "todo", name: "Todos", tools: "ready" },
+        { rowId: "app-notes", slug: "notes", name: "Notes", tools: "ready" },
+        { rowId: "app-chef", slug: "chef", name: "Chef", tools: "none" },
+        { rowId: "app-crm", slug: "crm", name: "CRM", tools: "unknown" },
       ],
     },
     { id: "org-other", name: "Other", role: "member", apps: [] },
@@ -85,6 +86,13 @@ function input(name: string, value: string): HTMLInputElement {
   );
   if (!found) throw new Error(`no ${name}=${value}`);
   return found;
+}
+
+/** The hint beside an app's checkbox, or null without one. */
+function hint(appRowId: string): string | null {
+  const label = input("app_ids", appRowId).closest("label")!;
+  const spans = [...label.querySelectorAll(":scope > span")];
+  return spans.length > 2 ? (spans.at(-1)!.textContent ?? "") : null;
 }
 
 function fire(target: EventTarget, event: Event) {
@@ -155,6 +163,12 @@ describe("what the consent form posts", () => {
     expect(button("Allow").disabled).toBe(true);
     // An app without tools can't be chosen.
     expect(input("app_ids", "app-chef").disabled).toBe(true);
+    expect(hint("app-chef")).toBe("(no AI tools yet)");
+    // One whose tools aren't known yet can: they load on first use.
+    expect(input("app_ids", "app-crm").disabled).toBe(false);
+    expect(hint("app-crm")).toBe("(tools load on first use)");
+    expect(hint("app-todo")).toBeNull();
+    expect(hint("app-notes")).toBeNull();
     act(() => input("app_ids", "app-notes").click());
     act(() => input("access", "read").click());
     press(button("Allow"));
@@ -165,6 +179,20 @@ describe("what the consent form posts", () => {
       app_mode: "selected",
       app_ids: ["app-notes"],
       access: "read",
+    });
+  });
+
+  it("allows a connection to only an app whose tools aren't known yet", () => {
+    render();
+    armAllow();
+    act(() => input("app_mode", "selected").click());
+    act(() => input("app_ids", "app-crm").click());
+    expect(button("Allow").disabled).toBe(false);
+    press(button("Allow"));
+    expect(sent).toHaveLength(1);
+    expect(parseDecisionForm(sent[0]!)).toMatchObject({
+      app_mode: "selected",
+      app_ids: ["app-crm"],
     });
   });
 

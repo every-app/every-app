@@ -14,10 +14,10 @@
  *    request that needs it (server/mcp-auth/routes.ts);
  *  - a host in the app registry → the perimeter proxy
  *    (`handleGatewayRequest`), which activates an app whose Worker was just
- *    uploaded (server/app-activation.ts), authenticates the Better Auth session,
- *    mints the identity JWT, and proxies to the app's private worker over its
- *    service binding. App hosts reach this Worker as its Workers Custom
- *    Domains.
+ *    uploaded and follows the version it runs (server/app-activation.ts),
+ *    authenticates the Better Auth session, mints the identity JWT, and
+ *    proxies to the app's private worker over its service binding. App
+ *    hosts reach this Worker as its Workers Custom Domains.
  *    An app host's `/mcp` is served by the ToolBus from the app's tool
  *    catalog instead (server/toolbus/app-host-mcp.ts);
  *  - on a hosted gateway with a third-party domain, a host one label below
@@ -56,7 +56,7 @@ import {
 import { SESSION_COOKIE_NAMES } from "./auth/session-cookie";
 import { createProdAuthenticator } from "./perimeter/betterAuthAuthenticator";
 import { createHostSessionAuthenticator } from "./perimeter/hostSessionAuthenticator";
-import { activateApp } from "./server/app-activation";
+import { activateApp, followAppVersion } from "./server/app-activation";
 import { DrizzleAppRegistry } from "./perimeter/drizzleAppRegistry";
 import {
   handleAppGatewayRequest,
@@ -377,6 +377,7 @@ export default {
         ),
       );
     }
+    followAppVersion(app);
 
     const deps = {
       env: env as unknown as Record<string, unknown>,

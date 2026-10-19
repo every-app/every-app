@@ -198,20 +198,22 @@ export async function markAppDeployed(
 
 /**
  * Register, upload and activate an app (activation is the gateway's own
- * first request over the new binding); returns its row id.
+ * first request over the new binding); returns the plan, with the app as
+ * it is now: active, at the version just recorded.
  */
 export async function deployLiveApp(
   db: TestDb,
   input: Parameters<typeof registerApp>[1] & { versionId?: string },
 ): Promise<RegistrationPlan> {
   const plan = await registerApp(db, input);
+  const versionId = input.versionId ?? `${input.appSlug}-version`;
   await markAppDeployed(db, plan.app.id, {
-    versionId: input.versionId ?? `${input.appSlug}-version`,
+    versionId,
     manifest: input.manifest ?? { id: input.appSlug },
   });
   await db
     .update(apps)
     .set({ status: "active" })
     .where(eq(apps.id, plan.app.id));
-  return plan;
+  return { ...plan, app: { ...plan.app, versionId, status: "active" } };
 }

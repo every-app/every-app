@@ -4,28 +4,33 @@
  * `everyapp_*` tools.
  *
  * The caller is already resolved (mcp-auth/validate.ts): an OAuth connection
- * or a personal access token. This reads, from D1 only, the serving catalogs
- * of the apps the caller reaches: active apps of their organization they
- * have access to and, on the hosted gateway, the shared apps, narrowed to
- * the connection's chosen apps or the token's app. It never asks an app for its tools; `tools/call` reaches exactly one
- * app over its service binding, with an identity minted for that call.
+ * or a personal access token. This serves, from the catalogs in D1, the
+ * apps the caller reaches: active apps of their organization they have
+ * access to and, on the hosted gateway, the shared apps, narrowed to the
+ * connection's chosen apps or the token's app. `tools/call` reaches
+ * exactly one app over its service binding, with an identity minted for
+ * that call.
  *
- * Apps it reaches with no snapshot yet (deployed before the gateway took
- * them, or whose deploy-time sync didn't happen) are synced in the
- * background when a client uses the tools (a POST), a few per request, and
- * listed from the next request on. One that failed is retried after five
- * minutes.
+ * /mcp is stateless: each request stands alone, with no session, no
+ * stream and no notification to push a changed tool list later. So the
+ * tools are fetched before the answer, never after it. The snapshots are
+ * normally taken when an app is activated or deployed; an app a client
+ * uses (a POST) that has none yet, or one from another version than the
+ * app runs, is synced within the request, up to a few seconds, and what
+ * finished is in the answer. One whose last sync failed is retried in the
+ * background after five minutes, so a broken app never slows a request.
  */
 import { env } from "cloudflare:workers";
 import { logEvent } from "@every-app/perimeter";
 import { platformPolicy } from "@/server/platform-policy";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
 import type { McpCaller } from "@/server/mcp-auth/validate";
-import { scheduleCatalogResync } from "./catalog-sync";
+import {
+  INLINE_SYNCS_MAX,
+  RETRY_FAILED_SYNC_MS,
+  syncUnsyncedCatalogs,
+} from "./catalog-sync";
 import { servedApp, toolBusHttp } from "./runtime";
-
-const FIRST_USE_SYNCS_PER_REQUEST = 3;
-const RETRY_FAILED_SYNC_MS = 5 * 60_000;
 
 /**
  * Browser origins allowed to call the gateway's /mcp besides its own:
@@ -64,6 +69,10 @@ export async function serveGatewayMcp(
     ...caller.apps,
   };
 
+  if (request.method === "POST") {
+    await syncUnsyncedApps(scope);
+  }
+
   let catalogs;
   try {
     catalogs = await AppToolRepository.findVisibleCatalogs(scope);
@@ -85,10 +94,6 @@ export async function serveGatewayMcp(
       },
       { status: 503 },
     );
-  }
-
-  if (request.method === "POST") {
-    await syncUnsyncedApps(scope);
   }
 
   const apps = catalogs.map((catalog) =>
@@ -132,8 +137,11 @@ export async function serveGatewayMcp(
 }
 
 /**
- * Schedule background syncs for reachable apps with no snapshot yet. Never
- * fails the request: a sync it misses happens on a later one.
+ * Sync the reachable apps whose tools aren't snapshotted, before the
+ * catalogs are read: those with no snapshot, or one from another version,
+ * within the request's budget; those whose last sync failed in the
+ * background. Never fails the request: a sync it misses happens on a later
+ * one.
  */
 async function syncUnsyncedApps(
   scope: Parameters<typeof AppToolRepository.findVisibleUnsyncedApps>[0],
@@ -141,9 +149,9 @@ async function syncUnsyncedApps(
   try {
     const unsynced = await AppToolRepository.findVisibleUnsyncedApps(scope, {
       failedBefore: new Date(Date.now() - RETRY_FAILED_SYNC_MS),
-      limit: FIRST_USE_SYNCS_PER_REQUEST,
+      limit: INLINE_SYNCS_MAX,
     });
-    for (const app of unsynced) scheduleCatalogResync(app, "first_use");
+    await syncUnsyncedCatalogs(unsynced, "first_use");
   } catch (error) {
     logEvent(
       "mcp.catalog.unavailable",

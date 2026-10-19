@@ -25,15 +25,14 @@ import {
 } from "@/server/repositories/AppToolRepository";
 import {
   BindingNotReadyError,
+  catalogSyncClaim,
   claimCatalogSync,
   logToolSync,
+  RETRY_FAILED_SYNC_MS,
   syncAppTools,
   type SyncableApp,
 } from "./catalog-sync";
 import { resetToolBusForTests, servedApp, toolBusHttp } from "./runtime";
-
-/** A snapshot that isn't serving is retried on use at most this often. */
-const RETRY_UNSERVED_SNAPSHOT_MS = 5 * 60_000;
 
 export function resetAppHostMcpForTests(): void {
   resetToolBusForTests();
@@ -98,7 +97,7 @@ async function servableCatalog(
   if (method !== "POST") return serving(stored);
   if (
     current &&
-    Date.now() - stored.fetchedAt.getTime() < RETRY_UNSERVED_SNAPSHOT_MS
+    Date.now() - stored.fetchedAt.getTime() < RETRY_FAILED_SYNC_MS
   ) {
     return null;
   }
@@ -119,19 +118,15 @@ async function syncOnUse(
   const target = await syncableApp(app);
   if (!target) return serving(stored);
   // A new version gets its own sync at once, whenever the last one ran.
-  const newVersion = stored !== null && fromOtherVersion(stored);
-  const claim = newVersion
-    ? `${target.rowId}@${target.versionId}`
-    : target.rowId;
+  const trigger =
+    stored !== null && fromOtherVersion(stored) ? "new_version" : "first_use";
   // Synced moments ago (by a request that read the catalog before this one
   // did): serve what that sync stored.
-  if (!claimCatalogSync(claim)) return servingCatalog(app);
+  if (!claimCatalogSync(catalogSyncClaim(target, trigger))) {
+    return servingCatalog(app);
+  }
   try {
-    logToolSync(
-      target,
-      await syncAppTools(target),
-      newVersion ? "new_version" : "first_use",
-    );
+    logToolSync(target, await syncAppTools(target), trigger);
   } catch (error) {
     // This isolate can't reach the app yet: keep serving what there is.
     if (error instanceof BindingNotReadyError) return serving(stored);
