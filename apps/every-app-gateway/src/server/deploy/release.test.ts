@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { HOSTED_DEPLOY_SENTINEL } from "@every-app/perimeter/manifest";
+import { BUILD_SENTINEL } from "@every-app/sdk/cloudflare/sentinel";
 import { gzip, packRelease, releaseFiles, tar } from "@/test/app-release";
 import { parseDeployUpload } from "./bundle";
 import { DeployError } from "./errors";
@@ -8,7 +8,7 @@ import { readTar, TarError } from "./tar";
 
 const MANIFEST = { id: "todo", name: "Todos", resources: { d1: ["DB"] } };
 const WORKER = {
-  name: HOSTED_DEPLOY_SENTINEL.workerName,
+  name: BUILD_SENTINEL.workerName,
   compatibilityDate: "2026-10-01",
   manifest: { type: "partial", mainModule: "index.js", modules: {} },
 };

@@ -56,12 +56,8 @@ vi.mock("@tanstack/react-start/server-entry", () => ({
   },
 }));
 
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { generateKeyPairSync } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { HOSTED_DEPLOY_SENTINEL } from "@every-app/perimeter/manifest";
 import { createCloudflareRest } from "@every-app/cf-rest";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
 import { apps, deployJobs, members, organizations, users } from "@/db/schema";
@@ -74,8 +70,6 @@ import { packRelease, releaseFiles } from "@/test/app-release";
 import { createTestDb } from "@/test/sqlite-db";
 
 const GATEWAY = "https://gateway.example.com";
-/** The gateway URL a tenant-neutral release is built with. */
-const SENTINEL_GATEWAY = "https://every-hosted--sentinel.invalid";
 const NAMESPACE = "every-app-apps";
 const TOKEN = "fake-cloudflare-api-token";
 const ACCOUNT_ID = "0123456789abcdef0123456789abcd01";
@@ -136,41 +130,21 @@ beforeAll(() => {
 
 /** The app's tenant-neutral Build Output config, as a release carries it. */
 function builtWorker(manifest: Record<string, unknown> = TODO) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-release-"));
-  fs.mkdirSync(path.join(root, ".everyapp"));
-  fs.writeFileSync(
-    path.join(root, ".everyapp/deploy.json"),
-    JSON.stringify({
-      schema: 1,
-      workerName: HOSTED_DEPLOY_SENTINEL.workerName,
-      organizationId: HOSTED_DEPLOY_SENTINEL.organizationId,
-      gatewayUrl: SENTINEL_GATEWAY,
-      identityIssuer: SENTINEL_GATEWAY,
-      identityPublicKeys: [HOSTED_DEPLOY_SENTINEL.publicKey],
-      resources: {
-        d1: Object.fromEntries(
-          ((manifest["resources"] as { d1?: string[] })?.d1 ?? []).map((b) => [
-            b,
-            {
-              name: HOSTED_DEPLOY_SENTINEL.d1Name,
-              id: HOSTED_DEPLOY_SENTINEL.d1Id,
-            },
-          ]),
-        ),
-      },
-    }),
-  );
-  const { entrypoint: _entrypoint, ...worker } = everyAppWorker({
-    manifest: manifest as typeof TODO,
-    entrypoint: "./src/entry.worker.ts",
-    ctx: { mode: "production" },
-    root,
-  });
-  fs.rmSync(root, { recursive: true, force: true });
-  return {
-    ...structuredClone(worker),
-    manifest: { type: "partial", mainModule: "index.js", modules: {} },
-  } as Record<string, any>;
+  // The tenant-neutral production build, as `everyapp deploy` runs it.
+  vi.stubEnv("EVERYAPP_BUILD", "1");
+  try {
+    const { entrypoint: _entrypoint, ...worker } = everyAppWorker({
+      manifest: manifest as typeof TODO,
+      entrypoint: "./src/entry.worker.ts",
+      ctx: { mode: "production" },
+    });
+    return {
+      ...structuredClone(worker),
+      manifest: { type: "partial", mainModule: "index.js", modules: {} },
+    } as Record<string, any>;
+  } finally {
+    vi.unstubAllEnvs();
+  }
 }
 
 const MODULES = {
