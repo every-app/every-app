@@ -1,8 +1,8 @@
 /**
- * At a terminal the human sink keeps a line open while milestones join it,
- * with a spinner at its end. A prompt, or a child attached to the terminal
- * (`cf deploy` asking its own questions, `cf auth login`), would be drawn
- * over: before either, the line is ended and the spinner stopped.
+ * At a terminal the human sink redraws its last line: the spinner of the
+ * step running, with the cursor hidden. A prompt, or a child attached to the
+ * terminal (`cf deploy` asking its own questions, `cf auth login`), would be
+ * drawn over: before either, the spinner is stopped and the cursor shown.
  */
 const drawing = new Set<() => void>();
 
@@ -12,7 +12,7 @@ export function onTerminalHandoff(release: () => void): () => void {
   return () => drawing.delete(release);
 }
 
-/** End the open line and stop the spinner: a prompt or an attached child comes next. */
+/** Stop the spinner and show the cursor: a prompt or an attached child comes next. */
 export function handTerminalOver(): void {
   for (const release of drawing) release();
 }

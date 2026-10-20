@@ -281,11 +281,14 @@ describe("createHumanSink", () => {
     firstDeploy(sink);
 
     expect(lines()).toEqual([
-      "todo → https://todo.apps.example.com (Example Inc), first deploy",
+      "Deploying todo to Example Inc (first deploy)",
       "Registered todo: private to you, owners and admins (change it in Admin → Apps)",
-      "Built · 2 migrations applied · uploaded 3f9c1a2e",
+      "Built ✓",
+      "2 migrations applied ✓",
       `  restore point: ${RESTORE}`,
-      "Binding to the Gateway · uploaded 7d20c4e1",
+      "Uploaded 3f9c1a2e ✓",
+      "Binding to the Gateway",
+      "  Uploaded 7d20c4e1 ✓",
       "Live: https://todo.apps.example.com",
     ]);
     expect(problems()).toEqual([]);
@@ -308,12 +311,12 @@ describe("createHumanSink", () => {
       },
     });
     expect(lines()).toEqual([
-      "todo → https://todo.apps.example.com (Example Inc), first deploy",
+      "Deploying todo to Example Inc (first deploy)",
       "Registered todo: private to owners and admins (change it in Admin → Apps)",
     ]);
   });
 
-  it("shows a redeploy in three lines, and one that sends secrets says so on its first line", () => {
+  it("shows a redeploy as a line per step, and one that sends secrets says so on its first line", () => {
     const redeploy = (secrets?: string[]) => {
       const { sink, lines } = human();
       sink.emit({
@@ -352,8 +355,10 @@ describe("createHumanSink", () => {
     };
 
     expect(redeploy()).toEqual([
-      "todo → https://todo.apps.example.com (Example Inc)",
-      "Built · database up to date · uploaded 8a01d4f7",
+      "Deploying todo to Example Inc",
+      "Built ✓",
+      "Database up to date ✓",
+      "Uploaded 8a01d4f7 ✓",
       "Live: https://todo.apps.example.com",
     ]);
     expect(redeploy(["GITHUB_TOKEN"])[0]).toBe(
@@ -361,7 +366,7 @@ describe("createHumanSink", () => {
     );
   });
 
-  it("shows setup's account, the Gateway's upgrade as one line, and what comes next", () => {
+  it("shows setup's account, the Gateway's upgrade with its steps under it, and what comes next", () => {
     const { sink, lines } = human();
     sink.emit({
       type: "step",
@@ -441,8 +446,10 @@ describe("createHumanSink", () => {
     expect(lines()).toEqual([
       "Cloudflare: ben@example.com · Example Inc",
       "Building the Gateway from this checkout (a minute or two)...",
-      "Upgrading the Gateway 0.3.0 → 0.4.0 · 2 migrations applied · uploaded 9c2e1b0d",
-      `  restore point: ${RESTORE}`,
+      "Upgrading the Gateway 0.3.0 → 0.4.0",
+      "  2 migrations applied ✓",
+      `    restore point: ${RESTORE}`,
+      "  Uploaded 9c2e1b0d ✓",
       "Owner created: ben@example.com",
       "Your Gateway is ready: https://apps.example.com",
       "Next: pnpm everyapp create my-app",
@@ -544,7 +551,7 @@ describe("createHumanSink", () => {
       data: { rerun: "pnpm everyapp deploy --force-dns", authorize: true },
     });
 
-    expect(lines()).toEqual(["todo → https://todo.apps.example.com"]);
+    expect(lines()).toEqual(["Deploying todo"]);
     expect(problems()).toEqual([
       "! No certificate yet.",
       "  It usually comes within five minutes.",
@@ -595,7 +602,7 @@ describe("createHumanSink", () => {
       status: "start",
       message: "Building the app...",
     });
-    expect(stdout()).toContain("Building the app ⠋");
+    expect(stdout()).toContain("Building the app... ⠋");
 
     sink.emit({ type: "step", step: "app.build", status: "ok" });
     sink.emit({
@@ -604,13 +611,14 @@ describe("createHumanSink", () => {
       status: "start",
       message: "Migrating the app's database...",
     });
+    expect(stdout()).toContain("Built ✓\n");
     expect(stdout().split("\r\x1b[2K").at(-1)).toBe(
-      "Built · Migrating the app's database ⠋",
+      "Migrating the app's database... ⠋",
     );
 
-    // cf deploy attached to the terminal, or a prompt: the line ends first.
+    // cf deploy attached to the terminal, or a prompt: the spinner goes first.
     handTerminalOver();
-    expect(stdout().endsWith("Built\n")).toBe(true);
+    expect(stdout().split("\r\x1b[2K").at(-1)).toBe("");
 
     sink.emit({
       type: "step",
@@ -619,7 +627,7 @@ describe("createHumanSink", () => {
       data: { applied: [] },
     });
     sink.emit({ type: "done" });
-    expect(stdout().endsWith("Database up to date\n")).toBe(true);
+    expect(stdout().endsWith("Database up to date ✓\n")).toBe(true);
   });
 
   it("exits 1 on an error after an action it waited for, like the NDJSON sink", () => {

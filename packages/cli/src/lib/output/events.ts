@@ -17,6 +17,7 @@
  * last `action_required` ends it (exit 2).
  */
 import chalk from "chalk";
+import cliCursor from "cli-cursor";
 import { onTerminalHandoff } from "./terminal";
 
 type EventData = Record<string, unknown>;
@@ -111,11 +112,12 @@ export function createNdjsonSink(
  * How a person sees the same events: a filter over them, not a print of
  * each one.
  *
- *  - Steps: only the milestones below, each rendered from its data. Short
- *    ones join one line (`Built · 2 migrations applied · uploaded 3f9c1a2e`),
+ *  - Steps: only the milestones below, each rendered from its data. A
+ *    finished step gets a ticked line of its own (`Uploaded 3f9c1a2e ✓`),
  *    with notes such as the database's restore point under it. Every other
  *    step is bookkeeping, shown with --verbose.
- *  - `step … start`: a spinner at a terminal, nothing when piped.
+ *  - `step … start`: a spinner after its message at a terminal (the cursor
+ *    hidden meanwhile), nothing when piped.
  *  - `progress`: with --verbose, except what a person must see whatever
  *    happens: the lease waits (who holds the lease), the certificate waits
  *    and the Gateway's release build, which takes a minute or two.
@@ -131,7 +133,7 @@ interface HumanSinkOptions {
   write?: (text: string) => void;
   /** stderr, for problems. */
   writeProblem?: (text: string) => void;
-  /** stdout is a terminal: a spinner while a step runs, milestones drawn as they come. */
+  /** stdout is a terminal: a spinner while a step runs, the cursor hidden. */
   terminal?: boolean;
   /** The terminal's width, so the line the spinner redraws never wraps. */
   columns?: () => number;
@@ -163,7 +165,7 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
           else if (verbose && !terminal && event.message) {
             screen.lines(chalk.dim(event.message));
           }
-          screen.spin(event.step, shown ? "" : spinnerLabel(event.message));
+          screen.spin(event.step, shown ? "" : (event.message ?? ""));
           return;
         }
         screen.stopSpinning(event.step);
@@ -234,11 +236,11 @@ type StepEvent = Extract<EventInput<EveryAppEvent>, { type: "step" }>;
 type Shown =
   /** Lines of their own. */
   | { line: string }
-  /** A line the next milestones join, until one closes it. */
+  /** A step done: a ticked line of its own, `notes` under it. */
+  | { done: string; notes?: string[] }
+  /** A step whose milestones show indented under it, until one closes it. */
   | { open: string }
-  /** Joins the open line, or starts one; `notes` print under it once it ends. */
-  | { join: string; notes?: string[] }
-  /** Ends the open line. */
+  /** Ends the open step, ticked if nothing showed under it. */
   | { close: true };
 
 /** The milestones: the steps a person sees, by name, and how. */
@@ -294,7 +296,7 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
       const first =
         secrets.length || unset.length
           ? `${isNew ? "Deploying" : "Redeploying"} ${appId} ${secrets.length ? `with ${secrets.join(", ")}` : `without ${unset.join(", ")}`} (code and pending migrations from this directory)`
-          : `${appId} → https://${text(data["hostname"])}${organization ? ` (${organization})` : ""}${isNew ? ", first deploy" : ""}`;
+          : `Deploying ${appId}${organization ? ` to ${chalk.dim(organization)}` : ""}${isNew ? " (first deploy)" : ""}`;
       if (!isNew) return { line: first };
       if (data["scope"] === "shared") {
         return {
@@ -311,7 +313,7 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
         line: `${first}\nRegistered ${appId}: ${access} (change it in Admin → Apps)`,
       };
     },
-    "app.build": (event) => (event.status === "ok" ? { join: "Built" } : null),
+    "app.build": (event) => (event.status === "ok" ? { done: "Built" } : null),
     "app.migrations": migrated,
     "app.upload": uploaded,
     "app.email": (event) => {
@@ -319,9 +321,9 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
       if (event.status !== "ok") return null;
       const addresses = strings(event.data?.["addresses"]);
       return {
-        join: addresses.length
-          ? `mail to ${addresses.join(", ")} routed`
-          : "mail routes removed",
+        done: addresses.length
+          ? `Mail to ${addresses.join(", ")} routed`
+          : "Mail routes removed",
       };
     },
     "app.bind": (event) =>
@@ -386,23 +388,23 @@ function migrated(event: StepEvent): Shown | null {
   const rollback = text(event.data?.["rollbackCommand"]);
   return applied.length
     ? {
-        join: `${plural(applied.length, "migration")} applied`,
+        done: `${plural(applied.length, "migration")} applied`,
         notes: rollback ? [`  restore point: ${rollback}`] : [],
       }
-    : { join: "database up to date" };
+    : { done: "Database up to date" };
 }
 
 function uploaded(event: StepEvent): Shown | null {
   if (event.status !== "ok") return null;
   const version = text(event.data?.["versionId"])?.slice(0, 8);
-  return { join: version ? `uploaded ${version}` : "uploaded" };
+  return { done: version ? `Uploaded ${version}` : "Uploaded" };
 }
 
 function show(screen: Screen, shown: Shown): void {
   if ("line" in shown) screen.lines(shown.line);
   else if ("open" in shown) screen.open(shown.open);
-  else if ("join" in shown) screen.join(shown.join, shown.notes);
-  else screen.endLine();
+  else if ("done" in shown) screen.done(shown.done, shown.notes);
+  else screen.close();
 }
 
 /** The command to run next, last under a problem. */
@@ -416,11 +418,6 @@ function nextCommand(data: EventData | undefined): string[] {
   ];
 }
 
-/** A step's start message as its spinner's label: "Building the app...". */
-function spinnerLabel(message: string | undefined): string {
-  return (message ?? "").replace(/(\.\.\.|…)$/, "");
-}
-
 const indent = (message: string) => message.replace(/\n/g, "\n  ");
 const plural = (count: number, noun: string) =>
   `${count} ${noun}${count === 1 ? "" : "s"}`;
@@ -428,20 +425,20 @@ const text = (value: unknown): string | undefined =>
   typeof value === "string" && value.length > 0 ? value : undefined;
 const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.map(String) : [];
-const capitalize = (value: string) =>
-  value.charAt(0).toUpperCase() + value.slice(1);
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const FRAME_MS = 80;
 
 /**
- * stdout for a person: lines, the open milestone line and, at a terminal,
- * the spinner of the step running, drawn at the end of the current line.
- * Piped, the open line is written once it ends and nothing spins.
+ * stdout for a person: lines, each finished step on its own ticked line and,
+ * at a terminal, the spinner of the step running on the line after them,
+ * with the cursor hidden. Piped, nothing spins.
  */
 class Screen {
-  private parts: string[] = [];
-  private notes: string[] = [];
+  /** The open step's line, not written yet: ticked if nothing shows under it. */
+  private header: string | undefined;
+  /** The open step's line is written: what follows is indented under it. */
+  private grouped = false;
   /** Steps started and not finished, innermost last: the spinner shows it. */
   private running: Array<{ step: string; label: string }> = [];
   private frame = 0;
@@ -455,44 +452,49 @@ class Screen {
     private readonly columns: () => number,
   ) {}
 
-  /** Lines of their own, once the open line has ended. */
+  /** Lines of their own, once the open step has ended. */
   lines(text: string): void {
-    this.endLine();
-    this.erase();
-    this.write(`${text}\n`);
-    this.draw();
+    this.endGroup();
+    this.print(text);
   }
 
   open(text: string): void {
-    this.endLine();
-    this.parts.push(text);
+    this.endGroup();
+    this.header = text;
     this.draw();
   }
 
-  join(text: string, notes: readonly string[] = []): void {
-    this.parts.push(this.parts.length === 0 ? capitalize(text) : text);
-    this.notes.push(...notes);
-    this.draw();
+  done(text: string, notes: readonly string[] = []): void {
+    this.writeHeader();
+    const indent = this.grouped ? "  " : "";
+    this.print(
+      [
+        `${indent}${text} ${chalk.green("✓")}`,
+        ...notes.map((note) => chalk.dim(`${indent}${note}`)),
+      ].join("\n"),
+    );
   }
 
-  /** End the open line, then its notes. */
-  endLine(): void {
-    if (this.parts.length === 0) return;
-    this.erase();
-    this.write(`${this.parts.join(" · ")}\n`);
-    for (const note of this.notes) this.write(`${chalk.dim(note)}\n`);
-    this.parts = [];
-    this.notes = [];
-    this.draw();
+  /** End the open step, ticked if nothing showed under it. */
+  close(): void {
+    if (this.header !== undefined) {
+      const header = this.header;
+      this.header = undefined;
+      this.print(`${header} ${chalk.green("✓")}`);
+    }
+    this.grouped = false;
   }
 
   spin(step: string, label: string): void {
+    // A step under the open one spins on a line of its own, under its header.
+    if (label) this.writeHeader();
     this.running = [
       ...this.running.filter((run) => run.step !== step),
       { step, label },
     ];
     if (!this.terminal) return;
     if (!this.timer) {
+      cliCursor.hide(process.stdout);
       this.timer = setInterval(() => {
         this.frame = (this.frame + 1) % FRAMES.length;
         this.draw();
@@ -514,18 +516,18 @@ class Screen {
   /** Something writes to the terminal beside us (stderr): nothing of ours on its line meanwhile. */
   aside(writeIt: () => void): void {
     if (this.terminal) {
-      this.endLine();
+      this.writeHeader();
       this.erase();
     }
     writeIt();
     this.draw();
   }
 
-  /** A prompt or an attached child takes the terminal: end the line, stop the spinner. */
+  /** A prompt or an attached child takes the terminal: end the open step, stop the spinner. */
   handOver(): void {
     this.running = [];
     this.stopTimer();
-    this.endLine();
+    this.endGroup();
     this.erase();
   }
 
@@ -534,9 +536,31 @@ class Screen {
     this.handOver();
   }
 
+  /** Write the open step's line, unticked, so what follows shows under it. */
+  private writeHeader(): void {
+    if (this.header === undefined) return;
+    const header = this.header;
+    this.header = undefined;
+    this.grouped = true;
+    this.print(header);
+  }
+
+  private endGroup(): void {
+    this.writeHeader();
+    this.grouped = false;
+  }
+
+  private print(text: string): void {
+    this.erase();
+    this.write(`${text}\n`);
+    this.draw();
+  }
+
   private stopTimer(): void {
+    if (!this.timer) return;
     clearInterval(this.timer);
     this.timer = undefined;
+    cliCursor.show(process.stdout);
   }
 
   private erase(): void {
@@ -545,26 +569,23 @@ class Screen {
     this.drawn = false;
   }
 
-  /** At a terminal: the open line so far, then the spinner, on the current line. */
+  /** At a terminal: the running step's message, or the open step's, then the spinner. */
   private draw(): void {
     if (!this.terminal) return;
-    const line = this.parts.join(" · ");
     const run = this.running.at(-1);
-    const spinner = run
-      ? `${run.label ? `${line ? " · " : ""}${run.label} ` : line ? " " : ""}${FRAMES[this.frame]}`
-      : "";
-    if (!line && !spinner) {
+    if (!run) {
       this.erase();
       return;
     }
+    const label = run.label || (this.header ? `${this.header}...` : "");
+    const spinner = `${this.grouped ? "  " : ""}${label ? `${label} ` : ""}${FRAMES[this.frame]}`;
     const width = Math.max(this.columns() - 1, 10);
-    const plain = line + spinner;
     this.write(
-      `\r\x1b[2K${
-        plain.length > width
-          ? `…${plain.slice(plain.length - width + 1)}`
-          : `${line}${chalk.dim(spinner)}`
-      }`,
+      `\r\x1b[2K${chalk.dim(
+        spinner.length > width
+          ? `…${spinner.slice(spinner.length - width + 1)}`
+          : spinner,
+      )}`,
     );
     this.drawn = true;
   }

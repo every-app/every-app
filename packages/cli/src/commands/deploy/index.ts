@@ -31,8 +31,8 @@ interface DeployCommandFlags {
  * a file; lib/app/release.ts). With EVERYAPP_DEPLOY_TOKEN, through a
  * hosted gateway's deploy API (deployToGateway.ts); otherwise no question
  * first (unless there is no Gateway yet: then it offers to install one).
- * The first line says where the app goes (`todo → https://todo.apps.example.com
- * (Acme)`), and the last that it is live. `--bundle-only` packs the app
+ * The first line says what is deployed where (`Deploying todo to Acme`),
+ * and the last that it is live, at its URL. `--bundle-only` packs the app
  * in this directory as a release instead (bundleApp.ts).
  */
 export async function deploy(
