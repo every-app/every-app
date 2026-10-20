@@ -114,6 +114,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         />
         <link rel="manifest" href="/site.webmanifest" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
         <link
           rel="icon"
           type="image/png"
@@ -126,6 +127,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           sizes="16x16"
           href="/favicon-16x16.png"
         />
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
         <title>Every App</title>
         <HeadContent />
       </head>
