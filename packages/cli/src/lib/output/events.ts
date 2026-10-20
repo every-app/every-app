@@ -29,7 +29,7 @@ import { ReportCode } from "@/lib/errors";
 import { GatewayChange } from "@/lib/gateway/change";
 import { onInterruptNotice } from "@/lib/interrupt";
 import { formatFacts, type Fact } from "./table";
-import { capitalize, plural, strings, text } from "./text";
+import { capitalize, listed, plural, strings, text } from "./text";
 import { duration, roughly } from "./time";
 import { onTerminalHandoff } from "./terminal";
 
@@ -335,8 +335,11 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
         const allFacts = [...facts, ...factsIn(event.data?.["facts"])];
         const next = nextItems(event.data?.["next"]);
         const lines = [
+          // An empty `display`: the steps said it all.
           ...(event.display !== undefined
-            ? [event.display]
+            ? event.display
+              ? [event.display]
+              : []
             : event.message
               ? [chalk.green(event.message)]
               : []),
@@ -468,7 +471,7 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         return {
           spin: running("setup.gateway")
             ? "Uploading..."
-            : running("app.bind")
+            : running("app.bind") || running("app.delete")
               ? ""
               : "Updating the Gateway...",
         };
@@ -485,6 +488,18 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       const secrets = strings(data["secrets"]);
       const unset = strings(data["unsetSecrets"]);
       const isNew = data["existingApp"] === false;
+      if (data["register"] === true) {
+        const header = { line: `Registering ${appId}${organization ? ` with ${organization}` : ""}` };
+        if (!isNew) return header;
+        return [
+          header,
+          {
+            done: `Registered ${appId} as a shared app`,
+            detail: "open to every organization's members",
+            notes: ["Its Worker needs the Gateway's identity keys, issuer, vars and binding props: see data.worker in --json"],
+          },
+        ];
+      }
       const first = {
         line:
           secrets.length || unset.length
@@ -505,6 +520,18 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
               ? `Private to owners and admins ${change}`
               : `Private to you, owners and admins ${change}`;
       return [first, { fact: { label: "Access", value: access } }];
+    },
+    // `register` again: the Worker's newer version recorded (the first says Registered).
+    "app.record": (event) => {
+      const data = event.data ?? {};
+      if (event.status !== "ok" || data["existingApp"] !== true) return null;
+      const deployedAt = data["deployedAt"];
+      return {
+        done: "Recorded the Worker's current version",
+        ...(typeof deployedAt === "number"
+          ? { detail: `deployed ${roughly(Date.now() - deployedAt)} ago` }
+          : {}),
+      };
     },
     "app.install": doneWhenOk("Installed dependencies"),
     "app.build": doneWhenOk("Built"),
@@ -546,12 +573,27 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       const url = text(data["url"]) ?? `https://${text(data["hostname"])}`;
       return { fact: { label: "Live", value: chalk.cyan(url) }, lead: true };
     },
-    "app.delete": (event) =>
+    "app.delete": (event) => {
+      const appId = text(event.data?.["appId"]);
+      if (event.status === "start") return { spin: `Removing ${appId} from the Gateway...` };
+      if (event.status !== "ok") return null;
+      return event.data?.["alreadyDeleted"] === true
+        ? { line: `${appId} was already removed from the Gateway` }
+        : { done: `Removed ${appId} from the Gateway` };
+    },
+    "app.certificate": (event) =>
       event.status === "ok"
-        ? {
-            line: `Removed ${text(event.data?.["appId"]) ?? "the app"} from the Gateway`,
-          }
+        ? { done: `Removed ${text(event.data?.["hostname"])}'s certificate` }
         : null,
+    "app.purge": (event) => {
+      const appId = text(event.data?.["appId"]);
+      if (event.status === "start") return { spin: `Deleting ${appId}'s Worker and data...` };
+      if (event.status !== "ok") return null;
+      const kinds = strings(event.data?.["kinds"]);
+      return kinds.length > 0
+        ? { done: `Deleted ${appId}'s ${listed(kinds)}` }
+        : { line: chalk.dim(`Nothing of ${appId}'s was left to delete in Cloudflare`) };
+    },
     "create.copy": (event) => {
       const data = event.data ?? {};
       if (event.status === "start") {

@@ -35,12 +35,6 @@ export const registerCommand = buildCommand({
         parse: String,
         brief: "The app's everyapp.config.ts",
       },
-      shared: {
-        kind: "boolean",
-        brief:
-          "Register a shared app: one Worker every organization's members can open (required for now)",
-        optional: true,
-      },
       gateway: gatewayFlag,
       "account-id": accountFlag,
       "force-dns": {
@@ -70,8 +64,9 @@ export const registerCommand = buildCommand({
       "     (APP__<worker>) and publish its hostname, then waits for it to go live",
       "",
       "Nothing about the Worker changes, and delete --purge keeps it. The app.register event lists",
-      "what its own pipeline must give it: the identity keys and issuer, and the AppGateway binding's",
-      "props. Only owners and admins of the platform organization register shared apps.",
+      "what its own pipeline must give it (data.worker): the identity keys and issuer, and the",
+      "AppGateway binding's props. Only owners and admins of the platform organization register",
+      "shared apps; an organization's own app deploys with everyapp deploy.",
     ].join("\n"),
   },
 });

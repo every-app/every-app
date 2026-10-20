@@ -34,7 +34,7 @@ Shared:  hosted Gateway only, platform organization owners/admins, when the
          user asks for a first-party app every organization opens:
          deploy --shared --json (redeploys and secret set keep it shared), or for a
          Worker deployed by other means: pnpm everyapp register <id>
-         --worker <name> --shared --manifest <everyapp.config.ts> --json
+         --worker <name> --manifest <everyapp.config.ts> --json
          (WORKER_NAME_MISMATCH names the Worker name to deploy under).
 Hosted:  third-party apps on a hosted Gateway, only when the user has a deploy
          key: EVERYAPP_DEPLOY_TOKEN=<key> pnpm everyapp deploy --gateway <url> --json

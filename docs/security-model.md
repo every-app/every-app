@@ -184,7 +184,7 @@ first upload; ADR-0001) decides what the gateway does, once, in
   organization and never change an app's scope (a redeploy that names none
   keeps the row's; the same id asked for as the other scope is refused,
   tombstones included). The CLI registers, redeploys or deletes one
-  (`everyapp deploy --shared`, `everyapp register --shared`,
+  (`everyapp deploy --shared`, `everyapp register`,
   `everyapp delete`) only on a gateway whose install row records `hosted`
   (deletes aside), and only for a Cloudflare login that is an owner or admin
   of the platform organization by its verified email (an API token is the

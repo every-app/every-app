@@ -10,6 +10,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { removeApp } from "@/commands/delete";
 import { deployApp } from "@/commands/deploy/deployApp";
@@ -21,7 +22,7 @@ import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
 import type { EveryAppCliManifest } from "@/lib/manifest";
-import { createNdjsonSink } from "@/lib/output/events";
+import { createHumanSink, createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
@@ -134,6 +135,7 @@ beforeEach(async () => {
 afterEach(async () => {
   await release.cleanup();
   vi.unstubAllEnvs();
+  vi.restoreAllMocks();
   fs.rmSync(home, { recursive: true, force: true });
   fs.rmSync(appDir, { recursive: true, force: true });
 });
@@ -159,8 +161,7 @@ function register(options: Partial<Parameters<typeof registerApp>[0]> = {}) {
   return registerApp({
     appId: "openseo",
     workerName: OPENSEO_WORKER,
-    manifestPath: path.join(appDir, "everyapp.config.ts"),
-    shared: true,
+    manifest: path.join(appDir, "everyapp.config.ts"),
     out: out(),
     interactive: false,
     createCf: () => account.cf,
@@ -372,7 +373,7 @@ describe("register", () => {
     const steps = events
       .filter((event) => event["type"] === "step" && event["status"] !== "start")
       .map((event) => event["step"]);
-    expect(steps).toEqual(["app.register", "gateway.deploy", "app.bind", "app.live"]);
+    expect(steps).toEqual(["app.register", "app.record", "gateway.deploy", "app.bind", "app.live"]);
 
     // Again, after its pipeline shipped a new version: recorded, no rebind.
     account.workers.get(OPENSEO_WORKER)!.versions.push("alchemy-version-2");
@@ -389,25 +390,28 @@ describe("register", () => {
     deployedElsewhere("openseo-production");
     await expect(register({ workerName: "openseo-production" })).rejects.toMatchObject({
       code: "WORKER_NAME_MISMATCH",
-      fix: expect.stringContaining(`--worker ${OPENSEO_WORKER}`),
+      message: `openseo's Worker must be named ${OPENSEO_WORKER}, not openseo-production\nThe Gateway binds each app's Worker by that name only.`,
+      fix: `deploy the Worker as ${OPENSEO_WORKER}`,
+      rerun: expect.stringMatching(new RegExp(`--worker ${OPENSEO_WORKER}$`)),
     });
     expect(appRow("openseo")).toBeUndefined();
     expect(account.gatewayBindings()).toEqual([]);
   });
 
-  it("refuses a manifest for another app, and runs only with --shared", async () => {
+  it("refuses a manifest for another app, naming the path as typed", async () => {
     await installGateway("hosted");
     deployedElsewhere();
+    vi.spyOn(process, "cwd").mockReturnValue(appDir);
 
-    await expect(register({ appId: "chef" })).rejects.toMatchObject({
+    await expect(register({ appId: "chef", manifest: "./everyapp.config.ts" })).rejects.toMatchObject({
       code: "MANIFEST_MISMATCH",
+      message: "./everyapp.config.ts is openseo's config, not chef's",
+      fix: "pass chef's everyapp.config.ts with --manifest",
     });
-    await expect(register({ shared: false })).rejects.toMatchObject({
-      code: "SHARED_FLAG_REQUIRED",
+    await expect(register({ manifest: "./missing.config.ts" })).rejects.toMatchObject({
+      code: "MANIFEST_NOT_FOUND",
+      message: "No manifest at ./missing.config.ts",
     });
-    await expect(
-      register({ manifestPath: path.join(appDir, "missing.config.ts") }),
-    ).rejects.toThrow(/No manifest at/);
     expect(appRow("openseo")).toBeUndefined();
   });
 
@@ -415,7 +419,32 @@ describe("register", () => {
     await installGateway("self_hosted");
     deployedElsewhere();
 
-    await expect(register()).rejects.toMatchObject({ code: "SHARED_APPS_UNAVAILABLE" });
+    await expect(register()).rejects.toMatchObject({
+      code: "SHARED_APPS_UNAVAILABLE",
+      message: "Shared apps need a hosted Gateway; https://example.com is self-hosted",
+    });
     expect(appRow("openseo")).toBeUndefined();
+  });
+
+  it("says what it registered, and on a later run what it recorded", async () => {
+    await installGateway("hosted");
+    deployedElsewhere();
+    let text = "";
+    const human = () =>
+      createHumanSink({ write: (chunk) => (text += chunk), writeProblem: (chunk) => (text += chunk) });
+
+    await register({ out: human() });
+
+    expect(stripVTControlCharacters(text)).toMatch(
+      /^Registering openseo with Every App\nRegistered openseo as a shared app ✓ open to every organization's members\n  Its Worker needs the Gateway's identity keys, issuer, vars and binding props: see data\.worker in --json\n/,
+    );
+
+    text = "";
+    account.workers.get(OPENSEO_WORKER)!.versions.push("alchemy-version-2");
+    await register({ out: human() });
+
+    expect(stripVTControlCharacters(text)).toMatch(
+      /^Registering openseo with Every App\nRecorded the Worker's current version ✓ deployed \S+ ago\n/,
+    );
   });
 });

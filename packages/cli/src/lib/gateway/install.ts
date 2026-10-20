@@ -98,8 +98,8 @@ const mode = (value: unknown): DeploymentMode | null =>
 export function notDeployedByEveryapp(): EveryAppError {
   return new EveryAppError(
     "GATEWAY_NOT_INSTALLED",
-    "The Gateway's first install stopped partway\nThis account has its database, but the install never recorded its address.",
-    { rerun: `${CLI} setup --domain <hostname>` },
+    "The Gateway's install didn't finish\nSetup stopped before it recorded the install.",
+    { rerun: `${CLI} setup`, rerunNote: "asks for the hostname again" },
   );
 }
 

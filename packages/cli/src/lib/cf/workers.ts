@@ -9,6 +9,8 @@ import { WorkerDeploymentsOutput } from "./schemas";
 interface WorkerDeployment {
   /** The version serving the largest share of traffic. */
   versionId: string | null;
+  /** When that deployment went out (ms), when cf says. */
+  deployedAt: number | null;
 }
 
 /**
@@ -47,7 +49,10 @@ export async function getWorkerDeployment(
   const version = [...(newest?.versions ?? [])].sort(
     (a, b) => b.percentage - a.percentage,
   )[0];
-  return { versionId: version?.version_id ?? null };
+  return {
+    versionId: version?.version_id ?? null,
+    deployedAt: newest?.created_on ? Date.parse(newest.created_on) : null,
+  };
 }
 
 /**

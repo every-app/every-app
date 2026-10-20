@@ -17,7 +17,7 @@ import type { EveryAppCliManifest } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { version as cliVersion } from "../../package.json";
-import { waitForLive, type LiveWaitSeams } from "./deploy/steps/waitForLive";
+import { LiveWaitVerb, waitForLive, type LiveWaitSeams } from "./deploy/steps/waitForLive";
 
 /**
  * The rebind's seams (tests): how long it waits for the gateway's lease,
@@ -53,11 +53,14 @@ export function gatewayFor(
  * Shared apps are the hosted gateway's: one self-hosted (or of no recorded
  * mode) has none, and nothing registers one there.
  */
-export function assertSharedApps(install: Pick<InstallRecord, "deploymentMode">): void {
+export function assertSharedApps(
+  install: Pick<InstallRecord, "deploymentMode" | "gatewayHost">,
+): void {
   if (install.deploymentMode === "hosted") return;
   throw new EveryAppError(
     "SHARED_APPS_UNAVAILABLE",
-    `Shared apps are for the hosted gateway; this one is ${install.deploymentMode ?? "of no recorded mode"}. Deploy without --shared to make it your organization's own app.`,
+    `Shared apps need a hosted Gateway; https://${install.gatewayHost} is ${install.deploymentMode?.replace("_", "-") ?? "of no recorded mode"}`,
+    { fix: `deploy it as your organization's own app: ${CLI} deploy, without --shared, from its directory` },
   );
 }
 
@@ -90,6 +93,12 @@ export function registerFromManifest(
   });
 }
 
+/** What an app command that couldn't bind leaves in place. */
+const KEPT: Readonly<Record<LiveWaitVerb, string>> = {
+  [LiveWaitVerb.Deploy]: "This app's upload is kept; deploying again binds it and makes it live.",
+  [LiveWaitVerb.Register]: "Its version is recorded; registering again binds it and makes it live.",
+};
+
 /**
  * Reconcile the gateway when the install row says it doesn't bind this
  * app's Worker yet, or doesn't publish its hostname yet.
@@ -105,7 +114,7 @@ export async function bindIfNeeded({
   interactive,
   forceDns,
   seams,
-  rerun = `${CLI} deploy`,
+  verb,
 }: {
   cf: CfRunner;
   db: D1Database;
@@ -118,8 +127,8 @@ export async function bindIfNeeded({
   interactive: boolean;
   forceDns?: boolean;
   seams: ReconcileSeams & Required<Pick<ReconcileSeams, "openRelease">>;
-  /** What to run again when the gateway is busy. */
-  rerun?: string;
+  /** The command binding it, to say what's kept when the Gateway is busy. */
+  verb: LiveWaitVerb;
 }): Promise<void> {
   const install = await readInstall(db);
   if (install?.liveAppWorkers.includes(workerName) && !publishHost) return;
@@ -151,10 +160,11 @@ export async function bindIfNeeded({
     });
   } catch (error) {
     if (error instanceof EveryAppError && error.code === "LEASE_HELD") {
+      // Run again as typed (the rerun of a retryable error).
       throw new EveryAppError(
         "LEASE_HELD",
-        `${error.message} This app's upload is kept: run \`${rerun}\` again once the gateway is free, and it binds the app and makes it live.`,
-        { retryable: true, rerun },
+        `${error.message}\n${KEPT[verb]}`,
+        { retryable: true, rerunNote: error.rerunNote, data: error.data },
       );
     }
     throw error;
@@ -174,6 +184,7 @@ export async function awaitLive({
   out,
   seams,
   message,
+  verb,
 }: {
   wait: boolean;
   db: D1Database;
@@ -183,9 +194,10 @@ export async function awaitLive({
   out: EventSink;
   seams?: LiveWaitSeams;
   message: string;
+  verb: LiveWaitVerb;
 }): Promise<boolean> {
   if (!wait) return false;
-  if ((await waitForLive({ db, appRowId, appId, hostname, out, ...seams })) !== "live") {
+  if ((await waitForLive({ db, appRowId, appId, hostname, out, verb, ...seams })) !== "live") {
     return false;
   }
   out.emit({

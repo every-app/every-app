@@ -592,7 +592,7 @@ describe("email set refuses before anything is read or changed", () => {
 
     await expect(set(dir, { senders: SENDERS })).rejects.toMatchObject({
       code: "SHARED_APP_FORBIDDEN",
-      message: expect.stringContaining("dev@example.com isn't one on this gateway"),
+      message: expect.stringContaining("dev@example.com isn't an owner or admin of"),
     });
     expect(row()).toEqual({ email_senders: null, email_inbound: null });
   });

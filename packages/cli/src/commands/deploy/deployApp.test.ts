@@ -10,6 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deletionSummary, removeApp } from "@/commands/delete";
@@ -37,7 +38,7 @@ import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
-import { createNdjsonSink } from "@/lib/output/events";
+import { createHumanSink, createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
@@ -1965,7 +1966,57 @@ describe("delete", () => {
   });
 
   it("refuses an app the registry doesn't have", async () => {
-    await expect(remove("nope", false)).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
+    await expect(remove("nope", false)).rejects.toMatchObject({
+      code: "APP_NOT_FOUND",
+      message: "No app named nope on this Gateway",
+      rerun: "pnpm everyapp status",
+    });
+  });
+
+  /** `delete` as a person sees it: stdout and stderr, colors stripped. */
+  async function removeShown(appId: string, purge = false) {
+    let text = "";
+    const sink = createHumanSink({ write: (chunk) => (text += chunk), writeProblem: (chunk) => (text += chunk) });
+    const result = await removeApp({
+      appId,
+      out: sink,
+      interactive: false,
+      purge,
+      createCf: () => account.cf,
+      reconcile: rebind,
+    });
+    sink.emit({ type: "done", ...deletionSummary(appId, result) });
+    return stripVTControlCharacters(text);
+  }
+
+  it("says it removed the app, what stays, and how to delete that too", async () => {
+    const shown = await removeShown("todo");
+
+    expect(shown).toMatch(/^Removed todo from the Gateway ✓/m);
+    expect(shown).not.toContain("Updating the Gateway");
+    expect(shown).toMatch(
+      /Its Worker and data are kept, and any cron triggers, Workflows and mail routes keep running\.\nTo delete those too: pnpm everyapp delete todo --purge\n$/,
+    );
+  });
+
+  it("says an app deleted already was, without redeploying the Gateway", async () => {
+    await remove("todo", false);
+    const versions = gatewayVersions();
+
+    const shown = await removeShown("todo");
+
+    expect(gatewayVersions()).toBe(versions);
+    expect(shown).toBe(
+      "todo was already removed from the Gateway\nIts Worker and data are kept. To delete them: pnpm everyapp delete todo --purge\n",
+    );
+  });
+
+  it("ticks the purge as its own step, naming the kinds it deleted", async () => {
+    const shown = await removeShown("todo", true);
+
+    expect(shown).toMatch(/^Removed todo from the Gateway ✓/m);
+    expect(shown).toMatch(/^Deleted todo's Worker(, [\w ]+)* and [\w ]+ ✓/m);
+    expect(shown).not.toContain("every-acme-todo");
   });
 
   it("brings a deleted app back under the same names on its next deploy", async () => {
@@ -1997,12 +2048,17 @@ describe("delete", () => {
       expect.objectContaining({
         type: "warning",
         code: "RESOURCES_KEPT",
-        data: { kept: ['D1 database "every-acme-chef"'] },
+        message:
+          "Kept the D1 database every-acme-chef\nIt has chef's name, but no deploy recorded creating it, so it may belong to something else.",
+        data: {
+          kept: ['D1 database "every-acme-chef"'],
+          fix: "if it is chef's, delete it in the Cloudflare dashboard (Storage & Databases → D1)",
+        },
       }),
     );
-    // Nothing was deleted, and the last word says so.
+    // Nothing was deleted, and the summary says so.
     expect(deletionSummary("chef", result)).toMatchObject({
-      message: 'Deleted chef; kept D1 database "every-acme-chef" (see above).',
+      message: 'Deleted chef; kept D1 database "every-acme-chef".',
       data: { purged: false, removed: [], kept: ['D1 database "every-acme-chef"'] },
     });
   });

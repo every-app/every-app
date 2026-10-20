@@ -47,7 +47,6 @@ async function deleteTodo(cf: FakeCf, events: any[] = []) {
   return deleteHostCertificates({
     cf,
     out: createNdjsonSink((line) => events.push(JSON.parse(line))),
-    step: "app.delete",
     zoneId: "zone-1",
     hostname: "todo.example.com",
   });
@@ -77,9 +76,11 @@ describe("deleteHostCertificates", () => {
     expect(deletedIds(cf)).toEqual(["todo"]);
     expect(events).toEqual([
       expect.objectContaining({
-        type: "progress",
+        type: "step",
+        step: "app.certificate",
+        status: "ok",
         message: "Removed todo.example.com's certificate.",
-        data: { certificatePacks: ["todo"] },
+        data: { hostname: "todo.example.com", certificatePacks: ["todo"] },
       }),
     ]);
   });

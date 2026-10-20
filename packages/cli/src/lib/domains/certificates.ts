@@ -102,23 +102,23 @@ function packsToDelete(
 }
 
 /**
- * Delete the removed `hostname`'s certificate packs (see `packsToDelete`);
- * returns their ids. A failure is a warning: the app is deleted either way,
- * and a stale certificate only sits in the zone's list.
+ * Delete the removed `hostname`'s certificate packs (see `packsToDelete`),
+ * saying so on step `app.certificate`; returns their ids. A failure is a
+ * warning: the app is deleted either way, and a stale certificate only sits
+ * in the zone's list.
  */
 export async function deleteHostCertificates({
   cf,
   out,
-  step,
   zoneId,
   hostname,
 }: {
   cf: CfRunner;
   out: EventSink;
-  step: string;
   zoneId: string;
   hostname: string;
 }): Promise<string[]> {
+  const step = "app.certificate";
   const deleted: string[] = [];
   try {
     const packs = packsToDelete(await listCertificatePacks(cf, zoneId), hostname);
@@ -140,16 +140,21 @@ export async function deleteHostCertificates({
       type: "warning",
       code: "CERT_CLEANUP_FAILED",
       step,
-      message: `Couldn't remove ${hostname}'s certificate (${errorMessage(error)}). It serves nothing now; delete it in the Cloudflare dashboard (SSL/TLS → Edge Certificates) if you like.`,
+      message: [
+        `Couldn't remove ${hostname}'s certificate`,
+        `It serves nothing now. Cloudflare said: ${errorMessage(error)}.`,
+        "Optional: delete it in the Cloudflare dashboard (SSL/TLS → Edge Certificates).",
+      ].join("\n"),
     });
     return deleted;
   }
   if (deleted.length > 0) {
     out.emit({
-      type: "progress",
+      type: "step",
       step,
+      status: "ok",
       message: `Removed ${hostname}'s certificate.`,
-      data: { certificatePacks: deleted },
+      data: { hostname, certificatePacks: deleted },
     });
   }
   return deleted;

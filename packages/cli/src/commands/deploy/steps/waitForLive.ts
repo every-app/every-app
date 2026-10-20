@@ -50,6 +50,17 @@ export interface LiveWaitSeams {
   now?: () => number;
 }
 
+/** The command that waits, for its messages: what it leaves in place, and what to run again. */
+export enum LiveWaitVerb {
+  Deploy = "deploy",
+  Register = "register",
+}
+
+const LEFT: Readonly<Record<LiveWaitVerb, string>> = {
+  [LiveWaitVerb.Deploy]: "uploaded and bound",
+  [LiveWaitVerb.Register]: "registered and bound",
+};
+
 /**
  * `live`: the registry says active. `first_visit`: it will be once a person
  * opens it (Access in front, or no certificate yet). `disabled`: an admin
@@ -63,6 +74,7 @@ export async function waitForLive({
   appId,
   hostname,
   out,
+  verb,
   fetch: fetchImpl,
   localDns = fetchImpl ? undefined : osLocalDns,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -75,6 +87,7 @@ export async function waitForLive({
   appId: string;
   hostname: string;
   out: EventSink;
+  verb: LiveWaitVerb;
 } & LiveWaitSeams): Promise<LiveOutcome> {
   const url = `https://${hostname}/`;
   const started = now();
@@ -102,7 +115,7 @@ export async function waitForLive({
         type: "warning",
         code: "APP_DISABLED",
         step: STEP,
-        message: `${appId} is switched off in Admin → Apps: the gateway serves it again once an admin turns it on.`,
+        message: `${appId} is switched off in Admin → Apps\nIt's ${LEFT[verb]}; the Gateway serves it once an admin turns it on.`,
       });
       return "disabled";
     }
@@ -115,7 +128,7 @@ export async function waitForLive({
           type: "warning",
           code: "ACCESS_IN_FRONT",
           step: STEP,
-          message: `Cloudflare Access answers ${url} before the gateway does, so this deploy can't make ${appId} live: it goes live on its first visit, once someone signs in through Access. ${appId} is uploaded and bound.`,
+          message: `Cloudflare Access answers ${hostname} before the Gateway\n${appId} is ${LEFT[verb]}. It goes live on its first visit, once someone signs in through Access.`,
           data: { hostname },
         });
         return "first_visit";
@@ -131,15 +144,18 @@ export async function waitForLive({
           type: "warning",
           code: "CERT_PENDING",
           step: STEP,
-          message: `${url} has no certificate after ${elapsed(waited)}. It usually comes within five minutes; ${appId} goes live on its first visit once it has one. If it never comes, check the zone's CAA records allow Cloudflare's certificate authorities. \`${CLI} status\` shows it.`,
-          data: { hostname },
+          message: `No certificate for ${hostname} after ${elapsed(waited)}\nIt usually comes within 5 minutes; ${appId} goes live on its first visit once it has one.`,
+          data: {
+            hostname,
+            fix: "if it never comes, check the zone's CAA records allow Cloudflare's certificate authorities",
+          },
         });
         return "first_visit";
       }
       throw new EveryAppError(
         "APP_NOT_LIVE",
-        `The gateway answers ${url} but hasn't made ${appId} live after ${elapsed(waited)}: it can't reach the app's Worker yet. Run \`${CLI} status\`, then deploy again; the upload is kept.`,
-        { retryable: true },
+        `${appId} isn't live after ${elapsed(waited)}: the Gateway can't reach its Worker yet\n${appId} stays ${LEFT[verb]}.`,
+        { retryable: true, rerun: `${CLI} status`, rerunNote: `then ${verb} again` },
       );
     }
     if (lastProgress === null || now() - lastProgress >= PROGRESS_EVERY_MS) {

@@ -4,6 +4,7 @@
  * deploys, and what to run when they disagree. Nothing goes to the gateway.
  */
 import fs from "node:fs";
+import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { applyEmailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -16,7 +17,7 @@ import { markDeployed, register, writeAppEmail } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
-import { createNdjsonSink } from "@/lib/output/events";
+import { createHumanSink, createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import type { CandidateRelease } from "@/lib/gateway/release";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
@@ -133,6 +134,17 @@ async function status() {
   return events.at(-1)!;
 }
 
+/** What a person sees: the report on stdout, colors stripped. */
+async function shown(cloudflare = account) {
+  let text = "";
+  await reportStatus({
+    gateway: await found(cloudflare),
+    out: createHumanSink({ write: (chunk) => (text += chunk), writeProblem: (chunk) => (text += chunk) }),
+    checkout,
+  });
+  return stripVTControlCharacters(text);
+}
+
 const fixCodes = (done: Record<string, any>) =>
   (done["data"]["fixes"] as Array<{ code: string }>).map((fix) => fix.code);
 
@@ -178,7 +190,27 @@ describe("everyapp status", () => {
     expect(done["data"]["fixes"]).toEqual([
       expect.objectContaining({ code: "NO_OWNER", run: "pnpm everyapp setup" }),
     ]);
-    expect(done["message"]).toMatch(/\ntodo +✓ live +https:\/\/todo\.example\.com/);
+    expect(done["message"]).toBe("Gateway https://example.com: 1 app live, 1 problem to fix");
+    const report = await shown();
+    expect(report).toMatch(/\ntodo +✓ live +https:\/\/todo\.example\.com +dev@example\.com\n/);
+    expect(report).toMatch(/\nOwner +none yet\n/);
+    expect(report).toContain(
+      [
+        "! No owner yet, so nobody can sign in",
+        "  Apps still deploy. Setup prints a one-time link that creates the owner account.",
+        "  Run: pnpm everyapp setup",
+      ].join("\n"),
+    );
+  });
+
+  it("shows an API token's deploys as such, and an empty Gateway as one with a deploy to run", async () => {
+    expect(await shown()).toContain("No apps yet. Deploy one from its directory: pnpm everyapp deploy");
+
+    await deployed("todo");
+    account.database("every-app-gateway").sqlite.exec(
+      `UPDATE apps SET deployed_by_actor = 'api-token:${ACCOUNT_ID}'`,
+    );
+    expect(await shown()).toMatch(/\ntodo +○ live on first visit +https:\/\/todo\.example\.com +API token\n/);
   });
 
   it("lists the mail each app's deploys route to it, and what to run when a route stops delivering", async () => {
@@ -219,8 +251,13 @@ describe("everyapp status", () => {
         email: { senders: [], inbound: [], routed: [], declaresInbound: false },
       }),
     );
-    expect(done["message"]).toContain(
-      "inbox: sends as the Gateway's sender only; receives *@example.com, support@example.com",
+    // One address a line; todo, with no mail, has no row.
+    expect(await shown()).toContain(
+      [
+        "EMAIL  SENDS AS              RECEIVES",
+        "inbox  the Gateway's sender  *@example.com",
+        "                             support@example.com",
+      ].join("\n"),
     );
     expect(fixCodes(done)).not.toContain("EMAIL_ROUTE_MISSING");
     expect(fixCodes(done)).not.toContain("EMAIL_ROUTE_PENDING");
@@ -230,16 +267,19 @@ describe("everyapp status", () => {
     account.emailRoutingOf("zone-1").rules.delete(rule!.id);
     expect((await status())["data"]["fixes"]).toContainEqual({
       code: "EMAIL_ROUTE_MISSING",
-      message: "Mail for inbox doesn't reach it: support@example.com (its Email Routing rule is gone).",
-      run: "pnpm everyapp deploy (in inbox's directory)",
+      message: "inbox doesn't get mail at support@example.com\nIts Email Routing rule is gone.",
+      run: "pnpm everyapp deploy from inbox's directory",
     });
+    expect(await shown()).toContain("support@example.com ! not delivered");
 
-    // cf can't read the rules: said, and the rest of the report stands.
+    // cf can't read the rules: a problem in the report, which stands.
     account.cf.override(["email-routing"], { exitCode: 1, stderr: "┌ Error\n│ boom\n└\n" });
     const unknown = await status();
-    expect(events).toContainEqual(expect.objectContaining({ type: "warning", code: "EMAIL_ROUTES_UNKNOWN" }));
+    expect(events.filter((event) => event["type"] === "warning")).toEqual([]);
+    expect(fixCodes(unknown)).toContain("EMAIL_ROUTES_UNKNOWN");
     expect(fixCodes(unknown)).not.toContain("EMAIL_ROUTE_MISSING");
     expect(unknown["data"]["apps"]).toHaveLength(2);
+    expect(await shown()).toContain("! Couldn't check the apps' Email Routing rules\n  Cloudflare said: boom.");
   });
 
   it("names an address set but not routed yet", async () => {
@@ -277,24 +317,30 @@ describe("everyapp status", () => {
         },
       }),
     );
-    expect(done["message"]).toContain(
-      "inbox: sends as *@example.com; receives *@example.com, support@example.com",
+    expect(await shown()).toContain(
+      [
+        "inbox  *@example.com  *@example.com",
+        "                      support@example.com ! not routed yet",
+      ].join("\n"),
     );
     expect(done["data"]["fixes"]).toContainEqual({
       code: "EMAIL_ROUTE_PENDING",
-      message: "Mail routes for inbox don't match its addresses: not routed yet: support@example.com.",
-      run: "pnpm everyapp deploy (in inbox's directory)",
+      message: "inbox doesn't get mail at support@example.com yet",
+      run: "pnpm everyapp deploy from inbox's directory",
     });
 
-    // The other way round: a route the list no longer names.
+    // The other way round too: a route the list no longer names. One
+    // deploy fixes both, so one problem says both.
     await writeAppEmail(db(), "inbox", { senders: [], inbound: ["support@example.com"] }, deployer);
-    expect((await status())["data"]["fixes"]).toContainEqual(
+    const both = await status();
+    expect(both["data"]["fixes"]).toContainEqual(
       expect.objectContaining({
         code: "EMAIL_ROUTE_PENDING",
         message:
-          "Mail routes for inbox don't match its addresses: not routed yet: support@example.com; still routed, no longer listed: *@example.com.",
+          "inbox's mail routes don't match its addresses\nsupport@example.com isn't routed yet; *@example.com is still routed, though no longer listed.",
       }),
     );
+    expect(fixCodes(both).filter((code) => code.startsWith("EMAIL"))).toHaveLength(1);
   });
 
   it("sends an app whose deployed manifest dropped the declaration to email unset, not to a deploy that changes nothing", async () => {
@@ -320,22 +366,61 @@ describe("everyapp status", () => {
         },
       }),
     );
-    expect(done["message"]).toContain(
-      "inbox: sends as the Gateway's sender only; receives nothing (*@example.com, support@example.com set, not declared)",
-    );
     expect(done["data"]["fixes"]).toContainEqual({
       code: "EMAIL_INBOUND_UNDECLARED",
       message:
-        "inbox's addresses (*@example.com, support@example.com) are stored, but the manifest it was deployed from doesn't declare email: { inbound: true }, so no mail is routed to it.",
-      run: "pnpm everyapp email unset inbound (in inbox's directory), or pnpm everyapp deploy once everyapp.config.ts declares it",
+        "inbox has inbound addresses, but its config doesn't turn inbound mail on\ninbox was deployed without email: { inbound: true }, so nothing routes *@example.com and support@example.com.",
+      run: null,
+      fix: "declare it in everyapp.config.ts and run pnpm everyapp deploy, or drop the addresses: pnpm everyapp email unset inbound",
     });
     expect(fixCodes(done)).not.toContain("EMAIL_ROUTE_PENDING");
+    const report = await shown();
+    expect(report).toContain("inbox  the Gateway's sender  ! *@example.com (inbound off)");
+    expect(report).toContain(
+      [
+        "  Fix: declare it in everyapp.config.ts and run pnpm everyapp deploy, or drop the addresses: pnpm everyapp email unset inbound",
+        "  Run either from inbox's directory.",
+      ].join("\n"),
+    );
   });
 
   it("prints the deployment mode the install recorded", async () => {
     const done = await status();
     expect(done["data"]["mode"]).toBe("self_hosted");
-    expect(done["message"]).toContain("https://example.com · self-hosted");
+    expect(await shown()).toContain("https://example.com · self-hosted");
+  });
+
+  it("says when cf can't list the certificates, in the report", async () => {
+    account.cf.override(["ssl", "certificate-packs", "list"], {
+      exitCode: 1,
+      stderr: "┌ Error\n│ Authentication error [code: 10000]\n└\n",
+    });
+
+    const done = await status();
+
+    expect(events.filter((event) => event["type"] === "warning")).toEqual([]);
+    expect(done["data"]).toMatchObject({ tls: null, certificates: null });
+    expect(fixCodes(done)).toContain("CERTIFICATES_UNKNOWN");
+    const report = await shown();
+    expect(report).toMatch(/\nTLS +! couldn't check\n/);
+    expect(report).toContain("! Couldn't list example.com's certificates\n  Cloudflare said: ");
+  });
+
+  it("puts the problems one command fixes in one block", async () => {
+    // No owner, and an app the live Gateway doesn't bind: setup does both.
+    await deployed("board", { bind: false });
+
+    const report = await shown();
+
+    expect(report).toContain(
+      [
+        "! The live Gateway doesn't serve board",
+        "  board is uploaded, but the live Gateway doesn't bind it.",
+        "  No owner yet, so nobody can sign in.",
+        "  Run: pnpm everyapp setup",
+      ].join("\n"),
+    );
+    expect(report.match(/Run: pnpm everyapp setup/g)).toHaveLength(1);
   });
 
   it("says what to run when the registry, the install row and cf disagree", async () => {
@@ -375,10 +460,29 @@ describe("everyapp status", () => {
     expect(done["data"]["apps"]).toContainEqual(
       expect.objectContaining({ id: "board", status: "binding", bound: false }),
     );
+    const report = await shown();
+    expect(report).toMatch(/\nDeploys +A deploy of todo from .+, started .+ ago\n/);
+    expect(report).toMatch(/\nboard +! not bound +https:\/\/board\.example\.com/);
+    expect(report).toMatch(/\nchef +✗ Worker missing +https:\/\/chef\.example\.com/);
+    expect(report).toMatch(/\nnotes +! never deployed +https:\/\/notes\.example\.com/);
+    expect(report).toMatch(/\ntodo +○ live on first visit · deploying +https:\/\/todo\.example\.com/);
+    expect(report).toContain(
+      "! The live Gateway doesn't serve board\n  board is uploaded, but the live Gateway doesn't bind it.\n  Run: pnpm everyapp setup",
+    );
+    expect(report).toContain(
+      "✗ chef's Worker no longer exists\n  Run: pnpm everyapp deploy from chef's directory, or pnpm everyapp delete chef",
+    );
+    // A running deploy shows in its rows, not as something to do.
+    expect(report).not.toContain("is running");
 
     // The gateway changed outside everyapp: that comes first.
     account.workers.get("every-app-gateway")!.versions.push("dashboard-1");
     expect(fixCodes(await status())).toContain("GATEWAY_CHANGED");
+    const changed = await shown();
+    expect(changed).toMatch(/\nRelease +0\.2\.0 · changed outside everyapp\n/);
+    expect(changed).toContain(
+      "! The Gateway Worker was changed outside everyapp\n  It serves a version from the dashboard or API, not the one setup uploaded.\n  Run: pnpm everyapp setup  redeploys 0.2.0, asking first",
+    );
   });
 
   it("says whether the live Gateway is the one this checkout builds, and what to run when not", async () => {
@@ -386,10 +490,11 @@ describe("everyapp status", () => {
     account.database("every-app-gateway").sqlite.exec(
       "UPDATE _everyapp_install SET source_tree_sha256 = 'tree-1'",
     );
-    const at = async (treeSha256: string | null, committedAt?: number) => {
+    const at = async (treeSha256: string | null, committedAt?: number, version?: string) => {
       const source = await releaseSource(tarball);
       checkout = async () => ({
         ...source,
+        version: version ?? source.version,
         treeSha256,
         order: { ...source.order, committedAt: committedAt ?? source.order.committedAt },
       });
@@ -404,7 +509,7 @@ describe("everyapp status", () => {
       checkout: { version: "0.2.0", treeSha256: "tree-1" },
     });
     expect(checkoutFixes(same)).toEqual([]);
-    expect(same["message"]).toContain("matches this checkout");
+    expect(await shown()).toMatch(/\nRelease +0\.2\.0 · matches this checkout\n/);
 
     // Committed since: the next rebind upgrades it, or setup does now.
     const newer = await at("tree-2", Date.parse("2026-10-20T00:00:00Z"));
@@ -412,15 +517,22 @@ describe("everyapp status", () => {
     expect(newer["data"]["fixes"]).toContainEqual(
       expect.objectContaining({ code: "GATEWAY_OUTDATED", run: "pnpm everyapp setup" }),
     );
+    expect(await shown()).toContain(
+      "! This checkout's Gateway changed since 0.2.0 went live\n  The next deploy or delete that rebinds the Gateway upgrades it too.",
+    );
 
     // Behind the live one: git pull.
-    const behind = await at("tree-0", Date.parse("2026-01-01T00:00:00Z"));
+    const behind = await at("tree-0", Date.parse("2026-01-01T00:00:00Z"), "0.1.0");
     expect(behind["data"]["upToDate"]).toBe(false);
     expect(checkoutFixes(behind)).toEqual(["CHECKOUT_BEHIND"]);
     expect(behind["data"]["fixes"]).toContainEqual(
       expect.objectContaining({ code: "CHECKOUT_BEHIND", run: "git pull" }),
     );
-    expect(behind["message"]).toContain("newer than this checkout");
+    const report = await shown();
+    expect(report).toMatch(/\nRelease +0\.2\.0 · this checkout is behind\n/);
+    expect(report).toContain(
+      "! This checkout is behind the live Gateway\n  This checkout has 0.1.0; 0.2.0 is live.\n  Deploys from here are refused until it catches up.\n  Run: git pull",
+    );
 
     // Without a tree hash, it can't say.
     const unknown = await at(null);
@@ -478,8 +590,15 @@ describe("everyapp status", () => {
 
     events = [];
     await reportStatus({ gateway: await found(fresh), out: out(), checkout });
-    expect(fixCodes(events.at(-1)!)).toContain("GATEWAY_NOT_UPLOADED");
-    expect(fixCodes(events.at(-1)!)).not.toContain("GATEWAY_CHANGED");
+    // Nobody can have claimed it: one problem, which setup finishes.
+    expect(fixCodes(events.at(-1)!)).toEqual(["GATEWAY_NOT_UPLOADED"]);
+    const report = await shown(fresh);
+    expect(report).toMatch(/\nRelease +0\.2\.0, never uploaded\n/);
+    expect(report).toMatch(/\nTLS +no hostnames yet\n/);
+    expect(report).toMatch(/\nNo apps yet\.\n/);
+    expect(report).toContain(
+      "! The Gateway's install stopped before its first upload\n  Setup finishes it, then prints the link that creates the owner account.\n  Run: pnpm everyapp setup",
+    );
 
     // A database with no install row at all.
     fresh.database("every-app-gateway").sqlite.exec("DROP TABLE _everyapp_install");
@@ -489,8 +608,31 @@ describe("everyapp status", () => {
       type: "done",
       data: {
         installed: false,
-        fixes: [expect.objectContaining({ run: expect.stringContaining("everyapp setup") })],
+        fixes: [{ code: "GATEWAY_NOT_INSTALLED", run: "pnpm everyapp setup" }],
       },
+    });
+    expect(await shown(fresh)).toBe(
+      [
+        "Cloudflare  Acme",
+        "Gateway     install not finished",
+        "",
+        "! Setup stopped before it recorded the Gateway's install",
+        "  The Gateway's database exists, but nothing else was recorded.",
+        "  Run: pnpm everyapp setup  asks for the hostname again",
+        "",
+      ].join("\n"),
+    );
+  });
+
+  it("is a first run when no account the login sees has a Gateway: install one", async () => {
+    await expect(
+      existingGateway({ out: out(), createCf: () => new FakeCloudflare().cf }),
+    ).rejects.toMatchObject({
+      action: "install_gateway",
+      message: expect.stringMatching(
+        /^No Gateway in Acme's Cloudflare account( \(logged in as .+\))?\nGateway in another account\? Log in to it: pnpm everyapp login$/,
+      ),
+      rerun: "pnpm everyapp setup",
     });
   });
 });

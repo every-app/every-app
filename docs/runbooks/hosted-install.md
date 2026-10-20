@@ -142,7 +142,7 @@ A Worker deployed by other means (OpenSEO's Alchemy stage, say), in the
 Gateway's account:
 
 ```sh
-pnpm everyapp register openseo --worker every-everyapp-openseo --shared --manifest ../open-seo/everyapp.config.ts
+pnpm everyapp register openseo --worker every-everyapp-openseo --manifest ../open-seo/everyapp.config.ts
 ```
 
 `register` checks the Worker exists, validates the manifest as `deploy`

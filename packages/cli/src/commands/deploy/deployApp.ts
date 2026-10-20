@@ -81,7 +81,7 @@ import {
 import { setupDeps, type SetupDeps } from "@/commands/setup/runSetup";
 import { checkSchemaDrift } from "./steps/checkSchemaDrift";
 import { offerGateway } from "./steps/offerGateway";
-import type { LiveWaitSeams } from "./steps/waitForLive";
+import { LiveWaitVerb, type LiveWaitSeams } from "./steps/waitForLive";
 import { buildApp } from "@/lib/app/buildApp";
 import {
   MISSING_CLOUDFLARE_CONFIG,
@@ -803,6 +803,7 @@ async function deploySteps(
     interactive,
     forceDns: options.forceDns,
     seams: { ...options.reconcile, openRelease: gateway.openRelease },
+    verb: LiveWaitVerb.Deploy,
   });
   // A hostname the gateway doesn't publish never answers (warned above).
   const wait = !outsideBase && (options.waitForLive ?? true);
@@ -824,6 +825,7 @@ async function deploySteps(
     out,
     seams: options.live,
     message: `${manifest.id} is live at https://${hostname}.`,
+    verb: LiveWaitVerb.Deploy,
   });
 
   return {

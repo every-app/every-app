@@ -892,7 +892,7 @@ In order. Each step points at the document that has the commands.
    (`SELECT jwt_public_key FROM _everyapp_install WHERE id = 'install'`, which
    matches `main`'s install table), then `pnpm deploy:everyapp:first-party`.
 7. **Register OpenSEO**:
-   `pnpm everyapp register openseo --worker every-everyapp-openseo --shared --manifest ../open-seo/everyapp.config.ts`,
+   `pnpm everyapp register openseo --worker every-everyapp-openseo --manifest ../open-seo/everyapp.config.ts`,
    and again after every OpenSEO deploy so the registry records the new version.
 8. **Worker names**: the registry names a shared app's Worker
    `every-<platform org key>-<appId>`, and the Every App organization's key is

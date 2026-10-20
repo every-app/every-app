@@ -13,7 +13,7 @@ import { deviceLoginAction, ensureCfAuth } from "@/lib/cf/account";
 import type { D1Database } from "@/lib/cf/d1";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
-import { EveryAppError } from "@/lib/errors";
+import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
@@ -126,7 +126,7 @@ function requireInstall(
   if (install.liveVersionId === null) {
     throw new EveryAppError(
       "GATEWAY_NOT_INSTALLED",
-      `The Gateway at https://${install.gatewayHost} never finished installing`,
+      `The Gateway at https://${install.gatewayHost} isn't finished installing\nSetup stopped before its first upload.`,
       { rerun: `${CLI} setup` },
     );
   }
@@ -135,8 +135,10 @@ function requireInstall(
 
 /**
  * The Gateway a command that needs one acts on (`status`), found through
- * the Cloudflare login: GATEWAY_NOT_FOUND when there is none. Under --json,
- * cf's device login goes to the agent, and the run waits.
+ * the Cloudflare login. None in any account the login sees is the first
+ * run: `install_gateway`, whose rerun is setup. None in the account asked
+ * for, or no accounts at all, is GATEWAY_NOT_FOUND. Under --json, cf's
+ * device login goes to the agent, and the run waits.
  */
 export async function existingGateway({
   json,
@@ -150,6 +152,18 @@ export async function existingGateway({
     interactive: canPromptInTerminal(json ?? false),
     onDeviceLogin: json ? deviceLoginAction(out, "gateway.login") : undefined,
   });
+  if (discovery.found.length === 0 && discovery.probed.length > 0 && !discovery.requestedAccountId) {
+    const accounts = discovery.probed.map((account) => account.name ?? account.id);
+    throw new ActionRequiredError(
+      "install_gateway",
+      [
+        `No Gateway in ${accounts.length === 1 ? `${accounts[0]}'s Cloudflare account` : `the ${accounts.length} Cloudflare accounts this login sees`}${whoami.email ? ` (logged in as ${whoami.email})` : ""}`,
+        `Gateway in another account? Log in to it: ${CLI} login`,
+      ].join("\n"),
+      undefined,
+      { rerun: `${CLI} setup`, rerunNote: "installs one", data: { accounts: discovery.probed } },
+    );
+  }
   return requireGateway(discovery, whoami);
 }
 

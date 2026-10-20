@@ -36,7 +36,7 @@ import {
 import { parseEmailList, storedEmailList, type AppEmailConfig } from "@every-app/sdk/internal";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
-import { CLI } from "@/lib/output/command";
+import { CLI, thisCommandWithout } from "@/lib/output/command";
 
 type D1Row = Record<string, unknown>;
 
@@ -348,7 +348,14 @@ async function registerApp(
   });
   // The scope the plan resolved: a redeploy that didn't ask keeps the row's.
   if (plan.app.scope === "shared") {
-    assertPlatformAdmin(input.deployer, deployerUserId, orgMembers, organization);
+    assertPlatformAdmin(
+      input.deployer,
+      deployerUserId,
+      orgMembers,
+      organization,
+      // Only `register` names the Worker it expects.
+      input.expectedWorkerName === undefined ? SharedAppAction.Deploy : SharedAppAction.Register,
+    );
   }
   if (
     input.expectedWorkerName !== undefined &&
@@ -356,8 +363,11 @@ async function registerApp(
   ) {
     throw new EveryAppError(
       "WORKER_NAME_MISMATCH",
-      `The Gateway names ${input.appSlug}'s Worker ${plan.app.workerName}, and binds no other`,
-      { fix: `deploy the Worker under that name, then register it with --worker ${plan.app.workerName}` },
+      `${input.appSlug}'s Worker must be named ${plan.app.workerName}, not ${input.expectedWorkerName}\nThe Gateway binds each app's Worker by that name only.`,
+      {
+        fix: `deploy the Worker as ${plan.app.workerName}`,
+        rerun: `${thisCommandWithout("--worker")} --worker ${plan.app.workerName}`,
+      },
     );
   }
   await db.run(registrationWrites(plan, now));
@@ -403,14 +413,24 @@ function assertPlatformAdmin(
   deployerUserId: string | null,
   orgMembers: Array<{ id: string; role: string | null }>,
   organization: Organization,
+  action: SharedAppAction,
 ): void {
   if (deployer.email === null) return;
   const member = orgMembers.find((candidate) => candidate.id === deployerUserId);
   if (member && isOwnerOrAdmin(member.role)) return;
   throw new EveryAppError(
     "SHARED_APP_FORBIDDEN",
-    `Only owners and admins of ${organization.name}, the platform organization, deploy or delete shared apps; ${deployer.email} isn't one on this gateway.`,
+    `Only ${organization.name} owners and admins can ${action} shared apps\n${deployer.email} isn't an owner or admin of ${organization.name}, the platform organization.`,
+    { fix: `ask an owner of ${organization.name} to make you an admin, or to do it for you` },
   );
+}
+
+/** What a login does to a shared app, which only the platform organization's owners and admins may. */
+enum SharedAppAction {
+  Deploy = "deploy",
+  Register = "register",
+  Delete = "delete",
+  ChangeEmail = "change the email of",
 }
 
 /** What a registration writes, in one batch. */
@@ -656,12 +676,13 @@ async function assertPlatformAdminIn(
   db: D1Database,
   deployer: Deployer,
   organization: Organization,
+  action: SharedAppAction,
 ): Promise<void> {
   if (deployer.email === null) return;
   const [members = [], deployers = []] = await db.run(
     memberQueries(organization.id, deployer.email),
   );
-  assertPlatformAdmin(deployer, text(deployers[0]?.["id"]), toMembers(members), organization);
+  assertPlatformAdmin(deployer, text(deployers[0]?.["id"]), toMembers(members), organization, action);
 }
 
 function notRegistered(appSlug: string): EveryAppError {
@@ -728,7 +749,9 @@ export async function writeAppEmail(
     const found = await findAppIn(db, appSlug);
     if (!found || !isRegistered(found.app)) throw notRegistered(appSlug);
     const { app, organization } = found;
-    if (app.scope === "shared") await assertPlatformAdminIn(db, deployer, organization);
+    if (app.scope === "shared") {
+      await assertPlatformAdminIn(db, deployer, organization, SharedAppAction.ChangeEmail);
+    }
     const emailSenders = storedEmailList(config.senders);
     const emailInbound = storedEmailList(config.inbound);
     const [changed = []] = await db.run([
@@ -780,18 +803,25 @@ export async function listApps(db: D1Database): Promise<
  * connections left. An app deleted already writes nothing, so a delete
  * that stopped part-way can run again. A shared app is every
  * organization's: only the platform organization's owners and admins delete
- * it. Returns the app as it was named.
+ * it. Returns the app as it was named, and whether it was deleted already.
  */
 export async function deleteApp(
   db: D1Database,
   appSlug: string,
   deployer: Deployer,
   now = Date.now(),
-): Promise<RegisteredAppInfo> {
+): Promise<RegisteredAppInfo & { alreadyDeleted: boolean }> {
   const found = await findAppIn(db, appSlug);
-  if (!found || !found.app.workerName) throw notRegistered(appSlug);
+  if (!found || !found.app.workerName) {
+    throw new EveryAppError("APP_NOT_FOUND", `No app named ${appSlug} on this Gateway`, {
+      rerun: `${CLI} status`,
+      rerunNote: "lists its apps",
+    });
+  }
   const { app, organization } = found;
-  if (app.scope === "shared") await assertPlatformAdminIn(db, deployer, organization);
+  if (app.scope === "shared") {
+    await assertPlatformAdminIn(db, deployer, organization, SharedAppAction.Delete);
+  }
   const update = deleteUpdate(app);
   if (update) {
     await db.run([
@@ -802,5 +832,5 @@ export async function deleteApp(
       ...withoutAppData(app, now),
     ]);
   }
-  return { ...info(app), status: DELETED_APP_STATUS };
+  return { ...info(app), status: DELETED_APP_STATUS, alreadyDeleted: update === null };
 }

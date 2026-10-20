@@ -22,6 +22,7 @@
  * keys and issuer, and the AppGateway binding with these props), which the
  * `app.register` step lists.
  */
+import path from "node:path";
 import { appBindingName } from "@every-app/perimeter/manifest";
 import {
   assertSharedApps,
@@ -31,7 +32,7 @@ import {
   registerFromManifest,
   type ReconcileSeams,
 } from "@/commands/appGateway";
-import type { LiveWaitSeams } from "@/commands/deploy/steps/waitForLive";
+import { LiveWaitVerb, type LiveWaitSeams } from "@/commands/deploy/steps/waitForLive";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { preflightAppHost } from "@/lib/domains/preflight";
@@ -41,7 +42,6 @@ import { connectToGateway } from "@/lib/gateway/connect";
 import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
 import { markDeployed } from "@/lib/gateway/registry";
 import { loadEveryAppManifestFile } from "@/lib/manifest";
-import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
 
@@ -49,10 +49,8 @@ interface RegisterAppOptions {
   appId: string;
   /** The Worker in the gateway's account (`--worker`). */
   workerName: string;
-  /** The app's everyapp.config.ts (`--manifest`). */
-  manifestPath: string;
-  /** `--shared`: the only kind `register` makes. */
-  shared: boolean;
+  /** The app's everyapp.config.ts as typed (`--manifest`), from the working directory. */
+  manifest: string;
   gateway?: string;
   accountId?: string;
   out: EventSink;
@@ -81,19 +79,17 @@ export async function registerApp(
   options: RegisterAppOptions,
 ): Promise<RegisterAppResult> {
   const { appId, workerName, out } = options;
-  if (!options.shared) {
-    throw new EveryAppError(
-      "SHARED_FLAG_REQUIRED",
-      `\`${CLI} register\` registers shared apps only, a hosted gateway's first-party apps: pass --shared. An organization's own app deploys with \`${CLI} deploy\`.`,
-    );
-  }
   const interactive =
     options.interactive ?? canPromptInTerminal(options.json ?? false);
-  const manifest = await loadEveryAppManifestFile(options.manifestPath);
+  const manifest = await loadEveryAppManifestFile(path.resolve(options.manifest), {
+    message: `No manifest at ${options.manifest}`,
+    fix: `pass ${appId}'s everyapp.config.ts with --manifest`,
+  });
   if (manifest.id !== appId) {
     throw new EveryAppError(
       "MANIFEST_MISMATCH",
-      `${options.manifestPath} is app "${manifest.id}"'s manifest, not "${appId}"'s.`,
+      `${options.manifest} is ${manifest.id}'s config, not ${appId}'s`,
+      { fix: `pass ${appId}'s everyapp.config.ts with --manifest` },
     );
   }
 
@@ -115,13 +111,15 @@ export async function registerApp(
   if (!deployment) {
     throw new EveryAppError(
       "WORKER_NOT_FOUND",
-      `No Worker ${workerName} in the gateway's Cloudflare account (${accountName ?? accountId}). Deploy it there first, then register it.`,
+      `No Worker named ${workerName} in ${accountName ?? accountId}'s account\nregister records a Worker your pipeline already deployed.`,
+      { fix: `deploy ${workerName} there, then register again` },
     );
   }
   if (!deployment.versionId) {
     throw new EveryAppError(
       "VERSION_UNKNOWN",
-      `Cloudflare reports no version serving ${workerName}.`,
+      `${workerName} has no version serving traffic`,
+      { fix: "deploy a version of it, then register again" },
     );
   }
   const versionId = deployment.versionId;
@@ -145,6 +143,7 @@ export async function registerApp(
       hostname,
       status: plan.app.status,
       existingApp: !isNew,
+      register: true,
       scope: plan.app.scope,
       organizationId: organization.id,
       organizationName: organization.name,
@@ -187,8 +186,14 @@ export async function registerApp(
   } finally {
     await lease.release();
   }
+  out.emit({
+    type: "step",
+    step: "app.record",
+    status: "ok",
+    message: `Recorded ${workerName}'s version ${versionId}.`,
+    data: { appId, versionId, existingApp: !isNew, deployedAt: deployment.deployedAt },
+  });
 
-  const rerun = `${CLI} register ${appId} --worker ${workerName} --shared --manifest ${options.manifestPath}`;
   await bindIfNeeded({
     cf,
     db: registry,
@@ -200,19 +205,10 @@ export async function registerApp(
     interactive,
     forceDns: options.forceDns,
     seams: { ...options.reconcile, openRelease: gateway.openRelease },
-    rerun,
+    verb: LiveWaitVerb.Register,
   });
-  const wait = !outsideBase && (options.waitForLive ?? true);
-  if (!outsideBase && !wait) {
-    out.emit({
-      type: "progress",
-      step: "app.live",
-      message: `${appId} goes live on its first visit to https://${hostname}; \`${CLI} status\` shows it.`,
-      data: { hostname },
-    });
-  }
   const live = await awaitLive({
-    wait,
+    wait: !outsideBase && (options.waitForLive ?? true),
     db: registry,
     appRowId: plan.app.id,
     appId,
@@ -220,6 +216,7 @@ export async function registerApp(
     out,
     seams: options.live,
     message: `${appId} is live at https://${hostname}, through ${appBindingName(workerName)}.`,
+    verb: LiveWaitVerb.Register,
   });
   return {
     liveUrl: `https://${hostname}`,
