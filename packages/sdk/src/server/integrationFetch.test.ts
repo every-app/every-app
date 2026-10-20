@@ -267,7 +267,7 @@ describe("the email capability", () => {
       }),
     ).toThrow(
       new ConfigurationError(
-        "email is sent with sendEmail() from @every-app/sdk/server, not integrationFetch().",
+        "email is a gateway service: call its helper from @every-app/sdk/server (sendEmail(), listMembers()), not integrationFetch().",
       ),
     );
   });

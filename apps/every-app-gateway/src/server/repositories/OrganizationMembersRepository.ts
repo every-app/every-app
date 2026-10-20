@@ -1,13 +1,95 @@
 import { db } from "@/db";
 import {
+  apps,
   members,
   organizations,
   userAccessTokens,
   userAppAccess,
   users,
 } from "@/db/schema";
-import { and, eq, isNull } from "drizzle-orm";
-import type { OrganizationRole } from "@/server/org-roles";
+import {
+  and,
+  eq,
+  exists,
+  isNotNull,
+  isNull,
+  lte,
+  or,
+  type SQL,
+} from "drizzle-orm";
+import type { OrganizationMember } from "@every-app/sdk/internal";
+import {
+  resolvePrimaryOrganizationRole,
+  type OrganizationRole,
+} from "@/server/org-roles";
+
+/**
+ * The user isn't deactivated at `now`: isUserBanned (server/user-ban.ts) as
+ * SQL. Banned with no expiry, or an expiry still to come, is deactivated.
+ */
+export function liveUser(now = new Date()): SQL {
+  return or(
+    isNull(users.banned),
+    eq(users.banned, false),
+    and(isNotNull(users.banExpires), lte(users.banExpires, now)),
+  )!;
+}
+
+/**
+ * The members of an active organization who can open one of its apps now,
+ * by the rule the perimeter applies when they visit it
+ * (betterAuthAuthenticator.ts hasAppAccess): not deactivated, and granted
+ * an organization's own app (`user_app_access`); a shared app opens for
+ * every member. The members capability lists them for the app.
+ */
+async function listAppMembers({
+  organizationId,
+  appSlug,
+  shared,
+}: {
+  organizationId: string;
+  appSlug: string;
+  shared: boolean;
+}): Promise<OrganizationMember[]> {
+  const granted = exists(
+    db
+      .select({ id: userAppAccess.id })
+      .from(userAppAccess)
+      .innerJoin(apps, eq(userAppAccess.appRowId, apps.id))
+      .where(
+        and(
+          eq(userAppAccess.userId, users.id),
+          eq(userAppAccess.organizationId, organizationId),
+          eq(apps.organizationId, organizationId),
+          eq(apps.appSlug, appSlug),
+        ),
+      ),
+  );
+  const rows = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      role: members.role,
+    })
+    .from(members)
+    .innerJoin(users, eq(members.userId, users.id))
+    .innerJoin(organizations, eq(members.organizationId, organizations.id))
+    .where(
+      and(
+        eq(members.organizationId, organizationId),
+        eq(organizations.status, "active"),
+        liveUser(),
+        ...(shared ? [] : [granted]),
+      ),
+    );
+  return rows.flatMap((row) => {
+    const role = resolvePrimaryOrganizationRole(row.role);
+    return role
+      ? [{ id: row.id, email: row.email, name: row.name ?? "", role }]
+      : [];
+  });
+}
 
 async function listMembersForOrganization(organizationId: string) {
   return db
@@ -123,6 +205,7 @@ async function removeMember(
 
 export const OrganizationMembersRepository = {
   listMembersForOrganization,
+  listAppMembers,
   findMembership,
   findMembershipWithUser,
   updateRole,

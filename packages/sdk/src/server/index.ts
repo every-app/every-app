@@ -40,6 +40,7 @@ export {
   type NodeServerHandlerOptions,
 } from "./nodeServer.js";
 export { sendEmail, type SendEmailOptions } from "./sendEmail.js";
+export { listMembers, type ListMembersOptions } from "./listMembers.js";
 export type {
   ApiKeyCapabilityId,
   CapabilityId,
@@ -48,6 +49,9 @@ export type {
   EmailAttachmentInput,
   SendEmailMessage,
   SendEmailResult,
+  ListMembersResult,
+  OrganizationMember,
+  OrganizationMemberRole,
 } from "../internal/index.js";
 export {
   // Deprecated in 0.3.0 and removed in 0.4.0: use defineTools().

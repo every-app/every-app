@@ -7,7 +7,8 @@
  *    the provider, so the app never sees the key;
  *  - `oauth_client`: completes a provider's token endpoint call with the
  *    gateway's OAuth client (capabilities/oauthClient.ts);
- *  - `service`: the gateway does the work itself (capabilities/email.ts).
+ *  - `service`: the gateway does the work itself (capabilities/email.ts,
+ *    capabilities/members.ts).
  */
 import {
   CAPABILITIES,
@@ -28,6 +29,11 @@ import {
   type GatewayMail,
 } from "./capabilities/email";
 import { forwardableHeaders } from "./capabilities/forward";
+import {
+  handleMembersList,
+  membersCapabilityStatus,
+  type ListAppMembers,
+} from "./capabilities/members";
 import {
   handleOAuthClientCall,
   oauthClientStatus,
@@ -69,6 +75,8 @@ interface HandleIntegrationProxyRequestOptions {
   fetchUpstream?: (request: Request) => Promise<Response>;
   /** The gateway's mail, for the `email` capability (loaded on first use). */
   mail?: () => Promise<GatewayMail>;
+  /** The calling app's members, for the `members` capability. */
+  listMembers: ListAppMembers;
 }
 
 export async function handleIntegrationProxyRequest({
@@ -78,6 +86,7 @@ export async function handleIntegrationProxyRequest({
   admit,
   fetchUpstream = fetch,
   mail = loadGatewayMail,
+  listMembers,
 }: HandleIntegrationProxyRequestOptions): Promise<Response> {
   const url = new URL(request.url);
   const hosted = platformPolicy(env).hosted;
@@ -88,11 +97,10 @@ export async function handleIntegrationProxyRequest({
     // Only an app that lists the capability learns whether a key is held.
     const capability = CAPABILITIES[status];
     if (capability.mode === "service") {
-      return emailCapabilityStatus({
-        entry: capabilities?.[status],
-        hosted,
-        mail,
-      });
+      const entry = capabilities?.[status];
+      return status === "email"
+        ? emailCapabilityStatus({ entry, hosted, mail })
+        : membersCapabilityStatus(entry);
     }
     if (capability.mode === "oauth_client") {
       return oauthClientStatus({
@@ -126,17 +134,14 @@ export async function handleIntegrationProxyRequest({
     return refusal(
       400,
       "invalid_integration_route",
-      "Integration calls go to /api/integrations/<provider>/<provider host>/<path>, for a host the provider uses, or to a route a gateway service declares (/api/integrations/email/send).",
+      "Integration calls go to /api/integrations/<provider>/<provider host>/<path>, for a host the provider uses, or to a route a gateway service declares (/api/integrations/email/send, /api/integrations/members/list).",
     );
   }
   if (route.kind === "service") {
-    return handleEmailSend({
-      request,
-      entry: capabilities?.[route.id],
-      hosted,
-      admit,
-      mail,
-    });
+    const entry = capabilities?.[route.id];
+    return route.id === "email"
+      ? handleEmailSend({ request, entry, hosted, admit, mail })
+      : handleMembersList({ request, entry, admit, listMembers });
   }
 
   const integration = CAPABILITIES[route.id];

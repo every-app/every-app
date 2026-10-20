@@ -48,7 +48,11 @@ describe("OPTIONAL_SECRETS", () => {
           )
           .map(([, value]) => value as string),
       ];
-      expect(settings.length, id).toBeGreaterThan(0);
+      // Only a service the gateway runs from its own data (members) holds
+      // no setting; a credential-holding kind always names one.
+      if (capability.mode !== "service") {
+        expect(settings.length, id).toBeGreaterThan(0);
+      }
       for (const setting of settings) {
         expect(declared.has(setting), `${id}: ${setting}`).toBe(true);
       }

@@ -343,17 +343,18 @@ for a live account:
     src/commands/deploy/deployApp.email.test.ts src/lib/app/emailRoutes.test.ts \
     src/lib/migrations/prisma.test.ts )
 
-# The gateway's capability routes: email and OAuth clients, unit and on
+# The gateway's capability routes: email, members and OAuth clients, unit and on
 # migrated SQLite; Workers AI in the AI proxy (the live SSE captures as
 # fixtures); OPTIONAL_SECRETS covers every setting the registry names
 ( cd apps/every-app-gateway && pnpm exec vitest run src/server/capabilities \
-    src/server/email-capability.sqlite.test.ts src/server/oauth-client.sqlite.test.ts \
+    src/server/email-capability.sqlite.test.ts src/server/members-capability.sqlite.test.ts \
+    src/server/oauth-client.sqlite.test.ts \
     src/server/ai-proxy.test.ts src/optional-secrets.test.ts )
 
-# The SDK's halves: sendEmail, the shared email and OAuth wire rules, the
+# The SDK's halves: sendEmail, listMembers, the shared email and OAuth wire rules, the
 # Workers AI normaliser, nodeServerHandler, and docs/capabilities.md's
 # generated OAuth tables (UPDATE_DOCS=1 regenerates them)
-( cd packages/sdk && pnpm exec vitest run src/server/sendEmail.test.ts \
+( cd packages/sdk && pnpm exec vitest run src/server/sendEmail.test.ts src/server/listMembers.test.ts \
     src/internal/email.test.ts src/internal/oauthClient.test.ts \
     src/internal/aiProviders.test.ts src/server/nodeServer.test.ts \
     src/internal/capabilitiesDoc.test.ts )

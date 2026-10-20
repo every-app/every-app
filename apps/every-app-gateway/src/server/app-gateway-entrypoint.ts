@@ -184,6 +184,17 @@ export async function handleAppGatewayRequest({
         },
         fetchUpstream,
         ...(mail ? { mail } : {}),
+        // Loaded on first use: it reads D1.
+        listMembers: async (organizationId) => {
+          const { OrganizationMembersRepository } = await import(
+            "./repositories/OrganizationMembersRepository"
+          );
+          return OrganizationMembersRepository.listAppMembers({
+            organizationId,
+            appSlug: app.appId,
+            shared: app.scope === "shared",
+          });
+        },
       });
     }
 

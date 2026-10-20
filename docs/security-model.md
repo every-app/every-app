@@ -121,6 +121,14 @@ first upload; ADR-0001) decides what the gateway does, once, in
   values with line breaks too, and the rest pass through to Email Sending.
   Logs (`email.app.send`) carry counts, an HMAC of the first recipient and
   the outcome, never subjects, bodies, attachments or addresses.
+- Apps read their organization's members through the gateway's `members`
+  capability (`server/capabilities/members.ts`): the deployed manifest must
+  list `members` with `read`, the organization is the call's attribution
+  (an organization's own app reads only its own), and the list holds only
+  people the perimeter would let open the app (not deactivated, an active
+  organization, granted an organization's own app). An agent's tool call
+  is refused, so a connected agent can't page through the directory. Logs
+  (`members.app.list`) carry the count, never an address.
 - Inbound mail reaches an app's `email()` handler from an Email Routing rule
   that names its Worker, outside the perimeter: no identity, and anyone can
   mail the address, so the handler treats the message as untrusted input

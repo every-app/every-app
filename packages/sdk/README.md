@@ -458,6 +458,27 @@ and `EMAIL_FROM` in `.dev.vars` to send for real from your own account. An
 `email()` handler (inbound mail) sits beside `everyApp()`'s `fetch` and
 passes `for: { background: true, organizationId }`.
 
+### Members
+
+The gateway lists the organization's members who can open the app now
+(`docs/capabilities.md`, "Gateway services: members"): read it when acting
+for people outside a request, such as choosing whom a scheduled report goes
+to, rather than a copy the app kept. List
+`capabilities: { members: { access: "read" } }`, and:
+
+```ts
+import { listMembers } from "@every-app/sdk/server";
+
+const { members } = await listMembers({ env, for: { background: true } });
+// [{ id, email, name, role: "owner" | "admin" | "member" }, ...]
+```
+
+People who were deactivated, left the organization or (for an
+organization's own app) weren't granted the app are left out. An agent's
+tool call is refused (`integration_agent_not_allowed`). In local dev, with
+no binding, it answers the request's signed-in user alone, and no one for
+background work.
+
 ### Social networks' OAuth clients
 
 The gateway holds a client for each social network its operator set up
@@ -502,7 +523,7 @@ under the gateway's names (`LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`,
 
 ### Whom a call is for
 
-`createGatewayFetch`, `integrationFetch` and `sendEmail` take `for`, which
+`createGatewayFetch`, `integrationFetch`, `sendEmail` and `listMembers` take `for`, which
 decides the organization the call is attributed to:
 
 - `for: request`, the inbound request: the identity the gateway put on it

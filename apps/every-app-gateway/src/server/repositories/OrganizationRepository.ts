@@ -1,18 +1,8 @@
 import { db } from "@/db";
 import { apps, members, organizations, users } from "@/db/schema";
 import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
-import {
-  and,
-  asc,
-  eq,
-  exists,
-  isNotNull,
-  isNull,
-  lte,
-  ne,
-  notExists,
-  or,
-} from "drizzle-orm";
+import { liveUser } from "@/server/repositories/OrganizationMembersRepository";
+import { and, asc, eq, exists, ne, notExists } from "drizzle-orm";
 
 /** An organization's display fields (no members, no invitations). */
 async function findSummaryById(organizationId: string) {
@@ -112,14 +102,7 @@ async function isAttributable(
             .from(members)
             .innerJoin(users, eq(users.id, members.userId))
             .where(
-              and(
-                eq(members.organizationId, organizations.id),
-                or(
-                  isNull(users.banned),
-                  eq(users.banned, false),
-                  and(isNotNull(users.banExpires), lte(users.banExpires, now)),
-                ),
-              ),
+              and(eq(members.organizationId, organizations.id), liveUser(now)),
             ),
         ),
       ),

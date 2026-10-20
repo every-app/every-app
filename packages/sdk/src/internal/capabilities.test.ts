@@ -205,7 +205,7 @@ describe("the capability registry", () => {
       "DATAFORSEO_API_KEY",
     ]);
     // The types follow the kinds.
-    expectTypeOf<ServiceCapabilityId>().toEqualTypeOf<"email">();
+    expectTypeOf<ServiceCapabilityId>().toEqualTypeOf<"email" | "members">();
     expectTypeOf<ApiKeyCapabilityId>().toEqualTypeOf<
       "dataforseo" | "context"
     >();

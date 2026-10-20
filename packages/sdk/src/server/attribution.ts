@@ -88,7 +88,8 @@ function isSharedWorker(env: object): boolean {
 
 // Duck-typed: a Request from another realm (a test runner, a polyfill) is
 // still the request.
-function isRequest(value: unknown): value is Request {
+/** Whether `for` is the inbound request (rather than background work). */
+export function isRequest(value: unknown): value is Request {
   return (
     typeof value === "object" &&
     value !== null &&

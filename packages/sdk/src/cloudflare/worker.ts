@@ -281,6 +281,9 @@ const DEV_GATEWAY_KEYS = {
       "RESEND_API_KEY",
       "EMAIL_PROVIDER",
     ],
+    // The organization's members: nothing to set; listMembers() answers
+    // from the dev identity.
+    members: [],
     // OAuth clients: the id, the secret, and the instance a provider with
     // no fixed host is on.
     linkedin: ["LINKEDIN_CLIENT_ID", "LINKEDIN_CLIENT_SECRET"],

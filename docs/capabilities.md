@@ -12,7 +12,8 @@ This is phase 0 of the integrations design
 gateway holds for social networks and for Google's and Microsoft's mail and
 calendar, whose token endpoints it completes for
 apps ([below](#oauth-clients)), and **gateway services**, things the gateway
-does itself for apps (sending email, [below](#gateway-services-email)).
+does itself for apps (sending email, [below](#gateway-services-email);
+listing the organization's members, [below](#gateway-services-members)).
 Organization-held OAuth accounts and admin approval come in later phases and
 keep the same manifest entry, binding route and SDK call.
 
@@ -45,6 +46,7 @@ to the gateway under `/api/integrations/<id>/...`, and answer
 | `api_key`      | `dataforseo`, `context`                               | puts its key on calls to the provider's own hosts, with the methods it reads with | `integrationFetch({ env, provider, for })` on the provider's real URLs                   | `read`  |                                 |
 | `oauth_client` | 16 social networks, Google and Microsoft mail and calendar ([OAuth clients](#oauth-clients))  | completes the network's token endpoints only, putting its client on the request   | `integrationFetch` on the token endpoint; the authorize URL from the status's `clientId` | `write` | `clientId` (Mastodon: `origin`) |
 | `service`      | `email` ([Gateway services](#gateway-services-email)) | does the work itself: sends the mail from its sender, within its budgets          | `sendEmail({ env, for, message })`, which posts to `/api/integrations/email/send`        | `write` | `sender`, `senders`, `provider` |
+| `service`      | `members` ([Gateway services](#gateway-services-members)) | does the work itself: reads its own directory of who can open the app          | `listMembers({ env, for })`, which gets `/api/integrations/members/list`        | `read` |  |
 
 Every status answers `{ capability, requested, configured, ready }`;
 `configured` is false for an app that doesn't list the capability, so no app
@@ -82,6 +84,7 @@ Everything the gateway holds for apps, in one table:
 | `dataforseo`                | `api_key`           | `DATAFORSEO_API_KEY` (`login:password`, or its base64)                                                                     | `DATAFORSEO_API_KEY`                                                                                           | OpenSEO                                              |
 | `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
 | `email`                     | `service`           | `EMAIL_FROM`, `EMAIL_FROM_NAME`, and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)) | Postiz, agentic-inbox, and the gateway's own mail    |
+| `members`                   | `service`           | none: the gateway reads its own directory                                                                                   | nothing to set                                                                                                 | OpenAnalytics (whom reports go to)                   |
 | 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | Postiz                                               |
 | `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-clients) | Open CRM (mail and calendar capture) |
 
@@ -570,6 +573,66 @@ keeps refusing the `email` trigger
 The handler runs with no identity: its gateway calls pass
 `for: { background: true, organizationId }` and treat the message as
 untrusted.
+
+## Gateway services: members
+
+`members` is a capability the gateway performs itself: an app reads the
+members of its organization who can open it now. An app that acts for
+people outside a request (a cron that emails reports, an alert) asks the
+gateway at that moment instead of trusting a copy it kept, so people who
+left the organization, were deactivated or lost the app stop receiving
+its mail. It needs no gateway setting.
+
+| Capability | Gateway settings | Route                                 | Access |
+| ---------- | ---------------- | ------------------------------------- | ------ |
+| `members`  | none             | `GET /api/integrations/members/list`  | `read` |
+
+An app lists it:
+
+```ts
+capabilities: {
+  members: { access: "read", why: "Whom scheduled reports go to." },
+},
+```
+
+and reads it:
+
+```ts
+import { listMembers } from "@every-app/sdk/server";
+
+const { members } = await listMembers({
+  env,
+  for: { background: true }, // or the request; a shared app names organizationId
+});
+// [{ id, email, name, role: "owner" | "admin" | "member" }, ...]
+```
+
+**Who is listed** is who the perimeter lets open the app
+(`hasAppAccess` in `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.ts`):
+members of the organization the call is for, not deactivated, in an active
+organization, and, for an organization's own app, granted it (everyone
+for `access: "everyone"`, otherwise whom admins granted). A shared app
+lists every live member of the organization its call names. `id` is the
+identity's `sub` (`getEveryAppUser().id`); `name` is empty when the person
+set none.
+
+**What the gateway checks**, in order:
+
+| Code                            | Status | When                                                                     |
+| ------------------------------- | ------ | ------------------------------------------------------------------------ |
+| `integration_method_not_allowed` | 405   | anything but `GET`                                                       |
+| `capability_not_requested`      | 403    | the manifest doesn't list `members` with `access: "read"`                |
+| `caller_*`                      | 401/403 | the call's organization, as for every capability call (attribution)     |
+| `integration_agent_not_allowed` | 403    | an agent's tool call: the directory is the app's to read, not an agent's |
+
+Every list is logged as `members.app.list` with the organization, app,
+count and attribution, never an address. `GET /api/integrations/members`
+(`integrationStatus({ env, provider: "members" })`) answers
+`{ capability, requested, configured: true, ready }`.
+
+In local dev (`everyapp dev`, no binding) there is no directory:
+`listMembers()` answers the request's signed-in user alone, and no one for
+background work.
 
 ## Limits today
 

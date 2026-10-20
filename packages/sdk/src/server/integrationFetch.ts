@@ -255,7 +255,7 @@ function fetchableCapability(
   const found = capability(provider);
   if (found.mode === "service") {
     throw new ConfigurationError(
-      `${String(provider)} is sent with sendEmail() from @every-app/sdk/server, not integrationFetch().`,
+      `${String(provider)} is a gateway service: call its helper from @every-app/sdk/server (sendEmail(), listMembers()), not integrationFetch().`,
     );
   }
   return found;
@@ -324,7 +324,7 @@ export async function integrationStatus<P extends CapabilityId>({
     | GatewayServiceBinding
     | undefined;
   const unavailable = (): IntegrationStatusOf<P> =>
-    (integration.mode === "service"
+    (provider === "email"
       ? {
           requested: false,
           configured: false,
@@ -346,7 +346,16 @@ export async function integrationStatus<P extends CapabilityId>({
     return (await response.json()) as IntegrationStatusOf<P>;
   }
   if (integration.mode === "service") {
-    return devEmailStatus(values) as IntegrationStatusOf<P>;
+    if (provider === "email") {
+      return devEmailStatus(values) as IntegrationStatusOf<P>;
+    }
+    // Members: listMembers() answers from the dev identity, nothing to set.
+    const dev = Boolean(values["EVERYAPP_DEV"]);
+    return {
+      requested: true,
+      configured: dev,
+      ready: dev,
+    } as IntegrationStatusOf<P>;
   }
   if (integration.mode === "oauth_client") {
     return devOAuthClientStatus(integration, values) as IntegrationStatusOf<P>;

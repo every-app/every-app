@@ -469,7 +469,7 @@ describe("capabilities manifest field", () => {
     [
       "an unknown capability",
       { github: { access: "read" } },
-      /capabilities\.github: unknown capability \(the gateway offers: dataforseo, context, email, linkedin, facebook, .*, microsoft-365\)/,
+      /capabilities\.github: unknown capability \(the gateway offers: dataforseo, context, email, members, linkedin, facebook, .*, microsoft-365\)/,
     ],
     [
       "an access level the capability doesn't offer",
@@ -496,6 +496,16 @@ describe("capabilities manifest field", () => {
       "email for reading",
       { email: { access: "read" } },
       /capabilities\.email\.access: Email offers write access/,
+    ],
+    [
+      "members for writing",
+      { members: { access: "write" } },
+      /capabilities\.members\.access: Members offers read access/,
+    ],
+    [
+      "senders on members",
+      { members: { access: "read", senders: ["*@mail.example.com"] } },
+      /Unrecognized key\(s\) in object: 'senders'/,
     ],
     [
       "a sender that isn't an address or a domain pattern",
@@ -577,6 +587,15 @@ describe("capabilities manifest field", () => {
         capabilities: { email: { access: "write" } },
       }).capabilities,
     ).toEqual({ email: { access: "write" } });
+  });
+
+  it("accepts members for reading", () => {
+    const capabilities = {
+      members: { access: "read", why: "Whom scheduled reports go to." },
+    };
+    expect(
+      validateManifestStrict({ id: "analytics", capabilities }).capabilities,
+    ).toEqual(capabilities);
   });
 
   it("refuses the old `integrations` key", () => {

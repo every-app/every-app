@@ -12,9 +12,10 @@
  *    public client id (`integrationStatus()`), keeps the user tokens and
  *    calls the provider's API with them itself.
  *  - `service`: something the gateway does itself, with no upstream host
- *    an app names (sending email). An app lists it the same way and calls
- *    its routes, `/api/integrations/<id>/<route>`, through the SDK's own
- *    helper (`sendEmail()`).
+ *    an app names (sending email, listing the organization's members). An
+ *    app lists it the same way and calls its routes,
+ *    `/api/integrations/<id>/<route>`, through the SDK's own helper
+ *    (`sendEmail()`, `listMembers()`).
  *
  * The gateway enforces these definitions, the manifest validator checks
  * `capabilities` against them, and the SDK reads them for its local-dev
@@ -190,6 +191,18 @@ export const CAPABILITIES = {
       "RESEND_API_KEY",
       "EMAIL_PROVIDER",
     ],
+  },
+  // The organization's members who can open the app
+  // (apps/every-app-gateway/src/server/capabilities/members.ts): who an app
+  // may email or notify now, after people leave or lose access. It needs no
+  // setting; the gateway reads its own directory.
+  members: {
+    mode: "service",
+    label: "Members",
+    access: ["read"],
+    routes: { list: ["GET"] },
+    settings: [],
+    optionalSettings: [],
   },
   // Social networks' OAuth clients (docs/capabilities.md "OAuth clients"):
   // the gateway completes their token endpoints only. Postiz connects its
