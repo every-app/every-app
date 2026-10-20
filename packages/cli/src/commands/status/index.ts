@@ -473,7 +473,7 @@ function fixesFor({
       fixes.push({
         code: "EMAIL_INBOUND_UNDECLARED",
         message: `${app.id}'s addresses (${app.email.inbound.join(", ")}) are stored, but the manifest it was deployed from doesn't declare email: { inbound: true }, so no mail is routed to it.`,
-        run: `${CLI} email unset --inbound (in ${app.id}'s directory), or ${CLI} deploy once everyapp.config.ts declares it`,
+        run: `${CLI} email unset inbound (in ${app.id}'s directory), or ${CLI} deploy once everyapp.config.ts declares it`,
       });
     } else if (notRouted.length > 0 || stale.length > 0) {
       fixes.push({

@@ -327,7 +327,7 @@ describe("everyapp status", () => {
       code: "EMAIL_INBOUND_UNDECLARED",
       message:
         "inbox's addresses (*@example.com, support@example.com) are stored, but the manifest it was deployed from doesn't declare email: { inbound: true }, so no mail is routed to it.",
-      run: "pnpm everyapp email unset --inbound (in inbox's directory), or pnpm everyapp deploy once everyapp.config.ts declares it",
+      run: "pnpm everyapp email unset inbound (in inbox's directory), or pnpm everyapp deploy once everyapp.config.ts declares it",
     });
     expect(fixCodes(done)).not.toContain("EMAIL_ROUTE_PENDING");
   });

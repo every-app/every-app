@@ -51,7 +51,7 @@ the one page that says how (`everyapp create` copies it into each new app).
 | `everyapp secret set\|unset\|list`   | The app's secrets and the gateway's settings, each by name                             |
 | `everyapp email set\|unset\|show`    | The addresses the app sends as and receives at, kept on the gateway                    |
 | `everyapp db …`                      | Local migrations (`migrate`), SQL (`query`), undoing the last migrations (`restore`)   |
-| `everyapp workflows …`               | The deployed app's Workflows                                                           |
+| `everyapp workflow …`                | The deployed app's Workflows                                                           |
 
 ### Create and run an app
 
@@ -167,7 +167,7 @@ app's providers and capabilities need; elsewhere, the gateway's.
 
 ```bash
 everyapp email set --sender "*@mail.example.com" --inbound support@mail.example.com   # in the app's directory, after its first deploy
-everyapp email unset --inbound
+everyapp email unset inbound
 everyapp email show
 ```
 

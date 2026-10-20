@@ -146,7 +146,23 @@ export const WorkflowInstanceListOutput = z.array(
 );
 
 /** `cf workflows instances get`: status, params, steps, output and error. */
-export const WorkflowInstanceOutput = z.looseObject({ status: z.string() });
+export const WorkflowInstanceOutput = z.looseObject({
+  status: z.string(),
+  params: z.unknown().optional(),
+  output: z.unknown().optional(),
+  error: z.looseObject({ name: z.string().nullish(), message: z.string().nullish() }).nullish(),
+  start: z.string().nullish(),
+  end: z.string().nullish(),
+  steps: z
+    .array(
+      z.looseObject({
+        name: z.string().nullish(),
+        success: z.boolean().nullish(),
+        output: z.unknown().optional(),
+      }),
+    )
+    .nullish(),
+});
 
 /** `cf workflows instances create`. */
 export const WorkflowInstanceCreatedOutput = z.looseObject({

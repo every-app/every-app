@@ -34,9 +34,17 @@ export function checkoutRoot(moduleUrl: string = import.meta.url): string {
   if (root) return root;
   throw new EveryAppError(
     "CHECKOUT_MISSING",
-    `everyapp runs from a checkout of the Every App repository\n${path.dirname(fileURLToPath(moduleUrl))} isn't in one.`,
-    { fix: "run it from the repository: pnpm everyapp …" },
+    `everyapp has to run from a checkout of the Every App repository\nThis copy is installed in ${packageDir(path.dirname(fileURLToPath(moduleUrl)))}, outside any checkout.`,
+    { fix: `in your checkout, run pnpm everyapp ${process.argv.slice(2).join(" ")}`.trimEnd() },
   );
+}
+
+/** The package `dir` is in: the nearest directory up with a package.json. */
+function packageDir(dir: string): string {
+  for (let at = dir; path.dirname(at) !== at; at = path.dirname(at)) {
+    if (fs.existsSync(path.join(at, "package.json"))) return at;
+  }
+  return dir;
 }
 
 /** Whether `dir` is the checkout's root or somewhere inside it. */

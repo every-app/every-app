@@ -65,7 +65,7 @@ Email:   pnpm everyapp email set --sender "*@<domain>" --inbound <address> --jso
          email() handler (everyapp.config.ts declares email: { inbound: true }) and
          makes the Email Routing rules now. EMAIL_ROUTING_DISABLED needs the user's
          yes: rerun with --enable-email-routing only if they said so. email unset
-         --senders|--inbound clears; email show prints both.
+         senders|inbound clears; email show prints both.
 Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
          --allow-delete-*, --allow-downgrade, or --yes to delete unless the
          user asked.

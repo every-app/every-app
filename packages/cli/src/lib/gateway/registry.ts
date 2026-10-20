@@ -743,6 +743,21 @@ WHERE id = ? AND status != '${DELETED_APP_STATUS}' RETURNING id`,
   });
 }
 
+/**
+ * The id of the app (deleted ones aside) whose Worker, or one of whose
+ * helper Workers (`<worker>--<helper>`), is `workerName`: what a person
+ * knows it by.
+ */
+export async function appIdOfWorker(db: D1Database, workerName: string): Promise<string | null> {
+  const [rows = []] = await db.run([
+    {
+      sql: `SELECT app_slug FROM apps WHERE status != '${DELETED_APP_STATUS}' AND (worker_name = ? OR substr(?, 1, length(worker_name) + 2) = worker_name || '--')`,
+      params: [workerName, workerName],
+    },
+  ]);
+  return text(rows[0]?.["app_slug"]);
+}
+
 /** Every app the registry lists, deleted ones aside, by app id. */
 export async function listApps(db: D1Database): Promise<
   Array<RegisteredAppInfo & { deployedBy: string | null; deployedAt: number | null }>

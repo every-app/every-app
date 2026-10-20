@@ -316,7 +316,7 @@ describe("deploy of an app that receives mail", () => {
         type: "warning",
         code: "EMAIL_INBOUND_UNDECLARED",
         message:
-          "everyapp.config.ts no longer declares email: { inbound: true }, so this deploy removes inbox's mail routes; its addresses (*@example.com, support@mail.example.com) stay on the Gateway until `pnpm everyapp email unset --inbound` clears them.",
+          "everyapp.config.ts no longer declares email: { inbound: true }, so this deploy removes inbox's mail routes; its addresses (*@example.com, support@mail.example.com) stay on the Gateway until `pnpm everyapp email unset inbound` clears them.",
       }),
     );
     expect(events).toContainEqual(
@@ -397,9 +397,8 @@ describe("deploy of an app that receives mail", () => {
 
     await expect(deploy()).rejects.toMatchObject({
       code: "EMAIL_ADDRESS_TAKEN",
-      message: expect.stringMatching(/^support@mail\.example\.com is delivered elsewhere\n/),
-      fix: "remove that rule, or take another address",
-      rerun: expect.stringMatching(/^pnpm everyapp/),
+      message: expect.stringMatching(/^support@mail\.example\.com already forwards to help@vendor\.com\n/),
+      fix: "remove that rule, or pick another address",
     });
     expect(inboxUploads()).toEqual([]);
     expect(account.emailRoutingOf("zone-1").catchAll.actions).toEqual([{ type: "drop" }]);
@@ -428,9 +427,8 @@ describe("deploy of an app that receives mail", () => {
         }),
       ).rejects.toMatchObject({
         code: "EMAIL_ADDRESS_TAKEN",
-        message: `support@mail.example.com is another app's\nIt is routed to ${WORKER}. Take another address, or remove it from that app first.`,
-        rerun: "pnpm everyapp email unset --inbound",
-        rerunNote: "in that app's directory",
+        message: "support@mail.example.com already goes to another app (inbox)",
+        fix: "pick another address, or run pnpm everyapp email unset inbound in inbox's directory first",
       });
       expect(account.deploys.some((upload) => upload.workerName === "every-acme-helpdesk")).toBe(false);
     } finally {
@@ -445,8 +443,7 @@ describe("deploy of an app that receives mail", () => {
     routing.catchAll = { ...routing.catchAll, actions: [{ type: "forward", value: ["all@vendor.com"] }] };
     await expect(deploy()).rejects.toMatchObject({
       code: "EMAIL_CATCH_ALL_TAKEN",
-      fix: expect.stringContaining("or set the app's addresses one by one instead"),
-      rerun: expect.stringMatching(/^pnpm everyapp/),
+      fix: expect.stringContaining("or list addresses one by one"),
     });
     expect(inboxUploads()).toEqual([]);
   });
@@ -456,12 +453,12 @@ describe("deploy of an app that receives mail", () => {
     await seed({ inbound: ["hi@elsewhere.net"] });
     await expect(deploy()).rejects.toMatchObject({
       code: "EMAIL_ZONE_NOT_FOUND",
-      fix: expect.stringContaining("or take the address out of the app's inbound addresses"),
+      fix: expect.stringContaining("or pick an address on another domain"),
     });
     await setEmail({ inbound: ["*@mail.example.com"] });
     await expect(deploy()).rejects.toMatchObject({
       code: "EMAIL_CATCH_ALL_NOT_APEX",
-      fix: "set each address on mail.example.com instead (--inbound support@mail.example.com)",
+      fix: "list each address instead, e.g. --inbound support@mail.example.com",
     });
     expect(inboxUploads()).toEqual([]);
   });

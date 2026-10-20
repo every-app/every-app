@@ -20,7 +20,7 @@ import {
   listAppWorkflows,
   listInstances,
   startInstance,
-} from "@/commands/workflows";
+} from "@/commands/workflow";
 import { readOwnedResources, recordOwnedResource } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
@@ -1562,7 +1562,7 @@ describe("apps with helper Workers", () => {
     await expect(
       startInstance({ ...options, workflow: "SITE_AUDIT", instanceId: "run-1" }),
     ).resolves.toMatchObject({ instance: { id: "run-1" } });
-    await expect(listAppWorkflows(options)).resolves.toEqual([
+    expect((await listAppWorkflows(options)).workflows).toEqual([
       expect.objectContaining({ binding: "RANK_CHECK", deployed: true }),
       expect.objectContaining({
         binding: "SITE_AUDIT",
@@ -1616,7 +1616,7 @@ describe("workflows", () => {
     await changeInstanceStatus({ ...options(), workflow: "RANK_CHECK", instanceId: "run-1", status: "pause" });
     await expect(
       listInstances({ ...options(), workflow: "every-acme-todo--rank-check", status: "paused" }),
-    ).resolves.toEqual([{ id: "run-1", status: "paused" }]);
+    ).resolves.toMatchObject({ instances: [{ id: "run-1", status: "paused" }] });
 
     // Terminating is for good: unattended, only with --yes.
     await expect(
@@ -1629,7 +1629,7 @@ describe("workflows", () => {
       status: "terminate",
       yes: true,
     });
-    await expect(listAppWorkflows(options())).resolves.toEqual([
+    expect((await listAppWorkflows(options())).workflows).toEqual([
       expect.objectContaining({
         binding: "RANK_CHECK",
         name: "every-acme-todo--rank-check",
@@ -1647,8 +1647,60 @@ describe("workflows", () => {
     account.workflows.get("every-acme-todo--rank-check")!.scriptName = "billing-api";
     await expect(
       startInstance({ ...options(), workflow: "RANK_CHECK" }),
-    ).rejects.toMatchObject({ code: "WORKFLOW_NOT_DEPLOYED" });
+    ).rejects.toMatchObject({
+      code: "WORKFLOW_NOT_DEPLOYED",
+      message: "RANK_CHECK is attached to another Worker\nCloudflare runs this Workflow on a Worker that isn't todo's.",
+    });
     expect(account.workflows.get("every-acme-todo--rank-check")!.instances.size).toBe(0);
+  });
+
+  it("suggests the closest declared binding for one it doesn't know", async () => {
+    const argv = process.argv;
+    process.argv = ["node", "everyapp", "workflow", "instances", "RANK"];
+    try {
+      await expect(listInstances({ ...options(), workflow: "RANK" })).rejects.toMatchObject({
+        code: "WORKFLOW_NOT_FOUND",
+        message: "No Workflow RANK in everyapp.config.ts\nIt declares RANK_CHECK.",
+        rerun: "pnpm everyapp workflow instances RANK_CHECK",
+      });
+    } finally {
+      process.argv = argv;
+    }
+  });
+
+  it("says the instance's status before asking to terminate it", async () => {
+    await startInstance({ ...options(), workflow: "RANK_CHECK", instanceId: "run-1" });
+    const confirm = vi.fn(async () => true);
+    await changeInstanceStatus({
+      ...options(),
+      interactive: true,
+      confirm,
+      workflow: "RANK_CHECK",
+      instanceId: "run-1",
+      status: "terminate",
+    });
+    expect(confirm).toHaveBeenCalledWith("Terminate it? It stops for good.", [
+      "RANK_CHECK instance run-1 is queued.",
+    ]);
+    expect(account.workflows.get("every-acme-todo--rank-check")!.instances.get("run-1")!.status).toBe(
+      "terminated",
+    );
+  });
+
+  it("lists nothing, without connecting, for an app that declares no Workflows", async () => {
+    fs.writeFileSync(
+      path.join(appDir, "everyapp.config.ts"),
+      `export default ${JSON.stringify({ ...WITH_WORKFLOW, resources: { d1: ["DB"] } })};\n`,
+    );
+    const createCf = vi.fn(() => account.cf);
+    await expect(listAppWorkflows({ ...options(), createCf })).resolves.toEqual({
+      appId: "todo",
+      workflows: [],
+    });
+    expect(createCf).not.toHaveBeenCalled();
+    await expect(listInstances({ ...options(), workflow: "RANK_CHECK" })).rejects.toMatchObject({
+      code: "NO_WORKFLOWS",
+    });
   });
 });
 

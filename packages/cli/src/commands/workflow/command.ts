@@ -15,7 +15,7 @@ export const INSTANCE_STATUSES = {
 } as const;
 
 const workflowArgument = {
-  brief: "The Workflow: its binding in everyapp.config.ts, its class or its name",
+  brief: "The Workflow's binding in everyapp.config.ts, its class or its name",
   parse: String,
   placeholder: "workflow",
 };
@@ -31,6 +31,20 @@ const workflowFlags = {
   verbose: verboseFlag,
 } as const;
 
+/** `--params`: a JSON object, checked before anything connects. */
+function parseParams(value: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    parsed = undefined;
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`Expected a JSON object, e.g. '{"siteId":"abc"}'.`);
+  }
+  return value;
+}
+
 const listCommand = buildCommand({
   loader: async () => {
     const { list } = await import(".");
@@ -41,7 +55,7 @@ const listCommand = buildCommand({
     flags: workflowFlags,
   },
   docs: {
-    brief: "List the app's Workflows and how many instances each has, by status",
+    brief: "List the app's Workflows with how many instances each has, by status",
   },
 });
 
@@ -69,7 +83,8 @@ const instancesCommand = buildCommand({
           }
           return limit;
         },
-        brief: "How many to list (1-100, default 25)",
+        brief: "How many to list, 1-100 (default 25)",
+        placeholder: "n",
         optional: true,
       },
     },
@@ -90,7 +105,7 @@ const getCommand = buildCommand({
     flags: workflowFlags,
   },
   docs: {
-    brief: "Show an instance: its status, params, steps, output and error",
+    brief: "Show an instance's status, params, steps, output and error",
   },
 });
 
@@ -105,14 +120,16 @@ const startCommand = buildCommand({
       ...workflowFlags,
       params: {
         kind: "parsed",
-        parse: String,
-        brief: "The instance's params, as JSON",
+        parse: parseParams,
+        brief: "The instance's params, as a JSON object",
+        placeholder: "json",
         optional: true,
       },
-      id: {
+      "instance-id": {
         kind: "parsed",
         parse: String,
         brief: "The instance id (default: one Cloudflare picks)",
+        placeholder: "id",
         optional: true,
       },
     },
@@ -146,14 +163,14 @@ const terminateCommand = buildCommand({
     },
     flags: {
       ...workflowFlags,
-      yes: { kind: "boolean", brief: "Skip the confirmation", optional: true },
+      yes: { kind: "boolean", brief: "Don't ask for confirmation", optional: true },
     },
     aliases: { y: "yes" },
   },
   docs: { brief: "Stop an instance for good (asks first)" },
 });
 
-export const workflowsRoutes = buildRouteMap({
+export const workflowRoutes = buildRouteMap({
   routes: {
     list: listCommand,
     instances: instancesCommand,
@@ -161,10 +178,10 @@ export const workflowsRoutes = buildRouteMap({
     start: startCommand,
     pause: statusCommand("pause", "Pause an instance"),
     resume: statusCommand("resume", "Resume a paused instance"),
-    terminate: terminateCommand,
     restart: statusCommand("restart", "Run an instance again from the start"),
+    terminate: terminateCommand,
   },
   docs: {
-    brief: "List and control the app's Workflows",
+    brief: "Inspect and control an app's Workflows",
   },
 });

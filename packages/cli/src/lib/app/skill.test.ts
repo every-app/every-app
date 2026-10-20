@@ -39,34 +39,17 @@ describe("the everyapp skill in a new app", () => {
 
   it("leaves an AGENTS.md that mentions it alone", async () => {
     fs.writeFileSync(path.join(appDir, "AGENTS.md"), "- Read skills/everyapp first.\n");
-    let asked = false;
 
-    const result = await linkSkill({
-      root,
-      appDir,
-      ask: async () => (asked = true),
-    });
+    const result = await linkSkill({ root, appDir });
 
     expect(result.agentsMd).toBe("mentions");
-    expect(asked).toBe(false);
     expect(agentsMd()).toBe("- Read skills/everyapp first.\n");
   });
 
-  it("asks before adding a line to another AGENTS.md, and never touches it without asking", async () => {
+  it("adds the line to an AGENTS.md that doesn't mention it", async () => {
     fs.writeFileSync(path.join(appDir, "AGENTS.md"), "# Ours\n\n- Use tabs.\n");
 
-    // --json or --yes: nobody to ask.
-    await expect(linkSkill({ root, appDir })).resolves.toMatchObject({ agentsMd: "left" });
-    expect(agentsMd()).toBe("# Ours\n\n- Use tabs.\n");
-
-    await expect(linkSkill({ root, appDir, ask: async () => false })).resolves.toMatchObject({
-      agentsMd: "left",
-    });
-    expect(agentsMd()).toBe("# Ours\n\n- Use tabs.\n");
-
-    await expect(linkSkill({ root, appDir, ask: async () => true })).resolves.toMatchObject({
-      agentsMd: "added",
-    });
+    await expect(linkSkill({ root, appDir })).resolves.toMatchObject({ agentsMd: "added" });
     expect(agentsMd()).toMatch(/^# Ours\n\n- Use tabs\.\n- Before running everyapp, read the everyapp skill/);
   });
 });

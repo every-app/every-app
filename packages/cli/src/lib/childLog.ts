@@ -3,8 +3,10 @@
  * commands, git, the Gateway's release build) write to a log file, never to
  * stdout, which --json keeps for events alone:
  * `$TMPDIR/everyapp/<command>-<time>.log`. When one fails, the error says
- * what ran, its last 20 lines and where the whole log is. With `echo`
- * (--verbose) the output goes to stderr too, as it comes.
+ * what ran, its last 20 lines and where the whole log is (also as `data`,
+ * for a caller that says it its own way). With `echo` (--verbose) the
+ * output goes to stderr too, as it comes, dim and indented under its
+ * command line.
  *
  * cf's own output never comes here: the runner keeps it in memory
  * (lib/cf/runner.ts), and a CfError carries its last lines.
@@ -13,6 +15,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import chalk from "chalk";
 import { execa } from "execa";
 import { EveryAppError } from "@/lib/errors";
 import { outputTail } from "@/lib/output/text";
@@ -45,9 +48,10 @@ export async function runLogged(
   const log = fs.createWriteStream(file, { flags: "a", mode: 0o600 });
   const header = `$ ${commandLine}\n# in ${options.cwd ?? process.cwd()}\n\n`;
   log.write(header);
+  const echo = options.echo ? echoed(commandLine) : null;
   const record = (chunk: Buffer) => {
     log.write(chunk);
-    if (options.echo) process.stderr.write(chunk);
+    echo?.write(chunk);
   };
 
   const child = execa(command, [...args], {
@@ -63,6 +67,7 @@ export async function runLogged(
   child.stdout?.on("data", record);
   child.stderr?.on("data", record);
   const result = await child;
+  echo?.end();
   await new Promise<void>((resolve) => log.end(resolve));
   if (!result.failed) return;
 
@@ -79,9 +84,31 @@ export async function runLogged(
     [`${options.what} failed (${why})`, ...tail, `Full log: ${file}`].join("\n"),
     {
       ...(options.fix ? { fix: options.fix } : {}),
-      data: { command: commandLine, log: file },
+      data: { command: commandLine, exitCode: result.exitCode ?? null, tail, log: file },
     },
   );
+}
+
+/**
+ * A child's output echoed to stderr (--verbose) under its command line,
+ * each line dim and indented, so it reads apart from everyapp's own.
+ */
+function echoed(commandLine: string): { write: (chunk: Buffer) => void; end: () => void } {
+  const say = (line: string) => process.stderr.write(`${chalk.dim(`  ${line}`)}\n`);
+  say(`$ ${commandLine}`);
+  // A line split across chunks waits for its end.
+  let pending = "";
+  return {
+    write: (chunk) => {
+      const lines = `${pending}${chunk.toString("utf8")}`.split(/\r?\n/);
+      pending = lines.pop() ?? "";
+      for (const line of lines) say(line);
+    },
+    end: () => {
+      if (pending) say(pending);
+      pending = "";
+    },
+  };
 }
 
 /** A new private log file under $TMPDIR/everyapp, named after `name`'s first two words. */

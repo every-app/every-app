@@ -33,7 +33,7 @@ default the builders chose.
 | `everyapp delete [id] [--purge]` | Removes an app. | `app delete` |
 | `everyapp secret set\|unset\|list NAME [--for gateway]` | App secrets; the Gateway's settings with `--for gateway` (`--gateway <url>` keeps its hosted-tier meaning). `set` redeploys the app from `cwd` and says so on its first line (§6). `unset` supersedes TODO.md's `secret delete`. (The flag went on 2026-10-19: a name that is a Gateway setting goes to the Gateway, any other to the app in `cwd`, which lists its own under `secrets` in everyapp.config.ts.) | `app secret set`, `gateway secret set` |
 | `everyapp db migrate\|query "<sql>" [--local]` | `migrate` applies migrations to the local database `dev` uses (production migrations stay inside `deploy`); `query` runs against production D1, `--local` for the dev database. | `app d1 …` |
-| `everyapp workflows …` | Unchanged. | `app workflows …` |
+| `everyapp workflow …` | Renamed from `workflows`. | `app workflow …` |
 | hidden: `setup --redeploy`, `setup --allow-downgrade` | The key-rotation runbook's forced redeploy; a deliberate Gateway rollback past the downgrade guard. | |
 
 Deleted outright, with no hidden aliases and no overlap release: `login`,

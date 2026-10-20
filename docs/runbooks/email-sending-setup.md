@@ -244,7 +244,7 @@ only link.
   is still there for an address the list dropped, and
   `EMAIL_INBOUND_UNDECLARED` when addresses are stored for an app whose
   deployed manifest doesn't declare inbound, which no deploy of it routes
-  (`everyapp email unset --inbound` clears them, or a deploy once the
+  (`everyapp email unset inbound` clears them, or a deploy once the
   manifest declares it; `email show` names the clearing command); a deploy
   of an app that declares inbound with no address yet
   prints one line naming `everyapp email set --inbound`.

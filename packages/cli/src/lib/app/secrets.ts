@@ -15,14 +15,14 @@ export function assertAppSecretName(name: string): void {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
     throw new EveryAppError(
       "SECRET_NAME_INVALID",
-      `"${name}" can't be a secret's name`,
+      `"${name}" isn't a valid secret name`,
       { fix: "use letters, digits and underscores, starting with a letter, e.g. GITHUB_TOKEN" },
     );
   }
   if (isReservedAppSecretName(name)) {
     throw new EveryAppError(
       "SECRET_NAME_RESERVED",
-      `${name} is set by everyapp itself\neveryapp sets it with ${RESERVED_APP_SECRET_NAMES_TEXT}.`,
+      `${name} is a reserved name\neveryapp manages ${RESERVED_APP_SECRET_NAMES_TEXT}.`,
       { fix: "pick another name" },
     );
   }

@@ -8,9 +8,9 @@ export const createCommand = buildCommand({
       kind: "tuple",
       parameters: [
         {
-          brief: "App id (kebab-case, e.g. my-app; asked for at a terminal when missing)",
+          brief: "Lowercase letters, digits and dashes, e.g. my-app (asked for when missing)",
           parse: String,
-          placeholder: "id",
+          placeholder: "name",
           optional: true,
         },
       ],
@@ -18,32 +18,32 @@ export const createCommand = buildCommand({
     flags: {
       deploy: {
         kind: "boolean",
-        brief: "Deploy the new app once it is created (see `everyapp deploy`)",
+        brief: "Deploy the app once it's created",
         optional: true,
       },
       gateway: {
         kind: "parsed",
         parse: String,
-        brief:
-          "With --deploy: the Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)",
+        brief: "With --deploy: your Gateway's URL (default: $EVERYAPP_GATEWAY_URL)",
+        placeholder: "url",
         optional: true,
       },
       "account-id": {
         kind: "parsed",
         parse: String,
-        brief:
-          "With --deploy: the Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)",
+        brief: "With --deploy: the Cloudflare account, when your login sees several",
+        placeholder: "id",
+        optional: true,
+      },
+      yes: {
+        kind: "boolean",
+        brief: "Don't ask anything (a name is then required)",
         optional: true,
       },
       json: jsonFlag,
       verbose: {
         kind: "boolean",
-        brief: "Show every step, and stream install output to stderr",
-        optional: true,
-      },
-      yes: {
-        kind: "boolean",
-        brief: "Never ask anything (an app id is then required)",
+        brief: "Stream install and git output to stderr",
         optional: true,
       },
     },
@@ -52,21 +52,15 @@ export const createCommand = buildCommand({
     },
   },
   docs: {
-    brief: "Create an app from the starter template",
+    brief: "Create a new app from the starter template",
     fullDescription: [
-      "Copies the simple-todo starter template into apps/<id> inside this checkout, or ./<id> anywhere",
-      "else, and readies it for `everyapp dev`. It doesn't contact your Gateway.",
+      "Inside your Every App checkout the app goes in apps/<name>; anywhere else in ./<name>,",
+      "with its own git repository. Dependencies are installed and the local database is ready,",
+      "so `pnpm dev` works straight away.",
       "",
-      "  1. Names the app after <id> (asked for at a terminal when it's missing)",
-      "  2. Puts the everyapp skill in .claude/skills/everyapp and .agents/skills/everyapp, for",
-      "     coding agents (asks before adding a line to an AGENTS.md that doesn't mention it;",
-      "     never under --json or --yes)",
-      "  3. Installs its dependencies",
-      "  4. Generates the Worker's types and applies its migrations to the local database",
-      "  5. Outside the checkout, starts a git repository for it",
-      "  6. With --deploy, deploys it as `everyapp deploy` does",
-      "",
-      "Then: cd into it and run `pnpm dev`; `everyapp deploy` when it should go live.",
+      "Examples:",
+      "  pnpm everyapp create analytics",
+      "  pnpm everyapp create analytics --deploy",
     ].join("\n"),
   },
 });

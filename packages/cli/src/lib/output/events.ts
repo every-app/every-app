@@ -208,6 +208,8 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
   const waits = new Set<string>();
   // The run's facts, shown together once it is done.
   const facts: Fact[] = [];
+  // Warnings shown, for the run's last line.
+  let warned = 0;
 
   const show = (items: readonly Shown[], took?: number) => {
     for (const item of items) {
@@ -218,7 +220,7 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
           item.detail ?? (took !== undefined && took >= 1000 ? duration(took) : "");
         screen.lines(
           [
-            `${item.done} ${chalk.green("✓")}${after ? ` ${chalk.dim(after)}` : ""}`,
+            ticked(item.done, after),
             ...(item.notes ?? []).map((note) => chalk.dim(`  ${note}`)),
           ].join("\n"),
         );
@@ -272,6 +274,7 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
         return;
       case "warning": {
         if (QUIET_WARNINGS.has(event.code) && !verbose) return;
+        warned += 1;
         problem([
           ...headed(chalk.yellow("!"), event.message),
           ...nextCommand(event.data, { url: true }),
@@ -339,7 +342,7 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
               : []),
           ...(allFacts.length > 0 ? ["", ...formatFacts(allFacts)] : []),
           ...(took >= 10_000 && event.display === undefined
-            ? [chalk.dim(`Done in ${duration(took)}`)]
+            ? [chalk.dim(`Done in ${duration(took)}${warned > 0 ? ` with ${plural(warned, "warning")}` : ""}`)]
             : []),
           ...(next.length > 0 ? ["", "Next:", ...formatNext(next)] : []),
         ];
@@ -348,6 +351,11 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
       }
     }
   }, verbose, now);
+}
+
+/** Something done, as a ticked line: `Built ✓ 4.2s`, `after` dim. */
+export function ticked(done: string, after?: string): string {
+  return `${done} ${chalk.green("✓")}${after ? ` ${chalk.dim(after)}` : ""}`;
 }
 
 type StepEvent = Extract<EventInput<EveryAppEvent>, { type: "step" }>;
@@ -372,6 +380,17 @@ type Milestone = (
 /** A milestone shown only once its step is done: a ticked line, `detail` (else its time) after it. */
 function doneWhenOk(done: string, detail?: string): Milestone {
   return (event) => (event.status === "ok" ? { done, detail } : null);
+}
+
+/** A step with a spinner while it runs, then a ticked line (its time after it). */
+function spinThenDone(spin: string, done: string): Milestone {
+  return (event) => (event.status === "start" ? { spin } : event.status === "ok" ? { done } : null);
+}
+
+/** A step its own messages say: its start's as the spinner's label, its ok's as the ticked line. */
+function saidByMessage(event: StepEvent): Shown | null {
+  if (event.status === "start") return { spin: event.message ?? "" };
+  return event.status === "ok" && event.message ? { done: event.message } : null;
 }
 
 /** The milestones: the steps a person sees, by name, and how. */
@@ -536,13 +555,29 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
     "create.copy": (event) => {
       const data = event.data ?? {};
       if (event.status === "start") {
-        return { line: `Creating ${text(data["appId"])} in ${text(data["shown"])}` };
+        return [
+          { line: `Creating ${text(data["appId"])} in ${text(data["shown"])}` },
+          // Run from somewhere in the checkout but its root.
+          ...(data["elsewhere"] === true
+            ? [{ line: chalk.dim("New apps go in the checkout's apps/ folder, wherever you run create.") }]
+            : []),
+        ];
       }
       return event.status === "ok" ? { done: "Copied the starter template" } : null;
     },
+    "secrets.gateway": saidByMessage,
+    "secrets.app": saidByMessage,
     "create.skill": doneWhenOk("Added the everyapp skill for coding agents"),
-    "create.install": doneWhenOk("Installed dependencies"),
-    "create.types": doneWhenOk("Generated types"),
+    "create.install": spinThenDone("Installing dependencies...", "Installed dependencies"),
+    "create.types": spinThenDone("Generating types...", "Generated types"),
+    "create.git": (event) =>
+      event.status === "start"
+        ? { spin: "Starting a git repository..." }
+        : event.status === "ok"
+          ? { done: "Started a git repository", detail: "first commit: Starter template" }
+          : null,
+    // The app is made; what follows (a deploy) is a block of its own.
+    "create.done": (event) => (event.status === "ok" ? { line: "" } : null),
     "dev.types": doneWhenOk("Worker types generated", ".cloudflare/types"),
     "dev.migrations": (event) => {
       if (event.status === "skip") {
@@ -573,13 +608,15 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         : { line: chalk.dim(`Stopped before ${appId} started.`) };
     },
     "migrations.local": (event) => {
+      if (event.status === "start") return { spin: "Setting up the local database..." };
       if (event.status === "skip" && event.message)
         return { line: event.message };
       if (event.status !== "ok") return null;
       const applied = strings(event.data?.["applied"]);
-      return applied.length
-        ? { done: "Local database migrated", detail: plural(applied.length, "migration") }
-        : { done: "Local database up to date" };
+      return {
+        done: "Set up the local database",
+        ...(applied.length ? { detail: plural(applied.length, "migration") } : {}),
+      };
     },
     "cloudflare.login": (event) => {
       const data = event.data ?? {};

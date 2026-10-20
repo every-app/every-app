@@ -21,6 +21,7 @@ import {
   type RouteMap,
 } from "@stricli/core";
 import { CLI } from "@/lib/output/command";
+import { listed } from "@/lib/output/text";
 
 export enum ArgumentErrorCode {
   UnknownCommand = "UNKNOWN_COMMAND",
@@ -73,7 +74,7 @@ function usageOf(path: readonly string[], command: Command<CommandContext>): str
 }
 
 /** Within two edits of `input`: a typo worth suggesting, not an unrelated word. */
-function closeTo(input: string, candidates: readonly string[]): string | undefined {
+export function closeTo(input: string, candidates: readonly string[]): string | undefined {
   let best: { candidate: string; distance: number } | undefined;
   for (const candidate of candidates) {
     const distance = editDistance(input.toLowerCase(), candidate.toLowerCase());
@@ -96,11 +97,6 @@ function editDistance(a: string, b: string): number {
     previous = current;
   }
   return previous[b.length]!;
-}
-
-/** "a, b and c". */
-function listed(items: readonly string[]): string {
-  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
 }
 
 /** A command or group the router has no route for. */
@@ -190,6 +186,16 @@ export function argumentProblem(
     };
   }
   if (exc instanceof UnsatisfiedPositionalError) {
+    const positional = command?.parameters.positional;
+    // A list of them ("secret set <name>..."): its brief says what to name.
+    if (positional?.kind === "array") {
+      const brief = positional.parameter.brief;
+      return {
+        code: ArgumentErrorCode.MissingArgument,
+        message: `Name at least one ${/^[A-Z]{2}/.test(brief) ? brief : `${brief.charAt(0).toLowerCase()}${brief.slice(1)}`}`,
+        data: usage,
+      };
+    }
     const parameter =
       command?.parameters.positional?.kind === "tuple"
         ? command.parameters.positional.parameters.find((p) => p.placeholder === exc.placeholder)

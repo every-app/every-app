@@ -20,6 +20,10 @@ beforeEach(() => {
   account = new FakeCloudflare();
   account.zones.push({ id: "zone-2", name: "other.org", status: "active" });
   db = cfD1Database(account.cf, account.createDatabase("every-app-gateway").uuid);
+  // The registry's app ids, by Worker, for what a refusal names.
+  account.database("every-app-gateway").sqlite.exec(
+    "CREATE TABLE apps (app_slug TEXT, worker_name TEXT, status TEXT); INSERT INTO apps VALUES ('helpdesk', 'every-acme-helpdesk', 'active')",
+  );
   for (const name of [WORKER, OTHER]) {
     account.workers.set(name, { versions: ["v1"], config: {}, secrets: {} });
   }
@@ -64,7 +68,7 @@ describe("planEmailRoutes", () => {
   it("refuses an address on a domain no zone in the account holds", async () => {
     await expect(plan(["support@unknown.net"])).rejects.toMatchObject({
       code: "EMAIL_ZONE_NOT_FOUND",
-      message: expect.stringContaining("unknown.net isn't on a zone"),
+      message: expect.stringContaining("unknown.net isn't on Cloudflare DNS"),
     });
   });
 
@@ -86,7 +90,9 @@ describe("planEmailRoutes", () => {
     });
     await expect(plan(["support@example.com"])).rejects.toMatchObject({
       code: "EMAIL_ADDRESS_TAKEN",
-      message: expect.stringContaining(OTHER),
+      message: "support@example.com already goes to another app (helpdesk)",
+      fix: "pick another address, or run pnpm everyapp email unset inbound in helpdesk's directory first",
+      data: { workerName: OTHER, appId: "helpdesk" },
     });
   });
 
@@ -101,7 +107,7 @@ describe("planEmailRoutes", () => {
     });
     await expect(plan(["support@example.com"])).rejects.toMatchObject({
       code: "EMAIL_ADDRESS_TAKEN",
-      message: expect.stringContaining('"Ben\'s inbox" in example.com sends it to ben@gmail.com'),
+      message: 'support@example.com already forwards to ben@gmail.com\nThe Email Routing rule "Ben\'s inbox" on example.com delivers it.',
     });
   });
 
@@ -115,7 +121,7 @@ describe("planEmailRoutes", () => {
     };
     await expect(plan(["*@example.com"])).rejects.toMatchObject({
       code: "EMAIL_CATCH_ALL_TAKEN",
-      message: expect.stringContaining("example.com's catch-all already sends mail to team@gmail.com"),
+      message: expect.stringContaining("example.com's catch-all already forwards to team@gmail.com"),
     });
 
     routing.catchAll = { ...routing.catchAll, enabled: false };

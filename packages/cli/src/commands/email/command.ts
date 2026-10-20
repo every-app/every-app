@@ -1,12 +1,17 @@
 import { buildCommand, buildRouteMap } from "@stricli/core";
 import { accountFlag, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
 
+/** The lists `email unset` clears. */
+export enum EmailList {
+  Senders = "senders",
+  Inbound = "inbound",
+}
+
 const appFlags = {
   manifest: {
     kind: "parsed",
     parse: String,
-    brief:
-      "The app's everyapp.config.ts, when it isn't in this directory (an app registered with `register --manifest`, or deployed from a release)",
+    brief: "Path to everyapp.config.ts, if it isn't in this directory",
     placeholder: "path",
     optional: true,
   },
@@ -30,8 +35,7 @@ const setCommand = buildCommand({
         variadic: true,
         optional: true,
         placeholder: "pattern",
-        brief:
-          'An address the app may send as: "*@<domain>" (any address on exactly that domain) or one address, in lowercase. Repeat for several; together they replace the app\'s senders',
+        brief: "Address the app may send as: '*@<domain>' or one address (repeat, up to 20)",
       },
       inbound: {
         kind: "parsed",
@@ -39,33 +43,31 @@ const setCommand = buildCommand({
         variadic: true,
         optional: true,
         placeholder: "address",
-        brief:
-          'An address Email Routing delivers to the app\'s email() handler: "*@<apex>" (the zone\'s catch-all) or one address, in lowercase. Repeat for several; together they replace the app\'s inbound addresses',
+        brief: "Address whose mail goes to the app: '*@<apex>' or one address (repeat, up to 50)",
       },
       "enable-email-routing": {
         kind: "boolean",
         optional: true,
-        brief:
-          "Turn on Email Routing for the domains the inbound addresses name that don't route mail yet (locks their MX and SPF records to Cloudflare)",
+        brief: "Turn on Email Routing for inbound domains without asking",
       },
       ...appFlags,
     },
   },
   docs: {
-    brief:
-      "Set the addresses the app in this directory sends as and receives at, on the Gateway, without a deploy",
+    brief: "Set senders or inbound addresses, without a deploy",
     fullDescription: [
-      "The app's installation on the Gateway holds two lists the manifest doesn't. --sender replaces the",
-      "From addresses the Gateway lets it name ('*@<domain>' for any address on exactly that domain, or",
-      "one address; 20 at most); everyapp.config.ts must list capabilities.email, and each domain must",
-      "also be onboarded to the Gateway's email provider (docs/runbooks/email-sending-setup.md).",
-      "--inbound replaces the addresses Email Routing delivers to its email() handler ('*@<apex>' is",
-      "the zone's catch-all, a subdomain takes one address each; 50 at most); everyapp.config.ts must",
-      "declare email: { inbound: true }. Inbound addresses are routed at once with the deploy's checks",
-      "(the zone, taken addresses, catch-alls on an apex only; turning routing on for a domain asks",
-      "first, or --enable-email-routing) and the rules are recorded as the app's. A list not named",
-      "is kept. The app must be deployed; addresses set before its Worker is uploaded are routed by",
-      "its next `everyapp deploy`. The Gateway reads a change within 30 seconds.",
+      "Each flag replaces its whole list; a list you don't name is kept. The Gateway",
+      "picks up a change within 30 seconds, without a deploy. Addresses set before",
+      "the app's first upload are routed by its next deploy.",
+      "",
+      "Requirements:",
+      "  --sender   everyapp.config.ts lists capabilities.email; each domain is set up for Email Sending",
+      "  --inbound  everyapp.config.ts declares email: { inbound: true }; the domain is on Cloudflare DNS",
+      "",
+      "Examples:",
+      "  everyapp email set --sender '*@mail.example.com'",
+      "  everyapp email set --inbound reports@mail.example.com",
+      "  everyapp email set --inbound '*@example.com' --enable-email-routing",
     ].join("\n"),
   },
 });
@@ -76,27 +78,30 @@ const unsetCommand = buildCommand({
     return unset;
   },
   parameters: {
-    positional: { kind: "tuple", parameters: [] },
-    flags: {
-      senders: {
-        kind: "boolean",
-        optional: true,
-        brief: "Clear the app's senders: it sends as the Gateway's sender only",
+    positional: {
+      kind: "array",
+      minimum: 1,
+      parameter: {
+        brief: "List to clear: senders or inbound",
+        placeholder: "senders|inbound",
+        parse: (value: string): EmailList => {
+          const list = Object.values(EmailList).find((name) => name === value);
+          if (!list) throw new Error("Use senders, inbound, or both.");
+          return list;
+        },
       },
-      inbound: {
-        kind: "boolean",
-        optional: true,
-        brief: "Clear the app's inbound addresses and remove their Email Routing rules",
-      },
-      ...appFlags,
     },
+    flags: appFlags,
   },
   docs: {
-    brief: "Clear the app's senders and/or inbound addresses on the Gateway, without a deploy",
+    brief: "Clear senders or inbound addresses, without a deploy",
     fullDescription: [
-      "Names what to clear: --senders, --inbound, or both. Clearing the inbound addresses removes the",
-      "Email Routing rules the app recorded (a catch-all goes back to dropping mail). Nothing is built",
-      "or deployed.",
+      "Clearing inbound addresses removes their Email Routing rules; a catch-all goes",
+      "back to dropping mail. Nothing is built or deployed.",
+      "",
+      "Examples:",
+      "  everyapp email unset inbound",
+      "  everyapp email unset senders inbound",
     ].join("\n"),
   },
 });
@@ -108,18 +113,21 @@ const showCommand = buildCommand({
   },
   parameters: { positional: { kind: "tuple", parameters: [] }, flags: appFlags },
   docs: {
-    brief: "Show the addresses the app in this directory sends as and receives at",
+    brief: "Show the app's senders and inbound addresses",
     fullDescription: [
-      "What the Gateway holds for the app: the senders it accepts from it and the addresses routed to",
-      "its Worker, against what everyapp.config.ts declares, and whether every address has its Email",
-      "Routing rule. With --json, the `done` event's data has it.",
+      "Lists the app's senders and inbound addresses on the Gateway, and whether each",
+      "inbound address is routed.",
+      "",
+      "Examples:",
+      "  everyapp email show",
+      "  everyapp email show --manifest ../analytics/everyapp.config.ts",
     ].join("\n"),
   },
 });
 
 export const emailRoutes = buildRouteMap({
-  routes: { set: setCommand, unset: unsetCommand, show: showCommand },
+  routes: { show: showCommand, set: setCommand, unset: unsetCommand },
   docs: {
-    brief: "Set the addresses an app sends from and receives at",
+    brief: "Manage the addresses an app sends as and receives at",
   },
 });

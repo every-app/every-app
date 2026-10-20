@@ -25,6 +25,11 @@ export function outputTail(...outputs: string[]): string[] {
     .slice(-20);
 }
 
+/** "a", "a and b", "a, b and c". */
+export function listed(items: readonly string[]): string {
+  return items.length <= 1 ? (items[0] ?? "") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+}
+
 /** A list of strings from event data, else empty. */
 export const strings = (value: unknown): string[] =>
   Array.isArray(value) ? value.map(String) : [];

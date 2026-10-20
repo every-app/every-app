@@ -130,15 +130,19 @@ export function askText(
   );
 }
 
-/** A secret: typed hidden, never echoed. */
+/** A secret: typed invisibly (its length shows nowhere), answered as a fixed mask. */
 export function askSecret(question: string, asked: Asked = {}): Promise<string> {
   return ask(asked, (streams) =>
     password(
       {
         message: question,
-        mask: true,
-        validate: (value: string) => (value.trim() ? true : "Enter a value"),
-        theme,
+        mask: false,
+        toggleMask: false,
+        validate: (value: string) => (value.trim() ? true : "Enter a value."),
+        theme: {
+          ...theme,
+          style: { ...theme.style, maskedText: "(hidden)", answer: () => chalk.dim("••••••••") },
+        },
       },
       streams,
     ),

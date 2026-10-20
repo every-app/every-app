@@ -49,7 +49,8 @@ import type { CfRunner } from "@/lib/cf/runner";
 import { dnsRecordsAt } from "@/lib/domains/records";
 import { resolveZone, type Zone } from "@/lib/domains/zones";
 import { EveryAppError } from "@/lib/errors";
-import { CLI, thisCommand } from "@/lib/output/command";
+import { appIdOfWorker } from "@/lib/gateway/registry";
+import { CLI } from "@/lib/output/command";
 import {
   forgetOwnedResources,
   readOwnedResources,
@@ -146,13 +147,13 @@ export async function planEmailRoutes({
       (route) => route.name === address && route.workerName !== workerName,
     );
     if (holder) {
+      const appId = await appIdOfWorker(gatewayDb, holder.workerName);
       throw new EveryAppError(
         "EMAIL_ADDRESS_TAKEN",
-        `${address} is another app's\nIt is routed to ${holder.workerName}. Take another address, or remove it from that app first.`,
+        `${address} already goes to another app${appId ? ` (${appId})` : ""}`,
         {
-          rerun: `${CLI} email unset --inbound`,
-          rerunNote: "in that app's directory",
-          data: { address, workerName: holder.workerName },
+          fix: `pick another address, or run ${CLI} email unset inbound in ${appId ? `${appId}'s` : "that app's"} directory first`,
+          data: { address, workerName: holder.workerName, appId },
         },
       );
     }
@@ -168,9 +169,9 @@ export async function planEmailRoutes({
     if (zone.name !== domainOf(address)) {
       throw new EveryAppError(
         "EMAIL_CATCH_ALL_NOT_APEX",
-        `${address} is a catch-all on a subdomain of ${zone.name}\nEmail Routing has catch-alls on a zone's apex only.`,
+        `${address}: catch-alls only work on a zone's apex\n${domainOf(address)} is a subdomain of ${zone.name}.`,
         {
-          fix: `set each address on ${domainOf(address)} instead (--inbound support@${domainOf(address)})`,
+          fix: `list each address instead, e.g. --inbound support@${domainOf(address)}`,
           data: { address, zone: zone.name },
         },
       );
@@ -205,11 +206,10 @@ export async function planEmailRoutes({
       if (!ours(catchAll) && sendsMail) {
         throw new EveryAppError(
           "EMAIL_CATCH_ALL_TAKEN",
-          `${zone.name}'s catch-all already sends mail ${describeActions(catchAll)}\n${address} would take it over.`,
+          `${zone.name}'s catch-all already ${delivery(catchAll)}\n${address} would take it over.`,
           {
-            fix: "set it back to dropping mail (Email Routing → Routing rules → Catch-all address), or set the app's addresses one by one instead",
-            rerun: thisCommand(),
-            data: { address, zone: zone.name },
+            fix: "set the catch-all back to Drop (Email Routing → Routing rules), or list addresses one by one",
+            data: { address, zone: zone.name, actions: catchAll.actions },
           },
         );
       }
@@ -223,11 +223,10 @@ export async function planEmailRoutes({
     if (foreign) {
       throw new EveryAppError(
         "EMAIL_ADDRESS_TAKEN",
-        `${address} is delivered elsewhere\nThe Email Routing rule ${foreign.name ? `"${foreign.name}"` : foreign.id} in ${zone.name} sends it ${describeActions(foreign)}.`,
+        `${address} already ${delivery(foreign)}\nThe Email Routing rule ${foreign.name ? `"${foreign.name}"` : foreign.id} on ${zone.name} delivers it.`,
         {
-          fix: "remove that rule, or take another address",
-          rerun: thisCommand(),
-          data: { address, zone: zone.name, ruleId: foreign.id },
+          fix: "remove that rule, or pick another address",
+          data: { address, zone: zone.name, ruleId: foreign.id, actions: foreign.actions },
         },
       );
     }
@@ -242,22 +241,19 @@ export async function planEmailRoutes({
     const domains = enable.map(({ domain }) => domain);
     const list = domains.join(", ");
     const one = domains.length === 1;
-    const what = `Turning it on adds and locks ${one ? "the domain's" : "each domain's"} MX and SPF records, so ${one ? "its" : "their"} mail goes to Cloudflare from then on.`;
+    const locks = `Turning it on locks ${one ? "the domain's" : "their"} MX and SPF records to Cloudflare.`;
     const commands = enable.map(
       ({ zone, domain }) => `npx cf email-routing enable -z ${zone.name} --name ${domain}`,
     );
     if (!interactive) {
       throw new EveryAppError(
         "EMAIL_ROUTING_DISABLED",
-        `Email Routing is off for ${list}\nThe app's inbound addresses need it. ${what} Nothing changed.\nTo turn it on yourself: ${commands.join("; ")}`,
+        `Email Routing is off for ${list}\n${locks} Nothing was changed.`,
         { data: { domains, commands } },
       );
     }
     await confirmOrCancel(confirm, `Turn on Email Routing for ${list}?`, {
-      context: [
-        `Email Routing is off for ${list}. Turning it on locks ${one ? "its" : "their"} MX and SPF records to Cloudflare.`,
-      ],
-      cancelled: `Cancelled. Email Routing stays off for ${list}; nothing changed.`,
+      context: [`Email Routing is off for ${list}. ${locks.replace("the domain's", "its")}`],
     });
   }
   return { workerName, accountId, routes, enable, dropped };
@@ -355,15 +351,20 @@ export function describeMailRoutes({
 }): string {
   const gone = removed.length ? ` Removed the routes for ${removed.join(", ")}.` : "";
   if (routed.length === 0) return `${appId} receives no mail.${gone}`;
-  const unsent = [...new Set(routed.map((address) => address.slice(address.indexOf("@") + 1)))].filter(
-    (domain) => !senders.some((sender) => sender.endsWith(`@${domain}`)),
-  );
+  const unsent = unsentDomains(routed, senders);
   const one = unsent.length === 1;
   const replies =
     unsent.length && sendersSettable
       ? ` To reply from ${unsent.join(", ")}, onboard ${one ? "it" : "them"} to Email Sending and list ${one ? "it" : "them"} with \`${CLI} email set --sender\` (docs/runbooks/email-sending-setup.md).`
       : "";
   return `Mail to ${routed.join(", ")} goes to ${workerName}.${gone}${replies}`;
+}
+
+/** The domains of `routed` addresses no sender covers: replying from them needs one. */
+export function unsentDomains(routed: readonly string[], senders: readonly string[]): string[] {
+  return [...new Set(routed.map(domainOf))].filter(
+    (domain) => !senders.some((sender) => sender.endsWith(`@${domain}`)),
+  );
 }
 
 /**
@@ -456,9 +457,9 @@ async function emailZone(cf: CfRunner, domain: string, accountId: string): Promi
     if (error instanceof EveryAppError && error.code === "ZONE_NOT_FOUND") {
       throw new EveryAppError(
         "EMAIL_ZONE_NOT_FOUND",
-        `${domain} isn't on a zone in this Cloudflare account\nEmail Routing needs the domain on Cloudflare DNS here.`,
+        `${domain} isn't on Cloudflare DNS in this account\nEmail Routing needs the domain's zone in the Gateway's Cloudflare account.`,
         {
-          fix: "add the domain (or its parent) to the account, or take the address out of the app's inbound addresses",
+          fix: "add the domain (or its parent) to the account, or pick an address on another domain",
           data: { domain },
         },
       );
@@ -543,6 +544,15 @@ function sameRule(rule: EmailRoutingRule, wanted: EmailRoutingRuleBody): boolean
     rule.matchers[0]!.type === wantedMatcher.type &&
     ("value" in wantedMatcher ? ruleAddress(rule) === wantedMatcher.value : true)
   );
+}
+
+/** What a rule someone else made does with mail, after "already": "forwards to ben@gmail.com". */
+function delivery(rule: EmailRoutingRule): string {
+  const action = rule.actions[0];
+  if (!action || action.type === "drop") return "drops mail";
+  if (action.type === "forward") return `forwards to ${action.value?.[0] ?? "an address"}`;
+  if (action.type === "worker") return "goes to another Worker";
+  return `sends mail to "${action.type}"`;
 }
 
 function describeActions(rule: EmailRoutingRule): string {

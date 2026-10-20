@@ -9,6 +9,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readOwnedResources } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
@@ -19,13 +20,14 @@ import { readApp, register, type Deployer } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
-import { createNdjsonSink } from "@/lib/output/events";
+import { createHumanSink, createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
 import { loseLeaseAtCheck } from "@/test/loseLease";
 import { deployApp } from "../deploy/deployApp";
+import { EmailList } from "./command";
 import { setEmail, showEmail, unsetEmail } from "./index";
 
 const GATEWAY = "every-app-gateway";
@@ -65,7 +67,6 @@ const db = () =>
     [...account.databases].find(([, entry]) => entry.name === GATEWAY)![0],
   );
 const done = () => events.find((event) => event["type"] === "done");
-const warnings = () => events.filter((event) => event["type"] === "warning");
 
 beforeEach(async () => {
   events = [];
@@ -198,8 +199,8 @@ function set(cwd: string, options: SetOptions & { flags?: Record<string, unknown
   const { flags: extra, ...rest } = options;
   return setEmail({ flags: { ...flags, ...extra }, out: out(), cwd, createCf, ...rest });
 }
-function unset(cwd: string, options: { senders?: boolean; inbound?: boolean } = {}) {
-  return unsetEmail({ flags, out: out(), cwd, createCf, ...options });
+function unset(cwd: string, ...lists: EmailList[]) {
+  return unsetEmail({ flags, out: out(), cwd, createCf, lists });
 }
 function show(cwd: string) {
   return showEmail({ flags, out: out(), cwd, createCf });
@@ -225,7 +226,7 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
     await set(dir, { senders: SENDERS });
 
     expect(done()).toMatchObject({
-      message: "inbox sends as *@example.com, ceo@example.com.",
+      message: "inbox sends as *@example.com, ceo@example.com. The Gateway picks up the change within 30 seconds.",
       data: {
         app: { id: "inbox", workerName: WORKER, status: "active" },
         senders: { value: SENDERS, changed: true },
@@ -246,7 +247,7 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
     await set(dir, { inbound: INBOUND });
 
     expect(done()).toMatchObject({
-      message: `Mail to *@example.com, support@mail.example.com goes to ${WORKER}. To reply from example.com, mail.example.com, onboard them to Email Sending and list them with \`pnpm everyapp email set --sender\` (docs/runbooks/email-sending-setup.md).`,
+      message: "Mail to *@example.com, support@mail.example.com goes to inbox.",
       data: {
         senders: { value: [], changed: false },
         inbound: { value: INBOUND, changed: true, routed: INBOUND, removed: [] },
@@ -291,14 +292,13 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
       email_senders: JSON.stringify(SENDERS),
       email_inbound: JSON.stringify(INBOUND),
     });
-    // The senders cover example.com, not mail.example.com.
-    expect(done()!["message"]).toBe(
-      `Mail to *@example.com, support@mail.example.com goes to ${WORKER}. To reply from mail.example.com, onboard it to Email Sending and list it with \`pnpm everyapp email set --sender\` (docs/runbooks/email-sending-setup.md).`,
-    );
+    expect(done()!["message"]).toBe("Mail to *@example.com, support@mail.example.com goes to inbox.");
 
     events = [];
     await set(dir, { senders: ["*@mail.example.com"] });
-    expect(done()!["message"]).toBe("inbox sends as *@mail.example.com.");
+    expect(done()!["message"]).toBe(
+      "inbox sends as *@mail.example.com. The Gateway picks up the change within 30 seconds.",
+    );
     expect(row()).toEqual({
       email_senders: '["*@mail.example.com"]',
       email_inbound: JSON.stringify(INBOUND),
@@ -316,7 +316,7 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
     await set(dir, { inbound: ["*@example.com"] });
 
     expect(done()).toMatchObject({
-      message: `Mail to *@example.com goes to ${WORKER}. Removed the routes for support@mail.example.com. To reply from example.com, onboard it to Email Sending and list it with \`pnpm everyapp email set --sender\` (docs/runbooks/email-sending-setup.md).`,
+      message: "Mail to *@example.com goes to inbox. Stopped routing support@mail.example.com.",
       data: {
         inbound: {
           value: ["*@example.com"],
@@ -342,7 +342,7 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
     await set(dir, { senders: [...SENDERS].reverse(), inbound: [...INBOUND].reverse() });
 
     expect(done()).toMatchObject({
-      message: `inbox already sends as ceo@example.com, *@example.com. Mail to support@mail.example.com, *@example.com already goes to ${WORKER}.`,
+      message: "inbox already sends as ceo@example.com, *@example.com. Mail to support@mail.example.com, *@example.com already goes to inbox.",
       data: {
         senders: { changed: false },
         inbound: { changed: false, routed: ["support@mail.example.com", "*@example.com"], removed: [] },
@@ -357,9 +357,7 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
     account.emailRoutingOf("zone-1").rules.delete(support!.id);
     events = [];
     await set(dir, { inbound: INBOUND });
-    expect(done()!["message"]).toBe(
-      `Mail to *@example.com, support@mail.example.com goes to ${WORKER}. To reply from mail.example.com, onboard it to Email Sending and list it with \`pnpm everyapp email set --sender\` (docs/runbooks/email-sending-setup.md).`,
-    );
+    expect(done()!["message"]).toBe("Mail to *@example.com, support@mail.example.com goes to inbox.");
     expect(done()!["data"]["inbound"]).toMatchObject({ changed: false, routed: INBOUND });
     expect(account.emailRulesFor("zone-1", "support@mail.example.com")).toHaveLength(1);
   });
@@ -390,7 +388,7 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
     events = [];
     await expect(set(dir, { inbound: INBOUND, interactive: true, confirm: async () => false })).rejects.toMatchObject({
       code: "CANCELLED",
-      message: "Cancelled. Email Routing stays off for example.com; nothing changed.",
+      message: "Cancelled. Nothing changed.",
     });
     expect(row().email_inbound).toBe('["support@mail.example.com"]');
     expect(account.emailRoutingOf("zone-1").enabled).toBe(false);
@@ -400,29 +398,50 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
     await set(dir, { inbound: INBOUND, enableRouting: true });
     expect(account.emailRoutingOf("zone-1").enabled).toBe(true);
     expect(await routes()).toHaveLength(2);
-    expect(done()!["message"]).toContain(`Mail to *@example.com, support@mail.example.com goes to ${WORKER}.`);
+    expect(done()!["message"]).toBe("Mail to *@example.com, support@mail.example.com goes to inbox.");
   });
 
-  it("hints at the senders replying needs, unless they cover the domains", async () => {
+  it("says what changed a line each, and how to reply from a domain no sender covers", async () => {
     routeMail();
     const dir = appDir(INBOX);
     await deploy(dir, INBOX);
+    const shown = async (options: Omit<SetOptions, "flags">) => {
+      let text = "";
+      await setEmail({
+        flags: {},
+        out: createHumanSink({ write: (line) => void (text += line), writeProblem: () => undefined }),
+        cwd: dir,
+        createCf,
+        ...options,
+      });
+      return stripVTControlCharacters(text);
+    };
 
-    await set(dir, { inbound: INBOUND });
-    expect(done()!["message"]).toContain(
-      "To reply from example.com, mail.example.com, onboard them to Email Sending and list them with `pnpm everyapp email set --sender`",
+    expect(await shown({ senders: ["ceo@example.com"], inbound: INBOUND })).toBe(
+      [
+        "inbox sends as ceo@example.com ✓",
+        "Mail to *@example.com, support@mail.example.com goes to inbox ✓",
+        "The Gateway picks up the change within 30 seconds.",
+        "",
+        // ceo@example.com covers example.com.
+        "To reply from mail.example.com, set it up for Email Sending, then:",
+        "  pnpm everyapp email set --sender 'ceo@example.com' --sender '*@mail.example.com'",
+        "",
+      ].join("\n"),
     );
-
-    events = [];
-    await set(dir, { senders: ["*@example.com"], inbound: INBOUND });
-    expect(done()!["message"]).toBe(
-      `inbox sends as *@example.com. Mail to *@example.com, support@mail.example.com already goes to ${WORKER}.`,
+    expect(
+      await shown({ senders: ["*@example.com", "support@mail.example.com"], inbound: ["*@example.com", "help@mail.example.com"] }),
+    ).toBe(
+      [
+        "inbox sends as *@example.com, support@mail.example.com ✓",
+        "Mail to *@example.com, help@mail.example.com goes to inbox ✓",
+        "Stopped routing support@mail.example.com ✓",
+        "The Gateway picks up the change within 30 seconds.",
+        "",
+      ].join("\n"),
     );
-
-    events = [];
-    await set(dir, { senders: ["*@example.com", "support@mail.example.com"], inbound: ["*@example.com", "help@mail.example.com"] });
-    expect(done()!["message"]).toBe(
-      `inbox sends as *@example.com, support@mail.example.com. Mail to *@example.com, help@mail.example.com goes to ${WORKER}. Removed the routes for support@mail.example.com.`,
+    expect(await shown({ senders: ["*@example.com", "support@mail.example.com"] })).toBe(
+      "Nothing changed. inbox already sends as *@example.com, support@mail.example.com.\n",
     );
   });
 });
@@ -432,13 +451,21 @@ describe("email set refuses before anything is read or changed", () => {
     const dir = emptyDir();
     await expect(set(dir, { senders: ["bad"] })).rejects.toMatchObject({
       code: "EMAIL_SENDER_INVALID",
-      message: '"bad" isn\'t a sender: a sender is "*@<domain>" or "<local>@<domain>", in lowercase.',
+      message: '"bad" isn\'t a sender\nA sender is "*@<domain>" or "<local>@<domain>", in lowercase.',
       data: { problems: ['"bad" isn\'t a sender: a sender is "*@<domain>" or "<local>@<domain>", in lowercase.'] },
     });
-    await expect(set(dir, { senders: ["Ben@hi.openseo.so"] })).rejects.toMatchObject({
-      code: "EMAIL_SENDER_INVALID",
-      message: '"Ben@hi.openseo.so" isn\'t a sender: a sender is "*@<domain>" or "<local>@<domain>", in lowercase.',
-    });
+    // Only the case is wrong: the command again, lowercased.
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), "email", "set", "--sender", "Ben@hi.openseo.so"];
+    try {
+      await expect(set(dir, { senders: ["Ben@hi.openseo.so"] })).rejects.toMatchObject({
+        code: "EMAIL_SENDER_INVALID",
+        message: '"Ben@hi.openseo.so" isn\'t a sender\nA sender is "*@<domain>" or "<local>@<domain>", in lowercase.',
+        rerun: "pnpm everyapp email set --sender ben@hi.openseo.so",
+      });
+    } finally {
+      process.argv = argv;
+    }
     const many = Array.from({ length: 51 }, (_, i) => `user${i}@example.com`);
     await expect(set(dir, { inbound: many })).rejects.toMatchObject({
       code: "EMAIL_INBOUND_INVALID",
@@ -447,7 +474,12 @@ describe("email set refuses before anything is read or changed", () => {
     await expect(set(dir, { inbound: ["a@example.com", "Hi@example.com", "a@example.com"] })).rejects.toMatchObject({
       code: "EMAIL_INBOUND_INVALID",
       message:
-        '"Hi@example.com" isn\'t an inbound address: an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase. a@example.com is listed twice.',
+        '2 problems with --inbound\n• "Hi@example.com" isn\'t an inbound address: an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase.\n• a@example.com is listed twice.',
+      data: { problems: [expect.stringContaining("Hi@example.com"), "a@example.com is listed twice."] },
+    });
+    // The same problem twice is said once.
+    await expect(set(dir, { inbound: ["support@", "support@"] })).rejects.toMatchObject({
+      message: '2 problems with --inbound\n• "support@" isn\'t an inbound address: an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase.\n• support@ is listed twice.',
     });
     expect(createCf).not.toHaveBeenCalled();
   });
@@ -455,7 +487,8 @@ describe("email set refuses before anything is read or changed", () => {
   it("nothing to set", async () => {
     await expect(set(emptyDir())).rejects.toMatchObject({
       code: "EMAIL_NOTHING_TO_SET",
-      message: "Name what to set: --sender <pattern> and/or --inbound <address>.",
+      message: "Name what to set: --sender, --inbound, or both",
+      rerun: "pnpm everyapp email set --help",
     });
     expect(createCf).not.toHaveBeenCalled();
   });
@@ -463,13 +496,15 @@ describe("email set refuses before anything is read or changed", () => {
   it("a sender for an app that lists no email, and an address for one that declares no inbound", async () => {
     await expect(set(appDir(NOTES), { senders: ["*@example.com"] })).rejects.toMatchObject({
       code: "EMAIL_NOT_DECLARED",
-      message:
-        'notes doesn\'t list email in its capabilities, so it can\'t send mail. Add capabilities: { email: { access: "write" } } to everyapp.config.ts and deploy, then set its senders.',
+      message: "notes can't send mail yet\neveryapp.config.ts doesn't list email in its capabilities.",
+      fix: 'add capabilities: { email: { access: "write" } } to everyapp.config.ts',
+      rerun: "pnpm everyapp deploy",
+      rerunNote: "then this command again",
     });
     await expect(set(appDir(MAILER), { inbound: ["*@example.com"] })).rejects.toMatchObject({
       code: "EMAIL_INBOUND_NOT_DECLARED",
-      message:
-        "mailer doesn't declare email: { inbound: true } in everyapp.config.ts, so no mail is routed to it. Declare it (its Worker exports email()) and deploy, then set its addresses.",
+      message: "mailer can't receive mail yet\neveryapp.config.ts doesn't declare email: { inbound: true }.",
+      fix: "declare email: { inbound: true } and export email() from the app's Worker",
     });
     // The manifest is read, the Gateway isn't.
     expect(createCf).not.toHaveBeenCalled();
@@ -490,16 +525,16 @@ describe("email set refuses before anything is read or changed", () => {
 
     await expect(set(dir, { senders: ["*@example.com"], inbound: INBOUND })).rejects.toMatchObject({
       code: "EMAIL_SENDERS_HOSTED",
-      message:
-        "This Gateway is hosted and sends app mail from its own sender only for now; it takes no app senders. Leave --sender out.",
+      message: "This Gateway doesn't take app senders\nHosted Gateways send all app mail from their own sender for now.",
+      rerun: undefined,
     });
     expect(row()).toEqual({ email_senders: null, email_inbound: null });
     expect(await routes()).toEqual([]);
 
-    // Inbound addresses alone are fine, and the sentence names no `email set --sender` this Gateway refuses.
+    // Inbound addresses alone are fine.
     events = [];
     await set(dir, { inbound: INBOUND });
-    expect(done()!["message"]).toBe(`Mail to *@example.com, support@mail.example.com goes to ${WORKER}.`);
+    expect(done()!["message"]).toBe("Mail to *@example.com, support@mail.example.com goes to inbox.");
     expect(row().email_inbound).toBe(JSON.stringify(INBOUND));
     expect(await routes()).toHaveLength(2);
   });
@@ -515,8 +550,8 @@ describe("email set refuses before anything is read or changed", () => {
 
     await expect(set(dir, { inbound: ["support@mail.example.com"] })).rejects.toMatchObject({
       code: "EMAIL_ADDRESS_TAKEN",
-      message:
-        "support@mail.example.com is another app's\nIt is routed to every-acme-helpdesk. Take another address, or remove it from that app first.",
+      message: "support@mail.example.com already goes to another app (helpdesk)",
+      fix: "pick another address, or run pnpm everyapp email unset inbound in helpdesk's directory first",
     });
     await expect(set(dir, { inbound: ["*@mail.example.com"] })).rejects.toMatchObject({
       code: "EMAIL_CATCH_ALL_NOT_APEX",
@@ -571,7 +606,7 @@ describe("email set keeps the row and the routes consistent", () => {
     await set(dir, { inbound: INBOUND });
 
     expect(done()).toMatchObject({
-      message: `Mail to *@example.com, support@mail.example.com goes to ${WORKER} once \`pnpm everyapp deploy\` uploads it.`,
+      message: "Saved *@example.com, support@mail.example.com. It's routed to inbox on the next deploy.",
       data: {
         app: { status: "pending" },
         inbound: { value: INBOUND, changed: true, routed: [], removed: [] },
@@ -599,7 +634,7 @@ describe("email set keeps the row and the routes consistent", () => {
     await set(dir, { inbound: INBOUND });
 
     expect(done()).toMatchObject({
-      message: `Mail to *@example.com, support@mail.example.com goes to ${WORKER} once \`pnpm everyapp deploy\` uploads the manifest that declares email: { inbound: true }.`,
+      message: "Saved *@example.com, support@mail.example.com. It's routed to inbox on the next deploy.",
       data: {
         app: { status: "active" },
         inbound: { value: INBOUND, changed: true, routed: [], removed: [] },
@@ -627,17 +662,13 @@ describe("email set keeps the row and the routes consistent", () => {
       return { exitCode: 1, stderr: "┌ Error\n│ boom\n└\n" };
     });
 
-    await expect(set(dir, { inbound: INBOUND })).rejects.toThrow("boom");
-
-    expect(warnings()).toContainEqual(
-      expect.objectContaining({
-        code: "EMAIL_ROUTES_PARTIAL",
-        step: "app.email",
-        message: expect.stringMatching(
-          /^Saved inbox's addresses; routing them stopped at: .+ Run `pnpm everyapp deploy` \(in inbox's directory\), or this command again, to finish\.$/,
-        ),
-      }),
-    );
+    await expect(set(dir, { inbound: INBOUND })).rejects.toMatchObject({
+      code: "EMAIL_ROUTES_PARTIAL",
+      message: expect.stringMatching(/^Inbound addresses saved, but routing them stopped part-way\n[\s\S]*boom/),
+      retryable: true,
+      rerunNote: "again, or pnpm everyapp deploy, to finish",
+      data: { saved: INBOUND },
+    });
     expect(row().email_inbound).toBe(JSON.stringify(INBOUND));
     // The catch-all went first; the rule's address was claimed, its rule never made.
     expect((await routes()).map((route) => route.binding)).toEqual(INBOUND);
@@ -647,8 +678,8 @@ describe("email set keeps the row and the routes consistent", () => {
     events = [];
     await show(dir);
     expect(done()).toMatchObject({
-      message: expect.stringContaining("Not routed yet: support@mail.example.com."),
-      data: { routed: ["*@example.com"], next: ["pnpm everyapp deploy"] },
+      message: expect.stringContaining("support@mail.example.com  inbound  not routed yet"),
+      data: { routed: ["*@example.com"], next: [{ command: "pnpm everyapp deploy", note: "route the list as shown" }] },
     });
 
     await deploy(dir, INBOX);
@@ -683,7 +714,9 @@ describe("email set keeps the row and the routes consistent", () => {
     } finally {
       vi.useRealTimers();
     }
-    expect(done()!["message"]).toBe("inbox sends as *@example.com, ceo@example.com.");
+    expect(done()!["message"]).toBe(
+      "inbox sends as *@example.com, ceo@example.com. The Gateway picks up the change within 30 seconds.",
+    );
 
     // Lost right before the write: nothing changes.
     events = [];
@@ -700,20 +733,14 @@ describe("email set keeps the row and the routes consistent", () => {
     // The first renewal is the check before the write, the second the one before the routes.
     loseLeaseAtCheck(account, `app:${WORKER}`, 2);
 
-    await expect(set(dir, { inbound: INBOUND })).rejects.toMatchObject({ code: "LEASE_LOST" });
-
-    // The row is the intent: written. The ledger: nothing yet.
+    // The row is the intent: written, and the run says so. The ledger: nothing yet.
+    await expect(set(dir, { inbound: INBOUND })).rejects.toMatchObject({
+      code: "EMAIL_ROUTES_PARTIAL",
+      data: { cause: "LEASE_LOST" },
+    });
     expect(row().email_inbound).toBe(JSON.stringify(INBOUND));
     expect(await routes()).toEqual([]);
     expect(account.emailRoutingOf("zone-1").rules.size).toBe(0);
-    // And the run says so, as it does when a rule can't be created.
-    expect(warnings()).toContainEqual(
-      expect.objectContaining({
-        code: "EMAIL_ROUTES_PARTIAL",
-        step: "app.email",
-        message: expect.stringMatching(/^Saved inbox's addresses; routing them stopped at: [\s\S]+ Run `pnpm everyapp deploy`/),
-      }),
-    );
 
     // The other deploy's lease gone, a deploy finishes from the same row.
     account.database(GATEWAY).sqlite.exec("DELETE FROM _everyapp_deploy_lease");
@@ -728,7 +755,7 @@ describe("email set keeps the row and the routes consistent", () => {
 
     await expect(set(emptyDir(), { senders: SENDERS })).rejects.toMatchObject({ code: "MANIFEST_NOT_FOUND" });
     await set(emptyDir(), { senders: SENDERS, flags: { manifest } });
-    expect(done()!["message"]).toBe("inbox sends as *@example.com, ceo@example.com.");
+    expect(done()!["message"]).toMatch(/^inbox sends as \*@example\.com, ceo@example\.com\./);
 
     events = [];
     await showEmail({ flags: { ...flags, manifest }, out: out(), cwd: emptyDir(), createCf });
@@ -744,10 +771,10 @@ describe("email unset", () => {
     await set(dir, { senders: SENDERS, inbound: INBOUND });
     events = [];
 
-    await unset(dir, { inbound: true });
+    await unset(dir, EmailList.Inbound);
 
     expect(done()).toMatchObject({
-      message: "inbox receives no mail. Removed the routes for *@example.com, support@mail.example.com.",
+      message: "Stopped routing *@example.com, support@mail.example.com.",
       data: {
         senders: { value: SENDERS, changed: false },
         inbound: { value: [], changed: true, routed: [], removed: INBOUND },
@@ -765,10 +792,10 @@ describe("email unset", () => {
     await set(dir, { senders: SENDERS });
     events = [];
 
-    await unset(dir, { senders: true });
+    await unset(dir, EmailList.Senders);
 
     expect(done()).toMatchObject({
-      message: "inbox sends as the Gateway's sender only.",
+      message: "Senders cleared (sends as the Gateway's sender). The Gateway picks up the change within 30 seconds.",
       data: { senders: { value: [], changed: true } },
     });
     expect(row()).toEqual({ email_senders: null, email_inbound: null });
@@ -778,7 +805,7 @@ describe("email unset", () => {
     const dir = appDir(INBOX);
     await deploy(dir, INBOX);
 
-    await unset(dir, { senders: true, inbound: true });
+    await unset(dir, EmailList.Senders, EmailList.Inbound);
 
     expect(done()).toMatchObject({
       message: "inbox already sends as the Gateway's sender only. inbox already receives no mail.",
@@ -797,10 +824,10 @@ describe("email unset", () => {
     const dropped = droppedManifest(dir, { id: "inbox" });
     events = [];
 
-    await unsetEmail({ flags: { ...flags, manifest: dropped }, out: out(), cwd: emptyDir(), createCf, senders: true, inbound: true });
+    await unsetEmail({ flags: { ...flags, manifest: dropped }, out: out(), cwd: emptyDir(), createCf, lists: [EmailList.Senders, EmailList.Inbound] });
 
     expect(done()!["message"]).toBe(
-      "inbox sends as the Gateway's sender only. inbox receives no mail. Removed the routes for *@example.com, support@mail.example.com.",
+      "Senders cleared (sends as the Gateway's sender). Stopped routing *@example.com, support@mail.example.com. The Gateway picks up the change within 30 seconds.",
     );
     expect(row()).toEqual({ email_senders: null, email_inbound: null });
     expect(await routes()).toEqual([]);
@@ -810,18 +837,17 @@ describe("email unset", () => {
     await showEmail({ flags: { ...flags, manifest: dropped }, out: out(), cwd: emptyDir(), createCf });
     expect(done()!["data"]["declares"]).toEqual({ sends: false, receives: false });
   });
-
-  it("refuses with nothing named", async () => {
-    await expect(unset(emptyDir())).rejects.toMatchObject({
-      code: "EMAIL_NOTHING_TO_UNSET",
-      message: "Name what to clear: --senders and/or --inbound.",
-    });
-    expect(createCf).not.toHaveBeenCalled();
-  });
 });
 
+/** `email show`'s table as --json's message has it: a header, then a row per address. */
+function table(rows: string[][]): string {
+  const all = [["ADDRESS", "ROLE", "STATUS"], ...rows];
+  const widths = [0, 1].map((column) => Math.max(...all.map((row) => row[column]!.length)));
+  return all.map(([address, role, status]) => `${address!.padEnd(widths[0]!)}  ${role!.padEnd(widths[1]!)}  ${status}`).join("\n");
+}
+
 describe("email show", () => {
-  it("prints both lists against what the manifest declares, and the Worker", async () => {
+  it("lists each address with its role and status, as a table", async () => {
     routeMail();
     const dir = appDir(INBOX);
     await deploy(dir, INBOX);
@@ -833,7 +859,12 @@ describe("email show", () => {
 
     expect(done()).toEqual(
       expect.objectContaining({
-        message: ["inbox sends as *@example.com, ceo@example.com.", `Mail to *@example.com, support@mail.example.com goes to ${WORKER}.`].join("\n"),
+        message: table([
+          ["*@example.com", "sender", "allowed"],
+          ["ceo@example.com", "sender", "allowed"],
+          ["*@example.com", "inbound", "routed"],
+          ["support@mail.example.com", "inbound", "routed"],
+        ]),
         data: {
           app: { id: "inbox", workerName: WORKER, status: "active", deployed: true },
           declares: { sends: true, receives: true },
@@ -847,28 +878,38 @@ describe("email show", () => {
     expect(cfCalls("email-routing")).toEqual([]);
   });
 
-  it("says an app sends as the Gateway's sender only and receives no mail", async () => {
+  it("says an app sends as the Gateway's sender and receives no mail, and how to change that", async () => {
     const dir = appDir(INBOX);
     await deploy(dir, INBOX);
 
     await show(dir);
 
     expect(done()).toMatchObject({
-      message: "inbox sends as the Gateway's sender only.\ninbox receives no mail.",
-      data: { senders: [], inbound: [], routed: [] },
+      message: "inbox sends as the Gateway's sender and receives no mail.",
+      data: {
+        senders: [],
+        inbound: [],
+        routed: [],
+        next: [
+          { command: "pnpm everyapp email set --sender '*@<domain>'", note: "send as your own domain" },
+          { command: "pnpm everyapp email set --inbound <address>", note: "receive mail" },
+        ],
+      },
     });
-    expect(done()!["data"]["next"]).toBeUndefined();
   });
 
-  it("says what the manifest doesn't declare", async () => {
+  it("says how to turn each direction on for an app that declares neither", async () => {
     const dir = appDir(NOTES);
     await deploy(dir, NOTES);
 
     await show(dir);
 
     expect(done()).toMatchObject({
-      message:
-        "notes doesn't list email in its capabilities, so it doesn't send mail.\nnotes doesn't declare email: { inbound: true }, so no mail is routed to it.",
+      message: [
+        "notes doesn't send or receive email.",
+        'To send, add capabilities: { email: { access: "write" } } to everyapp.config.ts.',
+        "To receive, add email: { inbound: true } to everyapp.config.ts.",
+      ].join("\n"),
       data: { declares: { sends: false, receives: false } },
     });
   });
@@ -879,10 +920,11 @@ describe("email show", () => {
 
     expect(done()).toEqual(
       expect.objectContaining({
-        message: "inbox isn't deployed yet; its senders and addresses are set after its first `pnpm everyapp deploy`.",
+        message: "inbox isn't deployed yet. Senders and inbound addresses can be set after its first deploy.",
         data: {
           app: { id: "inbox", deployed: false },
           declares: { sends: true, receives: true },
+          next: ["pnpm everyapp deploy"],
           durationMs: expect.any(Number),
         },
       }),
@@ -890,7 +932,7 @@ describe("email show", () => {
     expect(sink.exitCode).toBe(0);
   });
 
-  it("names an address set but not routed, with deploy as the next command", async () => {
+  it("marks an address set but not routed, and one routed but no longer listed, with deploy as the next command", async () => {
     routeMail();
     const dir = appDir(INBOX);
     await deploy(dir, INBOX);
@@ -906,11 +948,18 @@ describe("email show", () => {
 
     expect(done()).toMatchObject({
       message: [
+        table([
+          ["*@example.com", "inbound", "routed"],
+          ["support@mail.example.com", "inbound", "not routed yet"],
+        ]),
+        "",
         "inbox sends as the Gateway's sender only.",
-        `Mail to *@example.com, support@mail.example.com goes to ${WORKER}.`,
-        "Not routed yet: support@mail.example.com.",
       ].join("\n"),
-      data: { inbound: INBOUND, routed: ["*@example.com"], next: ["pnpm everyapp deploy"] },
+      data: {
+        inbound: INBOUND,
+        routed: ["*@example.com"],
+        next: [{ command: "pnpm everyapp deploy", note: "route the list as shown" }],
+      },
     });
 
     // The other way round: a route the list no longer names.
@@ -920,7 +969,12 @@ describe("email show", () => {
       .run('["support@mail.example.com"]');
     events = [];
     await show(dir);
-    expect(done()!["message"]).toContain("Not routed yet: support@mail.example.com.\nStill routed, no longer listed: *@example.com.");
+    expect(done()!["message"]).toContain(
+      table([
+        ["support@mail.example.com", "inbound", "not routed yet"],
+        ["*@example.com", "inbound", "removed, still routed"],
+      ]),
+    );
   });
 
   it("shows the addresses set before the first upload, with deploy as the next command", async () => {
@@ -932,18 +986,19 @@ describe("email show", () => {
     await show(dir);
 
     expect(done()).toMatchObject({
-      message: [
-        "inbox sends as the Gateway's sender only.",
-        `Mail to *@example.com, support@mail.example.com goes to ${WORKER} once \`pnpm everyapp deploy\` uploads it.`,
-      ].join("\n"),
+      message: expect.stringContaining(
+        table([
+          ["*@example.com", "inbound", "not routed yet"],
+          ["support@mail.example.com", "inbound", "not routed yet"],
+        ]),
+      ),
       data: {
         app: { id: "inbox", workerName: WORKER, status: "pending", deployed: false },
         inbound: INBOUND,
         routed: [],
-        next: ["pnpm everyapp deploy"],
+        next: [{ command: "pnpm everyapp deploy", note: "route the list as shown" }],
       },
     });
-    expect(done()!["message"]).not.toContain("Not routed yet");
   });
 
   it("names the clearing command, not a deploy, for addresses stored under a dropped declaration", async () => {
@@ -961,12 +1016,20 @@ describe("email show", () => {
 
     expect(done()).toMatchObject({
       message: [
+        table([
+          ["*@example.com", "inbound", "not declared"],
+          ["support@mail.example.com", "inbound", "not declared"],
+        ]),
+        "",
         "inbox sends as the Gateway's sender only.",
-        "inbox doesn't declare email: { inbound: true }, so no mail is routed to it.",
-        "Its addresses (*@example.com, support@mail.example.com) stay stored until `pnpm everyapp email unset --inbound` clears them.",
+        "everyapp.config.ts no longer declares email: { inbound: true }, so this address isn't used.",
       ].join("\n"),
-      data: { declares: { sends: true, receives: false }, inbound: INBOUND, routed: [] },
+      data: {
+        declares: { sends: true, receives: false },
+        inbound: INBOUND,
+        routed: [],
+        next: [{ command: "pnpm everyapp email unset inbound", note: "clear the stored address" }],
+      },
     });
-    expect(done()!["data"]["next"]).toBeUndefined();
   });
 });

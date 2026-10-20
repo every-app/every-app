@@ -7,13 +7,12 @@
  * git on Windows checks symlinks out as plain files. `create` copies it
  * again for each new app, so a newer CLI's skill reaches new apps.
  *
- * AGENTS.md points at it. A new one is written; an existing one that
- * doesn't mention the skill gets a line only when a person at the terminal
- * agrees, never under --json or --yes.
+ * AGENTS.md points at it. The starter's own AGENTS.md already does; one
+ * that is missing is written, and one that doesn't mention the skill gets
+ * the line (it is the new app's copy of the template's, not the person's).
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { Confirm } from "@/lib/output/prompt";
 
 const SKILL_PATHS = [".claude/skills/everyapp", ".agents/skills/everyapp"];
 
@@ -26,27 +25,24 @@ export function skillSource(root: string): string {
 }
 
 /** What happened to the app's AGENTS.md. */
-type AgentsMd = "mentions" | "created" | "added" | "left";
+type AgentsMd = "mentions" | "created" | "added";
 
 export async function linkSkill({
   root,
   appDir,
-  ask,
 }: {
   root: string;
   appDir: string;
-  /** Asks the person at the terminal; absent under --json or --yes. */
-  ask?: Confirm;
 }): Promise<{ paths: string[]; agentsMd: AgentsMd }> {
   for (const relative of SKILL_PATHS) {
     const target = path.join(appDir, relative);
     await fs.rm(target, { recursive: true, force: true });
     await fs.cp(skillSource(root), target, { recursive: true });
   }
-  return { paths: SKILL_PATHS, agentsMd: await pointAgentsMd(appDir, ask) };
+  return { paths: SKILL_PATHS, agentsMd: await pointAgentsMd(appDir) };
 }
 
-async function pointAgentsMd(appDir: string, ask?: Confirm): Promise<AgentsMd> {
+async function pointAgentsMd(appDir: string): Promise<AgentsMd> {
   const file = path.join(appDir, "AGENTS.md");
   let current: string;
   try {
@@ -56,9 +52,6 @@ async function pointAgentsMd(appDir: string, ask?: Confirm): Promise<AgentsMd> {
     return "created";
   }
   if (current.includes("skills/everyapp")) return "mentions";
-  if (!ask || !(await ask("Add a line to AGENTS.md pointing agents at the everyapp skill?"))) {
-    return "left";
-  }
   await fs.writeFile(file, `${current.replace(/\s*$/, "")}\n${POINTER}\n`);
   return "added";
 }

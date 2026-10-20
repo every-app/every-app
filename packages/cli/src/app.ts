@@ -30,7 +30,7 @@ import { registerCommand } from "./commands/register/command";
 import { secretRoutes } from "./commands/secret/command";
 import { setupCommand } from "./commands/setup/command";
 import { statusCommand } from "./commands/status/command";
-import { workflowsRoutes } from "./commands/workflows/command";
+import { workflowRoutes } from "./commands/workflow/command";
 import type { LocalContext } from "./context";
 import { errorMessage } from "./lib/errors";
 
@@ -55,7 +55,7 @@ const routes = buildRouteMap({
     secret: secretRoutes,
     email: emailRoutes,
     db: dbRoutes,
-    workflows: workflowsRoutes,
+    workflow: workflowRoutes,
     completion: completionRoutes,
   },
   docs: {
@@ -72,15 +72,19 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["GET STARTED", ["login", "setup", "create"]],
   ["APPS", ["dev", "deploy", "delete", "register"]],
   ["CONFIGURE", ["secret", "email"]],
-  ["INSPECT", ["status", "db", "workflows"]],
+  ["INSPECT", ["status", "db", "workflow"]],
 ];
 
 /** What `everyapp <group> --help` shows as examples. */
 const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   secret: ["secret set GITHUB_TOKEN", "secret set GITHUB_TOKEN --from-env GH_TOKEN"],
-  email: ["email show", "email set --inbound support@apps.example.com"],
+  email: ["email show", "email set --sender '*@mail.example.com'", "email unset inbound"],
   db: ["db migrate", "db query 'select count(*) from todos'"],
-  workflows: ["workflows list", "workflows instances RANK_CHECK --status running"],
+  workflow: [
+    "workflow list",
+    "workflow instances RANK_CHECK --status errored",
+    `workflow start RANK_CHECK --params '{"siteId":"abc"}'`,
+  ],
   completion: ["completion install"],
 };
 

@@ -9,58 +9,79 @@ import { askText } from "@/lib/output/prompt";
 
 const KEBAB_CASE = /^[a-z]([a-z0-9-]*[a-z0-9])?$/;
 
-/** Why `input` can't be an app id (a headline, then a detail line), or null when it can. */
-function validateAppId(input: string): string | null {
-  if (!input || input.trim().length === 0) {
-    return "The app id can't be empty";
-  }
-  if (input.length > 64) {
-    return "The app id must be 64 characters or less";
-  }
-  if (!KEBAB_CASE.test(input)) {
-    return "The app id must be kebab-case\nUse lowercase letters, digits and hyphens, starting with a letter.";
-  }
+/** What the prompt offers when Enter is pressed on nothing. */
+const DEFAULT_NAME = "my-app";
+
+/** What is wrong with a name: the headline, and how to fix it. */
+interface NameProblem {
+  headline: string;
+  fix: string;
+  /** A well-formed name the platform keeps. */
+  reserved?: boolean;
+}
+
+/** Why `input` can't name an app, or null when it can. */
+function nameProblem(input: string): NameProblem | null {
+  const invalid = `"${input}" isn't a valid app name`;
+  if (input.length > 64) return { headline: invalid, fix: "use 64 characters or fewer" };
   // "--" separates an app's Worker name from its resources' names.
   if (input.includes("--")) {
-    return "The app id can't contain two hyphens in a row";
+    return {
+      headline: invalid,
+      fix: `don't put two dashes in a row, e.g. ${input.replace(/-{2,}/g, "-")}`,
+    };
+  }
+  if (!KEBAB_CASE.test(input)) {
+    const slug = slugify(input);
+    return {
+      headline: invalid,
+      fix: `use lowercase letters, digits and dashes${slug ? `, e.g. ${slug}` : ", starting with a letter"}`,
+    };
   }
   if (isReservedAppId(input) || workerNameFor(input) === GATEWAY_WORKER_NAME) {
-    return `"${input}" is reserved for the platform\nPick another app id.`;
+    return { headline: `"${input}" is reserved for the platform`, fix: "pick another name", reserved: true };
   }
   return null;
 }
 
-/** `input` made into an app id, when it can be ("Analytics_App" → "analytics-app"). */
+/** `input` made into a name, when it can be ("Analytics_App" → "analytics-app"). */
 function slugify(input: string): string | null {
   const slug = input
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^[^a-z]+|-+$/g, "");
-  return slug && validateAppId(slug) === null ? slug : null;
+  return slug && slug.length <= 64 && KEBAB_CASE.test(slug) ? slug : null;
 }
 
 /**
- * The new app's id: the one given, once it validates; otherwise asked for,
- * but only at a terminal (never under --json or --yes).
+ * The new app's name (its id): the one given, once it is valid; otherwise
+ * asked for, but only at a terminal (never under --json or --yes).
  */
 export async function resolveAppId(
   given: string | undefined,
-  { interactive }: { interactive: boolean },
+  { interactive, yes }: { interactive: boolean; yes: boolean },
 ): Promise<string> {
   if (given !== undefined) {
-    const problem = validateAppId(given);
-    if (problem) {
-      const slug = slugify(given);
-      throw new EveryAppError("INVALID_APP_ID", problem, slug ? { rerun: `${CLI} create ${slug}` } : {});
-    }
+    const problem = nameProblem(given);
+    if (problem) throw new EveryAppError("INVALID_APP_ID", problem.headline, { fix: problem.fix });
     return given;
   }
   if (!interactive) {
-    throw new EveryAppError("APP_ID_REQUIRED", "Name the new app (kebab-case, e.g. my-app)", {
-      data: { usage: `${CLI} create <id>` },
-    });
+    throw new EveryAppError(
+      "APP_ID_REQUIRED",
+      `No app name given\n${yes ? "--yes means nothing is asked." : "There's no terminal to ask for one."}`,
+      { rerun: `${CLI} create <name>${yes ? " --yes" : ""}` },
+    );
   }
-  return askText("App id (kebab-case, e.g. my-app)", {
-    validate: (input) => validateAppId(input)?.split("\n")[0] ?? null,
+  return askText("App name", {
+    context: ["Lowercase letters, digits and dashes. It becomes part of the app's URL."],
+    initial: DEFAULT_NAME,
+    validate: (input) => {
+      const problem = nameProblem(input);
+      if (!problem) return null;
+      if (problem.reserved) return `${input} is reserved for the platform. Pick another name.`;
+      const slug = slugify(input);
+      return `Use lowercase letters, digits and dashes.${slug && !nameProblem(slug) ? ` Try ${slug}` : ""}`;
+    },
   });
 }

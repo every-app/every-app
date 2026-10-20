@@ -49,31 +49,57 @@ describe("argument problems", () => {
       message: '--deploy is a switch and takes no value (got "maybe")',
       data: { fix: "use --deploy or --no-deploy" },
     });
-    expect((await parse("workflows", "instances", "RANK", "--limit", "500")).problems[0]!.message).toBe(
+    expect((await parse("workflow", "instances", "RANK", "--limit", "500")).problems[0]!.message).toBe(
       "--limit must be a whole number from 1 to 100, not 500",
     );
     // Kebab-case values, and no far-fetched suggestion.
-    expect((await parse("workflows", "instances", "RANK", "--status", "nope")).problems[0]).toEqual({
+    expect((await parse("workflow", "instances", "RANK", "--status", "nope")).problems[0]).toEqual({
       code: "INVALID_VALUE",
       message:
         '--status can\'t be "nope"\nUse one of: queued, running, paused, waiting, waiting-for-pause, errored, terminated, complete, rolling-back.',
       data: {},
     });
-    expect((await parse("workflows", "instances", "RANK", "--status", "runing")).problems[0]!.data).toEqual({
+    expect((await parse("workflow", "instances", "RANK", "--status", "runing")).problems[0]!.data).toEqual({
       didYouMean: "running",
     });
   });
 
   it("shows where a missing or extra argument goes", async () => {
-    expect((await parse("workflows", "get", "RANK")).problems[0]!.message).toBe("Missing the instance id");
+    expect((await parse("workflow", "get", "RANK")).problems[0]!.message).toBe("Missing the instance id");
     expect((await parse("create", "a", "b")).problems[0]).toEqual({
       code: "TOO_MANY_ARGUMENTS",
       message: 'create takes one argument, but got another: "b"',
-      data: { usage: "pnpm everyapp create [<id>] [flags]" },
+      data: { usage: "pnpm everyapp create [<name>] [flags]" },
     });
-    expect((await parse("secret", "set", "--from-env")).problems[0]).toMatchObject({
+    expect((await parse("secret", "set", "GITHUB_TOKEN", "--from-env")).problems[0]).toMatchObject({
       code: "MISSING_FLAG_VALUE",
       message: "--from-env needs a value",
+    });
+  });
+
+  it("asks for at least one of a list of arguments, each checked", async () => {
+    expect((await parse("secret", "set")).problems[0]).toEqual({
+      code: "MISSING_ARGUMENT",
+      message: "Name at least one secret or Gateway setting",
+      data: { usage: "pnpm everyapp secret set <name>... [flags]" },
+    });
+    expect((await parse("email", "unset")).problems[0]).toEqual({
+      code: "MISSING_ARGUMENT",
+      message: "Name at least one list to clear: senders or inbound",
+      data: { usage: "pnpm everyapp email unset <senders|inbound>... [flags]" },
+    });
+    expect((await parse("email", "unset", "--inbound")).problems[0]!.code).toBe("UNKNOWN_FLAG");
+    expect((await parse("email", "unset", "everything")).problems[0]).toMatchObject({
+      code: "INVALID_VALUE",
+      message: '"everything" won\'t do for <senders|inbound>\nUse senders, inbound, or both.',
+    });
+  });
+
+  it("checks a Workflow's --params before connecting", async () => {
+    expect((await parse("workflow", "start", "RANK_CHECK", "--params", "{bad")).problems[0]).toEqual({
+      code: "INVALID_VALUE",
+      message: `--params can't be "{bad"\nExpected a JSON object, e.g. '{"siteId":"abc"}'.`,
+      data: {},
     });
   });
 });

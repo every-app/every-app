@@ -500,7 +500,7 @@ async function deploySteps(
         type: "warning",
         code: "EMAIL_INBOUND_UNDECLARED",
         step: "app.email",
-        message: `everyapp.config.ts no longer declares email: { inbound: true }, so this deploy removes ${manifest.id}'s mail routes; its addresses (${storedEmail.inbound.join(", ")}) stay on the Gateway until \`${CLI} email unset --inbound\` clears them.`,
+        message: `everyapp.config.ts no longer declares email: { inbound: true }, so this deploy removes ${manifest.id}'s mail routes; its addresses (${storedEmail.inbound.join(", ")}) stay on the Gateway until \`${CLI} email unset inbound\` clears them.`,
       });
     }
     // Mail routes are checked before anything is created: an address
