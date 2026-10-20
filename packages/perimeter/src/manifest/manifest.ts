@@ -15,8 +15,7 @@
 import { z } from "zod";
 import {
   CAPABILITIES,
-  EMAIL_LIMITS,
-  EMAIL_SENDER_PATTERN,
+  EMAIL_SET_COMMAND,
   gatewaySettingOwner,
   isCapabilityId,
   isReservedAppSecretName,
@@ -236,30 +235,10 @@ export const CapabilityRequestSchema = CapabilityEntryBaseSchema.passthrough();
 export type CapabilityRequest = z.infer<typeof CapabilityRequestSchema>;
 
 /**
- * The addresses an app may send email as (`capabilities.email.senders`):
- * `*@<domain>` for any address on exactly that domain, or one address, in
- * lowercase. The gateway refuses any other `from`; each domain must also be
- * onboarded to Email Sending in the gateway's Cloudflare account.
- */
-const EmailSendersSchema = z
-  .array(
-    z
-      .string()
-      .regex(
-        EMAIL_SENDER_PATTERN,
-        'a sender is "*@<domain>" or "<local>@<domain>", in lowercase',
-      ),
-  )
-  .max(EMAIL_LIMITS.senders)
-  .refine(
-    (senders) => new Set(senders).size === senders.length,
-    "duplicate sender",
-  );
-
-/**
- * What one capability's manifest entry takes: `access` and `why`, plus the
- * fields that capability defines (email's `senders`). Strict: a field
- * another capability takes is unknown here.
+ * What one capability's manifest entry takes: `access` and `why`. Strict:
+ * anything else is unknown here; an installation's email senders aren't
+ * the manifest's (`everyapp email set`), and `CapabilitiesSchemaStrict`
+ * names the command for a manifest that still lists them.
  */
 export function capabilityEntrySchema(id: CapabilityId) {
   const capability = CAPABILITIES[id];
@@ -269,19 +248,11 @@ export function capabilityEntrySchema(id: CapabilityId) {
       (level) => (capability.access as readonly string[]).includes(level),
       `${capability.label} offers ${capability.access.join(" or ")} access`,
     );
-  const base = CapabilityEntryBaseSchema.extend({ access });
-  switch (id) {
-    case "email":
-      return base.extend({ senders: EmailSendersSchema.optional() }).strict();
-    default:
-      return base.strict();
-  }
+  return CapabilityEntryBaseSchema.extend({ access }).strict();
 }
 
 /** One authored capability entry, whichever capability it is for. */
-export type CapabilityEntry = z.infer<typeof CapabilityEntryBaseSchema> & {
-  senders?: string[];
-};
+export type CapabilityEntry = z.infer<typeof CapabilityEntryBaseSchema>;
 
 const CapabilitiesSchema = z.record(
   ProviderNameSchema,
@@ -300,6 +271,19 @@ const CapabilitiesSchemaStrict = z
         });
         continue;
       }
+      if (
+        id === "email" &&
+        entry !== null &&
+        typeof entry === "object" &&
+        "senders" in entry
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [id, "senders"],
+          message: `senders moved out of the manifest: set them with \`${EMAIL_SET_COMMAND} --sender <pattern>\` in the app's directory after its first deploy`,
+        });
+        continue;
+      }
       const parsed = capabilityEntrySchema(id).safeParse(entry);
       if (parsed.success) continue;
       for (const issue of parsed.error.issues) {
@@ -309,54 +293,30 @@ const CapabilitiesSchemaStrict = z
   })
   .transform((capabilities) => capabilities as Record<string, CapabilityEntry>);
 
-/**
- * An address Email Routing delivers to the app's Worker: `*@<domain>`, the
- * catch-all of a zone's apex, or one address (`<local>@<domain>`), in
- * lowercase. The deploy finds the zone; a catch-all on a subdomain is
- * refused there, since Email Routing has catch-alls on apex domains only.
- */
-export const EMAIL_INBOUND_PATTERN =
-  /^(\*|[a-z0-9._+-]+)@([a-z0-9-]+\.)+[a-z]{2,}$/;
-
-/** How many addresses `email.inbound` takes (Email Routing allows 200 rules a domain). */
-export const MAX_EMAIL_INBOUND = 50;
-
-/** Email Routing's limit on a rule's address (its matcher's value). */
-const MAX_EMAIL_ADDRESS_LENGTH = 90;
+const INBOUND_MOVED = `inbound is true (the Worker exports an email() handler) or left out; the addresses moved out of the manifest: set them with \`${EMAIL_SET_COMMAND} --inbound <address>\` in the app's directory after its first deploy`;
 
 /**
- * Mail the app receives, through its `email()` handler. Registration
- * passes it through; nothing in the gateway acts on it.
+ * Mail the app receives through its `email()` handler: `inbound: true`
+ * declares the handler; the addresses are the installation's
+ * (`apps.email_inbound`, set with `everyapp email set --inbound`, which
+ * routes them). Registration passes the field through; a row written
+ * before the move holds an address list here and reads as undeclared, so
+ * the gateway keeps routing the app until its next deploy.
  */
 const EmailSchema = z
-  .object({ inbound: z.array(z.string()).optional() })
+  .object({ inbound: z.boolean().optional().catch(undefined) })
   .passthrough();
 
 const EmailSchemaStrict = z
   .object({
-    /**
-     * The addresses Email Routing delivers to this Worker's email()
-     * handler, which `everyapp deploy` routes: "*@example.com" (an apex
-     * zone's catch-all) or "support@mail.example.com".
-     */
-    inbound: z
-      .array(
-        z
-          .string()
-          .max(MAX_EMAIL_ADDRESS_LENGTH)
-          .regex(
-            EMAIL_INBOUND_PATTERN,
-            'an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase',
-          ),
-      )
-      .max(MAX_EMAIL_INBOUND)
-      .refine(
-        (addresses) => new Set(addresses).size === addresses.length,
-        "duplicate address",
-      )
-      .optional(),
+    /** True when the Worker exports `email()` beside `everyApp()`'s `fetch`; `everyapp email set --inbound` routes addresses to it. */
+    inbound: z.boolean({ invalid_type_error: INBOUND_MOVED }).optional(),
   })
   .strict();
+
+/** What a dispatch-tier manifest may not declare; the hosted deploy API refuses it too (`manifestProblems`). */
+export const DISPATCH_INBOUND_PROBLEM =
+  "email.inbound: apps in a dispatch namespace don't receive mail";
 
 /**
  * Cloudflare's limits for one of the app's Workers. `cpuMs` raises the CPU
@@ -488,8 +448,8 @@ export const ManifestSchema = z
     /** Limits on what the app may do through the gateway's AI proxy. */
     ai: AiPolicySchema.optional(),
     /**
-     * Mail the app's `email()` handler receives: `inbound` addresses, which
-     * `everyapp deploy` routes to its Worker with Email Routing rules.
+     * Mail the app's `email()` handler receives: `inbound: true` declares
+     * the handler; `everyapp email set --inbound` routes addresses to it.
      */
     email: EmailSchema.optional(),
     /**
@@ -811,11 +771,7 @@ export function manifestTierProblems(
       "resources.r2: R2 buckets aren't available to apps in a dispatch namespace yet",
     );
   }
-  if (manifest.email?.inbound?.length) {
-    problems.push(
-      "email.inbound: apps in a dispatch namespace don't receive mail",
-    );
-  }
+  if (manifest.email?.inbound === true) problems.push(DISPATCH_INBOUND_PROBLEM);
   if (manifest.secrets?.length) {
     problems.push(
       "secrets: third-party apps can't have secrets of their own yet",

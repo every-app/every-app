@@ -15,6 +15,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/client/components/ui/tooltip";
+import { appEmail } from "@/client/lib/appEmail";
 import type { AppWithAccessCount } from "@/types/app";
 import { AppActionsMenu } from "./AppActionsMenu";
 
@@ -61,6 +62,7 @@ function appStatus(app: AppWithAccessCount): {
 }
 
 function AppNameCell({ app }: { app: AppWithAccessCount }) {
+  const email = appEmail(app);
   return (
     <>
       <div className="flex min-w-0 items-center gap-1.5">
@@ -85,6 +87,20 @@ function AppNameCell({ app }: { app: AppWithAccessCount }) {
       {app.deployedByActor ? (
         <p className="truncate text-xs text-muted-foreground">
           Deployed by {app.deployedByActor}
+        </p>
+      ) : null}
+      {email.senders.length || email.inbound.length ? (
+        <p className="truncate text-xs text-muted-foreground">
+          {[
+            email.senders.length
+              ? `Sends as ${email.senders.join(", ")}`
+              : null,
+            email.inbound.length
+              ? `Receives ${email.inbound.join(", ")}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
       ) : null}
     </>

@@ -33,6 +33,7 @@ import {
   type AppScope,
   type RegistrationPlan,
 } from "@every-app/perimeter/registry";
+import { parseEmailList, storedEmailList, type AppEmailConfig } from "@every-app/sdk/internal";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
 
@@ -87,12 +88,15 @@ async function registryCall<T>(call: () => Promise<T>): Promise<T> {
 }
 
 const APP_COLUMNS =
-  "id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, is_default";
+  "id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, is_default, email_senders, email_inbound";
 
 const text = (value: unknown): string | null =>
   value === null || value === undefined ? null : String(value);
 
-function toAppRow(row: D1Row): AppRow {
+/** An `apps` row with its email configuration columns (JSON string[] or null). */
+type StoredAppRow = AppRow & { emailSenders: string | null; emailInbound: string | null };
+
+function toAppRow(row: D1Row): StoredAppRow {
   return {
     id: String(row["id"]),
     organizationId: String(row["organization_id"]),
@@ -109,6 +113,8 @@ function toAppRow(row: D1Row): AppRow {
     deployedAt: row["deployed_at"] == null ? null : Number(row["deployed_at"]),
     deployedByActor: text(row["deployed_by_actor"]),
     isDefault: Boolean(Number(row["is_default"])),
+    emailSenders: text(row["email_senders"]),
+    emailInbound: text(row["email_inbound"]),
   };
 }
 
@@ -467,9 +473,10 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
 }
 
 /**
- * What goes with a deleted app (deleteUpdate's companions): everyone's
- * access to it, the personal access tokens bound to it (revoked), its
- * agent tools snapshot, and its place in AI connections.
+ * What goes with a deleted app (deleteUpdate's companions): its email
+ * configuration (`email_senders`, `email_inbound`), everyone's access to
+ * it, the personal access tokens bound to it (revoked), its agent tools
+ * snapshot, and its place in AI connections.
  */
 function withoutAppData(
   app: Pick<AppRow, "id" | "organizationId">,
@@ -477,6 +484,10 @@ function withoutAppData(
 ): D1Statement[] {
   const scoped = [app.id, app.organizationId];
   return [
+    {
+      sql: "UPDATE apps SET email_senders = NULL, email_inbound = NULL WHERE id = ? AND organization_id = ?",
+      params: scoped,
+    },
     {
       sql: "DELETE FROM user_app_access WHERE app_row_id = ? AND organization_id = ?",
       params: scoped,
@@ -501,7 +512,7 @@ WHERE app_row_id = ?2 AND organization_id = ?3 AND revoked_at IS NULL`,
   ];
 }
 
-async function readAppRow(db: D1Database, id: string): Promise<AppRow | null> {
+async function readAppRow(db: D1Database, id: string): Promise<StoredAppRow | null> {
   const [rows = []] = await db.run([
     { sql: `SELECT ${APP_COLUMNS} FROM apps WHERE id = ?`, params: [id] },
   ]);
@@ -576,9 +587,18 @@ export interface RegisteredAppInfo {
   workerName: string;
   hostname: string;
   resources: AppResources;
+  /** What the installation sends as and receives at (`everyapp email set`). */
+  email: AppEmailConfig;
+  /**
+   * Whether the manifest the app was registered or last deployed from
+   * declares inbound mail (`email: { inbound: true }`): its Worker exports
+   * `email()`, so routes may name it. False until a deploy uploads the
+   * declaration, however the local everyapp.config.ts reads.
+   */
+  declaresInbound: boolean;
 }
 
-function info(app: AppRow): RegisteredAppInfo {
+function info(app: StoredAppRow): RegisteredAppInfo {
   return {
     id: app.id,
     appSlug: app.appSlug,
@@ -587,18 +607,37 @@ function info(app: AppRow): RegisteredAppInfo {
     workerName: app.workerName ?? "",
     hostname: app.hostname ?? "",
     resources: appResources(app),
+    email: { senders: parseEmailList(app.emailSenders), inbound: parseEmailList(app.emailInbound) },
+    declaresInbound: declaresInbound(app.manifest),
   };
 }
 
+/**
+ * The stored manifest's inbound declaration. The address list a manifest
+ * carried before 2026-10-19 counts: that Worker exports `email()` too, and
+ * the lenient schema reads the list as undeclared only to keep registering
+ * the row until its redeploy.
+ */
+function declaresInbound(stored: string | null): boolean {
+  if (!stored) return false;
+  try {
+    const manifest: unknown = JSON.parse(stored);
+    const inbound = (manifest as { email?: { inbound?: unknown } } | null)?.email?.inbound;
+    return inbound === true || Array.isArray(inbound);
+  } catch {
+    return false;
+  }
+}
+
 /** The install organization's row for an app id, tombstones included. */
-async function findApp(db: D1Database, appSlug: string): Promise<AppRow | null> {
+async function findApp(db: D1Database, appSlug: string): Promise<StoredAppRow | null> {
   return (await findAppIn(db, appSlug))?.app ?? null;
 }
 
 async function findAppIn(
   db: D1Database,
   appSlug: string,
-): Promise<{ app: AppRow; organization: Organization } | null> {
+): Promise<{ app: StoredAppRow; organization: Organization } | null> {
   const found = await installOrganization(db);
   if (!found) return null;
   const [rows = []] = await db.run([
@@ -652,6 +691,50 @@ export async function readApp(
     throw notRegistered(appSlug);
   }
   return info(app);
+}
+
+/** The installation's email configuration by row id (`deploy` reads it under the app's lease). */
+export async function readAppEmail(db: D1Database, appRowId: string): Promise<AppEmailConfig> {
+  const [rows = []] = await db.run([
+    { sql: "SELECT email_senders, email_inbound FROM apps WHERE id = ?", params: [appRowId] },
+  ]);
+  const row = rows[0];
+  if (!row) throw new EveryAppError("APP_NOT_FOUND", "The app's registry row is gone; deploy it again.");
+  return { senders: parseEmailList(row["email_senders"]), inbound: parseEmailList(row["email_inbound"]) };
+}
+
+/**
+ * `everyapp email set|unset`: store the installation's lists, as JSON or
+ * null for none; never the manifest. A shared app is every organization's:
+ * only the platform organization's owners and admins change it (as
+ * `deleteApp`). Returns the app as it is now.
+ */
+export async function writeAppEmail(
+  db: D1Database,
+  appSlug: string,
+  config: AppEmailConfig,
+  deployer: Deployer,
+  now = Date.now(),
+): Promise<RegisteredAppInfo> {
+  return registryCall(async () => {
+    const found = await findAppIn(db, appSlug);
+    if (!found || found.app.status === DELETED_APP_STATUS || !found.app.workerName) {
+      throw notRegistered(appSlug);
+    }
+    const { app, organization } = found;
+    if (app.scope === "shared") await assertPlatformAdminIn(db, deployer, organization);
+    const emailSenders = storedEmailList(config.senders);
+    const emailInbound = storedEmailList(config.inbound);
+    const [changed = []] = await db.run([
+      {
+        sql: `UPDATE apps SET email_senders = ?, email_inbound = ?, updated_at = ?
+WHERE id = ? AND status != '${DELETED_APP_STATUS}' RETURNING id`,
+        params: [emailSenders, emailInbound, now, app.id],
+      },
+    ]);
+    if (changed.length === 0) throw notRegistered(appSlug);
+    return info({ ...app, emailSenders, emailInbound });
+  });
 }
 
 /** Every app the registry lists, deleted ones aside, by app id. */

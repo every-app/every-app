@@ -11,7 +11,7 @@ import { applyGateway } from "@/lib/gateway/apply";
 import { discoverGateway } from "@/lib/gateway/discover";
 import { acquireLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
-import { markDeployed, register } from "@/lib/gateway/registry";
+import { markDeployed, register, writeAppEmail } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
@@ -178,12 +178,18 @@ describe("everyapp status", () => {
     const inbox = await deployed("inbox");
     await deployed("todo");
     account.emailRoutingOf("zone-1").enabled = true;
+    await writeAppEmail(
+      db(),
+      "inbox",
+      { senders: [], inbound: ["*@example.com", "support@example.com"] },
+      { actor: "dev@example.com", email: "dev@example.com" },
+    );
     const plan = await planEmailRoutes({
       cf: account.cf,
       gatewayDb: db(),
       accountId: ACCOUNT_ID,
       workerName: inbox.workerName!,
-      manifest: { email: { inbound: ["*@example.com", "support@example.com"] } },
+      addresses: ["*@example.com", "support@example.com"],
       interactive: false,
     });
     await applyEmailRoutes({ cf: account.cf, gatewayDb: db(), plan: plan! });

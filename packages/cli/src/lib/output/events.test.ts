@@ -450,6 +450,14 @@ describe("createHumanSink", () => {
     ]);
   });
 
+  it("prints the app.email hint line on a skip", () => {
+    const { sink, lines } = human();
+    const message =
+      "inbox receives no mail yet: `pnpm everyapp email set --inbound <address>` (in its directory) routes addresses to it.";
+    sink.emit({ type: "step", step: "app.email", status: "skip", message });
+    expect(lines()).toEqual([message]);
+  });
+
   it("says the Gateway is up to date when there is nothing to do", () => {
     const { sink, lines } = human();
     sink.emit({

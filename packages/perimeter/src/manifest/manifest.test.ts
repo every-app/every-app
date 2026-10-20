@@ -12,6 +12,7 @@ import {
   bucketNameFor,
   isReservedAppId,
   manifestTierProblems,
+  DISPATCH_INBOUND_PROBLEM,
 } from "./manifest";
 
 describe("validateManifest", () => {
@@ -508,34 +509,9 @@ describe("capabilities manifest field", () => {
       /Unrecognized key\(s\) in object: 'senders'/,
     ],
     [
-      "a sender that isn't an address or a domain pattern",
-      { email: { access: "write", senders: ["bad"] } },
-      /capabilities\.email\.senders\.0: a sender is "\*@<domain>" or "<local>@<domain>", in lowercase/,
-    ],
-    [
-      "an uppercase sender",
-      { email: { access: "write", senders: ["*@Mail.Example.com"] } },
-      /capabilities\.email\.senders\.0: a sender is/,
-    ],
-    [
-      "a duplicate sender",
-      {
-        email: {
-          access: "write",
-          senders: ["*@mail.example.com", "*@mail.example.com"],
-        },
-      },
-      /capabilities\.email\.senders: duplicate sender/,
-    ],
-    [
-      "more than 20 senders",
-      {
-        email: {
-          access: "write",
-          senders: Array.from({ length: 21 }, (_, i) => `s${i}@example.com`),
-        },
-      },
-      /capabilities\.email\.senders/,
+      "a leftover senders list",
+      { email: { access: "write", senders: ["*@mail.example.com"] } },
+      /capabilities\.email\.senders: senders moved out of the manifest: set them with `everyapp email set --sender <pattern>`/,
     ],
     [
       "senders on a capability that doesn't send mail",
@@ -569,18 +545,17 @@ describe("capabilities manifest field", () => {
     ).toEqual(capabilities);
   });
 
-  it("accepts email with the senders an app may send as", () => {
+  it("accepts email as a declaration only", () => {
     const capabilities = {
       email: {
         access: "write",
         why: "Sends mail from the organization's mailboxes.",
-        senders: ["*@mail.example.com", "support@example.com"],
       },
     };
     expect(
       validateManifestStrict({ id: "inbox", capabilities }).capabilities,
     ).toEqual(capabilities);
-    // Without senders, the gateway's own sender only.
+    // The senders are the installation's (`everyapp email set --sender`).
     expect(
       validateManifestStrict({
         id: "inbox",
@@ -1032,63 +1007,67 @@ describe("Prisma migrations, Hyperdrive caching and R2 buckets", () => {
 });
 
 describe("email.inbound manifest field", () => {
-  const inbox = {
-    id: "agentic-inbox",
-    email: { inbound: ["*@example.com", "support@mail.example.com"] },
-  };
+  const inbox = { id: "agentic-inbox", email: { inbound: true } };
 
-  it("accepts apex catch-alls and literal addresses in both schemas", () => {
-    expect(validateManifestStrict(inbox).email).toEqual(inbox.email);
-    expect(validateManifest(inbox).email).toEqual(inbox.email);
+  it("accepts the declaration in both schemas", () => {
+    expect(validateManifestStrict(inbox).email).toEqual({ inbound: true });
     expect(
-      validateManifestStrict({
-        id: "inbox",
-        email: { inbound: ["first.last+tag@example.co.uk", "a_b-c@x.io"] },
-      }).email?.inbound,
-    ).toHaveLength(2);
+      validateManifestStrict({ id: "inbox", email: { inbound: false } }).email,
+    ).toEqual({ inbound: false });
     expect(validateManifestStrict({ id: "inbox", email: {} }).email).toEqual(
       {},
     );
+    expect(
+      validateManifest({ id: "inbox", email: { inbound: true, later: 1 } })
+        .email,
+    ).toEqual({ inbound: true, later: 1 });
   });
 
   it.each([
-    ["an uppercase address", ["Support@example.com"]],
-    ["a bare domain", ["example.com"]],
-    ["a wildcard inside the local part", ["sup*@example.com"]],
-    ["a wildcard domain", ["*@*.example.com"]],
-    ["a single-label domain", ["support@localhost"]],
-    ["a duplicate", ["support@example.com", "support@example.com"]],
-    [
-      "an address over Email Routing's 90 characters",
-      [`${"a".repeat(80)}@example.com`],
-    ],
-    [
-      "more than 50 addresses",
-      Array.from({ length: 51 }, (_, i) => `a${i}@example.com`),
-    ],
-  ])("refuses %s", (_case, inbound) => {
+    ["an address list", ["*@example.com"]],
+    ["a string", "yes"],
+  ])("refuses %s, naming the command", (_case, inbound) => {
     expect(() =>
       validateManifestStrict({ id: "inbox", email: { inbound } }),
-    ).toThrow(/email\.inbound/);
+    ).toThrow(
+      /email\.inbound: inbound is true .* `everyapp email set --inbound <address>`/,
+    );
   });
 
-  it("refuses unknown email keys when authored, and keeps them at registration", () => {
+  it("reads an old row's address list as undeclared at registration", () => {
+    const email = validateManifest({
+      id: "inbox",
+      email: { inbound: ["*@example.com"], later: 1 },
+    }).email;
+    expect(email?.inbound).toBeUndefined();
+    expect(email).toEqual({ inbound: undefined, later: 1 });
+  });
+
+  it("refuses unknown email keys when authored", () => {
     expect(() =>
       validateManifestStrict({ id: "inbox", email: { outbound: [] } }),
     ).toThrow(/email/);
-    expect(
-      validateManifest({ id: "inbox", email: { inbound: ["X"], later: 1 } })
-        .email,
-    ).toEqual({ inbound: ["X"], later: 1 });
   });
 
   it("refuses inbound mail on the dispatch tier", () => {
     expect(manifestTierProblems(inbox, "service_binding")).toEqual([]);
     expect(manifestTierProblems(inbox, "dispatch")).toEqual([
-      "email.inbound: apps in a dispatch namespace don't receive mail",
+      DISPATCH_INBOUND_PROBLEM,
     ]);
     expect(
-      manifestTierProblems({ email: { inbound: [] } }, "dispatch"),
+      manifestTierProblems({ email: { inbound: false } }, "dispatch"),
+    ).toEqual([]);
+    // An old row's address list is not a declaration.
+    expect(
+      manifestTierProblems(
+        {
+          email: validateManifest({
+            id: "x",
+            email: { inbound: ["a@b.example"] },
+          }).email,
+        },
+        "dispatch",
+      ),
     ).toEqual([]);
   });
 });

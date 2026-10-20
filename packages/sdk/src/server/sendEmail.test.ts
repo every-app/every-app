@@ -258,7 +258,7 @@ describe("sendEmail in local dev", () => {
     });
   });
 
-  it("refuses a sender the manifest doesn't list, as the gateway does", async () => {
+  it("refuses a sender .dev.vars doesn't list, as the gateway does", async () => {
     await expect(
       sendEmail({
         env: DEV,
@@ -267,7 +267,7 @@ describe("sendEmail in local dev", () => {
     ).rejects.toMatchObject({
       status: 403,
       code: "email_sender_not_allowed",
-      message: expect.stringContaining("capabilities.email.senders"),
+      message: expect.stringContaining("EVERYAPP_EMAIL_SENDERS in .dev.vars"),
     });
     // A subdomain of a listed domain is another domain.
     await expect(
@@ -276,6 +276,18 @@ describe("sendEmail in local dev", () => {
         message: { ...MESSAGE, from: "x@sub.mail.example.com" },
       }),
     ).rejects.toMatchObject({ code: "email_sender_not_allowed" });
+  });
+
+  it("refuses every sender when .dev.vars sets none", async () => {
+    await expect(
+      sendEmail({
+        env: { EVERYAPP_DEV: "1" },
+        message: { ...MESSAGE, from: "support@mail.example.com" },
+      }),
+    ).rejects.toMatchObject({
+      status: 403,
+      code: "email_sender_not_allowed",
+    });
   });
 
   it("refuses an invalid message, as the gateway does", async () => {

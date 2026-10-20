@@ -316,7 +316,10 @@ describe("the email capability", () => {
     });
   });
 
-  it("in local dev, is configured by EMAIL_FROM and reads the manifest's senders", async () => {
+  it("in local dev, is configured by EMAIL_FROM and reads the stand-in senders from .dev.vars", async () => {
+    await expect(
+      integrationStatus({ env: { EVERYAPP_DEV: "1" }, provider: "email" }),
+    ).resolves.toMatchObject({ requested: true, senders: [] });
     const dev = {
       EVERYAPP_DEV: "1",
       EVERYAPP_EMAIL_SENDERS: '["*@mail.example.com"]',

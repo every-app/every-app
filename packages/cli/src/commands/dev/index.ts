@@ -459,8 +459,9 @@ function readyMessage({
     // Crons (everyAppWorker's `crons`) run on demand through the Vite
     // plugin's local explorer, on the app's own dev server.
     `  Cron:      curl -X POST "${explorer}/api/local/scheduled?worker=${workerName}" -H 'content-type: application/json' -d '{"cron":"<schedule>"}'`,
-    // Mail for email.inbound reaches the app's email() handler through
-    // miniflare's local delivery endpoint on the app's own dev server (the
+    // Mail for an app that declares `email: { inbound: true }` reaches the
+    // app's email() handler through miniflare's local delivery endpoint on
+    // the app's own dev server (the
     // Vite plugin's; wrangler 4 had /cdn-cgi/handler/email instead).
     ...emailHint(manifest, appPort),
     // Workflows run under cf dev too; the explorer starts, inspects, pauses
@@ -491,20 +492,19 @@ function readyMessage({
 
 /**
  * How to deliver a message to the app's email() handler locally, when the
- * manifest routes mail to it: the raw RFC 5322 message (with a Message-ID)
- * as the body, the envelope in the query. A catch-all's domain takes any
- * address.
+ * manifest declares one: the raw RFC 5322 message (with a Message-ID) as
+ * the body, the envelope in the query. The addresses are the installation's
+ * (`everyapp email set --inbound`); the local endpoint takes any, so the
+ * example uses hello@example.com.
  */
 export function emailHint(
   manifest: Pick<EveryAppCliManifest, "email">,
   appPort: number,
 ): string[] {
-  const first = manifest.email?.inbound?.[0];
-  if (!first) return [];
-  const to = first.replace(/^\*@/, "hello@");
+  if (manifest.email?.inbound !== true) return [];
   return [
-    `  Email:     curl -X POST "http://127.0.0.1:${appPort}/cdn-cgi/local/email?from=someone@example.net&to=${to}" --data-binary @message.eml`,
-    "             (message.eml: a raw message with From, To, Subject and Message-ID headers; email() gets no identity)",
+    `  Email:     curl -X POST "http://127.0.0.1:${appPort}/cdn-cgi/local/email?from=someone@example.net&to=hello@example.com" --data-binary @message.eml`,
+    "             (any address; message.eml: a raw message with From, To, Subject and Message-ID headers; email() gets no identity)",
   ];
 }
 

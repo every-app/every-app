@@ -155,9 +155,12 @@ const MODULES = {
 const MIGRATION =
   "CREATE TABLE todos (id text PRIMARY KEY);\n--> statement-breakpoint\nCREATE INDEX todos_id ON todos (id);";
 
-function files(worker = builtWorker()) {
+function files(
+  worker = builtWorker(),
+  manifest: Record<string, unknown> & { id: string } = TODO,
+) {
   return releaseFiles({
-    manifest: TODO,
+    manifest,
     worker,
     modules: MODULES,
     assets: { "favicon.ico": new Uint8Array([1, 2, 3]) },
@@ -540,6 +543,22 @@ describe("install from GitHub (SQLite, fake GitHub and Cloudflare)", () => {
     const body = (await response.json()) as { error: string; message: string };
     expect(body.error).toBe("BUNDLE_REFUSED");
     expect(body.message).toContain("CACHE");
+    await expectNothingRegistered();
+
+    // A release whose manifest declares inbound mail: a third-party app
+    // receives none, and the refusal comes before its row is written.
+    releases.set(
+      REPO,
+      packRelease(files(builtWorker(), { ...TODO, email: { inbound: true } })),
+    );
+    const inbound = await install();
+    expect(inbound.status).toBe(422);
+    const refused = (await inbound.json()) as {
+      error: string;
+      message: string;
+    };
+    expect(refused.error).toBe("BUNDLE_REFUSED");
+    expect(refused.message).toContain("inbound mail (email.inbound)");
     await expectNothingRegistered();
   });
 

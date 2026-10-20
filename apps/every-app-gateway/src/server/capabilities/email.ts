@@ -10,10 +10,11 @@
  *   GET  /api/integrations/email        EmailCapabilityStatus
  *
  * Without `from` a message goes out as the gateway's sender. With one, the
- * address must match a pattern in the app's manifest
- * (`capabilities.email.senders`), and its domain must be onboarded to Email
- * Sending in the gateway's account (or verified in its Resend account). A
- * hosted gateway sends app mail from its own sender only, for now.
+ * address must match one of the installation's senders
+ * (`apps.email_senders`, set with `everyapp email set --sender`), and its
+ * domain must be onboarded to Email Sending in the gateway's account (or
+ * verified in its Resend account). A hosted gateway sends app mail from its
+ * own sender only, for now.
  */
 import {
   CAPABILITIES,
@@ -22,6 +23,7 @@ import {
   distinctRecipients,
   emailDomain,
   emailProviderRefusal,
+  emailSenderRefusal,
   parseSendEmailMessage,
   senderAllowed,
   type EmailCapabilityStatus,
@@ -77,6 +79,8 @@ export async function loadGatewayMail(): Promise<GatewayMail> {
 interface EmailCapabilityOptions {
   /** The calling app's manifest entry for `email`, if it lists one. */
   entry: CapabilityRequest | undefined;
+  /** The senders stored for the app's installation (its registry row), the allowlist for `from`. */
+  senders: readonly string[];
   /** A hosted gateway: app senders are refused. */
   hosted: boolean;
   mail: () => Promise<GatewayMail>;
@@ -87,16 +91,13 @@ function requested(entry: CapabilityRequest | undefined): boolean {
   return entry?.access === "write";
 }
 
-/** The `from` patterns the gateway accepts from the app: none on hosted. */
+/** The `from` patterns the gateway accepts from the app: none on hosted, none without the grant. */
 function effectiveSenders(
   entry: CapabilityRequest | undefined,
+  senders: readonly string[],
   hosted: boolean,
 ): string[] {
-  const senders = entry?.["senders"];
-  if (hosted || !requested(entry) || !Array.isArray(senders)) return [];
-  return senders.filter(
-    (sender): sender is string => typeof sender === "string",
-  );
+  return hosted || !requested(entry) ? [] : [...senders];
 }
 
 /**
@@ -106,6 +107,7 @@ function effectiveSenders(
  */
 export async function emailCapabilityStatus({
   entry,
+  senders,
   hosted,
   mail,
 }: EmailCapabilityOptions): Promise<Response> {
@@ -118,7 +120,7 @@ export async function emailCapabilityStatus({
     configured,
     ready: isRequested && configured,
     sender: configured ? (gatewayMail?.sender() ?? null) : null,
-    senders: effectiveSenders(entry, hosted),
+    senders: effectiveSenders(entry, senders, hosted),
     provider: configured ? (gatewayMail?.provider() ?? null) : null,
   };
   return Response.json(status);
@@ -128,6 +130,7 @@ export async function emailCapabilityStatus({
 export async function handleEmailSend({
   request,
   entry,
+  senders,
   hosted,
   admit,
   mail,
@@ -210,7 +213,7 @@ export async function handleEmailSend({
     return capabilityRefusal(status, code, text, headers);
   };
 
-  // 5. The sender: the gateway's, or one the manifest allows.
+  // 5. The sender: the gateway's, or one the installation allows.
   if (message.from) {
     if (hosted) {
       return refuse(
@@ -219,11 +222,16 @@ export async function handleEmailSend({
         "This gateway sends app mail from its own sender only for now: leave from out, or ask the platform about sending from your own domain.",
       );
     }
-    if (!senderAllowed(message.from.address, effectiveSenders(entry, hosted))) {
+    if (
+      !senderAllowed(
+        message.from.address,
+        effectiveSenders(entry, senders, hosted),
+      )
+    ) {
       return refuse(
         403,
         "email_sender_not_allowed",
-        `This app may not send as ${message.from.address}: list it, or *@${emailDomain(message.from.address)}, in capabilities.email.senders in everyapp.config.ts and deploy again.`,
+        emailSenderRefusal(message.from.address, "gateway"),
       );
     }
   }

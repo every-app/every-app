@@ -65,6 +65,12 @@ interface HandleIntegrationProxyRequestOptions {
   request: Request;
   /** The calling app's registry manifest `capabilities`. */
   capabilities: Record<string, CapabilityRequest> | undefined;
+  /**
+   * The `from` patterns stored for the calling app's installation
+   * (`apps.email_senders`, RegisteredApp.emailSenders): what `email` lets it
+   * send as. The manifest only declares that it sends. Absent: none.
+   */
+  emailSenders?: readonly string[];
   env: IntegrationProxyEnv;
   /**
    * Attribute a call the proxy would forward to its organization; throws to
@@ -82,6 +88,7 @@ interface HandleIntegrationProxyRequestOptions {
 export async function handleIntegrationProxyRequest({
   request,
   capabilities,
+  emailSenders = [],
   env,
   admit,
   fetchUpstream = fetch,
@@ -99,7 +106,7 @@ export async function handleIntegrationProxyRequest({
     if (capability.mode === "service") {
       const entry = capabilities?.[status];
       return status === "email"
-        ? emailCapabilityStatus({ entry, hosted, mail })
+        ? emailCapabilityStatus({ entry, senders: emailSenders, hosted, mail })
         : membersCapabilityStatus(entry);
     }
     if (capability.mode === "oauth_client") {
@@ -140,7 +147,14 @@ export async function handleIntegrationProxyRequest({
   if (route.kind === "service") {
     const entry = capabilities?.[route.id];
     return route.id === "email"
-      ? handleEmailSend({ request, entry, hosted, admit, mail })
+      ? handleEmailSend({
+          request,
+          entry,
+          senders: emailSenders,
+          hosted,
+          admit,
+          mail,
+        })
       : handleMembersList({ request, entry, admit, listMembers });
   }
 

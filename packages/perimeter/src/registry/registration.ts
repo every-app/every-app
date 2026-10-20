@@ -651,15 +651,25 @@ export function markDeployedUpdate(
 
 /**
  * The columns that make an app a tombstone: unrouted and unlisted, its
- * names still reserved to its organization, and no longer available to
- * everyone. Null for an app that already is one, so a resumed delete writes
- * nothing. With it go, in the same batch: everyone's `user_app_access` to
- * it, the `user_access_tokens` bound to it (revoked), its `app_tools` and
- * `app_tool_catalogs` rows, and its `mcp_connection_apps` rows.
+ * names still reserved to its organization, no longer available to
+ * everyone, and its email configuration (`email_senders`, `email_inbound`)
+ * gone, so a revived app starts without it. Null for an app that already
+ * is one, so a resumed delete writes nothing. With it go, in the same
+ * batch: everyone's `user_app_access` to it, the `user_access_tokens`
+ * bound to it (revoked), its `app_tools` and `app_tool_catalogs` rows, and
+ * its `mcp_connection_apps` rows.
  */
-export function deleteUpdate(
-  app: Pick<AppRow, "status">,
-): { status: typeof DELETED_APP_STATUS; isDefault: false } | null {
+export function deleteUpdate(app: Pick<AppRow, "status">): {
+  status: typeof DELETED_APP_STATUS;
+  isDefault: false;
+  emailSenders: null;
+  emailInbound: null;
+} | null {
   if (app.status === DELETED_APP_STATUS) return null;
-  return { status: DELETED_APP_STATUS, isDefault: false };
+  return {
+    status: DELETED_APP_STATUS,
+    isDefault: false,
+    emailSenders: null,
+    emailInbound: null,
+  };
 }

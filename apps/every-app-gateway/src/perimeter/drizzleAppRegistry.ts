@@ -18,6 +18,7 @@ type RegistryRow = {
   organizationId: string;
   status: string;
   manifest: string | null;
+  emailSenders: string | null;
   versionId: string | null;
 };
 
@@ -31,6 +32,7 @@ const registryColumns = {
   organizationId: apps.organizationId,
   status: apps.status,
   manifest: apps.manifest,
+  emailSenders: apps.emailSenders,
   versionId: apps.versionId,
 };
 
@@ -92,6 +94,7 @@ function toRegistryRow(row: RegistryRow): AppRegistryRow {
     organizationId: row.organizationId,
     status: row.status,
     manifest: row.manifest,
+    emailSenders: row.emailSenders,
     rowId: row.id,
     versionId: row.versionId,
   };

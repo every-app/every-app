@@ -43,6 +43,8 @@ async function getAllWithAccessCounts(ctx: OrgContext) {
         tier: app.tier,
         scope: app.scope,
         manifest: app.manifest,
+        emailSenders: app.emailSenders,
+        emailInbound: app.emailInbound,
         status: app.status,
         deployedByActor: app.deployedByActor,
         isDefault: app.isDefault,

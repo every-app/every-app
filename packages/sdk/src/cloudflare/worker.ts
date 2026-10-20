@@ -375,9 +375,9 @@ type SharedEnv = {
  */
 type HyperdriveEnv<M> = { [B in AppHyperdriveNames<M>]: HyperdriveBinding };
 
-/** In dev, an app that lists `email` gets its manifest's senders. */
+/** In dev, an app that lists `email` may get the installation's stand-in senders from .dev.vars. */
 type DevEmailEnv<M> = M extends { capabilities: { email: unknown } }
-  ? { EVERYAPP_EMAIL_SENDERS: TextBinding }
+  ? { EVERYAPP_EMAIL_SENDERS?: SecretBinding }
   : unknown;
 
 /**
@@ -568,7 +568,6 @@ export function everyAppWorker<
       value: JSON.stringify([DEV_PUBLIC_KEY_PEM]),
     };
     env["EVERYAPP_IDENTITY_ISSUER"] = { type: "text", value: DEV_ISSUER };
-    addDevEmailSenders(env, manifest);
   }
 
   Object.assign(env, storageBindings(manifest, name, deploy));
@@ -702,7 +701,6 @@ export function everyAppAuxiliaryWorker<
     env["EVERY_APP_ORG_ID"] = { type: "secret" };
   } else {
     env["EVERYAPP_DEV"] = { type: "text", value: "1" };
-    addDevEmailSenders(env, manifest);
   }
   addDatabaseBindings(env, options, appWorker, worker, deploy);
   const { bindings, exports } = classBindings(manifest, appWorker, worker, env);
@@ -1019,7 +1017,15 @@ function addSecrets(
     }
   }
   if (!deploy) {
-    const names = new Set([...secrets, ...devGatewayKeys(options.manifest)]);
+    // With `.dev.vars` setting it, EVERYAPP_EMAIL_SENDERS stands in for the
+    // senders a gateway holds for an installation (`everyapp email set`).
+    const names = new Set([
+      ...secrets,
+      ...devGatewayKeys(options.manifest),
+      ...(options.manifest.capabilities?.["email"]
+        ? ["EVERYAPP_EMAIL_SENDERS"]
+        : []),
+    ]);
     for (const secret of locallySetSecrets(
       options.root ?? process.cwd(),
       options.ctx.mode ?? "development",
@@ -1028,28 +1034,6 @@ function addSecrets(
       env[secret] = { type: "secret" };
     }
   }
-}
-
-/**
- * In dev, the senders the manifest's `capabilities.email` allows, for
- * sendEmail()'s local check (EMAIL_SENDERS_ENV in ../internal/email.ts);
- * deployed, the gateway reads them from the registry.
- */
-function addDevEmailSenders(
-  env: Record<string, EveryAppBinding>,
-  manifest: EveryAppWorkerManifest,
-): void {
-  const email = manifest.capabilities?.["email"];
-  if (!email || typeof email !== "object") return;
-  const senders = (email as { senders?: unknown }).senders;
-  env["EVERYAPP_EMAIL_SENDERS"] = {
-    type: "text",
-    value: JSON.stringify(
-      Array.isArray(senders)
-        ? senders.filter((sender) => typeof sender === "string")
-        : [],
-    ),
-  };
 }
 
 /** The {@link DEV_GATEWAY_KEYS} of the manifest's providers and capabilities. */

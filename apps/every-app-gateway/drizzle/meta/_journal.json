@@ -15,6 +15,13 @@
       "when": 1792445901141,
       "tag": "0001_deploy_job_source",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792458108630,
+      "tag": "0002_app_email_config",
+      "breakpoints": true
     }
   ]
 }

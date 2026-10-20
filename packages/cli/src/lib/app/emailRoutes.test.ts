@@ -40,7 +40,7 @@ function plan(inbound: string[] | undefined, extra: Partial<Parameters<typeof pl
     gatewayDb: db,
     accountId: ACCOUNT_ID,
     workerName: WORKER,
-    manifest: inbound ? { email: { inbound } } : {},
+    addresses: inbound ?? [],
     interactive: false,
     ...extra,
   });
@@ -180,9 +180,10 @@ describe("applyEmailRoutes", () => {
       "other.org",
       "mail.example.com",
     ]);
-    const routed = await applyEmailRoutes({ cf: account.cf, gatewayDb: db, plan: planned });
+    const { routed, changed } = await applyEmailRoutes({ cf: account.cf, gatewayDb: db, plan: planned });
 
     expect(routed).toEqual(["*@example.com", "support@mail.example.com", "hi@other.org"]);
+    expect(changed).toBe(true);
     expect(account.emailRoutingOf("zone-1").enabled).toBe(true);
     expect(account.emailRoutingOf("zone-2").enabled).toBe(true);
     const [support] = account.emailRulesFor("zone-1", "support@mail.example.com");
@@ -218,8 +219,16 @@ describe("applyEmailRoutes", () => {
         (call) => call.args[0] === "email-routing" && ["create", "update", "delete", "enable"].some((verb) => call.args.includes(verb)),
       ).length;
     const before = writes();
-    await deployRoutes(["*@example.com", "support@mail.example.com"]);
+    const again = await deployRoutes(["*@example.com", "support@mail.example.com"]);
     expect(writes()).toBe(before);
+    expect(again).toMatchObject({ changed: false });
+
+    // A rule deleted by hand is made again, and the run says it changed something.
+    const [support] = account.emailRulesFor("zone-1", "support@mail.example.com");
+    account.emailRoutingOf("zone-1").rules.delete(support!.id);
+    const repaired = await deployRoutes(["*@example.com", "support@mail.example.com"]);
+    expect(repaired).toMatchObject({ changed: true });
+    expect(account.emailRulesFor("zone-1", "support@mail.example.com")).toHaveLength(1);
   });
 
   it("adopts the catch-all the manual step pointed at the Worker, and renames it", async () => {

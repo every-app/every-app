@@ -656,6 +656,33 @@ describe("hosted deploy API (SQLite, fake Cloudflare)", () => {
     expect((await row())?.status).toBe("pending");
   });
 
+  it("refuses a manifest that declares inbound mail, before anything is registered", async () => {
+    // The platform's zones aren't an organization's to route: a dispatch
+    // app declares no email() handler, at registration or at upload.
+    const inbox = { ...TODO, email: { inbound: true } };
+    const registered = await api(`/api/v1/orgs/${acme}/apps`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ appId: "todo", manifest: inbox }),
+    });
+    expect(registered.status).toBe(422);
+    const body = (await registered.json()) as {
+      error: string;
+      message: string;
+    };
+    expect(body.error).toBe("BUNDLE_REFUSED");
+    expect(body.message).toContain("inbound mail (email.inbound)");
+    expect(await row()).toBeUndefined();
+    expect(await db.select().from(deployJobs)).toEqual([]);
+
+    expect((await register()).status).toBe(201);
+    const upload_ = await deploy(upload(builtWorker(), inbox));
+    expect(upload_.status).toBe(422);
+    expect(await upload_.json()).toMatchObject({ error: "BUNDLE_REFUSED" });
+    expect(script()).toBeUndefined();
+    expect((await row())?.status).toBe("pending");
+  });
+
   it("deletes the Worker and fails the job when the bindings read back differ", async () => {
     await register();
     tamper = async (url, response) => {

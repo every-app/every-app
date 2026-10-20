@@ -52,6 +52,8 @@ async function findAllWithAccessCounts(organizationId: string) {
       tier: apps.tier,
       scope: apps.scope,
       manifest: apps.manifest,
+      emailSenders: apps.emailSenders,
+      emailInbound: apps.emailInbound,
       status: apps.status,
       deployedByActor: apps.deployedByActor,
       isDefault: apps.isDefault,

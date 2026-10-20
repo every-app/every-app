@@ -163,6 +163,7 @@ export async function handleAppGatewayRequest({
       return await handleIntegrationProxyRequest({
         request,
         capabilities: app.manifest.capabilities,
+        emailSenders: app.emailSenders ?? [],
         env,
         admit: async () => {
           const { organizationId, orgSource, user } = await attributeCall(

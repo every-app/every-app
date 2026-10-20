@@ -360,11 +360,24 @@ describe("app lifecycle (SQLite)", () => {
       tokenPrefix: "epat_abcd",
       expiresAt: new Date(Date.now() + 60_000),
     });
+    // Its email configuration (`everyapp email set`) goes with it.
+    await db
+      .update(apps)
+      .set({
+        emailSenders: '["*@mail.example.com"]',
+        emailInbound: '["*@example.com"]',
+      })
+      .where(eq(apps.id, registered.app.id));
 
     await AppService.delete(ownerCtx(), registered.app.id);
 
     const [row] = await db.select().from(apps);
-    expect(row).toMatchObject({ status: "deleted", isDefault: false });
+    expect(row).toMatchObject({
+      status: "deleted",
+      isDefault: false,
+      emailSenders: null,
+      emailInbound: null,
+    });
     expect(await db.select().from(userAppAccess)).toEqual([]);
     const [pat] = await db
       .select()

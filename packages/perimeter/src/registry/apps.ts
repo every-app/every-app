@@ -6,6 +6,7 @@
  * the proxy core can be unit-tested with an in-memory registry and run for real
  * against D1 in production / under miniflare.
  */
+import { parseEmailList } from "@every-app/sdk/internal";
 import { validateManifest, type Manifest } from "../manifest/manifest";
 
 export type Tier = "service_binding" | "dispatch";
@@ -51,6 +52,12 @@ export interface RegisteredApp {
   status: AppStatus;
   /** Parsed manifest snapshot taken at deploy time. */
   manifest: Manifest;
+  /**
+   * The `from` patterns this installation may send as (`apps.email_senders`,
+   * set with `everyapp email set --sender`): the manifest declares sending,
+   * this says as whom. Absent: none. Registries backed by D1 set it.
+   */
+  emailSenders?: string[];
   /** The `apps` row's primary key; registries backed by D1 set it. */
   rowId?: string;
   /** The Worker version the last deploy uploaded; null before the first. */
@@ -77,6 +84,8 @@ export interface AppRegistryRow {
   organizationId: string;
   status: string;
   manifest: string;
+  /** `apps.email_senders`: a JSON string[] column, or null. */
+  emailSenders?: string | null;
   rowId?: string;
   versionId?: string | null;
 }
@@ -116,6 +125,9 @@ export function rowToRegisteredApp(row: AppRegistryRow): RegisteredApp {
     organizationId: row.organizationId,
     status,
     manifest: validateManifest(JSON.parse(row.manifest)),
+    ...(row.emailSenders === undefined
+      ? {}
+      : { emailSenders: parseEmailList(row.emailSenders) }),
     ...(row.rowId === undefined ? {} : { rowId: row.rowId }),
     ...(row.versionId === undefined ? {} : { versionId: row.versionId }),
   };

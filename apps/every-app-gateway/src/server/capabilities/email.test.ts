@@ -103,10 +103,11 @@ const INBOX = {
     email: {
       access: "write",
       why: "Sends from the organization's mailboxes.",
-      senders: ["*@mail.example.com", "ceo@example.com"],
     },
   },
 };
+/** What the installation's registry row holds (`everyapp email set --sender`). */
+const SENDERS = ["*@mail.example.com", "ceo@example.com"];
 const MESSAGE = {
   to: "customer@example.net",
   subject: "Re: your order (private subject)",
@@ -127,6 +128,7 @@ function app(
     organizationId: "org-1",
     status: "active",
     manifest: validateManifest({ id: "inbox", ...manifest }),
+    emailSenders: SENDERS,
     ...overrides,
   };
 }
@@ -280,7 +282,7 @@ describe("POST /api/integrations/email/send", () => {
     }
   });
 
-  it("sends as an app sender the manifest allows, by a domain or an exact address", async () => {
+  it("sends as an app sender the installation allows, by a domain or an exact address", async () => {
     for (const from of [
       { address: "Support@Mail.Example.com", name: "Acme Support" },
       { address: "ceo@example.com" },
@@ -305,19 +307,57 @@ describe("POST /api/integrations/email/send", () => {
       403,
       "email_sender_not_allowed",
     );
-    expect(body["message"]).toContain("capabilities.email.senders");
+    expect(body["message"]).toContain("everyapp email set --sender");
     expect(send).not.toHaveBeenCalled();
   });
 
-  it("refuses any app sender when the manifest lists none", async () => {
+  it("refuses any app sender when the installation has none", async () => {
+    // An empty list, and a registry that doesn't carry the row's column.
+    const { emailSenders: _absent, ...noColumn } = app();
+    for (const registered of [app(INBOX, { emailSenders: [] }), noColumn]) {
+      await expectRefusal(
+        call({
+          registered,
+          body: { ...MESSAGE, from: "support@mail.example.com" },
+        }),
+        403,
+        "email_sender_not_allowed",
+      );
+    }
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("ignores senders a manifest snapshot still carries", async () => {
+    // A row deployed before the lists moved to the installation: the
+    // lenient manifest schema keeps `senders`, and the gateway reads none.
     await expectRefusal(
       call({
-        manifest: { capabilities: { email: { access: "write" } } },
-        body: { ...MESSAGE, from: "support@mail.example.com" },
+        registered: app(
+          {
+            capabilities: {
+              email: { access: "write", senders: ["*@old.example"] },
+            },
+          },
+          { emailSenders: [] },
+        ),
+        body: { ...MESSAGE, from: "support@old.example" },
       }),
       403,
       "email_sender_not_allowed",
     );
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("grants nothing to an app whose manifest doesn't list email, whatever its row says", async () => {
+    await expectRefusal(
+      call({
+        registered: app({}, { emailSenders: ["*@mail.example.com"] }),
+        body: { ...MESSAGE, from: "support@mail.example.com" },
+      }),
+      403,
+      "capability_not_requested",
+    );
+    expect(send).not.toHaveBeenCalled();
   });
 
   it("refuses app senders on a hosted gateway, and sends as its own", async () => {
@@ -723,7 +763,7 @@ describe("app mail through Resend", () => {
 });
 
 describe("GET /api/integrations/email", () => {
-  it("tells the app whether it can send, as whom, and which senders it may name", async () => {
+  it("tells the app whether it can send, as whom, and which senders its installation gives it", async () => {
     const response = await call({ path: STATUS });
     await expect(response.json()).resolves.toEqual({
       capability: "email",

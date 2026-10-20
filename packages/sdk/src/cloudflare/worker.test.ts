@@ -583,16 +583,14 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     expect(new Set(declared)).toEqual(keys);
   });
 
-  it("declares the email settings in dev when .dev.vars sets them, and passes the manifest's senders", () => {
+  it("declares the email settings in dev when .dev.vars sets them, and the stand-in senders", () => {
     const mailer = {
       ...manifest,
-      capabilities: {
-        email: { access: "write", senders: ["*@mail.example.com"] },
-      },
+      capabilities: { email: { access: "write" } },
     } as const;
     fs.writeFileSync(
       path.join(root, ".dev.vars"),
-      "EMAIL_FROM=noreply@example.com\nEMAIL_REST_API_TOKEN=token\nCLOUDFLARE_ACCOUNT_ID=acc123\n",
+      "EMAIL_FROM=noreply@example.com\nEMAIL_REST_API_TOKEN=token\nCLOUDFLARE_ACCOUNT_ID=acc123\nEVERYAPP_EMAIL_SENDERS=*@mail.example.com\n",
     );
     const env = (mode: string) =>
       everyAppWorker({
@@ -607,10 +605,7 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       EMAIL_REST_API_TOKEN: { type: "secret" },
       CLOUDFLARE_ACCOUNT_ID: { type: "secret" },
       // sendEmail() checks a `from` against them, as the gateway does.
-      [EMAIL_SENDERS_ENV]: {
-        type: "text",
-        value: JSON.stringify(["*@mail.example.com"]),
-      },
+      [EMAIL_SENDERS_ENV]: { type: "secret" },
     });
     // Not set, not declared.
     expect(env("development")["EMAIL_FROM_NAME"]).toBeUndefined();
@@ -623,7 +618,7 @@ describe("everyAppWorker crons and the app's own secrets", () => {
     expect(env("production")[EMAIL_SENDERS_ENV]).toBeUndefined();
   });
 
-  it("gives an app that doesn't list email no senders, and one without senders none", () => {
+  it("gives an app that doesn't list email no senders binding, and one that lists it none unless .dev.vars sets it", () => {
     expect(
       everyAppWorker({
         manifest,
@@ -632,16 +627,14 @@ describe("everyAppWorker crons and the app's own secrets", () => {
         root,
       }).env,
     ).not.toHaveProperty(EMAIL_SENDERS_ENV);
-    const withoutSenders = everyAppWorker({
-      manifest: { ...manifest, capabilities: { email: { access: "write" } } },
-      entrypoint,
-      ctx: { mode: "development" },
-      root,
-    }).env as Record<string, unknown>;
-    expect(withoutSenders[EMAIL_SENDERS_ENV]).toEqual({
-      type: "text",
-      value: "[]",
-    });
+    expect(
+      everyAppWorker({
+        manifest: { ...manifest, capabilities: { email: { access: "write" } } },
+        entrypoint,
+        ctx: { mode: "development" },
+        root,
+      }).env,
+    ).not.toHaveProperty(EMAIL_SENDERS_ENV);
   });
 
   it("declares Workers AI's token and account in dev when .dev.vars sets them", () => {
@@ -932,21 +925,19 @@ describe("helper Workers", () => {
     expect(audit.env["CONTEXT_API_KEY"]).toEqual({ type: "secret" });
   });
 
-  it("gives a helper in dev the manifest's email senders", () => {
+  it("gives a helper in dev the stand-in senders .dev.vars sets", () => {
+    fs.writeFileSync(
+      path.join(root, ".dev.vars"),
+      "EVERYAPP_EMAIL_SENDERS=a@b.example\n",
+    );
     const audit = everyAppAuxiliaryWorker({
-      manifest: {
-        ...seo,
-        capabilities: { email: { access: "write", senders: ["a@b.example"] } },
-      },
+      manifest: { ...seo, capabilities: { email: { access: "write" } } },
       worker: "audit",
       entrypoint: "/app/src/audit.ts",
       ctx: { mode: "development" },
       root,
     });
-    expect(audit.env[EMAIL_SENDERS_ENV]).toEqual({
-      type: "text",
-      value: '["a@b.example"]',
-    });
+    expect(audit.env[EMAIL_SENDERS_ENV]).toEqual({ type: "secret" });
   });
 
   it("gives a deployed helper the gateway binding with the app's identity", () => {

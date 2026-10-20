@@ -27,18 +27,18 @@ describe("DrizzleAppRegistry", () => {
   });
 
   it("maps Drizzle app rows through the shared registry mapper", async () => {
-    const registry = new DrizzleAppRegistry(
-      dbReturning({
-        appSlug: "todo",
-        hostname: "todo.example.com",
-        workerName: "every-todo",
-        tier: "dispatch",
-        scope: "shared",
-        organizationId: "org-1",
-        status: "active",
-        manifest: JSON.stringify({ id: "todo" }),
-      }),
-    );
+    const row = {
+      appSlug: "todo",
+      hostname: "todo.example.com",
+      workerName: "every-todo",
+      tier: "dispatch",
+      scope: "shared",
+      organizationId: "org-1",
+      status: "active",
+      manifest: JSON.stringify({ id: "todo" }),
+      emailSenders: '["*@mail.example.com"]',
+    };
+    const registry = new DrizzleAppRegistry(dbReturning(row));
 
     await expect(
       registry.findByHostname("TODO.EXAMPLE.COM"),
@@ -50,7 +50,14 @@ describe("DrizzleAppRegistry", () => {
       scope: "shared",
       organizationId: "org-1",
       status: "active",
+      emailSenders: ["*@mail.example.com"],
     });
+    // A null column is an installation with no senders, not an absent one.
+    await expect(
+      new DrizzleAppRegistry(
+        dbReturning({ ...row, emailSenders: null }),
+      ).findByHostname("todo.example.com"),
+    ).resolves.toMatchObject({ emailSenders: [] });
   });
 
   it("fails closed for unknown persisted statuses", async () => {

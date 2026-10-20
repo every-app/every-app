@@ -21,8 +21,8 @@ import {
   type OAuthClientCredentials,
   EMAIL_SENDERS_ENV,
   chooseEmailProvider,
+  parseEmailList,
   parseEmailSender,
-  parseEmailSendersEnv,
 } from "../internal/index.js";
 import {
   applyAttribution,
@@ -277,8 +277,8 @@ export interface IntegrationStatus {
 /**
  * The email capability's status: as {@link IntegrationStatus}, plus the
  * From a message without `from` gets, the `from` patterns the gateway
- * accepts from this app (its manifest's `capabilities.email.senders`) and
- * the provider mail goes out with (`cloudflare` or `resend`).
+ * accepts from this app (its installation's senders, `everyapp email set
+ * --sender`) and the provider mail goes out with (`cloudflare` or `resend`).
  */
 export type EmailIntegrationStatus = IntegrationStatus &
   Pick<EmailCapabilityStatus, "sender" | "senders" | "provider">;
@@ -390,9 +390,10 @@ function devOAuthClientStatus(
 
 /**
  * Email in local dev, with no gateway: sends are printed unless `.dev.vars`
- * sets EMAIL_FROM (and the REST settings), and the senders are the
- * manifest's, which `everyAppWorker()` passes in EVERYAPP_EMAIL_SENDERS.
- * The provider is the one the gateway would pick from the same settings:
+ * sets EMAIL_FROM (and the REST settings), and the senders are the ones
+ * `.dev.vars` sets as EVERYAPP_EMAIL_SENDERS, standing in for the
+ * installation's (`everyapp email set --sender`); unset, none. The
+ * provider is the one the gateway would pick from the same settings:
  * `cloudflare` for the REST pair, `resend` for RESEND_API_KEY, EMAIL_PROVIDER
  * choosing when both are set.
  */
@@ -421,7 +422,7 @@ function devEmailStatus(
           stringValue(values["EMAIL_FROM_NAME"]),
         )
       : null,
-    senders: dev ? parseEmailSendersEnv(values[EMAIL_SENDERS_ENV]) : [],
+    senders: dev ? parseEmailList(values[EMAIL_SENDERS_ENV]) : [],
     provider: configured && choice.ok ? choice.provider : null,
   };
 }

@@ -45,7 +45,7 @@ export interface OwnedResource {
   /**
    * The manifest binding; for a Worker, empty for the app's own and the
    * helper Worker's name (`workers`) for a helper; for an Email Routing
-   * route, its address in `email.inbound`.
+   * route, its address in the app's inbound list (`apps.email_inbound`).
    */
   binding: string;
   /** D1 name, KV title, Hyperdrive config name, Worker name or the route's address. */

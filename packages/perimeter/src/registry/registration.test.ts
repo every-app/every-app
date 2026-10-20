@@ -662,6 +662,8 @@ describe("deleteUpdate", () => {
     expect(deleteUpdate(registeredTodo)).toEqual({
       status: "deleted",
       isDefault: false,
+      emailSenders: null,
+      emailInbound: null,
     });
     expect(deleteUpdate({ status: "deleted" })).toBeNull();
   });

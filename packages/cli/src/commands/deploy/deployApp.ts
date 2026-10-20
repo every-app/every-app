@@ -30,7 +30,8 @@
  *      the secrets file; cf creates or updates its Workflows), so a
  *      deploy that can't upload leaves the database alone.
  *      Workflows the app dropped (with --allow-delete-workflows) go once
- *      the upload is live, and its Email Routing routes (`email.inbound`,
+ *      the upload is live, and its Email Routing routes (the installation's
+ *      inbound addresses, `everyapp email set --inbound`,
  *      lib/app/emailRoutes.ts: checked before anything is created, Email
  *      Routing turned on for a domain only at a terminal or with
  *      --enable-email-routing) are made; then the registry records the
@@ -97,7 +98,7 @@ import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
 import { assertAppSecretName } from "@/lib/app/secrets";
 import { readOwnedResources, recordUploadedVersion } from "@/lib/app/ownership";
 import { claimAppWorker, provisionAppResources } from "@/lib/app/resources";
-import { applyEmailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
+import { applyEmailRoutes, describeMailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
 import {
   appWorkflows,
   assertOwnWorkflows,
@@ -127,7 +128,7 @@ import { acquireLease } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import type { GatewayRelease } from "@/lib/gateway/release";
 import { gatewayReleaseSource } from "@/lib/gateway/source";
-import { markDeployed, register } from "@/lib/gateway/registry";
+import { markDeployed, readAppEmail, register } from "@/lib/gateway/registry";
 import type { InstallRecord } from "@/lib/gateway/install";
 import {
   loadEveryAppManifest,
@@ -163,8 +164,8 @@ interface DeployAppOptions {
   /** Publish a new hostname over the DNS record that answers it (`--force-dns`). */
   forceDns?: boolean;
   /**
-   * Turn Email Routing on for the domains `email.inbound` names that don't
-   * route mail yet, without asking (`--enable-email-routing`).
+   * Turn Email Routing on for the domains the app's inbound addresses name
+   * that don't route mail yet, without asking (`--enable-email-routing`).
    */
   enableEmailRouting?: boolean;
   /**
@@ -531,6 +532,21 @@ async function deploySteps(
     }));
     await claimAppWorker(ownership);
     for (const helper of helpers) await claimAppWorker(ownership, helper);
+    // The installation's email lists live on its registry row, read under
+    // the lease so `everyapp email set` can't change them between this check
+    // and the routes made after the upload. Without the manifest's
+    // declaration no Worker of the app receives mail: its routes go, its
+    // addresses stay stored.
+    const storedEmail = await readAppEmail(registry, plan.app.id);
+    const declaresInbound = manifest.email?.inbound === true;
+    if (!declaresInbound && storedEmail.inbound.length > 0) {
+      out.emit({
+        type: "warning",
+        code: "EMAIL_INBOUND_UNDECLARED",
+        step: "app.email",
+        message: `everyapp.config.ts no longer declares email: { inbound: true }, so this deploy removes ${manifest.id}'s mail routes; its addresses (${storedEmail.inbound.join(", ")}) stay on the Gateway until \`${CLI} email unset --inbound\` clears them.`,
+      });
+    }
     // Mail routes are checked before anything is created: an address
     // another app or rule has, or a domain whose routing stays off, stops
     // the deploy here.
@@ -539,7 +555,7 @@ async function deploySteps(
       gatewayDb: registry,
       accountId,
       workerName,
-      manifest,
+      addresses: declaresInbound ? storedEmail.inbound : [],
       interactive,
       enableRouting: options.enableEmailRouting,
       confirm: options.confirm,
@@ -755,7 +771,7 @@ async function deploySteps(
         status: "start",
         message: `Routing ${manifest.id}'s mail...`,
       });
-      const routed = await applyEmailRoutes({
+      const { routed } = await applyEmailRoutes({
         cf,
         gatewayDb: registry,
         plan: emailRoutes,
@@ -767,8 +783,25 @@ async function deploySteps(
         type: "step",
         step: "app.email",
         status: "ok",
-        message: emailRouteSummary(manifest, workerName, routed, removed),
+        message: describeMailRoutes({
+          appId: manifest.id,
+          workerName,
+          senders: storedEmail.senders,
+          routed,
+          removed,
+          sendersSettable:
+            manifest.capabilities?.["email"]?.access === "write" &&
+            install.deploymentMode !== "hosted",
+        }),
         data: { addresses: routed, removed },
+      });
+    }
+    if (!emailRoutes && declaresInbound && storedEmail.inbound.length === 0) {
+      out.emit({
+        type: "step",
+        step: "app.email",
+        status: "skip",
+        message: `${manifest.id} receives no mail yet: \`${CLI} email set --inbound <address>\` (in its directory) routes addresses to it.`,
       });
     }
     // A helper Worker the manifest dropped keeps running (with its crons)
@@ -845,29 +878,6 @@ async function deploySteps(
     versionId,
     live,
   };
-}
-
-/**
- * Where the app's mail goes now, and what replying from those addresses
- * still needs: each domain onboarded to Email Sending and named in
- * `capabilities.email.senders`.
- */
-function emailRouteSummary(
-  manifest: EveryAppCliManifest,
-  workerName: string,
-  routed: string[],
-  removed: string[],
-): string {
-  const gone = removed.length ? ` Removed the routes for ${removed.join(", ")}.` : "";
-  if (routed.length === 0) return `${manifest.id} receives no mail.${gone}`;
-  const senders = manifest.capabilities?.["email"]?.senders ?? [];
-  const unsent = [...new Set(routed.map((address) => address.slice(address.indexOf("@") + 1)))].filter(
-    (domain) => !senders.some((sender) => sender.endsWith(`@${domain}`)),
-  );
-  const replies = unsent.length
-    ? ` To reply from ${unsent.join(", ")}, onboard ${unsent.length === 1 ? "it" : "them"} to Email Sending and list ${unsent.length === 1 ? "it" : "them"} in capabilities.email.senders (docs/runbooks/email-sending-setup.md).`
-    : "";
-  return `Mail to ${routed.join(", ")} goes to ${workerName}.${gone}${replies}`;
 }
 
 /**

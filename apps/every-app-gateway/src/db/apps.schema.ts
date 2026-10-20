@@ -43,6 +43,13 @@ export const apps = sqliteTable(
     // JSON snapshot of everyapp.config.ts, taken when a deploy uploads the
     // app's Worker, so a new route policy goes live with the new code.
     manifest: text("manifest"),
+    // The installation's email configuration (`everyapp email set`), never
+    // the manifest's: a release bakes the manifest in, and whoever installs
+    // it must not inherit the first deployer's domain. JSON string[] of the
+    // `from` patterns the gateway lets the app send as, and of the addresses
+    // the CLI routes to its Worker with Email Routing. Null: none set.
+    emailSenders: text("email_senders"),
+    emailInbound: text("email_inbound"),
     // The app's deploy state:
     //  - 'pending': registered, its Worker not uploaded yet (not bound);
     //  - 'binding': uploaded; the first request that reaches it over the

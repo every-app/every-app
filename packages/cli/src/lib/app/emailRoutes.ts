@@ -1,7 +1,9 @@
 /**
- * The Email Routing routes `everyapp deploy` keeps for an app's
- * `email.inbound`: one rule per literal address (`support@mail.example.com`)
- * and a zone's catch-all for `*@<apex>`, each sending mail to the app's
+ * The Email Routing routes `everyapp deploy` and `everyapp email set` keep
+ * for an app's inbound addresses (its registry row's `email_inbound`, set
+ * with `everyapp email set --inbound`): one rule per literal address
+ * (`support@mail.example.com`) and a zone's catch-all for `*@<apex>`, each
+ * sending mail to the app's
  * Worker by name (`actions: [{ type: "worker", value: [<worker>] }]`), so
  * its `email()` handler gets it. The deploy policy keeps refusing the
  * `email` trigger: cf's own reconciliation of a Worker's addresses would
@@ -19,9 +21,9 @@
  * upload (zones, whether each domain routes mail, the rules there), asking
  * at a terminal before Email Routing is turned on for a domain (it locks
  * the domain's MX and SPF records); `applyEmailRoutes` writes after the
- * upload, since a rule may only name a Worker that exists. Routes the
- * manifest dropped are deleted (a catch-all goes back to dropping mail),
- * and so are all of them with `delete --purge` (`removeEmailRoutes`).
+ * upload, since a rule may only name a Worker that exists. Routes the list
+ * dropped are deleted (a catch-all goes back to dropping mail), and so are
+ * all of them with `delete --purge` (`removeEmailRoutes`).
  */
 import type { D1Database } from "@/lib/cf/d1";
 import { confirmAtTerminal, type Confirm } from "@/lib/cf/deploy";
@@ -46,7 +48,7 @@ import type { CfRunner } from "@/lib/cf/runner";
 import { dnsRecordsAt } from "@/lib/domains/records";
 import { resolveZone, type Zone } from "@/lib/domains/zones";
 import { EveryAppError } from "@/lib/errors";
-import type { EveryAppCliManifest } from "@/lib/manifest";
+import { CLI } from "@/lib/output/command";
 import {
   forgetOwnedResources,
   readOwnedResources,
@@ -101,8 +103,8 @@ interface EmailRoutesPlan {
 }
 
 /**
- * Check the app's `email.inbound` against the account before anything is
- * uploaded; null when the app has no routes and asks for none. Asks (at a
+ * Check the app's inbound addresses against the account before anything is
+ * written; null when the app has no routes and asks for none. Asks (at a
  * terminal) before Email Routing is turned on for a domain that doesn't
  * route mail yet, unless `enableRouting` (`--enable-email-routing`).
  */
@@ -111,7 +113,7 @@ export async function planEmailRoutes({
   gatewayDb,
   accountId,
   workerName,
-  manifest,
+  addresses,
   interactive,
   enableRouting = false,
   confirm = confirmAtTerminal,
@@ -120,12 +122,12 @@ export async function planEmailRoutes({
   gatewayDb: D1Database;
   accountId: string;
   workerName: string;
-  manifest: Pick<EveryAppCliManifest, "email">;
+  /** The installation's inbound addresses (`apps.email_inbound`); the caller checks the declaration. */
+  addresses: readonly string[];
   interactive: boolean;
   enableRouting?: boolean;
   confirm?: Confirm;
 }): Promise<EmailRoutesPlan | null> {
-  const addresses = manifest.email?.inbound ?? [];
   const owned = (await readOwnedResources(gatewayDb, workerName)).filter(
     (resource) => resource.kind === "email-route",
   );
@@ -145,7 +147,7 @@ export async function planEmailRoutes({
     if (holder) {
       throw new EveryAppError(
         "EMAIL_ADDRESS_TAKEN",
-        `${address} is routed to ${holder.workerName}: another app's deploy recorded it. Take another address in email.inbound, or remove it from that app first.`,
+        `${address} is routed to ${holder.workerName}: another app recorded it. Take another address, or remove it from that app first (everyapp email unset --inbound, in its directory).`,
         { data: { address, workerName: holder.workerName } },
       );
     }
@@ -161,7 +163,7 @@ export async function planEmailRoutes({
     if (zone.name !== domainOf(address)) {
       throw new EveryAppError(
         "EMAIL_CATCH_ALL_NOT_APEX",
-        `${address} is a catch-all on ${domainOf(address)}, a subdomain of the zone ${zone.name}, and Email Routing has catch-alls on a zone's apex only. List each address on ${domainOf(address)} in email.inbound instead (support@${domainOf(address)}).`,
+        `${address} is a catch-all on ${domainOf(address)}, a subdomain of the zone ${zone.name}, and Email Routing has catch-alls on a zone's apex only. Set each address on ${domainOf(address)} instead (--inbound support@${domainOf(address)}).`,
         { data: { address, zone: zone.name } },
       );
     }
@@ -198,7 +200,7 @@ export async function planEmailRoutes({
       if (!ours(catchAll) && sendsMail) {
         throw new EveryAppError(
           "EMAIL_CATCH_ALL_TAKEN",
-          `${zone.name}'s catch-all already sends mail ${describeActions(catchAll)}, and ${address} would take it over. Set it back to dropping mail (Email Routing → Routing rules → Catch-all address), or list the app's addresses one by one instead, then deploy again.`,
+          `${zone.name}'s catch-all already sends mail ${describeActions(catchAll)}, and ${address} would take it over. Set it back to dropping mail (Email Routing → Routing rules → Catch-all address), or set the app's addresses one by one instead, then run this again.`,
           { data: { address, zone: zone.name } },
         );
       }
@@ -212,7 +214,7 @@ export async function planEmailRoutes({
     if (foreign) {
       throw new EveryAppError(
         "EMAIL_ADDRESS_TAKEN",
-        `${address} is delivered elsewhere: the Email Routing rule ${foreign.name ? `"${foreign.name}"` : foreign.id} in ${zone.name} sends it ${describeActions(foreign)}. Remove that rule, or take another address in email.inbound, then deploy again.`,
+        `${address} is delivered elsewhere: the Email Routing rule ${foreign.name ? `"${foreign.name}"` : foreign.id} in ${zone.name} sends it ${describeActions(foreign)}. Remove that rule, or take another address, then run this again.`,
         { data: { address, zone: zone.name, ruleId: foreign.id } },
       );
     }
@@ -234,7 +236,7 @@ export async function planEmailRoutes({
     if (!interactive) {
       throw new EveryAppError(
         "EMAIL_ROUTING_DISABLED",
-        `Email Routing is off for ${list}, which email.inbound names. ${what} Nothing was uploaded: run this again with --enable-email-routing if that's what you want, or turn it on yourself (${commands.join("; ")}) and deploy again.`,
+        `Email Routing is off for ${list}, which the app's inbound addresses name. ${what} Nothing was changed: run this again with --enable-email-routing if that's what you want, or turn it on yourself (${commands.join("; ")}) and run this again.`,
         { data: { domains, commands } },
       );
     }
@@ -244,7 +246,7 @@ export async function planEmailRoutes({
     if (!agreed) {
       throw new EveryAppError(
         "EMAIL_ROUTING_DISABLED",
-        `Email Routing stays off for ${list}, so nothing was uploaded. Take ${one ? "that domain" : "those domains"} out of email.inbound, or turn routing on yourself (${commands.join("; ")}) and deploy again.`,
+        `Email Routing stays off for ${list}, so nothing was changed. Take ${one ? "that domain" : "those domains"} out of the app's inbound addresses, or turn routing on yourself (${commands.join("; ")}) and run this again.`,
         { data: { domains, commands } },
       );
     }
@@ -256,7 +258,9 @@ export async function planEmailRoutes({
  * Make the planned routes, after the app's Worker is uploaded: turn
  * Email Routing on where it was agreed, create or update each route
  * (recorded before it is created, so a retry finds it), then delete the
- * routes the manifest dropped. Returns the addresses routed.
+ * routes the manifest dropped. Returns the addresses routed, and whether
+ * anything was turned on, made, updated or removed (false when every rule
+ * was already as wanted).
  */
 export async function applyEmailRoutes({
   cf,
@@ -268,11 +272,16 @@ export async function applyEmailRoutes({
   gatewayDb: D1Database;
   plan: EmailRoutesPlan;
   onProgress?: (message: string) => void;
-}): Promise<string[]> {
+}): Promise<{ routed: string[]; changed: boolean }> {
   const { workerName } = plan;
+  let changed = false;
+  const did = (message: string) => {
+    changed = true;
+    onProgress?.(message);
+  };
   for (const { zone, domain } of plan.enable) {
     await enableEmailRouting(cf, zone.id, domain);
-    onProgress?.(`Turned on Email Routing for ${domain}.`);
+    did(`Turned on Email Routing for ${domain}.`);
   }
   for (const { address, zone, existing } of plan.routes) {
     const record = (resourceId: string | null) =>
@@ -282,7 +291,7 @@ export async function applyEmailRoutes({
       await record(`catch_all:${zone.id}`);
       if (!existing || !sameRule(existing, wanted)) {
         await updateEmailRoutingCatchAll(cf, zone.id, wanted);
-        onProgress?.(`${zone.name}'s catch-all sends mail to ${workerName}.`);
+        did(`${zone.name}'s catch-all sends mail to ${workerName}.`);
       }
       continue;
     }
@@ -291,7 +300,7 @@ export async function applyEmailRoutes({
       await record(`${zone.id}/${existing.id}`);
       if (!sameRule(existing, wanted)) {
         await updateEmailRoutingRule(cf, zone.id, existing.id, wanted);
-        onProgress?.(`Updated the Email Routing rule for ${address}.`);
+        did(`Updated the Email Routing rule for ${address}.`);
       }
       continue;
     }
@@ -300,13 +309,48 @@ export async function applyEmailRoutes({
     await record(null);
     const ruleId = await createEmailRoutingRule(cf, zone.id, wanted);
     await record(`${zone.id}/${ruleId}`);
-    onProgress?.(`Created the Email Routing rule for ${address}.`);
+    did(`Created the Email Routing rule for ${address}.`);
   }
   for (const route of plan.dropped) {
     await removeRoute(cf, gatewayDb, workerName, plan.accountId, route);
-    onProgress?.(`Removed the route for ${route.name}, which email.inbound no longer lists.`);
+    did(`Removed the route for ${route.name}, which the app's inbound addresses no longer list.`);
   }
-  return plan.routes.map((route) => route.address);
+  return { routed: plan.routes.map((route) => route.address), changed };
+}
+
+/** Where the app's mail goes now, and what replying from those addresses still needs. */
+export function describeMailRoutes({
+  appId,
+  workerName,
+  senders,
+  routed,
+  removed,
+  sendersSettable,
+}: {
+  appId: string;
+  workerName: string;
+  senders: readonly string[];
+  routed: readonly string[];
+  removed: readonly string[];
+  /**
+   * Whether `everyapp email set --sender` takes this app's senders: it
+   * declares `capabilities.email`, and the Gateway isn't hosted (a hosted
+   * one sends app mail from its own sender only). Otherwise the reply hint,
+   * which names that command, is left out.
+   */
+  sendersSettable: boolean;
+}): string {
+  const gone = removed.length ? ` Removed the routes for ${removed.join(", ")}.` : "";
+  if (routed.length === 0) return `${appId} receives no mail.${gone}`;
+  const unsent = [...new Set(routed.map((address) => address.slice(address.indexOf("@") + 1)))].filter(
+    (domain) => !senders.some((sender) => sender.endsWith(`@${domain}`)),
+  );
+  const one = unsent.length === 1;
+  const replies =
+    unsent.length && sendersSettable
+      ? ` To reply from ${unsent.join(", ")}, onboard ${one ? "it" : "them"} to Email Sending and list ${one ? "it" : "them"} with \`${CLI} email set --sender\` (docs/runbooks/email-sending-setup.md).`
+      : "";
+  return `Mail to ${routed.join(", ")} goes to ${workerName}.${gone}${replies}`;
 }
 
 /**
@@ -399,7 +443,7 @@ async function emailZone(cf: CfRunner, domain: string, accountId: string): Promi
     if (error instanceof EveryAppError && error.code === "ZONE_NOT_FOUND") {
       throw new EveryAppError(
         "EMAIL_ZONE_NOT_FOUND",
-        `${domain} isn't on a zone in this Cloudflare account, and Email Routing needs the domain on Cloudflare DNS here. Add the domain (or its parent) to the account, or take the address out of email.inbound.`,
+        `${domain} isn't on a zone in this Cloudflare account, and Email Routing needs the domain on Cloudflare DNS here. Add the domain (or its parent) to the account, or take the address out of the app's inbound addresses.`,
         { data: { domain } },
       );
     }
@@ -507,7 +551,7 @@ async function recordRoute(
     if (error instanceof EveryAppError && error.code === "RESOURCE_OWNED") {
       throw new EveryAppError(
         "EMAIL_ADDRESS_TAKEN",
-        `${address} was recorded for another app while this deploy was routing it. Take another address in email.inbound, or remove it from that app first.`,
+        `${address} was recorded for another app while this run was routing it. Take another address, or remove it from that app first.`,
         { data: { address } },
       );
     }

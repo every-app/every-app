@@ -20,8 +20,9 @@
  *                              namespaces, another Worker's Durable
  *                              Objects, KV, R2, Hyperdrive, rate limits,
  *                              the secrets store, mTLS, Workers AI, email,
- *                              queues, any other secret or variable, and
- *                              whatever the deployer doesn't know
+ *                              inbound mail (email.inbound), queues, any
+ *                              other secret or variable, and whatever the
+ *                              deployer doesn't know
  *
  * and the Worker itself: no crons, routes, domains, tail consumers,
  * logpush, placement or limits of its own, no Workflows, no helper Workers,
@@ -137,6 +138,12 @@ export function manifestProblems(
   }
   if (manifest.secrets?.length) {
     problems.push("it declares secrets, which third-party apps can't have yet");
+  }
+  // The platform's zones aren't an organization's to route (manifestTierProblems).
+  if (manifest.email?.inbound === true) {
+    problems.push(
+      "it declares inbound mail (email.inbound), which third-party apps can't receive",
+    );
   }
   const classes = durableObjects(manifest);
   if (classes.some((durableObject) => durableObject.worker)) {

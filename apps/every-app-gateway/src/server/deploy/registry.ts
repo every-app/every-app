@@ -248,6 +248,8 @@ async function register(
           hostname: app.hostname,
           workerName: app.workerName,
           manifest: app.manifest,
+          emailSenders: null,
+          emailInbound: null,
           status: app.status,
           isDefault: app.isDefault,
           updatedAt: now,

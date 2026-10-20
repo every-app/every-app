@@ -69,6 +69,21 @@ describe("rowToRegisteredApp", () => {
     expect(rowToRegisteredApp(BASE_ROW)).not.toHaveProperty("rowId");
   });
 
+  it("reads the installation's senders from the row, and none from null or bad JSON", () => {
+    expect(
+      rowToRegisteredApp({ ...BASE_ROW, emailSenders: '["*@a.example"]' })
+        .emailSenders,
+    ).toEqual(["*@a.example"]);
+    expect(
+      rowToRegisteredApp({ ...BASE_ROW, emailSenders: null }).emailSenders,
+    ).toEqual([]);
+    // A one-entry list no address matches: the row allows no sender.
+    expect(
+      rowToRegisteredApp({ ...BASE_ROW, emailSenders: "nope" }).emailSenders,
+    ).toEqual(["nope"]);
+    expect(rowToRegisteredApp(BASE_ROW)).not.toHaveProperty("emailSenders");
+  });
+
   it("exposes the persisted provider policy", () => {
     const app = rowToRegisteredApp({
       ...BASE_ROW,

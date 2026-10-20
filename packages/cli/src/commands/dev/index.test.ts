@@ -195,7 +195,7 @@ describe("everyapp dev", () => {
   it("prints how to deliver mail to the app's email() handler, on the app's own dev server", async () => {
     await fs.writeFile(
       path.join(cwd, "everyapp.config.ts"),
-      `export default ${JSON.stringify({ ...manifest, email: { inbound: ["*@example.com", "support@example.com"] } })};\n`,
+      `export default ${JSON.stringify({ ...manifest, email: { inbound: true } })};\n`,
     );
     const cf = new DevCf(cwd);
     const port = await getFreePort();
@@ -215,10 +215,8 @@ describe("everyapp dev", () => {
 
   it("prints no mail hint for an app that receives none", () => {
     expect(emailHint({}, 5173)).toEqual([]);
-    expect(emailHint({ email: { inbound: [] } }, 5173)).toEqual([]);
-    expect(emailHint({ email: { inbound: ["support@mail.example.com"] } }, 5173)[0]).toContain(
-      "to=support@mail.example.com",
-    );
+    expect(emailHint({ email: { inbound: false } }, 5173)).toEqual([]);
+    expect(emailHint({ email: { inbound: true } }, 5173)[0]).toContain("to=hello@example.com");
   });
 
   it("refuses an unknown mode before starting anything", async () => {

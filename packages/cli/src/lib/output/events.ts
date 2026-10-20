@@ -314,8 +314,8 @@ const MILESTONES: Readonly<Record<string, (event: StepEvent) => Shown | null>> =
     "app.build": (event) => (event.status === "ok" ? { join: "Built" } : null),
     "app.migrations": migrated,
     "app.upload": uploaded,
-    // TODO(integration): PR 6's deploy step (lib/app/emailRoutes.ts); events.ts isn't on its file list.
     "app.email": (event) => {
+      if (event.status === "skip" && event.message) return { line: event.message };
       if (event.status !== "ok") return null;
       const addresses = strings(event.data?.["addresses"]);
       return {

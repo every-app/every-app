@@ -5,8 +5,9 @@ import {
   emailProviderRefusal,
   emailRestBody,
   emailRestUrl,
+  emailSenderRefusal,
+  parseEmailList,
   parseEmailSender,
-  parseEmailSendersEnv,
   parseSendEmailMessage,
   readEmailRestResponse,
   senderAllowed,
@@ -26,8 +27,9 @@ import { GatewayRefusalError, gatewayRefusal } from "./integrationFetch.js";
 export interface SendEmailOptions {
   /**
    * The Worker env: the EVERY_APP_GATEWAY binding when deployed; in local
-   * dev EVERYAPP_DEV, and optionally EMAIL_REST_API_TOKEN,
-   * CLOUDFLARE_ACCOUNT_ID and EMAIL_FROM in `.dev.vars` to really send.
+   * dev EVERYAPP_DEV, EVERYAPP_EMAIL_SENDERS in `.dev.vars` for the senders
+   * a `from` may name, and optionally EMAIL_REST_API_TOKEN,
+   * CLOUDFLARE_ACCOUNT_ID and EMAIL_FROM there to really send.
    */
   env: object;
   /**
@@ -43,9 +45,10 @@ export interface SendEmailOptions {
 
 /**
  * Send an email through the gateway's `email` capability: its sender
- * (EMAIL_FROM) unless `message.from` names an address the manifest's
- * `capabilities.email.senders` allows, within the gateway's daily budgets.
- * The app lists `capabilities: { email: { access: "write" } }`.
+ * (EMAIL_FROM) unless `message.from` names an address the installation's
+ * senders allow (`everyapp email set --sender`; in dev, `.dev.vars`'
+ * EVERYAPP_EMAIL_SENDERS), within the gateway's daily budgets. The app
+ * lists `capabilities: { email: { access: "write" } }`.
  *
  * Throws {@link GatewayRefusalError} when the gateway won't send
  * (`email_sender_not_allowed`, `email_budget_exhausted`,
@@ -130,13 +133,13 @@ async function sendInDev(
     message.from &&
     !senderAllowed(
       message.from.address,
-      parseEmailSendersEnv(values[EMAIL_SENDERS_ENV]),
+      parseEmailList(values[EMAIL_SENDERS_ENV]),
     )
   ) {
     throw new GatewayRefusalError({
       status: 403,
       code: "email_sender_not_allowed",
-      message: `This app may not send as ${message.from.address}: list it, or *@${emailDomain(message.from.address)}, in capabilities.email.senders in everyapp.config.ts.`,
+      message: emailSenderRefusal(message.from.address, "dev"),
     });
   }
 

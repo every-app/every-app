@@ -3,13 +3,16 @@ import {
   EMAIL_SENDER_PATTERN,
   chooseEmailProvider,
   distinctRecipients,
+  emailListProblems,
   emailProviderRefusal,
   emailRestBody,
+  emailSenderRefusal,
+  parseEmailList,
   parseEmailSender,
-  parseEmailSendersEnv,
   parseSendEmailMessage,
   readEmailRestResponse,
   senderAllowed,
+  storedEmailList,
 } from "./email";
 
 const base = { to: "a@example.net", subject: "Hi", text: "Hello" };
@@ -250,10 +253,17 @@ describe("senders", () => {
     ).toEqual(["a@example.net", "b@example.net"]);
   });
 
-  it("reads the dev senders binding, and nothing from a bad one", () => {
-    expect(parseEmailSendersEnv('["*@a.example"]')).toEqual(["*@a.example"]);
-    expect(parseEmailSendersEnv("nope")).toEqual([]);
-    expect(parseEmailSendersEnv(undefined)).toEqual([]);
+  it("reads a senders list as JSON or a comma list, and nothing from a bad one", () => {
+    expect(parseEmailList('["*@a.example"]')).toEqual(["*@a.example"]);
+    expect(parseEmailList("*@a.example, b@c.example")).toEqual([
+      "*@a.example",
+      "b@c.example",
+    ]);
+    // A one-entry list no address matches.
+    expect(parseEmailList("nope")).toEqual(["nope"]);
+    expect(senderAllowed("x@nope", ["nope"])).toBe(false);
+    expect(parseEmailList(undefined)).toEqual([]);
+    expect(parseEmailList("[oops")).toEqual([]);
   });
 
   it("reads the configured sender as the gateway always has", () => {
@@ -269,6 +279,119 @@ describe("senders", () => {
     });
     expect(parseEmailSender("noreply@example.com", undefined)).toBeNull();
     expect(parseEmailSender(undefined, "Every App")).toBeNull();
+  });
+});
+
+describe("an installation's lists", () => {
+  const senders = (count: number) =>
+    Array.from({ length: count }, (_, i) => `s${i}@example.com`);
+  const addresses = (count: number) =>
+    Array.from({ length: count }, (_, i) => `a${i}@example.com`);
+
+  it.each([
+    [
+      "a bad sender",
+      "senders",
+      ["bad"],
+      `"bad" isn't a sender: a sender is "*@<domain>" or "<local>@<domain>", in lowercase.`,
+    ],
+    [
+      "an uppercase sender",
+      "senders",
+      ["Ben@example.com"],
+      `"Ben@example.com" isn't a sender: a sender is "*@<domain>" or "<local>@<domain>", in lowercase.`,
+    ],
+    [
+      "a duplicate sender",
+      "senders",
+      ["*@example.com", "*@example.com"],
+      "*@example.com is listed twice.",
+    ],
+    ["21 senders", "senders", senders(21), "At most 20 senders, not 21."],
+    [
+      "an uppercase inbound address",
+      "inbound",
+      ["Support@example.com"],
+      `"Support@example.com" isn't an inbound address: an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase.`,
+    ],
+    [
+      "a bare domain",
+      "inbound",
+      ["example.com"],
+      `"example.com" isn't an inbound address: an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase.`,
+    ],
+    [
+      "a partial wildcard",
+      "inbound",
+      ["sup*@example.com"],
+      `"sup*@example.com" isn't an inbound address: an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase.`,
+    ],
+    [
+      "a wildcard domain",
+      "inbound",
+      ["*@*.example.com"],
+      `"*@*.example.com" isn't an inbound address: an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase.`,
+    ],
+    [
+      "a domain without a TLD",
+      "inbound",
+      ["support@localhost"],
+      `"support@localhost" isn't an inbound address: an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase.`,
+    ],
+    [
+      "a duplicate address",
+      "inbound",
+      ["a@example.com", "a@example.com"],
+      "a@example.com is listed twice.",
+    ],
+    [
+      "an 81-character local part",
+      "inbound",
+      [`${"a".repeat(81)}@example.com`],
+      `${"a".repeat(81)}@example.com is longer than Email Routing's 90 characters.`,
+    ],
+    [
+      "51 addresses",
+      "inbound",
+      addresses(51),
+      "At most 50 inbound addresses, not 51.",
+    ],
+  ] as const)("refuses %s", (_, kind, values, problem) => {
+    expect(emailListProblems(kind, values)).toEqual([problem]);
+  });
+
+  it("accepts both lists within their limits", () => {
+    expect(emailListProblems("senders", senders(20))).toEqual([]);
+    expect(emailListProblems("inbound", addresses(50))).toEqual([]);
+    expect(
+      emailListProblems("inbound", [
+        "*@example.com",
+        "support@mail.example.com",
+      ]),
+    ).toEqual([]);
+  });
+
+  it("stores an empty list as null", () => {
+    expect(storedEmailList([])).toBeNull();
+    expect(parseEmailList(storedEmailList([]))).toEqual([]);
+    const stored = storedEmailList(["*@example.com", "ceo@example.com"]);
+    expect(stored).toBe('["*@example.com","ceo@example.com"]');
+    expect(parseEmailList(stored)).toEqual([
+      "*@example.com",
+      "ceo@example.com",
+    ]);
+  });
+
+  it("says what sets the senders, on the gateway and in dev", () => {
+    const onGateway = emailSenderRefusal("ceo@other.example", "gateway");
+    const inDev = emailSenderRefusal("ceo@other.example", "dev");
+    for (const sentence of [onGateway, inDev]) {
+      expect(sentence).toContain("This app may not send as ceo@other.example");
+      expect(sentence).toContain("*@other.example");
+      expect(sentence).toContain("everyapp email set --sender");
+    }
+    expect(onGateway).not.toContain(".dev.vars");
+    expect(inDev).toContain(".dev.vars");
   });
 });
 

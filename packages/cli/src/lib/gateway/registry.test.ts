@@ -22,7 +22,9 @@ import {
   listApps,
   markDeployed,
   readApp,
+  readAppEmail,
   register,
+  writeAppEmail,
   type Deployer,
   type RegisterInput,
 } from "./registry";
@@ -66,7 +68,7 @@ function registerApp(appSlug: string, overrides: Partial<RegisterInput> = {}) {
 
 const app = (appSlug: string) =>
   sqlite.all(
-    "SELECT organization_id, app_slug, hostname, worker_name, status, manifest, version_id, deployed_at, deployed_by_actor, is_default FROM apps WHERE app_slug = ?",
+    "SELECT organization_id, app_slug, hostname, worker_name, status, manifest, version_id, deployed_at, deployed_by_actor, is_default, email_senders, email_inbound FROM apps WHERE app_slug = ?",
     appSlug,
   )[0];
 const grantees = (appSlug: string) =>
@@ -326,9 +328,10 @@ describe("deleteApp", () => {
   });
   const nothing = { access: [], liveTokens: [], catalogs: [], tools: [], connections: [] };
 
-  it("leaves a tombstone, with nothing of the app's access, tokens, tools or connections", async () => {
+  it("leaves a tombstone, with nothing of the app's access, tokens, tools, connections or email configuration", async () => {
     const { plan, organization } = await registerApp("todo");
     withAppData(plan.app.id, organization.id);
+    await writeAppEmail(db(), "todo", { senders: ["*@example.com"], inbound: ["hi@example.com"] }, DEPLOYER);
 
     const deleted = await deleteApp(db(), "todo", DEPLOYER);
 
@@ -338,7 +341,12 @@ describe("deleteApp", () => {
       hostname: `todo.${BASE}`,
       resources: { d1: {}, kv: {} },
     });
-    expect(app("todo")).toMatchObject({ status: "deleted", is_default: 0 });
+    expect(app("todo")).toMatchObject({
+      status: "deleted",
+      is_default: 0,
+      email_senders: null,
+      email_inbound: null,
+    });
     expect(appData()).toEqual(nothing);
     expect(sqlite.all("SELECT revoked_at FROM user_access_tokens")[0]!["revoked_at"]).not.toBeNull();
     // Gone from the commands that act on an app, and from the list.
@@ -358,6 +366,9 @@ describe("deleteApp", () => {
     await deleteApp(db(), "todo", DEPLOYER);
     // Whatever was left on the tombstone, by hand or by an older gateway.
     withAppData(plan.app.id, "org-1");
+    sqlite.sqlite
+      .prepare("UPDATE apps SET email_senders = ?, email_inbound = ? WHERE id = ?")
+      .run('["*@old.example"]', '["hi@old.example"]', plan.app.id);
 
     const revived = await registerApp("todo");
 
@@ -366,10 +377,98 @@ describe("deleteApp", () => {
       app: { id: plan.app.id, workerName: "every-acme-todo", hostname: `todo.${BASE}` },
       previousManifest: { id: "todo", resources: { d1: ["DB"] } },
     });
-    expect(app("todo")).toMatchObject({ status: "pending", worker_name: "every-acme-todo" });
+    expect(app("todo")).toMatchObject({
+      status: "pending",
+      worker_name: "every-acme-todo",
+      email_senders: null,
+      email_inbound: null,
+    });
     expect({ ...appData(), access: [] }).toEqual(nothing);
     // Its initial access, granted again: the owner, and nobody from before.
     expect(grantees("todo")).toEqual(["owner"]);
+  });
+});
+
+describe("writeAppEmail", () => {
+  const LISTS = { senders: ["*@example.com", "ceo@example.com"], inbound: ["*@example.com"] };
+
+  it("stores the lists as JSON and an empty one as null, and reads them back", async () => {
+    const { plan } = await registerApp("inbox");
+
+    const written = await writeAppEmail(db(), "inbox", LISTS, DEPLOYER);
+
+    expect(written).toMatchObject({ id: plan.app.id, workerName: "every-acme-inbox", email: LISTS });
+    expect(app("inbox")).toMatchObject({
+      email_senders: '["*@example.com","ceo@example.com"]',
+      email_inbound: '["*@example.com"]',
+    });
+    await expect(readApp(db(), "inbox")).resolves.toMatchObject({ email: LISTS });
+    await expect(readAppEmail(db(), plan.app.id)).resolves.toEqual(LISTS);
+    await expect(listApps(db())).resolves.toEqual([expect.objectContaining({ email: LISTS })]);
+    // The manifest it was registered from declares no inbound mail, whatever the local file says.
+    await expect(readApp(db(), "inbox")).resolves.toMatchObject({ declaresInbound: false });
+    await markDeployed(db(), plan.app.id, {
+      versionId: "v1",
+      manifest: { id: "inbox", email: { inbound: true } },
+      actor: "x",
+    });
+    await expect(readApp(db(), "inbox")).resolves.toMatchObject({ declaresInbound: true });
+    // The address list a manifest carried before the move counts: that Worker exports email() too.
+    sqlite.sqlite
+      .prepare("UPDATE apps SET manifest = ? WHERE id = ?")
+      .run(JSON.stringify({ id: "inbox", email: { inbound: ["hi@example.com"] } }), plan.app.id);
+    await expect(readApp(db(), "inbox")).resolves.toMatchObject({ declaresInbound: true });
+
+    await writeAppEmail(db(), "inbox", { senders: [], inbound: [] }, DEPLOYER);
+    expect(app("inbox")).toMatchObject({ email_senders: null, email_inbound: null });
+    await expect(readAppEmail(db(), plan.app.id)).resolves.toEqual({ senders: [], inbound: [] });
+    await expect(readAppEmail(db(), "no-such-row")).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
+  });
+
+  it("refuses an app that isn't registered or is deleted", async () => {
+    await expect(writeAppEmail(db(), "inbox", LISTS, DEPLOYER)).rejects.toMatchObject({
+      code: "APP_NOT_FOUND",
+    });
+    await registerApp("inbox");
+    await deleteApp(db(), "inbox", DEPLOYER);
+    await expect(writeAppEmail(db(), "inbox", LISTS, DEPLOYER)).rejects.toMatchObject({
+      code: "APP_NOT_FOUND",
+    });
+    expect(app("inbox")).toMatchObject({ email_senders: null, email_inbound: null });
+  });
+
+  it("lets only a platform admin change a shared app's", async () => {
+    addOrganization("org-1", "everyapp", 1);
+    addUser("owner", { organization: "org-1", role: "owner" });
+    addUser("member", { organization: "org-1", role: "member" });
+    const owner: Deployer = { actor: "owner@example.com", email: "owner@example.com" };
+    await registerApp("inbox", { scope: "shared", deployer: owner });
+    const member: Deployer = { actor: "member@example.com", email: "member@example.com" };
+
+    await expect(writeAppEmail(db(), "inbox", LISTS, member)).rejects.toMatchObject({
+      code: "SHARED_APP_FORBIDDEN",
+    });
+    expect(app("inbox")).toMatchObject({ email_senders: null, email_inbound: null });
+
+    await expect(writeAppEmail(db(), "inbox", LISTS, owner)).resolves.toMatchObject({ email: LISTS });
+    // An API token has the account's authority.
+    await expect(
+      writeAppEmail(db(), "inbox", { senders: [], inbound: [] }, { actor: "api-token:acc", email: null }),
+    ).resolves.toMatchObject({ email: { senders: [], inbound: [] } });
+  });
+
+  it("keeps the lists across markDeployed", async () => {
+    const { plan } = await registerApp("inbox");
+    await writeAppEmail(db(), "inbox", LISTS, DEPLOYER);
+
+    await markDeployed(db(), plan.app.id, {
+      versionId: "v1",
+      manifest: { id: "inbox", email: { inbound: true } },
+      actor: DEPLOYER.actor,
+    });
+
+    await expect(readAppEmail(db(), plan.app.id)).resolves.toEqual(LISTS);
+    await expect(readApp(db(), "inbox")).resolves.toMatchObject({ status: "binding", email: LISTS });
   });
 });
 

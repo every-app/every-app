@@ -15,6 +15,7 @@ import {
 import { Separator } from "@/client/components/ui/separator";
 import { adminAppsCollection } from "@/client/tanstack-db";
 import { getServerErrorMessage } from "@/client/errors";
+import { appEmail } from "@/client/lib/appEmail";
 import { editAppSchema, type EditAppFormData } from "@/schemas/app";
 import type { AppWithAccessCount } from "@/types/app";
 
@@ -28,6 +29,8 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
   // Local state, not the form's error map: a stale onSubmit error there would
   // keep the form invalid and block a retry until a field changed.
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Read-only: the lists are set with the CLI, which also makes the routes.
+  const email = appEmail(app);
 
   const defaultValues: EditAppFormData = {
     name: app.name,
@@ -89,6 +92,45 @@ export function EditAppModal({ app, onClose }: EditAppModalProps) {
               <p className="text-sm text-muted-foreground">
                 Served at <span className="font-mono">{app.hostname}</span> —
                 set by <span className="font-mono">everyapp deploy</span>
+              </p>
+            ) : null}
+            {email.sends || email.receives ? (
+              <p className="text-sm text-muted-foreground">
+                Mail:{" "}
+                {email.sends ? (
+                  email.senders.length ? (
+                    <>
+                      sends as{" "}
+                      <span className="font-mono">
+                        {email.senders.join(", ")}
+                      </span>
+                    </>
+                  ) : (
+                    "sends as the gateway's sender only"
+                  )
+                ) : null}
+                {email.sends && email.receives ? "; " : null}
+                {email.receives ? (
+                  email.inbound.length ? (
+                    <>
+                      receives{" "}
+                      <span className="font-mono">
+                        {email.inbound.join(", ")}
+                      </span>
+                    </>
+                  ) : (
+                    "receives no addresses yet"
+                  )
+                ) : null}
+                {app.tier === "dispatch" ? (
+                  " — third-party apps send from the gateway's sender and receive no mail"
+                ) : (
+                  <>
+                    {" — "}set with{" "}
+                    <span className="font-mono">everyapp email set</span> in the
+                    app's directory
+                  </>
+                )}
               </p>
             ) : null}
             {app.scope === "shared" ? (

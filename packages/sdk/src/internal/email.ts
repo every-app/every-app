@@ -1,14 +1,15 @@
 /**
  * The `email` capability's wire contract (docs/capabilities.md "Gateway
  * services"): what an app sends to `POST /api/integrations/email/send`,
- * how the request is checked, which senders a manifest may name, which
- * provider a gateway sends with (Cloudflare Email Sending or Resend), and
- * how the provider's answers map onto the gateway's refusals.
+ * how the request is checked, which senders and inbound addresses an
+ * installation may hold (`everyapp email set`), which provider a gateway
+ * sends with (Cloudflare Email Sending or Resend), and how the provider's
+ * answers map onto the gateway's refusals.
  *
- * The gateway enforces these, the manifest validator reads the sender
- * pattern, and the SDK's local-dev fallback applies the same checks and
- * the same REST body, so a refusal in `everyapp dev` is the one production
- * gives. Pure functions only: no env, no I/O.
+ * The gateway enforces these, the CLI's `email set` checks the lists with
+ * the same validator, and the SDK's local-dev fallback applies the same
+ * checks and the same REST body, so a refusal in `everyapp dev` is the one
+ * production gives. Pure functions only: no env, no I/O.
  */
 
 /** An address with an optional display name. */
@@ -43,7 +44,7 @@ export interface SendEmailMessage {
   html?: string;
   /**
    * Absent: the gateway's own sender (EMAIL_FROM). Present: it must match
-   * one of the manifest's `capabilities.email.senders`.
+   * one of the installation's senders (`everyapp email set --sender`).
    */
   from?: string | EmailAddressInput;
   replyTo?: string | EmailAddressInput;
@@ -92,7 +93,10 @@ export interface EmailCapabilityStatus {
   ready: boolean;
   /** The From a message without `from` gets; null unless ready. */
   sender: { address: string; name: string } | null;
-  /** The `from` patterns the gateway accepts from this app; empty for none. */
+  /**
+   * The `from` patterns the gateway accepts from this app: its
+   * installation's; empty for none, and on a hosted gateway.
+   */
   senders: string[];
   /**
    * The provider mail goes out with; null unless configured. In local dev,
@@ -161,7 +165,7 @@ export function chooseEmailProvider(
     : { ok: false, error: "not_configured", requested: null };
 }
 
-/** Cloudflare Email Sending's limits the gateway checks before sending. */
+/** Cloudflare Email Sending's limits the gateway checks before sending, and the lists an installation keeps on the gateway. */
 export const EMAIL_LIMITS = {
   /** The request body, read with a counting stream. */
   bodyBytes: 5 * 1024 * 1024,
@@ -172,16 +176,104 @@ export const EMAIL_LIMITS = {
   headerNameBytes: 100,
   headersTotalBytes: 16 * 1024,
   attachments: 32,
-  /** Patterns in a manifest's `capabilities.email.senders`. */
+  /** Sender patterns an installation may hold (`everyapp email set --sender`). */
   senders: 20,
+  /** Inbound addresses an installation may hold (Email Routing allows 200 rules a domain). */
+  inbound: 50,
+  /** Email Routing's limit on a rule's address (its matcher's value). */
+  inboundAddressChars: 90,
 } as const;
 
 /**
- * A manifest `senders` entry: `*@<domain>` (any address on exactly that
- * domain) or `<local>@<domain>`, in lowercase.
+ * A sender: `*@<domain>` (any address on exactly that domain) or
+ * `<local>@<domain>`, in lowercase. Set per installed app with
+ * `everyapp email set --sender`; the gateway reads them from its registry.
  */
 export const EMAIL_SENDER_PATTERN =
   /^(\*|[a-z0-9._+-]+)@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]*[a-z0-9]$/;
+
+/**
+ * An inbound address Email Routing delivers to the app's Worker: `*@<domain>`,
+ * the catch-all of a zone's apex, or one address, in lowercase. The CLI finds
+ * the zone; a catch-all on a subdomain is refused there.
+ */
+export const EMAIL_INBOUND_PATTERN =
+  /^(\*|[a-z0-9._+-]+)@([a-z0-9-]+\.)+[a-z]{2,}$/;
+
+/** The command that sets an installation's senders and inbound addresses, for messages. */
+export const EMAIL_SET_COMMAND = "everyapp email set";
+
+/** An installed app's email configuration, as the gateway's `apps` row holds it (`[]` for a null column). */
+export interface AppEmailConfig {
+  /** The `from` patterns the gateway accepts from the app; empty: the gateway's sender only. */
+  senders: string[];
+  /** The addresses Email Routing delivers to the app's Worker; empty: none. */
+  inbound: string[];
+}
+
+/**
+ * Why `values` can't be an installation's senders or inbound addresses
+ * (`everyapp email set`), one sentence each; empty when they can. The
+ * rules the manifest's `capabilities.email.senders` and `email.inbound`
+ * had: the patterns above, no duplicates, at most EMAIL_LIMITS.senders or
+ * EMAIL_LIMITS.inbound entries, an inbound address at most
+ * EMAIL_LIMITS.inboundAddressChars long.
+ */
+export function emailListProblems(
+  kind: "senders" | "inbound",
+  values: readonly string[],
+): string[] {
+  const problems: string[] = [];
+  const limit =
+    kind === "senders" ? EMAIL_LIMITS.senders : EMAIL_LIMITS.inbound;
+  if (values.length > limit) {
+    problems.push(
+      `At most ${limit} ${kind === "senders" ? "senders" : "inbound addresses"}, not ${values.length}.`,
+    );
+  }
+  for (const value of values) {
+    if (kind === "inbound" && value.length > EMAIL_LIMITS.inboundAddressChars) {
+      problems.push(
+        `${value} is longer than Email Routing's ${EMAIL_LIMITS.inboundAddressChars} characters.`,
+      );
+    } else if (
+      !(kind === "senders" ? EMAIL_SENDER_PATTERN : EMAIL_INBOUND_PATTERN).test(
+        value,
+      )
+    ) {
+      problems.push(
+        kind === "senders"
+          ? `"${value}" isn't a sender: a sender is "*@<domain>" or "<local>@<domain>", in lowercase.`
+          : `"${value}" isn't an inbound address: an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase.`,
+      );
+    }
+  }
+  for (const twice of new Set(
+    values.filter((value, index) => values.indexOf(value) !== index),
+  )) {
+    problems.push(`${twice} is listed twice.`);
+  }
+  return problems;
+}
+
+/** A list as the row stores it: JSON, or null for none. */
+export function storedEmailList(values: readonly string[]): string | null {
+  return values.length === 0 ? null : JSON.stringify(values);
+}
+
+/**
+ * The 403 `email_sender_not_allowed` sentence. `where` says what sets the
+ * senders: the gateway's registry row, or `.dev.vars` in local dev.
+ */
+export function emailSenderRefusal(
+  address: string,
+  where: "gateway" | "dev",
+): string {
+  const domain = `*@${emailDomain(address)}`;
+  return where === "gateway"
+    ? `This app may not send as ${address}: list it, or ${domain}, among the app's senders with \`${EMAIL_SET_COMMAND} --sender\` in the app's directory.`
+    : `This app may not send as ${address}: in dev, list it, or ${domain}, in EVERYAPP_EMAIL_SENDERS in .dev.vars; deployed, \`${EMAIL_SET_COMMAND} --sender\` sets the app's senders.`;
+}
 
 /** An address the provider will take: printable ASCII, one `@`, a dotted domain. */
 const ADDRESS =
@@ -476,10 +568,10 @@ function byteLength(value: string): number {
 }
 
 /**
- * Whether `address` may be a message's From under `patterns` (a manifest's
- * `capabilities.email.senders`): `*@example.com` takes any address on
- * exactly example.com (not its subdomains), anything else that address
- * alone. Case never matters.
+ * Whether `address` may be a message's From under `patterns` (the
+ * installation's senders, `apps.email_senders`): `*@example.com` takes any
+ * address on exactly example.com (not its subdomains), anything else that
+ * address alone. Case never matters.
  */
 export function senderAllowed(
   address: string,
@@ -719,21 +811,34 @@ export function parseEmailSender(
 }
 
 /**
- * The text binding `everyAppWorker()` gives an app's Workers in local dev
- * when the manifest lists `email`: its `senders`, as JSON. Deployed, the
- * gateway reads them from the registry instead.
+ * The binding an app's Workers get in local dev when `.dev.vars` sets it
+ * (`everyAppWorker()` declares it like the other dev keys): the senders a
+ * gateway would hold for this installation, a comma- or whitespace-
+ * separated list or a JSON array. Deployed, the gateway reads them from the
+ * app's registry row (`apps.email_senders`, `everyapp email set --sender`).
  */
 export const EMAIL_SENDERS_ENV = "EVERYAPP_EMAIL_SENDERS";
 
-/** The senders in {@link EMAIL_SENDERS_ENV}; none when unset or unreadable. */
-export function parseEmailSendersEnv(value: unknown): string[] {
+/**
+ * A list of addresses or patterns: an `apps` row's `email_senders` or
+ * `email_inbound` (JSON), or {@link EMAIL_SENDERS_ENV} (JSON, or separated
+ * by commas or whitespace). None when unset, or when JSON that isn't an
+ * array; other text is read as a comma or whitespace list, so a word no
+ * address matches allows no sender. Only `everyapp email set` writes the
+ * columns, as JSON; the admin page reads them as JSON only.
+ */
+export function parseEmailList(value: unknown): string[] {
   if (typeof value !== "string" || !value.trim()) return [];
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return Array.isArray(parsed)
-      ? parsed.filter((entry): entry is string => typeof entry === "string")
-      : [];
-  } catch {
-    return [];
+  const text = value.trim();
+  if (text.startsWith("[")) {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      return Array.isArray(parsed)
+        ? parsed.filter((entry): entry is string => typeof entry === "string")
+        : [];
+    } catch {
+      return [];
+    }
   }
+  return text.split(/[\s,]+/).filter(Boolean);
 }

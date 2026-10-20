@@ -6,7 +6,8 @@
  * production. One Worker with two SQLite Durable Objects and the bucket
  * named after itself, bound by hand; no secrets, no triggers, no `ai` or
  * `send_email` binding (the gateway brokers both). `capabilities.email`
- * comes with PR 3.
+ * and `email: { inbound: true }` come with PR 3; its addresses are set
+ * with `everyapp email set`.
  */
 import { bindings } from "@cloudflare/config";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";

@@ -32,8 +32,9 @@ declare namespace Cloudflare {
     EMAIL_REST_API_TOKEN?: string;
     EMAIL_FROM?: string;
     EMAIL_FROM_NAME?: string;
-    // In dev, the manifest's capabilities.email.senders as JSON
-    // (everyAppWorker() sets it); sendEmail() checks a `from` against them.
+    // In dev, the senders .dev.vars sets (comma-separated or a JSON array),
+    // standing in for the installation's (everyapp email set); sendEmail()
+    // checks a `from` against them.
     EVERYAPP_EMAIL_SENDERS?: string;
     // integrationFetch() in dev for the OAuth clients' token endpoints: the
     // developer's own clients, under the gateway's names (MASTODON_URL is
