@@ -409,7 +409,7 @@ describe("createHumanSink", () => {
       type: "step",
       step: "setup.gateway",
       status: "start",
-      data: { release: "0.4.0", from: null, gatewayUrl: "https://apps.example.com" },
+      data: { change: "install", release: "0.4.0", from: null, gatewayUrl: "https://apps.example.com" },
     });
     sink.emit({ type: "step", step: "gateway.migrations", status: "start" });
     now += 400;
@@ -549,21 +549,104 @@ describe("createHumanSink", () => {
     ]);
   });
 
-  it("says the Gateway is up to date when there is nothing to do", () => {
+  it("says the Gateway is up to date when there is nothing to do, and who owns it", () => {
     const { sink, lines } = human();
+    sink.emit({
+      type: "step",
+      step: "setup.account",
+      status: "ok",
+      data: { id: "acct", name: "Ben Senescu", email: "ben@example.com", gateway: true },
+    });
     sink.emit({
       type: "step",
       step: "setup.gateway",
       status: "skip",
-      message: "The gateway already runs release 0.4.0.",
+      message: "Gateway 0.4.0 is up to date",
       data: {
         release: "0.4.0",
         gatewayUrl: "https://apps.example.com",
         upToDate: true,
+        account: "Ben Senescu",
       },
     });
+    sink.emit({
+      type: "step",
+      step: "setup.owner",
+      status: "skip",
+      data: { email: "ben@example.com", organizationName: "Ben Senescu" },
+    });
     expect(lines()).toEqual([
-      "Gateway 0.4.0 at https://apps.example.com is up to date.",
+      "Ben Senescu's Gateway 0.4.0 is up to date ✓",
+      "Owner account is ben@example.com ✓",
+    ]);
+  });
+
+  it("names what setup does to a live Gateway, and the apps a repair routes", () => {
+    const { sink, lines } = human();
+    const start = (data: Record<string, unknown>) =>
+      sink.emit({
+        type: "step",
+        step: "setup.gateway",
+        status: "start",
+        data: { gatewayUrl: "https://apps.example.com", account: "Ben Senescu", ...data },
+      });
+    start({ change: "upgrade", from: "0.3.0", release: "0.4.0" });
+    start({ change: "resume", from: null, release: "0.4.0" });
+    start({ change: "redeploy", from: "0.4.0", release: "0.4.0" });
+    start({ change: "repair", from: "0.4.0", release: "0.4.0" });
+    sink.emit({
+      type: "step",
+      step: "setup.gateway",
+      status: "ok",
+      data: { release: "0.4.0", repaired: true, added: ["todo"], apps: 1, was: 0 },
+    });
+    expect(lines()).toEqual([
+      "Upgrading Ben Senescu's Gateway 0.3.0 → 0.4.0",
+      "Resuming the Gateway 0.4.0 install at apps.example.com",
+      "Redeploying Ben Senescu's Gateway 0.4.0",
+      "Repairing Ben Senescu's Gateway 0.4.0",
+      "Gateway now routes todo ✓",
+    ]);
+  });
+
+  it("lists an action's choices, one ready command each, and no single rerun", () => {
+    const { sink, problems } = human();
+    sink.emit({
+      type: "action_required",
+      action: "choose_account",
+      message: "Choose which Gateway to use\nben@example.com sees a Gateway in 2 Cloudflare accounts. Run one of:",
+      data: {
+        choices: [
+          { label: "Ben Senescu", rerun: "pnpm everyapp setup --domain everyapp.team" },
+          { label: "Every Labs", rerun: "pnpm everyapp setup --domain everylabs.dev" },
+        ],
+      },
+    });
+    expect(problems()).toEqual([
+      "→ Choose which Gateway to use",
+      "  ben@example.com sees a Gateway in 2 Cloudflare accounts. Run one of:",
+      "  pnpm everyapp setup --domain everyapp.team  Ben Senescu",
+      "  pnpm everyapp setup --domain everylabs.dev  Every Labs",
+    ]);
+  });
+
+  it("puts an error's page after its fix", () => {
+    const { sink, problems } = human();
+    sink.emit({
+      type: "error",
+      code: "ZONE_NOT_FOUND",
+      retryable: false,
+      message: "apps.example.org isn't under a domain in this Cloudflare account\nThis account's domains: everyapp.team",
+      data: {
+        fix: "use a name under one of them",
+        url: "https://dash.cloudflare.com/acct/domains/overview",
+      },
+    });
+    expect(problems()).toEqual([
+      "✗ apps.example.org isn't under a domain in this Cloudflare account",
+      "  This account's domains: everyapp.team",
+      "  Fix: use a name under one of them",
+      "  https://dash.cloudflare.com/acct/domains/overview",
     ]);
   });
 

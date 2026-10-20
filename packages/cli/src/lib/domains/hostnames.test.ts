@@ -16,7 +16,7 @@ describe("normalizeHostname", () => {
 
   it("refuses what isn't a hostname with a dot in it", () => {
     for (const input of ["localhost", "apps..example.com", "-apps.example.com", "apps_example.com", ""]) {
-      expect(() => normalizeHostname(input)).toThrow(/isn't a hostname/);
+      expect(() => normalizeHostname(input)).toThrow(/isn't a full hostname/);
     }
   });
 });

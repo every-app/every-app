@@ -81,7 +81,7 @@ export function gatewayReleaseSource({
         type: "step",
         step: "gateway.release",
         status: "ok",
-        message: `Using Gateway ${opened.manifest.version} from ${describeOrigin(origin)}.`,
+        message: `Using Gateway ${opened.manifest.version} from ${describeOrigin(origin)}`,
         data: {
           release: opened.manifest.version,
           origin,
@@ -128,7 +128,7 @@ async function fetchRelease(
     asset: RELEASE_TARBALL,
     what: "the Gateway",
     step: "gateway.release",
-    missing: `${target} is neither a URL nor a file: pass --release a GitHub repository, a release tarball's URL, or a downloaded ${RELEASE_TARBALL}.`,
+    missing: `${target} doesn't exist\n--release takes a GitHub repository, a release tarball's URL, or a downloaded ${RELEASE_TARBALL}. Check the path, or leave out --release for the latest release.`,
     out,
     fetch: fetchImpl,
   });

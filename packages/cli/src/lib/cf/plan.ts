@@ -1,9 +1,10 @@
 /**
- * Whether the account subscribes to Workers Paid, from `cf accounts
- * subscriptions get`. Every App needs it, but the response's shape hasn't
- * been checked against a live account, so this only ever informs a
- * warning: "yes" when a live subscription names Workers Paid, else
- * "can't tell".
+ * Which Workers plan the account is on, from `cf accounts subscriptions
+ * get`. Every App needs Workers Paid, but the response's shape hasn't been
+ * checked against a live account, so only an answer that names the plan
+ * counts: a live subscription naming Workers Paid, or one naming Workers
+ * Free. Anything else is "can't tell", or "unreadable" when cf couldn't
+ * answer at all.
  */
 import { z } from "zod";
 import { runCfJson, type CfRunner } from "./runner";
@@ -21,10 +22,18 @@ const SubscriptionsOutput = z.array(
   }),
 );
 
+export enum WorkersPlan {
+  Paid = "paid",
+  Free = "free",
+  /** The subscriptions say neither. */
+  Unknown = "unknown",
+  /** cf couldn't list them (a token without the permission, say). */
+  Unreadable = "unreadable",
+}
+
 const ENDED = /cancel|expired|failed/i;
 
-/** True on Workers Paid; null when it can't be told (Free, or unreadable). */
-export async function hasWorkersPaid(cf: CfRunner): Promise<true | null> {
+export async function workersPlan(cf: CfRunner): Promise<WorkersPlan> {
   let subscriptions;
   try {
     subscriptions = await runCfJson(
@@ -33,21 +42,23 @@ export async function hasWorkersPaid(cf: CfRunner): Promise<true | null> {
       SubscriptionsOutput,
     );
   } catch {
-    return null;
+    return WorkersPlan.Unreadable;
   }
-  const paid = subscriptions.some((subscription) => {
-    const names = [
-      subscription.rate_plan?.id,
-      subscription.rate_plan?.public_name,
-      subscription.product?.name,
-    ]
-      .filter(Boolean)
-      .join(" ");
-    return (
-      /workers/i.test(names) &&
-      /paid|standard|bundled|unbound/i.test(names) &&
-      !ENDED.test(subscription.state ?? "")
-    );
-  });
-  return paid ? true : null;
+  const workers = subscriptions
+    .filter((subscription) => !ENDED.test(subscription.state ?? ""))
+    .map((subscription) =>
+      [
+        subscription.rate_plan?.id,
+        subscription.rate_plan?.public_name,
+        subscription.product?.name,
+      ]
+        .filter(Boolean)
+        .join(" "),
+    )
+    .filter((names) => /workers/i.test(names));
+  if (workers.some((names) => /paid|standard|bundled|unbound/i.test(names))) {
+    return WorkersPlan.Paid;
+  }
+  if (workers.some((names) => /free/i.test(names))) return WorkersPlan.Free;
+  return WorkersPlan.Unknown;
 }

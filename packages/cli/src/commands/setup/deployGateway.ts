@@ -7,8 +7,14 @@
 import { version as cliVersion } from "../../../package.json";
 import { cfD1Database } from "@/lib/cf/d1";
 import { waitForCertificates } from "@/lib/domains/certWait";
-import { resolveZone, type Zone } from "@/lib/domains/zones";
-import { EveryAppError } from "@/lib/errors";
+import {
+  findZone,
+  listZones,
+  registerDomainUrl,
+  zoneUrl,
+  type Zone,
+} from "@/lib/domains/zones";
+import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import type { D1Database } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
 import {
@@ -19,6 +25,7 @@ import {
 import type { InstallRecord } from "@/lib/gateway/install";
 import type { GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
+import { thisCommandWithout } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 
 /** Where a deploy goes: the install's own settings, or a new install's. */
@@ -46,7 +53,11 @@ export async function gatewayTarget({
     if (install.gatewayHost !== domain) {
       throw new EveryAppError(
         "DOMAIN_CHANGE_UNSUPPORTED",
-        `This gateway is installed at ${install.gatewayHost}; moving it to ${domain} isn't supported.`,
+        `The Gateway can't move to ${domain}\nIt's installed at ${install.gatewayHost}, and moving an installed Gateway isn't supported.`,
+        {
+          rerun: thisCommandWithout("--domain"),
+          rerunNote: "(without --domain) to update it where it is",
+        },
       );
     }
     return {
@@ -55,9 +66,45 @@ export async function gatewayTarget({
       appBaseDomain: install.appBaseDomain,
     };
   }
-  const zone = await resolveZone(cf, domain, accountId);
+  const zone = await gatewayZone(cf, domain, accountId);
   warnIfZoneApex(domain, zone, out);
   return { domain, zone, appBaseDomain: domain };
+}
+
+/**
+ * The active zone `domain` is in. None: the account's domains to choose
+ * from. One whose nameservers aren't Cloudflare's yet: finishing that is
+ * the person's to do (`add_domain`), then the same command.
+ */
+async function gatewayZone(cf: CfRunner, domain: string, accountId: string): Promise<Zone> {
+  const zone = await findZone(cf, domain, accountId);
+  if (!zone) {
+    const active = (await listZones(cf, accountId))
+      .filter((listed) => !listed.status || listed.status === "active")
+      .map((listed) => listed.name);
+    throw new EveryAppError(
+      "ZONE_NOT_FOUND",
+      `${domain} isn't under a domain in this Cloudflare account${
+        active.length > 0 ? `\nThis account's domains: ${active.join(", ")}` : ""
+      }`,
+      {
+        fix:
+          active.length > 0
+            ? `use a name under one of them, or add ${domain}'s domain to Cloudflare`
+            : `add ${domain}'s domain to Cloudflare`,
+        data: { url: registerDomainUrl(accountId), zones: active },
+      },
+    );
+  }
+  if (zone.status && zone.status !== "active") {
+    throw new ActionRequiredError(
+      "add_domain",
+      `Finish activating ${zone.name} on Cloudflare\nIts nameservers don't point at Cloudflare yet.`,
+      zoneUrl(accountId, zone.name),
+      { data: { zone: zone.name, status: zone.status } },
+    );
+  }
+  return { id: zone.id, name: zone.name };
 }
 
 /**
@@ -90,6 +137,7 @@ export async function deployGatewayRelease({
   | "sleep"
   | "leaseWaitMs"
   | "deploymentMode"
+  | "checkedDomains"
 > & {
     certificates?: Pick<
       Parameters<typeof waitForCertificates>[0],
@@ -103,8 +151,8 @@ export async function deployGatewayRelease({
     step: "gateway.resources",
     status: "ok",
     message: resources.created.length
-      ? `Created ${resources.created.join(", ")}.`
-      : "The gateway's D1 database and KV namespaces are ready.",
+      ? `Created ${resources.created.join(", ")}`
+      : "The Gateway's database and KV namespace are there",
   });
   const db = cfD1Database(cf, resources.d1Id);
   const result = await applyGateway({
@@ -141,6 +189,7 @@ function warnIfZoneApex(domain: string, zone: Zone, out: EventSink): void {
   out.emit({
     type: "warning",
     code: "GATEWAY_AT_ZONE_APEX",
-    message: `The gateway will serve at ${zone.name} itself, so its sign-in cookie covers every subdomain of ${zone.name}, and apps take names directly below it. Unless ${zone.name} is only for Every App, install on a subdomain instead: --domain apps.${zone.name}.`,
+    message: `The Gateway's sign-in cookie will cover every subdomain of ${zone.name}\nApps take names directly below it too. Unless the domain is only for Every App,\ninstall on a subdomain instead, e.g. --domain apps.${zone.name}`,
+    data: { suggestedDomain: `apps.${zone.name}` },
   });
 }

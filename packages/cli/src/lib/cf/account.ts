@@ -9,7 +9,6 @@ import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { choose, tellPerson } from "@/lib/output/prompt";
 import { roughly } from "@/lib/output/time";
-import { formatTable } from "@/lib/output/table";
 import { CfTimeoutError } from "./errors";
 import { runCfJson, type CfRunner } from "./runner";
 import { CfWhoamiOutput, type CfWhoami } from "./schemas";
@@ -70,6 +69,8 @@ export function deviceLoginAction(
       data: {
         url: login.url,
         code: login.code,
+        // cf stops waiting for the approval then (the timeout below).
+        expiresAt: new Date(Date.now() + DEVICE_LOGIN_TIMEOUT_MS).toISOString(),
         waiting: true,
         waitingFor: "Cloudflare login",
       },
@@ -217,21 +218,29 @@ export async function resolveAccount({
   }
   if (accounts.length === 1) return accounts[0]!;
   if (accounts.length === 0) {
-    throw new EveryAppError("ACCOUNT_REQUIRED", "This Cloudflare login lists no accounts", {
-      fix: "pass --account-id or set CLOUDFLARE_ACCOUNT_ID",
-    });
-  }
-  if (!interactive) {
     throw new EveryAppError(
       "ACCOUNT_REQUIRED",
-      [
-        `This login can use ${accounts.length} Cloudflare accounts; pick one`,
-        ...formatTable(
-          ["ACCOUNT", "ID"],
-          accounts.map((account) => [account.name ?? "(unnamed)", account.id]),
-        ),
-      ].join("\n"),
-      { rerun: `${thisCommand()} --account-id <id>` },
+      "This Cloudflare login can't list any accounts\nThe account id is in your dashboard URL: dash.cloudflare.com/<account-id>/…",
+      { fix: "pass --account-id, or set CLOUDFLARE_ACCOUNT_ID" },
+    );
+  }
+  if (!interactive) {
+    // One command per account, ready to run: no single rerun fits.
+    throw new ActionRequiredError(
+      "choose_account",
+      `Choose the Cloudflare account to install in\n${whoami.email ?? "This login"} can use ${accounts.length} accounts. Run one of:`,
+      undefined,
+      {
+        rerun: null,
+        data: {
+          choices: accounts.map((account) => ({
+            accountId: account.id,
+            accountName: account.name,
+            label: account.name,
+            rerun: thisCommand(["--account-id", account.id]),
+          })),
+        },
+      },
     );
   }
   return choose(

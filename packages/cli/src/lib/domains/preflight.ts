@@ -66,10 +66,10 @@ export async function preflightDomains(
   if (total > ZONE_CUSTOM_DOMAIN_LIMIT) {
     throw new EveryAppError(
       "ZONE_CUSTOM_DOMAIN_LIMIT",
-      `Too many Workers Custom Domains in ${zone.name}\nThis would put ${total} there; Cloudflare allows ${ZONE_CUSTOM_DOMAIN_LIMIT} per zone.`,
+      `${zone.name} would go over Cloudflare's ${ZONE_CUSTOM_DOMAIN_LIMIT} Custom Domains per zone\nThe Gateway alone needs ${total} there, before other Workers' domains.`,
       {
-        rerun: `${CLI} delete <id>`,
-        rerunNote: "for apps you no longer use, or install a second Gateway on another domain",
+        fix: `delete apps you no longer use (${CLI} delete <app>), or install a second Gateway on another domain`,
+        data: { total, limit: ZONE_CUSTOM_DOMAIN_LIMIT },
       },
     );
   }
@@ -78,7 +78,8 @@ export async function preflightDomains(
       type: "warning",
       code: "ZONE_CUSTOM_DOMAIN_LIMIT_NEAR",
       step,
-      message: `${zone.name} will hold at least ${total} of the ${ZONE_CUSTOM_DOMAIN_LIMIT} Workers Custom Domains Cloudflare allows in a zone (other Workers' domains there count too).`,
+      message: `${zone.name} is close to Cloudflare's ${ZONE_CUSTOM_DOMAIN_LIMIT} Custom Domains per zone\nIt will hold at least ${total}, and other Workers' domains there count too.`,
+      data: { total, limit: ZONE_CUSTOM_DOMAIN_LIMIT },
     });
   }
 
@@ -168,7 +169,10 @@ async function checkDnsRecords(
       type: "warning",
       code: "DNS_RECORD_REPLACED",
       step,
-      message: `${which}\n${records} --force-dns: the Gateway's Custom Domain${one ? " takes it" : "s take them"} over.${wildcardStays}`,
+      message: one
+        ? `Replacing ${conflicts[0]!.host}'s DNS record (${conflicts[0]!.records})${wildcardStays ? `\n${wildcardStays.trim()}` : ""}`
+        : `Replacing the DNS records of ${conflicts.length} hostnames\n${records}${wildcardStays}`,
+      data: { conflicts },
     });
     return;
   }

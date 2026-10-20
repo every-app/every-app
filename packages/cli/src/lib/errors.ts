@@ -99,8 +99,11 @@ export class EveryAppError extends Error {
 export class ActionRequiredError extends Error {
   readonly action: RequiredAction;
   readonly url?: string;
-  /** The command to run once it is done: this same one, unless set. */
-  readonly rerun: string;
+  /**
+   * The command to run once it is done: this same one, unless set; null
+   * when there is no one command (`data.choices` lists one per choice).
+   */
+  readonly rerun: string | null;
   readonly rerunNote?: string;
   /** What else the event carries for a script (`data`), e.g. the choices. */
   readonly data?: Record<string, unknown>;
@@ -109,13 +112,16 @@ export class ActionRequiredError extends Error {
     action: RequiredAction,
     message: string,
     url?: string,
-    options: Omit<NextStep, "fix"> & { data?: Record<string, unknown> } = {},
+    options: Omit<NextStep, "fix" | "rerun"> & {
+      rerun?: string | null;
+      data?: Record<string, unknown>;
+    } = {},
   ) {
     super(message);
     this.name = "ActionRequiredError";
     this.action = action;
     this.url = url;
-    this.rerun = options.rerun ?? thisCommand();
+    this.rerun = options.rerun === undefined ? thisCommand() : options.rerun;
     this.rerunNote = options.rerunNote;
     this.data = options.data;
   }

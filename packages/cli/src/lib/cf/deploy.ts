@@ -208,7 +208,7 @@ export async function assertReplaceable({
    * anyway?") and what saying yes does ("Setting GITHUB_TOKEN creates a new
    * version from it.").
    */
-  change: { question: string; effect: string };
+  change: { question: string; effect?: string };
 }): Promise<void> {
   const serving = await getWorkerDeployment(cf, workerName);
   if (!serving) return;
@@ -224,9 +224,14 @@ export async function assertReplaceable({
   await confirmOrCancel(confirm, change.question, {
     context: [
       `${withCapitalThe(shownAs)}'s live version wasn't deployed by everyapp (dashboard, API, or an interrupted deploy).`,
-      `${change.effect} Cloudflare may ask to confirm again.`,
+      [change.effect, "Cloudflare may ask to confirm again."].filter(Boolean).join(" "),
     ],
   });
+}
+
+/** Where an account subscribes to Workers Paid. */
+export function workersPlansUrl(accountId: string): string {
+  return `https://dash.cloudflare.com/${accountId}/workers/plans`;
 }
 
 /** "the Gateway" starts a sentence as "The Gateway"; an app id stays as it is. */
@@ -248,7 +253,7 @@ function explainDeployFailure(
   if (error.kind === "subdomain_missing") {
     return new ActionRequiredError(
       "register_workers_subdomain",
-      "Pick a workers.dev subdomain for this Cloudflare account\nCloudflare wants one before the first Worker upload and for Workflows. Apps stay private; they never use it.",
+      "Choose a workers.dev subdomain for this Cloudflare account\nCloudflare needs one before an account's first Worker. Apps never use it.",
       error.message.match(/https:\/\/dash\.cloudflare\.com\/\S+/)?.[0] ??
         `https://dash.cloudflare.com/${accountId}/workers/onboarding`,
     );
@@ -256,8 +261,9 @@ function explainDeployFailure(
   if (error.kind === "free_plan") {
     return new ActionRequiredError(
       "upgrade_workers_paid",
-      `Every App needs Workers Paid; subscribe, then run this again\nCloudflare refused the upload of ${workerName} on the Free plan: ${error.message}\nWorkers Paid is $5 a month, then usage.`,
-      `https://dash.cloudflare.com/${accountId}/workers/plans`,
+      "Subscribe this account to Workers Paid\nCloudflare refused the upload on the Free plan. Every App needs Workers Paid ($5 a month, then usage).",
+      workersPlansUrl(accountId),
+      { data: { workerName, cloudflare: error.message } },
     );
   }
   return error;

@@ -352,7 +352,7 @@ describe("everyapp deploy <release>", () => {
     const { tarball } = await bundle();
     await expect(open(tarball, { version: "0.2.0" })).rejects.toMatchObject({
       code: "CLI_TOO_OLD",
-      message: expect.stringContaining("todo 1.4.0 needs everyapp 0.3.0 or newer; this is 0.2.0"),
+      message: expect.stringContaining("todo 1.4.0 needs everyapp 0.3.0 or newer (this is 0.2.0)"),
     });
     await expect(openAppRelease(gatewayTarball)).rejects.toMatchObject({
       code: "RELEASE_INVALID",

@@ -450,8 +450,10 @@ describe("applyGateway", () => {
         code: "DOWNGRADE_REFUSED",
         // A release opened from a file, not a checkout's build.
         message: expect.stringMatching(
-          /^The Gateway from \/.+\.tar\.gz \(0\.2\.0 of 2026-10-12\) is older than the one live at https:\/\/example\.com \(0\.2\.0 of 2026-10-13\)\. Run everyapp from a checkout at least as new, then: pnpm everyapp/,
+          /^The Gateway from \/.+\.tar\.gz \(0\.2\.0 from Oct 12\) is older than the live one \(from Oct 13\)$/,
         ),
+        fix: "run everyapp from a checkout at least as new",
+        rerun: expect.stringMatching(/^pnpm everyapp/),
         authorize: false,
       });
       // Only setup offers the rollback.
@@ -504,7 +506,7 @@ describe("applyGateway", () => {
           confirm: async (question, context = []) => (asked.push(question, ...context), false),
         }),
       ).rejects.toMatchObject({ code: "CANCELLED" });
-      expect(asked.join("\n")).toContain("with an older release if it runs a newer one");
+      expect(asked.join("\n")).toContain("If it runs a newer release (an upgrade that stopped before recording itself), this puts an older one back.");
       expect(account.deploys).toHaveLength(deploys);
     } finally {
       await middle.cleanup();
@@ -603,9 +605,9 @@ describe("applyGateway", () => {
         confirm: async (question, context = []) => (asked.push(question, ...context), true),
       });
       expect(asked).toEqual([
-        "Replace it?",
+        "Replace it with 0.2.0?",
         "The Gateway's live version wasn't deployed by everyapp (dashboard, API, or an interrupted deploy).",
-        expect.stringMatching(/^Deploying replaces it, .* Cloudflare may ask to confirm again\.$/),
+        expect.stringMatching(/^If it runs a newer release .* Cloudflare may ask to confirm again\.$/),
       ]);
       expect(migrated()).toBe(true);
     });
@@ -933,7 +935,7 @@ describe("reconcileGateway", () => {
       expect.objectContaining({
         type: "warning",
         code: "APP_WORKER_MISSING",
-        message: expect.stringContaining("every-acme-chef"),
+        message: expect.stringMatching(/^Skipping chef: its Worker is missing\n/),
       }),
     );
     // Bound as the registry says, less the missing one: nothing to redo.

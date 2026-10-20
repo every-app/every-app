@@ -41,20 +41,7 @@ export async function resolveZone(
   accountId: string,
 ): Promise<Zone> {
   const candidates = zoneCandidates(host);
-  const found = await Promise.all(
-    candidates.map(async (name) => {
-      const zones = await runCfJson(
-        cf,
-        {
-          plane: "account",
-          args: ["zones", "list", "--name", name, "--account-id", accountId],
-        },
-        ZoneListOutput,
-      );
-      return zones.find((zone) => zone.name.toLowerCase() === name) ?? null;
-    }),
-  );
-  const zone = found.find((candidate) => candidate !== null);
+  const zone = await findZone(cf, host, accountId);
   if (!zone) {
     throw new EveryAppError(
       "ZONE_NOT_FOUND",
@@ -72,7 +59,37 @@ export async function resolveZone(
       },
     );
   }
-  return { id: zone.id, name: zone.name.toLowerCase() };
+  return { id: zone.id, name: zone.name };
+}
+
+/** The zone `host` belongs to, whatever its status, or null when the account has none. */
+export async function findZone(
+  cf: CfRunner,
+  host: string,
+  accountId: string,
+): Promise<ListedZone | null> {
+  const found = await Promise.all(
+    zoneCandidates(host).map(async (name) => {
+      const zones = await runCfJson(
+        cf,
+        {
+          plane: "account",
+          args: ["zones", "list", "--name", name, "--account-id", accountId],
+        },
+        ZoneListOutput,
+      );
+      return zones.find((zone) => zone.name.toLowerCase() === name) ?? null;
+    }),
+  );
+  const zone = found.find((candidate) => candidate !== null);
+  return zone
+    ? { id: zone.id, name: zone.name.toLowerCase(), status: zone.status ?? null }
+    : null;
+}
+
+/** A zone's own page in the dashboard, where its nameservers are. */
+export function zoneUrl(accountId: string, zone: string): string {
+  return `https://dash.cloudflare.com/${accountId}/${zone}`;
 }
 
 /** Every zone in the account, for picking one. */

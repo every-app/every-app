@@ -8,7 +8,9 @@
  * once the action is taken), and 1 after an error, whatever came before it.
  * An error says what to do next its own way (lib/errors.ts): `data.fix`, a
  * remedy in words, and `data.rerun`, the command to run (with
- * `data.rerunNote`), where one helps; an action always has `data.rerun`. An
+ * `data.rerunNote`), where one helps, and `data.url`, a page to open; an
+ * action always has `data.rerun`, or `data.choices` when the way on is one
+ * of several commands (each `{ rerun, label }`). An
  * error whose rerun takes something over (a flag like --force-dns) has
  * `data.authorize: true`: show it and ask before running it. An error with
  * code CANCELLED is a person declining a prompt. A warning is emitted once
@@ -24,9 +26,10 @@
 import chalk from "chalk";
 import cliCursor from "cli-cursor";
 import { ReportCode } from "@/lib/errors";
+import { GatewayChange } from "@/lib/gateway/change";
 import { onInterruptNotice } from "@/lib/interrupt";
 import { formatFacts, type Fact } from "./table";
-import { plural, strings, text } from "./text";
+import { capitalize, plural, strings, text } from "./text";
 import { duration, roughly } from "./time";
 import { onTerminalHandoff } from "./terminal";
 
@@ -271,7 +274,7 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
         if (QUIET_WARNINGS.has(event.code) && !verbose) return;
         problem([
           ...headed(chalk.yellow("!"), event.message),
-          ...nextCommand(event.data),
+          ...nextCommand(event.data, { url: true }),
         ]);
         return;
       }
@@ -295,7 +298,9 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
           return;
         }
         screen.finish();
-        writeProblem(`${[...lines, ...nextCommand(event.data)].join("\n")}\n`);
+        writeProblem(
+          `${[...lines, ...choiceLines(event.data?.["choices"]), ...nextCommand(event.data)].join("\n")}\n`,
+        );
         return;
       }
       case "error": {
@@ -308,7 +313,7 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
         writeProblem(
           `${[
             ...headed(chalk.red("✗"), event.message),
-            ...nextCommand(event.data),
+            ...nextCommand(event.data, { url: true }),
             // Its frames only: the message is the headline already.
             ...(stack
               ? stack
@@ -375,6 +380,8 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
     "setup.account": (event) => {
       if (event.status !== "ok") return null;
       const data = event.data ?? {};
+      // A live Gateway's own line names the account.
+      if (data["gateway"] === true) return null;
       const email = text(data["email"]);
       return {
         line: `Setting up Every App in ${text(data["name"]) ?? text(data["id"])}${email ? chalk.dim(` (${email})`) : ""}`,
@@ -384,32 +391,49 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       const data = event.data ?? {};
       const release = text(data["release"]);
       const from = text(data["from"]);
+      const account = text(data["account"]);
+      // "Ben Senescu's Gateway", or "the Gateway".
+      const theirs = account ? `${account}'s Gateway` : "the Gateway";
       if (event.status === "start") {
-        if (!from) {
-          const host = text(data["gatewayUrl"])?.replace(/^https:\/\//, "");
-          return { line: `Installing Gateway ${release} at ${host}` };
+        const host = text(data["gatewayUrl"])?.replace(/^https:\/\//, "");
+        switch (data["change"]) {
+          case GatewayChange.Install:
+            return { line: `Installing Gateway ${release} at ${host}` };
+          case GatewayChange.Resume:
+            return { line: `Resuming the Gateway ${release} install at ${host}` };
+          case GatewayChange.Upgrade:
+            return {
+              line: `Upgrading ${theirs} ${from && from !== release ? `${from} → ` : ""}${release}`,
+            };
+          case GatewayChange.Repair:
+            return { line: `Repairing ${theirs} ${release}` };
+          case GatewayChange.Redeploy:
+            return { line: `Redeploying ${theirs} ${release}` };
+          default:
+            return null;
         }
-        if (from !== release) return { line: `Upgrading the Gateway ${from} → ${release}` };
-        // setup's repair of a Gateway that runs this release already.
-        if (data["redeploy"] === true) return { line: `Redeploying the Gateway ${release}` };
+      }
+      if (event.status === "ok" && data["repaired"] === true) {
+        const added = strings(data["added"]);
+        if (added.length > 0) return { done: `Gateway now routes ${added.join(", ")}` };
         const apps = Number(data["apps"] ?? 0);
         const was = Number(data["was"] ?? apps);
         return {
-          line: `Gateway ${release} up to date · binding ${plural(apps, "app")}${was !== apps ? ` (was ${was})` : ""}`,
+          done: `Gateway routes ${plural(apps, "app")}`,
+          detail: was !== apps ? `was ${was}` : "",
         };
       }
       if (event.status !== "skip") return null;
       if (data["upToDate"] === true) {
-        return {
-          line: `Gateway ${release} at ${text(data["gatewayUrl"])} is up to date.`,
-        };
+        return { done: `${capitalize(theirs)} ${release} is up to date`, detail: "" };
       }
       return event.message ? { line: event.message } : null;
     },
     "setup.owner": (event) => {
-      if (event.status !== "ok") return null;
       const email = text(event.data?.["email"]);
-      return email ? { done: `Owner account created for ${email}` } : null;
+      if (!email) return null;
+      if (event.status === "skip") return { done: `Owner account is ${email}`, detail: "" };
+      return event.status === "ok" ? { done: `Owner account created for ${email}` } : null;
     },
     // Setup shows the Gateway's database and upload. Elsewhere (binding an
     // app, a delete, a Gateway setting) it is one step's work, shown only
@@ -476,6 +500,8 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       if (event.status !== "ok") return null;
       const data = event.data ?? {};
       if (data["downloaded"] === true) return { done: `Downloaded Gateway ${text(data["release"])}` };
+      const file = text((data["origin"] as { path?: unknown } | undefined)?.path);
+      if (file) return { done: `Loaded Gateway ${text(data["release"])} from ${file}`, detail: "" };
       return data["cached"] === false ? { done: "Built from this checkout" } : null;
     },
     "app.email": (event) => {
@@ -666,22 +692,39 @@ function headed(glyph: string, message: string): string[] {
  * then the command to run next (`data.rerun`, else `data.help`), its note
  * dim after it.
  */
-function nextCommand(data: EventData | undefined): string[] {
+function nextCommand(
+  data: EventData | undefined,
+  /** Show `data.url` after the fix (an action shows it under its headline). */
+  { url: withUrl = false }: { url?: boolean } = {},
+): string[] {
   const didYouMean = text(data?.["didYouMean"]);
   const usage = text(data?.["usage"]);
   const fix = text(data?.["fix"]);
+  const url = withUrl ? text(data?.["url"]) : undefined;
   const rerun = text(data?.["rerun"]) ?? text(data?.["help"]);
   const note = text(data?.["rerunNote"]);
   return [
     ...(didYouMean ? [`  Did you mean ${chalk.bold(didYouMean)}?`] : []),
     ...(usage ? [chalk.dim(`  Usage: ${usage}`)] : []),
     ...(fix ? [`  Fix: ${fix}`] : []),
+    ...(url ? [`  ${chalk.cyan(url)}`] : []),
     ...(rerun
       ? [
           `  ${data?.["authorize"] === true ? "To go ahead anyway" : "Run"}: ${chalk.bold(rerun)}${note ? ` ${chalk.dim(note)}` : ""}`,
         ]
       : []),
   ];
+}
+
+/** An action's `data.choices`: the command for each, its label dim after it. */
+function choiceLines(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const choices = value.map((choice: { rerun: string; label?: string | null }) => choice);
+  const width = Math.max(...choices.map((choice) => choice.rerun.length));
+  return choices.map(
+    (choice) =>
+      `  ${chalk.bold(choice.rerun.padEnd(width))}${choice.label ? `  ${chalk.dim(choice.label)}` : ""}`,
+  );
 }
 
 /** Facts a `done` event carries itself (`data.facts`), each `{ label, value, note? }`. */

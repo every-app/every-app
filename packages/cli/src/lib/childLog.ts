@@ -28,6 +28,10 @@ interface RunLoggedOptions {
   what: string;
   /** The error's code (default COMMAND_FAILED). */
   code?: string;
+  /** What to do when it fails ("fix the build error above, then run setup again"). */
+  fix?: string;
+  /** The log file's name, before its time ("gateway-build"); else the command's. */
+  logName?: string;
 }
 
 /** Run a child with its output in a log file; throws EveryAppError when it fails. */
@@ -37,9 +41,10 @@ export async function runLogged(
   options: RunLoggedOptions,
 ): Promise<void> {
   const commandLine = [command, ...args].join(" ");
-  const file = await newLogFile(commandLine);
+  const file = await newLogFile(options.logName ?? commandLine);
   const log = fs.createWriteStream(file, { flags: "a", mode: 0o600 });
-  log.write(`$ ${commandLine}\n# in ${options.cwd ?? process.cwd()}\n\n`);
+  const header = `$ ${commandLine}\n# in ${options.cwd ?? process.cwd()}\n\n`;
+  log.write(header);
   const record = (chunk: Buffer) => {
     log.write(chunk);
     if (options.echo) process.stderr.write(chunk);
@@ -61,34 +66,39 @@ export async function runLogged(
   await new Promise<void>((resolve) => log.end(resolve));
   if (!result.failed) return;
 
-  const tail = await lastLines(file);
+  // The child's own lines: not the header this wrote above them.
+  const tail = await lastLines(file, header.length);
+  const why =
+    result.exitCode !== undefined
+      ? `exit code ${result.exitCode}`
+      : result.signal
+        ? `stopped by ${result.signal}`
+        : result.shortMessage;
   throw new EveryAppError(
     options.code ?? "COMMAND_FAILED",
-    [
-      `${options.what} failed: ${result.shortMessage}`,
-      ...(tail.length > 0
-        ? ["Its last lines:", ...tail.map((line) => `  ${line}`)]
-        : []),
-      `Full log: ${file}`,
-    ].join("\n"),
+    [`${options.what} failed (${why})`, ...tail, `Full log: ${file}`].join("\n"),
+    {
+      ...(options.fix ? { fix: options.fix } : {}),
+      data: { command: commandLine, log: file },
+    },
   );
 }
 
-/** A new private log file under $TMPDIR/everyapp, named after the command. */
-async function newLogFile(commandLine: string): Promise<string> {
+/** A new private log file under $TMPDIR/everyapp, named after `name`'s first two words. */
+async function newLogFile(name: string): Promise<string> {
   const dir = path.join(os.tmpdir(), "everyapp");
   await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
-  const name =
-    commandLine
+  const base =
+    name
       .split(/\s+/)
       .slice(0, 2)
       .map((word) => path.basename(word).replace(/[^\w.-]+/g, ""))
       .filter(Boolean)
       .join("-") || "command";
   const time = new Date().toISOString().replace(/[:.]/g, "-");
-  return path.join(dir, `${name}-${time}-${process.pid}.log`);
+  return path.join(dir, `${base}-${time}-${process.pid}.log`);
 }
 
-async function lastLines(file: string): Promise<string[]> {
-  return outputTail(await fsp.readFile(file, "utf8").catch(() => ""));
+async function lastLines(file: string, skip: number): Promise<string[]> {
+  return outputTail((await fsp.readFile(file, "utf8").catch(() => "")).slice(skip));
 }

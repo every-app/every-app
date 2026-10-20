@@ -79,7 +79,7 @@ export function reportFailure(
     requireAction(error.action, error.message, {
       ...error.data,
       ...(error.url ? { url: error.url } : {}),
-      rerun: error.rerun,
+      ...(error.rerun ? { rerun: error.rerun } : {}),
       ...(error.rerunNote ? { rerunNote: error.rerunNote } : {}),
     });
     return;

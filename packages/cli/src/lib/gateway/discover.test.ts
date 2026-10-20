@@ -131,14 +131,25 @@ describe("discoverGateway", () => {
     expect(unattended).toMatchObject({
       name: "ActionRequiredError",
       action: "choose_account",
-      message: expect.stringMatching(/^This login sees a Gateway in 2 Cloudflare accounts; pick one\n[\s\S]*Acme +acct-2 +https:\/\/apps\.acme\.com/),
+      message: expect.stringMatching(/^Choose which Gateway to use\n.* sees a Gateway in 2 Cloudflare accounts\. Run one of:$/),
+      rerun: null,
       data: {
         choices: [
           expect.objectContaining({ accountId: "acct-1", gatewayUrl: "https://apps.me.dev" }),
           expect.objectContaining({
             accountId: "acct-2",
+            label: "Acme · apps.acme.com",
             rerun: expect.stringContaining("--account-id acct-2"),
           }),
+        ],
+      },
+    });
+    // setup names a Gateway by its address.
+    await expect(discover({ hostFlag: "--domain" })).rejects.toMatchObject({
+      data: {
+        choices: [
+          expect.objectContaining({ label: "Personal", rerun: expect.stringMatching(/ --domain apps\.me\.dev$/) }),
+          expect.objectContaining({ label: "Acme", rerun: expect.stringMatching(/ --domain apps\.acme\.com$/) }),
         ],
       },
     });

@@ -99,6 +99,11 @@ export interface ApplyGatewayOptions {
   db: D1Database;
   /** Publish new hostnames over the DNS records that answer them (--force-dns). */
   forceDns?: boolean;
+  /**
+   * Hostnames the caller checked already (lib/domains/preflight.ts), before
+   * it said anything was starting: setup's own host.
+   */
+  checkedDomains?: readonly string[];
   /** A person at a terminal answers cf's own prompts. */
   interactive: boolean;
   /** Asks that person before replacing a version everyapp didn't record (tests). */
@@ -146,6 +151,7 @@ export function candidate(release: GatewayRelease): CandidateRelease {
     ...release.source,
     version: release.manifest.version,
     sha256: release.manifest.sha256,
+    minCli: release.manifest.minCli,
   };
 }
 
@@ -219,25 +225,39 @@ function downgradeRefused(
   install: InstallRecord,
   { allowDowngradeFlag = false }: { allowDowngradeFlag?: boolean } = {},
 ): EveryAppError {
-  // The versions alone, unless they are the same: then when each was committed.
+  // The versions alone, unless they are the same: then when each is from.
   const sameVersion = release.version === install.releaseVersion;
-  const describe = (version: string, order: { committedAt: number }) =>
-    sameVersion
-      ? `${version} of ${new Date(order.committedAt).toISOString().slice(0, 10)}`
-      : version;
-  const again = thisCommand();
-  const live = `the one live at https://${install.gatewayHost} (${describe(install.releaseVersion, install.releaseOrder)})`;
-  const behind =
-    release.origin.kind === "checkout"
-      ? `This checkout's Gateway (${describe(release.version, release.order)}) is older than ${live}. Run git pull, then: ${again}`
-      : `The Gateway from ${describeOrigin(release.origin)} (${describe(release.version, release.order)}) is older than ${live}. ${allowDowngradeFlag ? "Pass --release a newer one, or run" : "Run"} everyapp from a checkout at least as new, then: ${again}`;
-  return new EveryAppError(
-    "DOWNGRADE_REFUSED",
-    `${behind}${allowDowngradeFlag ? `\nTo put this older Gateway back on purpose instead: ${thisCommand(["--allow-downgrade"])}` : ""}`,
-    allowDowngradeFlag
-      ? { rerun: thisCommand(["--allow-downgrade"]), authorize: true }
-      : { rerun: again },
-  );
+  const from = (order: { committedAt: number }) =>
+    new Date(order.committedAt).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      timeZone: "UTC",
+    });
+  const checkout = release.origin.kind === "checkout";
+  const what = checkout
+    ? "This checkout's Gateway"
+    : `The Gateway from ${describeOrigin(release.origin)}`;
+  const message = sameVersion
+    ? `${what} (${release.version} from ${from(release.order)}) is older than the live one (from ${from(install.releaseOrder)})`
+    : `${what} (${release.version}) is older than the live one (${install.releaseVersion})`;
+  const data = { live: install.releaseVersion, candidate: release.version };
+  // Only setup puts an older Gateway back, and only when asked to.
+  if (allowDowngradeFlag) {
+    return new EveryAppError("DOWNGRADE_REFUSED", message, {
+      fix: checkout
+        ? "git pull, then run setup again"
+        : "pass --release a newer Gateway release",
+      rerun: thisCommand(["--allow-downgrade"]),
+      authorize: true,
+      data,
+    });
+  }
+  return new EveryAppError("DOWNGRADE_REFUSED", message, {
+    fix: checkout ? "git pull" : "run everyapp from a checkout at least as new",
+    rerun: thisCommand(),
+    rerunNote: "after that",
+    data,
+  });
 }
 
 /**
@@ -245,13 +265,15 @@ function downgradeRefused(
  * run, and never one the install already serves.
  */
 class DomainChecks {
-  private readonly checked = new Set<string>();
+  private readonly checked: Set<string>;
   private readonly warned = new Set<string>();
 
   constructor(
     private readonly options: ApplyGatewayOptions,
     readonly liveDomains: readonly string[],
-  ) {}
+  ) {
+    this.checked = new Set(options.checkedDomains);
+  }
 
   /** The domains the gateway publishes for these app hosts. */
   domainsFor(appHosts: readonly string[]): string[] {
@@ -263,7 +285,8 @@ class DomainChecks {
       out.emit({
         type: "warning",
         code: "APP_HOST_OUTSIDE_BASE",
-        message: `Not publishing ${unwarned.join(", ")}: app hosts live one label below ${appBaseDomain}.`,
+        message: `Skipping ${unwarned.join(", ")}: ${unwarned.length === 1 ? "it isn't" : "they aren't"} under ${appBaseDomain}\nApps live one level below the Gateway's domain (<name>.${appBaseDomain}).`,
+        data: { hosts: unwarned },
       });
       for (const host of unwarned) this.warned.add(host);
     }
@@ -342,9 +365,11 @@ export async function applyGateway(
         interactive: options.interactive,
         confirm: options.confirm,
         change: {
-          question: "Replace it?",
+          question: `Replace it with ${release.manifest.version}?`,
+          // Even an upgrade: an upgrade to a newer release yet may have
+          // stopped before recording itself.
           effect:
-            "Deploying replaces it, with an older release if it runs a newer one (an upgrade that stopped before recording itself).",
+            "If it runs a newer release (an upgrade that stopped before recording itself), this puts an older one back.",
         },
       });
       await lease.check();
@@ -376,7 +401,7 @@ async function migrate({
     type: "step",
     step: "gateway.migrations",
     status: "start",
-    message: "Migrating the Gateway's database...",
+    message: "Migrating the Gateway's database",
   });
   const result = await migrateRemoteD1({
     cf,
@@ -391,9 +416,11 @@ async function migrate({
     type: "step",
     step: "gateway.migrations",
     status: "ok",
-    message: result.applied.length > 0
-      ? `Applied ${plural(result.applied.length, "migration")}.${restorePointNote(result.rollback)}`
-      : "The gateway's database is up to date.",
+    message: result.fresh
+      ? "Database created"
+      : result.applied.length > 0
+        ? `Applied ${plural(result.applied.length, "migration")}.${restorePointNote(result.rollback)}`
+        : "Database up to date",
     data: migrationEventData(result),
   });
   return result.rollback;
@@ -422,14 +449,24 @@ async function deploy(
     out.emit({
       type: "warning",
       code: "APP_NOT_BOUND",
-      message: `Not binding app "${row.appId}": its Worker "${row.workerName}" isn't the one its registry row names.`,
+      message: `Skipping ${row.appId}: its Worker isn't the one everyapp registered\nSo the Gateway won't route to it.`,
+      data: {
+        appId: row.appId,
+        workerName: row.workerName,
+        fix: `deploy ${row.appId} again, or remove it with ${CLI} delete ${row.appId}`,
+      },
     });
   }
   for (const row of desired.missing) {
     out.emit({
       type: "warning",
       code: "APP_WORKER_MISSING",
-      message: `Not binding app "${row.appId}": its Worker "${row.workerName}" doesn't exist (deleted by hand, or never uploaded). Deploy the app again, or delete it.`,
+      message: `Skipping ${row.appId}: its Worker is missing\nIt was deleted by hand or never uploaded, so the Gateway won't route to it.`,
+      data: {
+        appId: row.appId,
+        workerName: row.workerName,
+        fix: `deploy ${row.appId} again, or remove it with ${CLI} delete ${row.appId}`,
+      },
     });
   }
   const domains = domainChecks.domainsFor(desired.appHosts);
@@ -439,7 +476,7 @@ async function deploy(
     type: "step",
     step: "gateway.deploy",
     status: "start",
-    message: `Deploying gateway ${release.manifest.version} with ${plural(desired.appWorkers.length, "app")}...`,
+    message: `Uploading Gateway ${release.manifest.version} with ${plural(desired.appWorkers.length, "app")}`,
     data: { appWorkers: desired.appWorkers, domains },
   });
   // A Worker without a version yet gets a new identity key pair and its
@@ -465,7 +502,7 @@ async function deploy(
     type: "step",
     step: "gateway.deploy",
     status: "ok",
-    message: `Deployed gateway version ${deployed.versionId ?? "(unknown)"}.`,
+    message: deployed.versionId ? `Uploaded version ${deployed.versionId}` : "Uploaded",
     data: { versionId: deployed.versionId },
   });
   return {

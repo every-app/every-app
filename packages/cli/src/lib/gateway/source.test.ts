@@ -47,7 +47,7 @@ describe("where the Gateway comes from", () => {
     expect(github.requests).toHaveLength(3);
     expect(used().map((event) => event.message)).toEqual([
       "Downloading the latest Gateway release...",
-      "Using Gateway 0.2.0 from every-app/every-app release gateway-v0.2.0.",
+      "Using Gateway 0.2.0 from every-app/every-app release gateway-v0.2.0",
     ]);
   });
 
@@ -76,7 +76,7 @@ describe("where the Gateway comes from", () => {
       treeSha256: null,
     });
     expect(used().map((event) => event.message)).toEqual([
-      `Using Gateway 0.2.0 from ${tarball}.`,
+      `Using Gateway 0.2.0 from ${tarball}`,
     ]);
   });
 

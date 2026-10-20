@@ -249,6 +249,8 @@ async function buildReleaseFromCheckout(
       echo: verbose,
       what: "Building the Gateway",
       code: "GATEWAY_BUILD_FAILED",
+      fix: "fix the build error above, then run this again",
+      logName: "gateway-build",
     });
   // The gateway build resolves @every-app/sdk from its dist/.
   await build(["--filter", "@every-app/sdk", "build"], root);

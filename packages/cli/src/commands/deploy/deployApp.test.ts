@@ -974,7 +974,7 @@ describe("deploy", () => {
     const login = expect.objectContaining({
       type: "action_required",
       action: "cloudflare_login",
-      data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", waiting: true, waitingFor: "Cloudflare login" },
+      data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", expiresAt: expect.any(String), waiting: true, waitingFor: "Cloudflare login" },
     });
 
     await expect(deploy(TODO, { json: true })).resolves.toMatchObject({ live: true });
@@ -1010,9 +1010,9 @@ describe("deploy", () => {
 
     expect(refused).toMatchObject({
       code: "DOWNGRADE_REFUSED",
-      message: expect.stringMatching(
-        /^This checkout's Gateway \(0\.1\.0\) is older than the one live at https:\/\/example\.com \(0\.2\.0\)\. Run git pull, then: pnpm everyapp/,
-      ),
+      message: "This checkout's Gateway (0.1.0) is older than the live one (0.2.0)",
+      fix: "git pull",
+      rerun: expect.stringMatching(/^pnpm everyapp/),
       authorize: false,
     });
     expect((refused as { rerun: string }).rerun).not.toContain("--allow-downgrade");
@@ -2010,7 +2010,7 @@ describe("deploy with no Gateway in the account yet", () => {
       pickZone: async (): Promise<string> => {
         throw new Error("asked which zone");
       },
-      hostname: async (): Promise<string> => {
+      gatewayAddress: async (): Promise<string> => {
         throw new Error("asked for a hostname");
       },
     },

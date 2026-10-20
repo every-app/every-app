@@ -131,9 +131,15 @@ describe("resolveAccount", () => {
     await expect(
       resolveAccount({ whoami: whoami(), interactive: false }),
     ).rejects.toMatchObject({
-      code: "ACCOUNT_REQUIRED",
-      message: expect.stringMatching(/^This login can use 2 Cloudflare accounts; pick one\n[\s\S]*Globex +acct-2/),
-      rerun: expect.stringMatching(/--account-id <id>$/),
+      action: "choose_account",
+      message: "Choose the Cloudflare account to install in\ndev@example.com can use 2 accounts. Run one of:",
+      rerun: null,
+      data: {
+        choices: [
+          expect.objectContaining({ label: "Acme", rerun: expect.stringMatching(/--account-id acct-1$/) }),
+          expect.objectContaining({ label: "Globex", rerun: expect.stringMatching(/--account-id acct-2$/) }),
+        ],
+      },
     });
   });
 

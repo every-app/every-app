@@ -14,7 +14,7 @@ import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { gatewayReleaseSource } from "@/lib/gateway/source";
 import { cfD1Database } from "@/lib/cf/d1";
-import { createNdjsonSink, type EventSink } from "@/lib/output/events";
+import { createHumanSink, createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { reportFailure } from "@/lib/output/report";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { fakeGithubReleases } from "@/test/fakeGithub";
@@ -77,7 +77,7 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
       pickZone: async () => {
         throw new Error("asked a person");
       },
-      hostname: async () => {
+      gatewayAddress: async () => {
         throw new Error("asked a person");
       },
     },
@@ -147,6 +147,8 @@ describe("everyapp setup", () => {
     ]);
     expect(result).toEqual({
       gatewayUrl: `https://${GW}`,
+      account: expect.any(String),
+      owner: "owner@example.com",
       organizationName: "Owner",
       release: "0.2.0",
       gateway: "installed",
@@ -182,7 +184,7 @@ describe("everyapp setup", () => {
       expect.objectContaining({
         step: "setup.owner",
         status: "ok",
-        message: "Owner created: owner@example.com (Owner).",
+        message: "Owner account created for owner@example.com",
         data: { email: "owner@example.com", organizationName: "Owner" },
       }),
     );
@@ -246,7 +248,7 @@ describe("everyapp setup", () => {
       expect.objectContaining({
         step: "setup.gateway",
         status: "start",
-        data: expect.objectContaining({ gatewayUrl: `https://${GW}`, from: null }),
+        data: expect.objectContaining({ gatewayUrl: `https://${GW}`, from: null, change: "resume" }),
       }),
     );
     expect(account.gatewayDomains()).toEqual([GW]);
@@ -428,8 +430,9 @@ describe("everyapp setup", () => {
     expect(events.at(-1)).toMatchObject({
       type: "error",
       code: "DOWNGRADE_REFUSED",
-      message: expect.stringContaining("Run git pull, then: pnpm everyapp"),
+      message: "This checkout's Gateway (0.2.0 from Oct 12) is older than the live one (from Oct 13)",
       data: {
+        fix: "git pull, then run setup again",
         rerun: expect.stringContaining("--allow-downgrade"),
         authorize: true,
       },
@@ -468,7 +471,7 @@ describe("everyapp setup", () => {
       expect(events).toContainEqual(
         expect.objectContaining({
           step: "gateway.release",
-          message: "Using Gateway 0.2.0 from every-app/every-app release gateway-v0.2.0.",
+          message: "Using Gateway 0.2.0 from every-app/every-app release gateway-v0.2.0",
         }),
       );
       // No checkout: no tree hash, ordered by the release's release.json.
@@ -495,7 +498,7 @@ describe("everyapp setup", () => {
       expect(exitCode).toBe(0);
       expect(result).toMatchObject({ gateway: "installed", release: "0.2.0" });
       expect(events).toContainEqual(
-        expect.objectContaining({ step: "gateway.release", message: `Using Gateway 0.2.0 from ${tarball}.` }),
+        expect.objectContaining({ step: "gateway.release", message: `Using Gateway 0.2.0 from ${tarball}` }),
       );
       expect(account.deploys).toHaveLength(1);
     });
@@ -510,11 +513,11 @@ describe("everyapp setup", () => {
       expect(events.at(-1)).toMatchObject({
         type: "error",
         code: "CLI_TOO_OLD",
-        message: expect.stringContaining(
-          "Gateway release 0.4.0 needs everyapp 0.4.0 or newer; this is 0.3.0",
-        ),
+        message: "Gateway 0.4.0 needs everyapp 0.4.0 or newer (this is 0.3.0)",
       });
+      // Before anything is asked or created.
       expect(account.deploys).toHaveLength(0);
+      expect(account.databases.size).toBe(0);
     });
 
     it("refuses a release older than the live Gateway, by its release.json", async () => {
@@ -535,32 +538,65 @@ describe("everyapp setup", () => {
       expect(events.at(-1)).toMatchObject({
         type: "error",
         code: "DOWNGRADE_REFUSED",
-        message: expect.stringContaining(
-          `The Gateway from ${tarball} (0.2.0 of 2026-10-12) is older than the one live at https://${GW} (0.2.0 of 2026-10-13). Pass --release a newer one, or run everyapp from a checkout at least as new`,
-        ),
-        data: { rerun: expect.stringContaining("--allow-downgrade"), authorize: true },
+        message: `The Gateway from ${tarball} (0.2.0 from Oct 12) is older than the live one (from Oct 13)`,
+        data: {
+          fix: "pass --release a newer Gateway release",
+          rerun: expect.stringContaining("--allow-downgrade"),
+          authorize: true,
+        },
       });
       expect(account.deploys).toHaveLength(deploys);
     });
   });
 
-  it("never puts the owner setup link into a CI log", async () => {
+  it("never puts the owner setup link into a CI log, and ends done: apps deploy without an owner", async () => {
     vi.stubEnv("CI", "true");
 
-    const { exitCode } = await setup({ domain: GW });
+    const { exitCode, result } = await setup({ domain: GW });
 
-    expect(exitCode).toBe(2);
-    expect(events.at(-1)).toMatchObject({
-      type: "action_required",
-      action: "claim_owner",
-      message: expect.stringContaining("Run `pnpm everyapp setup` at a terminal"),
+    expect(exitCode).toBe(0);
+    expect(result).toMatchObject({ gateway: "installed", owner: null, ownerCreated: false });
+    expect(events.find((event) => event.code === "OWNER_NOT_CLAIMED")).toMatchObject({
+      type: "warning",
+      step: "setup.owner",
+      message: expect.stringMatching(/^The Gateway has no owner yet\nApps deploy without one\./),
+      // No link: only the command to run at a terminal.
+      data: { rerun: "pnpm everyapp setup", rerunNote: "at a terminal", needsTerminal: true },
     });
-    expect(events.at(-1).message).toContain("apps deploy without one");
-    // No link: only the command to run at a terminal.
-    expect(events.at(-1).data).toEqual({ rerun: "pnpm everyapp setup" });
+    expect(events.some((event) => event.type === "action_required")).toBe(false);
     expect(JSON.stringify(events)).not.toContain("#token=");
     // None minted, so a link someone already has keeps working.
     expect(account.database("every-app-gateway").all("SELECT id FROM owner_setup_tokens")).toEqual([]);
+  });
+
+  it("shows a person in CI each step on a line, then the warning that the owner is left", async () => {
+    vi.stubEnv("CI", "true");
+    let stdout = "";
+    let stderr = "";
+    const out = createHumanSink({
+      write: (text) => {
+        stdout += text;
+      },
+      writeProblem: (text) => {
+        stderr += text;
+      },
+    });
+    const plain = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, "").split("\n").slice(0, -1);
+
+    await runSetup({ domain: GW }, out, deps());
+
+    expect(out.exitCode).toBe(0);
+    expect(plain(stdout)).toEqual([
+      "Setting up Every App in Acme (dev@example.com)",
+      "Installing Gateway 0.2.0 at apps.example.com",
+      expect.stringMatching(/^Database created ✓/),
+      expect.stringMatching(/^Uploaded ✓/),
+    ]);
+    expect(plain(stderr)).toEqual([
+      "! The Gateway has no owner yet",
+      "  Apps deploy without one. To create it, run setup at a terminal with this Cloudflare login.",
+      "  Run: pnpm everyapp setup at a terminal",
+    ]);
   });
 
   it("says what is in front of the gateway before handing out the link, and waits all the same", async () => {
@@ -585,7 +621,7 @@ describe("everyapp setup", () => {
       expect.objectContaining({
         type: "warning",
         code: "GATEWAY_UNREACHABLE",
-        message: expect.stringContaining("certificate may still be on its way"),
+        message: expect.stringContaining("Its certificate is probably still on the way"),
       }),
     );
   });
@@ -603,7 +639,7 @@ describe("everyapp setup", () => {
 
     expect(exitCode).toBe(0);
     const warning = events.find((event) => event.code === "GATEWAY_UNREACHABLE");
-    expect(warning.message).toContain("DNS has no address for it yet");
+    expect(warning.message).toContain(`DNS has no address for ${GW} yet`);
     expect(warning.message).not.toContain("certificate");
   });
 
@@ -616,9 +652,11 @@ describe("everyapp setup", () => {
     expect(first.exitCode).toBe(2);
     expect(links()).toHaveLength(2);
     expect(links()[1]).toMatchObject({
-      message: expect.stringContaining("open it, then run `pnpm everyapp setup` again"),
-      data: { url: links()[0].data.url },
+      message: expect.stringMatching(/^Open the setup link above to create the owner account\nNobody opened it within /),
+      // Not shown again: it is on the screen already.
+      data: { setupUrl: links()[0].data.url, rerun: "pnpm everyapp setup", rerunNote: "to finish" },
     });
+    expect(links()[1].data.url).toBeUndefined();
     const url = links()[0].data.url;
 
     // A resumed setup mints a new link, and says the earlier one no longer
@@ -627,7 +665,9 @@ describe("everyapp setup", () => {
     const second = await setup();
     expect(second.exitCode).toBe(0);
     expect(links()[0].data.url).not.toBe(url);
-    expect(links()[0].message).toContain("The setup link shown before no longer works");
+    expect(links()[0].message).toMatch(
+      /^Open this new link to create the owner account\nThe link shown before no longer works\./,
+    );
     expect(() => worker.claim(url)).toThrow("INVALID_OR_EXPIRED_SETUP_LINK");
     expect(steps()).toContain("setup.owner ok");
   });
@@ -734,7 +774,7 @@ describe("everyapp setup", () => {
       expect.objectContaining({
         type: "action_required",
         action: "cloudflare_login",
-        data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", waiting: true, waitingFor: "Cloudflare login" },
+        data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", expiresAt: expect.any(String), waiting: true, waitingFor: "Cloudflare login" },
       }),
     );
     expect(steps()).toContain("setup.owner ok");
@@ -749,7 +789,7 @@ describe("everyapp setup", () => {
     expect(events.at(-1)).toMatchObject({
       type: "action_required",
       action: "add_domain",
-      message: expect.stringContaining("Domains → Buy a domain"),
+      message: expect.stringMatching(/^Add a domain to this Cloudflare account\n/),
       data: { url: `https://dash.cloudflare.com/${account.accountId}/domains/overview` },
     });
     expect(account.deploys).toEqual([]);
@@ -763,11 +803,15 @@ describe("everyapp setup", () => {
     expect(events.at(-1)).toMatchObject({
       type: "error",
       code: "DOMAIN_REQUIRED",
-      message: expect.stringContaining("--domain apps.example.com"),
+      message: expect.stringMatching(/^Choose the Gateway's address with --domain\n.*: example\.com\./),
+      data: expect.objectContaining({
+        fix: "add --domain apps.example.com, or another name under example.com",
+      }),
     });
   });
 
   it("warns about Workers Paid it can't confirm, never asks, and stops when Cloudflare refuses for the plan", async () => {
+    account.cf.override(["accounts", "subscriptions", "get"], { stdout: "[]" });
     account.failNextDeploy = "Your account must be on the Workers Paid plan to use this feature.";
 
     const refused = await setup({ domain: GW });
@@ -779,6 +823,7 @@ describe("everyapp setup", () => {
     expect(events.at(-1)).toMatchObject({
       type: "action_required",
       action: "upgrade_workers_paid",
+      message: expect.stringMatching(/^Subscribe this account to Workers Paid\n/),
       data: { url: `https://dash.cloudflare.com/${ACCOUNT_ID}/workers/plans` },
     });
 
@@ -787,9 +832,89 @@ describe("everyapp setup", () => {
     events = [];
     const { exitCode } = await setup({ domain: GW }, { interactive: true });
     expect(exitCode).toBe(0);
+  });
+
+  it("stops on a plan that reads as Free before creating anything", async () => {
+    account.cf.override(["accounts", "subscriptions", "get"], {
+      stdout: JSON.stringify([{ state: "Paid", rate_plan: { id: "workers_free", public_name: "Workers Free" } }]),
+    });
+
+    const { exitCode } = await setup({ domain: GW });
+
+    expect(exitCode).toBe(2);
+    expect(events.at(-1)).toMatchObject({
+      type: "action_required",
+      action: "upgrade_workers_paid",
+      data: { url: `https://dash.cloudflare.com/${ACCOUNT_ID}/workers/plans`, plan: "free" },
+    });
+    expect(account.databases.size).toBe(0);
+    expect(account.deploys).toEqual([]);
+  });
+
+  it("only notes a plan it can't read, for --verbose", async () => {
+    account.cf.override(["accounts", "subscriptions", "get"], {
+      exitCode: 1,
+      stderr: "┌ Error\n│ Authentication error [code: 10000]\n└\n",
+    });
+
+    const { exitCode } = await setup({ domain: GW });
+
+    expect(exitCode).toBe(0);
+    expect(events.some((event) => event.code === "WORKERS_PAID_UNVERIFIED")).toBe(false);
     expect(events).toContainEqual(
-      expect.objectContaining({ type: "warning", code: "WORKERS_PAID_UNVERIFIED" }),
+      expect.objectContaining({ step: "setup.plan", status: "skip", data: expect.objectContaining({ plan: "unreadable" }) }),
     );
+  });
+
+  it("refuses a --domain in no zone of the account, naming the account's domains", async () => {
+    const { exitCode } = await setup({ domain: "apps.example.org" });
+
+    expect(exitCode).toBe(1);
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      code: "ZONE_NOT_FOUND",
+      message: "apps.example.org isn't under a domain in this Cloudflare account\nThis account's domains: example.com",
+      data: { url: `https://dash.cloudflare.com/${ACCOUNT_ID}/domains/overview`, zones: ["example.com"] },
+    });
+    expect(account.databases.size).toBe(0);
+  });
+
+  it("asks for a --domain whose zone isn't active yet to be finished, then the same command", async () => {
+    account.zones.push({ id: "zone-2", name: "pending.dev", status: "pending" });
+
+    const { exitCode } = await setup({ domain: "apps.pending.dev" });
+
+    expect(exitCode).toBe(2);
+    expect(events.at(-1)).toMatchObject({
+      type: "action_required",
+      action: "add_domain",
+      message: "Finish activating pending.dev on Cloudflare\nIts nameservers don't point at Cloudflare yet.",
+      data: { url: `https://dash.cloudflare.com/${ACCOUNT_ID}/pending.dev` },
+    });
+  });
+
+  it("refuses a --domain that isn't a hostname before asking Cloudflare anything", async () => {
+    const { exitCode } = await setup({ domain: "everyapp" });
+
+    expect(exitCode).toBe(1);
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      code: "INVALID_DOMAIN",
+      message: "--domain everyapp isn't a full hostname",
+      data: { fix: "use a name like apps.example.com" },
+    });
+    expect(account.cf.calls).toEqual([]);
+  });
+
+  it("checks the new address's DNS before it says the install starts", async () => {
+    account.dnsRecords.push({ zoneId: "zone-1", name: GW, type: "CNAME", content: "ghs.googlehosted.com" });
+
+    const { exitCode } = await setup({ domain: GW });
+
+    expect(exitCode).toBe(1);
+    expect(events.at(-1)).toMatchObject({ type: "error", code: "DNS_RECORD_CONFLICT" });
+    expect(events.some((event) => event.step === "setup.gateway")).toBe(false);
+    expect(account.databases.size).toBe(0);
   });
 
   it("asks a person at a terminal where the gateway goes, and opens the setup link", async () => {
@@ -801,11 +926,14 @@ describe("everyapp setup", () => {
       {
         interactive: true,
         prompts: {
-          pickZone: async (zones) => {
-            asked.push(zones.join(","));
-            return "example.com";
+          pickZone: async () => {
+            throw new Error("asked for a zone");
           },
-          hostname: async (zone) => `tools.${zone}`,
+          // One question, under any of the account's domains.
+          gatewayAddress: async (zones) => {
+            asked.push(zones.join(","));
+            return "Tools.Example.com";
+          },
         },
       },
     );

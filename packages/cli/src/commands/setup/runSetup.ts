@@ -17,13 +17,16 @@
  *                (lib/gateway/discover.ts), or with none, where to install
  *                one: --account-id, CLOUDFLARE_ACCOUNT_ID, the only one, or
  *                a choice at the terminal
- *    plan        Workers Paid: warned about, never required
+ *    release     what this run deploys (lib/gateway/source.ts), described
+ *                before anything is asked: a --release that can't be had,
+ *                or one that needs a newer everyapp, stops here
+ *    plan        Workers Paid: a Free plan stops the run before anything is
+ *                created; one that can't be confirmed is warned about
  *    domain      where the gateway lives: --domain, the install row's (also
- *                one an install wrote before it stopped), or a zone picked
- *                at the terminal (apps.<zone>)
- *    gateway     installed, or upgraded to the release --release names,
- *                this checkout builds, or without a checkout, the latest
- *                published one (lib/gateway/source.ts); when it runs that
+ *                one an install wrote before it stopped), or an address
+ *                typed at the terminal, under any of the account's active
+ *                zones; a new one's DNS is checked before anything starts
+ *    gateway     installed, or upgraded to that release; when it runs that
  *                release already (told by the install row's tree hash
  *                before anything is built, or the release's SHA-256), repaired:
  *                redeployed only if it doesn't bind and publish exactly the
@@ -33,7 +36,8 @@
  *                --allow-downgrade
  *    owner       a one-time setup link, opened in the browser (never put
  *                into a CI log), and the wait for the claim, read from the
- *                link's own row in D1
+ *                link's own row in D1. In CI the run ends without one, with
+ *                a warning: apps deploy without an owner
  *
  * What can be set up next (AI, email) is the command's `done.data.next`.
  * With --json, each step is an NDJSON event and what only a person can do
@@ -49,7 +53,8 @@ import {
 } from "@/lib/cf/account";
 import { PINNED_CF_VERSION } from "@/lib/cf/bin";
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
-import { hasWorkersPaid } from "@/lib/cf/plan";
+import { workersPlansUrl } from "@/lib/cf/deploy";
+import { WorkersPlan, workersPlan } from "@/lib/cf/plan";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
 import { waitForCertificates } from "@/lib/domains/certWait";
@@ -59,9 +64,11 @@ import {
   type HttpsAnswer,
   type NoAnswerKind,
 } from "@/lib/domains/https";
-import { listZones, registerDomainUrl } from "@/lib/domains/zones";
-import { ActionRequiredError, errorMessage, EveryAppError } from "@/lib/errors";
+import { preflightDomains } from "@/lib/domains/preflight";
+import { listZones, registerDomainUrl, zoneUrl } from "@/lib/domains/zones";
+import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import { candidate, isLiveRelease, refuseDowngrade } from "@/lib/gateway/apply";
+import { GatewayChange } from "@/lib/gateway/change";
 import { discoverGateway, type Discovery } from "@/lib/gateway/discover";
 import type { InstallRecord } from "@/lib/gateway/install";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
@@ -79,10 +86,9 @@ import {
   waitForSetupLink,
   type GatewayOwner,
 } from "@/lib/gateway/setup-link";
-import { CLI } from "@/lib/output/command";
+import { CLI, thisCommandWithout } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { askText, choose } from "@/lib/output/prompt";
-import { plural } from "@/lib/output/text";
 import { deployGatewayRelease, gatewayTarget } from "./deployGateway";
 
 export interface SetupFlags {
@@ -108,8 +114,10 @@ export interface SetupFlags {
  * which account and where.
  */
 interface SetupPrompts {
+  /** The zone a Gateway `deploy` offers to install goes under (apps.<zone>). */
   pickZone(zones: string[]): Promise<string>;
-  hostname(zone: string): Promise<string>;
+  /** The Gateway's address, under one of `zones`. */
+  gatewayAddress(zones: string[]): Promise<string>;
 }
 
 /** Everything setup reaches outside itself; tests swap in fakes. */
@@ -149,6 +157,10 @@ type GatewayOutcome = "installed" | "upgraded" | "repaired" | "up-to-date";
 
 interface SetupResult {
   gatewayUrl: string;
+  /** The Cloudflare account it is in, as a person knows it. */
+  account: string;
+  /** Its owner's email; null while nobody has claimed it (in CI). */
+  owner: string | null;
   organizationName: string | null;
   /** The release the Gateway runs now. */
   release: string;
@@ -181,6 +193,8 @@ export async function runSetup(
   out: EventSink,
   deps: SetupDeps,
 ): Promise<SetupResult> {
+  // Before anything is asked of Cloudflare: a --domain that isn't a hostname.
+  const domain = domainFlag(flags.domain);
   checkToolchain(out);
 
   // Cloudflare: login, then the Gateway the login's accounts have.
@@ -193,23 +207,36 @@ export async function runSetup(
     type: "step",
     step: "setup.auth",
     status: "ok",
-    message: `Logged in to Cloudflare${whoami.email ? ` as ${whoami.email}` : ""}.`,
+    message: `Logged in to Cloudflare${whoami.email ? ` as ${whoami.email}` : ""}`,
     data: { email: whoami.email ?? null },
   });
   const discovery = await discoverGateway({
     whoami,
     createCf: deps.createCf,
     accountId: flags["account-id"],
-    host: normalizeHostname(flags.domain),
+    host: domain,
+    hostFlag: "--domain",
     interactive: deps.interactive,
   });
   return installGateway({ whoami, discovery, flags, out, deps });
 }
 
+/** --domain, as a hostname; one that isn't is refused in the flag's name. */
+function domainFlag(value: string | undefined): string | undefined {
+  try {
+    return normalizeHostname(value);
+  } catch (error) {
+    if (!(error instanceof EveryAppError)) throw error;
+    throw new EveryAppError(error.code, `--domain ${value} isn't a full hostname`, {
+      fix: error.fix,
+    });
+  }
+}
+
 /**
- * Everything after the login: the account, the plan, where the Gateway
- * lives, the Gateway itself and its owner. `deploy` runs it as it is when
- * the login finds no Gateway and a person agrees to install one.
+ * Everything after the login: the account, the release, the plan, where
+ * the Gateway lives, the Gateway itself and its owner. `deploy` runs it as
+ * it is when the login finds no Gateway and a person agrees to install one.
  */
 export async function installGateway({
   whoami,
@@ -233,35 +260,61 @@ export async function installGateway({
       flag: flags["account-id"],
       interactive: deps.interactive,
     }));
+  const accountName = account.name ?? account.id;
   const cf = found?.cf ?? deps.createCf(account.id);
+  const install = found?.install ?? null;
+  // An install that stopped before its first upload isn't live yet.
+  const live = install?.liveVersionId ? install : null;
   out.emit({
     type: "step",
     step: "setup.account",
     status: "ok",
-    message: `Using Cloudflare account ${account.name ?? account.id}.`,
-    data: { id: account.id, name: account.name, email: whoami.email ?? null },
+    message: `Setting up Every App in ${accountName}`,
+    data: {
+      id: account.id,
+      name: account.name,
+      email: whoami.email ?? null,
+      gateway: live !== null,
+    },
   });
-  await checkPlan(cf, account.id, out);
+  assertModeUnchanged(live, flags.mode);
 
-  // Where the gateway lives.
-  const databaseId = found?.databaseId ?? null;
-  const install = found?.install ?? null;
-  const domain =
-    normalizeHostname(flags.domain) ??
-    install?.gatewayHost ??
-    (await pickDomain(cf, account.id, deps));
+  // What this run deploys, before anything is asked or created.
+  const source = await deps.source();
+  if (source.minCli) {
+    refuseNewerThanCli({ version: source.version, minCli: source.minCli }, deps.cliVersion);
+  }
+  if (!live) await checkPlan(cf, account.id, out);
+
+  // Where the gateway lives, and nothing in the way of a new address.
   const target = await gatewayTarget({
     cf,
     accountId: account.id,
     install,
-    domain,
+    domain:
+      domainFlag(flags.domain) ??
+      install?.gatewayHost ??
+      (await pickDomain(cf, account.id, deps)),
     out,
   });
+  const newHost = !live?.liveDomains.includes(target.domain);
+  if (newHost) {
+    await preflightDomains({
+      cf,
+      out,
+      step: "gateway.domains",
+      zone: target.zone,
+      domains: [target.domain],
+      liveDomains: [],
+      forceDns: flags["force-dns"],
+      cfAsks: deps.interactive && out.verbose,
+    });
+  }
   out.emit({
     type: "step",
     step: "setup.domain",
     status: "ok",
-    message: `The gateway lives at https://${target.domain}, each app one label below it (todo.${target.appBaseDomain}) as its own Custom Domain.`,
+    message: `Apps will live one level below ${target.appBaseDomain}`,
     data: {
       gatewayHost: target.domain,
       appBaseDomain: target.appBaseDomain,
@@ -270,14 +323,16 @@ export async function installGateway({
   });
 
   // The gateway.
-  assertModeUnchanged(install, flags.mode);
   const gatewayUrl = `https://${target.domain}`;
   const gateway = await deployOrRepairGateway({
     cf,
-    account,
+    accountId: account.id,
+    accountName,
     install,
-    databaseId,
+    databaseId: found?.databaseId ?? null,
     target,
+    source,
+    checkedDomains: newHost ? [target.domain] : [],
     flags,
     out,
     deps,
@@ -294,7 +349,9 @@ export async function installGateway({
 
   return {
     gatewayUrl,
-    organizationName: owner.organizationName || null,
+    account: accountName,
+    owner: owner?.email ?? null,
+    organizationName: owner?.organizationName || null,
     release: gateway.release,
     gateway: gateway.outcome,
     ownerCreated: created,
@@ -307,7 +364,7 @@ function checkToolchain(out: EventSink): void {
     type: "step",
     step: "setup.toolchain",
     status: "ok",
-    message: `Node ${process.versions.node}, cf ${PINNED_CF_VERSION}.`,
+    message: `Node ${process.versions.node}, cf ${PINNED_CF_VERSION}`,
     data: { node: process.versions.node, cf: PINNED_CF_VERSION },
   });
 }
@@ -316,33 +373,56 @@ function checkToolchain(out: EventSink): void {
  * The Free plan can't run Every App: D1 stops answering for the rest of
  * the day once a database reaches its daily row limits (enforced since
  * 2026-09-01), and the gateway reads D1 on every request; requests get
- * 10 ms of CPU; an account has 10 databases. Warned about, never asked or
- * required: the subscription's shape isn't verified, so a paid account
- * could read as unknown. When Cloudflare itself refuses for the plan, the
- * run stops with `upgrade_workers_paid` (lib/cf/deploy.ts, report.ts).
+ * 10 ms of CPU; an account has 10 databases. A plan that reads as Free
+ * stops a new install before anything is created; one that can't be told
+ * is warned about (or, when cf couldn't read it, noted with --verbose):
+ * Cloudflare refusing the upload for the plan still stops the run then
+ * (`upgrade_workers_paid`, lib/cf/deploy.ts).
  */
 async function checkPlan(
   cf: CfRunner,
   accountId: string,
   out: EventSink,
 ): Promise<void> {
-  if (await hasWorkersPaid(cf)) {
-    out.emit({
-      type: "step",
-      step: "setup.plan",
-      status: "ok",
-      message: "The account is on Workers Paid.",
-    });
-    return;
+  const plan = await workersPlan(cf);
+  const url = workersPlansUrl(accountId);
+  switch (plan) {
+    case WorkersPlan.Paid:
+      out.emit({
+        type: "step",
+        step: "setup.plan",
+        status: "ok",
+        message: "Account is on Workers Paid",
+        data: { plan },
+      });
+      return;
+    case WorkersPlan.Free:
+      throw new ActionRequiredError(
+        "upgrade_workers_paid",
+        "Subscribe this account to Workers Paid\nIt's on the Free plan. Every App needs Workers Paid ($5 a month, then usage): on Free, the Gateway stops once D1 hits its daily limit.",
+        url,
+        { data: { plan } },
+      );
+    case WorkersPlan.Unknown:
+      out.emit({
+        type: "warning",
+        code: "WORKERS_PAID_UNVERIFIED",
+        step: "setup.plan",
+        message:
+          "Couldn't confirm this account is on Workers Paid\nEvery App needs it ($5 a month, then usage). On Free, the Gateway stops once D1 hits its daily limit.",
+        data: { url, plan },
+      });
+      return;
+    case WorkersPlan.Unreadable:
+      out.emit({
+        type: "step",
+        step: "setup.plan",
+        status: "skip",
+        message: "Couldn't read this account's plan; Cloudflare refuses the upload if it's on Free",
+        data: { url, plan },
+      });
+      return;
   }
-  const url = `https://dash.cloudflare.com/${accountId}/workers/plans`;
-  out.emit({
-    type: "warning",
-    code: "WORKERS_PAID_UNVERIFIED",
-    step: "setup.plan",
-    message: `Couldn't confirm this account is on Workers Paid ($5 a month, then usage). Every App needs it: on the Free plan D1 stops answering for the rest of the day once it reaches its daily limits (and the gateway reads D1 on every request), requests get 10 ms of CPU, and an account has 10 databases. Subscribe at ${url}.`,
-    data: { url },
-  });
 }
 
 /**
@@ -353,17 +433,22 @@ export async function activeZones(cf: CfRunner, accountId: string): Promise<stri
   const zones = await listZones(cf, accountId);
   const active = zones.filter((zone) => !zone.status || zone.status === "active");
   if (active.length > 0) return active.map((zone) => zone.name);
-  const pending = zones.map((zone) => zone.name);
+  const [pending] = zones;
+  if (pending) {
+    throw new ActionRequiredError(
+      "add_domain",
+      `Finish activating ${zones.map((zone) => zone.name).join(", ")} on Cloudflare\n${zones.length === 1 ? "Its nameservers don't" : "Their nameservers don't"} point at Cloudflare yet.`,
+      zoneUrl(accountId, pending.name),
+    );
+  }
   throw new ActionRequiredError(
     "add_domain",
-    pending.length > 0
-      ? `${pending.join(", ")} ${pending.length === 1 ? "isn't" : "aren't"} active yet: finish ${pending.length === 1 ? "its" : "their"} nameserver setup in the Cloudflare dashboard, then run this command again.`
-      : `Every App needs a domain on Cloudflare, and this account has none. Buy one in the Cloudflare dashboard: Domains → Buy a domain (${registerDomainUrl(accountId)}; a Worker's Domains tab sells them too). Cloudflare Registrar charges what the registry does, about $10 a year for a .com, and the domain is ready in minutes with nothing to configure. Or add a domain you own and point its nameservers at Cloudflare. Then run this command again; a subdomain of it works best, e.g. apps.<your domain>.`,
+    "Add a domain to this Cloudflare account\nEvery App needs one. Buy one in the dashboard (about $10 a year for a .com, ready in minutes),\nor point a domain you own at Cloudflare's nameservers.",
     registerDomainUrl(accountId),
   );
 }
 
-/** A hostname for the gateway, picked at the terminal from the account's zones. */
+/** The gateway's address, typed at the terminal under one of the account's zones. */
 async function pickDomain(
   cf: CfRunner,
   accountId: string,
@@ -373,48 +458,63 @@ async function pickDomain(
   if (!deps.interactive) {
     throw new EveryAppError(
       "DOMAIN_REQUIRED",
-      `Pass --domain with a hostname in one of this account's zones, e.g. --domain apps.${zones[0]!}. Zones: ${zones.join(", ")}.`,
-      { rerun: `${CLI} setup --domain apps.${zones[0]!}` },
+      `Choose the Gateway's address with --domain\nIt must be under one of this account's domains: ${zones.join(", ")}. A subdomain works best.`,
+      {
+        fix: `add --domain apps.${zones[0]!}, or another name under ${orList(zones)}`,
+        data: { zones },
+      },
     );
   }
-  const zone = zones.length === 1 ? zones[0]! : await deps.prompts.pickZone(zones);
-  return normalizeHostname(await deps.prompts.hostname(zone));
+  return normalizeHostname(await deps.prompts.gatewayAddress(zones));
+}
+
+/** "a", "a or b", "a, b or c". */
+function orList(items: readonly string[]): string {
+  return items.length <= 1
+    ? (items[0] ?? "")
+    : `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`;
 }
 
 /**
- * The Gateway this run deploys (lib/gateway/source.ts), live: installed,
- * upgraded, or when it already runs these sources (told by the install
- * row's tree hash, before anything is built) or this very release,
+ * The Gateway this run deploys (`source`, lib/gateway/source.ts), live:
+ * installed, upgraded, or when it already runs these sources (told by the
+ * install row's tree hash, before anything is built) or this very release,
  * repaired if its bindings or hostnames aren't the registry's. A Gateway
  * behind the live release is refused, unless --allow-downgrade.
  */
 async function deployOrRepairGateway({
   cf,
-  account,
+  accountId,
+  accountName,
   install,
   databaseId,
   target,
+  source,
+  checkedDomains,
   flags,
   out,
   deps,
 }: {
   cf: CfRunner;
-  account: { id: string; name: string | null };
+  accountId: string;
+  accountName: string;
   install: InstallRecord | null;
   databaseId: string | null;
   target: Awaited<ReturnType<typeof gatewayTarget>>;
+  source: CandidateRelease;
+  checkedDomains: string[];
   flags: SetupFlags;
   out: EventSink;
   deps: SetupDeps;
 }): Promise<{ db: D1Database; release: string; outcome: GatewayOutcome }> {
   const gatewayUrl = `https://${target.domain}`;
-  // An install that stopped before its first upload isn't live yet.
   const live = install?.liveVersionId ? install : null;
   const allowDowngrade = flags["allow-downgrade"] ?? false;
   const repair = (openRelease: () => Promise<GatewayRelease>) =>
     repairGateway({
       cf,
-      accountId: account.id,
+      accountId,
+      accountName,
       install: live!,
       databaseId: databaseId!,
       openRelease,
@@ -424,7 +524,6 @@ async function deployOrRepairGateway({
     });
   if (live && databaseId) {
     // Before building: a minute or two, for nothing, on a fresh machine.
-    const source = await deps.source();
     if (
       (source.treeSha256 && source.treeSha256 === live.sourceTreeSha256) ||
       (source.sha256 && source.sha256 === live.releaseSha256)
@@ -434,6 +533,26 @@ async function deployOrRepairGateway({
     if (!allowDowngrade) refuseDowngrade(source, live, { allowDowngradeFlag: true });
   }
 
+  // Said before the release is opened: a checkout's build takes a minute or two.
+  out.emit({
+    type: "step",
+    step: "setup.gateway",
+    status: "start",
+    message: live
+      ? `Upgrading the Gateway ${live.releaseVersion} → ${source.version}`
+      : `Installing Gateway ${source.version} at ${target.domain}`,
+    data: {
+      change: live
+        ? GatewayChange.Upgrade
+        : install?.gatewayHost === target.domain
+          ? GatewayChange.Resume
+          : GatewayChange.Install,
+      release: source.version,
+      from: live?.releaseVersion ?? null,
+      gatewayUrl,
+      account: accountName,
+    },
+  });
   const release = await deps.openRelease();
   try {
     const manifest = release.manifest;
@@ -444,28 +563,16 @@ async function deployOrRepairGateway({
         refuseDowngrade(candidate(release), live, { allowDowngradeFlag: true });
       }
     }
-    out.emit({
-      type: "step",
-      step: "setup.gateway",
-      status: "start",
-      message: live
-        ? `Upgrading the gateway to release ${manifest.version}...`
-        : `Installing the gateway at ${gatewayUrl} in ${account.name ?? account.id}...`,
-      data: {
-        release: manifest.version,
-        from: live?.releaseVersion ?? null,
-        gatewayUrl,
-      },
-    });
     const { result, db } = await deployGatewayRelease({
       cf,
       out,
       reason: live ? "upgrade" : "deploy",
       release,
-      accountId: account.id,
+      accountId,
       target,
       interactive: deps.interactive,
       forceDns: flags["force-dns"],
+      checkedDomains,
       allowDowngrade,
       allowDowngradeFlag: true,
       deploymentMode: flags.mode,
@@ -477,7 +584,7 @@ async function deployOrRepairGateway({
       type: "step",
       step: "setup.gateway",
       status: "ok",
-      message: `Gateway ${manifest.version} is live at https://${target.domain}.`,
+      message: `Gateway ${manifest.version} is live at ${gatewayUrl}`,
       data: { versionId: result.versionId, release: manifest.version },
     });
     return {
@@ -490,21 +597,30 @@ async function deployOrRepairGateway({
   }
 }
 
+/** The modes as a person reads them. */
+const MODE_NAMES: Readonly<Record<DeploymentMode, string>> = {
+  self_hosted: "self-hosted",
+  hosted: "hosted",
+};
+
 /**
  * --mode decides what a new Gateway is: its first upload sets
  * GATEWAY_DEPLOYMENT_MODE, and nothing changes it after. On a live Gateway
  * the flag may only say what its install row recorded.
  */
 function assertModeUnchanged(
-  install: InstallRecord | null,
+  live: InstallRecord | null,
   mode: DeploymentMode | undefined,
 ): void {
-  if (!mode || !install?.liveVersionId || install.deploymentMode === mode) {
-    return;
-  }
+  if (!mode || !live?.deploymentMode || live.deploymentMode === mode) return;
   throw new EveryAppError(
     "MODE_CHANGE_UNSUPPORTED",
-    `This gateway was installed as ${install.deploymentMode}; changing it to ${mode} isn't supported.`,
+    `This Gateway is ${MODE_NAMES[live.deploymentMode]} and can't be switched to ${MODE_NAMES[mode]}`,
+    {
+      rerun: thisCommandWithout("--mode"),
+      rerunNote: "(without --mode) to update it as it is",
+      data: { installed: live.deploymentMode, requested: mode },
+    },
   );
 }
 
@@ -516,6 +632,7 @@ function assertModeUnchanged(
 async function repairGateway({
   cf,
   accountId,
+  accountName,
   install,
   databaseId,
   openRelease,
@@ -525,6 +642,7 @@ async function repairGateway({
 }: {
   cf: CfRunner;
   accountId: string;
+  accountName: string;
   install: InstallRecord;
   databaseId: string;
   openRelease: () => Promise<GatewayRelease>;
@@ -541,22 +659,38 @@ async function repairGateway({
       type: "step",
       step: "setup.gateway",
       status: "skip",
-      message: `Gateway ${release} at ${gatewayUrl} is up to date: the release this run deploys, binding the ${plural(desired.appWorkers.length, "app")} its registry lists.`,
-      data: { release, gatewayUrl, upToDate: true },
+      message: `Gateway ${release} is up to date`,
+      data: {
+        release,
+        gatewayUrl,
+        upToDate: true,
+        account: accountName,
+        apps: desired.appWorkers.length,
+      },
     });
     return { db, release, outcome: "up-to-date" };
   }
+  // The apps the live Gateway doesn't route yet, by their names.
+  const added = [
+    ...new Set(
+      desired.apps
+        .filter((app) => !install.liveAppWorkers.includes(app.workerName))
+        .map((app) => app.appId),
+    ),
+  ].sort();
   out.emit({
     type: "step",
     step: "setup.gateway",
     status: "start",
     message: inSync
-      ? `Redeploying gateway ${release} (--redeploy)...`
-      : `Rebinding gateway ${release}: ${plural(desired.appWorkers.length, "app")} (was ${install.liveAppWorkers.length})...`,
+      ? `Redeploying the Gateway ${release} (--redeploy)`
+      : `Repairing the Gateway ${release}: ${desired.appWorkers.length} apps, was ${install.liveAppWorkers.length}`,
     data: {
+      change: inSync ? GatewayChange.Redeploy : GatewayChange.Repair,
       release,
       from: release,
       gatewayUrl,
+      account: accountName,
       apps: desired.appWorkers.length,
       was: install.liveAppWorkers.length,
       redeploy: inSync,
@@ -585,8 +719,22 @@ async function repairGateway({
     type: "step",
     step: "setup.gateway",
     status: "ok",
-    message: `Gateway ${release} binds ${plural(result.appWorkers.length, "app")} (version ${result.versionId ?? "unknown"}).`,
-    data: { versionId: result.versionId, release, apps: result.appWorkers },
+    message: inSync
+      ? `Gateway ${release} redeployed`
+      : `Gateway ${release} routes ${result.appWorkers.length} apps`,
+    data: {
+      versionId: result.versionId,
+      release,
+      appWorkers: result.appWorkers,
+      ...(inSync
+        ? {}
+        : {
+            repaired: true,
+            added,
+            apps: result.appWorkers.length,
+            was: install.liveAppWorkers.length,
+          }),
+    },
   });
   return { db, release, outcome: "repaired" };
 }
@@ -596,7 +744,8 @@ async function repairGateway({
  * this run mints (and opens, at a terminal), waiting up to 15 minutes for
  * the claim by reading the link's own row in D1. A resumed setup mints a
  * new link, and the one shown before stops working. Apps don't need an
- * owner; people do, to sign in.
+ * owner; people do, to sign in. In CI there is no one to hand the link to:
+ * the run ends with the Gateway installed and a warning (exit 0).
  */
 async function ensureOwner({
   db,
@@ -610,14 +759,14 @@ async function ensureOwner({
   flags: SetupFlags;
   out: EventSink;
   deps: SetupDeps;
-}): Promise<{ owner: GatewayOwner; created: boolean }> {
+}): Promise<{ owner: GatewayOwner | null; created: boolean }> {
   const existing = await readOwner(db);
   if (existing) {
     out.emit({
       type: "step",
       step: "setup.owner",
       status: "skip",
-      message: `The gateway's owner is ${existing.email}.`,
+      message: `Owner account is ${existing.email}`,
       data: { ...existing },
     });
     return { owner: existing, created: false };
@@ -626,34 +775,38 @@ async function ensureOwner({
   // owner: it goes to a person at this terminal, or in the --json events
   // an agent on this machine hands on.
   if (!maySetupLinkBeShown({ terminal: deps.interactive, relayed: flags.json })) {
-    throw new ActionRequiredError(
-      "claim_owner",
-      `The Gateway has no owner yet. Run \`${CLI} setup\` at a terminal on any machine with this Cloudflare login to create the owner account; apps deploy without one.`,
-      undefined,
-      { rerun: `${CLI} setup` },
-    );
+    out.emit({
+      type: "warning",
+      code: "OWNER_NOT_CLAIMED",
+      step: "setup.owner",
+      message:
+        "The Gateway has no owner yet\nApps deploy without one. To create it, run setup at a terminal with this Cloudflare login.",
+      data: { rerun: `${CLI} setup`, rerunNote: "at a terminal", needsTerminal: true },
+    });
+    return { owner: null, created: false };
   }
   await checkReachable(gatewayUrl, out, deps.seams?.fetch);
 
   const link = await mintSetupLink({ db, gatewayUrl });
+  const expiresIn = () => roughly(link.expiresAt.getTime() - Date.now());
   out.emit({
     type: "action_required",
     action: "claim_owner",
     step: "setup.owner",
-    message: [
-      "Open this link to create the owner account",
-      `Works once and expires in ${roughly(link.expiresAt.getTime() - Date.now())}. Treat it like a password.`,
-      ...(link.replaced ? ["The setup link shown before no longer works; this one replaces it."] : []),
-    ].join("\n"),
+    message: link.replaced
+      ? `Open this new link to create the owner account\nThe link shown before no longer works. This one works once and expires in ${expiresIn()}. Treat it like a password.`
+      : `Open this link to create the owner account\nWorks once and expires in ${expiresIn()}. Treat it like a password.`,
     data: {
       url: link.url,
       expiresAt: link.expiresAt.toISOString(),
+      replaced: link.replaced,
       waiting: true,
       waitingFor: "the owner account",
     },
   });
   if (deps.interactive) await deps.openBrowser(link.url);
 
+  const waitStarted = Date.now();
   const state = await waitForSetupLink({ db, id: link.id, ...deps.seams?.owner });
   // A newer link replaced this one: whoever has it may have used it.
   const owner =
@@ -667,32 +820,37 @@ async function ensureOwner({
       type: "step",
       step: "setup.owner",
       status: "ok",
-      message: `Owner created: ${owner.email}${owner.organizationName ? ` (${owner.organizationName})` : ""}.`,
+      message: `Owner account created for ${owner.email}`,
       data: { ...owner },
     });
     return { owner, created: true };
   }
   if (state.status === "waiting") {
+    // The link is on the screen already: not shown again.
     throw new ActionRequiredError(
       "claim_owner",
-      `Nobody has used the setup link yet. It works until ${link.expiresAt.toLocaleString()}: open it, then run \`${CLI} setup\` again to finish. (Run before anyone opens it, setup shows a new link, and this one stops working.)`,
-      link.url,
-      { rerun: `${CLI} setup` },
+      `Open the setup link above to create the owner account\nNobody opened it within ${roughly(Date.now() - waitStarted)}. It still works for ${expiresIn()}; running setup before it's opened replaces it.`,
+      undefined,
+      {
+        rerun: `${CLI} setup`,
+        rerunNote: "to finish",
+        data: { setupUrl: link.url, expiresAt: link.expiresAt.toISOString() },
+      },
     );
   }
   throw new ActionRequiredError(
     "claim_owner",
-    `The setup link stopped working before anyone used it: a newer one replaced it (setup on another machine), or it expired. If someone has the newer link, create the owner account with it; otherwise run \`${CLI} setup\` again for a new one.`,
+    "Use the newer setup link, or get a new one\nThis link stopped working before anyone used it: setup ran again on another machine, or it expired.",
     undefined,
-    { rerun: `${CLI} setup` },
+    { rerun: `${CLI} setup`, rerunNote: "for a new link" },
   );
 }
 
-/** What a gateway that doesn't answer may be waiting for. */
-const unreachableBecause: Record<NoAnswerKind, string> = {
-  tls: "; its certificate may still be on its way",
-  dns: "; DNS has no address for it yet",
-  other: "",
+/** Why a gateway that doesn't answer may not, in a person's words. */
+const unreachableBecause: Record<NoAnswerKind, (host: string, reason: string) => string> = {
+  tls: () => "Its certificate is probably still on the way (TLS handshake failed).",
+  dns: (host) => `DNS has no address for ${host} yet.`,
+  other: (_host, reason) => `It didn't answer (${reason}).`,
 };
 
 /**
@@ -706,20 +864,22 @@ async function checkReachable(
   out: EventSink,
   fetchImpl?: typeof fetch,
 ): Promise<void> {
+  const host = new URL(gatewayUrl).host;
   const answer = await probeHttps(`${gatewayUrl}/`, fetchImpl);
   if (!answer.answered) {
     out.emit({
       type: "warning",
       code: "GATEWAY_UNREACHABLE",
       step: "setup.owner",
-      message: `${gatewayUrl} doesn't answer over HTTPS yet (${answer.reason})${unreachableBecause[answer.kind]}. The setup link works as soon as it does.`,
+      message: `${host} doesn't answer over HTTPS yet\n${unreachableBecause[answer.kind](host, answer.reason)} The link below works as soon as it does.`,
+      data: { kind: answer.kind, reason: answer.reason },
     });
   } else if (answer.access) {
     out.emit({
       type: "warning",
       code: "ACCESS_IN_FRONT",
       step: "setup.owner",
-      message: `Cloudflare Access answers ${gatewayUrl} before the gateway: whoever opens the setup link signs in to Access first.`,
+      message: `Cloudflare Access protects ${host}\nWhoever opens the setup link signs in to Access first.`,
     });
   }
 }
@@ -731,19 +891,24 @@ const terminalPrompts: SetupPrompts = {
       "Which of your domains should Every App live under?",
       zones.map((zone) => ({ label: zone, value: zone })),
     ),
-  hostname: (zone: string) =>
+  gatewayAddress: (zones: string[]) =>
     askText("Gateway address", {
       context: [
-        `Apps get addresses one level below the Gateway, e.g. todo.apps.${zone}; a subdomain keeps the rest of ${zone} out of it.`,
+        zones.length === 1
+          ? `Apps get addresses one level below the Gateway, e.g. todo.apps.${zones[0]!}`
+          : `Your domains: ${zones.join(", ")}. Apps live one level below the Gateway.`,
       ],
-      initial: `apps.${zone}`,
+      initial: `apps.${zones[0]!}`,
       validate: (value) => {
+        let host: string;
         try {
-          const host = normalizeHostname(value);
-          return host === zone || host.endsWith(`.${zone}`) ? null : `Use ${zone} or a name under it`;
-        } catch (error) {
-          return errorMessage(error);
+          host = normalizeHostname(value);
+        } catch {
+          return `Enter a hostname like apps.${zones[0]!}`;
         }
+        return zones.some((zone) => host === zone || host.endsWith(`.${zone}`))
+          ? null
+          : `Use a name under ${orList(zones)}`;
       },
     }),
 };

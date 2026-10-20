@@ -20,15 +20,13 @@
  * caller decides (`setup` installs one; anything else fails, listing the
  * accounts asked).
  */
-import chalk from "chalk";
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
 import { isCfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import { CLI, thisCommand, thisCommandWithout } from "@/lib/output/command";
-import { choose, tellPerson } from "@/lib/output/prompt";
-import { formatTable } from "@/lib/output/table";
+import { choose } from "@/lib/output/prompt";
 import { readInstall, type InstallRecord } from "./install";
 import { findGatewayDatabase } from "./resources";
 
@@ -67,9 +65,14 @@ interface DiscoverOptions {
   accountId?: string;
   /** The Gateway's host, when the command names one: it picks among several. */
   host?: string;
+  /**
+   * The flag that names the Gateway by its host (setup's --domain): the
+   * choices among several say it, rather than an account id.
+   */
+  hostFlag?: string;
   interactive: boolean;
   /** Asks the person at the terminal which Gateway (tests answer for them). */
-  pick?: (found: FoundGateway[]) => Promise<FoundGateway>;
+  pick?: (found: FoundGateway[], whoami: CfWhoami) => Promise<FoundGateway>;
 }
 
 export async function discoverGateway({
@@ -77,6 +80,7 @@ export async function discoverGateway({
   createCf,
   accountId,
   host,
+  hostFlag,
   interactive,
   pick = pickAtTerminal,
 }: DiscoverOptions): Promise<Discovery> {
@@ -108,30 +112,30 @@ export async function discoverGateway({
     ? found.filter((g) => g.install?.gatewayHost.toLowerCase() === host.toLowerCase())
     : [];
   if (atHost.length === 1) return { ...result, gateway: atHost[0]! };
-  if (interactive) return { ...result, gateway: await pick(found) };
+  if (interactive) return { ...result, gateway: await pick(found, whoami) };
+  // One command per Gateway, ready to run: no single rerun fits.
   throw new ActionRequiredError(
     "choose_account",
-    [
-      `This login sees a Gateway in ${found.length} Cloudflare accounts; pick one`,
-      ...formatTable(
-        ["ACCOUNT", "ID", "GATEWAY"],
-        found.map((gateway) => [
-          gateway.account.name ?? "(unnamed)",
-          gateway.account.id,
-          gateway.install ? `https://${gateway.install.gatewayHost}` : "(not installed)",
-        ]),
-      ),
-    ].join("\n"),
+    `Choose which Gateway to use\n${whoami.email ?? "This login"} sees a Gateway in ${found.length} Cloudflare accounts. Run one of:`,
     undefined,
     {
-      rerun: `${thisCommand()} --account-id <id>`,
+      rerun: null,
       data: {
-        choices: found.map((gateway) => ({
-          accountId: gateway.account.id,
-          accountName: gateway.account.name,
-          gatewayUrl: gateway.install ? `https://${gateway.install.gatewayHost}` : null,
-          rerun: `${thisCommand()} --account-id ${gateway.account.id}`,
-        })),
+        choices: found.map((gateway) => {
+          const gatewayHost = gateway.install?.gatewayHost;
+          const byHost = hostFlag && gatewayHost;
+          return {
+            accountId: gateway.account.id,
+            accountName: gateway.account.name,
+            gatewayUrl: gatewayHost ? `https://${gatewayHost}` : null,
+            label: byHost
+              ? (gateway.account.name ?? gateway.account.id)
+              : [gateway.account.name, gatewayHost].filter(Boolean).join(" · "),
+            rerun: byHost
+              ? `${thisCommandWithout(hostFlag)} ${hostFlag} ${gatewayHost}`
+              : thisCommand(["--account-id", gateway.account.id]),
+          };
+        }),
       },
     },
   );
@@ -226,17 +230,20 @@ function describeGateway(gateway: FoundGateway): string {
   return `${account}${gateway.install ? ` at https://${gateway.install.gatewayHost}` : ""}`;
 }
 
-/** Ask the person at the terminal which account's Gateway; the answer names the account. */
-async function pickAtTerminal(found: FoundGateway[]): Promise<FoundGateway> {
-  const gateway = await choose(
-    "Which account?",
-    found.map((gateway) => ({
-      label: gateway.account.name ?? gateway.account.id,
-      ...(gateway.install ? { hint: `https://${gateway.install.gatewayHost}` } : {}),
-      value: gateway,
-    })),
-    { context: [`This login sees a Gateway in ${found.length} Cloudflare accounts.`] },
+/** Ask the person at the terminal which Gateway, by its address; its account dim beside it. */
+function pickAtTerminal(found: FoundGateway[], whoami: CfWhoami): Promise<FoundGateway> {
+  return choose(
+    "Which Gateway?",
+    found.map((gateway) => {
+      const account = gateway.account.name ?? gateway.account.id;
+      return gateway.install
+        ? { label: gateway.install.gatewayHost, hint: account, value: gateway }
+        : { label: account, value: gateway };
+    }),
+    {
+      context: [
+        `${whoami.email ?? "This login"} sees a Gateway in ${found.length} Cloudflare accounts`,
+      ],
+    },
   );
-  tellPerson(chalk.dim(`Skip this next time with --account-id ${gateway.account.id}`));
-  return gateway;
 }

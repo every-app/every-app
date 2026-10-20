@@ -27,10 +27,9 @@ export function normalizeHostname(input: string | undefined): string | undefined
     .replace(/[/?#].*$/, "")
     .replace(/\.$/, "");
   if (!isValidHostname(host)) {
-    throw new EveryAppError(
-      "INVALID_DOMAIN",
-      `"${input}" isn't a hostname like apps.example.com`,
-    );
+    throw new EveryAppError("INVALID_DOMAIN", `${input} isn't a full hostname`, {
+      fix: "use a name like apps.example.com",
+    });
   }
   return host;
 }

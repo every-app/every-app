@@ -13,7 +13,6 @@ import { z } from "zod";
 import { privateTempDir } from "@/lib/cf/privateDir";
 import { EveryAppError } from "@/lib/errors";
 import { isNotFoundError } from "@/lib/file-operations";
-import { thisCommand } from "@/lib/output/command";
 
 export const RELEASE_TARBALL = "every-app-gateway-release.tar.gz";
 /**
@@ -99,6 +98,8 @@ export interface CandidateRelease extends ReleaseSource {
   version: string;
   /** Its SHA-256, once it is built. */
   sha256?: string;
+  /** The oldest everyapp that deploys it, once a release says. */
+  minCli?: string;
 }
 
 /** "this checkout", "every-app/every-app release gateway-v0.3.0", a URL or a path. */
@@ -215,22 +216,29 @@ export async function extractRelease<T extends z.infer<typeof BaseReleaseSchema>
     if (!parsed.success) {
       throw new EveryAppError(
         "RELEASE_INVALID",
-        `${tarball} has no valid release.json: ${parsed.error.issues[0]?.message}`,
+        `${tarball} isn't a valid ${names.the.toLowerCase()}\nIts release.json is malformed: ${parsed.error.issues[0]?.message}`,
       );
     }
     const manifest = parsed.data;
     if (manifest.buildOutputVersion !== SUPPORTED_BUILD_OUTPUT) {
       throw new EveryAppError(
         "RELEASE_UNSUPPORTED",
-        `${names.the} ${manifest.version} is newer than this everyapp deploys\nIt uses Build Output ${manifest.buildOutputVersion}; this everyapp deploys ${SUPPORTED_BUILD_OUTPUT}.`,
-        { fix: "update everyapp (in a checkout: git pull)", rerun: thisCommand() },
+        `${names.the} ${manifest.version} needs a newer everyapp`,
+        {
+          fix: "update everyapp (in a checkout: git pull), then run this again",
+          data: {
+            buildOutputVersion: manifest.buildOutputVersion,
+            supported: SUPPORTED_BUILD_OUTPUT,
+          },
+        },
       );
     }
     const actual = await hashReleaseTree(dir);
     if (actual !== manifest.sha256) {
       throw new EveryAppError(
         "RELEASE_CORRUPT",
-        `${names.the} ${manifest.version} doesn't match its SHA-256 (expected ${manifest.sha256}, got ${actual}).`,
+        `${names.the} ${manifest.version} doesn't match its checksum\nThe download may be damaged. Download it again.`,
+        { data: { expected: manifest.sha256, actual } },
       );
     }
     return { dir, manifest, cleanup };
@@ -313,13 +321,16 @@ export function refuseNewerThanCli(
   manifest: Pick<ReleaseManifest, "version" | "minCli">,
   cliVersion: string,
   /** What the release is, as the message names it. */
-  what = `Gateway release ${manifest.version}`,
+  what = `Gateway ${manifest.version}`,
 ): void {
   if (compareVersions(manifest.minCli, cliVersion) > 0) {
     throw new EveryAppError(
       "CLI_TOO_OLD",
-      `${what} needs everyapp ${manifest.minCli} or newer; this is ${cliVersion}`,
-      { fix: "update everyapp (in a checkout: git pull)", rerun: thisCommand() },
+      `${what} needs everyapp ${manifest.minCli} or newer (this is ${cliVersion})`,
+      {
+        fix: "update everyapp (in a checkout: git pull), then run this again",
+        data: { minCli: manifest.minCli, cliVersion },
+      },
     );
   }
 }
