@@ -58,6 +58,10 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
+        <script
+          defer
+          src="https://analytics.everyapp.team/script.js?siteId=96bcc879-03cf-4b63-93bc-993b1d349d48"
+        />
       </head>
       <body className="flex flex-col min-h-screen">
         <RootProvider>{children}</RootProvider>
