@@ -75,13 +75,18 @@ export async function runLogged(
   const tail = await lastLines(file, header.length);
   const why =
     result.exitCode !== undefined
-      ? `exit code ${result.exitCode}`
+      ? `${result.command} exited with code ${result.exitCode}`
       : result.signal
-        ? `stopped by ${result.signal}`
+        ? `${result.command} was stopped by ${result.signal}`
         : result.shortMessage;
   throw new EveryAppError(
     options.code ?? "COMMAND_FAILED",
-    [`${options.what} failed (${why})`, ...tail, `Full log: ${file}`].join("\n"),
+    [
+      `${options.what} failed`,
+      `${why}.${tail.length > 0 ? " Its last lines:" : ""}`,
+      ...tail.map((line) => `  ${line}`),
+      `Full log: ${file}`,
+    ].join("\n"),
     {
       ...(options.fix ? { fix: options.fix } : {}),
       data: { command: commandLine, exitCode: result.exitCode ?? null, tail, log: file },

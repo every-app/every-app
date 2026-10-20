@@ -83,10 +83,12 @@ function seams() {
       liveUrl: "https://my-app.apps.example.com",
       gatewayUrl: "https://apps.example.com",
       organizationId: "org_1",
+      organizationName: "Acme",
       hostname: "my-app.apps.example.com",
       workerName: "every-my-app",
       versionId: "v1",
       live: true,
+      next: [],
     })),
   };
 }

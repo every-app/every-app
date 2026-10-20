@@ -45,17 +45,29 @@ export async function checkSchemaDrift({
   // An absent `migrations` field means drizzle (lib/manifest.ts).
   const engine = manifest.migrations?.engine ?? "drizzle";
   const postgres = manifest.migrations?.dialect === "postgresql";
-  const skip = (why: string) =>
+  const skip = (why: string, more: { detail?: string; fix?: string } = {}) =>
     out.emit({
       type: "warning",
       code: "SCHEMA_CHECK_SKIPPED",
       step: "app.schema",
-      message: `${why}, so this deploy can't check that ${manifest.id}'s migrations match its schema.`,
+      message: `Can't check the schema against the migrations: ${why}${more.detail ? `\n${more.detail}` : ""}`,
+      ...(more.fix ? { data: { fix: more.fix } } : {}),
     });
   if (engine === "prisma") {
-    skip(
-      "Prisma compares a schema with its migrations only against a shadow database (run `prisma migrate diff --from-migrations <dir> --to-schema <schema> --exit-code` with datasource.shadowDatabaseUrl set in prisma.config.ts)",
-    );
+    // Nothing to fix: one dim line, and the way to check by hand with --verbose.
+    out.emit({
+      type: "progress",
+      step: "app.schema",
+      message:
+        "To check a Prisma schema against its migrations: prisma migrate diff --from-migrations <dir> --to-schema <schema> --exit-code, with datasource.shadowDatabaseUrl set in prisma.config.ts.",
+    });
+    out.emit({
+      type: "step",
+      step: "app.schema",
+      status: "skip",
+      message: "Schema not checked against migrations (Prisma needs a shadow database; --verbose shows how)",
+      data: { engine },
+    });
     return;
   }
   if ((!postgres && !manifest.resources?.d1?.length) || engine !== "drizzle") return;
@@ -64,16 +76,17 @@ export async function checkSchemaDrift({
   try {
     drizzleKit = (await resolveLocalPackage(cwd, "drizzle-kit", "drizzle-kit")).binPath;
   } catch {
-    skip("drizzle-kit isn't installed in this app (add it to devDependencies)");
+    skip("drizzle-kit isn't installed", { fix: "add drizzle-kit to devDependencies" });
     return;
   }
   const named = manifest.migrations?.config;
   const config = await firstFile(cwd, named ? [named] : CONFIG_FILES);
   if (!config) {
     skip(
+      named ? `no ${named} (migrations.config)` : "no drizzle.config.ts",
       named
-        ? `This app has no ${named} (migrations.config)`
-        : 'This app has no drizzle.config.ts (an app that writes its SQL by hand sets migrations.engine to "d1-sql")',
+        ? {}
+        : { detail: 'An app that writes its SQL by hand sets migrations.engine to "d1-sql".' },
     );
     return;
   }
@@ -82,7 +95,7 @@ export async function checkSchemaDrift({
     type: "step",
     step: "app.schema",
     status: "start",
-    message: "Checking the schema against the migrations...",
+    message: "Checking the schema...",
   });
   const migrations = path.resolve(cwd, manifest.migrations?.dir ?? "drizzle");
   ensureGitignored(cwd, ".everyapp/");
@@ -140,7 +153,8 @@ export async function checkSchemaDrift({
     if (added.length > 0) {
       throw new EveryAppError(
         "SCHEMA_DRIFT",
-        `${manifest.id}'s schema has changes its migrations don't: drizzle-kit would write a new migration for them. Run \`pnpm db:generate\`, then deploy again. Nothing was migrated or uploaded.`,
+        "The schema has changes no migration covers\ndrizzle-kit would write a new migration for them. Nothing was migrated or uploaded.",
+        { rerun: "pnpm db:generate", rerunNote: "then run this again" },
       );
     }
     // No new migration from a run that failed says nothing.
@@ -152,10 +166,14 @@ export async function checkSchemaDrift({
         (run.timedOut ? `no answer in ${GENERATE_TIMEOUT_MS / 1000} s` : `exit ${run.exitCode}`);
       throw new EveryAppError(
         "SCHEMA_CHECK_FAILED",
-        `drizzle-kit couldn't compare ${manifest.id}'s schema with its migrations (${why}). Run \`pnpm db:generate\` in a terminal (it asks there about renamed columns and tables), then deploy again. Nothing was migrated or uploaded.`,
+        `drizzle-kit couldn't compare the schema with the migrations\n${why}. Nothing was migrated or uploaded.`,
+        {
+          rerun: "pnpm db:generate",
+          rerunNote: "in a terminal; it asks about renamed columns and tables",
+        },
       );
     }
-    out.emit({ type: "step", step: "app.schema", status: "ok", message: "schema in sync" });
+    out.emit({ type: "step", step: "app.schema", status: "ok", message: "The schema matches the migrations." });
   } finally {
     await fs.rm(scratch, { recursive: true, force: true });
     forget();

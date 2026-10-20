@@ -50,7 +50,13 @@ export async function deploy(
         out,
         verbose: flags.verbose,
       });
-      out.emit({ type: "done", data: result });
+      out.emit({
+        type: "done",
+        data: {
+          ...result,
+          next: [{ command: `${CLI} deploy ${result.shown}`, note: "deploys it" }],
+        },
+      });
       return;
     }
     const gateway = requestedGatewayUrl(flags.gateway);
@@ -72,14 +78,14 @@ export function refuseBundleFlags(
   if (flags["bundle-only"] && source) {
     throw new EveryAppError(
       "BUNDLE_ONLY_WITH_SOURCE",
-      `--bundle-only packs the app in this directory; ${source} is a release already. Run \`${CLI} deploy ${source}\` to deploy it, or --bundle-only without it.`,
+      "--bundle-only packs the app in this directory, not a release URL",
+      { rerun: `${CLI} deploy ${source}`, rerunNote: "deploys that release" },
     );
   }
   if (!flags["bundle-only"] && flags.out !== undefined) {
-    throw new EveryAppError(
-      "OUT_WITHOUT_BUNDLE_ONLY",
-      "--out names the release --bundle-only writes; add --bundle-only, or deploy without --out.",
-    );
+    throw new EveryAppError("OUT_WITHOUT_BUNDLE_ONLY", "--out needs --bundle-only", {
+      fix: "add --bundle-only, or drop --out",
+    });
   }
 }
 
@@ -118,7 +124,7 @@ async function deployFrom({
         versionId: result.versionId,
         jobId: result.jobId,
         status: result.status,
-        live: false,
+        live: result.live,
       },
     });
     return;
@@ -142,5 +148,12 @@ async function deployFrom({
   });
   // `app.live` said it to a person already (or that it goes live on its
   // first visit).
-  out.emit({ type: "done", data: liveDone(result) });
+  out.emit({
+    type: "done",
+    data: {
+      ...liveDone(result),
+      organization: result.organizationName,
+      ...(result.next.length > 0 ? { next: result.next } : {}),
+    },
+  });
 }

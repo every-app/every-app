@@ -540,7 +540,7 @@ describe("the live wait", () => {
       },
     });
 
-    await expect(wait(id, { fetch: live.fetch })).resolves.toBe("live");
+    await expect(wait(id, { fetch: live.fetch })).resolves.toMatchObject({ outcome: "live" });
 
     expect(live.requests).toEqual([`https://todo.${BASE}/`, `https://todo.${BASE}/`]);
     expect(app("todo")).toMatchObject({ status: "active" });
@@ -561,7 +561,7 @@ describe("the live wait", () => {
           order.push("sleep");
         },
       }),
-    ).resolves.toBe("live");
+    ).resolves.toMatchObject({ outcome: "live" });
     expect(order).toEqual(["request"]);
   });
 
@@ -580,7 +580,7 @@ describe("the live wait", () => {
           negativeCacheTtlSeconds: async () => 1800,
         },
       }),
-    ).resolves.toBe("live");
+    ).resolves.toMatchObject({ outcome: "live" });
     expect(asked).toEqual([`todo.${BASE}`]);
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -610,7 +610,7 @@ describe("the live wait", () => {
           negativeCacheTtlSeconds: async () => null,
         },
       }),
-    ).resolves.toBe("live");
+    ).resolves.toMatchObject({ outcome: "live" });
     expect(asked).toEqual([]);
     expect(events.filter((event) => event["type"] === "warning")).toEqual([]);
   });
@@ -643,7 +643,7 @@ describe("the live wait", () => {
         }),
     });
 
-    await expect(wait(id, { fetch: behindAccess.fetch })).resolves.toBe("first_visit");
+    await expect(wait(id, { fetch: behindAccess.fetch })).resolves.toMatchObject({ outcome: "first_visit" });
 
     expect(behindAccess.requests).toHaveLength(1);
     expect(app("todo")).toMatchObject({ status: "binding" });
@@ -672,7 +672,7 @@ describe("the live wait", () => {
           now += ms;
         },
       }),
-    ).resolves.toBe("first_visit");
+    ).resolves.toMatchObject({ outcome: "first_visit" });
     expect(events).toContainEqual(
       expect.objectContaining({ type: "warning", code: "CERT_PENDING" }),
     );
@@ -686,7 +686,7 @@ describe("the live wait", () => {
     sqlite.sqlite.exec("UPDATE apps SET status = 'active'");
     const live = gateway();
 
-    await expect(wait(id, { fetch: live.fetch })).resolves.toBe("live");
+    await expect(wait(id, { fetch: live.fetch })).resolves.toMatchObject({ outcome: "live" });
     expect(live.requests).toEqual([]);
   });
 });

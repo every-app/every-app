@@ -56,7 +56,8 @@ describe("buildApp", () => {
     );
     expect(failure).toMatchObject({ code: "BUILD_FAILED" });
     const lines = String((failure as Error).message).split("\n");
-    expect(lines.slice(1)).toEqual(
+    expect(lines.slice(0, 2)).toEqual(["Build failed", "cf build's last lines:"]);
+    expect(lines.slice(2)).toEqual(
       [...vite.slice(-18), "error during build:", "Error: boom"].map((line) => `  ${line}`),
     );
   });

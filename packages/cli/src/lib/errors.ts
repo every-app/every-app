@@ -41,6 +41,7 @@ export enum ReportCode {
  */
 const TAKEOVER_FLAGS: Readonly<Record<string, string>> = {
   DNS_RECORD_CONFLICT: "--force-dns",
+  DNS_UNREADABLE: "--force-dns",
   CAA_BLOCKS_ISSUANCE: "--force-dns",
   DURABLE_OBJECT_REMOVED: "--allow-delete-durable-object-data",
   WORKFLOW_REMOVED: "--allow-delete-workflows",

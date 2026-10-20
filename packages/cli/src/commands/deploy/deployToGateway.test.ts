@@ -140,6 +140,7 @@ describe("everyapp deploy --gateway (hosted deploy API)", () => {
       versionId: "etag-1",
       jobId: "job-1",
       status: "succeeded",
+      live: false,
     });
     expect(gateway.requests.map((r) => `${r.method} ${r.path}`)).toEqual([
       "GET /api/v1/deploy-key",
@@ -170,12 +171,24 @@ describe("everyapp deploy --gateway (hosted deploy API)", () => {
       workerName: "every-acme-todo",
       organizationId: "org-acme",
     });
-    expect(events.filter((e) => e["type"] === "progress" && e["step"] === "app.upload")).toHaveLength(1);
+    expect(events.find((e) => e["step"] === "app.deploy")?.["data"]).toMatchObject({
+      appId: "todo",
+      gatewayHost: "app.everyapp.com",
+      firstDeploy: true,
+    });
+    expect(
+      events.find((e) => e["type"] === "step" && e["step"] === "app.upload" && e["status"] === "ok")?.["data"],
+    ).toMatchObject({ jobId: "job-1", modules: expect.any(Number), migrations: 1 });
     // No browser session reaches a third-party host yet: no promise it opens on a visit.
-    const done = events.find((e) => e["type"] === "step" && e["step"] === "app.upload" && e["status"] === "ok");
+    const done = events.find((e) => e["type"] === "step" && e["step"] === "app.hosted" && e["status"] === "ok");
     expect(done?.["message"]).toBe(
       "Deployed version etag-1; todo is at https://todo-acme.everyapp.dev.",
     );
+    // Not active yet: the URL, not a Live fact.
+    expect(events.find((e) => e["step"] === "app.live")).toMatchObject({
+      status: "skip",
+      data: { url: "https://todo-acme.everyapp.dev" },
+    });
   });
 
   it("uploads an app release as it is, without building anything", async () => {
@@ -228,7 +241,7 @@ describe("everyapp deploy --gateway (hosted deploy API)", () => {
     gateway.jobError = { code: "BINDINGS_MISMATCH", message: "Cloudflare lists other bindings." };
     await expect(run()).rejects.toMatchObject({
       code: "BINDINGS_MISMATCH",
-      message: "Cloudflare lists other bindings.",
+      message: "app.everyapp.com couldn't deploy todo\nIt said: Cloudflare lists other bindings.",
       rerun: `pnpm everyapp deploy --gateway ${GATEWAY}`,
       data: { jobId: "job-1" },
     });
@@ -257,14 +270,14 @@ describe("hostedDeployTarget", () => {
     );
     expect(() =>
       hostedDeployTarget({ gateway: GATEWAY, shared: true, "force-dns": false }, { EVERYAPP_DEPLOY_TOKEN: TOKEN }),
-    ).toThrow(expect.objectContaining({ code: "FLAG_NOT_FOR_HOSTED_DEPLOY", message: expect.stringContaining("--shared is") }));
+    ).toThrow(expect.objectContaining({ code: "FLAG_NOT_FOR_HOSTED_DEPLOY", message: expect.stringContaining("--shared only works with your own Gateway") }));
     // Email Routing is the self-hoster's account's: refused, not ignored.
     expect(() =>
       hostedDeployTarget({ gateway: GATEWAY, "enable-email-routing": true }, { EVERYAPP_DEPLOY_TOKEN: TOKEN }),
     ).toThrow(
       expect.objectContaining({
         code: "FLAG_NOT_FOR_HOSTED_DEPLOY",
-        message: expect.stringContaining("--enable-email-routing is"),
+        message: expect.stringContaining("--enable-email-routing only works"),
       }),
     );
     expect(hostedDeployTarget({ gateway: GATEWAY }, { EVERYAPP_DEPLOY_TOKEN: TOKEN })).toEqual({

@@ -199,6 +199,12 @@ function human(options: Parameters<typeof createHumanSink>[0] = {}) {
 function firstDeploy(sink: EventSink) {
   sink.emit({
     type: "step",
+    step: "app.deploy",
+    status: "ok",
+    data: { appId: "todo", organizationName: "Example Inc", firstDeploy: true },
+  });
+  sink.emit({
+    type: "step",
     step: "app.register",
     status: "ok",
     message: "Registered todo as every-acme-todo.",
@@ -206,8 +212,11 @@ function firstDeploy(sink: EventSink) {
       appId: "todo",
       hostname: "todo.apps.example.com",
       existingApp: false,
+      firstDeploy: true,
       defaultAccess: false,
+      hasOwner: true,
       organizationName: "Example Inc",
+      gatewayUrl: "https://apps.example.com",
     },
   });
   sink.emit({
@@ -309,13 +318,13 @@ describe("createHumanSink", () => {
       "Added to the Gateway ✓",
       "",
       "Live    https://todo.apps.example.com",
-      "Access  Private to you, owners and admins · change it in Admin → Apps",
+      "Access  Private to you, owners and admins · change it at https://apps.example.com/admin/apps",
     ]);
     expect(problems()).toEqual([]);
     expect(sink.exitCode).toBe(0);
   });
 
-  it("says a new app is private to owners and admins when the login isn't a gateway user", () => {
+  it("says a new app is private to owners and admins when the login isn't a gateway user, and who gets it before the Gateway has an owner", () => {
     const { sink, lines } = human();
     sink.emit({
       type: "step",
@@ -325,23 +334,53 @@ describe("createHumanSink", () => {
         appId: "todo",
         hostname: "todo.apps.example.com",
         existingApp: false,
+        firstDeploy: true,
         defaultAccess: false,
         deployerAccess: false,
+        hasOwner: false,
         organizationName: "Example Inc",
         gatewayUrl: "https://apps.example.com",
       },
     });
     sink.emit({ type: "done" });
     expect(lines()).toEqual([
-      "Deploying todo to Example Inc (first deploy)",
       "",
       "Access  Private to owners and admins · change it at https://apps.example.com/admin/apps",
+      "  The Gateway has no owner yet; its first owner gets the app (pnpm everyapp setup).",
     ]);
   });
 
-  it("shows a redeploy as a line per step, and one that sends secrets says so on its first line", () => {
-    const redeploy = (secrets?: string[]) => {
+  it("heads a release's deploy with its version and origin", () => {
+    const { sink, lines } = human();
+    sink.emit({
+      type: "step",
+      step: "app.deploy",
+      status: "ok",
+      data: {
+        appId: "analytics",
+        organizationName: "Example Inc",
+        firstDeploy: false,
+        version: "1.4.2",
+        origin: "github.com/acme/analytics (release v1.4.2)",
+      },
+    });
+    sink.emit({ type: "step", step: "app.build", status: "ok", data: { release: true } });
+    expect(lines()).toEqual([
+      "Deploying analytics 1.4.2 to Example Inc",
+      "  From github.com/acme/analytics (release v1.4.2)",
+      "Release checked ✓",
+    ]);
+  });
+
+  it("shows a redeploy as a line per step", () => {
+    const redeploy = () => {
       const { sink, lines } = human();
+      sink.emit({
+        type: "step",
+        step: "app.deploy",
+        status: "ok",
+        data: { appId: "todo", organizationName: "Example Inc", firstDeploy: false },
+      });
       sink.emit({
         type: "step",
         step: "app.register",
@@ -350,8 +389,8 @@ describe("createHumanSink", () => {
           appId: "todo",
           hostname: "todo.apps.example.com",
           existingApp: true,
+          firstDeploy: false,
           organizationName: "Example Inc",
-          ...(secrets ? { secrets } : {}),
         },
       });
       sink.emit({ type: "step", step: "app.build", status: "ok" });
@@ -385,9 +424,6 @@ describe("createHumanSink", () => {
       "",
       "Live  https://todo.apps.example.com",
     ]);
-    expect(redeploy(["GITHUB_TOKEN"])[0]).toBe(
-      "Redeploying todo with GITHUB_TOKEN (code and pending migrations from this directory)",
-    );
   });
 
   it("shows setup's install a step a line, with each slow step's time, then the facts, the run's time and what comes next", () => {
@@ -491,12 +527,101 @@ describe("createHumanSink", () => {
     ]);
   });
 
-  it("prints the app.email hint line on a skip", () => {
+  it("ticks Email Routing turned on, then the routed mail with how to reply from it", () => {
     const { sink, lines } = human();
-    const message =
-      "inbox receives no mail yet: `pnpm everyapp email set --inbound <address>` (in its directory) routes addresses to it.";
-    sink.emit({ type: "step", step: "app.email", status: "skip", message });
-    expect(lines()).toEqual([message]);
+    sink.emit({
+      type: "step",
+      step: "app.email",
+      status: "skip",
+      message: "inbox receives no mail yet.",
+    });
+    sink.emit({
+      type: "step",
+      step: "app.email",
+      status: "ok",
+      data: {
+        addresses: ["support@example.com"],
+        enabled: ["example.com"],
+        replyHint: "To reply from example.com, set up Email Sending, then: pnpm everyapp email set --sender",
+      },
+    });
+    expect(lines()).toEqual([
+      "Email Routing turned on for example.com ✓",
+      "Mail to support@example.com routed ✓",
+      "  To reply from example.com, set up Email Sending, then: pnpm everyapp email set --sender",
+    ]);
+  });
+
+  it("indents an upgrade of the Gateway under its heading while an app is added", () => {
+    const { sink, lines } = human();
+    sink.emit({ type: "step", step: "app.bind", status: "start", data: { appId: "todo" } });
+    sink.emit({
+      type: "step",
+      step: "gateway.upgrade",
+      status: "start",
+      data: { from: "0.2.0", to: "0.2.1" },
+    });
+    sink.emit({ type: "step", step: "gateway.release", status: "ok", data: { cached: false } });
+    sink.emit({ type: "step", step: "gateway.migrations", status: "start" });
+    sink.emit({
+      type: "step",
+      step: "gateway.migrations",
+      status: "ok",
+      data: { applied: ["0007_x.sql"], restoreCommand: "pnpm everyapp db restore --gateway" },
+    });
+    sink.emit({ type: "step", step: "gateway.deploy", status: "start" });
+    sink.emit({ type: "step", step: "gateway.deploy", status: "ok" });
+    sink.emit({ type: "step", step: "gateway.upgrade", status: "ok" });
+    sink.emit({ type: "step", step: "app.bind", status: "ok" });
+    expect(lines()).toEqual([
+      "Gateway 0.2.0 → 0.2.1",
+      "  Built ✓",
+      "  Database migrated ✓ 0007_x.sql",
+      "    Restore point saved. To undo: pnpm everyapp db restore --gateway",
+      "  Uploaded ✓",
+      "Added to the Gateway ✓",
+    ]);
+  });
+
+  it("ends a deploy that isn't live yet with its URL and when it goes live, or that nothing routes to it", () => {
+    const end = (data: Record<string, unknown>) => {
+      const { sink, lines } = human();
+      sink.emit({ type: "step", step: "app.live", status: "skip", data });
+      sink.emit({ type: "done" });
+      return lines();
+    };
+    expect(end({ url: "https://todo.example.com", reason: "certificate" })).toEqual([
+      "",
+      "URL     https://todo.example.com",
+      "Status  Goes live on its first visit, once its certificate comes (a few minutes)",
+    ]);
+    expect(end({ url: "https://todo.example.com", reason: "outside-base" })).toEqual([
+      "",
+      "Live  Not routed",
+    ]);
+  });
+
+  it("shows --bundle-only's release, its SHA-256 and how to deploy it", () => {
+    const { sink, lines } = human();
+    sink.emit({
+      type: "step",
+      step: "app.release",
+      status: "ok",
+      data: { appId: "analytics", version: "1.4.2", shown: "./everyapp-release.tar.gz", sha256: "9f3c1a2e4b5d6e7f" },
+    });
+    sink.emit({
+      type: "done",
+      data: { next: [{ command: "pnpm everyapp deploy ./everyapp-release.tar.gz", note: "deploys it" }] },
+    });
+    expect(lines()).toEqual([
+      "Packed analytics 1.4.2 ✓",
+      "",
+      "Release  ./everyapp-release.tar.gz",
+      "SHA-256  9f3c1a2e4b5d",
+      "",
+      "Next:",
+      "  pnpm everyapp deploy ./everyapp-release.tar.gz  deploys it",
+    ]);
   });
 
   it("shows a dev run: its steps ticked, the ready block, tool calls as they come, then the stop", () => {
@@ -694,16 +819,7 @@ describe("createHumanSink", () => {
 
   it("puts problems on stderr: a headline, its detail, then what to do", () => {
     const { sink, lines, problems } = human();
-    sink.emit({
-      type: "step",
-      step: "app.register",
-      status: "ok",
-      data: {
-        appId: "todo",
-        hostname: "todo.apps.example.com",
-        existingApp: true,
-      },
-    });
+    sink.emit({ type: "step", step: "app.deploy", status: "ok", data: { appId: "todo" } });
     sink.emit({
       type: "warning",
       code: "CERT_PENDING",
@@ -801,7 +917,7 @@ describe("createHumanSink", () => {
       status: "start",
       message: "Building the app...",
     });
-    expect(stdout()).toContain("Building the app... ⠋");
+    expect(stdout()).toContain("Building... ⠋");
 
     sink.emit({ type: "step", step: "app.build", status: "ok" });
     sink.emit({
@@ -811,9 +927,7 @@ describe("createHumanSink", () => {
       message: "Migrating the app's database...",
     });
     expect(stdout()).toContain("Built ✓\n");
-    expect(stdout().split("\r\x1b[2K").at(-1)).toBe(
-      "Migrating the app's database... ⠋",
-    );
+    expect(stdout().split("\r\x1b[2K").at(-1)).toBe("Migrating the database... ⠋");
 
     // cf deploy attached to the terminal, or a prompt: the spinner goes first.
     handTerminalOver();

@@ -211,8 +211,7 @@ describe("deploy --shared", () => {
     });
     expect(account.gatewayBindings()).toEqual(["every-everyapp-todo"]);
     expect(events.find((event) => event["step"] === "app.register")).toMatchObject({
-      data: { scope: "shared", organizationName: "Every App", existingApp: false },
-      message: expect.stringContaining("every member of every organization"),
+      data: { scope: "shared", organizationName: "Every App", existingApp: false, firstDeploy: true },
     });
 
     // A redeploy keeps it shared, with --shared or without.
@@ -221,20 +220,20 @@ describe("deploy --shared", () => {
     expect(appRow("todo")).toMatchObject({ scope: "shared", status: "active" });
   });
 
-  it("keeps a shared app shared through a redeploy that sends secrets, which has no --shared", async () => {
+  it("keeps a shared app shared through a redeploy without --shared", async () => {
     await installGateway("hosted");
     await deploy(TODO, { shared: true });
     account.deploys.length = 0;
 
-    // deployApp with a secret, and no `shared`.
-    await expect(deploy(TODO, { secrets: { FOO: "bar" } })).resolves.toMatchObject({
+    // deployApp with no `shared`.
+    await expect(deploy(TODO)).resolves.toMatchObject({
       live: true,
     });
 
     expect(appRow("todo")).toMatchObject({ scope: "shared", status: "active" });
     expect(grants("todo")).toEqual([]);
     const upload = account.deploys.find((d) => d.workerName === "every-everyapp-todo")!;
-    expect(upload.secrets).toEqual({ GATEWAY_URL, FOO: "bar" });
+    expect(upload.secrets).toEqual({ GATEWAY_URL });
     expect(upload.config["env"]).not.toHaveProperty("EVERY_APP_ORG_ID");
   });
 
@@ -243,7 +242,7 @@ describe("deploy --shared", () => {
     await deploy(TODO, { shared: true });
     gatewayDb().sqlite.exec("UPDATE members SET role = 'member'");
 
-    await expect(deploy(TODO, { secrets: { FOO: "bar" } })).rejects.toMatchObject({
+    await expect(deploy(TODO)).rejects.toMatchObject({
       code: "SHARED_APP_FORBIDDEN",
     });
   });

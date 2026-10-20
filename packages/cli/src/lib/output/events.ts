@@ -28,6 +28,7 @@ import cliCursor from "cli-cursor";
 import { ReportCode } from "@/lib/errors";
 import { GatewayChange } from "@/lib/gateway/change";
 import { onInterruptNotice } from "@/lib/interrupt";
+import { CLI } from "./command";
 import { formatFacts, type Fact } from "./table";
 import { capitalize, listed, plural, strings, text } from "./text";
 import { duration, roughly } from "./time";
@@ -206,15 +207,16 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
   const started = new Map<string, number>();
   // Waits drawn as a spinner (or, piped, said once); each ends at the next step.
   const waits = new Set<string>();
-  // The run's facts, shown together once it is done.
+  // The run's facts, shown together once it is done: `lead` ones first, in order.
   const facts: Fact[] = [];
   // Warnings shown, for the run's last line.
   let warned = 0;
+  let leads = 0;
 
   const show = (items: readonly Shown[], took?: number) => {
     for (const item of items) {
       if ("line" in item) screen.lines(item.line);
-      else if ("fact" in item) facts.splice(item.lead ? 0 : facts.length, 0, item.fact);
+      else if ("fact" in item) facts.splice(item.lead ? leads++ : facts.length, 0, item.fact);
       else if ("done" in item) {
         const after =
           item.detail ?? (took !== undefined && took >= 1000 ? duration(took) : "");
@@ -462,9 +464,11 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
     // when its migrations ran.
     "gateway.migrations": (event, running) => {
       const inSetup = running("setup.gateway");
+      const upgrade = running("gateway.upgrade");
       if (event.status === "start") return inSetup ? null : { spin: "" };
-      if (!inSetup && strings(event.data?.["applied"]).length === 0) return null;
-      return migrated(event, inSetup ? "Database" : "Gateway database");
+      if (!inSetup && !upgrade && strings(event.data?.["applied"]).length === 0) return null;
+      const shown = migrated(event, inSetup || upgrade ? "Database" : "Gateway database");
+      return upgrade ? under(shown) : shown;
     },
     "gateway.deploy": (event, running) => {
       if (event.status === "start") {
@@ -476,21 +480,37 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
               : "Updating the Gateway...",
         };
       }
-      return event.status === "ok" && running("setup.gateway") ? { done: "Uploaded" } : null;
+      if (event.status !== "ok") return null;
+      if (running("gateway.upgrade")) return under({ done: "Uploaded" });
+      return running("setup.gateway") ? { done: "Uploaded" } : null;
     },
     "gateway.reconcile": (event) =>
       event.status === "skip" && event.message ? { line: event.message } : null,
-    "app.register": (event) => {
+    // A deploy's first line: what goes where, and (until the app has been
+    // live once) that it is its first deploy.
+    "app.deploy": (event) => {
       if (event.status !== "ok") return null;
       const data = event.data ?? {};
-      const appId = text(data["appId"]) ?? "The app";
-      const organization = text(data["organizationName"]);
-      const secrets = strings(data["secrets"]);
-      const unset = strings(data["unsetSecrets"]);
-      const isNew = data["existingApp"] === false;
+      const version = text(data["version"]);
+      const to = text(data["organizationName"]) ?? text(data["gatewayHost"]);
+      const origin = text(data["origin"]);
+      return {
+        line: [
+          `Deploying ${text(data["appId"])}${version ? ` ${version}` : ""}${to ? ` to ${to}` : ""}${data["firstDeploy"] === true ? chalk.dim(" (first deploy)") : ""}`,
+          ...(origin ? [chalk.dim(`  From ${origin}`)] : []),
+        ].join("\n"),
+      };
+    },
+    // `register`'s own header; for a deploy, who can open an app that has
+    // never been live: a fact for the end.
+    "app.register": (event) => {
+      const data = event.data ?? {};
+      if (event.status !== "ok") return null;
       if (data["register"] === true) {
+        const appId = text(data["appId"]) ?? "The app";
+        const organization = text(data["organizationName"]);
         const header = { line: `Registering ${appId}${organization ? ` with ${organization}` : ""}` };
-        if (!isNew) return header;
+        if (data["existingApp"] !== false) return header;
         return [
           header,
           {
@@ -500,17 +520,9 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
           },
         ];
       }
-      const first = {
-        line:
-          secrets.length || unset.length
-            ? `${isNew ? "Deploying" : "Redeploying"} ${appId} ${secrets.length ? `with ${secrets.join(", ")}` : `without ${unset.join(", ")}`} (code and pending migrations from this directory)`
-            : `Deploying ${appId}${organization ? ` to ${organization}` : ""}${isNew ? chalk.dim(" (first deploy)") : ""}`,
-      };
-      if (!isNew) return first;
-      const admin = text(data["gatewayUrl"]);
-      const change = chalk.dim(
-        `· change it ${admin ? `at ${admin}/admin/apps` : "in Admin → Apps"}`,
-      );
+      if (data["firstDeploy"] !== true) return null;
+      const organization = text(data["organizationName"]);
+      const change = chalk.dim(`· change it at ${text(data["gatewayUrl"])}/admin/apps`);
       const access =
         data["scope"] === "shared"
           ? `Members of every organization ${chalk.dim("(shared app)")}`
@@ -519,7 +531,52 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
             : data["deployerAccess"] === false
               ? `Private to owners and admins ${change}`
               : `Private to you, owners and admins ${change}`;
-      return [first, { fact: { label: "Access", value: access } }];
+      const noOwner =
+        data["hasOwner"] === false
+          ? `\n  ${chalk.dim(`The Gateway has no owner yet; its first owner gets the app (${CLI} setup).`)}`
+          : "";
+      return { fact: { label: "Access", value: `${access}${noOwner}` } };
+    },
+    "app.hyperdrive": (event) =>
+      event.status === "ok"
+        ? {
+            done: "Connected to Postgres through Hyperdrive",
+            notes:
+              event.data?.["caching"] === "off"
+                ? ['Query caching is off; caching: "default" in everyapp.config.ts turns it on.']
+                : [],
+          }
+        : null,
+    "app.install": doneWhenOk("Installed dependencies"),
+    "app.build": (event) => {
+      if (event.status === "start") return { spin: "Building..." };
+      if (event.status !== "ok") return null;
+      return { done: event.data?.["release"] === true ? "Release checked" : "Built" };
+    },
+    "app.schema": (event) => {
+      if (event.status === "start") return { spin: "Checking the schema..." };
+      if (event.status === "skip" && event.message) return { line: chalk.dim(event.message) };
+      return event.status === "ok" ? { done: "Schema matches the migrations" } : null;
+    },
+    "app.migrations": (event) => {
+      if (event.status === "start") {
+        return {
+          spin:
+            event.data?.["dialect"] === "postgresql"
+              ? "Migrating the Postgres database..."
+              : "Migrating the database...",
+        };
+      }
+      // drizzle-kit doesn't say which migrations it applied.
+      if (event.status === "ok" && event.data?.["applied"] === undefined) {
+        return { done: "Database migrated" };
+      }
+      return migrated(event, "Database");
+    },
+    "app.helper": (event) => {
+      const name = text(event.data?.["name"]);
+      if (event.status === "start") return { spin: `Uploading ${name}...` };
+      return event.status === "ok" ? { done: `Uploaded helper Worker ${name}` } : null;
     },
     // `register` again: the Worker's newer version recorded (the first says Registered).
     "app.record": (event) => {
@@ -533,45 +590,101 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
           : {}),
       };
     },
-    "app.install": doneWhenOk("Installed dependencies"),
-    "app.build": doneWhenOk("Built"),
-    "app.migrations": (event) => migrated(event, "Database"),
     "app.upload": (event) => {
       if (event.status === "start") return { spin: "Uploading..." };
-      return event.status === "ok" ? { done: "Uploaded" } : null;
+      if (event.status !== "ok") return null;
+      // A hosted deploy's upload: what it carried.
+      const data = event.data ?? {};
+      return typeof data["modules"] === "number"
+        ? {
+            done: "Uploaded",
+            detail: `${plural(data["modules"], "module")}, ${plural(Number(data["assets"]), "asset")}, ${plural(Number(data["migrations"]), "migration")}`,
+          }
+        : { done: "Uploaded" };
+    },
+    // `deploy --bundle-only`: the release it packed, and where.
+    "app.release": (event) => {
+      if (event.status !== "ok") return null;
+      const data = event.data ?? {};
+      return [
+        { done: `Packed ${text(data["appId"])} ${text(data["version"])}` },
+        { fact: { label: "Release", value: text(data["shown"]) ?? "" } },
+        { fact: { label: "SHA-256", value: (text(data["sha256"]) ?? "").slice(0, 12) } },
+      ];
+    },
+    "app.workflows": (event) =>
+      event.status === "ok"
+        ? { done: `Deleted the Workflow ${text(event.data?.["binding"])}` }
+        : null,
+    // A hosted Gateway deploys the uploaded app itself.
+    "app.hosted": (event) => {
+      const data = event.data ?? {};
+      const host = text(data["gatewayHost"]);
+      if (event.status === "start") {
+        return { spin: `Waiting for ${host} to deploy ${text(data["appId"])}` };
+      }
+      if (event.status === "ok") return { done: "Deployed" };
+      if (event.status !== "skip") return null;
+      return {
+        done: `Handed to ${host}`,
+        detail: `job ${text(data["jobId"])}`,
+        notes: [`It deploys ${text(data["appId"])} on its own; this run didn't wait for it.`],
+      };
     },
     "app.lease": leaseWaited,
     "gateway.lease": leaseWaited,
-    "gateway.release": (event) => {
+    "gateway.release": (event, running) => {
       if (event.status !== "ok") return null;
       const data = event.data ?? {};
       if (data["downloaded"] === true) return { done: `Downloaded Gateway ${text(data["release"])}` };
       const file = text((data["origin"] as { path?: unknown } | undefined)?.path);
       if (file) return { done: `Loaded Gateway ${text(data["release"])} from ${file}`, detail: "" };
-      return data["cached"] === false ? { done: "Built from this checkout" } : null;
+      if (data["cached"] !== false) return null;
+      return running("gateway.upgrade") ? under({ done: "Built" }) : { done: "Built from this checkout" };
     },
     "app.email": (event) => {
-      if (event.status === "skip" && event.message) return { line: event.message };
+      const data = event.data ?? {};
+      if (event.status === "start") {
+        return { spin: data["removing"] === true ? "Removing mail routes..." : "Routing mail..." };
+      }
       if (event.status !== "ok") return null;
-      const addresses = strings(event.data?.["addresses"]);
-      return {
-        done: addresses.length
-          ? `Mail to ${addresses.join(", ")} routed`
-          : "Mail routes removed",
-      };
+      const addresses = strings(data["addresses"]);
+      const replies = text(data["replyHint"]);
+      return [
+        ...strings(data["enabled"]).map((domain) => ({
+          done: `Email Routing turned on for ${domain}`,
+        })),
+        addresses.length
+          ? {
+              done: `Mail to ${addresses.join(", ")} routed`,
+              ...(replies ? { notes: [replies] } : {}),
+            }
+          : { done: "Mail routes removed" },
+      ];
     },
     "app.bind": (event) =>
       event.status === "start"
-        ? { spin: "Adding to the Gateway..." }
+        ? { spin: `Adding ${text(event.data?.["appId"])} to the Gateway...` }
         : event.status === "ok"
           ? { done: "Added to the Gateway" }
           : null,
+    // Adding an app upgrades the Gateway: its steps go under this heading.
+    "gateway.upgrade": (event) =>
+      event.status === "start"
+        ? {
+            line: chalk.bold(`Gateway ${text(event.data?.["from"])} → ${text(event.data?.["to"])}`),
+          }
+        : null,
     "app.live": (event) => {
-      if (event.status === "skip" && event.message) return { line: event.message };
-      if (event.status !== "ok") return null;
       const data = event.data ?? {};
       const url = text(data["url"]) ?? `https://${text(data["hostname"])}`;
-      return { fact: { label: "Live", value: chalk.cyan(url) }, lead: true };
+      if (event.status === "skip") return notLiveYet(data, url);
+      if (event.status !== "ok") return null;
+      const live = { fact: { label: "Live", value: chalk.cyan(url) }, lead: true };
+      // The wait it took, when there was one.
+      const waited = text(data["waited"]);
+      if (!waited) return live;
+      return [{ done: waited === "certificate" ? "Certificate issued" : "Live" }, live];
     },
     "app.delete": (event) => {
       const appId = text(event.data?.["appId"]);
@@ -723,6 +836,7 @@ const waiting = (data: EventData) => data["host"] === undefined;
  * the gateway's certificates).
  */
 const SHOWN_PROGRESS: Readonly<Record<string, (data: EventData) => boolean>> = {
+  "app.release": always,
   "app.lease": always,
   "gateway.lease": always,
   "db.lease": always,
@@ -754,6 +868,37 @@ function migrated(event: StepEvent, what: string): Shown | null {
     detail: applied.join(", "),
     notes: restore ? [`Restore point saved. To undo: ${restore}`] : [],
   };
+}
+
+/** A ticked line indented under a heading (`Gateway 0.2.0 → 0.2.1`), its notes too. */
+function under(shown: Shown | null): Shown | null {
+  if (!shown || !("done" in shown)) return shown;
+  return {
+    ...shown,
+    done: `  ${shown.done}`,
+    ...(shown.notes ? { notes: shown.notes.map((note) => `  ${note}`) } : {}),
+  };
+}
+
+/**
+ * What the end of a deploy says of an app that isn't live yet
+ * (`data.reason`): its URL and when it goes live, or that nothing routes
+ * to it.
+ */
+function notLiveYet(data: EventData, url: string): Shown[] {
+  if (data["reason"] === "outside-base") {
+    return [{ fact: { label: "Live", value: chalk.yellow("Not routed") }, lead: true }];
+  }
+  const status =
+    data["reason"] === "certificate"
+      ? "Goes live on its first visit, once its certificate comes (a few minutes)"
+      : data["reason"] === "first-visit"
+        ? "Goes live on its first visit"
+        : undefined;
+  return [
+    { fact: { label: "URL", value: chalk.cyan(url) }, lead: true },
+    ...(status ? [{ fact: { label: "Status", value: status }, lead: true }] : []),
+  ];
 }
 
 /** A problem: its first line after the glyph, the rest dim under it, then `data.fix`. */

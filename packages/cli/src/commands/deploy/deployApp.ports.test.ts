@@ -176,7 +176,7 @@ describe("deploy of Postiz (two Workers, D1 with Prisma's SQL, a Workflow and a 
         step: "app.build",
         status: "ok",
         message: "Built the app and checked its Workers.",
-        data: { workflows: [PUBLISH_POST] },
+        data: { release: false, workflows: [PUBLISH_POST] },
       }),
     );
     // The build was tenant-neutral; the deploy installed every placeholder.

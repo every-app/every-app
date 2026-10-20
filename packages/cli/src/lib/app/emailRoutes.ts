@@ -327,15 +327,7 @@ export async function applyEmailRoutes({
   };
 }
 
-/** Where the app's mail goes now, and what replying from those addresses still needs. */
-export function describeMailRoutes({
-  appId,
-  workerName,
-  senders,
-  routed,
-  removed,
-  sendersSettable,
-}: {
+interface MailRoutes {
   appId: string;
   workerName: string;
   senders: readonly string[];
@@ -348,13 +340,17 @@ export function describeMailRoutes({
    * which names that command, is left out.
    */
   sendersSettable: boolean;
-}): string {
+}
+
+/** Where the app's mail goes now, and what replying from those addresses still needs. */
+export function describeMailRoutes(routes: MailRoutes): string {
+  const { appId, workerName, routed, removed } = routes;
   const gone = removed.length ? ` Removed the routes for ${removed.join(", ")}.` : "";
   if (routed.length === 0) return `${appId} receives no mail.${gone}`;
-  const unsent = unsentDomains(routed, senders);
+  const unsent = routes.sendersSettable ? unsentDomains(routed, routes.senders) : [];
   const one = unsent.length === 1;
   const replies =
-    unsent.length && sendersSettable
+    unsent.length
       ? ` To reply from ${unsent.join(", ")}, onboard ${one ? "it" : "them"} to Email Sending and list ${one ? "it" : "them"} with \`${CLI} email set --sender\` (docs/runbooks/email-sending-setup.md).`
       : "";
   return `Mail to ${routed.join(", ")} goes to ${workerName}.${gone}${replies}`;

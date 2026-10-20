@@ -200,6 +200,7 @@ export async function registerApp(
     databaseId,
     out,
     accountId,
+    appId,
     workerName,
     publishHost: newHost,
     interactive,

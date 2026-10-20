@@ -61,7 +61,7 @@ export function localPackageRunner({
 }
 
 /**
- * Run a migration CLI against `databaseUrl`. A failure throws `failed(why)`,
+ * Run a migration CLI against `databaseUrl`; returns its stdout. A failure throws `failed(why)`,
  * `why` being the first line of its redacted output that matches a
  * `reasonPatterns` entry (tried in order), else its last line.
  */
@@ -79,14 +79,14 @@ export async function runMigrationCli({
   databaseUrl: string;
   reasonPatterns: readonly RegExp[];
   failed: (why: string) => EveryAppError;
-}): Promise<void> {
+}): Promise<string> {
   const { password } = parseOriginUrl(databaseUrl, POSTGRES_URL_VARIABLE);
   const result = await run({
     args,
     cwd,
     env: { [POSTGRES_URL_VARIABLE]: databaseUrl },
   });
-  if (result.exitCode === 0) return;
+  if (result.exitCode === 0) return result.stdout;
   const output = redactSecrets(`${result.stderr}\n${result.stdout}`, [
     databaseUrl,
     password,

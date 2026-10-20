@@ -327,7 +327,7 @@ export async function fetchAppRelease(
       asset: APP_RELEASE_TARBALL,
       what: "the app",
       step: "app.release",
-      missing: `${source} is neither a URL nor a file: pass a GitHub repository URL (https://github.com/<owner>/<repo>), a release tarball's URL, or a downloaded ${APP_RELEASE_TARBALL}.`,
+      missing: `${source} is neither a URL nor a file\nPass a GitHub repository URL (https://github.com/<owner>/<repo>), a release tarball's URL, or a downloaded ${APP_RELEASE_TARBALL}.`,
       out,
       fetch: fetchImpl,
     });
@@ -335,8 +335,8 @@ export async function fetchAppRelease(
     if (repo && error instanceof EveryAppError && error.code === "RELEASE_NOT_FOUND") {
       throw new EveryAppError(
         "NO_RELEASE",
-        `${repo.repo} publishes no everyapp release${repo.tag ? ` ${repo.tag}` : ""}\nNo ${APP_RELEASE_TARBALL} on https://github.com/${repo.repo}/releases.`,
-        { rerun: `pnpm install && ${CLI} deploy`, rerunNote: "in a clone of it" },
+        `${repo.repo} publishes no everyapp release${repo.tag ? ` ${repo.tag}` : ""}\nIts GitHub releases have no ${APP_RELEASE_TARBALL}.`,
+        { fix: `clone it, then run pnpm install && ${CLI} deploy in it` },
       );
     }
     throw error;

@@ -41,15 +41,31 @@ describe("migratePrismaPostgres", () => {
     ]);
   });
 
+  it("returns the migrations Prisma applied, none when the database was up to date", async () => {
+    const applied = stub({
+      exitCode: 0,
+      stdout:
+        "2 migrations found in prisma/migrations\n\nApplying migration `20240101_init`\nApplying migration `20240202_source`\n\nAll migrations have been successfully applied.\n",
+      stderr: "",
+    });
+    await expect(
+      migratePrismaPostgres({ cwd: "/app", databaseUrl: URL, run: applied.run }),
+    ).resolves.toEqual(["20240101_init", "20240202_source"]);
+    const upToDate = stub({ exitCode: 0, stdout: "No pending migrations to apply.\n", stderr: "" });
+    await expect(
+      migratePrismaPostgres({ cwd: "/app", databaseUrl: URL, run: upToDate.run }),
+    ).resolves.toEqual([]);
+  });
+
   it("names Prisma's error code and never the URL or the password, encoded or not", async () => {
     const { run } = stub({
       exitCode: 1,
       stdout: `Loaded Prisma config from prisma.config.ts.\nDatasource "db": PostgreSQL database "app" at ${URL}\n`,
       stderr: `Error: P1000: Authentication failed against database server, the provided database credentials for \`app\` (p@ss/word, p%40ss%2Fword) are not valid.`,
     });
-    const error = await migratePrismaPostgres({ cwd: "/app", databaseUrl: URL, run }).catch(
-      (caught: unknown) => caught as Error & { code: string },
-    );
+    const error = (await migratePrismaPostgres({ cwd: "/app", databaseUrl: URL, run }).catch(
+      (caught: unknown) => caught,
+    )) as Error & { code: string };
     expect(error).toMatchObject({ code: "MIGRATION_FAILED" });
     expect(error!.message).toContain(
       "Error: P1000: Authentication failed against database server, the provided database credentials for `app` (***, ***) are not valid.",
@@ -85,7 +101,7 @@ describe("migratePrismaPostgres", () => {
     fs.writeFileSync(path.join(cwd, "package.json"), "{}");
     await expect(migratePrismaPostgres({ cwd, databaseUrl: URL })).rejects.toMatchObject({
       code: "PRISMA_MISSING",
-      fix: "add prisma to devDependencies",
+      fix: "add prisma to devDependencies, then deploy again",
     });
   });
 

@@ -24,7 +24,6 @@ import {
 } from "@/commands/workflow";
 import { readOwnedResources, recordOwnedResource } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
-import { listWorkerSecrets } from "@/lib/cf/secrets";
 import { rollbackFor } from "@/lib/errors";
 import { applyGateway } from "@/lib/gateway/apply";
 import { readInstall } from "@/lib/gateway/install";
@@ -287,7 +286,9 @@ describe("deploy", () => {
       .map((event) => event["step"]);
     expect(steps).toEqual([
       "app.connect",
+      "app.deploy",
       "app.register",
+      "app.resources",
       "app.install",
       "app.build",
       "app.migrations",
@@ -307,8 +308,9 @@ describe("deploy", () => {
         defaultAccess: false,
         deployerAccess: false,
         organizationName: "Acme",
+        firstDeploy: true,
+        hasOwner: false,
       },
-      message: expect.stringContaining("its first owner gets the app"),
     });
     // A new database: nothing to restore it to.
     expect(events.find((event) => event["step"] === "app.migrations" && event["status"] === "ok")).toEqual(
@@ -355,56 +357,6 @@ describe("deploy", () => {
     expect(granted("chef").sort()).toEqual(["dev", ownerId].sort());
     expect(events.find((event) => event["step"] === "app.register")).toMatchObject({
       data: { deployerAccess: true, organizationName: "Owner" },
-      message: expect.stringContaining("only you and the organization's owners and admins"),
-    });
-  });
-
-  it("sends the app's own secrets with the version, and later deploys keep them", async () => {
-    await deploy(TODO, { secrets: { GITHUB_TOKEN: "ghp_test" } });
-
-    const uploads = account.deploys.filter((d) => d.workerName === "every-acme-todo");
-    expect(uploads.at(-1)!.secrets).toEqual({
-      GITHUB_TOKEN: "ghp_test",
-      GATEWAY_URL,
-      EVERY_APP_ORG_ID: organizationId(),
-    });
-    // A plain redeploy doesn't send it again; the Worker keeps it.
-    await deploy();
-    expect(account.deploys.filter((d) => d.workerName === "every-acme-todo").at(-1)!.secrets).toEqual({
-      GATEWAY_URL,
-      EVERY_APP_ORG_ID: organizationId(),
-    });
-  });
-
-  it("removes a secret, then replaces the version Cloudflare made without it, unattended", async () => {
-    await deploy(TODO, { secrets: { GITHUB_TOKEN: "ghp_test" } });
-    await expect(listWorkerSecrets(account.cf, "every-acme-todo")).resolves.toEqual([
-      "EVERY_APP_ORG_ID",
-      "GATEWAY_URL",
-      "GITHUB_TOKEN",
-    ]);
-    const uploads = account.deploys.length;
-    events = [];
-
-    await deploy(TODO, { unsetSecrets: ["GITHUB_TOKEN"] });
-
-    expect(account.workers.get("every-acme-todo")!.secrets).not.toHaveProperty("GITHUB_TOKEN");
-    expect(account.deploys).toHaveLength(uploads + 1);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        step: "app.register",
-        data: expect.objectContaining({ unsetSecrets: ["GITHUB_TOKEN"] }),
-      }),
-    );
-    // The upload that followed is the version everyapp records.
-    const [record] = (await readOwnedResources(registry(), "every-acme-todo")).filter(
-      (resource) => resource.kind === "worker",
-    );
-    expect(record!.versionId).toBe(account.workers.get("every-acme-todo")!.versions.at(-1));
-
-    // Gone already: the redeploy runs all the same.
-    await expect(deploy(TODO, { unsetSecrets: ["GITHUB_TOKEN"] })).resolves.toMatchObject({
-      live: true,
     });
   });
 
@@ -432,24 +384,6 @@ describe("deploy", () => {
       liveVersionId: result.versionId,
     });
     expect(result.versionId).toBe(account.workers.get("every-app-gateway")!.versions.at(-1));
-  });
-
-  it("refuses a secret named like one everyapp sets, before anything happens", async () => {
-    await expect(
-      deploy(TODO, { secrets: { GATEWAY_URL: "https://evil.example" } }),
-    ).rejects.toMatchObject({ code: "SECRET_NAME_RESERVED" });
-    await expect(
-      deploy(TODO, { secrets: { EVERYAPP_DEV: "1" } }),
-    ).rejects.toMatchObject({ code: "SECRET_NAME_RESERVED" });
-    expect(appRow("todo")).toBeUndefined();
-    expect(account.deploys.filter((d) => d.workerName === "every-acme-todo")).toEqual([]);
-  });
-
-  it("refuses a secret named like one of the app's bindings, before anything happens", async () => {
-    await expect(
-      deploy(TODO, { secrets: { DB: "not-a-database" } }),
-    ).rejects.toMatchObject({ code: "SECRET_NAME_TAKEN" });
-    expect(appRow("todo")).toBeUndefined();
   });
 
   it("redeploys an app's code without touching the gateway", async () => {
@@ -655,8 +589,10 @@ describe("deploy", () => {
 
     const held = await deploy().catch((error: Error) => error);
     expect(held).toMatchObject({ code: "LEASE_HELD", retryable: true });
-    expect((held as Error).message).toContain(
-      `It's from dev@example.com on ${upgrade.holder.split(":")[0]!.split(".")[0]}. If it stopped`,
+    // Who holds it: the deployer when that run knew its login, and the machine.
+    const machine = upgrade.holder.split(":")[0]!.split(".")[0]!;
+    expect((held as Error).message).toMatch(
+      new RegExp(`It's from (dev@example\\.com on )?${machine}\\. If it stopped`),
     );
     expect((held as Error).message).toContain("This app's upload is kept");
     expect((held as Error).message).not.toContain("--");
@@ -1049,7 +985,7 @@ describe("deploy", () => {
 
     await expect(deploy()).rejects.toMatchObject({
       code: "IDENTITY_KEY_UNKNOWN",
-      message: expect.stringContaining("key-rotation.md"),
+      fix: expect.stringContaining("key-rotation.md"),
     });
     expect(appRow("todo")).toBeUndefined();
   });
@@ -1108,7 +1044,7 @@ export default defineConfig({ dialect: "sqlite", schema: "./src/db/schema.ts", o
 
     expect(schemaEvents()).toEqual([
       expect.objectContaining({ type: "step", status: "start" }),
-      expect.objectContaining({ type: "step", status: "ok", message: "schema in sync" }),
+      expect.objectContaining({ type: "step", status: "ok" }),
     ]);
     expect(account.database("every-acme-todo").all("SELECT name FROM d1_migrations")).toEqual([
       { name: migrationsOf().find((file) => String(file).endsWith(".sql")) },
@@ -1127,7 +1063,7 @@ export default defineConfig({ dialect: "sqlite", schema: "./src/db/schema.ts", o
 
     await expect(deploy()).rejects.toMatchObject({
       code: "SCHEMA_DRIFT",
-      message: expect.stringContaining("Run `pnpm db:generate`, then deploy again"),
+      rerun: "pnpm db:generate",
     });
     expect(
       account.database("every-acme-todo").all("SELECT name FROM sqlite_master WHERE name = 'd1_migrations'"),
@@ -1147,7 +1083,8 @@ export default defineConfig({ dialect: "sqlite", schema: "./src/db/schema.ts", o
 
     await expect(deploy()).rejects.toMatchObject({
       code: "SCHEMA_CHECK_FAILED",
-      message: expect.stringContaining("Run `pnpm db:generate` in a terminal"),
+      rerun: "pnpm db:generate",
+      rerunNote: expect.stringContaining("in a terminal"),
     });
     expect(account.workers.get("every-acme-todo")).toBeUndefined();
     expect(scratchLeft()).toEqual([]);
@@ -1216,6 +1153,7 @@ describe("deploy of an app without helper Workers", () => {
     ).toMatchInlineSnapshot(`
       {
         "built": {
+          "release": false,
           "workflows": [
             "every-acme-todo--rank-check",
           ],
@@ -1384,7 +1322,7 @@ describe("apps with helper Workers", () => {
   const HELPER = "every-acme-seo--audit";
 
   it("uploads each helper Worker before the app's, private and named after it", async () => {
-    await deploy(SEO, { secrets: { CRAWLER_SECRET: "s" } });
+    await deploy(SEO);
 
     const uploads = account.deploys.filter((upload) =>
       upload.workerName.startsWith("every-acme-seo"),
@@ -1410,11 +1348,10 @@ describe("apps with helper Workers", () => {
         SiteAuditWorkflow: { type: "workflow", name: "every-acme-seo--site-audit" },
       },
     });
-    // The app's own secrets, the gateway and the organization reach both:
+    // The gateway and the organization reach both:
     // a helper's gateway calls are the organization's like the app's.
     for (const upload of [helper!, app!]) {
       expect(Object.keys(upload.secrets!).sort()).toEqual([
-        "CRAWLER_SECRET",
         "EVERY_APP_ORG_ID",
         "GATEWAY_URL",
       ]);
@@ -1438,6 +1375,7 @@ describe("apps with helper Workers", () => {
         step: "app.build",
         status: "ok",
         data: {
+          release: false,
           workflows: ["every-acme-seo--rank-check", "every-acme-seo--site-audit"],
         },
       }),
@@ -1532,15 +1470,6 @@ describe("apps with helper Workers", () => {
     await deploy(withoutAudit, { allowDeleteWorkflows: true });
     expect(account.workflows.has("every-acme-seo--site-audit")).toBe(false);
     expect(account.workflows.has("every-acme-seo--rank-check")).toBe(true);
-  });
-
-  it("unsets the app's secret on its helper Workers too", async () => {
-    await deploy(SEO, { secrets: { CRAWLER_SECRET: "s" } });
-    await deploy(SEO, { unsetSecrets: ["CRAWLER_SECRET"] });
-    expect(account.workers.get(HELPER)!.secrets).not.toHaveProperty("CRAWLER_SECRET");
-    expect(account.workers.get("every-acme-seo")!.secrets).not.toHaveProperty(
-      "CRAWLER_SECRET",
-    );
   });
 
   it("warns that a helper Worker the manifest dropped keeps running", async () => {
@@ -1785,10 +1714,16 @@ describe("deploy and delete with the gateway on a subdomain", () => {
       expect.objectContaining({
         type: "progress",
         step: "app.live",
-        message: expect.stringContaining("get its certificate"),
+        message: `Waiting for the certificate for todo.${GW} (usually under 5m)`,
       }),
     );
-    expect(events.at(-1)).toMatchObject({ type: "step", step: "app.live", status: "ok" });
+    // A person sees the wait end: the certificate came.
+    expect(events.at(-1)).toMatchObject({
+      type: "step",
+      step: "app.live",
+      status: "ok",
+      data: { waited: "certificate" },
+    });
   });
 
   it("redeploys an app's code without touching the gateway or its domains", async () => {
@@ -1872,9 +1807,15 @@ describe("deploy and delete with the gateway on a subdomain", () => {
         step: "app.live",
         type: "step",
         status: "skip",
-        message: expect.stringContaining("goes live on its first visit"),
+        data: expect.objectContaining({ url: `https://todo.${GW}`, reason: "certificate" }),
       }),
     );
+
+    // A redeploy of an app that's live says so, waiting or not.
+    await expect(deployHere()).resolves.toMatchObject({ live: true });
+    events = [];
+    await expect(deployHere({ waitForLive: false })).resolves.toMatchObject({ live: true });
+    expect(events.find((event) => event["step"] === "app.live")).toMatchObject({ status: "ok" });
 
     // Another app whose certificate doesn't come in time: a warning, not a failure.
     events = [];
@@ -2149,7 +2090,7 @@ describe("deploy with no Gateway in the account yet", () => {
     expect(failure).toMatchObject({
       action: "install_gateway",
       rerun: "pnpm everyapp setup --domain apps.example.com",
-      message: expect.stringContaining("No Gateway in Acme yet"),
+      message: expect.stringContaining("Install a Gateway first: Acme has none yet"),
     });
     expect(account.deploys).toEqual([]);
     expect(account.databases.size).toBe(0);
@@ -2170,7 +2111,7 @@ describe("deploy with no Gateway in the account yet", () => {
       },
     });
 
-    expect(asked).toEqual(["No Gateway in Acme yet. Install one at apps.example.com?"]);
+    expect(asked).toEqual(["Install a Gateway at apps.example.com?"]);
     expect(opened).toEqual([expect.stringMatching(/^https:\/\/apps\.example\.com\/setup#token=est_/)]);
     expect(events).toContainEqual(
       expect.objectContaining({ step: "setup.owner", status: "ok" }),
@@ -2179,15 +2120,16 @@ describe("deploy with no Gateway in the account yet", () => {
     expect(account.gatewayDomains().sort()).toEqual(["apps.example.com", "todo.apps.example.com"]);
   });
 
-  it("deploys nothing when the person declines, and names the setup command", async () => {
+  it("deploys nothing when the person declines: a cancel that names the setup command", async () => {
     const failure = await deploy(TODO, {
       interactive: true,
       offerInstall: { confirm: async () => false, setup: setupSeams() },
     }).catch((error: unknown) => error);
 
     expect(failure).toMatchObject({
-      code: "GATEWAY_NOT_FOUND",
-      rerun: "pnpm everyapp setup --domain apps.example.com",
+      code: "CANCELLED",
+      message:
+        "Cancelled. Nothing deployed.\nApps deploy behind a Gateway. To install one elsewhere: pnpm everyapp setup --domain <hostname>",
     });
     expect(account.deploys).toEqual([]);
   });

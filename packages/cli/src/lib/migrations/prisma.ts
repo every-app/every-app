@@ -18,7 +18,6 @@
  */
 import { APP_SECRETS_FILE, POSTGRES_URL_VARIABLE } from "@/lib/app/deploySecrets";
 import { EveryAppError } from "@/lib/errors";
-import { thisCommand } from "@/lib/output/command";
 import {
   localPackageRunner,
   runMigrationCli,
@@ -35,12 +34,17 @@ function localPrisma(): MigrationCliRunner {
     missing: () =>
       new EveryAppError(
         "PRISMA_MISSING",
-        'Prisma isn\'t installed in this app\nPrisma migrations (migrations.engine "prisma") run the app\'s own Prisma CLI. Nothing was migrated or uploaded.',
-        { fix: "add prisma to devDependencies", rerun: thisCommand() },
+        "Prisma migrations need prisma, which isn't installed\nNothing was migrated or uploaded.",
+        { fix: "add prisma to devDependencies, then deploy again" },
       ),
   });
 }
 
+/**
+ * Apply the pending migrations; returns their names as Prisma reports each
+ * (``Applying migration `20240101_init` ``), none when the database was up
+ * to date.
+ */
 export async function migratePrismaPostgres({
   cwd,
   databaseUrl,
@@ -52,8 +56,8 @@ export async function migratePrismaPostgres({
   /** The app's prisma.config.ts, relative to `cwd`; Prisma's own lookup when unset. */
   config?: string;
   run?: MigrationCliRunner;
-}): Promise<void> {
-  await runMigrationCli({
+}): Promise<string[]> {
+  const output = await runMigrationCli({
     run,
     args: ["migrate", "deploy", ...(config ? ["--config", config] : [])],
     cwd,
@@ -63,11 +67,11 @@ export async function migratePrismaPostgres({
     failed: (why) =>
       new EveryAppError(
         "MIGRATION_FAILED",
-        `prisma migrate deploy couldn't migrate the app's Postgres database\n${why}. Nothing was uploaded.`,
+        `prisma migrate deploy couldn't migrate the Postgres database\n${why}. Nothing was uploaded.`,
         {
-          fix: `check ${POSTGRES_URL_VARIABLE} in ${APP_SECRETS_FILE}, the app's prisma.config.ts (its datasource reads process.env.${POSTGRES_URL_VARIABLE}) and the migrations`,
-          rerun: thisCommand(),
+          fix: `check ${POSTGRES_URL_VARIABLE} in ${APP_SECRETS_FILE}, prisma.config.ts (its datasource reads it) and the migrations`,
         },
       ),
   });
+  return [...output.matchAll(/^Applying migration `([^`]+)`/gm)].map((match) => match[1]!);
 }

@@ -176,7 +176,7 @@ describe("deploy of an app that receives mail", () => {
     await deploy();
     expect(emailStep("skip")).toMatchObject({
       type: "step",
-      message: "inbox receives no mail yet: `pnpm everyapp email set --inbound <address>` (in its directory) routes addresses to it.",
+      message: "inbox receives no mail yet.",
     });
     expect(account.cf.calls.filter((call) => call.args[0] === "email-routing")).toEqual([]);
     expect(await routes()).toEqual([]);
@@ -223,7 +223,7 @@ describe("deploy of an app that receives mail", () => {
         step: "app.email",
         status: "ok",
         message: expect.stringContaining(`Mail to *@example.com, support@mail.example.com goes to ${WORKER}.`),
-        data: { addresses: ["*@example.com", "support@mail.example.com"], removed: [] },
+        data: expect.objectContaining({ addresses: ["*@example.com", "support@mail.example.com"], removed: [] }),
       }),
     );
     expect(emailStep("skip")).toBeUndefined();
@@ -273,7 +273,7 @@ describe("deploy of an app that receives mail", () => {
       expect.objectContaining({
         step: "app.email",
         status: "ok",
-        data: { addresses: ["*@example.com"], removed: ["support@mail.example.com"] },
+        data: expect.objectContaining({ addresses: ["*@example.com"], removed: ["support@mail.example.com"] }),
       }),
     );
 
@@ -316,7 +316,8 @@ describe("deploy of an app that receives mail", () => {
         type: "warning",
         code: "EMAIL_INBOUND_UNDECLARED",
         message:
-          "everyapp.config.ts no longer declares email: { inbound: true }, so this deploy removes inbox's mail routes; its addresses (*@example.com, support@mail.example.com) stay on the Gateway until `pnpm everyapp email unset inbound` clears them.",
+          "everyapp.config.ts no longer declares inbound email; removing the app's mail routes\nIts addresses (*@example.com, support@mail.example.com) stay on the Gateway until you clear them.",
+        data: { rerun: "pnpm everyapp email unset inbound" },
       }),
     );
     expect(events).toContainEqual(
@@ -324,21 +325,23 @@ describe("deploy of an app that receives mail", () => {
         step: "app.email",
         status: "ok",
         message: "inbox receives no mail. Removed the routes for *@example.com, support@mail.example.com.",
-        data: { addresses: [], removed: ["*@example.com", "support@mail.example.com"] },
+        data: expect.objectContaining({ addresses: [], removed: ["*@example.com", "support@mail.example.com"] }),
       }),
     );
     // The list stays: declaring inbound again routes it.
     await expect(readAppEmail(registry(), id)).resolves.toEqual({ senders: [], inbound: INBOUND });
   });
 
-  it("prints the hint once on the first deploy of an app that declares inbound with no addresses", async () => {
-    await deploy();
+  it("ends with how to route mail on a deploy of an app that declares inbound with no addresses", async () => {
+    await expect(deploy()).resolves.toMatchObject({
+      next: [{ command: "pnpm everyapp email set --inbound <address>", note: "routes mail to inbox" }],
+    });
     const hints = events.filter((event) => event["step"] === "app.email");
     expect(hints).toEqual([
       expect.objectContaining({
         type: "step",
         status: "skip",
-        message: "inbox receives no mail yet: `pnpm everyapp email set --inbound <address>` (in its directory) routes addresses to it.",
+        message: "inbox receives no mail yet.",
       }),
     ]);
     // Nothing for an app that doesn't declare inbound mail.

@@ -68,6 +68,9 @@ const LEFT: Readonly<Record<LiveWaitVerb, string>> = {
  */
 type LiveOutcome = "live" | "first_visit" | "disabled";
 
+/** What a person waited for, when the wait showed: its certificate, or the app itself. */
+type Waited = "certificate" | "live";
+
 export async function waitForLive({
   db,
   appRowId,
@@ -88,12 +91,13 @@ export async function waitForLive({
   hostname: string;
   out: EventSink;
   verb: LiveWaitVerb;
-} & LiveWaitSeams): Promise<LiveOutcome> {
+} & LiveWaitSeams): Promise<{ outcome: LiveOutcome; waited?: Waited }> {
   const url = `https://${hostname}/`;
   const started = now();
   let answered = false;
   let lastProgress: number | null = null;
-  const live = async (): Promise<LiveOutcome> => {
+  let waitedFor: Waited | undefined;
+  const live = async () => {
     // Only a request this run made says the hostname resolves at its zone.
     if (answered && localDns) {
       await warnIfLocalDnsStale({
@@ -104,7 +108,7 @@ export async function waitForLive({
         localDns,
       });
     }
-    return "live";
+    return { outcome: "live" as const, waited: waitedFor };
   };
 
   for (;;) {
@@ -117,7 +121,7 @@ export async function waitForLive({
         step: STEP,
         message: `${appId} is switched off in Admin → Apps\nIt's ${LEFT[verb]}; the Gateway serves it once an admin turns it on.`,
       });
-      return "disabled";
+      return { outcome: "disabled" };
     }
 
     const answer = await probeHttps(url, fetchImpl);
@@ -128,10 +132,10 @@ export async function waitForLive({
           type: "warning",
           code: "ACCESS_IN_FRONT",
           step: STEP,
-          message: `Cloudflare Access answers ${hostname} before the Gateway\n${appId} is ${LEFT[verb]}. It goes live on its first visit, once someone signs in through Access.`,
+          message: `Cloudflare Access answers before the Gateway, so this run can't confirm ${appId} is live\nIt goes live on its first visit, once someone signs in through Access.`,
           data: { hostname },
         });
-        return "first_visit";
+        return { outcome: "first_visit" };
       }
       // The request reached the gateway, which activates a bound app on it.
       if ((await appStatus(db, appRowId, appId)) === "active") return live();
@@ -150,7 +154,7 @@ export async function waitForLive({
             fix: "if it never comes, check the zone's CAA records allow Cloudflare's certificate authorities",
           },
         });
-        return "first_visit";
+        return { outcome: "first_visit" };
       }
       throw new EveryAppError(
         "APP_NOT_LIVE",
@@ -159,12 +163,13 @@ export async function waitForLive({
       );
     }
     if (lastProgress === null || now() - lastProgress >= PROGRESS_EVERY_MS) {
+      waitedFor = answered ? "live" : "certificate";
       out.emit({
         type: "progress",
         step: STEP,
         message: answered
-          ? `Waiting for ${url} to go live...`
-          : `Waiting for ${url} to go live and get its certificate (usually under five minutes)...`,
+          ? `Waiting for ${appId} to go live`
+          : `Waiting for the certificate for ${hostname} (usually under 5m)`,
         data: { hostname, waitedMs: waited, answered },
       });
       lastProgress = now();
@@ -182,7 +187,8 @@ async function appStatus(
   if (!app || app.status === DELETED_APP_STATUS) {
     throw new EveryAppError(
       "APP_NOT_FOUND",
-      `${appId} was deleted while it deployed.`,
+      `${appId} was deleted during this run\nSomeone removed it from the Gateway while this run waited for it to go live.`,
+      { retryable: true, rerunNote: "to put it back" },
     );
   }
   return app.status;

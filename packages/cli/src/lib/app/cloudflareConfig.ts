@@ -3,8 +3,8 @@ import path from "node:path";
 
 /** What to add when an app has no cloudflare.config.ts. */
 export const MISSING_CLOUDFLARE_CONFIG = [
-  "No cloudflare.config.ts found. Every App apps define their Worker in a",
-  "cloudflare.config.ts at the app root that builds it from everyapp.config.ts:",
+  "No cloudflare.config.ts in this app",
+  "Every App apps build their Worker in a cloudflare.config.ts at the app root:",
   "",
   '  import { defineConfig } from "cf/config";',
   '  import { everyAppWorker } from "@every-app/sdk/cloudflare";',
@@ -15,7 +15,7 @@ export const MISSING_CLOUDFLARE_CONFIG = [
   "    worker: everyAppWorker({ manifest, entrypoint, ctx }),",
   "  }));",
   "",
-  "See templates/simple-todo for the full setup (package.json, vite.config.ts).",
+  "templates/simple-todo has the full setup (package.json, vite.config.ts).",
 ].join("\n");
 
 /**

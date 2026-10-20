@@ -38,14 +38,18 @@ export async function bundleApp({
   /** Seams for tests. */
   createCf?: () => CfRunner;
   installDeps?: typeof installDependencies;
-}): Promise<{ tarball: string; version: string; sha256: string }> {
-  await installDeps({
-    cwd,
-    description: "Installing dependencies...",
-    install: manifest.install,
-    verbose,
-  });
-  out.emit({ type: "step", step: "app.build", status: "start", message: "Building the app..." });
+}): Promise<{ tarball: string; shown: string; version: string; sha256: string }> {
+  if (manifest.install !== false) {
+    out.emit({ type: "step", step: "app.install", status: "start", message: "Installing dependencies..." });
+    await installDeps({
+      cwd,
+      description: "Installing dependencies...",
+      install: manifest.install,
+      verbose,
+    });
+    out.emit({ type: "step", step: "app.install", status: "ok" });
+  }
+  out.emit({ type: "step", step: "app.build", status: "start", message: "Building..." });
   await buildApp({ cwd, cf: createCf(), buildCommand: manifest.build, verbose });
   const sentinel = sentinelDeployTarget(manifest);
   await prepareAppBuildOutput({
@@ -61,6 +65,8 @@ export async function bundleApp({
   await checkSchemaDrift({ cwd, manifest, out });
 
   const tarball = path.resolve(cwd, outFile);
+  // As a person names it again: `./everyapp-release.tar.gz`.
+  const shown = path.isAbsolute(outFile) || outFile.startsWith(".") ? outFile : `./${outFile}`;
   const cfVersion = await resolveCfBinary(cwd).then(
     (cf) => cf.version,
     () => "unknown",
@@ -71,7 +77,7 @@ export async function bundleApp({
     step: "app.release",
     status: "ok",
     message: `Packed ${manifest.id} ${release.version} (${release.sha256.slice(0, 12)}) into ${tarball}.`,
-    data: { tarball, appId: manifest.id, version: release.version, sha256: release.sha256 },
+    data: { tarball, shown, appId: manifest.id, version: release.version, sha256: release.sha256 },
   });
-  return { tarball, version: release.version, sha256: release.sha256 };
+  return { tarball, shown, version: release.version, sha256: release.sha256 };
 }

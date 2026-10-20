@@ -71,8 +71,8 @@ interface ProvisionOptions {
   gatewayDb: D1Database;
   registration: AppNaming;
   /** Said for each resource created, or created again after it was deleted. */
-  onCreated?: (description: string) => void;
-  onRecreated?: (description: string) => void;
+  onCreated?: (description: string, kind: OwnedResource["kind"]) => void;
+  onRecreated?: (description: string, kind: OwnedResource["kind"]) => void;
   /** Said when an existing Hyperdrive config is adopted or pointed at a new origin. */
   onChanged?: (message: string) => void;
 }
@@ -254,7 +254,7 @@ async function provisionHyperdrive(
       return existing.id;
     }
     if (existing) throw replacedError(resource, recorded.resourceId);
-    onRecreated?.(description);
+    onRecreated?.(description, resource.kind);
   } else if (recorded) {
     // Claimed, then created, but the id never recorded: it's this one.
     if (existing) {
@@ -339,7 +339,7 @@ async function provisionOne(
   if (recorded?.resourceId) {
     if (existing === recorded.resourceId) return existing;
     if (existing) throw replacedError(resource, recorded.resourceId);
-    onRecreated?.(describeResource(resource));
+    onRecreated?.(describeResource(resource), kind);
   } else if (recorded) {
     // Claimed, then created, but the id never recorded: it's this one.
     if (existing) {
@@ -396,7 +396,7 @@ async function createClaimed(
     ...resource,
     resourceId: id,
   });
-  onCreated?.(describeResource(resource));
+  onCreated?.(describeResource(resource), resource.kind);
   return id;
 }
 

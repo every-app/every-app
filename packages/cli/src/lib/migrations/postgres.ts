@@ -14,7 +14,6 @@
  */
 import { APP_SECRETS_FILE, POSTGRES_URL_VARIABLE } from "@/lib/app/deploySecrets";
 import { EveryAppError } from "@/lib/errors";
-import { thisCommand } from "@/lib/output/command";
 import {
   localPackageRunner,
   runMigrationCli,
@@ -29,8 +28,8 @@ function localDrizzleKit(): MigrationCliRunner {
     missing: () =>
       new EveryAppError(
         "DRIZZLE_KIT_MISSING",
-        "drizzle-kit isn't installed in this app\nPostgres migrations run the app's own drizzle-kit. Nothing was migrated or uploaded.",
-        { fix: "add drizzle-kit to devDependencies", rerun: thisCommand() },
+        "Postgres migrations need drizzle-kit, which isn't installed\nNothing was migrated or uploaded.",
+        { fix: "add drizzle-kit to devDependencies, then deploy again" },
       ),
   });
 }
@@ -56,11 +55,8 @@ export async function migratePostgres({
     failed: (why) =>
       new EveryAppError(
         "MIGRATION_FAILED",
-        `drizzle-kit couldn't migrate the app's Postgres database\n${why}. Nothing was uploaded.`,
-        {
-          fix: `check ${POSTGRES_URL_VARIABLE} in ${APP_SECRETS_FILE} and the migrations`,
-          rerun: thisCommand(),
-        },
+        `drizzle-kit couldn't migrate the Postgres database\n${why}. Nothing was uploaded.`,
+        { fix: `check ${POSTGRES_URL_VARIABLE} in ${APP_SECRETS_FILE} and the migrations` },
       ),
   });
 }

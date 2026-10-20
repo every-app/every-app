@@ -41,7 +41,7 @@ export async function buildApp({
       env: { ...process.env, ...BUILD_ENV },
       shell: true,
       echo: verbose,
-      what: "The app's build command",
+      what: "Build",
       code: "BUILD_FAILED",
     });
     return;
@@ -64,7 +64,8 @@ export async function buildApp({
       throw new EveryAppError(
         "BUILD_FAILED",
         [
-          "cf build failed. Its last lines:",
+          "Build failed",
+          "cf build's last lines:",
           ...outputTail(error.stdout, error.stderr).map((line) => `  ${line}`),
         ].join("\n"),
       );

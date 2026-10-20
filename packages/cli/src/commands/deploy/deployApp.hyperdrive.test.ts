@@ -424,6 +424,11 @@ describe("deploy of an app on Postgres through Hyperdrive", () => {
     };
 
     it("runs prisma migrate deploy with the URL in its environment, before anything is uploaded", async () => {
+      migrationResult = {
+        exitCode: 0,
+        stdout: "1 migration found in prisma/migrations\n\nApplying migration `20240101_init`\n",
+        stderr: "",
+      };
       await deploy(PRISMA);
 
       expect(prismaMigrations).toEqual([
@@ -440,17 +445,18 @@ describe("deploy of an app on Postgres through Hyperdrive", () => {
           step: "app.migrations",
           status: "ok",
           message: "Migrated the app's Postgres database (prisma migrate deploy).",
-          data: { dialect: "postgresql", engine: "prisma" },
+          data: { dialect: "postgresql", engine: "prisma", applied: ["20240101_init"] },
         }),
       );
     });
 
-    it("says it can't check the schema against the migrations, and why", async () => {
+    it("says, without a warning, that it can't check the schema against the migrations, and why", async () => {
       await deploy(PRISMA);
       expect(events.filter((event) => event["step"] === "app.schema")).toEqual([
+        expect.objectContaining({ type: "progress", message: expect.stringContaining("prisma migrate diff") }),
         expect.objectContaining({
-          type: "warning",
-          code: "SCHEMA_CHECK_SKIPPED",
+          type: "step",
+          status: "skip",
           message: expect.stringContaining("shadow database"),
         }),
       ]);

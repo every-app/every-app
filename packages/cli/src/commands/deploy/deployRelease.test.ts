@@ -287,10 +287,14 @@ describe("everyapp deploy <release>", () => {
     expect(account.database("every-acme-todo").all("SELECT name FROM d1_migrations")).toEqual([
       { name: "0000_init.sql" },
     ]);
-    expect(events[0]).toMatchObject({
+    expect(events.find((event) => event["step"] === "app.deploy")).toMatchObject({
       type: "step",
-      step: "app.release",
-      message: `Deploying todo 1.4.0 from ${tarball}.`,
+      data: { appId: "todo", version: "1.4.0", origin: tarball, firstDeploy: true },
+    });
+    // Nothing was built: the release was checked.
+    expect(events.find((event) => event["step"] === "app.build")).toMatchObject({
+      status: "ok",
+      data: { release: true },
     });
     expect(
       events.find((event) => event["step"] === "app.schema" && event["type"] === "progress")?.["message"],
@@ -333,18 +337,18 @@ describe("everyapp deploy <release>", () => {
 
     events = [];
     await deployRelease(release);
-    expect(events.find((event) => event["step"] === "app.release" && event["type"] === "step")?.["message"]).toBe(
-      "Deploying todo 1.4.0 from github.com/acme/todo (release v1.4.0).",
-    );
+    expect(events.find((event) => event["step"] === "app.deploy")?.["data"]).toMatchObject({
+      version: "1.4.0",
+      origin: "github.com/acme/todo (release v1.4.0)",
+    });
 
     await expect(
       fetchAppRelease("https://github.com/acme/notes", { out: out(), fetch: github.fetch }),
     ).rejects.toMatchObject({
       code: "NO_RELEASE",
       message:
-        "acme/notes publishes no everyapp release\nNo everyapp-release.tar.gz on https://github.com/acme/notes/releases.",
-      rerun: "pnpm install && pnpm everyapp deploy",
-      rerunNote: "in a clone of it",
+        "acme/notes publishes no everyapp release\nIts GitHub releases have no everyapp-release.tar.gz.",
+      fix: "clone it, then run pnpm install && pnpm everyapp deploy in it",
     });
   });
 
@@ -378,7 +382,7 @@ describe("everyapp deploy <release>", () => {
       }),
     ).rejects.toMatchObject({
       code: "RELEASE_MIGRATIONS_UNSUPPORTED",
-      message: expect.stringContaining("drizzle-kit"),
+      message: "todo can't deploy from a release: its Postgres migrations need the source",
     });
     expect(account.database("every-app-gateway").all("SELECT id FROM apps")).toEqual([]);
   });

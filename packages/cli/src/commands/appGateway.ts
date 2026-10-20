@@ -109,6 +109,7 @@ export async function bindIfNeeded({
   databaseId,
   out,
   accountId,
+  appId,
   workerName,
   publishHost,
   interactive,
@@ -121,6 +122,7 @@ export async function bindIfNeeded({
   databaseId: string;
   out: EventSink;
   accountId: string;
+  appId: string;
   workerName: string;
   /** The app's hostname isn't one of the gateway's Custom Domains yet. */
   publishHost: boolean;
@@ -137,9 +139,21 @@ export async function bindIfNeeded({
     step: "app.bind",
     status: "start",
     message: `Binding ${appBindingName(workerName)} on the gateway${publishHost ? " and publishing its hostname" : ""}...`,
+    data: { appId },
   });
+  // The Gateway this run deploys upgrades the live one when its version is newer.
+  const to = (await seams.source?.())?.version;
+  const upgrade = to !== undefined && install !== null && to !== install.releaseVersion;
+  if (upgrade) {
+    out.emit({
+      type: "step",
+      step: "gateway.upgrade",
+      status: "start",
+      message: `Upgrading the Gateway ${install.releaseVersion} → ${to}...`,
+      data: { from: install.releaseVersion, to },
+    });
+  }
   try {
-    // The Gateway this run deploys: an upgrade too, when it is newer.
     const result = await reconcileGateway({
       cf,
       out,
@@ -151,6 +165,7 @@ export async function bindIfNeeded({
       forceDns,
       ...seams,
     });
+    if (upgrade) out.emit({ type: "step", step: "gateway.upgrade", status: "ok", data: { to } });
     out.emit({
       type: "step",
       step: "app.bind",
@@ -164,7 +179,7 @@ export async function bindIfNeeded({
       throw new EveryAppError(
         "LEASE_HELD",
         `${error.message}\n${KEPT[verb]}`,
-        { retryable: true, rerunNote: error.rerunNote, data: error.data },
+        { retryable: true, rerunNote: "once the other deploy finishes", data: error.data },
       );
     }
     throw error;
@@ -197,15 +212,14 @@ export async function awaitLive({
   verb: LiveWaitVerb;
 }): Promise<boolean> {
   if (!wait) return false;
-  if ((await waitForLive({ db, appRowId, appId, hostname, out, verb, ...seams })) !== "live") {
-    return false;
-  }
+  const { outcome, waited } = await waitForLive({ db, appRowId, appId, hostname, out, verb, ...seams });
+  if (outcome !== "live") return false;
   out.emit({
     type: "step",
     step: "app.live",
     status: "ok",
     message,
-    data: { hostname, url: `https://${hostname}` },
+    data: { hostname, url: `https://${hostname}`, ...(waited ? { waited } : {}) },
   });
   return true;
 }

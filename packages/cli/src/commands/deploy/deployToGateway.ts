@@ -33,8 +33,10 @@ import { prepareAppBuildOutput } from "@/lib/app/policy";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { errorMessage, EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
+import { roughly } from "@/lib/output/time";
 import type { EventSink } from "@/lib/output/events";
 import { installDependencies } from "@/lib/package-manager";
+import { NEVER_LIVE } from "./deployApp";
 import { checkSchemaDrift } from "./steps/checkSchemaDrift";
 
 const POLL_INTERVAL_MS = 2_000;
@@ -71,15 +73,18 @@ export function hostedDeployTarget(
   if (!flags.gateway) {
     throw new EveryAppError(
       "GATEWAY_URL_REQUIRED",
-      "EVERYAPP_DEPLOY_TOKEN is set, so this deploy goes through a hosted gateway's deploy API: name it with --gateway <url> or EVERYAPP_GATEWAY_URL. To deploy to your own Gateway with your Cloudflare login, unset EVERYAPP_DEPLOY_TOKEN.",
-      { rerun: `${CLI} deploy --gateway <url>` },
+      "EVERYAPP_DEPLOY_TOKEN is set, but no hosted Gateway is named",
+      {
+        fix: "add --gateway <url> (or set EVERYAPP_GATEWAY_URL); to use your own Gateway, unset the token",
+      },
     );
   }
   const used = SELF_HOST_ONLY_FLAGS.filter((flag) => flags[flag] !== undefined && flags[flag] !== false);
   if (used.length > 0) {
+    const one = used.length === 1;
     throw new EveryAppError(
       "FLAG_NOT_FOR_HOSTED_DEPLOY",
-      `--${used.join(", --")} ${used.length === 1 ? "is" : "are"} for deploys to your own Gateway; a hosted gateway decides ${used.length === 1 ? "it" : "them"} itself. Deploy again without.`,
+      `--${used.join(", --")} only work${one ? "s" : ""} with your own Gateway\nA hosted Gateway decides ${one ? "that" : "those"} itself.`,
       { rerun: `${CLI} deploy --gateway ${flags.gateway}` },
     );
   }
@@ -111,6 +116,8 @@ interface DeployToGatewayResult {
   versionId: string | null;
   jobId: string;
   status: string;
+  /** The Gateway says the app is active. */
+  live: boolean;
 }
 
 interface JobBody {
@@ -130,6 +137,7 @@ export async function deployToGateway(
   options: DeployToGatewayOptions,
 ): Promise<DeployToGatewayResult> {
   const { cwd, manifest, gatewayUrl, out } = options;
+  const host = new URL(gatewayUrl).host;
   const fetchImpl = options.fetch ?? fetch;
   const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const rerun = `${CLI} deploy --gateway ${gatewayUrl}`;
@@ -142,11 +150,10 @@ export async function deployToGateway(
         headers: { ...(init.headers as Record<string, string>), authorization: `Bearer ${options.token}` },
       });
     } catch (error) {
-      throw new EveryAppError(
-        "GATEWAY_UNREACHABLE",
-        `${gatewayUrl} didn't answer (${errorMessage(error)}).`,
-        { retryable: true, rerun },
-      );
+      throw new EveryAppError("GATEWAY_UNREACHABLE", `${host} didn't answer\n${errorMessage(error)}`, {
+        retryable: true,
+        rerun,
+      });
     }
     const body = (await response.json().catch(() => null)) as
       | (T & { error?: string; message?: string })
@@ -156,15 +163,24 @@ export async function deployToGateway(
     if (response.status === 404 && pathname === "/api/v1/deploy-key") {
       throw new EveryAppError(
         "DEPLOY_API_UNAVAILABLE",
-        `${gatewayUrl} has no deploy API: it takes no third-party deploys. Deploy to your own Gateway with your Cloudflare login (unset EVERYAPP_DEPLOY_TOKEN).`,
+        `${host} doesn't take deploys from other accounts\nIt has no deploy API.`,
+        { fix: `to deploy to your own Gateway, unset EVERYAPP_DEPLOY_TOKEN and run ${CLI} deploy` },
       );
     }
     const code = body?.error ?? `HTTP_${response.status}`;
-    const message = body?.message ?? `${gatewayUrl} answered ${response.status}.`;
-    throw new EveryAppError(code, message, {
-      retryable: response.status >= 500 || response.status === 409,
-      rerun,
-    });
+    if (response.status === 401 || response.status === 403) {
+      throw new EveryAppError(
+        code,
+        `${host} refused the deploy (HTTP ${response.status})${body?.message ? `\n${body.message}` : ""}`,
+        { fix: "check EVERYAPP_DEPLOY_TOKEN" },
+      );
+    }
+    const retryable = response.status >= 500 || response.status === 409;
+    throw new EveryAppError(
+      code,
+      `${host} couldn't deploy ${manifest.id} (HTTP ${response.status})${body?.message ? `\nIt said: ${body.message}` : ""}`,
+      retryable ? { retryable, rerun, rerunNote: "to try again" } : {},
+    );
   };
 
   // 1. Who the key is, then the app's registration (checked against the
@@ -179,6 +195,22 @@ export async function deployToGateway(
       body: JSON.stringify({ appId: manifest.id, manifest }),
     },
   );
+  const release = options.release;
+  out.emit({
+    type: "step",
+    step: "app.deploy",
+    status: "ok",
+    message: `Deploying ${manifest.id}${release ? ` ${release.release.version} from ${describeAppOrigin(release.origin)}` : ""} to ${gatewayUrl}.`,
+    data: {
+      appId: manifest.id,
+      gatewayHost: host,
+      organizationId: key.organizationId,
+      firstDeploy: NEVER_LIVE.has(app.status),
+      ...(release
+        ? { version: release.release.version, origin: describeAppOrigin(release.origin) }
+        : {}),
+    },
+  });
   out.emit({
     type: "step",
     step: "app.register",
@@ -189,7 +221,6 @@ export async function deployToGateway(
 
   // 2. The build, with placeholders for everything the deployer installs;
   // a release's was built where it was packed.
-  const release = options.release;
   if (release) {
     await prepareAppBuildOutput({ cwd: release.dir, inputs: sentinelDeployTarget(manifest) });
     out.emit({
@@ -197,15 +228,20 @@ export async function deployToGateway(
       step: "app.build",
       status: "ok",
       message: `Checked the Worker of ${manifest.id} ${release.release.version} from ${describeAppOrigin(release.origin)}; its publisher's build checked its migrations against its schema.`,
+      data: { release: true },
     });
   } else {
-    await (options.installDeps ?? installDependencies)({
-      cwd,
-      description: "Installing dependencies...",
-      install: manifest.install,
-      verbose: options.verbose ?? false,
-    });
-    out.emit({ type: "step", step: "app.build", status: "start", message: "Building the app..." });
+    if (manifest.install !== false) {
+      out.emit({ type: "step", step: "app.install", status: "start", message: "Installing dependencies..." });
+      await (options.installDeps ?? installDependencies)({
+        cwd,
+        description: "Installing dependencies...",
+        install: manifest.install,
+        verbose: options.verbose ?? false,
+      });
+      out.emit({ type: "step", step: "app.install", status: "ok" });
+    }
+    out.emit({ type: "step", step: "app.build", status: "start", message: "Building..." });
     await buildApp({
       cwd,
       cf: (options.createCf ?? (() => createCfRunner()))(),
@@ -233,41 +269,75 @@ export async function deployToGateway(
     method: "POST",
     body: bundle.form,
   });
+  out.emit({
+    type: "step",
+    step: "app.upload",
+    status: "ok",
+    message: `Uploaded ${manifest.id}; ${host} deploys it as job ${job.id}.`,
+    data: {
+      jobId: job.id,
+      modules: bundle.modules,
+      assets: bundle.assets,
+      migrations: bundle.migrations,
+    },
+  });
+  const deployed = { appId: manifest.id, gatewayHost: host, jobId: job.id };
+  const wait = options.wait ?? true;
+  if (job.status === "running" && wait) {
+    out.emit({
+      type: "step",
+      step: "app.hosted",
+      status: "start",
+      message: `${host} is deploying ${manifest.id}...`,
+      data: deployed,
+    });
+  }
   const deadline = Date.now() + POLL_TIMEOUT_MS;
-  while (job.status === "running" && (options.wait ?? true)) {
+  while (job.status === "running" && wait) {
     if (Date.now() > deadline) {
       throw new EveryAppError(
         "DEPLOY_TIMEOUT",
-        `The gateway is still deploying ${manifest.id} (job ${job.id}), though it gives a deploy only about 50 seconds; the gateway may have lost the job. Deploy again in a few minutes.`,
-        { retryable: true, rerun },
+        `${host} hasn't finished deploying ${manifest.id} after ${roughly(POLL_TIMEOUT_MS)}\nIt may have lost the job (${job.id}).`,
+        { retryable: true, rerun, rerunNote: "in a few minutes", data: { jobId: job.id } },
       );
     }
-    out.emit({ type: "progress", step: "app.upload", message: `The gateway is deploying ${manifest.id}...`, data: { jobId: job.id } });
     await sleep(POLL_INTERVAL_MS);
     ({ job } = await call<{ job: JobBody }>(`${orgPath}/deploys/${encodeURIComponent(job.id)}`));
   }
   if (job.status === "failed") {
-    throw new EveryAppError(job.error?.code ?? "DEPLOY_FAILED", job.error?.message ?? "The deploy failed.", {
-      rerun,
-      data: { jobId: job.id },
-    });
+    throw new EveryAppError(
+      job.error?.code ?? "DEPLOY_FAILED",
+      `${host} couldn't deploy ${manifest.id}${job.error?.message ? `\nIt said: ${job.error.message}` : ""}`,
+      { rerun, rerunNote: "to try again", data: { jobId: job.id } },
+    );
   }
-  const url = job.app?.url ?? null;
+  const url = job.app?.url ?? (app.hostname ? `https://${app.hostname}` : null);
+  const live = job.app?.status === "active";
   out.emit({
     type: "step",
-    step: "app.upload",
-    status: job.status === "succeeded" ? "ok" : "start",
+    step: "app.hosted",
+    status: job.status === "succeeded" ? "ok" : "skip",
     message:
       job.status === "succeeded"
         ? `Deployed version ${job.app?.versionId}${url ? `; ${manifest.id} is at ${url}` : ""}.`
-        : `The gateway is deploying ${manifest.id} (job ${job.id}).`,
-    data: { jobId: job.id, versionId: job.app?.versionId ?? null, status: job.status },
+        : `${host} is deploying ${manifest.id} (job ${job.id}); this run didn't wait for it.`,
+    data: { ...deployed, versionId: job.app?.versionId ?? null, status: job.status },
   });
+  if (url) {
+    out.emit({
+      type: "step",
+      step: "app.live",
+      status: live ? "ok" : "skip",
+      message: `${manifest.id} is at ${url}.`,
+      data: { url },
+    });
+  }
   return {
     liveUrl: url,
     workerName: job.app?.workerName ?? app.workerName,
     versionId: job.app?.versionId ?? null,
     jobId: job.id,
     status: job.status,
+    live,
   };
 }
