@@ -1,65 +1,50 @@
-import { ChevronRight, Monitor, Rocket, Terminal } from "lucide-react";
+import { Monitor, Rocket, Terminal } from "lucide-react";
 import { CodeBlock } from "@/client/components/CodeBlock";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
 } from "@/client/components/ui/alert";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/client/components/ui/collapsible";
-
-interface DeployAppStepProps {
-  isExpanded: boolean;
-  onToggle: () => void;
-}
-
-export function DeployAppStep({ isExpanded, onToggle }: DeployAppStepProps) {
+export function DeployAppStep() {
   return (
-    <Collapsible open={isExpanded} onOpenChange={() => onToggle()}>
-      <CollapsibleTrigger className="group flex w-full items-center gap-3 px-5 py-4 text-left text-sm font-medium outline-none transition-colors hover:bg-foreground/5 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:ring-inset aria-expanded:bg-primary/5 sm:px-6">
+    <div>
+      <div className="flex items-center gap-3 px-5 py-4 text-sm text-foreground sm:px-6">
         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-foreground/5">
           <Rocket className="size-4" aria-hidden />
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block">Deploy your first app</span>
-          <span className="mt-1 block text-xs font-normal text-muted-foreground">
-            Self-host an app to get started with Every App
-          </span>
-        </span>
-        <ChevronRight
-          className="size-4 shrink-0 text-muted-foreground transition-transform group-data-panel-open:rotate-90"
-          aria-hidden
-        />
-      </CollapsibleTrigger>
+        <div className="min-w-0 flex-1">
+          <h3 className="font-medium">Deploy your first app</h3>
+          <p className="mt-1 text-foreground/80">
+            Start with the Todo App included in this repository.
+          </p>
+        </div>
+      </div>
 
-      <CollapsibleContent className="space-y-5 px-5 py-5 text-sm sm:px-6">
+      <div className="space-y-5 border-t border-border bg-background/40 px-5 py-5 text-sm leading-relaxed text-foreground sm:px-6">
         {/* Mobile message - shown on small screens */}
         <Alert variant="info" className="sm:hidden">
           <Monitor />
           <AlertTitle>Open this page on your computer</AlertTitle>
-          <AlertDescription>
+          <AlertDescription className="text-foreground">
             Deploying an app requires running terminal commands. Please visit
             this page on your computer to see the deployment instructions.
           </AlertDescription>
         </Alert>
 
         {/* Desktop instructions - hidden on small screens */}
-        <div className="hidden space-y-3 sm:block">
+        <div className="hidden max-w-2xl space-y-4 sm:block">
           <p className="flex items-center gap-2 font-medium">
             <Terminal className="size-4 text-muted-foreground" aria-hidden />
             Follow these steps in your terminal
           </p>
 
-          <ol className="list-decimal space-y-3 pl-5 marker:text-muted-foreground">
+          <ol className="list-decimal space-y-4 pl-5 marker:font-medium marker:text-foreground">
             <li>
               In your checkout of the Every App repository, go to the Todo App
               <div className="mt-2">
                 <CodeBlock code="cd apps/todo-app" />
               </div>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="mt-2 text-sm text-foreground/80">
                 Apps deploy from the repository, with the CLI in it
               </p>
             </li>
@@ -73,7 +58,7 @@ export function DeployAppStep({ isExpanded, onToggle }: DeployAppStepProps) {
           </ol>
         </div>
 
-        <p className="hidden text-muted-foreground sm:block">
+        <p className="hidden text-foreground sm:block">
           Ready to build your own app? Check out the{" "}
           <a
             href="https://everyapp.com/docs/build-your-own-app"
@@ -85,7 +70,7 @@ export function DeployAppStep({ isExpanded, onToggle }: DeployAppStepProps) {
           </a>{" "}
           guide.
         </p>
-      </CollapsibleContent>
-    </Collapsible>
+      </div>
+    </div>
   );
 }

@@ -15,7 +15,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider className="h-[100dvh] min-h-0 overflow-hidden">
       <Sidebar />
-      <SidebarInset className="min-h-0 overflow-hidden md:!m-0 md:!mt-2 md:!rounded-none md:!rounded-tl-lg md:border-l md:border-t md:border-sidebar-border md:!shadow-none">
+      <SidebarInset className="min-h-0 overflow-hidden">
         <MobileTopBar />
         <div className="min-h-0 flex-1 overflow-auto">{children}</div>
       </SidebarInset>
@@ -27,16 +27,16 @@ function MobileTopBar() {
   return (
     // The installed app runs under the status bar, so the bar starts below it.
     <div className="shrink-0 border-b border-border bg-card pt-safe md:hidden">
-      <div className="flex items-center gap-1 px-2 py-1.5">
+      <div className="flex h-16 items-center gap-2 px-4">
         <SidebarTrigger aria-label="Toggle sidebar" />
         <Link
           to="/"
           className="flex items-center gap-1 font-semibold text-foreground"
         >
           <img
-            src="/transparent-logo.png"
+            src="/android-chrome-192x192.png"
             alt=""
-            className="-my-1 size-7 rounded"
+            className="-my-1 size-7 rounded-md"
           />
           Every App
         </Link>

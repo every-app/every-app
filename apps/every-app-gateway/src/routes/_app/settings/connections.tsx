@@ -176,8 +176,8 @@ function ConnectionsPage() {
     <div className="h-full overflow-auto px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-8">
       <div className="mx-auto max-w-7xl space-y-6">
         <PageHeader
-          title="Connected AI apps"
-          description="AI apps you allowed to use your apps through this gateway's connector."
+          title="AI connections"
+          description="Manage the AI assistants you have allowed to access your apps."
         />
 
         <DataTable
@@ -193,7 +193,7 @@ function ConnectionsPage() {
             ) : undefined
           }
           empty={{
-            title: "No connected AI apps",
+            title: "No AI connections yet",
             description:
               "When you allow an AI app such as Claude or ChatGPT to use your apps, it shows up here.",
           }}

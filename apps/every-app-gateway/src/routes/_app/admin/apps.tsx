@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Download } from "lucide-react";
 import { adminAppsCollection } from "@/client/tanstack-db";
 import { ErrorState } from "@/client/components/ErrorState";
-import { PageHeader } from "@/client/components/PageHeader";
+import { SectionHeader } from "@/client/components/PageHeader";
 import { AppsTable } from "@/client/components/admin/AppsTable";
 import { EditAppModal } from "@/client/components/admin/EditAppModal";
 import { DeleteAppModal } from "@/client/components/admin/DeleteAppModal";
@@ -46,65 +46,63 @@ function AppsPage() {
   };
 
   return (
-    <div className="h-full overflow-auto px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <PageHeader
-          title="Apps"
-          description={
-            canInstall
-              ? "Manage the app catalog and user access. Apps are added by installing them from GitHub or deploying them with the everyapp CLI."
-              : "Manage the app catalog and user access. Apps are added by deploying them with the everyapp CLI."
-          }
-          actions={
-            canInstall ? (
-              <Button onClick={() => setInstalling(true)}>
-                <Download />
-                Install from GitHub
-              </Button>
-            ) : undefined
-          }
+    <div className="space-y-6">
+      <SectionHeader
+        title="Apps"
+        hint={
+          canInstall
+            ? "Manage the app catalog and user access. Apps are added by installing them from GitHub or deploying them with the everyapp CLI."
+            : "Manage the app catalog and user access. Apps are added by deploying them with the everyapp CLI."
+        }
+        action={
+          canInstall ? (
+            <Button onClick={() => setInstalling(true)}>
+              <Download />
+              Install from GitHub
+            </Button>
+          ) : undefined
+        }
+      />
+
+      <AppsTable
+        apps={apps}
+        isLoading={isLoading}
+        error={
+          isError ? (
+            <ErrorState
+              title="Failed to load apps"
+              message="Please try again."
+            />
+          ) : undefined
+        }
+        onManageAccess={setAccessApp}
+        onEdit={setEditingApp}
+        onDelete={setDeletingApp}
+        isOwner={isOwner}
+      />
+
+      {installing ? (
+        <InstallFromGitHubModal onClose={() => setInstalling(false)} />
+      ) : null}
+
+      {editingApp ? (
+        <EditAppModal app={editingApp} onClose={() => setEditingApp(null)} />
+      ) : null}
+
+      {isOwner && deletingApp ? (
+        <DeleteAppModal
+          app={deletingApp}
+          onClose={() => setDeletingApp(null)}
+          onConfirm={() => confirmDelete(deletingApp)}
         />
+      ) : null}
 
-        <AppsTable
-          apps={apps}
-          isLoading={isLoading}
-          error={
-            isError ? (
-              <ErrorState
-                title="Failed to load apps"
-                message="Please try again."
-              />
-            ) : undefined
-          }
-          onManageAccess={setAccessApp}
-          onEdit={setEditingApp}
-          onDelete={setDeletingApp}
-          isOwner={isOwner}
+      {accessApp ? (
+        <ManageAppAccessModal
+          app={accessApp}
+          onClose={() => setAccessApp(null)}
         />
-
-        {installing ? (
-          <InstallFromGitHubModal onClose={() => setInstalling(false)} />
-        ) : null}
-
-        {editingApp ? (
-          <EditAppModal app={editingApp} onClose={() => setEditingApp(null)} />
-        ) : null}
-
-        {isOwner && deletingApp ? (
-          <DeleteAppModal
-            app={deletingApp}
-            onClose={() => setDeletingApp(null)}
-            onConfirm={() => confirmDelete(deletingApp)}
-          />
-        ) : null}
-
-        {accessApp ? (
-          <ManageAppAccessModal
-            app={accessApp}
-            onClose={() => setAccessApp(null)}
-          />
-        ) : null}
-      </div>
+      ) : null}
     </div>
   );
 }

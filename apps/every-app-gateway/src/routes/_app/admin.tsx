@@ -1,18 +1,50 @@
-import { createFileRoute, Outlet, Link } from "@tanstack/react-router";
-import { ShieldAlert } from "lucide-react";
+import {
+  createFileRoute,
+  Outlet,
+  Link,
+  useLocation,
+  useNavigate,
+} from "@tanstack/react-router";
+import { AppWindow, KeyRound, ShieldAlert, Users } from "lucide-react";
 import { useSession } from "@/client/hooks/useSession";
 import { authClient } from "@/client/auth-client";
 import { EmptyState } from "@/client/components/EmptyState";
 import { SkeletonPage } from "@/client/components/SkeletonPresets";
 import { StatusScreen } from "@/client/components/StatusScreen";
 import { Button } from "@/client/components/ui/button";
+import { PageHeader } from "@/client/components/PageHeader";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/client/components/ui/tabs";
 
 export const Route = createFileRoute("/_app/admin")({
   component: AdminLayout,
 });
 
-// The admin pages' gate. The sidebar carries their navigation.
+enum AdminTab {
+  Users = "users",
+  Apps = "apps",
+  Tokens = "tokens",
+}
+
+const adminTabs = [
+  { value: AdminTab.Users, label: "Users", to: "/admin/users", icon: Users },
+  { value: AdminTab.Apps, label: "Apps", to: "/admin/apps", icon: AppWindow },
+  {
+    value: AdminTab.Tokens,
+    label: "Tokens",
+    to: "/admin/tokens",
+    icon: KeyRound,
+  },
+] as const;
+
+// One administration page; each tab has a URL and inherits the same access gate.
 function AdminLayout() {
+  const pathname = useLocation({ select: (location) => location.pathname });
+  const navigate = useNavigate();
   const { data: session, isPending } = useSession();
   const { data: activeMemberRole, isPending: isRolePending } =
     authClient.useActiveMemberRole();
@@ -43,5 +75,49 @@ function AdminLayout() {
     );
   }
 
-  return <Outlet />;
+  const activeTab =
+    adminTabs.find((tab) => tab.to === pathname)?.value ?? AdminTab.Users;
+
+  return (
+    <div className="px-5 py-7 pb-safe md:px-10 md:py-10 lg:px-12">
+      <div className="mx-auto max-w-7xl space-y-7">
+        <PageHeader
+          title="Manage workspace"
+          description="Manage your organization's users, apps, and access tokens."
+        />
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => {
+            const tab = adminTabs.find((tab) => tab.value === value);
+            if (tab) void navigate({ to: tab.to });
+          }}
+          className="gap-6"
+        >
+          <div className="border-b border-border pb-1">
+            <TabsList
+              variant="line"
+              className="h-10 gap-5"
+              aria-label="Manage workspace"
+            >
+              {adminTabs.map(({ value, label, icon: Icon }) => (
+                <TabsTrigger
+                  key={value}
+                  value={value}
+                  className="gap-2 px-1 pb-2"
+                >
+                  <Icon className="size-4" aria-hidden />
+                  {label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </div>
+          {adminTabs.map((tab) => (
+            <TabsContent key={tab.value} value={tab.value}>
+              {activeTab === tab.value ? <Outlet /> : null}
+            </TabsContent>
+          ))}
+        </Tabs>
+      </div>
+    </div>
+  );
 }

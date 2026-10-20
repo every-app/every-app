@@ -40,7 +40,7 @@ export function OrganizationSwitcher({
     // moves when the organization arrives.
     return (
       <div
-        className="flex min-w-0 flex-col rounded-lg border border-sidebar-border bg-card px-3 py-1.5"
+        className="flex min-w-0 flex-col rounded-lg border border-sidebar-border/70 bg-card px-3 py-2.5"
         aria-busy
       >
         <span className="flex h-5 items-center">
@@ -67,7 +67,7 @@ export function OrganizationSwitcher({
       <DropdownMenuTrigger
         aria-label="Switch organization"
         disabled={isSwitching}
-        className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-sidebar-border bg-card px-3 py-1.5 text-left outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
+        className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-sidebar-border/70 bg-card px-3 py-2.5 text-left shadow-xs outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
       >
         <span className="flex min-w-0 flex-col">
           <span className="truncate text-sm font-medium">

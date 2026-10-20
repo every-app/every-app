@@ -22,7 +22,7 @@ import {
 import { InviteUserModal } from "@/client/components/admin/InviteUserModal";
 import { UsersTable } from "@/client/components/admin/UsersTable";
 import { ErrorState } from "@/client/components/ErrorState";
-import { PageHeader } from "@/client/components/PageHeader";
+import { SectionHeader } from "@/client/components/PageHeader";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { Button } from "@/client/components/ui/button";
 import { getServerErrorMessage } from "@/client/errors";
@@ -151,89 +151,85 @@ function UsersPage() {
   });
 
   return (
-    <div className="h-full overflow-auto px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <PageHeader
-          title="Users"
-          description="Manage user accounts and invitations."
-          actions={
-            <Button onClick={() => setShowInviteModal(true)}>
-              <UserPlus data-icon="inline-start" />
-              Invite user
-            </Button>
-          }
+    <div className="space-y-6">
+      <SectionHeader
+        title="Users"
+        hint="Manage user accounts and invitations."
+        action={
+          <Button onClick={() => setShowInviteModal(true)}>
+            <UserPlus data-icon="inline-start" />
+            Invite user
+          </Button>
+        }
+      />
+
+      {!emailConfigured ? (
+        <Alert variant="warning">
+          <MailWarning />
+          <AlertDescription className="text-foreground">
+            Email is not configured. Invitations and password resets give you a
+            link to share instead.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <UsersTable
+        users={users}
+        isLoading={isLoading && users.length === 0}
+        error={
+          isError ? (
+            <ErrorState
+              title="Failed to load users"
+              message="Please try again."
+            />
+          ) : undefined
+        }
+        emailConfigured={emailConfigured}
+        onSendPasswordResetEmail={(userId) =>
+          sendPasswordResetEmailMutation.mutate(userId)
+        }
+        onCreatePasswordResetLink={(userId) => resetLinkMutation.mutate(userId)}
+        onCopyInvitationLink={(invitationId) =>
+          invitationLinkMutation.mutate(invitationId)
+        }
+        onDelete={handleDeleteUser}
+        onCancelInvitation={(invitationId) =>
+          cancelInvitationMutation.mutate(invitationId)
+        }
+        onChangeRole={(userId, role) =>
+          changeRoleMutation.mutate({ userId, role })
+        }
+        onDeactivate={(userId) => deactivateMutation.mutate(userId)}
+        onReactivate={(userId) => reactivateMutation.mutate(userId)}
+        isPending={
+          sendPasswordResetEmailMutation.isPending ||
+          resetLinkMutation.isPending ||
+          invitationLinkMutation.isPending ||
+          cancelInvitationMutation.isPending ||
+          changeRoleMutation.isPending ||
+          deactivateMutation.isPending ||
+          reactivateMutation.isPending
+        }
+        canManageInvitations={canManageInvitations}
+        isOwner={isOwner}
+        currentUserId={session?.user.id}
+      />
+
+      {showInviteModal ? (
+        <InviteUserModal
+          onClose={() => setShowInviteModal(false)}
+          onSuccess={() => {
+            setShowInviteModal(false);
+            toast.success("Invitation email sent");
+          }}
+          onInvited={() => void adminUsersCollection.utils.refetch()}
         />
+      ) : null}
 
-        {!emailConfigured ? (
-          <Alert variant="warning">
-            <MailWarning />
-            <AlertDescription className="text-foreground">
-              Email is not configured. Invitations and password resets give you
-              a link to share instead.
-            </AlertDescription>
-          </Alert>
-        ) : null}
-
-        <UsersTable
-          users={users}
-          isLoading={isLoading && users.length === 0}
-          error={
-            isError ? (
-              <ErrorState
-                title="Failed to load users"
-                message="Please try again."
-              />
-            ) : undefined
-          }
-          emailConfigured={emailConfigured}
-          onSendPasswordResetEmail={(userId) =>
-            sendPasswordResetEmailMutation.mutate(userId)
-          }
-          onCreatePasswordResetLink={(userId) =>
-            resetLinkMutation.mutate(userId)
-          }
-          onCopyInvitationLink={(invitationId) =>
-            invitationLinkMutation.mutate(invitationId)
-          }
-          onDelete={handleDeleteUser}
-          onCancelInvitation={(invitationId) =>
-            cancelInvitationMutation.mutate(invitationId)
-          }
-          onChangeRole={(userId, role) =>
-            changeRoleMutation.mutate({ userId, role })
-          }
-          onDeactivate={(userId) => deactivateMutation.mutate(userId)}
-          onReactivate={(userId) => reactivateMutation.mutate(userId)}
-          isPending={
-            sendPasswordResetEmailMutation.isPending ||
-            resetLinkMutation.isPending ||
-            invitationLinkMutation.isPending ||
-            cancelInvitationMutation.isPending ||
-            changeRoleMutation.isPending ||
-            deactivateMutation.isPending ||
-            reactivateMutation.isPending
-          }
-          canManageInvitations={canManageInvitations}
-          isOwner={isOwner}
-          currentUserId={session?.user.id}
-        />
-
-        {showInviteModal ? (
-          <InviteUserModal
-            onClose={() => setShowInviteModal(false)}
-            onSuccess={() => {
-              setShowInviteModal(false);
-              toast.success("Invitation email sent");
-            }}
-            onInvited={() => void adminUsersCollection.utils.refetch()}
-          />
-        ) : null}
-
-        <LinkRevealModal
-          link={revealedLink}
-          onClose={() => setRevealedLink(null)}
-        />
-      </div>
+      <LinkRevealModal
+        link={revealedLink}
+        onClose={() => setRevealedLink(null)}
+      />
     </div>
   );
 }

@@ -351,7 +351,7 @@ export function ConsentForm({
           </div>
 
           <p className="text-center text-xs text-muted-foreground">
-            You can disconnect it at any time from Connected AI apps.
+            You can disconnect it at any time from AI connections.
           </p>
         </CardContent>
       </Card>
