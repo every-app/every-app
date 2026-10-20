@@ -41,6 +41,8 @@
  * same command again resumes it.
  */
 import { version as packageVersion } from "../../../package.json";
+import chalk from "chalk";
+import { roughly } from "@/lib/output/roughly";
 import enquirer from "enquirer";
 import {
   deviceLoginAction,
@@ -651,11 +653,16 @@ async function ensureOwner({
     type: "action_required",
     action: "claim_owner",
     step: "setup.owner",
-    message: `${link.replaced ? "The setup link shown before no longer works; this one replaces it. " : ""}Create the owner account with this one-time setup link (it works once, until ${link.expiresAt.toLocaleString()}; treat it like a password). Waiting for it...`,
+    message: [
+      "Open this link to create the owner account",
+      `Works once and expires in ${roughly(link.expiresAt.getTime() - Date.now())}. Treat it like a password.`,
+      ...(link.replaced ? ["The setup link shown before no longer works; this one replaces it."] : []),
+    ].join("\n"),
     data: {
       url: link.url,
       expiresAt: link.expiresAt.toISOString(),
       waiting: true,
+      waitingFor: "the owner account",
     },
   });
   if (deps.interactive) await deps.openBrowser(link.url);
@@ -744,10 +751,13 @@ const terminalPrompts: SetupPrompts = {
   },
   async hostname(zone: string): Promise<string> {
     handTerminalOver();
+    process.stdout.write(
+      `${chalk.dim(`Apps get addresses one level below the Gateway, e.g. todo.apps.${zone}; a subdomain keeps the rest of ${zone} out of it.`)}\n`,
+    );
     const { hostname } = await enquirer.prompt<{ hostname: string }>({
       type: "input",
       name: "hostname",
-      message: `The gateway's address (apps live one level below it; a subdomain keeps the rest of ${zone} out of it)`,
+      message: "Gateway address",
       initial: `apps.${zone}`,
       validate: (value: string) => {
         try {

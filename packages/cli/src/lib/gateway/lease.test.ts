@@ -127,15 +127,18 @@ describe("deploy lease", () => {
     expect(waits).toBe(2);
   });
 
-  it("says who holds it, since when, and where to see it", async () => {
+  it("says which machine holds it, since when, and where to see it", async () => {
     const live = await take("gateway.upgrade");
-    const since = new Date(clock).toISOString();
-    const until = new Date(clock + TTL).toISOString();
+    clock += 60_000;
 
     const held = await take("gateway.reconcile").catch((error: Error) => error);
-    expect(held).toMatchObject({ code: "LEASE_HELD", retryable: true });
+    expect(held).toMatchObject({
+      code: "LEASE_HELD",
+      retryable: true,
+      data: { fix: "`pnpm everyapp status` shows it; run this again once it finishes" },
+    });
     expect((held as Error).message).toBe(
-      `Another deploy is running: ${live.holder} has held the deploy lease "gateway" (gateway.upgrade) since ${since}; \`pnpm everyapp status\` shows it while that deploy runs. If it died, the lease expires by ${until} and the next run takes it.`,
+      `Another deploy is still running after 0s\nIt's from ${live.holder.split(":")[0]!.replace(/\.local$/, "")}, started 1m ago. If it died, its lease runs out in 2m and the next run takes it.`,
     );
   });
 

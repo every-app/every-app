@@ -24,10 +24,9 @@
  * `defineTools()` catalog, with the gateway's policy and identity contract,
  * so MCP Inspector, Claude Code or curl can call the app's tools locally.
  */
-import fs from "node:fs/promises";
+import chalk from "chalk";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import path from "node:path";
 import type { LocalContext } from "@/context";
 import { ManifestError } from "@every-app/perimeter/manifest";
 import {
@@ -63,11 +62,12 @@ import { registerDevApp } from "./registerDevApp";
 import { createDevAppGateway } from "./devAppGateway";
 import { applyDevMigrations } from "./migrations";
 import { startAppDevServer, type AppDevServer } from "./appServer";
-import { MISSING_CLOUDFLARE_CONFIG } from "@/lib/app/cloudflareConfig";
+import { MISSING_CLOUDFLARE_CONFIG, readCloudflareConfig } from "@/lib/app/cloudflareConfig";
 import { ensureWorkerTypes } from "@/lib/app/workerTypes";
 import { EveryAppError } from "@/lib/errors";
 import type { EventSink } from "@/lib/output/events";
 import { eventSink, runReported } from "@/lib/output/run";
+import { formatFacts } from "@/lib/output/table";
 
 interface DevCommandFlags {
   port?: number;
@@ -109,9 +109,8 @@ export async function runDev(
   }
 
   const manifest = await loadManifest(cwd);
-  const hasCloudflareConfig = await fileExists(
-    path.join(cwd, "cloudflare.config.ts"),
-  );
+  const cloudflareConfig = await readCloudflareConfig(cwd);
+  const hasCloudflareConfig = cloudflareConfig !== null;
   if (!manifest.dev && !hasCloudflareConfig) {
     throw new EveryAppError(
       "MISSING_CLOUDFLARE_CONFIG",
@@ -178,9 +177,7 @@ export async function runDev(
     type: "step",
     step: "dev.app",
     status: "start",
-    message: manifest.dev
-      ? `Starting the app's dev server (internal port ${appPort})...`
-      : `Starting cf dev (internal port ${appPort})...`,
+    message: `Starting ${manifest.id}...`,
     data: { appPort },
   });
   const appServer = await startAppDevServer({
@@ -218,6 +215,8 @@ export async function runDev(
       flags.host ?? DEFAULT_HOST,
     );
 
+    out.emit({ type: "step", step: "dev.app", status: "ok", data: { appId: manifest.id } });
+    appServer.releaseOutput(false);
     out.emit({
       type: "step",
       step: "dev.ready",
@@ -229,6 +228,7 @@ export async function runDev(
         appPort,
         gatewayUrl,
         host: address.address,
+        crons: cloudflareConfig?.hasCrons ?? false,
       }),
       data: {
         mode,
@@ -243,6 +243,9 @@ export async function runDev(
     await appServer.exited;
     server.close();
   } catch (error) {
+    // Why it didn't start is in what it printed.
+    out.emit({ type: "step", step: "dev.app", status: "fail" });
+    appServer.releaseOutput(true);
     stop();
     throw error;
   } finally {
@@ -437,6 +440,7 @@ function readyMessage({
   appPort,
   gatewayUrl,
   host,
+  crons,
 }: {
   manifest: EveryAppCliManifest;
   mode: DevMode;
@@ -444,49 +448,61 @@ function readyMessage({
   appPort: number;
   gatewayUrl: string;
   host: string;
+  crons: boolean;
 }): string {
   const explorer = `http://127.0.0.1:${appPort}/cdn-cgi/local/explorer`;
   const workerName = registerDevApp(manifest).workerName;
-  return [
-    "",
-    `everyapp dev: the local gateway is running (${mode} mode)`,
-    "",
-    `  App:       ${appUrl}`,
-    `  MCP:       ${appUrl}/mcp`,
-    mode === "mirror"
-      ? "             Send Authorization: Bearer <a personal access token from the local gateway>."
-      : "             Send Authorization: Bearer <anything>; MCP clients act as the dev user.",
+  const facts = [
+    { label: "App", value: chalk.cyan(appUrl) },
+    {
+      label: "MCP",
+      value: `${chalk.cyan(`${appUrl}/mcp`)}  ${chalk.dim(
+        mode === "mirror"
+          ? "send a personal access token from the local gateway"
+          : "any bearer token acts as the dev user",
+      )}`,
+    },
     // Crons (everyAppWorker's `crons`) run on demand through the Vite
     // plugin's local explorer, on the app's own dev server.
-    `  Cron:      curl -X POST "${explorer}/api/local/scheduled?worker=${workerName}" -H 'content-type: application/json' -d '{"cron":"<schedule>"}'`,
+    ...(crons
+      ? [
+          {
+            label: "Cron",
+            value: `curl -X POST "${explorer}/api/local/scheduled?worker=${workerName}" -H 'content-type: application/json' -d '{"cron":"<schedule>"}'`,
+          },
+        ]
+      : []),
     // Mail for an app that declares `email: { inbound: true }` reaches the
     // app's email() handler through miniflare's local delivery endpoint on
-    // the app's own dev server (the
-    // Vite plugin's; wrangler 4 had /cdn-cgi/handler/email instead).
+    // the app's own dev server (the Vite plugin's).
     ...emailHint(manifest, appPort),
     // Workflows run under cf dev too; the explorer starts, inspects, pauses
     // and restarts their instances.
     ...(manifest.resources?.workflows?.length
-      ? [`  Workflows: ${explorer}`]
+      ? [{ label: "Workflows", value: chalk.cyan(explorer) }]
       : []),
-    ...(mode === "mirror"
-      ? [
-          `  Gateway:   ${gatewayUrl} (real login/launcher)`,
-          "  Log in at the base host; the session cookie rides to the app subdomain.",
-        ]
-      : [
-          `  Dev user:  ${DEV_USER.email} (seeded; org ${DEV_USER.orgId}, ${DEV_USER.orgRole})`,
-        ]),
+    mode === "mirror"
+      ? {
+          label: "Gateway",
+          value: `${chalk.cyan(gatewayUrl)}  ${chalk.dim("log in there; the session reaches the app")}`,
+        }
+      : {
+          label: "Dev user",
+          value: `${DEV_USER.email} ${chalk.dim(`(${DEV_USER.orgRole} of ${DEV_USER.orgId})`)}`,
+        },
+  ];
+  return [
+    "",
+    ...formatFacts(facts).map((line) => `  ${line}`),
+    "",
     ...(host === DEFAULT_HOST
       ? []
       : [
-          `  Listening on ${host}: anyone who can reach this port gets a dev identity.`,
+          `${chalk.yellow("!")} Listening on ${host}: anyone who can reach this port gets a dev identity.`,
         ]),
-    "  Real perimeter on every request (identity header, public-route policy, CSRF).",
-    "  Public routes are auth-optional; to exercise them anonymously send the header",
-    "  x-everyapp-dev-anon: 1 (curl) or set cookie everyapp_dev_anon=1 (browser).",
-    "  Direct hits to the app's internal port get 401, by design.",
-    "",
+    chalk.dim(
+      "Every request goes through the real perimeter (everyapp dev --help says how). Ctrl+C to stop.",
+    ),
   ].join("\n");
 }
 
@@ -500,19 +516,12 @@ function readyMessage({
 export function emailHint(
   manifest: Pick<EveryAppCliManifest, "email">,
   appPort: number,
-): string[] {
+): Array<{ label: string; value: string }> {
   if (manifest.email?.inbound !== true) return [];
   return [
-    `  Email:     curl -X POST "http://127.0.0.1:${appPort}/cdn-cgi/local/email?from=someone@example.net&to=hello@example.com" --data-binary @message.eml`,
-    "             (any address; message.eml: a raw message with From, To, Subject and Message-ID headers; email() gets no identity)",
+    {
+      label: "Email",
+      value: `curl -X POST "http://127.0.0.1:${appPort}/cdn-cgi/local/email?from=someone@example.net&to=hello@example.com" --data-binary @message.eml  ${chalk.dim("any address; message.eml is a raw message with From, To, Subject and Message-ID")}`,
+    },
   ];
-}
-
-async function fileExists(file: string): Promise<boolean> {
-  try {
-    await fs.access(file);
-    return true;
-  } catch {
-    return false;
-  }
 }

@@ -17,6 +17,7 @@ describe("startAppDevServer", () => {
       {
         args: ["dev"],
         cwd: "/work/todo",
+        holdOutput: true,
         env: {
           PORT: "41234",
           CLOUDFLARE_REGISTRY_PATH: path.join(

@@ -73,7 +73,7 @@ class DevCf extends FakeCf {
       child.stop(signal);
     };
     this.stopApp = stop;
-    return { exited: child.exited, stop };
+    return { ...child, stop };
   }
 
   /** The app's dev server exits (what Ctrl-C ends in). */
@@ -206,7 +206,7 @@ describe("everyapp dev", () => {
     );
     const appPort = Number(cf.started[0]!.env?.["PORT"]);
     expect(String(ready["message"])).toContain(
-      `  Email:     curl -X POST "http://127.0.0.1:${appPort}/cdn-cgi/local/email?from=someone@example.net&to=hello@example.com" --data-binary @message.eml`,
+      `curl -X POST "http://127.0.0.1:${appPort}/cdn-cgi/local/email?from=someone@example.net&to=hello@example.com" --data-binary @message.eml`,
     );
 
     cf.exitApp();
@@ -216,7 +216,7 @@ describe("everyapp dev", () => {
   it("prints no mail hint for an app that receives none", () => {
     expect(emailHint({}, 5173)).toEqual([]);
     expect(emailHint({ email: { inbound: false } }, 5173)).toEqual([]);
-    expect(emailHint({ email: { inbound: true } }, 5173)[0]).toContain("to=hello@example.com");
+    expect(emailHint({ email: { inbound: true } }, 5173)[0]?.value).toContain("to=hello@example.com");
   });
 
   it("refuses an unknown mode before starting anything", async () => {

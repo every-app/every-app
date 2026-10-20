@@ -146,7 +146,7 @@ export async function waitForCertificates({
       out.emit({
         type: "progress",
         step,
-        message: `${waitingFor(waiting)} (${elapsed(waited)} so far; usually under five minutes)...`,
+        message: `${waitingFor(waiting)} (usually under five minutes)...`,
         data: { hosts: pending, waitedMs: waited, waitingFor: Object.fromEntries(waiting) },
       });
       lastProgress = now();

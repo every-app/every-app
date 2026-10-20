@@ -47,7 +47,7 @@ export const devCommand = buildCommand({
     },
   },
   docs: {
-    brief: "Run the app behind a local gateway with the real perimeter",
+    brief: "Run the app locally behind a dev Gateway",
     fullDescription: [
       "Runs the app under `cf dev` (or the manifest's dev command) on an internal",
       "port and a gateway-lite in front of it on $PORT (default 8787) — the REAL",
@@ -62,6 +62,11 @@ export const devCommand = buildCommand({
       "otherwise. Before starting, dev generates the Worker's types when",
       ".cloudflare/types is missing and applies local D1 migrations",
       "(cf d1 migrations apply --local) to .cloudflare/state.",
+      "",
+      "Every request goes through the real perimeter (identity header, public-route",
+      "policy, CSRF). Public routes are auth-optional; to call them anonymously send",
+      "the header x-everyapp-dev-anon: 1 (curl) or set the cookie everyapp_dev_anon=1",
+      "(browser). Requests straight to the app's internal port get 401, by design.",
       "",
       "--mode stub (default): seeded dev user, zero setup.",
       "--mode mirror: authenticate against a SEPARATELY-running local gateway",

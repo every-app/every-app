@@ -111,6 +111,7 @@ export async function createApp({
     step: "create.copy",
     status: "start",
     message: `Creating ${appId} in ${shown}...`,
+    data: { appId, shown },
   });
   await copyStarter({ root, targetDir, appId });
   out.emit({
@@ -132,6 +133,7 @@ export async function createApp({
     data: skill,
   });
 
+  out.emit({ type: "step", step: "create.install", status: "start", message: "Installing dependencies..." });
   await install({
     cwd: targetDir,
     description: "Installing dependencies...",
@@ -141,9 +143,11 @@ export async function createApp({
 
   const manifest = await loadEveryAppManifest(targetDir);
   try {
+    out.emit({ type: "step", step: "create.types", status: "start", message: "Generating types..." });
     await generateWorkerTypes(cf, targetDir);
     out.emit({ type: "step", step: "create.types", status: "ok" });
   } catch (error) {
+    out.emit({ type: "step", step: "create.types", status: "fail" });
     out.emit({
       type: "warning",
       code: "WORKER_TYPES_FAILED",
@@ -152,6 +156,7 @@ export async function createApp({
     });
   }
   try {
+    out.emit({ type: "step", step: "migrations.local", status: "start", message: "Setting up the local database..." });
     const result = await applyLocalMigrations({
       cwd: targetDir,
       manifest,
@@ -167,6 +172,7 @@ export async function createApp({
           : { reason: result.reason },
     });
   } catch (error) {
+    out.emit({ type: "step", step: "migrations.local", status: "fail" });
     out.emit({
       type: "warning",
       code: "MIGRATIONS_FAILED",
@@ -181,11 +187,14 @@ export async function createApp({
     out.emit({ type: "step", step: "create.git", status: "ok" });
   }
 
-  const next = [`cd ${shown}`, "pnpm dev"];
+  const next = [
+    { command: `cd ${shown}` },
+    { command: "pnpm dev", note: "run it locally" },
+    ...(flags.deploy ? [] : [{ command: `${CLI} deploy`, note: "put it live" }]),
+  ];
   if (!flags.deploy) {
     out.emit({
       type: "done",
-      message: `Created ${appId} in ${shown}.`,
       data: { appId, dir: targetDir, next },
     });
     return;
@@ -207,9 +216,9 @@ export async function createApp({
     verbose,
     offerInstall: { yes: flags.yes },
   });
+  // `app.live` showed its URL.
   out.emit({
     type: "done",
-    message: `${appId} is live at ${deployed.liveUrl}`,
     data: { appId, dir: targetDir, url: deployed.liveUrl, next },
   });
 }

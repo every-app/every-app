@@ -25,7 +25,10 @@
  * nobody set yet) and the Gateway settings its providers and capabilities
  * need, or outside an app directory, the Gateway's.
  */
+import { stripVTControlCharacters } from "node:util";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { isReservedAppSecretName } from "@every-app/sdk/internal";
+import chalk from "chalk";
 import {
   gatewaySettingsFor,
   isDevOnlyGatewaySetting,
@@ -46,7 +49,7 @@ import { EveryAppError } from "@/lib/errors";
 import { acquireGatewayLease } from "@/lib/gateway/apply";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall, writeInstall } from "@/lib/gateway/install";
-import { acquireLease } from "@/lib/gateway/lease";
+import { acquireLease, describeLeaseHolder } from "@/lib/gateway/lease";
 import { readApp } from "@/lib/gateway/registry";
 import {
   loadEveryAppManifestIfPresent,
@@ -54,6 +57,7 @@ import {
 } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { eventSink, runReported } from "@/lib/output/run";
+import { formatTable } from "@/lib/output/table";
 import { readSecretValue } from "@/lib/secretValue";
 
 interface SecretFlags {
@@ -166,9 +170,14 @@ export async function listSecrets(options: SecretOptions): Promise<void> {
   const gatewayNames = await listWorkerSecrets(cf, GATEWAY_WORKER_NAME);
   const settable = [...SETTABLE_GATEWAY_SETTINGS];
   if (!manifest) {
+    const display =
+      gatewayNames.length > 0
+        ? formatTable(["NAME", "WHERE"], gatewayNames.map((name) => [name, "Gateway"])).join("\n")
+        : chalk.dim("The Gateway has no secrets.");
     out.emit({
       type: "done",
-      message: namesLine(GATEWAY_WORKER_NAME, gatewayNames),
+      message: stripVTControlCharacters(display),
+      display,
       data: { gateway: { workerName: GATEWAY_WORKER_NAME, names: gatewayNames, settable } },
     });
     return;
@@ -205,36 +214,37 @@ export async function listSecrets(options: SecretOptions): Promise<void> {
     }
   }
 
-  const lines: string[] = [];
-  if (!workerName) {
-    lines.push(
-      `${manifest.id} isn't deployed yet; its own secrets are set after its first \`everyapp deploy\`.${
-        declared.length > 0 ? ` It lists: ${declared.join(", ")}.` : ""
-      }`,
-    );
-  }
-  for (const worker of workers) {
-    lines.push(namesLine(worker.workerName, worker.names));
-    if (worker.missing.length > 0) {
-      lines.push(
-        `Listed under secrets in everyapp.config.ts, not set on ${worker.workerName}: ${worker.missing.join(", ")}`,
-      );
+  // One row per name: the app's own (everyapp's, with --verbose), then the
+  // Gateway settings it uses.
+  const notSet = chalk.yellow("not set");
+  const rows: string[][] = [];
+  workers.forEach((worker, index) => {
+    // A helper Worker is named `<app's Worker>--<helper>`.
+    const where = index === 0 ? manifest.id : `${worker.workerName.split("--").at(-1)} helper`;
+    for (const name of worker.names) {
+      if (options.flags.verbose || !isReservedAppSecretName(name)) rows.push([name, where, "set"]);
     }
+    for (const name of worker.missing) rows.push([name, where, notSet]);
+  });
+  if (!workerName) {
+    for (const name of declared) rows.push([name, manifest.id, chalk.dim("app not deployed yet")]);
   }
-  if (needs.length > 0) {
-    lines.push(
-      `Gateway settings ${manifest.id} uses: ${needs
-        .map(
-          (need) =>
-            `${need.name} (${need.set ? "set" : need.required ? "not set" : "optional, not set"})`,
-        )
-        .join(", ")}`,
-    );
+  for (const need of needs) {
+    rows.push([
+      need.name,
+      "Gateway",
+      need.set ? "set" : need.required ? notSet : chalk.dim("not set (optional)"),
+    ]);
   }
+  const display =
+    rows.length > 0
+      ? formatTable(["NAME", "WHERE", "STATUS"], rows).join("\n")
+      : chalk.dim(`${manifest.id} has no secrets.`);
   const toSet = [...new Set([...(workers[0]?.missing ?? []), ...gatewayMissing])];
   out.emit({
     type: "done",
-    message: lines.join("\n"),
+    message: stripVTControlCharacters(display),
+    display,
     data: {
       app: { id: manifest.id, deployed: workerName !== null, workerName, declared, workers },
       gateway: {
@@ -404,7 +414,7 @@ async function apply(
             out.emit({
               type: "progress",
               step: "app.lease",
-              message: `Waiting for another deploy of ${app.manifest.id} to finish: ${holder.holder}...`,
+              message: `Waiting for another deploy of ${app.manifest.id} to finish (${describeLeaseHolder(holder)})...`,
             }),
           onHeartbeatProblem: (message) =>
             out.emit({ type: "warning", code: "LEASE_HEARTBEAT", step: "app.lease", message }),
@@ -601,10 +611,4 @@ function doneData(applied: Applied): Record<string, unknown> {
     ...(applied.gateway ? { gateway: applied.gateway } : {}),
     ...(applied.app ? { app: applied.app } : {}),
   };
-}
-
-function namesLine(workerName: string, names: readonly string[]): string {
-  return names.length > 0
-    ? `${workerName}: ${names.join(", ")}`
-    : `${workerName} has no secrets.`;
 }

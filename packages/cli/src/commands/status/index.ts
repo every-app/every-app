@@ -1,3 +1,5 @@
+import { stripVTControlCharacters } from "node:util";
+import chalk from "chalk";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import type { LocalContext } from "@/context";
 import { emailRouteProblems, type EmailRouteProblem } from "@/lib/app/emailRoutes";
@@ -19,7 +21,7 @@ import {
 } from "@/lib/gateway/checkoutRelease";
 import type { FoundGateway } from "@/lib/gateway/discover";
 import type { InstallRecord } from "@/lib/gateway/install";
-import { readLiveLeases, type LeaseHolder } from "@/lib/gateway/lease";
+import { describeLeaseHolder, readLiveLeases, type LeaseHolder } from "@/lib/gateway/lease";
 import { gatewayDomains } from "@/lib/gateway/patchBuildOutput";
 import { listApps } from "@/lib/gateway/registry";
 import { readOwner, type GatewayOwner } from "@/lib/gateway/setup-link";
@@ -27,6 +29,7 @@ import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { existingGateway } from "@/lib/gateway/connect";
 import { eventSink, runReported } from "@/lib/output/run";
+import { formatFacts, formatTable } from "@/lib/output/table";
 
 interface StatusFlags {
   "account-id"?: string;
@@ -192,51 +195,82 @@ export async function reportStatus({
     emailProblems,
   });
 
-  const lines = [
-    `Gateway:  ${gatewayUrl} (${account.name ?? account.id})`,
-    // The mode is a secret nothing reads back: the install row has it when
-    // the first upload recorded it.
-    ...(install.deploymentMode ? [`Mode:     ${install.deploymentMode}`] : []),
-    `Release:  ${install.releaseVersion} (${install.releaseSha256.slice(0, 12)})${
-      source.upToDate === true
-        ? " · built from this checkout's sources"
-        : source.upToDate === false
-          ? source.behind
-            ? " · newer than this checkout"
-            : " · this checkout has changed since"
-          : ""
-    }${servingRecorded ? "" : `; the Worker serves ${serving?.versionId ?? "no version"}, not the recorded ${install.liveVersionId ?? "(none)"}`}`,
-    `Owner:    ${owner ? `${owner.email}${owner.organizationName ? ` (${owner.organizationName})` : ""}` : "none yet"}`,
-    `Apps:     ${apps.length === 0 ? "none" : apps.map((app) => `${app.id} (${app.status}${app.bound || app.status === "pending" ? "" : ", not bound"})`).join(", ")}${apps.length > 0 && inSync ? " · all bound" : ""}`,
-    ...receiving.map(
-      (app, index) =>
-        `${index === 0 ? "Email:    " : "          "}${app.id}: sends as ${app.email.senders.join(", ") || "the Gateway's sender only"}; receives ${
-          app.email.inbound.length > 0 && !app.email.declaresInbound
-            ? `nothing (${app.email.inbound.join(", ")} set, not declared)`
-            : app.email.inbound.join(", ") || "nothing"
-        }`,
-    ),
-    `TLS:      ${
-      certificates === null
-        ? "unknown (Cloudflare didn't list the zone's certificates)"
-        : waiting.length === 0
-          ? `ready (${certificates.length} hostname${certificates.length === 1 ? "" : "s"})`
-          : `no certificate yet for ${waiting.join(", ")}`
-    }`,
-    ...(leases.length
-      ? leases.map(
-          (lease, index) =>
-            `${index === 0 ? "Deploys:  " : "          "}${describeDeploy(lease)}`,
-        )
-      : ["Deploys:  none running"]),
-    ...fixes.map(
-      (fix, index) =>
-        `${index === 0 ? "To do:    " : "          "}${fix.message}${fix.run ? ` Run: ${fix.run}` : ""}`,
-    ),
+  const releaseNote =
+    source.upToDate === true
+      ? "matches this checkout"
+      : source.upToDate === false
+        ? source.behind
+          ? "newer than this checkout"
+          : "this checkout has changed since"
+        : null;
+  const facts = [
+    {
+      label: "Gateway",
+      // The mode is a secret nothing reads back: the install row has it when
+      // the first upload recorded it.
+      value: `${chalk.cyan(gatewayUrl)}${install.deploymentMode ? chalk.dim(` · ${install.deploymentMode.replace("_", "-")}`) : ""}`,
+    },
+    { label: "Cloudflare", value: account.name ?? account.id },
+    {
+      label: "Owner",
+      value: owner
+        ? `${owner.email}${owner.organizationName ? chalk.dim(` · ${owner.organizationName}`) : ""}`
+        : chalk.yellow("none yet"),
+    },
+    {
+      label: "Release",
+      value: `${install.releaseVersion}${releaseNote ? chalk.dim(` · ${releaseNote}`) : ""}${
+        servingRecorded
+          ? ""
+          : chalk.yellow(` · the Worker serves ${serving?.versionId ?? "no version"}, not ${install.liveVersionId ?? "the one recorded"}`)
+      }`,
+    },
+    {
+      label: "TLS",
+      value:
+        certificates === null
+          ? chalk.yellow("unknown (Cloudflare didn't list the zone's certificates)")
+          : waiting.length === 0
+            ? `ready on ${certificates.length} hostname${certificates.length === 1 ? "" : "s"}`
+            : chalk.yellow(`no certificate yet for ${waiting.join(", ")}`),
+    },
+    ...receiving.map((app, index) => ({
+      label: index === 0 ? "Email" : "",
+      value: `${app.id}: sends as ${app.email.senders.join(", ") || "the Gateway's sender only"}; receives ${
+        app.email.inbound.length > 0 && !app.email.declaresInbound
+          ? `nothing (${app.email.inbound.join(", ")} set, not declared)`
+          : app.email.inbound.join(", ") || "nothing"
+      }`,
+    })),
+    ...leases.map((lease, index) => ({
+      label: index === 0 ? "Deploys" : "",
+      value: describeDeploy(lease),
+    })),
   ];
+  const display = [
+    ...formatFacts(facts),
+    "",
+    ...(apps.length > 0
+      ? formatTable(
+          ["APP", "STATUS", "URL", "DEPLOYED BY"],
+          apps.map((app) => [
+            app.id,
+            appStatus(app),
+            chalk.cyan(`https://${app.hostname}`),
+            app.deployedBy ?? "",
+          ]),
+        )
+      : [chalk.dim(`No apps yet. Run: ${CLI} create my-app`)]),
+    ...fixes.flatMap((fix, index) => [
+      ...(index === 0 ? [""] : []),
+      `${chalk.yellow("!")} ${fix.message}`,
+      ...(fix.run ? [`  Run: ${chalk.bold(fix.run)}`] : []),
+    ]),
+  ].join("\n");
   out.emit({
     type: "done",
-    message: lines.join("\n"),
+    message: stripVTControlCharacters(display),
+    display,
     data: {
       deployed: true,
       installed: true,
@@ -478,18 +512,22 @@ function fixesFor({
   for (const lease of leases) {
     fixes.push({
       code: "DEPLOY_RUNNING",
-      message: `${lease.holder} is running ${lease.purpose}.`,
+      message: `${describeLeaseHolder(lease)} is running ${lease.purpose}.`,
       run: null,
     });
   }
   return fixes;
 }
 
-/**
- * A running deploy: its lease, who holds it since when, and when it expires
- * unless that deploy renews it (it does every 30 seconds while it runs).
- */
+/** A running deploy: what it does, the machine it runs on and since when. */
 function describeDeploy(lease: LeaseHolder): string {
-  const at = (ms: number) => new Date(ms).toISOString();
-  return `${lease.holder} is running ${lease.purpose} (lease ${lease.id}, since ${at(lease.acquiredAt)}, expires ${at(lease.expiresAt)} unless renewed)`;
+  return `${lease.purpose} (${describeLeaseHolder(lease)})`;
+}
+
+/** An app's STATUS cell: live, pending, or live but not bound. */
+function appStatus(app: AppState): string {
+  if (app.status === "active") {
+    return app.bound ? `${chalk.green("✓")} live` : chalk.yellow("! not bound");
+  }
+  return chalk.dim(app.status);
 }

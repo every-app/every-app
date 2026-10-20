@@ -34,14 +34,23 @@ export async function setup(
       if (result.gateway === "installed" || result.ownerCreated) {
         out.emit({
           type: "done",
-          message: `Your Gateway is ready: ${gatewayUrl}${organizationName ? ` (${organizationName})` : ""}`,
           data: {
             ...data,
+            facts: [
+              { label: "Gateway", value: gatewayUrl },
+              {
+                label: "Admin",
+                value: `${gatewayUrl}/admin`,
+                note: "invite people, choose who opens which app",
+              },
+            ],
             next: [
-              `${CLI} create my-app`,
-              `Invite people, and decide who opens which app: ${gatewayUrl}/admin`,
-              `AI for apps, any time: ${CLI} secret set OPENAI_API_KEY`,
-              `Email for invitations and password resets (until then they are links to share): onboard the domain for Cloudflare Email Sending, then ${CLI} secret set EMAIL_FROM`,
+              { command: `${CLI} create my-app`, note: "start your first app" },
+              { command: `${CLI} secret set OPENAI_API_KEY`, note: "turn on AI for apps" },
+              {
+                command: `${CLI} secret set EMAIL_FROM`,
+                note: "email invites and password resets; needs Cloudflare Email Sending",
+              },
             ],
           },
         });

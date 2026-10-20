@@ -71,7 +71,7 @@ describe("preflightDomains", () => {
     await expect(run(refused, { domains }).result).rejects.toMatchObject({
       code: "DNS_RECORD_CONFLICT",
       message: expect.stringContaining(
-        "todo.apps.example.com (*.apps.example.com: CNAME site.example.net); notes.apps.example.com (*.apps.example.com: CNAME site.example.net).",
+        "todo.apps.example.com (CNAME site.example.net, through *.apps.example.com); notes.apps.example.com (CNAME site.example.net, through *.apps.example.com).",
       ),
     });
     // The wildcard is read once for both.

@@ -7,6 +7,8 @@ export interface AppDevServer {
   /** Settles when the dev server process exits. */
   readonly exited: Promise<unknown>;
   stop(): void;
+  /** Its output from now on, after its startup output (`startup: true`) or without it. */
+  releaseOutput(startup: boolean): void;
 }
 
 interface StartAppDevServerOptions {
@@ -38,13 +40,19 @@ export async function startAppDevServer({
       reject: false,
       shell: true,
     });
-    return { exited: child, stop: () => child.kill("SIGTERM") };
+    return { exited: child, stop: () => child.kill("SIGTERM"), releaseOutput: () => {} };
   }
 
+  // Vite's banner names the internal port, which nobody should open.
   const child = await cf.start({
     args: ["dev"],
     cwd,
     env: { PORT: String(port), ...devRegistryEnv(cwd) },
+    holdOutput: true,
   });
-  return { exited: child.exited, stop: () => child.stop("SIGTERM") };
+  return {
+    exited: child.exited,
+    stop: () => child.stop("SIGTERM"),
+    releaseOutput: (startup) => child.releaseOutput(startup),
+  };
 }

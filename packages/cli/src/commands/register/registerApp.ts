@@ -39,7 +39,7 @@ import { preflightDomains } from "@/lib/domains/preflight";
 import { EveryAppError } from "@/lib/errors";
 import { refuseOlderCheckout } from "@/lib/gateway/apply";
 import { connectToGateway } from "@/lib/gateway/connect";
-import { acquireLease } from "@/lib/gateway/lease";
+import { acquireLease, describeLeaseHolder } from "@/lib/gateway/lease";
 import { markDeployed, register } from "@/lib/gateway/registry";
 import { loadEveryAppManifestFile } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
@@ -194,7 +194,7 @@ export async function registerApp(
       out.emit({
         type: "progress",
         step: "app.lease",
-        message: `Waiting for another deploy of ${appId} to finish: ${holder.holder}...`,
+        message: `Waiting for another deploy of ${appId} to finish (${describeLeaseHolder(holder)})...`,
       }),
     onHeartbeatProblem: (message) =>
       out.emit({ type: "warning", code: "LEASE_HEARTBEAT", step: "app.lease", message }),

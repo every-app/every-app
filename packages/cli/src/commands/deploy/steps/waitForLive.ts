@@ -153,8 +153,8 @@ export async function waitForLive({
         type: "progress",
         step: STEP,
         message: answered
-          ? `Waiting for ${url} to go live (${elapsed(waited)} so far)...`
-          : `Waiting for ${url} to go live and get its certificate (${elapsed(waited)} so far; usually under five minutes)...`,
+          ? `Waiting for ${url} to go live...`
+          : `Waiting for ${url} to go live and get its certificate (usually under five minutes)...`,
         data: { hostname, waitedMs: waited, answered },
       });
       lastProgress = now();

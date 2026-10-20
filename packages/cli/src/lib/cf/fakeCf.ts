@@ -132,6 +132,7 @@ export class FakeCf implements CfRunner {
     return {
       exited,
       stop: (signal = "SIGTERM") => this.resolveExit?.({ code: null, signal }),
+      releaseOutput: () => {},
     };
   }
 }

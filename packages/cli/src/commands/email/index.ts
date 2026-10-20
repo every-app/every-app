@@ -35,7 +35,7 @@ import { canPromptInTerminal, type Confirm } from "@/lib/cf/deploy";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
-import { acquireLease } from "@/lib/gateway/lease";
+import { acquireLease, describeLeaseHolder } from "@/lib/gateway/lease";
 import { readApp, readAppEmail, writeAppEmail } from "@/lib/gateway/registry";
 import {
   loadEveryAppManifest,
@@ -306,7 +306,7 @@ async function changeEmail(
       out.emit({
         type: "progress",
         step: "app.lease",
-        message: `Waiting for another deploy of ${id} to finish: ${holder.holder}...`,
+        message: `Waiting for another deploy of ${id} to finish (${describeLeaseHolder(holder)})...`,
       }),
     onHeartbeatProblem: (message) =>
       out.emit({ type: "warning", code: "LEASE_HEARTBEAT", step: "app.lease", message }),

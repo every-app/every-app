@@ -177,7 +177,7 @@ describe("everyapp status", () => {
     expect(done["data"]["fixes"]).toEqual([
       expect.objectContaining({ code: "NO_OWNER", run: "pnpm everyapp setup" }),
     ]);
-    expect(done["message"]).toContain("Apps:     todo (active) · all bound");
+    expect(done["message"]).toMatch(/\ntodo +✓ live +https:\/\/todo\.example\.com/);
   });
 
   it("lists the mail each app's deploys route to it, and what to run when a route stops delivering", async () => {
@@ -219,7 +219,7 @@ describe("everyapp status", () => {
       }),
     );
     expect(done["message"]).toContain(
-      "Email:    inbox: sends as the Gateway's sender only; receives *@example.com, support@example.com",
+      "inbox: sends as the Gateway's sender only; receives *@example.com, support@example.com",
     );
     expect(fixCodes(done)).not.toContain("EMAIL_ROUTE_MISSING");
     expect(fixCodes(done)).not.toContain("EMAIL_ROUTE_PENDING");
@@ -277,7 +277,7 @@ describe("everyapp status", () => {
       }),
     );
     expect(done["message"]).toContain(
-      "Email:    inbox: sends as *@example.com; receives *@example.com, support@example.com",
+      "inbox: sends as *@example.com; receives *@example.com, support@example.com",
     );
     expect(done["data"]["fixes"]).toContainEqual({
       code: "EMAIL_ROUTE_PENDING",
@@ -320,7 +320,7 @@ describe("everyapp status", () => {
       }),
     );
     expect(done["message"]).toContain(
-      "Email:    inbox: sends as the Gateway's sender only; receives nothing (*@example.com, support@example.com set, not declared)",
+      "inbox: sends as the Gateway's sender only; receives nothing (*@example.com, support@example.com set, not declared)",
     );
     expect(done["data"]["fixes"]).toContainEqual({
       code: "EMAIL_INBOUND_UNDECLARED",
@@ -334,7 +334,7 @@ describe("everyapp status", () => {
   it("prints the deployment mode the install recorded", async () => {
     const done = await status();
     expect(done["data"]["mode"]).toBe("self_hosted");
-    expect(done["message"]).toContain("Mode:     self_hosted");
+    expect(done["message"]).toContain("https://example.com · self-hosted");
   });
 
   it("says what to run when the registry, the install row and cf disagree", async () => {
@@ -403,7 +403,7 @@ describe("everyapp status", () => {
       checkout: { version: "0.2.0", treeSha256: "tree-1" },
     });
     expect(checkoutFixes(same)).toEqual([]);
-    expect(same["message"]).toContain("built from this checkout's sources");
+    expect(same["message"]).toContain("matches this checkout");
 
     // Committed since: the next rebind upgrades it, or setup does now.
     const newer = await at("tree-2", Date.parse("2026-10-20T00:00:00Z"));

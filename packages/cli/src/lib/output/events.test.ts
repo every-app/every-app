@@ -282,14 +282,14 @@ describe("createHumanSink", () => {
 
     expect(lines()).toEqual([
       "Deploying todo to Example Inc (first deploy)",
-      "Registered todo: private to you, owners and admins (change it in Admin → Apps)",
       "Built ✓",
-      "2 migrations applied ✓",
-      `  restore point: ${RESTORE}`,
-      "Uploaded 3f9c1a2e ✓",
-      "Binding to the Gateway",
-      "  Uploaded 7d20c4e1 ✓",
-      "Live: https://todo.apps.example.com",
+      "Database migrated ✓ 0000_init.sql, 0001_tags.sql",
+      `  To undo: ${RESTORE}`,
+      "Uploaded ✓",
+      "Added to the Gateway ✓",
+      "",
+      "Live    https://todo.apps.example.com",
+      "Access  Private to you, owners and admins · change it in Admin → Apps",
     ]);
     expect(problems()).toEqual([]);
     expect(sink.exitCode).toBe(0);
@@ -308,11 +308,14 @@ describe("createHumanSink", () => {
         defaultAccess: false,
         deployerAccess: false,
         organizationName: "Example Inc",
+        gatewayUrl: "https://apps.example.com",
       },
     });
+    sink.emit({ type: "done" });
     expect(lines()).toEqual([
       "Deploying todo to Example Inc (first deploy)",
-      "Registered todo: private to owners and admins (change it in Admin → Apps)",
+      "",
+      "Access  Private to owners and admins · change it at https://apps.example.com/admin/apps",
     ]);
   });
 
@@ -358,22 +361,18 @@ describe("createHumanSink", () => {
       "Deploying todo to Example Inc",
       "Built ✓",
       "Database up to date ✓",
-      "Uploaded 8a01d4f7 ✓",
-      "Live: https://todo.apps.example.com",
+      "Uploaded ✓",
+      "",
+      "Live  https://todo.apps.example.com",
     ]);
     expect(redeploy(["GITHUB_TOKEN"])[0]).toBe(
       "Redeploying todo with GITHUB_TOKEN (code and pending migrations from this directory)",
     );
   });
 
-  it("shows setup's account, the Gateway's upgrade with its steps under it, and what comes next", () => {
-    const { sink, lines } = human();
-    sink.emit({
-      type: "step",
-      step: "setup.toolchain",
-      status: "ok",
-      message: "Node 22, cf 1.0.0-beta.14.",
-    });
+  it("shows setup's install a step a line, with each slow step's time, then the facts, the run's time and what comes next", () => {
+    let now = 0;
+    const { sink, lines } = human({ now: () => now });
     sink.emit({
       type: "step",
       step: "setup.auth",
@@ -387,73 +386,63 @@ describe("createHumanSink", () => {
       data: { id: "acct", name: "Example Inc", email: "ben@example.com" },
     });
     sink.emit({
-      type: "progress",
-      step: "gateway.release",
-      message: "Building the Gateway from this checkout (a minute or two)...",
-    });
-    sink.emit({
       type: "step",
       step: "setup.gateway",
       status: "start",
-      data: {
-        release: "0.4.0",
-        from: "0.3.0",
-        gatewayUrl: "https://apps.example.com",
-      },
+      data: { release: "0.4.0", from: null, gatewayUrl: "https://apps.example.com" },
     });
-    sink.emit({
-      type: "step",
-      step: "gateway.resources",
-      status: "ok",
-      message: "Ready.",
-    });
+    sink.emit({ type: "step", step: "gateway.migrations", status: "start" });
+    now += 400;
     sink.emit({
       type: "step",
       step: "gateway.migrations",
       status: "ok",
-      data: { applied: ["0031_a.sql", "0032_b.sql"], rollbackCommand: RESTORE },
+      data: { applied: ["0000_a.sql", "0001_b.sql"], fresh: true, rollbackCommand: RESTORE },
     });
+    sink.emit({ type: "step", step: "gateway.deploy", status: "start" });
+    now += 6_100;
     sink.emit({
       type: "step",
       step: "gateway.deploy",
       status: "ok",
       data: { versionId: "9c2e1b0d-2222" },
     });
-    sink.emit({
-      type: "step",
-      step: "setup.gateway",
-      status: "ok",
-      data: { release: "0.4.0" },
-    });
+    sink.emit({ type: "step", step: "setup.gateway", status: "ok", data: { release: "0.4.0" } });
+    now += 30_000;
     sink.emit({
       type: "step",
       step: "setup.owner",
       status: "ok",
-      message: "Owner created: ben@example.com (Example Inc).",
       data: { email: "ben@example.com", organizationName: "Example Inc" },
     });
     sink.emit({
       type: "done",
-      message: "Your Gateway is ready: https://apps.example.com",
       data: {
+        facts: [
+          { label: "Gateway", value: "https://apps.example.com" },
+          { label: "Admin", value: "https://apps.example.com/admin", note: "invite people" },
+        ],
         next: [
-          "pnpm everyapp create my-app",
-          "AI for apps, any time: pnpm everyapp secret set OPENAI_API_KEY",
+          { command: "pnpm everyapp create my-app", note: "start your first app" },
+          { command: "pnpm everyapp secret set OPENAI_API_KEY", note: "turn on AI for apps" },
         ],
       },
     });
 
     expect(lines()).toEqual([
-      "Cloudflare: ben@example.com · Example Inc",
-      "Building the Gateway from this checkout (a minute or two)...",
-      "Upgrading the Gateway 0.3.0 → 0.4.0",
-      "  2 migrations applied ✓",
-      `    restore point: ${RESTORE}`,
-      "  Uploaded 9c2e1b0d ✓",
-      "Owner created: ben@example.com",
-      "Your Gateway is ready: https://apps.example.com",
-      "Next: pnpm everyapp create my-app",
-      "      AI for apps, any time: pnpm everyapp secret set OPENAI_API_KEY",
+      "Setting up Every App in Example Inc (ben@example.com)",
+      "Installing Gateway 0.4.0 at apps.example.com",
+      "Database created ✓ 2 migrations",
+      "Uploaded ✓ 6.1s",
+      "Owner account created for ben@example.com ✓",
+      "",
+      "Gateway  https://apps.example.com",
+      "Admin    https://apps.example.com/admin  invite people",
+      "Done in 37s",
+      "",
+      "Next:",
+      "  pnpm everyapp create my-app              start your first app",
+      "  pnpm everyapp secret set OPENAI_API_KEY  turn on AI for apps",
     ]);
   });
 
@@ -525,7 +514,7 @@ describe("createHumanSink", () => {
     ]);
   });
 
-  it("puts problems on stderr, each ending with the command to run next", () => {
+  it("puts problems on stderr: a headline, its detail, then what to do", () => {
     const { sink, lines, problems } = human();
     sink.emit({
       type: "step",
@@ -546,19 +535,49 @@ describe("createHumanSink", () => {
       type: "error",
       code: "DNS_RECORD_CONFLICT",
       message:
-        "todo.apps.example.com already has a DNS record (A 203.0.113.7).",
+        "todo.apps.example.com already points somewhere else\ntodo.apps.example.com (A 203.0.113.7).",
       retryable: false,
-      data: { rerun: "pnpm everyapp deploy --force-dns", authorize: true },
+      data: {
+        fix: "delete the record in Cloudflare (example.com → DNS)",
+        rerun: "pnpm everyapp deploy --force-dns",
+        authorize: true,
+      },
     });
 
     expect(lines()).toEqual(["Deploying todo"]);
     expect(problems()).toEqual([
       "! No certificate yet.",
       "  It usually comes within five minutes.",
-      "✗ todo.apps.example.com already has a DNS record (A 203.0.113.7).",
+      "✗ todo.apps.example.com already points somewhere else",
+      "  todo.apps.example.com (A 203.0.113.7).",
+      "  Fix: delete the record in Cloudflare (example.com → DNS)",
       "  To go ahead anyway: pnpm everyapp deploy --force-dns",
     ]);
     expect(sink.exitCode).toBe(1);
+  });
+
+  it("redraws a wait in place at a terminal, with how long it has run, and ticks it once it ends", () => {
+    let now = 0;
+    const { sink, stdout } = human({ terminal: true, columns: () => 120, now: () => now });
+    const wait = (holder: string) =>
+      sink.emit({
+        type: "progress",
+        step: "app.lease",
+        message: `Waiting for another deploy of todo to finish (${holder})...`,
+      });
+    wait("Bens-MacBook-Pro, started 1m ago");
+    now += 25_000;
+    wait("Bens-MacBook-Pro, started 2m ago");
+    expect(stdout().split("\r\x1b[2K").at(-1)).toBe(
+      "Waiting for another deploy of todo to finish (Bens-MacBook-Pro, started 2m ago)... · 25s ⠋",
+    );
+    now += 16_000;
+    sink.emit({ type: "step", step: "app.lease", status: "ok" });
+    // What stays on screen: each line as its last redraw left it.
+    const screen = stdout()
+      .split("\n")
+      .map((line) => line.split("\r\x1b[2K").at(-1));
+    expect(screen).toEqual(["Other deploy finished ✓ 41s", ""]);
   });
 
   it("shows an action the run waits for on stdout, and one it stops on with its rerun on stderr", () => {
@@ -566,10 +585,11 @@ describe("createHumanSink", () => {
     sink.emit({
       type: "action_required",
       action: "claim_owner",
-      message: "Create the owner account with this one-time setup link.",
+      message: "Open this link to create the owner account\nWorks once and expires in 24h.",
       data: {
         url: "https://apps.example.com/setup#token=est_x",
         waiting: true,
+        waitingFor: "the owner account",
       },
     });
     sink.emit({
@@ -583,11 +603,12 @@ describe("createHumanSink", () => {
     });
 
     expect(lines()).toEqual([
-      "Create the owner account with this one-time setup link.",
+      "→ Open this link to create the owner account",
       "  https://apps.example.com/setup#token=est_x",
+      "  Works once and expires in 24h.",
     ]);
     expect(problems()).toEqual([
-      "This Cloudflare account has no workers.dev subdomain yet.",
+      "→ This Cloudflare account has no workers.dev subdomain yet.",
       "  https://dash.cloudflare.com/acct/workers/onboarding",
       "  Then run: pnpm everyapp setup --domain apps.example.com",
     ]);

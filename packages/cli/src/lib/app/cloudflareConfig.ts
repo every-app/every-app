@@ -20,14 +20,17 @@ export const MISSING_CLOUDFLARE_CONFIG = [
 
 /**
  * The app's cloudflare.config.ts: null when it has none, else whether it
- * builds the Worker with everyAppWorker().
+ * builds the Worker with everyAppWorker() and whether it declares crons.
  */
 export async function readCloudflareConfig(
   cwd: string,
-): Promise<{ usesEveryAppWorker: boolean } | null> {
+): Promise<{ usesEveryAppWorker: boolean; hasCrons: boolean } | null> {
   try {
     const source = await fs.readFile(path.join(cwd, "cloudflare.config.ts"), "utf8");
-    return { usesEveryAppWorker: source.includes("everyAppWorker") };
+    return {
+      usesEveryAppWorker: source.includes("everyAppWorker"),
+      hasCrons: /\bcrons\s*:/.test(source),
+    };
   } catch {
     return null;
   }

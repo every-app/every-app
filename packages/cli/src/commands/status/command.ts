@@ -15,7 +15,7 @@ export const statusCommand = buildCommand({
     },
   },
   docs: {
-    brief: "Show the Gateway, its owner, apps, certificates, running deploys and what to fix",
+    brief: "Show the Gateway, its apps and anything to fix",
     fullDescription: [
       "One screen, all of it from the Gateway's D1 database and cf, nothing asked of the Gateway:",
       "its URL and release (and whether this checkout builds it), its owner, the apps its registry",

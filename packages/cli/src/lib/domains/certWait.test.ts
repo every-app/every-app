@@ -73,10 +73,10 @@ describe("waitForCertificates", () => {
     // At 0 s, 15 s, 30 s, then (a ready at 42 s) 45 s, 60 s.
     expect(waitingLines(events).map((e) => e.data.waitedMs)).toEqual([0, 15_000, 30_000, 45_000, 60_000]);
     expect(waitingLines(events)[0].message).toBe(
-      "Waiting for certificates: a.apps.example.com, b.apps.example.com (0s so far; usually under five minutes)...",
+      "Waiting for certificates: a.apps.example.com, b.apps.example.com (usually under five minutes)...",
     );
     expect(waitingLines(events).at(-1).message).toBe(
-      "Waiting for a certificate: b.apps.example.com (1m 00s so far; usually under five minutes)...",
+      "Waiting for a certificate: b.apps.example.com (usually under five minutes)...",
     );
     expect(events.filter((e) => e.message?.endsWith("has its certificate."))).toHaveLength(2);
   });
@@ -100,7 +100,7 @@ describe("waitForCertificates", () => {
 
     expect(waitingLines(events)[0]).toMatchObject({
       message:
-        "Waiting for a certificate: todo.apps.example.com; Waiting for DNS: gw.example.com has no record at the zone's nameservers yet; Waiting for https://chef.apps.example.com to answer (0s so far; usually under five minutes)...",
+        "Waiting for a certificate: todo.apps.example.com; Waiting for DNS: gw.example.com has no record at the zone's nameservers yet; Waiting for https://chef.apps.example.com to answer (usually under five minutes)...",
       data: {
         waitingFor: {
           "gw.example.com": "dns",

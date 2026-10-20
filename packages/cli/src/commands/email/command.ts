@@ -121,7 +121,6 @@ export const emailRoutes = buildRouteMap({
   routes: { set: setCommand, unset: unsetCommand, show: showCommand },
   defaultCommand: "show",
   docs: {
-    brief:
-      "The addresses the app sends as and receives at: its installation's on the Gateway, not the manifest's",
+    brief: "Set the addresses an app sends from and receives at",
   },
 });

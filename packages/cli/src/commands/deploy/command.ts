@@ -87,7 +87,7 @@ export const deployCommand = buildCommand({
     aliases: { y: "yes" },
   },
   docs: {
-    brief: "Deploy the app in this directory, or an app's release",
+    brief: "Deploy the app in this directory, or a release",
     fullDescription: [
       "Deploys the app in this directory as a private Cloudflare Worker defined by cloudflare.config.ts,",
       "with cf and your Cloudflare login (or CLOUDFLARE_API_TOKEN), in the Gateway's account:",

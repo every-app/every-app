@@ -116,7 +116,8 @@ async function checkDnsRecords(
   added: string[],
 ): Promise<void> {
   const { out, step, zone, forceDns } = options;
-  const conflicts: string[] = [];
+  // Each hostname a record answers, and the records that answer it.
+  const conflicts: Array<{ host: string; records: string }> = [];
   let viaWildcard = false;
   const answering = (records: Array<{ type: string }>) =>
     records.filter((r) => CONFLICTING_TYPES.has(r.type.toUpperCase()));
@@ -126,7 +127,7 @@ async function checkDnsRecords(
     const records = await recordsAt(options, host);
     const conflicting = answering(records);
     if (conflicting.length > 0) {
-      conflicts.push(`${host} (${conflicting.map(describeRecord).join(", ")})`);
+      conflicts.push({ host, records: conflicting.map(describeRecord).join(", ") });
     }
     // A name with no records of its own is answered by the wildcard over
     // it (the zone's apex has none over it in the zone).
@@ -135,14 +136,19 @@ async function checkDnsRecords(
       if (!wildcards.has(name)) wildcards.set(name, recordsAt(options, name));
       const covering = answering(await wildcards.get(name)!);
       if (covering.length > 0) {
-        conflicts.push(`${host} (${name}: ${covering.map(describeRecord).join(", ")})`);
+        conflicts.push({ host, records: `${covering.map(describeRecord).join(", ")}, through ${name}` });
         viaWildcard = true;
       }
     }
   }
   if (conflicts.length === 0) return;
   const one = conflicts.length === 1;
-  const which = `${one ? "A hostname the gateway is about to serve already has a DNS record" : "Hostnames the gateway is about to serve already have DNS records"}: ${conflicts.join("; ")}.`;
+  const which = one
+    ? `${conflicts[0]!.host} already points somewhere else`
+    : `${conflicts.length} hostnames already point somewhere else`;
+  const records = one
+    ? `Its DNS record: ${conflicts[0]!.records}.`
+    : `${conflicts.map((c) => `${c.host} (${c.records})`).join("; ")}.`;
   const wildcardStays = viaWildcard
     ? " A wildcard record stays, and keeps answering every other name."
     : "";
@@ -151,12 +157,17 @@ async function checkDnsRecords(
       type: "warning",
       code: "DNS_RECORD_REPLACED",
       step,
-      message: `${which} --force-dns: the gateway's Custom Domain${one ? " takes it" : "s take them"} over.${wildcardStays}`,
+      message: `${which}\n${records} --force-dns: the Gateway's Custom Domain${one ? " takes it" : "s take them"} over.${wildcardStays}`,
     });
     return;
   }
   throw new EveryAppError(
     "DNS_RECORD_CONFLICT",
-    `${which} Publishing the gateway there would take ${one ? "it" : "them"} from whatever ${one ? "the record serves" : "the records serve"}.${wildcardStays} Remove ${one ? "the record" : "the records"} (Cloudflare dashboard → ${zone.name} → DNS), choose another name, or pass --force-dns to take ${one ? "it" : "them"} over.`,
+    `${which}\n${records} Publishing ${one ? "it replaces the record" : "them replaces those records"}.${wildcardStays}`,
+    {
+      data: {
+        fix: `delete ${one ? "the record" : "the records"} in Cloudflare (${zone.name} → DNS), or use another name`,
+      },
+    },
   );
 }

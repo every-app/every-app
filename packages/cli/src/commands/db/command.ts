@@ -75,6 +75,6 @@ export const dbRoutes = buildRouteMap({
     query: queryCommand,
   },
   docs: {
-    brief: "The app's D1 database: local migrations, and SQL",
+    brief: "Run migrations and SQL against the app's database",
   },
 });

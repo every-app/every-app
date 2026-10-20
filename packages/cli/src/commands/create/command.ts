@@ -55,7 +55,7 @@ export const createCommand = buildCommand({
     },
   },
   docs: {
-    brief: "Create a new app from the starter template",
+    brief: "Create an app from the starter template",
     fullDescription: [
       "Copies the simple-todo starter template into apps/<id> inside this checkout, or ./<id> anywhere",
       "else, and readies it for `everyapp dev`. It doesn't contact your Gateway.",

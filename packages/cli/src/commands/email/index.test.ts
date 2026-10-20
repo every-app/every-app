@@ -670,7 +670,9 @@ describe("email set keeps the row and the routes consistent", () => {
           expect.objectContaining({
             type: "progress",
             step: "app.lease",
-            message: `Waiting for another deploy of inbox to finish: ${held.holder}...`,
+            message: expect.stringContaining(
+              `Waiting for another deploy of inbox to finish (${held.holder.split(":")[0]!.replace(/\.local$/, "")}, started`,
+            ),
           }),
         ),
       );

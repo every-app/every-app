@@ -23,6 +23,7 @@
  * Commands take a {@link CfRunner} so tests can swap in `FakeCf`.
  */
 import { spawn, type ChildProcess } from "node:child_process";
+import { once } from "node:events";
 import { rmSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -91,6 +92,11 @@ export interface CfProcess {
   }>;
   /** Signal the whole process group (cf, the package manager, Vite, workerd). */
   stop(signal?: NodeJS.Signals): void;
+  /**
+   * With `holdOutput`: pass output through from now on, after what was held
+   * (`startup: true`) or without it.
+   */
+  releaseOutput(startup: boolean): void;
 }
 
 export interface CfStartCall {
@@ -98,6 +104,8 @@ export interface CfStartCall {
   /** App root. */
   cwd: string;
   env?: Record<string, string | undefined>;
+  /** Keep stdout and stderr until `releaseOutput()`, e.g. a dev server's startup banner. */
+  holdOutput?: boolean;
 }
 
 export interface CfRunner {
@@ -189,25 +197,53 @@ export function createCfRunner(options: CfRunnerOptions = {}): CfRunner {
       if (runsPackageManager(call.args)) {
         await assertToolchainNode(call.cwd, env);
       }
+      const hold = call.holdOutput ?? false;
       const child = spawn(process.execPath, [binary.path, ...call.args], {
         cwd: call.cwd,
-        // Output goes straight to the terminal, so it keeps its colors.
-        env,
+        // Output goes straight to the terminal, so it keeps its colors; held
+        // output asks for them.
+        env: hold && process.stdout.isTTY ? { ...env, FORCE_COLOR: "1" } : env,
         // No stdin: a detached group reading the terminal would be stopped
         // with SIGTTIN.
-        stdio: ["ignore", "inherit", "inherit"],
+        stdio: ["ignore", hold ? "pipe" : "inherit", hold ? "pipe" : "inherit"],
         detached: PROCESS_GROUPS,
       });
+      let held: Array<{ to: NodeJS.WriteStream; chunk: Buffer }> | null = hold ? [] : null;
+      // Held output can trail the exit: what explains a failed start comes last.
+      const drained = hold
+        ? Promise.race([
+            Promise.all([once(child.stdout!, "end"), once(child.stderr!, "end")]),
+            new Promise((resolve) => setTimeout(resolve, 1000).unref()),
+          ])
+        : Promise.resolve();
+      if (hold) {
+        for (const [from, to] of [
+          [child.stdout!, process.stdout],
+          [child.stderr!, process.stderr],
+        ] as const) {
+          from.on("data", (chunk: Buffer) => {
+            if (held) held.push({ to, chunk });
+            else to.write(chunk);
+          });
+        }
+      }
       const exited = new Promise<{
         code: number | null;
         signal: NodeJS.Signals | null;
       }>((resolve, reject) => {
         child.once("error", reject);
-        child.once("exit", (code, signal) => resolve({ code, signal }));
+        child.once("exit", (code, signal) => {
+          void drained.then(() => resolve({ code, signal }));
+        });
       });
       return {
         exited,
         stop: (signal) => stopChild(child, PROCESS_GROUPS, signal),
+        releaseOutput: (startup) => {
+          const kept = held ?? [];
+          held = null;
+          if (startup) for (const { to, chunk } of kept) to.write(chunk);
+        },
       };
     },
   };

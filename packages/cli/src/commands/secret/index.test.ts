@@ -450,8 +450,9 @@ describe("secret list", () => {
     events = [];
     await list(emptyDir());
     const names = gatewayWorker().versions.length > 0 ? Object.keys(gatewayWorker().secrets).sort() : [];
+    const width = Math.max(...names.map((name) => name.length));
     expect(done()).toMatchObject({
-      message: `${GATEWAY}: ${names.join(", ")}`,
+      message: [`${"NAME".padEnd(width)}  WHERE`, ...names.map((name) => `${name.padEnd(width)}  Gateway`)].join("\n"),
       data: { gateway: { workerName: GATEWAY, names, settable: expect.arrayContaining(["OPENAI_API_KEY", "EMAIL_FROM"]) } },
     });
     expect(done()!["data"]["app"]).toBeUndefined();
@@ -465,11 +466,19 @@ describe("secret list", () => {
 
     await list(dir);
 
+    // everyapp's own names (EVERY_APP_ORG_ID, GATEWAY_URL) only with --verbose.
     expect(done()!["message"]).toBe(
       [
-        `${workerName}: EVERY_APP_ORG_ID, GATEWAY_URL, GITHUB_TOKEN`,
-        `Listed under secrets in everyapp.config.ts, not set on ${workerName}: STRIPE_KEY`,
-        "Gateway settings todo uses: OPENAI_API_KEY (set), DATAFORSEO_API_KEY (not set), EMAIL_FROM (not set), EMAIL_FROM_NAME (not set), EMAIL_REST_API_TOKEN (optional, not set), RESEND_API_KEY (optional, not set), EMAIL_PROVIDER (optional, not set)",
+        "NAME                  WHERE    STATUS",
+        "GITHUB_TOKEN          todo     set",
+        "STRIPE_KEY            todo     not set",
+        "OPENAI_API_KEY        Gateway  set",
+        "DATAFORSEO_API_KEY    Gateway  not set",
+        "EMAIL_FROM            Gateway  not set",
+        "EMAIL_FROM_NAME       Gateway  not set",
+        "EMAIL_REST_API_TOKEN  Gateway  not set (optional)",
+        "RESEND_API_KEY        Gateway  not set (optional)",
+        "EMAIL_PROVIDER        Gateway  not set (optional)",
       ].join("\n"),
     );
     expect(done()!["data"]).toMatchObject({
@@ -510,9 +519,9 @@ describe("secret list", () => {
 
     expect(done()!["message"]).toBe(
       [
-        `${workerName}: EVERY_APP_ORG_ID, GATEWAY_URL, GITHUB_TOKEN`,
-        `${helper}: EVERY_APP_ORG_ID, GATEWAY_URL`,
-        `Listed under secrets in everyapp.config.ts, not set on ${helper}: GITHUB_TOKEN`,
+        "NAME          WHERE         STATUS",
+        "GITHUB_TOKEN  seo           set",
+        "GITHUB_TOKEN  audit helper  not set",
       ].join("\n"),
     );
     expect(done()!["data"]["next"]).toBeUndefined();
@@ -522,8 +531,16 @@ describe("secret list", () => {
     await list(appDir(TODO));
     expect(done()!["message"]).toBe(
       [
-        "todo isn't deployed yet; its own secrets are set after its first `everyapp deploy`. It lists: GITHUB_TOKEN, STRIPE_KEY.",
-        "Gateway settings todo uses: OPENAI_API_KEY (not set), DATAFORSEO_API_KEY (not set), EMAIL_FROM (not set), EMAIL_FROM_NAME (not set), EMAIL_REST_API_TOKEN (optional, not set), RESEND_API_KEY (optional, not set), EMAIL_PROVIDER (optional, not set)",
+        "NAME                  WHERE    STATUS",
+        "GITHUB_TOKEN          todo     app not deployed yet",
+        "STRIPE_KEY            todo     app not deployed yet",
+        "OPENAI_API_KEY        Gateway  not set",
+        "DATAFORSEO_API_KEY    Gateway  not set",
+        "EMAIL_FROM            Gateway  not set",
+        "EMAIL_FROM_NAME       Gateway  not set",
+        "EMAIL_REST_API_TOKEN  Gateway  not set (optional)",
+        "RESEND_API_KEY        Gateway  not set (optional)",
+        "EMAIL_PROVIDER        Gateway  not set (optional)",
       ].join("\n"),
     );
     expect(done()!["data"]).toMatchObject({

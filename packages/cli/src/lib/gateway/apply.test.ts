@@ -340,8 +340,8 @@ describe("applyGateway", () => {
 
     const held = await deployGateway().catch((error: Error) => error);
     expect(held).toMatchObject({ code: "LEASE_HELD", retryable: true });
-    expect((held as Error).message).toContain('laptop:42:abcd has held the deploy lease "gateway" (gateway.upgrade) since');
-    expect((held as Error).message).toContain("`pnpm everyapp status` shows it");
+    expect((held as Error).message).toContain("It's from laptop, started");
+    expect(held).toMatchObject({ data: { fix: expect.stringContaining("`pnpm everyapp status` shows it") } });
     expect((held as Error).message).not.toContain("--");
     expect(account.deploys).toEqual([]);
 
@@ -729,7 +729,7 @@ describe("per-app Custom Domains", () => {
 
     await expect(reconcile()).rejects.toMatchObject({
       code: "DNS_RECORD_CONFLICT",
-      message: expect.stringContaining(`todo.${GW} (CNAME legacy.example.net)`),
+      message: expect.stringContaining("Its DNS record: CNAME legacy.example.net."),
     });
     expect(account.deploys).toHaveLength(deploys);
     expect(account.gatewayBindings()).toEqual([]);
@@ -761,7 +761,7 @@ describe("per-app Custom Domains", () => {
 
     await expect(reconcile()).rejects.toMatchObject({
       code: "DNS_RECORD_CONFLICT",
-      message: expect.stringContaining(`todo.${GW} (*.${GW}: CNAME site.example.net)`),
+      message: expect.stringContaining(`Its DNS record: CNAME site.example.net, through *.${GW}.`),
     });
     expect(account.gatewayDomains()).toEqual([GW]);
 

@@ -33,6 +33,8 @@ interface MigrateRemoteD1Result {
   /** Restores the bookmark: the caller shows it, and repeats it in a later failure. */
   rollbackCommand: string;
   applied: string[];
+  /** The database had none of the migrations before: nothing to restore. */
+  fresh: boolean;
 }
 
 export async function migrateRemoteD1({
@@ -46,6 +48,7 @@ export async function migrateRemoteD1({
   const bookmark = await getD1Bookmark(cf, databaseId);
   const rollback = restoreCommand(databaseId, bookmark, accountId);
 
+  const total = await countMigrations(dir, nested);
   try {
     const applied = await applyRemoteMigrations({
       cf,
@@ -53,7 +56,12 @@ export async function migrateRemoteD1({
       dir,
       nested,
     });
-    return { bookmark, rollbackCommand: rollback, applied };
+    return {
+      bookmark,
+      rollbackCommand: rollback,
+      applied,
+      fresh: applied.length > 0 && applied.length === total,
+    };
   } catch (error) {
     throw new EveryAppError(
       "MIGRATION_FAILED",
@@ -64,6 +72,25 @@ export async function migrateRemoteD1({
       ].join("\n"),
     );
   }
+}
+
+/** The migrations in `dir`: `<tag>/migration.sql` each, or `*.sql` files. */
+async function countMigrations(dir: string, nested: boolean): Promise<number> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  if (!nested) {
+    return entries.filter((entry) => entry.isFile() && entry.name.endsWith(".sql")).length;
+  }
+  let count = 0;
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    try {
+      await fs.access(path.join(dir, entry.name, "migration.sql"));
+      count += 1;
+    } catch {
+      // Not a migration directory.
+    }
+  }
+  return count;
 }
 
 /** drizzle-kit's newer layout keeps each migration in `<dir>/<tag>/migration.sql`. */

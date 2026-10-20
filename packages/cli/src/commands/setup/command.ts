@@ -64,7 +64,7 @@ export const setupCommand = buildCommand({
     aliases: { y: "yes" },
   },
   docs: {
-    brief: "Install, upgrade or repair the Gateway in your Cloudflare account",
+    brief: "Install, upgrade or repair the Gateway",
     fullDescription: [
       "One command from an empty Cloudflare account to a working Gateway and its owner, and the",
       "one to run after a git pull or when something is off. Run it again any time: it picks up",

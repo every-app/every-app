@@ -56,7 +56,7 @@ export function checkMirrorBaseHost(baseHost: string): string | null {
     `mirror mode needs a two-label base host so the session cookie can cross`,
     `the gateway->app subdomain boundary. You're on "${baseHost}" (one label).`,
     ``,
-    `Pass --baseHost everyapp.localhost and open`,
+    `Pass --base-host everyapp.localhost and open`,
     `  http://<app>.everyapp.localhost:<port>`,
     `via portless (recommended) or an /etc/hosts entry, and set the gateway's`,
     `EVERYAPP_DEV_COOKIE_DOMAIN=everyapp.localhost and`,

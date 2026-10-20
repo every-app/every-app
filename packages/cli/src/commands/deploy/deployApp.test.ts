@@ -282,7 +282,9 @@ describe("deploy", () => {
       .filter((event) => event["type"] === "step" && event["status"] !== "start")
       .map((event) => event["step"]);
     expect(steps).toEqual([
+      "app.connect",
       "app.register",
+      "app.install",
       "app.build",
       "app.migrations",
       "app.upload",
@@ -662,9 +664,8 @@ describe("deploy", () => {
     const held = await deploy().catch((error: Error) => error);
     expect(held).toMatchObject({ code: "LEASE_HELD", retryable: true });
     expect((held as Error).message).toContain(
-      `${upgrade.holder} has held the deploy lease "gateway" (gateway.upgrade)`,
+      `It's from ${upgrade.holder.split(":")[0]!.replace(/\.local$/, "")}, started`,
     );
-    expect((held as Error).message).toContain("`pnpm everyapp status` shows it");
     expect((held as Error).message).toContain("This app's upload is kept");
     expect((held as Error).message).not.toContain("--");
     expect(account.workers.get("every-acme-todo")!.versions).toHaveLength(1);
@@ -1701,7 +1702,7 @@ describe("deploy and delete with the gateway on a subdomain", () => {
 
     await expect(deployHere()).rejects.toMatchObject({
       code: "DNS_RECORD_CONFLICT",
-      message: expect.stringContaining("--force-dns"),
+      rerun: expect.stringContaining("--force-dns"),
     });
     expect(databaseId("every-acme-todo")).toBeUndefined();
     expect(account.workers.has("every-acme-todo")).toBe(false);
@@ -1721,7 +1722,8 @@ describe("deploy and delete with the gateway on a subdomain", () => {
     expect(events).toContainEqual(
       expect.objectContaining({
         step: "app.live",
-        type: "progress",
+        type: "step",
+        status: "skip",
         message: expect.stringContaining("goes live on its first visit"),
       }),
     );

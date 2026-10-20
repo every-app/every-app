@@ -18,6 +18,7 @@
  * deploy if it is lost. Renewals never overlap, and each one is given up
  * after 20 seconds rather than the runner's two minutes.
  */
+import { roughly } from "@/lib/output/roughly";
 import { randomBytes } from "node:crypto";
 import os from "node:os";
 import type { D1Database } from "@/lib/cf/d1";
@@ -141,13 +142,12 @@ export async function readLiveLeases(
   return rows.map(toHolder);
 }
 
-/**
- * Who holds a lease and since when, and where to see it: for the error a
- * deploy that gave up waiting raises.
- */
-function describeHolder(current: LeaseHolder): string {
-  return `${current.holder} has held the deploy lease "${current.id}" (${current.purpose}) since ${iso(current.acquiredAt)}; \`${CLI} status\` shows it while that deploy runs. If it died, the lease expires by ${iso(current.expiresAt)} and the next run takes it.`;
+/** Who holds a lease, for a person: "Bens-MacBook-Pro, started 1m ago". */
+export function describeLeaseHolder(current: LeaseHolder, now = Date.now()): string {
+  const machine = current.holder.split(":")[0]!.replace(/\.local$/, "");
+  return `${machine}, started ${roughly(now - current.acquiredAt)} ago`;
 }
+
 
 export async function acquireLease({
   db,
@@ -179,9 +179,14 @@ export async function acquireLease({
       throw new EveryAppError(
         "LEASE_HELD",
         current
-          ? `Another deploy is running: ${describeHolder(current)}`
+          ? `Another deploy is still running after ${roughly(waitMs)}\nIt's from ${describeLeaseHolder(current, now())}. If it died, its lease runs out in ${roughly(current.expiresAt - now())} and the next run takes it.`
           : `Couldn't take the deploy lease "${id}".`,
-        { retryable: true },
+        {
+          retryable: true,
+          ...(current
+            ? { data: { holder: current, fix: `\`${CLI} status\` shows it; run this again once it finishes` } }
+            : {}),
+        },
       );
     }
     if (current) onWait?.(current);

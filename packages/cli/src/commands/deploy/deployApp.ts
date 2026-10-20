@@ -124,7 +124,7 @@ import { afterMigration, EveryAppError } from "@/lib/errors";
 import { connectToGateway } from "@/lib/gateway/connect";
 import { refuseOlderCheckout, type CandidateRelease } from "@/lib/gateway/apply";
 import { readInstall } from "@/lib/gateway/install";
-import { acquireLease } from "@/lib/gateway/lease";
+import { acquireLease, describeLeaseHolder } from "@/lib/gateway/lease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import type { GatewayRelease } from "@/lib/gateway/release";
 import { gatewayReleaseSource } from "@/lib/gateway/source";
@@ -352,6 +352,7 @@ async function deploySteps(
   // install. With none anywhere, `deploy` offers to install one first.
   const offer = options.offerInstall;
   const gateway = gatewayFor(options.reconcile, out, options.verbose);
+  out.emit({ type: "step", step: "app.connect", status: "start", message: "Finding your Gateway..." });
   const { cf, accountId, accountName, databaseId, db: registry, install, gatewayUrl, deployer } =
     await connectToGateway({
       gateway: options.gateway,
@@ -383,6 +384,7 @@ async function deploySteps(
             })
         : undefined,
     });
+  out.emit({ type: "step", step: "app.connect", status: "ok", data: { gatewayUrl } });
   // Before anything is registered: never with a Gateway behind the live one.
   await refuseOlderCheckout(install, gateway.source);
   const identityKey = install.jwtPublicKey;
@@ -447,6 +449,7 @@ async function deploySteps(
       scope: plan.app.scope,
       organizationId: organization.id,
       organizationName: organization.name,
+      gatewayUrl,
       ...(secretNames.length > 0 ? { secrets: secretNames } : {}),
       ...(unsetNames.length > 0 ? { unsetSecrets: unsetNames } : {}),
     },
@@ -480,19 +483,25 @@ async function deploySteps(
   }
 
   // 3. Everything that touches the app's Worker and data, one deploy at a time.
+  let waited = false;
   const lease = await acquireLease({
     db: registry,
     id: `app:${workerName}`,
     purpose: "app.deploy",
-    onWait: (holder) =>
+    onWait: (holder) => {
+      waited = true;
       out.emit({
         type: "progress",
         step: "app.lease",
-        message: `Waiting for another deploy of ${manifest.id} to finish: ${holder.holder}...`,
-      }),
+        message: `Waiting for another deploy of ${manifest.id} to finish (${describeLeaseHolder(holder)})...`,
+      });
+    },
     onHeartbeatProblem: (message) =>
       out.emit({ type: "warning", code: "LEASE_HEARTBEAT", step: "app.lease", message }),
   });
+  if (waited) {
+    out.emit({ type: "step", step: "app.lease", status: "ok", message: "The other deploy finished." });
+  }
   let versionId: string;
   try {
     const deletedDurableObjects = checkDurableObjects(
@@ -566,13 +575,15 @@ async function deploySteps(
       secrets: appSecrets,
     });
 
-    if (!release) {
+    if (!release && manifest.install !== false) {
+      out.emit({ type: "step", step: "app.install", status: "start", message: "Installing dependencies..." });
       await (options.installDeps ?? installDependencies)({
         cwd,
         description: "Installing dependencies...",
         install: manifest.install,
         verbose: options.verbose ?? false,
       });
+      out.emit({ type: "step", step: "app.install", status: "ok" });
     }
 
     const target: InstallTarget = {
@@ -843,8 +854,9 @@ async function deploySteps(
   const wait = !outsideBase && (options.waitForLive ?? true);
   if (!outsideBase && !wait) {
     out.emit({
-      type: "progress",
+      type: "step",
       step: "app.live",
+      status: "skip",
       message: `${manifest.id} goes live on its first visit to https://${hostname}${newHost ? ", once its certificate comes (within a few minutes)" : ""}; \`${CLI} status\` shows it.`,
       data: { hostname },
     });
@@ -1047,6 +1059,7 @@ async function migrate({
     data: {
       bookmark: result.bookmark,
       applied: result.applied,
+      fresh: result.fresh,
       rollbackCommand: result.rollbackCommand,
     },
   });

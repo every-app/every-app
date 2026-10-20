@@ -110,6 +110,6 @@ export const secretRoutes = buildRouteMap({
     list: listCommand,
   },
   docs: {
-    brief: "The app's secrets and the Gateway's settings, each by name",
+    brief: "Set, remove and list secrets and Gateway settings",
   },
 });

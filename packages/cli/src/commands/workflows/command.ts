@@ -161,6 +161,6 @@ export const workflowsRoutes = buildRouteMap({
     restart: statusCommand("restart", "Run an instance again from the start"),
   },
   docs: {
-    brief: "The deployed app's Workflows, through cf in the Gateway's account",
+    brief: "List and control the app's Workflows",
   },
 });

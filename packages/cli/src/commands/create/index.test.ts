@@ -133,7 +133,15 @@ describe("everyapp create", () => {
     expect(fs.existsSync(path.join(app, ".dev.vars"))).toBe(false);
     expect(events.at(-1)).toMatchObject({
       type: "done",
-      data: { appId: "my-app", dir: app, next: ["cd ./my-app", "pnpm dev"] },
+      data: {
+        appId: "my-app",
+        dir: app,
+        next: [
+          { command: "cd ./my-app" },
+          { command: "pnpm dev", note: "run it locally" },
+          { command: "pnpm everyapp deploy", note: "put it live" },
+        ],
+      },
     });
     expect(events.filter((event) => event["type"] === "warning")).toEqual([]);
   });

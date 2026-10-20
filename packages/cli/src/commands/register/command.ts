@@ -58,7 +58,7 @@ export const registerCommand = buildCommand({
     },
   },
   docs: {
-    brief: "Register a Worker deployed by other means as a shared app (hosted Gateway)",
+    brief: "Add a Worker deployed elsewhere as a shared app",
     fullDescription: [
       "Puts a Worker deployed some other way (an Alchemy stage, wrangler, a pipeline) behind a hosted",
       "Gateway as a shared app, with your Cloudflare login, in the Gateway's account:",

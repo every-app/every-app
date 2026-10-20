@@ -64,7 +64,7 @@ import {
   type DesiredState,
 } from "./desiredState";
 import { readInstall, writeInstall, type InstallRecord } from "./install";
-import { acquireLease, type Lease } from "./lease";
+import { acquireLease, describeLeaseHolder, type Lease } from "./lease";
 import { gatewayDomains, patchGatewayBuildOutput } from "./patchBuildOutput";
 import {
   compareReleaseOrder,
@@ -146,7 +146,7 @@ export function acquireGatewayLease(
       options.out.emit({
         type: "progress",
         step: "gateway.lease",
-        message: `Waiting for another deploy to finish: ${holder.holder} (${holder.purpose})...`,
+        message: `Waiting for another deploy to finish (${describeLeaseHolder(holder)})...`,
       }),
     onHeartbeatProblem: (message) =>
       options.out.emit({
@@ -395,7 +395,7 @@ async function migrate({
     type: "step",
     step: "gateway.migrations",
     status: "start",
-    message: "Migrating the gateway's database...",
+    message: "Migrating the Gateway's database...",
   });
   const result = await migrateRemoteD1({
     cf,
@@ -416,6 +416,7 @@ async function migrate({
     data: {
       bookmark: result.bookmark,
       applied: result.applied,
+      fresh: result.fresh,
       rollbackCommand: result.rollbackCommand,
     },
   });
