@@ -454,6 +454,56 @@ describe("createHumanSink", () => {
     expect(lines()).toEqual([message]);
   });
 
+  it("shows a dev run: its steps ticked, the ready block, tool calls as they come, then the stop", () => {
+    const { sink, lines } = human();
+    sink.emit({ type: "step", step: "dev.types", status: "start", message: "Generating Worker types..." });
+    sink.emit({ type: "step", step: "dev.types", status: "ok", message: "Generated the Worker's types (.cloudflare/types)." });
+    sink.emit({ type: "step", step: "dev.migrations", status: "start", message: "Applying local migrations..." });
+    sink.emit({
+      type: "step",
+      step: "dev.migrations",
+      status: "ok",
+      data: { applied: ["0000_init.sql", "0001_tags.sql"] },
+    });
+    sink.emit({ type: "step", step: "dev.app", status: "start", message: "Starting todo..." });
+    sink.emit({
+      type: "step",
+      step: "dev.app",
+      status: "ok",
+      message: "\n  App  http://todo.localhost:8787\n",
+      data: { appId: "todo" },
+    });
+    sink.emit({ type: "step", step: "dev.ready", status: "ok", data: { port: 8787 } });
+    sink.emit({ type: "progress", step: "dev.session", message: "Every request goes through the real perimeter. Ctrl+C to stop." });
+    sink.emit({ type: "progress", step: "dev.mcp", message: "MCP  list_todos  ok  12ms" });
+    sink.emit({ type: "step", step: "dev.stop", status: "ok", data: { appId: "todo", started: true } });
+
+    expect(lines()).toEqual([
+      "Worker types generated ✓ .cloudflare/types",
+      "2 local migrations applied ✓",
+      "todo is running locally ✓",
+      "",
+      "  App  http://todo.localhost:8787",
+      "",
+      "Every request goes through the real perimeter. Ctrl+C to stop.",
+      "MCP  list_todos  ok  12ms",
+      "todo stopped ✓",
+    ]);
+  });
+
+  it("says when dev skipped its migrations or stopped before the app started", () => {
+    const { sink, lines } = human();
+    sink.emit({ type: "step", step: "dev.migrations", status: "skip", data: { reason: "no_d1" } });
+    sink.emit({ type: "step", step: "dev.migrations", status: "skip", data: { reason: "flag" } });
+    sink.emit({ type: "step", step: "dev.migrations", status: "ok", data: { applied: [] } });
+    sink.emit({ type: "step", step: "dev.stop", status: "ok", data: { appId: "todo", started: false } });
+    expect(lines()).toEqual([
+      "Skipped local migrations (--skip-migrations)",
+      "Local database up to date ✓",
+      "Stopped before todo started.",
+    ]);
+  });
+
   it("says the Gateway is up to date when there is nothing to do", () => {
     const { sink, lines } = human();
     sink.emit({

@@ -23,51 +23,39 @@
  * `<app>.localhost/mcp` is served by a local ToolBus from the app's live
  * `defineTools()` catalog, with the gateway's policy and identity contract,
  * so MCP Inspector, Claude Code or curl can call the app's tools locally.
+ *
+ * Ctrl+C stops the app's dev server and says so (exit 130), through the
+ * interrupt handler (lib/interrupt.ts) that also stops a migration's cf.
  */
-import chalk from "chalk";
+import fs from "node:fs/promises";
 import http from "node:http";
-import type { AddressInfo } from "node:net";
+import path from "node:path";
 import type { LocalContext } from "@/context";
 import { ManifestError } from "@every-app/perimeter/manifest";
+import type { SessionAuthenticator } from "@every-app/perimeter/dev";
+import { getFreePort, waitForHttp, waitForUrl } from "./proxy";
 import {
-  mintDevIdentityJwt,
-  mintDevPublicMarkerJwt,
-  parseHost,
-  DEV_USER,
-  type SessionAuthenticator,
-} from "@every-app/perimeter/dev";
-import {
-  getFreePort,
-  handleUpgrade,
-  pipeUpgrade,
-  toWebRequest,
-  viteFetcher,
-  waitForHttp,
-  waitForUrl,
-  writeWebResponse,
-} from "./proxy";
-import {
-  resolveDevMode,
   checkMirrorBaseHost,
-  classifyHost,
+  DEFAULT_MIRROR_BASE_HOST,
   DEV_MODE_ENV,
-  type DevMode,
+  DevMode,
+  resolveDevMode,
 } from "./mode";
 import { createRemoteAuthenticator } from "./remoteAuth";
 import { loadEveryAppManifest, type EveryAppCliManifest } from "@/lib/manifest";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import { PINNED_CF_VERSION, resolveCfBinary } from "@/lib/cf/bin";
-import { devLauncherHtml } from "./launcherPage";
-import { registerDevApp } from "./registerDevApp";
-import { createDevAppGateway } from "./devAppGateway";
 import { applyDevMigrations } from "./migrations";
 import { startAppDevServer, type AppDevServer } from "./appServer";
-import { MISSING_CLOUDFLARE_CONFIG, readCloudflareConfig } from "@/lib/app/cloudflareConfig";
-import { ensureWorkerTypes } from "@/lib/app/workerTypes";
+import { assertPortFree, listen, serveGateway } from "./gatewayServer";
+import { readyBlock } from "./ready";
+import { readCloudflareConfig } from "@/lib/app/cloudflareConfig";
+import { generateWorkerTypes, hasWorkerTypes } from "@/lib/app/workerTypes";
 import { EveryAppError } from "@/lib/errors";
+import { isInterrupted, onInterrupt, sayOnInterrupt } from "@/lib/interrupt";
+import { thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { eventSink, runReported } from "@/lib/output/run";
-import { formatFacts } from "@/lib/output/table";
 
 interface DevCommandFlags {
   port?: number;
@@ -79,9 +67,10 @@ interface DevCommandFlags {
 }
 
 const DEFAULT_GATEWAY_URL = "http://localhost:3000";
-const DEFAULT_MIRROR_BASE_HOST = "everyapp.localhost";
 /** Loopback only, unless --host: the dev keypair is public. */
 const DEFAULT_HOST = "127.0.0.1";
+const DEFAULT_PORT = 8787;
+const MIRROR_PROBE_MS = 5000;
 
 export default async function dev(
   this: LocalContext,
@@ -91,437 +80,303 @@ export default async function dev(
   await runReported(out, () => runDev(flags, out));
 }
 
-/** The whole run; returns once the app's dev server exits. */
+/**
+ * The whole run; returns once the app's dev server exits, or quietly when
+ * Ctrl+C stopped it (the interrupt handler then exits).
+ */
 export async function runDev(
   flags: DevCommandFlags,
   out: EventSink,
   {
     cwd = process.cwd(),
     cf = createCfRunner(),
-  }: { cwd?: string; cf?: CfRunner } = {},
+    env = process.env,
+  }: { cwd?: string; cf?: CfRunner; env?: NodeJS.ProcessEnv } = {},
 ): Promise<void> {
-  const mode = resolveDevMode(flags.mode, process.env[DEV_MODE_ENV]);
+  const mode = resolveDevMode(flags.mode, env[DEV_MODE_ENV]);
   const gatewayUrl = flags.gateway ?? DEFAULT_GATEWAY_URL;
   const mirrorBaseHost = flags.baseHost ?? DEFAULT_MIRROR_BASE_HOST;
-  if (mode === "mirror") {
-    const problem = checkMirrorBaseHost(mirrorBaseHost);
-    if (problem) throw new EveryAppError("MIRROR_BASE_HOST", problem);
-  }
+  if (mode === DevMode.Mirror) checkMirrorBaseHost(mirrorBaseHost);
 
   const manifest = await loadManifest(cwd);
   const cloudflareConfig = await readCloudflareConfig(cwd);
-  const hasCloudflareConfig = cloudflareConfig !== null;
-  if (!manifest.dev && !hasCloudflareConfig) {
+  if (!manifest.dev && !cloudflareConfig) {
     throw new EveryAppError(
       "MISSING_CLOUDFLARE_CONFIG",
-      MISSING_CLOUDFLARE_CONFIG,
+      [
+        "No cloudflare.config.ts in this directory",
+        "Every App apps build their Worker in cloudflare.config.ts with everyAppWorker() from @every-app/sdk/cloudflare.",
+      ].join("\n"),
+      { data: { fix: "copy cloudflare.config.ts from templates/simple-todo" } },
     );
   }
+
+  const host = flags.host ?? DEFAULT_HOST;
+  const port = flags.port ?? (env["PORT"] ? Number(env["PORT"]) : DEFAULT_PORT);
+  await assertPortFree(port, host);
 
   const cfBinary = await resolveCfBinary(cwd);
   if (cfBinary.source === "project" && cfBinary.version !== PINNED_CF_VERSION) {
     out.emit({
-      type: "progress",
-      step: "dev.cf",
-      message: `Using the app's cf ${cfBinary.version} (this everyapp is tested with ${PINNED_CF_VERSION}).`,
+      type: "warning",
+      code: "CF_VERSION_DIFFERS",
+      message: `Using the app's cf ${cfBinary.version}; everyapp is tested with ${PINNED_CF_VERSION}`,
       data: { version: cfBinary.version, tested: PINNED_CF_VERSION },
     });
   }
 
-  // The app's typed Env, on a fresh clone. Later config changes regenerate
-  // it through the app's own `types:check` script.
-  if (hasCloudflareConfig && (await ensureWorkerTypes(cf, cwd))) {
-    out.emit({
-      type: "step",
-      step: "dev.types",
-      status: "ok",
-      message: "Generated the Worker's types (.cloudflare/types).",
-    });
-  }
-
-  // Pending local migrations go in before the app starts, so a fresh clone's
-  // first page load doesn't hit an empty database.
-  if (!flags["skip-migrations"]) {
-    await applyDevMigrations({ cwd, manifest, cf, out });
-  }
-
-  // mirror mode: the gateway must be running separately. Fail fast with
-  // guidance rather than producing silent 401s later.
-  let authenticator: SessionAuthenticator | undefined;
-  if (mode === "mirror") {
-    try {
-      // Probe the gateway URL as given so its own hostname resolution applies
-      // (a gateway on localhost:3000 is reached whether it bound IPv4 or IPv6).
-      await waitForUrl(gatewayUrl, 5000);
-    } catch {
-      throw new EveryAppError(
-        "MIRROR_GATEWAY_UNREACHABLE",
-        [
-          `mirror mode: no gateway reachable at ${gatewayUrl}.`,
-          "Start it first:  cd apps/every-app-gateway && pnpm dev",
-          '(or pass --gateway <url>). See docs/TESTING.md "mirror mode".',
-        ].join("\n"),
-      );
-    }
-    authenticator = createRemoteAuthenticator({
-      gatewayUrl,
-      onHint: (message) =>
-        out.emit({ type: "warning", code: "MIRROR_SESSION", message }),
-    });
-  }
-
-  // The app's dev server on an internal port (hot reload intact); the
-  // gateway-lite is the only thing you talk to directly.
-  const appPort = await getFreePort();
-  out.emit({
-    type: "step",
-    step: "dev.app",
-    status: "start",
-    message: `Starting ${manifest.id}...`,
-    data: { appPort },
+  // Ctrl+C: stop what runs, then say so.
+  let appServer: AppDevServer | undefined;
+  let started = false;
+  const forgetInterrupt = onInterrupt({
+    sync: () => appServer?.stop(),
+    async: async () => {
+      await appServer?.exited;
+      out.emit({
+        type: "step",
+        step: "dev.stop",
+        status: "ok",
+        data: { appId: manifest.id, started },
+      });
+    },
   });
-  const appServer = await startAppDevServer({
-    cwd,
-    manifest,
-    cf,
-    port: appPort,
-  });
-  const stop = () => appServer.stop();
-  const signals = ["SIGINT", "SIGTERM", "exit"] as const;
-  for (const signal of signals) process.on(signal, stop);
+  let unsay = sayOnInterrupt(manifest.id);
+  const stopping = (what: string) => {
+    unsay();
+    unsay = sayOnInterrupt(what);
+  };
+  const stopOnExit = () => appServer?.stop();
+  process.on("exit", stopOnExit);
+
   try {
-    await waitForAppServer(appServer, appPort);
+    // Mirror mode: the gateway must be running separately. Fail fast with
+    // guidance rather than producing 401s later.
+    if (mode === DevMode.Mirror) await probeGateway(gatewayUrl, out);
 
-    const gatewayPort =
-      flags.port ?? (process.env["PORT"] ? Number(process.env["PORT"]) : 8787);
-    // Mirror mode routes by <app>.<baseHost>; stub mode by <app>.localhost.
-    const appUrl =
-      mode === "mirror"
-        ? `http://${manifest.id}.${mirrorBaseHost}:${gatewayPort}`
-        : `http://${manifest.id}.localhost:${gatewayPort}`;
-    const server = createGatewayServer({
+    // The app's typed Env, on a fresh clone. Later config changes regenerate
+    // it through the app's own `types:check` script.
+    if (cloudflareConfig && !(await hasWorkerTypes(cwd))) {
+      out.emit({ type: "step", step: "dev.types", status: "start", message: "Generating Worker types..." });
+      await generateWorkerTypes(cf, cwd);
+      out.emit({ type: "step", step: "dev.types", status: "ok", message: "Generated the Worker's types (.cloudflare/types)." });
+    }
+
+    // Pending local migrations go in before the app starts, so a fresh
+    // clone's first page load doesn't hit an empty database.
+    stopping("the local migrations");
+    await applyDevMigrations({
+      cwd,
       manifest,
-      mode,
-      mirrorBaseHost,
-      gatewayUrl: mode === "mirror" ? new URL(gatewayUrl) : null,
-      authenticator,
-      appPort,
-      appUrl,
+      cf,
       out,
+      skip: flags["skip-migrations"] ?? false,
     });
-    const address = await listen(
-      server,
-      gatewayPort,
-      flags.host ?? DEFAULT_HOST,
-    );
+    stopping(manifest.id);
 
-    out.emit({ type: "step", step: "dev.app", status: "ok", data: { appId: manifest.id } });
-    appServer.releaseOutput(false);
+    // The app's dev server on an internal port (hot reload intact); the
+    // gateway-lite is the only thing you talk to directly.
+    const appPort = await getFreePort();
     out.emit({
       type: "step",
-      step: "dev.ready",
-      status: "ok",
-      message: readyMessage({
+      step: "dev.app",
+      status: "start",
+      message: manifest.dev
+        ? `Starting ${manifest.id} with its dev command...`
+        : `Starting ${manifest.id}...`,
+      data: { appPort },
+    });
+    appServer = await startAppDevServer({ cwd, manifest, cf, port: appPort });
+    const server = http.createServer();
+    try {
+      await waitForAppServer(appServer, appPort, manifest).catch(
+        async (error: unknown) => {
+          if (!isInterrupted()) {
+            // Why it didn't start is in what it printed.
+            out.emit({ type: "step", step: "dev.app", status: "fail" });
+            appServer!.stop();
+            await appServer!.exited;
+            appServer!.releaseOutput(true);
+          }
+          throw error;
+        },
+      );
+      const address = await listen(server, port, host);
+      // Mirror mode routes by <app>.<baseHost>; stub mode by <app>.localhost.
+      const appUrl =
+        mode === DevMode.Mirror
+          ? `http://${manifest.id}.${mirrorBaseHost}:${address.port}`
+          : `http://${manifest.id}.localhost:${address.port}`;
+      const loginUrl = `http://${mirrorBaseHost}:${address.port}`;
+      serveGateway(server, {
         manifest,
         mode,
-        appUrl,
+        mirrorBaseHost,
+        gatewayUrl: mode === DevMode.Mirror ? new URL(gatewayUrl) : null,
+        authenticator: mirrorAuthenticator(mode, gatewayUrl, loginUrl, out),
         appPort,
-        gatewayUrl,
-        host: address.address,
-        crons: cloudflareConfig?.hasCrons ?? false,
-      }),
-      data: {
-        mode,
         appUrl,
-        mcpUrl: `${appUrl}/mcp`,
-        host: address.address,
-        port: address.port,
-        appPort,
-      },
-    });
+        out,
+      });
 
-    await appServer.exited;
-    server.close();
+      started = true;
+      stopping("");
+      out.emit({
+        type: "step",
+        step: "dev.app",
+        status: "ok",
+        message: readyBlock({
+          manifest,
+          mode,
+          appUrl,
+          appPort,
+          gatewayUrl,
+          loginUrl,
+          crons: cloudflareConfig?.hasCrons ?? false,
+        }),
+        data: { appId: manifest.id },
+      });
+      appServer.releaseOutput(false);
+      out.emit({
+        type: "step",
+        step: "dev.ready",
+        status: "ok",
+        data: {
+          mode,
+          appUrl,
+          mcpUrl: `${appUrl}/mcp`,
+          host: address.address,
+          port: address.port,
+          appPort,
+        },
+      });
+      if (mode === DevMode.Stub && !isLoopback(address.address)) {
+        out.emit({
+          type: "warning",
+          code: "DEV_EXPOSED",
+          message: `Listening on ${address.address}: anyone who can reach port ${address.port} gets in as the dev user`,
+        });
+      }
+      out.emit({
+        type: "progress",
+        step: "dev.session",
+        message: "Every request goes through the real perimeter. Ctrl+C to stop.",
+      });
+
+      await appServer.exited;
+    } finally {
+      server.close();
+    }
   } catch (error) {
-    // Why it didn't start is in what it printed.
-    out.emit({ type: "step", step: "dev.app", status: "fail" });
-    appServer.releaseOutput(true);
-    stop();
+    // Ctrl+C ended the run: the interrupt handler says so.
+    if (isInterrupted()) return;
+    appServer?.stop();
     throw error;
   } finally {
-    for (const signal of signals) process.off(signal, stop);
+    process.off("exit", stopOnExit);
+    unsay();
+    forgetInterrupt();
   }
 }
 
 async function loadManifest(cwd: string): Promise<EveryAppCliManifest> {
   try {
+    await fs.access(path.join(cwd, "everyapp.config.ts"));
+  } catch {
+    throw new EveryAppError(
+      "NO_MANIFEST",
+      "No everyapp.config.ts in this directory",
+      { data: { fix: `run ${thisCommand()} from the app's root directory` } },
+    );
+  }
+  try {
     return await loadEveryAppManifest(cwd);
   } catch (error) {
     if (error instanceof ManifestError) {
-      throw new EveryAppError("INVALID_MANIFEST", error.message);
+      throw new EveryAppError(
+        "INVALID_MANIFEST",
+        `everyapp.config.ts isn't valid\n${error.message}`,
+      );
     }
     throw error;
   }
 }
 
+async function probeGateway(gatewayUrl: string, out: EventSink): Promise<void> {
+  out.emit({
+    type: "step",
+    step: "dev.gateway",
+    status: "start",
+    message: `Looking for the local Gateway at ${gatewayUrl}...`,
+  });
+  try {
+    // Probe the gateway URL as given so its own hostname resolution applies
+    // (a gateway on localhost:3000 is reached whether it bound IPv4 or IPv6).
+    await waitForUrl(gatewayUrl, MIRROR_PROBE_MS);
+  } catch {
+    out.emit({ type: "step", step: "dev.gateway", status: "fail" });
+    throw new EveryAppError(
+      "MIRROR_GATEWAY_UNREACHABLE",
+      `No local Gateway at ${gatewayUrl}\nSee "mirror mode" in docs/TESTING.md.`,
+      {
+        data: {
+          gatewayUrl,
+          fix: "run pnpm dev in apps/every-app-gateway, or pass --gateway <url>",
+        },
+      },
+    );
+  }
+  out.emit({ type: "step", step: "dev.gateway", status: "ok", data: { gatewayUrl } });
+}
+
+/** Mirror mode's session source: the separately-run Gateway. */
+function mirrorAuthenticator(
+  mode: DevMode,
+  gatewayUrl: string,
+  loginUrl: string,
+  out: EventSink,
+): SessionAuthenticator | undefined {
+  if (mode !== DevMode.Mirror) return undefined;
+  return createRemoteAuthenticator({
+    gatewayUrl,
+    loginUrl,
+    onHint: (message) =>
+      out.emit({ type: "warning", code: "MIRROR_SESSION", message }),
+  });
+}
+
 async function waitForAppServer(
   appServer: AppDevServer,
   appPort: number,
+  manifest: EveryAppCliManifest,
 ): Promise<void> {
   const startup = await Promise.race([
     waitForHttp(appPort).then(
       () => "up" as const,
-      (error: unknown) => error,
+      () => "timeout" as const,
     ),
     appServer.exited.then(() => "exited" as const),
   ]);
   if (startup === "up") return;
+  if (startup === "exited") {
+    throw new EveryAppError(
+      "DEV_SERVER_FAILED",
+      `${manifest.id}'s dev server exited before it was ready\nIts output is above.`,
+    );
+  }
   throw new EveryAppError(
-    "DEV_SERVER_FAILED",
-    startup === "exited"
-      ? "The app's dev server exited before it started listening."
-      : `${String(startup)}\nIs the app's vite.config.ts taking its port from PORT (server.port: Number(process.env.PORT))?`,
+    "DEV_SERVER_TIMEOUT",
+    `${manifest.id}'s dev server didn't start listening in time\nIt must listen on the port everyapp passes in PORT.`,
+    {
+      data: {
+        appPort,
+        fix: manifest.dev
+          ? `make its dev command (${manifest.dev}) listen on the port in PORT`
+          : "in vite.config.ts, set server.port: Number(process.env.PORT)",
+      },
+    },
   );
 }
 
-interface GatewayServerOptions {
-  manifest: EveryAppCliManifest;
-  mode: DevMode;
-  mirrorBaseHost: string;
-  /** Mirror mode's separately-run gateway. */
-  gatewayUrl: URL | null;
-  authenticator?: SessionAuthenticator;
-  appPort: number;
-  appUrl: string;
-  out: EventSink;
-}
-
-/**
- * The gateway-lite: the real perimeter with this app registered. In mirror
- * mode the seeded authenticator is replaced by the RemoteAuthenticator, and
- * bare-base-host traffic (launcher, login, /api/auth, admin, HMR) goes to
- * the separately-run gateway so login and UI are the real thing. /mcp goes
- * to a local ToolBus serving the app's live tool catalog.
- */
-function createGatewayServer({
-  manifest,
-  mode,
-  mirrorBaseHost,
-  gatewayUrl,
-  authenticator,
-  appPort,
-  appUrl,
-  out,
-}: GatewayServerOptions): http.Server {
-  const app = registerDevApp(manifest);
-  const handleRequest = createDevAppGateway({
-    app,
-    appName: manifest.name,
-    appUrl,
-    appFetcher: viteFetcher(appPort),
-    authenticator,
-    out,
-  });
-  const gatewayPort = Number(gatewayUrl?.port || 80);
-  const gatewayFetcher = gatewayUrl
-    ? viteFetcher(gatewayPort, gatewayUrl.hostname)
-    : null;
-
-  const server = http.createServer((req, res) => {
-    void (async () => {
-      try {
-        const hostHeader = req.headers.host ?? "";
-
-        if (gatewayFetcher) {
-          // Resolve against the explicit base host: parseHost alone can't tell
-          // the two-label base host from an app on a one-label base.
-          const cls = classifyHost(hostHeader, mirrorBaseHost);
-          if (cls.kind === "launcher") {
-            // Real launcher / login / /api/auth — forward to the gateway.
-            const response = await gatewayFetcher.fetch(toWebRequest(req));
-            await writeWebResponse(res, response);
-            return;
-          }
-          if (cls.kind === "invalid") {
-            res.writeHead(421, { "content-type": "text/plain; charset=utf-8" });
-            res.end(
-              checkMirrorBaseHost(
-                parseHost(hostHeader)?.baseHost ?? hostHeader,
-              ) ??
-                `Unknown host "${hostHeader}" — expected <app>.${mirrorBaseHost}.`,
-            );
-            return;
-          }
-          // cls.kind === "app": fall through to the perimeter below.
-        }
-
-        const parsed = parseHost(hostHeader || null);
-        // Stub: bare base host (no app label) = the minimal dev launcher.
-        if (mode === "stub" && parsed && parsed.appLabel === "") {
-          res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
-          res.end(devLauncherHtml(manifest.id, manifest.name, parsed.host));
-          return;
-        }
-
-        const response = await handleRequest(toWebRequest(req));
-        await writeWebResponse(res, response);
-      } catch (error) {
-        if (!res.headersSent) {
-          res.writeHead(502, { "content-type": "application/json" });
-        }
-        res.end(
-          JSON.stringify({
-            error: "dev_gateway_error",
-            message: String(error),
-          }),
-        );
-      }
-    })();
-  });
-
-  // WebSocket upgrades. App-subdomain upgrades get the perimeter contract
-  // (strip trust headers, inject identity). In mirror mode, bare-base-host
-  // upgrades are the gateway's own HMR — forwarded untouched to the gateway.
-  server.on("upgrade", (req, socket, head) => {
-    if (
-      gatewayUrl &&
-      classifyHost(req.headers.host ?? "", mirrorBaseHost).kind === "launcher"
-    ) {
-      pipeUpgrade(req, socket, head, gatewayPort, {
-        targetHost: gatewayUrl.hostname,
-      });
-      return;
-    }
-    void handleUpgrade(req, socket, head, {
-      appId: manifest.id,
-      appPort,
-      publicRoutes: app.manifest.public,
-      parseAppLabel: (host) => parseHost(host)?.appLabel ?? "",
-      mintIdentity: async (request) => {
-        if (authenticator) {
-          // Resolve the real session from the upgrade cookie, then mint for it.
-          const session = await authenticator.authenticate(request);
-          if (!session) return null;
-          return mintDevIdentityJwt(manifest.id, session);
-        }
-        return mintDevIdentityJwt(manifest.id);
-      },
-      mintPublicMarker: () => mintDevPublicMarkerJwt(manifest.id),
-    });
-  });
-
-  return server;
-}
-
-async function listen(
-  server: http.Server,
-  port: number,
-  host: string,
-): Promise<AddressInfo> {
-  try {
-    await new Promise<void>((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(port, host, resolve);
-    });
-  } catch (error) {
-    throw new EveryAppError(
-      "DEV_PORT_UNAVAILABLE",
-      `Could not listen on ${host}:${port}: ${error instanceof Error ? error.message : String(error)}. Pass --port <n> for another port.`,
-    );
-  }
-  return server.address() as AddressInfo;
-}
-
-/** What's running and how to reach it, as one block. */
-function readyMessage({
-  manifest,
-  mode,
-  appUrl,
-  appPort,
-  gatewayUrl,
-  host,
-  crons,
-}: {
-  manifest: EveryAppCliManifest;
-  mode: DevMode;
-  appUrl: string;
-  appPort: number;
-  gatewayUrl: string;
-  host: string;
-  crons: boolean;
-}): string {
-  const explorer = `http://127.0.0.1:${appPort}/cdn-cgi/local/explorer`;
-  const workerName = registerDevApp(manifest).workerName;
-  const facts = [
-    { label: "App", value: chalk.cyan(appUrl) },
-    {
-      label: "MCP",
-      value: `${chalk.cyan(`${appUrl}/mcp`)}  ${chalk.dim(
-        mode === "mirror"
-          ? "send a personal access token from the local gateway"
-          : "any bearer token acts as the dev user",
-      )}`,
-    },
-    // Crons (everyAppWorker's `crons`) run on demand through the Vite
-    // plugin's local explorer, on the app's own dev server.
-    ...(crons
-      ? [
-          {
-            label: "Cron",
-            value: `curl -X POST "${explorer}/api/local/scheduled?worker=${workerName}" -H 'content-type: application/json' -d '{"cron":"<schedule>"}'`,
-          },
-        ]
-      : []),
-    // Mail for an app that declares `email: { inbound: true }` reaches the
-    // app's email() handler through miniflare's local delivery endpoint on
-    // the app's own dev server (the Vite plugin's).
-    ...emailHint(manifest, appPort),
-    // Workflows run under cf dev too; the explorer starts, inspects, pauses
-    // and restarts their instances.
-    ...(manifest.resources?.workflows?.length
-      ? [{ label: "Workflows", value: chalk.cyan(explorer) }]
-      : []),
-    mode === "mirror"
-      ? {
-          label: "Gateway",
-          value: `${chalk.cyan(gatewayUrl)}  ${chalk.dim("log in there; the session reaches the app")}`,
-        }
-      : {
-          label: "Dev user",
-          value: `${DEV_USER.email} ${chalk.dim(`(${DEV_USER.orgRole} of ${DEV_USER.orgId})`)}`,
-        },
-  ];
-  return [
-    "",
-    ...formatFacts(facts).map((line) => `  ${line}`),
-    "",
-    ...(host === DEFAULT_HOST
-      ? []
-      : [
-          `${chalk.yellow("!")} Listening on ${host}: anyone who can reach this port gets a dev identity.`,
-        ]),
-    chalk.dim(
-      "Every request goes through the real perimeter (everyapp dev --help says how). Ctrl+C to stop.",
-    ),
-  ].join("\n");
-}
-
-/**
- * How to deliver a message to the app's email() handler locally, when the
- * manifest declares one: the raw RFC 5322 message (with a Message-ID) as
- * the body, the envelope in the query. The addresses are the installation's
- * (`everyapp email set --inbound`); the local endpoint takes any, so the
- * example uses hello@example.com.
- */
-export function emailHint(
-  manifest: Pick<EveryAppCliManifest, "email">,
-  appPort: number,
-): Array<{ label: string; value: string }> {
-  if (manifest.email?.inbound !== true) return [];
-  return [
-    {
-      label: "Email",
-      value: `curl -X POST "http://127.0.0.1:${appPort}/cdn-cgi/local/email?from=someone@example.net&to=hello@example.com" --data-binary @message.eml  ${chalk.dim("any address; message.eml is a raw message with From, To, Subject and Message-ID")}`,
-    },
-  ];
+function isLoopback(address: string): boolean {
+  return address === "::1" || address.startsWith("127.");
 }

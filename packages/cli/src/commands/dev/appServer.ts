@@ -1,15 +1,9 @@
-import { execa } from "execa";
 import { devRegistryEnv } from "@/lib/app/localD1";
 import type { CfRunner } from "@/lib/cf/runner";
+import { spawnLongRunning, type LongRunningProcess } from "@/lib/longRunning";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 
-export interface AppDevServer {
-  /** Settles when the dev server process exits. */
-  readonly exited: Promise<unknown>;
-  stop(): void;
-  /** Its output from now on, after its startup output (`startup: true`) or without it. */
-  releaseOutput(startup: boolean): void;
-}
+export type AppDevServer = LongRunningProcess;
 
 interface StartAppDevServerOptions {
   cwd: string;
@@ -22,9 +16,10 @@ interface StartAppDevServerOptions {
 /**
  * Start the app's dev server on `port`: the manifest's `dev` command when it
  * has one, otherwise `cf dev`. cf forwards no port flag to Vite, so the port
- * travels in PORT and the app's vite.config.ts reads it. `cf dev` runs in its
- * own process group so stopping it also stops the Vite and workerd processes
- * it starts.
+ * travels in PORT and the app's vite.config.ts reads it. Either runs in its
+ * own process group, so stopping it also stops the Vite and workerd
+ * processes it starts, and its output is held until it is ready: its
+ * startup banner names the internal port, which nobody should open.
  */
 export async function startAppDevServer({
   cwd,
@@ -33,26 +28,19 @@ export async function startAppDevServer({
   port,
 }: StartAppDevServerOptions): Promise<AppDevServer> {
   if (manifest.dev) {
-    const child = execa(manifest.dev, [], {
+    return spawnLongRunning({
+      command: manifest.dev,
+      args: [],
       cwd,
-      stdio: "inherit",
       env: { ...process.env, PORT: String(port) },
-      reject: false,
       shell: true,
+      hold: true,
     });
-    return { exited: child, stop: () => child.kill("SIGTERM"), releaseOutput: () => {} };
   }
-
-  // Vite's banner names the internal port, which nobody should open.
-  const child = await cf.start({
+  return cf.start({
     args: ["dev"],
     cwd,
     env: { PORT: String(port), ...devRegistryEnv(cwd) },
     holdOutput: true,
   });
-  return {
-    exited: child.exited,
-    stop: () => child.stop("SIGTERM"),
-    releaseOutput: (startup) => child.releaseOutput(startup),
-  };
 }

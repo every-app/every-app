@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { acquireLease, readLease } from "@/lib/gateway/lease";
 import { createSqliteD1 } from "@/test/sqliteD1";
-import { handleInterrupt, onInterrupt, trackChild } from "./interrupt";
+import { handleInterrupt, onInterrupt, sayOnInterrupt, trackChild } from "./interrupt";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -37,6 +37,21 @@ describe("interrupts", () => {
     expect(process.listenerCount("SIGTERM")).toBeGreaterThan(0);
     forget();
     expect(process.listenerCount("SIGINT")).toBe(before);
+  });
+
+  it("say what a command stops, when it says, instead of deploy's sentence", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      onInterrupt({ sync: () => undefined });
+      const unsay = sayOnInterrupt("the local migrations");
+      await handleInterrupt("SIGINT", { exit: () => undefined });
+      unsay();
+      expect(stderr.mock.calls.map(([text]) => String(text).replace(/\x1b\[[0-9;]*m/g, ""))).toEqual([
+        "\nStopping the local migrations... (Ctrl+C again to quit at once)\n",
+      ]);
+    } finally {
+      stderr.mockRestore();
+    }
   });
 
   it("stop cf's process group, then clean up and exit 130", async () => {

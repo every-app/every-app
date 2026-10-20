@@ -10,7 +10,9 @@ import type { CfProcess, CfStartCall } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { getFreePort } from "./proxy";
-import { emailHint, runDev } from "./index";
+import { handleInterrupt } from "@/lib/interrupt";
+import { runDev } from "./index";
+import { emailHint } from "./ready";
 
 const manifest = {
   id: "todo",
@@ -27,6 +29,8 @@ const manifest = {
 class DevCf extends FakeCf {
   private app?: http.Server;
   private stopApp?: () => void;
+  /** What reached the app: method, path and body. */
+  readonly requests: Array<{ method: string; url: string; body: string }> = [];
 
   constructor(private readonly cwd: string) {
     super();
@@ -47,14 +51,17 @@ class DevCf extends FakeCf {
       ),
     );
     this.app = http.createServer((req, res) => {
+      const request = { method: req.method ?? "", url: req.url ?? "", body: "" };
+      this.requests.push(request);
+      req.on("data", (chunk: Buffer) => (request.body += chunk.toString()));
       const headers = new Headers();
       for (const [name, value] of Object.entries(req.headers)) {
         if (typeof value === "string") headers.set(name, value);
       }
-      const request = new Request(`http://${req.headers.host}${req.url}`, {
-        headers,
-      });
-      getIdentityFromRequest(request, { audience: manifest.id, env }).then(
+      getIdentityFromRequest(
+        new Request(`http://${req.headers.host}${req.url}`, { headers }),
+        { audience: manifest.id, env },
+      ).then(
         ({ user }) => {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ email: user?.email }));
@@ -79,6 +86,11 @@ class DevCf extends FakeCf {
   /** The app's dev server exits (what Ctrl-C ends in). */
   exitApp(): void {
     this.stopApp?.();
+  }
+
+  /** The app stops answering while its dev server runs on. */
+  closeApp(): void {
+    this.app?.close();
   }
 }
 
@@ -202,7 +214,7 @@ describe("everyapp dev", () => {
     const running = runDev({ port, "skip-migrations": true }, out, { cwd, cf });
 
     const ready = await until(() =>
-      events.find((event) => event["step"] === "dev.ready"),
+      events.find((event) => event["step"] === "dev.app" && event["status"] === "ok"),
     );
     const appPort = Number(cf.started[0]!.env?.["PORT"]);
     expect(String(ready["message"])).toContain(
@@ -228,5 +240,170 @@ describe("everyapp dev", () => {
       runDev({ mode: "prod" }, out, { cwd, cf }),
     ).rejects.toBeInstanceOf(EveryAppError);
     expect(cf.started).toEqual([]);
+  });
+
+  it("says where to run it outside an app, and what an app without cloudflare.config.ts needs", async () => {
+    const cf = new DevCf(cwd);
+    await fs.rm(path.join(cwd, "cloudflare.config.ts"));
+    await expect(runDev({}, out, { cwd, cf })).rejects.toMatchObject({
+      code: "MISSING_CLOUDFLARE_CONFIG",
+      data: { fix: "copy cloudflare.config.ts from templates/simple-todo" },
+    });
+    await fs.rm(path.join(cwd, "everyapp.config.ts"));
+    await expect(runDev({}, out, { cwd, cf })).rejects.toMatchObject({
+      code: "NO_MANIFEST",
+      message: "No everyapp.config.ts in this directory",
+    });
+    expect(cf.started).toEqual([]);
+  });
+
+  it("refuses a Gateway port in use before anything starts, suggesting the next free one", async () => {
+    const taken = http.createServer();
+    await new Promise<void>((resolve) => taken.listen(0, "127.0.0.1", resolve));
+    const port = (taken.address() as { port: number }).port;
+    const cf = new DevCf(cwd);
+    try {
+      const error = (await runDev({ port }, out, { cwd, cf }).catch(
+        (thrown: unknown) => thrown,
+      )) as EveryAppError;
+      const free = Number(error.data?.["free"]);
+      expect(free).toBeGreaterThan(port);
+      expect(error).toMatchObject({
+        code: "DEV_PORT_IN_USE",
+        message: `Port ${port} is already in use`,
+        rerun: expect.stringMatching(new RegExp(`^pnpm everyapp.* --port ${free}$`)),
+      });
+    } finally {
+      taken.close();
+    }
+    expect(cf.calls).toEqual([]);
+    expect(cf.started).toEqual([]);
+  });
+
+  it("runs a cron through the gateway-lite, and shows how when the app declares crons", async () => {
+    await fs.writeFile(
+      path.join(cwd, "cloudflare.config.ts"),
+      "// worker: everyAppWorker({ manifest, entrypoint, ctx, crons: ['*/5 * * * *'] })\n",
+    );
+    const cf = new DevCf(cwd);
+    const port = await getFreePort();
+    const running = runDev({ port, "skip-migrations": true }, out, { cwd, cf });
+
+    const ready = await until(() =>
+      events.find((event) => event["step"] === "dev.app" && event["status"] === "ok"),
+    );
+    expect(String(ready["message"])).toContain(
+      `curl -X POST http://todo.localhost:${port}/__everyapp/cron -d '<schedule>'`,
+    );
+
+    await new Promise<void>((resolve, reject) => {
+      http
+        .request(
+          {
+            host: "127.0.0.1",
+            port,
+            method: "POST",
+            path: "/__everyapp/cron",
+            headers: { host: `todo.localhost:${port}` },
+          },
+          (res) => res.resume().on("end", resolve),
+        )
+        .on("error", reject)
+        .end("*/5 * * * *");
+    });
+    expect(cf.requests).toContainEqual({
+      method: "POST",
+      url: "/cdn-cgi/local/explorer/api/local/scheduled?worker=every-todo",
+      body: JSON.stringify({ cron: "*/5 * * * *" }),
+    });
+
+    cf.exitApp();
+    await running;
+  });
+
+  it("refuses another app's host with 421, warning once", async () => {
+    const cf = new DevCf(cwd);
+    const port = await getFreePort();
+    const running = runDev({ port, "skip-migrations": true }, out, { cwd, cf });
+    await until(() => events.find((event) => event["step"] === "dev.ready"));
+
+    for (let i = 0; i < 2; i++) {
+      expect(await get(port, `other.localhost:${port}`)).toEqual({
+        status: 421,
+        body: `This dev server serves todo.localhost, not other.localhost:${port}.\n`,
+      });
+    }
+    expect(events.filter((event) => event["type"] === "warning")).toEqual([
+      expect.objectContaining({
+        code: "DEV_WRONG_HOST",
+        message: `Request for other.localhost:${port} refused: this dev server serves todo.localhost`,
+      }),
+    ]);
+
+    cf.exitApp();
+    await running;
+  });
+
+  it("warns once when requests fail in the gateway-lite", async () => {
+    const cf = new DevCf(cwd);
+    const port = await getFreePort();
+    const running = runDev({ port, "skip-migrations": true }, out, { cwd, cf });
+    await until(() => events.find((event) => event["step"] === "dev.ready"));
+    cf.closeApp();
+
+    for (const _ of [1, 2]) {
+      expect((await get(port, `todo.localhost:${port}`)).status).toBe(502);
+    }
+    const warnings = events.filter((event) => event["type"] === "warning");
+    expect(warnings).toEqual([
+      expect.objectContaining({
+        code: "DEV_REQUEST_FAILED",
+        message: expect.stringMatching(/^GET \/ failed in the local Gateway: connect ECONNREFUSED/),
+      }),
+    ]);
+
+    cf.exitApp();
+    await running;
+  });
+
+  it("stops the app on Ctrl+C, says so, and exits 130", async () => {
+    const cf = new DevCf(cwd);
+    const port = await getFreePort();
+    const running = runDev({ port, "skip-migrations": true }, out, { cwd, cf });
+    await until(() => events.find((event) => event["step"] === "dev.ready"));
+
+    const exits: number[] = [];
+    await handleInterrupt("SIGINT", { exit: (code) => exits.push(code) });
+    await running;
+
+    expect(exits).toEqual([130]);
+    expect(events.at(-1)).toMatchObject({
+      type: "step",
+      step: "dev.stop",
+      status: "ok",
+      data: { appId: "todo", started: true },
+    });
+  });
+
+  it("replays what the app's dev server printed when it exits before it is ready", async () => {
+    // A dev server that exits at once.
+    const cf = new (class extends FakeCf {
+      released: boolean[] = [];
+      override async start(call: CfStartCall): Promise<CfProcess> {
+        const child = await super.start(call);
+        child.stop();
+        return { ...child, releaseOutput: (startup) => this.released.push(startup) };
+      }
+    })();
+    const port = await getFreePort();
+
+    await expect(
+      runDev({ port, "skip-migrations": true }, out, { cwd, cf }),
+    ).rejects.toMatchObject({
+      code: "DEV_SERVER_FAILED",
+      message: "todo's dev server exited before it was ready\nIts output is above.",
+    });
+    expect(cf.released).toEqual([true]);
+    expect(events.at(-1)).toMatchObject({ step: "dev.app", status: "fail" });
   });
 });

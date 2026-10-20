@@ -22,16 +22,12 @@ export async function generateWorkerTypes(
   });
 }
 
-/** Generate the types unless they exist. Returns whether it generated them. */
-export async function ensureWorkerTypes(
-  cf: CfRunner,
-  cwd: string,
-): Promise<boolean> {
+/** Whether the app's types were generated (a fresh clone has none). */
+export async function hasWorkerTypes(cwd: string): Promise<boolean> {
   try {
     await fs.access(path.join(cwd, WORKER_TYPES_FILE));
-    return false;
-  } catch {
-    await generateWorkerTypes(cf, cwd);
     return true;
+  } catch {
+    return false;
   }
 }

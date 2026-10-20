@@ -35,7 +35,7 @@ describe("applyDevMigrations", () => {
       stdout: '[{"name":"0000_init.sql","status":"✅"}]',
     });
 
-    await applyDevMigrations({ cwd, manifest, cf, out });
+    await applyDevMigrations({ cwd, manifest, cf, out, skip: false });
 
     expect(cf.calls).toHaveLength(1);
     expect(cf.calls[0]).toMatchObject({
@@ -60,7 +60,7 @@ describe("applyDevMigrations", () => {
     });
     expect(events.at(-1)).toMatchObject({
       type: "step",
-      step: "migrations.local",
+      step: "dev.migrations",
       status: "ok",
       message: "Applied 0000_init.sql.",
       data: { applied: ["0000_init.sql"] },
@@ -73,33 +73,43 @@ describe("applyDevMigrations", () => {
       stderr: "┌ Error\n│ migration 0001 failed\n└\n",
     });
 
-    const failure = applyDevMigrations({ cwd, manifest, cf, out });
+    const failure = applyDevMigrations({ cwd, manifest, cf, out, skip: false });
 
     await expect(failure).rejects.toBeInstanceOf(EveryAppError);
     await expect(failure).rejects.toMatchObject({
       code: "MIGRATIONS_FAILED",
-      message: expect.stringContaining("migration 0001 failed"),
+      message: expect.stringMatching(
+        /^A local migration failed\n.*migration 0001 failed.*\nOr start with --skip-migrations if the local database is already usable\.$/s,
+      ),
+      data: { fix: expect.stringMatching(/^correct the migration, then run pnpm everyapp.* again$/) },
     });
-    await expect(failure).rejects.toThrow(
-      "Run manually: pnpm run db:migrate:local",
-    );
     expect(events.at(-1)).toMatchObject({
       type: "step",
-      step: "migrations.local",
+      step: "dev.migrations",
       status: "fail",
     });
   });
 
-  it("skips an app without a migrations directory", async () => {
+  it("starts no step for an app without a migrations directory or D1", async () => {
     await fs.rm(path.join(cwd, "drizzle"), { recursive: true });
     const cf = new FakeCf();
 
-    await applyDevMigrations({ cwd, manifest, cf, out });
+    await applyDevMigrations({ cwd, manifest, cf, out, skip: false });
+    await applyDevMigrations({ cwd, manifest: { id: "todo" }, cf, out, skip: false });
 
     expect(cf.calls).toHaveLength(0);
-    expect(events.at(-1)).toMatchObject({
-      status: "skip",
-      data: { reason: "no_migrations_dir" },
-    });
+    expect(events).toMatchObject([
+      { status: "skip", data: { reason: "no_migrations_dir" } },
+      { status: "skip", data: { reason: "no_d1" } },
+    ]);
+  });
+
+  it("applies nothing with --skip-migrations", async () => {
+    const cf = new FakeCf();
+
+    await applyDevMigrations({ cwd, manifest, cf, out, skip: true });
+
+    expect(cf.calls).toHaveLength(0);
+    expect(events).toMatchObject([{ status: "skip", data: { reason: "flag" } }]);
   });
 });

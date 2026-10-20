@@ -15,21 +15,21 @@ export const devCommand = buildCommand({
         kind: "parsed",
         parse: String,
         brief:
-          "Address the gateway listens on (default 127.0.0.1; 0.0.0.0 lets other machines in, each as a dev identity)",
+          "Address the Gateway listens on (default 127.0.0.1; 0.0.0.0 lets other machines in, each as a dev identity)",
         optional: true,
       },
       mode: {
         kind: "parsed",
         parse: String,
         brief:
-          "stub (seeded dev user, default) | mirror (real login via local gateway)",
+          "stub (seeded dev user, default) | mirror (real login through a local Gateway)",
         optional: true,
       },
       gateway: {
         kind: "parsed",
         parse: String,
         brief:
-          "mirror mode: URL of the separately-run local gateway (default http://localhost:3000)",
+          "mirror mode: URL of the separately-run local Gateway (default http://localhost:3000)",
         optional: true,
       },
       baseHost: {
@@ -68,13 +68,21 @@ export const devCommand = buildCommand({
       "the header x-everyapp-dev-anon: 1 (curl) or set the cookie everyapp_dev_anon=1",
       "(browser). Requests straight to the app's internal port get 401, by design.",
       "",
+      "An app that declares crons runs one on demand with",
+      "  curl -X POST http://<app-id>.localhost:8787/__everyapp/cron -d '<schedule>'",
+      "An app that receives mail gets a curl command that delivers message.eml to its",
+      "email() handler: a raw message with From, To, Subject and Message-ID headers,",
+      "to any address. email() gets no identity.",
+      "",
       "--mode stub (default): seeded dev user, zero setup.",
-      "--mode mirror: authenticate against a SEPARATELY-running local gateway",
+      "--mode mirror: authenticate against a SEPARATELY-running local Gateway",
       "  (run `pnpm dev` in apps/every-app-gateway first). Real login/launcher",
       "  are forwarded to it. Requires a two-label base host (e.g.",
       "  everyapp.localhost) so the session cookie crosses the subdomain",
       "  boundary; the CLI prints setup guidance if the host is unusable.",
       "  Also settable via EVERYAPP_DEV_MODE; the flag wins.",
+      "",
+      "Ctrl+C stops the app and exits with 130.",
     ].join("\n"),
   },
 });

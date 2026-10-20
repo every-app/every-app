@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createRemoteAuthenticator } from "./remoteAuth";
 
 const GATEWAY = "http://localhost:3000";
+const LOGIN = "http://everyapp.localhost:8787";
 
 function jsonResponse(body: unknown, ok = true): Response {
   return new Response(JSON.stringify(body), {
@@ -29,6 +30,7 @@ describe("createRemoteAuthenticator", () => {
     });
     const auth = createRemoteAuthenticator({
       gatewayUrl: GATEWAY,
+      loginUrl: LOGIN,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
 
@@ -58,18 +60,38 @@ describe("createRemoteAuthenticator", () => {
     const fetchImpl = vi.fn(async () => jsonResponse({ session: null }));
     const auth = createRemoteAuthenticator({
       gatewayUrl: GATEWAY,
+      loginUrl: LOGIN,
       fetchImpl: fetchImpl as unknown as typeof fetch,
       onHint,
     });
     expect(await auth.authenticate(reqWithCookie())).toBeNull();
     expect(fetchImpl).not.toHaveBeenCalled();
-    expect(onHint).toHaveBeenCalledOnce();
+    expect(onHint).toHaveBeenCalledExactlyOnceWith(
+      "No Gateway session yet: log in at http://everyapp.localhost:8787, then reload",
+    );
+  });
+
+  it.each([
+    ["expired", "Your Gateway session expired: log in again, then reload"],
+    ["banned", "The Gateway rejected the session (banned)"],
+  ])("says what a %s reason means", async (reason, hint) => {
+    const onHint = vi.fn();
+    const auth = createRemoteAuthenticator({
+      gatewayUrl: GATEWAY,
+      loginUrl: LOGIN,
+      fetchImpl: (async () =>
+        jsonResponse({ session: null, reason })) as unknown as typeof fetch,
+      onHint,
+    });
+    expect(await auth.authenticate(reqWithCookie("c=1"))).toBeNull();
+    expect(onHint).toHaveBeenCalledExactlyOnceWith(hint);
   });
 
   it("returns null and hints once on a no_active_organization reason", async () => {
     const onHint = vi.fn();
     const auth = createRemoteAuthenticator({
       gatewayUrl: GATEWAY,
+      loginUrl: LOGIN,
       fetchImpl: (async () =>
         jsonResponse({ session: null, reason: "no_active_organization" })) as unknown as typeof fetch,
       onHint,
@@ -78,20 +100,25 @@ describe("createRemoteAuthenticator", () => {
     expect(await auth.authenticate(reqWithCookie("c=1"))).toBeNull();
     // Deduplicated: the same reason hints only once.
     expect(onHint).toHaveBeenCalledOnce();
-    expect(onHint.mock.calls[0]![0]).toContain("active organization");
+    expect(onHint.mock.calls[0]![0]).toBe(
+      "No active organization: create or pick one in the Gateway, then reload",
+    );
   });
 
   it("returns null and hints when the gateway is unreachable", async () => {
     const onHint = vi.fn();
     const auth = createRemoteAuthenticator({
       gatewayUrl: GATEWAY,
+      loginUrl: LOGIN,
       fetchImpl: (async () => {
         throw new Error("ECONNREFUSED");
       }) as unknown as typeof fetch,
       onHint,
     });
     expect(await auth.authenticate(reqWithCookie("c=1"))).toBeNull();
-    expect(onHint.mock.calls[0]![0]).toContain("could not reach the gateway");
+    expect(onHint.mock.calls[0]![0]).toBe(
+      "Can't reach the local Gateway at http://localhost:3000\nECONNREFUSED. Is pnpm dev running in apps/every-app-gateway?",
+    );
   });
 });
 
@@ -117,6 +144,7 @@ describe("createRemoteAuthenticator with a personal access token", () => {
     });
     const auth = createRemoteAuthenticator({
       gatewayUrl: GATEWAY,
+      loginUrl: LOGIN,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
     const session = await auth.authenticate(
@@ -137,6 +165,7 @@ describe("createRemoteAuthenticator with a personal access token", () => {
     const fetchImpl = vi.fn();
     const auth = createRemoteAuthenticator({
       gatewayUrl: GATEWAY,
+      loginUrl: LOGIN,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
     expect(

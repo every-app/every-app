@@ -24,12 +24,21 @@ interface IdentityResponse {
   reason?: string | null;
 }
 
+/** Why the Gateway resolved no session (`reason` of /api/dev/identity). */
+enum SessionReason {
+  NoSession = "no_session",
+  NoActiveOrganization = "no_active_organization",
+  Expired = "expired",
+}
+
 interface RemoteAuthenticatorOptions {
   /** Base URL of the separately-running local gateway, e.g. http://localhost:3000. */
   gatewayUrl: string;
+  /** Where a person logs in: the base host on the gateway-lite, e.g. http://everyapp.localhost:8787. */
+  loginUrl: string;
   /** Injectable for tests; defaults to global fetch. */
   fetchImpl?: typeof fetch;
-  /** Called once with a human hint when a fixable reason is returned. */
+  /** Called once per reason with a human hint, its headline first. */
   onHint?: (message: string) => void;
 }
 
@@ -40,16 +49,23 @@ export function createRemoteAuthenticator(
   const endpoint = new URL("/api/dev/identity", options.gatewayUrl).toString();
   const hinted = new Set<string>();
 
+  function sentence(reason: string): string {
+    switch (reason) {
+      case SessionReason.NoSession:
+        return `No Gateway session yet: log in at ${options.loginUrl}, then reload`;
+      case SessionReason.NoActiveOrganization:
+        return "No active organization: create or pick one in the Gateway, then reload";
+      case SessionReason.Expired:
+        return "Your Gateway session expired: log in again, then reload";
+      default:
+        return `The Gateway rejected the session (${reason})`;
+    }
+  }
+
   function hintOnce(reason: string | null | undefined): void {
     if (!reason || hinted.has(reason)) return;
     hinted.add(reason);
-    const message =
-      reason === "no_active_organization"
-        ? "mirror: you're logged in but have no active organization — create/select one in the gateway, then reload."
-        : reason === "no_session"
-          ? "mirror: no gateway session yet — log in at the base host, then reload the app."
-          : `mirror: gateway returned reason="${reason}".`;
-    options.onHint?.(message);
+    options.onHint?.(sentence(reason));
   }
 
   return {
@@ -60,7 +76,7 @@ export function createRemoteAuthenticator(
       const cookie = request.headers.get("cookie");
       const token = extractEveryAppBearer(request.headers);
       if (!cookie && !token) {
-        hintOnce("no_session");
+        hintOnce(SessionReason.NoSession);
         return null;
       }
       // A personal token wins and is never mixed with the cookie, as on the
@@ -73,9 +89,10 @@ export function createRemoteAuthenticator(
         res = await doFetch(endpoint, { headers });
       } catch (err) {
         options.onHint?.(
-          `mirror: could not reach the gateway at ${options.gatewayUrl} (${String(
-            err,
-          )}). Is it running (\`pnpm dev\` in apps/every-app-gateway)?`,
+          [
+            `Can't reach the local Gateway at ${options.gatewayUrl}`,
+            `${err instanceof Error ? err.message : String(err)}. Is pnpm dev running in apps/every-app-gateway?`,
+          ].join("\n"),
         );
         return null;
       }

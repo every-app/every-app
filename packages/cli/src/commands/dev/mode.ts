@@ -10,27 +10,30 @@
  *             gateway->app subdomain boundary.
  */
 import { EveryAppError } from "@/lib/errors";
+import { replaceFlag } from "./rerun";
 
-export type DevMode = "stub" | "mirror";
+export enum DevMode {
+  Stub = "stub",
+  Mirror = "mirror",
+}
 
 export const DEV_MODE_ENV = "EVERYAPP_DEV_MODE";
-
-export class DevModeError extends EveryAppError {
-  constructor(message: string) {
-    super("INVALID_DEV_MODE", message);
-    this.name = "DevModeError";
-  }
-}
+export const DEFAULT_MIRROR_BASE_HOST = "everyapp.localhost";
 
 /** Flag wins over env; env over the `stub` default. Unknown values throw. */
 export function resolveDevMode(
   flag: string | undefined,
   env: string | undefined,
 ): DevMode {
-  const raw = (flag ?? env ?? "stub").toLowerCase();
-  if (raw === "stub" || raw === "mirror") return raw;
-  throw new DevModeError(
-    `Invalid dev mode "${raw}" — expected "stub" or "mirror".`,
+  const raw = flag ?? env ?? DevMode.Stub;
+  const mode = Object.values(DevMode).find((value) => value === raw.toLowerCase());
+  if (mode) return mode;
+  throw new EveryAppError(
+    "INVALID_DEV_MODE",
+    [
+      `${flag === undefined ? DEV_MODE_ENV : "--mode"} must be stub or mirror, not "${raw}"`,
+      "stub signs you in as a seeded dev user; mirror uses real login through a local Gateway.",
+    ].join("\n"),
   );
 }
 
@@ -45,23 +48,27 @@ export function baseHostLabelCount(baseHost: string): number {
 }
 
 /**
- * mirror mode needs the session cookie to ride from the gateway base host to a
- * sub-app subdomain, which requires the cookie be scoped to a parent domain —
- * impossible on a single-label base like `localhost`. Returns a guidance
- * message when the base host is unusable, or null when it's fine.
+ * Mirror mode needs the session cookie to ride from the Gateway's base host
+ * to an app's subdomain, which requires the cookie be scoped to a parent
+ * domain: impossible on a single-label base like `localhost`.
  */
-export function checkMirrorBaseHost(baseHost: string): string | null {
-  if (baseHostLabelCount(baseHost) >= 2) return null;
-  return [
-    `mirror mode needs a two-label base host so the session cookie can cross`,
-    `the gateway->app subdomain boundary. You're on "${baseHost}" (one label).`,
-    ``,
-    `Pass --base-host everyapp.localhost and open`,
-    `  http://<app>.everyapp.localhost:<port>`,
-    `via portless (recommended) or an /etc/hosts entry, and set the gateway's`,
-    `EVERYAPP_DEV_COOKIE_DOMAIN=everyapp.localhost and`,
-    `GATEWAY_URL=http://everyapp.localhost:<port>.`,
-  ].join("\n");
+export function checkMirrorBaseHost(baseHost: string): void {
+  if (baseHostLabelCount(baseHost) >= 2) return;
+  throw new EveryAppError(
+    "MIRROR_BASE_HOST",
+    [
+      `Mirror mode needs a two-label base host, like ${DEFAULT_MIRROR_BASE_HOST}`,
+      `The session cookie must cross from the Gateway to the app's subdomain; "${baseHost}" has one label.`,
+      `Open apps at http://<app>.${DEFAULT_MIRROR_BASE_HOST}:<port> through portless or an /etc/hosts entry.`,
+    ].join("\n"),
+    {
+      rerun: replaceFlag("--base-host", DEFAULT_MIRROR_BASE_HOST),
+      data: {
+        baseHost,
+        fix: `on the local Gateway, set EVERYAPP_DEV_COOKIE_DOMAIN=${DEFAULT_MIRROR_BASE_HOST} and GATEWAY_URL=http://${DEFAULT_MIRROR_BASE_HOST}:<port>`,
+      },
+    },
+  );
 }
 
 const stripPort = (host: string): string => host.split(":")[0] ?? host;

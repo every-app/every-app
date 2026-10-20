@@ -130,7 +130,7 @@ export function createNdjsonSink(
  *    hidden meanwhile), nothing when piped.
  *  - `progress`: with --verbose, except the waits a person must see (who
  *    holds a lease, a certificate, the Gateway's build): at a terminal one
- *    line redrawn in place, piped once.
+ *    line redrawn in place, piped once; and `everyapp dev`'s log lines.
  *  - `warning`, `action_required`, `error` and `done`: always (a warning
  *    said twice in one run, once). Each problem is a one-line headline, its
  *    detail dim under it, then what to do: `data.fix`, then the command to
@@ -231,7 +231,8 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
         return;
       }
       case "progress":
-        if (SHOWN_PROGRESS[event.step]?.(event.data ?? {})) {
+        if (LOGGED_PROGRESS.has(event.step)) screen.lines(chalk.dim(event.message));
+        else if (SHOWN_PROGRESS[event.step]?.(event.data ?? {})) {
           if (!started.has(event.step)) started.set(event.step, now());
           if (terminal) screen.spin(event.step, event.message);
           else if (!waits.has(event.step)) screen.lines(event.message);
@@ -466,12 +467,38 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       event.status === "ok" ? { done: "Installed dependencies" } : null,
     "create.types": (event) =>
       event.status === "ok" ? { done: "Generated types" } : null,
+    "dev.types": (event) =>
+      event.status === "ok"
+        ? { done: "Worker types generated", detail: ".cloudflare/types" }
+        : null,
+    "dev.migrations": (event) => {
+      if (event.status === "skip") {
+        return event.data?.["reason"] === "flag"
+          ? { line: chalk.dim("Skipped local migrations (--skip-migrations)") }
+          : null;
+      }
+      if (event.status !== "ok") return null;
+      const applied = strings(event.data?.["applied"]);
+      return {
+        done: applied.length
+          ? `${plural(applied.length, "local migration")} applied`
+          : "Local database up to date",
+      };
+    },
+    // The ready line, then the block of how to reach the app.
     "dev.app": (event) =>
       event.status === "ok"
-        ? { done: `${text(event.data?.["appId"]) ?? "The app"} is running locally` }
+        ? [
+            { done: `${text(event.data?.["appId"]) ?? "The app"} is running locally` },
+            ...(event.message ? [{ line: event.message }] : []),
+          ]
         : null,
-    "dev.ready": (event) =>
-      event.status === "ok" && event.message ? { line: event.message } : null,
+    "dev.stop": (event) => {
+      const appId = text(event.data?.["appId"]) ?? "the app";
+      return event.data?.["started"] === true
+        ? { done: `${appId} stopped` }
+        : { line: chalk.dim(`Stopped before ${appId} started.`) };
+    },
     "migrations.local": (event) => {
       if (event.status === "skip" && event.message)
         return { line: event.message };
@@ -509,6 +536,12 @@ const SHOWN_PROGRESS: Readonly<Record<string, (data: EventData) => boolean>> = {
   "app.live": always,
   "gateway.tls": waiting,
 };
+
+/**
+ * Progress a person sees as it comes, a dim line each, like request logs:
+ * `everyapp dev`'s tool calls and how to use the running app.
+ */
+const LOGGED_PROGRESS = new Set(["dev.mcp", "dev.session"]);
 
 /**
  * A migration step: a database that was empty is created, one that had

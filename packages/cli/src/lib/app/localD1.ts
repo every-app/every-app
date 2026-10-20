@@ -20,9 +20,27 @@ const LOCAL_STATE_DIR = ".cloudflare/state";
 const DEFAULT_MIGRATIONS_DIR = "drizzle";
 const MIGRATIONS_TIMEOUT_MS = 600_000;
 
+type Skipped = { status: "skipped"; reason: "no_d1" | "no_migrations_dir" };
+
 type LocalMigrationsResult =
   | { status: "applied"; applied: string[]; database: string }
-  | { status: "skipped"; reason: "no_d1" | "no_migrations_dir" };
+  | Skipped;
+
+/** The binding and directory the app's local migrations apply from, or why it has none. */
+export async function localMigrationsSource(
+  cwd: string,
+  manifest: EveryAppCliManifest,
+): Promise<{ status: "found"; binding: string; dir: string } | Skipped> {
+  const d1Bindings = manifest.resources?.d1 ?? [];
+  if (d1Bindings.length === 0) return { status: "skipped", reason: "no_d1" };
+
+  const binding = resolveMigrationBinding(d1Bindings, manifest.migrations);
+  const dir = manifest.migrations?.dir ?? DEFAULT_MIGRATIONS_DIR;
+  if (!(await isDirectory(path.resolve(cwd, dir)))) {
+    return { status: "skipped", reason: "no_migrations_dir" };
+  }
+  return { status: "found", binding, dir };
+}
 
 interface ApplyLocalMigrationsOptions {
   cwd: string;
@@ -35,15 +53,25 @@ export async function applyLocalMigrations({
   manifest,
   cf,
 }: ApplyLocalMigrationsOptions): Promise<LocalMigrationsResult> {
-  const d1Bindings = manifest.resources?.d1 ?? [];
-  if (d1Bindings.length === 0) return { status: "skipped", reason: "no_d1" };
+  const source = await localMigrationsSource(cwd, manifest);
+  if (source.status === "skipped") return source;
+  return {
+    status: "applied",
+    ...(await migrateLocalDatabase({ cwd, manifest, cf, ...source })),
+  };
+}
 
-  const binding = resolveMigrationBinding(d1Bindings, manifest.migrations);
-  const dir = manifest.migrations?.dir ?? DEFAULT_MIGRATIONS_DIR;
-  if (!(await isDirectory(path.resolve(cwd, dir)))) {
-    return { status: "skipped", reason: "no_migrations_dir" };
-  }
-
+/** Apply the migrations in `dir` to the local database of `binding`. */
+export async function migrateLocalDatabase({
+  cwd,
+  manifest,
+  cf,
+  binding,
+  dir,
+}: ApplyLocalMigrationsOptions & { binding: string; dir: string }): Promise<{
+  applied: string[];
+  database: string;
+}> {
   // cf accepts only a UUID or 32-hex id here, never a binding name.
   const database = localD1Id(workerNameFor(manifest.id), binding);
   const applied = await runCfJson(
@@ -69,7 +97,6 @@ export async function applyLocalMigrations({
     D1MigrationsApplyOutput,
   );
   return {
-    status: "applied",
     applied: applied.map((migration) => migration.name),
     database,
   };
@@ -98,7 +125,7 @@ export async function legacyLocalStateNote(
   const legacy = await isDirectory(path.join(cwd, ".wrangler", "state"));
   const current = await isDirectory(path.join(cwd, LOCAL_STATE_DIR));
   if (!legacy || current) return null;
-  return "Local data now lives in .cloudflare/state; rows in the old .wrangler/state database aren't carried over.";
+  return "Local data now lives in .cloudflare/state\nRows in the old .wrangler/state database weren't copied over.";
 }
 
 async function isDirectory(dir: string): Promise<boolean> {

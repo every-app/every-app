@@ -13,6 +13,9 @@ import { DEV_ISSUER, DEV_PRIVATE_KEY_PEM } from "@every-app/sdk/dev";
 import { createDevToolBus } from "@every-app/toolbus/dev";
 import type { EventSink } from "@/lib/output/events";
 
+/** `destructive_requires_approval` as words. */
+const words = (code: string) => code.replaceAll("_", " ");
+
 interface DevAppGatewayOptions {
   app: RegisteredApp;
   appName?: string;
@@ -45,7 +48,13 @@ export function createDevAppGateway(
       out.emit({
         type: "progress",
         step: "dev.mcp",
-        message: `mcp ${event.tool} → ${event.decision === "blocked" ? `blocked (${event.reason})` : event.outcome} (${event.durationMs}ms)`,
+        message: [
+          "MCP",
+          event.tool,
+          event.decision === "blocked"
+            ? `blocked${event.reason ? `: ${words(event.reason)}` : ""}`
+            : `${words(event.outcome)}  ${event.durationMs}ms`,
+        ].join("  "),
         data: {
           tool: event.tool,
           decision: event.decision,

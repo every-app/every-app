@@ -4,7 +4,6 @@ import {
   baseHostLabelCount,
   checkMirrorBaseHost,
   classifyHost,
-  DevModeError,
 } from "./mode";
 
 describe("resolveDevMode", () => {
@@ -21,8 +20,13 @@ describe("resolveDevMode", () => {
   it("is case-insensitive", () => {
     expect(resolveDevMode("MIRROR", undefined)).toBe("mirror");
   });
-  it("throws on an unknown value", () => {
-    expect(() => resolveDevMode("prod", undefined)).toThrow(DevModeError);
+  it("names the flag or the env var an unknown value came from", () => {
+    expect(() => resolveDevMode("prod", undefined)).toThrow(
+      '--mode must be stub or mirror, not "prod"\nstub signs you in as a seeded dev user; mirror uses real login through a local Gateway.',
+    );
+    expect(() => resolveDevMode(undefined, "prod")).toThrow(
+      'EVERYAPP_DEV_MODE must be stub or mirror, not "prod"',
+    );
   });
 });
 
@@ -42,13 +46,25 @@ describe("baseHostLabelCount", () => {
 
 describe("checkMirrorBaseHost", () => {
   it("passes a two-label base host", () => {
-    expect(checkMirrorBaseHost("everyapp.localhost:8787")).toBeNull();
-    expect(checkMirrorBaseHost("example.com")).toBeNull();
+    expect(() => checkMirrorBaseHost("everyapp.localhost:8787")).not.toThrow();
+    expect(() => checkMirrorBaseHost("example.com")).not.toThrow();
   });
-  it("rejects a single-label base host with guidance", () => {
-    const msg = checkMirrorBaseHost("localhost:8787");
-    expect(msg).toContain("two-label base host");
-    expect(msg).toContain("everyapp.localhost");
+  it("rejects a single-label base host, suggesting a usable one", () => {
+    const argv = process.argv;
+    process.argv = [argv[0]!, argv[1]!, "dev", "--mode", "mirror", "--base-host", "localhost"];
+    try {
+      expect(() => checkMirrorBaseHost("localhost")).toThrow(
+        expect.objectContaining({
+          code: "MIRROR_BASE_HOST",
+          message: expect.stringMatching(
+            /^Mirror mode needs a two-label base host, like everyapp\.localhost\n/,
+          ),
+          rerun: "pnpm everyapp dev --mode mirror --base-host everyapp.localhost",
+        }),
+      );
+    } finally {
+      process.argv = argv;
+    }
   });
 });
 

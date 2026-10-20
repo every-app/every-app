@@ -1,17 +1,31 @@
-import { applyLocalMigrations, legacyLocalStateNote } from "@/lib/app/localD1";
+import {
+  legacyLocalStateNote,
+  localMigrationsSource,
+  migrateLocalDatabase,
+} from "@/lib/app/localD1";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import type { EveryAppCliManifest } from "@/lib/manifest";
+import { thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 
-/** The same step `everyapp db migrate` reports. */
-const STEP = "migrations.local";
+const STEP = "dev.migrations";
+
+/** Why dev applied no migrations (`data.reason` of its skipped step). */
+enum MigrationsSkipped {
+  /** --skip-migrations */
+  Flag = "flag",
+  NoD1 = "no_d1",
+  NoMigrationsDir = "no_migrations_dir",
+}
 
 interface ApplyDevMigrationsOptions {
   cwd: string;
   manifest: EveryAppCliManifest;
   cf: CfRunner;
   out: EventSink;
+  /** --skip-migrations */
+  skip: boolean;
 }
 
 /**
@@ -23,45 +37,44 @@ export async function applyDevMigrations({
   manifest,
   cf,
   out,
+  skip,
 }: ApplyDevMigrationsOptions): Promise<void> {
   const note = await legacyLocalStateNote(cwd);
   if (note) {
     out.emit({ type: "warning", code: "LEGACY_LOCAL_STATE", message: note });
   }
+  if (skip) {
+    out.emit({ type: "step", step: STEP, status: "skip", data: { reason: MigrationsSkipped.Flag } });
+    return;
+  }
+  // An app with nothing to apply shows no step at all.
+  const source = await localMigrationsSource(cwd, manifest);
+  if (source.status === "skipped") {
+    out.emit({ type: "step", step: STEP, status: "skip", data: { reason: source.reason } });
+    return;
+  }
+
   out.emit({
     type: "step",
     step: STEP,
     status: "start",
-    message: "Applying local database migrations...",
+    message: "Applying local migrations...",
   });
-
-  let result: Awaited<ReturnType<typeof applyLocalMigrations>>;
+  let result: Awaited<ReturnType<typeof migrateLocalDatabase>>;
   try {
-    result = await applyLocalMigrations({ cwd, manifest, cf });
+    result = await migrateLocalDatabase({ cwd, manifest, cf, ...source });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     out.emit({ type: "step", step: STEP, status: "fail", data: { message } });
-    // Every template and example app ships this script, and the
-    // troubleshooting docs point at it, so it's the recipe to print rather
-    // than the raw cf call.
     throw new EveryAppError(
       "MIGRATIONS_FAILED",
       [
-        `Failed to apply local database migrations: ${message}`,
-        "Run manually: pnpm run db:migrate:local",
-        "Fix the migration error, then start dev again. Use --skip-migrations only if the local database is already usable.",
+        "A local migration failed",
+        message,
+        "Or start with --skip-migrations if the local database is already usable.",
       ].join("\n"),
+      { data: { fix: `correct the migration, then run ${thisCommand()} again` } },
     );
-  }
-
-  if (result.status === "skipped") {
-    out.emit({
-      type: "step",
-      step: STEP,
-      status: "skip",
-      data: { reason: result.reason },
-    });
-    return;
   }
   out.emit({
     type: "step",

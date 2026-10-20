@@ -22,12 +22,17 @@
  *
  * Commands take a {@link CfRunner} so tests can swap in `FakeCf`.
  */
-import { spawn, type ChildProcess } from "node:child_process";
-import { once } from "node:events";
+import { spawn } from "node:child_process";
 import { rmSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { onInterrupt, trackChild } from "@/lib/interrupt";
+import {
+  PROCESS_GROUPS,
+  spawnLongRunning,
+  stopChild,
+  type LongRunningProcess,
+} from "@/lib/longRunning";
 import { handTerminalOver } from "@/lib/output/terminal";
 import type { z } from "zod";
 import { resolveCfBinary, type CfBinary } from "./bin";
@@ -85,19 +90,7 @@ export interface CfResult {
 }
 
 /** A long-running cf process (`cf dev`) in its own process group. */
-export interface CfProcess {
-  readonly exited: Promise<{
-    code: number | null;
-    signal: NodeJS.Signals | null;
-  }>;
-  /** Signal the whole process group (cf, the package manager, Vite, workerd). */
-  stop(signal?: NodeJS.Signals): void;
-  /**
-   * With `holdOutput`: pass output through from now on, after what was held
-   * (`startup: true`) or without it.
-   */
-  releaseOutput(startup: boolean): void;
-}
+export type CfProcess = LongRunningProcess;
 
 export interface CfStartCall {
   args: readonly string[];
@@ -125,9 +118,6 @@ export interface CfRunnerOptions {
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_WATCHDOG_IDLE_MS = 2_000;
-const KILL_GRACE_MS = 1_000;
-// Windows has no process groups to signal; children are stopped one by one.
-const PROCESS_GROUPS = process.platform !== "win32";
 
 export function createCfRunner(options: CfRunnerOptions = {}): CfRunner {
   const resolveBinary = options.resolveBinary ?? resolveCfBinary;
@@ -197,54 +187,13 @@ export function createCfRunner(options: CfRunnerOptions = {}): CfRunner {
       if (runsPackageManager(call.args)) {
         await assertToolchainNode(call.cwd, env);
       }
-      const hold = call.holdOutput ?? false;
-      const child = spawn(process.execPath, [binary.path, ...call.args], {
+      return spawnLongRunning({
+        command: process.execPath,
+        args: [binary.path, ...call.args],
         cwd: call.cwd,
-        // Output goes straight to the terminal, so it keeps its colors; held
-        // output asks for them.
-        env: hold && process.stdout.isTTY ? { ...env, FORCE_COLOR: "1" } : env,
-        // No stdin: a detached group reading the terminal would be stopped
-        // with SIGTTIN.
-        stdio: ["ignore", hold ? "pipe" : "inherit", hold ? "pipe" : "inherit"],
-        detached: PROCESS_GROUPS,
+        env,
+        hold: call.holdOutput ?? false,
       });
-      let held: Array<{ to: NodeJS.WriteStream; chunk: Buffer }> | null = hold ? [] : null;
-      // Held output can trail the exit: what explains a failed start comes last.
-      const drained = hold
-        ? Promise.race([
-            Promise.all([once(child.stdout!, "end"), once(child.stderr!, "end")]),
-            new Promise((resolve) => setTimeout(resolve, 1000).unref()),
-          ])
-        : Promise.resolve();
-      if (hold) {
-        for (const [from, to] of [
-          [child.stdout!, process.stdout],
-          [child.stderr!, process.stderr],
-        ] as const) {
-          from.on("data", (chunk: Buffer) => {
-            if (held) held.push({ to, chunk });
-            else to.write(chunk);
-          });
-        }
-      }
-      const exited = new Promise<{
-        code: number | null;
-        signal: NodeJS.Signals | null;
-      }>((resolve, reject) => {
-        child.once("error", reject);
-        child.once("exit", (code, signal) => {
-          void drained.then(() => resolve({ code, signal }));
-        });
-      });
-      return {
-        exited,
-        stop: (signal) => stopChild(child, PROCESS_GROUPS, signal),
-        releaseOutput: (startup) => {
-          const kept = held ?? [];
-          held = null;
-          if (startup) for (const { to, chunk } of kept) to.write(chunk);
-        },
-      };
     },
   };
 }
@@ -410,31 +359,6 @@ function spawnCf(options: SpawnCfOptions): Promise<CfResult> {
       });
     });
   });
-}
-
-/**
- * Signal a child, or its whole process group when it leads one, and escalate
- * to SIGKILL if it outlives the grace period.
- */
-function stopChild(
-  child: ChildProcess,
-  group: boolean,
-  signal: NodeJS.Signals = "SIGTERM",
-) {
-  const pid = child.pid;
-  if (pid === undefined) return;
-  const send = (sig: NodeJS.Signals) => {
-    try {
-      if (group) process.kill(-pid, sig);
-      else child.kill(sig);
-    } catch {
-      // Already gone.
-    }
-  };
-  send(signal);
-  if (signal !== "SIGKILL") {
-    setTimeout(() => send("SIGKILL"), KILL_GRACE_MS).unref();
-  }
 }
 
 /** `env` with `dir` first on its PATH (whatever its case on Windows). */

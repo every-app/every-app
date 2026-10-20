@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FakeCf } from "@/lib/cf/fakeCf";
-import { ensureWorkerTypes, WORKER_TYPES_FILE } from "./workerTypes";
+import { generateWorkerTypes, hasWorkerTypes, WORKER_TYPES_FILE } from "./workerTypes";
 
 let cwd: string;
 
@@ -15,22 +15,21 @@ afterEach(async () => {
   await fs.rm(cwd, { recursive: true, force: true });
 });
 
-describe("ensureWorkerTypes", () => {
-  it("runs cf workers types in the app when the types are missing", async () => {
+describe("worker types", () => {
+  it("runs cf workers types in the app", async () => {
     const cf = new FakeCf();
-    expect(await ensureWorkerTypes(cf, cwd)).toBe(true);
+    await generateWorkerTypes(cf, cwd);
     expect(cf.calls).toMatchObject([
       { args: ["workers", "types"], plane: "project", cwd },
     ]);
   });
 
-  it("leaves existing types alone", async () => {
+  it("knows whether the types exist", async () => {
+    expect(await hasWorkerTypes(cwd)).toBe(false);
     await fs.mkdir(path.dirname(path.join(cwd, WORKER_TYPES_FILE)), {
       recursive: true,
     });
     await fs.writeFile(path.join(cwd, WORKER_TYPES_FILE), "");
-    const cf = new FakeCf();
-    expect(await ensureWorkerTypes(cf, cwd)).toBe(false);
-    expect(cf.calls).toEqual([]);
+    expect(await hasWorkerTypes(cwd)).toBe(true);
   });
 });

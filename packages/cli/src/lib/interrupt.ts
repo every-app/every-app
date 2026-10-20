@@ -20,7 +20,7 @@
  * second Ctrl+C exits at once; a SIGTERM after the first signal (a CI
  * runner following its SIGINT up) lets the cleanup go on. With nothing
  * registered, Node's default applies. `everyapp dev` stops its own
- * `cf dev`.
+ * `cf dev` through a cleanup, and says what it stops (sayOnInterrupt).
  *
  * Callers unregister a cleanup only once their own cleanup has finished:
  * stopping cf wakes up the code that was waiting for it, and its `finally`
@@ -28,6 +28,8 @@
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ChildProcess } from "node:child_process";
+import chalk from "chalk";
+import { handTerminalOver } from "@/lib/output/terminal";
 
 interface Cleanup {
   /** Must not wait: runs even when the async ones are cut short. */
@@ -54,6 +56,8 @@ const cleanedUp = new WeakSet<Cleanup>();
 const cleaningUp = new AsyncLocalStorage<true>();
 let installed = false;
 let interrupted = false;
+// What the first signal says it stops, when the command says (sayOnInterrupt).
+let saying: string | undefined;
 
 /** Stop `child` (and its group) on an interrupt; call the result once it exits. */
 export function trackChild(child: ChildProcess, group: boolean): () => void {
@@ -77,6 +81,17 @@ export function trackChild(child: ChildProcess, group: boolean): () => void {
 /** Whether a SIGINT or SIGTERM is being handled: what's left is its to do. */
 export function isInterrupted(): boolean {
   return interrupted;
+}
+
+/**
+ * What the first signal says it is stopping ("the local migrations"; "" for
+ * nothing), instead of deploy's sentence; call the result to go back.
+ */
+export function sayOnInterrupt(stopping: string): () => void {
+  saying = stopping;
+  return () => {
+    if (saying === stopping) saying = undefined;
+  };
 }
 
 /** Run `cleanup` on an interrupt; call the result once it's no longer needed. */
@@ -120,8 +135,14 @@ export async function handleInterrupt(
     return;
   }
   interrupted = true;
+  // A spinner would be drawn over what follows.
+  handTerminalOver();
   process.stderr.write(
-    "\nInterrupted: stopping cf, recording what it uploaded, removing temporary files and freeing the deploy lease (Ctrl+C again to quit at once)...\n",
+    saying === undefined
+      ? "\nInterrupted: stopping cf, recording what it uploaded, removing temporary files and freeing the deploy lease (Ctrl+C again to quit at once)...\n"
+      : saying
+        ? `\n${chalk.dim(`Stopping ${saying}... (Ctrl+C again to quit at once)`)}\n`
+        : "\n",
   );
 
   const running = [...children];
@@ -193,5 +214,6 @@ export function resetInterruptsForTests(): void {
   children.clear();
   cleanups.clear();
   interrupted = false;
+  saying = undefined;
   updateHandlers();
 }
