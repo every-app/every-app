@@ -4,23 +4,34 @@
  * database id the app's `cloudflare.config.ts` gives it (`localD1Id`), for
  * both the drizzle and d1-sql engines.
  */
-import fs from "node:fs/promises";
 import path from "node:path";
 import { localD1Id } from "@every-app/sdk/cloudflare";
 import { workerNameFor } from "@every-app/perimeter/manifest";
 import { runCfJson, type CfRunner } from "@/lib/cf/runner";
 import { D1MigrationsApplyOutput, D1MigrationsListOutput } from "@/lib/cf/schemas";
+import { directoryExists } from "@/lib/file-operations";
 import {
+  migrationsDir,
   resolveMigrationBinding,
   type EveryAppCliManifest,
 } from "@/lib/manifest";
 
 /** Where the Cloudflare Vite plugin keeps local state, relative to the app root. */
 const LOCAL_STATE_DIR = ".cloudflare/state";
-const DEFAULT_MIGRATIONS_DIR = "drizzle";
 const MIGRATIONS_TIMEOUT_MS = 600_000;
 
-type Skipped = { status: "skipped"; reason: "no_d1" | "no_migrations_dir" };
+/** Why no local migrations were applied (`data.reason` of a skipped migrations step). */
+export enum LocalMigrationsSkipped {
+  /** `everyapp dev --skip-migrations`. */
+  Flag = "flag",
+  NoD1 = "no_d1",
+  NoMigrationsDir = "no_migrations_dir",
+}
+
+type Skipped = {
+  status: "skipped";
+  reason: LocalMigrationsSkipped.NoD1 | LocalMigrationsSkipped.NoMigrationsDir;
+};
 
 type LocalMigrationsResult =
   | { status: "applied"; applied: string[]; database: string }
@@ -32,12 +43,14 @@ export async function localMigrationsSource(
   manifest: EveryAppCliManifest,
 ): Promise<{ status: "found"; binding: string; dir: string } | Skipped> {
   const d1Bindings = manifest.resources?.d1 ?? [];
-  if (d1Bindings.length === 0) return { status: "skipped", reason: "no_d1" };
+  if (d1Bindings.length === 0) {
+    return { status: "skipped", reason: LocalMigrationsSkipped.NoD1 };
+  }
 
   const binding = resolveMigrationBinding(d1Bindings, manifest.migrations);
-  const dir = localMigrationsDir(manifest);
-  if (!(await isDirectory(path.resolve(cwd, dir)))) {
-    return { status: "skipped", reason: "no_migrations_dir" };
+  const dir = migrationsDir(manifest);
+  if (!(await directoryExists(path.resolve(cwd, dir)))) {
+    return { status: "skipped", reason: LocalMigrationsSkipped.NoMigrationsDir };
   }
   return { status: "found", binding, dir };
 }
@@ -48,11 +61,6 @@ interface ApplyLocalMigrationsOptions {
   cf: CfRunner;
   /** There are migrations to apply, and cf is about to (after the checks that skip them). */
   onApply?: () => void;
-}
-
-/** The migrations directory the manifest names, relative to the app (default drizzle). */
-export function localMigrationsDir(manifest: EveryAppCliManifest): string {
-  return manifest.migrations?.dir ?? DEFAULT_MIGRATIONS_DIR;
 }
 
 export async function applyLocalMigrations({
@@ -137,7 +145,7 @@ export async function listPendingLocalMigrations({
         "--persist-to",
         LOCAL_STATE_DIR,
         "--dir",
-        localMigrationsDir(manifest),
+        migrationsDir(manifest),
       ],
     },
     D1MigrationsListOutput,
@@ -165,16 +173,8 @@ export function devRegistryEnv(cwd: string): Record<string, string> {
 export async function legacyLocalStateNote(
   cwd: string,
 ): Promise<string | null> {
-  const legacy = await isDirectory(path.join(cwd, ".wrangler", "state"));
-  const current = await isDirectory(path.join(cwd, LOCAL_STATE_DIR));
+  const legacy = await directoryExists(path.join(cwd, ".wrangler", "state"));
+  const current = await directoryExists(path.join(cwd, LOCAL_STATE_DIR));
   if (!legacy || current) return null;
   return "Local data now lives in .cloudflare/state\nRows in the old .wrangler/state database weren't copied over.";
-}
-
-async function isDirectory(dir: string): Promise<boolean> {
-  try {
-    return (await fs.stat(dir)).isDirectory();
-  } catch {
-    return false;
-  }
 }

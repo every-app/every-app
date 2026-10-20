@@ -47,7 +47,7 @@ describe("resolveZone", () => {
     const cf = zonesCf([{ id: "z", name: "company.com", status: "pending" }]);
     await expect(resolveZone(cf, "apps.company.com", ACCOUNT)).rejects.toMatchObject({
       code: "ZONE_NOT_ACTIVE",
-      message: expect.stringContaining("nameserver"),
+      fix: expect.stringContaining("nameserver"),
     });
   });
 

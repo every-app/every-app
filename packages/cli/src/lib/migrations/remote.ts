@@ -22,7 +22,8 @@ import {
   type D1Database,
 } from "@/lib/cf/d1";
 import type { CfRunner } from "@/lib/cf/runner";
-import { EveryAppError, type Rollback } from "@/lib/errors";
+import { errorMessage, EveryAppError, type Rollback } from "@/lib/errors";
+import { fileExists } from "@/lib/file-operations";
 import { deployerFor } from "@/lib/gateway/registry";
 import {
   forgetRestorePoint,
@@ -60,11 +61,11 @@ export async function migrateRemoteD1({
   target,
   restoreCommand: restore,
 }: MigrateRemoteD1Options): Promise<MigrateRemoteD1Result> {
-  const nested = await hasNestedLayout(dir);
+  const { nested, count } = await readMigrationLayout(dir);
   const pending = await listPendingRemoteMigrations({ cf, databaseId, dir, nested });
   if (pending.length === 0) return { applied: [], fresh: false, rollback: null };
 
-  const fresh = pending.length === (await countMigrations(dir, nested));
+  const fresh = pending.length === count;
   let rollback: Rollback | null = null;
   if (fresh) {
     // A restore point of a database this one replaced is no way back.
@@ -94,7 +95,7 @@ export async function migrateRemoteD1({
       "MIGRATION_FAILED",
       [
         "Database migration failed",
-        error instanceof Error ? error.message : String(error),
+        errorMessage(error),
         "Nothing was uploaded; the version that's serving keeps running.",
         ...(rollback ? [`To roll the database back to before this run: ${rollback.restoreCommand}`] : []),
       ].join("\n"),
@@ -108,41 +109,34 @@ export async function migrateRemoteD1({
   }
 }
 
-/** The migrations in `dir`: `<tag>/migration.sql` each, or `*.sql` files. */
-async function countMigrations(dir: string, nested: boolean): Promise<number> {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  if (!nested) {
-    return entries.filter((entry) => entry.isFile() && entry.name.endsWith(".sql")).length;
-  }
-  let count = 0;
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    try {
-      await fs.access(path.join(dir, entry.name, "migration.sql"));
-      count += 1;
-    } catch {
-      // Not a migration directory.
-    }
-  }
-  return count;
+/**
+ * How `dir` keeps its migrations, and how many it has: drizzle-kit's newer
+ * layout keeps each in `<dir>/<tag>/migration.sql` (`nested`), the older
+ * one as `*.sql` files. A missing `dir` has none.
+ */
+async function readMigrationLayout(
+  dir: string,
+): Promise<{ nested: boolean; count: number }> {
+  const entries = await fs.readdir(dir, { withFileTypes: true }).catch(() => []);
+  const tags = entries.filter((entry) => entry.isDirectory() && entry.name !== "meta");
+  const nestedCount = (
+    await Promise.all(
+      tags.map((entry) => fileExists(path.join(dir, entry.name, "migration.sql"))),
+    )
+  ).filter(Boolean).length;
+  if (nestedCount > 0) return { nested: true, count: nestedCount };
+  return {
+    nested: false,
+    count: entries.filter((entry) => entry.isFile() && entry.name.endsWith(".sql")).length,
+  };
 }
 
-/** drizzle-kit's newer layout keeps each migration in `<dir>/<tag>/migration.sql`. */
-async function hasNestedLayout(dir: string): Promise<boolean> {
-  let entries;
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
-  } catch {
-    return false;
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name === "meta") continue;
-    try {
-      await fs.access(path.join(dir, entry.name, "migration.sql"));
-      return true;
-    } catch {
-      // Not a migration directory.
-    }
-  }
-  return false;
+/** What a migration step's message adds once it saved a restore point. */
+export function restorePointNote(rollback: Rollback | null): string {
+  return rollback ? ` Restore point saved; to undo: ${rollback.restoreCommand}` : "";
+}
+
+/** What a migration step's `ok` event carries for a script. */
+export function migrationEventData(result: MigrateRemoteD1Result): Record<string, unknown> {
+  return { applied: result.applied, fresh: result.fresh, ...result.rollback };
 }

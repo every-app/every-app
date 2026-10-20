@@ -119,7 +119,6 @@ const showCommand = buildCommand({
 
 export const emailRoutes = buildRouteMap({
   routes: { set: setCommand, unset: unsetCommand, show: showCommand },
-  defaultCommand: "show",
   docs: {
     brief: "Set the addresses an app sends from and receives at",
   },

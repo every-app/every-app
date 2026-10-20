@@ -7,7 +7,7 @@
  * no call here has run against a live account yet.
  */
 import { z } from "zod";
-import { CfError } from "./errors";
+import { CfError, isCfError } from "./errors";
 import { runCfJson, type CfRunner } from "./runner";
 
 /** `cf email-routing settings get`: whether the zone routes mail. */
@@ -147,7 +147,7 @@ export async function getEmailRoutingRule(
       EmailRoutingRuleOutput,
     );
   } catch (error) {
-    if (error instanceof CfError && error.kind === "not_found") return null;
+    if (isCfError(error, "not_found")) return null;
     throw error;
   }
 }
@@ -226,7 +226,7 @@ export async function deleteEmailRoutingRule(
     });
     return true;
   } catch (error) {
-    if (error instanceof CfError && error.kind === "not_found") return false;
+    if (isCfError(error, "not_found")) return false;
     throw error;
   }
 }

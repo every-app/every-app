@@ -99,7 +99,7 @@ describe("ensureCfAuth", () => {
     await expect(ensureCfAuth({ cf, interactive: true })).rejects.toMatchObject({
       code: "CLOUDFLARE_TOKEN_REJECTED",
       message: expect.stringMatching(/^Cloudflare didn't accept CLOUDFLARE_API_TOKEN\n/),
-      data: { fix: `set a valid token, or unset CLOUDFLARE_API_TOKEN and run ${CLI} login` },
+      fix: `set a valid token, or unset CLOUDFLARE_API_TOKEN and run ${CLI} login`,
     });
     // Never a login over the token.
     expect(cf.calls).toHaveLength(1);
@@ -132,7 +132,8 @@ describe("resolveAccount", () => {
       resolveAccount({ whoami: whoami(), interactive: false }),
     ).rejects.toMatchObject({
       code: "ACCOUNT_REQUIRED",
-      message: expect.stringContaining("acct-2 (Globex)"),
+      message: expect.stringMatching(/^This login can use 2 Cloudflare accounts; pick one\n[\s\S]*Globex +acct-2/),
+      rerun: expect.stringMatching(/--account-id <id>$/),
     });
   });
 

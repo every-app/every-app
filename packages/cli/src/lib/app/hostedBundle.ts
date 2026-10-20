@@ -14,10 +14,12 @@ import {
   HOSTED_DEPLOY_PROTOCOL,
 } from "@every-app/perimeter/manifest";
 import { version as cliVersion } from "../../../package.json";
-import type { EveryAppCliManifest } from "@/lib/manifest";
-import { resolveMigrationBinding } from "@/lib/manifest";
-
-const WORKER_DIR = path.join(".cloudflare", "output", "v0", "workers", "default");
+import {
+  migrationsDir,
+  resolveMigrationBinding,
+  type EveryAppCliManifest,
+} from "@/lib/manifest";
+import { DEFAULT_WORKER, WORKERS_DIR } from "./buildOutput";
 
 async function filesUnder(dir: string): Promise<string[]> {
   let entries;
@@ -42,7 +44,7 @@ async function migrationFiles(
   const bindings = manifest.resources?.d1 ?? [];
   if (bindings.length === 0) return [];
   resolveMigrationBinding(bindings, manifest.migrations);
-  const dir = path.resolve(cwd, manifest.migrations?.dir ?? "drizzle");
+  const dir = path.resolve(cwd, migrationsDir(manifest));
   return (await filesUnder(dir))
     // `<name>.sql`, or drizzle-kit's newer `<tag>/migration.sql`.
     .filter((name) => /^[^/]+\.sql$/.test(name) || /^[^/]+\/migration\.sql$/.test(name))
@@ -79,7 +81,7 @@ export async function packageHostedBundle({
   /** The app's @every-app/sdk version, for the stamp. */
   sdkVersion: string | null;
 }): Promise<{ form: FormData; modules: number; assets: number; migrations: number }> {
-  const workerDir = path.join(root, WORKER_DIR);
+  const workerDir = path.join(root, WORKERS_DIR, DEFAULT_WORKER);
   const configText = await fs.readFile(path.join(workerDir, "worker.config.json"), "utf8");
   const config = JSON.parse(configText) as {
     manifest?: { modules?: Record<string, { type?: string }> };

@@ -13,6 +13,7 @@
  * The Gateway's own row is written after its bookmark, so restoring the
  * Gateway's database takes the row with it.
  */
+import { appLeaseId, GATEWAY_LEASE_ID } from "./lease";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 
 const CREATE_TABLE: D1Statement = {
@@ -26,13 +27,11 @@ const CREATE_TABLE: D1Statement = {
 )`,
 };
 
-/** The Gateway's database, as a restore point's target (like its deploy lease's id). */
-export const GATEWAY_RESTORE_TARGET = "gateway";
+/** The Gateway's database, as a restore point's target: its deploy lease's id. */
+export const GATEWAY_RESTORE_TARGET = GATEWAY_LEASE_ID;
 
-/** An app's database, as a restore point's target (like its deploy lease's id). */
-export function appRestoreTarget(workerName: string): string {
-  return `app:${workerName}`;
-}
+/** An app's database, as a restore point's target: its deploy lease's id. */
+export const appRestoreTarget = appLeaseId;
 
 export interface RestorePoint {
   /** `gateway`, or `app:<workerName>`. */

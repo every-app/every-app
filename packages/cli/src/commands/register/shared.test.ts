@@ -389,7 +389,7 @@ describe("register", () => {
     deployedElsewhere("openseo-production");
     await expect(register({ workerName: "openseo-production" })).rejects.toMatchObject({
       code: "WORKER_NAME_MISMATCH",
-      message: expect.stringContaining(`--worker ${OPENSEO_WORKER}`),
+      fix: expect.stringContaining(`--worker ${OPENSEO_WORKER}`),
     });
     expect(appRow("openseo")).toBeUndefined();
     expect(account.gatewayBindings()).toEqual([]);

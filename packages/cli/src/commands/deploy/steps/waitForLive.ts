@@ -29,6 +29,7 @@ import { EveryAppError } from "@/lib/errors";
 import { readAppById } from "@/lib/gateway/registry";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
+import { elapsed } from "@/lib/output/time";
 
 const STEP = "app.live";
 const DEFAULT_MAX_WAIT_MS = 600_000;
@@ -55,13 +56,6 @@ export interface LiveWaitSeams {
  * switched it off.
  */
 type LiveOutcome = "live" | "first_visit" | "disabled";
-
-function elapsed(ms: number): string {
-  const seconds = Math.round(ms / 1000);
-  return seconds < 60
-    ? `${seconds}s`
-    : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
-}
 
 export async function waitForLive({
   db,

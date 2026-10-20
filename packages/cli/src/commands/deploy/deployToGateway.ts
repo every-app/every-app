@@ -31,7 +31,7 @@ import { appSdkVersion, packageHostedBundle } from "@/lib/app/hostedBundle";
 import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
 import { prepareAppBuildOutput } from "@/lib/app/policy";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
-import { EveryAppError } from "@/lib/errors";
+import { errorMessage, EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { installDependencies } from "@/lib/package-manager";
@@ -144,7 +144,7 @@ export async function deployToGateway(
     } catch (error) {
       throw new EveryAppError(
         "GATEWAY_UNREACHABLE",
-        `${gatewayUrl} didn't answer (${error instanceof Error ? error.message : String(error)}).`,
+        `${gatewayUrl} didn't answer (${errorMessage(error)}).`,
         { retryable: true, rerun },
       );
     }

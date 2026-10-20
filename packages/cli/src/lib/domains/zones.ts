@@ -3,9 +3,10 @@
  * a zone in the account holds (`apps.company.com` in `company.com`), so the
  * zone is the longest of the name and its parents the account has.
  */
-import { runCfJson, type CfRunner } from "@/lib/cf/runner";
+import { listAll, runCfJson, type CfRunner } from "@/lib/cf/runner";
 import { ZoneListOutput } from "@/lib/cf/schemas";
 import { EveryAppError } from "@/lib/errors";
+import { thisCommand } from "@/lib/output/command";
 import { zoneCandidates } from "./hostnames";
 
 export interface Zone {
@@ -57,13 +58,18 @@ export async function resolveZone(
   if (!zone) {
     throw new EveryAppError(
       "ZONE_NOT_FOUND",
-      `No zone in this Cloudflare account holds ${host} (looked for ${candidates.join(", ")}). Use a domain that is on Cloudflare in this account: buy one in the dashboard (Domains, ${registerDomainUrl(accountId)}), or add one you own and point its nameservers at Cloudflare.`,
+      `No zone in this Cloudflare account holds ${host}\nLooked for ${candidates.join(", ")}. Buy a domain in the dashboard (Domains, ${registerDomainUrl(accountId)}), or add one you own and point its nameservers at Cloudflare.`,
+      { fix: "use a domain that is on Cloudflare in this account" },
     );
   }
   if (zone.status && zone.status !== "active") {
     throw new EveryAppError(
       "ZONE_NOT_ACTIVE",
-      `The Cloudflare zone ${zone.name} is ${zone.status}. Finish its nameserver setup first (Cloudflare dashboard → ${zone.name} → Overview), then run this again.`,
+      `The Cloudflare zone ${zone.name} is ${zone.status}, not active`,
+      {
+        fix: `finish its nameserver setup (Cloudflare dashboard → ${zone.name} → Overview)`,
+        rerun: thisCommand(),
+      },
     );
   }
   return { id: zone.id, name: zone.name.toLowerCase() };
@@ -74,33 +80,15 @@ export async function listZones(
   cf: CfRunner,
   accountId: string,
 ): Promise<ListedZone[]> {
-  const zones: ListedZone[] = [];
-  for (let page = 1; page <= MAX_ZONE_PAGES; page += 1) {
-    const batch = await runCfJson(
-      cf,
-      {
-        plane: "account",
-        args: [
-          "zones",
-          "list",
-          "--account-id",
-          accountId,
-          "--per-page",
-          String(ZONE_PAGE_SIZE),
-          "--page",
-          String(page),
-        ],
-      },
-      ZoneListOutput,
-    );
-    zones.push(
-      ...batch.map((zone) => ({
-        id: zone.id,
-        name: zone.name.toLowerCase(),
-        status: zone.status ?? null,
-      })),
-    );
-    if (batch.length < ZONE_PAGE_SIZE) break;
-  }
-  return zones;
+  const zones = await listAll(
+    cf,
+    ["zones", "list", "--account-id", accountId],
+    ZoneListOutput,
+    { perPage: ZONE_PAGE_SIZE, maxPages: MAX_ZONE_PAGES },
+  );
+  return zones.map((zone) => ({
+    id: zone.id,
+    name: zone.name.toLowerCase(),
+    status: zone.status ?? null,
+  }));
 }

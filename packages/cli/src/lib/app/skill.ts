@@ -13,7 +13,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { Confirm } from "@/lib/cf/deploy";
+import type { Confirm } from "@/lib/output/prompt";
 
 const SKILL_PATHS = [".claude/skills/everyapp", ".agents/skills/everyapp"];
 

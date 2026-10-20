@@ -14,6 +14,7 @@
  * strings come from cf's own output and source, and the plan and subdomain
  * ones are unverified until a live account run.
  */
+import { outputTail } from "@/lib/output/text";
 type CfErrorKind =
   | "auth"
   | "not_found"
@@ -52,6 +53,11 @@ export class CfError extends Error {
     this.stderr = details.stderr;
     this.stdout = details.stdout ?? "";
   }
+}
+
+/** `error` is cf's, of `kind` (`not_found`, `already_exists`…). */
+export function isCfError(error: unknown, kind: CfErrorKind): error is CfError {
+  return error instanceof CfError && error.kind === kind;
 }
 
 /** A cf call that ran past its time limit; its process group was killed. */
@@ -197,14 +203,4 @@ function joinWrapped(lines: string[]): string {
 /** Without a box, what cf printed last: a build's error, say. */
 function lastLines(...outputs: string[]): string {
   return outputTail(...outputs).join("\n") || "cf failed without an error message";
-}
-
-/** The last 20 lines cf printed, stdout then stderr: what a failure shows of it. */
-export function outputTail(...outputs: string[]): string[] {
-  return outputs
-    .join("\n")
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
-    .filter((line) => line.trim().length > 0)
-    .slice(-20);
 }

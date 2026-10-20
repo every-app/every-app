@@ -7,12 +7,12 @@
  * setup command; the deploy comes after it.
  */
 import { resolveAccount } from "@/lib/cf/account";
-import { confirmAtTerminal, type Confirm } from "@/lib/cf/deploy";
 import type { CfWhoami } from "@/lib/cf/schemas";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import { discoverGateway, type Discovery } from "@/lib/gateway/discover";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
+import { confirmAtTerminal, type Confirm } from "@/lib/output/prompt";
 import {
   activeZones,
   installGateway,

@@ -12,11 +12,11 @@
  * attached to ask. Unattended runs can't answer: cf aborts, and this says
  * what to do.
  */
-import enquirer from "enquirer";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import { isInterrupted, onInterrupt } from "@/lib/interrupt";
-import { handTerminalOver } from "@/lib/output/terminal";
-import { CfError } from "./errors";
+import { thisCommand } from "@/lib/output/command";
+import { confirmAtTerminal, confirmOrCancel, type Confirm } from "@/lib/output/prompt";
+import { CfError, isCfError } from "./errors";
 import type { CfRunner } from "./runner";
 import { getWorkerDeployment } from "./workers";
 
@@ -60,30 +60,6 @@ interface CfDeployResult {
   versionId: string | null;
   /** cf's own output (empty when it ran attached to the terminal). */
   output: string;
-}
-
-/** Asks the person at the terminal a yes/no question; tests answer for them. */
-export type Confirm = (question: string) => Promise<boolean>;
-
-export const confirmAtTerminal: Confirm = async (message) => {
-  handTerminalOver();
-  return (
-    await enquirer.prompt<{ confirmed: boolean }>({
-      type: "confirm",
-      name: "confirmed",
-      message,
-      initial: false,
-    })
-  ).confirmed;
-};
-
-/** Whether a person is at this terminal to answer cf's prompts. */
-export function canPromptInTerminal(json: boolean): boolean {
-  return (
-    Boolean(process.stdin.isTTY && process.stdout.isTTY) &&
-    !json &&
-    !process.env["CI"]
-  );
 }
 
 export async function cfDeploy(options: CfDeployOptions): Promise<CfDeployResult> {
@@ -169,11 +145,7 @@ async function deployAndRecord(
       (error: unknown) => {
         // Piped, cf can't ask before replacing a Worker changed outside
         // everyapp and aborts before uploading: a person is asked attached.
-        if (
-          options.interactive &&
-          error instanceof CfError &&
-          error.kind === "strict_conflict"
-        ) {
+        if (options.interactive && isCfError(error, "strict_conflict")) {
           return deploy("interactive");
         }
         throw error;
@@ -196,7 +168,8 @@ async function deployAndRecord(
   ) {
     throw new EveryAppError(
       "DEPLOY_NOT_UPLOADED",
-      `cf finished without uploading a new version of ${options.workerName} (was one of its questions answered no?). The version that was serving still is. Run the command again to deploy.`,
+      `cf finished without uploading a new version of ${options.workerName}\nWas one of its questions answered no? The version that was serving still is.`,
+      { rerun: thisCommand(), rerunNote: "to deploy again" },
     );
   }
   await options.onUploaded?.(deployment.versionId, true);
@@ -210,42 +183,54 @@ async function deployAndRecord(
  * the database is migrated, and cf can't be asked beforehand. So, before
  * migrating, this asks whether the version serving is one everyapp recorded
  * deploying. If not, an unattended run stops, and a person is asked now,
- * while nothing has changed.
+ * while nothing has changed, in the command's own words (`change`); No
+ * cancels the run.
  */
 export async function assertReplaceable({
   cf,
   workerName,
+  shownAs,
   recordedVersionIds,
   interactive,
   confirm = confirmAtTerminal,
-  note,
+  change,
 }: {
   cf: CfRunner;
   workerName: string;
+  /** The Worker as a person knows it: "analytics", "the Gateway". */
+  shownAs: string;
   /** The versions everyapp recorded uploading (registry, install row, own record). */
   recordedVersionIds: ReadonlyArray<string | null | undefined>;
   interactive: boolean;
   confirm?: Confirm;
-  /** What else replacing it could mean, for the person asked. */
-  note?: string;
+  /**
+   * What this run would do to it: the question ("Set GITHUB_TOKEN on it
+   * anyway?") and what saying yes does ("Setting GITHUB_TOKEN creates a new
+   * version from it.").
+   */
+  change: { question: string; effect: string };
 }): Promise<void> {
   const serving = await getWorkerDeployment(cf, workerName);
   if (!serving) return;
   if (serving.versionId && recordedVersionIds.includes(serving.versionId)) return;
-  const what = `${workerName} is serving a version everyapp didn't record deploying: changed in the Cloudflare dashboard or through the API, deployed before everyapp used cf, or uploaded by a deploy that stopped before it could record it.${note ? ` ${note}` : ""}`;
   if (!interactive) {
     throw new ActionRequiredError(
       "rerun_interactive",
-      `${what} It isn't replaced unattended (cf refuses to replace one changed in the dashboard or through the API, and can't be asked first), so nothing was migrated or uploaded: run this command once in a terminal.`,
+      `${withCapitalThe(shownAs)} was changed outside everyapp; confirm in a terminal\nIts live version wasn't deployed by everyapp, and Cloudflare won't replace it unattended. Nothing changed.`,
+      undefined,
+      { rerunNote: "in a terminal", data: { workerName, versionId: serving.versionId } },
     );
   }
-  if (!(await confirm(`${what} Replace it? Any migrations run first, and cf may ask again.`))) {
-    throw new EveryAppError(
-      "DEPLOY_CANCELLED",
-      `Left ${workerName} as it is: nothing was migrated or uploaded.`,
-    );
-  }
+  await confirmOrCancel(confirm, change.question, {
+    context: [
+      `${withCapitalThe(shownAs)}'s live version wasn't deployed by everyapp (dashboard, API, or an interrupted deploy).`,
+      `${change.effect} Cloudflare may ask to confirm again.`,
+    ],
+  });
 }
+
+/** "the Gateway" starts a sentence as "The Gateway"; an app id stays as it is. */
+const withCapitalThe = (text: string) => text.replace(/^the /, "The ");
 
 function explainDeployFailure(
   error: unknown,
@@ -255,13 +240,15 @@ function explainDeployFailure(
   if (error.kind === "strict_conflict") {
     return new ActionRequiredError(
       "rerun_interactive",
-      `${workerName} was last changed outside everyapp (in the Cloudflare dashboard or through the API), so cf won't overwrite it unattended. Run this command again in a terminal and confirm cf's prompt.`,
+      `${workerName} was changed outside everyapp; confirm in a terminal\nIt was last changed in the Cloudflare dashboard or through the API, so cf won't overwrite it unattended.`,
+      undefined,
+      { rerunNote: "in a terminal, and confirm cf's prompt" },
     );
   }
   if (error.kind === "subdomain_missing") {
     return new ActionRequiredError(
       "register_workers_subdomain",
-      "This Cloudflare account has no workers.dev subdomain yet, and Cloudflare wants one before the first Worker upload and for Workflows. Pick one in the dashboard (apps stay private; they never use it), then run this command again.",
+      "Pick a workers.dev subdomain for this Cloudflare account\nCloudflare wants one before the first Worker upload and for Workflows. Apps stay private; they never use it.",
       error.message.match(/https:\/\/dash\.cloudflare\.com\/\S+/)?.[0] ??
         `https://dash.cloudflare.com/${accountId}/workers/onboarding`,
     );
@@ -269,7 +256,7 @@ function explainDeployFailure(
   if (error.kind === "free_plan") {
     return new ActionRequiredError(
       "upgrade_workers_paid",
-      `Cloudflare refused the upload of ${workerName} on the Free plan: ${error.message}\nEvery App needs Workers Paid ($5 a month, then usage). Subscribe, then run this command again.`,
+      `Every App needs Workers Paid; subscribe, then run this again\nCloudflare refused the upload of ${workerName} on the Free plan: ${error.message}\nWorkers Paid is $5 a month, then usage.`,
       `https://dash.cloudflare.com/${accountId}/workers/plans`,
     );
   }

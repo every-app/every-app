@@ -3,12 +3,13 @@
  * The CLI never sees a Cloudflare token: cf keeps its own credentials, and
  * CI passes CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID straight through.
  */
-import enquirer from "enquirer";
-import { ActionRequiredError, EveryAppError } from "@/lib/errors";
-import { CLI } from "@/lib/output/command";
+import chalk from "chalk";
+import { ActionRequiredError, errorMessage, EveryAppError } from "@/lib/errors";
+import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { roughly } from "@/lib/output/roughly";
-import { handTerminalOver } from "@/lib/output/terminal";
+import { choose, tellPerson } from "@/lib/output/prompt";
+import { roughly } from "@/lib/output/time";
+import { formatTable } from "@/lib/output/table";
 import { CfTimeoutError } from "./errors";
 import { runCfJson, type CfRunner } from "./runner";
 import { CfWhoamiOutput, type CfWhoami } from "./schemas";
@@ -18,13 +19,28 @@ interface Account {
   name: string | null;
 }
 
+/** The login's email, once `cf auth whoami` said it (null for an API token). */
+let loginEmail: string | null = null;
+
 /** Who cf is logged in as (`authenticated: false` when it isn't). */
 export async function cfWhoami(cf: CfRunner): Promise<CfWhoami> {
-  return runCfJson(
+  const whoami = await runCfJson(
     cf,
     { plane: "account", args: ["auth", "whoami"] },
     CfWhoamiOutput,
   );
+  loginEmail =
+    whoami.authenticated && !process.env["CLOUDFLARE_API_TOKEN"] ? (whoami.email ?? null) : null;
+  return whoami;
+}
+
+/**
+ * Who this run acts as, for what others see of it (a deploy lease's
+ * holder): the Cloudflare login's email once this run checked it, else
+ * null (not logged in yet, or an API token, whose user isn't who runs it).
+ */
+export function loggedInAs(): string | null {
+  return loginEmail;
 }
 
 /** How long a person has to approve cf's device login. */
@@ -90,10 +106,13 @@ export async function logIn({
     throw new EveryAppError(
       "CLOUDFLARE_TOKEN_REJECTED",
       "Cloudflare didn't accept CLOUDFLARE_API_TOKEN\nIt may be mistyped, expired or revoked.\nA token needs Workers, D1, KV and Zone DNS Read access: https://dash.cloudflare.com/profile/api-tokens",
-      { data: { fix: `set a valid token, or unset CLOUDFLARE_API_TOKEN and run ${CLI} login` } },
+      { fix: `set a valid token, or unset CLOUDFLARE_API_TOKEN and run ${CLI} login` },
     );
   }
   if (interactive) {
+    tellPerson(
+      `${chalk.cyan("→")} Log in to Cloudflare to continue\n${chalk.dim("  Starting Cloudflare's login. Open its link and enter the code.")}`,
+    );
     await cf.run({ plane: "account", mode: "interactive", args: ["auth", "login"] });
   } else if (onDeviceLogin) {
     await deviceLogin(cf, onDeviceLogin);
@@ -108,6 +127,9 @@ export async function logIn({
     throw new EveryAppError("CLOUDFLARE_LOGIN_FAILED", "Cloudflare login didn't complete", {
       rerun: `${CLI} login`,
     });
+  }
+  if (interactive) {
+    tellPerson(`Logged in to Cloudflare${loggedIn.email ? ` as ${loggedIn.email}` : ""} ${chalk.green("✓")}`);
   }
   return loggedIn;
 }
@@ -143,7 +165,7 @@ async function deviceLogin(
       "CLOUDFLARE_LOGIN_FAILED",
       error instanceof CfTimeoutError
         ? `Cloudflare login timed out after ${roughly(DEVICE_LOGIN_TIMEOUT_MS)}\nOr set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID.`
-        : `Cloudflare login didn't complete\n${error instanceof Error ? error.message : String(error)}`,
+        : `Cloudflare login didn't complete\n${errorMessage(error)}`,
       { retryable: true, rerun: `${CLI} login` },
     );
   }
@@ -187,7 +209,7 @@ export async function resolveAccount({
         ].join("\n"),
         {
           rerun: `${CLI} login`,
-          data: { fix: "pass one of these with --account-id, or log in as someone else" },
+          fix: "pass one of these with --account-id, or log in as someone else",
         },
       );
     }
@@ -195,28 +217,30 @@ export async function resolveAccount({
   }
   if (accounts.length === 1) return accounts[0]!;
   if (accounts.length === 0) {
-    throw new EveryAppError(
-      "ACCOUNT_REQUIRED",
-      "cf lists no Cloudflare accounts for this login. Pass --account-id or set CLOUDFLARE_ACCOUNT_ID.",
-    );
+    throw new EveryAppError("ACCOUNT_REQUIRED", "This Cloudflare login lists no accounts", {
+      fix: "pass --account-id or set CLOUDFLARE_ACCOUNT_ID",
+    });
   }
   if (!interactive) {
     throw new EveryAppError(
       "ACCOUNT_REQUIRED",
-      `This login can use several Cloudflare accounts; pass --account-id with one of: ${accounts
-        .map((account) => `${account.id} (${account.name ?? "unnamed"})`)
-        .join(", ")}.`,
+      [
+        `This login can use ${accounts.length} Cloudflare accounts; pick one`,
+        ...formatTable(
+          ["ACCOUNT", "ID"],
+          accounts.map((account) => [account.name ?? "(unnamed)", account.id]),
+        ),
+      ].join("\n"),
+      { rerun: `${thisCommand()} --account-id <id>` },
     );
   }
-  handTerminalOver();
-  const { accountId } = await enquirer.prompt<{ accountId: string }>({
-    type: "select",
-    name: "accountId",
-    message: "Which Cloudflare account?",
-    choices: accounts.map((account) => ({
-      name: account.id,
-      message: `${account.name ?? account.id} (${account.id})`,
-    })),
-  });
-  return named(accountId);
+  return choose(
+    "Which account should the Gateway go in?",
+    accounts.map((account) => ({ label: account.name ?? account.id, value: account })),
+    {
+      context: [
+        `${whoami.email ?? "This login"} can use ${accounts.length} Cloudflare accounts`,
+      ],
+    },
+  );
 }

@@ -7,32 +7,35 @@ import { workerNameFor } from "@every-app/perimeter/manifest";
 import {
   applyLocalMigrations,
   devRegistryEnv,
-  legacyLocalStateNote,
   listPendingLocalMigrations,
-  localMigrationsDir,
+  LocalMigrationsSkipped,
 } from "@/lib/app/localD1";
 import { readOwnedResources } from "@/lib/app/ownership";
-import { deviceLoginAction } from "@/lib/cf/account";
 import { queryD1Results, sqlError, type D1Result } from "@/lib/cf/d1";
-import { canPromptInTerminal, confirmAtTerminal, type Confirm } from "@/lib/cf/deploy";
 import { CfError } from "@/lib/cf/errors";
+import { canPromptInTerminal, confirmUnlessYes, type Confirm } from "@/lib/output/prompt";
 import { createCfRunner, runCfJson, type CfRunner } from "@/lib/cf/runner";
 import { D1RawOutput } from "@/lib/cf/schemas";
-import { EveryAppError } from "@/lib/errors";
+import { errorMessage, EveryAppError } from "@/lib/errors";
+import { isNotFoundError } from "@/lib/file-operations";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readApp } from "@/lib/gateway/registry";
 import {
   loadEveryAppManifest,
+  migrationsDir,
   resolveMigrationBinding,
   type EveryAppCliManifest,
 } from "@/lib/manifest";
 import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { eventSink, runReported } from "@/lib/output/run";
+import { runCommand } from "@/lib/output/run";
+import type { GatewayCommandFlags } from "../flags";
+import { localMigrationsApplied, warnLegacyLocalState } from "../localMigrations";
 import { formatQueryResults, readsOnly, type Database } from "./queryOutput";
 
 interface MigrateCommandFlags {
   json?: boolean;
+  verbose?: boolean;
 }
 
 const MIGRATE_STEP = "db.migrate";
@@ -46,8 +49,7 @@ export async function migrate(
   this: LocalContext,
   flags: MigrateCommandFlags,
 ): Promise<void> {
-  const out = eventSink(flags.json);
-  await runReported(out, async () => {
+  await runCommand(flags, async (out) => {
     await migrateLocal({ cwd: process.cwd(), out });
     out.emit({ type: "done" });
   });
@@ -65,10 +67,7 @@ export async function migrateLocal({
   cf = createCfRunner(),
 }: MigrateLocalOptions): Promise<void> {
   const manifest = await loadEveryAppManifest(cwd);
-  const note = await legacyLocalStateNote(cwd);
-  if (note) {
-    out.emit({ type: "warning", code: "LEGACY_LOCAL_STATE", message: note });
-  }
+  await warnLegacyLocalState(cwd, out);
 
   let result: Awaited<ReturnType<typeof applyLocalMigrations>>;
   try {
@@ -94,23 +93,14 @@ export async function migrateLocal({
       step: MIGRATE_STEP,
       status: "skip",
       message:
-        result.reason === "no_d1"
+        result.reason === LocalMigrationsSkipped.NoD1
           ? `${manifest.id} declares no D1 database, so there's nothing to migrate.`
-          : `No migrations in ${localMigrationsDir(manifest)}/ yet, so there's nothing to migrate.`,
+          : `No migrations in ${migrationsDir(manifest)}/ yet, so there's nothing to migrate.`,
       data: { reason: result.reason },
     });
     return;
   }
-  out.emit({
-    type: "step",
-    step: MIGRATE_STEP,
-    status: "ok",
-    message:
-      result.applied.length > 0
-        ? `Applied ${result.applied.join(", ")}.`
-        : "The local database is up to date.",
-    data: { database: result.database, applied: result.applied },
-  });
+  localMigrationsApplied(out, MIGRATE_STEP, result);
 }
 
 /**
@@ -128,9 +118,7 @@ async function localMigrationFailed({
   cf: CfRunner;
   error: unknown;
 }): Promise<EveryAppError> {
-  const { problem, sqliteCode } = sqlError(
-    error instanceof Error ? error.message : String(error),
-  );
+  const { problem, sqliteCode } = sqlError(errorMessage(error));
   // Only to name it: the migration's own error is the one to report.
   const [failed] = await listPendingLocalMigrations({ cwd, manifest, cf }).catch(
     () => [],
@@ -144,21 +132,17 @@ async function localMigrationFailed({
     {
       data: {
         ...(failed ? { migration: failed } : {}),
-        fix: `correct ${failed ? path.posix.join(localMigrationsDir(manifest), failed) : "the migration"}`,
+        fix: `correct ${failed ? path.posix.join(migrationsDir(manifest), failed) : "the migration"}`,
       },
     },
   );
 }
 
-interface QueryCommandFlags {
+interface QueryCommandFlags extends GatewayCommandFlags {
   local?: boolean;
   file?: string;
   binding?: string;
-  gateway?: string;
-  "account-id"?: string;
   yes?: boolean;
-  json?: boolean;
-  verbose?: boolean;
 }
 
 /**
@@ -172,34 +156,29 @@ export async function query(
   flags: QueryCommandFlags,
   sql?: string,
 ): Promise<void> {
-  const out = eventSink(flags.json, flags.verbose);
-  await runReported(
-    out,
-    async () => {
-      const database: Database = flags.local ? "local" : "production";
-      const results = await queryAppD1({
-        cwd: process.cwd(),
-        sql: await readSql(sql, flags.file),
-        local: flags.local ?? false,
-        binding: flags.binding,
-        gateway: flags.local ? undefined : requestedGatewayUrl(flags.gateway),
-        accountId: flags["account-id"],
-        yes: flags.yes,
-        json: flags.json,
-        out,
-      });
-      out.emit({
-        type: "done",
-        data: {
-          database,
-          results: results.map((result) => result.rows),
-          meta: results.map(({ duration, changes }) => ({ duration, changes })),
-        },
-        display: formatQueryResults(results, database),
-      });
-    },
-    { verbose: flags.verbose },
-  );
+  await runCommand(flags, async (out) => {
+    const database: Database = flags.local ? "local" : "production";
+    const results = await queryAppD1({
+      cwd: process.cwd(),
+      sql: await readSql(sql, flags.file),
+      local: flags.local ?? false,
+      binding: flags.binding,
+      gateway: flags.local ? undefined : requestedGatewayUrl(flags.gateway),
+      accountId: flags["account-id"],
+      yes: flags.yes,
+      json: flags.json,
+      out,
+    });
+    out.emit({
+      type: "done",
+      data: {
+        database,
+        results: results.map((result) => result.rows),
+        meta: results.map(({ duration, changes }) => ({ duration, changes })),
+      },
+      display: formatQueryResults(results, database),
+    });
+  });
 }
 
 /** The SQL to run: the argument, or `--file` (`-`: stdin), never both. */
@@ -221,7 +200,7 @@ async function readSql(sql: string | undefined, file: string | undefined): Promi
   try {
     return await fs.readFile(file, "utf8");
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    if (isNotFoundError(error)) {
       throw new EveryAppError("SQL_FILE_NOT_FOUND", `No file at ${file}`);
     }
     throw error;
@@ -262,7 +241,7 @@ export async function queryAppD1({
   cf = createCfRunner(),
   createCf,
   interactive = canPromptInTerminal(json ?? false),
-  confirm = confirmAtTerminal,
+  confirm,
 }: QueryAppD1Options): Promise<D1Result[]> {
   const manifest = await loadEveryAppManifest(cwd);
   const bindings = manifest.resources?.d1 ?? [];
@@ -382,13 +361,13 @@ async function queryProduction({
   out: EventSink;
   createCf?: (accountId?: string) => CfRunner;
   interactive: boolean;
-  confirm: Confirm;
+  confirm?: Confirm;
 }): Promise<D1Result[]> {
   const { cf, db } = await connectToGateway({
     gateway,
     accountId,
     interactive,
-    onDeviceLogin: json ? deviceLoginAction(out, "db.login") : undefined,
+    login: { json, out, step: "db.login" },
     createCf,
   });
   const app = await readApp(db, manifest.id);
@@ -404,16 +383,14 @@ async function queryProduction({
       { rerun: `${CLI} deploy` },
     );
   }
-  if (!yes && !readsOnly(sql)) {
-    if (!interactive) {
-      throw new EveryAppError(
-        "CONFIRMATION_REQUIRED",
-        `This SQL can change ${manifest.id}'s production database\nA person at a terminal confirms it first, or --yes does.`,
-      );
-    }
-    if (!(await confirm(`Change data in ${manifest.id}'s production database?`))) {
-      throw new EveryAppError("QUERY_CANCELLED", "Cancelled. Nothing changed.");
-    }
+  if (!readsOnly(sql)) {
+    await confirmUnlessYes({
+      yes,
+      interactive,
+      confirm,
+      question: `Change data in ${manifest.id}'s production database?`,
+      unattended: `This SQL can change ${manifest.id}'s production database\nA person at a terminal confirms it first, or --yes does.`,
+    });
   }
   return failingQuery("production", () => queryD1Results(cf, databaseId, [{ sql }]));
 }

@@ -8,9 +8,8 @@
  */
 import type { LocalContext } from "@/context";
 import { appWorkflows, type AppWorkflow } from "@/lib/app/workflows";
-import { deviceLoginAction } from "@/lib/cf/account";
-import { canPromptInTerminal, confirmAtTerminal, type Confirm } from "@/lib/cf/deploy";
-import { createCfRunner, runCfJson, type CfRunner } from "@/lib/cf/runner";
+import { canPromptInTerminal, confirmUnlessYes, type Confirm } from "@/lib/output/prompt";
+import { runCfJson, type CfRunner } from "@/lib/cf/runner";
 import {
   WorkflowInstanceCreatedOutput,
   WorkflowInstanceListOutput,
@@ -24,13 +23,9 @@ import { readApp } from "@/lib/gateway/registry";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { eventSink, runReported } from "@/lib/output/run";
-
-interface WorkflowFlags {
-  gateway?: string;
-  "account-id"?: string;
-  json?: boolean;
-}
+import { runCommand } from "@/lib/output/run";
+import type { GatewayCommandFlags } from "../flags";
+import { INSTANCE_STATUSES } from "./command";
 
 /** Where a command runs; tests swap cf and the terminal. */
 interface WorkflowCommandOptions {
@@ -48,16 +43,8 @@ interface WorkflowCommandOptions {
 
 type StatusChange = "pause" | "resume" | "terminate" | "restart";
 
-type InstanceStatus =
-  | "queued"
-  | "running"
-  | "paused"
-  | "waiting"
-  | "waitingForPause"
-  | "errored"
-  | "terminated"
-  | "complete"
-  | "rollingBack";
+/** An instance status as Cloudflare names it. */
+type InstanceStatus = (typeof INSTANCE_STATUSES)[keyof typeof INSTANCE_STATUSES];
 
 const DONE: Record<StatusChange, string> = {
   pause: "Paused",
@@ -74,7 +61,7 @@ async function connect({
   json,
   out,
   interactive = canPromptInTerminal(json ?? false),
-  createCf = (accountId?: string) => createCfRunner({ accountId }),
+  createCf,
 }: WorkflowCommandOptions): Promise<{
   cf: CfRunner;
   workflows: AppWorkflow[];
@@ -90,7 +77,7 @@ async function connect({
     gateway,
     accountId,
     interactive,
-    onDeviceLogin: json && out ? deviceLoginAction(out, "workflows.login") : undefined,
+    login: out && { json, out, step: "workflows.login" },
     createCf,
   });
   const { workerName } = await readApp(db, manifest.id);
@@ -238,22 +225,15 @@ export async function changeInstanceStatus(
   },
 ) {
   const { cf, workflow } = await openWorkflow(options, options.workflow);
-  if (options.status === "terminate" && !options.yes) {
-    if (!(options.interactive ?? canPromptInTerminal(options.json ?? false))) {
-      throw new EveryAppError(
-        "CONFIRMATION_REQUIRED",
-        "Terminating an instance needs a person at a terminal, or --yes.",
-      );
-    }
-    const confirmed = await (options.confirm ?? confirmAtTerminal)(
-      `Terminate instance ${options.instanceId} of ${workflow.binding}? It stops for good.`,
-    );
-    if (!confirmed) {
-      throw new EveryAppError(
-        "TERMINATE_CANCELLED",
-        `Left instance ${options.instanceId} running.`,
-      );
-    }
+  if (options.status === "terminate") {
+    await confirmUnlessYes({
+      yes: options.yes,
+      interactive: options.interactive ?? canPromptInTerminal(options.json ?? false),
+      confirm: options.confirm,
+      question: "Terminate it? It stops for good.",
+      unattended: "Terminating an instance needs a person at a terminal, or --yes.",
+      context: [`${workflow.binding} instance ${options.instanceId}`],
+    });
   }
   const changed = await runCfJson(
     cf,
@@ -277,7 +257,7 @@ export async function changeInstanceStatus(
   return { workflow, status: changed.status ?? null };
 }
 
-function commandOptions(flags: WorkflowFlags, out: EventSink): WorkflowCommandOptions {
+function commandOptions(flags: GatewayCommandFlags, out: EventSink): WorkflowCommandOptions {
   return {
     cwd: process.cwd(),
     gateway: requestedGatewayUrl(flags.gateway),
@@ -287,9 +267,8 @@ function commandOptions(flags: WorkflowFlags, out: EventSink): WorkflowCommandOp
   };
 }
 
-export async function list(this: LocalContext, flags: WorkflowFlags): Promise<void> {
-  const out = eventSink(flags.json);
-  await runReported(out, async () => {
+export async function list(this: LocalContext, flags: GatewayCommandFlags): Promise<void> {
+  await runCommand(flags, async (out) => {
     const workflows = await listAppWorkflows(commandOptions(flags, out));
     out.emit({
       type: "done",
@@ -308,15 +287,14 @@ export async function list(this: LocalContext, flags: WorkflowFlags): Promise<vo
 
 export async function instances(
   this: LocalContext,
-  flags: WorkflowFlags & { status?: InstanceStatus; limit?: number },
+  flags: GatewayCommandFlags & { status?: keyof typeof INSTANCE_STATUSES; limit?: number },
   workflow: string,
 ): Promise<void> {
-  const out = eventSink(flags.json);
-  await runReported(out, async () => {
+  await runCommand(flags, async (out) => {
     const listed = await listInstances({
       ...commandOptions(flags, out),
       workflow,
-      status: flags.status,
+      status: flags.status && INSTANCE_STATUSES[flags.status],
       limit: flags.limit,
     });
     out.emit({
@@ -336,12 +314,11 @@ export async function instances(
 
 export async function get(
   this: LocalContext,
-  flags: WorkflowFlags,
+  flags: GatewayCommandFlags,
   workflow: string,
   instanceId: string,
 ): Promise<void> {
-  const out = eventSink(flags.json);
-  await runReported(out, async () => {
+  await runCommand(flags, async (out) => {
     const instance = await getInstance({
       ...commandOptions(flags, out),
       workflow,
@@ -357,11 +334,10 @@ export async function get(
 
 export async function start(
   this: LocalContext,
-  flags: WorkflowFlags & { params?: string; id?: string },
+  flags: GatewayCommandFlags & { params?: string; id?: string },
   workflow: string,
 ): Promise<void> {
-  const out = eventSink(flags.json);
-  await runReported(out, async () => {
+  await runCommand(flags, async (out) => {
     const started = await startInstance({
       ...commandOptions(flags, out),
       workflow,
@@ -377,11 +353,10 @@ export async function start(
 }
 
 async function reportStatusChange(
-  flags: WorkflowFlags & { yes?: boolean },
+  flags: GatewayCommandFlags & { yes?: boolean },
   change: { workflow: string; instanceId: string; status: StatusChange },
 ): Promise<void> {
-  const out = eventSink(flags.json);
-  await runReported(out, async () => {
+  await runCommand(flags, async (out) => {
     const changed = await changeInstanceStatus({
       ...commandOptions(flags, out),
       ...change,
@@ -402,7 +377,7 @@ async function reportStatusChange(
 function statusCommand(status: Exclude<StatusChange, "terminate">) {
   return async function (
     this: LocalContext,
-    flags: WorkflowFlags,
+    flags: GatewayCommandFlags,
     workflow: string,
     instanceId: string,
   ): Promise<void> {
@@ -416,7 +391,7 @@ export const restart = statusCommand("restart");
 
 export async function terminate(
   this: LocalContext,
-  flags: WorkflowFlags & { yes?: boolean },
+  flags: GatewayCommandFlags & { yes?: boolean },
   workflow: string,
   instanceId: string,
 ): Promise<void> {

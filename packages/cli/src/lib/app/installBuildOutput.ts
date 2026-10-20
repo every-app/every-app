@@ -21,15 +21,15 @@
  * (./policy.ts) then checks the installed output against the same target.
  */
 import fs from "node:fs/promises";
-import path from "node:path";
 import {
   BUILD_SENTINEL,
   resourceSentinel,
   type EveryAppDeployTarget,
 } from "@every-app/sdk/cloudflare";
 import { EveryAppError } from "@/lib/errors";
+import { builtWorkers } from "./buildOutput";
+import { RESOURCE_LABELS } from "./ownership";
 
-const WORKERS_DIR = path.join(".cloudflare", "output", "v0", "workers");
 /** Cloudflare's limit on a Workflow's name. */
 const MAX_WORKFLOW_NAME_LENGTH = 64;
 
@@ -55,13 +55,13 @@ interface WorkerConfig extends Record<string, unknown> {
   exports?: Record<string, Record<string, unknown>>;
 }
 
-/** The kinds of placeholder resource, and the field each one rewrites. */
-const RESOURCES = {
-  d1: "D1 database",
-  kv: "KV namespace",
-  hyperdrive: "Hyperdrive config",
-  r2: "R2 bucket",
-} as const;
+/** The kinds of placeholder resource. */
+const RESOURCE_KINDS = ["d1", "kv", "hyperdrive", "r2"] as const;
+type PlaceholderKind = (typeof RESOURCE_KINDS)[number];
+
+function isPlaceholderKind(kind: string): kind is PlaceholderKind {
+  return (RESOURCE_KINDS as readonly string[]).includes(kind);
+}
 
 /**
  * One Worker's config, installed: a copy with every placeholder rewritten
@@ -133,14 +133,7 @@ export async function installAppBuildOutput({
   cwd: string;
   target: InstallTarget;
 }): Promise<void> {
-  const workersDir = path.join(cwd, WORKERS_DIR);
-  for (const entry of await fs.readdir(workersDir, { withFileTypes: true })) {
-    if (!entry.isDirectory()) continue;
-    const file = path.join(workersDir, entry.name, "worker.config.json");
-    const config = JSON.parse(await fs.readFile(file, "utf8")) as Record<
-      string,
-      unknown
-    >;
+  for await (const { file, config } of builtWorkers(cwd)) {
     await fs.writeFile(
       file,
       `${JSON.stringify(installWorkerConfig(config, target), null, 2)}\n`,
@@ -159,15 +152,16 @@ function installResource(
   target: InstallTarget,
 ): void {
   const kind = String(binding.type);
-  if (!Object.hasOwn(RESOURCES, kind)) return;
+  if (!isPlaceholderKind(kind)) return;
   const placeholder = resourceSentinel(name);
   const field = kind === "d1" || kind === "r2" ? "name" : "id";
   if (binding[field] !== placeholder) return;
-  const resource = target.resources[kind as keyof typeof RESOURCES]?.[name];
+  const resource = target.resources[kind]?.[name];
   if (!resource) {
     throw new EveryAppError(
       "INSTALL_INPUTS_MISSING",
-      `The build binds ${RESOURCES[kind as keyof typeof RESOURCES]} ${name}, which the deploy didn't provision. Declare it in everyapp.config.ts's resources, then deploy again.`,
+      `The build binds ${RESOURCE_LABELS[kind]} ${name}, which the deploy didn't provision`,
+      { fix: "declare it in everyapp.config.ts's resources" },
     );
   }
   Object.assign(binding, resource);
@@ -222,7 +216,8 @@ function assertWorkflowNames(config: WorkerConfig): void {
     if (name.length > MAX_WORKFLOW_NAME_LENGTH) {
       throw new EveryAppError(
         "WORKFLOW_NAME_TOO_LONG",
-        `${binding} would be the Workflow "${name}", longer than Cloudflare's ${MAX_WORKFLOW_NAME_LENGTH} characters; shorten its binding name in everyapp.config.ts.`,
+        `${binding} would be the Workflow "${name}", longer than Cloudflare's ${MAX_WORKFLOW_NAME_LENGTH} characters`,
+        { fix: "shorten its binding name in everyapp.config.ts" },
       );
     }
   }

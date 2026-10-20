@@ -21,10 +21,13 @@
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
-import type { Stats } from "node:fs";
+import { rmSync, type Stats } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { EveryAppError } from "@/lib/errors";
+import { isNotFoundError } from "@/lib/file-operations";
+import { onInterrupt } from "@/lib/interrupt";
+import { thisCommand } from "@/lib/output/command";
 
 const CONFIG_FILE = "cloudflare.config.ts";
 const PRIVATE_MODE = 0o700;
@@ -47,6 +50,26 @@ export async function makeCfTempDir(prefix: string): Promise<string> {
   const parent = await ensureCfDir("tmp");
   await removeStale(parent);
   return fs.mkdtemp(path.join(parent, `${prefix}${process.pid}-`));
+}
+
+/**
+ * A {@link makeCfTempDir} that an interrupt removes too, until `cleanup`
+ * removes it.
+ */
+export async function privateTempDir(
+  prefix: string,
+): Promise<{ dir: string; cleanup: () => Promise<void> }> {
+  const dir = await makeCfTempDir(prefix);
+  const forget = onInterrupt({
+    sync: () => rmSync(dir, { recursive: true, force: true }),
+  });
+  return {
+    dir,
+    cleanup: async () => {
+      await fs.rm(dir, { recursive: true, force: true });
+      forget();
+    },
+  };
 }
 
 // Far longer than a run lives: an unattended deploy times out after 15
@@ -142,7 +165,8 @@ async function refuseSudoInUsersHome(): Promise<void> {
   if (home?.uid === sudoUid) {
     throw new EveryAppError(
       "UNSAFE_CF_DIRECTORY",
-      `everyapp is running as root (sudo) with your HOME, ${os.homedir()}: it would leave ~/.everyapp there to root. Run it without sudo.`,
+      `everyapp is running as root (sudo) with your HOME\nIt would leave ~/.everyapp in ${os.homedir()} to root.`,
+      { fix: "run it without sudo" },
     );
   }
 }
@@ -159,7 +183,7 @@ async function ensureEveryappDir(dir: string): Promise<void> {
   try {
     stat = await fs.stat(dir);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    if (!isNotFoundError(error)) throw error;
     await fs.mkdir(dir, { recursive: true, mode: PRIVATE_MODE });
     return;
   }
@@ -257,14 +281,16 @@ async function assertNoPlantableAncestor(dir: string): Promise<void> {
     if (problem) {
       throw new EveryAppError(
         "UNSAFE_CF_DIRECTORY",
-        `${current} ${problem}, so everyapp won't run cf below it (in ${dir}): cf runs any cloudflare.config.ts it finds in a parent of its working directory. Make it writable only by you (chmod go-w "${current}"), or run everyapp with a HOME that is.`,
+        `${current} ${problem}, so everyapp won't run cf below it\ncf runs any cloudflare.config.ts it finds in a parent of its working directory (here ${dir}).`,
+        { fix: `make it writable only by you (chmod go-w "${current}"), or run everyapp with a HOME that is` },
       );
     }
     const config = path.join(current, CONFIG_FILE);
     if (await isFile(config)) {
       throw new EveryAppError(
         "UNSAFE_CF_DIRECTORY",
-        `cf would run ${config} in every command everyapp starts in ${dir}: it loads a cloudflare.config.ts from any parent of its working directory. Move that file into a project directory, then run this again.`,
+        `cf would run ${config} in every command everyapp starts\ncf loads a cloudflare.config.ts from any parent of its working directory (here ${dir}).`,
+        { fix: "move that file into a project directory", rerun: thisCommand() },
       );
     }
     if (path.dirname(current) === current) return;
@@ -274,7 +300,8 @@ async function assertNoPlantableAncestor(dir: string): Promise<void> {
 function unsafe(dir: string, problem: string): EveryAppError {
   return new EveryAppError(
     "UNSAFE_CF_DIRECTORY",
-    `${dir} ${problem}. everyapp runs cf and keeps the files it hands to cf (secrets among them) there, so only you may be able to write to it. Fix or remove it, then run this again.`,
+    `${dir} ${problem}\neveryapp runs cf and keeps the files it hands to cf (secrets among them) there, so only you may be able to write to it.`,
+    { fix: "fix or remove it", rerun: thisCommand() },
   );
 }
 
@@ -282,7 +309,7 @@ async function lstatOrNull(target: string): Promise<Stats | null> {
   try {
     return await fs.lstat(target);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    if (isNotFoundError(error)) return null;
     throw error;
   }
 }

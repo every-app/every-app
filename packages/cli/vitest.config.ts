@@ -14,5 +14,8 @@ export default defineConfig({
     globals: true,
     environment: "node",
     setupFiles: ["src/test/setup.ts"],
+    // Tests run everyapp as the checkout does (lib/output/command.ts `CLI`),
+    // however vitest itself was started.
+    env: { npm_config_user_agent: "pnpm/test" },
   },
 });

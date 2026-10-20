@@ -14,7 +14,7 @@ import {
   parseHost,
   type SessionAuthenticator,
 } from "@every-app/perimeter/dev";
-import { EveryAppError } from "@/lib/errors";
+import { errorMessage, EveryAppError } from "@/lib/errors";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { createDevAppGateway } from "./devAppGateway";
@@ -293,7 +293,7 @@ function requestProblems(out: EventSink) {
   };
   return {
     failed(method: string, path: string, error: unknown) {
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = errorMessage(error);
       once(`failed\n${reason}`, () =>
         out.emit({
           type: "warning",

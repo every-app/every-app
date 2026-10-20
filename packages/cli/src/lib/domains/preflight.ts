@@ -15,11 +15,13 @@
  * cf can't list which Worker holds a Custom Domain: attached to a terminal
  * (--verbose) cf asks before moving one, and otherwise this warns.
  */
-import { CfError } from "@/lib/cf/errors";
+import { isCfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
-import { CLI } from "@/lib/output/command";
+import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
+import type { InstallRecord } from "@/lib/gateway/install";
+import { isOneLabelBelow } from "./hostnames";
 import { describeRecord, dnsRecordsAt, wildcardOver } from "./records";
 import type { Zone } from "./zones";
 
@@ -64,7 +66,11 @@ export async function preflightDomains(
   if (total > ZONE_CUSTOM_DOMAIN_LIMIT) {
     throw new EveryAppError(
       "ZONE_CUSTOM_DOMAIN_LIMIT",
-      `This would put ${total} Workers Custom Domains in ${zone.name}; Cloudflare allows ${ZONE_CUSTOM_DOMAIN_LIMIT} per zone. Delete apps you no longer use (${CLI} delete <id>), or install a second gateway on another domain.`,
+      `Too many Workers Custom Domains in ${zone.name}\nThis would put ${total} there; Cloudflare allows ${ZONE_CUSTOM_DOMAIN_LIMIT} per zone.`,
+      {
+        rerun: `${CLI} delete <id>`,
+        rerunNote: "for apps you no longer use, or install a second Gateway on another domain",
+      },
     );
   }
   if (total >= ZONE_CUSTOM_DOMAIN_WARN_AT) {
@@ -98,11 +104,16 @@ async function recordsAt(
   try {
     return await dnsRecordsAt(cf, zone.id, host);
   } catch (error) {
-    if (!(error instanceof CfError && error.kind === "auth")) throw error;
+    if (!isCfError(error, "auth")) throw error;
     if (forceDns) return [];
     throw new EveryAppError(
       "DNS_UNREADABLE",
-      `Can't read ${zone.name}'s DNS records with this Cloudflare login, so can't tell whether publishing ${host} would replace one. Give the API token Zone → DNS → Read, or pass --force-dns to publish without checking.`,
+      `Can't read ${zone.name}'s DNS records with this Cloudflare login\nSo it can't tell whether publishing ${host} would replace one.`,
+      {
+        fix: "give the API token Zone → DNS → Read",
+        rerun: thisCommand(["--force-dns"]),
+        authorize: true,
+      },
     );
   }
 }
@@ -165,9 +176,44 @@ async function checkDnsRecords(
     "DNS_RECORD_CONFLICT",
     `${which}\n${records} Publishing ${one ? "it replaces the record" : "them replaces those records"}.${wildcardStays}`,
     {
-      data: {
-        fix: `delete ${one ? "the record" : "the records"} in Cloudflare (${zone.name} → DNS), or use another name`,
-      },
+      fix: `delete ${one ? "the record" : "the records"} in Cloudflare (${zone.name} → DNS), or use another name`,
     },
   );
+}
+
+/**
+ * An app's hostname against the Gateway's: one not one label below the base
+ * is never published (`outsideBase`); a new one is checked like any new
+ * hostname before anything is created or uploaded (`newHost`).
+ */
+export async function preflightAppHost({
+  cf,
+  out,
+  install,
+  hostname,
+  forceDns,
+  cfAsks,
+}: {
+  cf: CfRunner;
+  out: EventSink;
+  install: Pick<InstallRecord, "appBaseDomain" | "liveDomains" | "zoneId" | "zoneName">;
+  hostname: string;
+  forceDns?: boolean;
+  cfAsks: boolean;
+}): Promise<{ outsideBase: boolean; newHost: boolean }> {
+  const outsideBase = !isOneLabelBelow(hostname, install.appBaseDomain);
+  const newHost = !outsideBase && !install.liveDomains.includes(hostname);
+  if (newHost) {
+    await preflightDomains({
+      cf,
+      out,
+      step: "app.domain",
+      zone: { id: install.zoneId, name: install.zoneName },
+      domains: [...install.liveDomains, hostname],
+      liveDomains: install.liveDomains,
+      forceDns,
+      cfAsks,
+    });
+  }
+  return { outsideBase, newHost };
 }

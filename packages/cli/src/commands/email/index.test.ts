@@ -13,7 +13,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readOwnedResources } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
-import { acquireLease } from "@/lib/gateway/lease";
+import { LeasePurpose } from "@/lib/gateway/lease";
+import { holdLease } from "@/test/holdLease";
 import { readApp, register, type Deployer } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
@@ -377,7 +378,7 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
       },
     });
     expect(asked).toEqual([
-      "Turn on Email Routing for mail.example.com? Cloudflare adds and locks its MX and SPF records, so mail for it goes to Cloudflare from then on.",
+      "Turn on Email Routing for mail.example.com?",
     ]);
     expect(
       account.dnsRecords.filter((record) => record.name === "mail.example.com" && record.type === "MX"),
@@ -388,8 +389,8 @@ describe("email set stores the lists on the Gateway and routes the addresses at 
     // Declined: nothing changes, the row included.
     events = [];
     await expect(set(dir, { inbound: INBOUND, interactive: true, confirm: async () => false })).rejects.toMatchObject({
-      code: "EMAIL_ROUTING_DISABLED",
-      message: expect.stringContaining("Email Routing stays off for example.com, so nothing was changed."),
+      code: "CANCELLED",
+      message: "Cancelled. Email Routing stays off for example.com; nothing changed.",
     });
     expect(row().email_inbound).toBe('["support@mail.example.com"]');
     expect(account.emailRoutingOf("zone-1").enabled).toBe(false);
@@ -515,7 +516,7 @@ describe("email set refuses before anything is read or changed", () => {
     await expect(set(dir, { inbound: ["support@mail.example.com"] })).rejects.toMatchObject({
       code: "EMAIL_ADDRESS_TAKEN",
       message:
-        "support@mail.example.com is routed to every-acme-helpdesk: another app recorded it. Take another address, or remove it from that app first (everyapp email unset --inbound, in its directory).",
+        "support@mail.example.com is another app's\nIt is routed to every-acme-helpdesk. Take another address, or remove it from that app first.",
     });
     await expect(set(dir, { inbound: ["*@mail.example.com"] })).rejects.toMatchObject({
       code: "EMAIL_CATCH_ALL_NOT_APEX",
@@ -663,7 +664,7 @@ describe("email set keeps the row and the routes consistent", () => {
     // Another deploy holds the lease: this run waits for it.
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     try {
-      const held = await acquireLease({ db: db(), id: `app:${WORKER}`, purpose: "app.deploy", heartbeatMs: 0 });
+      const held = await holdLease(db(), `app:${WORKER}`, LeasePurpose.AppDeploy, "inbox");
       const run = set(dir, { senders: SENDERS });
       await vi.waitFor(() =>
         expect(events).toContainEqual(
@@ -671,7 +672,7 @@ describe("email set keeps the row and the routes consistent", () => {
             type: "progress",
             step: "app.lease",
             message: expect.stringContaining(
-              `Waiting for another deploy of inbox to finish (${held.holder.split(":")[0]!.replace(/\.local$/, "")}, started`,
+              `Waiting for a deploy of inbox to finish (dev@example.com on ${held.holder.split(":")[0]!.split(".")[0]}, started`,
             ),
           }),
         ),
@@ -710,7 +711,7 @@ describe("email set keeps the row and the routes consistent", () => {
       expect.objectContaining({
         code: "EMAIL_ROUTES_PARTIAL",
         step: "app.email",
-        message: expect.stringMatching(/^Saved inbox's addresses; routing them stopped at: .+ Run `pnpm everyapp deploy`/),
+        message: expect.stringMatching(/^Saved inbox's addresses; routing them stopped at: [\s\S]+ Run `pnpm everyapp deploy`/),
       }),
     );
 
@@ -839,6 +840,7 @@ describe("email show", () => {
           senders: SENDERS,
           inbound: INBOUND,
           routed: INBOUND,
+          durationMs: expect.any(Number),
         },
       }),
     );
@@ -878,7 +880,11 @@ describe("email show", () => {
     expect(done()).toEqual(
       expect.objectContaining({
         message: "inbox isn't deployed yet; its senders and addresses are set after its first `pnpm everyapp deploy`.",
-        data: { app: { id: "inbox", deployed: false }, declares: { sends: true, receives: true } },
+        data: {
+          app: { id: "inbox", deployed: false },
+          declares: { sends: true, receives: true },
+          durationMs: expect.any(Number),
+        },
       }),
     );
     expect(sink.exitCode).toBe(0);

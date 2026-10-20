@@ -16,14 +16,15 @@ export const accountFlag = {
   optional: true,
 } as const;
 
+/** The same on every command: the event stream and its exit codes (lib/output/events.ts). */
 export const jsonFlag = {
   kind: "boolean",
   brief:
-    "Print only NDJSON events on stdout (exit 2: an action is required; then run it again)",
+    "Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)",
   optional: true,
 } as const;
 
-/** For commands that only read: their result is the `done` event. */
+/** For a command whose result is the event (db query): its rows as NDJSON. */
 export const resultJsonFlag = {
   kind: "boolean",
   brief: "Print the result as an NDJSON event",
@@ -33,7 +34,7 @@ export const resultJsonFlag = {
 export const verboseFlag = {
   kind: "boolean",
   brief:
-    "Show every step and progress line, stream build and install output to stderr, and attach cf deploy to the terminal",
+    "Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace",
   optional: true,
 } as const;
 
@@ -50,3 +51,11 @@ export const forceDnsFlag = {
     "Publish new hostnames even where a DNS record answers them (one at a hostname is replaced)",
   optional: true,
 } as const;
+
+/** The flags of a command that acts on the Gateway. */
+export interface GatewayCommandFlags {
+  gateway?: string;
+  "account-id"?: string;
+  json?: boolean;
+  verbose?: boolean;
+}

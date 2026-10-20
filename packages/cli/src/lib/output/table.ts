@@ -9,10 +9,14 @@ import chalk from "chalk";
 const width = (text: string) => stripVTControlCharacters(text).length;
 const pad = (text: string, to: number) => text + " ".repeat(to - width(text));
 
-/** Each `{ label, value }` on its line, the values lined up after dim labels. */
-export function formatFacts(
-  facts: ReadonlyArray<{ label: string; value: string }>,
-): string[] {
+/** A labelled value in a block of them (`Live  https://…`). */
+export interface Fact {
+  label: string;
+  value: string;
+}
+
+/** Each fact on its line, the values lined up after dim labels. */
+export function formatFacts(facts: readonly Fact[]): string[] {
   const labels = Math.max(...facts.map((fact) => fact.label.length));
   return facts.map(
     (fact) => `${chalk.dim(fact.label.padEnd(labels))}  ${fact.value}`,

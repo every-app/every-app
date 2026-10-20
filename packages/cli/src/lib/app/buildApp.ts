@@ -13,9 +13,10 @@
  * log file (lib/childLog.ts). With `verbose`, either streams to stderr.
  */
 import { runLogged } from "@/lib/childLog";
-import { CfError, outputTail } from "@/lib/cf/errors";
+import { CfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
+import { outputTail } from "@/lib/output/text";
 
 const BUILD_TIMEOUT_MS = 600_000;
 const BUILD_ENV = { EVERYAPP_BUILD: "1" };

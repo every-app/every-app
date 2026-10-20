@@ -41,37 +41,41 @@
  * nothing replaces the release the install row names with an older one
  * unless asked to.
  */
-import { rmSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import type { D1Database } from "@/lib/cf/d1";
-import { assertReplaceable, cfDeploy, type Confirm } from "@/lib/cf/deploy";
-import { makeCfTempDir } from "@/lib/cf/privateDir";
+import { assertReplaceable, cfDeploy } from "@/lib/cf/deploy";
+import { privateTempDir } from "@/lib/cf/privateDir";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
-import { isOneLabelBelow } from "@/lib/domains/hostnames";
+import { publishedAppHosts } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
 import { afterMigration, EveryAppError, type Rollback } from "@/lib/errors";
-import { onInterrupt } from "@/lib/interrupt";
-import { migrateRemoteD1 } from "@/lib/migrations/remote";
+import type { Confirm } from "@/lib/output/prompt";
+import {
+  migrateRemoteD1,
+  migrationEventData,
+  restorePointNote,
+} from "@/lib/migrations/remote";
 import { GATEWAY_RESTORE_TARGET } from "./restorePoints";
 import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
+import { plural } from "@/lib/output/text";
 import {
   readDesiredState,
   workerExistence,
   type DesiredState,
 } from "./desiredState";
 import { readInstall, writeInstall, type InstallRecord } from "./install";
-import { acquireLease, describeLeaseHolder, type Lease } from "./lease";
+import { acquireGatewayLease, LeasePurpose, type Lease } from "./lease";
 import { gatewayDomains, patchGatewayBuildOutput } from "./patchBuildOutput";
 import {
   compareReleaseOrder,
   describeOrigin,
+  type CandidateRelease,
   type GatewayRelease,
-  type ReleaseSource,
 } from "./release";
 import type { GatewayResources } from "./resources";
 import { newGatewaySecrets, type DeploymentMode } from "./secretsFile";
@@ -129,42 +133,12 @@ export interface ApplyGatewayResult {
   newHosts: string[];
 }
 
-/** Take the `gateway` deploy lease, saying who has it while waiting. */
-export function acquireGatewayLease(
-  options: Pick<
-    ApplyGatewayOptions,
-    "db" | "out" | "leaseWaitMs" | "sleep"
-  >,
-  purpose: string,
-) {
-  return acquireLease({
-    db: options.db,
-    id: "gateway",
-    purpose,
-    waitMs: options.leaseWaitMs,
-    ...(options.sleep ? { sleep: options.sleep } : {}),
-    onWait: (holder) =>
-      options.out.emit({
-        type: "progress",
-        step: "gateway.lease",
-        message: `Waiting for another deploy to finish (${describeLeaseHolder(holder)})...`,
-      }),
-    onHeartbeatProblem: (message) =>
-      options.out.emit({
-        type: "warning",
-        code: "LEASE_HEARTBEAT",
-        step: "gateway.lease",
-        message,
-      }),
-  });
-}
-
-/** A Gateway as the downgrade guard compares it with the live one. */
-export interface CandidateRelease extends ReleaseSource {
-  version: string;
-  /** Its SHA-256, once it is built. */
-  sha256?: string;
-}
+/** The lease purpose of each reason the Gateway is deployed. */
+const GATEWAY_LEASE_PURPOSES: Readonly<Record<ApplyReason, LeasePurpose>> = {
+  deploy: LeasePurpose.GatewayDeploy,
+  upgrade: LeasePurpose.GatewayUpgrade,
+  reconcile: LeasePurpose.GatewayReconcile,
+};
 
 /** What the guard knows of a release this run opened. */
 export function candidate(release: GatewayRelease): CandidateRelease {
@@ -220,9 +194,17 @@ export async function refuseOlderCheckout(
   install: InstallRecord,
   source: () => Promise<CandidateRelease>,
 ): Promise<void> {
-  const checkout = await source();
-  if (olderThanInstalled(checkout, install)) {
-    throw downgradeRefused(checkout, install);
+  refuseDowngrade(await source(), install);
+}
+
+/** Throw DOWNGRADE_REFUSED when `release` is older than the live Gateway. */
+export function refuseDowngrade(
+  release: CandidateRelease,
+  install: InstallRecord,
+  options: { allowDowngradeFlag?: boolean } = {},
+): void {
+  if (olderThanInstalled(release, install)) {
+    throw downgradeRefused(release, install, options);
   }
 }
 
@@ -232,7 +214,7 @@ export async function refuseOlderCheckout(
  * `setup` puts an older Gateway back on purpose, with --allow-downgrade
  * (`allowDowngradeFlag`), which an agent asks about first.
  */
-export function downgradeRefused(
+function downgradeRefused(
   release: CandidateRelease,
   install: InstallRecord,
   { allowDowngradeFlag = false }: { allowDowngradeFlag?: boolean } = {},
@@ -274,9 +256,8 @@ class DomainChecks {
   /** The domains the gateway publishes for these app hosts. */
   domainsFor(appHosts: readonly string[]): string[] {
     const { appBaseDomain, gatewayHost, out } = this.options;
-    const stray = appHosts.filter(
-      (host) => !isOneLabelBelow(host, appBaseDomain),
-    );
+    const published = publishedAppHosts(appHosts, appBaseDomain);
+    const stray = appHosts.filter((host) => !published.includes(host));
     const unwarned = stray.filter((host) => !this.warned.has(host));
     if (unwarned.length > 0) {
       out.emit({
@@ -286,10 +267,7 @@ class DomainChecks {
       });
       for (const host of unwarned) this.warned.add(host);
     }
-    return gatewayDomains({
-      gatewayHost,
-      appHosts: appHosts.filter((host) => !stray.includes(host)),
-    });
+    return gatewayDomains({ gatewayHost, appHosts: published });
   }
 
   async check(domains: readonly string[]): Promise<void> {
@@ -310,10 +288,10 @@ class DomainChecks {
 export async function applyGateway(
   options: ApplyGatewayOptions,
 ): Promise<ApplyGatewayResult> {
-  const { cf, out, reason, release, db } = options;
+  const { cf, reason, release, db } = options;
   const ownLease = options.heldLease
     ? null
-    : await acquireGatewayLease(options, `gateway.${reason}`);
+    : await acquireGatewayLease(options, GATEWAY_LEASE_PURPOSES[reason]);
   const lease = options.heldLease ?? ownLease!;
   // Once the database is migrated, a failure says how to put it back.
   let rollback: Rollback | null = null;
@@ -321,12 +299,8 @@ export async function applyGateway(
     // Only now is the install record the last deploy's for sure: another
     // upgrade may have finished while this one waited for the lease.
     const install = await readInstall(db);
-    if (
-      install &&
-      !options.allowDowngrade &&
-      olderThanInstalled(candidate(release), install)
-    ) {
-      throw downgradeRefused(candidate(release), install, {
+    if (install && !options.allowDowngrade) {
+      refuseDowngrade(candidate(release), install, {
         allowDowngradeFlag: options.allowDowngradeFlag,
       });
     }
@@ -363,10 +337,15 @@ export async function applyGateway(
       await assertReplaceable({
         cf,
         workerName: GATEWAY_WORKER_NAME,
+        shownAs: "the Gateway",
         recordedVersionIds: [install?.liveVersionId],
         interactive: options.interactive,
         confirm: options.confirm,
-        note: "If it runs a newer gateway release (an upgrade that stopped before recording itself), this replaces it with an older one.",
+        change: {
+          question: "Replace it?",
+          effect:
+            "Deploying replaces it, with an older release if it runs a newer one (an upgrade that stopped before recording itself).",
+        },
       });
       await lease.check();
       rollback = await migrate(options);
@@ -413,9 +392,9 @@ async function migrate({
     step: "gateway.migrations",
     status: "ok",
     message: result.applied.length > 0
-      ? `Applied ${result.applied.length} migration${result.applied.length === 1 ? "" : "s"}.${result.rollback ? ` Restore point saved; to undo: ${result.rollback.restoreCommand}` : ""}`
+      ? `Applied ${plural(result.applied.length, "migration")}.${restorePointNote(result.rollback)}`
       : "The gateway's database is up to date.",
-    data: { applied: result.applied, fresh: result.fresh, ...result.rollback },
+    data: migrationEventData(result),
   });
   return result.rollback;
 }
@@ -460,7 +439,7 @@ async function deploy(
     type: "step",
     step: "gateway.deploy",
     status: "start",
-    message: `Deploying gateway ${release.manifest.version} with ${desired.appWorkers.length} app${desired.appWorkers.length === 1 ? "" : "s"}...`,
+    message: `Deploying gateway ${release.manifest.version} with ${plural(desired.appWorkers.length, "app")}...`,
     data: { appWorkers: desired.appWorkers, domains },
   });
   // A Worker without a version yet gets a new identity key pair and its
@@ -551,10 +530,7 @@ async function withPatchedRelease<T>(
 ): Promise<T> {
   // cf runs in this copy, so it lives where no one else can plant a
   // cloudflare.config.ts above it (lib/cf/privateDir.ts).
-  const workdir = await makeCfTempDir("gateway-deploy-");
-  const forget = onInterrupt({
-    sync: () => rmSync(workdir, { recursive: true, force: true }),
-  });
+  const { dir: workdir, cleanup } = await privateTempDir("gateway-deploy-");
   try {
     await fs.cp(options.release.dir, workdir, { recursive: true });
     await patchGatewayBuildOutput(workdir, {
@@ -568,14 +544,11 @@ async function withPatchedRelease<T>(
       appBaseDomain: options.appBaseDomain,
       appWorkers: apps.appWorkers,
       // Only hosts one label below the base: see DomainChecks.domainsFor.
-      appHosts: apps.appHosts.filter((host) =>
-        isOneLabelBelow(host, options.appBaseDomain),
-      ),
+      appHosts: publishedAppHosts(apps.appHosts, options.appBaseDomain),
     });
     return await use(workdir);
   } finally {
-    await fs.rm(workdir, { recursive: true, force: true });
-    forget();
+    await cleanup();
   }
 }
 
@@ -635,13 +608,4 @@ function installRecord(
     updatedAt: Date.now(),
     updatedBy: `everyapp ${options.cliVersion} on ${os.hostname()}`,
   };
-}
-
-/** Thrown when an install row is required but this gateway has none. */
-export function notDeployedByEveryapp(): EveryAppError {
-  return new EveryAppError(
-    "GATEWAY_NOT_INSTALLED",
-    `This account has the Gateway's database, but no install record: its install stopped before it could write one. Finish installing it: ${CLI} setup --domain <hostname>`,
-    { rerun: `${CLI} setup --domain <hostname>` },
-  );
 }

@@ -25,25 +25,25 @@
 import { appBindingName } from "@every-app/perimeter/manifest";
 import {
   assertSharedApps,
+  awaitLive,
   bindIfNeeded,
   gatewayFor,
+  registerFromManifest,
   type ReconcileSeams,
-} from "@/commands/deploy/deployApp";
-import { waitForLive, type LiveWaitSeams } from "@/commands/deploy/steps/waitForLive";
-import { deviceLoginAction } from "@/lib/cf/account";
-import { canPromptInTerminal } from "@/lib/cf/deploy";
+} from "@/commands/appGateway";
+import type { LiveWaitSeams } from "@/commands/deploy/steps/waitForLive";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
-import { isOneLabelBelow } from "@/lib/domains/hostnames";
-import { preflightDomains } from "@/lib/domains/preflight";
+import { preflightAppHost } from "@/lib/domains/preflight";
 import { EveryAppError } from "@/lib/errors";
 import { refuseOlderCheckout } from "@/lib/gateway/apply";
 import { connectToGateway } from "@/lib/gateway/connect";
-import { acquireLease, describeLeaseHolder } from "@/lib/gateway/lease";
-import { markDeployed, register } from "@/lib/gateway/registry";
+import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
+import { markDeployed } from "@/lib/gateway/registry";
 import { loadEveryAppManifestFile } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
+import { canPromptInTerminal } from "@/lib/output/prompt";
 
 interface RegisterAppOptions {
   appId: string;
@@ -103,7 +103,7 @@ export async function registerApp(
       gateway: options.gateway,
       accountId: options.accountId,
       interactive,
-      onDeviceLogin: options.json ? deviceLoginAction(out, "app.login") : undefined,
+      login: { json: options.json, out, step: "app.login" },
       createCf: options.createCf,
     });
   const gateway = gatewayFor(options.reconcile, out, options.verbose);
@@ -127,17 +127,11 @@ export async function registerApp(
   const versionId = deployment.versionId;
 
   // 3. Register under the name the rules give it, which must be this Worker.
-  const { plan, organization } = await register(registry, {
-    appSlug: appId,
-    name: manifest.name ?? appId,
-    description: manifest.description ?? appId,
-    manifest,
-    appBaseDomain: install.appBaseDomain,
-    deployer,
-    organizationName: accountName ?? "",
-    scope: "shared",
-    expectedWorkerName: workerName,
-  });
+  const { plan, organization } = await registerFromManifest(
+    registry,
+    { manifest, install, deployer, accountName },
+    { scope: "shared", expectedWorkerName: workerName },
+  );
   const hostname = plan.app.hostname!;
   const isNew = plan.kind !== "existing";
   out.emit({
@@ -169,36 +163,21 @@ export async function registerApp(
     },
   });
 
-  const outsideBase = !isOneLabelBelow(hostname, install.appBaseDomain);
-  const newHost = !outsideBase && !install.liveDomains.includes(hostname);
-  if (newHost) {
-    await preflightDomains({
-      cf,
-      out,
-      step: "app.domain",
-      zone: { id: install.zoneId, name: install.zoneName },
-      domains: [...install.liveDomains, hostname],
-      liveDomains: install.liveDomains,
-      forceDns: options.forceDns,
-      cfAsks: interactive && out.verbose,
-    });
-  }
+  const { outsideBase, newHost } = await preflightAppHost({
+    cf,
+    out,
+    install,
+    hostname,
+    forceDns: options.forceDns,
+    cfAsks: interactive && out.verbose,
+  });
 
   // 4. Record the live version (one deploy or register of the app at a
   // time), bind, publish and go live.
-  const lease = await acquireLease({
-    db: registry,
-    id: `app:${workerName}`,
-    purpose: "app.register",
-    onWait: (holder) =>
-      out.emit({
-        type: "progress",
-        step: "app.lease",
-        message: `Waiting for another deploy of ${appId} to finish (${describeLeaseHolder(holder)})...`,
-      }),
-    onHeartbeatProblem: (message) =>
-      out.emit({ type: "warning", code: "LEASE_HEARTBEAT", step: "app.lease", message }),
-  });
+  const lease = await acquireAppLease(
+    { db: registry, out },
+    { workerName, appId, purpose: LeasePurpose.AppRegister },
+  );
   try {
     await markDeployed(registry, plan.app.id, {
       versionId,
@@ -232,25 +211,16 @@ export async function registerApp(
       data: { hostname },
     });
   }
-  const live =
-    wait &&
-    (await waitForLive({
-      db: registry,
-      appRowId: plan.app.id,
-      appId,
-      hostname,
-      out,
-      ...options.live,
-    })) === "live";
-  if (live) {
-    out.emit({
-      type: "step",
-      step: "app.live",
-      status: "ok",
-      message: `${appId} is live at https://${hostname}, through ${appBindingName(workerName)}.`,
-      data: { hostname, url: `https://${hostname}` },
-    });
-  }
+  const live = await awaitLive({
+    wait,
+    db: registry,
+    appRowId: plan.app.id,
+    appId,
+    hostname,
+    out,
+    seams: options.live,
+    message: `${appId} is live at https://${hostname}, through ${appBindingName(workerName)}.`,
+  });
   return {
     liveUrl: `https://${hostname}`,
     organizationId: organization.id,

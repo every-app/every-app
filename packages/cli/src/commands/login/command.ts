@@ -1,5 +1,5 @@
 import { buildCommand } from "@stricli/core";
-import { jsonFlag } from "../flags";
+import { jsonFlag, verboseFlag } from "../flags";
 
 export const loginCommand = buildCommand({
   loader: async () => {
@@ -10,6 +10,7 @@ export const loginCommand = buildCommand({
     positional: { kind: "tuple", parameters: [] },
     flags: {
       json: jsonFlag,
+      verbose: verboseFlag,
     },
   },
   docs: {

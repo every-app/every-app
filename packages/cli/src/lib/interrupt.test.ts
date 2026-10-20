@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { acquireLease, readLease } from "@/lib/gateway/lease";
+import { LeasePurpose, readLease } from "@/lib/gateway/lease";
+import { holdLease } from "@/test/holdLease";
 import { createSqliteD1 } from "@/test/sqliteD1";
 import { handleInterrupt, onInterrupt, sayOnInterrupt, trackChild } from "./interrupt";
 
@@ -47,7 +48,7 @@ describe("interrupts", () => {
       await handleInterrupt("SIGINT", { exit: () => undefined });
       unsay();
       expect(stderr.mock.calls.map(([text]) => String(text).replace(/\x1b\[[0-9;]*m/g, ""))).toEqual([
-        "\nStopping the local migrations... (Ctrl+C again to quit at once)\n",
+        "\nStopping the local migrations (Ctrl+C again to quit at once)...\n",
       ]);
     } finally {
       stderr.mockRestore();
@@ -182,7 +183,7 @@ describe("interrupts", () => {
 
   it("free a held deploy lease and remove a temporary file", async () => {
     const db = createSqliteD1();
-    await acquireLease({ db, id: "gateway", purpose: "gateway.upgrade", heartbeatMs: 0 });
+    await holdLease(db, "gateway", LeasePurpose.GatewayUpgrade);
     const app = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-interrupt-app-"));
     const file = path.join(app, "secrets.json");
     fs.writeFileSync(file, "{}");
@@ -258,7 +259,9 @@ await cfDeploy({ cf, cwd: ${JSON.stringify(work)}, workerName: "every-app-gatewa
         everyapp.kill("SIGINT");
 
         expect(await exited).toBe(130);
-        expect(stderr).toContain("Interrupted");
+        // What it stops, then that it stopped.
+        expect(stderr).toContain("Stopping cf (Ctrl+C again to quit at once)...");
+        expect(stderr).toContain("Stopped.");
         await waitFor(() => !isAlive(pid));
         expect(fs.existsSync(secrets)).toBe(false);
       } finally {

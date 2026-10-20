@@ -1,5 +1,18 @@
 import { buildCommand, buildRouteMap } from "@stricli/core";
-import { accountFlag, gatewayFlag, resultJsonFlag } from "../flags";
+import { accountFlag, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
+
+/** An instance status as --status takes it (kebab-case), and as Cloudflare names it. */
+export const INSTANCE_STATUSES = {
+  queued: "queued",
+  running: "running",
+  paused: "paused",
+  waiting: "waiting",
+  "waiting-for-pause": "waitingForPause",
+  errored: "errored",
+  terminated: "terminated",
+  complete: "complete",
+  "rolling-back": "rollingBack",
+} as const;
 
 const workflowArgument = {
   brief: "The Workflow: its binding in everyapp.config.ts, its class or its name",
@@ -14,7 +27,8 @@ const instanceArgument = {
 const workflowFlags = {
   gateway: gatewayFlag,
   "account-id": accountFlag,
-  json: resultJsonFlag,
+  json: jsonFlag,
+  verbose: verboseFlag,
 } as const;
 
 const listCommand = buildCommand({
@@ -42,17 +56,7 @@ const instancesCommand = buildCommand({
       ...workflowFlags,
       status: {
         kind: "enum",
-        values: [
-          "queued",
-          "running",
-          "paused",
-          "waiting",
-          "waitingForPause",
-          "errored",
-          "terminated",
-          "complete",
-          "rollingBack",
-        ],
+        values: Object.keys(INSTANCE_STATUSES) as Array<keyof typeof INSTANCE_STATUSES>,
         brief: "Only instances with this status",
         optional: true,
       },

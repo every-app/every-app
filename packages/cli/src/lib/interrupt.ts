@@ -25,13 +25,33 @@
  * Callers unregister a cleanup only once their own cleanup has finished:
  * stopping cf wakes up the code that was waiting for it, and its `finally`
  * may still be running when everyapp exits.
+ *
+ * What a person sees is the run's sink's to draw (lib/output/events.ts
+ * registers with `onInterruptNotice`): a line built from what is being
+ * stopped and cleaned up ("Stopping cf and freeing todo for other runs"),
+ * from the running cf children and the cleanups' `label`s (one without a
+ * label, like removing a temporary file, isn't worth saying), then a last
+ * line: the newest cleanup's `closing`, if it has one, else "Stopped."
  */
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ChildProcess } from "node:child_process";
-import chalk from "chalk";
+import { signalChild } from "@/lib/longRunning";
 import { handTerminalOver } from "@/lib/output/terminal";
+import { capitalize } from "@/lib/output/text";
 
 interface Cleanup {
+  /**
+   * What it does, for a person: "freeing todo for other runs". Read when
+   * the signal comes, so a command may change it as it goes ("stopping the
+   * local migrations").
+   */
+  label?: string;
+  /**
+   * The run's last line once it stopped, if this cleanup knows better than
+   * "Stopped." (what state a deploy was left in); "" when the command says
+   * its own.
+   */
+  closing?: () => string | undefined;
   /** Must not wait: runs even when the async ones are cut short. */
   sync?: () => void;
   /** Best effort, bounded by {@link ASYNC_CLEANUP_MS}. */
@@ -49,7 +69,16 @@ const CHILD_EXIT_MS = 3_000;
 const ASYNC_CLEANUP_MS = 10_000;
 const SIGNALS = ["SIGINT", "SIGTERM"] as const;
 
+/** How the run's sink shows an interrupt. */
+interface InterruptNotice {
+  /** Stopping began: `message` says what is stopped and cleaned up. */
+  stopping(message: string): void;
+  /** Everything stopped; `closing` is the last line. */
+  stopped(closing: string): void;
+}
+
 const children = new Set<TrackedChild>();
+const notices = new Set<InterruptNotice>();
 const cleanups = new Set<Cleanup>();
 const cleanedUp = new WeakSet<Cleanup>();
 // Set while the interrupt's own cleanups run.
@@ -104,6 +133,40 @@ export function onInterrupt(cleanup: Cleanup): () => void {
   };
 }
 
+/** The run's sink shows interrupts; returns how to stop. */
+export function onInterruptNotice(notice: InterruptNotice): () => void {
+  notices.add(notice);
+  return () => notices.delete(notice);
+}
+
+/** "Stopping cf and freeing todo for other runs", from what's running and registered. */
+function stoppingMessage(): string {
+  const labels = [...new Set([...cleanups].flatMap((cleanup) => (cleanup.label ? [cleanup.label] : [])))];
+  // cf is what a cleanup that says it stops something stops.
+  const doing = [
+    ...(children.size > 0 && !labels.some((label) => label.startsWith("stopping ")) ? ["stopping cf"] : []),
+    ...labels,
+  ];
+  if (doing.length === 0) return "Stopping";
+  const said =
+    doing.length === 1 ? doing[0]! : `${doing.slice(0, -1).join(", ")} and ${doing.at(-1)}`;
+  return capitalize(said);
+}
+
+/** The newest cleanup's closing line, else "Stopped." */
+function closingLine(registered: readonly Cleanup[]): string {
+  for (const cleanup of [...registered].reverse()) {
+    const closing = cleanup.closing?.();
+    if (closing !== undefined) return closing;
+  }
+  return "Stopped.";
+}
+
+function tell(how: (notice: InterruptNotice) => void, fallback: string): void {
+  if (notices.size === 0) process.stderr.write(fallback);
+  for (const notice of notices) how(notice);
+}
+
 function updateHandlers(): void {
   const needed = children.size > 0 || cleanups.size > 0;
   if (needed === installed || interrupted) return;
@@ -137,13 +200,16 @@ export async function handleInterrupt(
   interrupted = true;
   // A spinner would be drawn over what follows.
   handTerminalOver();
-  process.stderr.write(
-    saying === undefined
-      ? "\nInterrupted: stopping cf, recording what it uploaded, removing temporary files and freeing the deploy lease (Ctrl+C again to quit at once)...\n"
-      : saying
-        ? `\n${chalk.dim(`Stopping ${saying}... (Ctrl+C again to quit at once)`)}\n`
-        : "\n",
-  );
+  // What the command said it stops (sayOnInterrupt; "" for nothing), else
+  // what's running and registered.
+  // A command that says what it stops (sayOnInterrupt) says its own last line too.
+  const said = saying;
+  const message = said === undefined ? stoppingMessage() : said ? `Stopping ${said}` : "";
+  if (message) {
+    tell((notice) => notice.stopping(message), `\n${message} (Ctrl+C again to quit at once)...\n`);
+  }
+  // The closing line is decided by what was registered when stopping began.
+  const registered = [...cleanups];
 
   const running = [...children];
   for (const tracked of running) send(tracked, signal);
@@ -158,6 +224,10 @@ export async function handleInterrupt(
   // What the interrupted code registered meanwhile (a secrets file it
   // went on to write).
   runSyncCleanups();
+  if (said === undefined) {
+    const closing = closingLine(registered);
+    tell((notice) => notice.stopped(closing), closing ? `${closing}\n` : "");
+  }
   exit(code);
 }
 
@@ -187,14 +257,7 @@ function runSyncCleanups(): void {
 }
 
 function send({ child, group }: TrackedChild, signal: NodeJS.Signals): void {
-  const pid = child.pid;
-  if (pid === undefined) return;
-  try {
-    if (group) process.kill(-pid, signal);
-    else child.kill(signal);
-  } catch {
-    // Already gone.
-  }
+  signalChild(child, group, signal);
 }
 
 async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
@@ -213,6 +276,7 @@ async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boo
 export function resetInterruptsForTests(): void {
   children.clear();
   cleanups.clear();
+  notices.clear();
   interrupted = false;
   saying = undefined;
   updateHandlers();

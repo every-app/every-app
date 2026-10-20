@@ -23,10 +23,9 @@
  * Commands take a {@link CfRunner} so tests can swap in `FakeCf`.
  */
 import { spawn } from "node:child_process";
-import { rmSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { onInterrupt, trackChild } from "@/lib/interrupt";
+import { trackChild } from "@/lib/interrupt";
 import {
   PROCESS_GROUPS,
   spawnLongRunning,
@@ -34,6 +33,7 @@ import {
   type LongRunningProcess,
 } from "@/lib/longRunning";
 import { handTerminalOver } from "@/lib/output/terminal";
+import { outputTail } from "@/lib/output/text";
 import type { z } from "zod";
 import { resolveCfBinary, type CfBinary } from "./bin";
 import {
@@ -46,7 +46,7 @@ import {
 import {
   CF_FILES_PREFIX,
   cfNeutralDir,
-  makeCfTempDir,
+  privateTempDir,
   thisNodeBinDir,
 } from "./privateDir";
 import { assertToolchainNode, runsPackageManager } from "./toolchain";
@@ -174,10 +174,7 @@ export function createCfRunner(options: CfRunnerOptions = {}): CfRunner {
           watchdogIdleMs: call.local ? idleMs : undefined,
         });
       } finally {
-        if (files) {
-          await fs.rm(files.dir, { recursive: true, force: true });
-          files.forget();
-        }
+        await files?.remove();
       }
     },
 
@@ -219,6 +216,29 @@ export async function runCfJson<T>(
   return validated.data;
 }
 
+/** Every page of an account-plane list command, `perPage` at a time, up to `maxPages`. */
+export async function listAll<T>(
+  cf: CfRunner,
+  args: readonly string[],
+  schema: z.ZodType<T[]>,
+  { perPage, maxPages }: { perPage: number; maxPages: number },
+): Promise<T[]> {
+  const items: T[] = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const batch = await runCfJson(
+      cf,
+      {
+        plane: "account",
+        args: [...args, "--per-page", String(perPage), "--page", String(page)],
+      },
+      schema,
+    );
+    items.push(...batch);
+    if (batch.length < perPage) break;
+  }
+  return items;
+}
+
 async function workingDirectory(call: CfCall): Promise<string> {
   if (call.plane === "project") {
     if (!call.cwd) throw new Error("project-plane cf calls need a cwd");
@@ -229,17 +249,13 @@ async function workingDirectory(call: CfCall): Promise<string> {
 
 /**
  * Write `files` to a new private directory, which goes even when everyapp
- * is interrupted: call `forget` once it's removed.
+ * is interrupted: call `remove` once they're used.
  */
 async function writePrivateFiles(files: Record<string, string | object>): Promise<{
-  dir: string;
   paths: Record<string, string>;
-  forget: () => void;
+  remove: () => Promise<void>;
 }> {
-  const dir = await makeCfTempDir(CF_FILES_PREFIX);
-  const forget = onInterrupt({
-    sync: () => rmSync(dir, { recursive: true, force: true }),
-  });
+  const { dir, cleanup } = await privateTempDir(CF_FILES_PREFIX);
   const paths: Record<string, string> = {};
   try {
     for (const [name, content] of Object.entries(files)) {
@@ -252,11 +268,10 @@ async function writePrivateFiles(files: Record<string, string | object>): Promis
       paths[name] = file;
     }
   } catch (error) {
-    await fs.rm(dir, { recursive: true, force: true });
-    forget();
+    await cleanup();
     throw error;
   }
-  return { dir, paths, forget };
+  return { paths, remove: cleanup };
 }
 
 interface SpawnCfOptions {
@@ -312,7 +327,7 @@ function spawnCf(options: SpawnCfOptions): Promise<CfResult> {
         : setTimeout(() => {
             stopChild(child, !interactive && PROCESS_GROUPS);
             finish(() =>
-              reject(new CfTimeoutError(command, timeoutMs, lastLine(stderr))),
+              reject(new CfTimeoutError(command, timeoutMs, outputTail(stderr).at(-1)?.trim())),
             );
           }, timeoutMs);
 
@@ -328,16 +343,16 @@ function spawnCf(options: SpawnCfOptions): Promise<CfResult> {
       }, options.watchdogIdleMs);
     };
 
-    child.stdout?.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString();
-      options.onOutput?.(chunk.toString());
-      watch();
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString();
-      options.onOutput?.(chunk.toString());
-      watch();
-    });
+    for (const [stream, append] of [
+      [child.stdout, (text: string) => (stdout += text)],
+      [child.stderr, (text: string) => (stderr += text)],
+    ] as const) {
+      stream?.on("data", (chunk: Buffer) => {
+        append(chunk.toString());
+        options.onOutput?.(chunk.toString());
+        watch();
+      });
+    }
 
     child.once("error", (error) => finish(() => reject(error)));
     child.once("close", (code) => {
@@ -379,14 +394,6 @@ function isCompleteJson(text: string): boolean {
   } catch {
     return false;
   }
-}
-
-function lastLine(text: string): string | undefined {
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .at(-1);
 }
 
 function describe(args: CfCall["args"]): string {

@@ -9,6 +9,7 @@
  * probe back from a hostname that already works.
  */
 import { Agent, fetch as undiciFetch } from "undici";
+import { errorMessage } from "@/lib/errors";
 import { lookup } from "./authoritativeDns";
 
 const PROBE_TIMEOUT_MS = 10_000;
@@ -54,7 +55,7 @@ function causes(error: unknown): unknown[] {
 function kindOf(error: unknown): NoAnswerKind {
   const chain = causes(error);
   const codes = chain.map((at) => String((at as { code?: unknown } | null)?.code ?? ""));
-  const text = chain.map((at) => (at instanceof Error ? at.message : String(at))).join("\n");
+  const text = chain.map(errorMessage).join("\n");
   if (codes.some((code) => DNS_CODES.has(code)) || /\b(ENOTFOUND|EAI_AGAIN|ENODATA)\b/.test(text)) {
     return "dns";
   }
@@ -85,7 +86,7 @@ function reasonFor(error: unknown): string {
     error instanceof Error && error.cause instanceof Error
       ? error.cause
       : error;
-  return cause instanceof Error ? cause.message : String(cause);
+  return errorMessage(cause);
 }
 
 /** GET `url` once, without following redirects. */

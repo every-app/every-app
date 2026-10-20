@@ -17,18 +17,13 @@ import {
   APP_BINDING_PREFIX,
   appBindingName,
 } from "@every-app/perimeter/manifest";
+import { DEFAULT_WORKER, WORKERS_DIR } from "@/lib/app/buildOutput";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { EveryAppError } from "@/lib/errors";
 
-export const GATEWAY_WORKER_CONFIG = path.join(
-  ".cloudflare",
-  "output",
-  "v0",
-  "workers",
-  "default",
-  "worker.config.json",
-);
-const BUNDLE_DIR = path.join(".cloudflare", "output", "v0", "workers", "default", "bundle");
+const GATEWAY_WORKER_DIR = path.join(WORKERS_DIR, DEFAULT_WORKER);
+export const GATEWAY_WORKER_CONFIG = path.join(GATEWAY_WORKER_DIR, "worker.config.json");
+const BUNDLE_DIR = path.join(GATEWAY_WORKER_DIR, "bundle");
 const PATCH_PLACEHOLDER = "__EVERYAPP_PATCH__";
 const GATEWAY_D1_NAME = "every-app-gateway";
 

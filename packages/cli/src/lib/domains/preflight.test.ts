@@ -98,7 +98,9 @@ describe("preflightDomains", () => {
       });
     await expect(run(denied()).result).rejects.toMatchObject({
       code: "DNS_UNREADABLE",
-      message: expect.stringContaining("Zone → DNS → Read"),
+      fix: "give the API token Zone → DNS → Read",
+      rerun: expect.stringMatching(/ --force-dns$/),
+      authorize: true,
     });
     await expect(run(denied(), { forceDns: true }).result).resolves.toEqual([
       "todo.apps.example.com",

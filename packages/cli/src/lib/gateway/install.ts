@@ -13,6 +13,9 @@
  * run that stops there resumes from it.
  */
 import type { D1Database } from "@/lib/cf/d1";
+import { EveryAppError } from "@/lib/errors";
+import { CLI } from "@/lib/output/command";
+import { textOrNull } from "@/lib/output/text";
 import type { ReleaseOrder } from "./release";
 import { DEPLOYMENT_MODES, type DeploymentMode } from "./secretsFile";
 
@@ -86,13 +89,19 @@ function list(value: unknown): string[] {
   }
 }
 
-const text = (value: unknown): string | null =>
-  typeof value === "string" && value ? value : null;
-
 const mode = (value: unknown): DeploymentMode | null =>
   (DEPLOYMENT_MODES as readonly unknown[]).includes(value)
     ? (value as DeploymentMode)
     : null;
+
+/** Thrown when an install row is required but this gateway has none. */
+export function notDeployedByEveryapp(): EveryAppError {
+  return new EveryAppError(
+    "GATEWAY_NOT_INSTALLED",
+    "The Gateway's first install stopped partway\nThis account has its database, but the install never recorded its address.",
+    { rerun: `${CLI} setup --domain <hostname>` },
+  );
+}
 
 /** The install row, or null before the CLI first deployed this gateway. */
 export async function readInstall(
@@ -122,13 +131,13 @@ export async function readInstall(
       schema: Number(row["release_schema"]),
       committedAt: Number(row["release_committed_at"]),
     },
-    sourceTreeSha256: text(row["source_tree_sha256"]),
-    liveVersionId: text(row["live_version_id"]),
+    sourceTreeSha256: textOrNull(row["source_tree_sha256"]),
+    liveVersionId: textOrNull(row["live_version_id"]),
     liveDomains: list(row["live_domains"]),
     liveAppWorkers: list(row["live_app_workers"]),
     updatedAt: Number(row["updated_at"]),
-    updatedBy: text(row["updated_by"]),
-    jwtPublicKey: text(row["jwt_public_key"]),
+    updatedBy: textOrNull(row["updated_by"]),
+    jwtPublicKey: textOrNull(row["jwt_public_key"]),
     deploymentMode: mode(row["deployment_mode"]),
   };
 }

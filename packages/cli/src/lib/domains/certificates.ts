@@ -9,39 +9,22 @@
  * all) without an active certificate, and `everyapp status` reads which
  * hostnames have an active one.
  */
-import { CfError } from "@/lib/cf/errors";
-import { runCfJson, type CfRunner } from "@/lib/cf/runner";
+import { isCfError } from "@/lib/cf/errors";
+import { listAll, type CfRunner } from "@/lib/cf/runner";
 import { CertificatePackListOutput } from "@/lib/cf/schemas";
+import { errorMessage } from "@/lib/errors";
 import type { EventSink } from "@/lib/output/events";
 
 const PACK_PAGE_SIZE = 50;
 const MAX_PACK_PAGES = 20;
 
-async function listCertificatePacks(cf: CfRunner, zoneId: string) {
-  const packs = [];
-  for (let page = 1; page <= MAX_PACK_PAGES; page += 1) {
-    const batch = await runCfJson(
-      cf,
-      {
-        plane: "account",
-        args: [
-          "ssl",
-          "certificate-packs",
-          "list",
-          "-z",
-          zoneId,
-          "--per-page",
-          String(PACK_PAGE_SIZE),
-          "--page",
-          String(page),
-        ],
-      },
-      CertificatePackListOutput,
-    );
-    packs.push(...batch);
-    if (batch.length < PACK_PAGE_SIZE) break;
-  }
-  return packs;
+function listCertificatePacks(cf: CfRunner, zoneId: string) {
+  return listAll(
+    cf,
+    ["ssl", "certificate-packs", "list", "-z", zoneId],
+    CertificatePackListOutput,
+    { perPage: PACK_PAGE_SIZE, maxPages: MAX_PACK_PAGES },
+  );
 }
 
 type CertificatePack = Awaited<ReturnType<typeof listCertificatePacks>>[number];
@@ -149,7 +132,7 @@ export async function deleteHostCertificates({
         });
         deleted.push(pack.id);
       } catch (error) {
-        if (!(error instanceof CfError && error.kind === "not_found")) throw error;
+        if (!isCfError(error, "not_found")) throw error;
       }
     }
   } catch (error) {
@@ -157,7 +140,7 @@ export async function deleteHostCertificates({
       type: "warning",
       code: "CERT_CLEANUP_FAILED",
       step,
-      message: `Couldn't remove ${hostname}'s certificate (${error instanceof Error ? error.message : String(error)}). It serves nothing now; delete it in the Cloudflare dashboard (SSL/TLS → Edge Certificates) if you like.`,
+      message: `Couldn't remove ${hostname}'s certificate (${errorMessage(error)}). It serves nothing now; delete it in the Cloudflare dashboard (SSL/TLS → Edge Certificates) if you like.`,
     });
     return deleted;
   }

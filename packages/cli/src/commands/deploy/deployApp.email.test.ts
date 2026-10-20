@@ -379,7 +379,7 @@ describe("deploy of an app that receives mail", () => {
       },
     });
     expect(asked).toEqual([
-      "Turn on Email Routing for example.com, mail.example.com? Cloudflare adds and locks their MX and SPF records, so mail for them goes to Cloudflare from then on.",
+      "Turn on Email Routing for example.com, mail.example.com?",
     ]);
     expect(account.emailRoutingOf("zone-1").enabled).toBe(true);
   });
@@ -397,7 +397,9 @@ describe("deploy of an app that receives mail", () => {
 
     await expect(deploy()).rejects.toMatchObject({
       code: "EMAIL_ADDRESS_TAKEN",
-      message: expect.stringContaining("Remove that rule, or take another address, then run this again."),
+      message: expect.stringMatching(/^support@mail\.example\.com is delivered elsewhere\n/),
+      fix: "remove that rule, or take another address",
+      rerun: expect.stringMatching(/^pnpm everyapp/),
     });
     expect(inboxUploads()).toEqual([]);
     expect(account.emailRoutingOf("zone-1").catchAll.actions).toEqual([{ type: "drop" }]);
@@ -426,7 +428,9 @@ describe("deploy of an app that receives mail", () => {
         }),
       ).rejects.toMatchObject({
         code: "EMAIL_ADDRESS_TAKEN",
-        message: `support@mail.example.com is routed to ${WORKER}: another app recorded it. Take another address, or remove it from that app first (everyapp email unset --inbound, in its directory).`,
+        message: `support@mail.example.com is another app's\nIt is routed to ${WORKER}. Take another address, or remove it from that app first.`,
+        rerun: "pnpm everyapp email unset --inbound",
+        rerunNote: "in that app's directory",
       });
       expect(account.deploys.some((upload) => upload.workerName === "every-acme-helpdesk")).toBe(false);
     } finally {
@@ -441,7 +445,8 @@ describe("deploy of an app that receives mail", () => {
     routing.catchAll = { ...routing.catchAll, actions: [{ type: "forward", value: ["all@vendor.com"] }] };
     await expect(deploy()).rejects.toMatchObject({
       code: "EMAIL_CATCH_ALL_TAKEN",
-      message: expect.stringContaining("or set the app's addresses one by one instead, then run this again."),
+      fix: expect.stringContaining("or set the app's addresses one by one instead"),
+      rerun: expect.stringMatching(/^pnpm everyapp/),
     });
     expect(inboxUploads()).toEqual([]);
   });
@@ -451,12 +456,12 @@ describe("deploy of an app that receives mail", () => {
     await seed({ inbound: ["hi@elsewhere.net"] });
     await expect(deploy()).rejects.toMatchObject({
       code: "EMAIL_ZONE_NOT_FOUND",
-      message: expect.stringContaining("or take the address out of the app's inbound addresses."),
+      fix: expect.stringContaining("or take the address out of the app's inbound addresses"),
     });
     await setEmail({ inbound: ["*@mail.example.com"] });
     await expect(deploy()).rejects.toMatchObject({
       code: "EMAIL_CATCH_ALL_NOT_APEX",
-      message: expect.stringContaining("Set each address on mail.example.com instead (--inbound support@mail.example.com)."),
+      fix: "set each address on mail.example.com instead (--inbound support@mail.example.com)",
     });
     expect(inboxUploads()).toEqual([]);
   });

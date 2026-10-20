@@ -9,7 +9,8 @@ import { applyEmailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
 import { discoverGateway } from "@/lib/gateway/discover";
-import { acquireLease } from "@/lib/gateway/lease";
+import { LeasePurpose } from "@/lib/gateway/lease";
+import { holdLease } from "@/test/holdLease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { markDeployed, register, writeAppEmail } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
@@ -17,7 +18,7 @@ import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
-import type { CheckoutSource } from "@/lib/gateway/checkoutRelease";
+import type { CandidateRelease } from "@/lib/gateway/release";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
@@ -124,7 +125,7 @@ async function found(cloudflare = account) {
 }
 
 /** This checkout's Gateway, as status reads it; a test can change it. */
-let checkout: (() => Promise<CheckoutSource>) | null;
+let checkout: (() => Promise<CandidateRelease>) | null;
 
 async function status() {
   events = [];
@@ -354,7 +355,7 @@ describe("everyapp status", () => {
     await deployed("board", { bind: false });
     // chef's Worker deleted by hand; a deploy running; the owner claimed.
     account.workers.delete("every-acme-chef");
-    await acquireLease({ db: db(), id: "app:every-acme-todo", purpose: "app.deploy", heartbeatMs: 0 });
+    await holdLease(db(), "app:every-acme-todo", LeasePurpose.AppDeploy, "todo");
     new GatewayWorker(account).claim(
       (await mintSetupLink({ db: db(), gatewayUrl: "https://example.com" })).url,
     );

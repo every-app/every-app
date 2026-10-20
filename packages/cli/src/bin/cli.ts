@@ -1,29 +1,89 @@
 #!/usr/bin/env node
+import chalk from "chalk";
 import { run } from "@stricli/core";
 import { buildContext } from "@/context";
-import { app, rootHelp } from "@/app";
-import { EveryAppError } from "@/lib/errors";
+import { buildApp, groupHelp, rootHelp, versionLine } from "@/app";
 import { requestedExitCode } from "@/lib/exit-code";
+import type { EventSink } from "@/lib/output/events";
 import { reportFailure } from "@/lib/output/report";
 import { eventSink } from "@/lib/output/run";
-import { unsupportedRuntimeReason } from "@/lib/runtime";
+import { colorEnabled } from "@/lib/output/terminal";
+import { unsupportedRuntime } from "@/lib/runtime";
 
-// Refuse before any command starts a child that would fail obscurely,
-// through the one error path every command reports through.
-const runtimeProblem = unsupportedRuntimeReason();
-if (runtimeProblem) {
-  const out = eventSink(process.argv.includes("--json"));
-  reportFailure(out, new EveryAppError("UNSUPPORTED_RUNTIME", runtimeProblem));
-  process.exitCode = out.exitCode;
-} else if (isRootHelp(process.argv.slice(2))) {
-  process.stdout.write(rootHelp());
-} else {
-  await run(app, process.argv.slice(2), buildContext(process));
-  const exitCode = requestedExitCode();
-  if (exitCode !== undefined) process.exitCode = exitCode;
+/**
+ * What everyapp reads from the arguments before any command does: `--json`
+ * (stays for the command; parse errors are NDJSON then too) and the global
+ * `--no-color` (taken out: no command declares it). Arguments after `--`
+ * are a command's own.
+ */
+function globalOptions(argv: readonly string[]): {
+  args: string[];
+  json: boolean;
+  noColor: boolean;
+} {
+  const end = argv.indexOf("--");
+  const options = end < 0 ? argv : argv.slice(0, end);
+  return {
+    args: argv.filter((arg, index) => arg !== "--no-color" || (end >= 0 && index > end)),
+    json: options.includes("--json"),
+    noColor: options.includes("--no-color"),
+  };
 }
 
-/** No command, or just --help: everyapp's own overview, grouped. */
-function isRootHelp(args: readonly string[]): boolean {
-  return args.length === 0 || (args.length === 1 && (args[0] === "--help" || args[0] === "-h"));
+const { args, json, noColor } = globalOptions(process.argv.slice(2));
+const color = colorEnabled(noColor);
+if (!color) chalk.level = 0;
+// What everyapp runs (cf attached to the terminal) doesn't color either.
+if (noColor) process.env["NO_COLOR"] = "1";
+
+const helpRequested = args.some((arg) => arg === "--help" || arg === "-h");
+const runtimeProblem = unsupportedRuntime();
+if (runtimeProblem) {
+  // Refuse before any command starts a child that would fail obscurely,
+  // through the one error path every command reports through.
+  const out = eventSink(json);
+  reportFailure(out, runtimeProblem);
+  process.exitCode = out.exitCode;
+} else if (args.length === 0 || (args.length === 1 && helpRequested)) {
+  process.stdout.write(rootHelp(false));
+} else if (args.length === 1 && (args[0] === "--help-all" || args[0] === "-H")) {
+  process.stdout.write(rootHelp(true));
+} else if (args.length === 1 && (args[0] === "--version" || args[0] === "-v")) {
+  process.stdout.write(versionLine());
+} else {
+  const help = groupHelp(args);
+  if (help) {
+    process.stdout.write(help);
+  } else {
+    await runCommand();
+  }
+}
+
+/**
+ * Run the command through stricli. Whatever it refuses is reported
+ * through the run's sink (`buildApp`): stricli's own writes to stderr are
+ * dropped, and its exit code (251, 252) kept.
+ */
+async function runCommand(): Promise<void> {
+  let out: EventSink | undefined;
+  const app = buildApp({
+    color,
+    args,
+    report: (problem) => {
+      out ??= eventSink(json);
+      out.emit({ type: "error", retryable: false, ...problem });
+    },
+  });
+  const stricliProcess = {
+    stdout: process.stdout,
+    stderr: { write: () => true },
+    env: process.env,
+    exitCode: undefined as number | undefined,
+  };
+  await run(app, args, {
+    ...buildContext(process),
+    process: stricliProcess as unknown as NodeJS.Process,
+  });
+  const exitCode = requestedExitCode() ?? stricliProcess.exitCode;
+  if (exitCode !== undefined) process.exitCode = exitCode;
 }

@@ -41,9 +41,7 @@
  * same command again resumes it.
  */
 import { version as packageVersion } from "../../../package.json";
-import chalk from "chalk";
-import { roughly } from "@/lib/output/roughly";
-import enquirer from "enquirer";
+import { roughly } from "@/lib/output/time";
 import {
   deviceLoginAction,
   ensureCfAuth,
@@ -51,7 +49,6 @@ import {
 } from "@/lib/cf/account";
 import { PINNED_CF_VERSION } from "@/lib/cf/bin";
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
-import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { hasWorkersPaid } from "@/lib/cf/plan";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
@@ -63,19 +60,17 @@ import {
   type NoAnswerKind,
 } from "@/lib/domains/https";
 import { listZones, registerDomainUrl } from "@/lib/domains/zones";
-import { ActionRequiredError, EveryAppError } from "@/lib/errors";
-import {
-  candidate,
-  downgradeRefused,
-  isLiveRelease,
-  olderThanInstalled,
-  type CandidateRelease,
-} from "@/lib/gateway/apply";
+import { ActionRequiredError, errorMessage, EveryAppError } from "@/lib/errors";
+import { candidate, isLiveRelease, refuseDowngrade } from "@/lib/gateway/apply";
 import { discoverGateway, type Discovery } from "@/lib/gateway/discover";
 import type { InstallRecord } from "@/lib/gateway/install";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { reconcileGateway, registryDrift } from "@/lib/gateway/reconcile";
-import { refuseNewerThanCli, type GatewayRelease } from "@/lib/gateway/release";
+import {
+  refuseNewerThanCli,
+  type CandidateRelease,
+  type GatewayRelease,
+} from "@/lib/gateway/release";
 import {
   maySetupLinkBeShown,
   mintSetupLink,
@@ -84,10 +79,10 @@ import {
   waitForSetupLink,
   type GatewayOwner,
 } from "@/lib/gateway/setup-link";
-import { gatewayReleaseSource } from "@/lib/gateway/source";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { handTerminalOver } from "@/lib/output/terminal";
+import { askText, choose } from "@/lib/output/prompt";
+import { plural } from "@/lib/output/text";
 import { deployGatewayRelease, gatewayTarget } from "./deployGateway";
 
 export interface SetupFlags {
@@ -162,25 +157,19 @@ interface SetupResult {
   ownerCreated: boolean;
 }
 
-/** setup's own dependencies, for a run at this terminal or under --json. */
+/** setup's own dependencies, deploying `gateway`'s release. */
 export function setupDeps({
-  out,
-  json,
-  verbose,
-  release,
+  gateway,
+  interactive,
 }: {
-  out: EventSink;
-  json?: boolean;
-  verbose?: boolean;
-  /** --release */
-  release?: string;
+  gateway: Pick<SetupDeps, "openRelease" | "source">;
+  interactive: boolean;
 }): SetupDeps {
-  const gateway = gatewayReleaseSource({ release, out, verbose });
   return {
     createCf: (accountId) => createCfRunner({ accountId }),
-    openRelease: gateway.open,
-    source: gateway.describe,
-    interactive: canPromptInTerminal(json ?? false),
+    openRelease: gateway.openRelease,
+    source: gateway.source,
+    interactive,
     prompts: terminalPrompts,
     openBrowser: openInBrowser,
     cliVersion: packageVersion,
@@ -442,9 +431,7 @@ async function deployOrRepairGateway({
     ) {
       return repair(deps.openRelease);
     }
-    if (!allowDowngrade && olderThanInstalled(source, live)) {
-      throw downgradeRefused(source, live, { allowDowngradeFlag: true });
-    }
+    if (!allowDowngrade) refuseDowngrade(source, live, { allowDowngradeFlag: true });
   }
 
   const release = await deps.openRelease();
@@ -453,8 +440,8 @@ async function deployOrRepairGateway({
     refuseNewerThanCli(manifest, deps.cliVersion);
     if (live && databaseId) {
       if (isLiveRelease(release, live)) return await repair(async () => release);
-      if (!allowDowngrade && olderThanInstalled(candidate(release), live)) {
-        throw downgradeRefused(candidate(release), live, { allowDowngradeFlag: true });
+      if (!allowDowngrade) {
+        refuseDowngrade(candidate(release), live, { allowDowngradeFlag: true });
       }
     }
     out.emit({
@@ -554,7 +541,7 @@ async function repairGateway({
       type: "step",
       step: "setup.gateway",
       status: "skip",
-      message: `Gateway ${release} at ${gatewayUrl} is up to date: the release this run deploys, binding the ${desired.appWorkers.length} app${desired.appWorkers.length === 1 ? "" : "s"} its registry lists.`,
+      message: `Gateway ${release} at ${gatewayUrl} is up to date: the release this run deploys, binding the ${plural(desired.appWorkers.length, "app")} its registry lists.`,
       data: { release, gatewayUrl, upToDate: true },
     });
     return { db, release, outcome: "up-to-date" };
@@ -565,7 +552,7 @@ async function repairGateway({
     status: "start",
     message: inSync
       ? `Redeploying gateway ${release} (--redeploy)...`
-      : `Rebinding gateway ${release}: ${desired.appWorkers.length} app${desired.appWorkers.length === 1 ? "" : "s"} (was ${install.liveAppWorkers.length})...`,
+      : `Rebinding gateway ${release}: ${plural(desired.appWorkers.length, "app")} (was ${install.liveAppWorkers.length})...`,
     data: {
       release,
       from: release,
@@ -598,7 +585,7 @@ async function repairGateway({
     type: "step",
     step: "setup.gateway",
     status: "ok",
-    message: `Gateway ${release} binds ${result.appWorkers.length} app${result.appWorkers.length === 1 ? "" : "s"} (version ${result.versionId ?? "unknown"}).`,
+    message: `Gateway ${release} binds ${plural(result.appWorkers.length, "app")} (version ${result.versionId ?? "unknown"}).`,
     data: { versionId: result.versionId, release, apps: result.appWorkers },
   });
   return { db, release, outcome: "repaired" };
@@ -739,37 +726,24 @@ async function checkReachable(
 
 /** The questions setup asks a person at the terminal. */
 const terminalPrompts: SetupPrompts = {
-  async pickZone(zones: string[]): Promise<string> {
-    handTerminalOver();
-    const { zone } = await enquirer.prompt<{ zone: string }>({
-      type: "select",
-      name: "zone",
-      message: "Which of your domains should Every App live under?",
-      choices: zones,
-    });
-    return zone;
-  },
-  async hostname(zone: string): Promise<string> {
-    handTerminalOver();
-    process.stdout.write(
-      `${chalk.dim(`Apps get addresses one level below the Gateway, e.g. todo.apps.${zone}; a subdomain keeps the rest of ${zone} out of it.`)}\n`,
-    );
-    const { hostname } = await enquirer.prompt<{ hostname: string }>({
-      type: "input",
-      name: "hostname",
-      message: "Gateway address",
+  pickZone: (zones: string[]) =>
+    choose(
+      "Which of your domains should Every App live under?",
+      zones.map((zone) => ({ label: zone, value: zone })),
+    ),
+  hostname: (zone: string) =>
+    askText("Gateway address", {
+      context: [
+        `Apps get addresses one level below the Gateway, e.g. todo.apps.${zone}; a subdomain keeps the rest of ${zone} out of it.`,
+      ],
       initial: `apps.${zone}`,
-      validate: (value: string) => {
+      validate: (value) => {
         try {
           const host = normalizeHostname(value);
-          return host === zone || host.endsWith(`.${zone}`)
-            ? true
-            : `Use ${zone} or a name under it`;
+          return host === zone || host.endsWith(`.${zone}`) ? null : `Use ${zone} or a name under it`;
         } catch (error) {
-          return error instanceof Error ? error.message : String(error);
+          return errorMessage(error);
         }
       },
-    });
-    return hostname;
-  },
+    }),
 };

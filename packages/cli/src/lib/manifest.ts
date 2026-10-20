@@ -7,6 +7,7 @@ import {
   type EveryAppManifest,
 } from "@every-app/perimeter/manifest";
 import { EveryAppError } from "@/lib/errors";
+import { isNotFoundError } from "@/lib/file-operations";
 
 // The shared strict manifest schema covers every CLI field (including the
 // dev command string), so the CLI adds nothing on top.
@@ -32,9 +33,7 @@ export async function loadEveryAppManifestIfPresent(
   try {
     await fs.access(path.join(cwd, "everyapp.config.ts"));
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return null;
-    }
+    if (isNotFoundError(error)) return null;
     throw error;
   }
   return loadEveryAppManifest(cwd);
@@ -52,10 +51,8 @@ export async function loadEveryAppManifestFile(
   try {
     await fs.access(manifestPath);
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      throw new EveryAppError("MANIFEST_NOT_FOUND", missing.message, {
-        ...(missing.fix ? { data: { fix: missing.fix } } : {}),
-      });
+    if (isNotFoundError(error)) {
+      throw new EveryAppError("MANIFEST_NOT_FOUND", missing.message, { fix: missing.fix });
     }
     throw error;
   }
@@ -80,4 +77,9 @@ export function resolveMigrationBinding(
     );
   }
   return migrationBinding;
+}
+
+/** The app's migrations directory, relative to the app (default drizzle). */
+export function migrationsDir(manifest: EveryAppCliManifest): string {
+  return manifest.migrations?.dir ?? "drizzle";
 }

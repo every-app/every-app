@@ -14,13 +14,12 @@ import {
   type DesiredState,
 } from "@/lib/gateway/desiredState";
 import { findCheckoutRoot } from "@/lib/checkout";
+import { errorMessage } from "@/lib/errors";
 import { olderThanInstalled } from "@/lib/gateway/apply";
-import {
-  checkoutSource,
-  type CheckoutSource,
-} from "@/lib/gateway/checkoutRelease";
+import { checkoutSource } from "@/lib/gateway/checkoutRelease";
 import type { FoundGateway } from "@/lib/gateway/discover";
 import type { InstallRecord } from "@/lib/gateway/install";
+import type { CandidateRelease } from "@/lib/gateway/release";
 import { describeLeaseHolder, readLiveLeases, type LeaseHolder } from "@/lib/gateway/lease";
 import { gatewayDomains } from "@/lib/gateway/patchBuildOutput";
 import { listApps } from "@/lib/gateway/registry";
@@ -28,8 +27,9 @@ import { readOwner, type GatewayOwner } from "@/lib/gateway/setup-link";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { existingGateway } from "@/lib/gateway/connect";
-import { eventSink, runReported } from "@/lib/output/run";
+import { runCommand } from "@/lib/output/run";
 import { formatFacts, formatTable } from "@/lib/output/table";
+import { capitalize, plural } from "@/lib/output/text";
 
 interface StatusFlags {
   "account-id"?: string;
@@ -79,24 +79,19 @@ export async function status(
   this: LocalContext,
   flags: StatusFlags,
 ): Promise<void> {
-  const out = eventSink(flags.json, flags.verbose);
-  await runReported(
-    out,
-    async () => {
-      const gateway = await existingGateway({
-        json: flags.json,
-        out,
-        accountId: flags["account-id"],
-      });
-      const root = findCheckoutRoot();
-      await reportStatus({
-        gateway,
-        out,
-        checkout: root ? () => checkoutSource(root) : null,
-      });
-    },
-    { verbose: flags.verbose },
-  );
+  await runCommand(flags, async (out) => {
+    const gateway = await existingGateway({
+      json: flags.json,
+      out,
+      accountId: flags["account-id"],
+    });
+    const root = findCheckoutRoot();
+    await reportStatus({
+      gateway,
+      out,
+      checkout: root ? () => checkoutSource(root) : null,
+    });
+  });
 }
 
 /** The status of the Gateway discovery found, as the command's `done` event. */
@@ -111,7 +106,7 @@ export async function reportStatus({
    * What this checkout's Gateway is, without building it; null when
    * everyapp doesn't run from a checkout.
    */
-  checkout: (() => Promise<CheckoutSource>) | null;
+  checkout: (() => Promise<CandidateRelease>) | null;
 }): Promise<void> {
   const { cf, account, db, install } = gateway;
   if (!install) {
@@ -231,7 +226,7 @@ export async function reportStatus({
         certificates === null
           ? chalk.yellow("unknown (Cloudflare didn't list the zone's certificates)")
           : waiting.length === 0
-            ? `ready on ${certificates.length} hostname${certificates.length === 1 ? "" : "s"}`
+            ? `ready on ${plural(certificates.length, "hostname")}`
             : chalk.yellow(`no certificate yet for ${waiting.join(", ")}`),
     },
     ...receiving.map((app, index) => ({
@@ -244,7 +239,7 @@ export async function reportStatus({
     })),
     ...leases.map((lease, index) => ({
       label: index === 0 ? "Deploys" : "",
-      value: describeDeploy(lease),
+      value: describeLeaseHolder(lease),
     })),
   ];
   const display = [
@@ -316,7 +311,7 @@ interface CheckoutState {
 
 async function checkoutAgainst(
   install: InstallRecord,
-  checkout: (() => Promise<CheckoutSource>) | null,
+  checkout: (() => Promise<CandidateRelease>) | null,
 ): Promise<CheckoutState> {
   // A checkout that can't be read doesn't stop the rest of the report.
   const source = checkout ? await checkout().catch(() => null) : null;
@@ -344,7 +339,7 @@ async function readCertificates(
     out.emit({
       type: "warning",
       code: "CERTIFICATES_UNKNOWN",
-      message: `Couldn't list ${install.zoneName}'s certificates (${error instanceof Error ? error.message : String(error)}).`,
+      message: `Couldn't list ${install.zoneName}'s certificates (${errorMessage(error)}).`,
     });
     return null;
   }
@@ -366,7 +361,7 @@ async function readEmailProblems(
     out.emit({
       type: "warning",
       code: "EMAIL_ROUTES_UNKNOWN",
-      message: `Couldn't read the apps' Email Routing rules (${error instanceof Error ? error.message : String(error)}).`,
+      message: `Couldn't read the apps' Email Routing rules (${errorMessage(error)}).`,
     });
     return null;
   }
@@ -512,16 +507,11 @@ function fixesFor({
   for (const lease of leases) {
     fixes.push({
       code: "DEPLOY_RUNNING",
-      message: `${describeLeaseHolder(lease)} is running ${lease.purpose}.`,
+      message: `${capitalize(describeLeaseHolder(lease))} is running.`,
       run: null,
     });
   }
   return fixes;
-}
-
-/** A running deploy: what it does, the machine it runs on and since when. */
-function describeDeploy(lease: LeaseHolder): string {
-  return `${lease.purpose} (${describeLeaseHolder(lease)})`;
 }
 
 /** An app's STATUS cell: live, pending, or live but not bound. */

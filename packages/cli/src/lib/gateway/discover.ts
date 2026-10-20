@@ -20,14 +20,15 @@
  * caller decides (`setup` installs one; anything else fails, listing the
  * accounts asked).
  */
-import enquirer from "enquirer";
+import chalk from "chalk";
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
-import { CfError } from "@/lib/cf/errors";
+import { isCfError } from "@/lib/cf/errors";
 import type { CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
-import { CLI, thisCommand } from "@/lib/output/command";
-import { handTerminalOver } from "@/lib/output/terminal";
+import { CLI, thisCommand, thisCommandWithout } from "@/lib/output/command";
+import { choose, tellPerson } from "@/lib/output/prompt";
+import { formatTable } from "@/lib/output/table";
 import { readInstall, type InstallRecord } from "./install";
 import { findGatewayDatabase } from "./resources";
 
@@ -110,16 +111,26 @@ export async function discoverGateway({
   if (interactive) return { ...result, gateway: await pick(found) };
   throw new ActionRequiredError(
     "choose_account",
-    `This Cloudflare login sees a Gateway in ${found.length} accounts: ${found.map(describeGateway).join("; ")}. Pick one with --account-id (or CLOUDFLARE_ACCOUNT_ID), then run this command again.`,
+    [
+      `This login sees a Gateway in ${found.length} Cloudflare accounts; pick one`,
+      ...formatTable(
+        ["ACCOUNT", "ID", "GATEWAY"],
+        found.map((gateway) => [
+          gateway.account.name ?? "(unnamed)",
+          gateway.account.id,
+          gateway.install ? `https://${gateway.install.gatewayHost}` : "(not installed)",
+        ]),
+      ),
+    ].join("\n"),
     undefined,
     {
-      rerun: `${thisCommand()} --account-id <account-id>`,
+      rerun: `${thisCommand()} --account-id <id>`,
       data: {
         choices: found.map((gateway) => ({
           accountId: gateway.account.id,
           accountName: gateway.account.name,
           gatewayUrl: gateway.install ? `https://${gateway.install.gatewayHost}` : null,
-          rerun: thisCommand(["--account-id", gateway.account.id]),
+          rerun: `${thisCommand()} --account-id ${gateway.account.id}`,
         })),
       },
     },
@@ -138,10 +149,7 @@ async function probe(
     const db = cfD1Database(cf, databaseId);
     return { account, cf, databaseId, db, install: await readInstall(db) };
   } catch (error) {
-    if (
-      error instanceof CfError &&
-      (error.kind === "auth" || error.kind === "not_found")
-    ) {
+    if (isCfError(error, "auth") || isCfError(error, "not_found")) {
       return null;
     }
     throw error;
@@ -158,54 +166,77 @@ export function requireGateway(
   whoami: CfWhoami,
 ): FoundGateway {
   if (discovery.gateway) return discovery.gateway;
-  const login = whoami.email ? ` (cf is logged in as ${whoami.email})` : "";
-  const install = `Install one with \`${CLI} setup --domain <hostname>\``;
-  let message: string;
+  const login = whoami.email ? [`Logged in to Cloudflare as ${whoami.email}.`] : [];
+  const data = { accounts: discovery.probed };
   if (discovery.requestedAccountId && discovery.found.length > 0) {
-    message = `Cloudflare account ${discovery.requestedAccountId} has no Gateway; this login's ${discovery.found.length === 1 ? "is" : "are"} in ${discovery.found.map(describeGateway).join("; ")}. Pass that account's id to --account-id (or CLOUDFLARE_ACCOUNT_ID), or drop it.`;
-  } else if (discovery.probed.length === 0) {
-    message = `cf lists no Cloudflare accounts for this login${login}. Pass the Gateway's account with --account-id, or set CLOUDFLARE_ACCOUNT_ID.`;
-  } else {
-    message = `No Gateway in the Cloudflare account${discovery.probed.length === 1 ? "" : "s"} this login sees${login}: ${discovery.probed.map(describeAccount).join(", ")}. ${install}, or log in to the Gateway's account: ${CLI} login.`;
+    throw new EveryAppError(
+      "GATEWAY_NOT_FOUND",
+      [
+        `Cloudflare account ${discovery.requestedAccountId} has no Gateway`,
+        `This login's Gateway${discovery.found.length === 1 ? " is" : "s are"} in ${discovery.found.map(describeGateway).join("; ")}.`,
+      ].join("\n"),
+      { fix: "pass that account's id to --account-id (or CLOUDFLARE_ACCOUNT_ID), or drop it", data },
+    );
   }
-  throw new EveryAppError("GATEWAY_NOT_FOUND", message, {
-    rerun: `${CLI} setup`,
-    data: { accounts: discovery.probed },
-  });
+  if (discovery.probed.length === 0) {
+    throw new EveryAppError(
+      "GATEWAY_NOT_FOUND",
+      ["This Cloudflare login lists no accounts", ...login].join("\n"),
+      { fix: "pass the Gateway's account with --account-id, or set CLOUDFLARE_ACCOUNT_ID", data },
+    );
+  }
+  const accounts = discovery.probed.map((account) => account.name ?? account.id);
+  throw new EveryAppError(
+    "GATEWAY_NOT_FOUND",
+    [
+      accounts.length === 1
+        ? `No Gateway in ${accounts[0]}, the only account this login sees`
+        : `No Gateway in the ${accounts.length} accounts this login sees`,
+      ...(accounts.length === 1 ? [] : [`${accounts.join(", ")}.`]),
+      ...login,
+      `Or log in to the Gateway's account: ${CLI} login`,
+    ].join("\n"),
+    { rerun: `${CLI} setup --domain <hostname>`, rerunNote: "to install one", data },
+  );
 }
 
 /** `--gateway` and EVERYAPP_GATEWAY_URL must name the Gateway that was found. */
 export function checkGatewayUrl(
   gateway: FoundGateway & { install: InstallRecord },
   requested: string | undefined,
+  argv: readonly string[] = process.argv.slice(2),
 ): void {
   if (!requested) return;
   const host = new URL(requested).host.toLowerCase();
-  if (host === gateway.install.gatewayHost.toLowerCase()) return;
+  const found = gateway.install.gatewayHost.toLowerCase();
+  if (host === found) return;
+  const fromFlag = argv.some((arg) => arg === "--gateway" || arg.startsWith("--gateway="));
+  const where = gateway.account.name ?? gateway.account.id;
   throw new EveryAppError(
     "GATEWAY_URL_MISMATCH",
-    `The Gateway in Cloudflare account ${describeAccount(gateway.account)} is https://${gateway.install.gatewayHost}, not ${requested}. Drop --gateway (and EVERYAPP_GATEWAY_URL), or pass that Gateway's account with --account-id.`,
+    `The Gateway here is ${found}, not ${host}\nFound in ${where}. For ${host}, pass its account with --account-id.`,
+    fromFlag
+      ? { rerun: thisCommandWithout("--gateway", argv), rerunNote: `to use ${found}` }
+      : { fix: `unset EVERYAPP_GATEWAY_URL to use ${found}` },
   );
 }
 
-function describeAccount(account: CloudflareAccount): string {
-  return account.name ? `${account.name} (${account.id})` : account.id;
-}
-
 function describeGateway(gateway: FoundGateway): string {
-  return `${describeAccount(gateway.account)}${gateway.install ? ` at https://${gateway.install.gatewayHost}` : ""}`;
+  const account = gateway.account.name ?? gateway.account.id;
+  return `${account}${gateway.install ? ` at https://${gateway.install.gatewayHost}` : ""}`;
 }
 
+/** Ask the person at the terminal which account's Gateway; the answer names the account. */
 async function pickAtTerminal(found: FoundGateway[]): Promise<FoundGateway> {
-  handTerminalOver();
-  const { accountId } = await enquirer.prompt<{ accountId: string }>({
-    type: "select",
-    name: "accountId",
-    message: "This login sees a Gateway in several Cloudflare accounts. Which one?",
-    choices: found.map((gateway) => ({
-      name: gateway.account.id,
-      message: describeGateway(gateway),
+  const gateway = await choose(
+    "Which account?",
+    found.map((gateway) => ({
+      label: gateway.account.name ?? gateway.account.id,
+      ...(gateway.install ? { hint: `https://${gateway.install.gatewayHost}` } : {}),
+      value: gateway,
     })),
-  });
-  return found.find((gateway) => gateway.account.id === accountId)!;
+    { context: [`This login sees a Gateway in ${found.length} Cloudflare accounts.`] },
+  );
+  tellPerson(chalk.dim(`Skip this next time with --account-id ${gateway.account.id}`));
+  return gateway;
 }

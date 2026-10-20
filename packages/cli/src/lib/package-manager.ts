@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { execa } from "execa";
 import { runLogged } from "./childLog";
+import { isNotFoundError } from "./file-operations";
 
 /**
  * Check if pnpm is installed
@@ -24,7 +25,7 @@ interface InstallDependenciesOptions {
   verbose?: boolean;
 }
 
-type PackageManager = "pnpm" | "yarn" | "npm";
+export type PackageManager = "pnpm" | "yarn" | "npm";
 
 interface InstallCommand {
   command: string;
@@ -76,9 +77,9 @@ export async function detectPackageManager(cwd: string): Promise<PackageManager>
   const fromPackageManager = await detectPackageManagerField(cwd);
   if (fromPackageManager) return fromPackageManager;
 
-  if (await fileExists(path.join(cwd, "pnpm-lock.yaml"))) return "pnpm";
-  if (await fileExists(path.join(cwd, "yarn.lock"))) return "yarn";
-  if (await fileExists(path.join(cwd, "package-lock.json"))) return "npm";
+  if (await fileExistsStrict(path.join(cwd, "pnpm-lock.yaml"))) return "pnpm";
+  if (await fileExistsStrict(path.join(cwd, "yarn.lock"))) return "yarn";
+  if (await fileExistsStrict(path.join(cwd, "package-lock.json"))) return "npm";
 
   return "pnpm";
 }
@@ -96,9 +97,7 @@ async function detectPackageManagerField(
     if (packageManager.startsWith("npm")) return "npm";
     return null;
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return null;
-    }
+    if (isNotFoundError(error)) return null;
     throw error;
   }
 }
@@ -115,14 +114,13 @@ async function getInstallCommand(
   return { command: "npx", args: ["pnpm", "install"] };
 }
 
-async function fileExists(filePath: string): Promise<boolean> {
+/** Whether `filePath` is there; any error but ENOENT is thrown. */
+async function fileExistsStrict(filePath: string): Promise<boolean> {
   try {
     await fs.access(filePath);
     return true;
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      return false;
-    }
+    if (isNotFoundError(error)) return false;
     throw error;
   }
 }

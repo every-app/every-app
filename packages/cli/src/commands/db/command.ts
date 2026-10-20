@@ -16,6 +16,7 @@ const migrateCommand = buildCommand({
     positional: { kind: "tuple", parameters: [] },
     flags: {
       json: jsonFlag,
+      verbose: verboseFlag,
     },
   },
   docs: {

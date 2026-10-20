@@ -6,9 +6,14 @@
  * events instead (createHumanSink). A run ends with exit code 0 when done, 2
  * when it stopped on `action_required` (re-run the same command to resume
  * once the action is taken), and 1 after an error, whatever came before it.
- * Errors and actions end with the command to run next, `data.rerun`; an
+ * An error says what to do next its own way (lib/errors.ts): `data.fix`, a
+ * remedy in words, and `data.rerun`, the command to run (with
+ * `data.rerunNote`), where one helps; an action always has `data.rerun`. An
  * error whose rerun takes something over (a flag like --force-dns) has
- * `data.authorize: true`: show it and ask before running it.
+ * `data.authorize: true`: show it and ask before running it. An error with
+ * code CANCELLED is a person declining a prompt. A warning is emitted once
+ * per run, however often it is raised, and `done` carries the run's
+ * `data.durationMs`.
  *
  * An `action_required` with `data.waiting: true` is one the run waits for
  * (a login to approve, a setup link to open): pass its `url` and `code` to
@@ -18,7 +23,11 @@
  */
 import chalk from "chalk";
 import cliCursor from "cli-cursor";
-import { formatFacts } from "./table";
+import { ReportCode } from "@/lib/errors";
+import { onInterruptNotice } from "@/lib/interrupt";
+import { formatFacts, type Fact } from "./table";
+import { plural, strings, text } from "./text";
+import { duration, roughly } from "./time";
 import { onTerminalHandoff } from "./terminal";
 
 type EventData = Record<string, unknown>;
@@ -110,11 +119,20 @@ export function createNdjsonSink(
   write: (line: string) => void = (line) => process.stdout.write(line),
   now: () => Date = () => new Date(),
 ): EventSink {
-  return trackExitCode((event) => {
-    // `display` is drawn for a person; a script reads `data`.
-    const line = event.type === "done" ? { ...event, display: undefined } : event;
-    write(`${JSON.stringify({ v: 1, ts: now().toISOString(), ...line })}\n`);
-  }, false);
+  const sink = emitter(
+    (event) => {
+      // `display` is drawn for a person; a script reads `data`.
+      const line = event.type === "done" ? { ...event, display: undefined } : event;
+      write(`${JSON.stringify({ v: 1, ts: now().toISOString(), ...line })}\n`);
+    },
+    false,
+    () => now().getTime(),
+  );
+  onInterruptNotice({
+    stopping: (message) => sink.emit({ type: "progress", step: "interrupt", message }),
+    stopped: () => undefined,
+  });
+  return sink;
 }
 
 /**
@@ -131,11 +149,17 @@ export function createNdjsonSink(
  *  - `progress`: with --verbose, except the waits a person must see (who
  *    holds a lease, a certificate, the Gateway's build): at a terminal one
  *    line redrawn in place, piped once; and `everyapp dev`'s log lines.
- *  - `warning`, `action_required`, `error` and `done`: always (a warning
- *    said twice in one run, once). Each problem is a one-line headline, its
- *    detail dim under it, then what to do: `data.fix`, then the command to
- *    run (`data.rerun`). Problems go to stderr. `done` ends with the facts,
- *    the run's time when it took 10 seconds or more, and `data.next`.
+ *  - `warning`, `action_required`, `error` and `done`: always. Each problem
+ *    is a one-line headline, its detail dim under it, then what to do:
+ *    `data.fix`, then the command to run (`data.rerun`, `data.rerunNote`
+ *    dim after it). With --verbose an error adds its code, and an
+ *    unexpected one its stack. A CANCELLED error is only its message, dim.
+ *    Problems go to stderr. `done` ends with the facts, the run's time when
+ *    it took 10 seconds or more, and `data.next`.
+ *  - Piped, a step that runs long says so every 30 seconds (`still
+ *    building the Gateway · 1m`), so a CI log shows it's alive.
+ *  - Ctrl-C (lib/interrupt.ts): the spinner becomes the line saying what's
+ *    being stopped, and the last line says it stopped.
  */
 interface HumanSinkOptions {
   /** Bookkeeping steps and progress too (`--verbose`). */
@@ -166,11 +190,15 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
     now,
   );
   if (terminal) onTerminalHandoff(() => screen.handOver());
+  onInterruptNotice({
+    stopping: (message) => screen.interrupt(`${message} (Ctrl+C again to quit at once)`),
+    stopped: (closing) => {
+      screen.finish();
+      if (closing) writeProblem(`${chalk.dim(closing)}\n`);
+    },
+  });
   const problem = (lines: string[]) =>
     screen.aside(() => writeProblem(`${lines.join("\n")}\n`));
-  // A check that runs twice in one deploy (the app's, then the gateway's)
-  // says the same thing once.
-  const warned = new Set<string>();
   // When each running step started, for the time its ticked line shows.
   const started = new Map<string, number>();
   // Waits drawn as a spinner (or, piped, said once); each ends at the next step.
@@ -195,7 +223,7 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
     }
   };
 
-  return trackExitCode((event) => {
+  return emitter((event) => {
     switch (event.type) {
       case "step": {
         for (const wait of waits) {
@@ -240,12 +268,10 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
         } else if (verbose) screen.lines(chalk.dim(event.message));
         return;
       case "warning": {
-        const seen = `${event.code}\n${event.message}`;
-        if (warned.has(seen) || (QUIET_WARNINGS.has(event.code) && !verbose)) return;
-        warned.add(seen);
+        if (QUIET_WARNINGS.has(event.code) && !verbose) return;
         problem([
           ...headed(chalk.yellow("!"), event.message),
-          ...nextCommand(event.data, "Run"),
+          ...nextCommand(event.data),
         ]);
         return;
       }
@@ -269,15 +295,32 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
           return;
         }
         screen.finish();
-        writeProblem(`${[...lines, ...nextCommand(event.data, "Then run")].join("\n")}\n`);
+        writeProblem(`${[...lines, ...nextCommand(event.data)].join("\n")}\n`);
         return;
       }
-      case "error":
+      case "error": {
         screen.finish();
+        if (event.code === ReportCode.Cancelled) {
+          writeProblem(`${chalk.dim(event.message)}\n`);
+          return;
+        }
+        const stack = verbose ? text(event.data?.["stack"]) : undefined;
         writeProblem(
-          `${[...headed(chalk.red("✗"), event.message), ...nextCommand(event.data, "Run")].join("\n")}\n`,
+          `${[
+            ...headed(chalk.red("✗"), event.message),
+            ...nextCommand(event.data),
+            // Its frames only: the message is the headline already.
+            ...(stack
+              ? stack
+                  .split("\n")
+                  .filter((line) => /^\s+at /.test(line))
+                  .map((line) => chalk.dim(`  ${line.trim()}`))
+              : []),
+            ...(verbose ? [chalk.dim(`  Error code: ${event.code}`)] : []),
+          ].join("\n")}\n`,
         );
         return;
+      }
       case "done": {
         screen.finish();
         const took = now() - began;
@@ -299,7 +342,7 @@ export function createHumanSink(options: HumanSinkOptions = {}): EventSink {
         return;
       }
     }
-  }, verbose);
+  }, verbose, now);
 }
 
 type StepEvent = Extract<EventInput<EveryAppEvent>, { type: "step" }>;
@@ -320,6 +363,11 @@ type Milestone = (
   event: StepEvent,
   running: (step: string) => boolean,
 ) => Shown | Shown[] | null;
+
+/** A milestone shown only once its step is done: a ticked line, `detail` (else its time) after it. */
+function doneWhenOk(done: string, detail?: string): Milestone {
+  return (event) => (event.status === "ok" ? { done, detail } : null);
+}
 
 /** The milestones: the steps a person sees, by name, and how. */
 const MILESTONES: Readonly<Record<string, Milestone>> =
@@ -415,16 +463,21 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
               : `Private to you, owners and admins ${change}`;
       return [first, { fact: { label: "Access", value: access } }];
     },
-    "app.install": (event) =>
-      event.status === "ok" ? { done: "Installed dependencies" } : null,
-    "app.build": (event) => (event.status === "ok" ? { done: "Built" } : null),
+    "app.install": doneWhenOk("Installed dependencies"),
+    "app.build": doneWhenOk("Built"),
     "app.migrations": (event) => migrated(event, "Database"),
     "app.upload": (event) => {
       if (event.status === "start") return { spin: "Uploading..." };
       return event.status === "ok" ? { done: "Uploaded" } : null;
     },
-    "app.lease": (event) =>
-      event.status === "ok" ? { done: "Other deploy finished" } : null,
+    "app.lease": leaseWaited,
+    "gateway.lease": leaseWaited,
+    "gateway.release": (event) => {
+      if (event.status !== "ok") return null;
+      const data = event.data ?? {};
+      if (data["downloaded"] === true) return { done: `Downloaded Gateway ${text(data["release"])}` };
+      return data["cached"] === false ? { done: "Built from this checkout" } : null;
+    },
     "app.email": (event) => {
       if (event.status === "skip" && event.message) return { line: event.message };
       if (event.status !== "ok") return null;
@@ -461,16 +514,10 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       }
       return event.status === "ok" ? { done: "Copied the starter template" } : null;
     },
-    "create.skill": (event) =>
-      event.status === "ok" ? { done: "Added the everyapp skill for coding agents" } : null,
-    "create.install": (event) =>
-      event.status === "ok" ? { done: "Installed dependencies" } : null,
-    "create.types": (event) =>
-      event.status === "ok" ? { done: "Generated types" } : null,
-    "dev.types": (event) =>
-      event.status === "ok"
-        ? { done: "Worker types generated", detail: ".cloudflare/types" }
-        : null,
+    "create.skill": doneWhenOk("Added the everyapp skill for coding agents"),
+    "create.install": doneWhenOk("Installed dependencies"),
+    "create.types": doneWhenOk("Generated types"),
+    "dev.types": doneWhenOk("Worker types generated", ".cloudflare/types"),
     "dev.migrations": (event) => {
       if (event.status === "skip") {
         return event.data?.["reason"] === "flag"
@@ -551,6 +598,13 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
  */
 const QUIET_WARNINGS = new Set(["CUSTOM_DOMAIN_OWNER_UNCHECKED"]);
 
+/** A lease came free after a wait (lib/gateway/lease.ts): "Other deploy finished ✓ 41s". */
+function leaseWaited(event: StepEvent): Shown | null {
+  return event.status === "ok"
+    ? { done: `Other ${text(event.data?.["waitedFor"]) ?? "run"} finished` }
+    : null;
+}
+
 const always = () => true;
 /**
  * The certificate wait, not each certificate as it comes (`data.host`):
@@ -561,14 +615,12 @@ const waiting = (data: EventData) => data["host"] === undefined;
 /**
  * Progress a person sees without --verbose, by step: the waits (a lease,
  * a deploy `db restore` waits out, an app going live with its certificate,
- * the gateway's certificates) and
- * the Gateway build.
+ * the gateway's certificates).
  */
 const SHOWN_PROGRESS: Readonly<Record<string, (data: EventData) => boolean>> = {
   "app.lease": always,
   "gateway.lease": always,
   "db.lease": always,
-  "gateway.release": always,
   "app.live": always,
   "gateway.tls": waiting,
 };
@@ -608,26 +660,28 @@ function headed(glyph: string, message: string): string[] {
   ];
 }
 
-/** What to do about a problem: `data.fix`, then the command to run next. */
-function nextCommand(data: EventData | undefined, label: string): string[] {
+/**
+ * What to do about a problem: a close match to what was typed
+ * (`data.didYouMean`), how the command is used (`data.usage`), `data.fix`,
+ * then the command to run next (`data.rerun`, else `data.help`), its note
+ * dim after it.
+ */
+function nextCommand(data: EventData | undefined): string[] {
+  const didYouMean = text(data?.["didYouMean"]);
+  const usage = text(data?.["usage"]);
   const fix = text(data?.["fix"]);
-  const rerun = text(data?.["rerun"]);
+  const rerun = text(data?.["rerun"]) ?? text(data?.["help"]);
+  const note = text(data?.["rerunNote"]);
   return [
+    ...(didYouMean ? [`  Did you mean ${chalk.bold(didYouMean)}?`] : []),
+    ...(usage ? [chalk.dim(`  Usage: ${usage}`)] : []),
     ...(fix ? [`  Fix: ${fix}`] : []),
     ...(rerun
       ? [
-          data?.["authorize"] === true
-            ? `  To go ahead anyway: ${chalk.bold(rerun)}`
-            : `  ${label}: ${chalk.bold(rerun)}`,
+          `  ${data?.["authorize"] === true ? "To go ahead anyway" : "Run"}: ${chalk.bold(rerun)}${note ? ` ${chalk.dim(note)}` : ""}`,
         ]
       : []),
   ];
-}
-
-/** A labelled value in the block that ends a run (`Live  https://…`). */
-interface Fact {
-  label: string;
-  value: string;
 }
 
 /** Facts a `done` event carries itself (`data.facts`), each `{ label, value, note? }`. */
@@ -656,24 +710,11 @@ function formatNext(items: Array<{ command: string; note?: string }>): string[] 
   );
 }
 
-/** "850ms" is never shown; "4.2s", "41s", "1m 4s". */
-function duration(ms: number): string {
-  const seconds = ms / 1000;
-  if (seconds < 10) return `${seconds.toFixed(1)}s`;
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  const whole = Math.round(seconds);
-  return `${Math.floor(whole / 60)}m ${whole % 60}s`;
-}
-
-const plural = (count: number, noun: string) =>
-  `${count} ${noun}${count === 1 ? "" : "s"}`;
-const text = (value: unknown): string | undefined =>
-  typeof value === "string" && value.length > 0 ? value : undefined;
-const strings = (value: unknown): string[] =>
-  Array.isArray(value) ? value.map(String) : [];
 
 const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const FRAME_MS = 80;
+/** How often, piped, a long step says it still runs. */
+const STILL_MS = 30_000;
 
 /**
  * stdout for a person: lines and, at a terminal, the spinner of the step
@@ -706,7 +747,10 @@ class Screen {
     const current = this.steps.find((run) => run.step === step);
     if (current) current.label = label;
     else this.steps.push({ step, label, since: this.now() });
-    if (!this.terminal) return;
+    if (!this.terminal) {
+      this.keepAlive();
+      return;
+    }
     if (!this.timer) {
       cliCursor.hide(process.stdout);
       this.timer = setInterval(() => {
@@ -751,6 +795,13 @@ class Screen {
     this.handOver();
   }
 
+  /** Ctrl-C: whatever ran stops showing, and `label` (what's being stopped) shows instead. */
+  interrupt(label: string): void {
+    this.handOver();
+    if (this.terminal) this.spin("interrupt", label);
+    else this.write(`${chalk.dim(label)}\n`);
+  }
+
   private settle(): void {
     if (this.steps.length === 0) this.stopTimer();
     this.draw();
@@ -760,7 +811,26 @@ class Screen {
     if (!this.timer) return;
     clearInterval(this.timer);
     this.timer = undefined;
-    cliCursor.show(process.stdout);
+    if (this.terminal) cliCursor.show(process.stdout);
+  }
+
+  /**
+   * Piped, nothing spins: every {@link STILL_MS} the innermost labelled
+   * step that has run that long says it still runs, so a CI log moves.
+   */
+  private keepAlive(): void {
+    if (this.timer) return;
+    this.timer = setInterval(() => {
+      const run = this.steps.findLast((step) => step.label);
+      if (!run) return;
+      const took = this.now() - run.since;
+      if (took < STILL_MS) return;
+      const label = run.label.replace(/\.{3}$|…$/, "");
+      this.write(
+        `${chalk.dim(`still ${label.charAt(0).toLowerCase()}${label.slice(1)} · ${roughly(took)}`)}\n`,
+      );
+    }, STILL_MS);
+    this.timer.unref();
   }
 
   private erase(): void {
@@ -791,15 +861,32 @@ class Screen {
   }
 }
 
-function trackExitCode(
+/**
+ * What both sinks do with an event before writing it: a warning raised
+ * again with the same words (a check run for the app, then for the
+ * Gateway) is dropped; `done` gets the run's `durationMs`; and the exit
+ * code is tracked.
+ */
+function emitter(
   write: (event: EventInput<EveryAppEvent>) => void,
   verbose: boolean,
+  now: () => number,
 ): EventSink {
+  const began = now();
+  const warned = new Set<string>();
   let failed = false;
   let stopped = false;
   let waiting = false;
   return {
-    emit(event) {
+    emit(input) {
+      let event = input;
+      if (event.type === "warning") {
+        const seen = `${event.code}\n${event.message}`;
+        if (warned.has(seen)) return;
+        warned.add(seen);
+      } else if (event.type === "done") {
+        event = { ...event, data: { ...event.data, durationMs: now() - began } };
+      }
       if (event.type === "error") failed = true;
       else if (event.type === "action_required") {
         if (event.data?.waiting) waiting = true;

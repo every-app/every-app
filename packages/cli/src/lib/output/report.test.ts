@@ -4,9 +4,10 @@ import { CfError, parseCfOutput } from "@/lib/cf/errors";
 import {
   ActionRequiredError,
   afterMigration,
+  CancelledError,
   EveryAppError,
 } from "@/lib/errors";
-import { CLI, thisCommand } from "./command";
+import { CLI, invocation, thisCommand, thisCommandWithout } from "./command";
 import { createNdjsonSink } from "./events";
 import { reportFailure } from "./report";
 
@@ -34,18 +35,92 @@ describe("thisCommand", () => {
   });
 });
 
+describe("invocation", () => {
+  it("is how the person ran everyapp: through their package manager, or directly", () => {
+    expect(invocation({ npm_config_user_agent: "pnpm/10.34.5 npm/? node/v24.22.0 darwin arm64" })).toBe(
+      "pnpm everyapp",
+    );
+    expect(invocation({ npm_config_user_agent: "npm/10.9.2 node/v22.18.0 darwin arm64" })).toBe("npx everyapp");
+    expect(invocation({})).toBe("everyapp");
+  });
+});
+
+describe("thisCommandWithout", () => {
+  it("drops a flag and its value, however it was given", () => {
+    expect(thisCommandWithout("--gateway", ["secret", "list", "--gateway", "https://a.dev"])).toBe(
+      `${CLI} secret list`,
+    );
+    expect(thisCommandWithout("--gateway", ["secret", "list", "--gateway=https://a.dev", "--json"])).toBe(
+      `${CLI} secret list`,
+    );
+  });
+});
+
 describe("reportFailure", () => {
-  it("ends an error with the command to run again", () => {
+  it("never suggests the failing command again where that can't help", () => {
     const { event, exitCode } = report(
-      new EveryAppError("SECRET_NAME_TAKEN", "DB is one of todo's bindings."),
+      new EveryAppError("SECRET_NAME_TAKEN", "DB is one of todo's bindings", {
+        fix: "pick another name",
+      }),
     );
     expect(event).toMatchObject({
       type: "error",
       code: "SECRET_NAME_TAKEN",
-      data: { rerun: expect.stringMatching(new RegExp(`^${CLI}`)) },
+      data: { fix: "pick another name" },
     });
+    expect(event["data"]).not.toHaveProperty("rerun");
     expect(event["data"]).not.toHaveProperty("authorize");
     expect(exitCode).toBe(1);
+  });
+
+  it("ends a retryable error with the command to run again, and its note", () => {
+    const { event } = report(
+      new EveryAppError("LEASE_HELD", "Another deploy is running", {
+        retryable: true,
+        rerunNote: "once it's done",
+      }),
+    );
+    expect(event).toMatchObject({
+      retryable: true,
+      data: { rerun: expect.stringMatching(new RegExp(`^${CLI}`)), rerunNote: "once it's done" },
+    });
+  });
+
+  it("calls an error everyapp didn't raise a bug, with its stack, and suggests --verbose", () => {
+    const { event } = report(new TypeError("Cannot read properties of undefined (reading 'workerName')"));
+    expect(event).toMatchObject({
+      code: "UNEXPECTED",
+      message:
+        "everyapp hit an unexpected error\nTypeError: Cannot read properties of undefined (reading 'workerName')\nThis is a bug in everyapp, not something you did.",
+      data: {
+        stack: expect.stringContaining("TypeError"),
+        rerun: expect.stringMatching(/ --verbose$/),
+        rerunNote: "for a stack trace to report",
+      },
+    });
+  });
+
+  it("reports a network failure as one to retry, not a bug", () => {
+    const failed = Object.assign(new TypeError("fetch failed"), {
+      cause: Object.assign(new Error("getaddrinfo ENOTFOUND api.github.com"), { code: "ENOTFOUND" }),
+    });
+    expect(report(failed).event).toMatchObject({
+      code: "NETWORK_ERROR",
+      retryable: true,
+      data: { rerun: expect.stringMatching(new RegExp(`^${CLI}`)) },
+    });
+  });
+
+  it("reports a declined prompt as a cancel", () => {
+    expect(report(new CancelledError("Cancelled. Nothing deleted.")).event).toEqual({
+      v: 1,
+      ts: expect.any(String),
+      type: "error",
+      code: "CANCELLED",
+      message: "Cancelled. Nothing deleted.",
+      retryable: false,
+      data: {},
+    });
   });
 
   it("says when the rerun takes something over, for an agent to ask first", () => {

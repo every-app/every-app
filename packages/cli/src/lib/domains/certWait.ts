@@ -10,8 +10,10 @@
  * once. A hostname this computer still can't resolve once it answers gets
  * a LOCAL_DNS_STALE warning (localDns.ts).
  */
+import { setTimeout } from "node:timers/promises";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
+import { elapsed } from "@/lib/output/time";
 import { probeHttps, type HttpsAnswer, type NoAnswerKind } from "./https";
 import { osLocalDns, warnIfLocalDnsStale, type LocalDns } from "./localDns";
 
@@ -42,13 +44,6 @@ interface CertificateWaitResult {
   pending: string[];
   /** Ready, but this computer's resolver still has no address for them. */
   staleLocally: string[];
-}
-
-function elapsed(ms: number): string {
-  const seconds = Math.round(ms / 1000);
-  return seconds < 60
-    ? `${seconds}s`
-    : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
 }
 
 /** What the hostnames are waiting for, from each one's last probe. */
@@ -87,7 +82,7 @@ export async function waitForCertificates({
   progressEveryMs = DEFAULT_PROGRESS_EVERY_MS,
   probe,
   localDns = probe ? undefined : osLocalDns,
-  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep = setTimeout,
   now = Date.now,
 }: CertificateWaitOptions): Promise<CertificateWaitResult> {
   const started = now();

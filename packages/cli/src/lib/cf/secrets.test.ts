@@ -53,16 +53,20 @@ describe("patchWorkerSecrets", () => {
       assertReplaceable({
         cf: account.cf,
         workerName: "every-acme-todo",
+        shownAs: "todo",
         recordedVersionIds: ["every-acme-todo-version-1"],
         interactive: false,
+        change: { question: "Set GITHUB_TOKEN on it anyway?", effect: "Setting it makes a new version." },
       }),
-    ).rejects.toThrow(/didn't record deploying/);
+    ).rejects.toThrow(/^todo was changed outside everyapp; confirm in a terminal/);
     await expect(
       assertReplaceable({
         cf: account.cf,
         workerName: "every-acme-todo",
+        shownAs: "todo",
         recordedVersionIds: ["every-acme-todo-version-1", serving!.versionId!],
         interactive: false,
+        change: { question: "Set GITHUB_TOKEN on it anyway?", effect: "Setting it makes a new version." },
       }),
     ).resolves.toBeUndefined();
   });

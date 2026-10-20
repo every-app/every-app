@@ -15,8 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { execa } from "execa";
 import { EveryAppError } from "@/lib/errors";
-
-const TAIL_LINES = 20;
+import { outputTail } from "@/lib/output/text";
 
 interface RunLoggedOptions {
   cwd?: string;
@@ -91,10 +90,5 @@ async function newLogFile(commandLine: string): Promise<string> {
 }
 
 async function lastLines(file: string): Promise<string[]> {
-  const text = await fsp.readFile(file, "utf8").catch(() => "");
-  return text
-    .split(/\r?\n/)
-    .map((line) => line.trimEnd())
-    .filter((line) => line.trim().length > 0)
-    .slice(-TAIL_LINES);
+  return outputTail(await fsp.readFile(file, "utf8").catch(() => ""));
 }

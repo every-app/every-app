@@ -3,12 +3,12 @@
  * Workflows when it deploys the Worker (`PUT /workflows/<name>`, which
  * reassigns a name another Worker holds); these read and delete them.
  */
-import { CfError } from "./errors";
-import { listAll } from "./resources";
-import { runCfJson, type CfRunner } from "./runner";
+import { isCfError } from "./errors";
+import { listAll, runCfJson, type CfRunner } from "./runner";
 import { WorkflowListOutput, WorkflowOutput, type Workflow } from "./schemas";
 
 const PAGE_SIZE = 100;
+const MAX_PAGES = 50;
 
 /** The Workflow with this name, or null when the account has none. */
 export async function getWorkflow(
@@ -22,7 +22,7 @@ export async function getWorkflow(
       WorkflowOutput,
     );
   } catch (error) {
-    if (error instanceof CfError && error.kind === "not_found") return null;
+    if (isCfError(error, "not_found")) return null;
     throw error;
   }
 }
@@ -33,7 +33,7 @@ export function listWorkflows(cf: CfRunner, search: string): Promise<Workflow[]>
     cf,
     ["workflows", "list", "--search", search],
     WorkflowListOutput,
-    PAGE_SIZE,
+    { perPage: PAGE_SIZE, maxPages: MAX_PAGES },
   );
 }
 
@@ -41,10 +41,21 @@ export function listWorkflows(cf: CfRunner, search: string): Promise<Workflow[]>
  * Delete a Workflow with its instances. `--force` answers cf's
  * confirmation, decided as for `deleteD1`.
  */
-export async function deleteWorkflow(cf: CfRunner, name: string): Promise<void> {
+async function deleteWorkflow(cf: CfRunner, name: string): Promise<void> {
   await cf.run({
     plane: "account",
     mode: "json",
     args: ["workflows", "delete", name, "--force"],
   });
+}
+
+/** {@link deleteWorkflow}, unless it is gone already: whether it was there. */
+export async function deleteWorkflowIfExists(cf: CfRunner, name: string): Promise<boolean> {
+  try {
+    await deleteWorkflow(cf, name);
+    return true;
+  } catch (error) {
+    if (isCfError(error, "not_found")) return false;
+    throw error;
+  }
 }

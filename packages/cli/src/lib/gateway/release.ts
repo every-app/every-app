@@ -7,13 +7,13 @@
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
-import { makeCfTempDir } from "@/lib/cf/privateDir";
-import { onInterrupt } from "@/lib/interrupt";
+import { privateTempDir } from "@/lib/cf/privateDir";
 import { EveryAppError } from "@/lib/errors";
+import { isNotFoundError } from "@/lib/file-operations";
+import { thisCommand } from "@/lib/output/command";
 
 export const RELEASE_TARBALL = "every-app-gateway-release.tar.gz";
 /**
@@ -78,7 +78,7 @@ export type ReleaseOrigin =
   | { kind: "file"; path: string };
 
 /** What a release was built from, as far as the CLI knows it. */
-export interface ReleaseSource {
+interface ReleaseSource {
   /**
    * `hashCheckoutTree` of the Gateway's sources it was built from; null
    * for a release that didn't come from this checkout.
@@ -87,6 +87,18 @@ export interface ReleaseSource {
   /** Where it sits in the Gateway's history. */
   order: ReleaseOrder;
   origin: ReleaseOrigin;
+}
+
+/**
+ * A Gateway as the downgrade guard compares it with the live one
+ * (lib/gateway/apply.ts `olderThanInstalled`): a release this run opened,
+ * or what the checkout's sources say before it is built.
+ */
+export interface CandidateRelease extends ReleaseSource {
+  /** The Gateway package's version. */
+  version: string;
+  /** Its SHA-256, once it is built. */
+  sha256?: string;
 }
 
 /** "this checkout", "every-app/every-app release gateway-v0.3.0", a URL or a path. */
@@ -138,7 +150,7 @@ export async function hashFiles(
     try {
       content = await fsp.readFile(path.join(root, file));
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      if (!isNotFoundError(error)) throw error;
       hash.update(`${file}\0-\n`);
       continue;
     }
@@ -176,14 +188,7 @@ export async function extractRelease<T extends z.infer<typeof BaseReleaseSchema>
   schema: z.ZodType<T>,
 ): Promise<{ dir: string; manifest: T; cleanup(): Promise<void> }> {
   const names = RELEASE_NAMES[kind];
-  const dir = await makeCfTempDir(`${kind}-release-`);
-  const forget = onInterrupt({
-    sync: () => fs.rmSync(dir, { recursive: true, force: true }),
-  });
-  const cleanup = async () => {
-    await fsp.rm(dir, { recursive: true, force: true });
-    forget();
-  };
+  const { dir, cleanup } = await privateTempDir(`${kind}-release-`);
   try {
     await extractTarGz(tarball, dir);
     const json: unknown = JSON.parse(
@@ -217,7 +222,8 @@ export async function extractRelease<T extends z.infer<typeof BaseReleaseSchema>
     if (manifest.buildOutputVersion !== SUPPORTED_BUILD_OUTPUT) {
       throw new EveryAppError(
         "RELEASE_UNSUPPORTED",
-        `${names.the} ${manifest.version} uses Build Output ${manifest.buildOutputVersion}; this everyapp deploys ${SUPPORTED_BUILD_OUTPUT}. Upgrade everyapp.`,
+        `${names.the} ${manifest.version} is newer than this everyapp deploys\nIt uses Build Output ${manifest.buildOutputVersion}; this everyapp deploys ${SUPPORTED_BUILD_OUTPUT}.`,
+        { fix: "update everyapp (in a checkout: git pull)", rerun: thisCommand() },
       );
     }
     const actual = await hashReleaseTree(dir);
@@ -230,7 +236,7 @@ export async function extractRelease<T extends z.infer<typeof BaseReleaseSchema>
     return { dir, manifest, cleanup };
   } catch (error) {
     await cleanup();
-    if (error instanceof SyntaxError || (error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (error instanceof SyntaxError || isNotFoundError(error)) {
       throw new EveryAppError(
         "RELEASE_INVALID",
         `${tarball} isn't ${names.a}: ${(error as Error).message}`,
@@ -312,7 +318,8 @@ export function refuseNewerThanCli(
   if (compareVersions(manifest.minCli, cliVersion) > 0) {
     throw new EveryAppError(
       "CLI_TOO_OLD",
-      `${what} needs everyapp ${manifest.minCli} or newer; this is ${cliVersion}. Update everyapp (in a checkout: git pull), then run the same command again.`,
+      `${what} needs everyapp ${manifest.minCli} or newer; this is ${cliVersion}`,
+      { fix: "update everyapp (in a checkout: git pull)", rerun: thisCommand() },
     );
   }
 }

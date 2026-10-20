@@ -4,6 +4,9 @@
  * 22.18.0; older Nodes fail with an unhelpful `Unknown file extension ".ts"`,
  * and Bun isn't supported at all.
  */
+import { EveryAppError } from "@/lib/errors";
+import { thisCommand } from "@/lib/output/command";
+
 export const MIN_NODE_VERSION = "22.18.0";
 
 /** Whether this Node version can load a cloudflare.config.ts. */
@@ -11,15 +14,23 @@ export function loadsCloudflareConfig(nodeVersion: string): boolean {
   return compareVersions(nodeVersion, MIN_NODE_VERSION) >= 0;
 }
 
-/** Why this runtime can't run everyapp, or null when it can. */
-export function unsupportedRuntimeReason(
+/** Why this runtime can't run everyapp (UNSUPPORTED_RUNTIME), or null when it can. */
+export function unsupportedRuntime(
   versions: NodeJS.ProcessVersions = process.versions,
-): string | null {
+): EveryAppError | null {
   if (versions["bun"]) {
-    return `everyapp runs on Node.js ${MIN_NODE_VERSION} or newer, not Bun: the Cloudflare CLI can't load cloudflare.config.ts under Bun. Run it with Node (pnpm everyapp …).`;
+    return new EveryAppError(
+      "UNSUPPORTED_RUNTIME",
+      "everyapp runs on Node.js, not Bun\nThe Cloudflare CLI can't load cloudflare.config.ts under Bun.",
+      { rerun: thisCommand(), rerunNote: `with Node.js ${MIN_NODE_VERSION} or newer` },
+    );
   }
   if (!loadsCloudflareConfig(versions.node)) {
-    return `everyapp needs Node.js ${MIN_NODE_VERSION} or newer; this is ${versions.node}. The Cloudflare CLI loads cloudflare.config.ts with Node's built-in TypeScript support, which older versions lack. Install a newer Node 22 or 24 and run the command again.`;
+    return new EveryAppError(
+      "UNSUPPORTED_RUNTIME",
+      `everyapp needs Node.js ${MIN_NODE_VERSION} or newer; this is ${versions.node}\nThe Cloudflare CLI loads cloudflare.config.ts with Node's built-in TypeScript support.`,
+      { fix: "install Node 22 or 24, then run the command again" },
+    );
   }
   return null;
 }

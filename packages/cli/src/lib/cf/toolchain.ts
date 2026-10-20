@@ -11,7 +11,8 @@
  */
 import { execa } from "execa";
 import { EveryAppError } from "@/lib/errors";
-import { detectPackageManager } from "@/lib/package-manager";
+import { thisCommand } from "@/lib/output/command";
+import { detectPackageManager, type PackageManager } from "@/lib/package-manager";
 import { loadsCloudflareConfig, MIN_NODE_VERSION } from "@/lib/runtime";
 
 const PROBE_TIMEOUT_MS = 60_000;
@@ -26,7 +27,7 @@ export async function assertToolchainNode(
   env: NodeJS.ProcessEnv,
 ): Promise<void> {
   const probe = ["node", "-p", "process.versions.node"];
-  let packageManager: Awaited<ReturnType<typeof detectPackageManager>>;
+  let packageManager: PackageManager;
   let version: string;
   try {
     packageManager = await detectPackageManager(cwd);
@@ -54,6 +55,7 @@ export async function assertToolchainNode(
   }
   throw new EveryAppError(
     "NODE_TOO_OLD",
-    `${packageManager} runs this project's tools on Node.js ${version}, though everyapp runs on ${process.versions.node}: something pins it for this project (a Volta \`volta.node\` in package.json, pnpm's use-node-version). cf needs Node.js ${MIN_NODE_VERSION} or newer to load cloudflare.config.ts. Raise the pin (\`volta pin node@22\`, for Volta), then run this again.`,
+    `${packageManager} runs this project's tools on Node.js ${version}; cf needs ${MIN_NODE_VERSION} or newer\neveryapp runs on ${process.versions.node}, but something pins this project's (a Volta \`volta.node\` in package.json, pnpm's use-node-version). cf needs ${MIN_NODE_VERSION} or newer to load cloudflare.config.ts.`,
+    { fix: "raise the pin (`volta pin node@22`, for Volta)", rerun: thisCommand() },
   );
 }

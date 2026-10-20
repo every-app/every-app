@@ -155,7 +155,7 @@ describe("cf's private directories", () => {
     try {
       await expect(cfNeutralDir()).rejects.toMatchObject({
         code: "UNSAFE_CF_DIRECTORY",
-        message: expect.stringContaining("Run it without sudo"),
+        fix: "run it without sudo",
       });
       expect(fs.existsSync(path.join(home, ".everyapp"))).toBe(false);
     } finally {

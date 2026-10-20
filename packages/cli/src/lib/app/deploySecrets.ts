@@ -18,6 +18,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parseEnv } from "node:util";
 import { EveryAppError } from "@/lib/errors";
+import { isNotFoundError } from "@/lib/file-operations";
 import { ensureGitignored } from "@/lib/gitignore";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 
@@ -32,7 +33,7 @@ export async function readAppSecrets(cwd: string): Promise<AppSecrets> {
   try {
     raw = await fs.readFile(path.join(cwd, APP_SECRETS_FILE), "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
+    if (isNotFoundError(error)) return {};
     throw error;
   }
   ensureGitignored(cwd, `${path.dirname(APP_SECRETS_FILE)}/`);
@@ -91,7 +92,8 @@ export function parseOriginUrl(url: string, variable: string): HyperdriveOrigin 
   const invalid = (why: string) =>
     new EveryAppError(
       "DATABASE_URL_INVALID",
-      `${variable} in ${APP_SECRETS_FILE} ${why}; write it as postgres://<user>:<password>@<host>:<port>/<database>.`,
+      `${variable} in ${APP_SECRETS_FILE} ${why}`,
+      { fix: "write it as postgres://<user>:<password>@<host>:<port>/<database>" },
     );
   let parsed: URL;
   try {

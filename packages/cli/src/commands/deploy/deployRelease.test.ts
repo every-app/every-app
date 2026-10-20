@@ -341,9 +341,10 @@ describe("everyapp deploy <release>", () => {
       fetchAppRelease("https://github.com/acme/notes", { out: out(), fetch: github.fetch }),
     ).rejects.toMatchObject({
       code: "NO_RELEASE",
-      message: expect.stringContaining(
-        "acme/notes publishes no everyapp release (no everyapp-release.tar.gz on https://github.com/acme/notes/releases). Clone it, then run: pnpm install && pnpm everyapp deploy",
-      ),
+      message:
+        "acme/notes publishes no everyapp release\nNo everyapp-release.tar.gz on https://github.com/acme/notes/releases.",
+      rerun: "pnpm install && pnpm everyapp deploy",
+      rerunNote: "in a clone of it",
     });
   });
 

@@ -487,11 +487,9 @@ describe("everyapp setup", () => {
     });
 
     it("installs --release <file>", async () => {
-      const deps = setupDeps({ out: sink(), json: true, release: tarball });
-
       const { result, exitCode } = await setup(
         { domain: GW, release: tarball },
-        { openRelease: deps.openRelease, source: deps.source },
+        fromSource(gatewayReleaseSource({ out: sink(), release: tarball })),
       );
 
       expect(exitCode).toBe(0);
@@ -513,7 +511,7 @@ describe("everyapp setup", () => {
         type: "error",
         code: "CLI_TOO_OLD",
         message: expect.stringContaining(
-          "Gateway release 0.4.0 needs everyapp 0.4.0 or newer; this is 0.3.0. Update everyapp",
+          "Gateway release 0.4.0 needs everyapp 0.4.0 or newer; this is 0.3.0",
         ),
       });
       expect(account.deploys).toHaveLength(0);

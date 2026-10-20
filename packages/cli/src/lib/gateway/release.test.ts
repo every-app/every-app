@@ -193,7 +193,8 @@ describe("refuseNewerThanCli", () => {
     expect(() => refuseNewerThanCli({ version: "0.4.0", minCli: "0.4.0" }, "0.3.0")).toThrow(
       expect.objectContaining({
         code: "CLI_TOO_OLD",
-        message: expect.stringContaining("needs everyapp 0.4.0 or newer; this is 0.3.0. Update everyapp"),
+        message: expect.stringContaining("needs everyapp 0.4.0 or newer; this is 0.3.0"),
+        fix: "update everyapp (in a checkout: git pull)",
       }),
     );
   });

@@ -1,7 +1,6 @@
-import enquirer from "enquirer";
-import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { EveryAppError } from "@/lib/errors";
-import { handTerminalOver } from "@/lib/output/terminal";
+import { thisCommand } from "@/lib/output/command";
+import { askSecret, canPromptInTerminal } from "@/lib/output/prompt";
 
 /**
  * A secret's value from `--from-env <VAR>`, or a hidden prompt at a
@@ -16,25 +15,16 @@ export async function readSecretValue(
   if (variable) {
     const value = process.env[variable];
     if (!value) {
-      throw new EveryAppError(
-        "SECRET_EMPTY",
-        `${variable} is empty or unset in this environment.`,
-      );
+      throw new EveryAppError("SECRET_EMPTY", `${variable} is empty or unset in this environment`, {
+        fix: `set ${variable} to ${name}'s value, then run this again`,
+      });
     }
     return value;
   }
   if (!canPromptInTerminal(options.json ?? false)) {
-    throw new EveryAppError(
-      "SECRET_VALUE_REQUIRED",
-      `Pass the value through an environment variable: --from-env <VAR>.`,
-    );
+    throw new EveryAppError("SECRET_VALUE_REQUIRED", `No terminal to ask for ${name}'s value`, {
+      rerun: `${thisCommand()} --from-env ${name}`,
+    });
   }
-  handTerminalOver();
-  const { value } = await enquirer.prompt<{ value: string }>({
-    type: "password",
-    name: "value",
-    message: `Value for ${name}`,
-    validate: (input: string) => (input.trim() ? true : "Enter a value"),
-  });
-  return value.trim();
+  return (await askSecret(`Value for ${name}`)).trim();
 }

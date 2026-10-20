@@ -19,14 +19,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { findCheckoutRoot } from "@/lib/checkout";
 import type { EventSink } from "@/lib/output/events";
-import { fetchReleaseTarball } from "@/lib/release/fetch";
-import { candidate, type CandidateRelease } from "./apply";
+import { fetchReleaseTarball, githubRepository, isUrl } from "@/lib/release/fetch";
+import { candidate } from "./apply";
 import { checkoutSource, openCheckoutGatewayRelease } from "./checkoutRelease";
 import {
   describeOrigin,
   GATEWAY_RELEASE_REPO,
   openRelease,
   RELEASE_TARBALL,
+  type CandidateRelease,
   type GatewayRelease,
   type ReleaseOrigin,
 } from "./release";
@@ -81,7 +82,12 @@ export function gatewayReleaseSource({
         step: "gateway.release",
         status: "ok",
         message: `Using Gateway ${opened.manifest.version} from ${describeOrigin(origin)}.`,
-        data: { release: opened.manifest.version, origin, sha256: opened.manifest.sha256 },
+        data: {
+          release: opened.manifest.version,
+          origin,
+          sha256: opened.manifest.sha256,
+          downloaded: origin.kind !== "file",
+        },
       });
     }
     return opened;
@@ -105,6 +111,19 @@ async function fetchRelease(
   out: EventSink,
   fetchImpl?: typeof fetch,
 ): Promise<{ tarball: string; origin: ReleaseOrigin }> {
+  if (isUrl(target)) {
+    const repo = githubRepository(target);
+    out.emit({
+      type: "step",
+      step: "gateway.release",
+      status: "start",
+      message:
+        repo && !repo.tag
+          ? "Downloading the latest Gateway release..."
+          : `Downloading the Gateway release${repo?.tag ? ` ${repo.tag}` : ""}...`,
+      data: { url: target },
+    });
+  }
   const { tarball, origin } = await fetchReleaseTarball(target, {
     asset: RELEASE_TARBALL,
     what: "the Gateway",

@@ -31,7 +31,8 @@ import { reconcileGateway } from "@/lib/gateway/reconcile";
 import { deleteApp as deleteFromRegistry } from "@/lib/gateway/registry";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
 import { handleInterrupt, resetInterruptsForTests } from "@/lib/interrupt";
-import { acquireLease, readLease } from "@/lib/gateway/lease";
+import { LeasePurpose, readLease } from "@/lib/gateway/lease";
+import { holdLease } from "@/test/holdLease";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
@@ -574,7 +575,7 @@ describe("deploy", () => {
     // recorded version lets the next unattended deploy go ahead.
     await expect(
       deploy(TODO, { interactive: true, confirm: async () => false }),
-    ).rejects.toMatchObject({ code: "DEPLOY_CANCELLED" });
+    ).rejects.toMatchObject({ code: "CANCELLED" });
     expect(migrated()).toEqual([{ name: "0000_init.sql" }]);
     await deploy(TODO, { interactive: true, confirm: async () => true });
     expect(migrated()).toEqual([{ name: "0000_init.sql" }, { name: "0001_more.sql" }]);
@@ -649,17 +650,12 @@ describe("deploy", () => {
 
   it("keeps the upload when binding waits for a deploy of the gateway, and binds it next time", async () => {
     // An upgrade of the gateway, still running.
-    const upgrade = await acquireLease({
-      db: registry(),
-      id: "gateway",
-      purpose: "gateway.upgrade",
-      heartbeatMs: 0,
-    });
+    const upgrade = await holdLease(registry(), "gateway", LeasePurpose.GatewayUpgrade);
 
     const held = await deploy().catch((error: Error) => error);
     expect(held).toMatchObject({ code: "LEASE_HELD", retryable: true });
     expect((held as Error).message).toContain(
-      `It's from ${upgrade.holder.split(":")[0]!.replace(/\.local$/, "")}, started`,
+      `It's from dev@example.com on ${upgrade.holder.split(":")[0]!.split(".")[0]}. If it stopped`,
     );
     expect((held as Error).message).toContain("This app's upload is kept");
     expect((held as Error).message).not.toContain("--");
@@ -812,7 +808,7 @@ describe("deploy", () => {
     await expect(queryAppD1(write)).rejects.toMatchObject({ code: "CONFIRMATION_REQUIRED" });
     await expect(
       queryAppD1({ ...write, interactive: true, confirm: async () => false }),
-    ).rejects.toMatchObject({ code: "QUERY_CANCELLED" });
+    ).rejects.toMatchObject({ code: "CANCELLED" });
     expect(account.database("every-acme-todo").all("SELECT title FROM todos")).toHaveLength(1);
     await queryAppD1({ ...write, yes: true });
     expect(account.database("every-acme-todo").all("SELECT title FROM todos")).toEqual([]);

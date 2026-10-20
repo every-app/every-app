@@ -46,6 +46,7 @@ describe("where the Gateway comes from", () => {
     // One download (two redirects and the file) for both.
     expect(github.requests).toHaveLength(3);
     expect(used().map((event) => event.message)).toEqual([
+      "Downloading the latest Gateway release...",
       "Using Gateway 0.2.0 from every-app/every-app release gateway-v0.2.0.",
     ]);
   });

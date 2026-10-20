@@ -12,7 +12,6 @@
  * recorded here.
  */
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
-import { CfError } from "@/lib/cf/errors";
 import { EveryAppError } from "@/lib/errors";
 
 const CREATE_TABLE: D1Statement[] = [
@@ -39,6 +38,16 @@ const CREATE_TABLE: D1Statement[] = [
 ];
 
 type ResourceKind = "worker" | "d1" | "kv" | "hyperdrive" | "email-route";
+
+/** Each kind of app resource as a person reads it (R2 buckets are named, never recorded). */
+export const RESOURCE_LABELS: Readonly<Record<ResourceKind | "r2", string>> = {
+  worker: "Worker",
+  d1: "D1 database",
+  kv: "KV namespace",
+  hyperdrive: "Hyperdrive config",
+  r2: "R2 bucket",
+  "email-route": "Email Routing route for",
+};
 
 export interface OwnedResource {
   kind: ResourceKind;
@@ -75,12 +84,18 @@ export async function readOwnedResources(
     },
   ]);
   return (results.at(-1) ?? []).map((row) => ({
+    ...toOwnedResource(row),
+    versionId: row["version_id"] == null ? null : String(row["version_id"]),
+  }));
+}
+
+function toOwnedResource(row: Record<string, unknown>): OwnedResource {
+  return {
     kind: String(row["kind"]) as ResourceKind,
     binding: String(row["binding"]),
     name: String(row["name"]),
     resourceId: row["resource_id"] === null ? null : String(row["resource_id"]),
-    versionId: row["version_id"] == null ? null : String(row["version_id"]),
-  }));
+  };
 }
 
 /**
@@ -100,10 +115,7 @@ export async function readResourcesOfKind(
   ]);
   return (results.at(-1) ?? []).map((row) => ({
     workerName: String(row["worker_name"]),
-    kind,
-    binding: String(row["binding"]),
-    name: String(row["name"]),
-    resourceId: row["resource_id"] === null ? null : String(row["resource_id"]),
+    ...toOwnedResource({ ...row, kind }),
   }));
 }
 
@@ -156,7 +168,8 @@ ON CONFLICT (worker_name, kind, binding) DO UPDATE SET name = excluded.name,
     if (isUniqueViolation(error)) {
       throw new EveryAppError(
         "RESOURCE_OWNED",
-        `${describeResource(resource)} is recorded as another app's, so ${workerName} can't use it. Rename the binding in everyapp.config.ts.`,
+        `${describeResource(resource)} is recorded as another app's\n${workerName} can't use it.`,
+        { fix: "rename the binding in everyapp.config.ts" },
       );
     }
     throw error;
@@ -187,21 +200,10 @@ export function describeResource({
   kind,
   name,
 }: Pick<OwnedResource, "kind" | "name">): string {
-  const label =
-    kind === "worker"
-      ? "Worker"
-      : kind === "d1"
-        ? "D1 database"
-        : kind === "hyperdrive"
-          ? "Hyperdrive config"
-          : kind === "email-route"
-            ? "Email Routing route for"
-            : "KV namespace";
-  return `${label} "${name}"`;
+  return `${RESOURCE_LABELS[kind]} "${name}"`;
 }
 
 function isUniqueViolation(error: unknown): boolean {
-  const message =
-    error instanceof CfError || error instanceof Error ? error.message : "";
+  const message = error instanceof Error ? error.message : "";
   return /UNIQUE constraint failed/i.test(message);
 }

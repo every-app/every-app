@@ -14,21 +14,25 @@
  */
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { cfD1Database, type D1Database } from "@/lib/cf/d1";
-import type { Confirm } from "@/lib/cf/deploy";
+import type { Confirm } from "@/lib/output/prompt";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { deleteWorkerSecret } from "@/lib/cf/secrets";
-import { isOneLabelBelow } from "@/lib/domains/hostnames";
+import { publishedAppHosts } from "@/lib/domains/hostnames";
 import type { EventSink } from "@/lib/output/events";
 import {
-  acquireGatewayLease,
   applyGateway,
-  notDeployedByEveryapp,
   type ApplyGatewayOptions,
   type ApplyGatewayResult,
 } from "./apply";
 import { readDesiredState, workerExistence, type DesiredState } from "./desiredState";
-import { readInstall, writeInstall, type InstallRecord } from "./install";
+import {
+  notDeployedByEveryapp,
+  readInstall,
+  writeInstall,
+  type InstallRecord,
+} from "./install";
+import { acquireGatewayLease, LeasePurpose } from "./lease";
 import { refuseNewerThanCli, type GatewayRelease } from "./release";
 
 interface ReconcileGatewayOptions {
@@ -102,7 +106,7 @@ export async function reconcileGateway(
         leaseWaitMs: options.leaseWaitMs,
         sleep: options.sleep,
       },
-      "gateway.reconcile",
+      LeasePurpose.GatewayReconcile,
     );
     try {
       // Under the lease, the install row is the last deploy's for sure.
@@ -170,9 +174,7 @@ export async function registryDrift(
 /** Whether the install already publishes exactly these app hosts. */
 function publishesHosts(install: InstallRecord, appHosts: readonly string[]): boolean {
   const live = install.liveDomains.filter((host) => host !== install.gatewayHost);
-  const wanted = appHosts.filter((host) =>
-    isOneLabelBelow(host, install.appBaseDomain),
-  );
+  const wanted = publishedAppHosts(appHosts, install.appBaseDomain);
   return [...live].sort().join("\n") === [...wanted].sort().join("\n");
 }
 

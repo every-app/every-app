@@ -39,37 +39,33 @@ import {
 import type { LocalContext } from "@/context";
 import { readOwnedResources, recordUploadedVersion } from "@/lib/app/ownership";
 import { assertAppSecretName } from "@/lib/app/secrets";
-import { deviceLoginAction } from "@/lib/cf/account";
 import type { D1Database } from "@/lib/cf/d1";
-import { assertReplaceable, canPromptInTerminal } from "@/lib/cf/deploy";
+import { assertReplaceable } from "@/lib/cf/deploy";
+import { canPromptInTerminal } from "@/lib/output/prompt";
 import type { CfRunner } from "@/lib/cf/runner";
 import { listWorkerSecrets, patchWorkerSecrets } from "@/lib/cf/secrets";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { EveryAppError } from "@/lib/errors";
-import { acquireGatewayLease } from "@/lib/gateway/apply";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall, writeInstall } from "@/lib/gateway/install";
-import { acquireLease, describeLeaseHolder } from "@/lib/gateway/lease";
-import { readApp } from "@/lib/gateway/registry";
+import { acquireAppLease, acquireGatewayLease, LeasePurpose } from "@/lib/gateway/lease";
+import { findRegisteredApp, readApp } from "@/lib/gateway/registry";
 import {
   loadEveryAppManifestIfPresent,
   type EveryAppCliManifest,
 } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
-import { eventSink, runReported } from "@/lib/output/run";
+import { runCommand } from "@/lib/output/run";
 import { formatTable } from "@/lib/output/table";
 import { readSecretValue } from "@/lib/secretValue";
+import type { GatewayCommandFlags } from "../flags";
 
-interface SecretFlags {
-  gateway?: string;
-  "account-id"?: string;
+interface SecretFlags extends GatewayCommandFlags {
   yes?: boolean;
-  json?: boolean;
-  verbose?: boolean;
 }
 
 /** What the handlers take from the command line, and the seams tests use. */
-export interface SecretOptions {
+interface SecretOptions {
   flags: SecretFlags;
   out: EventSink;
   /** The directory whose everyapp.config.ts names the app (default: the working directory). */
@@ -83,19 +79,15 @@ export async function set(
   flags: SecretFlags & { "from-env"?: string },
   ...names: string[]
 ): Promise<void> {
-  const out = eventSink(flags.json, flags.verbose);
-  await runReported(
-    out,
-    () =>
-      setSecrets({
-        flags,
-        out,
-        names,
-        readValue: (name) =>
-          readSecretValue(name, { fromEnv: flags["from-env"], json: flags.json }),
-        fromEnv: flags["from-env"],
-      }),
-    { verbose: flags.verbose },
+  await runCommand(flags, (out) =>
+    setSecrets({
+      flags,
+      out,
+      names,
+      readValue: (name) =>
+        readSecretValue(name, { fromEnv: flags["from-env"], json: flags.json }),
+      fromEnv: flags["from-env"],
+    }),
   );
 }
 
@@ -104,20 +96,14 @@ export async function unset(
   flags: SecretFlags,
   ...names: string[]
 ): Promise<void> {
-  const out = eventSink(flags.json, flags.verbose);
-  await runReported(out, () => unsetSecrets({ flags, out, names }), {
-    verbose: flags.verbose,
-  });
+  await runCommand(flags, (out) => unsetSecrets({ flags, out, names }));
 }
 
 export async function list(
   this: LocalContext,
   flags: Omit<SecretFlags, "yes">,
 ): Promise<void> {
-  const out = eventSink(flags.json, flags.verbose);
-  await runReported(out, () => listSecrets({ flags, out }), {
-    verbose: flags.verbose,
-  });
+  await runCommand(flags, (out) => listSecrets({ flags, out }));
 }
 
 /** `secret set`: every name routed, then each value read, then the changes applied. */
@@ -193,17 +179,12 @@ export async function listSecrets(options: SecretOptions): Promise<void> {
     .map((need) => need.name);
 
   // The app's Workers, once it is deployed: its own, then each helper.
-  let workerName: string | null = null;
-  try {
-    workerName = (await readApp(db, manifest.id)).workerName;
-  } catch (error) {
-    if (!(error instanceof EveryAppError && error.code === "APP_NOT_FOUND")) throw error;
-  }
+  const workerName = (await findRegisteredApp(db, manifest.id))?.workerName ?? null;
   const workers: Array<{ workerName: string; names: string[]; missing: string[] }> = [];
   if (workerName) {
-    const helpers = (await readOwnedResources(db, workerName))
-      .filter((resource) => resource.kind === "worker" && resource.binding !== "")
-      .map((resource) => resource.name);
+    const helpers = (await appWorkerRecords(db, workerName))
+      .filter((record) => record.binding !== "")
+      .map((record) => record.name);
     for (const name of [workerName, ...helpers]) {
       const names = await listWorkerSecrets(cf, name);
       workers.push({
@@ -350,20 +331,26 @@ function didYouMean(name: string, known: readonly string[]): string {
   return match ? ` Did you mean ${match}?` : "";
 }
 
-async function connect(options: SecretOptions) {
-  const { flags, out } = options;
+function connect({ flags, out, createCf }: SecretOptions) {
   return connectToGateway({
     gateway: requestedGatewayUrl(flags.gateway),
     accountId: flags["account-id"],
     interactive: canPromptInTerminal(flags.json ?? false),
-    onDeviceLogin: flags.json ? deviceLoginAction(out, "login") : undefined,
-    ...(options.createCf ? { createCf: options.createCf } : {}),
+    login: { json: flags.json, out, step: "login" },
+    createCf,
   });
+}
+
+/** The records of the app's Workers: its own (binding "") and each helper's. */
+async function appWorkerRecords(db: D1Database, workerName: string) {
+  return (await readOwnedResources(db, workerName)).filter((resource) => resource.kind === "worker");
 }
 
 /** A Worker whose secrets change: what changes there, and how its new version is recorded. */
 interface Target {
   workerName: string;
+  /** The Worker as a person knows it: "the Gateway", "analytics". */
+  shownAs: string;
   changes: Record<string, string | null>;
   recordedVersionIds: ReadonlyArray<string | null | undefined>;
   record: (versionId: string) => Promise<void>;
@@ -403,22 +390,13 @@ async function apply(
   }
 
   const gatewayLease =
-    route.gateway.length > 0 ? await acquireGatewayLease({ db, out }, "gateway.secrets") : null;
+    route.gateway.length > 0 ? await acquireGatewayLease({ db, out }, LeasePurpose.GatewaySecrets) : null;
   try {
     const appLease = app
-      ? await acquireLease({
-          db,
-          id: `app:${app.workerName}`,
-          purpose: "app.secrets",
-          onWait: (holder) =>
-            out.emit({
-              type: "progress",
-              step: "app.lease",
-              message: `Waiting for another deploy of ${app.manifest.id} to finish (${describeLeaseHolder(holder)})...`,
-            }),
-          onHeartbeatProblem: (message) =>
-            out.emit({ type: "warning", code: "LEASE_HEARTBEAT", step: "app.lease", message }),
-        })
+      ? await acquireAppLease(
+          { db, out },
+          { workerName: app.workerName, appId: app.manifest.id, purpose: LeasePurpose.AppSecrets },
+        )
       : null;
     try {
       const targets: Target[] = [];
@@ -433,6 +411,7 @@ async function apply(
         }
         targets.push({
           workerName: GATEWAY_WORKER_NAME,
+          shownAs: "the Gateway",
           changes: pick(route.gateway),
           recordedVersionIds: [install.liveVersionId],
           record: (versionId) =>
@@ -445,13 +424,12 @@ async function apply(
         });
       }
       if (app) {
-        const records = (await readOwnedResources(db, app.workerName)).filter(
-          (resource) => resource.kind === "worker",
-        );
+        const records = await appWorkerRecords(db, app.workerName);
         const recorded = records.map((record) => record.versionId);
         // The app's own Worker first, then each helper deployed with it.
         targets.push({
           workerName: app.workerName,
+          shownAs: app.manifest.id,
           changes: pick(app.names),
           recordedVersionIds: recorded,
           record: (versionId) => recordUploadedVersion(db, app.workerName, versionId),
@@ -459,6 +437,7 @@ async function apply(
         for (const record of records.filter((record) => record.binding !== "")) {
           targets.push({
             workerName: record.name,
+            shownAs: `${app.manifest.id}'s ${record.binding} Worker`,
             changes: pick(app.names),
             recordedVersionIds: recorded,
             record: (versionId) =>
@@ -469,12 +448,22 @@ async function apply(
 
       // Every check, then every change.
       for (const target of targets) {
+        const names = Object.keys(target.changes).join(", ");
         await assertReplaceable({
           cf,
           workerName: target.workerName,
+          shownAs: target.shownAs,
           recordedVersionIds: target.recordedVersionIds,
           interactive,
-          note: "Its secrets change in a new version of what it serves.",
+          change: removing
+            ? {
+                question: `Remove ${names} from it anyway?`,
+                effect: `Removing ${names} creates a new version from it.`,
+              }
+            : {
+                question: `Set ${names} on it anyway?`,
+                effect: `Setting ${names} creates a new version from it.`,
+              },
         });
       }
       if (removing) await keepHeldNames(cf, targets, out);

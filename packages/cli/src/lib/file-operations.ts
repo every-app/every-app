@@ -51,3 +51,18 @@ export async function directoryExists(dirPath: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Whether `file` can be reached; any error counts as no. */
+export async function fileExists(file: string): Promise<boolean> {
+  try {
+    await fs.access(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A filesystem error saying the path isn't there (ENOENT). */
+export function isNotFoundError(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}

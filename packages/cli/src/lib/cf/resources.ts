@@ -5,9 +5,8 @@
  * the winner's. (App resources never take a winner's: lib/app/resources.ts
  * creates them with createD1/createKv and records what it created.)
  */
-import type { z } from "zod";
-import { CfError } from "./errors";
-import { runCfJson, type CfRunner } from "./runner";
+import { isCfError } from "./errors";
+import { listAll, runCfJson, type CfRunner } from "./runner";
 import {
   D1DatabaseListOutput,
   D1DatabaseOutput,
@@ -21,29 +20,25 @@ interface Resource {
 }
 
 const KV_PAGE_SIZE = 100;
-const MAX_PAGES = 50;
+const MAX_KV_PAGES = 50;
 
-/** Every page of a list command, `perPage` at a time. */
-export async function listAll<T>(
-  cf: CfRunner,
-  args: readonly string[],
-  schema: z.ZodType<T[]>,
-  perPage: number,
-): Promise<T[]> {
-  const items: T[] = [];
-  for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const batch = await runCfJson(
-      cf,
-      {
-        plane: "account",
-        args: [...args, "--per-page", String(perPage), "--page", String(page)],
-      },
-      schema,
-    );
-    items.push(...batch);
-    if (batch.length < perPage) break;
+/**
+ * The resource `find` finds, else the one `create` makes; a create that
+ * loses a race (`already_exists`) finds the winner's.
+ */
+async function getOrCreate(
+  find: () => Promise<string | null>,
+  create: () => Promise<string>,
+): Promise<Resource> {
+  const existing = await find();
+  if (existing) return { id: existing, created: false };
+  try {
+    return { id: await create(), created: true };
+  } catch (error) {
+    const winner = isCfError(error, "already_exists") ? await find() : null;
+    if (winner) return { id: winner, created: false };
+    throw error;
   }
-  return items;
 }
 
 export async function findD1(
@@ -69,22 +64,11 @@ export async function createD1(cf: CfRunner, name: string): Promise<string> {
   return database.uuid;
 }
 
-export async function getOrCreateD1(
-  cf: CfRunner,
-  name: string,
-): Promise<Resource> {
-  const existing = await findD1(cf, name);
-  if (existing) return { id: existing, created: false };
-  try {
-    return { id: await createD1(cf, name), created: true };
-  } catch (error) {
-    const winner =
-      error instanceof CfError && error.kind === "already_exists"
-        ? await findD1(cf, name)
-        : null;
-    if (winner) return { id: winner, created: false };
-    throw error;
-  }
+export function getOrCreateD1(cf: CfRunner, name: string): Promise<Resource> {
+  return getOrCreate(
+    () => findD1(cf, name),
+    () => createD1(cf, name),
+  );
 }
 
 export async function findKv(
@@ -95,7 +79,7 @@ export async function findKv(
     cf,
     ["kv", "namespaces", "list"],
     KvNamespaceListOutput,
-    KV_PAGE_SIZE,
+    { perPage: KV_PAGE_SIZE, maxPages: MAX_KV_PAGES },
   );
   return namespaces.find((namespace) => namespace.title === title)?.id ?? null;
 }
@@ -110,22 +94,11 @@ export async function createKv(cf: CfRunner, title: string): Promise<string> {
   return namespace.id;
 }
 
-export async function getOrCreateKv(
-  cf: CfRunner,
-  title: string,
-): Promise<Resource> {
-  const existing = await findKv(cf, title);
-  if (existing) return { id: existing, created: false };
-  try {
-    return { id: await createKv(cf, title), created: true };
-  } catch (error) {
-    const winner =
-      error instanceof CfError && error.kind === "already_exists"
-        ? await findKv(cf, title)
-        : null;
-    if (winner) return { id: winner, created: false };
-    throw error;
-  }
+export function getOrCreateKv(cf: CfRunner, title: string): Promise<Resource> {
+  return getOrCreate(
+    () => findKv(cf, title),
+    () => createKv(cf, title),
+  );
 }
 
 /**

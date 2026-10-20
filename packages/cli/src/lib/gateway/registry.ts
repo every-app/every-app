@@ -300,14 +300,7 @@ async function registerApp(
         sql: `SELECT ${APP_COLUMNS} FROM apps WHERE organization_id = ? AND app_slug = ?`,
         params: [organization.id, input.appSlug],
       },
-      {
-        sql: "SELECT user_id, role FROM members WHERE organization_id = ?",
-        params: [organization.id],
-      },
-      {
-        sql: "SELECT id FROM users WHERE lower(email) = lower(?) AND email_verified = 1",
-        params: [input.deployer.email],
-      },
+      ...memberQueries(organization.id, input.deployer.email),
     ]);
   const orgKey = text(keys[0]?.["org_key"]);
   if (!orgKey) {
@@ -336,10 +329,7 @@ async function registerApp(
     },
   ]);
   const deployerUserId = text(deployers[0]?.["id"]);
-  const orgMembers = members.map((member) => ({
-    id: String(member["user_id"]),
-    role: text(member["role"]),
-  }));
+  const orgMembers = toMembers(members);
   const plan = planRegistration({
     organizationId: organization.id,
     isInstallOrganization: true,
@@ -366,7 +356,8 @@ async function registerApp(
   ) {
     throw new EveryAppError(
       "WORKER_NAME_MISMATCH",
-      `The gateway names ${input.appSlug}'s Worker ${plan.app.workerName}, and binds no other: deploy the Worker under that name, then register it with --worker ${plan.app.workerName}.`,
+      `The Gateway names ${input.appSlug}'s Worker ${plan.app.workerName}, and binds no other`,
+      { fix: `deploy the Worker under that name, then register it with --worker ${plan.app.workerName}` },
     );
   }
   await db.run(registrationWrites(plan, now));
@@ -378,6 +369,24 @@ async function registerApp(
       deployerUserId !== null &&
       plan.grants.some((grant) => grant.userId === deployerUserId),
   };
+}
+
+/** An organization's members, then the user with the deployer's verified email. */
+function memberQueries(organizationId: string, email: string | null): D1Statement[] {
+  return [
+    {
+      sql: "SELECT user_id, role FROM members WHERE organization_id = ?",
+      params: [organizationId],
+    },
+    {
+      sql: "SELECT id FROM users WHERE lower(email) = lower(?) AND email_verified = 1",
+      params: [email],
+    },
+  ];
+}
+
+function toMembers(rows: D1Row[]): Array<{ id: string; role: string | null }> {
+  return rows.map((member) => ({ id: String(member["user_id"]), role: text(member["role"]) }));
 }
 
 const isOwnerOrAdmin = (role: string | null) =>
@@ -513,16 +522,12 @@ WHERE app_row_id = ?2 AND organization_id = ?3 AND revoked_at IS NULL`,
   ];
 }
 
-async function readAppRow(db: D1Database, id: string): Promise<StoredAppRow | null> {
+/** An app's row by id, or null. */
+export async function readAppById(db: D1Database, id: string): Promise<StoredAppRow | null> {
   const [rows = []] = await db.run([
     { sql: `SELECT ${APP_COLUMNS} FROM apps WHERE id = ?`, params: [id] },
   ]);
   return rows[0] ? toAppRow(rows[0]) : null;
-}
-
-/** An app's row by id, or null (tests, and the live wait). */
-export function readAppById(db: D1Database, id: string): Promise<AppRow | null> {
-  return readAppRow(db, id);
 }
 
 const MARK_DEPLOYED_ATTEMPTS = 3;
@@ -540,7 +545,7 @@ export function markDeployed(
 ): Promise<string> {
   return registryCall(async () => {
     for (let attempt = 1; ; attempt += 1) {
-      const app = await readAppRow(db, appRowId);
+      const app = await readAppById(db, appRowId);
       if (!app) {
         throw new RegistrationError({
           status: 404,
@@ -571,7 +576,7 @@ export function markDeployed(
       if (attempt >= MARK_DEPLOYED_ATTEMPTS) {
         throw new EveryAppError(
           "APP_CHANGING",
-          "The app's registry row keeps changing while this deploy records its upload. Deploy again; the upload is kept.",
+          "The app's registry row keeps changing while this deploy records its upload\nThe upload is kept.",
           { retryable: true },
         );
       }
@@ -631,10 +636,6 @@ function declaresInbound(stored: string | null): boolean {
 }
 
 /** The install organization's row for an app id, tombstones included. */
-async function findApp(db: D1Database, appSlug: string): Promise<StoredAppRow | null> {
-  return (await findAppIn(db, appSlug))?.app ?? null;
-}
-
 async function findAppIn(
   db: D1Database,
   appSlug: string,
@@ -657,29 +658,17 @@ async function assertPlatformAdminIn(
   organization: Organization,
 ): Promise<void> {
   if (deployer.email === null) return;
-  const [members = [], deployers = []] = await db.run([
-    {
-      sql: "SELECT user_id, role FROM members WHERE organization_id = ?",
-      params: [organization.id],
-    },
-    {
-      sql: "SELECT id FROM users WHERE lower(email) = lower(?) AND email_verified = 1",
-      params: [deployer.email],
-    },
-  ]);
-  assertPlatformAdmin(
-    deployer,
-    text(deployers[0]?.["id"]),
-    members.map((member) => ({ id: String(member["user_id"]), role: text(member["role"]) })),
-    organization,
+  const [members = [], deployers = []] = await db.run(
+    memberQueries(organization.id, deployer.email),
   );
+  assertPlatformAdmin(deployer, text(deployers[0]?.["id"]), toMembers(members), organization);
 }
 
 function notRegistered(appSlug: string): EveryAppError {
   return new EveryAppError(
     "APP_NOT_FOUND",
     `${appSlug} isn't deployed to this Gateway yet`,
-    { rerun: `${CLI} deploy` },
+    { rerun: `${CLI} deploy`, rerunNote: "in the app's directory" },
   );
 }
 
@@ -688,11 +677,23 @@ export async function readApp(
   db: D1Database,
   appSlug: string,
 ): Promise<RegisteredAppInfo> {
-  const app = await findApp(db, appSlug);
-  if (!app || app.status === DELETED_APP_STATUS || !app.workerName) {
-    throw notRegistered(appSlug);
-  }
-  return info(app);
+  const app = await findRegisteredApp(db, appSlug);
+  if (!app) throw notRegistered(appSlug);
+  return app;
+}
+
+/** A registered app (not deleted) with names, or null when there's none. */
+export async function findRegisteredApp(
+  db: D1Database,
+  appSlug: string,
+): Promise<RegisteredAppInfo | null> {
+  const app = (await findAppIn(db, appSlug))?.app;
+  return app && isRegistered(app) ? info(app) : null;
+}
+
+/** Not deleted, and named: an app the commands act on. */
+function isRegistered(app: StoredAppRow): boolean {
+  return app.status !== DELETED_APP_STATUS && Boolean(app.workerName);
 }
 
 /** The installation's email configuration by row id (`deploy` reads it under the app's lease). */
@@ -701,7 +702,12 @@ export async function readAppEmail(db: D1Database, appRowId: string): Promise<Ap
     { sql: "SELECT email_senders, email_inbound FROM apps WHERE id = ?", params: [appRowId] },
   ]);
   const row = rows[0];
-  if (!row) throw new EveryAppError("APP_NOT_FOUND", "The app's registry row is gone; deploy it again.");
+  if (!row) {
+    throw new EveryAppError("APP_NOT_FOUND", "The app is no longer registered on this Gateway", {
+      rerun: `${CLI} deploy`,
+      rerunNote: "in the app's directory",
+    });
+  }
   return { senders: parseEmailList(row["email_senders"]), inbound: parseEmailList(row["email_inbound"]) };
 }
 
@@ -720,9 +726,7 @@ export async function writeAppEmail(
 ): Promise<RegisteredAppInfo> {
   return registryCall(async () => {
     const found = await findAppIn(db, appSlug);
-    if (!found || found.app.status === DELETED_APP_STATUS || !found.app.workerName) {
-      throw notRegistered(appSlug);
-    }
+    if (!found || !isRegistered(found.app)) throw notRegistered(appSlug);
     const { app, organization } = found;
     if (app.scope === "shared") await assertPlatformAdminIn(db, deployer, organization);
     const emailSenders = storedEmailList(config.senders);

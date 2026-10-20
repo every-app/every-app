@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { migratePostgres, type DrizzleKitRunner } from "./postgres";
+import type { MigrationCliRunner } from "./localCli";
+import { migratePostgres } from "./postgres";
 
 const URL = "postgres://app:p%40ss%2Fword@db.example.net:5432/app";
 
-function stub(result: Awaited<ReturnType<DrizzleKitRunner>>) {
-  const calls: Parameters<DrizzleKitRunner>[0][] = [];
-  const run: DrizzleKitRunner = async (call) => {
+function stub(result: Awaited<ReturnType<MigrationCliRunner>>) {
+  const calls: Parameters<MigrationCliRunner>[0][] = [];
+  const run: MigrationCliRunner = async (call) => {
     calls.push(call);
     return result;
   };

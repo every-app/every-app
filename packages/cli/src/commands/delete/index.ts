@@ -1,16 +1,13 @@
-import enquirer from "enquirer";
 import type { LocalContext } from "@/context";
-import { gatewayFor, type ReconcileSeams } from "@/commands/deploy/deployApp";
+import { gatewayFor, type ReconcileSeams } from "@/commands/appGateway";
 import { removeEmailRoutes } from "@/lib/app/emailRoutes";
 import {
   describeResource,
   forgetOwnedResources,
   readOwnedResources,
 } from "@/lib/app/ownership";
-import { deviceLoginAction } from "@/lib/cf/account";
 import type { D1Database } from "@/lib/cf/d1";
-import { canPromptInTerminal } from "@/lib/cf/deploy";
-import { CfError } from "@/lib/cf/errors";
+import { isCfError } from "@/lib/cf/errors";
 import {
   deleteD1,
   deleteKv,
@@ -20,10 +17,10 @@ import {
 import { deleteHyperdrive } from "@/lib/cf/hyperdrive";
 import type { CfRunner } from "@/lib/cf/runner";
 import { deleteWorker, getWorkerDeployment } from "@/lib/cf/workers";
-import { deleteWorkflow, listWorkflows } from "@/lib/cf/workflows";
+import { deleteWorkflowIfExists, listWorkflows } from "@/lib/cf/workflows";
 import { deleteHostCertificates } from "@/lib/domains/certificates";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
-import { EveryAppError } from "@/lib/errors";
+import { CancelledError } from "@/lib/errors";
 import { refuseOlderCheckout } from "@/lib/gateway/apply";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall } from "@/lib/gateway/install";
@@ -35,17 +32,14 @@ import {
 import { loadEveryAppManifest } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { eventSink, runReported } from "@/lib/output/run";
-import { handTerminalOver } from "@/lib/output/terminal";
+import { askText, canPromptInTerminal, confirmUnlessYes } from "@/lib/output/prompt";
+import { runCommand } from "@/lib/output/run";
 import { version as cliVersion } from "../../../package.json";
+import type { GatewayCommandFlags } from "../flags";
 
-interface DeleteCommandFlags {
-  gateway?: string;
-  "account-id"?: string;
+interface DeleteCommandFlags extends GatewayCommandFlags {
   purge?: boolean;
   yes?: boolean;
-  json?: boolean;
-  verbose?: boolean;
 }
 
 export async function deleteApp(
@@ -53,30 +47,21 @@ export async function deleteApp(
   flags: DeleteCommandFlags,
   appIdArgument?: string,
 ): Promise<void> {
-  const out = eventSink(flags.json, flags.verbose);
-  await runReported(
-    out,
-    async () => {
-      const appId =
-        appIdArgument ?? (await loadEveryAppManifest(process.cwd())).id;
-      const interactive = canPromptInTerminal(flags.json ?? false);
-      if (!(await confirmDelete({ appId, flags, interactive }))) {
-        out.emit({ type: "done", message: "Nothing deleted." });
-        return;
-      }
-      const result = await removeApp({
-        appId,
-        gateway: requestedGatewayUrl(flags.gateway),
-        accountId: flags["account-id"],
-        out,
-        json: flags.json,
-        interactive,
-        purge: flags.purge ?? false,
-      });
-      out.emit({ type: "done", ...deletionSummary(appId, result) });
-    },
-    { verbose: flags.verbose },
-  );
+  await runCommand(flags, async (out) => {
+    const appId = appIdArgument ?? (await loadEveryAppManifest(process.cwd())).id;
+    const interactive = canPromptInTerminal(flags.json ?? false);
+    await confirmDelete({ appId, flags, interactive });
+    const result = await removeApp({
+      appId,
+      gateway: requestedGatewayUrl(flags.gateway),
+      accountId: flags["account-id"],
+      out,
+      json: flags.json,
+      interactive,
+      purge: flags.purge ?? false,
+    });
+    out.emit({ type: "done", ...deletionSummary(appId, result) });
+  });
 }
 
 /**
@@ -121,7 +106,7 @@ export async function removeApp({
     gateway,
     accountId,
     interactive,
-    onDeviceLogin: json ? deviceLoginAction(out, "app.login") : undefined,
+    login: { json, out, step: "app.login" },
     createCf,
   });
   const { cf, db: registry } = connection;
@@ -240,11 +225,8 @@ async function purgeApp(
         }
         continue;
       }
-      try {
-        await deleteWorkflow(cf, workflow.name);
+      if (await deleteWorkflowIfExists(cf, workflow.name)) {
         removed.push(`Workflow "${workflow.name}"`);
-      } catch (error) {
-        if (!(error instanceof CfError && error.kind === "not_found")) throw error;
       }
     }
   }
@@ -269,7 +251,7 @@ async function purgeApp(
       removed.push(describeResource(resource));
     } catch (error) {
       // Deleted already, by an earlier purge that stopped or by hand.
-      if (!(error instanceof CfError && error.kind === "not_found")) throw error;
+      if (!isCfError(error, "not_found")) throw error;
     }
   }
   await forgetOwnedResources(registry, deleted.workerName);
@@ -334,29 +316,23 @@ async function confirmDelete({
   appId: string;
   flags: DeleteCommandFlags;
   interactive: boolean;
-}): Promise<boolean> {
-  if (flags.yes) return true;
-  if (!interactive) {
-    // Its rerun adds --yes, for a person to agree to (lib/errors.ts).
-    throw new EveryAppError(
-      "CONFIRMATION_REQUIRED",
-      `Deleting an app needs a person at a terminal, or --yes.`,
-    );
-  }
-  handTerminalOver();
-  if (flags.purge) {
-    const { typed } = await enquirer.prompt<{ typed: string }>({
-      type: "input",
-      name: "typed",
-      message: `This deletes ${appId}'s Worker and all its data for good. Type the app id to confirm`,
+}): Promise<void> {
+  const cancelled = "Cancelled. Nothing deleted.";
+  // --purge, at a terminal: the app id typed, not a yes.
+  if (flags.purge && interactive && !flags.yes) {
+    const typed = await askText("Type the app id to confirm", {
+      context: [`This deletes ${appId}'s Worker and all its data for good.`],
     });
-    return typed.trim() === appId;
+    if (typed.trim() !== appId) throw new CancelledError(cancelled);
+    return;
   }
-  const { confirmed } = await enquirer.prompt<{ confirmed: boolean }>({
-    type: "confirm",
-    name: "confirmed",
-    message: `Delete ${appId} from your gateway?`,
-    initial: false,
+  // Unattended, its rerun adds --yes, for a person to agree to (lib/errors.ts).
+  await confirmUnlessYes({
+    yes: flags.yes,
+    interactive,
+    question: `Delete ${appId} from the Gateway?`,
+    unattended: "Deleting an app needs a person at a terminal, or --yes.",
+    context: ["Its Worker and data stay; --purge deletes them too."],
+    cancelled,
   });
-  return confirmed;
 }

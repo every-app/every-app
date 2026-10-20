@@ -10,54 +10,29 @@
  * way back.
  *
  * The URL reaches drizzle-kit only in its environment, and anything it
- * prints comes back with the URL and password replaced.
+ * prints comes back with the URL and password replaced (./localCli.ts).
  */
-import { execa } from "execa";
-import {
-  APP_SECRETS_FILE,
-  parseOriginUrl,
-  POSTGRES_URL_VARIABLE,
-  redactSecrets,
-} from "@/lib/app/deploySecrets";
+import { APP_SECRETS_FILE, POSTGRES_URL_VARIABLE } from "@/lib/app/deploySecrets";
 import { EveryAppError } from "@/lib/errors";
-import { resolveLocalPackage } from "@/lib/local-package-bin";
-
-const MIGRATE_TIMEOUT_MS = 10 * 60_000;
-
-/** How drizzle-kit runs: a seam, so tests need no Postgres. */
-export type DrizzleKitRunner = (call: {
-  /** drizzle-kit's arguments. */
-  args: string[];
-  cwd: string;
-  env: Record<string, string>;
-}) => Promise<{ exitCode: number; stdout: string; stderr: string }>;
+import { thisCommand } from "@/lib/output/command";
+import {
+  localPackageRunner,
+  runMigrationCli,
+  type MigrationCliRunner,
+} from "./localCli";
 
 /** The app's own drizzle-kit, with this Node. */
-function localDrizzleKit(): DrizzleKitRunner {
-  return async ({ args, cwd, env }) => {
-    let binPath: string;
-    try {
-      binPath = (await resolveLocalPackage(cwd, "drizzle-kit", "drizzle-kit"))
-        .binPath;
-    } catch {
-      throw new EveryAppError(
+function localDrizzleKit(): MigrationCliRunner {
+  return localPackageRunner({
+    packageName: "drizzle-kit",
+    binName: "drizzle-kit",
+    missing: () =>
+      new EveryAppError(
         "DRIZZLE_KIT_MISSING",
-        "Postgres migrations run the app's own drizzle-kit, which isn't installed here: add it to devDependencies, then deploy again. Nothing was migrated or uploaded.",
-      );
-    }
-    const run = await execa(process.execPath, [binPath, ...args], {
-      cwd,
-      env: { NODE_NO_WARNINGS: "1", ...env },
-      stdin: "ignore",
-      reject: false,
-      timeout: MIGRATE_TIMEOUT_MS,
-    });
-    return {
-      exitCode: run.timedOut ? 124 : (run.exitCode ?? 1),
-      stdout: String(run.stdout ?? ""),
-      stderr: String(run.stderr ?? ""),
-    };
-  };
+        "drizzle-kit isn't installed in this app\nPostgres migrations run the app's own drizzle-kit. Nothing was migrated or uploaded.",
+        { fix: "add drizzle-kit to devDependencies", rerun: thisCommand() },
+      ),
+  });
 }
 
 export async function migratePostgres({
@@ -70,30 +45,22 @@ export async function migratePostgres({
   databaseUrl: string;
   /** The app's drizzle config, relative to `cwd`; drizzle-kit's default when unset. */
   config?: string;
-  run?: DrizzleKitRunner;
+  run?: MigrationCliRunner;
 }): Promise<void> {
-  const { password } = parseOriginUrl(databaseUrl, POSTGRES_URL_VARIABLE);
-  const result = await run({
+  await runMigrationCli({
+    run,
     args: ["migrate", ...(config ? ["--config", config] : [])],
     cwd,
-    env: { [POSTGRES_URL_VARIABLE]: databaseUrl },
-  });
-  if (result.exitCode === 0) return;
-  const output = redactSecrets(`${result.stderr}\n${result.stdout}`, [
     databaseUrl,
-    password,
-    encodeURIComponent(password),
-  ]);
-  const lines = output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const why =
-    lines.find((line) => /error/i.test(line)) ??
-    lines.at(-1) ??
-    `exit ${result.exitCode}`;
-  throw new EveryAppError(
-    "MIGRATION_FAILED",
-    `drizzle-kit couldn't migrate the app's Postgres database (${why}). Nothing was uploaded; check ${POSTGRES_URL_VARIABLE} in ${APP_SECRETS_FILE} and the migrations, then deploy again.`,
-  );
+    reasonPatterns: [/error/i],
+    failed: (why) =>
+      new EveryAppError(
+        "MIGRATION_FAILED",
+        `drizzle-kit couldn't migrate the app's Postgres database\n${why}. Nothing was uploaded.`,
+        {
+          fix: `check ${POSTGRES_URL_VARIABLE} in ${APP_SECRETS_FILE} and the migrations`,
+          rerun: thisCommand(),
+        },
+      ),
+  });
 }

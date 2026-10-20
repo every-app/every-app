@@ -18,10 +18,14 @@ export interface CfBinary {
  * The CLI's own pinned `cf`, never a global one. Resolved from this module's
  * location, which is inside the installed `everyapp` package.
  */
-async function resolveCliCfBinary(): Promise<CfBinary> {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const { binPath, version } = await resolveLocalPackage(here, "cf", "cf");
-  return { path: binPath, version, source: "cli" };
+function resolveCliCfBinary(): Promise<CfBinary> {
+  return resolveFrom(path.dirname(fileURLToPath(import.meta.url)), "cli");
+}
+
+/** The `cf` installed for `dir`, as `source`'s. */
+async function resolveFrom(dir: string, source: CfBinary["source"]): Promise<CfBinary> {
+  const { binPath, version } = await resolveLocalPackage(dir, "cf", "cf");
+  return { path: binPath, version, source };
 }
 
 /**
@@ -33,12 +37,7 @@ async function resolveCliCfBinary(): Promise<CfBinary> {
 export async function resolveCfBinary(projectRoot?: string): Promise<CfBinary> {
   if (projectRoot) {
     try {
-      const { binPath, version } = await resolveLocalPackage(
-        projectRoot,
-        "cf",
-        "cf",
-      );
-      return { path: binPath, version, source: "project" };
+      return await resolveFrom(projectRoot, "project");
     } catch {
       // The app doesn't install cf; fall back to the CLI's.
     }

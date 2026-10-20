@@ -6,6 +6,7 @@
  * membership, then consumes the link, and undoes both if anything fails.
  */
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 import { execa } from "execa";
 import type { D1Database } from "@/lib/cf/d1";
 
@@ -143,7 +144,7 @@ export async function waitForSetupLink({
   id,
   timeoutMs = OWNER_WAIT_MS,
   intervalMs = OWNER_POLL_MS,
-  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  sleep = setTimeout,
   now = Date.now,
 }: {
   db: D1Database;

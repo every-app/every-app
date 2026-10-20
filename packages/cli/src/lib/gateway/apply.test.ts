@@ -21,7 +21,8 @@ import { loseLeaseAtCheck, OTHER_HOLDER } from "@/test/loseLease";
 import { handleInterrupt, resetInterruptsForTests } from "@/lib/interrupt";
 import { applyGateway } from "./apply";
 import { readInstall, writeInstall } from "./install";
-import { acquireLease } from "./lease";
+import { holdLease } from "@/test/holdLease";
+import { LeasePurpose } from "./lease";
 import { reconcileGateway } from "./reconcile";
 import { openRelease, type GatewayRelease } from "./release";
 import { ensureGatewayResources } from "./resources";
@@ -348,8 +349,8 @@ describe("applyGateway", () => {
 
     const held = await deployGateway().catch((error: Error) => error);
     expect(held).toMatchObject({ code: "LEASE_HELD", retryable: true });
-    expect((held as Error).message).toContain("It's from laptop, started");
-    expect(held).toMatchObject({ data: { fix: expect.stringContaining("`pnpm everyapp status` shows it") } });
+    expect((held as Error).message).toContain("It's from laptop. If it stopped");
+    expect(held).toMatchObject({ rerunNote: expect.stringContaining("pnpm everyapp status shows it") });
     expect((held as Error).message).not.toContain("--");
     expect(account.deploys).toEqual([]);
 
@@ -413,7 +414,8 @@ describe("applyGateway", () => {
 
     await expect(deployGateway()).rejects.toMatchObject({
       action: "rerun_interactive",
-      message: expect.stringContaining("Run this command again in a terminal"),
+      message: expect.stringContaining("was changed outside everyapp; confirm in a terminal"),
+      rerunNote: "in a terminal, and confirm cf's prompt",
     });
 
     // At a terminal, cf runs again attached and asks its own question.
@@ -499,10 +501,10 @@ describe("applyGateway", () => {
           reason: "upgrade",
           release: middle,
           interactive: true,
-          confirm: async (question) => (asked.push(question), false),
+          confirm: async (question, context = []) => (asked.push(question, ...context), false),
         }),
-      ).rejects.toMatchObject({ code: "DEPLOY_CANCELLED" });
-      expect(asked[0]).toContain("replaces it with an older one");
+      ).rejects.toMatchObject({ code: "CANCELLED" });
+      expect(asked.join("\n")).toContain("with an older release if it runs a newer one");
       expect(account.deploys).toHaveLength(deploys);
     } finally {
       await middle.cleanup();
@@ -549,12 +551,7 @@ describe("applyGateway", () => {
     const newer = await laterBuild();
     try {
       // This upgrade waits for the lease while a newer one finishes.
-      const other = await acquireLease({
-        db: gatewayD1(),
-        id: "gateway",
-        purpose: "gateway.upgrade",
-        heartbeatMs: 0,
-      });
+      const other = await holdLease(gatewayD1(), "gateway", LeasePurpose.GatewayUpgrade);
       let raced = false;
       const waiting = deployGateway({
         reason: "upgrade",
@@ -589,7 +586,7 @@ describe("applyGateway", () => {
 
       await expect(deployGateway()).rejects.toMatchObject({
         action: "rerun_interactive",
-        message: expect.stringContaining("nothing was migrated or uploaded"),
+        message: expect.stringMatching(/^The Gateway was changed outside everyapp; confirm in a terminal\n.*Nothing changed\.$/),
       });
       expect(migrated()).toBe(false);
       expect(gatewayDb().all("SELECT name FROM sqlite_master WHERE name = 'd1_migrations'")).toEqual([]);
@@ -597,15 +594,19 @@ describe("applyGateway", () => {
       // At a terminal, a person is asked first; no means nothing changes.
       await expect(
         deployGateway({ interactive: true, confirm: async () => false }),
-      ).rejects.toMatchObject({ code: "DEPLOY_CANCELLED" });
+      ).rejects.toMatchObject({ code: "CANCELLED" });
       expect(migrated()).toBe(false);
 
       const asked: string[] = [];
       await deployGateway({
         interactive: true,
-        confirm: async (question) => (asked.push(question), true),
+        confirm: async (question, context = []) => (asked.push(question, ...context), true),
       });
-      expect(asked[0]).toMatch(/every-app-gateway is serving a version everyapp didn't record/);
+      expect(asked).toEqual([
+        "Replace it?",
+        "The Gateway's live version wasn't deployed by everyapp (dashboard, API, or an interrupted deploy).",
+        expect.stringMatching(/^Deploying replaces it, .* Cloudflare may ask to confirm again\.$/),
+      ]);
       expect(migrated()).toBe(true);
     });
 
@@ -1009,12 +1010,7 @@ describe("reconcileGateway", () => {
     const newer = await laterBuild();
     try {
       // An upgrade holds the lease; the install row still names release A.
-      const upgrade = await acquireLease({
-        db: gatewayD1(),
-        id: "gateway",
-        purpose: "gateway.upgrade",
-        heartbeatMs: 0,
-      });
+      const upgrade = await holdLease(gatewayD1(), "gateway", LeasePurpose.GatewayUpgrade);
       let upgraded = false;
 
       await expect(

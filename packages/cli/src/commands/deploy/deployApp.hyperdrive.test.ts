@@ -18,8 +18,7 @@ import { applyGateway } from "@/lib/gateway/apply";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
-import type { DrizzleKitRunner } from "@/lib/migrations/postgres";
-import type { PrismaRunner } from "@/lib/migrations/prisma";
+import type { MigrationCliRunner } from "@/lib/migrations/localCli";
 import { createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
@@ -56,7 +55,7 @@ let events: Array<Record<string, any>>;
 /** What the stub drizzle-kit (or Prisma CLI) was asked, and how many uploads had happened. */
 let migrations: Array<{ args: string[]; env: Record<string, string>; uploadsBefore: number }>;
 let prismaMigrations: typeof migrations;
-let migrationResult: Awaited<ReturnType<DrizzleKitRunner>>;
+let migrationResult: Awaited<ReturnType<MigrationCliRunner>>;
 
 const out = () => createNdjsonSink((line) => events.push(JSON.parse(line)));
 const seams = { sleep: async () => undefined, leaseWaitMs: 0 };
@@ -65,11 +64,11 @@ const rebind = {
   openRelease: () => openRelease(tarball),
   source: () => releaseSource(tarball),
 };
-const drizzleKit: DrizzleKitRunner = async ({ args, env }) => {
+const drizzleKit: MigrationCliRunner = async ({ args, env }) => {
   migrations.push({ args, env, uploadsBefore: seoUploads().length });
   return migrationResult;
 };
-const prisma: PrismaRunner = async ({ args, env }) => {
+const prisma: MigrationCliRunner = async ({ args, env }) => {
   prismaMigrations.push({ args, env, uploadsBefore: seoUploads().length });
   return migrationResult;
 };
@@ -297,7 +296,7 @@ describe("deploy of an app on Postgres through Hyperdrive", () => {
       deploy({ ...withoutMigrations, database: { provider: "postgres" } }),
     ).rejects.toMatchObject({
       code: "HYPERDRIVE_ORIGIN_MISSING",
-      message: expect.stringContaining("HYPERDRIVE_ORIGIN_URL"),
+      fix: expect.stringContaining("HYPERDRIVE_ORIGIN_URL"),
     });
     expect(account.hyperdrive.size).toBe(0);
     expect(seoUploads()).toEqual([]);

@@ -19,7 +19,7 @@ import {
 } from "@every-app/perimeter/manifest";
 import type { AppResources } from "@every-app/perimeter/registry";
 import type { D1Database } from "@/lib/cf/d1";
-import { CfError } from "@/lib/cf/errors";
+import { isCfError } from "@/lib/cf/errors";
 import {
   createD1,
   createKv,
@@ -39,7 +39,7 @@ import type { HyperdriveConfig } from "@/lib/cf/schemas";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { EveryAppError } from "@/lib/errors";
 import type { EveryAppCliManifest } from "@/lib/manifest";
-import { CLI } from "@/lib/output/command";
+import { CLI, thisCommand } from "@/lib/output/command";
 import type { InstallTarget } from "./installBuildOutput";
 import {
   APP_SECRETS_FILE,
@@ -54,6 +54,7 @@ import {
   forgetOwnedResources,
   readOwnedResources,
   recordOwnedResource,
+  RESOURCE_LABELS,
   type OwnedResource,
 } from "./ownership";
 
@@ -99,7 +100,8 @@ export async function claimAppWorker(
   if ((await getWorkerDeployment(cf, workerName)) !== null) {
     throw new EveryAppError(
       "WORKER_NAME_TAKEN",
-      `A Worker named ${workerName} already exists in this Cloudflare account, but no deploy of this app created it. It may belong to another gateway or project; delete or rename it, then deploy again.`,
+      `A Worker named ${workerName} already exists in this Cloudflare account\nNo deploy of this app created it; it may belong to another Gateway or project.`,
+      { fix: "delete or rename it", rerun: thisCommand() },
     );
   }
   await recordOwnedResource(gatewayDb, registration.workerName, {
@@ -202,25 +204,17 @@ function hyperdriveNameFor(workerName: string, binding: string): string {
  * caching is kept as the manifest says (`caching`, off by default): the
  * deploy creates it that way and turns it back if it changed.
  */
-async function provisionHyperdrive({
-  cf,
-  gatewayDb,
-  registration,
-  owned,
-  binding,
-  name,
-  origin,
-  caching,
-  onCreated,
-  onRecreated,
-  onChanged,
-}: ProvisionOptions & {
-  owned: OwnedResource[];
-  binding: string;
-  name: string;
-  origin: HyperdriveOrigin | null;
-  caching: HyperdriveCaching;
-}): Promise<string> {
+async function provisionHyperdrive(
+  options: ProvisionOptions & {
+    owned: OwnedResource[];
+    binding: string;
+    name: string;
+    origin: HyperdriveOrigin | null;
+    caching: HyperdriveCaching;
+  },
+): Promise<string> {
+  const { cf, gatewayDb, registration, owned, binding, name, origin, caching } = options;
+  const { onRecreated, onChanged } = options;
   const { workerName } = registration;
   const resource = { kind: "hyperdrive" as const, binding, name };
   const description = describeResource(resource);
@@ -259,12 +253,7 @@ async function provisionHyperdrive({
       await reconcile(existing);
       return existing.id;
     }
-    if (existing) {
-      throw new EveryAppError(
-        "RESOURCE_REPLACED",
-        `${description} isn't the one this app created (${recorded.resourceId}): that was deleted, and this one was created by someone else since. Delete or rename it, then deploy again.`,
-      );
-    }
+    if (existing) throw replacedError(resource, recorded.resourceId);
     onRecreated?.(description);
   } else if (recorded) {
     // Claimed, then created, but the id never recorded: it's this one.
@@ -288,82 +277,57 @@ async function provisionHyperdrive({
     }
     throw new EveryAppError(
       "RESOURCE_NAME_TAKEN",
-      `A Hyperdrive config named "${name}" already exists in this Cloudflare account, but no deploy of this app created it. To use it, set ${variable} in ${APP_SECRETS_FILE} to the URL of the database it connects to; otherwise delete or rename it, then deploy again.`,
+      `A Hyperdrive config named "${name}" already exists in this Cloudflare account\nNo deploy of this app created it.`,
+      {
+        fix: `to use it, set ${variable} in ${APP_SECRETS_FILE} to the URL of the database it connects to; otherwise delete or rename it`,
+        rerun: thisCommand(),
+      },
     );
   }
 
   if (!origin) {
     throw new EveryAppError(
       "HYPERDRIVE_ORIGIN_MISSING",
-      `${binding} needs a Hyperdrive config, and creating one needs the database it connects to: set ${variable} (or POSTGRES_DATABASE_URL, when it is the app's only config) in ${APP_SECRETS_FILE} to postgres://<user>:<password>@<host>:<port>/<database>, then deploy again.`,
+      `${binding} needs the database its Hyperdrive config connects to\nCreating the config needs its URL.`,
+      {
+        fix: `set ${variable} (or POSTGRES_DATABASE_URL, when it is the app's only config) in ${APP_SECRETS_FILE} to postgres://<user>:<password>@<host>:<port>/<database>`,
+        rerun: thisCommand(),
+      },
     );
   }
-  // Claim the name first: a retry after a create whose id went unrecorded
-  // finds the config by it.
-  await recordOwnedResource(gatewayDb, workerName, {
-    ...resource,
-    resourceId: null,
-  });
-  let id: string;
-  try {
-    id = await createHyperdrive(cf, name, origin, caching);
-  } catch (error) {
-    if (error instanceof CfError && error.kind === "already_exists") {
-      await forgetOwnedResources(gatewayDb, workerName, {
-        kind: "hyperdrive",
-        binding,
-      });
-      throw new EveryAppError(
-        "RESOURCE_NAME_TAKEN",
-        `${description} was created by someone else while this deploy was creating it. Delete or rename it, then deploy again.`,
-      );
-    }
-    throw error;
-  }
-  await recordOwnedResource(gatewayDb, workerName, {
-    ...resource,
-    resourceId: id,
-  });
-  onCreated?.(description);
-  return id;
+  return createClaimed(options, resource, () =>
+    createHyperdrive(cf, name, origin, caching),
+  );
 }
-
-const KIND_LABELS = { d1: "D1 database", kv: "KV namespace", r2: "R2 bucket" } as const;
 
 function assignedName(
   registration: AppNaming,
-  kind: keyof typeof KIND_LABELS,
+  kind: "d1" | "kv" | "r2",
   binding: string,
 ): string {
   const name = registration.resources[kind][binding];
   if (!name || isReservedName(name)) {
     throw new EveryAppError(
       "RESOURCE_NAME_MISSING",
-      `The gateway assigned no usable ${KIND_LABELS[kind]} name for binding ${binding}. Upgrade the gateway: ${CLI} setup`,
+      `The Gateway assigned no usable ${RESOURCE_LABELS[kind]} name for binding ${binding}`,
+      { rerun: `${CLI} setup`, rerunNote: "to upgrade the Gateway" },
     );
   }
   return name;
 }
 
-async function provisionOne({
-  gatewayDb,
-  registration,
-  owned,
-  kind,
-  binding,
-  name,
-  find,
-  create,
-  onCreated,
-  onRecreated,
-}: ProvisionOptions & {
-  owned: OwnedResource[];
-  kind: "d1" | "kv";
-  binding: string;
-  name: string;
-  find: (name: string) => Promise<string | null>;
-  create: (name: string) => Promise<string>;
-}): Promise<string> {
+async function provisionOne(
+  options: ProvisionOptions & {
+    owned: OwnedResource[];
+    kind: "d1" | "kv";
+    binding: string;
+    name: string;
+    find: (name: string) => Promise<string | null>;
+    create: (name: string) => Promise<string>;
+  },
+): Promise<string> {
+  const { gatewayDb, registration, owned, kind, binding, name, find, create, onRecreated } =
+    options;
   const { workerName } = registration;
   const resource = { kind, binding, name };
   const recorded = owned.find(
@@ -374,12 +338,7 @@ async function provisionOne({
 
   if (recorded?.resourceId) {
     if (existing === recorded.resourceId) return existing;
-    if (existing) {
-      throw new EveryAppError(
-        "RESOURCE_REPLACED",
-        `${describeResource(resource)} isn't the one this app created (${recorded.resourceId}): that was deleted, and this one was created by someone else since. Delete or rename it, then deploy again.`,
-      );
-    }
+    if (existing) throw replacedError(resource, recorded.resourceId);
     onRecreated?.(describeResource(resource));
   } else if (recorded) {
     // Claimed, then created, but the id never recorded: it's this one.
@@ -393,26 +352,42 @@ async function provisionOne({
   } else if (existing) {
     throw new EveryAppError(
       "RESOURCE_NAME_TAKEN",
-      `A ${kind === "d1" ? "D1 database" : "KV namespace"} named "${name}" already exists in this Cloudflare account, but no deploy of this app created it. It may belong to another gateway, app or project; delete or rename it, then deploy again.`,
+      `A ${RESOURCE_LABELS[kind]} named "${name}" already exists in this Cloudflare account\nNo deploy of this app created it; it may belong to another Gateway, app or project.`,
+      { fix: "delete or rename it", rerun: thisCommand() },
     );
   }
 
-  // Claim the name first: a retry after a create whose id went unrecorded
-  // finds the resource by it.
+  return createClaimed(options, resource, () => create(name));
+}
+
+/**
+ * Create one of the app's resources, recorded as the app's first: a retry
+ * after a create whose id went unrecorded finds it by its name.
+ */
+async function createClaimed(
+  { gatewayDb, registration, onCreated }: ProvisionOptions,
+  resource: Omit<OwnedResource, "resourceId">,
+  create: () => Promise<string>,
+): Promise<string> {
+  const { workerName } = registration;
   await recordOwnedResource(gatewayDb, workerName, {
     ...resource,
     resourceId: null,
   });
   let id: string;
   try {
-    id = await create(name);
+    id = await create();
   } catch (error) {
-    if (error instanceof CfError && error.kind === "already_exists") {
+    if (isCfError(error, "already_exists")) {
       // Someone else created it since the lookup: not ours.
-      await forgetOwnedResources(gatewayDb, workerName, { kind, binding });
+      await forgetOwnedResources(gatewayDb, workerName, {
+        kind: resource.kind,
+        binding: resource.binding,
+      });
       throw new EveryAppError(
         "RESOURCE_NAME_TAKEN",
-        `${describeResource(resource)} was created by someone else while this deploy was creating it. Delete or rename it, then deploy again.`,
+        `${describeResource(resource)} was created by someone else while this deploy was creating it`,
+        { fix: "delete or rename it", rerun: thisCommand() },
       );
     }
     throw error;
@@ -423,4 +398,16 @@ async function provisionOne({
   });
   onCreated?.(describeResource(resource));
   return id;
+}
+
+/** A resource under the app's name that isn't the one it recorded. */
+function replacedError(
+  resource: Pick<OwnedResource, "kind" | "name">,
+  recordedId: string,
+): EveryAppError {
+  return new EveryAppError(
+    "RESOURCE_REPLACED",
+    `${describeResource(resource)} isn't the one this app created\nThat one (${recordedId}) was deleted, and this one was created by someone else since.`,
+    { fix: "delete or rename it", rerun: thisCommand() },
+  );
 }

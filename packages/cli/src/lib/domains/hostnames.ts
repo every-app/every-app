@@ -29,7 +29,7 @@ export function normalizeHostname(input: string | undefined): string | undefined
   if (!isValidHostname(host)) {
     throw new EveryAppError(
       "INVALID_DOMAIN",
-      `"${input}" isn't a hostname like apps.example.com.`,
+      `"${input}" isn't a hostname like apps.example.com`,
     );
   }
   return host;
@@ -40,6 +40,11 @@ export function isOneLabelBelow(host: string, parent: string): boolean {
   if (!host.endsWith(`.${parent}`)) return false;
   const label = host.slice(0, -(parent.length + 1));
   return label.length > 0 && !label.includes(".") && isValidHostname(host);
+}
+
+/** The app hosts the gateway publishes: those one label below its app base domain. */
+export function publishedAppHosts(hosts: readonly string[], base: string): string[] {
+  return hosts.filter((host) => isOneLabelBelow(host, base));
 }
 
 /**

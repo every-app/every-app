@@ -65,19 +65,23 @@
  * the gateway. The gateway takes the app's agent tools itself, on first use
  * and whenever the app's version changes.
  */
-import fs from "node:fs/promises";
 import path from "node:path";
 import { version as cliVersion } from "../../../package.json";
-import {
-  appBindingName,
-  manifestTierProblems,
-} from "@every-app/perimeter/manifest";
+import { manifestTierProblems } from "@every-app/perimeter/manifest";
 import type { RegistrationPlan } from "@every-app/perimeter/registry";
 import { helperWorkerName } from "@every-app/sdk/cloudflare";
+import {
+  assertSharedApps,
+  awaitLive,
+  bindIfNeeded,
+  gatewayFor,
+  registerFromManifest,
+  type ReconcileSeams,
+} from "@/commands/appGateway";
 import { setupDeps, type SetupDeps } from "@/commands/setup/runSetup";
 import { checkSchemaDrift } from "./steps/checkSchemaDrift";
 import { offerGateway } from "./steps/offerGateway";
-import { waitForLive, type LiveWaitSeams } from "./steps/waitForLive";
+import type { LiveWaitSeams } from "./steps/waitForLive";
 import { buildApp } from "@/lib/app/buildApp";
 import {
   MISSING_CLOUDFLARE_CONFIG,
@@ -98,49 +102,49 @@ import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
 import { assertAppSecretName } from "@/lib/app/secrets";
 import { readOwnedResources, recordUploadedVersion } from "@/lib/app/ownership";
 import { claimAppWorker, provisionAppResources } from "@/lib/app/resources";
-import { applyEmailRoutes, describeMailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
+import {
+  applyEmailRoutes,
+  describeMailRoutes,
+  emailDeclarations,
+  planEmailRoutes,
+} from "@/lib/app/emailRoutes";
 import {
   appWorkflows,
   assertOwnWorkflows,
   droppedWorkflows,
   type AppWorkflow,
 } from "@/lib/app/workflows";
-import { deviceLoginAction } from "@/lib/cf/account";
 import type { D1Database } from "@/lib/cf/d1";
-import {
-  assertReplaceable,
-  canPromptInTerminal,
-  cfDeploy,
-  type Confirm,
-} from "@/lib/cf/deploy";
-import { CfError } from "@/lib/cf/errors";
+import { assertReplaceable, cfDeploy } from "@/lib/cf/deploy";
 import type { CfRunner } from "@/lib/cf/runner";
 import { deleteWorkerSecret } from "@/lib/cf/secrets";
 import { getWorkerDeployment } from "@/lib/cf/workers";
-import { deleteWorkflow } from "@/lib/cf/workflows";
-import { isOneLabelBelow } from "@/lib/domains/hostnames";
-import { preflightDomains } from "@/lib/domains/preflight";
+import { deleteWorkflowIfExists } from "@/lib/cf/workflows";
+import { preflightAppHost } from "@/lib/domains/preflight";
 import { afterMigration, EveryAppError, type Rollback } from "@/lib/errors";
+import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
-import { refuseOlderCheckout, type CandidateRelease } from "@/lib/gateway/apply";
-import { readInstall } from "@/lib/gateway/install";
-import { acquireLease, describeLeaseHolder } from "@/lib/gateway/lease";
-import { reconcileGateway } from "@/lib/gateway/reconcile";
-import type { GatewayRelease } from "@/lib/gateway/release";
-import { gatewayReleaseSource } from "@/lib/gateway/source";
-import { markDeployed, readAppEmail, register } from "@/lib/gateway/registry";
-import type { InstallRecord } from "@/lib/gateway/install";
+import { refuseOlderCheckout } from "@/lib/gateway/apply";
+import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
+import { markDeployed, readAppEmail } from "@/lib/gateway/registry";
 import {
   loadEveryAppManifest,
+  migrationsDir,
   resolveMigrationBinding,
   type EveryAppCliManifest,
 } from "@/lib/manifest";
-import { migratePostgres, type DrizzleKitRunner } from "@/lib/migrations/postgres";
-import { migratePrismaPostgres, type PrismaRunner } from "@/lib/migrations/prisma";
-import { migrateRemoteD1 } from "@/lib/migrations/remote";
+import type { MigrationCliRunner } from "@/lib/migrations/localCli";
+import { migratePostgres } from "@/lib/migrations/postgres";
+import { migratePrismaPostgres } from "@/lib/migrations/prisma";
+import {
+  migrateRemoteD1,
+  migrationEventData,
+  restorePointNote,
+} from "@/lib/migrations/remote";
 import { appRestoreTarget } from "@/lib/gateway/restorePoints";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
+import { canPromptInTerminal, type Confirm } from "@/lib/output/prompt";
 import { installDependencies } from "@/lib/package-manager";
 
 interface DeployAppOptions {
@@ -206,41 +210,11 @@ interface DeployAppOptions {
   createCf?: (accountId?: string) => CfRunner;
   installDeps?: typeof installDependencies;
   /** Runs drizzle-kit for Postgres migrations (default: the app's own). */
-  drizzleKit?: DrizzleKitRunner;
+  drizzleKit?: MigrationCliRunner;
   /** Runs the Prisma CLI for migrations.engine "prisma" (default: the app's own). */
-  prisma?: PrismaRunner;
+  prisma?: MigrationCliRunner;
   reconcile?: ReconcileSeams;
   live?: LiveWaitSeams;
-}
-
-/**
- * The rebind's seams (tests): how long it waits for the gateway's lease,
- * how it sleeps, and the release it deploys (default: lib/gateway/source.ts,
- * the checkout's build or the latest release).
- */
-export interface ReconcileSeams {
-  sleep?: (ms: number) => Promise<void>;
-  leaseWaitMs?: number;
-  openRelease?: () => Promise<GatewayRelease>;
-  /** What that release is, without building it from a checkout. */
-  source?: () => Promise<CandidateRelease>;
-}
-
-/**
- * The Gateway an app command's rebind deploys, unless a test says: one
- * source for the downgrade guard and the rebind, so a release is fetched
- * once.
- */
-export function gatewayFor(
-  seams: ReconcileSeams | undefined,
-  out: EventSink,
-  verbose?: boolean,
-): Required<Pick<ReconcileSeams, "openRelease" | "source">> {
-  const gateway = gatewayReleaseSource({ out, verbose });
-  return {
-    openRelease: seams?.openRelease ?? gateway.open,
-    source: seams?.source ?? gateway.describe,
-  };
 }
 
 interface DeployAppResult {
@@ -360,7 +334,7 @@ async function deploySteps(
       accountId: options.accountId,
       interactive,
       // An agent reading --json gets cf's device login, and the run waits.
-      onDeviceLogin: options.json ? deviceLoginAction(out, "app.login") : undefined,
+      login: { json: options.json, out, step: "app.login" },
       createCf: options.createCf,
       onNoGateway: offer
         ? ({ whoami, discovery }) =>
@@ -375,10 +349,8 @@ async function deploySteps(
                 forceDns: options.forceDns,
                 verbose: options.verbose,
                 deps: {
-                  ...setupDeps({ out, json: options.json, verbose: options.verbose }),
-                  interactive,
+                  ...setupDeps({ gateway, interactive }),
                   ...(options.createCf ? { createCf: options.createCf } : {}),
-                  ...gateway,
                   ...offer.setup,
                 },
               },
@@ -399,16 +371,11 @@ async function deploySteps(
   if (options.shared) assertSharedApps(install);
 
   // 2. Register: the rules name everything.
-  const { plan, organization, hasOwner, deployerGranted } = await register(registry, {
-    appSlug: manifest.id,
-    name: manifest.name ?? manifest.id,
-    description: manifest.description ?? manifest.id,
-    manifest,
-    appBaseDomain: install.appBaseDomain,
-    deployer,
-    organizationName: accountName ?? "",
-    ...(options.shared ? { scope: "shared" as const } : {}),
-  });
+  const { plan, organization, hasOwner, deployerGranted } = await registerFromManifest(
+    registry,
+    { manifest, install, deployer, accountName },
+    options.shared ? { scope: "shared" } : {},
+  );
   const shared = plan.app.scope === "shared";
   // A redeploy that didn't ask keeps a shared app shared: still hosted only.
   if (shared) assertSharedApps(install);
@@ -460,8 +427,14 @@ async function deploySteps(
   // created or uploaded; the reconcile that publishes it checks again. One
   // that isn't one label below the base is never published, so it is
   // neither checked nor a reason to redeploy the gateway.
-  const outsideBase = !isOneLabelBelow(hostname, install.appBaseDomain);
-  const newHost = !outsideBase && !install.liveDomains.includes(hostname);
+  const { outsideBase, newHost } = await preflightAppHost({
+    cf,
+    out,
+    install,
+    hostname,
+    forceDns: options.forceDns,
+    cfAsks: interactive && out.verbose,
+  });
   if (outsideBase) {
     out.emit({
       type: "warning",
@@ -470,39 +443,12 @@ async function deploySteps(
       message: `${hostname} isn't one label below ${install.appBaseDomain}, so the gateway doesn't publish it and ${manifest.id} can't be reached there.`,
     });
   }
-  if (newHost) {
-    await preflightDomains({
-      cf,
-      out,
-      step: "app.domain",
-      zone: { id: install.zoneId, name: install.zoneName },
-      domains: [...install.liveDomains, hostname],
-      liveDomains: install.liveDomains,
-      forceDns: options.forceDns,
-      cfAsks: interactive && out.verbose,
-    });
-  }
 
   // 3. Everything that touches the app's Worker and data, one deploy at a time.
-  let waited = false;
-  const lease = await acquireLease({
-    db: registry,
-    id: `app:${workerName}`,
-    purpose: "app.deploy",
-    onWait: (holder) => {
-      waited = true;
-      out.emit({
-        type: "progress",
-        step: "app.lease",
-        message: `Waiting for another deploy of ${manifest.id} to finish (${describeLeaseHolder(holder)})...`,
-      });
-    },
-    onHeartbeatProblem: (message) =>
-      out.emit({ type: "warning", code: "LEASE_HEARTBEAT", step: "app.lease", message }),
-  });
-  if (waited) {
-    out.emit({ type: "step", step: "app.lease", status: "ok", message: "The other deploy finished." });
-  }
+  const lease = await acquireAppLease(
+    { db: registry, out },
+    { workerName, appId: manifest.id, purpose: LeasePurpose.AppDeploy },
+  );
   let versionId: string;
   try {
     const deletedDurableObjects = checkDurableObjects(
@@ -548,7 +494,7 @@ async function deploySteps(
     // declaration no Worker of the app receives mail: its routes go, its
     // addresses stay stored.
     const storedEmail = await readAppEmail(registry, plan.app.id);
-    const declaresInbound = manifest.email?.inbound === true;
+    const declaresInbound = emailDeclarations(manifest).receives;
     if (!declaresInbound && storedEmail.inbound.length > 0) {
       out.emit({
         type: "warning",
@@ -611,13 +557,14 @@ async function deploySteps(
       cwd: root,
       inputs: target,
     });
-    await assertOwnWorkflows({ cf, workerName, names: workflows });
-    for (const helper of helpers) {
-      await assertOwnWorkflows({
-        cf,
+    for (const worker of [
+      { workerName, names: workflows },
+      ...helpers.map((helper) => ({
         workerName: helper.workerName,
         names: helperWorkflows[helper.workerName] ?? [],
-      });
+      })),
+    ]) {
+      await assertOwnWorkflows({ cf, ...worker });
     }
     out.emit({
       type: "step",
@@ -645,20 +592,28 @@ async function deploySteps(
     );
     const recordedVersion = (binding: string) =>
       workerRecords.find((record) => record.binding === binding)?.versionId;
-    await assertReplaceable({
-      cf,
-      workerName,
-      recordedVersionIds: [plan.versionId, recordedVersion("")],
-      interactive,
-      confirm: options.confirm,
-    });
-    for (const helper of helpers) {
+    const replace = {
+      question: "Deploy over it?",
+      effect: "Deploying replaces it, after any migrations run.",
+    };
+    for (const worker of [
+      {
+        workerName,
+        shownAs: manifest.id,
+        recordedVersionIds: [plan.versionId, recordedVersion("")],
+      },
+      ...helpers.map((helper) => ({
+        workerName: helper.workerName,
+        shownAs: `${manifest.id}'s ${helper.name} Worker`,
+        recordedVersionIds: [recordedVersion(helper.name)],
+      })),
+    ]) {
       await assertReplaceable({
         cf,
-        workerName: helper.workerName,
-        recordedVersionIds: [recordedVersion(helper.name)],
+        ...worker,
         interactive,
         confirm: options.confirm,
+        change: replace,
       });
     }
     if (unsetNames.length > 0) {
@@ -767,11 +722,7 @@ async function deploySteps(
     // The live version no longer defines them. Before the registry records
     // the new manifest, so a retry after a failed delete deletes them still.
     for (const workflow of deletedWorkflows) {
-      try {
-        await deleteWorkflow(cf, workflow.name);
-      } catch (error) {
-        if (!(error instanceof CfError && error.kind === "not_found")) throw error;
-      }
+      await deleteWorkflowIfExists(cf, workflow.name);
       out.emit({
         type: "progress",
         step: "app.upload",
@@ -787,14 +738,13 @@ async function deploySteps(
         status: "start",
         message: `Routing ${manifest.id}'s mail...`,
       });
-      const { routed } = await applyEmailRoutes({
+      const { routed, removed } = await applyEmailRoutes({
         cf,
         gatewayDb: registry,
         plan: emailRoutes,
         onProgress: (message) =>
           out.emit({ type: "progress", step: "app.email", message }),
       });
-      const removed = emailRoutes.dropped.map((route) => route.name);
       out.emit({
         type: "step",
         step: "app.email",
@@ -806,8 +756,7 @@ async function deploySteps(
           routed,
           removed,
           sendersSettable:
-            manifest.capabilities?.["email"]?.access === "write" &&
-            install.deploymentMode !== "hosted",
+            emailDeclarations(manifest).sends && install.deploymentMode !== "hosted",
         }),
         data: { addresses: routed, removed },
       });
@@ -866,25 +815,16 @@ async function deploySteps(
       data: { hostname },
     });
   }
-  const live =
-    wait &&
-    (await waitForLive({
-      db: registry,
-      appRowId: plan.app.id,
-      appId: manifest.id,
-      hostname,
-      out,
-      ...options.live,
-    })) === "live";
-  if (live) {
-    out.emit({
-      type: "step",
-      step: "app.live",
-      status: "ok",
-      message: `${manifest.id} is live at https://${hostname}.`,
-      data: { hostname, url: `https://${hostname}` },
-    });
-  }
+  const live = await awaitLive({
+    wait,
+    db: registry,
+    appRowId: plan.app.id,
+    appId: manifest.id,
+    hostname,
+    out,
+    seams: options.live,
+    message: `${manifest.id} is live at https://${hostname}.`,
+  });
 
   return {
     liveUrl: `https://${hostname}`,
@@ -909,18 +849,6 @@ function refuseReleaseMigrations(manifest: EveryAppCliManifest): void {
   throw new EveryAppError(
     "RELEASE_MIGRATIONS_UNSUPPORTED",
     `${manifest.id} migrates a Postgres database with ${engine}, which needs the app's source: a release can't. Clone it, then run: pnpm install && pnpm everyapp deploy`,
-  );
-}
-
-/**
- * Shared apps are the hosted gateway's: one self-hosted (or of no recorded
- * mode) has none, and nothing registers one there.
- */
-export function assertSharedApps(install: Pick<InstallRecord, "deploymentMode">): void {
-  if (install.deploymentMode === "hosted") return;
-  throw new EveryAppError(
-    "SHARED_APPS_UNAVAILABLE",
-    `Shared apps are for the hosted gateway; this one is ${install.deploymentMode ?? "of no recorded mode"}. Deploy without --shared to make it your organization's own app.`,
   );
 }
 
@@ -1026,8 +954,8 @@ async function migrate({
   /** How a person restores it. */
   restoreCommand: string;
   appSecrets: AppSecrets;
-  drizzleKit?: DrizzleKitRunner;
-  prisma?: PrismaRunner;
+  drizzleKit?: MigrationCliRunner;
+  prisma?: MigrationCliRunner;
 }): Promise<Rollback | null> {
   if (manifest.migrations?.dialect === "postgresql") {
     await migratePostgresDatabase({ out, cwd, manifest, appSecrets, drizzleKit, prisma });
@@ -1037,14 +965,9 @@ async function migrate({
   if (bindings.length === 0) return null;
   const binding = resolveMigrationBinding(bindings, manifest.migrations);
   const databaseId = resources.d1?.[binding]?.id;
-  const dir = path.resolve(cwd, manifest.migrations?.dir ?? "drizzle");
-  if (!databaseId || !(await isDirectory(dir))) {
-    out.emit({
-      type: "step",
-      step: "app.migrations",
-      status: "skip",
-      message: "No migrations to apply.",
-    });
+  const dir = path.resolve(cwd, migrationsDir(manifest));
+  if (!databaseId || !(await directoryExists(dir))) {
+    skipMigrations(out);
     return null;
   }
   out.emit({
@@ -1067,9 +990,9 @@ async function migrate({
     step: "app.migrations",
     status: "ok",
     message: result.applied.length > 0
-      ? `Applied ${result.applied.join(", ")}.${result.rollback ? ` Restore point saved; to undo: ${result.rollback.restoreCommand}` : ""}`
+      ? `Applied ${result.applied.join(", ")}.${restorePointNote(result.rollback)}`
       : "The app's database is up to date.",
-    data: { applied: result.applied, fresh: result.fresh, ...result.rollback },
+    data: migrationEventData(result),
   });
   return result.rollback;
 }
@@ -1092,19 +1015,13 @@ async function migratePostgresDatabase({
   cwd: string;
   manifest: EveryAppCliManifest;
   appSecrets: AppSecrets;
-  drizzleKit?: DrizzleKitRunner;
-  prisma?: PrismaRunner;
+  drizzleKit?: MigrationCliRunner;
+  prisma?: MigrationCliRunner;
 }): Promise<void> {
   const engine = manifest.migrations?.engine === "prisma" ? "prisma" : "drizzle";
-  const dir =
-    manifest.migrations?.dir ?? (engine === "drizzle" ? "drizzle" : undefined);
-  if (dir !== undefined && !(await isDirectory(path.resolve(cwd, dir)))) {
-    out.emit({
-      type: "step",
-      step: "app.migrations",
-      status: "skip",
-      message: "No migrations to apply.",
-    });
+  const dir = engine === "drizzle" ? migrationsDir(manifest) : manifest.migrations?.dir;
+  if (dir !== undefined && !(await directoryExists(path.resolve(cwd, dir)))) {
+    skipMigrations(out);
     return;
   }
   out.emit({
@@ -1131,77 +1048,6 @@ async function migratePostgresDatabase({
     message: `Migrated the app's Postgres database (${engine === "prisma" ? "prisma migrate deploy" : "drizzle-kit migrate"}).`,
     data: { dialect: "postgresql", engine },
   });
-}
-
-/**
- * Reconcile the gateway when the install row says it doesn't bind this
- * app's Worker yet, or doesn't publish its hostname yet.
- */
-export async function bindIfNeeded({
-  cf,
-  db,
-  databaseId,
-  out,
-  accountId,
-  workerName,
-  publishHost,
-  interactive,
-  forceDns,
-  seams,
-  rerun = `${CLI} deploy`,
-}: {
-  cf: CfRunner;
-  db: D1Database;
-  databaseId: string;
-  out: EventSink;
-  accountId: string;
-  workerName: string;
-  /** The app's hostname isn't one of the gateway's Custom Domains yet. */
-  publishHost: boolean;
-  interactive: boolean;
-  forceDns?: boolean;
-  seams: ReconcileSeams & Required<Pick<ReconcileSeams, "openRelease">>;
-  /** What to run again when the gateway is busy. */
-  rerun?: string;
-}): Promise<void> {
-  const install = await readInstall(db);
-  if (install?.liveAppWorkers.includes(workerName) && !publishHost) return;
-  out.emit({
-    type: "step",
-    step: "app.bind",
-    status: "start",
-    message: `Binding ${appBindingName(workerName)} on the gateway${publishHost ? " and publishing its hostname" : ""}...`,
-  });
-  try {
-    // The Gateway this run deploys: an upgrade too, when it is newer.
-    const result = await reconcileGateway({
-      cf,
-      out,
-      accountId,
-      databaseId,
-      interactive,
-      cliVersion,
-      force: true,
-      forceDns,
-      ...seams,
-    });
-    out.emit({
-      type: "step",
-      step: "app.bind",
-      status: "ok",
-      message: `The gateway binds ${appBindingName(workerName)} (gateway version ${result.versionId ?? "unknown"}).`,
-      data: { versionId: result.versionId, newHosts: result.newHosts },
-    });
-  } catch (error) {
-    if (error instanceof EveryAppError && error.code === "LEASE_HELD") {
-      throw new EveryAppError(
-        "LEASE_HELD",
-        `${error.message} This app's upload is kept: run \`${rerun}\` again once the gateway is free, and it binds the app and makes it live.`,
-        { retryable: true, rerun },
-      );
-    }
-    throw error;
-  }
 }
 
 /**
@@ -1248,10 +1094,12 @@ async function dropSecrets({
   }
 }
 
-async function isDirectory(dir: string): Promise<boolean> {
-  try {
-    return (await fs.stat(dir)).isDirectory();
-  } catch {
-    return false;
-  }
+/** The app has no migrations to apply. */
+function skipMigrations(out: EventSink): void {
+  out.emit({
+    type: "step",
+    step: "app.migrations",
+    status: "skip",
+    message: "No migrations to apply.",
+  });
 }

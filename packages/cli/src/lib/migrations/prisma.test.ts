@@ -2,13 +2,14 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { migratePrismaPostgres, type PrismaRunner } from "./prisma";
+import type { MigrationCliRunner } from "./localCli";
+import { migratePrismaPostgres } from "./prisma";
 
 const URL = "postgres://app:p%40ss%2Fword@db.example.net:5432/app";
 
-function stub(result: Awaited<ReturnType<PrismaRunner>>) {
-  const calls: Parameters<PrismaRunner>[0][] = [];
-  const run: PrismaRunner = async (call) => {
+function stub(result: Awaited<ReturnType<MigrationCliRunner>>) {
+  const calls: Parameters<MigrationCliRunner>[0][] = [];
+  const run: MigrationCliRunner = async (call) => {
     calls.push(call);
     return result;
   };
@@ -53,7 +54,7 @@ describe("migratePrismaPostgres", () => {
     expect(error!.message).toContain(
       "Error: P1000: Authentication failed against database server, the provided database credentials for `app` (***, ***) are not valid.",
     );
-    expect(error!.message).toContain("prisma.config.ts");
+    expect(error).toMatchObject({ fix: expect.stringContaining("prisma.config.ts") });
     expect(error!.message).not.toMatch(/p@ss|p%40ss|postgres:\/\//);
   });
 
@@ -66,7 +67,7 @@ describe("migratePrismaPostgres", () => {
     });
     await expect(migratePrismaPostgres({ cwd: "/app", databaseUrl: URL, run })).rejects.toMatchObject({
       code: "MIGRATION_FAILED",
-      message: expect.stringContaining("(Error: P3005)"),
+      message: expect.stringContaining("\nError: P3005"),
     });
   });
 
@@ -84,7 +85,7 @@ describe("migratePrismaPostgres", () => {
     fs.writeFileSync(path.join(cwd, "package.json"), "{}");
     await expect(migratePrismaPostgres({ cwd, databaseUrl: URL })).rejects.toMatchObject({
       code: "PRISMA_MISSING",
-      message: expect.stringContaining("add prisma to devDependencies"),
+      fix: "add prisma to devDependencies",
     });
   });
 

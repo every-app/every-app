@@ -34,7 +34,8 @@ export function checkoutRoot(moduleUrl: string = import.meta.url): string {
   if (root) return root;
   throw new EveryAppError(
     "CHECKOUT_MISSING",
-    `everyapp runs from a checkout of the Every App repository, and ${path.dirname(fileURLToPath(moduleUrl))} isn't in one. Run it from the repository: pnpm everyapp …`,
+    `everyapp runs from a checkout of the Every App repository\n${path.dirname(fileURLToPath(moduleUrl))} isn't in one.`,
+    { fix: "run it from the repository: pnpm everyapp …" },
   );
 }
 

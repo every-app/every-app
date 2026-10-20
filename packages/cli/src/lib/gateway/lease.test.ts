@@ -1,14 +1,25 @@
+import os from "node:os";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { FakeCf } from "@/lib/cf/fakeCf";
 import type { CfRunner } from "@/lib/cf/runner";
+import { createNdjsonSink, type EventSink } from "@/lib/output/events";
 import { createSqliteD1, sqliteD1Script, type SqliteD1 } from "@/test/sqliteD1";
-import { acquireLease, readLease, readLiveLeases } from "./lease";
+import {
+  acquireLease,
+  describeLeaseHolder,
+  LeasePurpose,
+  readLease,
+  readLiveLeases,
+} from "./lease";
 
 const TTL = 3 * 60_000;
+const MACHINE = os.hostname().split(".")[0];
 
 let db: SqliteD1;
 let clock: number;
+let events: any[];
+let out: EventSink;
 const now = () => clock;
 const sleep = async (ms: number) => {
   clock += ms;
@@ -17,18 +28,26 @@ const sleep = async (ms: number) => {
 beforeEach(() => {
   db = createSqliteD1();
   clock = 1_000_000;
+  events = [];
+  out = createNdjsonSink((line) => events.push(JSON.parse(line)));
 });
 
-const take = (purpose: string) =>
+const take = (purpose: LeasePurpose, app?: string) =>
   acquireLease({
     db,
     id: "gateway",
     purpose,
+    ...(app ? { app } : {}),
+    out,
+    step: "gateway.lease",
     now,
     sleep,
     heartbeatMs: 0,
     waitMs: 0,
   });
+
+const warnings = () =>
+  events.filter((event) => event.type === "warning").map((event) => event.message as string);
 
 /** The SQLite database behind a switch that makes every request fail. */
 function flaky() {
@@ -43,46 +62,56 @@ function flaky() {
 }
 
 describe("deploy lease", () => {
-  it("lets one of two deploys hold it, and says who has it", async () => {
-    const first = await take("gateway.upgrade");
-    const onWait = vi.fn();
+  it("lets one of two deploys hold it, and says who has it while the other waits", async () => {
+    const first = await take(LeasePurpose.GatewayUpgrade);
 
     await expect(
       acquireLease({
         db,
         id: "gateway",
-        purpose: "gateway.reconcile",
+        purpose: LeasePurpose.GatewayReconcile,
+        out,
+        step: "gateway.lease",
         now,
         sleep,
         heartbeatMs: 0,
         waitMs: 10_000,
-        onWait,
       }),
     ).rejects.toMatchObject({ code: "LEASE_HELD", retryable: true });
-    expect(onWait).toHaveBeenCalledWith(
-      expect.objectContaining({
-        holder: first.holder,
-        purpose: "gateway.upgrade",
-      }),
-    );
+    expect(events[0]).toMatchObject({
+      type: "progress",
+      step: "gateway.lease",
+      message: `Waiting for a Gateway upgrade to finish (${MACHINE}, started 0s ago)`,
+      data: { holder: { holder: first.holder, purpose: "gateway.upgrade" } },
+    });
     // Different leases don't block each other.
     await expect(
-      acquireLease({ db, id: "app:every-acme-todo", purpose: "app.deploy", now, sleep, heartbeatMs: 0 }),
+      acquireLease({
+        db,
+        id: "app:every-acme-todo",
+        purpose: LeasePurpose.AppDeploy,
+        app: "todo",
+        out,
+        step: "app.lease",
+        now,
+        sleep,
+        heartbeatMs: 0,
+      }),
     ).resolves.toMatchObject({ id: "app:every-acme-todo" });
   });
 
   it("is free again once its holder releases it", async () => {
-    const first = await take("gateway.upgrade");
+    const first = await take(LeasePurpose.GatewayUpgrade);
     await first.release();
-    await expect(take("gateway.reconcile")).resolves.toBeTruthy();
+    await expect(take(LeasePurpose.GatewayReconcile)).resolves.toBeTruthy();
   });
 
   it("is taken over 3 minutes after its last renewal, and the old holder's release is a no-op", async () => {
-    const crashed = await take("gateway.upgrade");
+    const crashed = await take(LeasePurpose.GatewayUpgrade);
     clock += TTL - 1;
-    await expect(take("gateway.reconcile")).rejects.toMatchObject({ code: "LEASE_HELD" });
+    await expect(take(LeasePurpose.GatewayReconcile)).rejects.toMatchObject({ code: "LEASE_HELD" });
     clock += 2;
-    const next = await take("gateway.reconcile");
+    const next = await take(LeasePurpose.GatewayReconcile);
 
     await crashed.release();
     await expect(readLease(db, "gateway")).resolves.toMatchObject({
@@ -91,30 +120,38 @@ describe("deploy lease", () => {
     });
   });
 
-  it("waits out a holder that died, by default", async () => {
-    const dead = await take("gateway.upgrade");
-    const onWait = vi.fn();
+  it("waits out a holder that died, by default, and says the wait is over", async () => {
+    const dead = await take(LeasePurpose.GatewayUpgrade);
     // No waitMs: the default outlasts the TTL plus a heartbeat.
     const next = await acquireLease({
       db,
       id: "gateway",
-      purpose: "gateway.reconcile",
+      purpose: LeasePurpose.GatewayReconcile,
+      out,
+      step: "gateway.lease",
       now,
       sleep,
       heartbeatMs: 0,
-      onWait,
     });
-    expect(onWait).toHaveBeenCalledWith(expect.objectContaining({ holder: dead.holder }));
+    expect(events[0]).toMatchObject({ type: "progress", data: { holder: { holder: dead.holder } } });
+    expect(events.at(-1)).toMatchObject({
+      type: "step",
+      step: "gateway.lease",
+      status: "ok",
+      data: { waitedFor: "Gateway upgrade" },
+    });
     expect(next.holder).not.toBe(dead.holder);
   });
 
   it("waits for a holder that finishes", async () => {
-    const first = await take("gateway.upgrade");
+    const first = await take(LeasePurpose.GatewayUpgrade);
     let waits = 0;
     const second = acquireLease({
       db,
       id: "gateway",
-      purpose: "app.reconcile",
+      purpose: LeasePurpose.GatewayReconcile,
+      out,
+      step: "gateway.lease",
       now,
       heartbeatMs: 0,
       waitMs: 60_000,
@@ -127,32 +164,112 @@ describe("deploy lease", () => {
     expect(waits).toBe(2);
   });
 
-  it("says which machine holds it, since when, and where to see it", async () => {
-    const live = await take("gateway.upgrade");
+  it("says what the holder does, who runs it on which machine, and since when", async () => {
+    await acquireLease({
+      db,
+      id: "app:every-acme-todo",
+      purpose: LeasePurpose.AppDeploy,
+      app: "todo",
+      out,
+      step: "app.lease",
+      now,
+      sleep,
+      heartbeatMs: 0,
+    });
     clock += 60_000;
 
-    const held = await take("gateway.reconcile").catch((error: Error) => error);
+    const held = await acquireLease({
+      db,
+      id: "app:every-acme-todo",
+      purpose: LeasePurpose.AppSecrets,
+      app: "todo",
+      out,
+      step: "app.lease",
+      now,
+      sleep,
+      heartbeatMs: 0,
+      waitMs: 0,
+    }).catch((error: Error) => error);
     expect(held).toMatchObject({
       code: "LEASE_HELD",
       retryable: true,
-      data: { fix: "`pnpm everyapp status` shows it; run this again once it finishes" },
+      rerunNote: "once it's done (pnpm everyapp status shows it)",
     });
     expect((held as Error).message).toBe(
-      `Another deploy is still running after 0s\nIt's from ${live.holder.split(":")[0]!.replace(/\.local$/, "")}, started 1m ago. If it died, its lease runs out in 2m and the next run takes it.`,
+      `A deploy of todo is still running after 0s\nIt's from ${MACHINE}. If it stopped without cleaning up, it's released within 2m.`,
     );
+    const lease = (await readLease(db, "app:every-acme-todo"))!;
+    expect(describeLeaseHolder({ ...lease, deployer: "ben@example.com" }, clock)).toBe(
+      `a deploy of todo from ben@example.com on ${MACHINE}, started 1m ago`,
+    );
+  });
+
+  it("reads a row an older everyapp wrote, and adds the new columns to its table in place", async () => {
+    db.sqlite.exec(`CREATE TABLE _everyapp_deploy_lease (
+      id TEXT PRIMARY KEY, holder TEXT NOT NULL, purpose TEXT NOT NULL,
+      acquired_at INTEGER NOT NULL, expires_at INTEGER NOT NULL)`);
+    db.sqlite
+      .prepare("INSERT INTO _everyapp_deploy_lease VALUES (?, ?, ?, ?, ?)")
+      .run("gateway", "Bens-MacBook-Pro.local:48211:9f3a1c2e", "gateway.upgrade", clock, clock + TTL);
+
+    const lease = (await readLease(db, "gateway"))!;
+    expect(lease).toMatchObject({ app: null, deployer: null, machine: "Bens-MacBook-Pro" });
+    expect(describeLeaseHolder(lease, clock + 120_000)).toBe(
+      "a Gateway upgrade from Bens-MacBook-Pro, started 2m ago",
+    );
+    expect(db.all("PRAGMA table_info(_everyapp_deploy_lease)").map((column) => column["name"])).toEqual([
+      "id",
+      "holder",
+      "purpose",
+      "acquired_at",
+      "expires_at",
+      "app",
+      "deployer",
+      "machine",
+    ]);
   });
 
   it("lists the deploys running now, not those that died", async () => {
     // A deploy of another app that died.
-    await acquireLease({ db, id: "app:every-acme-notes", purpose: "app.deploy", now, sleep, heartbeatMs: 0 });
+    const app = (id: string, name: string) =>
+      acquireLease({
+        db,
+        id,
+        purpose: LeasePurpose.AppDeploy,
+        app: name,
+        out,
+        step: "app.lease",
+        now,
+        sleep,
+        heartbeatMs: 0,
+      });
+    await app("app:every-acme-notes", "notes");
     clock += TTL + 1;
-    const gateway = await take("gateway.upgrade");
+    const gateway = await take(LeasePurpose.GatewayUpgrade);
     clock += 1;
-    const app = await acquireLease({ db, id: "app:every-acme-todo", purpose: "app.deploy", now, sleep, heartbeatMs: 0 });
+    const todo = await app("app:every-acme-todo", "todo");
 
     await expect(readLiveLeases(db, clock)).resolves.toEqual([
-      { id: "gateway", holder: gateway.holder, purpose: "gateway.upgrade", acquiredAt: clock - 1, expiresAt: clock - 1 + TTL },
-      { id: "app:every-acme-todo", holder: app.holder, purpose: "app.deploy", acquiredAt: clock, expiresAt: clock + TTL },
+      {
+        id: "gateway",
+        holder: gateway.holder,
+        purpose: "gateway.upgrade",
+        acquiredAt: clock - 1,
+        expiresAt: clock - 1 + TTL,
+        app: null,
+        deployer: null,
+        machine: MACHINE,
+      },
+      {
+        id: "app:every-acme-todo",
+        holder: todo.holder,
+        purpose: "app.deploy",
+        acquiredAt: clock,
+        expiresAt: clock + TTL,
+        app: "todo",
+        deployer: null,
+        machine: MACHINE,
+      },
     ]);
   });
 
@@ -162,7 +279,9 @@ describe("deploy lease", () => {
       const lease = await acquireLease({
         db,
         id: "gateway",
-        purpose: "gateway.upgrade",
+        purpose: LeasePurpose.GatewayUpgrade,
+        out,
+        step: "gateway.lease",
         now,
         sleep,
         heartbeatMs: 30_000,
@@ -170,9 +289,7 @@ describe("deploy lease", () => {
       const before = (await readLease(db, "gateway"))!.expiresAt;
       clock += 30_000;
       await vi.advanceTimersByTimeAsync(30_000);
-      expect((await readLease(db, "gateway"))!.expiresAt).toBe(
-        before + 30_000,
-      );
+      expect((await readLease(db, "gateway"))!.expiresAt).toBe(before + 30_000);
       // A deploy that runs far longer than the TTL keeps it.
       for (let beat = 0; beat < 20; beat += 1) {
         clock += 30_000;
@@ -187,50 +304,50 @@ describe("deploy lease", () => {
 
   describe("before a step that can't be undone", () => {
     it("goes on while it holds the lease, and renews it", async () => {
-      const lease = await take("gateway.upgrade");
+      const lease = await take(LeasePurpose.GatewayUpgrade);
       clock += 60_000;
       await lease.check();
       expect((await readLease(db, "gateway"))!.expiresAt).toBe(clock + TTL);
     });
 
     it("stops once another deploy took the lease", async () => {
-      const lease = await take("gateway.upgrade");
+      const lease = await take(LeasePurpose.GatewayUpgrade);
       clock += TTL + 1;
-      const other = await take("gateway.reconcile");
+      const other = await take(LeasePurpose.GatewayReconcile);
 
       await expect(lease.check()).rejects.toMatchObject({
         code: "LEASE_LOST",
         retryable: true,
-        message: expect.stringContaining("no longer this deploy's"),
+        message: expect.stringContaining("Stopped: this run lost its hold on the Gateway"),
       });
       // The other deploy's lease is left alone.
       await lease.release();
       await expect(readLease(db, "gateway")).resolves.toMatchObject({ holder: other.holder });
     });
 
-    it("goes on through a short outage, and stops once renewals failed for half the TTL", async () => {
+    it("goes on through a short outage, warning, and stops once renewals failed for half the TTL", async () => {
       const { state, db: unreliable } = flaky();
-      const problems: string[] = [];
       const lease = await acquireLease({
         db: unreliable,
-        id: "gateway",
-        purpose: "gateway.upgrade",
+        id: "app:every-acme-todo",
+        purpose: LeasePurpose.AppEmail,
+        app: "todo",
+        out,
+        step: "app.lease",
         now,
         sleep,
         heartbeatMs: 0,
-        onHeartbeatProblem: (message) => problems.push(message),
       });
 
       state.failing = true;
       clock += TTL / 2;
       await expect(lease.check()).resolves.toBeUndefined();
-      expect(problems.at(-1)).toMatch(/Couldn't renew the deploy lease "gateway" \(network down\); it expires at/);
+      expect(warnings()).toEqual([
+        "Can't reach Cloudflare to keep hold of todo (2m so far)\nnetwork down. Another run can take over in 2m if this continues.",
+      ]);
 
       clock += 1;
-      await expect(lease.check()).rejects.toMatchObject({
-        code: "LEASE_LOST",
-        message: expect.stringMatching(/Couldn't renew the deploy lease "gateway" for 90 s \(network down\)/),
-      });
+      await expect(lease.check()).rejects.toMatchObject({ code: "LEASE_LOST" });
       // It stays lost, even once D1 answers again.
       state.failing = false;
       await expect(lease.check()).rejects.toMatchObject({ code: "LEASE_LOST" });
@@ -239,20 +356,20 @@ describe("deploy lease", () => {
     it("hears from the heartbeat that the lease is lost, once", async () => {
       vi.useFakeTimers();
       try {
-        const problems: string[] = [];
         const lease = await acquireLease({
           db,
           id: "gateway",
-          purpose: "gateway.upgrade",
+          purpose: LeasePurpose.GatewayUpgrade,
+          out,
+          step: "gateway.lease",
           now,
           sleep,
           heartbeatMs: 30_000,
-          onHeartbeatProblem: (message) => problems.push(message),
         });
 
         db.sqlite.exec("DELETE FROM _everyapp_deploy_lease");
         await vi.advanceTimersByTimeAsync(90_000);
-        expect(problems).toEqual([expect.stringMatching(/no longer this deploy's/)]);
+        expect(warnings()).toEqual([expect.stringMatching(/^This run lost its hold on the Gateway\n/)]);
         await expect(lease.check()).rejects.toMatchObject({ code: "LEASE_LOST" });
       } finally {
         vi.useRealTimers();
@@ -282,7 +399,9 @@ describe("deploy lease", () => {
       const lease = await acquireLease({
         db: slow,
         id: "gateway",
-        purpose: "gateway.upgrade",
+        purpose: LeasePurpose.GatewayUpgrade,
+        out,
+        step: "gateway.lease",
         now,
         sleep,
         heartbeatMs: 30_000,
@@ -317,14 +436,17 @@ describe("deploy lease", () => {
     const lease = await acquireLease({
       db: cfD1Database(cf, "gateway-db"),
       id: "gateway",
-      purpose: "gateway.upgrade",
+      purpose: LeasePurpose.GatewayUpgrade,
+      out,
+      step: "gateway.lease",
       now,
       sleep,
       heartbeatMs: 0,
     });
-    expect(limits).toEqual([undefined]);
+    // The table (created, then its columns read), then the lease taken.
+    expect(limits).toEqual([undefined, undefined]);
 
     await lease.check();
-    expect(limits).toEqual([undefined, 20_000]);
+    expect(limits).toEqual([undefined, undefined, 20_000]);
   });
 });

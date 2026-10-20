@@ -11,13 +11,12 @@
  */
 import { deviceLoginAction, ensureCfAuth } from "@/lib/cf/account";
 import type { D1Database } from "@/lib/cf/d1";
-import { canPromptInTerminal } from "@/lib/cf/deploy";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { notDeployedByEveryapp } from "./apply";
+import { canPromptInTerminal } from "@/lib/output/prompt";
 import {
   checkGatewayUrl,
   discoverGateway,
@@ -25,7 +24,7 @@ import {
   type Discovery,
   type FoundGateway,
 } from "./discover";
-import type { InstallRecord } from "./install";
+import { notDeployedByEveryapp, type InstallRecord } from "./install";
 import { deployerFor, type Deployer } from "./registry";
 
 interface GatewayConnection {
@@ -48,15 +47,23 @@ type CreateCf = (accountId?: string) => CfRunner;
 
 const defaultCreateCf: CreateCf = (accountId) => createCfRunner({ accountId });
 
-/** A gateway URL as `--gateway` takes it: no path, query or trailing slash. */
-function normalizeGatewayUrl(gatewayUrl: string): string {
+/**
+ * A gateway URL as `--gateway` takes it: no path, query or trailing slash.
+ * `source` names where it came from, for the error.
+ */
+function normalizeGatewayUrl(gatewayUrl: string, source: "--gateway" | "EVERYAPP_GATEWAY_URL"): string {
   let url: URL;
   try {
     url = new URL(gatewayUrl);
   } catch {
     throw new EveryAppError(
       "INVALID_GATEWAY_URL",
-      `"${gatewayUrl}" isn't a URL; pass the gateway's, e.g. https://apps.example.com.`,
+      source === "--gateway"
+        ? `--gateway must be a full URL, not "${gatewayUrl}"\nFor example https://apps.example.com.`
+        : `EVERYAPP_GATEWAY_URL must be a full URL, not "${gatewayUrl}"`,
+      source === "--gateway"
+        ? {}
+        : { fix: `set it to https://${gatewayUrl.replace(/^\w+:\/\//, "")}, or unset it` },
     );
   }
   url.pathname = url.pathname.replace(/\/+$/, "");
@@ -67,8 +74,9 @@ function normalizeGatewayUrl(gatewayUrl: string): string {
 
 /** The gateway URL `--gateway` or EVERYAPP_GATEWAY_URL names, if either does. */
 export function requestedGatewayUrl(flag?: string): string | undefined {
-  const explicit = flag ?? process.env["EVERYAPP_GATEWAY_URL"];
-  return explicit ? normalizeGatewayUrl(explicit) : undefined;
+  if (flag) return normalizeGatewayUrl(flag, "--gateway");
+  const fromEnv = process.env["EVERYAPP_GATEWAY_URL"];
+  return fromEnv ? normalizeGatewayUrl(fromEnv, "EVERYAPP_GATEWAY_URL") : undefined;
 }
 
 /** How a run without a terminal logs in: see `ensureCfAuth`. */
@@ -118,7 +126,7 @@ function requireInstall(
   if (install.liveVersionId === null) {
     throw new EveryAppError(
       "GATEWAY_NOT_INSTALLED",
-      `The Gateway at https://${install.gatewayHost} stopped before its first upload finished. Finish installing it: ${CLI} setup`,
+      `The Gateway at https://${install.gatewayHost} never finished installing`,
       { rerun: `${CLI} setup` },
     );
   }
@@ -127,31 +135,22 @@ function requireInstall(
 
 /**
  * The Gateway a command that needs one acts on (`status`), found through
- * the Cloudflare login: GATEWAY_NOT_FOUND when
- * there is none; with `installed`, one whose install is recorded and live.
- * Under --json, cf's device login goes to the agent, and the run waits.
+ * the Cloudflare login: GATEWAY_NOT_FOUND when there is none. Under --json,
+ * cf's device login goes to the agent, and the run waits.
  */
-export async function existingGateway(
-  options: ExistingGatewayOptions & { installed: true },
-): Promise<FoundGateway & { install: InstallRecord }>;
-export async function existingGateway(
-  options: ExistingGatewayOptions & { installed?: false },
-): Promise<FoundGateway>;
 export async function existingGateway({
   json,
   out,
   accountId,
   createCf,
-  installed,
-}: ExistingGatewayOptions & { installed?: boolean }): Promise<FoundGateway> {
+}: ExistingGatewayOptions): Promise<FoundGateway> {
   const { whoami, discovery } = await loginAndDiscover({
     createCf,
     accountId,
     interactive: canPromptInTerminal(json ?? false),
     onDeviceLogin: json ? deviceLoginAction(out, "gateway.login") : undefined,
   });
-  const gateway = requireGateway(discovery, whoami);
-  return installed ? requireInstall(gateway) : gateway;
+  return requireGateway(discovery, whoami);
 }
 
 interface ExistingGatewayOptions {
@@ -168,17 +167,17 @@ export async function connectToGateway({
   gateway,
   accountId,
   interactive,
-  onDeviceLogin,
   createCf = defaultCreateCf,
   onNoGateway,
+  login,
 }: {
   /** The URL `--gateway` or EVERYAPP_GATEWAY_URL names (requestedGatewayUrl). */
   gateway?: string;
   /** --account-id */
   accountId?: string;
   interactive: boolean;
-  /** Under --json: hand cf's device login to the agent, and wait for it. */
-  onDeviceLogin?: OnDeviceLogin;
+  /** Under --json (`json`), cf's device login goes to the agent on `step`. */
+  login?: { json?: boolean; out: EventSink; step: string };
   createCf?: CreateCf;
   /**
    * No account the login sees has a Gateway (`deploy` offers to install
@@ -186,15 +185,15 @@ export async function connectToGateway({
    */
   onNoGateway?: (found: { whoami: CfWhoami; discovery: Discovery }) => Promise<Discovery>;
 }): Promise<GatewayConnection> {
-  const login = await loginAndDiscover({
+  const loggedIn = await loginAndDiscover({
     createCf,
     accountId,
     host: gateway ? new URL(gateway).host.toLowerCase() : undefined,
     interactive,
-    onDeviceLogin,
+    onDeviceLogin: login?.json ? deviceLoginAction(login.out, login.step) : undefined,
   });
-  const { whoami } = login;
-  let { discovery } = login;
+  const { whoami } = loggedIn;
+  let { discovery } = loggedIn;
   if (
     onNoGateway &&
     discovery.gateway === null &&

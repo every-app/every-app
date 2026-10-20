@@ -10,12 +10,10 @@
  * never the shared one, and is checked by whoever opens it
  * (lib/gateway/release.ts `openRelease`).
  */
-import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { makeCfTempDir } from "@/lib/cf/privateDir";
+import { privateTempDir } from "@/lib/cf/privateDir";
 import { EveryAppError } from "@/lib/errors";
-import { onInterrupt } from "@/lib/interrupt";
 
 /** Far above a Gateway release (a few MB), far below a disk's worth. */
 const MAX_BYTES = 200 * 1024 * 1024;
@@ -136,14 +134,7 @@ export async function downloadRelease(
     throw tooLarge(url, maxBytes);
   }
 
-  const dir = await makeCfTempDir("release-download-");
-  const forget = onInterrupt({
-    sync: () => fs.rmSync(dir, { recursive: true, force: true }),
-  });
-  const cleanup = async () => {
-    await fsp.rm(dir, { recursive: true, force: true });
-    forget();
-  };
+  const { dir, cleanup } = await privateTempDir("release-download-");
   const tarball = path.join(dir, path.posix.basename(current.pathname) || "release.tar.gz");
   try {
     const file = await fsp.open(tarball, "wx", 0o600);
@@ -224,7 +215,7 @@ function githubReleaseTag(url: URL): string | null {
 function tooLarge(url: string, maxBytes: number): EveryAppError {
   return new EveryAppError(
     "RELEASE_TOO_LARGE",
-    `${url} is larger than ${Math.round(maxBytes / 1024 / 1024)} MB; a release is a few MB. Refusing to download it.`,
+    `${url} is over ${Math.round(maxBytes / 1024 / 1024)} MB, too big for a release\nA release is a few MB. Check the URL.`,
   );
 }
 

@@ -1,4 +1,5 @@
 import { buildCommand } from "@stricli/core";
+import { jsonFlag } from "../flags";
 
 export const createCommand = buildCommand({
   loader: async () => import("."),
@@ -34,11 +35,7 @@ export const createCommand = buildCommand({
           "With --deploy: the Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)",
         optional: true,
       },
-      json: {
-        kind: "boolean",
-        brief: "Print progress as NDJSON events on stdout (never asks anything)",
-        optional: true,
-      },
+      json: jsonFlag,
       verbose: {
         kind: "boolean",
         brief: "Show every step, and stream install output to stderr",

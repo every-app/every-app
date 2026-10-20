@@ -1,12 +1,10 @@
-import chalk from "chalk";
 import type { LocalContext } from "@/context";
-import { deviceLoginAction } from "@/lib/cf/account";
 import { restoreD1 } from "@/lib/cf/d1";
-import { canPromptInTerminal, confirmAtTerminal, type Confirm } from "@/lib/cf/deploy";
+import { canPromptInTerminal, confirmUnlessYes, type Confirm } from "@/lib/output/prompt";
 import type { CfRunner } from "@/lib/cf/runner";
 import { EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
-import { acquireLease, describeLeaseHolder } from "@/lib/gateway/lease";
+import { acquireLease, LeasePurpose } from "@/lib/gateway/lease";
 import { readApp } from "@/lib/gateway/registry";
 import {
   appRestoreTarget,
@@ -17,9 +15,9 @@ import {
 } from "@/lib/gateway/restorePoints";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
-import { roughly } from "@/lib/output/roughly";
+import { plural } from "@/lib/output/text";
+import { roughly } from "@/lib/output/time";
 import { eventSink, runReported } from "@/lib/output/run";
-import { handTerminalOver } from "@/lib/output/terminal";
 
 interface RestoreCommandFlags {
   gateway?: boolean;
@@ -81,7 +79,7 @@ export async function restoreDatabase({
   out,
   createCf,
   interactive = canPromptInTerminal(json),
-  confirm = confirmRestore,
+  confirm,
 }: RestoreDatabaseOptions): Promise<void> {
   if (gateway && named) {
     throw new EveryAppError("RESTORE_TARGET_TWICE", `Pass ${named} or --gateway, not both`, {
@@ -93,7 +91,7 @@ export async function restoreDatabase({
     gateway: requestedGatewayUrl(),
     accountId,
     interactive,
-    onDeviceLogin: json ? deviceLoginAction(out, "db.login") : undefined,
+    login: { json, out, step: "db.login" },
     createCf,
   });
   const target = appId
@@ -117,33 +115,24 @@ export async function restoreDatabase({
     createdBy: point.createdBy,
   };
 
-  if (!yes) {
-    if (!interactive) {
-      throw new EveryAppError(
-        "CONFIRMATION_REQUIRED",
-        `Restoring ${whose} needs a person at a terminal to confirm, or --yes\nIt undoes ${undoes(point)}; anything written to it since is lost too.`,
-        { data },
-      );
-    }
-    const question = `Put ${whose} back to before ${undoes(point)}?`;
-    if (!(await confirm(question.charAt(0).toUpperCase() + question.slice(1)))) {
-      throw new EveryAppError("RESTORE_CANCELLED", "Cancelled. Nothing changed.");
-    }
-  }
+  await confirmUnlessYes({
+    yes,
+    interactive,
+    confirm,
+    question: `Put ${whose} back to before ${undoes(point)}?`,
+    unattended: `Restoring ${whose} needs a person at a terminal to confirm, or --yes\nIt undoes ${undoes(point)}; anything written to it since is lost too.`,
+    context: ["Anything written to the database since then is lost too."],
+    data,
+  });
 
   // Never in the middle of a deploy's migration or upload.
   const lease = await acquireLease({
     db,
     id: target,
-    purpose: "db.restore",
-    onWait: (holder) =>
-      out.emit({
-        type: "progress",
-        step: "db.lease",
-        message: `Waiting for a deploy to finish (${describeLeaseHolder(holder)})...`,
-      }),
-    onHeartbeatProblem: (message) =>
-      out.emit({ type: "warning", code: "LEASE_HEARTBEAT", step: "db.lease", message }),
+    purpose: LeasePurpose.DbRestore,
+    ...(appId ? { app: appId } : {}),
+    out,
+    step: "db.lease",
   });
   try {
     await lease.check();
@@ -166,14 +155,6 @@ export async function restoreDatabase({
 
 /** "2 migrations (0001_x.sql, 0002_y.sql) applied 3m ago by ben@example.com" */
 function undoes(point: RestorePoint, now = Date.now()): string {
-  const count = point.migrations.length;
   const by = point.createdBy.startsWith("api-token:") ? "an API token" : point.createdBy;
-  return `${count} migration${count === 1 ? "" : "s"} (${point.migrations.join(", ")}) applied ${roughly(now - point.createdAt)} ago by ${by}`;
+  return `${plural(point.migrations.length, "migration")} (${point.migrations.join(", ")}) applied ${roughly(now - point.createdAt)} ago by ${by}`;
 }
-
-/** At a terminal: what else a restore undoes, dim, then the question. */
-const confirmRestore: Confirm = async (question) => {
-  handTerminalOver();
-  process.stderr.write(`${chalk.dim("Anything written to the database since then is lost too.")}\n`);
-  return confirmAtTerminal(question);
-};

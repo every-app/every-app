@@ -12,7 +12,6 @@
  * 5. Outside the checkout, start a git repository for it.
  * 6. With --deploy, deploy it as `everyapp deploy` does.
  */
-import fs from "node:fs/promises";
 import path from "node:path";
 import type { LocalContext } from "@/context";
 import { deployApp } from "@/commands/deploy/deployApp";
@@ -21,29 +20,22 @@ import { linkSkill } from "@/lib/app/skill";
 import { copyStarter, newAppDir } from "@/lib/app/starter";
 import { generateWorkerTypes } from "@/lib/app/workerTypes";
 import { checkoutRoot, isInCheckout } from "@/lib/checkout";
-import {
-  canPromptInTerminal,
-  confirmAtTerminal,
-  type Confirm,
-} from "@/lib/cf/deploy";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
-import { EveryAppError } from "@/lib/errors";
-import { directoryExists } from "@/lib/file-operations";
+import { errorMessage, EveryAppError } from "@/lib/errors";
+import { directoryExists, fileExists } from "@/lib/file-operations";
 import { requestedGatewayUrl } from "@/lib/gateway/connect";
 import { initRepository } from "@/lib/git";
 import { loadEveryAppManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
-import { eventSink, runReported } from "@/lib/output/run";
+import { canPromptInTerminal, confirmAtTerminal, type Confirm } from "@/lib/output/prompt";
+import { runCommand } from "@/lib/output/run";
 import { CLI } from "@/lib/output/command";
 import { installDependencies } from "@/lib/package-manager";
+import type { GatewayCommandFlags } from "../flags";
 import { resolveAppId } from "./steps/appId";
 
-interface CreateCommandFlags {
+interface CreateCommandFlags extends GatewayCommandFlags {
   deploy?: boolean;
-  gateway?: string;
-  "account-id"?: string;
-  json?: boolean;
-  verbose?: boolean;
   yes?: boolean;
 }
 
@@ -52,10 +44,7 @@ export default async function create(
   flags: CreateCommandFlags,
   appIdArg?: string,
 ): Promise<void> {
-  const out = eventSink(flags.json);
-  await runReported(out, () => createApp({ flags, appIdArg, out }), {
-    verbose: flags.verbose,
-  });
+  await runCommand(flags, (out) => createApp({ flags, appIdArg, out }));
 }
 
 interface CreateAppOptions {
@@ -221,17 +210,4 @@ export async function createApp({
     type: "done",
     data: { appId, dir: targetDir, url: deployed.liveUrl, next },
   });
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function fileExists(file: string): Promise<boolean> {
-  try {
-    await fs.access(file);
-    return true;
-  } catch {
-    return false;
-  }
 }

@@ -72,7 +72,7 @@ describe("planEmailRoutes", () => {
     routeMail("zone-1");
     await expect(plan(["*@mail.example.com"])).rejects.toMatchObject({
       code: "EMAIL_CATCH_ALL_NOT_APEX",
-      message: expect.stringContaining("support@mail.example.com"),
+      fix: expect.stringContaining("support@mail.example.com"),
     });
   });
 
@@ -142,17 +142,20 @@ describe("planEmailRoutes", () => {
     expect(account.emailRoutingOf("zone-1").enabled).toBe(false);
   });
 
-  it("asks at a terminal, and stops when the person says no", async () => {
-    const questions: string[] = [];
-    const ask = (answer: boolean) => async (question: string) => {
-      questions.push(question);
+  it("asks at a terminal, and cancels when the person says no", async () => {
+    const questions: Array<[string, readonly string[] | undefined]> = [];
+    const ask = (answer: boolean) => async (question: string, context?: readonly string[]) => {
+      questions.push([question, context]);
       return answer;
     };
     await expect(
       plan(["support@example.com"], { interactive: true, confirm: ask(false) }),
-    ).rejects.toMatchObject({ code: "EMAIL_ROUTING_DISABLED" });
+    ).rejects.toMatchObject({ code: "CANCELLED" });
     expect(questions).toEqual([
-      "Turn on Email Routing for example.com? Cloudflare adds and locks its MX and SPF records, so mail for it goes to Cloudflare from then on.",
+      [
+        "Turn on Email Routing for example.com?",
+        ["Email Routing is off for example.com. Turning it on locks its MX and SPF records to Cloudflare."],
+      ],
     ]);
 
     const agreed = await plan(["support@example.com"], { interactive: true, confirm: ask(true) });

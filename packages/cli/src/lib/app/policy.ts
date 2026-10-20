@@ -24,11 +24,13 @@ import {
   listSourceMaps,
   validateWorkerConfig,
 } from "@/lib/gateway/patchBuildOutput";
+import {
+  BUILD_OUTPUT_DIR,
+  builtWorkers,
+  DEFAULT_WORKER,
+  isProductionBuild,
+} from "./buildOutput";
 import type { InstallTarget } from "./installBuildOutput";
-
-const OUTPUT_DIR = path.join(".cloudflare", "output", "v0");
-const WORKERS_DIR = path.join(OUTPUT_DIR, "workers");
-const DEFAULT_WORKER = "default";
 
 type Binding = Record<string, unknown> & { type?: string };
 type Export = Record<string, unknown> & { type?: string; state?: string };
@@ -63,6 +65,15 @@ const ALLOWED_BINDINGS = new Set([
  * resource separator. `every-acme-notes-archive` is app `notes-archive`'s
  * Worker, not one of app `notes`'s resources.
  */
+/** The service binding every app Worker has: the gateway's AppGateway. */
+function isGatewayBinding(name: string, binding: Binding): boolean {
+  return (
+    name === "EVERY_APP_GATEWAY" &&
+    binding["worker"] === GATEWAY_WORKER_NAME &&
+    binding["exportName"] === "AppGateway"
+  );
+}
+
 function isOwnResourceName(resource: string, workerName: string): boolean {
   return (
     resource === workerName ||
@@ -112,11 +123,11 @@ export function appPolicyProblems(
     problems.push(`EVERYAPP_AUDIENCE isn't the Worker's name ("${workerName}")`);
   }
   problems.push(
-    ...bindingProblems(env, inputs, (name, binding) =>
-      (name === "EVERY_APP_GATEWAY" &&
-        binding["worker"] === GATEWAY_WORKER_NAME &&
-        binding["exportName"] === "AppGateway") ||
-      helperWorkers.includes(String(binding["worker"])),
+    ...bindingProblems(
+      env,
+      inputs,
+      (name, binding) =>
+        isGatewayBinding(name, binding) || helperWorkers.includes(String(binding["worker"])),
     ),
     ...exportProblems(
       config.exports ?? {},
@@ -143,14 +154,7 @@ export function helperPolicyProblems(
   }
   problems.push(
     ...privacyProblems(config),
-    ...bindingProblems(
-      config.env ?? {},
-      inputs,
-      (name, binding) =>
-        name === "EVERY_APP_GATEWAY" &&
-        binding["worker"] === GATEWAY_WORKER_NAME &&
-        binding["exportName"] === "AppGateway",
-    ),
+    ...bindingProblems(config.env ?? {}, inputs, isGatewayBinding),
     // No tombstones on a helper yet: its classes stay while it does.
     ...exportProblems(config.exports ?? {}, [], inputs.workerName),
   );
@@ -354,13 +358,7 @@ export async function prepareAppBuildOutput({
   workflows: string[];
   helperWorkflows: Record<string, string[]>;
 }> {
-  const rootConfig = JSON.parse(
-    await fs.readFile(path.join(cwd, OUTPUT_DIR, "config.json"), "utf8"),
-  ) as { buildContext?: { mode?: string; isPreview?: boolean } };
-  if (
-    rootConfig.buildContext?.mode !== "production" ||
-    rootConfig.buildContext.isPreview
-  ) {
+  if (!(await isProductionBuild(path.join(cwd, BUILD_OUTPUT_DIR)))) {
     throw new EveryAppError(
       "APP_POLICY",
       "The app's Build Output isn't a production build. The manifest's build command must run `cf build` (production by default).",
@@ -463,15 +461,8 @@ async function readBuiltWorkers(
     string,
     { config: BuiltWorkerConfig; directory: string }
   >();
-  for (const entry of await fs.readdir(path.join(cwd, WORKERS_DIR), {
-    withFileTypes: true,
-  })) {
-    if (!entry.isDirectory()) continue;
-    const directory = path.join(cwd, WORKERS_DIR, entry.name);
-    const config = JSON.parse(
-      await fs.readFile(path.join(directory, "worker.config.json"), "utf8"),
-    ) as BuiltWorkerConfig;
-    workers.set(entry.name, { config, directory });
+  for await (const { name, config, directory } of builtWorkers<BuiltWorkerConfig>(cwd)) {
+    workers.set(name, { config, directory });
   }
   return workers;
 }

@@ -3,6 +3,7 @@
  * process group so stopping it also stops what it started (the package
  * manager, Vite, workerd).
  */
+import chalk from "chalk";
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 
@@ -48,7 +49,7 @@ export function spawnLongRunning({
     shell,
     // Output goes straight to the terminal, so it keeps its colors; held
     // output asks for them.
-    env: hold && process.stdout.isTTY ? { ...env, FORCE_COLOR: "1" } : env,
+    env: hold && chalk.level > 0 ? { ...env, FORCE_COLOR: "1" } : env,
     // No stdin: a detached group reading the terminal would be stopped
     // with SIGTTIN.
     stdio: ["ignore", hold ? "pipe" : "inherit", hold ? "pipe" : "inherit"],
@@ -102,18 +103,25 @@ export function stopChild(
   group: boolean,
   signal: NodeJS.Signals = "SIGTERM",
 ) {
+  if (child.pid === undefined) return;
+  signalChild(child, group, signal);
+  if (signal !== "SIGKILL") {
+    setTimeout(() => signalChild(child, group, "SIGKILL"), KILL_GRACE_MS).unref();
+  }
+}
+
+/** Signal a child, or its whole process group when it leads one; one that's gone is left be. */
+export function signalChild(
+  child: ChildProcess,
+  group: boolean,
+  signal: NodeJS.Signals,
+): void {
   const pid = child.pid;
   if (pid === undefined) return;
-  const send = (sig: NodeJS.Signals) => {
-    try {
-      if (group) process.kill(-pid, sig);
-      else child.kill(sig);
-    } catch {
-      // Already gone.
-    }
-  };
-  send(signal);
-  if (signal !== "SIGKILL") {
-    setTimeout(() => send("SIGKILL"), KILL_GRACE_MS).unref();
+  try {
+    if (group) process.kill(-pid, signal);
+    else child.kill(signal);
+  } catch {
+    // Already gone.
   }
 }

@@ -22,14 +22,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { runLogged } from "@/lib/childLog";
+import { fileExists } from "@/lib/file-operations";
 import type { EventSink } from "@/lib/output/events";
 import {
   hashFiles,
   newestMigration,
   openRelease,
   RELEASE_TARBALL,
+  type CandidateRelease,
   type GatewayRelease,
-  type ReleaseSource,
 } from "./release";
 
 /** What a Gateway release is built from, relative to the checkout's root. */
@@ -90,19 +91,13 @@ async function sourcesCommittedAt(root: string): Promise<number | null> {
   }
 }
 
-/** What the checkout's Gateway is, without building it. */
-export interface CheckoutSource extends ReleaseSource {
-  /** The Gateway package's version. */
-  version: string;
-}
-
 /**
  * The release this checkout would build, as far as its sources tell:
  * their tree hash, the Gateway's version, its newest migration and when
  * its sources were last committed (now, without git: a checkout git can't
  * read is never called older).
  */
-export async function checkoutSource(root: string): Promise<CheckoutSource> {
+export async function checkoutSource(root: string): Promise<CandidateRelease> {
   const gatewayDir = path.join(root, "apps", "every-app-gateway");
   const readJson = async (file: string) =>
     JSON.parse(await fs.readFile(path.join(gatewayDir, file), "utf8")) as unknown;
@@ -148,7 +143,7 @@ export async function openCheckoutRelease({
   const cached = tree ? path.join(cacheDir, `${tree}.tar.gz`) : null;
   const source = { origin: { kind: "checkout" } as const, treeSha256: tree, committedAt };
 
-  if (cached && (await exists(cached))) {
+  if (cached && (await fileExists(cached))) {
     try {
       const release = await openRelease(cached, source);
       const now = new Date();
@@ -174,7 +169,7 @@ export async function openCheckoutRelease({
   }
   const release = await openRelease(tarball, {
     origin: { kind: "checkout" },
-    treeSha256: cached && (await exists(cached)) ? tree : null,
+    treeSha256: cached && (await fileExists(cached)) ? tree : null,
     committedAt,
   });
   out.emit({
@@ -206,15 +201,6 @@ async function store(tarball: string, target: string, keep: number): Promise<voi
     .sort((a, b) => b.usedAt - a.usedAt)
     .slice(keep)) {
     if (file !== target) await fs.rm(file, { force: true });
-  }
-}
-
-async function exists(file: string): Promise<boolean> {
-  try {
-    await fs.access(file);
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -251,9 +237,10 @@ async function buildReleaseFromCheckout(
 ): Promise<string> {
   const gatewayDir = path.join(root, "apps", "every-app-gateway");
   out.emit({
-    type: "progress",
+    type: "step",
     step: "gateway.release",
-    message: "Building the Gateway from this checkout (a minute or two)...",
+    status: "start",
+    message: "Building the Gateway from this checkout (usually 1–2m)",
     data: { dir: gatewayDir },
   });
   const build = (args: string[], cwd: string) =>

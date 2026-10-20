@@ -28,15 +28,24 @@
  */
 import { emailListProblems, type AppEmailConfig } from "@every-app/sdk/internal";
 import type { LocalContext } from "@/context";
-import { applyEmailRoutes, describeMailRoutes, planEmailRoutes } from "@/lib/app/emailRoutes";
+import {
+  applyEmailRoutes,
+  describeMailRoutes,
+  emailDeclarations,
+  planEmailRoutes,
+} from "@/lib/app/emailRoutes";
 import { readOwnedResources } from "@/lib/app/ownership";
-import { deviceLoginAction } from "@/lib/cf/account";
-import { canPromptInTerminal, type Confirm } from "@/lib/cf/deploy";
+import { canPromptInTerminal, type Confirm } from "@/lib/output/prompt";
 import type { CfRunner } from "@/lib/cf/runner";
-import { EveryAppError } from "@/lib/errors";
+import { errorMessage, EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
-import { acquireLease, describeLeaseHolder } from "@/lib/gateway/lease";
-import { readApp, readAppEmail, writeAppEmail } from "@/lib/gateway/registry";
+import { acquireAppLease, LeasePurpose } from "@/lib/gateway/lease";
+import {
+  findRegisteredApp,
+  readApp,
+  readAppEmail,
+  writeAppEmail,
+} from "@/lib/gateway/registry";
 import {
   loadEveryAppManifest,
   loadEveryAppManifestFile,
@@ -44,18 +53,15 @@ import {
 } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { eventSink, runReported } from "@/lib/output/run";
+import { runCommand } from "@/lib/output/run";
+import type { GatewayCommandFlags } from "../flags";
 
-interface EmailFlags {
+interface EmailFlags extends GatewayCommandFlags {
   manifest?: string;
-  gateway?: string;
-  "account-id"?: string;
-  json?: boolean;
-  verbose?: boolean;
 }
 
 /** What the handlers take from the command line, and the seams tests use. */
-export interface EmailOptions {
+interface EmailOptions {
   flags: EmailFlags;
   out: EventSink;
   /** The directory whose everyapp.config.ts names the app (default: the working directory). */
@@ -72,18 +78,14 @@ export async function set(
   this: LocalContext,
   flags: EmailFlags & { sender?: string[]; inbound?: string[]; "enable-email-routing"?: boolean },
 ): Promise<void> {
-  const out = eventSink(flags.json, flags.verbose);
-  await runReported(
-    out,
-    () =>
-      setEmail({
-        flags,
-        out,
-        senders: flags.sender?.length ? flags.sender : undefined,
-        inbound: flags.inbound?.length ? flags.inbound : undefined,
-        enableRouting: flags["enable-email-routing"],
-      }),
-    { verbose: flags.verbose },
+  await runCommand(flags, (out) =>
+    setEmail({
+      flags,
+      out,
+      senders: flags.sender?.length ? flags.sender : undefined,
+      inbound: flags.inbound?.length ? flags.inbound : undefined,
+      enableRouting: flags["enable-email-routing"],
+    }),
   );
 }
 
@@ -91,17 +93,13 @@ export async function unset(
   this: LocalContext,
   flags: EmailFlags & { senders?: boolean; inbound?: boolean },
 ): Promise<void> {
-  const out = eventSink(flags.json, flags.verbose);
-  await runReported(
-    out,
-    () => unsetEmail({ flags, out, senders: flags.senders, inbound: flags.inbound }),
-    { verbose: flags.verbose },
+  await runCommand(flags, (out) =>
+    unsetEmail({ flags, out, senders: flags.senders, inbound: flags.inbound }),
   );
 }
 
 export async function show(this: LocalContext, flags: EmailFlags): Promise<void> {
-  const out = eventSink(flags.json, flags.verbose);
-  await runReported(out, () => showEmail({ flags, out }), { verbose: flags.verbose });
+  await runCommand(flags, (out) => showEmail({ flags, out }));
 }
 
 /** `email set`: the checks, the lease, the write, the routes, one `done`. */
@@ -135,13 +133,14 @@ export async function setEmail(
 
   // The manifest: what the app declares.
   const manifest = await loadManifest(options);
-  if (senders !== undefined && manifest.capabilities?.["email"]?.access !== "write") {
+  const declares = emailDeclarations(manifest);
+  if (senders !== undefined && !declares.sends) {
     throw new EveryAppError(
       "EMAIL_NOT_DECLARED",
       `${manifest.id} doesn't list email in its capabilities, so it can't send mail. Add capabilities: { email: { access: "write" } } to everyapp.config.ts and deploy, then set its senders.`,
     );
   }
-  if (inbound !== undefined && manifest.email?.inbound !== true) {
+  if (inbound !== undefined && !declares.receives) {
     throw new EveryAppError(
       "EMAIL_INBOUND_NOT_DECLARED",
       `${manifest.id} doesn't declare email: { inbound: true } in everyapp.config.ts, so no mail is routed to it. Declare it (its Worker exports email()) and deploy, then set its addresses.`,
@@ -184,16 +183,10 @@ export async function showEmail(options: EmailOptions): Promise<void> {
   const { out } = options;
   const manifest = await loadManifest(options);
   const { id } = manifest;
-  const declares = {
-    sends: manifest.capabilities?.["email"]?.access === "write",
-    receives: manifest.email?.inbound === true,
-  };
+  const declares = emailDeclarations(manifest);
   const { db } = await connect(options);
-  let app;
-  try {
-    app = await readApp(db, id);
-  } catch (error) {
-    if (!(error instanceof EveryAppError && error.code === "APP_NOT_FOUND")) throw error;
+  const app = await findRegisteredApp(db, id);
+  if (!app) {
     out.emit({
       type: "done",
       message: `${id} isn't deployed yet; its senders and addresses are set after its first \`${CLI} deploy\`.`,
@@ -256,14 +249,13 @@ function loadManifest(options: EmailOptions): Promise<EveryAppCliManifest> {
     : loadEveryAppManifest(options.cwd ?? process.cwd());
 }
 
-async function connect(options: EmailOptions) {
-  const { flags, out } = options;
+function connect({ flags, out, createCf }: EmailOptions) {
   return connectToGateway({
     gateway: requestedGatewayUrl(flags.gateway),
     accountId: flags["account-id"],
     interactive: canPromptInTerminal(flags.json ?? false),
-    onDeviceLogin: flags.json ? deviceLoginAction(out, "login") : undefined,
-    ...(options.createCf ? { createCf: options.createCf } : {}),
+    login: { json: flags.json, out, step: "login" },
+    createCf,
   });
 }
 
@@ -298,19 +290,10 @@ async function changeEmail(
   const { workerName } = app;
   const pending = app.status === "pending";
 
-  const lease = await acquireLease({
-    db,
-    id: `app:${workerName}`,
-    purpose: "app.email",
-    onWait: (holder) =>
-      out.emit({
-        type: "progress",
-        step: "app.lease",
-        message: `Waiting for another deploy of ${id} to finish (${describeLeaseHolder(holder)})...`,
-      }),
-    onHeartbeatProblem: (message) =>
-      out.emit({ type: "warning", code: "LEASE_HEARTBEAT", step: "app.lease", message }),
-  });
+  const lease = await acquireAppLease(
+    { db, out },
+    { workerName, appId: id, purpose: LeasePurpose.AppEmail },
+  );
   try {
     const current = await readAppEmail(db, app.id);
     const next: AppEmailConfig = {
@@ -351,7 +334,7 @@ async function changeEmail(
       out.emit({ type: "progress", step: "app.email", message: `Routing ${id}'s mail...` });
       try {
         await lease.check();
-        ({ routed, changed: reconciled } = await applyEmailRoutes({
+        ({ routed, removed, changed: reconciled } = await applyEmailRoutes({
           cf,
           gatewayDb: db,
           plan,
@@ -362,11 +345,10 @@ async function changeEmail(
           type: "warning",
           code: "EMAIL_ROUTES_PARTIAL",
           step: "app.email",
-          message: `Saved ${id}'s addresses; routing them stopped at: ${error instanceof Error ? error.message : String(error)} Run \`${CLI} deploy\` (in ${id}'s directory), or this command again, to finish.`,
+          message: `Saved ${id}'s addresses; routing them stopped at: ${errorMessage(error)} Run \`${CLI} deploy\` (in ${id}'s directory), or this command again, to finish.`,
         });
         throw error;
       }
-      removed = plan.dropped.map((route) => route.name);
     }
 
     const sendersChanged = !sameSet(next.senders, current.senders);
@@ -393,7 +375,7 @@ async function changeEmail(
                 senders: next.senders,
                 routed,
                 removed,
-                sendersSettable: manifest.capabilities?.["email"]?.access === "write" && !hosted,
+                sendersSettable: emailDeclarations(manifest).sends && !hosted,
               })
             : `Mail to ${routed.join(", ")} already goes to ${workerName}.`,
         );

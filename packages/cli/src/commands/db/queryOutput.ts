@@ -7,6 +7,7 @@
 import chalk from "chalk";
 import type { D1Result } from "@/lib/cf/d1";
 import { formatTable } from "@/lib/output/table";
+import { plural } from "@/lib/output/text";
 
 /** The database a query runs against. */
 export type Database = "production" | "local";
@@ -53,9 +54,6 @@ function cell(value: unknown): string {
 
 /** D1 reports fractions of a millisecond. */
 const time = (ms: number) => (ms < 1 ? "<1ms" : `${Math.round(ms)}ms`);
-
-const plural = (count: number, noun: string) =>
-  `${count} ${noun}${count === 1 ? "" : "s"}`;
 
 /** Statements that only read: SELECT, EXPLAIN, VALUES, a WITH that writes nothing, a PRAGMA that sets nothing. */
 const READ = [

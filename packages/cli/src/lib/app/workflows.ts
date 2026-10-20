@@ -11,6 +11,7 @@ import { helperWorkerName, workflowNameFor } from "@every-app/sdk/cloudflare";
 import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkflow } from "@/lib/cf/workflows";
 import { EveryAppError } from "@/lib/errors";
+import { thisCommand } from "@/lib/output/command";
 
 export interface AppWorkflow {
   /** The manifest binding, e.g. RANK_CHECK. */
@@ -65,7 +66,8 @@ export async function assertOwnWorkflows({
     if (existing && existing.script_name !== workerName) {
       throw new EveryAppError(
         "WORKFLOW_NAME_TAKEN",
-        `A Workflow named "${name}" already exists in this Cloudflare account and runs on Worker ${existing.script_name ?? "(unknown)"}, not ${workerName}; deploying would take it over. Delete or rename it, then deploy again.`,
+        `A Workflow named "${name}" already exists in this Cloudflare account\nIt runs on Worker ${existing.script_name ?? "(unknown)"}, not ${workerName}; deploying would take it over.`,
+        { fix: "delete or rename it", rerun: thisCommand() },
       );
     }
   }

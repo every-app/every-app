@@ -2,7 +2,7 @@
  * What is deployed to a Worker, read with `cf workers deployments list`
  * (by script name), and deleting one.
  */
-import { CfError } from "./errors";
+import { isCfError } from "./errors";
 import { runCfJson, type CfRunner } from "./runner";
 import { WorkerDeploymentsOutput } from "./schemas";
 
@@ -38,7 +38,7 @@ export async function getWorkerDeployment(
       WorkerDeploymentsOutput,
     );
   } catch (error) {
-    if (error instanceof CfError && error.kind === "not_found") return null;
+    if (isCfError(error, "not_found")) return null;
     throw error;
   }
   const newest = [...deployments].sort((a, b) =>

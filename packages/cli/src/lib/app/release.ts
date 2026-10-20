@@ -24,8 +24,10 @@ import path from "node:path";
 import { z } from "zod";
 import { ManifestError, validateManifestStrict } from "@every-app/perimeter/manifest";
 import { version as cliVersion } from "../../../package.json";
-import { makeCfTempDir } from "@/lib/cf/privateDir";
+import { privateTempDir } from "@/lib/cf/privateDir";
 import { EveryAppError } from "@/lib/errors";
+import { isNotFoundError } from "@/lib/file-operations";
+import { CLI } from "@/lib/output/command";
 import {
   BaseReleaseSchema,
   extractRelease,
@@ -33,10 +35,14 @@ import {
   refuseNewerThanCli,
   type ReleaseOrigin,
 } from "@/lib/gateway/release";
-import { onInterrupt } from "@/lib/interrupt";
-import { resolveMigrationBinding, type EveryAppCliManifest } from "@/lib/manifest";
+import {
+  migrationsDir,
+  resolveMigrationBinding,
+  type EveryAppCliManifest,
+} from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { fetchReleaseTarball, githubRepository, isUrl } from "@/lib/release/fetch";
+import { isProductionBuild } from "./buildOutput";
 import { appSdkVersion } from "./hostedBundle";
 
 /** The asset an app's GitHub release carries. */
@@ -89,20 +95,19 @@ export function describeAppOrigin(origin: ReleaseOrigin): string {
  * The migrations directory the manifest names, relative to the app, when
  * it migrates a database; null when it doesn't.
  */
-function migrationsDir(manifest: EveryAppCliManifest): string | null {
+function releasedMigrationsDir(manifest: EveryAppCliManifest): string | null {
   if (manifest.migrations?.engine === "prisma") {
     throw new EveryAppError(
       "RELEASE_MIGRATIONS_UNSUPPORTED",
-      `${manifest.id} migrates with Prisma (migrations.engine "prisma"), which needs the app's source and its Prisma CLI: a release can't carry it. Deploy it from its checkout with \`everyapp deploy\`.`,
+      `${manifest.id} migrates with Prisma, which a release can't carry\nPrisma migrations (migrations.engine "prisma") need the app's source and its Prisma CLI.`,
+      { rerun: `${CLI} deploy`, rerunNote: "from the app's checkout" },
     );
   }
-  if (manifest.migrations?.dialect === "postgresql") {
-    return manifest.migrations.dir ?? "drizzle";
-  }
+  if (manifest.migrations?.dialect === "postgresql") return migrationsDir(manifest);
   const bindings = manifest.resources?.d1 ?? [];
   if (bindings.length === 0) return null;
   resolveMigrationBinding(bindings, manifest.migrations);
-  return manifest.migrations?.dir ?? "drizzle";
+  return migrationsDir(manifest);
 }
 
 /** Files under `root`, relative and `/`-separated. */
@@ -140,7 +145,7 @@ async function readJournal(dir: string): Promise<Array<{ tag: string; when: numb
   try {
     text = await fsp.readFile(path.join(dir, "meta", "_journal.json"), "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    if (isNotFoundError(error)) return [];
     throw error;
   }
   const journal = JSON.parse(text) as { entries?: Array<{ tag: string; when: number }> };
@@ -198,21 +203,16 @@ export async function packAppRelease({
     );
   }
   const outputDir = path.join(outputRoot, BUILD_OUTPUT_VERSION);
-  const rootConfig = JSON.parse(
-    await fsp.readFile(path.join(outputDir, "config.json"), "utf8"),
-  ) as { buildContext?: { mode?: string; isPreview?: boolean } };
-  if (rootConfig.buildContext?.mode !== "production" || rootConfig.buildContext.isPreview) {
+  if (!(await isProductionBuild(outputDir))) {
     throw new EveryAppError(
       "RELEASE_PACK_FAILED",
-      "The app's Build Output isn't a production build; a release ships only one. Build with `cf build` (production by default).",
+      "The app's Build Output isn't a production build\nA release ships only one.",
+      { fix: "build with `cf build` (production by default)" },
     );
   }
-  const migrations = migrationsDir(manifest);
+  const migrations = releasedMigrationsDir(manifest);
 
-  const stageDir = await makeCfTempDir("app-release-stage-");
-  const forget = onInterrupt({
-    sync: () => fs.rmSync(stageDir, { recursive: true, force: true }),
-  });
+  const { dir: stageDir, cleanup } = await privateTempDir("app-release-stage-");
   try {
     const copy = (from: string, to: string) =>
       fsp.cp(from, path.join(stageDir, to), {
@@ -261,8 +261,7 @@ export async function packAppRelease({
     await runTar(["-czf", outFile, "-C", stageDir, "."]);
     return release;
   } finally {
-    await fsp.rm(stageDir, { recursive: true, force: true });
-    forget();
+    await cleanup();
   }
 }
 
@@ -336,7 +335,8 @@ export async function fetchAppRelease(
     if (repo && error instanceof EveryAppError && error.code === "RELEASE_NOT_FOUND") {
       throw new EveryAppError(
         "NO_RELEASE",
-        `${repo.repo} publishes no everyapp release${repo.tag ? ` ${repo.tag}` : ""} (no ${APP_RELEASE_TARBALL} on https://github.com/${repo.repo}/releases). Clone it, then run: pnpm install && pnpm everyapp deploy`,
+        `${repo.repo} publishes no everyapp release${repo.tag ? ` ${repo.tag}` : ""}\nNo ${APP_RELEASE_TARBALL} on https://github.com/${repo.repo}/releases.`,
+        { rerun: `pnpm install && ${CLI} deploy`, rerunNote: "in a clone of it" },
       );
     }
     throw error;

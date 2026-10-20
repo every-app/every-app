@@ -131,7 +131,7 @@ describe("discoverGateway", () => {
     expect(unattended).toMatchObject({
       name: "ActionRequiredError",
       action: "choose_account",
-      message: expect.stringContaining("Acme (acct-2) at https://apps.acme.com"),
+      message: expect.stringMatching(/^This login sees a Gateway in 2 Cloudflare accounts; pick one\n[\s\S]*Acme +acct-2 +https:\/\/apps\.acme\.com/),
       data: {
         choices: [
           expect.objectContaining({ accountId: "acct-1", gatewayUrl: "https://apps.me.dev" }),
@@ -206,8 +206,8 @@ describe("discoverGateway", () => {
     expect(() => requireGateway(discovery, whoami())).toThrowError(
       expect.objectContaining({
         code: "GATEWAY_NOT_FOUND",
-        message: expect.stringContaining("Personal (acct-1), Acme (acct-2)"),
-        rerun: "pnpm everyapp setup",
+        message: expect.stringContaining("No Gateway in the 2 accounts this login sees\nPersonal, Acme."),
+        rerun: "pnpm everyapp setup --domain <hostname>",
         data: { accounts: [{ id: "acct-1", name: "Personal" }, { id: "acct-2", name: "Acme" }] },
       }),
     );
@@ -226,7 +226,7 @@ describe("discoverGateway", () => {
       expect.objectContaining({
         code: "GATEWAY_NOT_FOUND",
         message: expect.stringContaining(
-          "Cloudflare account acct-1 has no Gateway; this login's is in Acme (acct-2) at https://apps.acme.com",
+          "Cloudflare account acct-1 has no Gateway\nThis login's Gateway is in Acme at https://apps.acme.com.",
         ),
       }),
     );
@@ -252,7 +252,7 @@ describe("connectToGateway", () => {
       connectToGateway({ gateway: "https://apps.other.dev", createCf, interactive: false }),
     ).rejects.toMatchObject({
       code: "GATEWAY_URL_MISMATCH",
-      message: expect.stringContaining("is https://apps.acme.com, not https://apps.other.dev"),
+      message: expect.stringContaining("The Gateway here is apps.acme.com, not apps.other.dev\n"),
     });
     await expect(
       connectToGateway({ gateway: "https://apps.acme.com", createCf, interactive: false }),

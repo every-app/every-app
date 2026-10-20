@@ -17,6 +17,7 @@ import type {
   SessionAuthenticator,
   AuthenticatedSession,
 } from "@every-app/perimeter/dev";
+import { errorMessage } from "@/lib/errors";
 
 interface IdentityResponse {
   session: AuthenticatedSession | null;
@@ -91,7 +92,7 @@ export function createRemoteAuthenticator(
         options.onHint?.(
           [
             `Can't reach the local Gateway at ${options.gatewayUrl}`,
-            `${err instanceof Error ? err.message : String(err)}. Is pnpm dev running in apps/every-app-gateway?`,
+            `${errorMessage(err)}. Is pnpm dev running in apps/every-app-gateway?`,
           ].join("\n"),
         );
         return null;

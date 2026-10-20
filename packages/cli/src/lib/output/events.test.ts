@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { handleInterrupt, onInterrupt } from "@/lib/interrupt";
 import { createHumanSink, createNdjsonSink, type EventSink } from "./events";
 import { handTerminalOver } from "./terminal";
 
@@ -51,10 +52,28 @@ describe("createNdjsonSink", () => {
         v: 1,
         ts: "2026-10-12T12:00:00.000Z",
         type: "done",
-        data: { gatewayUrl: "https://apps.example.com" },
+        data: { gatewayUrl: "https://apps.example.com", durationMs: 0 },
       },
     ]);
     expect(sink.exitCode).toBe(0);
+  });
+
+  it("says a warning raised again with the same words once, and how long the run took", () => {
+    const { sink, events } = ndjson();
+    const unchecked = {
+      type: "warning",
+      code: "CUSTOM_DOMAIN_OWNER_UNCHECKED",
+      message: "If another Worker already serves todo.example.com, it will be replaced by this deployment.",
+    } as const;
+    sink.emit({ ...unchecked, step: "app.domain" });
+    sink.emit({ ...unchecked, step: "gateway.domains" });
+    sink.emit({ type: "warning", code: "CUSTOM_DOMAIN_OWNER_UNCHECKED", message: "Another host." });
+    sink.emit({ type: "done" });
+    expect(events()).toEqual([
+      expect.objectContaining({ step: "app.domain" }),
+      expect.objectContaining({ message: "Another host." }),
+      expect.objectContaining({ type: "done", data: { durationMs: 0 } }),
+    ]);
   });
 
   it("carries what a person must do in action_required and exits 2", () => {
@@ -548,7 +567,7 @@ describe("createHumanSink", () => {
     ]);
   });
 
-  it("shows progress only with --verbose, except lease and live waits and the Gateway build", () => {
+  it("shows progress only with --verbose, except lease and live waits", () => {
     const emitAll = (sink: EventSink) => {
       sink.emit({
         type: "progress",
@@ -648,7 +667,7 @@ describe("createHumanSink", () => {
       "Waiting for another deploy of todo to finish (Bens-MacBook-Pro, started 2m ago)... · 25s ⠋",
     );
     now += 16_000;
-    sink.emit({ type: "step", step: "app.lease", status: "ok" });
+    sink.emit({ type: "step", step: "app.lease", status: "ok", data: { waitedFor: "deploy" } });
     // What stays on screen: each line as its last redraw left it.
     const screen = stdout()
       .split("\n")
@@ -686,7 +705,7 @@ describe("createHumanSink", () => {
     expect(problems()).toEqual([
       "→ This Cloudflare account has no workers.dev subdomain yet.",
       "  https://dash.cloudflare.com/acct/workers/onboarding",
-      "  Then run: pnpm everyapp setup --domain apps.example.com",
+      "  Run: pnpm everyapp setup --domain apps.example.com",
     ]);
     expect(sink.exitCode).toBe(2);
   });
@@ -737,5 +756,127 @@ describe("createHumanSink", () => {
     });
     sink.emit({ type: "error", code: "X", message: "boom", retryable: false });
     expect(sink.exitCode).toBe(1);
+  });
+
+  it("says a declined prompt dim, with nothing to do next, and exits 1", () => {
+    const { sink, problems } = human();
+    sink.emit({
+      type: "error",
+      code: "CANCELLED",
+      message: "Cancelled. Nothing deleted.",
+      retryable: false,
+      data: {},
+    });
+    expect(problems()).toEqual(["Cancelled. Nothing deleted."]);
+    expect(sink.exitCode).toBe(1);
+  });
+
+  it("ends a problem with a close match, the usage, and the command to run with its note", () => {
+    const { sink, problems } = human();
+    sink.emit({
+      type: "error",
+      code: "UNKNOWN_FLAG",
+      message: "Unknown flag --jsn for create",
+      retryable: false,
+      data: { didYouMean: "--json", help: "pnpm everyapp create --help" },
+    });
+    sink.emit({
+      type: "error",
+      code: "MISSING_ARGUMENT",
+      message: "Missing the SQL to run",
+      retryable: false,
+      data: { usage: "pnpm everyapp db query <sql> [flags]" },
+    });
+    sink.emit({
+      type: "error",
+      code: "LEASE_HELD",
+      message: "A deploy of todo is still running after 5m",
+      retryable: true,
+      data: { rerun: "pnpm everyapp deploy", rerunNote: "once it's done" },
+    });
+    expect(problems()).toEqual([
+      "✗ Unknown flag --jsn for create",
+      "  Did you mean --json?",
+      "  Run: pnpm everyapp create --help",
+      "✗ Missing the SQL to run",
+      "  Usage: pnpm everyapp db query <sql> [flags]",
+      "✗ A deploy of todo is still running after 5m",
+      "  Run: pnpm everyapp deploy once it's done",
+    ]);
+  });
+
+  it("adds an error's code with --verbose, and an unexpected one's stack, its message said once", () => {
+    const stack =
+      "TypeError: Cannot read properties of undefined (reading 'workerName')\n    at notRoutable (src/commands/secret/index.ts:315:12)\n    at async runReported (src/lib/output/run.ts:26:5)";
+    const unexpected = {
+      type: "error",
+      code: "UNEXPECTED",
+      message:
+        "everyapp hit an unexpected error\nTypeError: Cannot read properties of undefined (reading 'workerName')\nThis is a bug in everyapp, not something you did.",
+      retryable: false,
+      data: { stack },
+    } as const;
+    const quiet = human();
+    quiet.sink.emit(unexpected);
+    expect(quiet.problems()).not.toContain("  at notRoutable (src/commands/secret/index.ts:315:12)");
+
+    const verbose = human({ verbose: true });
+    verbose.sink.emit(unexpected);
+    expect(verbose.problems()).toEqual([
+      "✗ everyapp hit an unexpected error",
+      "  TypeError: Cannot read properties of undefined (reading 'workerName')",
+      "  This is a bug in everyapp, not something you did.",
+      "  at notRoutable (src/commands/secret/index.ts:315:12)",
+      "  at async runReported (src/lib/output/run.ts:26:5)",
+      "  Error code: UNEXPECTED",
+    ]);
+  });
+
+  it("ticks the Gateway release once downloaded or built, not when it was built before", () => {
+    const { sink, lines } = human();
+    sink.emit({ type: "step", step: "gateway.release", status: "start", message: "Downloading the latest Gateway release..." });
+    sink.emit({ type: "step", step: "gateway.release", status: "ok", data: { release: "0.2.1", downloaded: true } });
+    sink.emit({ type: "step", step: "gateway.release", status: "ok", data: { release: "0.2.1", cached: false } });
+    sink.emit({ type: "step", step: "gateway.release", status: "ok", data: { release: "0.2.1", cached: true } });
+    expect(lines()).toEqual(["Downloaded Gateway 0.2.1 ✓", "Built from this checkout ✓"]);
+  });
+
+  it("piped, says a long step still runs every 30 seconds", () => {
+    vi.useFakeTimers();
+    try {
+      let now = 0;
+      const { sink, lines } = human({ now: () => now });
+      sink.emit({
+        type: "step",
+        step: "gateway.release",
+        status: "start",
+        message: "Building the Gateway from this checkout (usually 1–2m)",
+      });
+      for (const _ of [1, 2, 3]) {
+        now += 30_000;
+        vi.advanceTimersByTime(30_000);
+      }
+      sink.emit({ type: "step", step: "gateway.release", status: "ok", data: { release: "0.4.0", cached: false } });
+      expect(lines()).toEqual([
+        "still building the Gateway from this checkout (usually 1–2m) · 30s",
+        "still building the Gateway from this checkout (usually 1–2m) · 1m",
+        "still building the Gateway from this checkout (usually 1–2m) · 2m",
+        "Built from this checkout ✓ 1m 30s",
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("on Ctrl+C, says what it stops in place of the spinner, then that it stopped", async () => {
+    const { sink, stdout, problems } = human({ terminal: true, columns: () => 120 });
+    sink.emit({ type: "step", step: "app.migrations", status: "start", message: "Migrating the database..." });
+    onInterrupt({ label: "freeing todo for other runs", async: async () => undefined });
+    onInterrupt({ closing: () => "Stopped before uploading. The version that was serving still is." });
+    await handleInterrupt("SIGINT", { exit: () => undefined });
+    expect(stdout().split("\r\x1b[2K").at(-2)).toMatch(
+      /^Freeing todo for other runs \(Ctrl\+C again to quit at once\) ⠋$/,
+    );
+    expect(problems()).toEqual(["Stopped before uploading. The version that was serving still is."]);
   });
 });
