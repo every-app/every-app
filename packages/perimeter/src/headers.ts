@@ -218,6 +218,11 @@ export interface SecurityHeaderOptions {
  * Uniform security headers stamped on HTML responses. Apps may tighten the CSP
  * but the gateway guarantees this floor. Non-HTML responses (JSON/assets) get
  * the non-framing headers but not the HTML CSP.
+ *
+ * Every response also says `X-Robots-Tag: noindex, nofollow`: a gateway and
+ * its apps are private applications, never pages for a search engine. It is
+ * a header rather than a robots.txt Disallow so a crawler can still fetch a
+ * page, see it, and drop a listing it already has.
  */
 export function withSecurityHeaders(
   response: Response,
@@ -234,6 +239,7 @@ export function withSecurityHeaders(
   headers.set("Strict-Transport-Security", options.hsts ?? DEFAULT_HSTS);
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("X-Frame-Options", "DENY");
+  headers.set("X-Robots-Tag", "noindex, nofollow");
   headers.set(
     "Referrer-Policy",
     options.referrerPolicy ?? "strict-origin-when-cross-origin",

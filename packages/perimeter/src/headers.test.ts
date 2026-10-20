@@ -169,6 +169,17 @@ describe("withSecurityHeaders", () => {
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
   });
 
+  it("tells search engines not to index any response, over an app's own", () => {
+    for (const contentType of ["text/html", "application/json", "image/png"]) {
+      const res = withSecurityHeaders(
+        new Response("", {
+          headers: { "content-type": contentType, "x-robots-tag": "all" },
+        }),
+      );
+      expect(res.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+    }
+  });
+
   it("keeps an app's own tighter CSP directives, adding the floor", () => {
     const res = withSecurityHeaders(
       new Response("<html></html>", {
