@@ -48,6 +48,7 @@ the one page that says how (`everyapp create` copies it into each new app).
 | `everyapp deploy`                    | Deploys the app in this directory (offers to install the gateway when there is none)   |
 | `everyapp delete [id] [--purge]`     | Removes an app                                                                         |
 | `everyapp secret set\|unset\|list`   | The app's secrets and the gateway's settings, each by name                             |
+| `everyapp email set\|unset\|show`    | The addresses the app sends as and receives at, kept on the gateway                    |
 | `everyapp db migrate`, `db query`    | Local migrations; SQL against the app's production (or `--local`) database             |
 | `everyapp workflows …`               | The deployed app's Workflows                                                           |
 
@@ -160,6 +161,19 @@ Worker in one new version and never deploy; the next `deploy` or `setup`
 keeps the secrets. `list` in an app's directory shows each Worker's secrets,
 the ones the manifest lists that nobody set, and the gateway settings the
 app's providers and capabilities need; elsewhere, the gateway's.
+
+### Email
+
+```bash
+everyapp email set --sender "*@mail.example.com" --inbound support@mail.example.com   # in the app's directory, after its first deploy
+everyapp email unset --inbound
+everyapp email show
+```
+
+The manifest only declares (`capabilities.email`, `email: { inbound: true }`);
+the lists are the installation's, kept on the gateway. `--inbound` makes the
+Email Routing rules at once; `everyapp deploy` keeps them in step and
+`delete --purge` removes them.
 
 ### Query or migrate the app's D1 database
 

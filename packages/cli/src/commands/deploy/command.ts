@@ -48,7 +48,7 @@ export const deployCommand = buildCommand({
       "enable-email-routing": {
         kind: "boolean",
         brief:
-          "Turn on Email Routing for the domains email.inbound names that don't route mail yet (locks their MX and SPF records to Cloudflare)",
+          "Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)",
         optional: true,
       },
       shared: {
@@ -104,8 +104,9 @@ export const deployCommand = buildCommand({
       "  6. Uploads it with cf deploy --prebuilt, its secrets in the same version, and",
       "     creates or updates its Workflows (refused if another Worker runs one of their names);",
       "     its helper Workers (everyapp.config.ts workers, <worker>--<name>) go up first; then routes",
-      "     the mail to email.inbound's addresses to it with Email Routing rules (checked before",
-      "     anything is created; turning routing on for a domain asks first, or --enable-email-routing)",
+      "     the mail to the addresses its installation lists (everyapp email set --inbound) to it with",
+      "     Email Routing rules (checked before anything is created; turning routing on for a domain",
+      "     asks first, or --enable-email-routing)",
       "  7. Redeploys the Gateway from this checkout to bind the Worker and publish its hostname (new",
       "     apps; it upgrades the Gateway too when the checkout is newer), then requests the app's",
       "     hostname until it is live (a new hostname's certificate included); behind Cloudflare",

@@ -44,8 +44,13 @@ interface AppState {
   bound: boolean;
   /** Who deployed it last: an email, or `api-token:<account id>`. */
   deployedBy: string | null;
-  /** The addresses its deploys route to its Worker (`email.inbound`). */
-  email: string[];
+  /**
+   * What its installation sends as and receives at (`everyapp email set`),
+   * the addresses its deploys recorded routes for, and whether the manifest
+   * it was deployed from declares inbound mail (without it no deploy routes
+   * the stored addresses).
+   */
+  email: { senders: string[]; inbound: string[]; routed: string[]; declaresInbound: boolean };
 }
 
 /** Something off, and what to run about it (null: it settles by itself, wait). */
@@ -61,8 +66,9 @@ interface Fix {
  * records, whether the Worker serves the version that row names, whether
  * it was built from this checkout's Gateway sources (`upToDate`, by tree
  * hash, nothing built), its owner, the apps its registry lists and whether the live version binds
- * them, the mail addresses each app's deploys route to it (and whether
- * Email Routing still delivers them), each published hostname's certificate (Cloudflare's certificate
+ * them, what each installation sends as and receives at (`everyapp email
+ * set`), whether every stored address has its route and Email Routing
+ * still delivers it, each published hostname's certificate (Cloudflare's certificate
  * packs), any deploy in progress, and `fixes`: what to run when something
  * is off.
  */
@@ -159,11 +165,18 @@ export async function reportStatus({
     status: app.status,
     bound: install.liveAppWorkers.includes(app.workerName),
     deployedBy: app.deployedBy,
-    email: emailRoutes
-      .filter((route) => route.workerName === app.workerName)
-      .map((route) => route.name),
+    email: {
+      senders: app.email.senders,
+      inbound: app.email.inbound,
+      routed: emailRoutes
+        .filter((route) => route.workerName === app.workerName)
+        .map((route) => route.name),
+      declaresInbound: app.declaresInbound,
+    },
   }));
-  const receiving = apps.filter((app) => app.email.length > 0);
+  const receiving = apps.filter(
+    (app) => app.email.senders.length > 0 || app.email.inbound.length > 0 || app.email.routed.length > 0,
+  );
   const waiting = (certificates ?? []).filter((c) => !c.ready).map((c) => c.host);
   const source = await checkoutAgainst(install, checkout);
   const fixes = fixesFor({
@@ -197,7 +210,11 @@ export async function reportStatus({
     `Apps:     ${apps.length === 0 ? "none" : apps.map((app) => `${app.id} (${app.status}${app.bound || app.status === "pending" ? "" : ", not bound"})`).join(", ")}${apps.length > 0 && inSync ? " · all bound" : ""}`,
     ...receiving.map(
       (app, index) =>
-        `${index === 0 ? "Email:    " : "          "}${app.id}: ${app.email.join(", ")}`,
+        `${index === 0 ? "Email:    " : "          "}${app.id}: sends as ${app.email.senders.join(", ") || "the Gateway's sender only"}; receives ${
+          app.email.inbound.length > 0 && !app.email.declaresInbound
+            ? `nothing (${app.email.inbound.join(", ")} set, not declared)`
+            : app.email.inbound.join(", ") || "nothing"
+        }`,
     ),
     `TLS:      ${
       certificates === null
@@ -417,6 +434,30 @@ function fixesFor({
     }
   }
   for (const app of apps) {
+    // The stored list is the intent, the ledger what exists.
+    const notRouted = app.email.inbound.filter((address) => !app.email.routed.includes(address));
+    const stale = app.email.routed.filter((address) => !app.email.inbound.includes(address));
+    if (app.email.inbound.length > 0 && !app.email.declaresInbound) {
+      // No deploy of that manifest routes these (it dropped the declaration
+      // and kept the list, or the list came before the declaration did):
+      // clear them, or deploy a manifest that declares them.
+      fixes.push({
+        code: "EMAIL_INBOUND_UNDECLARED",
+        message: `${app.id}'s addresses (${app.email.inbound.join(", ")}) are stored, but the manifest it was deployed from doesn't declare email: { inbound: true }, so no mail is routed to it.`,
+        run: `${CLI} email unset --inbound (in ${app.id}'s directory), or ${CLI} deploy once everyapp.config.ts declares it`,
+      });
+    } else if (notRouted.length > 0 || stale.length > 0) {
+      fixes.push({
+        code: "EMAIL_ROUTE_PENDING",
+        message: `Mail routes for ${app.id} don't match its addresses: ${[
+          notRouted.length ? `not routed yet: ${notRouted.join(", ")}` : "",
+          stale.length ? `still routed, no longer listed: ${stale.join(", ")}` : "",
+        ]
+          .filter(Boolean)
+          .join("; ")}.`,
+        run: `${CLI} deploy (in ${app.id}'s directory)`,
+      });
+    }
     const problems = (emailProblems ?? []).filter(
       (problem) => problem.workerName === app.workerName,
     );

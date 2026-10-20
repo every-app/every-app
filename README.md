@@ -148,7 +148,7 @@ Refresh your Gateway — the app appears, live at the URL the deploy prints (`ht
 
 ## Build Your Own App
 
-Every command is on the [CLI reference](https://everyapp.com/docs/cli): `setup`, `status`, `create`, `dev`, `deploy`, `delete`, `secret`, `db` and `workflows`.
+Every command is on the [CLI reference](https://everyapp.com/docs/cli): `setup`, `status`, `create`, `dev`, `deploy`, `delete`, `secret`, `email`, `db` and `workflows`.
 
 ### An app in its own repository
 

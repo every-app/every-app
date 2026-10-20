@@ -55,6 +55,14 @@ Secrets: pnpm everyapp secret set NAME --from-env VAR --json   (live at once, no
          put a value on the command line. secret unset NAME; secret list
          (in an app directory: the app's secrets and the Gateway settings it
          needs, set or not; elsewhere: the Gateway's).
+Email:   pnpm everyapp email set --sender "*@<domain>" --inbound <address> --json
+         In the app's directory, after its first deploy; nothing is deployed. --sender
+         replaces the From addresses the Gateway lets the app name (everyapp.config.ts
+         lists capabilities.email); --inbound replaces the addresses routed to its
+         email() handler (everyapp.config.ts declares email: { inbound: true }) and
+         makes the Email Routing rules now. EMAIL_ROUTING_DISABLED needs the user's
+         yes: rerun with --enable-email-routing only if they said so. email unset
+         --senders|--inbound clears; email show prints both.
 Remove:  pnpm everyapp delete <id> --json   never add --purge, --force-dns,
          --allow-delete-*, --allow-downgrade, or --yes to delete unless the
          user asked.

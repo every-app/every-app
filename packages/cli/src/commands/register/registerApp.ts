@@ -15,7 +15,9 @@
  *      publish its hostname, then wait for it to go live, as deploy does.
  *
  * Nothing about the Worker changes: no build, no upload, no secrets, and
- * it is never recorded as everyapp's own, so `delete --purge` keeps it. Its
+ * it is never recorded as everyapp's own, so `delete --purge` keeps it.
+ * Senders and inbound addresses are set afterwards with `everyapp email
+ * set --manifest <path>`; `register` makes no routes. Its
  * own pipeline gives it what an everyapp-built Worker gets (the identity
  * keys and issuer, and the AppGateway binding with these props), which the
  * `app.register` step lists.

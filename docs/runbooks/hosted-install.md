@@ -154,8 +154,11 @@ redeploys the Gateway to bind it and publish its hostname, and waits for it
 to go live. It never uploads or changes the Worker, and `delete --purge`
 keeps it. Run it again after the Worker's own pipeline ships a version, so
 the registry records it (the Gateway re-reads the app's tools on a new
-version). `--json` prints the same events as `deploy`; the `app.register`
-event's `data.worker` lists what the Worker's own pipeline must give it:
+version). A registered app's senders and inbound addresses are set
+afterwards with `pnpm everyapp email set --manifest ../open-seo/everyapp.config.ts …`
+(a hosted Gateway takes no app senders); `register` makes no routes.
+`--json` prints the same events as `deploy`; the `app.register` event's
+`data.worker` lists what the Worker's own pipeline must give it:
 
 - `EVERYAPP_IDENTITY_ISSUER` (`identityIssuer`) and
   `EVERYAPP_IDENTITY_PUBLIC_KEYS` (`identityPublicKeys`, JSON), so the SDK
@@ -269,7 +272,11 @@ same pipeline as the deploy API; the dialog follows the deploy job and
 ends with the app's hostname. It is the same as a deploy key's deploy in
 every rule above (policy, read-back, one deploy at a time, the 50-second
 budget); `deployed_by_actor` is the admin's email and the job's `source`
-column records the repository, tag, version and commit.
+column records the repository, tag, version and commit. A release's
+manifest carries only the declarations (`capabilities.email`,
+`email: { inbound: true }`); a third-party app can't declare inbound mail
+(`BUNDLE_REFUSED`), and the hosted Gateway sends its mail from its own
+sender.
 
 - `NO_RELEASE`: the repository's latest GitHub release has no
   `everyapp-release.tar.gz` (or it has no releases, or it is private: the

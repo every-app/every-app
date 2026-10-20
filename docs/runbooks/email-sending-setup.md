@@ -109,8 +109,8 @@ unless you intentionally want REST to take precedence over its binding.
    hidden prompt with `resend` (or `cloudflare`). `pnpm everyapp secret
    unset EMAIL_PROVIDER` goes back to the automatic choice.
 
-Every domain an app sends from (`capabilities.email.senders`) must be
-verified in the same Resend account, the way the gateway's own is; until it
+Every domain an installation sends from (`everyapp email set --sender`)
+must be verified in the same Resend account, the way the gateway's own is; until it
 is, those sends answer `email_sender_not_verified` (422), whose message
 points at https://resend.com/domains. Resend's rate limit (10 requests a
 second per team by default) and daily or monthly quota answer
@@ -152,10 +152,11 @@ needs; apps get no `send-email` binding of their own.
 
 - **Which domains to onboard.** The gateway's sender domain (`EMAIL_FROM`'s)
   serves every app that sends without `from`. An app that sends as its own
-  addresses lists them in its manifest (`senders: ["*@mail.example.com"]`),
-  and each of those domains must also be set up with the gateway's
-  provider: onboarded to Email Sending in the gateway's Cloudflare account,
-  the same way as above,
+  addresses has them set on its installation
+  (`pnpm everyapp email set --sender "*@mail.example.com"`, in the app's
+  directory, after its first deploy), and each of those domains must also
+  be set up with the gateway's provider: onboarded to Email Sending in the
+  gateway's Cloudflare account, the same way as above,
 
   ```sh
   npx cf email-sending subdomains create -z mail.example.com --name mail.example.com
@@ -168,68 +169,91 @@ needs; apps get no `send-email` binding of their own.
   recipients with Cloudflare needs the Workers Paid plan, and a new account
   starts with a small daily quota that Cloudflare raises over time
   (`email_provider_limited`, 429, when it runs out).
+
+  An app deployed from a release (`everyapp deploy <github url>`) has no
+  directory here: clone its repository (only `everyapp.config.ts` is read)
+  and run `everyapp email set` in it, or pass `--manifest <path>`.
 - **Budgets.** App mail has its own daily budgets: 100 mails per recipient
   address and 5,000 for the whole gateway when self-hosted, 20 and 5,000 when
   hosted, counted once per distinct recipient. A hosted gateway sends app
   mail from its own sender only.
 - **Check.** `GET /api/integrations/email` from the app
   (`integrationStatus({ env, provider: "email" })`) says whether the gateway
-  can send, as whom, with which provider, and which senders the app may
-  name. Worker logs show every app send as `email.app.send` (never its
-  subject or body).
+  can send, as whom, with which provider, and which senders its
+  installation may name (what `everyapp email show` prints). Worker logs
+  show every app send as `email.app.send` (never its subject or body).
 - **Local dev.** With no gateway, `sendEmail()` really sends only through
   Cloudflare's REST API (`EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and
   `EMAIL_FROM` in the app's `.dev.vars`) and prints the message otherwise.
   `integrationStatus()` names the provider the gateway would pick from the
-  same `.dev.vars` (`RESEND_API_KEY`, `EMAIL_PROVIDER` included).
+  same `.dev.vars` (`RESEND_API_KEY`, `EMAIL_PROVIDER` included). The
+  senders have a stand-in in dev: `EVERYAPP_EMAIL_SENDERS=*@mail.example.com`
+  in `.dev.vars`; unset, every `from` is refused.
 
 ## Inbound mail to an app
 
 An app that receives mail (agentic-inbox, say) exports an `email()` handler
-beside its `fetch` and lists the addresses it receives in its manifest:
+beside its `fetch` and declares it in its manifest:
 
 ```ts
-email: {
-  // "*@<apex>" is the zone's catch-all; any other address is one rule.
-  inbound: ["*@example.com", "support@mail.example.com"],
-},
+email: { inbound: true },
 ```
 
-`everyapp deploy` then routes them to the app's Worker, `every-<org>-<app>`,
-with Email Routing rules that name it. The deploy policy keeps refusing the
-`email` trigger (cf would reconcile the account's addresses itself, with no
-record of whose they are), so these rules are the only link.
+Its addresses are its installation's:
+`pnpm everyapp email set --inbound "*@example.com" --inbound support@mail.example.com`
+(in the app's directory, after its first deploy; `*@<apex>` is the zone's
+catch-all, any other address one rule) routes them to the app's Worker,
+`every-<org>-<app>`, with Email Routing rules that name it, at once;
+`everyapp deploy` keeps the rules in step with the stored list. An app
+whose Worker isn't uploaded yet, or whose deployed manifest doesn't declare
+inbound yet, gets no rule: `email set` stores its addresses, and the deploy
+that uploads the declaration checks and routes them. The deploy policy
+keeps refusing the `email` trigger (cf would reconcile the account's
+addresses itself, with no record of whose they are), so these rules are the
+only link.
 
-- **Before anything is uploaded** the deploy finds each domain's zone in the
-  account (`EMAIL_ZONE_NOT_FOUND` if none holds it), refuses a catch-all on a
-  subdomain (`EMAIL_CATCH_ALL_NOT_APEX`: Email Routing has catch-alls on an
-  apex only; list each subdomain address instead), an address another app's
-  deploy recorded or a rule it didn't make delivers elsewhere
-  (`EMAIL_ADDRESS_TAKEN`), and a catch-all that already sends the zone's mail
-  somewhere (`EMAIL_CATCH_ALL_TAKEN`). A rule named `everyapp:<worker>`, or
-  one that already sends the address to the app's Worker (the manual step
-  below), is adopted.
+- **Before anything is written**, by `email set` and by every deploy, the
+  checks: each domain's zone in the account (`EMAIL_ZONE_NOT_FOUND` if none
+  holds it), a catch-all on a subdomain refused (`EMAIL_CATCH_ALL_NOT_APEX`:
+  Email Routing has catch-alls on an apex only; list each subdomain address
+  instead), an address another app recorded or a rule it didn't make
+  delivers elsewhere (`EMAIL_ADDRESS_TAKEN`), and a catch-all that already
+  sends the zone's mail somewhere (`EMAIL_CATCH_ALL_TAKEN`). A rule named
+  `everyapp:<worker>`, or one that already sends the address to the app's
+  Worker (the manual step below), is adopted.
 - **Email Routing off for a domain** (the zone's setting for its apex,
   Cloudflare's MX records for a subdomain): turning it on adds and locks the
   domain's MX and SPF records, so its mail moves to Cloudflare. At a terminal
-  the deploy asks; unattended it stops with `EMAIL_ROUTING_DISABLED` and
-  uploads nothing, and `everyapp deploy --enable-email-routing` turns it on
-  without asking. The deploy only turns it on for domains `email.inbound`
-  names.
-- **After the upload** it creates a rule per address
+  the command asks; unattended it stops with `EMAIL_ROUTING_DISABLED` and
+  changes nothing, and `--enable-email-routing` (a flag of `email set` and
+  of `deploy`) turns it on without asking. Routing is turned on only for
+  the domains the inbound addresses name.
+- **Then** (at once for `email set`, after the upload for `deploy`) it
+  creates a rule per address
   (`{"name":"everyapp:<worker>","matchers":[{"type":"literal","field":"to","value":"support@mail.example.com"}],"actions":[{"type":"worker","value":["<worker>"]}]}`)
   and points the catch-all at the Worker, each recorded in the gateway's D1 as
-  the app's (`email-route`). An address dropped from `email.inbound` loses its
-  rule on the next deploy, a dropped catch-all drops mail again, and
-  `everyapp delete --purge` removes every route the app recorded.
-- **Check.** `everyapp status` lists each app's addresses and says
-  `EMAIL_ROUTE_MISSING` (run `everyapp deploy`) when a rule is gone, off or
-  sends mail elsewhere, or routing is off for the domain.
+  the app's (`email-route`). An address dropped from the list loses its rule
+  in the same run (`email set`) or on the next deploy, a dropped catch-all
+  drops mail again, and `everyapp delete --purge` removes every route the
+  app recorded.
+- **Check.** `everyapp email show` and `everyapp status` list each
+  installation's senders and addresses; `status` says `EMAIL_ROUTE_MISSING`
+  (run `everyapp deploy`) when a rule is gone, off or sends mail elsewhere,
+  or routing is off for the domain, `EMAIL_ROUTE_PENDING` (run
+  `everyapp deploy`) when an address is set but not routed yet or a route
+  is still there for an address the list dropped, and
+  `EMAIL_INBOUND_UNDECLARED` when addresses are stored for an app whose
+  deployed manifest doesn't declare inbound, which no deploy of it routes
+  (`everyapp email unset --inbound` clears them, or a deploy once the
+  manifest declares it; `email show` names the clearing command); a deploy
+  of an app that declares inbound with no address yet
+  prints one line naming `everyapp email set --inbound`.
 
-Hosted organizations' apps (the dispatch tier) take no `email.inbound`.
+Hosted organizations' apps (the dispatch tier) receive no mail: the deploy
+API and the GitHub install refuse `email: { inbound: true }`.
 
-By hand, for an app without `email.inbound` (the Worker's name is printed by
-`everyapp deploy` and `everyapp status`):
+By hand, for an app whose addresses aren't set yet (the Worker's name is
+printed by `everyapp deploy` and `everyapp status`):
 
 1. Enable Email Routing on the zone:
 
@@ -250,18 +274,20 @@ By hand, for an app without `email.inbound` (the Worker's name is printed by
    then create one literal rule per address (**Routing rules > Create address
    > Send to a Worker**, or
    `npx cf email-routing rules create -z example.com --body '{"name":"everyapp:every-<org>-<app>","enabled":true,"matchers":[{"type":"literal","field":"to","value":"support@mail.example.com"}],"actions":[{"type":"worker","value":["every-<org>-<app>"]}]}'`).
-   Adding these addresses to `email.inbound` later adopts the rules.
+   Setting these addresses with `everyapp email set --inbound` later adopts
+   the rules (by the name `everyapp:<worker>`, or because they already send
+   to the app's Worker).
 
 To reply from those addresses, onboard the same domain for sending (above)
-and list it in the app's `senders`. The `email()` handler runs with no
+and list it with `everyapp email set --sender`. The `email()` handler runs with no
 identity and anyone can mail the address: it treats the message as untrusted
 and calls the gateway with `for: { background: true, organizationId }`.
 
-Locally, `everyapp dev` prints, for an app with `email.inbound`, how to
-deliver a message to the handler:
-`curl -X POST "http://127.0.0.1:<app port>/cdn-cgi/local/email?from=someone@example.net&to=support@example.com" --data-binary @message.eml`
-(the raw message needs a `Message-ID` header), on the app's own dev port,
-not the gateway's.
+Locally, `everyapp dev` prints, for an app that declares
+`email: { inbound: true }`, how to deliver a message to the handler:
+`curl -X POST "http://127.0.0.1:<app port>/cdn-cgi/local/email?from=someone@example.net&to=hello@example.com" --data-binary @message.eml`
+(any `to`: there is no routing in dev; the raw message needs a
+`Message-ID` header), on the app's own dev port, not the gateway's.
 
 Not yet verified on a live account: that a rule delivers to a Worker with no
 routes and no workers.dev subdomain (every app Worker), that it survives

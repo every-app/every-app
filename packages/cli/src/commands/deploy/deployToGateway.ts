@@ -47,6 +47,7 @@ const SELF_HOST_ONLY_FLAGS = [
   "account-id",
   "allow-delete-durable-object-data",
   "allow-delete-workflows",
+  "enable-email-routing",
   "force-dns",
   "shared",
   "yes",

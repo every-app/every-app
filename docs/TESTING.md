@@ -338,17 +338,18 @@ for a live account:
 ```bash
 # Both ports' manifests through register → provision → build → policy →
 # migrate (Postiz's 171-statement Prisma init on SQLite) → upload, in the
-# fake account; and inbound mail routes in the same fake account
+# fake account; and inbound mail routes, `everyapp email set` included, in
+# the same fake account
 ( cd packages/cli && pnpm exec vitest run src/commands/deploy/deployApp.ports.test.ts \
-    src/commands/deploy/deployApp.email.test.ts src/lib/app/emailRoutes.test.ts \
-    src/lib/migrations/prisma.test.ts )
+    src/commands/deploy/deployApp.email.test.ts src/commands/email/index.test.ts \
+    src/lib/app/emailRoutes.test.ts src/lib/migrations/prisma.test.ts )
 
 # The gateway's capability routes: email, members and OAuth clients, unit and on
 # migrated SQLite; Workers AI in the AI proxy (the live SSE captures as
 # fixtures); OPTIONAL_SECRETS covers every setting the registry names
 ( cd apps/every-app-gateway && pnpm exec vitest run src/server/capabilities \
-    src/server/email-capability.sqlite.test.ts src/server/members-capability.sqlite.test.ts \
-    src/server/oauth-client.sqlite.test.ts \
+    src/server/email-capability.sqlite.test.ts src/server/app-email.sqlite.test.ts \
+    src/server/members-capability.sqlite.test.ts src/server/oauth-client.sqlite.test.ts \
     src/server/ai-proxy.test.ts src/optional-secrets.test.ts )
 
 # The SDK's halves: sendEmail, listMembers, the shared email and OAuth wire rules, the
@@ -521,15 +522,18 @@ Sending or Email Routing:
 
 - **Outbound** (`sendEmail()` from `@every-app/sdk/server`, the `email`
   capability): the SDK checks the message and the sender the way the gateway
-  does (the manifest's `senders` reach the Worker as
-  `EVERYAPP_EMAIL_SENDERS`), then prints
+  does (the installation's senders have a stand-in in dev,
+  `EVERYAPP_EMAIL_SENDERS` in `.dev.vars`, a comma list or a JSON array;
+  unset, every `from` is refused), then prints
   `[everyapp dev] email to <n> recipients subject "<subject>"` and answers
   `{ status: "logged" }`. With `EMAIL_REST_API_TOKEN`,
   `CLOUDFLARE_ACCOUNT_ID` and `EMAIL_FROM` in the app's `.dev.vars` it
   really sends, from the developer's own account
   ([docs/capabilities.md](capabilities.md#gateway-services-email)).
-- **Inbound** (an app's `email()` handler): with `email.inbound` in the
-  manifest, `everyapp dev` prints an `Email:` line in its ready block. It
+- **Inbound** (an app's `email()` handler): with `email: { inbound: true }`
+  in the manifest, `everyapp dev` prints an `Email:` line in its ready block
+  (its `to=hello@example.com` is an example: the addresses are the
+  installation's, and the local endpoint takes any). It
   posts a raw RFC 5322 message to the app's **internal** port, where the
   Cloudflare Vite plugin's miniflare runs the handler:
 

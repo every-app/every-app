@@ -72,19 +72,25 @@ afterEach(async () => {
 });
 
 /** An app registered, uploaded (its Worker exists) and, unless `bind: false`, bound. */
-async function deployed(appSlug: string, { bind = true } = {}) {
+/** An app that receives mail: its Worker exports email(). */
+const INBOX = { id: "inbox", email: { inbound: true } };
+
+async function deployed(
+  appSlug: string,
+  { bind = true, manifest = { id: appSlug } }: { bind?: boolean; manifest?: Record<string, unknown> } = {},
+) {
   const { plan } = await register(db(), {
     appSlug,
     name: appSlug,
     description: appSlug,
-    manifest: { id: appSlug },
+    manifest,
     appBaseDomain: "example.com",
     deployer: { actor: "dev@example.com", email: "dev@example.com" },
     organizationName: "Acme",
   });
   await markDeployed(db(), plan.app.id, {
     versionId: `${appSlug}-v1`,
-    manifest: { id: appSlug },
+    manifest,
     actor: "dev@example.com",
   });
   account.workers.set(plan.app.workerName!, {
@@ -175,7 +181,7 @@ describe("everyapp status", () => {
   });
 
   it("lists the mail each app's deploys route to it, and what to run when a route stops delivering", async () => {
-    const inbox = await deployed("inbox");
+    const inbox = await deployed("inbox", { manifest: INBOX });
     await deployed("todo");
     account.emailRoutingOf("zone-1").enabled = true;
     await writeAppEmail(
@@ -196,11 +202,27 @@ describe("everyapp status", () => {
 
     const done = await status();
     expect(done["data"]["apps"]).toContainEqual(
-      expect.objectContaining({ id: "inbox", email: ["*@example.com", "support@example.com"] }),
+      expect.objectContaining({
+        id: "inbox",
+        email: {
+          senders: [],
+          inbound: ["*@example.com", "support@example.com"],
+          routed: ["*@example.com", "support@example.com"],
+          declaresInbound: true,
+        },
+      }),
     );
-    expect(done["data"]["apps"]).toContainEqual(expect.objectContaining({ id: "todo", email: [] }));
-    expect(done["message"]).toContain("Email:    inbox: *@example.com, support@example.com");
+    expect(done["data"]["apps"]).toContainEqual(
+      expect.objectContaining({
+        id: "todo",
+        email: { senders: [], inbound: [], routed: [], declaresInbound: false },
+      }),
+    );
+    expect(done["message"]).toContain(
+      "Email:    inbox: sends as the Gateway's sender only; receives *@example.com, support@example.com",
+    );
     expect(fixCodes(done)).not.toContain("EMAIL_ROUTE_MISSING");
+    expect(fixCodes(done)).not.toContain("EMAIL_ROUTE_PENDING");
 
     // Someone deleted the rule by hand.
     const [rule] = account.emailRulesFor("zone-1", "support@example.com");
@@ -217,6 +239,96 @@ describe("everyapp status", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "warning", code: "EMAIL_ROUTES_UNKNOWN" }));
     expect(fixCodes(unknown)).not.toContain("EMAIL_ROUTE_MISSING");
     expect(unknown["data"]["apps"]).toHaveLength(2);
+  });
+
+  it("names an address set but not routed yet", async () => {
+    const inbox = await deployed("inbox", { manifest: INBOX });
+    account.emailRoutingOf("zone-1").enabled = true;
+    const deployer = { actor: "dev@example.com", email: "dev@example.com" };
+    await writeAppEmail(db(), "inbox", { senders: ["*@example.com"], inbound: ["*@example.com"] }, deployer);
+    const plan = await planEmailRoutes({
+      cf: account.cf,
+      gatewayDb: db(),
+      accountId: ACCOUNT_ID,
+      workerName: inbox.workerName!,
+      addresses: ["*@example.com"],
+      interactive: false,
+    });
+    await applyEmailRoutes({ cf: account.cf, gatewayDb: db(), plan: plan! });
+    // A longer list, stored (as `everyapp email set` does first) but not routed yet.
+    await writeAppEmail(
+      db(),
+      "inbox",
+      { senders: ["*@example.com"], inbound: ["*@example.com", "support@example.com"] },
+      deployer,
+    );
+
+    const done = await status();
+
+    expect(done["data"]["apps"]).toContainEqual(
+      expect.objectContaining({
+        id: "inbox",
+        email: {
+          senders: ["*@example.com"],
+          inbound: ["*@example.com", "support@example.com"],
+          routed: ["*@example.com"],
+          declaresInbound: true,
+        },
+      }),
+    );
+    expect(done["message"]).toContain(
+      "Email:    inbox: sends as *@example.com; receives *@example.com, support@example.com",
+    );
+    expect(done["data"]["fixes"]).toContainEqual({
+      code: "EMAIL_ROUTE_PENDING",
+      message: "Mail routes for inbox don't match its addresses: not routed yet: support@example.com.",
+      run: "pnpm everyapp deploy (in inbox's directory)",
+    });
+
+    // The other way round: a route the list no longer names.
+    await writeAppEmail(db(), "inbox", { senders: [], inbound: ["support@example.com"] }, deployer);
+    expect((await status())["data"]["fixes"]).toContainEqual(
+      expect.objectContaining({
+        code: "EMAIL_ROUTE_PENDING",
+        message:
+          "Mail routes for inbox don't match its addresses: not routed yet: support@example.com; still routed, no longer listed: *@example.com.",
+      }),
+    );
+  });
+
+  it("sends an app whose deployed manifest dropped the declaration to email unset, not to a deploy that changes nothing", async () => {
+    // As a deploy without `email: { inbound: true }` leaves it: routes removed, the list kept.
+    await deployed("inbox");
+    await writeAppEmail(
+      db(),
+      "inbox",
+      { senders: [], inbound: ["*@example.com", "support@example.com"] },
+      { actor: "dev@example.com", email: "dev@example.com" },
+    );
+
+    const done = await status();
+
+    expect(done["data"]["apps"]).toContainEqual(
+      expect.objectContaining({
+        id: "inbox",
+        email: {
+          senders: [],
+          inbound: ["*@example.com", "support@example.com"],
+          routed: [],
+          declaresInbound: false,
+        },
+      }),
+    );
+    expect(done["message"]).toContain(
+      "Email:    inbox: sends as the Gateway's sender only; receives nothing (*@example.com, support@example.com set, not declared)",
+    );
+    expect(done["data"]["fixes"]).toContainEqual({
+      code: "EMAIL_INBOUND_UNDECLARED",
+      message:
+        "inbox's addresses (*@example.com, support@example.com) are stored, but the manifest it was deployed from doesn't declare email: { inbound: true }, so no mail is routed to it.",
+      run: "pnpm everyapp email unset --inbound (in inbox's directory), or pnpm everyapp deploy once everyapp.config.ts declares it",
+    });
+    expect(fixCodes(done)).not.toContain("EMAIL_ROUTE_PENDING");
   });
 
   it("prints the deployment mode the install recorded", async () => {

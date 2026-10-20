@@ -25,7 +25,7 @@ Run commands from your `every-app` folder as `pnpm everyapp <command>`. Add `--h
 - **`pnpm everyapp secret set OPENAI_API_KEY`** stores a key on the Gateway so every app can use it. A name the Gateway doesn't know (say `GITHUB_TOKEN`) is stored for the app you're in, once its `everyapp.config.ts` lists it under `secrets`.
 - **`pnpm everyapp delete my-app`** takes an app offline. Add `--purge` to delete its data for good.
 
-There's also `db` (database migrations and queries), `workflows` (background jobs) and `register` (hosted Gateways only, you won't need it).
+There's also `email` (the addresses an app sends as and receives at), `db` (database migrations and queries), `workflows` (background jobs) and `register` (hosted Gateways only, you won't need it).
 
 ## Logging in and CI
 

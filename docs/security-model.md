@@ -113,10 +113,12 @@ first upload; ADR-0001) decides what the gateway does, once, in
   against its own `app` budgets, once per distinct recipient (100 per
   address and 5,000 per gateway a day self-hosted, 20 and 5,000 hosted; no
   per-organization budget). Recipients are the app's to choose. The From is
-  the gateway's sender unless it matches the manifest's
-  `capabilities.email.senders` (`*@domain` or one address); a hosted
-  gateway refuses any app sender, so one organization's app can't send as
-  the platform or as another's domain. Headers that would set the sender,
+  the gateway's sender unless it matches one of the installation's senders
+  (`apps.email_senders`, `*@domain` or one address, set with
+  `everyapp email set` by whoever can deploy, never by the manifest, so a
+  release carries no domain); a hosted gateway refuses any app sender, so
+  one organization's app can't send as the platform or as another's
+  domain. Headers that would set the sender,
   recipients or subject (`From`, `Sender`, `Reply-To`, ...) are refused,
   values with line breaks too, and the rest pass through to Email Sending.
   Logs (`email.app.send`) carry counts, an HMAC of the first recipient and
@@ -136,13 +138,16 @@ first upload; ADR-0001) decides what the gateway does, once, in
   organization with `for: { background: true, organizationId }`; a reply
   sent from it goes through the `email` capability and its budgets like any
   other. The deploy keeps refusing the `email` trigger; the CLI
-  makes the rules from the manifest's `email.inbound` instead, recorded in
-  the ownership ledger, so a deploy takes only an address no other app
-  recorded and no foreign rule or catch-all delivers, never turns Email
+  makes the rules from the installation's inbound addresses instead
+  (`everyapp email set --inbound`, and every deploy reconciles them),
+  recorded in the ownership ledger, so it takes only an address no other
+  app recorded and no foreign rule or catch-all delivers, never turns Email
   Routing on for a domain without a person's yes (or
   `--enable-email-routing`), and `--purge` removes only the routes the app
-  recorded. Apps on the dispatch tier take no inbound addresses
-  (docs/runbooks/email-sending-setup.md).
+  recorded. The manifest only declares the handler
+  (`email: { inbound: true }`), so an installer inherits no address. Apps
+  on the dispatch tier declare no inbound mail (the hosted deploy API
+  refuses it; docs/runbooks/email-sending-setup.md).
 
 ## Organizations and Shared Apps
 

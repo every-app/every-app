@@ -241,9 +241,10 @@ call.
 ### What a hosted fork can't do yet
 
 Two checks stand between a fork and the dispatch tier. The manifest check
-(`manifestTierProblems` in `packages/perimeter`) refuses Hyperdrive, R2 and
-inbound mail. The hosted deploy API refuses KV, Workflows, crons and helper
-Workers. Internet egress is blocked by default. OpenSEO's fork shape uses KV, R2, Workflows, a cron and a helper, and it fetches arbitrary customer sites.
+(`manifestTierProblems` in `packages/perimeter`, run by the CLI, and the
+hosted deploy API's `manifestProblems`) refuses Hyperdrive, R2 and the
+inbound-mail declaration (`email: { inbound: true }`). The hosted deploy
+API also refuses KV, Workflows, crons and helper Workers. Internet egress is blocked by default. OpenSEO's fork shape uses KV, R2, Workflows, a cron and a helper, and it fetches arbitrary customer sites.
 So hosted forks ship in tiers (TODO.md, "OpenSEO in Every App"):
 
 1. **Tier 0**: research tools, SAM chat and Google through the gateway, with

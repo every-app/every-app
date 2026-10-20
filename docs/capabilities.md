@@ -4,7 +4,9 @@ An app often needs a third-party API that isn't AI: DataForSEO for SEO data,
 Context.dev for rendering pages, a social network's OAuth client, a way to
 send email, later GitHub or Google. The gateway holds the credential once, an
 app lists the capability in its manifest, and the app calls through the
-gateway. No app holds the key, and a deploy needs no per-app settings.
+gateway. No app holds the key; the one per-installation setting, the
+addresses an app sends as and receives at, is set with `everyapp email set`
+(below).
 
 This is phase 0 of the integrations design
 ([research/2026-10-integrations-hub/app-integrations.md](research/2026-10-integrations-hub/app-integrations.md)):
@@ -56,10 +58,12 @@ lists them in `providers` (and limits them with `ai.models`) and calls
 
 ## For an operator
 
-Every key, client and sender lives in the gateway Worker's secrets; nothing
-is set per app. Set them from any directory, as many names at once as you
-like; the name says it is the gateway's (an app's own secrets are the names
-its `everyapp.config.ts` lists under `secrets`, set from the app's directory):
+Every key, client and the gateway's own sender live in the gateway Worker's
+secrets; an app's senders and inbound addresses are the one thing set per
+installation, with `everyapp email set` in the app's directory. Set the
+gateway's from any directory, as many names at once as you like; the name
+says it is the gateway's (an app's own secrets are the names its
+`everyapp.config.ts` lists under `secrets`, set from the app's directory):
 
 ```bash
 pnpm everyapp secret set DATAFORSEO_API_KEY
@@ -83,7 +87,7 @@ Everything the gateway holds for apps, in one table:
 | the AI proxy's extra routes | AI provider setting | `AI_PROXY_EXTRA_ROUTES` (optional; OpenAI only, e.g. `/v1/files`)                                                          | `AI_PROXY_EXTRA_ROUTES`                                                                                        |                                                      |
 | `dataforseo`                | `api_key`           | `DATAFORSEO_API_KEY` (`login:password`, or its base64)                                                                     | `DATAFORSEO_API_KEY`                                                                                           | OpenSEO                                              |
 | `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
-| `email`                     | `service`           | `EMAIL_FROM`, `EMAIL_FROM_NAME`, and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)) | Postiz, agentic-inbox, and the gateway's own mail    |
+| `email`                     | `service`           | `EMAIL_FROM`, `EMAIL_FROM_NAME`, and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)); an app's own senders with `everyapp email set --sender` | Postiz, agentic-inbox, and the gateway's own mail    |
 | `members`                   | `service`           | none: the gateway reads its own directory                                                                                   | nothing to set                                                                                                 | OpenAnalytics (whom reports go to)                   |
 | 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | Postiz                                               |
 | `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-clients) | Open CRM (mail and calendar capture) |
@@ -441,20 +445,21 @@ set up the gateway's sending domain with its provider, then set the sender.
 The gateway's own invitation and password-reset mail uses the same setup
 and the same provider.
 
-An app lists it, with the addresses it may send as:
+An app lists it:
 
 ```ts
 capabilities: {
   email: {
     access: "write",
     why: "Sends replies from the organization's mailboxes.",
-    // Optional: without senders, mail goes out as the gateway's sender only.
-    senders: ["*@mail.example.com", "billing@example.com"],
   },
 },
 ```
 
-and sends:
+The addresses it may send as are its installation's, not the manifest's:
+`pnpm everyapp email set --sender "*@mail.example.com"` in the app's
+directory, after its first deploy. Without any, mail goes out as the
+gateway's sender only. It sends:
 
 ```ts
 import { GatewayRefusalError, sendEmail } from "@every-app/sdk/server";
@@ -487,7 +492,7 @@ as sent, attachments included):
 | `cc`, `bcc`   | address or list                                                                      | plain addresses (no display names)                                |
 | `subject`     | string                                                                               | one line, 998 characters at most                                  |
 | `text`, `html`| string                                                                               | at least one                                                      |
-| `from`        | address or `{ address, name? }`                                                      | absent: the gateway's sender; present: must match a `senders` pattern |
+| `from`        | address or `{ address, name? }`                                                      | absent: the gateway's sender; present: must match one of the installation's senders |
 | `replyTo`     | address or `{ address, name? }`                                                      | absent: replies go to the sender                                  |
 | `headers`     | `{ name: value }`                                                                    | 20 at most, values one line of 2,048 bytes at most; `From`, `To`, `Cc`, `Bcc`, `Reply-To`, `Subject`, `Sender`, `Return-Path`, `Date`, MIME and DKIM headers are refused (the message's own fields set them) |
 | `attachments` | `[{ filename, contentType, content (base64), disposition?: "attachment" \| "inline", contentId? }]` | 32 at most; an inline one needs a `contentId` (`cid:` in the HTML) |
@@ -498,16 +503,19 @@ transport will retry some recipients). In local dev the SDK answers
 `logged` (below).
 
 **The sender rule.** Without `from`, the message goes out as `EMAIL_FROM`
-(with `EMAIL_FROM_NAME`). With one, the address must match a pattern in the
-deployed manifest's `capabilities.email.senders`: `*@<domain>` takes any
-address on exactly that domain (not its subdomains), anything else that one
-address; patterns are lowercase, unique, 20 at most, and `everyapp deploy`
-checks them. Each domain an app sends from must also be set up with the
-gateway's provider, onboarded to Email Sending in the gateway's Cloudflare
-account (on Cloudflare DNS) or verified in its Resend account, or the
-provider refuses it: `email_sender_not_verified`, whose message names the
-step. A hosted gateway sends app mail from its own sender only, for now:
-any `from` is refused.
+(with `EMAIL_FROM_NAME`). With one, the address must match one of the
+installation's senders, set with `everyapp email set --sender` and stored
+on the app's registry row (never in the manifest, so a release carries
+none): `*@<domain>` takes any address on exactly that domain (not its
+subdomains), anything else that one address; patterns are lowercase,
+unique, 20 at most, and the command checks them. A change applies within
+30 seconds (the gateway caches the app's row that long). Each domain an app
+sends from must also be set up with the gateway's provider, onboarded to
+Email Sending in the gateway's Cloudflare account (on Cloudflare DNS) or
+verified in its Resend account, or the provider refuses it:
+`email_sender_not_verified`, whose message names the step. A hosted gateway
+sends app mail from its own sender only, for now: any `from` is refused,
+and `everyapp email set --sender` refuses on a hosted install.
 
 **Budgets.** App mail (`app` kind) counts against daily budgets in
 `rate_limit_counters`, once for each distinct recipient, before it is sent:
@@ -527,7 +535,7 @@ any of whose recipients has had its share is refused whole, with
 | `integration_read_only`          | 403    | an agent's identity (`chan: "mcp"`) without `mcp:write`                                      |
 | `email_message_too_large`        | 413    | the body passes 5 MiB, counted as it streams                                                 |
 | `email_invalid_message`          | 400    | the message breaks a rule above, or the provider refuses it as malformed (Resend: other 400s and 422s) |
-| `email_sender_not_allowed`       | 403    | `from` matches no `senders` pattern, or the gateway is hosted                                |
+| `email_sender_not_allowed`       | 403    | `from` matches none of the installation's senders, or the gateway is hosted                  |
 | `integration_not_configured`     | 503    | the gateway has no sender or provider (or `EMAIL_PROVIDER` names one that isn't set up); the message names the settings and the runbook |
 | `email_budget_exhausted`         | 429    | a recipient or the gateway has had its day's app mail (`Retry-After`)                        |
 | `email_budget_unavailable`       | 503    | the budget couldn't be read or written, so nothing was sent                                  |
@@ -545,13 +553,16 @@ attachments or an address.
 answers `{ capability, requested, configured, ready, sender, senders, provider }`
 without sending: `sender` is the From a message without `from` gets (null
 unless configured), `senders` the patterns the gateway accepts from this
-app (empty on a hosted gateway), `provider` the one mail goes out with
+app (its installation's; empty on a hosted gateway), `provider` the one
+mail goes out with
 (`cloudflare` or `resend`; null unless configured). An app shows "sending
 isn't set up" from `ready`, and offers only addresses `senders` allows.
 
 **Local dev.** With no gateway, `sendEmail()` checks the message and the
-sender the same way (the manifest's `senders` reach the Worker in dev as
-`EVERYAPP_EMAIL_SENDERS`), then prints
+sender the same way; the senders are `EVERYAPP_EMAIL_SENDERS` in the app's
+`.dev.vars` (a comma-separated list or a JSON array), standing in for the
+installation's, and unset, every `from` is refused as a gateway with none
+set does; then it prints
 `[everyapp dev] email to <n> recipients subject "<subject>"` and answers
 `{ status: "logged", messageId: "dev-<uuid>" }`. With
 `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `EMAIL_FROM` in
@@ -561,14 +572,17 @@ would pick from the same `.dev.vars` (`RESEND_API_KEY` and `EMAIL_PROVIDER`
 count), though only Cloudflare's REST API sends from dev for now.
 
 **Inbound mail** is not a capability: the app exports an `email()` handler
-beside `everyApp()`'s `fetch` and lists its addresses in the manifest,
-`email: { inbound: ["*@example.com", "support@mail.example.com"] }`
-(`*@` is a zone apex's catch-all; subdomains take literal addresses).
-`everyapp deploy` creates the Email Routing rules that send them to the
-app's Worker, records them as the app's, deletes those the manifest
-drops, and asks (or takes `--enable-email-routing`) before it turns
-routing on for a domain; `delete --purge` removes them. The deploy policy
-keeps refusing the `email` trigger
+beside `everyApp()`'s `fetch` and declares it in the manifest,
+`email: { inbound: true }`. The addresses are the installation's:
+`everyapp email set --inbound "*@example.com" --inbound support@mail.example.com`
+in the app's directory (`*@` is a zone apex's catch-all; subdomains take
+literal addresses) stores them on the gateway and creates the Email
+Routing rules that send them to the app's Worker at once, recorded as the
+app's, removing those the list drops and asking (or taking
+`--enable-email-routing`) before it turns routing on for a domain;
+`everyapp deploy` keeps the rules in step with the stored list (and
+removes them when the manifest drops the declaration); `delete --purge`
+removes them. The deploy policy keeps refusing the `email` trigger
 ([docs/runbooks/email-sending-setup.md](runbooks/email-sending-setup.md#inbound-mail-to-an-app)).
 The handler runs with no identity: its gateway calls pass
 `for: { background: true, organizationId }` and treat the message as
@@ -636,8 +650,10 @@ background work.
 
 ## Limits today
 
-- One key, client or sender per capability, shared by every app and every
-  organization that lists it, so a provider's limits are shared too (Meta's
+- One key, client or gateway sender per capability, shared by every app and
+  every organization that lists it (an app's own senders are per installed
+  app, one list for every organization a shared app serves), so a
+  provider's limits are shared too (Meta's
   app review tiers, TikTok's user caps, Workers AI's per-account rate
   limits). Whoever can deploy an app can list any capability, as for AI
   providers (deploying already takes credentials that can change the
@@ -646,6 +662,6 @@ background work.
   one capability with budgets (per recipient address and per gateway, not
   per organization).
 - A hosted gateway sends app mail from its own sender only, and apps on the
-  dispatch tier take no inbound addresses.
+  dispatch tier declare no inbound mail (the hosted deploy API refuses it).
 - Keys and clients live in gateway Worker secrets, not encrypted in D1 with
   rotation in the UI, as the full design has it.

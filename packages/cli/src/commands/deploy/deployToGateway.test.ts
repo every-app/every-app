@@ -258,6 +258,15 @@ describe("hostedDeployTarget", () => {
     expect(() =>
       hostedDeployTarget({ gateway: GATEWAY, shared: true, "force-dns": false }, { EVERYAPP_DEPLOY_TOKEN: TOKEN }),
     ).toThrow(expect.objectContaining({ code: "FLAG_NOT_FOR_HOSTED_DEPLOY", message: expect.stringContaining("--shared is") }));
+    // Email Routing is the self-hoster's account's: refused, not ignored.
+    expect(() =>
+      hostedDeployTarget({ gateway: GATEWAY, "enable-email-routing": true }, { EVERYAPP_DEPLOY_TOKEN: TOKEN }),
+    ).toThrow(
+      expect.objectContaining({
+        code: "FLAG_NOT_FOR_HOSTED_DEPLOY",
+        message: expect.stringContaining("--enable-email-routing is"),
+      }),
+    );
     expect(hostedDeployTarget({ gateway: GATEWAY }, { EVERYAPP_DEPLOY_TOKEN: TOKEN })).toEqual({
       gatewayUrl: GATEWAY,
       token: TOKEN,
