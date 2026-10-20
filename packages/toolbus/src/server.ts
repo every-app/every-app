@@ -4,8 +4,9 @@
  * header rules, error codes); this file only lists and calls tools from the
  * catalog snapshot in the request's view.
  *
- * Tools are the only capability: no resources, prompts, logging or
- * subscriptions, and the tool list never changes mid-request.
+ * Tools are the only capability: no resources, prompts or logging, and the
+ * tool list never changes mid-request. Whether it may change between
+ * requests (`listChanged`) is the HTTP layer's call, per era: see http.ts.
  */
 import {
   ProtocolError,
@@ -14,6 +15,7 @@ import {
   type CallToolResult,
   type Tool,
 } from "@modelcontextprotocol/server";
+import { canonicalJson } from "@every-app/sdk/internal";
 import { listBuiltinTools } from "./builtins";
 import { executeToolCall } from "./execute";
 import { displayedToolName, exposedToolName } from "./names";
@@ -81,10 +83,28 @@ export function listTools(view: ToolBusView): Tool[] {
   return tools;
 }
 
+/**
+ * 16 hex characters of SHA-256 over the tools this caller would be listed:
+ * names, schemas, descriptions and hints. Equal lists hash equal; a changed
+ * one is what `notifications/tools/list_changed` reports.
+ */
+export async function toolListHash(view: ToolBusView): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(canonicalJson(listTools(view))),
+  );
+  let hex = "";
+  for (const byte of new Uint8Array(digest).subarray(0, 8)) {
+    hex += byte.toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
 export function createToolBusServer(
   view: ToolBusView,
   deps: ToolBusDeps,
   protocolVersion?: string,
+  options: { listChanged?: boolean } = {},
 ): Server {
   const server = new Server(
     {
@@ -93,7 +113,7 @@ export function createToolBusServer(
       version: TOOLBUS_VERSION,
     },
     {
-      capabilities: { tools: { listChanged: false } },
+      capabilities: { tools: { listChanged: options.listChanged ?? false } },
       ...(view.instructions ? { instructions: view.instructions } : {}),
       jsonSchemaValidator,
       cacheHints: {

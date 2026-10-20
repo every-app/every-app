@@ -2,10 +2,35 @@
  * HTTP serving for the ToolBus: one stateless handler for both MCP eras.
  *
  *  - 2026-07-28 traffic (a per-request `_meta` envelope) goes to the SDK's
- *    own `createMcpHandler`: strict, JSON responses, no subscriptions.
+ *    own `createMcpHandler`: strict, JSON responses, no subscriptions held
+ *    by the SDK.
  *  - 2025-06-18 / 2025-11-25 traffic (the initialize handshake and requests
  *    without the envelope) gets a fresh JSON-mode Streamable HTTP transport
- *    per request, closed before the response returns. No sessions.
+ *    per request, closed before the response returns.
+ *
+ * Nothing is kept between requests, yet a connected client learns when the
+ * tools it may see change (an app added, removed or redeployed):
+ *
+ *  - 2025 eras: `initialize` issues an `Mcp-Session-Id` whose last part is a
+ *    hash of the caller's tool list (spec: a server MAY assign a session id
+ *    at initialization, and the client then sends it on every request). A
+ *    later request carrying a hash other than the current one is answered
+ *    as an SSE stream, `notifications/tools/list_changed` before the result
+ *    (the spec lets a server send notifications related to the request
+ *    before its response); a `tools/list` on such a session gets HTTP 404
+ *    Session not found, so the client initializes again and its new session
+ *    carries the current hash. Clients that take an `Mcp-Session-Id` from a
+ *    later response (the 2025 SDK) get the new one with the notification.
+ *  - 2026-07-28: there are no sessions and the spec routes list changes
+ *    through `subscriptions/listen`. When the view can be re-read
+ *    (`view.refresh`), that request is held open as an SSE stream, the view
+ *    re-read every `listenPollMs`, the notification pushed when the hash
+ *    differs, and the stream ended gracefully after `listenMaxMs` (the client
+ *    opens a new one). Only a request the SDK's classifier accepts as a
+ *    2026-07-28 request is held, at most a few per credential per isolate;
+ *    anything else goes to the SDK, which answers as the spec says. Without
+ *    `refresh` the modern era declares `listChanged: false`, so clients
+ *    don't ask.
  *
  * First it checks Origin (and, in local dev, Host) as the Streamable HTTP
  * spec requires: a browser may call from the endpoint's own origin, from an
@@ -16,20 +41,45 @@
  * here; on the gateway the OAuth resource server answers preflights.
  */
 import {
+  classifyInboundRequest,
   createMcpHandler,
+  isJsonContentType,
   isLegacyRequest,
+  readRequestBody,
   WebStandardStreamableHTTPServerTransport,
   type AuthInfo,
+  type JSONRPCRequest,
   type McpHttpHandler,
   type McpRequestContext,
 } from "@modelcontextprotocol/server";
 import { scopesForAccess } from "./execute";
 import { isPlainObject } from "./io";
-import { createToolBusServer } from "./server";
+import { createToolBusServer, toolListHash, TOOLBUS_VERSION } from "./server";
 import type { ToolBusDeps, ToolBusView } from "./types";
 
 export const MAX_REQUEST_BODY_BYTES = 256 * 1024;
+/** A held `subscriptions/listen` stream re-reads the view this often. */
+const LISTEN_POLL_MS = 30_000;
+/** And ends gracefully after this long; the client opens a new one. */
+const LISTEN_MAX_MS = 10 * 60_000;
+/**
+ * Streams one credential may hold on one isolate (Claude Code holds one);
+ * more are refused in-band like the SDK refuses past its own limit.
+ */
+const LISTEN_STREAMS_PER_CALLER = 8;
+const MODERN_PROTOCOL_VERSION = "2026-07-28";
 const VIEW_KEY = "everyapp.toolbus.view";
+const SUBSCRIPTION_ID_KEY = "io.modelcontextprotocol/subscriptionId";
+const SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo";
+const LIST_CHANGED = {
+  jsonrpc: "2.0",
+  method: "notifications/tools/list_changed",
+} as const;
+const SSE_HEADERS = {
+  "content-type": "text/event-stream",
+  "cache-control": "no-cache, no-transform",
+  "x-accel-buffering": "no",
+};
 const CORS_ALLOW_HEADERS = [
   "accept",
   "authorization",
@@ -51,17 +101,22 @@ export type ToolBusHttpHandler = (
  * caller and its apps) travels with the request, not the handler.
  */
 export function createToolBusHttp(deps: ToolBusDeps): ToolBusHttpHandler {
+  // Open subscriptions/listen streams per credential, on this isolate.
+  const held = new Map<string, number>();
   // Built on first use: the SDK logs a notice whenever a JSON-mode handler
   // is created, which only belongs in logs that actually serve MCP.
   let modern: McpHttpHandler | undefined;
   const modernHandler = () =>
     (modern ??= createMcpHandler(
-      (context) =>
-        createToolBusServer(
-          viewOf(context),
+      (context) => {
+        const view = viewOf(context);
+        return createToolBusServer(
+          view,
           deps,
           context.requestInfo?.headers.get("mcp-protocol-version") ?? undefined,
-        ),
+          { listChanged: view.refresh !== undefined },
+        );
+      },
       {
         legacy: "reject",
         responseMode: "json",
@@ -95,13 +150,36 @@ export function createToolBusHttp(deps: ToolBusDeps): ToolBusHttpHandler {
         cors,
       );
     }
-    if (
-      Number(request.headers.get("content-length")) > MAX_REQUEST_BODY_BYTES
-    ) {
+    // Read once, within the limit (a chunked body declares no length), and
+    // hand the parsed body to every leg, so none reads it again.
+    let read: Awaited<ReturnType<typeof readRequestBody>>;
+    try {
+      read = await readRequestBody(
+        // Workers' Request generics differ from the SDK's; one object at runtime.
+        request.clone() as unknown as Parameters<typeof readRequestBody>[0],
+        MAX_REQUEST_BODY_BYTES,
+      );
+    } catch {
+      return withHeaders(
+        jsonRpcError(
+          400,
+          -32700,
+          "Parse error: the request body could not be read.",
+        ),
+        cors,
+      );
+    }
+    if (read.tooLarge) {
       return withHeaders(
         jsonRpcError(413, -32600, "Request body too large."),
         cors,
       );
+    }
+    let body: unknown;
+    try {
+      body = JSON.parse(read.text);
+    } catch {
+      body = undefined;
     }
 
     const authInfo: AuthInfo = {
@@ -110,15 +188,50 @@ export function createToolBusHttp(deps: ToolBusDeps): ToolBusHttpHandler {
       scopes: scopesForAccess(view.principal.access),
       extra: { [VIEW_KEY]: view },
     };
+    const parsed = body !== undefined ? { parsedBody: body } : {};
     // Options go in the third argument; the second is a pre-parsed body.
-    const legacy = await isLegacyRequest(request, undefined, {
+    const legacy = await isLegacyRequest(request, body, {
       maxRequestBodySize: MAX_REQUEST_BODY_BYTES,
     });
-    const response = legacy
-      ? await serveLegacy(request, view, deps, authInfo)
-      : await modernHandler().fetch(request, { authInfo });
+    let response: Response;
+    const listen = view.refresh ? listenRequest(request, body) : null;
+    if (legacy) {
+      response = await serveLegacy(request, view, deps, authInfo, body);
+    } else if (listen) {
+      response = await serveListen(request, view, deps, listen, held);
+    } else {
+      response = await modernHandler().fetch(request, { authInfo, ...parsed });
+    }
     return withHeaders(response, cors);
   };
+}
+
+/**
+ * The body as a 2026-07-28 `subscriptions/listen` request the SDK's
+ * classifier accepts (envelope, headers and version checked as it does),
+ * else null: the SDK then answers with the spec's error.
+ */
+function listenRequest(request: Request, body: unknown): JSONRPCRequest | null {
+  if (
+    request.headers.get("mcp-method") !== "subscriptions/listen" ||
+    request.headers.get("mcp-protocol-version") !== MODERN_PROTOCOL_VERSION ||
+    !isJsonContentType(request.headers.get("content-type"))
+  ) {
+    return null;
+  }
+  const outcome = classifyInboundRequest({
+    httpMethod: request.method,
+    protocolVersionHeader: request.headers.get("mcp-protocol-version")!,
+    mcpMethodHeader: "subscriptions/listen",
+    mcpNameHeader: request.headers.get("mcp-name") ?? undefined,
+    body,
+  });
+  return outcome.kind === "modern" &&
+    outcome.messageKind === "request" &&
+    outcome.message.method === "subscriptions/listen" &&
+    outcome.classification.revision === MODERN_PROTOCOL_VERSION
+    ? outcome.message
+    : null;
 }
 
 function viewOf(context: McpRequestContext): ToolBusView {
@@ -132,13 +245,8 @@ async function serveLegacy(
   view: ToolBusView,
   deps: ToolBusDeps,
   authInfo: AuthInfo,
+  body: unknown,
 ): Promise<Response> {
-  let body: unknown;
-  try {
-    body = await request.clone().json();
-  } catch {
-    body = undefined;
-  }
   // Neither 2025-06-18 nor 2025-11-25 has JSON-RPC batches (the modern leg
   // refuses them too). A batch would also slip past the routing-header
   // check below and fan one request out into a call per message.
@@ -156,27 +264,286 @@ async function serveLegacy(
     return jsonRpcError(400, -32020, `Bad Request: ${mismatch}`, {}, body);
   }
 
+  const method = isPlainObject(body) ? body["method"] : undefined;
+  const hash = await toolListHash(view);
+  const sessionHash = toolsHashOfSession(request.headers.get("mcp-session-id"));
+  const changed = sessionHash !== undefined && sessionHash !== hash;
+  // The session was issued for another tool list. Its tools/list ends the
+  // session (spec: the server MAY terminate a session at any time, and the
+  // client MUST then initialize again), so the new session carries the
+  // current hash and the notification below stops repeating.
+  if (changed && method === "tools/list") {
+    return jsonRpcError(404, -32001, "Session not found");
+  }
+
   const server = createToolBusServer(
     view,
     deps,
     request.headers.get("mcp-protocol-version") ?? undefined,
+    { listChanged: true },
   );
   const transport = new WebStandardStreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
+    // Only initialize mints a session; later requests validate nothing, so
+    // a client without one, or with one from before a deploy, is served.
+    sessionIdGenerator:
+      method === "initialize" ? () => sessionIdFor(hash) : undefined,
     enableJsonResponse: true,
   });
   try {
     await server.connect(transport);
-    return await transport.handleRequest(request, {
+    const response = await transport.handleRequest(request, {
       authInfo,
       ...(body !== undefined ? { parsedBody: body } : {}),
     });
+    return changed &&
+      isJsonRpcRequest(body) &&
+      method !== "initialize" &&
+      acceptsEventStream(request)
+      ? await withListChanged(response, hash)
+      : response;
   } finally {
     await Promise.all([
       transport.close().catch(() => undefined),
       server.close().catch(() => undefined),
     ]);
   }
+}
+
+/** `<uuid>.<tool list hash>`: visible ASCII, unguessable, self-describing. */
+function sessionIdFor(hash: string): string {
+  return `${crypto.randomUUID()}.${hash}`;
+}
+
+function toolsHashOfSession(header: string | null): string | undefined {
+  const hash = header?.slice(header.lastIndexOf(".") + 1);
+  return hash && /^[0-9a-f]{16}$/.test(hash) ? hash : undefined;
+}
+
+function isJsonRpcRequest(body: unknown): boolean {
+  return (
+    isPlainObject(body) && typeof body["method"] === "string" && "id" in body
+  );
+}
+
+function acceptsEventStream(request: Request): boolean {
+  return (request.headers.get("accept") ?? "").includes("text/event-stream");
+}
+
+function sseEvent(message: unknown): string {
+  return `event: message\ndata: ${JSON.stringify(message)}\n\n`;
+}
+
+/**
+ * The JSON-mode response as an SSE stream, `notifications/tools/list_changed`
+ * before the result. The new session id is for clients that take one from
+ * any response; the others reach the 404 above on their next tools/list.
+ */
+async function withListChanged(
+  response: Response,
+  hash: string,
+): Promise<Response> {
+  if (
+    response.status !== 200 ||
+    !response.headers.get("content-type")?.includes("application/json")
+  ) {
+    return response;
+  }
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(SSE_HEADERS)) {
+    headers.set(name, value);
+  }
+  headers.set("mcp-session-id", sessionIdFor(hash));
+  return new Response(
+    `${sseEvent(LIST_CHANGED)}event: message\ndata: ${await response.text()}\n\n`,
+    { status: 200, headers },
+  );
+}
+
+/** The spec's subscription filter: booleans, and resource URIs as strings. */
+function validFilter(filter: Record<string, unknown>): boolean {
+  for (const key of [
+    "toolsListChanged",
+    "promptsListChanged",
+    "resourcesListChanged",
+  ]) {
+    if (key in filter && typeof filter[key] !== "boolean") return false;
+  }
+  const uris = filter["resourceSubscriptions"];
+  return (
+    uris === undefined ||
+    (Array.isArray(uris) && uris.every((uri) => typeof uri === "string"))
+  );
+}
+
+/**
+ * Who holds a stream, for the cap: the credential's own id, or the user's
+ * when the credential has none (a browser session).
+ */
+function streamHolder(view: ToolBusView): string {
+  const { credential } = view.principal;
+  return credential.id === "session" || credential.id === "pat"
+    ? `${credential.kind}:${view.principal.userId}`
+    : credential.id;
+}
+
+/**
+ * A 2026-07-28 `subscriptions/listen`, held open: the acknowledgement
+ * first, then every `listenPollMs` either `notifications/tools/list_changed`
+ * (the re-read view lists other tools) or an SSE comment as keep-alive;
+ * after `listenMaxMs`, or when the view can't be re-read within a poll, the
+ * request's completion result closes it gracefully. Only `toolsListChanged`
+ * is served; a filter without it is acknowledged and closed at once.
+ */
+async function serveListen(
+  request: Request,
+  view: ToolBusView,
+  deps: ToolBusDeps,
+  message: JSONRPCRequest,
+  held: Map<string, number>,
+): Promise<Response> {
+  const id = message.id;
+  if (!acceptsEventStream(request)) {
+    return jsonRpcError(
+      406,
+      -32000,
+      "Not Acceptable: Client must accept text/event-stream",
+    );
+  }
+  const params = isPlainObject(message.params) ? message.params : {};
+  const filter = params["notifications"];
+  if (!isPlainObject(filter) || !validFilter(filter)) {
+    return Response.json({
+      jsonrpc: "2.0",
+      id,
+      error: {
+        code: -32602,
+        message: isPlainObject(filter)
+          ? "notifications: invalid subscription filter"
+          : "notifications is required",
+      },
+    });
+  }
+  const wanted = filter["toolsListChanged"] === true;
+  const refresh = view.refresh;
+  if (!refresh) throw new Error("subscriptions/listen needs view.refresh");
+  const caller = streamHolder(view);
+  if ((held.get(caller) ?? 0) >= LISTEN_STREAMS_PER_CALLER) {
+    return Response.json({
+      jsonrpc: "2.0",
+      id,
+      error: { code: -32603, message: "Subscription limit reached" },
+    });
+  }
+  // Reserved before anything is awaited: a burst of opens counts too.
+  held.set(caller, (held.get(caller) ?? 0) + 1);
+  const release = () => {
+    const count = (held.get(caller) ?? 1) - 1;
+    if (count > 0) held.set(caller, count);
+    else held.delete(caller);
+  };
+  const pollMs = deps.listenPollMs ?? LISTEN_POLL_MS;
+  const maxMs = deps.listenMaxMs ?? LISTEN_MAX_MS;
+  const meta = { [SUBSCRIPTION_ID_KEY]: id };
+  const encoder = new TextEncoder();
+  let last: string;
+  try {
+    last = await toolListHash(view);
+  } catch (error) {
+    release();
+    throw error;
+  }
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let closed = false;
+
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const write = (text: string) => controller.enqueue(encoder.encode(text));
+      const end = () => {
+        if (closed) return;
+        closed = true;
+        release();
+        write(
+          sseEvent({
+            jsonrpc: "2.0",
+            id,
+            result: {
+              resultType: "complete",
+              _meta: { ...meta, [SERVER_INFO_KEY]: serverInfo(view) },
+            },
+          }),
+        );
+        controller.close();
+      };
+      write(
+        sseEvent({
+          jsonrpc: "2.0",
+          method: "notifications/subscriptions/acknowledged",
+          params: {
+            notifications: wanted ? { toolsListChanged: true } : {},
+            _meta: meta,
+          },
+        }),
+      );
+      if (!wanted) {
+        end();
+        return;
+      }
+      const opened = Date.now();
+      const tick = async () => {
+        if (closed) return;
+        if (Date.now() - opened >= maxMs) {
+          end();
+          return;
+        }
+        let current: string;
+        try {
+          current = await toolListHash(await withinPoll(refresh(), pollMs));
+        } catch {
+          end();
+          return;
+        }
+        if (closed) return;
+        if (current === last) {
+          write(": keepalive\n\n");
+        } else {
+          last = current;
+          write(sseEvent({ ...LIST_CHANGED, params: { _meta: meta } }));
+        }
+        timer = setTimeout(tick, pollMs);
+      };
+      timer = setTimeout(tick, pollMs);
+    },
+    cancel() {
+      if (!closed) release();
+      closed = true;
+      clearTimeout(timer);
+    },
+  });
+  // The runtime cancels the stream when the client goes; its abort signal
+  // says so too, in case the response was never read.
+  request.signal?.addEventListener("abort", () => {
+    if (!closed) release();
+    closed = true;
+    clearTimeout(timer);
+  });
+  return new Response(stream, { status: 200, headers: SSE_HEADERS });
+}
+
+function serverInfo(view: ToolBusView) {
+  return {
+    name: view.serverInfo.name,
+    ...(view.serverInfo.title ? { title: view.serverInfo.title } : {}),
+    version: TOOLBUS_VERSION,
+  };
+}
+
+/** A re-read that takes longer than a poll ends the stream instead. */
+function withinPoll<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("refresh timed out")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
 /** Decode the spec's `=?base64?…?=` form of a non-ASCII header value. */
@@ -273,7 +640,7 @@ function corsHeaders(request: Request): Record<string, string> {
   if (origin === null || origin === new URL(request.url).origin) return {};
   return {
     "access-control-allow-origin": origin,
-    "access-control-expose-headers": "mcp-protocol-version",
+    "access-control-expose-headers": "mcp-protocol-version, mcp-session-id",
     vary: "Origin",
   };
 }

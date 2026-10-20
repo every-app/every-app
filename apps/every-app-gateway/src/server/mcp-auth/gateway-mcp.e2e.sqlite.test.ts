@@ -117,6 +117,7 @@ import {
   syncAppTools,
 } from "@/server/toolbus/catalog-sync";
 import { resetAppHostMcpForTests } from "@/server/toolbus/app-host-mcp";
+import { listenIntervalsForTests } from "@/server/toolbus/runtime";
 import { createKvFake } from "@/test/kv-fake";
 import { deployLiveApp, markAppDeployed, registerApp } from "@/test/registry";
 import { createTestDb, seedMember, seedOrganization } from "@/test/sqlite-db";
@@ -985,7 +986,10 @@ describe("a DCR client (Codex-style)", () => {
         clientInfo: { name: "claude-ai", version: "1" },
       },
     });
-    expect(init.headers.get("mcp-session-id")).toBeNull();
+    // `<uuid>.<tool list hash>`: the ToolBus compares later requests' hash.
+    expect(init.headers.get("mcp-session-id")).toMatch(
+      /^[0-9a-f-]{36}\.[0-9a-f]{16}$/,
+    );
     expect(((await init.json()) as { result: unknown }).result).toMatchObject({
       protocolVersion: "2025-06-18",
       serverInfo: { name: "every-app", title: "acme · Every App" },
@@ -2516,6 +2520,56 @@ describe("every request re-checks the connection", () => {
     expect((await mcp(tokens.access_token, "tools/list")).status).toBe(401);
   });
 
+  it("tells a held subscriptions/listen stream when an app goes, and ends it when the connection is revoked", async () => {
+    listenIntervalsForTests.pollMs = 20;
+    listenIntervalsForTests.maxMs = 10_000;
+    resetAppHostMcpForTests();
+    try {
+      const { tokens, connectionId } = await connected(memberId);
+      const discover = (await (
+        await mcp(tokens.access_token, "server/discover")
+      ).json()) as { result: { capabilities: object } };
+      expect(discover.result.capabilities).toEqual({
+        tools: { listChanged: true },
+      });
+
+      const listen = await mcp(tokens.access_token, "subscriptions/listen", {
+        notifications: { toolsListChanged: true },
+      });
+      expect(listen.status).toBe(200);
+      expect(listen.headers.get("content-type")).toBe("text/event-stream");
+      const reader = listen.body!.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      const next = async (method: string): Promise<void> => {
+        while (!text.includes(method)) {
+          const { value, done } = await reader.read();
+          if (done) throw new Error(`stream ended before ${method}`);
+          text += decoder.decode(value, { stream: true });
+        }
+      };
+      await next("notifications/subscriptions/acknowledged");
+      // Polls without a change write keep-alives, nothing else.
+      await next(": keepalive");
+      expect(text).not.toContain("list_changed");
+
+      await AppAccessService.updateAccessForApp(
+        { orgId, userId: ownerId, role: "owner" },
+        todoRowId,
+        [ownerId],
+      );
+      await next("notifications/tools/list_changed");
+
+      await McpConnectionService.revokeForUser(memberId, connectionId);
+      await next('"resultType":"complete"');
+      expect((await reader.read()).done).toBe(true);
+    } finally {
+      delete listenIntervalsForTests.pollMs;
+      delete listenIntervalsForTests.maxMs;
+      resetAppHostMcpForTests();
+    }
+  });
+
   it("drops an app whose access was taken away, or that was deleted", async () => {
     const { tokens } = await connected(memberId);
     expect(await toolNames(tokens.access_token)).toContain("todo_list_todos");
@@ -2547,6 +2601,42 @@ describe("every request re-checks the connection", () => {
 });
 
 describe("personal access tokens on the gateway's /mcp", () => {
+  it("ends a held subscriptions/listen stream once the token is revoked", async () => {
+    listenIntervalsForTests.pollMs = 20;
+    listenIntervalsForTests.maxMs = 10_000;
+    resetAppHostMcpForTests();
+    try {
+      const token = await pat();
+      const listen = await mcp(token, "subscriptions/listen", {
+        notifications: { toolsListChanged: true },
+      });
+      expect(listen.headers.get("content-type")).toBe("text/event-stream");
+      const reader = listen.body!.getReader();
+      const decoder = new TextDecoder();
+      let text = "";
+      const next = async (marker: string): Promise<void> => {
+        while (!text.includes(marker)) {
+          const { value, done } = await reader.read();
+          if (done) throw new Error(`stream ended before ${marker}`);
+          text += decoder.decode(value, { stream: true });
+        }
+      };
+      await next("notifications/subscriptions/acknowledged");
+      await next(": keepalive");
+
+      const [row] = (
+        await UserPatService.listForUser(ownerId, orgId)
+      ).tokens.filter((candidate) => candidate.name === "claude code");
+      await UserPatService.revoke(row!.id, ownerId);
+      await next('"resultType":"complete"');
+      expect((await reader.read()).done).toBe(true);
+    } finally {
+      delete listenIntervalsForTests.pollMs;
+      delete listenIntervalsForTests.maxMs;
+      resetAppHostMcpForTests();
+    }
+  });
+
   async function pat(
     scopes?: string[],
     appRowId: string | null = null,

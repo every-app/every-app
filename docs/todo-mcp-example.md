@@ -37,11 +37,19 @@ stay in the gateway's ToolBus (`@every-app/toolbus`, built on the official
   what claude.ai, ChatGPT and Claude Code connect to) and
   `https://<todo-app-host>/mcp` (this app, a personal token or the app's own
   pages), both served by the gateway.
-- Transport: stateless Streamable HTTP with JSON responses. Both protocol
-  eras work: 2026-07-28 (`server/discover`, per-request `_meta`) and the
-  2025-06-18 / 2025-11-25 `initialize` handshake. No sessions, no SSE
-  streams; `GET /mcp` returns `405`.
-- Capabilities: tools only. `tools/list` results may be cached for 60 s.
+- Transport: Streamable HTTP with JSON responses, nothing kept between
+  requests. Both protocol eras work: 2026-07-28 (`server/discover`,
+  per-request `_meta`) and the 2025-06-18 / 2025-11-25 `initialize`
+  handshake. `GET /mcp` returns `405`.
+- Capabilities: tools only, with `listChanged`. `tools/list` results may be
+  cached for 60 s. When the caller's tool list changes (an app added,
+  removed or redeployed), a 2026-07-28 client learns it on the
+  `subscriptions/listen` stream the gateway holds open (re-read every 30 s,
+  ended after 10 minutes for the client to reopen); a 2025-era client's
+  `Mcp-Session-Id` carries a hash of its list, and a request on a session
+  with another hash is answered as an SSE stream, the notification before
+  the result. Claude Code refetches `tools/list` within milliseconds of
+  either.
 - An app whose manifest says `mcp: "app"`, or that has no tools, keeps
   answering `/mcp` itself.
 

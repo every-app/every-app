@@ -11,7 +11,10 @@
  * With no snapshot to serve, or when the snapshot can't be read at all (D1
  * before the catalog migration ran, say), it returns null and the request
  * is proxied to the app as before, so apps that still answer /mcp
- * themselves keep working.
+ * themselves keep working. A connected client learns of a redeploy with
+ * other tools the way the ToolBus tells it (a 2025 session's hash, or a
+ * held 2026-07-28 `subscriptions/listen` stream re-reading the snapshot
+ * through the view's `refresh`).
  */
 import {
   logEvent,
@@ -172,35 +175,43 @@ export async function serveAppHostMcp({
     );
   }
 
-  const toolBusApp = servedApp(
-    {
-      rowId: catalog.appRowId,
-      appId: app.appId,
-      audience: app.workerName,
-      name: app.manifest.name ?? app.appId,
-      baseUrl: `https://${app.hostname}`,
-      catalogHash: catalog.catalogHash,
-      ...(catalog.instructions ? { instructions: catalog.instructions } : {}),
-      tools: catalog.tools,
-    },
-    {
-      rowId: catalog.appRowId,
-      organizationId: app.organizationId,
-      appSlug: app.appId,
-      hostname: app.hostname,
-      workerName: app.workerName,
-      tier: app.tier,
-      versionId: catalog.appVersionId,
-    },
-  );
+  const requestId = request.headers.get("cf-ray") ?? undefined;
+  const view = (stored: StoredCatalog, catalogHash: string) =>
+    appSurfaceView(
+      servedApp(
+        {
+          rowId: stored.appRowId,
+          appId: app.appId,
+          audience: app.workerName,
+          name: app.manifest.name ?? app.appId,
+          baseUrl: `https://${app.hostname}`,
+          catalogHash,
+          ...(stored.instructions ? { instructions: stored.instructions } : {}),
+          tools: stored.tools,
+        },
+        {
+          rowId: stored.appRowId,
+          organizationId: app.organizationId,
+          appSlug: app.appId,
+          hostname: app.hostname,
+          workerName: app.workerName,
+          tier: app.tier,
+          versionId: stored.appVersionId,
+        },
+      ),
+      principal.principal,
+      requestId,
+    );
 
   const serve = await toolBusHttp();
-  return serve(
-    request,
-    appSurfaceView(
-      toolBusApp,
-      principal.principal,
-      request.headers.get("cf-ray") ?? undefined,
-    ),
-  );
+  return serve(request, {
+    ...view(catalog, catalog.catalogHash),
+    // A held subscriptions/listen stream re-reads the serving snapshot (a
+    // redeploy with other tools); a snapshot that went away ends it.
+    refresh: async () => {
+      const fresh = await servingCatalog(app);
+      if (!fresh?.catalogHash) throw new Error("no catalog to serve");
+      return view(fresh, fresh.catalogHash);
+    },
+  });
 }

@@ -998,6 +998,84 @@ describe("syncing a new version", () => {
     expect(listCalls()).toBe(2);
   });
 
+  it("tells a 2025 session about the redeploy: the notification before the result, then a new session", async () => {
+    const token = await personalToken();
+    const init = await mcp(
+      token,
+      "initialize",
+      {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "cursor", version: "1" },
+      },
+      "legacy",
+    );
+    const sessionId = init.headers.get("mcp-session-id")!;
+    expect(sessionId).toMatch(/^[0-9a-f-]{36}\.[0-9a-f]{16}$/);
+    const same = await mcpRaw(
+      { authorization: `Bearer ${token}`, "mcp-session-id": sessionId },
+      {
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "list_todos", arguments: {} },
+      },
+    );
+    expect(same.headers.get("content-type")).toContain("application/json");
+
+    await redeploy();
+    const call = await mcpRaw(
+      { authorization: `Bearer ${token}`, "mcp-session-id": sessionId },
+      {
+        jsonrpc: "2.0",
+        id: 3,
+        method: "tools/call",
+        params: { name: "list_todos", arguments: {} },
+      },
+    );
+    expect(call.headers.get("content-type")).toBe("text/event-stream");
+    const events = (await call.text())
+      .split("\n\n")
+      .filter((frame) => frame.startsWith("event: message"))
+      .map((frame) => JSON.parse(frame.slice(frame.indexOf("data: ") + 6)));
+    expect(events[0]).toEqual({
+      jsonrpc: "2.0",
+      method: "notifications/tools/list_changed",
+    });
+    expect(events[1]).toMatchObject({
+      id: 3,
+      result: { content: expect.any(Array) },
+    });
+
+    const stale = await mcpRaw(
+      { authorization: `Bearer ${token}`, "mcp-session-id": sessionId },
+      { jsonrpc: "2.0", id: 4, method: "tools/list", params: {} },
+    );
+    expect(stale.status).toBe(404);
+    const again = await mcp(
+      token,
+      "initialize",
+      {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "cursor", version: "1" },
+      },
+      "legacy",
+    );
+    const fresh = again.headers.get("mcp-session-id")!;
+    expect(fresh.split(".")[1]).not.toBe(sessionId.split(".")[1]);
+    const listed = await mcpRaw(
+      { authorization: `Bearer ${token}`, "mcp-session-id": fresh },
+      { jsonrpc: "2.0", id: 5, method: "tools/list", params: {} },
+    );
+    expect(listed.headers.get("content-type")).toContain("application/json");
+    expect(await toolNames(listed)).toEqual([
+      "archive_todos",
+      "create_todo",
+      "list_todos",
+    ]);
+  });
+
   it("serves the older snapshot while this isolate can't reach the new version", async () => {
     const token = await personalToken();
     await mcp(token, "tools/list");

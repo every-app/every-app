@@ -82,6 +82,13 @@ export interface ToolBusView {
    * (e.g. MCP Inspector's `http://localhost:6274`), as exact origins.
    */
   allowedOrigins?: readonly string[];
+  /**
+   * Read the caller's view again, from the current catalogs. A held
+   * 2026-07-28 `subscriptions/listen` stream polls it to push
+   * `notifications/tools/list_changed`; without it the modern era declares
+   * `listChanged: false` and no stream is held.
+   */
+  refresh?: () => Promise<ToolBusView>;
 }
 
 export type ToolCallOutcome =
@@ -144,4 +151,8 @@ export interface ToolBusDeps {
   localhostOnly?: boolean;
   /** How long an app may take to answer one call. Default 30 s. */
   callTimeoutMs?: number;
+  /** How often a held `subscriptions/listen` stream re-reads the view. Default 30 s. */
+  listenPollMs?: number;
+  /** How long a `subscriptions/listen` stream is held before it ends gracefully. Default 10 min. */
+  listenMaxMs?: number;
 }

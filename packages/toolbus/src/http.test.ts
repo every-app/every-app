@@ -46,7 +46,335 @@ const chef = todoApp({
   instructions: undefined,
 });
 
+/** `<uuid>.<16 hex>`: the tool list hash is the last part. */
+const SESSION_ID = /^[0-9a-f-]{36}\.[0-9a-f]{16}$/;
+
+/** The todo app after a redeploy that added a tool. */
+const todoAppWithArchive = () =>
+  todoApp({
+    tools: [
+      ...todoApp().tools,
+      {
+        name: "archive_todo",
+        description: "Archive a todo.",
+        risk: "write",
+        inputSchema: {
+          type: "object",
+          properties: {},
+          additionalProperties: false,
+        },
+      },
+    ],
+  });
+
+/** The JSON-RPC messages of an SSE body (comment frames skipped). */
+function sseMessages(text: string): unknown[] {
+  return text.split("\n\n").flatMap((frame) => {
+    const data = frame
+      .split("\n")
+      .filter((line) => line.startsWith("data: "))
+      .map((line) => line.slice("data: ".length))
+      .join("\n");
+    return data ? [JSON.parse(data)] : [];
+  });
+}
+
+/**
+ * Read SSE messages from a streaming response until `count` arrived (or the
+ * stream ended); `raw` is everything read, comment frames included.
+ */
+async function readMessages(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  count: number,
+): Promise<unknown[] & { raw: string; done: boolean }> {
+  const decoder = new TextDecoder();
+  let text = "";
+  let raw = "";
+  let ended = false;
+  const messages: unknown[] = [];
+  while (messages.length < count) {
+    const { value, done } = await reader.read();
+    if (done) {
+      ended = true;
+      break;
+    }
+    const chunk = decoder.decode(value, { stream: true });
+    raw += chunk;
+    text += chunk;
+    const frames = text.split("\n\n");
+    text = frames.pop() ?? "";
+    messages.push(...sseMessages(frames.join("\n\n") + "\n\n"));
+  }
+  return Object.assign(messages, { raw, done: ended });
+}
+
+const SUBSCRIPTION_ID = "io.modelcontextprotocol/subscriptionId";
+
+/** A `subscriptions/listen` request and the id it carries. */
+async function listenRequest(
+  notifications: Record<string, unknown> = { toolsListChanged: true },
+): Promise<{ request: Request; id: number }> {
+  const request = modernRequest("subscriptions/listen", { notifications });
+  const { id } = (await request.clone().json()) as { id: number };
+  return { request, id };
+}
+
+function initializeRequest(version = "2025-11-25", headers = {}) {
+  return legacyRequest(
+    "initialize",
+    {
+      protocolVersion: version,
+      capabilities: {},
+      clientInfo: { name: "claude-code", version: "1" },
+    },
+    { version, headers },
+  );
+}
+
 describe("2026-07-28 (modern) era", () => {
+  it("holds subscriptions/listen and pushes tools/list_changed when the re-read view differs", async () => {
+    const { serve } = toolBus({ listenPollMs: 10, listenMaxMs: 300 });
+    let current = appView();
+    const view: ToolBusView = { ...appView(), refresh: async () => current };
+
+    // Only a view that can be re-read advertises the capability.
+    const { result: plain } = await rpcBody(
+      await serve(modernRequest("server/discover"), appView()),
+    );
+    expect(plain.capabilities).toEqual({ tools: { listChanged: false } });
+    const { result: discovered } = await rpcBody(
+      await serve(modernRequest("server/discover"), view),
+    );
+    expect(discovered.capabilities).toEqual({ tools: { listChanged: true } });
+
+    const { request, id } = await listenRequest();
+    const listen = await serve(request, view);
+    expect(listen.status).toBe(200);
+    expect(listen.headers.get("content-type")).toBe("text/event-stream");
+    const reader = listen.body!.getReader();
+    const [ack] = await readMessages(reader, 1);
+    expect(ack).toEqual({
+      jsonrpc: "2.0",
+      method: "notifications/subscriptions/acknowledged",
+      params: {
+        notifications: { toolsListChanged: true },
+        _meta: { [SUBSCRIPTION_ID]: id },
+      },
+    });
+
+    // The app is redeployed with another tool: the next poll pushes the
+    // notification; the polls before it wrote keep-alives.
+    await new Promise((resolve) => setTimeout(resolve, 35));
+    current = appView(todoAppWithArchive());
+    const changed = await readMessages(reader, 1);
+    expect(changed[0]).toEqual({
+      jsonrpc: "2.0",
+      method: "notifications/tools/list_changed",
+      params: { _meta: { [SUBSCRIPTION_ID]: id } },
+    });
+    expect(changed.raw).toContain(": keepalive\n\n");
+
+    // Held until listenMaxMs, then ended with the request's result.
+    const ended = await readMessages(reader, 1);
+    expect(ended[0]).toEqual({
+      jsonrpc: "2.0",
+      id,
+      result: {
+        resultType: "complete",
+        _meta: {
+          [SUBSCRIPTION_ID]: id,
+          "io.modelcontextprotocol/serverInfo": {
+            name: "every-app-todo",
+            title: "Todos",
+            version: "0.1.0",
+          },
+        },
+      },
+    });
+    expect((await reader.read()).done).toBe(true);
+
+    // Without refresh the SDK refuses the subscription, as before.
+    const refused = await rpcBody(
+      await serve((await listenRequest()).request, appView()),
+    );
+    expect(refused.error.code).toBe(-32603);
+  });
+
+  it("ends a listen stream gracefully when the view can't be re-read, or wasn't asked for", async () => {
+    const { serve } = toolBus({ listenPollMs: 10, listenMaxMs: 5_000 });
+    const gone: ToolBusView = {
+      ...appView(),
+      refresh: async () => {
+        throw new Error("no catalog to serve");
+      },
+    };
+    const { request, id } = await listenRequest();
+    const reader = (await serve(request, gone)).body!.getReader();
+    const messages = await readMessages(reader, 3);
+    expect(messages.map((m) => (m as { method?: string }).method)).toEqual([
+      "notifications/subscriptions/acknowledged",
+      undefined,
+    ]);
+    expect(messages[1]).toMatchObject({
+      id,
+      result: { resultType: "complete" },
+    });
+    expect(messages.done).toBe(true);
+    expect(messages.raw).not.toContain("list_changed");
+
+    const other = await listenRequest({ resourcesListChanged: true });
+    const unwanted = await readMessages(
+      (
+        await serve(other.request, {
+          ...appView(),
+          refresh: async () => appView(),
+        })
+      ).body!.getReader(),
+      3,
+    );
+    expect(unwanted[0]).toMatchObject({ params: { notifications: {} } });
+    expect(unwanted[1]).toMatchObject({
+      id: other.id,
+      result: { resultType: "complete" },
+    });
+    expect(unwanted.done).toBe(true);
+  });
+
+  it("stops re-reading the view once the client closes the stream, and caps the streams a credential holds", async () => {
+    const { serve } = toolBus({ listenPollMs: 10, listenMaxMs: 5_000 });
+    let reads = 0;
+    const view: ToolBusView = {
+      ...appView(),
+      refresh: async () => {
+        reads += 1;
+        return appView();
+      },
+    };
+    const readers: ReadableStreamDefaultReader<Uint8Array>[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      const response = await serve((await listenRequest()).request, view);
+      expect(response.headers.get("content-type")).toBe("text/event-stream");
+      readers.push(response.body!.getReader());
+    }
+    const ninth = await serve((await listenRequest()).request, view);
+    expect(ninth.headers.get("content-type")).toContain("application/json");
+    expect((await rpcBody(ninth)).error).toEqual({
+      code: -32603,
+      message: "Subscription limit reached",
+    });
+    // Another user's browser sessions have their own slots.
+    const session = (userId: string): ToolBusView => ({
+      ...view,
+      principal: {
+        ...PRINCIPAL,
+        userId,
+        credential: { kind: "session", id: "session" },
+      },
+    });
+    const other = await serve(
+      (await listenRequest()).request,
+      session("user_2"),
+    );
+    expect(other.headers.get("content-type")).toBe("text/event-stream");
+    await other.body!.cancel();
+
+    await Promise.all(readers.map((reader) => reader.cancel()));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const after = reads;
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(reads).toBe(after);
+    // Closed streams free their slot, and a burst of opens counts too.
+    const burst = await Promise.all(
+      Array.from({ length: 12 }, async () =>
+        serve((await listenRequest()).request, view),
+      ),
+    );
+    const streams = burst.filter(
+      (response) =>
+        response.headers.get("content-type") === "text/event-stream",
+    );
+    expect(streams).toHaveLength(8);
+    await Promise.all(streams.map((response) => response.body!.cancel()));
+  });
+
+  it("leaves a listen request the classifier rejects to the SDK", async () => {
+    const { serve } = toolBus();
+    const view: ToolBusView = { ...appView(), refresh: async () => appView() };
+    const { request } = await listenRequest();
+    const headers = new Headers(request.headers);
+    headers.delete("mcp-protocol-version");
+    const unversioned = await serve(
+      new Request(request.url, {
+        method: "POST",
+        headers,
+        body: await request.text(),
+      }),
+      view,
+    );
+    expect(unversioned.status).toBe(400);
+    expect((await rpcBody(unversioned)).error.code).toBe(-32020);
+
+    const nameless = await serve(
+      modernRequest(
+        "subscriptions/listen",
+        { notifications: { toolsListChanged: true } },
+        { "mcp-method": "tools/list" },
+      ),
+      view,
+    );
+    expect(nameless.status).toBe(400);
+    expect((await rpcBody(nameless)).error.code).toBe(-32020);
+
+    const unfiltered = await rpcBody(
+      await serve(modernRequest("subscriptions/listen"), view),
+    );
+    expect(unfiltered.error.code).toBe(-32602);
+    const malformed = await rpcBody(
+      await serve(
+        (await listenRequest({ toolsListChanged: "yes" })).request,
+        view,
+      ),
+    );
+    expect(malformed.error.code).toBe(-32602);
+
+    const jsonOnly = await serve((await listenRequest()).request, view);
+    expect(jsonOnly.headers.get("content-type")).toBe("text/event-stream");
+    await jsonOnly.body!.cancel();
+    const noStream = await serve(
+      modernRequest(
+        "subscriptions/listen",
+        { notifications: { toolsListChanged: true } },
+        { accept: "application/json" },
+      ),
+      view,
+    );
+    expect(noStream.status).toBe(406);
+  });
+
+  it("answers a body that can't be read with a parse error, not a crash", async () => {
+    const { serve } = toolBus();
+    const broken = new Request("https://todo-acme.example.com/mcp", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        "mcp-protocol-version": "2026-07-28",
+        "mcp-method": "tools/list",
+      },
+      body: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"jsonrpc":"2.0",'));
+          controller.error(new Error("connection reset"));
+        },
+      }),
+      // @ts-expect-error undici needs this for a stream body
+      duplex: "half",
+    });
+    const response = await serve(broken, appView());
+    expect(response.status).toBe(400);
+    expect((await rpcBody(response)).error.code).toBe(-32700);
+  });
+
   it("answers server/discover with the tools capability and instructions", async () => {
     const { serve } = toolBus();
     const response = await serve(modernRequest("server/discover"), appView());
@@ -337,12 +665,12 @@ describe("2025 (legacy) eras", () => {
         view,
       );
       expect(init.status).toBe(200);
-      expect(init.headers.get("mcp-session-id")).toBeNull();
+      expect(init.headers.get("mcp-session-id")).toMatch(SESSION_ID);
       expect(init.headers.get("content-type")).toContain("application/json");
       const { result: initialized } = await rpcBody(init);
       expect(initialized).toMatchObject({
         protocolVersion: version,
-        capabilities: { tools: { listChanged: false } },
+        capabilities: { tools: { listChanged: true } },
         serverInfo: { name: "every-app-todo", title: "Todos" },
         instructions: "Call list_todos first.",
       });
@@ -393,6 +721,103 @@ describe("2025 (legacy) eras", () => {
       expect(appCalls).toEqual(["todo.list_todos"]);
     });
   }
+
+  it("sends tools/list_changed before the result once the session's tool list changed", async () => {
+    const { serve } = toolBus();
+    const init = await serve(initializeRequest(), appView());
+    const sessionId = init.headers.get("mcp-session-id")!;
+    expect(sessionId).toMatch(SESSION_ID);
+
+    // The app is redeployed with another tool. The next request on the
+    // session streams the notification, then its own result.
+    const after = appView(todoAppWithArchive());
+    const call = await serve(
+      legacyRequest(
+        "tools/call",
+        { name: "list_todos", arguments: {} },
+        { headers: { "mcp-session-id": sessionId } },
+      ),
+      after,
+    );
+    expect(call.status).toBe(200);
+    expect(call.headers.get("content-type")).toBe("text/event-stream");
+    expect(sseMessages(await call.text())).toEqual([
+      { jsonrpc: "2.0", method: "notifications/tools/list_changed" },
+      {
+        jsonrpc: "2.0",
+        id: expect.any(Number),
+        result: { content: [{ type: "text", text: "ran list_todos" }] },
+      },
+    ]);
+
+    // A client that takes the session id from that response lists plainly;
+    // one that keeps the old session is told to initialize again, and the
+    // session it gets then names the current list.
+    const rotated = call.headers.get("mcp-session-id")!;
+    expect(rotated).toMatch(SESSION_ID);
+    expect(rotated).not.toBe(sessionId);
+    const listed = await serve(
+      legacyRequest(
+        "tools/list",
+        {},
+        { headers: { "mcp-session-id": rotated } },
+      ),
+      after,
+    );
+    expect(listed.headers.get("content-type")).toContain("application/json");
+    expect(
+      (await rpcBody(listed)).result.tools.map((t: { name: string }) => t.name),
+    ).toEqual(["archive_todo", "create_todo", "list_todos"]);
+
+    const stale = await serve(
+      legacyRequest(
+        "tools/list",
+        {},
+        { headers: { "mcp-session-id": sessionId } },
+      ),
+      after,
+    );
+    expect(stale.status).toBe(404);
+    expect((await rpcBody(stale)).error.code).toBe(-32001);
+    const again = await serve(
+      initializeRequest("2025-11-25", { "mcp-session-id": sessionId }),
+      after,
+    );
+    expect(again.headers.get("content-type")).toContain("application/json");
+    expect(again.headers.get("mcp-session-id")!.split(".")[1]).toBe(
+      rotated.split(".")[1],
+    );
+  });
+
+  it("answers plain JSON while the session's tool list is unchanged", async () => {
+    const { serve } = toolBus();
+    const view = appView();
+    const init = await serve(initializeRequest(), view);
+    const sessionId = init.headers.get("mcp-session-id")!;
+
+    const call = await serve(
+      legacyRequest(
+        "tools/call",
+        { name: "list_todos", arguments: {} },
+        { headers: { "mcp-session-id": sessionId } },
+      ),
+      view,
+    );
+    expect(call.status).toBe(200);
+    expect(call.headers.get("content-type")).toContain("application/json");
+    expect(call.headers.get("mcp-session-id")).toBeNull();
+    expect((await rpcBody(call)).result.content).toEqual([
+      { type: "text", text: "ran list_todos" },
+    ]);
+
+    // No session at all (a client from before sessions carried a hash):
+    // nothing to compare, nothing streamed.
+    const bare = await serve(
+      legacyRequest("tools/call", { name: "list_todos", arguments: {} }),
+      appView(todoAppWithArchive()),
+    );
+    expect(bare.headers.get("content-type")).toContain("application/json");
+  });
 
   it("refuses JSON-RPC batches, whatever their routing headers say", async () => {
     const { serve, appCalls } = toolBus();
@@ -668,6 +1093,43 @@ describe("transport guards", () => {
       inspector.headers.get("access-control-allow-credentials"),
     ).toBeNull();
     expect((await preflight("https://evil.example")).status).toBe(403);
+  });
+
+  it("refuses a chunked body over 256 KB before reading it whole", async () => {
+    const { serve } = toolBus();
+    const view: ToolBusView = { ...appView(), refresh: async () => appView() };
+    const { request } = await listenRequest();
+    const padded = new TextEncoder().encode(
+      JSON.stringify({
+        ...((await request.clone().json()) as object),
+        pad: "x".repeat(4 * MAX_REQUEST_BODY_BYTES),
+      }),
+    );
+    const chunkSize = 64 * 1024;
+    const chunks = Math.ceil(padded.byteLength / chunkSize);
+    let pulled = 0;
+    const chunked = new Request(request.url, {
+      method: "POST",
+      headers: request.headers,
+      body: new ReadableStream({
+        pull(controller) {
+          if (pulled === chunks) {
+            controller.close();
+            return;
+          }
+          controller.enqueue(
+            padded.subarray(pulled * chunkSize, (pulled + 1) * chunkSize),
+          );
+          pulled += 1;
+        },
+      }),
+      // @ts-expect-error undici needs this for a stream body
+      duplex: "half",
+    });
+    expect(chunked.headers.get("content-length")).toBeNull();
+    const response = await serve(chunked, view);
+    expect(response.status).toBe(413);
+    expect(pulled).toBeLessThan(chunks);
   });
 
   it("refuses bodies over 256 KB", async () => {

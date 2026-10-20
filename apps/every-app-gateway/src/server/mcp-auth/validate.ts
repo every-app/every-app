@@ -85,9 +85,18 @@ function patAccess(scopes: string[]): McpAccess | null {
   return scopes.includes(MCP_READ_SCOPE) ? "read" : null;
 }
 
+/**
+ * A held subscriptions/listen stream rechecks its caller every poll; that
+ * doesn't count as use of the token or connection.
+ */
+interface ResolveCallerOptions {
+  touch?: boolean;
+}
+
 /** The caller behind a personal access token, or null when it isn't valid. */
 export async function resolvePatCaller(
   token: string,
+  { touch = true }: ResolveCallerOptions = {},
 ): Promise<McpCaller | null> {
   const pat = await UserPatService.verify(token);
   if (!pat) return null;
@@ -106,10 +115,12 @@ export async function resolvePatCaller(
 
   const access = patAccess(scopes);
   if (!access) return { kind: "refused", reason: "token_scope" };
-  background(
-    UserPatRepository.touchLastUsed(pat.id, pat.userId),
-    "mcp.pat.touch_failed",
-  );
+  if (touch) {
+    background(
+      UserPatRepository.touchLastUsed(pat.id, pat.userId),
+      "mcp.pat.touch_failed",
+    );
+  }
   return {
     kind: "caller",
     principal: {
@@ -135,6 +146,7 @@ export async function resolvePatCaller(
 export async function resolveOauthCaller(
   props: unknown,
   scope: string[],
+  { touch = true }: ResolveCallerOptions = {},
 ): Promise<McpCaller | "insufficient_scope" | null> {
   if (!isGrantProps(props)) return null;
   const connection = await McpConnectionRepository.findActiveWithMembership(
@@ -172,10 +184,12 @@ export async function resolveOauthCaller(
         : null;
   if (!access) return "insufficient_scope";
 
-  background(
-    McpConnectionRepository.touchLastUsed(connection.id),
-    "mcp.connection.touch_failed",
-  );
+  if (touch) {
+    background(
+      McpConnectionRepository.touchLastUsed(connection.id),
+      "mcp.connection.touch_failed",
+    );
+  }
   return {
     kind: "caller",
     principal: {

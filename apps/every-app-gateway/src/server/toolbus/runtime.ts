@@ -31,6 +31,9 @@ const servedApps = new WeakMap<ToolBusApp, SyncableApp>();
 
 let toolBus: Promise<ToolBusHttpHandler> | undefined;
 
+/** Tests shorten a held subscriptions/listen stream's poll and life. */
+export const listenIntervalsForTests: { pollMs?: number; maxMs?: number } = {};
+
 /** Register an app a request serves, and return it for the request's view. */
 export function servedApp(app: ToolBusApp, route: SyncableApp): ToolBusApp {
   servedApps.set(app, route);
@@ -96,6 +99,12 @@ export function toolBusHttp(): Promise<ToolBusHttpHandler> {
           env.BETTER_AUTH_SECRET,
           ARGS_DIGEST_CONTEXT,
         ),
+        ...(listenIntervalsForTests.pollMs
+          ? { listenPollMs: listenIntervalsForTests.pollMs }
+          : {}),
+        ...(listenIntervalsForTests.maxMs
+          ? { listenMaxMs: listenIntervalsForTests.maxMs }
+          : {}),
       }),
   );
   return toolBus;
