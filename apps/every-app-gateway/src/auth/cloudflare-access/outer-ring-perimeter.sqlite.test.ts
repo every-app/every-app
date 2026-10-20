@@ -39,8 +39,9 @@ vi.mock("@tanstack/react-start/server-entry", () => ({
 }));
 
 import { createHash, generateKeyPairSync } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { createAuth } from "@/auth";
-import { members, ownerSetupTokens, users } from "@/db/schema";
+import { accounts, members, ownerSetupTokens, users } from "@/db/schema";
 import server, { clearHostnameCacheForTests } from "@/server";
 import { clearOrgContextCacheForTests } from "@/server/organization/orgContext";
 import { AppAccessService } from "@/server/services/AppAccessService";
@@ -304,6 +305,84 @@ describe("the outer ring on app hosts (SQLite)", () => {
     expect(response.headers.get("location")).toMatch(
       new RegExp(`^${GATEWAY}/sign-in\\?return_to=`),
     );
+    expect(received).toEqual([]);
+  });
+
+  it("serves the gateway's /mcp to the person Access vouches for, once the outer ring has linked them", async () => {
+    // With Access's Managed OAuth on the gateway's host, an AI app's request
+    // reaches /mcp with the person's assertion and no gateway credential.
+    const assertion = await access.assertion({ email: OWNER.email });
+    const gatewayHost = new URL(GATEWAY).host;
+    const listTools = () =>
+      server.fetch(
+        new Request(`${GATEWAY}/mcp`, {
+          method: "POST",
+          headers: {
+            host: gatewayHost,
+            "content-type": "application/json",
+            accept: "application/json, text/event-stream",
+            "mcp-protocol-version": "2026-07-28",
+            "mcp-method": "tools/list",
+            "cf-access-jwt-assertion": assertion,
+          },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "tools/list",
+            params: {
+              _meta: {
+                "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+                "io.modelcontextprotocol/clientCapabilities": {},
+                "io.modelcontextprotocol/clientInfo": {
+                  name: "test",
+                  version: "1",
+                },
+              },
+            },
+          }),
+        }),
+      );
+    const linkedAccounts = () =>
+      db
+        .select({ userId: accounts.userId })
+        .from(accounts)
+        .where(eq(accounts.providerId, "cloudflare-access"));
+
+    // The owner signed in with a password: the Access identity isn't linked
+    // to the account yet, and /mcp hands nothing to a bare email.
+    expect(await linkedAccounts()).toEqual([]);
+    const before = await listTools();
+    expect(before.status).toBe(403);
+    expect(await before.json()).toMatchObject({
+      error: "forbidden",
+      reason: "not_connected",
+      message: expect.stringContaining(GATEWAY),
+    });
+
+    // The browser's session check on the gateway, through the outer ring as
+    // the same person: that links the identity.
+    const check = await createAuth().handler(
+      new Request(`${GATEWAY}/api/auth/get-session`, {
+        headers: {
+          host: gatewayHost,
+          cookie: ownerCookie,
+          "cf-access-jwt-assertion": assertion,
+        },
+      }),
+    );
+    expect(check.status).toBe(200);
+    expect(await linkedAccounts()).toEqual([{ userId: owner.userId }]);
+
+    const after = await listTools();
+    expect(after.status).toBe(200);
+    const body = (await after.json()) as {
+      result: { tools: { name: string }[] };
+    };
+    expect(body.result.tools.map((tool) => tool.name)).toContain(
+      "everyapp_whoami",
+    );
+    // The gateway's own catalog fetch, with its system token, is all the
+    // app saw: /mcp proxied nothing to it.
     expect(received).toEqual([]);
   });
 });

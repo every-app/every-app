@@ -30,7 +30,7 @@ stolen admin session can't add a way in or change who it lets in.
 | What Access protects | The sign-in                                     | Every request to the gateway's and apps' hostnames, except the paths you bypass |
 | Access app type      | Access for SaaS (OIDC)                          | Self-hosted, hostname-based                                                     |
 | Mobile app           | Works (sign-in runs in the system browser)      | Not supported: the app's requests carry no Access session                       |
-| MCP clients, the CLI | Unaffected                                      | Need the bypass paths below                                                     |
+| MCP clients, the CLI | Unaffected                                      | Through Access too with Managed OAuth (below), or the bypass paths below        |
 | Passwords            | Can stay on, or be turned off                   | Can stay on, or be turned off                                                   |
 
 Use **OIDC sign-in** unless a security team requires Access in front of
@@ -75,8 +75,10 @@ once their current Access session runs out (the application's session
 duration, 24 hours unless you set another): the gateway honours a session
 only with Access's word for that person on the request. But personal access
 tokens and AI connections never pass through Access, and keep working until
-you deactivate them. (Revoking their Access session in Zero Trust → My Team
-→ Users stops their browser at Access's edge sooner.)
+you deactivate them; the exception is an AI app connected through Access
+itself ("MCP through Access too", below), which stops within the access
+token lifetime. (Revoking their Access session in Zero Trust → My Team →
+Users stops their browser at Access's edge sooner.)
 
 With auto-join (`CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, or the outer ring's
 `everyone`), **Delete** wouldn't keep anyone out: their next Access sign-in
@@ -242,12 +244,18 @@ login, safe only as long as that cookie stays out of reach of scripts.
 Let through, on each, only the machine endpoints, which check their own
 credentials:
 
-| Path                              | Where             | Why                                                    |
-| --------------------------------- | ----------------- | ------------------------------------------------------ |
-| `/mcp`, `/mcp/*`                  | gateway and apps  | MCP clients, with OAuth or a personal access token     |
-| `/oauth/token`, `/oauth/register` | gateway           | The OAuth server's token, revocation and registration  |
-| `/.well-known/*`                  | gateway           | OAuth discovery documents                              |
-| Each app's public routes          | that app's host   | Whatever its `everyapp.config.ts` declares as `public` |
+| Path                              | Where            | Why                                                    |
+| --------------------------------- | ---------------- | ------------------------------------------------------ |
+| `/mcp`, `/mcp/*`                  | gateway and apps | MCP clients, with OAuth or a personal access token     |
+| `/oauth/token`, `/oauth/register` | gateway          | The OAuth server's token, revocation and registration  |
+| `/.well-known/*`                  | gateway          | OAuth discovery documents                              |
+| Each app's public routes          | that app's host  | Whatever its `everyapp.config.ts` declares as `public` |
+
+With **Managed OAuth** on the gateway's application ("MCP through Access
+too", below), the first three rows go: the gateway's application bypasses
+nothing at all, and the apps' application keeps only each app's public
+routes. AI apps then pass Access like browsers do. The rows above are for
+the setup without it.
 
 Keep everything else behind Access, `/oauth/authorize` and the consent pages
 (`/oauth/consent*`) included: those are pages for people, signed in with
@@ -338,6 +346,158 @@ first time, an existing account signs in with its password once (see
 delete `CLOUDFLARE_ACCESS_AUD` first (see "Troubleshooting" for how): with
 the outer ring set, no session counts without Access's word for it.
 
+### MCP through Access too (Managed OAuth)
+
+Access has **Managed OAuth** (a beta): a switch on an application that
+makes Access itself the OAuth server AI apps talk to. Turn it on for the
+gateway's application and nothing on the gateway's host needs a bypass:
+Claude, ChatGPT, Claude Code and the rest log in at Access like a browser
+does (an AI app must support RFC 8707 resource indicators, which the current
+MCP specification requires of clients; an older one is refused at Access's
+authorize step), and your Access policy decides who may use them. There is
+nothing to run or host; the gateway only takes Access's word for the person
+on `/mcp`.
+
+What changes:
+
+- An AI app's request to `/mcp` without a token gets `401 invalid_token`
+  from Access, with a `WWW-Authenticate` header that points at Access's own
+  discovery documents, which Access serves on your hostname
+  (`/.well-known/oauth-authorization-server`,
+  `/.well-known/oauth-protected-resource/mcp`; the issuer is
+  `https://<team>.cloudflareaccess.com`, with PKCE, dynamic client
+  registration and refresh tokens). The gateway's own OAuth server, consent
+  page and dynamic registration go idle: no request reaches them. Browsers
+  still get Access's login page.
+- The gateway sees the same `Cf-Access-Jwt-Assertion` as for a browser and
+  serves the call for the person it names, before the `Authorization`
+  header is looked at, so the Access token the AI app sends there is never
+  taken for one of the gateway's own. Without a verified assertion that
+  header is checked like any other and refused (see "An AI app loops on
+  401" under "Troubleshooting").
+- Someone taken out of the policy loses MCP within the access token
+  lifetime, 15 minutes by default: Access re-checks the policy at each
+  refresh. Deactivating them in Every App still cuts them off at once.
+- An AI app connected before the switch gets Access's 401 on its next
+  request and connects again, this time through Access. Its old connection
+  under **Connected AI apps** is dead weight: disconnect it.
+
+**Turn it on.** First finish the outer ring above (team domain and both AUD
+tags): without it the gateway ignores the assertion on `/mcp`, and an AI app
+would loop on 401 (see "Troubleshooting"). Then give the gateway's Access
+application an `oauth_configuration`. The API replaces the application on
+`PUT`, so send every field the `GET` returned and change only the
+`overrides` (none) and the new object:
+
+```sh
+npx cf@1.0.0-beta.14 zero-trust access applications get <app id>   # start from this
+
+npx cf@1.0.0-beta.14 zero-trust access applications update <app id> --body '{
+  "name": "Every App gateway",
+  "type": "self_hosted",
+  "destinations": [{"type": "public", "uri": "apps.acme.com"}],
+  "policies": ["<policy id>"],
+  "session_duration": "24h",
+  "http_only_cookie_attribute": true,
+  "enable_binding_cookie": false,
+  "oauth_configuration": {
+    "enabled": true,
+    "dynamic_client_registration": {
+      "enabled": true,
+      "allow_any_on_localhost": true,
+      "allow_any_on_loopback": true,
+      "allowed_uris": [
+        "https://claude.ai/api/mcp/auth_callback",
+        "https://chatgpt.com/connector_platform_oauth_redirect"
+      ]
+    },
+    "grant": {
+      "session_duration": "168h",
+      "access_token_lifetime": "15m"
+    }
+  }
+}'
+```
+
+(Plus whatever else your `get` printed, `allowed_idps` say.) Setting up
+fresh? Create the gateway's application with this body instead of the one
+above: no `overrides`, and `oauth_configuration` from the start. The
+`grant` is how long an AI app stays connected before the person logs in at
+Access again (`session_duration`, here a week) and how often Access
+re-checks the policy meanwhile (`access_token_lifetime`). Claude Code and
+Codex register with a redirect on localhost, which the two `allow_any_*`
+settings cover; claude.ai and ChatGPT need their callback URLs in
+`allowed_uris` (the two above; `https` only, a path may end in `/*`).
+
+In the dashboard: open the gateway's application, remove its path
+overrides, and under **Advanced settings** turn on **Managed OAuth** with
+**Allow localhost clients**, **Allow loopback clients**, the two callback
+URLs under **Allowed redirect URIs**, and a **Grant session duration** and
+**Access token lifetime**.
+
+On the apps' application, drop the `/mcp` overrides too and keep each app's
+public routes. `<app>.<gateway>/mcp` is then reachable by browsers only
+(the perimeter doesn't take the assertion there yet); AI apps use the
+gateway's `/mcp`, which offers every app the member can use. Don't turn
+Managed OAuth on for the apps' application.
+
+How the gateway treats an AI app that came through Access:
+
+- The person must have signed in to the gateway through Access in the
+  browser once, which links the Access identity to their account (see
+  "Existing accounts"). Otherwise the AI app gets `403` with reason
+  `not_connected` and that advice. Nothing is created from `/mcp`: no
+  account, no membership, whatever the auto-join settings say. It is the
+  rule the browser path enforces too: an account someone registered with
+  another person's address is never handed to that person.
+- It gets read and write access to every app the member can use, like the
+  browser, not a connection's chosen apps or a token's one app.
+- The organization is the one they belong to. With several, the one their
+  browser is in (their most recent live session's active organization);
+  if that can't be told, `403 organization_unresolved`, and they open the
+  gateway and pick one.
+- The audit log (`mcp_tool_calls`) records credential kind `access` and the
+  email (the `mcp.tool_call` log line carries the user id, not the email);
+  apps see the actor `access:<email>`, as they see `oauth:…` and `pat:…`.
+- Nothing appears under **Connected AI apps**: the grant lives at Access.
+  End it there (the OAuth revocation endpoint Access's discovery document
+  lists) or take the person out of the policy, which stops the AI app at
+  the next token refresh; deactivating works as always.
+
+**Personal access tokens** get Access's 401 too: there is no bypass left.
+A script should keep working if its request also carries a service token
+from a **Service Auth** policy on the gateway's application
+(`CF-Access-Client-Id` and `CF-Access-Client-Secret` headers, with
+`Authorization: Bearer epat_…` as before): a service token's assertion
+names no person, so the gateway ignores it and checks the personal token as
+usual. This hasn't been checked against a live Managed OAuth application
+yet (tell us), and the gateway logs `mcp.access_assertion_ignored` with
+reason `invalid` for each such request: it can't tell a service token's
+assertion from a forged header. Service tokens use no seats.
+
+A request that carries a person's own Access token instead (say through
+`cloudflared access curl`) acts as that person, with every app they can
+use: the personal token alongside is ignored, its app and scope with it.
+
+**The mobile app** is still unsupported behind the outer ring; Managed OAuth
+changes nothing there.
+
+**The binding cookie** hasn't been tried with Managed OAuth, and Cloudflare
+documents it as unsuited to non-browser clients. Keep it on for the apps'
+application, as in section 1. On the gateway's application the body above
+leaves it off, so AI apps connect the first time; an AI app's requests
+carry a bearer token and no cookie, so it may well work with it on: once
+one has connected, turn it on and see, and tell us either way.
+
+**Going back.** Set `oauth_configuration.enabled` to `false` (or turn
+**Managed OAuth** off) and restore the overrides from the table above, on
+the apps' application too. Nothing changes in the gateway: it accepts the
+assertion on `/mcp` only when a request carries one, and its OAuth server
+and personal tokens work as before. AI apps that connected through Access
+get the gateway's 401 on their next request and connect again, this time
+through the gateway's own OAuth server (a new row under **Connected AI
+apps**).
+
 ### How the gateway treats the assertion
 
 - It never trusts `Cf-Access-Jwt-Assertion` (or the `CF_Authorization`
@@ -350,6 +510,25 @@ the outer ring set, no session counts without Access's word for it.
 - It signs people in only on the gateway's own host (`GATEWAY_URL`), during
   the browser's session check, and only with the gateway application's
   token (`CLOUDFLARE_ACCESS_AUD`).
+- On `/mcp` (Managed OAuth, above) a verified assertion is the caller's
+  credential: the `Cf-Access-Jwt-Assertion` header only, never the
+  `CF_Authorization` cookie (on a bypassed `/mcp` the cookie reaches the
+  gateway unverified, and reading it would let a cross-site POST act as the
+  person); only the gateway application's AUD, never the apps'; and only for
+  an Access identity already linked to an account by a sign-in in the
+  browser. Behind Managed OAuth, Access lets a browser's cookie-carrying
+  request through with the header added, so there the `Origin` rule every
+  `/mcp` request passes is what keeps a page on another site from driving
+  tool calls: it is checked before the assertion is verified or anything is
+  read for the person, and an origin in `MCP_ALLOWED_ORIGINS` is trusted
+  with that (see `docs/runbooks/mcp-oauth.md`). An assertion that doesn't
+  verify, or is the apps' application's, is logged
+  (`mcp.access_assertion_ignored`) and the request is treated as if it
+  carried none: the OAuth token or personal token it may also carry is
+  checked as always. A verified one for a person with no account linked
+  here answers `403 not_connected` (`mcp.access_caller_refused`), whatever
+  else the request carries. Without the outer ring configured, `/mcp` never
+  looks at the header.
 - A session counts only with a verified assertion for the same person on
   the request: the header Access adds, or the `CF_Authorization` cookie that
   browsers also send on the paths you bypass. That holds wherever a session
@@ -414,7 +593,9 @@ application with a page to pick the email you log in as, and with
 `--proxy-port` an outer ring in front of a `vite dev` gateway: the gateway's
 application on the proxy's host and, with `--apps-aud`, a separate one on
 app hosts (`<app>.localhost:<proxy port>`), each bypassing the paths above
-and setting a `CF_Authorization` cookie as Access does.
+and setting a `CF_Authorization` cookie as Access does. It doesn't play
+Managed OAuth (no 401, no discovery documents of its own); the gateway's
+tests cover the assertion on `/mcp`.
 
 ```sh
 cd apps/every-app-gateway
@@ -438,7 +619,8 @@ and `CLOUDFLARE_ACCESS_APPS_AUD`, and use the gateway's own URL. If the first `v
 is a new version of the pre-bundle", start it again.
 
 The automated tests cover the same ground without a browser:
-`src/auth/cloudflare-access/*.test.ts`.
+`src/auth/cloudflare-access/*.test.ts`, and for Managed OAuth
+`src/server/mcp-auth/access-mcp.sqlite.test.ts`.
 
 ## Troubleshooting
 
@@ -493,10 +675,44 @@ The automated tests cover the same ground without a browser:
   going to sent you back here") behind the outer ring. Their hosts' Access
   application isn't one the gateway knows: put its AUD tag in
   `CLOUDFLARE_ACCESS_APPS_AUD`.
-- **MCP clients get an HTML login page.** A bypass path is missing. (Connecting an AI app does show Access's login in the
-  browser, at `/oauth/authorize`: that page is for people.)
+- **MCP clients get an HTML login page.** A bypass path is missing, or
+  Managed OAuth isn't on. (Connecting an AI app does show Access's login in
+  the browser, at `/oauth/authorize` without Managed OAuth, at Access with
+  it: that page is for people.)
 - **Someone you took out of the Access policy still uses an AI app or a
   script.** Tokens never pass through Access: deactivate them (see "Taking
-  someone off").
+  someone off"). With Managed OAuth, an AI app connected through Access
+  stops within the access token lifetime; personal tokens still need the
+  deactivation.
+- **An AI app loops on `401 invalid_token`** behind Managed OAuth. Look at
+  the `WWW-Authenticate` header. One naming
+  `cloudflare-access-protected-resource` is Access's: the person isn't
+  allowed in by your policy or identity provider; they must be able to open
+  the gateway in a browser as the same email. One naming
+  `oauth-protected-resource` (or `realm="every-app"` with no metadata, when
+  `MCP_OAUTH_ENABLED` is off) is the gateway's own: it didn't take the
+  assertion and asked for a token of its own, which Access's discovery
+  documents shadow. The logs say why. `mcp.access_assertion_ignored` with
+  reason `invalid`: a wrong `CLOUDFLARE_ACCESS_AUD` or team domain, or the
+  keys couldn't be fetched (`access.jwks_fetch_failed` alongside); with
+  reason `audience`: the apps' application is in front of the gateway's
+  host. No such line at all: the gateway never looked at the header, because
+  the outer ring isn't configured (`CLOUDFLARE_ACCESS_TEAM_DOMAIN`,
+  `CLOUDFLARE_ACCESS_AUD`; a malformed value is an `access.config_problem`)
+  or the gateway isn't `self_hosted` (an `access.config_problem` says its
+  Access settings are ignored).
+- **An AI app gets `403 not_connected`** behind Managed OAuth. Access knows
+  the person, the gateway doesn't yet: open the gateway in a browser and
+  sign in once through Access (an existing password account signs in with
+  its password, see "Existing accounts"), then connect the AI app again.
+- **A script's personal token gets Access's 401** behind Managed OAuth. Add
+  a Service Auth policy to the gateway's application and send the service
+  token's `CF-Access-Client-Id` and `CF-Access-Client-Secret` headers with
+  the request, alongside the personal token (see "Personal access tokens"
+  under "MCP through Access too"; not yet checked against a live Managed
+  OAuth application).
+- **Connected AI apps shows nothing for an AI app connected through
+  Access.** Expected: the grant is Access's, not the gateway's. Revoke it at
+  Access, or take the person out of the policy.
 - **The mobile app can't sign in behind the outer ring.** Expected; use OIDC
   sign-in for teams that use the app.

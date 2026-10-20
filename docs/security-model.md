@@ -501,11 +501,15 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   one-minute system token that opens nothing but the catalog). Each tool
   call is one call over the app's service binding.
 - The gateway's `/mcp` takes an OAuth access token issued by the gateway
-  (see below) or a personal access token, never a cookie. It serves the
-  active apps of the caller's organization they have access to, narrowed to
-  the apps an OAuth connection chose or the one app a token is bound to. A
-  browser may call it only from the gateway's own origin or an origin listed
-  in `MCP_ALLOWED_ORIGINS` (empty by default).
+  (see below) or a personal access token, never a cookie; a self-hosted
+  gateway behind Cloudflare Access's Managed OAuth also takes a verified
+  Access assertion for the person (`docs/runbooks/cloudflare-access.md`).
+  It serves the active apps of the caller's organization they have access
+  to, narrowed to the apps an OAuth connection chose or the one app a token
+  is bound to. A browser may call it only from the gateway's own origin or
+  an origin listed in `MCP_ALLOWED_ORIGINS` (empty by default); behind
+  Managed OAuth, where Access vouches for a browser's cookie too, that rule
+  is checked before anything is read for the person.
 - An app host's `/mcp` needs a personal access token or the user's browser
   session; it takes no OAuth token and advertises no authorization server
   (its protected-resource metadata paths answer 404).
@@ -664,8 +668,7 @@ in a Workers for Platforms dispatch namespace. Third-party deploys are off
 unless a hosted gateway's `THIRD_PARTY_DEPLOYS` secret is exactly `on`
 (`platformPolicy.thirdPartyDeploys`, "Hosted Deploy API" below), and the
 gateway's release config declares no namespace yet: the hosted install adds the `DISPATCHER`
-binding once the account has one. Until then every dispatch app answers
-503.
+binding once the account has one. Until then every dispatch app answers 503.
 
 - `getAppFetcher` is the only code that invokes an app. For a dispatch app
   it reads the optional `DISPATCHER` binding and throws
@@ -712,13 +715,13 @@ lookup or credential read (`routeHost`,
 `packages/perimeter/src/hostRoutes.ts`; the profile comes from
 `hostProfile` in `apps/every-app-gateway/src/server/app-hosts.ts`):
 
-| | First-party hosts | Third-party hosts |
-| --- | --- | --- |
-| Names | `<appId>.<APP_BASE_DOMAIN>`, `<appId>-<orgKey>.<APP_BASE_DOMAIN>` (every non-gateway host, looked up by full name) | `<appId>-<orgKey>.<THIRD_PARTY_DOMAIN>`, one label below it |
-| Rows served | `tier = 'service_binding'`, `scope` `org` or `shared` | `tier = 'dispatch'`, `scope = 'org'` |
-| Code | Workers our account (or the self-hoster) deployed | customer code in the dispatch namespace |
-| Browser credential | the Better Auth cookie, `Domain=<APP_BASE_DOMAIN>` | `__Host-everyapp_s`, host-only, one per host |
-| Personal access tokens | yes | yes, same rules (own organization, bound app) |
+|                        | First-party hosts                                                                                                  | Third-party hosts                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| Names                  | `<appId>.<APP_BASE_DOMAIN>`, `<appId>-<orgKey>.<APP_BASE_DOMAIN>` (every non-gateway host, looked up by full name) | `<appId>-<orgKey>.<THIRD_PARTY_DOMAIN>`, one label below it |
+| Rows served            | `tier = 'service_binding'`, `scope` `org` or `shared`                                                              | `tier = 'dispatch'`, `scope = 'org'`                        |
+| Code                   | Workers our account (or the self-hoster) deployed                                                                  | customer code in the dispatch namespace                     |
+| Browser credential     | the Better Auth cookie, `Domain=<APP_BASE_DOMAIN>`                                                                 | `__Host-everyapp_s`, host-only, one per host                |
+| Personal access tokens | yes                                                                                                                | yes, same rules (own organization, bound app)               |
 
 - **The class decides the row.** A first-party host never serves a
   dispatch row and a third-party host never serves a service-binding or

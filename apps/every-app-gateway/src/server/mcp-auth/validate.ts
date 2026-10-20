@@ -1,15 +1,19 @@
 /**
- * Who is calling the gateway's `/mcp`, from either credential it accepts:
+ * Who is calling the gateway's `/mcp`, from the credentials it accepts:
  *
  *  - an OAuth access token this gateway issued (`OAuthAuthorizationServer`),
  *    whose props carry only ids: the connection, user and organization;
  *  - a personal access token (`epat_`), recognized by its shape and checked
- *    before the authorization server ever sees it.
+ *    before the authorization server ever sees it;
+ *  - a Cloudflare Access assertion for the gateway's own Access application,
+ *    where Access's Managed OAuth stands in front of `/mcp` (routes.ts, then
+ *    access-caller.ts).
  *
- * Nothing is cached. Every request re-reads the connection (or token), the
- * user's live membership and ban state and the organization's status, so
- * revoking a connection, removing or deactivating a member, suspending an
- * organization, or taking an app away takes effect on the next request.
+ * Nothing is cached. Every request re-reads the connection (or token, or
+ * linked account), the user's live membership and ban state and the
+ * organization's status, so revoking a connection, removing or deactivating
+ * a member, suspending an organization, or taking an app away takes effect
+ * on the next request.
  */
 import { waitUntil } from "cloudflare:workers";
 import {
@@ -48,10 +52,20 @@ export type McpCaller =
       apps: { connectionId?: string; appRowId?: string };
     }
   /**
-   * A personal token without MCP scopes: valid, but not for this; or a
-   * credential of a suspended organization.
+   * A personal token without MCP scopes: valid, but not for this; a
+   * credential of a suspended organization; or an Access identity with no
+   * account linked here, a deactivated one, or one in several organizations
+   * with no sign of which (access-caller.ts).
    */
-  | { kind: "refused"; reason: "token_scope" | "organization_suspended" };
+  | {
+      kind: "refused";
+      reason:
+        | "token_scope"
+        | "organization_suspended"
+        | "not_connected"
+        | "account_deactivated"
+        | "organization_unresolved";
+    };
 
 function isGrantProps(value: unknown): value is McpGrantProps {
   if (!value || typeof value !== "object") return false;
