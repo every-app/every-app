@@ -3,10 +3,10 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createJiti } from "jiti";
 import {
-  ManifestError,
   validateManifestStrict,
   type EveryAppManifest,
 } from "@every-app/perimeter/manifest";
+import { EveryAppError } from "@/lib/errors";
 
 // The shared strict manifest schema covers every CLI field (including the
 // dev command string), so the CLI adds nothing on top.
@@ -15,10 +15,10 @@ export type EveryAppCliManifest = EveryAppManifest;
 export async function loadEveryAppManifest(
   cwd: string,
 ): Promise<EveryAppCliManifest> {
-  return loadEveryAppManifestFile(
-    path.join(cwd, "everyapp.config.ts"),
-    "No everyapp.config.ts found in the current directory — run this command from an app root.",
-  );
+  return loadEveryAppManifestFile(path.join(cwd, "everyapp.config.ts"), {
+    message: "No everyapp.config.ts in this directory",
+    fix: "run this from the app's directory",
+  });
 }
 
 /**
@@ -46,13 +46,16 @@ export async function loadEveryAppManifestIfPresent(
  */
 export async function loadEveryAppManifestFile(
   manifestPath: string,
-  missing = `No manifest at ${manifestPath}.`,
+  /** What MANIFEST_NOT_FOUND says when there is no file there, and how to fix it. */
+  missing: { message: string; fix?: string } = { message: `No manifest at ${manifestPath}` },
 ): Promise<EveryAppCliManifest> {
   try {
     await fs.access(manifestPath);
   } catch (error) {
     if (error instanceof Error && "code" in error && error.code === "ENOENT") {
-      throw new ManifestError(missing);
+      throw new EveryAppError("MANIFEST_NOT_FOUND", missing.message, {
+        ...(missing.fix ? { data: { fix: missing.fix } } : {}),
+      });
     }
     throw error;
   }

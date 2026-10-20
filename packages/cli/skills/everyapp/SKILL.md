@@ -41,6 +41,9 @@ Hosted:  third-party apps on a hosted Gateway, only when the user has a deploy
          (no Cloudflare login; EVERYAPP_GATEWAY_URL works too; BUNDLE_REFUSED
          lists what the hosted policy refuses)
 Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--local] --json
+         (a production write stops with CONFIRMATION_REQUIRED: add --yes only
+         if the user said so). pnpm everyapp db restore --json undoes the last
+         deploy's migrations (and every write since): only when the user asks.
 Postgres: an app with resources.hyperdrive or migrations.dialect "postgresql"
          reads POSTGRES_DATABASE_URL (and <BINDING>_ORIGIN_URL) from
          .everyapp/secrets.env, which the user writes; never print, commit or

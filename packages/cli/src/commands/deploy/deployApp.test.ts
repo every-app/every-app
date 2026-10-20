@@ -14,6 +14,7 @@ import { execa } from "execa";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { deletionSummary, removeApp } from "@/commands/delete";
 import { queryAppD1 } from "@/commands/db";
+import { restoreDatabase } from "@/commands/db/restore";
 import {
   changeInstanceStatus,
   listAppWorkflows,
@@ -23,7 +24,7 @@ import {
 import { readOwnedResources, recordOwnedResource } from "@/lib/app/ownership";
 import { cfD1Database } from "@/lib/cf/d1";
 import { listWorkerSecrets } from "@/lib/cf/secrets";
-import { rollbackCommandFor } from "@/lib/errors";
+import { rollbackFor } from "@/lib/errors";
 import { applyGateway } from "@/lib/gateway/apply";
 import { readInstall } from "@/lib/gateway/install";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
@@ -34,6 +35,7 @@ import { acquireLease, readLease } from "@/lib/gateway/lease";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
+import { CLI } from "@/lib/output/command";
 import { createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
@@ -306,20 +308,13 @@ describe("deploy", () => {
       },
       message: expect.stringContaining("its first owner gets the app"),
     });
-    expect(events.find((event) => event["step"] === "app.migrations" && event["status"] === "ok")).toMatchObject({
-      data: {
-        applied: ["0000_init.sql"],
-        rollbackCommand: expect.stringContaining("d1 time-travel restore"),
-      },
-      message: expect.stringContaining("d1 time-travel restore"),
-    });
+    // A new database: nothing to restore it to.
+    expect(events.find((event) => event["step"] === "app.migrations" && event["status"] === "ok")).toEqual(
+      expect.objectContaining({ data: { applied: ["0000_init.sql"], fresh: true } }),
+    );
     expect(events.find((event) => event["step"] === "app.live")).toMatchObject({
       data: { hostname: "todo.example.com", url: "https://todo.example.com" },
     });
-    // The restore command is no longer a progress line.
-    expect(
-      events.filter((event) => event["type"] === "progress" && String(event["message"]).includes("time-travel")),
-    ).toEqual([]);
     const leases = account.database("every-app-gateway").all(
       "SELECT * FROM _everyapp_deploy_lease",
     );
@@ -773,8 +768,8 @@ describe("deploy", () => {
 
     const failure = await deploy().catch((error: unknown) => error);
     expect(failure).toMatchObject({ action: "register_workers_subdomain" });
-    // The database was migrated first: the report says how to put it back.
-    expect(rollbackCommandFor(failure)).toContain("d1 time-travel restore");
+    // The database was migrated first, but it was new: nothing to put back.
+    expect(rollbackFor(failure)).toBeUndefined();
     // Registered and provisioned; the next run picks it up, with the same
     // database and namespace it created.
     expect(appRow("todo")).toMatchObject({ status: "pending" });
@@ -800,9 +795,113 @@ describe("deploy", () => {
         cwd: appDir,
         sql: "SELECT title FROM todos",
         local: false,
+        out: out(),
         createCf: () => account.cf,
       }),
-    ).resolves.toEqual([[{ title: "ship it" }]]);
+    ).resolves.toMatchObject([{ rows: [{ title: "ship it" }] }]);
+
+    // A write needs a person to say yes, or --yes.
+    const write = {
+      cwd: appDir,
+      sql: "DELETE FROM todos",
+      local: false,
+      out: out(),
+      createCf: () => account.cf,
+      interactive: false,
+    };
+    await expect(queryAppD1(write)).rejects.toMatchObject({ code: "CONFIRMATION_REQUIRED" });
+    await expect(
+      queryAppD1({ ...write, interactive: true, confirm: async () => false }),
+    ).rejects.toMatchObject({ code: "QUERY_CANCELLED" });
+    expect(account.database("every-acme-todo").all("SELECT title FROM todos")).toHaveLength(1);
+    await queryAppD1({ ...write, yes: true });
+    expect(account.database("every-acme-todo").all("SELECT title FROM todos")).toEqual([]);
+
+    // The SQL's own error, said as such.
+    await expect(
+      queryAppD1({ ...write, sql: "SELECT * FROM todo" }),
+    ).rejects.toMatchObject({
+      code: "QUERY_FAILED",
+      message: "Query failed: no such table: todo\nSQLITE_ERROR from the production database.",
+    });
+  });
+
+  it("saves a restore point when a redeploy migrates the database, and db restore puts it back", async () => {
+    await deploy();
+    fs.writeFileSync(
+      path.join(appDir, "drizzle", "0001_done.sql"),
+      "ALTER TABLE todos ADD done integer;",
+    );
+    fs.writeFileSync(
+      path.join(appDir, "everyapp.config.ts"),
+      `export default ${JSON.stringify(TODO)};\n`,
+    );
+    events = [];
+
+    await deploy();
+
+    expect(events.find((event) => event["step"] === "app.migrations" && event["status"] === "ok")).toMatchObject({
+      data: {
+        applied: ["0001_done.sql"],
+        fresh: false,
+        restoreCommand: `${CLI} db restore`,
+        rollbackCommand: expect.stringContaining("d1 time-travel restore"),
+      },
+    });
+    const registry = account.database("every-app-gateway");
+    const [point] = registry.all("SELECT * FROM _everyapp_restore_points");
+    expect(point).toMatchObject({
+      target: "app:every-acme-todo",
+      database_id: databaseId("every-acme-todo"),
+      migrations: '["0001_done.sql"]',
+      created_by: "dev@example.com",
+    });
+
+    const restore = (options: Partial<Parameters<typeof restoreDatabase>[0]> = {}) =>
+      restoreDatabase({
+        cwd: appDir,
+        gateway: false,
+        yes: false,
+        json: true,
+        out: out(),
+        createCf: () => account.cf,
+        interactive: true,
+        ...options,
+      });
+    const asked: string[] = [];
+    await restore({ confirm: async (question) => (asked.push(question), true) });
+
+    expect(asked).toEqual([
+      "Put todo's database back to before 1 migration (0001_done.sql) applied 0s ago by dev@example.com?",
+    ]);
+    expect(account.restores).toEqual([
+      { databaseId: databaseId("every-acme-todo"), bookmark: point!["bookmark"] },
+    ]);
+    // Used up, and the lease freed.
+    expect(registry.all("SELECT * FROM _everyapp_restore_points")).toEqual([]);
+    expect(registry.all("SELECT * FROM _everyapp_deploy_lease")).toEqual([]);
+    await expect(restore({ yes: true })).rejects.toMatchObject({ code: "NO_RESTORE_POINT" });
+    // The Gateway was installed into an empty database: nothing to go back to.
+    await expect(restore({ gateway: true, yes: true })).rejects.toMatchObject({
+      code: "NO_RESTORE_POINT",
+      message: expect.stringMatching(/^No restore point for the Gateway's database\n/),
+    });
+  });
+
+  it("says how to restore the database when the upload fails after a migration", async () => {
+    await deploy();
+    fs.writeFileSync(
+      path.join(appDir, "drizzle", "0001_done.sql"),
+      "ALTER TABLE todos ADD done integer;",
+    );
+    account.failNextDeploy = "an internal error occurred [code: 10013]";
+
+    const failure = await deploy().catch((error: unknown) => error);
+
+    expect(rollbackFor(failure)).toEqual({
+      restoreCommand: `${CLI} db restore`,
+      rollbackCommand: expect.stringContaining("d1 time-travel restore"),
+    });
   });
 
   it("goes live on its first visit behind Cloudflare Access, and says so", async () => {
@@ -879,7 +978,7 @@ describe("deploy", () => {
     const login = expect.objectContaining({
       type: "action_required",
       action: "cloudflare_login",
-      data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", waiting: true },
+      data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", waiting: true, waitingFor: "Cloudflare login" },
     });
 
     await expect(deploy(TODO, { json: true })).resolves.toMatchObject({ live: true });
@@ -1137,7 +1236,7 @@ describe("deploy of an app without helper Workers", () => {
           "build",
           "workflows get every-acme-todo--rank-check",
           "workers deployments list --worker every-acme-todo --per-page 10",
-          "d1 time-travel get-bookmark <uuid>",
+          "d1 migrations list <uuid> --dir <app>/drizzle",
           "d1 migrations apply <uuid> --dir <app>/drizzle",
           "workers deployments list --worker every-acme-todo --per-page 10",
           "deploy --prebuilt --mode production --message everyapp 0.3.0 todo --secrets-file /fake-cf-files/secrets.json",

@@ -218,9 +218,10 @@ function firstDeploy(sink: EventSink) {
     type: "step",
     step: "app.migrations",
     status: "ok",
-    message: `Applied 0000_init.sql, 0001_tags.sql. To roll the database back to before this run: ${RESTORE}`,
+    message: `Applied 0000_init.sql, 0001_tags.sql. Restore point saved; to undo: pnpm everyapp db restore`,
     data: {
       applied: ["0000_init.sql", "0001_tags.sql"],
+      restoreCommand: "pnpm everyapp db restore",
       rollbackCommand: RESTORE,
     },
   });
@@ -284,7 +285,7 @@ describe("createHumanSink", () => {
       "Deploying todo to Example Inc (first deploy)",
       "Built ✓",
       "Database migrated ✓ 0000_init.sql, 0001_tags.sql",
-      `  To undo: ${RESTORE}`,
+      "  Restore point saved. To undo: pnpm everyapp db restore",
       "Uploaded ✓",
       "Added to the Gateway ✓",
       "",
@@ -339,7 +340,7 @@ describe("createHumanSink", () => {
         type: "step",
         step: "app.migrations",
         status: "ok",
-        data: { applied: [], rollbackCommand: RESTORE },
+        data: { applied: [] },
       });
       sink.emit({
         type: "step",
@@ -397,7 +398,7 @@ describe("createHumanSink", () => {
       type: "step",
       step: "gateway.migrations",
       status: "ok",
-      data: { applied: ["0000_a.sql", "0001_b.sql"], fresh: true, rollbackCommand: RESTORE },
+      data: { applied: ["0000_a.sql", "0001_b.sql"], fresh: true },
     });
     sink.emit({ type: "step", step: "gateway.deploy", status: "start" });
     now += 6_100;
@@ -443,6 +444,31 @@ describe("createHumanSink", () => {
       "Next:",
       "  pnpm everyapp create my-app              start your first app",
       "  pnpm everyapp secret set OPENAI_API_KEY  turn on AI for apps",
+    ]);
+  });
+
+  it("shows db migrate's files under its ticked line, and db restore what it undid", () => {
+    const { sink, lines } = human();
+    sink.emit({ type: "step", step: "db.migrate", status: "start" });
+    sink.emit({
+      type: "step",
+      step: "db.migrate",
+      status: "ok",
+      data: { applied: ["0000_dry_bloodaxe.sql", "0001_add_events.sql"] },
+    });
+    sink.emit({ type: "step", step: "db.restore", status: "start" });
+    sink.emit({
+      type: "step",
+      step: "db.restore",
+      status: "ok",
+      data: { appId: null, migrations: ["0007_x.sql"] },
+    });
+
+    expect(lines()).toEqual([
+      "2 migrations applied to the local database ✓",
+      "  0000_dry_bloodaxe.sql",
+      "  0001_add_events.sql",
+      "Restored the Gateway's database ✓ before 0007_x.sql",
     ]);
   });
 

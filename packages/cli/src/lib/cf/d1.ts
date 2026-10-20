@@ -9,7 +9,9 @@ import { runCfJson, type CfRunner } from "./runner";
 import {
   D1BookmarkOutput,
   D1MigrationsApplyOutput,
+  D1MigrationsListOutput,
   D1QueryOutput,
+  D1RestoreOutput,
 } from "./schemas";
 
 type D1Value = string | number | null;
@@ -21,6 +23,15 @@ export interface D1Statement {
 }
 
 type D1Row = Record<string, unknown>;
+
+/** A statement's rows, and what D1 says about running it. */
+export interface D1Result {
+  rows: D1Row[];
+  /** Milliseconds D1 took. */
+  duration: number;
+  /** Rows the statement inserted, updated or deleted. */
+  changes: number;
+}
 
 /**
  * A remote D1 database: runs statements in one request and returns each
@@ -40,24 +51,35 @@ interface D1RunOptions {
 
 export function cfD1Database(cf: CfRunner, databaseId: string): D1Database {
   return {
-    run: (statements, options) => queryD1(cf, databaseId, statements, options),
+    run: async (statements, options) =>
+      (await queryD1Results(cf, databaseId, statements, options)).map((result) => result.rows),
   };
 }
 
 const MIGRATIONS_TIMEOUT_MS = 600_000;
 
 /**
+ * A SQL error as D1 reports it through cf (`no such table: todo:
+ * SQLITE_ERROR [code: 7500]`): the problem, and SQLite's code if it named one.
+ */
+export function sqlError(message: string): { problem: string; sqliteCode?: string } {
+  const [, problem = message, sqliteCode] =
+    /^([\s\S]*?)(?::\s*(SQLITE_[A-Z_]+))?(?:\s*\[code: \d+\])?$/.exec(message.trim()) ?? [];
+  return { problem, ...(sqliteCode ? { sqliteCode } : {}) };
+}
+
+/**
  * Run statements against a remote D1 database in one `cf d1 query`
  * request: one as `{sql, params}`, several as a batch. The body travels in
  * a private temp file (`--body @file`), never on argv. Returns each
- * statement's rows.
+ * statement's rows, time and changes.
  */
-export async function queryD1(
+export async function queryD1Results(
   cf: CfRunner,
   databaseId: string,
   statements: readonly D1Statement[],
   { timeoutMs }: D1RunOptions = {},
-): Promise<D1Row[][]> {
+): Promise<D1Result[]> {
   const body = statements.length === 1 ? statements[0] : { batch: statements };
   const results = await runCfJson(
     cf,
@@ -75,7 +97,11 @@ export async function queryD1(
     },
     D1QueryOutput,
   );
-  return results.map((result) => result.results ?? []);
+  return results.map((result) => ({
+    rows: result.results ?? [],
+    duration: result.meta?.duration ?? 0,
+    changes: result.meta?.changes ?? 0,
+  }));
 }
 
 /**
@@ -98,7 +124,27 @@ export async function getD1Bookmark(
 }
 
 /**
- * `cf d1 time-travel restore`, for messages that say how to roll back. It
+ * Put the database back to `bookmark` (Time Travel): whatever was written
+ * after it is gone. With `--force`, which cf would otherwise ask for, and
+ * answer "no" to itself where no one can type.
+ */
+export async function restoreD1(
+  cf: CfRunner,
+  databaseId: string,
+  bookmark: string,
+): Promise<void> {
+  await runCfJson(
+    cf,
+    {
+      plane: "account",
+      args: ["d1", "time-travel", "restore", databaseId, "--bookmark", bookmark, "--force"],
+    },
+    D1RestoreOutput,
+  );
+}
+
+/**
+ * `cf d1 time-travel restore`, for scripts (`rollbackCommand` in --json). It
  * carries `--force`: where no one can type (an agent, a script) cf answers
  * its own confirmation "no" and prints `Aborted.` with exit 0. And the
  * account, which a database id needs when cf can use several: cf takes it
@@ -122,13 +168,41 @@ export function restoreCommand(
     : `CLOUDFLARE_ACCOUNT_ID=${accountId} ${restore}`;
 }
 
-interface ApplyRemoteMigrationsOptions {
+interface RemoteMigrationsOptions {
   cf: CfRunner;
   databaseId: string;
   /** The migrations directory. */
   dir: string;
   /** drizzle's nested layout, `<dir>/<tag>/migration.sql`. */
   nested?: boolean;
+}
+
+/** `--dir`, and for drizzle's nested layout `--pattern`, as cf takes them. */
+function migrationsDirArgs(dir: string, nested: boolean): string[] {
+  const absoluteDir = path.resolve(dir);
+  return [
+    "--dir",
+    absoluteDir,
+    ...(nested ? ["--pattern", path.join(absoluteDir, "*", "migration.sql")] : []),
+  ];
+}
+
+/** The migrations in `dir` the remote database hasn't applied, in the order cf applies them. */
+export async function listPendingRemoteMigrations({
+  cf,
+  databaseId,
+  dir,
+  nested = false,
+}: RemoteMigrationsOptions): Promise<string[]> {
+  const pending = await runCfJson(
+    cf,
+    {
+      plane: "account",
+      args: ["d1", "migrations", "list", databaseId, ...migrationsDirArgs(dir, nested)],
+    },
+    D1MigrationsListOutput,
+  );
+  return pending.map((migration) => migration.Name);
 }
 
 /**
@@ -143,24 +217,13 @@ export async function applyRemoteMigrations({
   databaseId,
   dir,
   nested = false,
-}: ApplyRemoteMigrationsOptions): Promise<string[]> {
-  const absoluteDir = path.resolve(dir);
+}: RemoteMigrationsOptions): Promise<string[]> {
   const applied = await runCfJson(
     cf,
     {
       plane: "account",
       timeoutMs: MIGRATIONS_TIMEOUT_MS,
-      args: [
-        "d1",
-        "migrations",
-        "apply",
-        databaseId,
-        "--dir",
-        absoluteDir,
-        ...(nested
-          ? ["--pattern", path.join(absoluteDir, "*", "migration.sql")]
-          : []),
-      ],
+      args: ["d1", "migrations", "apply", databaseId, ...migrationsDirArgs(dir, nested)],
     },
     D1MigrationsApplyOutput,
   );

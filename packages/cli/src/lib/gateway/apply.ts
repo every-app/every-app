@@ -53,9 +53,10 @@ import type { CfRunner } from "@/lib/cf/runner";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
-import { afterMigration, EveryAppError } from "@/lib/errors";
+import { afterMigration, EveryAppError, type Rollback } from "@/lib/errors";
 import { onInterrupt } from "@/lib/interrupt";
 import { migrateRemoteD1 } from "@/lib/migrations/remote";
+import { GATEWAY_RESTORE_TARGET } from "./restorePoints";
 import { CLI, thisCommand } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import {
@@ -315,7 +316,7 @@ export async function applyGateway(
     : await acquireGatewayLease(options, `gateway.${reason}`);
   const lease = options.heldLease ?? ownLease!;
   // Once the database is migrated, a failure says how to put it back.
-  let rollbackCommand: string | null = null;
+  let rollback: Rollback | null = null;
   try {
     // Only now is the install record the last deploy's for sure: another
     // upgrade may have finished while this one waited for the lease.
@@ -368,7 +369,7 @@ export async function applyGateway(
         note: "If it runs a newer gateway release (an upgrade that stopped before recording itself), this replaces it with an older one.",
       });
       await lease.check();
-      rollbackCommand = await migrate(options);
+      rollback = await migrate(options);
     }
     // A mode the install row records is the gateway's for good: a Worker
     // that comes back (deleted by hand) gets the one it was installed with.
@@ -377,20 +378,21 @@ export async function applyGateway(
       liveDomains: install?.liveDomains ?? [],
     }, lease);
   } catch (error) {
-    throw afterMigration(error, rollbackCommand);
+    throw afterMigration(error, rollback);
   } finally {
     await ownLease?.release();
   }
 }
 
-/** Returns the command that rolls the database back, when it changed. */
+/** Returns the restore point saved before the database changed, if one was. */
 async function migrate({
   cf,
   out,
   resources,
   release,
   accountId,
-}: ApplyGatewayOptions): Promise<string | null> {
+  db,
+}: ApplyGatewayOptions): Promise<Rollback | null> {
   out.emit({
     type: "step",
     step: "gateway.migrations",
@@ -402,25 +404,20 @@ async function migrate({
     databaseId: resources.d1Id,
     accountId,
     dir: path.join(release.dir, "drizzle"),
-    onProgress: (message) =>
-      out.emit({ type: "progress", step: "gateway.migrations", message }),
+    registry: db,
+    target: GATEWAY_RESTORE_TARGET,
+    restoreCommand: `${CLI} db restore --gateway`,
   });
-  const changed = result.applied.length > 0;
   out.emit({
     type: "step",
     step: "gateway.migrations",
     status: "ok",
-    message: changed
-      ? `Applied ${result.applied.length} migration${result.applied.length === 1 ? "" : "s"}. To roll the database back to before this run: ${result.rollbackCommand}`
+    message: result.applied.length > 0
+      ? `Applied ${result.applied.length} migration${result.applied.length === 1 ? "" : "s"}.${result.rollback ? ` Restore point saved; to undo: ${result.rollback.restoreCommand}` : ""}`
       : "The gateway's database is up to date.",
-    data: {
-      bookmark: result.bookmark,
-      applied: result.applied,
-      fresh: result.fresh,
-      rollbackCommand: result.rollbackCommand,
-    },
+    data: { applied: result.applied, fresh: result.fresh, ...result.rollback },
   });
-  return changed ? result.rollbackCommand : null;
+  return result.rollback;
 }
 
 /**

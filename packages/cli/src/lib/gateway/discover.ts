@@ -166,7 +166,7 @@ export function requireGateway(
   } else if (discovery.probed.length === 0) {
     message = `cf lists no Cloudflare accounts for this login${login}. Pass the Gateway's account with --account-id, or set CLOUDFLARE_ACCOUNT_ID.`;
   } else {
-    message = `No Gateway in the Cloudflare account${discovery.probed.length === 1 ? "" : "s"} this login sees${login}: ${discovery.probed.map(describeAccount).join(", ")}. ${install}, or log in to the Gateway's account: npx cf auth login.`;
+    message = `No Gateway in the Cloudflare account${discovery.probed.length === 1 ? "" : "s"} this login sees${login}: ${discovery.probed.map(describeAccount).join(", ")}. ${install}, or log in to the Gateway's account: ${CLI} login.`;
   }
   throw new EveryAppError("GATEWAY_NOT_FOUND", message, {
     rerun: `${CLI} setup`,

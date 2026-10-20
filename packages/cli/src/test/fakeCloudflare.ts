@@ -231,6 +231,8 @@ export class FakeCloudflare {
   /** Hyperdrive configs by id. */
   readonly hyperdrive = new Map<string, FakeHyperdrive>();
   readonly deploys: RecordedDeploy[] = [];
+  /** `cf d1 time-travel restore`s, in order (the data isn't rewound). */
+  readonly restores: Array<{ databaseId: string; bookmark: string }> = [];
   /** Apps `cf build` can build, by app root. */
   readonly apps = new Map<string, EveryAppCliManifest>();
   /**
@@ -356,6 +358,12 @@ export class FakeCloudflare {
       .on(["d1", "time-travel", "get-bookmark"], () => ({
         stdout: JSON.stringify({ bookmark: `bookmark-${(this.counter += 1)}` }),
       }))
+      .on(["d1", "time-travel", "restore"], (call) => {
+        const declined = unconfirmed(call, "This reverts the D1 database to a previous point in time.");
+        if (declined) return declined;
+        this.restores.push({ databaseId: call.args[3]!, bookmark: flag(call.args, "--bookmark")! });
+        return { stdout: JSON.stringify({ previous_bookmark: `bookmark-${(this.counter += 1)}` }) };
+      })
       .on(["d1"], (call) => {
         const id = call.args[1] === "query" ? call.args[2] : call.args[3];
         const entry = this.databases.get(id ?? "");

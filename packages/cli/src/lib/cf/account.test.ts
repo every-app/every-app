@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { CLI } from "@/lib/output/command";
 import { ensureCfAuth, resolveAccount } from "./account";
 import { FakeCf } from "./fakeCf";
 
@@ -77,8 +78,19 @@ describe("ensureCfAuth", () => {
     const cf = new FakeCf().on(["auth", "whoami"], { stdout: LOGGED_OUT });
     await expect(ensureCfAuth({ cf, interactive: false })).rejects.toMatchObject({
       action: "cloudflare_login",
+      message: `Log in to Cloudflare with ${CLI} login\nUnattended? Set CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID instead.`,
     });
     expect(cf.calls).toHaveLength(1);
+  });
+
+  it("points a login that didn't take at everyapp login", async () => {
+    vi.stubEnv("CLOUDFLARE_API_TOKEN", "");
+    const cf = new FakeCf().on(["auth", "whoami"], { stdout: LOGGED_OUT });
+    await expect(ensureCfAuth({ cf, interactive: true })).rejects.toMatchObject({
+      code: "CLOUDFLARE_LOGIN_FAILED",
+      message: "Cloudflare login didn't complete",
+      rerun: `${CLI} login`,
+    });
   });
 
   it("blames a token cf can't use", async () => {
@@ -86,7 +98,11 @@ describe("ensureCfAuth", () => {
     const cf = new FakeCf().on(["auth", "whoami"], { stdout: LOGGED_OUT });
     await expect(ensureCfAuth({ cf, interactive: true })).rejects.toMatchObject({
       code: "CLOUDFLARE_TOKEN_REJECTED",
+      message: expect.stringMatching(/^Cloudflare didn't accept CLOUDFLARE_API_TOKEN\n/),
+      data: { fix: `set a valid token, or unset CLOUDFLARE_API_TOKEN and run ${CLI} login` },
     });
+    // Never a login over the token.
+    expect(cf.calls).toHaveLength(1);
   });
 });
 
@@ -123,6 +139,15 @@ describe("resolveAccount", () => {
   it("refuses an account the login can't use", async () => {
     await expect(
       resolveAccount({ whoami: whoami(), flag: "acct-9", interactive: false }),
-    ).rejects.toMatchObject({ code: "ACCOUNT_NOT_ACCESSIBLE" });
+    ).rejects.toMatchObject({
+      code: "ACCOUNT_NOT_ACCESSIBLE",
+      message: [
+        "dev@example.com can't use Cloudflare account acct-9",
+        "Accounts this login can use:",
+        "  Acme    acct-1",
+        "  Globex  acct-2",
+      ].join("\n"),
+      rerun: `${CLI} login`,
+    });
   });
 });

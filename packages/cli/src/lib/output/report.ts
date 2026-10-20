@@ -3,7 +3,7 @@ import { CfError, CfOutputError, CfTimeoutError } from "@/lib/cf/errors";
 import {
   ActionRequiredError,
   EveryAppError,
-  rollbackCommandFor,
+  rollbackFor,
 } from "@/lib/errors";
 import { thisCommand } from "./command";
 import type { EventSink } from "./events";
@@ -24,12 +24,12 @@ export function reportFailure(
   error: unknown,
   step?: string,
 ): void {
-  const rollbackCommand = rollbackCommandFor(error);
+  const rollback = rollbackFor(error);
   const withRollback = (message: string) =>
-    rollbackCommand
-      ? `${message}\nTo roll the database back to before this run: ${rollbackCommand}`
+    rollback
+      ? `${message}\nThe database stays migrated. To roll it back: ${rollback.restoreCommand}`
       : message;
-  const rollbackData = rollbackCommand ? { rollbackCommand } : {};
+  const rollbackData = rollback ? { rollbackCommand: rollback.rollbackCommand } : {};
   if (error instanceof ActionRequiredError) {
     out.emit({
       type: "action_required",

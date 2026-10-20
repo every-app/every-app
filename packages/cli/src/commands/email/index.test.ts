@@ -477,7 +477,7 @@ describe("email set refuses before anything is read or changed", () => {
   it("an app that isn't registered", async () => {
     await expect(set(appDir(INBOX), { senders: ["*@example.com"] })).rejects.toMatchObject({
       code: "APP_NOT_FOUND",
-      message: 'No app "inbox" is registered on this gateway; deploy it first.',
+      message: "inbox isn't deployed to this Gateway yet",
     });
   });
 
@@ -725,7 +725,7 @@ describe("email set keeps the row and the routes consistent", () => {
     await deploy(dir, INBOX);
     const manifest = path.join(dir, "everyapp.config.ts");
 
-    await expect(set(emptyDir(), { senders: SENDERS })).rejects.toThrow("No everyapp.config.ts found");
+    await expect(set(emptyDir(), { senders: SENDERS })).rejects.toMatchObject({ code: "MANIFEST_NOT_FOUND" });
     await set(emptyDir(), { senders: SENDERS, flags: { manifest } });
     expect(done()!["message"]).toBe("inbox sends as *@example.com, ceo@example.com.");
 

@@ -736,7 +736,7 @@ describe("everyapp setup", () => {
       expect.objectContaining({
         type: "action_required",
         action: "cloudflare_login",
-        data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", waiting: true },
+        data: { url: "https://dash.cloudflare.com/oauth2/device", code: "ABCD-EFGH", waiting: true, waitingFor: "Cloudflare login" },
       }),
     );
     expect(steps()).toContain("setup.owner ok");

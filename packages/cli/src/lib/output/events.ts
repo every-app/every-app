@@ -508,6 +508,40 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         ? { done: "Local database migrated", detail: plural(applied.length, "migration") }
         : { done: "Local database up to date" };
     },
+    "cloudflare.login": (event) => {
+      const data = event.data ?? {};
+      const who = text(data["email"]);
+      const as = who ? ` as ${who}` : data["token"] === true ? " with CLOUDFLARE_API_TOKEN" : "";
+      if (event.status === "skip") return { line: `Already logged in to Cloudflare${as}` };
+      return event.status === "ok" ? { done: `Logged in to Cloudflare${as}` } : null;
+    },
+    "db.migrate": (event) => {
+      if (event.status === "start") return { spin: "Applying migrations to the local database..." };
+      if (event.status === "skip" && event.message) return { line: chalk.dim(event.message) };
+      if (event.status !== "ok") return null;
+      const applied = strings(event.data?.["applied"]);
+      return applied.length
+        ? {
+            done: `${plural(applied.length, "migration")} applied to the local database`,
+            detail: "",
+            notes: applied,
+          }
+        : { done: "Local database up to date", detail: "" };
+    },
+    "db.query": (event) =>
+      event.status === "start"
+        ? { spin: `Querying the ${text(event.data?.["database"])} database...` }
+        : null,
+    "db.restore": (event) => {
+      if (event.status === "start") return { spin: "Restoring..." };
+      if (event.status !== "ok") return null;
+      const data = event.data ?? {};
+      const appId = text(data["appId"]);
+      return {
+        done: `Restored ${appId ? `${appId}'s` : "the Gateway's"} database`,
+        detail: `before ${strings(data["migrations"]).join(", ")}`,
+      };
+    },
   };
 
 /**
@@ -526,12 +560,14 @@ const waiting = (data: EventData) => data["host"] === undefined;
 
 /**
  * Progress a person sees without --verbose, by step: the waits (a lease,
- * an app going live with its certificate, the gateway's certificates) and
+ * a deploy `db restore` waits out, an app going live with its certificate,
+ * the gateway's certificates) and
  * the Gateway build.
  */
 const SHOWN_PROGRESS: Readonly<Record<string, (data: EventData) => boolean>> = {
   "app.lease": always,
   "gateway.lease": always,
+  "db.lease": always,
   "gateway.release": always,
   "app.live": always,
   "gateway.tls": waiting,
@@ -545,7 +581,7 @@ const LOGGED_PROGRESS = new Set(["dev.mcp", "dev.session"]);
 
 /**
  * A migration step: a database that was empty is created, one that had
- * migrations names those this run applied, with how to undo them.
+ * migrations names those this run applied, with how to restore it.
  */
 function migrated(event: StepEvent, what: string): Shown | null {
   if (event.status !== "ok") return null;
@@ -555,11 +591,11 @@ function migrated(event: StepEvent, what: string): Shown | null {
   if (data["fresh"] === true) {
     return { done: `${what} created`, detail: plural(applied.length, "migration") };
   }
-  const rollback = text(data["rollbackCommand"]);
+  const restore = text(data["restoreCommand"]);
   return {
     done: `${what} migrated`,
     detail: applied.join(", "),
-    notes: rollback ? [`To undo: ${rollback}`] : [],
+    notes: restore ? [`Restore point saved. To undo: ${restore}`] : [],
   };
 }
 

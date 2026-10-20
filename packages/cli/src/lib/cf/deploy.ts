@@ -196,7 +196,7 @@ async function deployAndRecord(
   ) {
     throw new EveryAppError(
       "DEPLOY_NOT_UPLOADED",
-      `cf finished without uploading a new version of ${options.workerName} (was one of its questions answered no?). The version that was serving still is; if this run migrated a database, it stays migrated. Run the command again to deploy, or roll the database back with the command printed with its bookmark.`,
+      `cf finished without uploading a new version of ${options.workerName} (was one of its questions answered no?). The version that was serving still is. Run the command again to deploy.`,
     );
   }
   await options.onUploaded?.(deployment.versionId, true);
@@ -255,7 +255,7 @@ function explainDeployFailure(
   if (error.kind === "strict_conflict") {
     return new ActionRequiredError(
       "rerun_interactive",
-      `${workerName} was last changed outside everyapp (in the Cloudflare dashboard or through the API), so cf won't overwrite it unattended. If this run migrated a database, it stays migrated. Run this command again in a terminal and confirm cf's prompt.`,
+      `${workerName} was last changed outside everyapp (in the Cloudflare dashboard or through the API), so cf won't overwrite it unattended. Run this command again in a terminal and confirm cf's prompt.`,
     );
   }
   if (error.kind === "subdomain_missing") {

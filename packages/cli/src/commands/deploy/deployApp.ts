@@ -120,7 +120,7 @@ import { getWorkerDeployment } from "@/lib/cf/workers";
 import { deleteWorkflow } from "@/lib/cf/workflows";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
 import { preflightDomains } from "@/lib/domains/preflight";
-import { afterMigration, EveryAppError } from "@/lib/errors";
+import { afterMigration, EveryAppError, type Rollback } from "@/lib/errors";
 import { connectToGateway } from "@/lib/gateway/connect";
 import { refuseOlderCheckout, type CandidateRelease } from "@/lib/gateway/apply";
 import { readInstall } from "@/lib/gateway/install";
@@ -138,6 +138,7 @@ import {
 import { migratePostgres, type DrizzleKitRunner } from "@/lib/migrations/postgres";
 import { migratePrismaPostgres, type PrismaRunner } from "@/lib/migrations/prisma";
 import { migrateRemoteD1 } from "@/lib/migrations/remote";
+import { appRestoreTarget } from "@/lib/gateway/restorePoints";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { installDependencies } from "@/lib/package-manager";
@@ -256,18 +257,18 @@ interface DeployAppResult {
 export async function deployApp(
   options: DeployAppOptions,
 ): Promise<DeployAppResult> {
-  const migrated: Migrated = { rollbackCommand: null };
+  const migrated: Migrated = { rollback: null };
   try {
     return await deploySteps(options, migrated);
   } catch (error) {
     // Once the app's database changed, a failure says how to put it back.
-    throw afterMigration(error, migrated.rollbackCommand);
+    throw afterMigration(error, migrated.rollback);
   }
 }
 
-/** The command that rolls the app's database back, once this deploy migrated it. */
+/** The restore point of the app's database, once this deploy migrated it. */
 interface Migrated {
-  rollbackCommand: string | null;
+  rollback: Rollback | null;
 }
 
 async function deploySteps(
@@ -675,13 +676,17 @@ async function deploySteps(
       }
     }
     await lease.check();
-    migrated.rollbackCommand = await migrate({
+    migrated.rollback = await migrate({
       cf,
       out,
       cwd: root,
       manifest,
       resources,
       accountId,
+      registry,
+      workerName,
+      // A release isn't deployed from the app's directory.
+      restoreCommand: `${CLI} db restore${release ? ` ${manifest.id}` : ""}`,
       appSecrets,
       drizzleKit: options.drizzleKit,
       prisma: options.prisma,
@@ -994,7 +999,7 @@ async function checkWorkflows({
   return removed;
 }
 
-/** Returns the command that rolls the database back, when it changed. */
+/** Returns the restore point saved before the database changed, if one was. */
 async function migrate({
   cf,
   out,
@@ -1002,6 +1007,9 @@ async function migrate({
   manifest,
   resources,
   accountId,
+  registry,
+  workerName,
+  restoreCommand,
   appSecrets,
   drizzleKit,
   prisma,
@@ -1012,10 +1020,15 @@ async function migrate({
   manifest: EveryAppCliManifest;
   resources: InstallTarget["resources"];
   accountId: string;
+  /** Where the restore point is recorded. */
+  registry: D1Database;
+  workerName: string;
+  /** How a person restores it. */
+  restoreCommand: string;
   appSecrets: AppSecrets;
   drizzleKit?: DrizzleKitRunner;
   prisma?: PrismaRunner;
-}): Promise<string | null> {
+}): Promise<Rollback | null> {
   if (manifest.migrations?.dialect === "postgresql") {
     await migratePostgresDatabase({ out, cwd, manifest, appSecrets, drizzleKit, prisma });
     return null;
@@ -1045,25 +1058,20 @@ async function migrate({
     databaseId,
     accountId,
     dir,
-    onProgress: (message) =>
-      out.emit({ type: "progress", step: "app.migrations", message }),
+    registry,
+    target: appRestoreTarget(workerName),
+    restoreCommand,
   });
-  const changed = result.applied.length > 0;
   out.emit({
     type: "step",
     step: "app.migrations",
     status: "ok",
-    message: changed
-      ? `Applied ${result.applied.join(", ")}. To roll the database back to before this run: ${result.rollbackCommand}`
+    message: result.applied.length > 0
+      ? `Applied ${result.applied.join(", ")}.${result.rollback ? ` Restore point saved; to undo: ${result.rollback.restoreCommand}` : ""}`
       : "The app's database is up to date.",
-    data: {
-      bookmark: result.bookmark,
-      applied: result.applied,
-      fresh: result.fresh,
-      rollbackCommand: result.rollbackCommand,
-    },
+    data: { applied: result.applied, fresh: result.fresh, ...result.rollback },
   });
-  return changed ? result.rollbackCommand : null;
+  return result.rollback;
 }
 
 /**

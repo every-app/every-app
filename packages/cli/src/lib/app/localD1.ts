@@ -9,7 +9,7 @@ import path from "node:path";
 import { localD1Id } from "@every-app/sdk/cloudflare";
 import { workerNameFor } from "@every-app/perimeter/manifest";
 import { runCfJson, type CfRunner } from "@/lib/cf/runner";
-import { D1MigrationsApplyOutput } from "@/lib/cf/schemas";
+import { D1MigrationsApplyOutput, D1MigrationsListOutput } from "@/lib/cf/schemas";
 import {
   resolveMigrationBinding,
   type EveryAppCliManifest,
@@ -35,7 +35,7 @@ export async function localMigrationsSource(
   if (d1Bindings.length === 0) return { status: "skipped", reason: "no_d1" };
 
   const binding = resolveMigrationBinding(d1Bindings, manifest.migrations);
-  const dir = manifest.migrations?.dir ?? DEFAULT_MIGRATIONS_DIR;
+  const dir = localMigrationsDir(manifest);
   if (!(await isDirectory(path.resolve(cwd, dir)))) {
     return { status: "skipped", reason: "no_migrations_dir" };
   }
@@ -46,15 +46,24 @@ interface ApplyLocalMigrationsOptions {
   cwd: string;
   manifest: EveryAppCliManifest;
   cf: CfRunner;
+  /** There are migrations to apply, and cf is about to (after the checks that skip them). */
+  onApply?: () => void;
+}
+
+/** The migrations directory the manifest names, relative to the app (default drizzle). */
+export function localMigrationsDir(manifest: EveryAppCliManifest): string {
+  return manifest.migrations?.dir ?? DEFAULT_MIGRATIONS_DIR;
 }
 
 export async function applyLocalMigrations({
   cwd,
   manifest,
   cf,
+  onApply,
 }: ApplyLocalMigrationsOptions): Promise<LocalMigrationsResult> {
   const source = await localMigrationsSource(cwd, manifest);
   if (source.status === "skipped") return source;
+  onApply?.();
   return {
     status: "applied",
     ...(await migrateLocalDatabase({ cwd, manifest, cf, ...source })),
@@ -68,7 +77,7 @@ export async function migrateLocalDatabase({
   cf,
   binding,
   dir,
-}: ApplyLocalMigrationsOptions & { binding: string; dir: string }): Promise<{
+}: Omit<ApplyLocalMigrationsOptions, "onApply"> & { binding: string; dir: string }): Promise<{
   applied: string[];
   database: string;
 }> {
@@ -100,6 +109,40 @@ export async function migrateLocalDatabase({
     applied: applied.map((migration) => migration.name),
     database,
   };
+}
+
+/**
+ * The migrations the local database hasn't applied, in the order cf
+ * applies them: after a failed apply, the first is the one that failed.
+ */
+export async function listPendingLocalMigrations({
+  cwd,
+  manifest,
+  cf,
+}: Omit<ApplyLocalMigrationsOptions, "onApply">): Promise<string[]> {
+  const binding = resolveMigrationBinding(manifest.resources?.d1 ?? [], manifest.migrations);
+  const pending = await runCfJson(
+    cf,
+    {
+      plane: "project",
+      cwd,
+      local: true,
+      env: devRegistryEnv(cwd),
+      args: [
+        "d1",
+        "migrations",
+        "list",
+        localD1Id(workerNameFor(manifest.id), binding),
+        "--local",
+        "--persist-to",
+        LOCAL_STATE_DIR,
+        "--dir",
+        localMigrationsDir(manifest),
+      ],
+    },
+    D1MigrationsListOutput,
+  );
+  return pending.map((migration) => migration.Name);
 }
 
 /**

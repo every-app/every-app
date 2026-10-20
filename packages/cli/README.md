@@ -41,6 +41,7 @@ the one page that says how (`everyapp create` copies it into each new app).
 
 | Command                              | Does                                                                                   |
 | ------------------------------------ | -------------------------------------------------------------------------------------- |
+| `everyapp login`                     | Logs in to Cloudflare (or says who is logged in)                                       |
 | `everyapp setup [--domain D]`        | Installs, upgrades or repairs the gateway; creates its owner the first time            |
 | `everyapp status`                    | The gateway, its owner, apps, certificates, running deploys, and what to fix           |
 | `everyapp create <id> [--deploy]`    | A new app from the starter template, ready for `dev`                                   |
@@ -49,7 +50,7 @@ the one page that says how (`everyapp create` copies it into each new app).
 | `everyapp delete [id] [--purge]`     | Removes an app                                                                         |
 | `everyapp secret set\|unset\|list`   | The app's secrets and the gateway's settings, each by name                             |
 | `everyapp email set\|unset\|show`    | The addresses the app sends as and receives at, kept on the gateway                    |
-| `everyapp db migrate`, `db query`    | Local migrations; SQL against the app's production (or `--local`) database             |
+| `everyapp db …`                      | Local migrations (`migrate`), SQL (`query`), undoing the last migrations (`restore`)   |
 | `everyapp workflows …`               | The deployed app's Workflows                                                           |
 
 ### Create and run an app
@@ -175,19 +176,25 @@ the lists are the installation's, kept on the gateway. `--inbound` makes the
 Email Routing rules at once; `everyapp deploy` keeps them in step and
 `delete --purge` removes them.
 
-### Query or migrate the app's D1 database
+### Query, migrate or restore the app's D1 database
 
 ```bash
 everyapp db query "SELECT count(*) FROM todos"
 everyapp db query --local "SELECT count(*) FROM todos"
+everyapp db query --file scripts/backfill.sql
 everyapp db migrate
+everyapp db restore
 ```
 
 `db query` runs SQL against the production database (with your Cloudflare
 login, in the gateway's account) or, with `--local`, the one `everyapp dev`
-uses. `db migrate` applies the app's migrations to that local database
+uses; SQL that changes the production database is confirmed first (`--yes`
+skips that). `db migrate` applies the app's migrations to that local database
 (`cf d1 migrations apply --local`); production migrations run as part of
-`deploy`, and nowhere else.
+`deploy`, and nowhere else. Before a deploy migrates a database that has data,
+it saves a restore point (a D1 Time Travel bookmark, kept in the gateway's
+database); `db restore` puts the database back to it, and `db restore --gateway`
+does the same for the gateway's own database after a migrating `setup`.
 
 ## Documentation
 

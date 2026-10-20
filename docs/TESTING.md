@@ -721,8 +721,9 @@ npx cf workers deployments create --worker every-app-gateway \
   --strategy percentage --versions '[{"version_id":"<VERSION_ID>","percentage":100}]'
 ```
 
-A deploy also prints a D1 Time Travel bookmark before it migrates, with the
-`cf d1 time-travel restore` command that takes the database back. Gateway
+A deploy also saves a D1 Time Travel restore point before it migrates a
+database with data; `pnpm everyapp db restore --gateway` takes the Gateway's
+database back to it (`--json` gives cf's own `time-travel restore` command). Gateway
 migrations only add, so the previous version runs against the migrated
 database.
 

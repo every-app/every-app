@@ -32,16 +32,36 @@ export const D1DatabaseOutput = z.looseObject({
 });
 export const D1DatabaseListOutput = z.array(D1DatabaseOutput);
 
+/**
+ * `cf d1 migrations list`: the migrations the database hasn't applied yet,
+ * in the order `migrations apply` runs them.
+ */
+export const D1MigrationsListOutput = z.array(z.looseObject({ Name: z.string() }));
+
+/** What D1 says about a statement it ran: how long it took, and the rows it changed. */
+const D1Meta = z
+  .looseObject({
+    duration: z.number().nullish(),
+    changes: z.number().nullish(),
+  })
+  .nullish();
+
 /** `cf d1 query`: one result per statement, rows as objects. */
 export const D1QueryOutput = z.array(
   z.looseObject({
     results: z.array(z.record(z.string(), z.unknown())).nullish(),
     success: z.boolean().nullish(),
+    meta: D1Meta,
   }),
 );
 
 /** `cf d1 time-travel get-bookmark`. */
 export const D1BookmarkOutput = z.looseObject({ bookmark: z.string() });
+
+/** `cf d1 time-travel restore`: the bookmark the database was at before. */
+export const D1RestoreOutput = z.looseObject({
+  previous_bookmark: z.string().nullish(),
+});
 
 /** `cf kv namespaces create`, and each entry of `cf kv namespaces list`. */
 export const KvNamespaceOutput = z.looseObject({
@@ -148,6 +168,7 @@ export const D1RawOutput = z.array(
         rows: z.array(z.array(z.unknown())).nullish(),
       })
       .nullish(),
+    meta: D1Meta,
   }),
 );
 

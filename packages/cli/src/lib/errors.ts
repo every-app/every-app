@@ -81,25 +81,33 @@ export class ActionRequiredError extends Error {
   }
 }
 
-const rollbacks = new WeakMap<object, string>();
+/** The restore point a run saved before it migrated a database (lib/migrations/remote.ts). */
+export interface Rollback {
+  /** `everyapp db restore`, as a person runs it. */
+  restoreCommand: string;
+  /** cf's own `d1 time-travel restore` with the bookmark, for scripts (--json). */
+  rollbackCommand: string;
+}
+
+const rollbacks = new WeakMap<object, Rollback>();
 
 /**
- * A failure after a migration changed a database: its report repeats the
- * command that restores the bookmark taken before (lib/migrations/remote.ts).
- * Returns `error`, to rethrow.
+ * A failure after a migration changed a database: its report says how to
+ * put the database back to the restore point saved before. Returns
+ * `error`, to rethrow.
  */
 export function afterMigration(
   error: unknown,
-  rollbackCommand: string | null,
+  rollback: Rollback | null,
 ): unknown {
-  if (rollbackCommand && typeof error === "object" && error !== null) {
-    if (!rollbacks.has(error)) rollbacks.set(error, rollbackCommand);
+  if (rollback && typeof error === "object" && error !== null) {
+    if (!rollbacks.has(error)) rollbacks.set(error, rollback);
   }
   return error;
 }
 
-/** The restore command `afterMigration` attached to `error`, if any. */
-export function rollbackCommandFor(error: unknown): string | undefined {
+/** The restore point `afterMigration` attached to `error`, if any. */
+export function rollbackFor(error: unknown): Rollback | undefined {
   return typeof error === "object" && error !== null
     ? rollbacks.get(error)
     : undefined;

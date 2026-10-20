@@ -7,7 +7,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
-import { rollbackCommandFor } from "@/lib/errors";
+import { rollbackFor } from "@/lib/errors";
+import { CLI } from "@/lib/output/command";
 import { createNdjsonSink } from "@/lib/output/events";
 import {
   ACCOUNT_ID,
@@ -24,6 +25,7 @@ import { acquireLease } from "./lease";
 import { reconcileGateway } from "./reconcile";
 import { openRelease, type GatewayRelease } from "./release";
 import { ensureGatewayResources } from "./resources";
+import { readRestorePoint } from "./restorePoints";
 
 let account: FakeCloudflare;
 let tarball: string;
@@ -147,12 +149,12 @@ describe("applyGateway", () => {
   it("installs a gateway: migrations first, then one upload with its secrets", async () => {
     const result = await deployGateway();
 
-    // The order that keeps a failure safe: lease, bookmark and migrations
+    // The order that keeps a failure safe: lease and migrations
     // all before the upload. Nothing is kept in KV.
     const commands = account.cf.calls.map((call) => call.args.slice(0, 3).join(" "));
     const order = [
       "d1 query", // the lease (and its table)
-      "d1 time-travel get-bookmark",
+      "d1 migrations list",
       "d1 migrations apply",
       "deploy --prebuilt --mode",
     ].map((command) => commands.findIndex((c) => c.startsWith(command)));
@@ -324,7 +326,13 @@ describe("applyGateway", () => {
 
     await expect(deployGateway({ reason: "upgrade" })).rejects.toMatchObject({
       code: "MIGRATION_FAILED",
-      message: expect.stringContaining("d1 time-travel restore"),
+      message: expect.stringContaining(`${CLI} db restore --gateway`),
+      data: { rollbackCommand: expect.stringContaining("d1 time-travel restore") },
+    });
+    // Recorded before the migration ran: `db restore --gateway` finds it.
+    await expect(readRestorePoint(gatewayDb(), "gateway")).resolves.toMatchObject({
+      migrations: ["9999_broken.sql"],
+      createdBy: "dev@example.com",
     });
     expect(account.deploys).toHaveLength(1);
     expect(account.workers.get("every-app-gateway")!.versions).toEqual(serving);
@@ -393,8 +401,9 @@ describe("applyGateway", () => {
       action: "register_workers_subdomain",
       url: `https://dash.cloudflare.com/${ACCOUNT_ID}/workers/onboarding`,
     });
-    // Migrated before the upload stopped: the report repeats the restore command.
-    expect(rollbackCommandFor(failure)).toContain("d1 time-travel restore");
+    // Migrated before the upload stopped, but a new install's database was
+    // empty: there is nothing to restore.
+    expect(rollbackFor(failure)).toBeUndefined();
   });
 
   it("asks for a terminal when the Worker was last changed in the dashboard", async () => {
@@ -610,7 +619,7 @@ describe("applyGateway", () => {
         action: "rerun_interactive",
       });
       expect(
-        account.cf.calls.slice(calls).some((call) => call.args.join(" ").startsWith("d1 time-travel")),
+        account.cf.calls.slice(calls).some((call) => call.args.join(" ").startsWith("d1 migrations")),
       ).toBe(false);
     });
 
@@ -941,7 +950,7 @@ describe("reconcileGateway", () => {
 
   const migrations = () =>
     account.cf.calls.filter(
-      (call) => call.args.slice(0, 3).join(" ") === "d1 time-travel get-bookmark",
+      (call) => call.args.slice(0, 3).join(" ") === "d1 migrations list",
     ).length;
 
   it("redeploys the release that is live without migrating anything", async () => {

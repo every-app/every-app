@@ -75,7 +75,7 @@ function cfFailure(message: string): FakeCfResponse {
 }
 
 /**
- * A FakeCf script for `cf d1 query <id>` and `cf d1 migrations apply <id>`
+ * A FakeCf script for `cf d1 query <id>` and `cf d1 migrations list|apply <id>`
  * against the SQLite databases in `databases`, by D1 id.
  */
 export function sqliteD1Script(
@@ -100,7 +100,7 @@ export function sqliteD1Script(
       }
     }
 
-    // `cf d1 migrations apply <id> --dir <dir>`, as cf runs it.
+    // `cf d1 migrations list|apply <id> --dir <dir>`, as cf runs them.
     const dir = call.args[call.args.indexOf("--dir") + 1]!;
     db.sqlite.exec(
       'CREATE TABLE IF NOT EXISTS "d1_migrations"(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)',
@@ -108,8 +108,12 @@ export function sqliteD1Script(
     const done = new Set(
       db.all("SELECT name FROM d1_migrations").map((row) => row["name"]),
     );
+    const pending = migrationFiles(dir).filter((f) => !done.has(f));
+    if (call.args[2] === "list") {
+      return { stdout: JSON.stringify(pending.map((name) => ({ Name: name }))) };
+    }
     const applied: Array<{ name: string; status: string }> = [];
-    for (const file of migrationFiles(dir).filter((f) => !done.has(f))) {
+    for (const file of pending) {
       db.sqlite.exec("BEGIN");
       try {
         execMigration(db.sqlite, path.join(dir, file));

@@ -92,18 +92,19 @@ describe("reportFailure", () => {
     expect(event["data"]).toEqual({ rerun: `${CLI} setup` });
   });
 
-  it("repeats the database's restore command in a failure after a migration", () => {
-    const restore =
+  it("says how to restore the database in a failure after a migration", () => {
+    const rollbackCommand =
       "npx cf@1.0.0-beta.14 d1 time-travel restore db-1 --bookmark b-1 --force";
     const { event } = report(
       afterMigration(
         new EveryAppError("DEPLOY_NOT_UPLOADED", "cf uploaded nothing."),
-        restore,
+        { restoreCommand: `${CLI} db restore`, rollbackCommand },
       ),
     );
+    // People get everyapp's short command; scripts cf's own.
     expect(event).toMatchObject({
-      message: `cf uploaded nothing.\nTo roll the database back to before this run: ${restore}`,
-      data: { rollbackCommand: restore },
+      message: `cf uploaded nothing.\nThe database stays migrated. To roll it back: ${CLI} db restore`,
+      data: { rollbackCommand },
     });
     // Not for a failure before any migration.
     expect(
@@ -144,9 +145,9 @@ describe("reportFailure", () => {
     });
   });
 
-  it("names a broken or missing manifest", () => {
+  it("names a broken manifest", () => {
     expect(
-      report(new ManifestError("No everyapp.config.ts found.")).event,
+      report(new ManifestError("resources.d1 must be an array.")).event,
     ).toMatchObject({
       code: "INVALID_MANIFEST",
     });

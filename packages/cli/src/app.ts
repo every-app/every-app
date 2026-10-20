@@ -19,6 +19,7 @@ import { deleteCommand } from "./commands/delete/command";
 import { deployCommand } from "./commands/deploy/command";
 import { devCommand } from "./commands/dev/command";
 import { emailRoutes } from "./commands/email/command";
+import { loginCommand } from "./commands/login/command";
 import { registerCommand } from "./commands/register/command";
 import { secretRoutes } from "./commands/secret/command";
 import { setupCommand } from "./commands/setup/command";
@@ -28,6 +29,7 @@ import { CLI } from "./lib/output/command";
 
 const routes = buildRouteMap({
   routes: {
+    login: loginCommand,
     setup: setupCommand,
     status: statusCommand,
     create: createCommand,
@@ -55,7 +57,7 @@ const routes = buildRouteMap({
 
 /** The commands `everyapp --help` lists, in groups. */
 const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
-  ["GET STARTED", ["setup", "create"]],
+  ["GET STARTED", ["login", "setup", "create"]],
   ["APPS", ["dev", "deploy", "delete", "register"]],
   ["CONFIGURE", ["secret", "email"]],
   ["INSPECT", ["status", "db", "workflows"]],

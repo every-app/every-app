@@ -1,5 +1,11 @@
 import { buildCommand, buildRouteMap } from "@stricli/core";
-import { accountFlag, gatewayFlag, jsonFlag, resultJsonFlag } from "../flags";
+import {
+  accountFlag,
+  gatewayFlag,
+  jsonFlag,
+  resultJsonFlag,
+  verboseFlag,
+} from "../flags";
 
 const migrateCommand = buildCommand({
   loader: async () => {
@@ -9,25 +15,17 @@ const migrateCommand = buildCommand({
   parameters: {
     positional: { kind: "tuple", parameters: [] },
     flags: {
-      local: {
-        kind: "boolean",
-        brief:
-          "The local database `everyapp dev` uses: the default, and the only one it migrates",
-        optional: true,
-      },
       json: jsonFlag,
     },
   },
   docs: {
-    brief: "Apply the app's migrations to the local database `everyapp dev` uses",
+    brief: "Apply migrations to the local database",
     fullDescription: [
-      "Applies the app's D1 migrations (migrations.dir in everyapp.config.ts, default drizzle/)",
-      "to the local database in .cloudflare/state that `cf dev` and `everyapp dev` serve:",
+      "Apply the app's migrations to the local database",
       "",
-      "  cf d1 migrations apply <local id> --local --persist-to .cloudflare/state --dir <dir>",
-      "",
-      "`everyapp dev` runs it on every start. Production migrations run inside `everyapp deploy`,",
-      "after a restore point, and nowhere else.",
+      "Reads migrations from migrations.dir in everyapp.config.ts (default drizzle/).",
+      "`everyapp dev` runs this on every start. Production migrations run only during",
+      "`everyapp deploy`, after a restore point is saved.",
     ].join("\n"),
   },
 });
@@ -40,31 +38,101 @@ const queryCommand = buildCommand({
   parameters: {
     positional: {
       kind: "tuple",
-      parameters: [{ brief: "SQL to run", parse: String, placeholder: "sql" }],
+      parameters: [
+        { brief: "SQL to run", parse: String, placeholder: "sql", optional: true },
+      ],
     },
     flags: {
       local: {
         kind: "boolean",
-        brief: "Query the local database `everyapp dev` uses instead",
+        brief: "Query the local database `everyapp dev` uses",
+        optional: true,
+      },
+      file: {
+        kind: "parsed",
+        parse: String,
+        brief: "Read the SQL from a file (- for stdin)",
+        placeholder: "path",
         optional: true,
       },
       binding: {
         kind: "parsed",
         parse: String,
-        brief: "D1 binding (default: the migrations binding, or the first)",
+        brief: "D1 binding to query (default: the migrations binding, or the first)",
+        placeholder: "name",
         optional: true,
       },
       gateway: gatewayFlag,
       "account-id": accountFlag,
-      json: resultJsonFlag,
+      yes: {
+        kind: "boolean",
+        brief: "Run SQL that changes the production database without asking",
+        optional: true,
+      },
+      json: { ...resultJsonFlag, brief: "Print rows as NDJSON instead of a table" },
+      verbose: { ...verboseFlag, brief: "Show every step" },
     },
   },
   docs: {
-    brief: "Run SQL against the app's production D1 database (or --local)",
+    brief: "Run SQL against the production database (or --local)",
     fullDescription: [
-      "Runs SQL against the app's production D1 database through cf, with your Cloudflare login in the",
-      "Gateway's account (or, with --local, against the database in .cloudflare/state).",
-      "For anything else, cf works on the database directly: npx cf d1 query <database-id> --sql \"…\"",
+      "Run SQL against the app's D1 database",
+      "",
+      "Runs against the production database unless --local is set; SQL that changes it is",
+      "confirmed first (--yes skips that). Rows print as a table; use --json for machine output.",
+      "",
+      "EXAMPLES",
+      '  $ everyapp db query "select * from todos limit 5"',
+      '  $ everyapp db query --local "select count(*) from events"',
+      "  $ everyapp db query --file scripts/backfill.sql",
+    ].join("\n"),
+  },
+});
+
+const restoreCommand = buildCommand({
+  loader: async () => {
+    const { restore } = await import("./restore");
+    return restore;
+  },
+  parameters: {
+    positional: {
+      kind: "tuple",
+      parameters: [
+        {
+          brief: "The app (default: the one in this directory)",
+          parse: String,
+          placeholder: "app",
+          optional: true,
+        },
+      ],
+    },
+    flags: {
+      gateway: {
+        kind: "boolean",
+        brief: "Restore the Gateway's database, from its last migrating setup or upgrade",
+        optional: true,
+      },
+      "account-id": accountFlag,
+      yes: {
+        kind: "boolean",
+        brief: "Restore without asking",
+        optional: true,
+      },
+      json: jsonFlag,
+    },
+  },
+  docs: {
+    brief: "Put the production database back to before the last migrations",
+    fullDescription: [
+      "Put the app's production database back to before its last migrations",
+      "",
+      "Each deploy that migrates a database with data saves a restore point first (Time Travel).",
+      "This restores the last one, after asking: the migrations are undone, and so is anything",
+      "written to the database since. --gateway does the same for the Gateway's database.",
+      "",
+      "EXAMPLES",
+      "  $ everyapp db restore",
+      "  $ everyapp db restore --gateway",
     ].join("\n"),
   },
 });
@@ -73,8 +141,9 @@ export const dbRoutes = buildRouteMap({
   routes: {
     migrate: migrateCommand,
     query: queryCommand,
+    restore: restoreCommand,
   },
   docs: {
-    brief: "Run migrations and SQL against the app's database",
+    brief: "Migrate, query and restore an app's D1 database",
   },
 });

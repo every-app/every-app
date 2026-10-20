@@ -121,7 +121,7 @@ Stopped half-way (a login to approve, a domain to buy, a link you haven't opened
 
 ### Deploy from another machine
 
-Log in to the Gateway's Cloudflare account there (`npx cf auth login`, or the first `pnpm everyapp` command offers it), then deploy from a checkout of this repository. That's all: nothing is kept on the machine that set the Gateway up, and the CLI finds the Gateway by asking the accounts your login sees (`--account-id` picks when more than one has one). In CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Each app records who deployed it. To take someone's deploy access away, remove them from the Cloudflare account (or revoke the API token).
+Log in to the Gateway's Cloudflare account there (`pnpm everyapp login`, or the first `pnpm everyapp` command offers it), then deploy from a checkout of this repository. That's all: nothing is kept on the machine that set the Gateway up, and the CLI finds the Gateway by asking the accounts your login sees (`--account-id` picks when more than one has one). In CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Each app records who deployed it. To take someone's deploy access away, remove them from the Cloudflare account (or revoke the API token).
 
 ### Upgrading your Gateway
 

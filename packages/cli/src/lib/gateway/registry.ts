@@ -36,6 +36,7 @@ import {
 import { parseEmailList, storedEmailList, type AppEmailConfig } from "@every-app/sdk/internal";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
+import { CLI } from "@/lib/output/command";
 
 type D1Row = Record<string, unknown>;
 
@@ -677,7 +678,8 @@ async function assertPlatformAdminIn(
 function notRegistered(appSlug: string): EveryAppError {
   return new EveryAppError(
     "APP_NOT_FOUND",
-    `No app "${appSlug}" is registered on this gateway; deploy it first.`,
+    `${appSlug} isn't deployed to this Gateway yet`,
+    { rerun: `${CLI} deploy` },
   );
 }
 
