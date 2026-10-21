@@ -21,7 +21,10 @@ import {
 import { EmptyState } from "@/client/components/EmptyState";
 import { ErrorState } from "@/client/components/ErrorState";
 import { PageHeader } from "@/client/components/PageHeader";
-import { SegmentedToggle } from "@/client/components/SegmentedToggle";
+import {
+  SegmentedToggle,
+  SegmentedToggleSize,
+} from "@/client/components/SegmentedToggle";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import {
@@ -37,13 +40,19 @@ import {
   InputGroupButton,
   InputGroupInput,
 } from "@/client/components/ui/input-group";
+import { Kbd } from "@/client/components/ui/kbd";
 import {
   AppLibraryFilter,
   AppLibraryLayout,
   AppLibrarySort,
   useAppLibrary,
 } from "@/client/hooks/useAppLibrary";
+import { useShortcutLabel } from "@/client/hooks/useShortcutLabel";
 import { authClient } from "@/client/auth-client";
+
+// An outline button on the card surface (white in light mode), so it stands
+// out from the page and the empty state's background.
+const cardButtonClass = "bg-card hover:bg-card/80 dark:bg-card";
 
 const searchSchema = z.object({
   pwa: z
@@ -65,6 +74,7 @@ function App() {
   const [showPWAInstallModal, setShowPWAInstallModal] = useState(false);
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  const searchShortcut = useShortcutLabel("K");
   const navigate = useNavigate();
   const hasStrippedPwaParam = useRef(false);
   const { data: activeMemberRole, isPending: isMemberRolePending } =
@@ -137,6 +147,8 @@ function App() {
         a.name.localeCompare(b.name),
     );
   }
+  const heading = filter === AppLibraryFilter.Pinned ? "Pinned" : "All apps";
+  const SortIcon = sort === AppLibrarySort.Name ? ArrowDownAZ : Pin;
   const gridClassName = cn(
     "grid gap-4",
     layout === AppLibraryLayout.Grid && "md:grid-cols-2 xl:grid-cols-3",
@@ -144,7 +156,7 @@ function App() {
   const manageAppsButton = (
     <Button
       variant="outline"
-      className="bg-card hover:bg-card/80 dark:bg-card"
+      className={cardButtonClass}
       nativeButton={false}
       render={<Link to="/admin/apps" />}
     >
@@ -154,10 +166,27 @@ function App() {
   );
 
   return (
-    <div className="px-5 py-5 pb-safe md:px-10 md:py-6 lg:px-12">
+    // The page starts 20px down, like the sidebar's brand row, so the title
+    // and the brand share a center line.
+    <div className="px-5 py-5 pb-safe md:px-10 lg:px-12">
       <div className="mx-auto max-w-7xl space-y-4">
         <PageHeader
-          title="Your apps"
+          title={
+            <>
+              {heading}
+              {!isLoading && !isError && apps.length > 0 ? (
+                <Badge
+                  variant="outline"
+                  className="rounded-md px-1.5 text-xs font-medium text-muted-foreground"
+                  aria-live="polite"
+                  aria-atomic="true"
+                >
+                  {visibleApps.length}
+                  <span className="sr-only"> apps</span>
+                </Badge>
+              ) : null}
+            </>
+          }
           actions={
             userCanManageApps ? (
               <div className="hidden md:block">{manageAppsButton}</div>
@@ -171,7 +200,7 @@ function App() {
         {apps.length > 0 || (isLoading && !isError) ? (
           <>
             <div className="flex items-center gap-3">
-              <InputGroup className="h-11 border-border bg-card shadow-xs md:max-w-sm">
+              <InputGroup className="border-border bg-card shadow-xs md:max-w-sm">
                 <InputGroupAddon>
                   <Search aria-hidden />
                 </InputGroupAddon>
@@ -189,6 +218,14 @@ function App() {
                     }
                   }}
                 />
+                {!search && searchShortcut ? (
+                  <InputGroupAddon
+                    align="inline-end"
+                    className="hidden md:flex"
+                  >
+                    <Kbd>{searchShortcut}</Kbd>
+                  </InputGroupAddon>
+                ) : null}
                 {search ? (
                   <InputGroupAddon align="inline-end">
                     <InputGroupButton
@@ -211,13 +248,12 @@ function App() {
                     render={
                       <Button
                         variant="ghost"
-                        size="sm"
-                        className="text-xs text-muted-foreground"
+                        className="text-muted-foreground"
                         aria-label="Sort apps"
                       />
                     }
                   >
-                    <ArrowDownAZ className="size-3.5" aria-hidden />
+                    <SortIcon data-icon="inline-start" aria-hidden />
                     {sort === AppLibrarySort.Name ? "Name A–Z" : "Pinned first"}
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -237,17 +273,18 @@ function App() {
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <SegmentedToggle
+                  size={SegmentedToggleSize.Toolbar}
                   value={layout}
                   onChange={setLayout}
                   items={[
                     {
                       value: AppLibraryLayout.Grid,
-                      icon: <LayoutGrid className="size-3.5" />,
+                      icon: <LayoutGrid className="size-4" />,
                       label: "Grid view",
                     },
                     {
                       value: AppLibraryLayout.List,
-                      icon: <List className="size-3.5" />,
+                      icon: <List className="size-4" />,
                       label: "List view",
                     },
                   ]}
@@ -255,30 +292,9 @@ function App() {
               </div>
             </div>
             <section
-              className="space-y-3"
-              aria-labelledby="app-library-heading"
+              aria-label={query ? "Search results" : heading}
               aria-busy={isLoading}
             >
-              <div className="flex items-center gap-2">
-                <h2 id="app-library-heading" className="text-sm font-medium">
-                  {query
-                    ? "Search results"
-                    : filter === AppLibraryFilter.Pinned
-                      ? "Pinned apps"
-                      : "All apps"}
-                </h2>
-                {!isLoading ? (
-                  <Badge
-                    variant="outline"
-                    className="rounded-md px-1.5 text-xs text-muted-foreground"
-                    aria-live="polite"
-                    aria-atomic="true"
-                  >
-                    {visibleApps.length}
-                    <span className="sr-only"> apps</span>
-                  </Badge>
-                ) : null}
-              </div>
               {isLoading ? (
                 <ul className={gridClassName} aria-label="Loading apps">
                   {Array.from({ length: 3 }, (_, index) => (
@@ -309,11 +325,12 @@ function App() {
                   description={
                     query
                       ? "Try another app name or description."
-                      : "Pin an app from All apps to keep it in your sidebar."
+                      : "Pin an app to keep it in your sidebar."
                   }
                   action={
                     <Button
                       variant="outline"
+                      className={cardButtonClass}
                       onClick={() => {
                         setSearch("");
                         void navigate({ to: "/", search: {} });

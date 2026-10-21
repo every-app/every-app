@@ -22,6 +22,7 @@ import {
   ACCESS_SIGN_OUT_PATH,
   useSignInMethods,
 } from "@/client/sign-in-methods";
+import { BrandLink } from "@/client/components/BrandLink";
 import { OrganizationSwitcher } from "@/client/components/OrganizationSwitcher";
 import { ThemePreferenceRadio } from "@/client/components/ThemePreferenceMenuItems";
 import {
@@ -57,14 +58,12 @@ function SidebarNavLink({
   linkProps,
   count,
   active,
-  disabled = false,
 }: {
   icon: ComponentType<{ className?: string }>;
   label: string;
   linkProps: LinkOptions;
   count?: number;
   active?: boolean;
-  disabled?: boolean;
 }) {
   const { setOpenMobile } = useSidebar();
   const contents = (
@@ -80,18 +79,6 @@ function SidebarNavLink({
       ) : null}
     </>
   );
-  if (disabled)
-    return (
-      <SidebarMenuItem>
-        <SidebarMenuButton
-          disabled
-          aria-disabled="true"
-          className={navButtonClass}
-        >
-          {contents}
-        </SidebarMenuButton>
-      </SidebarMenuItem>
-    );
   return (
     <SidebarMenuItem>
       <Link
@@ -132,20 +119,14 @@ export function Sidebar() {
   return (
     <UiSidebar collapsible="offcanvas">
       {/* The top inset keeps the header clear of the status bar in the
-          installed app, where the page runs under it. */}
+          installed app, where the page runs under it. The brand row matches
+          the page title row (20px down, 40px tall), so the workspace switcher
+          lines up with the page's toolbar. */}
       <SidebarHeader className="gap-4 px-3 pb-4 pt-[calc(env(safe-area-inset-top,0px)+1.25rem)]">
-        <Link
-          to="/"
+        <BrandLink
           onClick={() => setOpenMobile(false)}
-          className="flex items-center gap-2 px-3 text-lg font-semibold tracking-tight text-sidebar-foreground"
-        >
-          <img
-            src="/android-chrome-192x192.png"
-            alt=""
-            className="size-7 rounded-md"
-          />
-          Every App
-        </Link>
+          className="h-10 px-3 text-sidebar-foreground"
+        />
         <OrganizationSwitcher
           signedIn={signedIn}
           onCloseDrawer={() => setOpenMobile(false)}
@@ -174,7 +155,6 @@ export function Sidebar() {
                 <SidebarNavLink
                   icon={Pin}
                   label="Pinned"
-                  disabled={pinnedApps.length === 0}
                   active={
                     location.pathname === "/" &&
                     location.search.filter === AppLibraryFilter.Pinned
@@ -195,7 +175,7 @@ export function Sidebar() {
           </SidebarGroup>
           {pinnedApps.length > 0 ? (
             <SidebarGroup className="mt-3 px-3 py-0">
-              <SidebarGroupLabel className="h-5 px-3 text-[10px] uppercase tracking-wider text-sidebar-foreground/50">
+              <SidebarGroupLabel className="h-6 px-3 text-xs font-medium text-sidebar-foreground/50">
                 Pinned apps
               </SidebarGroupLabel>
               <SidebarGroupContent>
@@ -246,7 +226,6 @@ export function Sidebar() {
 
 function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
   const { data: session } = useSession();
-  const { setOpenMobile } = useSidebar();
   const email = session?.user.email;
   const { data: methods } = useSignInMethods();
   const accessProvider = methods?.providers[0];
@@ -334,26 +313,15 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
                     <User className="size-4" />
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-xs font-medium">
+                    <span className="block truncate text-sm font-medium">
                       {session?.user.name || email}
                     </span>
-                    <span className="block truncate text-[11px] text-sidebar-foreground/50">
+                    <span className="block truncate text-xs text-sidebar-foreground/50">
                       {email}
                     </span>
                   </span>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="top" className="w-56">
-                  <DropdownMenuItem
-                    render={
-                      <Link
-                        to="/settings/connections"
-                        onClick={() => setOpenMobile(false)}
-                      />
-                    }
-                  >
-                    <Link2 className="size-4" />
-                    AI connections
-                  </DropdownMenuItem>
                   {accessProvider && accessLinked === false && (
                     <DropdownMenuItem onClick={() => void connectAccess()}>
                       <Link2 className="size-4" />

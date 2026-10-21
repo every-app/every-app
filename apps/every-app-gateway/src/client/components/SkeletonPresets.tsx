@@ -57,7 +57,7 @@ export function SkeletonPage() {
       <div className="mx-auto max-w-7xl space-y-4">
         {/* Line boxes the size of PageHeader's title and description. */}
         <div className="space-y-1">
-          <div className="flex h-8 items-center">
+          <div className="flex h-10 items-center">
             <Skeleton className="h-6 w-48" />
           </div>
           <div className="flex h-5 items-center">

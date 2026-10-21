@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
+import { BrandLink } from "@/client/components/BrandLink";
 import { Sidebar } from "@/client/components/Sidebar";
 import {
   SidebarInset,
@@ -29,17 +29,7 @@ function MobileTopBar() {
     <div className="shrink-0 border-b border-border bg-card pt-safe md:hidden">
       <div className="flex h-16 items-center gap-2 px-4">
         <SidebarTrigger aria-label="Toggle sidebar" />
-        <Link
-          to="/"
-          className="flex items-center gap-1 font-semibold text-foreground"
-        >
-          <img
-            src="/android-chrome-192x192.png"
-            alt=""
-            className="-my-1 size-7 rounded-md"
-          />
-          Every App
-        </Link>
+        <BrandLink className="text-foreground" />
       </div>
     </div>
   );

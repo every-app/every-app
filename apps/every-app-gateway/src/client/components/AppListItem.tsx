@@ -14,6 +14,15 @@ import { AppLibraryLayout } from "@/client/hooks/useAppLibrary";
 import { appStatus } from "@/client/lib/appStatus";
 import type { UserAccessApp } from "@/types/app";
 
+/**
+ * Every card in a layout is the same height: the name is one line, the
+ * description at most two, and a status sits beside the name rather than
+ * adding a row.
+ */
+function cardHeightClass(list: boolean) {
+  return cn("h-32 md:h-42", list && "md:h-13");
+}
+
 interface AppListItemProps {
   app: UserAccessApp;
   pinned: boolean;
@@ -44,19 +53,38 @@ export function AppListItem({
       />
       <div
         className={cn(
-          "min-w-0 pr-8 md:pb-4",
+          "min-w-0 pr-8",
           list && "md:flex md:items-baseline md:gap-3 md:pr-0 md:pb-0",
         )}
       >
-        <h3
+        <div
           className={cn(
-            "text-sm font-semibold tracking-tight md:text-base",
-            list &&
-              "md:max-w-1/2 md:shrink-0 md:truncate md:text-sm md:leading-5",
+            "flex min-w-0 items-center gap-2",
+            list && "md:max-w-1/2 md:shrink-0",
           )}
         >
-          {app.name}
-        </h3>
+          <h3
+            className={cn(
+              "truncate text-sm font-semibold tracking-tight md:text-base",
+              list && "md:text-sm md:leading-5",
+            )}
+          >
+            {app.name}
+          </h3>
+          {!routable ? (
+            <Badge
+              variant={status.variant}
+              className={cn("shrink-0", list && "md:hidden")}
+            >
+              {status.label}
+            </Badge>
+          ) : !list ? (
+            <ArrowUpRight
+              className="-ml-1 hidden size-3.5 shrink-0 text-muted-foreground md:block"
+              aria-hidden
+            />
+          ) : null}
+        </div>
         <p
           className={cn(
             "mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground",
@@ -68,9 +96,9 @@ export function AppListItem({
       </div>
       <div
         className={cn(
-          "absolute top-2 right-2 flex items-center text-xs font-medium md:static md:mt-auto md:w-full md:justify-between md:border-t md:border-border md:pt-3",
+          "absolute top-2 right-2 flex items-center text-xs font-medium md:static md:mt-auto md:w-full",
           list &&
-            "md:mt-0 md:w-auto md:gap-2 md:self-center md:justify-end md:border-0 md:pt-0",
+            "md:mt-0 md:w-auto md:gap-2 md:self-center md:justify-end md:pt-0",
         )}
       >
         <Tooltip>
@@ -94,44 +122,41 @@ export function AppListItem({
           </TooltipTrigger>
           <TooltipContent>{pinLabel}</TooltipContent>
         </Tooltip>
-        {routable ? (
-          <span
-            className={cn(
-              list && buttonVariants({ variant: "outline", size: "sm" }),
-              "hidden w-full items-center justify-between md:flex",
-              list && "md:w-auto md:justify-center md:gap-1 md:text-xs",
-            )}
-          >
-            Open app
-            <ArrowUpRight
-              className="size-4 text-muted-foreground"
-              aria-hidden
-            />
-          </span>
-        ) : (
-          <Badge variant={status.variant} className="hidden md:inline-flex">
-            {status.label}
-          </Badge>
-        )}
+        {list ? (
+          routable ? (
+            <span
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "hidden md:flex md:gap-1 md:text-xs",
+              )}
+            >
+              Open app
+              <ArrowUpRight
+                className="size-4 text-muted-foreground"
+                aria-hidden
+              />
+            </span>
+          ) : (
+            <Badge variant={status.variant} className="hidden md:inline-flex">
+              {status.label}
+            </Badge>
+          )
+        ) : null}
       </div>
-      {!routable ? (
-        <Badge variant={status.variant} className="col-start-2 mt-2 md:hidden">
-          {status.label}
-        </Badge>
-      ) : null}
     </>
   );
   const bodyClass = cn(
-    "grid min-h-32 flex-1 grid-cols-[3rem_minmax(0,1fr)] items-center gap-x-4 rounded-xl p-5 md:flex md:flex-col md:items-stretch",
+    "grid min-h-0 flex-1 grid-cols-[3rem_minmax(0,1fr)] items-center gap-x-4 rounded-xl p-5 md:flex md:flex-col md:items-stretch",
     list &&
-      "md:grid md:min-h-12 md:grid-cols-[2rem_minmax(0,1fr)_auto] md:items-center md:gap-x-3 md:px-4 md:py-2",
+      "md:grid md:grid-cols-[2rem_minmax(0,1fr)_auto] md:items-center md:gap-x-3 md:px-4 md:py-2",
   );
 
   return (
-    <li className="h-full">
+    <li>
       <Card
         className={cn(
-          "group relative h-full gap-0 py-0 transition-colors motion-reduce:transition-none",
+          "group relative gap-0 py-0 transition-colors motion-reduce:transition-none",
+          cardHeightClass(list),
           routable ? "hover:border-foreground/25" : "bg-card/60",
         )}
       >
@@ -154,9 +179,9 @@ export function AppListItemSkeleton({ layout }: { layout: AppLibraryLayout }) {
     <li>
       <Card
         className={cn(
-          "min-h-32 flex-row items-center gap-4 p-5 md:min-h-48 md:flex-col md:items-stretch",
-          list &&
-            "md:min-h-12 md:flex-row md:items-center md:gap-3 md:px-4 md:py-2",
+          "flex-row items-center gap-4 p-5 md:flex-col md:items-stretch",
+          cardHeightClass(list),
+          list && "md:flex-row md:items-center md:gap-3 md:px-4 md:py-2",
         )}
       >
         <Skeleton

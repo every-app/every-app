@@ -18,7 +18,9 @@ import {
 
 /**
  * The active organization at the top of the sidebar, with a menu that
- * switches to another of the user's organizations.
+ * switches to another of the user's organizations. It is 40px tall, like the
+ * page's search box beside it, and its 11px inset plus the 1px border puts
+ * the name in line with the logo.
  */
 export function OrganizationSwitcher({
   signedIn,
@@ -36,19 +38,14 @@ export function OrganizationSwitcher({
   const [isSwitching, setIsSwitching] = useState(false);
 
   if (isPending) {
-    // The loaded switcher's box: a name line and a slug line, so nothing
-    // moves when the organization arrives.
+    // The loaded switcher's row, so nothing moves when the organization
+    // arrives.
     return (
       <div
-        className="flex min-w-0 flex-col rounded-lg border border-sidebar-border/70 bg-card px-3 py-2.5"
+        className="flex h-10 items-center rounded-lg border border-sidebar-border/70 bg-card px-[11px]"
         aria-busy
       >
-        <span className="flex h-5 items-center">
-          <Skeleton className="h-3.5 w-28" />
-        </span>
-        <span className="flex h-4 items-center">
-          <Skeleton className="h-3 w-20" />
-        </span>
+        <Skeleton className="h-3.5 w-28" />
       </div>
     );
   }
@@ -67,17 +64,10 @@ export function OrganizationSwitcher({
       <DropdownMenuTrigger
         aria-label="Switch organization"
         disabled={isSwitching}
-        className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-sidebar-border/70 bg-card px-3 py-2.5 text-left shadow-xs outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
+        className="flex h-10 w-full min-w-0 items-center justify-between gap-2 rounded-lg border border-sidebar-border/70 bg-card px-[11px] text-left shadow-xs outline-none hover:bg-accent focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60"
       >
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium">
-            {activeOrganization?.name ?? "Select organization"}
-          </span>
-          {activeOrganization?.slug ? (
-            <span className="truncate text-xs text-muted-foreground">
-              {activeOrganization.slug}
-            </span>
-          ) : null}
+        <span className="truncate text-sm font-medium">
+          {activeOrganization?.name ?? "Select organization"}
         </span>
         <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
       </DropdownMenuTrigger>

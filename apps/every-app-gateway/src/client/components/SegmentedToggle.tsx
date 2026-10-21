@@ -1,8 +1,22 @@
 import type { ReactNode } from "react";
+import { cn } from "cn";
 import {
   ToggleGroup,
   ToggleGroupItem,
 } from "@/client/components/ui/toggle-group";
+
+/** `Compact` sits in a menu; `Toolbar` matches the other 40px controls on a row. */
+export enum SegmentedToggleSize {
+  Compact = "compact",
+  Toolbar = "toolbar",
+}
+
+// The track has a 1px border and 2px padding, so an item is the track's
+// height less 6px.
+const ITEM_SIZE_CLASS: Record<SegmentedToggleSize, string> = {
+  [SegmentedToggleSize.Compact]: "h-[22px]",
+  [SegmentedToggleSize.Toolbar]: "h-[34px] min-w-[34px] px-2",
+};
 
 interface SegmentedToggleItem<T extends string> {
   value: T;
@@ -16,11 +30,13 @@ export function SegmentedToggle<T extends string>({
   value,
   onChange,
   showLabels = false,
+  size = SegmentedToggleSize.Compact,
 }: {
   items: SegmentedToggleItem<T>[];
   value: T;
   onChange: (value: T) => void;
   showLabels?: boolean;
+  size?: SegmentedToggleSize;
 }) {
   return (
     <ToggleGroup
@@ -42,7 +58,10 @@ export function SegmentedToggle<T extends string>({
           value={item.value}
           aria-label={showLabels ? undefined : item.label}
           title={item.label}
-          className="h-[22px] text-muted-foreground aria-pressed:bg-primary/15 aria-pressed:text-primary"
+          className={cn(
+            ITEM_SIZE_CLASS[size],
+            "text-muted-foreground aria-pressed:bg-primary/15 aria-pressed:text-primary",
+          )}
         >
           {item.icon}
           {showLabels && (

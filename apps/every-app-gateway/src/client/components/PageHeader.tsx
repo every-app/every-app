@@ -1,6 +1,10 @@
 import type { ReactNode } from "react";
 
-/** The page title, with an optional subtitle and actions on the right. */
+/**
+ * The page title, with an optional subtitle and actions on the right. The
+ * title line is a control's height (40px), so the actions center on the
+ * title whether or not a subtitle follows it.
+ */
 export function PageHeader({
   title,
   description,
@@ -14,13 +18,15 @@ export function PageHeader({
   return (
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0 flex-1 basis-64 space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        <h1 className="flex min-h-10 items-center gap-2 text-2xl font-semibold tracking-tight">
+          {title}
+        </h1>
         {description ? (
           <div className="text-sm text-muted-foreground">{description}</div>
         ) : null}
       </div>
       {actions ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-2">
           {actions}
         </div>
       ) : null}
