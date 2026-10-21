@@ -41,6 +41,8 @@ export type UserAccessApp = Pick<
   | "updatedAt"
 > & {
   grantedAt: Date | number;
+  /** The path of the launcher icon the app's manifest names (`icon`), or null. */
+  icon: string | null;
 };
 
 /**

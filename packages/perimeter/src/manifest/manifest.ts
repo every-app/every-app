@@ -407,6 +407,19 @@ export const ManifestSchema = z
     name: z.string().min(1).optional(),
     description: z.string().optional(),
     /**
+     * The app's launcher icon: the path of an SVG the app serves (e.g.
+     * "/everyapp-icon.svg" from its public directory), which the gateway's
+     * app library shows instead of the app's favicon. The app draws the
+     * whole tile; the library only rounds its corners. Unset: the favicon.
+     */
+    icon: z
+      .string()
+      .regex(
+        /^(\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*)*\/[A-Za-z0-9_~-][A-Za-z0-9._~-]*\.svg$/,
+        'icon must be the path of an SVG the app serves, such as "/everyapp-icon.svg"',
+      )
+      .optional(),
+    /**
      * Legacy: the Worker entry now comes from `cloudflare.config.ts`. Still
      * accepted so existing manifests validate.
      */

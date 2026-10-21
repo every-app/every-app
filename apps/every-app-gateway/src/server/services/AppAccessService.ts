@@ -35,6 +35,7 @@ async function getAppsForUser(ctx: OrgContext) {
           hostname: app.hostname,
           scope: app.scope,
           status: app.status,
+          icon: app.icon,
           isDefault: app.isDefault,
           createdAt: app.createdAt,
           updatedAt: app.updatedAt,

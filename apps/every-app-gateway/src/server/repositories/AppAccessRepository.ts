@@ -1,6 +1,7 @@
 import { db } from "@/db";
 import { userAppAccess, apps, users, members } from "@/db/schema";
 import { eq, and, inArray } from "drizzle-orm";
+import { manifestIcon } from "./AppRepository";
 
 // Types for repository operations
 type CreateAccess = {
@@ -31,6 +32,7 @@ async function findAllByUserId(userId: string, organizationId: string) {
         hostname: apps.hostname,
         scope: apps.scope,
         status: apps.status,
+        icon: manifestIcon,
         isDefault: apps.isDefault,
         createdAt: apps.createdAt,
         updatedAt: apps.updatedAt,

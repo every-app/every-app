@@ -2,19 +2,29 @@ import { useState } from "react";
 import { cn } from "cn";
 import type { UserAccessApp } from "@/types/app";
 
-/** Use the app's own favicon, keeping the icon's space when it is missing. */
+/**
+ * The launcher icon the app's manifest names, else the app's favicon, else
+ * the first letter of its name: an image that fails to load gives way to
+ * the next. The app draws its icon's whole tile; this only rounds its
+ * corners.
+ */
 export function AppIcon({
   app,
   className,
 }: {
-  app: Pick<UserAccessApp, "name" | "hostname" | "status">;
+  app: Pick<UserAccessApp, "name" | "hostname" | "status" | "icon">;
   className?: string;
 }) {
-  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const [failedSrcs, setFailedSrcs] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
   const src =
     app.hostname && app.status === "active"
-      ? `//${app.hostname}/favicon.ico`
-      : null;
+      ? [app.icon, "/favicon.ico"]
+          .filter((path): path is string => path !== null)
+          .map((path) => `//${app.hostname}${path}`)
+          .find((candidate) => !failedSrcs.has(candidate))
+      : undefined;
 
   return (
     <span
@@ -24,13 +34,13 @@ export function AppIcon({
         className,
       )}
     >
-      {src && src !== failedSrc ? (
+      {src ? (
         <img
           src={src}
           alt=""
           className="size-full object-contain"
           decoding="async"
-          onError={() => setFailedSrc(src)}
+          onError={() => setFailedSrcs((failed) => new Set(failed).add(src))}
         />
       ) : (
         (Array.from(app.name.trim())[0]?.toUpperCase() ?? "?")

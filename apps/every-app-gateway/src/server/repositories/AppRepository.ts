@@ -12,9 +12,23 @@ import {
   deleteUpdate,
   type AppRow,
 } from "@every-app/perimeter/registry";
-import { and, count, eq, inArray, isNull, ne, notExists } from "drizzle-orm";
+import {
+  and,
+  count,
+  eq,
+  inArray,
+  isNull,
+  ne,
+  notExists,
+  sql,
+} from "drizzle-orm";
 
 const notDeleted = ne(apps.status, DELETED_APP_STATUS);
+
+/** The launcher icon's path the app's manifest names (`icon`), or null. */
+export const manifestIcon = sql<
+  string | null
+>`json_extract(${apps.manifest}, '$.icon')`;
 
 // Apps are registered, deployed and deleted by the CLI writing D1 itself
 // (ADR-0003). The gateway edits catalog metadata, activates apps and
@@ -84,6 +98,7 @@ async function findAllWithAccessCounts(organizationId: string) {
  */
 async function findAllShared(exceptOrganizationId?: string) {
   return db.query.apps.findMany({
+    extras: { icon: manifestIcon.as("icon") },
     where: and(
       eq(apps.scope, "shared"),
       notDeleted,
