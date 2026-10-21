@@ -113,7 +113,7 @@ describe("deploy, as a person sees it", () => {
     const first = await deployShown();
     expect(first.exitCode).toBe(0);
     expect(first.stdout.split("\n")).toEqual([
-      "Deploying todo to Acme (first deploy)",
+      "Deploying todo to example.com (Acme)",
       "Installed dependencies ✓",
       "Built ✓",
       "Database created ✓ 1 migration",
@@ -131,7 +131,7 @@ describe("deploy, as a person sees it", () => {
 
     const again = await deployShown();
     expect(again.stdout.split("\n")).toEqual([
-      "Deploying todo to Acme",
+      "Deploying todo to example.com (Acme)",
       "Installed dependencies ✓",
       "Built ✓",
       "Database up to date ✓",
@@ -145,17 +145,15 @@ describe("deploy, as a person sees it", () => {
   it("stays a first deploy until the app has been live once", async () => {
     // Uploaded and added, but not live yet.
     const notLive = await deployShown(TODO, { waitForLive: false });
-    expect(notLive.stdout).toContain("Deploying todo to Acme (first deploy)");
     expect(notLive.stdout).toContain(
       "\nURL     https://todo.example.com\nStatus  Goes live on its first visit, once its certificate comes (a few minutes)\n",
     );
 
     const retried = await deployShown();
-    expect(retried.stdout).toContain("Deploying todo to Acme (first deploy)");
     expect(retried.stdout).toContain("Access  Private to owners and admins");
 
     const live = await deployShown(TODO, { waitForLive: false });
-    expect(live.stdout.split("\n")[0]).toBe("Deploying todo to Acme");
+    expect(live.stdout).not.toContain("Access");
     expect(live.stdout).toContain("\nLive  https://todo.example.com\n");
   });
 

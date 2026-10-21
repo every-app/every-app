@@ -201,7 +201,7 @@ function firstDeploy(sink: EventSink) {
     type: "step",
     step: "app.deploy",
     status: "ok",
-    data: { appId: "todo", organizationName: "Example Inc", firstDeploy: true },
+    data: { appId: "todo", gatewayHost: "apps.example.com", organizationName: "Example Inc", firstDeploy: true },
   });
   sink.emit({
     type: "step",
@@ -310,7 +310,7 @@ describe("createHumanSink", () => {
     firstDeploy(sink);
 
     expect(lines()).toEqual([
-      "Deploying todo to Example Inc (first deploy)",
+      "Deploying todo to apps.example.com (Example Inc)",
       "Built ✓",
       "Database migrated ✓ 0000_init.sql, 0001_tags.sql",
       "  Restore point saved. To undo: pnpm everyapp db restore",
@@ -358,6 +358,7 @@ describe("createHumanSink", () => {
       status: "ok",
       data: {
         appId: "analytics",
+        gatewayHost: "apps.example.com",
         organizationName: "Example Inc",
         firstDeploy: false,
         version: "1.4.2",
@@ -366,7 +367,7 @@ describe("createHumanSink", () => {
     });
     sink.emit({ type: "step", step: "app.build", status: "ok", data: { release: true } });
     expect(lines()).toEqual([
-      "Deploying analytics 1.4.2 to Example Inc",
+      "Deploying analytics 1.4.2 to apps.example.com (Example Inc)",
       "  From github.com/acme/analytics (release v1.4.2)",
       "Release checked ✓",
     ]);
@@ -379,7 +380,7 @@ describe("createHumanSink", () => {
         type: "step",
         step: "app.deploy",
         status: "ok",
-        data: { appId: "todo", organizationName: "Example Inc", firstDeploy: false },
+        data: { appId: "todo", gatewayHost: "apps.example.com", organizationName: "Example Inc", firstDeploy: false },
       });
       sink.emit({
         type: "step",
@@ -417,7 +418,7 @@ describe("createHumanSink", () => {
     };
 
     expect(redeploy()).toEqual([
-      "Deploying todo to Example Inc",
+      "Deploying todo to apps.example.com (Example Inc)",
       "Built ✓",
       "Database up to date ✓",
       "Uploaded ✓",
@@ -822,7 +823,7 @@ describe("createHumanSink", () => {
 
   it("puts problems on stderr: a headline, its detail, then what to do", () => {
     const { sink, lines, problems } = human();
-    sink.emit({ type: "step", step: "app.deploy", status: "ok", data: { appId: "todo" } });
+    sink.emit({ type: "step", step: "app.deploy", status: "ok", data: { appId: "todo", gatewayHost: "apps.example.com" } });
     sink.emit({
       type: "warning",
       code: "CERT_PENDING",
@@ -841,7 +842,7 @@ describe("createHumanSink", () => {
       },
     });
 
-    expect(lines()).toEqual(["Deploying todo"]);
+    expect(lines()).toEqual(["Deploying todo to apps.example.com"]);
     expect(problems()).toEqual([
       "! No certificate yet.",
       "  It usually comes within five minutes.",

@@ -340,6 +340,7 @@ async function deploySteps(
       organizationName: installOrg?.organization.name ?? accountName,
       firstDeploy,
       gatewayUrl,
+      gatewayHost: new URL(gatewayUrl).host,
       ...(release
         ? {
             version: release.release.version,

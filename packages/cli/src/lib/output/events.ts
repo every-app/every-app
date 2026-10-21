@@ -484,17 +484,16 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
     },
     "gateway.reconcile": (event) =>
       event.status === "skip" && event.message ? { line: event.message } : null,
-    // A deploy's first line: what goes where, and (until the app has been
-    // live once) that it is its first deploy.
+    // A deploy's first line: what goes to which Gateway, and whose it is.
     "app.deploy": (event) => {
       if (event.status !== "ok") return null;
       const data = event.data ?? {};
       const version = text(data["version"]);
-      const to = text(data["organizationName"]) ?? text(data["gatewayHost"]);
+      const organization = text(data["organizationName"]);
       const origin = text(data["origin"]);
       return {
         line: [
-          `Deploying ${text(data["appId"])}${version ? ` ${version}` : ""}${to ? ` to ${to}` : ""}${data["firstDeploy"] === true ? chalk.dim(" (first deploy)") : ""}`,
+          `Deploying ${text(data["appId"])}${version ? ` ${version}` : ""} to ${text(data["gatewayHost"])}${organization ? chalk.dim(` (${organization})`) : ""}`,
           ...(origin ? [chalk.dim(`  From ${origin}`)] : []),
         ].join("\n"),
       };
