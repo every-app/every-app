@@ -11,6 +11,7 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { styleText } from "node:util";
 
 const cliDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const packagesDir = path.dirname(cliDir);
@@ -73,11 +74,12 @@ if (fs.existsSync(path.join(cliDir, "src")) && fs.existsSync(path.join(sdkDir, "
       path.join(sdkDir, "dist"),
     ]) > writtenAt(path.join(cliDir, "dist", "index.js"));
   if (cliStale) {
-    console.error("everyapp: its source changed since the last build; rebuilding...");
     // The CLI bundles the SDK from its dist/, and apps load it from there too.
     if (sdkStale) rebuild("pnpm", ["run", "build"], sdkDir);
     // tsup alone, no type check: `pnpm -C packages/cli build` type-checks.
     rebuild("pnpm", ["exec", "tsup", "--silent"], cliDir);
+    const commit = spawnSync("git", ["describe", "--always", "--dirty", "--exclude=*"], { cwd: cliDir, encoding: "utf8" }).stdout.trim();
+    console.error(styleText("dim", `Updated everyapp CLI to ${commit}`, { stream: process.stderr }));
   }
 }
 
