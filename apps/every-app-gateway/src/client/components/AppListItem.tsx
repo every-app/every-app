@@ -11,6 +11,7 @@ import {
   TooltipTrigger,
 } from "@/client/components/ui/tooltip";
 import { AppLibraryLayout } from "@/client/hooks/useAppLibrary";
+import { appStatus } from "@/client/lib/appStatus";
 import type { UserAccessApp } from "@/types/app";
 
 interface AppListItemProps {
@@ -27,9 +28,9 @@ export function AppListItem({
   onTogglePin,
   layout,
 }: AppListItemProps) {
-  const routable = Boolean(app.hostname) && app.status === "active";
+  const status = appStatus(app);
+  const routable = status.opens;
   const list = layout === AppLibraryLayout.List;
-  const label = !app.hostname ? "Needs deploy" : app.status;
   const pinLabel = `${pinned ? "Unpin" : "Pin"} ${app.name}`;
   const PinIcon = pinned ? PinOff : Pin;
   const body = (
@@ -37,14 +38,14 @@ export function AppListItem({
       <AppIcon
         app={app}
         className={cn(
-          "row-span-2 md:mb-5",
+          "row-span-2 md:mb-4 md:size-10 md:rounded-lg",
           list && "md:row-span-1 md:mb-0 md:size-8",
         )}
       />
       <div
         className={cn(
-          "min-w-0 pr-8",
-          list && "md:flex md:items-baseline md:gap-3 md:pr-0",
+          "min-w-0 pr-8 md:pb-4",
+          list && "md:flex md:items-baseline md:gap-3 md:pr-0 md:pb-0",
         )}
       >
         <h3
@@ -58,7 +59,7 @@ export function AppListItem({
         </h3>
         <p
           className={cn(
-            "mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground md:mt-2",
+            "mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground",
             list && "md:mt-0 md:line-clamp-none md:truncate md:leading-5",
           )}
         >
@@ -67,7 +68,7 @@ export function AppListItem({
       </div>
       <div
         className={cn(
-          "absolute top-2 right-2 flex items-center text-xs font-medium md:static md:mt-auto md:w-full md:justify-between md:border-t md:border-border md:pt-4",
+          "absolute top-2 right-2 flex items-center text-xs font-medium md:static md:mt-auto md:w-full md:justify-between md:border-t md:border-border md:pt-3",
           list &&
             "md:mt-0 md:w-auto md:gap-2 md:self-center md:justify-end md:border-0 md:pt-0",
         )}
@@ -108,20 +109,20 @@ export function AppListItem({
             />
           </span>
         ) : (
-          <Badge variant="outline" className="hidden md:inline-flex">
-            {label}
+          <Badge variant={status.variant} className="hidden md:inline-flex">
+            {status.label}
           </Badge>
         )}
       </div>
       {!routable ? (
-        <Badge variant="outline" className="col-start-2 mt-2 md:hidden">
-          {label}
+        <Badge variant={status.variant} className="col-start-2 mt-2 md:hidden">
+          {status.label}
         </Badge>
       ) : null}
     </>
   );
   const bodyClass = cn(
-    "grid min-h-32 grid-cols-[3rem_minmax(0,1fr)] items-center gap-x-4 rounded-xl p-5 md:flex md:min-h-60 md:flex-col md:items-stretch md:p-6",
+    "grid min-h-32 flex-1 grid-cols-[3rem_minmax(0,1fr)] items-center gap-x-4 rounded-xl p-5 md:flex md:flex-col md:items-stretch",
     list &&
       "md:grid md:min-h-12 md:grid-cols-[2rem_minmax(0,1fr)_auto] md:items-center md:gap-x-3 md:px-4 md:py-2",
   );
@@ -153,13 +154,16 @@ export function AppListItemSkeleton({ layout }: { layout: AppLibraryLayout }) {
     <li>
       <Card
         className={cn(
-          "min-h-32 flex-row items-center gap-4 p-5 md:min-h-60 md:flex-col md:items-stretch md:p-6",
+          "min-h-32 flex-row items-center gap-4 p-5 md:min-h-48 md:flex-col md:items-stretch",
           list &&
             "md:min-h-12 md:flex-row md:items-center md:gap-3 md:px-4 md:py-2",
         )}
       >
         <Skeleton
-          className={cn("size-12 shrink-0 rounded-xl", list && "md:size-8")}
+          className={cn(
+            "size-12 shrink-0 rounded-xl md:size-10 md:rounded-lg",
+            list && "md:size-8",
+          )}
         />
         <div
           className={cn(

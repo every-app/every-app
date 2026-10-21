@@ -1,4 +1,4 @@
-import { useMemo, useState, type ComponentProps, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Info } from "lucide-react";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
@@ -16,6 +16,7 @@ import {
   TooltipTrigger,
 } from "@/client/components/ui/tooltip";
 import { appEmail } from "@/client/lib/appEmail";
+import { appStatus } from "@/client/lib/appStatus";
 import type { AppWithAccessCount } from "@/types/app";
 import { AppActionsMenu } from "./AppActionsMenu";
 
@@ -34,31 +35,6 @@ interface AppsTableProps extends AppRowActions {
   isLoading: boolean;
   /** A load failure. With no rows it replaces the table. */
   error?: ReactNode;
-}
-
-type BadgeVariant = ComponentProps<typeof Badge>["variant"];
-
-/**
- * The deploy state as a chip. An app is only reachable once it has a hostname
- * and its Worker is bound and active (see `AppListItem`).
- */
-function appStatus(app: AppWithAccessCount): {
-  label: string;
-  variant: BadgeVariant;
-} {
-  if (!app.hostname || app.status === "pending") {
-    return { label: "Needs deploy", variant: "outline" };
-  }
-  switch (app.status) {
-    case "active":
-      return { label: "Active", variant: "success" };
-    case "binding":
-      return { label: "Deploying", variant: "info" };
-    case "disabled":
-      return { label: "Disabled", variant: "secondary" };
-    default:
-      return { label: app.status, variant: "outline" };
-  }
 }
 
 function AppNameCell({ app }: { app: AppWithAccessCount }) {

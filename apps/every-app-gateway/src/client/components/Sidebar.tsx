@@ -17,6 +17,7 @@ import { authClient } from "@/client/auth-client";
 import { useSession } from "@/client/hooks/useSession";
 import { AppLibraryFilter, useAppLibrary } from "@/client/hooks/useAppLibrary";
 import { AppIcon } from "@/client/components/AppIcon";
+import { appStatus } from "@/client/lib/appStatus";
 import {
   ACCESS_SIGN_OUT_PATH,
   useSignInMethods,
@@ -199,36 +200,39 @@ export function Sidebar() {
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {pinnedApps.map((app) => (
-                    <SidebarMenuItem key={app.id}>
-                      <SidebarMenuButton
-                        className={navButtonClass}
-                        disabled={!app.hostname || app.status !== "active"}
-                        render={
-                          app.hostname && app.status === "active" ? (
-                            <a
-                              href={`//${app.hostname}`}
-                              onClick={() => setOpenMobile(false)}
-                            />
-                          ) : undefined
-                        }
-                      >
-                        <AppIcon
-                          app={app}
-                          className="size-6 rounded-md text-xs"
-                        />
-                        <span className="min-w-0 flex-1 truncate">
-                          {app.name}
-                        </span>
-                        {app.hostname && app.status === "active" ? (
-                          <ArrowUpRight
-                            className="size-4 text-sidebar-foreground/50"
-                            aria-hidden
+                  {pinnedApps.map((app) => {
+                    const status = appStatus(app);
+                    return (
+                      <SidebarMenuItem key={app.id}>
+                        <SidebarMenuButton
+                          className={navButtonClass}
+                          disabled={!status.opens}
+                          render={
+                            status.opens ? (
+                              <a
+                                href={`//${app.hostname}`}
+                                onClick={() => setOpenMobile(false)}
+                              />
+                            ) : undefined
+                          }
+                        >
+                          <AppIcon
+                            app={app}
+                            className="size-6 rounded-md text-xs"
                           />
-                        ) : null}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                          <span className="min-w-0 flex-1 truncate">
+                            {app.name}
+                          </span>
+                          {status.opens ? (
+                            <ArrowUpRight
+                              className="size-4 text-sidebar-foreground/50"
+                              aria-hidden
+                            />
+                          ) : null}
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
