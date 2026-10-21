@@ -2,28 +2,42 @@ import chalk from "chalk";
 import type { LocalContext } from "@/context";
 import { gatewayReleaseSource } from "@/lib/gateway/source";
 import { CLI } from "@/lib/output/command";
+import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal } from "@/lib/output/prompt";
 import { runCommand } from "@/lib/output/run";
 import { formatFacts } from "@/lib/output/table";
 import { duration } from "@/lib/output/time";
-import { runSetup, setupDeps, type SetupFlags } from "./runSetup";
+import {
+  runSetup,
+  setupDeps,
+  type SetupDeps,
+  type SetupFlags,
+  type SetupResult,
+} from "./runSetup";
 
 export async function setup(
   this: LocalContext,
   flags: SetupFlags,
 ): Promise<void> {
+  await runGatewayCommand(flags, (out, deps) => runSetup(flags, out, deps));
+}
+
+/** `setup` or `gateway deploy`, run with their dependencies, then what it did to the Gateway. */
+export async function runGatewayCommand(
+  flags: SetupFlags,
+  run: (out: EventSink, deps: SetupDeps) => Promise<SetupResult>,
+): Promise<void> {
   const began = Date.now();
   await runCommand(flags, async (out) => {
     const gateway = gatewayReleaseSource({ release: flags.release, out, verbose: flags.verbose });
-    const result = await runSetup(
-      flags,
+    const result = await run(
       out,
       setupDeps({
         gateway: { openRelease: gateway.open, source: gateway.describe },
         interactive: canPromptInTerminal(flags.json ?? false),
       }),
     );
-    const { gatewayUrl, organizationName, release, owner } = result;
+    const { gatewayUrl, organizationName, release, releaseName, owner } = result;
     const adminUrl = `${gatewayUrl}/admin`;
     const data = {
       gatewayUrl,
@@ -39,11 +53,11 @@ export async function setup(
     if (result.gateway === "upgraded" && !result.ownerCreated) {
       out.emit({
         type: "done",
-        message: `Upgraded to ${release}`,
+        message: `Upgraded to ${releaseName}`,
         data,
         display: [
           ...formatFacts([{ label: "Gateway", value: chalk.cyan(gatewayUrl) }]),
-          chalk.dim(`Upgraded to ${release} in ${duration(Date.now() - began)}`),
+          chalk.dim(`Upgraded to ${releaseName} in ${duration(Date.now() - began)}`),
         ].join("\n"),
       });
       return;

@@ -151,6 +151,7 @@ describe("everyapp setup", () => {
       owner: "owner@example.com",
       organizationName: "Owner",
       release: "0.2.0",
+      releaseName: "0.2.0",
       gateway: "installed",
       ownerCreated: true,
     });
@@ -588,7 +589,7 @@ describe("everyapp setup", () => {
     expect(out.exitCode).toBe(0);
     expect(plain(stdout)).toEqual([
       "Setting up Every App in Acme (dev@example.com)",
-      "Installing Gateway 0.2.0 at apps.example.com",
+      "Installing the Gateway at apps.example.com (0.2.0)",
       expect.stringMatching(/^Database created ✓/),
       expect.stringMatching(/^Uploaded ✓/),
     ]);

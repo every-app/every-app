@@ -413,8 +413,8 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
     },
     "setup.gateway": (event) => {
       const data = event.data ?? {};
-      const release = text(data["release"]);
-      const from = text(data["from"]);
+      // Its version, or its commit when the version doesn't say what it is.
+      const name = text(data["releaseName"]);
       const account = text(data["account"]);
       // "Ben Senescu's Gateway", or "the Gateway".
       const theirs = account ? `${account}'s Gateway` : "the Gateway";
@@ -422,17 +422,15 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
         const host = text(data["gatewayUrl"])?.replace(/^https:\/\//, "");
         switch (data["change"]) {
           case GatewayChange.Install:
-            return { line: `Installing Gateway ${release} at ${host}` };
+            return { line: `Installing the Gateway at ${host} (${name})` };
           case GatewayChange.Resume:
-            return { line: `Resuming the Gateway ${release} install at ${host}` };
+            return { line: `Resuming the Gateway install at ${host} (${name})` };
           case GatewayChange.Upgrade:
-            return {
-              line: `Upgrading ${theirs} ${from && from !== release ? `${from} → ` : ""}${release}`,
-            };
+            return { line: `Upgrading ${theirs} to ${name}` };
           case GatewayChange.Repair:
-            return { line: `Repairing ${theirs} ${release}` };
+            return { line: `Repairing ${theirs} (${name})` };
           case GatewayChange.Redeploy:
-            return { line: `Redeploying ${theirs} ${release}` };
+            return { line: `Redeploying ${theirs} (${name})` };
           default:
             return null;
         }
@@ -449,7 +447,7 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       }
       if (event.status !== "skip") return null;
       if (data["upToDate"] === true) {
-        return { done: `${capitalize(theirs)} ${release} is up to date`, detail: "" };
+        return { done: `${capitalize(theirs)} is up to date with ${name}`, detail: "" };
       }
       return event.message ? { line: event.message } : null;
     },

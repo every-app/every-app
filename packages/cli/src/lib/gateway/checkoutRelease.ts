@@ -30,6 +30,7 @@ import {
   openRelease,
   RELEASE_TARBALL,
   type CandidateRelease,
+  type CheckoutCommit,
   type GatewayRelease,
 } from "./release";
 
@@ -92,10 +93,38 @@ async function sourcesCommittedAt(root: string): Promise<number | null> {
 }
 
 /**
+ * The checkout's commit, when its Gateway isn't exactly the release of its
+ * version: sources that differ from the `gateway-v<version>` tag's (changes
+ * git hasn't committed included), or a version with no tag yet. Null when
+ * it is that release, or without git.
+ */
+async function unreleasedCommit(root: string, version: string): Promise<CheckoutCommit | null> {
+  const git = (args: string[]) => promisify(execFile)("git", args, { cwd: root });
+  const tagDiffers = () =>
+    // Exits 1 when the sources differ, and fails when the tag doesn't exist.
+    git(["diff", "--quiet", `gateway-v${version}`, "HEAD", "--", ...GATEWAY_SOURCES]).then(
+      () => false,
+      () => true,
+    );
+  try {
+    const [head, changes] = await Promise.all([
+      git(["rev-parse", "--short", "HEAD"]),
+      git(["status", "--porcelain", "--", ...GATEWAY_SOURCES]),
+    ]);
+    const uncommittedChanges = changes.stdout.trim() !== "";
+    if (!uncommittedChanges && !(await tagDiffers())) return null;
+    return { hash: head.stdout.trim(), uncommittedChanges };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * The release this checkout would build, as far as its sources tell:
- * their tree hash, the Gateway's version, its newest migration and when
- * its sources were last committed (now, without git: a checkout git can't
- * read is never called older).
+ * their tree hash, the Gateway's version (and the commit, when the version
+ * alone doesn't say what it is), its newest migration and when its sources
+ * were last committed (now, without git: a checkout git can't read is
+ * never called older).
  */
 export async function checkoutSource(root: string): Promise<CandidateRelease> {
   const gatewayDir = path.join(root, "apps", "every-app-gateway");
@@ -107,10 +136,13 @@ export async function checkoutSource(root: string): Promise<CandidateRelease> {
     readJson("drizzle/meta/_journal.json"),
     readJson("package.json"),
   ]);
+  const version = String((pkg as { version?: unknown }).version ?? "unknown");
+  const commit = await unreleasedCommit(root, version);
   return {
     treeSha256,
     origin: { kind: "checkout" },
-    version: String((pkg as { version?: unknown }).version ?? "unknown"),
+    ...(commit ? { commit } : {}),
+    version,
     order: {
       schema: newestMigration((journal as { entries?: Array<{ when: number }> }).entries ?? []),
       committedAt: committedAt ?? Date.now(),

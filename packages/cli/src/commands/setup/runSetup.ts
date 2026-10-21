@@ -69,12 +69,13 @@ import { listZones, registerDomainUrl, zoneUrl } from "@/lib/domains/zones";
 import { ActionRequiredError, EveryAppError } from "@/lib/errors";
 import { candidate, isLiveRelease, refuseDowngrade } from "@/lib/gateway/apply";
 import { GatewayChange } from "@/lib/gateway/change";
-import { discoverGateway, type Discovery } from "@/lib/gateway/discover";
-import type { InstallRecord } from "@/lib/gateway/install";
+import { discoverGateway, requireGateway, type Discovery } from "@/lib/gateway/discover";
+import { notDeployedByEveryapp, type InstallRecord } from "@/lib/gateway/install";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { reconcileGateway, registryDrift } from "@/lib/gateway/reconcile";
 import {
   refuseNewerThanCli,
+  releaseName,
   type CandidateRelease,
   type GatewayRelease,
 } from "@/lib/gateway/release";
@@ -107,6 +108,9 @@ export interface SetupFlags {
   yes?: boolean;
   verbose?: boolean;
 }
+
+/** `gateway deploy` takes setup's flags, but those only a new Gateway needs. */
+export type GatewayDeployFlags = Omit<SetupFlags, "domain" | "mode" | "release">;
 
 /**
  * What only a person at a terminal answers: where the gateway goes, when
@@ -155,15 +159,17 @@ export interface SetupDeps {
 /** What setup did to the Gateway. */
 type GatewayOutcome = "installed" | "upgraded" | "repaired" | "up-to-date";
 
-interface SetupResult {
+export interface SetupResult {
   gatewayUrl: string;
   /** The Cloudflare account it is in, as a person knows it. */
   account: string;
   /** Its owner's email; null while nobody has claimed it (in CI). */
   owner: string | null;
   organizationName: string | null;
-  /** The release the Gateway runs now. */
+  /** The release the Gateway runs now: its version. */
   release: string;
+  /** That release as a person reads it (lib/gateway/release.ts `releaseName`). */
+  releaseName: string;
   gateway: GatewayOutcome;
   /** This run made the owner (with the setup link it handed out). */
   ownerCreated: boolean;
@@ -196,8 +202,37 @@ export async function runSetup(
   // Before anything is asked of Cloudflare: a --domain that isn't a hostname.
   const domain = domainFlag(flags.domain);
   checkToolchain(out);
+  const { whoami, discovery } = await loginAndDiscover(flags, out, deps, {
+    host: domain,
+    hostFlag: "--domain",
+  });
+  return installGateway({ whoami, discovery, flags, out, deps });
+}
 
-  // Cloudflare: login, then the Gateway the login's accounts have.
+/**
+ * `everyapp gateway deploy`: the Gateway the login finds, deployed from
+ * this checkout as setup does (or repaired, or left alone when it is up
+ * to date), without ever installing one.
+ */
+export async function runGatewayDeploy(
+  flags: GatewayDeployFlags,
+  out: EventSink,
+  deps: SetupDeps,
+): Promise<SetupResult> {
+  checkToolchain(out);
+  const { whoami, discovery } = await loginAndDiscover(flags, out, deps);
+  const found = requireGateway(discovery, whoami);
+  if (!found.install?.liveVersionId) throw notDeployedByEveryapp();
+  return installGateway({ whoami, discovery, flags, out, deps });
+}
+
+/** Cloudflare: login, then the Gateway the login's accounts have. */
+async function loginAndDiscover(
+  flags: GatewayDeployFlags,
+  out: EventSink,
+  deps: SetupDeps,
+  byHost?: { host: string | undefined; hostFlag: string },
+): Promise<{ whoami: CfWhoami; discovery: Discovery }> {
   const whoami = await ensureCfAuth({
     cf: deps.createCf(),
     interactive: deps.interactive,
@@ -214,11 +249,10 @@ export async function runSetup(
     whoami,
     createCf: deps.createCf,
     accountId: flags["account-id"],
-    host: domain,
-    hostFlag: "--domain",
+    ...byHost,
     interactive: deps.interactive,
   });
-  return installGateway({ whoami, discovery, flags, out, deps });
+  return { whoami, discovery };
 }
 
 /** --domain, as a hostname; one that isn't is refused in the flag's name. */
@@ -353,6 +387,7 @@ export async function installGateway({
     owner: owner?.email ?? null,
     organizationName: owner?.organizationName || null,
     release: gateway.release,
+    releaseName: releaseName(source),
     gateway: gateway.outcome,
     ownerCreated: created,
   };
@@ -518,6 +553,7 @@ async function deployOrRepairGateway({
       install: live!,
       databaseId: databaseId!,
       openRelease,
+      source,
       flags,
       out,
       deps,
@@ -533,14 +569,15 @@ async function deployOrRepairGateway({
     if (!allowDowngrade) refuseDowngrade(source, live, { allowDowngradeFlag: true });
   }
 
+  const name = releaseName(source);
   // Said before the release is opened: a checkout's build takes a minute or two.
   out.emit({
     type: "step",
     step: "setup.gateway",
     status: "start",
     message: live
-      ? `Upgrading the Gateway ${live.releaseVersion} → ${source.version}`
-      : `Installing Gateway ${source.version} at ${target.domain}`,
+      ? `Upgrading the Gateway to ${name}`
+      : `Installing the Gateway at ${target.domain} (${name})`,
     data: {
       change: live
         ? GatewayChange.Upgrade
@@ -548,6 +585,7 @@ async function deployOrRepairGateway({
           ? GatewayChange.Resume
           : GatewayChange.Install,
       release: source.version,
+      releaseName: name,
       from: live?.releaseVersion ?? null,
       gatewayUrl,
       account: accountName,
@@ -584,8 +622,8 @@ async function deployOrRepairGateway({
       type: "step",
       step: "setup.gateway",
       status: "ok",
-      message: `Gateway ${manifest.version} is live at ${gatewayUrl}`,
-      data: { versionId: result.versionId, release: manifest.version },
+      message: `The Gateway (${name}) is live at ${gatewayUrl}`,
+      data: { versionId: result.versionId, release: manifest.version, releaseName: name },
     });
     return {
       db,
@@ -636,6 +674,7 @@ async function repairGateway({
   install,
   databaseId,
   openRelease,
+  source,
   flags,
   out,
   deps,
@@ -646,6 +685,8 @@ async function repairGateway({
   install: InstallRecord;
   databaseId: string;
   openRelease: () => Promise<GatewayRelease>;
+  /** What this run deploys: the release the Gateway runs. */
+  source: CandidateRelease;
   flags: SetupFlags;
   out: EventSink;
   deps: SetupDeps;
@@ -653,15 +694,17 @@ async function repairGateway({
   const db = cfD1Database(cf, databaseId);
   const gatewayUrl = `https://${install.gatewayHost}`;
   const release = install.releaseVersion;
+  const name = releaseName(source);
   const { inSync, desired } = await registryDrift(cf, db, install);
   if (inSync && !flags.redeploy) {
     out.emit({
       type: "step",
       step: "setup.gateway",
       status: "skip",
-      message: `Gateway ${release} is up to date`,
+      message: `The Gateway is up to date with ${name}`,
       data: {
         release,
+        releaseName: name,
         gatewayUrl,
         upToDate: true,
         account: accountName,
@@ -683,11 +726,12 @@ async function repairGateway({
     step: "setup.gateway",
     status: "start",
     message: inSync
-      ? `Redeploying the Gateway ${release} (--redeploy)`
-      : `Repairing the Gateway ${release}: ${desired.appWorkers.length} apps, was ${install.liveAppWorkers.length}`,
+      ? `Redeploying the Gateway (${name}) for --redeploy`
+      : `Repairing the Gateway (${name}): ${desired.appWorkers.length} apps, was ${install.liveAppWorkers.length}`,
     data: {
       change: inSync ? GatewayChange.Redeploy : GatewayChange.Repair,
       release,
+      releaseName: name,
       from: release,
       gatewayUrl,
       account: accountName,
@@ -720,11 +764,12 @@ async function repairGateway({
     step: "setup.gateway",
     status: "ok",
     message: inSync
-      ? `Gateway ${release} redeployed`
-      : `Gateway ${release} routes ${result.appWorkers.length} apps`,
+      ? `The Gateway (${name}) is redeployed`
+      : `The Gateway (${name}) routes ${result.appWorkers.length} apps`,
     data: {
       versionId: result.versionId,
       release,
+      releaseName: name,
       appWorkers: result.appWorkers,
       ...(inSync
         ? {}

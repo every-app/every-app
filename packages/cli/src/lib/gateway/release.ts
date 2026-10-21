@@ -100,6 +100,28 @@ export interface CandidateRelease extends ReleaseSource {
   sha256?: string;
   /** The oldest everyapp that deploys it, once a release says. */
   minCli?: string;
+  /**
+   * The checkout's commit, when the Gateway it builds isn't exactly its
+   * version's release (checkoutRelease.ts `unreleasedCommit`).
+   */
+  commit?: CheckoutCommit;
+}
+
+/** The commit a checkout is at, and whether the Gateway's sources changed since. */
+export interface CheckoutCommit {
+  /** HEAD's short hash. */
+  hash: string;
+  uncommittedChanges: boolean;
+}
+
+/**
+ * A release as a person reads it: its version, or when the version alone
+ * doesn't say what it is, its commit ("commit 981c72da", "commit 981c72da
+ * with uncommitted changes").
+ */
+export function releaseName({ version, commit }: Pick<CandidateRelease, "version" | "commit">): string {
+  if (!commit) return version;
+  return `commit ${commit.hash}${commit.uncommittedChanges ? " with uncommitted changes" : ""}`;
 }
 
 /** "this checkout", "every-app/every-app release gateway-v0.3.0", a URL or a path. */

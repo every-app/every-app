@@ -445,7 +445,7 @@ describe("createHumanSink", () => {
       type: "step",
       step: "setup.gateway",
       status: "start",
-      data: { change: "install", release: "0.4.0", from: null, gatewayUrl: "https://apps.example.com" },
+      data: { change: "install", release: "0.4.0", releaseName: "0.4.0", from: null, gatewayUrl: "https://apps.example.com" },
     });
     sink.emit({ type: "step", step: "gateway.migrations", status: "start" });
     now += 400;
@@ -487,7 +487,7 @@ describe("createHumanSink", () => {
 
     expect(lines()).toEqual([
       "Setting up Every App in Example Inc (ben@example.com)",
-      "Installing Gateway 0.4.0 at apps.example.com",
+      "Installing the Gateway at apps.example.com (0.4.0)",
       "Database created ✓ 2 migrations",
       "Uploaded ✓ 6.1s",
       "Owner account created for ben@example.com ✓",
@@ -686,9 +686,10 @@ describe("createHumanSink", () => {
       type: "step",
       step: "setup.gateway",
       status: "skip",
-      message: "Gateway 0.4.0 is up to date",
+      message: "The Gateway is up to date with 0.4.0",
       data: {
         release: "0.4.0",
+        releaseName: "0.4.0",
         gatewayUrl: "https://apps.example.com",
         upToDate: true,
         account: "Ben Senescu",
@@ -701,7 +702,7 @@ describe("createHumanSink", () => {
       data: { email: "ben@example.com", organizationName: "Ben Senescu" },
     });
     expect(lines()).toEqual([
-      "Ben Senescu's Gateway 0.4.0 is up to date ✓",
+      "Ben Senescu's Gateway is up to date with 0.4.0 ✓",
       "Owner account is ben@example.com ✓",
     ]);
   });
@@ -715,10 +716,11 @@ describe("createHumanSink", () => {
         status: "start",
         data: { gatewayUrl: "https://apps.example.com", account: "Ben Senescu", ...data },
       });
-    start({ change: "upgrade", from: "0.3.0", release: "0.4.0" });
-    start({ change: "resume", from: null, release: "0.4.0" });
-    start({ change: "redeploy", from: "0.4.0", release: "0.4.0" });
-    start({ change: "repair", from: "0.4.0", release: "0.4.0" });
+    start({ change: "upgrade", from: "0.3.0", release: "0.4.0", releaseName: "0.4.0" });
+    start({ change: "upgrade", from: "0.4.0", release: "0.4.0", releaseName: "commit 981c72da" });
+    start({ change: "resume", from: null, release: "0.4.0", releaseName: "0.4.0" });
+    start({ change: "redeploy", from: "0.4.0", release: "0.4.0", releaseName: "0.4.0" });
+    start({ change: "repair", from: "0.4.0", release: "0.4.0", releaseName: "0.4.0" });
     sink.emit({
       type: "step",
       step: "setup.gateway",
@@ -726,10 +728,11 @@ describe("createHumanSink", () => {
       data: { release: "0.4.0", repaired: true, added: ["todo"], apps: 1, was: 0 },
     });
     expect(lines()).toEqual([
-      "Upgrading Ben Senescu's Gateway 0.3.0 → 0.4.0",
-      "Resuming the Gateway 0.4.0 install at apps.example.com",
-      "Redeploying Ben Senescu's Gateway 0.4.0",
-      "Repairing Ben Senescu's Gateway 0.4.0",
+      "Upgrading Ben Senescu's Gateway to 0.4.0",
+      "Upgrading Ben Senescu's Gateway to commit 981c72da",
+      "Resuming the Gateway install at apps.example.com (0.4.0)",
+      "Redeploying Ben Senescu's Gateway (0.4.0)",
+      "Repairing Ben Senescu's Gateway (0.4.0)",
       "Gateway now routes todo ✓",
     ]);
   });

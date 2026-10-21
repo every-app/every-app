@@ -193,6 +193,8 @@ describe("the Gateway build cache", () => {
     await expect(checkoutSource(root)).resolves.toEqual({
       treeSha256: await hashCheckoutTree(root),
       origin: { kind: "checkout" },
+      // No gateway-v0.2.0 tag: the version alone doesn't say what it is.
+      commit: { hash: expect.stringMatching(/^[0-9a-f]{7,}$/), uncommittedChanges: false },
       version: "0.2.0",
       order: { schema: 0, committedAt },
     });
