@@ -78,6 +78,12 @@ interface SecretOptions {
   createCf?: (accountId?: string) => CfRunner;
 }
 
+interface SetSecretsOptions extends SecretOptions {
+  names: string[];
+  /** A name's value: the hidden prompt, stdin or `--from-env`. */
+  readValue: (name: string) => Promise<string>;
+}
+
 export async function set(
   this: LocalContext,
   flags: GatewayCommandFlags & { "from-env"?: string },
@@ -107,27 +113,26 @@ export async function list(this: LocalContext, flags: GatewayCommandFlags): Prom
 }
 
 /** `secret set`: every name routed, the Gateway reached and the app found, then each value read, then the changes applied. */
-export async function setSecrets(
-  options: SecretOptions & {
-    names: string[];
-    /** A name's value: the hidden prompt, stdin or `--from-env`. */
-    readValue: (name: string) => Promise<string>;
-  },
-): Promise<void> {
-  const { names, out } = options;
-  const route = await routeNames(names, options.cwd ?? process.cwd(), SecretAction.Set);
-  const reached = await reach(route, options);
-  const changes: Record<string, string> = {};
-  for (const name of names) changes[name] = await options.readValue(name);
-  const applied = (await apply(reached, changes, options, SecretAction.Set))!;
-  out.emit({
+export async function setSecrets(options: SetSecretsOptions): Promise<void> {
+  const { applied, gatewayHost } = await applySecretValues(options);
+  options.out.emit({
     type: "done",
     message: `Set ${describe(applied, "on")}`,
     display: chalk.dim(
-      applied.app ? "Live now. No deploy needed." : `Live now on ${reached.gatewayHost}. No deploy needed.`,
+      applied.app ? "Live now. No deploy needed." : `Live now on ${gatewayHost}. No deploy needed.`,
     ),
     data: doneData(applied),
   });
+}
+
+/** Reuse the secret command's checks, leases and version recording inside setup. */
+export async function applySecretValues(options: SetSecretsOptions) {
+  const route = await routeNames(options.names, options.cwd ?? process.cwd(), SecretAction.Set);
+  const reached = await reach(route, options);
+  const changes: Record<string, string> = {};
+  for (const name of options.names) changes[name] = await options.readValue(name);
+  const applied = (await apply(reached, changes, options, SecretAction.Set))!;
+  return { applied, gatewayHost: reached.gatewayHost };
 }
 
 /** `secret unset`: every name routed, then, once the person agrees, removed from the Workers that hold it. */

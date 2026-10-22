@@ -2056,6 +2056,7 @@ describe("deploy with no Gateway in the account yet", () => {
   /** setup's own seams, as `deploy` hands them on when it installs one. */
   const setupSeams = (opened: string[] = []) => ({
     prompts: {
+      browserDeploymentToken: async () => null,
       pickZone: async (): Promise<string> => {
         throw new Error("asked which zone");
       },

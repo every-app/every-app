@@ -74,6 +74,7 @@ function deps(overrides: Partial<SetupDeps> = {}): SetupDeps {
     source: () => releaseSource(tarball),
     interactive: false,
     prompts: {
+      browserDeploymentToken: async () => null,
       pickZone: async () => {
         throw new Error("asked a person");
       },
@@ -927,6 +928,7 @@ describe("everyapp setup", () => {
       {
         interactive: true,
         prompts: {
+          browserDeploymentToken: async () => null,
           pickZone: async () => {
             throw new Error("asked for a zone");
           },

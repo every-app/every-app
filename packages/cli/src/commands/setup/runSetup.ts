@@ -38,6 +38,8 @@
  *                into a CI log), and the wait for the claim, read from the
  *                link's own row in D1. In CI the run ends without one, with
  *                a warning: apps deploy without an owner
+ *    browser     at a terminal, optionally store a Cloudflare deploy token
+ *                for browser installs (No by default; existing tokens stay)
  *
  * What can be set up next (AI, email) is the command's `done.data.next`.
  * With --json, each step is an NDJSON event and what only a person can do
@@ -45,6 +47,8 @@
  * same command again resumes it.
  */
 import { version as packageVersion } from "../../../package.json";
+import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { applySecretValues } from "../secret";
 import { roughly } from "@/lib/output/time";
 import {
   deviceLoginAction,
@@ -57,6 +61,7 @@ import { workersPlansUrl } from "@/lib/cf/deploy";
 import { WorkersPlan, workersPlan } from "@/lib/cf/plan";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import type { CfWhoami } from "@/lib/cf/schemas";
+import { listWorkerSecrets } from "@/lib/cf/secrets";
 import { waitForCertificates } from "@/lib/domains/certWait";
 import { normalizeHostname } from "@/lib/domains/hostnames";
 import {
@@ -89,7 +94,7 @@ import {
 } from "@/lib/gateway/setup-link";
 import { CLI, thisCommandWithout } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
-import { askText, choose } from "@/lib/output/prompt";
+import { askSecret, askText, choose, confirmAtTerminal } from "@/lib/output/prompt";
 import { deployGatewayRelease, gatewayTarget } from "./deployGateway";
 
 export interface SetupFlags {
@@ -114,14 +119,15 @@ export type GatewayDeployFlags = Omit<SetupFlags, "domain" | "mode" | "release">
 
 /**
  * What only a person at a terminal answers: where the gateway goes, when
- * there is no --domain. Nothing asks for a go-ahead: the first lines say
- * which account and where.
+ * there is no --domain, and optional browser-deployment credentials.
  */
 interface SetupPrompts {
   /** The zone a Gateway `deploy` offers to install goes under (apps.<zone>). */
   pickZone(zones: string[]): Promise<string>;
   /** The Gateway's address, under one of `zones`. */
   gatewayAddress(zones: string[]): Promise<string>;
+  /** Yes/No, then a hidden token; null when the person skips. */
+  browserDeploymentToken(): Promise<string | null>;
 }
 
 /** Everything setup reaches outside itself; tests swap in fakes. */
@@ -380,6 +386,23 @@ export async function installGateway({
     out,
     deps,
   });
+
+  if (
+    deps.interactive &&
+    (live?.deploymentMode ?? flags.mode ?? "self_hosted") === "self_hosted" &&
+    !(await listWorkerSecrets(cf, GATEWAY_WORKER_NAME)).includes("CF_DEPLOY_TOKEN")
+  ) {
+    const token = await deps.prompts.browserDeploymentToken();
+    if (token !== null) {
+      await applySecretValues({
+        flags: { json: flags.json, "account-id": account.id, gateway: gatewayUrl },
+        out,
+        names: ["CF_DEPLOY_TOKEN"],
+        readValue: async () => token,
+        createCf: () => cf,
+      });
+    }
+  }
 
   return {
     gatewayUrl,
@@ -931,6 +954,23 @@ async function checkReachable(
 
 /** The questions setup asks a person at the terminal. */
 const terminalPrompts: SetupPrompts = {
+  browserDeploymentToken: async () => {
+    const configure = await confirmAtTerminal("Configure browser app installs?", [
+      "Install apps on this Gateway through your browser, without running deployment commands.",
+    ]);
+    if (!configure) return null;
+    return (await askSecret("Cloudflare API token", {
+      context: [
+        "1. Open https://dash.cloudflare.com/profile/api-tokens",
+        "   Select Create Token, then Custom token > Get started.",
+        "2. Add permissions:",
+        "   Account > Workers Scripts > Edit; Account > D1 > Edit; Zone > DNS > Read.",
+        "   Limit account resources to this account and zone resources to the Gateway's zone.",
+        "3. Continue to summary, create the token, then paste it below (input is hidden).",
+        "The token is stored as a secret on your Gateway.",
+      ],
+    })).trim();
+  },
   pickZone: (zones: string[]) =>
     choose(
       "Which of your domains should Every App live under?",

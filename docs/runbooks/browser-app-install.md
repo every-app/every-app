@@ -12,7 +12,9 @@ The workspace appears above the source. One eligible workspace is shown read-onl
 
 ## Configure a self-hosted Gateway
 
-Browser installation is on by default. The deployer still needs Cloudflare credentials. Configure these Gateway settings once using the matching CLI, with values already in your local environment:
+Browser installation is on by default. Interactive `pnpm everyapp setup` offers **Configure browser app installs?** (Yes/No, default No), explaining: "Install apps on this Gateway through your browser, without running deployment commands." Enter accepts No and continues setup without changing credentials. Yes opens a hidden Cloudflare API token prompt. The instructions link to [Cloudflare API tokens](https://dash.cloudflare.com/profile/api-tokens), explain how to create a custom token, and list the required permissions and resource scopes. The token is stored as `CF_DEPLOY_TOKEN` on the Gateway. Existing tokens and hosted Gateways are left alone; unattended setup does not prompt. Run setup again later to configure it if skipped.
+
+For unattended configuration, use the matching CLI with values already in your local environment:
 
 ```sh
 pnpm everyapp secret set CF_DEPLOY_TOKEN --from-env CF_DEPLOY_TOKEN --json
