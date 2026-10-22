@@ -1,0 +1,136 @@
+---
+title: Create an app
+description: Start from the starter app, tell your coding agent what you want, try it, and put it online.
+---
+
+Run these from your `every-app` folder.
+
+<Steps>
+<Step>
+
+### Create it
+
+```bash
+pnpm everyapp create my-app
+cd apps/my-app
+```
+
+This copies the starter app, a simple todo list, into `apps/my-app`.
+
+The name becomes part of the app's address: `my-app.apps.yourcompany.com`. Use lowercase letters, numbers and dashes.
+
+</Step>
+<Step>
+
+### Tell your agent what you want
+
+Open the `apps/my-app` folder in your coding agent and describe the app. A few sentences is enough:
+
+```text
+Turn this into a shared todo list for my household. I want separate lists
+for groceries and chores, a due date on each todo, and a way to see who
+added what.
+```
+
+You don't need to ask for a login page. The Gateway handles sign-in, and the app includes notes that explain Every App to your agent.
+
+</Step>
+<Step>
+
+### Try it on your computer
+
+```bash
+pnpm dev
+```
+
+Open `http://my-app.localhost:8787`. You're signed in as a test user, and changes show up as your agent makes them. Press Ctrl+C in the terminal to stop it.
+
+</Step>
+<Step>
+
+### Put it online
+
+```bash
+pnpm run deploy
+```
+
+When it's done, you'll see:
+
+```text
+Live    https://my-app.apps.yourcompany.com
+Access  Private to you, owners and admins · change it at https://apps.yourcompany.com/admin/apps
+```
+
+Open your Gateway and the app is in **All apps**.
+
+</Step>
+</Steps>
+
+No Gateway yet? The deploy offers to install one first. Type `y` and press Enter.
+
+## Start from a finished app
+
+Three finished apps come with Every App. Deploy one from its folder:
+
+```bash
+cd apps/todo-app
+pnpm run deploy
+```
+
+| Folder                 | What it is                                |
+| ---------------------- | ----------------------------------------- |
+| `apps/todo-app`        | A todo list you can use from the keyboard |
+| `apps/workout-tracker` | Track your workouts and programs          |
+| `apps/chef`            | A cooking assistant (needs an OpenAI key) |
+
+## Install an app from GitHub
+
+Install an app someone published on GitHub with its address:
+
+```bash
+pnpm everyapp deploy https://github.com/owner/repo
+```
+
+Run it again later to update.
+
+## Apps that use AI
+
+Add your AI key to the Gateway once, and every app that uses AI can use it:
+
+```bash
+pnpm everyapp secret set OPENAI_API_KEY
+```
+
+Paste the key when asked. For OpenRouter, use `OPENROUTER_API_KEY`.
+
+## Keys only one app uses
+
+Some apps need a key of their own, like a `GITHUB_TOKEN`. List it in the app's `everyapp.config.ts`:
+
+```ts
+secrets: ["GITHUB_TOKEN"],
+```
+
+Deploy the app, then run this in its folder and paste the key when asked:
+
+```bash
+pnpm everyapp secret set GITHUB_TOKEN
+```
+
+Only that app gets the key, and later deploys keep it. To use it with `pnpm dev`, put it in the app's `.dev.vars` file as `GITHUB_TOKEN=...`.
+
+## Share your app on GitHub
+
+{/* TODO(publishing): this needs the SDK and CLI on npm. Until then the app's workspace:* dependencies don't install outside the every-app checkout, so the release workflow fails */}
+
+Once your app is on GitHub, anyone with a Gateway can [install it](#install-an-app-from-github).
+
+1. Put the app's folder in its own GitHub repository.
+2. Tag a version and push the tag:
+
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+
+Every app comes with a GitHub workflow that builds it and publishes a release for the tag. To share an update, push a new tag, like `v1.1.0`.

@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
-import { baseOptions } from "@/lib/layout.shared";
+import { homeOptions } from "@/lib/layout.shared";
 
 export const Route = createFileRoute("/privacy")({
   component: PrivacyPolicy,
@@ -18,7 +18,7 @@ export const Route = createFileRoute("/privacy")({
 
 function PrivacyPolicy() {
   return (
-    <HomeLayout {...baseOptions()}>
+    <HomeLayout {...homeOptions()}>
       <div className="max-w-3xl mx-auto px-6 py-12 md:py-24">
         <h1 className="text-4xl font-bold mb-2">Privacy Policy</h1>
         <p className="text-fd-muted-foreground mb-12">

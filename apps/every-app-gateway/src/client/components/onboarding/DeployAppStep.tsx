@@ -61,7 +61,7 @@ export function DeployAppStep() {
         <p className="hidden text-foreground sm:block">
           Ready to build your own app? Check out the{" "}
           <a
-            href="https://everyapp.com/docs/build-your-own-app"
+            href="https://everyapp.com/docs/create-an-app"
             target="_blank"
             rel="noopener noreferrer"
             className="font-medium text-primary underline underline-offset-4"

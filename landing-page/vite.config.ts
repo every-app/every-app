@@ -4,7 +4,7 @@ import { cloudflare } from "@cloudflare/vite-plugin";
 import { defineConfig } from "vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 import tailwindcss from "@tailwindcss/vite";
-import mdx from "fumadocs-mdx/vite";
+import { fumadocsMdx } from "fumadocs-mdx/vite";
 
 export default defineConfig({
   server: {
@@ -16,7 +16,7 @@ export default defineConfig({
     },
   },
   plugins: [
-    mdx(await import("./source.config")),
+    fumadocsMdx(),
     tailwindcss(),
     tsConfigPaths({
       projects: ["./tsconfig.json"],

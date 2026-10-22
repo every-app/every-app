@@ -1,0 +1,45 @@
+---
+title: Get a domain
+description: Every App needs a domain on Cloudflare. Buy one there, or bring one you already own.
+---
+
+Your Gateway and apps live under one address on your domain, like `apps.yourcompany.com`. Your website and email keep working as they are.
+
+## Buy a new domain
+
+The quickest way. It's ready in under a minute.
+
+1. Open [Register domains](https://dash.cloudflare.com/?to=/:account/registrar/register) in the Cloudflare dashboard.
+2. Search for a name and select **Purchase** next to the one you want.
+3. Fill in your contact and payment details, then select **Complete purchase**.
+
+With Workers Paid, a `.dev` or `.app` domain costs $1 for the first year. After that it renews at $12.20 a year for `.dev` and $14.20 for `.app`.
+
+## Use a domain you already own
+
+If you bought it elsewhere, like GoDaddy or Namecheap, keep it there and point it at Cloudflare.
+
+1. In the Cloudflare dashboard, open [Domains](https://dash.cloudflare.com/?to=/:account/domains/overview) and select **Onboard a domain**.
+2. Enter your domain without `www` (for example `yourcompany.com`) and continue.
+3. Choose the **Free** plan.
+4. Cloudflare copies your existing DNS records. Check that your website and email records are in the list, then continue.
+5. Cloudflare shows you two nameservers. Sign in where you bought the domain, find its nameserver settings, and replace the nameservers there with Cloudflare's two.
+6. Wait for Cloudflare's email saying your domain is active. This usually takes under an hour, and at most a day.
+
+<Callout type="warn">
+  If you use email on this domain (Google Workspace, Microsoft 365 or similar),
+  make sure its records were copied in step 4 before you change the nameservers.
+  Otherwise your email stops arriving.
+</Callout>
+
+## You don't touch DNS
+
+Every App creates the DNS records and HTTPS certificates it needs. A new address usually starts working within five minutes.
+
+If something already uses the address, setup stops instead of replacing it. Delete that record in Cloudflare (your domain, then **DNS**) or choose another address.
+
+## Choosing your address
+
+Setup suggests `apps.yourcompany.com`, but any name under your domain works, like `tools.yourcompany.com`. Apps go one level below it: `todo.tools.yourcompany.com`.
+
+Pick carefully. The Gateway can't move once it's set up.

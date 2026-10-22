@@ -141,7 +141,7 @@ function Home() {
           <nav aria-label="Primary" className="flex items-center gap-6 text-sm">
             <Link
               to="/docs/$"
-              params={{ _splat: "introduction" }}
+              params={{ _splat: "" }}
               className="text-stone-400 transition-colors hover:text-white"
             >
               Docs
@@ -177,7 +177,7 @@ function Home() {
                 Want to set it up yourself today?{" "}
                 <Link
                   to="/docs/$"
-                  params={{ _splat: "introduction" }}
+                  params={{ _splat: "" }}
                   className="text-stone-300 underline decoration-stone-600 underline-offset-4 transition-colors hover:text-white hover:decoration-stone-400"
                 >
                   Read the docs

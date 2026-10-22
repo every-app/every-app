@@ -199,4 +199,4 @@ does the same for the gateway's own database after a migrating `setup`.
 ## Documentation
 
 For full documentation, visit [everyapp.com/docs](https://everyapp.com/docs);
-every command and flag is on the [CLI reference](https://everyapp.com/docs/cli).
+every command and flag is on the [CLI reference](https://everyapp.com/docs/commands).

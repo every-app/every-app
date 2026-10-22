@@ -1,0 +1,36 @@
+---
+title: How it works
+description: Where your apps run, how they stay private, and who can change them.
+---
+
+## Where everything runs
+
+Everything runs in your Cloudflare account. The Gateway and each app are separate programs on Cloudflare (Workers), each with its own database.
+
+## How apps stay private
+
+Apps have no public address of their own. Every visit goes through the Gateway first.
+
+When someone opens `todo.apps.yourcompany.com`:
+
+1. The Gateway checks that they're signed in and allowed to open the todo app. If not, the app never sees the request.
+2. It passes the request to the app over a private connection inside Cloudflare, with a signed note saying who they are. The note only works for that app, and only for about two minutes.
+3. The app checks the note and shows that person their data.
+
+So even if an app has a bug, only people you've given access to can reach it.
+
+## Your data
+
+Each app has its own database, so one app can't read or change another's data. Deploys save a restore point before changing a database. [Undo a database change](/docs/update#undo-a-database-change)
+
+## Who can change things
+
+Anyone who can sign in to your Cloudflare account can deploy apps and change the Gateway. Only give that access to people you fully trust.
+
+To let someone else deploy, add them to your Cloudflare account. To stop them, remove them.
+
+## Limits today
+
+- You add and update apps from the terminal, not from the Gateway.
+- When you remove someone, it can take up to two minutes before every app stops letting them in.
+- The Gateway can't move to a different address once it's set up.

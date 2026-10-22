@@ -16,8 +16,7 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"],
-      "fumadocs-mdx:collections/*": [".source/*"]
+      "@/*": ["./src/*"]
     },
     "noEmit": true
   }

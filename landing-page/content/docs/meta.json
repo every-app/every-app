@@ -1,19 +1,19 @@
 {
   "title": "Docs",
   "pages": [
-    "---Start Here---",
-    "introduction",
-    "quickstart",
-    "---Learn---",
+    "---Get started---",
+    "index",
+    "cloudflare",
+    "domain",
     "gateway",
-    "apps",
-    "architecture",
-    "---Build---",
-    "build-your-own-app",
-    "deploy-existing-apps",
-    "---Reference---",
-    "cli",
+    "---Apps---",
+    "create-an-app",
+    "update",
+    "people",
+    "---Help---",
+    "how-it-works",
     "troubleshooting",
-    "[llms.txt — docs for your coding agent](/llms.txt)"
+    "commands",
+    "external:[Docs for your coding agent](/llms-full.txt)"
   ]
 }

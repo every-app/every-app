@@ -12,36 +12,36 @@ const checks = [
   {
     type: "redirect",
     from: "/docs/getting-started/quickstart",
-    to: "/docs/quickstart",
+    to: "/docs/gateway",
     expectedCodes: [301, 308],
   },
   {
     type: "redirect",
-    from: "/docs/build-an-app",
-    to: "/docs/build-your-own-app",
+    from: "/docs/build-your-own-app",
+    to: "/docs/create-an-app",
     expectedCodes: [301, 308],
   },
   {
     type: "redirect",
-    from: "/docs/quickstart/",
-    to: "/docs/quickstart",
+    from: "/docs/gateway/",
+    to: "/docs/gateway",
     expectedCodes: [301, 307, 308],
   },
   {
     type: "status",
-    path: "/docs/quickstart",
+    path: "/docs/gateway",
     expectedCode: 200,
   },
   {
     type: "status",
-    path: "/docs/build-your-own-app",
+    path: "/docs/create-an-app",
     expectedCode: 200,
   },
   { type: "status", path: "/robots.txt", expectedCode: 200 },
   { type: "status", path: "/sitemap.xml", expectedCode: 200 },
 ];
 
-const seoPages = ["/docs/quickstart", "/docs/build-your-own-app"];
+const seoPages = ["/docs/gateway", "/docs/create-an-app"];
 
 function toUrl(path) {
   return new URL(path, `${BASE_URL}/`).toString();

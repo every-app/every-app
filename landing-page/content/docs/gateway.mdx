@@ -1,58 +1,127 @@
 ---
-title: The Gateway
-description: Your front door, where people sign in and you decide who opens what.
+title: Set up your Gateway
+description: Install the Gateway in your Cloudflare account and create your owner account. About 15 minutes.
 ---
 
-The Gateway lives at `apps.yourdomain.com`. It's the only part the internet can see. Your apps sit behind it.
+The Gateway is where you and the people you invite sign in and open your apps. Before you start, you need a [Cloudflare account on Workers Paid](/docs/cloudflare) and a [domain on Cloudflare](/docs/domain).
 
-It does four jobs:
+## Install the tools
 
-- **Sign-in.** People sign in once and can open every app you've given them.
-- **A home screen** that lists their apps.
-- **Privacy.** Nobody reaches an app unless they're signed in and allowed.
-- **AI keys.** Apps use your key through the Gateway and never hold it.
+1. **Node.js.** Download the LTS version from [nodejs.org](https://nodejs.org) and run the installer. You need version 22.18 or newer.
+2. **A terminal.** On a Mac, open the **Terminal** app. On Windows, open **Windows Terminal**.
+3. **pnpm.** In the terminal, run:
 
-## Invite people
+   ```bash
+   npm install -g pnpm
+   ```
 
-Go to **Admin → Users → Invite user** and type their email. If your Gateway can't send email, it shows you an invite link to send yourself.
+4. **Git.** On a Mac, run `git --version`. If it isn't installed, your Mac offers to install it. On Windows, install it from [git-scm.com](https://git-scm.com).
 
-## Choose who opens which app
+## Set it up
 
-A new app is private to you and your admins. In **Admin → Apps**, open the app's **⋯** menu. **Manage access** picks people one by one. **Edit app** can make it available to everyone.
+{/* TODO(publishing): replace the clone and install with the published npm command once the CLI is on npm again */}
 
-## Add your AI key
+<Steps>
+<Step>
 
-```bash
-pnpm everyapp secret set OPENAI_API_KEY
-```
-
-It asks for the key without showing it. Use `OPENROUTER_API_KEY` for OpenRouter.
-
-## Keep it up to date
+### Download Every App
 
 ```bash
-git pull && pnpm install && pnpm everyapp setup
+git clone https://github.com/every-app/every-app.git
+cd every-app
+pnpm install
 ```
 
-Run this in your `every-app` folder. Your users, apps and data stay. Setup builds the Gateway from that folder. Deploying an app updates the Gateway too when the folder has a newer one.
+Run every command in these docs from this `every-app` folder.
 
-To install a Gateway release you downloaded instead, pass it to setup:
+</Step>
+<Step>
+
+### Start setup
 
 ```bash
-pnpm everyapp setup --release ./every-app-gateway-release.tar.gz
+pnpm everyapp setup
 ```
 
-`--release` also takes a release's URL, or a GitHub repository's for its latest release. A CLI that runs outside an `every-app` folder takes the latest release of [every-app/every-app](https://github.com/every-app/every-app).
+</Step>
+<Step>
 
-## What it costs
+### Log in to Cloudflare
 
-Workers Paid is **$5 a month**. That includes plenty for a few apps and a small group of people:
+The terminal says **Log in to Cloudflare to continue** and opens a Cloudflare page in your browser. Approve it there.
 
-| Included each month | Above that               |
-| ------------------- | ------------------------ |
-| 10 million requests | $0.30 per million        |
-| 30 million CPU-ms   | $0.02 per million CPU-ms |
+If you have more than one Cloudflare account, the terminal asks which one to use.
 
-A `.com` domain from Cloudflare is about $10 a year. Web addresses and HTTPS are free. See Cloudflare's [pricing page](https://developers.cloudflare.com/workers/platform/pricing/) for more.
+</Step>
+<Step>
 
-**Next:** [How apps work](/docs/apps)
+### Choose your address
+
+The terminal asks for the **Gateway address** and suggests `apps.yourcompany.com`. Press Enter to use it, or type another name under your domain. [Choosing your address](/docs/domain#choosing-your-address)
+
+</Step>
+<Step>
+
+### Wait a few minutes
+
+Setup builds the Gateway and puts it online. This usually takes under five minutes.
+
+</Step>
+<Step>
+
+### Create your owner account
+
+Your browser opens a page called **Set up your gateway**. Enter your name, email and a password of at least 8 characters, then select **Create owner account**.
+
+Back in the terminal, setup asks **Configure browser app installs?** Press Enter to skip it. You can turn it on later by running setup again.
+
+</Step>
+</Steps>
+
+<Callout type="warn">
+  The owner link works once and expires after about 24 hours. Anyone who opens
+  it first becomes the owner, so don't share it. If you lose it, run `pnpm
+  everyapp setup` again for a new one.
+</Callout>
+
+## Or let your coding agent do it
+
+Paste this into Claude Code, Codex or Cursor and it runs the steps above for you:
+
+```text
+Set up Every App for me. Docs: https://everyapp.com/llms-full.txt
+
+1. Clone https://github.com/every-app/every-app.git, run `pnpm install`,
+   and run every command from that folder. Always use `pnpm everyapp`,
+   never npx.
+2. Ask me which domain to use, then run
+   `pnpm everyapp setup --domain apps.<my domain> --json`.
+
+The --json output has one event per line. When an event has
+"type":"action_required", show me its message, data.url and data.code.
+If it says "waiting": true, keep reading. If the command exits with
+code 2, run its data.rerun once I'm done.
+
+Keep it short and tell me exactly what to do when you need me.
+```
+
+It stops when it needs you to approve the Cloudflare login (step 3) and create your owner account (step 6).
+
+## When it's done
+
+The terminal ends with your Gateway's address:
+
+```text
+Gateway  https://apps.yourcompany.com
+Admin    https://apps.yourcompany.com/admin
+```
+
+Open it and you're signed in.
+
+## If setup stops
+
+Run `pnpm everyapp setup` again. It picks up where it left off. [Troubleshooting](/docs/troubleshooting) covers the common reasons it stops.
+
+## Add it to your phone
+
+Open `https://apps.yourcompany.com/pwa` on your computer and scan the code with your phone, or open that address on your phone and follow the steps. Your apps then open from your home screen.

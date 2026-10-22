@@ -2,6 +2,11 @@
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
 
+/* Code blocks lay their lines out as flex items, which collapses blank ones. */
+pre .line {
+  min-height: 1lh;
+}
+
 .landing-reveal {
   opacity: 0;
   animation: landing-reveal 700ms cubic-bezier(0.22, 1, 0.36, 1) forwards;

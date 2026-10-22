@@ -10,20 +10,25 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as LlmsFullDottxtRouteImport } from './routes/llms-full[.]txt'
 import { Route as LlmsDottxtRouteImport } from './routes/llms[.]txt'
 import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as SupportRouteImport } from './routes/support'
 import { Route as ApiSearchRouteImport } from './routes/api/search'
 import { Route as BlogsIndexRouteImport } from './routes/blogs/index'
 import { Route as BlogsSplatRouteImport } from './routes/blogs/$'
-import { Route as DocsIndexRouteImport } from './routes/docs/index'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
-import { Route as DocsBuildAnAppRouteImport } from './routes/docs/build-an-app'
+import { Route as DocsChar123Char125DotmdRouteImport } from './routes/docs/{$}[.]md'
 import { Route as DocsInternalSplatRouteImport } from './routes/docs/internal/$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LlmsFullDottxtRoute = LlmsFullDottxtRouteImport.update({
+  id: '/llms-full.txt',
+  path: '/llms-full.txt',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LlmsDottxtRoute = LlmsDottxtRouteImport.update({
@@ -56,19 +61,14 @@ const BlogsSplatRoute = BlogsSplatRouteImport.update({
   path: '/blogs/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DocsIndexRoute = DocsIndexRouteImport.update({
-  id: '/docs/',
-  path: '/docs/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const DocsSplatRoute = DocsSplatRouteImport.update({
   id: '/docs/$',
   path: '/docs/$',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DocsBuildAnAppRoute = DocsBuildAnAppRouteImport.update({
-  id: '/docs/build-an-app',
-  path: '/docs/build-an-app',
+const DocsChar123Char125DotmdRoute = DocsChar123Char125DotmdRouteImport.update({
+  id: '/docs/{$}.md',
+  path: '/docs/{$}.md',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DocsInternalSplatRoute = DocsInternalSplatRouteImport.update({
@@ -79,97 +79,97 @@ const DocsInternalSplatRoute = DocsInternalSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
   '/support': typeof SupportRoute
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
-  '/docs/build-an-app': typeof DocsBuildAnAppRoute
+  '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/blogs/': typeof BlogsIndexRoute
-  '/docs/': typeof DocsIndexRoute
   '/docs/internal/$': typeof DocsInternalSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
   '/support': typeof SupportRoute
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
-  '/docs/build-an-app': typeof DocsBuildAnAppRoute
+  '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/blogs': typeof BlogsIndexRoute
-  '/docs': typeof DocsIndexRoute
   '/docs/internal/$': typeof DocsInternalSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/llms-full.txt': typeof LlmsFullDottxtRoute
   '/llms.txt': typeof LlmsDottxtRoute
   '/privacy': typeof PrivacyRoute
   '/support': typeof SupportRoute
   '/api/search': typeof ApiSearchRoute
   '/blogs/$': typeof BlogsSplatRoute
   '/docs/$': typeof DocsSplatRoute
-  '/docs/build-an-app': typeof DocsBuildAnAppRoute
+  '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/blogs/': typeof BlogsIndexRoute
-  '/docs/': typeof DocsIndexRoute
   '/docs/internal/$': typeof DocsInternalSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/llms-full.txt'
     | '/llms.txt'
     | '/privacy'
     | '/support'
     | '/api/search'
     | '/blogs/$'
     | '/docs/$'
-    | '/docs/build-an-app'
+    | '/docs/{$}.md'
     | '/blogs/'
-    | '/docs/'
     | '/docs/internal/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/llms-full.txt'
     | '/llms.txt'
     | '/privacy'
     | '/support'
     | '/api/search'
     | '/blogs/$'
     | '/docs/$'
-    | '/docs/build-an-app'
+    | '/docs/{$}.md'
     | '/blogs'
-    | '/docs'
     | '/docs/internal/$'
   id:
     | '__root__'
     | '/'
+    | '/llms-full.txt'
     | '/llms.txt'
     | '/privacy'
     | '/support'
     | '/api/search'
     | '/blogs/$'
     | '/docs/$'
-    | '/docs/build-an-app'
+    | '/docs/{$}.md'
     | '/blogs/'
-    | '/docs/'
     | '/docs/internal/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  LlmsFullDottxtRoute: typeof LlmsFullDottxtRoute
   LlmsDottxtRoute: typeof LlmsDottxtRoute
   PrivacyRoute: typeof PrivacyRoute
   SupportRoute: typeof SupportRoute
   ApiSearchRoute: typeof ApiSearchRoute
   BlogsSplatRoute: typeof BlogsSplatRoute
   DocsSplatRoute: typeof DocsSplatRoute
-  DocsBuildAnAppRoute: typeof DocsBuildAnAppRoute
+  DocsChar123Char125DotmdRoute: typeof DocsChar123Char125DotmdRoute
   BlogsIndexRoute: typeof BlogsIndexRoute
-  DocsIndexRoute: typeof DocsIndexRoute
   DocsInternalSplatRoute: typeof DocsInternalSplatRoute
 }
 
@@ -180,6 +180,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/llms-full.txt': {
+      id: '/llms-full.txt'
+      path: '/llms-full.txt'
+      fullPath: '/llms-full.txt'
+      preLoaderRoute: typeof LlmsFullDottxtRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/llms.txt': {
@@ -224,13 +231,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof BlogsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/docs/': {
-      id: '/docs/'
-      path: '/docs'
-      fullPath: '/docs/'
-      preLoaderRoute: typeof DocsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/docs/$': {
       id: '/docs/$'
       path: '/docs/$'
@@ -238,11 +238,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/docs/build-an-app': {
-      id: '/docs/build-an-app'
-      path: '/docs/build-an-app'
-      fullPath: '/docs/build-an-app'
-      preLoaderRoute: typeof DocsBuildAnAppRouteImport
+    '/docs/{$}.md': {
+      id: '/docs/{$}.md'
+      path: '/docs/{$}.md'
+      fullPath: '/docs/{$}.md'
+      preLoaderRoute: typeof DocsChar123Char125DotmdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/docs/internal/$': {
@@ -257,15 +257,15 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  LlmsFullDottxtRoute: LlmsFullDottxtRoute,
   LlmsDottxtRoute: LlmsDottxtRoute,
   PrivacyRoute: PrivacyRoute,
   SupportRoute: SupportRoute,
   ApiSearchRoute: ApiSearchRoute,
   BlogsSplatRoute: BlogsSplatRoute,
   DocsSplatRoute: DocsSplatRoute,
-  DocsBuildAnAppRoute: DocsBuildAnAppRoute,
+  DocsChar123Char125DotmdRoute: DocsChar123Char125DotmdRoute,
   BlogsIndexRoute: BlogsIndexRoute,
-  DocsIndexRoute: DocsIndexRoute,
   DocsInternalSplatRoute: DocsInternalSplatRoute,
 }
 export const routeTree = rootRouteImport

@@ -1,0 +1,46 @@
+---
+title: Invite people
+description: Invite people to your Gateway and choose which apps each of them can open.
+---
+
+Your Gateway is invite-only: nobody can sign up unless you invite them. Everything below is under **Manage workspace** at the bottom of the Gateway's sidebar.
+
+## Invite someone
+
+1. Open the **Users** tab and select **Invite user**.
+2. Enter their email and choose a role:
+   - **Member** opens the apps they're given.
+   - **Admin** can also invite people and manage apps.
+3. Select **Invite**.
+
+If your Gateway can't send email, you get a **Copy invite link** button instead. Send them the link yourself. It expires after 72 hours. [Set up email](#send-email)
+
+## Choose who can open an app
+
+A new app is private to owners and admins. To share it, open the **Apps** tab and the **⋯** menu next to the app.
+
+- **Manage access** picks people one by one.
+- **Edit app**, then **Available to everyone**, opens it to every member, including people you invite later.
+
+## When someone forgets their password
+
+If your Gateway sends email, they can select **Forgot password?** on the sign-in page.
+
+If not, open the **⋯** menu next to them in **Users**, select **Generate password reset link** and send it to them. It expires after an hour.
+
+## Remove someone
+
+Open the **⋯** menu next to them in **Users** and select **Deactivate**. They're signed out everywhere and can't sign back in. **Reactivate** undoes it. The owner can also **Delete user**.
+
+## Send email
+
+Optional. With email set up, invites and password resets go out by email.
+
+1. In the Cloudflare dashboard, go to **Compute & AI**, then **Email Service**, then **Email Sending**. Select **Onboard Domain**, choose your domain, then **Add records and onboard**.
+2. In your `every-app` folder, run:
+
+   ```bash
+   pnpm everyapp secret set EMAIL_FROM EMAIL_FROM_NAME
+   ```
+
+   When asked, enter the address to send from, like `noreply@yourcompany.com`, and the name people see, like `Your Company`.

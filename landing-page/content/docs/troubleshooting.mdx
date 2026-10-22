@@ -1,42 +1,73 @@
 ---
 title: Troubleshooting
-description: The most common problems and how to fix them.
+description: What the most common messages mean and how to fix them.
 ---
 
-Two things fix most problems. **Run the command again:** `setup` and `deploy` pick up where they stopped. **Ask `pnpm everyapp status`:** it tells you what's wrong and what to run.
+Two things fix most problems:
 
-## Odd errors after using npx
+- **Run the same command again.** Setup and deploys pick up where they stopped.
+- **Run `pnpm everyapp status`.** It shows what's wrong and what to run.
 
-Running the CLI through npx downloads an old version that doesn't work. Always run `pnpm everyapp` from your `every-app` folder.
+## Subscribe this account to Workers Paid
 
-## "Every App needs a domain on Cloudflare"
+Your Cloudflare account is on the free plan. [Turn on Workers Paid](/docs/cloudflare#turn-on-workers-paid), then run the command again. Nothing was created.
 
-The Cloudflare account you're logged in to doesn't have that domain. Add it to Cloudflare, or buy one under **Domains → Buy a domain**, then run the command again.
+If you see **Couldn't confirm this account is on Workers Paid**, setup carries on. Check that you've subscribed.
 
-## "Couldn't confirm this account is on Workers Paid"
+## Add a domain to this Cloudflare account
 
-Subscribe under **Workers & Pages → Plans** in the Cloudflare dashboard. If you already have, setup carries on anyway.
+The Cloudflare account you logged in to has no domain. [Get a domain](/docs/domain), then run the command again. If you have more than one Cloudflare account, check you approved the login for the right one.
 
-## "No workers.dev subdomain yet"
+## Finish activating your domain on Cloudflare
 
-Cloudflare wants every account to pick one name once. Open the link the CLI shows, pick any name, and run the command again.
+Its nameservers don't point to Cloudflare yet. Finish [the nameserver step](/docs/domain#use-a-domain-you-already-own), wait for Cloudflare's email saying the domain is active, then run the command again.
 
-## You lost the owner account link
+## Choose a workers.dev subdomain for this Cloudflare account
 
-Run `pnpm everyapp setup` again for a new one.
+Cloudflare asks every account to pick this name once. Open the link the terminal shows, pick any name, and run the command again. Your apps never use it.
 
-## The address doesn't load yet
+## Your address already points somewhere else
 
-New addresses need an HTTPS certificate from Cloudflare. It usually takes a minute or two, sometimes up to ten.
+Something on your domain already uses the address you chose. Delete that record in Cloudflare (your domain, then **DNS**), or choose another address.
 
-## "Schema has changes its migrations don't"
+## You lost the owner link, or it stopped working
 
-Your database changed but nobody wrote down the change. In the app folder, run `pnpm run db:generate`, then `pnpm run deploy`.
+Run `pnpm everyapp setup` again for a new link.
 
-## "No everyapp.config.ts found"
+## A new address doesn't load yet
 
-You're not in an app folder. Run `cd apps/my-app` and try again.
+Cloudflare is still making its HTTPS certificate. Give it up to ten minutes.
+
+## An app in your Gateway says Needs deploy, Deploying or Disabled
+
+- **Needs deploy:** the app isn't online yet. Run `pnpm run deploy` in its folder.
+- **Deploying:** the app is still being connected. Refresh in a minute.
+- **Disabled:** the app has been turned off.
+
+## The schema has changes no migration covers
+
+Your app stores something new but has no migration for it. In the app's folder, run `pnpm run db:generate`, then deploy again.
+
+## This checkout's Gateway is older than the live one
+
+Someone updated your Gateway from a newer copy of Every App. In your `every-app` folder, run `git pull` and `pnpm install`, then try again.
+
+## everyapp needs Node.js 22.18.0 or newer
+
+Install the latest LTS version from [nodejs.org](https://nodejs.org), open a new terminal window, and try again.
+
+## everyapp has to run from a checkout of the Every App repository
+
+You're outside the `every-app` folder. Run `cd every-app` and try again.
+
+## No everyapp.config.ts in this directory
+
+This command runs inside an app's folder. Run `cd apps/my-app` and try again.
+
+## Strange errors after using npx
+
+`npx everyapp` downloads an old version that doesn't work. Always run `pnpm everyapp` from your `every-app` folder.
 
 ## Still stuck
 
-Run the command again with `--verbose`, then open an issue on [GitHub](https://github.com/every-app/every-app/issues) with the output.
+Run the command again with `--verbose` at the end, and bring the output to our [Discord](https://discord.gg/c9uGs3cFXr).

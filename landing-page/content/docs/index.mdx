@@ -1,0 +1,36 @@
+---
+title: What is Every App?
+description: Host your apps with confidence.
+---
+
+Every App puts the web apps you build online, in your own Cloudflare account. Each app gets a web address, a database and a sign-in.
+
+## The two parts
+
+**The Gateway** is your home base, at an address like `apps.yourcompany.com`. You and the people you invite sign in there and open your apps.
+
+**Apps** are what you build, usually with a coding agent like Claude Code, Codex or Cursor. Each one has its own address under the Gateway, like `todo.apps.yourcompany.com`.
+
+## What you can count on
+
+- **Private by default.** Nobody can open an app until they've signed in and you've given them access.
+- **One sign-in for every app.** You never build a login page.
+- **Each app keeps its own data.** Removing one app never touches another.
+- **Updates keep your data.** Before a deploy changes an app's database, it saves a restore point.
+- **Safe to run again.** If setup or a deploy stops halfway, run it again. It picks up where it left off.
+
+## What it costs
+
+| What                           | Cost                  |
+| ------------------------------ | --------------------- |
+| Cloudflare's Workers Paid plan | $5 a month            |
+| A `.dev` or `.app` domain      | $1 for the first year |
+| Every App                      | Free and open source  |
+
+A few apps for a family or a small team fit inside the $5. Full details are on Cloudflare's [pricing page](https://developers.cloudflare.com/workers/platform/pricing/).
+
+## What you need
+
+1. A Cloudflare account on Workers Paid. [Set up Cloudflare](/docs/cloudflare)
+2. A domain on Cloudflare. [Get a domain](/docs/domain)
+3. A Mac, Windows or Linux computer, and about 30 minutes.

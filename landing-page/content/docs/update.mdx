@@ -1,0 +1,56 @@
+---
+title: Update an app
+description: Ship changes to an app, keep your Gateway up to date, and remove apps you don't need.
+---
+
+## Ship a change
+
+In the app's folder, deploy again:
+
+```bash
+pnpm run deploy
+```
+
+The app's data stays.
+
+## When the app stores something new
+
+If a change affects what the app saves, like a new field on a todo, the database needs a migration. Your coding agent usually writes it. If not, run this in the app's folder:
+
+```bash
+pnpm run db:generate
+```
+
+Without one, the deploy stops with **The schema has changes no migration covers** before changing anything.
+
+## Undo a database change
+
+Before a deploy changes an app's database, it saves a restore point. To go back to it, run this in the app's folder:
+
+```bash
+pnpm everyapp db restore
+```
+
+It asks first. Anything saved in the app since that deploy is lost too.
+
+## Update your Gateway
+
+To get the newest Gateway, run this in your `every-app` folder:
+
+```bash
+git pull
+pnpm install
+pnpm everyapp gateway deploy
+```
+
+Your people, apps and data stay. Deploying any app also updates the Gateway when your `every-app` folder has a newer version.
+
+## Remove an app
+
+```bash
+pnpm everyapp delete my-app
+```
+
+This takes the app off your Gateway. Its data is kept.
+
+Add `--purge` to delete its data too. This can't be undone, so it asks you to type the app's name first.

@@ -1,0 +1,27 @@
+---
+title: Set up Cloudflare
+description: Create a Cloudflare account and turn on Workers Paid. About 5 minutes.
+---
+
+Every App runs in your own Cloudflare account, and Cloudflare bills you directly. Already have an account? Use it. Every App leaves the rest of your account alone.
+
+<Steps>
+<Step>
+
+### Create an account
+
+Sign up at [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up). Then verify your email from the message Cloudflare sends you. You need this to buy a domain.
+
+</Step>
+<Step>
+
+### Turn on Workers Paid
+
+Open [Workers plans](https://dash.cloudflare.com/?to=/:account/workers/plans) in the Cloudflare dashboard. Choose the **Paid** plan ($5 a month) and enter your card. Full details are on Cloudflare's [pricing page](https://developers.cloudflare.com/workers/platform/pricing/).
+
+</Step>
+</Steps>
+
+## Why the free plan won't work
+
+On the free plan, Cloudflare stops your databases for the rest of the day once they reach a daily limit. The Gateway checks its database every time someone opens an app, so all your apps would stop with it.

@@ -1,0 +1,41 @@
+---
+title: Commands
+description: Every everyapp command, in one place.
+---
+
+Run these in a terminal, inside your `every-app` folder. Add `--help` to any command to see all its options.
+
+## Your Gateway
+
+| Command                        | What it does                                             |
+| ------------------------------ | -------------------------------------------------------- |
+| `pnpm everyapp login`          | Logs in to Cloudflare.                                   |
+| `pnpm everyapp setup`          | Installs your Gateway. Run it again to resume or repair. |
+| `pnpm everyapp gateway deploy` | Updates your Gateway to the version in your folder.      |
+| `pnpm everyapp status`         | Shows your Gateway and apps, and what to run if needed.  |
+
+## Apps
+
+| Command                             | What it does                                               |
+| ----------------------------------- | ---------------------------------------------------------- |
+| `pnpm everyapp create my-app`       | Makes a new app from the starter, in `apps/my-app`.        |
+| `pnpm everyapp deploy <GitHub URL>` | Installs an app someone published on GitHub.               |
+| `pnpm everyapp delete my-app`       | Takes an app off your Gateway. `--purge` deletes its data. |
+| `pnpm everyapp secret set <NAME>`   | Stores a key, like `OPENAI_API_KEY`, without showing it.   |
+
+## Inside an app's folder
+
+| Command                    | What it does                                            |
+| -------------------------- | ------------------------------------------------------- |
+| `pnpm dev`                 | Runs the app on your computer.                          |
+| `pnpm run deploy`          | Puts the app online, or updates it.                     |
+| `pnpm run db:generate`     | Writes a migration after what the app stores changes.   |
+| `pnpm everyapp db restore` | Puts the app's database back to before the last deploy. |
+
+There's also `email` for the addresses an app sends from and receives at, `db` for looking inside a database, `workflow` for an app's background jobs, and `register`, which you won't need.
+
+## For coding agents
+
+Add `--json` to get one event per line. An event with `"type":"action_required"` needs a person: show them its message, `data.url` and `data.code`. If the command exits with code 2, run the event's `data.rerun` once they're done.
+
+In CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` instead of logging in.

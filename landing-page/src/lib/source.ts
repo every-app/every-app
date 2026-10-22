@@ -1,43 +1,69 @@
-import { loader } from "fumadocs-core/source";
-// Keep this deep import for now: the public "fumadocs-mdx/runtime/vite" entry
-// resolves to the browser runtime in our SSR build, which breaks sourceAsync.
-import { fromConfig } from "../../node_modules/fumadocs-mdx/dist/runtime/vite/server.js";
-import { docs, blog, internal } from "../../source.generated";
-import type * as Config from "../../source.config";
+import { createGetUrl, llms, loader } from "fumadocs-core/source";
+import { pageSchema } from "fumadocs-core/source/schema";
+import { defineCollections, defineDocs } from "fumadocs-mdx/macro";
+import { z } from "zod";
 
-const serverCreate = fromConfig<typeof Config>();
+export const docs = defineDocs({
+  dir: "content/docs",
+  docs: {
+    async: true,
+    postprocess: {
+      includeProcessedMarkdown: true,
+    },
+  },
+});
 
-const docsSourceData = await serverCreate.sourceAsync(docs.doc, docs.meta);
+// Notes for the people building Every App, served at /docs/internal. Kept out
+// of the user docs' sidebar, search, llms.txt and sitemap.
+export const internal = defineDocs({
+  dir: "content/internal",
+  docs: {
+    async: true,
+  },
+});
+
+export const blog = defineCollections({
+  type: "doc",
+  dir: "content/blog",
+  async: true,
+  schema: pageSchema.extend({
+    author: z.string(),
+    date: z.string(),
+  }),
+});
 
 export const source = loader({
-  source: docsSourceData,
+  source: docs.toFumadocsSource(),
   baseUrl: "/docs",
-  plugins: [
-    {
-      transformPageTree: {
-        file(node) {
-          if (node.url === "/llms.txt") {
-            return {
-              ...node,
-              external: true,
-            };
-          }
-
-          return node;
-        },
-      },
-    },
-  ],
 });
 
 export const internalSource = loader({
-  source: await serverCreate.sourceAsync(internal.doc, internal.meta),
+  source: internal.toFumadocsSource(),
   baseUrl: "/docs/internal",
 });
 
 export const blogSource = loader({
-  source: await serverCreate.sourceAsync(blog, {} as Record<string, never>),
+  source: blog.toFumadocsSource(),
   baseUrl: "/blogs",
 });
 
-export { docs, blog, internal };
+export const docsLlms = llms(source, {
+  renderPage: async (page) =>
+    `# ${page.data.title} (${page.url})\n\n${await page.data.getText("processed")}`,
+});
+
+const getDocsUrl = createGetUrl("/docs");
+
+/** The URL serving a docs page as Markdown: `/docs/gateway.md`, `/docs/index.md`. */
+export function getPageMarkdownUrl(slugs: string[]): string {
+  const segments = slugs.length === 0 ? ["index"] : [...slugs];
+  segments[segments.length - 1] += ".md";
+  return getDocsUrl(segments);
+}
+
+/** The page slugs a Markdown URL's segments name. */
+export function decodeMarkdownSegments(segments: string[]): string[] {
+  const slugs = [...segments];
+  slugs[slugs.length - 1] = slugs[slugs.length - 1].replace(/\.md$/, "");
+  return slugs.length === 1 && slugs[0] === "index" ? [] : slugs;
+}

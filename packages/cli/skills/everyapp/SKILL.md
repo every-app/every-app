@@ -75,4 +75,4 @@ a workers.dev subdomain, pay for Workers Paid, buy a domain. Interactive
 setup optionally offers browser deployment: a Yes/No prompt (default No),
 then a hidden Cloudflare API token prompt. Never ask for its value in chat.
 Otherwise, only a hosted Gateway's deploy key is supplied.
-Full reference: https://everyapp.com/docs/cli
+Full reference: https://everyapp.com/docs/commands

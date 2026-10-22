@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
-import { baseOptions } from "@/lib/layout.shared";
+import { homeOptions } from "@/lib/layout.shared";
 import { getBlogPosts } from "@/lib/content.functions";
 import { buildPageSeo } from "@/lib/seo";
 
@@ -22,7 +22,7 @@ function BlogIndex() {
   const posts = Route.useLoaderData();
 
   return (
-    <HomeLayout {...baseOptions()}>
+    <HomeLayout {...homeOptions()}>
       <div className="max-w-3xl mx-auto px-6 py-12 md:py-24">
         <h1 className="text-4xl font-bold mb-8">Blog</h1>
 

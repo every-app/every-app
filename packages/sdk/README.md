@@ -6,7 +6,7 @@ This SDK handles authentication and session management for apps running within t
 
 ## Documentation
 
-For full API reference and usage guides, see the [How Apps Work](https://everyapp.com/docs/apps).
+For full API reference and usage guides, see [How It Works](https://everyapp.com/docs/how-it-works).
 
 ## Entry points
 
