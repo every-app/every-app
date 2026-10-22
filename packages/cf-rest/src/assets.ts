@@ -18,14 +18,27 @@ interface UploadSession {
  * completion JWT in the script's `metadata.assets.jwt`.
  */
 export function dispatchAssets(transport: CloudflareTransport) {
+  return scriptAssets(transport);
+}
+
+/** Static assets for an account Worker, using the same upload protocol. */
+export function workerAssets(transport: CloudflareTransport) {
+  const assets = scriptAssets(transport);
+  return {
+    upload: (script: string, files: Record<string, AssetFile>) =>
+      assets.upload(null, script, files),
+  };
+}
+
+function scriptAssets(transport: CloudflareTransport) {
   return {
     /** Upload `files` (by path) and return the completion JWT. */
     upload: async (
-      namespace: string,
+      namespace: string | null,
       script: string,
       files: Record<string, AssetFile>,
     ): Promise<string> => {
-      const context = `Upload assets of dispatch script ${namespace}/${script}`;
+      const context = `Upload assets of ${namespace === null ? "Worker " : `dispatch script ${namespace}/`}${script}`;
       const entries = await Promise.all(
         Object.entries(files).map(async ([path, file]) => ({
           path: normalizeAssetPath(path),
@@ -42,15 +55,13 @@ export function dispatchAssets(transport: CloudflareTransport) {
       const session = await transport.request<UploadSession>(
         transport.accountPath(
           "workers",
-          "dispatch",
-          "namespaces",
-          namespace,
+          ...(namespace === null ? [] : ["dispatch", "namespaces", namespace]),
           "scripts",
           script,
           "assets-upload-session",
         ),
         json("POST", { manifest }),
-        { context },
+        { context, envelopeOptional: namespace === null },
       );
       if (!session.jwt)
         throw new Error(`${context}: the session returned no JWT`);

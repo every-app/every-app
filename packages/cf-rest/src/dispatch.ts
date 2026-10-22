@@ -93,6 +93,36 @@ function assertTags(tags: readonly string[]): void {
   for (const tag of tags) assertTag(tag);
 }
 
+/** Both account and dispatch Workers use the same multipart upload format. */
+export function workerUploadForm(
+  script: string,
+  { metadata, modules }: { metadata: WorkerMetadata; modules: WorkerModule[] },
+): FormData {
+  const names = new Set(modules.map((module) => module.name));
+  if (names.size !== modules.length)
+    throw new Error(`Duplicate module names in ${script}`);
+  if (!names.has(metadata.main_module))
+    throw new Error(
+      `main_module ${metadata.main_module} is not among the modules of ${script}`,
+    );
+  assertTags(metadata.tags ?? []);
+  const form = new FormData();
+  form.set("metadata", jsonPart(metadata));
+  for (const module of modules) {
+    const content =
+      typeof module.content === "string"
+        ? module.content
+        : new Uint8Array(module.content);
+    form.set(
+      module.name,
+      new File([content], module.name, {
+        type: MODULE_CONTENT_TYPES[module.type],
+      }),
+    );
+  }
+  return form;
+}
+
 function tagQuery(filter: TagFilter): string {
   const entries = Object.entries(filter);
   for (const [tag] of entries) assertTag(tag);
@@ -161,36 +191,12 @@ export function dispatchScripts(transport: CloudflareTransport) {
       script: string,
       upload: { metadata: WorkerMetadata; modules: WorkerModule[] },
     ) => {
-      const { metadata, modules } = upload;
-      const names = new Set(modules.map((module) => module.name));
-      if (names.size !== modules.length) {
-        throw new Error(
-          `Duplicate module names in ${label(namespace, script)}`,
-        );
-      }
-      if (!names.has(metadata.main_module)) {
-        throw new Error(
-          `main_module ${metadata.main_module} is not among the modules of ${label(namespace, script)}`,
-        );
-      }
-      assertTags(metadata.tags ?? []);
-      const form = new FormData();
-      form.set("metadata", jsonPart(metadata));
-      for (const module of modules) {
-        const content =
-          typeof module.content === "string"
-            ? module.content
-            : new Uint8Array(module.content);
-        form.set(
-          module.name,
-          new File([content], module.name, {
-            type: MODULE_CONTENT_TYPES[module.type],
-          }),
-        );
-      }
       return transport.request<DispatchScript>(
         scripts(namespace, script),
-        { method: "PUT", body: form },
+        {
+          method: "PUT",
+          body: workerUploadForm(label(namespace, script), upload),
+        },
         { context: `Upload dispatch script ${label(namespace, script)}` },
       );
     },

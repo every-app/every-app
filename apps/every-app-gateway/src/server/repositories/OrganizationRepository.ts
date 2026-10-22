@@ -2,6 +2,7 @@ import { db } from "@/db";
 import { apps, members, organizations, users } from "@/db/schema";
 import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
 import { liveUser } from "@/server/repositories/OrganizationMembersRepository";
+import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 import { and, asc, eq, exists, ne, notExists } from "drizzle-orm";
 
 /** An organization's display fields (no members, no invitations). */
@@ -17,6 +18,24 @@ async function findSummaryById(organizationId: string) {
     .limit(1);
 
   return rows[0] ?? null;
+}
+
+/** Active workspaces this user can administer; no members or invitations. */
+async function findAdminSummariesForUser(userId: string) {
+  const rows = await db
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      role: members.role,
+    })
+    .from(organizations)
+    .innerJoin(members, eq(members.organizationId, organizations.id))
+    .where(and(eq(members.userId, userId), eq(organizations.status, "active")))
+    .orderBy(asc(organizations.name), asc(organizations.id));
+  return rows.flatMap(({ role, ...workspace }) => {
+    const primary = resolvePrimaryOrganizationRole(role);
+    return primary === "owner" || primary === "admin" ? [workspace] : [];
+  });
 }
 
 /**
@@ -118,6 +137,7 @@ async function deleteById(organizationId: string): Promise<void> {
 
 export const OrganizationRepository = {
   findSummaryById,
+  findAdminSummariesForUser,
   findAwaitingOwner,
   adoptForOwner,
   isAttributable,

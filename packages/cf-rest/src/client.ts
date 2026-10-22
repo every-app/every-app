@@ -203,6 +203,8 @@ async function parseEnvelope<T>(
   }
   if (envelope)
     return { result: envelope.result, resultInfo: envelope.result_info };
+  if (response.status === 204 && options.envelopeOptional)
+    return { result: null as T, resultInfo: undefined };
   if (options.envelopeOptional && body !== undefined) {
     return { result: body as T, resultInfo: undefined };
   }

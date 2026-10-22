@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AcceptInvitationRouteImport } from './routes/accept-invitation'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as InstallRouteImport } from './routes/install'
 import { Route as PwaRouteImport } from './routes/pwa'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SetupRouteImport } from './routes/setup'
@@ -33,6 +34,7 @@ import { Route as ApiMeAppsRouteImport } from './routes/api/me/apps'
 import { Route as ApiSetupClaimRouteImport } from './routes/api/setup/claim'
 import { Route as ApiAdminAppsInstallRouteImport } from './routes/api/admin/apps/install'
 import { Route as ApiAdminDeploysIdRouteImport } from './routes/api/admin/deploys/$id'
+import { Route as ApiAdminAppsInstallContextRouteImport } from './routes/api/admin/apps/install/context'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -46,6 +48,11 @@ const AcceptInvitationRoute = AcceptInvitationRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InstallRoute = InstallRouteImport.update({
+  id: '/install',
+  path: '/install',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PwaRoute = PwaRouteImport.update({
@@ -153,11 +160,18 @@ const ApiAdminDeploysIdRoute = ApiAdminDeploysIdRouteImport.update({
   path: '/api/admin/deploys/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAdminAppsInstallContextRoute =
+  ApiAdminAppsInstallContextRouteImport.update({
+    id: '/context',
+    path: '/context',
+    getParentRoute: () => ApiAdminAppsInstallRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/accept-invitation': typeof AcceptInvitationRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/install': typeof InstallRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/setup': typeof SetupRoute
@@ -176,12 +190,14 @@ export interface FileRoutesByFullPath {
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/admin/': typeof AppAdminIndexRoute
-  '/api/admin/apps/install': typeof ApiAdminAppsInstallRoute
+  '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
   '/api/admin/deploys/$id': typeof ApiAdminDeploysIdRoute
+  '/api/admin/apps/install/context': typeof ApiAdminAppsInstallContextRoute
 }
 export interface FileRoutesByTo {
   '/accept-invitation': typeof AcceptInvitationRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/install': typeof InstallRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/setup': typeof SetupRoute
@@ -200,14 +216,16 @@ export interface FileRoutesByTo {
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/admin': typeof AppAdminIndexRoute
-  '/api/admin/apps/install': typeof ApiAdminAppsInstallRoute
+  '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
   '/api/admin/deploys/$id': typeof ApiAdminDeploysIdRoute
+  '/api/admin/apps/install/context': typeof ApiAdminAppsInstallContextRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/accept-invitation': typeof AcceptInvitationRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/install': typeof InstallRoute
   '/pwa': typeof PwaRoute
   '/reset-password': typeof ResetPasswordRoute
   '/setup': typeof SetupRoute
@@ -227,8 +245,9 @@ export interface FileRoutesById {
   '/api/me/apps': typeof ApiMeAppsRoute
   '/api/setup/claim': typeof ApiSetupClaimRoute
   '/_app/admin/': typeof AppAdminIndexRoute
-  '/api/admin/apps/install': typeof ApiAdminAppsInstallRoute
+  '/api/admin/apps/install': typeof ApiAdminAppsInstallRouteWithChildren
   '/api/admin/deploys/$id': typeof ApiAdminDeploysIdRoute
+  '/api/admin/apps/install/context': typeof ApiAdminAppsInstallContextRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -236,6 +255,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invitation'
     | '/forgot-password'
+    | '/install'
     | '/pwa'
     | '/reset-password'
     | '/setup'
@@ -256,10 +276,12 @@ export interface FileRouteTypes {
     | '/admin/'
     | '/api/admin/apps/install'
     | '/api/admin/deploys/$id'
+    | '/api/admin/apps/install/context'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/accept-invitation'
     | '/forgot-password'
+    | '/install'
     | '/pwa'
     | '/reset-password'
     | '/setup'
@@ -280,11 +302,13 @@ export interface FileRouteTypes {
     | '/admin'
     | '/api/admin/apps/install'
     | '/api/admin/deploys/$id'
+    | '/api/admin/apps/install/context'
   id:
     | '__root__'
     | '/_app'
     | '/accept-invitation'
     | '/forgot-password'
+    | '/install'
     | '/pwa'
     | '/reset-password'
     | '/setup'
@@ -306,12 +330,14 @@ export interface FileRouteTypes {
     | '/_app/admin/'
     | '/api/admin/apps/install'
     | '/api/admin/deploys/$id'
+    | '/api/admin/apps/install/context'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   AcceptInvitationRoute: typeof AcceptInvitationRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
+  InstallRoute: typeof InstallRoute
   PwaRoute: typeof PwaRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SetupRoute: typeof SetupRoute
@@ -323,7 +349,7 @@ export interface RootRouteChildren {
   ApiDevIdentityRoute: typeof ApiDevIdentityRoute
   ApiMeAppsRoute: typeof ApiMeAppsRoute
   ApiSetupClaimRoute: typeof ApiSetupClaimRoute
-  ApiAdminAppsInstallRoute: typeof ApiAdminAppsInstallRoute
+  ApiAdminAppsInstallRoute: typeof ApiAdminAppsInstallRouteWithChildren
   ApiAdminDeploysIdRoute: typeof ApiAdminDeploysIdRoute
 }
 
@@ -348,6 +374,13 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/install': {
+      id: '/install'
+      path: '/install'
+      fullPath: '/install'
+      preLoaderRoute: typeof InstallRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pwa': {
@@ -497,6 +530,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAdminDeploysIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/admin/apps/install/context': {
+      id: '/api/admin/apps/install/context'
+      path: '/context'
+      fullPath: '/api/admin/apps/install/context'
+      preLoaderRoute: typeof ApiAdminAppsInstallContextRouteImport
+      parentRoute: typeof ApiAdminAppsInstallRoute
+    }
   }
 }
 
@@ -534,10 +574,22 @@ const AppRouteChildren: AppRouteChildren = {
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
+interface ApiAdminAppsInstallRouteChildren {
+  ApiAdminAppsInstallContextRoute: typeof ApiAdminAppsInstallContextRoute
+}
+
+const ApiAdminAppsInstallRouteChildren: ApiAdminAppsInstallRouteChildren = {
+  ApiAdminAppsInstallContextRoute: ApiAdminAppsInstallContextRoute,
+}
+
+const ApiAdminAppsInstallRouteWithChildren =
+  ApiAdminAppsInstallRoute._addFileChildren(ApiAdminAppsInstallRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   AcceptInvitationRoute: AcceptInvitationRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
+  InstallRoute: InstallRoute,
   PwaRoute: PwaRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SetupRoute: SetupRoute,
@@ -549,7 +601,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiDevIdentityRoute: ApiDevIdentityRoute,
   ApiMeAppsRoute: ApiMeAppsRoute,
   ApiSetupClaimRoute: ApiSetupClaimRoute,
-  ApiAdminAppsInstallRoute: ApiAdminAppsInstallRoute,
+  ApiAdminAppsInstallRoute: ApiAdminAppsInstallRouteWithChildren,
   ApiAdminDeploysIdRoute: ApiAdminDeploysIdRoute,
 }
 export const routeTree = rootRouteImport

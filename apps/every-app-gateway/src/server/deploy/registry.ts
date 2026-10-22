@@ -1,5 +1,5 @@
 /**
- * The registry rows of third-party apps, written by the gateway itself:
+ * Registry rows written by the Gateway's release deployer:
  * on the hosted gateway the deploy API is the control plane, so the rules
  * the CLI runs over D1 in self-host (@every-app/perimeter/registry) run
  * here instead, with the tier `dispatch` and the organization's own scope.
@@ -9,8 +9,10 @@
  * on the third-party domain (THIRD_PARTY_DOMAIN), never the gateway's own.
  * With no third-party domain set the app gets no hostname: it is uploaded
  * and verified, and nobody can open it until a later deploy names it.
+ * Self-hosted installs use service_binding and the CLI's install-org
+ * naming rules on APP_BASE_DOMAIN instead.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import {
   appNames,
   markDeployedUpdate,
@@ -120,6 +122,8 @@ export async function findOrgApp(
 }
 
 interface RegisterDispatchAppInput {
+  /** Self-hosted installs use the CLI's normal service-binding tier. */
+  serviceBinding?: boolean;
   organizationId: string;
   appSlug: string;
   name: string;
@@ -180,16 +184,32 @@ async function register(
   const { organizationId, appSlug } = input;
   const configured =
     input.configuredThirdPartyDomain?.trim().toLowerCase() || null;
-  if (configured) assertOwnDomain(configured, input.appBaseDomain);
-  const domain = input.thirdPartyDomain;
+  if (!input.serviceBinding && configured)
+    assertOwnDomain(configured, input.appBaseDomain);
+  const domain = input.serviceBinding
+    ? input.appBaseDomain
+    : input.thirdPartyDomain;
+  if (input.serviceBinding && !domain)
+    throw new DeployError(
+      "DEPLOYER_NOT_CONFIGURED",
+      503,
+      "Set APP_BASE_DOMAIN before installing apps.",
+    );
+  const owned = input.serviceBinding
+    ? ((await db.all(
+        sql`SELECT id FROM organizations WHERE EXISTS (SELECT 1 FROM members WHERE members.organization_id = organizations.id AND members.role = 'owner') ORDER BY created_at, id LIMIT 1`,
+      )) as Array<{ id: string }>)
+    : [];
+  const isInstallOrganization =
+    input.serviceBinding === true && owned[0]?.id === organizationId;
   const orgKey = await orgKeyFor(organizationId);
   const stored = await findOrgApp(organizationId, appSlug);
   const existingApp = stored ? toAppRow(stored) : null;
   const names = appNames({
     appSlug,
     orgKey,
-    // Never the gateway's own domain's bare `<appId>` form.
-    isInstallOrganization: false,
+    // The bare app id belongs only to the self-hosted install organization.
+    isInstallOrganization,
     appBaseDomain: domain ?? NO_DOMAIN,
     existingApp,
   });
@@ -206,9 +226,9 @@ async function register(
     .where(eq(members.organizationId, organizationId));
   const plan = planRegistration({
     organizationId,
-    isInstallOrganization: false,
+    isInstallOrganization,
     scope: "org",
-    tier: "dispatch",
+    tier: input.serviceBinding ? "service_binding" : "dispatch",
     appSlug,
     name: input.name,
     description: input.description,

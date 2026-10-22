@@ -1,9 +1,9 @@
 /**
  * What every way into the deploy pipeline shares: the deploy API's routes
- * (./routes.ts, deploy keys) and the admin's install from GitHub
- * (./install.ts, a session). Each authenticates its caller and gets the
- * bundle its own way; from there a deploy is the same: the manifest under
- * the hosted policy, the registration, one job at a time per app, and the
+ * (./routes.ts, deploy keys) and browser installation (./install.ts, a
+ * session, hosted or self-hosted). Each authenticates its caller
+ * and gets the bundle its own way; from there a deploy shares the manifest
+ * policy, registration, one job at a time per app, and the
  * pipeline (./pipeline.ts) inside the request and `waitUntil` after it.
  * A deploy that went live takes the new version's tool snapshot, since
  * only here does the gateway itself learn of a new `apps.version_id`.
@@ -31,6 +31,13 @@ import { bundleRefused, DeployError } from "./errors";
 import { bundleProblems, manifestProblems } from "./metadata";
 import { runDeploy } from "./pipeline";
 import { registerDispatchApp, toAppRow } from "./registry";
+import { BROWSER_INSTALL_LIMITS, withInstallLease } from "./browser-install";
+
+export function deployLimits() {
+  return platformPolicy(env).mode === "self_hosted"
+    ? BROWSER_INSTALL_LIMITS
+    : platformPolicy(env).thirdPartyLimits;
+}
 
 const INLINE_WAIT_MS = 20_000;
 
@@ -100,10 +107,7 @@ export function parseManifest(raw: unknown, appId: string): Manifest {
       `manifest.id "${manifest.id}" does not match the app id "${appId}".`,
     );
   }
-  const problems = manifestProblems(
-    manifest,
-    platformPolicy(env).thirdPartyLimits,
-  );
+  const problems = manifestProblems(manifest, deployLimits());
   if (problems.length > 0) throw bundleRefused(problems);
   return manifest;
 }
@@ -116,6 +120,7 @@ interface Deployer {
 
 export function registerApp(deployer: Deployer, manifest: Manifest) {
   return registerDispatchApp({
+    serviceBinding: platformPolicy(env).mode === "self_hosted",
     organizationId: deployer.organizationId,
     appSlug: manifest.id,
     name: manifest.name ?? manifest.id,
@@ -220,7 +225,7 @@ export async function startDeploy(input: StartDeployInput): Promise<string> {
   const { gatewayUrl, identityPublicKey } = deployerSettings();
   // Refused before anything is registered, created or queued; the
   // pipeline checks again before it uploads.
-  const limits = platformPolicy(env).thirdPartyLimits;
+  const limits = deployLimits();
   const problems = bundleProblems(
     bundle.worker,
     manifest,
@@ -228,7 +233,10 @@ export async function startDeploy(input: StartDeployInput): Promise<string> {
     bundle.assets.size > 0,
   );
   if (problems.length > 0) throw bundleRefused(problems);
-  const deployer = CfRestDeployer.fromEnv(env);
+  const selfHosted = platformPolicy(env).mode === "self_hosted";
+  const deployer = selfHosted
+    ? CfRestDeployer.fromSelfHostedEnv(env)
+    : CfRestDeployer.fromEnv(env);
   // The job before the row: a deploy refused as already running leaves the
   // registry as the running one has it.
   const job = await DeployJobRepository.start(
@@ -255,16 +263,45 @@ export async function startDeploy(input: StartDeployInput): Promise<string> {
   logEvent("deploy_api.deploy_started", fields);
 
   // Never rejects: the answer is the job, however its outcome was recorded.
-  const run = runDeploy({
-    app,
-    manifest,
-    bundle,
-    deployer,
-    gatewayUrl,
-    identityPublicKey,
-    limits,
-    actor: input.actor,
-  }).then(
+  const execute = (port: CfRestDeployer, current = app) =>
+    runDeploy({
+      app: current,
+      manifest,
+      bundle,
+      deployer: port,
+      gatewayUrl,
+      identityPublicKey,
+      limits,
+      actor: input.actor,
+    });
+  const deploy = selfHosted
+    ? withInstallLease(`app:${app.workerName}`, "app.deploy", async (renew) => {
+        // A CLI operation may have finished after registration, before we
+        // acquired its lease. Never upload against that stale snapshot.
+        const row = await AppRepository.findById(app.id, organizationId);
+        if (
+          !row ||
+          row.status === "deleted" ||
+          row.tier !== "service_binding" ||
+          row.workerName !== app.workerName ||
+          row.hostname !== app.hostname ||
+          row.versionId !== app.versionId
+        )
+          throw new DeployError(
+            "APP_CHANGING",
+            409,
+            "This app changed before installation started. Try again.",
+          );
+        const current = toAppRow(row);
+        const deployed = await execute(
+          deployer.usingLease(renew, current),
+          current,
+        );
+        await deployer.publishBoundApp(deployed, gatewayUrl, renew);
+        return deployed;
+      })
+    : execute(deployer);
+  const run = deploy.then(
     (deployed) => {
       if (deployed.hostname && deployed.workerName) {
         scheduleCatalogResync(

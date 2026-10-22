@@ -1,16 +1,17 @@
 /**
- * Install an app from GitHub (Admin → Apps → Install from GitHub): an
- * owner or admin of the session's organization pastes a repository URL,
- * and the gateway deploys the repository's latest everyapp release
+ * Browser installation (Admin → Apps → Install app): an owner or admin
+ * supplies a public GitHub repository or immutable oss.new release URL,
+ * and the Gateway deploys the validated release
  * (./release.ts) through the deploy API's pipeline (./run.ts), registered
  * as a third-party app of that organization.
  *
  *   GET  /api/admin/apps/install        whether this gateway installs apps
- *   POST /api/admin/apps/install        install one (JSON: repoUrl)
+ *   GET  /api/admin/apps/install/context eligible workspaces for approval
+ *   POST /api/admin/apps/install        repoUrl OR releaseUrl, organizationId
  *   GET  /api/admin/deploys/{id}        a deploy job, as the page polls it
  *
- * Only behind the deploy API's launch gate (platformPolicy(env)
- * .thirdPartyDeploys, hosted only): otherwise APP_INSTALL_NOT_AVAILABLE.
+ * Hosted deploys retain their launch gate. Self-hosted browser installs are
+ * on by default with configured credentials; BROWSER_APP_INSTALLS=off opts out.
  * Session-authenticated, so these are control-plane routes
  * (src/routes/api/admin/), behind its CSRF guard.
  */
@@ -24,11 +25,14 @@ import {
 } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
 import { isUserBanned } from "@/server/user-ban";
+import { OrganizationRepository } from "@/server/repositories/OrganizationRepository";
 import { bundleRefused, DeployError } from "./errors";
-import { fetchAppRelease, parseRepoUrl } from "./release";
+import { fetchAppRelease, fetchReleaseUrl, parseRepoUrl } from "./release";
+import { selfHostedInstallEnabled } from "./browser-install";
 import { bundleProblems } from "./metadata";
 import {
   deployerSettings,
+  deployLimits,
   failure,
   jobAnswer,
   json,
@@ -43,18 +47,30 @@ interface InstallCaller {
   organizationId: string;
 }
 
-/**
- * An owner or admin of the session's organization, its role read live
- * (as a deploy key's is), in an organization that isn't suspended.
- */
-async function authenticateAdmin(request: Request): Promise<InstallCaller> {
+async function authenticateSession(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session?.user?.id || isUserBanned(session.user)) {
     throw new DeployError("UNAUTHORIZED", 401, "Sign in again.");
   }
+  return session;
+}
+
+/** The approved workspace, checked live even if another tab switched sessions. */
+async function authenticateAdmin(
+  session: Awaited<ReturnType<typeof authenticateSession>>,
+  organizationId?: unknown,
+): Promise<InstallCaller> {
+  if (
+    organizationId !== undefined &&
+    (typeof organizationId !== "string" ||
+      !organizationId.trim() ||
+      organizationId.length > 256)
+  )
+    throw new DeployError("INVALID_REQUEST", 400, "Choose a valid workspace.");
   const org = await resolveOrgContext({
     userId: session.user.id,
-    activeOrganizationId: session.session.activeOrganizationId ?? null,
+    activeOrganizationId:
+      organizationId ?? session.session.activeOrganizationId ?? null,
   });
   const role = org
     ? await resolveLiveOrgRole(session.user.id, org.orgId)
@@ -88,7 +104,7 @@ async function authenticateAdmin(request: Request): Promise<InstallCaller> {
 }
 
 function installAvailable(): boolean {
-  return platformPolicy(env).thirdPartyDeploys;
+  return platformPolicy(env).thirdPartyDeploys || selfHostedInstallEnabled(env);
 }
 
 function assertAvailable(): void {
@@ -96,7 +112,7 @@ function assertAvailable(): void {
     throw new DeployError(
       "APP_INSTALL_NOT_AVAILABLE",
       404,
-      "This gateway doesn't install apps from GitHub; deploy them with the everyapp CLI.",
+      "Browser installation is not enabled on this Gateway. Its owner can configure the browser deployer, or deploy with the everyapp CLI.",
     );
   }
 }
@@ -117,33 +133,69 @@ async function serve(work: () => Promise<Response>): Promise<Response> {
 /** GET /api/admin/apps/install */
 export function serveInstallAvailability(request: Request): Promise<Response> {
   return serve(async () => {
-    await authenticateAdmin(request);
+    await authenticateAdmin(await authenticateSession(request));
     return json({ available: installAvailable() });
+  });
+}
+
+/** GET /api/admin/apps/install/context: approval choices, without switching sessions. */
+export function serveInstallContext(request: Request): Promise<Response> {
+  return serve(async () => {
+    const session = await authenticateSession(request);
+    const workspaces = await OrganizationRepository.findAdminSummariesForUser(
+      session.user.id,
+    );
+    const active = session.session.activeOrganizationId;
+    return json({
+      available: installAvailable(),
+      workspaces,
+      defaultOrganizationId:
+        workspaces.find((workspace) => workspace.id === active)?.id ??
+        workspaces[0]?.id ??
+        null,
+    });
   });
 }
 
 /** POST /api/admin/apps/install */
 export function serveInstall(request: Request): Promise<Response> {
   return serve(async () => {
-    const caller = await authenticateAdmin(request);
-    assertAvailable();
-    let body: { repoUrl?: unknown };
+    const session = await authenticateSession(request);
+    let body: {
+      repoUrl?: unknown;
+      releaseUrl?: unknown;
+      organizationId?: unknown;
+    };
     try {
       body = (await request.json()) as typeof body;
     } catch {
-      throw new DeployError("INVALID_REQUEST", 400, "Send JSON: { repoUrl }.");
+      throw new DeployError(
+        "INVALID_REQUEST",
+        400,
+        "Send JSON with one repoUrl or releaseUrl.",
+      );
     }
-    const repo = parseRepoUrl(body?.repoUrl);
+    const caller = await authenticateAdmin(session, body?.organizationId);
+    assertAvailable();
     // Nothing is downloaded for a gateway that couldn't deploy it.
     deployerSettings();
-    const release = await fetchAppRelease(repo);
+    if (body?.releaseUrl !== undefined && body.repoUrl !== undefined)
+      throw new DeployError(
+        "INVALID_REQUEST",
+        400,
+        "Send one repoUrl or releaseUrl.",
+      );
+    const release =
+      body?.releaseUrl !== undefined
+        ? await fetchReleaseUrl(body.releaseUrl)
+        : await fetchAppRelease(parseRepoUrl(body?.repoUrl));
     const manifest = parseManifest(release.bundle.manifest, release.appId);
     // Refused before the app is registered: a release that can't go
     // leaves no row behind. startDeploy checks again.
     const problems = bundleProblems(
       release.bundle.worker,
       manifest,
-      platformPolicy(env).thirdPartyLimits,
+      deployLimits(),
       release.bundle.assets.size > 0,
     );
     if (problems.length > 0) throw bundleRefused(problems);
@@ -152,7 +204,7 @@ export function serveInstall(request: Request): Promise<Response> {
     logEvent("app_install.started", {
       org: caller.organizationId,
       app: manifest.id,
-      repo: repo.repoUrl,
+      repo: release.source.repoUrl,
       tag: release.source.tag,
       kind: plan.kind,
     });
@@ -175,7 +227,10 @@ export function serveInstallJob(
   id: string,
 ): Promise<Response> {
   return serve(async () => {
-    const caller = await authenticateAdmin(request);
+    const caller = await authenticateAdmin(
+      await authenticateSession(request),
+      new URL(request.url).searchParams.get("organizationId") ?? undefined,
+    );
     assertAvailable();
     return jobAnswer(caller.organizationId, id);
   });

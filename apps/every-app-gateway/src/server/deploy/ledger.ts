@@ -1,5 +1,5 @@
 /**
- * The D1 databases the deployer created for third-party apps, recorded in
+ * The D1 databases and self-hosted Workers the deployer created, recorded in
  * the CLI's resource ledger (`_everyapp_app_resources` in the gateway's
  * D1, packages/cli/src/lib/app/ownership.ts) with the same rules: a name
  * proves nothing (anyone with the account can create a database named like
@@ -30,6 +30,52 @@ const CREATE_TABLE = [
 
 async function ensureTable(): Promise<void> {
   for (const statement of CREATE_TABLE) await db.run(statement);
+}
+
+/** Claim a free Worker before upload; an existing one needs its original claim. */
+export async function claimBrowserWorker(
+  workerName: string,
+  exists: boolean,
+): Promise<string | null> {
+  await ensureTable();
+  const [claim] = (await db.all(
+    sql`SELECT name, resource_id, version_id FROM _everyapp_app_resources WHERE worker_name = ${workerName} AND kind = 'worker' AND binding = ''`,
+  )) as Array<{
+    name: string;
+    resource_id: string | null;
+    version_id: string | null;
+  }>;
+  if (claim?.name === workerName && claim.resource_id === workerName)
+    return claim.version_id;
+  if (exists || claim)
+    throw new DeployError(
+      "WORKER_OWNED",
+      409,
+      "This Worker is not recorded as this app's. Use the CLI to reconcile it.",
+    );
+  await db.run(
+    sql`INSERT INTO _everyapp_app_resources (worker_name, kind, binding, name, resource_id, created_at)
+    VALUES (${workerName}, 'worker', '', ${workerName}, ${workerName}, ${Date.now()})`,
+  );
+  return null;
+}
+
+/** Record the serving version before later install steps can fail. */
+export async function recordBrowserWorkerVersion(
+  workerName: string,
+  versionId: string,
+): Promise<void> {
+  const updated = await db.all(
+    sql`UPDATE _everyapp_app_resources SET version_id = ${versionId}
+    WHERE worker_name = ${workerName} AND kind = 'worker' AND binding = ''
+      AND name = ${workerName} AND resource_id = ${workerName} RETURNING worker_name`,
+  );
+  if (!updated.length)
+    throw new DeployError(
+      "WORKER_OWNED",
+      409,
+      "The Worker's ownership claim is missing. Use the CLI to reconcile it.",
+    );
 }
 
 async function recorded(

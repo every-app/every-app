@@ -9,9 +9,10 @@
  */
 import { CloudflareTransport, type CloudflareTransportOptions } from "./client";
 import { d1 } from "./d1";
-import { dispatchAssets } from "./assets";
+import { dispatchAssets, workerAssets } from "./assets";
 import { dispatchNamespaces, dispatchScripts } from "./dispatch";
 import { workers } from "./workers";
+import { scripts } from "./scripts";
 
 export function createCloudflareRest(options: CloudflareTransportOptions) {
   const transport = new CloudflareTransport(options);
@@ -20,8 +21,10 @@ export function createCloudflareRest(options: CloudflareTransportOptions) {
     dispatchNamespaces: dispatchNamespaces(transport),
     dispatchScripts: dispatchScripts(transport),
     dispatchAssets: dispatchAssets(transport),
+    workerAssets: workerAssets(transport),
     d1: d1(transport),
     workers: workers(transport),
+    scripts: scripts(transport),
   };
 }
 

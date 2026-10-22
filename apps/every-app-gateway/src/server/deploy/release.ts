@@ -16,6 +16,7 @@ import type { DeployJobSource } from "@/server/repositories/DeployJobRepository"
 import { parseStamp, type DeployBundle } from "./bundle";
 import { bundleRefused, DeployError } from "./errors";
 import { readTar, TarError } from "./tar";
+import { OSS_NEW_RELEASE_URL } from "../../schemas/app-install";
 
 const APP_RELEASE_ASSET = "everyapp-release.tar.gz";
 
@@ -391,16 +392,7 @@ export async function fetchAppRelease(repo: {
   repoUrl: string;
 }): Promise<AppRelease> {
   const { body, tag } = await download(repo.owner, repo.repo);
-  let files: Map<string, Uint8Array>;
-  try {
-    files = readTar(await gunzip(body), { maxFiles: MAX_FILES });
-  } catch (error) {
-    if (error instanceof TarError) {
-      throw invalid(`The release isn't a readable archive: ${error.message}.`);
-    }
-    throw error;
-  }
-  const { release, bundle } = await bundleFromRelease(files);
+  const { release, bundle } = await unpackRelease(body);
   return {
     appId: release.appId,
     bundle,
@@ -411,4 +403,56 @@ export async function fetchAppRelease(repo: {
       gitSha: release.gitSha,
     },
   };
+}
+
+/** Only oss.new's immutable, public release endpoint; no credentials or redirects. */
+export async function fetchReleaseUrl(raw: unknown): Promise<AppRelease> {
+  if (typeof raw !== "string" || !OSS_NEW_RELEASE_URL.test(raw.trim()))
+    throw new DeployError(
+      "INVALID_RELEASE_URL",
+      400,
+      "Use an oss.new release URL: https://oss.new/apps/<key>.",
+    );
+  const url = raw.trim();
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      redirect: "error",
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw fetchFailed("The oss.new release could not be downloaded.");
+  }
+  if (!response.ok || !response.body) {
+    await response.body?.cancel();
+    throw fetchFailed(`oss.new answered ${response.status}.`);
+  }
+  if (Number(response.headers.get("content-length")) > MAX_RELEASE_BYTES) {
+    await response.body.cancel();
+    throw tooLarge("compressed");
+  }
+  const { release, bundle } = await unpackRelease(response.body);
+  return {
+    appId: release.appId,
+    bundle,
+    source: {
+      repoUrl: url,
+      tag: null,
+      version: release.version,
+      gitSha: release.gitSha,
+    },
+  };
+}
+
+async function unpackRelease(body: ReadableStream<Uint8Array>) {
+  let files: Map<string, Uint8Array>;
+  try {
+    files = readTar(await gunzip(body), { maxFiles: MAX_FILES });
+  } catch (error) {
+    if (error instanceof TarError) {
+      throw invalid(`The release isn't a readable archive: ${error.message}.`);
+    }
+    throw error;
+  }
+  return bundleFromRelease(files);
 }

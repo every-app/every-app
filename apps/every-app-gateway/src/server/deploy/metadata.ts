@@ -136,6 +136,23 @@ export function manifestProblems(
       "it declares KV namespaces, which third-party apps can't have; use D1",
     );
   }
+  if (
+    manifest.resources?.r2?.length ||
+    manifest.resources?.hyperdrive?.length
+  ) {
+    problems.push(
+      "it declares R2 or Hyperdrive, which the browser deployer can't provision; use the CLI",
+    );
+  }
+  if (
+    (manifest.migrations?.dialect &&
+      manifest.migrations.dialect !== "sqlite") ||
+    (manifest.migrations?.engine && manifest.migrations.engine !== "drizzle")
+  ) {
+    problems.push(
+      "its migrations require a source checkout; browser installs support D1 SQL migrations only",
+    );
+  }
   if (manifest.secrets?.length) {
     problems.push("it declares secrets, which third-party apps can't have yet");
   }

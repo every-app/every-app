@@ -4,7 +4,7 @@ import {
   serveInstallAvailability,
 } from "@/server/deploy/install";
 
-/** Install an app from GitHub (server/deploy/install.ts). */
+/** Browser installation from a public repository or oss.new release. */
 export const Route = createFileRoute("/api/admin/apps/install")({
   server: {
     handlers: {

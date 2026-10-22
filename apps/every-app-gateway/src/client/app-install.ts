@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 /**
- * Admin → Apps → Install from GitHub, over the session-authenticated admin
+ * Admin → Apps → Install app, over the session-authenticated admin
  * routes (server/deploy/install.ts): whether this gateway installs apps,
  * starting an install, and the deploy job it answers with.
  */
@@ -12,6 +12,12 @@ export interface InstallJob {
   error: { code: string; message: string } | null;
   source: { repoUrl: string; tag: string | null; version: string } | null;
   app: { id: string; hostname: string | null; url: string | null } | null;
+}
+
+interface AppInstallContext {
+  available: boolean;
+  workspaces: Array<{ id: string; name: string }>;
+  defaultOrganizationId: string | null;
 }
 
 /** A refusal, with the route's code (`NO_RELEASE`, `INVALID_REPO_URL`, ...). */
@@ -38,7 +44,7 @@ async function answer<T>(response: Response): Promise<T> {
   return body;
 }
 
-/** Whether this gateway installs apps from GitHub (hosted, past the launch gate). */
+/** Whether this Gateway has an enabled browser deployer. */
 export function useAppInstallAvailable(enabled: boolean) {
   return useQuery({
     queryKey: ["admin", "app-install"],
@@ -53,16 +59,42 @@ export function useAppInstallAvailable(enabled: boolean) {
   });
 }
 
-export async function startAppInstall(repoUrl: string): Promise<InstallJob> {
+/** Workspaces the signed-in user can install into, with their active one preferred. */
+export function useAppInstallContext() {
+  return useQuery({
+    queryKey: ["admin", "app-install", "context"],
+    queryFn: async () =>
+      answer<AppInstallContext>(await fetch("/api/admin/apps/install/context")),
+    staleTime: 0,
+  });
+}
+
+export async function startAppInstall({
+  sourceUrl,
+  organizationId,
+}: {
+  sourceUrl: string;
+  organizationId: string;
+}): Promise<InstallJob> {
   const response = await fetch("/api/admin/apps/install", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ repoUrl }),
+    body: JSON.stringify({
+      organizationId,
+      ...(sourceUrl.startsWith("https://github.com/")
+        ? { repoUrl: sourceUrl }
+        : { releaseUrl: sourceUrl }),
+    }),
   });
   return (await answer<{ job: InstallJob }>(response)).job;
 }
 
-export async function fetchInstallJob(id: string): Promise<InstallJob> {
-  const response = await fetch(`/api/admin/deploys/${encodeURIComponent(id)}`);
+export async function fetchInstallJob(
+  id: string,
+  organizationId: string,
+): Promise<InstallJob> {
+  const response = await fetch(
+    `/api/admin/deploys/${encodeURIComponent(id)}?organizationId=${encodeURIComponent(organizationId)}`,
+  );
   return (await answer<{ job: InstallJob }>(response)).job;
 }

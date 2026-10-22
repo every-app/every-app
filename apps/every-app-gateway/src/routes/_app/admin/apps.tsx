@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useState } from "react";
 import { Download } from "lucide-react";
@@ -9,7 +9,6 @@ import { AppsTable } from "@/client/components/admin/AppsTable";
 import { EditAppModal } from "@/client/components/admin/EditAppModal";
 import { DeleteAppModal } from "@/client/components/admin/DeleteAppModal";
 import { ManageAppAccessModal } from "@/client/components/admin/ManageAppAccessModal";
-import { InstallFromGitHubModal } from "@/client/components/admin/InstallFromGitHubModal";
 import { Button } from "@/client/components/ui/button";
 import { useAppInstallAvailable } from "@/client/app-install";
 import type { AppWithAccessCount } from "@/types/app";
@@ -23,9 +22,8 @@ function AppsPage() {
   const { data: activeMemberRole } = authClient.useActiveMemberRole();
   const isOwner = activeMemberRole?.role === "owner";
   const isAdmin = isOwner || activeMemberRole?.role === "admin";
-  // Only a hosted gateway past the third-party launch gate installs apps.
+  // Hosted deployer or a configured self-hosted browser deployer.
   const { data: canInstall } = useAppInstallAvailable(isAdmin);
-  const [installing, setInstalling] = useState(false);
   // Each dialog renders only while its app is set. The setters are stable, so
   // the table's columns are too.
   const [editingApp, setEditingApp] = useState<AppWithAccessCount | null>(null);
@@ -56,9 +54,9 @@ function AppsPage() {
         }
         action={
           canInstall ? (
-            <Button onClick={() => setInstalling(true)}>
+            <Button nativeButton={false} render={<Link to="/install" />}>
               <Download />
-              Install from GitHub
+              Install app
             </Button>
           ) : undefined
         }
@@ -80,10 +78,6 @@ function AppsPage() {
         onDelete={setDeletingApp}
         isOwner={isOwner}
       />
-
-      {installing ? (
-        <InstallFromGitHubModal onClose={() => setInstalling(false)} />
-      ) : null}
 
       {editingApp ? (
         <EditAppModal app={editingApp} onClose={() => setEditingApp(null)} />

@@ -107,6 +107,8 @@ export const OPTIONAL_SECRETS = [
   // (src/server/deploy, docs/runbooks/hosted-install.md).
   "THIRD_PARTY_DEPLOYS",
   "CF_DEPLOY_TOKEN",
+  // Self-hosted browser installs are on by default; set to "off" to opt out.
+  "BROWSER_APP_INSTALLS",
   "DISPATCH_NAMESPACE",
   "THIRD_PARTY_DOMAIN",
 ] as const;

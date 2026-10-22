@@ -92,10 +92,12 @@ export const SETTABLE_GATEWAY_SETTINGS = [
   "EMAIL_PASSWORD_SIGN_IN",
   // "false" keeps the hosted gateway's sign-up invite-only.
   "HOSTED_OPEN_SIGNUP",
-  // The hosted deploy API's deployer and the third-party domain. Its launch
+  // Release deployers and the hosted third-party domain. The hosted launch
   // gate, THIRD_PARTY_DEPLOYS, is never set from here: it is opened by
   // hand once the launch checks pass (docs/runbooks/hosted-install.md).
   "CF_DEPLOY_TOKEN",
+  // Self-hosted browser installs are on by default; "off" opts out.
+  "BROWSER_APP_INSTALLS",
   "DISPATCH_NAMESPACE",
   "THIRD_PARTY_DOMAIN",
 ] as const;
