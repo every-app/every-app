@@ -39,7 +39,9 @@ function GroupsPage() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<AdminGroup | null>(null);
   const [deleting, setDeleting] = useState<AdminGroup | null>(null);
-  const [membersOf, setMembersOf] = useState<AdminGroup | null>(null);
+  // The members dialog needs only the id and name: the "Add members" action
+  // on the created toast opens it for a group the list may not show yet.
+  const [membersOf, setMembersOf] = useState<GroupRef | null>(null);
   const [appsOf, setAppsOf] = useState<AdminGroup | null>(null);
 
   const groupsQuery = useQuery({
@@ -107,8 +109,13 @@ function GroupsPage() {
               await updateGroup({ data: { id: editing.id, ...values } });
               toast.success("Group updated");
             } else {
-              await createGroup({ data: values });
-              toast.success("Group created");
+              const created = await createGroup({ data: values });
+              toast.success("Group created", {
+                action: {
+                  label: "Add members",
+                  onClick: () => setMembersOf(created),
+                },
+              });
             }
             setCreating(false);
             setEditing(null);
@@ -156,12 +163,14 @@ function GroupsPage() {
   );
 }
 
+type GroupRef = Pick<AdminGroup, "id" | "name">;
+
 function GroupMembersDialog({
   group,
   onClose,
   onSaved,
 }: {
-  group: AdminGroup;
+  group: GroupRef;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {

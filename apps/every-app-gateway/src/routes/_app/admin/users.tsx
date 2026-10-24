@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { MailWarning, UserPlus } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { adminUsersCollection, useQueryFailed } from "@/client/tanstack-db";
 import {
@@ -23,7 +23,6 @@ import { InviteUserModal } from "@/client/components/admin/InviteUserModal";
 import { UsersTable } from "@/client/components/admin/UsersTable";
 import { ErrorState } from "@/client/components/ErrorState";
 import { SectionHeader } from "@/client/components/PageHeader";
-import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { Button } from "@/client/components/ui/button";
 import { getServerErrorMessage } from "@/client/errors";
 import { useSession } from "@/client/hooks/useSession";
@@ -161,6 +160,21 @@ function UsersPage() {
     <div className="space-y-6">
       <SectionHeader
         title="Users"
+        // Email is off on every new install: a note, not an alarm.
+        hint={
+          emailConfigured ? undefined : (
+            <>
+              Invitations and password resets are links you share.{" "}
+              <a
+                href="https://everyapp.com/docs/people#send-email"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Set up email
+              </a>
+            </>
+          )
+        }
         action={
           <Button onClick={() => setShowInviteModal(true)}>
             <UserPlus data-icon="inline-start" />
@@ -168,16 +182,6 @@ function UsersPage() {
           </Button>
         }
       />
-
-      {!emailConfigured ? (
-        <Alert variant="warning">
-          <MailWarning />
-          <AlertDescription className="text-foreground">
-            Email is not configured. Invitations and password resets give you a
-            link to share instead.
-          </AlertDescription>
-        </Alert>
-      ) : null}
 
       <UsersTable
         users={users}

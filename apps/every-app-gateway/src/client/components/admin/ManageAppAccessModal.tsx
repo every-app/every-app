@@ -4,6 +4,7 @@ import { Minus, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "cn";
 import { ErrorState } from "@/client/components/ErrorState";
+import { ScrollBox } from "@/client/components/ScrollBox";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { Checkbox } from "@/client/components/ui/checkbox";
@@ -160,14 +161,22 @@ export function ManageAppAccessModal({
     }
   };
 
-  // Filter users based on search query
+  // The search, with whoever could open the app when the dialog opened
+  // first. The order follows the loaded state, not the checkboxes, so rows
+  // never jump while toggling.
   const filteredUsers = useMemo(() => {
-    if (!searchQuery) return users;
     const query = searchQuery.toLowerCase();
-    return users.filter(
-      (user: UserAccessState) =>
-        user.name.toLowerCase().includes(query) ||
-        user.email.toLowerCase().includes(query),
+    const matching = query
+      ? users.filter(
+          (user: UserAccessState) =>
+            user.name.toLowerCase().includes(query) ||
+            user.email.toLowerCase().includes(query),
+        )
+      : users;
+    const hadAccess = (user: UserAccessState) =>
+      user.hasAccess || user.viaGroups.length > 0;
+    return [...matching].sort(
+      (a, b) => Number(hadAccess(b)) - Number(hadAccess(a)),
     );
   }, [users, searchQuery]);
 
@@ -304,7 +313,7 @@ export function ManageAppAccessModal({
             isRetrying={isFetching}
           />
         ) : (
-          <div className="max-h-72 overflow-y-auto overscroll-contain rounded-lg border border-border">
+          <ScrollBox className="max-h-72" deps={[filteredUsers]}>
             {filteredUsers.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-muted-foreground">
                 {searchQuery
@@ -415,7 +424,7 @@ export function ManageAppAccessModal({
                 })}
               </ul>
             )}
-          </div>
+          </ScrollBox>
         )}
 
         {/* Summary: of a list that is in. */}

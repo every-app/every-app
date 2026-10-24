@@ -130,6 +130,9 @@ export function UsersTable({
     columns,
     getRowId: (user) => user.id,
     withSorting: true,
+    // Newest first from the start, so the row an invitation adds lands at
+    // the top, where a fresh load puts it.
+    initialState: { sorting: [{ id: "createdAt", desc: true }] },
   });
 
   return (

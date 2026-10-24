@@ -3,8 +3,8 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
 import { DateCell, dateSortValue } from "@/client/components/table/DateCell";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
-import { Button } from "@/client/components/ui/button";
 import type { AdminGroup } from "@/types/group";
+import { CountCell } from "./CountCell";
 import { GroupActionsMenu } from "./GroupActionsMenu";
 
 type GroupActions = {
@@ -32,38 +32,14 @@ function useGroupActions() {
   return context;
 }
 
-function CountCell({
-  group,
-  count,
-  noun,
-  onClick,
-}: {
-  group: AdminGroup;
-  count: number;
-  noun: string;
-  onClick: (group: AdminGroup) => void;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="xs"
-      className="-ml-2 tabular-nums"
-      onClick={() => onClick(group)}
-    >
-      {count} {noun}
-      {count === 1 ? "" : "s"}
-    </Button>
-  );
-}
-
 function MembersCell({ group }: { group: AdminGroup }) {
   const { onManageMembers } = useGroupActions();
   return (
     <CountCell
-      group={group}
       count={group.memberCount}
       noun="member"
-      onClick={onManageMembers}
+      aria-label={`${group.memberCount} ${group.memberCount === 1 ? "member" : "members"} of ${group.name}`}
+      onClick={() => onManageMembers(group)}
     />
   );
 }
@@ -72,10 +48,10 @@ function AppsCell({ group }: { group: AdminGroup }) {
   const { onManageApps } = useGroupActions();
   return (
     <CountCell
-      group={group}
       count={group.appCount}
       noun="app"
-      onClick={onManageApps}
+      aria-label={`${group.appCount} ${group.appCount === 1 ? "app" : "apps"} for ${group.name}`}
+      onClick={() => onManageApps(group)}
     />
   );
 }

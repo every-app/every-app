@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Minus, Plus, Search } from "lucide-react";
 import { cn } from "cn";
 import { ErrorState } from "@/client/components/ErrorState";
+import { ScrollBox } from "@/client/components/ScrollBox";
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { Checkbox } from "@/client/components/ui/checkbox";
@@ -67,18 +68,20 @@ export function ChecklistDialog({
   emptyText,
 }: ChecklistDialogProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [original, setOriginal] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  // The server's list, once it loads.
+  // The server's list: what was checked when the dialog opened, and the
+  // starting point of what is checked now.
   const initialKey = initialSelectedIds.join("\n");
+  const original = useMemo(
+    () => new Set(initialKey ? initialKey.split("\n") : []),
+    [initialKey],
+  );
   useEffect(() => {
     if (isLoading) return;
-    const ids = new Set(initialKey ? initialKey.split("\n") : []);
-    setSelected(ids);
-    setOriginal(new Set(ids));
-  }, [initialKey, isLoading]);
+    setSelected(new Set(original));
+  }, [original, isLoading]);
 
   const toggle = (id: string) => {
     setSelected((prev) => {
@@ -89,15 +92,22 @@ export function ChecklistDialog({
     });
   };
 
+  // What was checked when the dialog opened comes first. The order follows
+  // that opening selection, not the current one, so rows never jump while
+  // toggling.
   const filtered = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    if (!query) return items;
-    return items.filter(
-      (item) =>
-        item.label.toLowerCase().includes(query) ||
-        (item.detail ?? "").toLowerCase().includes(query),
+    const matching = query
+      ? items.filter(
+          (item) =>
+            item.label.toLowerCase().includes(query) ||
+            (item.detail ?? "").toLowerCase().includes(query),
+        )
+      : items;
+    return [...matching].sort(
+      (a, b) => Number(original.has(b.id)) - Number(original.has(a.id)),
     );
-  }, [items, searchQuery]);
+  }, [items, original, searchQuery]);
 
   const adding = [...selected].filter((id) => !original.has(id)).length;
   const removing = [...original].filter((id) => !selected.has(id)).length;
@@ -189,7 +199,7 @@ export function ChecklistDialog({
             isRetrying={isRefetching}
           />
         ) : (
-          <div className="max-h-72 overflow-y-auto overscroll-contain rounded-lg border border-border">
+          <ScrollBox className="max-h-72" deps={[filtered]}>
             {filtered.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-muted-foreground">
                 {searchQuery
@@ -248,7 +258,7 @@ export function ChecklistDialog({
                 })}
               </ul>
             )}
-          </div>
+          </ScrollBox>
         )}
 
         {/* The count is of a list that is in. */}

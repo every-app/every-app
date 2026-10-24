@@ -55,14 +55,19 @@ export function SectionHeader({
   action,
 }: {
   title: string;
-  hint?: string;
+  /** One line under the title; a link in it is underlined. */
+  hint?: ReactNode;
   action?: ReactNode;
 }) {
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="space-y-0.5">
         <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
-        {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+        {hint ? (
+          <p className="text-xs text-muted-foreground [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground">
+            {hint}
+          </p>
+        ) : null}
       </div>
       {action}
     </div>
