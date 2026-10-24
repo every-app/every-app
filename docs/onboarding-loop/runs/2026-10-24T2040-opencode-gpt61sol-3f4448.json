@@ -1,0 +1,263 @@
+{
+  "v": 1,
+  "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+  "retryOf": null,
+  "startedAt": "2026-10-24T20:40:11.673Z",
+  "durationS": 1108,
+  "terminal_reason": "blocked",
+  "harness": {
+    "name": "opencode",
+    "version": "2.1.3",
+    "model": {
+      "requested": "openai/gpt-6.1-sol",
+      "resolved": "openai/gpt-6.1-sol"
+    },
+    "mode": null,
+    "permissionBypass": true
+  },
+  "signal": {
+    "toolCalls": "full",
+    "toolOutput": "truncated",
+    "exitCodes": true,
+    "cost": "harness",
+    "resume": "native"
+  },
+  "cliCommit": "6b142b18da98",
+  "checkoutCommit": "6b142b18da98",
+  "promptVariant": "checkout-present",
+  "promptSha": "217d257562ca",
+  "imageTag": "everyapp-loop:96d998",
+  "deviations": [
+    "checkout_preplaced",
+    "api_token_auth",
+    "event_log",
+    "claim_immediate"
+  ],
+  "fixtures": {
+    "workers_subdomain": "preexisting",
+    "cert_packs": "deleted",
+    "preRunPlanTotal": 0
+  },
+  "phases": [
+    {
+      "name": "install",
+      "startedAt": "2026-10-24T21:16:14.984Z",
+      "durationS": 0
+    },
+    {
+      "name": "setup",
+      "startedAt": "2026-10-24T21:16:23.244Z",
+      "durationS": 47
+    },
+    {
+      "name": "preflight.lock_wait",
+      "startedAt": "2026-10-24T20:40:11.674Z",
+      "durationS": 330
+    },
+    {
+      "name": "preflight.gap_wait",
+      "startedAt": "2026-10-24T20:45:41.707Z",
+      "durationS": 1789
+    },
+    {
+      "name": "teardown.before",
+      "startedAt": "2026-10-24T21:15:34.725Z",
+      "durationS": 22
+    },
+    {
+      "name": "harness",
+      "startedAt": "2026-10-24T21:16:00.896Z",
+      "durationS": 93
+    },
+    {
+      "name": "verify",
+      "startedAt": "2026-10-24T21:17:38.322Z",
+      "durationS": 927
+    },
+    {
+      "name": "teardown.after",
+      "startedAt": "2026-10-24T21:33:07.422Z",
+      "durationS": 51
+    }
+  ],
+  "everyappCommands": [
+    {
+      "argv": [
+        "setup",
+        "--domain",
+        "apps.<zone>",
+        "--json"
+      ],
+      "json": true,
+      "ci": false,
+      "exit": 1,
+      "ms": 47457,
+      "warnings": [
+        "CUSTOM_DOMAIN_OWNER_UNCHECKED"
+      ],
+      "actions": [],
+      "errors": [
+        "CF_NOT_FOUND"
+      ]
+    }
+  ],
+  "steps": {
+    "setup": {
+      "status": "error",
+      "reruns": 0
+    },
+    "claim": {
+      "how": "none",
+      "latencyS": null,
+      "linkSurfacedToPerson": false
+    },
+    "app": {
+      "by": "none",
+      "id": null
+    },
+    "access": {
+      "tried": false
+    }
+  },
+  "handoffs": {
+    "expected": [
+      "domain_question",
+      "claim_owner",
+      "create_app"
+    ],
+    "exercised": [
+      "domain_question"
+    ],
+    "skippedBecause": {
+      "cloudflare_login": "api_token",
+      "upgrade_workers_paid": "runbook",
+      "add_domain": "runbook",
+      "ACCESS_TEAM_REQUIRED": "no --with-access",
+      "register_workers_subdomain": "workers.dev name preexisting",
+      "claim_owner": "not reached",
+      "create_app": "not reached"
+    }
+  },
+  "scriptedUserTurns": [
+    {
+      "trigger": "domain_question",
+      "expected": true
+    }
+  ],
+  "interventions": [],
+  "interventionNeeded": false,
+  "hesitations": [
+    {
+      "kind": "tool_output_truncated",
+      "excerpt": "read output cut at 50146 chars",
+      "triage": "harness"
+    },
+    {
+      "kind": "asked_user",
+      "excerpt": "",
+      "triage": "prompt"
+    },
+    {
+      "kind": "ended_turn_without_done",
+      "excerpt": "Which Cloudflare domain should I use? I’ll set up the Gateway at `apps.<your-domain>`. `pnpm install` is complete.",
+      "triage": "prompt"
+    },
+    {
+      "kind": "asked_user",
+      "excerpt": "Which Cloudflare domain should I use?",
+      "triage": "prompt"
+    },
+    {
+      "kind": "tool_output_truncated",
+      "excerpt": "read output cut at 5716 chars",
+      "triage": "harness"
+    },
+    {
+      "kind": "source_read",
+      "excerpt": "/work/every-app/packages/cli/src/lib/cf/deploy.ts",
+      "triage": "docs"
+    },
+    {
+      "kind": "source_read",
+      "excerpt": "/work/every-app/packages/cli/src/lib/cf/workers.ts",
+      "triage": "docs"
+    },
+    {
+      "kind": "source_read",
+      "excerpt": "/work/every-app/packages/cli/src/lib/cf/runner.ts",
+      "triage": "docs"
+    },
+    {
+      "kind": "tool_output_truncated",
+      "excerpt": "read output cut at 7619 chars",
+      "triage": "harness"
+    },
+    {
+      "kind": "tool_output_truncated",
+      "excerpt": "grep output cut at 38672 chars",
+      "triage": "harness"
+    }
+  ],
+  "harnessTimeouts": [],
+  "errors": [
+    {
+      "code": "CF_NOT_FOUND",
+      "step": "setup",
+      "source": "cli"
+    }
+  ],
+  "resumes": [
+    {
+      "reason": "turn_end_without_done",
+      "how": "native"
+    }
+  ],
+  "verify": {
+    "phaseReached": "gateway-db",
+    "rows": {
+      "G1": "fail",
+      "G2": "fail",
+      "G3": "fail",
+      "O1": "fail",
+      "A1": "fail",
+      "A2": "fail",
+      "A3": "fail",
+      "S1": "fail",
+      "T1": "pass",
+      "X1": "skipped"
+    },
+    "gatewayUpToDate": true
+  },
+  "verdict": {
+    "value": "fail-onboarding",
+    "reasonCode": "everyapp_error:CF_NOT_FOUND",
+    "falseDone": false,
+    "tainted": false,
+    "shortcut": false,
+    "reportedUrlMatched": null
+  },
+  "cost": {
+    "usd": 0.1617,
+    "source": "harness",
+    "tokens": {
+      "input": 42,
+      "output": 1225,
+      "cacheRead": 382259,
+      "cacheWrite": 43720
+    },
+    "model": "openai/gpt-6.1-sol"
+  },
+  "secret_exposure": {
+    "cf_token": 0,
+    "provider_key": 0,
+    "setup_link": 0,
+    "owner_password": 0,
+    "bearer": 0
+  },
+  "versions": {
+    "verifier": 1,
+    "decisionTable": 1,
+    "rules": 1,
+    "parser": 1
+  }
+}

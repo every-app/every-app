@@ -12,9 +12,9 @@
         "at": "2026-10-24T10:25:25.490Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T19:30-opencode-gpt53codex-019400",
-        "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
-        "at": "2026-10-24T19:35:15.754Z"
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
       },
       "occurrences": [
         {
@@ -50,6 +50,27 @@
           "harness": "opencode",
           "model": "openai/gpt-5.3-codex",
           "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T20:40-codex-gpt61sol-bbf950",
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
           "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
         }
       ],
@@ -61,16 +82,16 @@
       "id": "b5b5dc186d933bea6df1303cfab70344e46fa6e4",
       "area": "cli",
       "key": "CUSTOM_DOMAIN_OWNER_UNCHECKED|deploy",
-      "status": "open",
+      "status": "flaky",
       "firstSeen": {
         "runId": "2026-10-24T10:20-script-none-c58fad",
         "cliCommit": "e41110c7c10c7983a96a54f8065b7e1c80e757f6",
         "at": "2026-10-24T10:25:25.490Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T19:30-opencode-gpt53codex-019400",
-        "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
-        "at": "2026-10-24T19:35:15.754Z"
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
       },
       "occurrences": [
         {
@@ -106,6 +127,20 @@
           "harness": "opencode",
           "model": "openai/gpt-5.3-codex",
           "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T20:40-codex-gpt61sol-bbf950",
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
           "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
         }
       ],
@@ -117,16 +152,16 @@
       "id": "e9340d8811f5abceae7dbdbc014180900128fe5a",
       "area": "cli",
       "key": "ACCESS_NOT_CHECKED|deploy",
-      "status": "open",
+      "status": "flaky",
       "firstSeen": {
         "runId": "2026-10-24T10:20-script-none-c58fad",
         "cliCommit": "e41110c7c10c7983a96a54f8065b7e1c80e757f6",
         "at": "2026-10-24T10:25:25.490Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T19:30-opencode-gpt53codex-019400",
-        "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
-        "at": "2026-10-24T19:35:15.754Z"
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
       },
       "occurrences": [
         {
@@ -162,6 +197,20 @@
           "harness": "opencode",
           "model": "openai/gpt-5.3-codex",
           "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T20:40-codex-gpt61sol-bbf950",
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
           "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
         }
       ],
@@ -173,16 +222,16 @@
       "id": "c5c5e26b4392043ec7fcc0eb2dcb40cc179c56f8",
       "area": "cli",
       "key": "status|GATEWAY_OUTDATED",
-      "status": "open",
+      "status": "flaky",
       "firstSeen": {
         "runId": "2026-10-24T10:20-script-none-c58fad",
         "cliCommit": "e41110c7c10c7983a96a54f8065b7e1c80e757f6",
         "at": "2026-10-24T10:25:25.490Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T19:30-opencode-gpt53codex-019400",
-        "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
-        "at": "2026-10-24T19:35:15.754Z"
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
       },
       "occurrences": [
         {
@@ -219,6 +268,20 @@
           "model": "openai/gpt-5.3-codex",
           "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
           "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T20:40-codex-gpt61sol-bbf950",
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
         }
       ],
       "excerpt": "status from a fresh clone of the same commit calls the Gateway outdated: an app created inside the checkout rewrites pnpm-lock.yaml, which the Gateway's tree hash covers",
@@ -229,16 +292,16 @@
       "id": "dc3f6c63d0e076285bcef3acca81da249c0945bb",
       "area": "prompt",
       "key": "ended_turn_without_done|-|-",
-      "status": "open",
+      "status": "flaky",
       "firstSeen": {
         "runId": "2026-10-24T10:40-claude-opus55-022ccf",
         "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
         "at": "2026-10-24T10:59:56.905Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T19:30-opencode-gpt53codex-019400",
-        "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
-        "at": "2026-10-24T19:35:15.754Z"
+        "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T21:33:58.409Z"
       },
       "occurrences": [
         {
@@ -260,6 +323,13 @@
           "harness": "opencode",
           "model": "openai/gpt-5.3-codex",
           "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
           "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
         }
       ],
@@ -278,9 +348,9 @@
         "at": "2026-10-24T10:59:56.905Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T19:30-opencode-gpt53codex-019400",
-        "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
-        "at": "2026-10-24T19:35:15.754Z"
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
       },
       "occurrences": [
         {
@@ -303,6 +373,20 @@
           "model": "openai/gpt-5.3-codex",
           "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
           "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
         }
       ],
       "excerpt": "Which domain should I use?",
@@ -313,7 +397,7 @@
       "id": "ef4f21fc3656a3587af59799f9c34e854ec91482",
       "area": "loop",
       "key": "ended_turn_without_done|-|-",
-      "status": "open",
+      "status": "fixed",
       "firstSeen": {
         "runId": "2026-10-24T10:59-codex-gpt53codex-26b723",
         "cliCommit": "f2a1000de452a6aaa91a18c84d417e35bb5f3239",
@@ -404,9 +488,9 @@
         "at": "2026-10-24T19:35:15.754Z"
       },
       "lastSeen": {
-        "runId": "2026-10-24T19:30-opencode-gpt53codex-019400",
-        "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
-        "at": "2026-10-24T19:35:15.754Z"
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
       },
       "occurrences": [
         {
@@ -415,9 +499,254 @@
           "model": "openai/gpt-5.3-codex",
           "cliCommit": "931ff03991e1d640688ef812b334d5e0eaa62b93",
           "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
         }
       ],
       "excerpt": "read output cut at 50146 chars",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "5c5aa7a1202b1dbb3a8c14b0482a4b9b2ebdb182",
+      "area": "prompt",
+      "key": "blocked_for_question|-|-",
+      "status": "flaky",
+      "firstSeen": {
+        "runId": "2026-10-24T20:40-codex-gpt61sol-bbf950",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T20:45:30.608Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T20:40-codex-gpt61sol-bbf950",
+          "harness": "codex",
+          "model": "gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        },
+        {
+          "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        }
+      ],
+      "excerpt": "BLOCKED: waiting for your domain. Which domain should I use for `apps.<your domain>`?",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "46dea63815e4156d645554e9fe3281573fc0544d",
+      "area": "cli",
+      "key": "CF_NOT_FOUND|setup",
+      "status": "flaky",
+      "firstSeen": {
+        "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T21:33:58.409Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T21:33:58.409Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        }
+      ],
+      "excerpt": "CF_NOT_FOUND from `everyapp setup --domain apps.<zone> --json` (exit 1)",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "63a0907d814f7ec539de8e4e12dd40e4545970b2",
+      "area": "loop",
+      "key": "tool_output_truncated|setup --domain apps.<zone> --json > /tmp/opencode/everyapp-setup.log 2>&1|-",
+      "status": "flaky",
+      "firstSeen": {
+        "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T21:33:58.409Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T21:33:58.409Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        }
+      ],
+      "excerpt": "read output cut at 5716 chars",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "c71cef23dd4750d3b28abcd9fddd009357f67e05",
+      "area": "docs",
+      "key": "source_read|setup --domain apps.<zone> --json > /tmp/opencode/everyapp-setup.log 2>&1|-",
+      "status": "flaky",
+      "firstSeen": {
+        "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T21:33:58.409Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T21:33:58.409Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        }
+      ],
+      "excerpt": "/work/every-app/packages/cli/src/lib/cf/deploy.ts",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "070c0c298f048537a02cd5348f17eb7a6ac0673e",
+      "area": "loop",
+      "key": "tool_output_truncated|--filter everyapp exec cf workers list --quiet|-",
+      "status": "flaky",
+      "firstSeen": {
+        "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T21:33:58.409Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T21:33:58.409Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T20:40-opencode-gpt61sol-3f4448",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        }
+      ],
+      "excerpt": "grep output cut at 38672 chars",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "dce8d3b16cb0913974076ec828926a551ec5c285",
+      "area": "loop",
+      "key": "ended_turn_without_done|setup --domain apps.<zone> --json > /tmp/opencode/everyapp-setup.log 2>&1|-",
+      "status": "flaky",
+      "firstSeen": {
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        }
+      ],
+      "excerpt": "Open [your owner setup link](<url>). Enter your name, email, and a password of at least 8 characters, then click **Create owner account**. The l",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "27dd9f35612724250e2e9a7f4365cc3b683557a4",
+      "area": "cli",
+      "key": "repeated_command|setup --domain apps.<zone> --json|-",
+      "status": "flaky",
+      "firstSeen": {
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        }
+      ],
+      "excerpt": "setup --domain apps.<zone> --json",
+      "proposedFix": null,
+      "link": null
+    },
+    {
+      "id": "f50da2a068f1c569347132a6638adb18149527fd",
+      "area": "skill",
+      "key": "background_killed|setup|-",
+      "status": "flaky",
+      "firstSeen": {
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
+      },
+      "lastSeen": {
+        "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+        "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+        "at": "2026-10-24T22:09:31.110Z"
+      },
+      "occurrences": [
+        {
+          "runId": "2026-10-24T21:28-opencode-gpt61sol-02aadb",
+          "harness": "opencode",
+          "model": "openai/gpt-6.1-sol",
+          "cliCommit": "6b142b18da988e53a7c33bea0b4fd700732b840c",
+          "promptSha": "217d257562ca175378a119e430e2bdf84836cf13947f84aa863d57ba8ed2b672"
+        }
+      ],
+      "excerpt": "everyapp setup (pid 533) vanished with no exit line: the harness killed its background task",
       "proposedFix": null,
       "link": null
     }
