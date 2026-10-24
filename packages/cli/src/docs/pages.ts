@@ -73,3 +73,20 @@ export function plain(text: string): string {
   // eslint-disable-next-line no-control-regex
   return text.replace(/\x1b\[[0-9;]*m/g, "");
 }
+
+/**
+ * The documents the landing page mirrors from the repository at build time
+ * (landing-page/scripts/sync-agent-docs.js), page slug under repo/ →
+ * repository path.
+ */
+export function mirroredDocuments(): Map<string, string> {
+  const script = readFileSync(
+    fileURLToPath(new URL("../../scripts/sync-agent-docs.js", AGENT_DOCS_DIR)),
+    "utf8",
+  );
+  const map = new Map<string, string>();
+  for (const match of script.matchAll(/from: "([^"]+)",(?:(?!from:)[\s\S])*?to: "([^"]+)"/g)) {
+    map.set(match[2]!, match[1]!);
+  }
+  return map;
+}

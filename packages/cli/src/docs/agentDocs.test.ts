@@ -41,23 +41,11 @@ import {
   anchorOf,
   backticked,
   h3s,
+  mirroredDocuments,
   readPage,
   writePage,
 } from "./pages";
 
-
-/** The documents the landing page mirrors from the repository, page slug → repository path. */
-function mirrored(): Map<string, string> {
-  const script = readFileSync(
-    fileURLToPath(new URL("../../scripts/sync-agent-docs.js", AGENT_DOCS_DIR)),
-    "utf8",
-  );
-  const map = new Map<string, string>();
-  for (const match of script.matchAll(/from: "([^"]+)",(?:(?!from:)[\s\S])*?to: "([^"]+)"/g)) {
-    map.set(match[2]!, match[1]!);
-  }
-  return map;
-}
 
 const HOW = "Document it on the page (see the brief at the top of the page), or run `pnpm -C packages/cli docs:update` for a generated page.";
 
@@ -131,7 +119,7 @@ describe("the agent docs", () => {
         if (rest.startsWith("repo/")) {
           // Mirrored from the repository at build time: the source must exist,
           // or the site build's prerender fails on the link.
-          const source = mirrored().get(rest.slice("repo/".length));
+          const source = mirroredDocuments().get(rest.slice("repo/".length));
           if (!source || !existsSync(fileURLToPath(new URL(`../../../${source}`, AGENT_DOCS_DIR)))) {
             broken.push(`${slug}.md → ${target} (not mirrored, or its source is missing)`);
           }
