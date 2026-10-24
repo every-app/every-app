@@ -980,6 +980,7 @@ describe("outer ring: Access in front of the gateway (SQLite)", () => {
       emailPassword: true,
       providers: [],
       accessEmail: "alice@acme.com",
+      emailConfigured: false,
       signUp: "invitation",
       emailVerification: false,
     });
@@ -1047,9 +1048,34 @@ describe("OIDC sign-in: Continue with Company SSO (SQLite)", () => {
       emailPassword: true,
       providers: [{ id: "cloudflare-access", label: "Company SSO" }],
       accessEmail: null,
+      emailConfigured: false,
       signUp: "invitation",
       emailVerification: false,
     });
+  });
+
+  it("says whether the gateway sends email, so the reset pages stop promising one", async () => {
+    await expect((await api("/sign-in-methods")).json()).resolves.toMatchObject(
+      { emailConfigured: false },
+    );
+    // A sender alone isn't enough: a provider has to be set up too.
+    useAccessEnv({
+      ...MOCK_ACCESS_ENV.oidc,
+      EMAIL_FROM: "noreply@acme.com",
+      EMAIL_FROM_NAME: "Acme",
+    });
+    await expect((await api("/sign-in-methods")).json()).resolves.toMatchObject(
+      { emailConfigured: false },
+    );
+    useAccessEnv({
+      ...MOCK_ACCESS_ENV.oidc,
+      EMAIL_FROM: "noreply@acme.com",
+      EMAIL_FROM_NAME: "Acme",
+      RESEND_API_KEY: "re_test",
+    });
+    await expect((await api("/sign-in-methods")).json()).resolves.toMatchObject(
+      { emailConfigured: true },
+    );
   });
 
   it("sends the browser to Access with state and PKCE (S256), and signs an invited person in", async () => {
@@ -1668,6 +1694,7 @@ describe("a hosted gateway: no Cloudflare Access sign-in, whatever is set (SQLit
       emailPassword: true,
       providers: [],
       accessEmail: null,
+      emailConfigured: false,
       signUp: "open",
       emailVerification: true,
     });

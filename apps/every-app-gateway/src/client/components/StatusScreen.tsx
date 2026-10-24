@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "cn";
+import { BrandMark } from "@/client/components/BrandLink";
 import { Spinner } from "@/client/components/Spinner";
 
 const WIDTHS = {
@@ -22,7 +23,7 @@ export function StatusScreen({
   footer,
   size = "md",
 }: {
-  /** Show the Every App logo, for screens outside the app shell. */
+  /** Show the Every App mark and wordmark, for screens outside the app shell. */
   logo?: boolean;
   title?: ReactNode;
   description?: ReactNode;
@@ -44,13 +45,7 @@ export function StatusScreen({
           WIDTHS[size],
         )}
       >
-        {logo ? (
-          <img
-            src="/transparent-logo.png"
-            alt="Every App"
-            className="size-12 rounded-lg"
-          />
-        ) : null}
+        {logo ? <BrandMark mark="size-8" /> : null}
         {title ? (
           <h1 className="text-center text-xl font-semibold">{title}</h1>
         ) : null}

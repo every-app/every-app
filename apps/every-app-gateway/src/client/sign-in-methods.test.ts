@@ -4,6 +4,7 @@ import {
   accessSignInErrorMessage,
   mayAutoContinue,
   shouldLinkAfterPasswordSignIn,
+  signInPageParts,
 } from "./sign-in-methods";
 
 function memoryStorage() {
@@ -105,5 +106,83 @@ describe("mayAutoContinue", () => {
       setItem: () => undefined,
     };
     expect(mayAutoContinue("/", broken)).toBe(true);
+  });
+});
+
+describe("signInPageParts", () => {
+  const base = {
+    emailPassword: true,
+    providers: [],
+    accessEmail: null,
+    emailConfigured: false,
+    signUp: "invitation" as const,
+    emailVerification: false,
+  };
+  const quiet = { signedIn: false, accessErrorCode: null };
+
+  it("offers Sign up only where anyone may sign up, and not before the methods load", () => {
+    expect(signInPageParts(undefined, quiet).signUp).toBe(false);
+    expect(signInPageParts(base, quiet).signUp).toBe(false);
+    expect(signInPageParts({ ...base, signUp: "open" }, quiet).signUp).toBe(
+      true,
+    );
+  });
+
+  it("shows Continue with <label> until Access has named the person", () => {
+    const sso = {
+      ...base,
+      providers: [{ id: "cloudflare-access", label: "Company SSO" }],
+    };
+    expect(signInPageParts(sso, quiet).accessButton).toBe(true);
+    expect(
+      signInPageParts({ ...sso, accessEmail: "alice@acme.com" }, quiet)
+        .accessButton,
+    ).toBe(false);
+    expect(signInPageParts(base, quiet).accessButton).toBe(false);
+  });
+
+  it("names who Access says is here, unless a red alert already does", () => {
+    const named = { ...base, accessEmail: "alice@acme.com" };
+    expect(signInPageParts(named, quiet).accessNote).toBe(true);
+    expect(
+      signInPageParts(named, {
+        ...quiet,
+        accessErrorCode: "ACCESS_NOT_INVITED",
+      }).accessNote,
+    ).toBe(false);
+    expect(
+      signInPageParts(named, {
+        ...quiet,
+        accessErrorCode: "ACCESS_EMAIL_MISMATCH",
+      }).accessNote,
+    ).toBe(false);
+    expect(
+      signInPageParts(named, { ...quiet, signedIn: true }).accessNote,
+    ).toBe(false);
+    expect(signInPageParts(base, quiet).accessNote).toBe(false);
+  });
+
+  it("offers Sign out of Access on a red Access alert behind the outer ring", () => {
+    const named = { ...base, accessEmail: "alice@acme.com" };
+    expect(signInPageParts(named, quiet).accessSignOut).toBe(false);
+    expect(
+      signInPageParts(named, {
+        ...quiet,
+        accessErrorCode: "ACCESS_NOT_INVITED",
+      }).accessSignOut,
+    ).toBe(true);
+    // The mismatch code only comes from the outer ring, even if the methods
+    // couldn't load.
+    expect(
+      signInPageParts(base, {
+        ...quiet,
+        accessErrorCode: "ACCESS_EMAIL_MISMATCH",
+      }).accessSignOut,
+    ).toBe(true);
+    // An OIDC-only gateway has no Access sign-out on this host.
+    expect(
+      signInPageParts(base, { ...quiet, accessErrorCode: "ACCESS_NOT_INVITED" })
+        .accessSignOut,
+    ).toBe(false);
   });
 });

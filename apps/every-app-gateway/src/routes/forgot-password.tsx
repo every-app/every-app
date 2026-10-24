@@ -6,6 +6,7 @@ import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import {
   AuthCard,
   AuthPageShell,
+  NoEmailResetNotice,
   authInputClassName,
   authLinkClassName,
   authSubmitClassName,
@@ -15,6 +16,7 @@ import { useAppForm } from "@/client/components/form/useAppForm";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { Button } from "@/client/components/ui/button";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
+import { useSignInMethods } from "@/client/sign-in-methods";
 import {
   getBetterAuthErrorMessage,
   getServerErrorMessage,
@@ -57,6 +59,9 @@ function ForgotPassword() {
   const navigate = useNavigate();
   const { redirect, return_to } = Route.useSearch();
   const authSearch = getAuthSearch({ redirect, return_to });
+  const { data: methods } = useSignInMethods();
+  // Unknown while the methods load (or if they can't): the form stays.
+  const emailOff = methods?.emailConfigured === false;
 
   const form = useAppForm({
     defaultValues: { email: "" },
@@ -148,7 +153,9 @@ function ForgotPassword() {
       <AuthCard
         title={success ? "Check your email" : "Forgot password"}
         description={
-          success ? undefined : "We'll email you a link to reset it."
+          success || emailOff
+            ? undefined
+            : "We'll email you a link to reset it."
         }
         footer={
           success ? undefined : (
@@ -182,6 +189,8 @@ function ForgotPassword() {
               Back to sign in
             </Button>
           </>
+        ) : emailOff ? (
+          <NoEmailResetNotice />
         ) : (
           <form.AppForm>
             <form.Form className="space-y-4">

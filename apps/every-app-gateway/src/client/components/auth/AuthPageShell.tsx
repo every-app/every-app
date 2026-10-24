@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "cn";
+import { BrandMark } from "@/client/components/BrandLink";
 import { Card, CardContent } from "@/client/components/ui/card";
 import { FieldSeparator } from "@/client/components/ui/field";
 
@@ -33,8 +34,9 @@ export function AuthPageShell({ children }: { children: ReactNode }) {
 }
 
 /**
- * The Every App logo, a title and helper text above a card that holds the
- * form, with an optional footer (links such as "Back to sign in") below it.
+ * The Every App mark and wordmark, a title and helper text above a card that
+ * holds the form, with an optional footer (links such as "Back to sign in")
+ * below it.
  */
 export function AuthCard({
   title,
@@ -59,11 +61,7 @@ export function AuthCard({
       )}
     >
       <div className="space-y-3 text-center">
-        <img
-          src="/transparent-logo.png"
-          alt="Every App"
-          className="mx-auto size-12 rounded-lg"
-        />
+        <BrandMark mark="size-8" className="justify-center" />
         <div>
           <h1 className="text-xl font-semibold">{title}</h1>
           {description ? (
@@ -82,6 +80,18 @@ export function AuthCard({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * What the password reset pages say on a gateway with no email sender: the
+ * admin's menu has "Password reset link" for exactly this.
+ */
+export function NoEmailResetNotice() {
+  return (
+    <p className="text-sm text-muted-foreground">
+      This gateway doesn't send email. Ask an admin for a password reset link.
+    </p>
   );
 }
 

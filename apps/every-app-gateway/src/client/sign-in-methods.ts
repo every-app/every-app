@@ -84,6 +84,53 @@ export function accessSignInErrorMessage(
   }
 }
 
+/** What the sign-in page shows around its form. */
+interface SignInPageParts {
+  /** "Don't have an account? Sign up": only where anyone may sign up. */
+  signUp: boolean;
+  /**
+   * "Continue with <label>" and its divider: not once Access has named the
+   * person, since for them it ends where this page already is.
+   */
+  accessButton: boolean;
+  /**
+   * The blue note naming who Access says is here: not next to a red alert
+   * that says the same thing.
+   */
+  accessNote: boolean;
+  /**
+   * "Not you? Sign out of Access" on the red alert: when the outer ring is
+   * on, so the sign-out path exists on this host.
+   */
+  accessSignOut: boolean;
+}
+
+/**
+ * What the sign-in page shows around its form, from what the methods say
+ * and what is already on screen. Nothing shows before the methods load, so
+ * nothing flashes and then goes away.
+ */
+export function signInPageParts(
+  methods: SignInMethods | undefined,
+  state: {
+    /** A session exists; the page is only waiting to move on. */
+    signedIn: boolean;
+    /** The code of the Access refusal a red alert shows, if one does. */
+    accessErrorCode: string | null;
+  },
+): SignInPageParts {
+  const accessEmail = Boolean(methods?.accessEmail);
+  const accessError = state.accessErrorCode !== null;
+  return {
+    signUp: methods?.signUp === "open",
+    accessButton: Boolean(methods?.providers.length) && !accessEmail,
+    accessNote: accessEmail && !state.signedIn && !accessError,
+    accessSignOut:
+      accessError &&
+      (accessEmail || state.accessErrorCode === "ACCESS_EMAIL_MISMATCH"),
+  };
+}
+
 /** Codes after which signing in with the password should connect Access. */
 export function shouldLinkAfterPasswordSignIn(code: string | undefined) {
   return code === "account_not_linked";

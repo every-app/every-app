@@ -22,6 +22,12 @@ export interface SignInMethods extends PublicPolicy {
    * request came through the outer ring.
    */
   accessEmail: string | null;
+  /**
+   * Whether the gateway sends email. Without a sender, invitations and
+   * password resets are links an admin hands out, and the reset pages say so
+   * instead of promising a message.
+   */
+  emailConfigured: boolean;
 }
 
 export function signInMethods(options: {
@@ -42,11 +48,13 @@ export function signInMethods(options: {
             gatewayUrl,
             ctx.request,
           );
-          // Loaded on first use: it reads the gateway's database, which the
-          // CLI's schema config (cli-config.ts) can't load.
-          const { isPasswordSignInOn } = await import(
-            "./cloudflare-access/membership"
-          );
+          // Loaded on first use: they read the gateway's database and Worker
+          // env, which the CLI's schema config (cli-config.ts) can't load.
+          const [{ isPasswordSignInOn }, { isEmailConfigured }] =
+            await Promise.all([
+              import("./cloudflare-access/membership"),
+              import("@/server/email/sendEmail"),
+            ]);
           ctx.setHeader("cache-control", "no-store");
           const methods: SignInMethods = {
             emailPassword: await isPasswordSignInOn(access),
@@ -54,6 +62,7 @@ export function signInMethods(options: {
               ? [{ id: ACCESS_PROVIDER_ID, label: access.oidc.label }]
               : [],
             accessEmail: identity?.email ?? null,
+            emailConfigured: isEmailConfigured(),
             ...policy,
           };
           return ctx.json(methods);

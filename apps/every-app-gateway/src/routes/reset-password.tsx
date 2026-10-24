@@ -6,6 +6,7 @@ import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import {
   AuthCard,
   AuthPageShell,
+  NoEmailResetNotice,
   authInputClassName,
   authLinkClassName,
   authSubmitClassName,
@@ -15,6 +16,7 @@ import { useAppForm } from "@/client/components/form/useAppForm";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
 import { Button } from "@/client/components/ui/button";
 import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
+import { useSignInMethods } from "@/client/sign-in-methods";
 import { getServerErrorMessage } from "@/client/errors";
 
 const searchSchema = z.object({
@@ -70,6 +72,10 @@ function ResetPassword() {
   const navigate = useNavigate();
   const authSearch = getAuthSearch({ redirect, return_to });
   const linkUsable = isLinkUsable(token, urlError) && !tokenRefused;
+  const { data: methods } = useSignInMethods();
+  // A dead link on a gateway that can't mail a new one: no button to a form
+  // that can only disappoint. Unknown while the methods load.
+  const emailOff = methods?.emailConfigured === false;
 
   // The form only renders when the link carries a token and no error.
   const form = useAppForm({
@@ -183,16 +189,20 @@ function ResetPassword() {
       <AuthPageShell>
         <AuthCard
           title="Reset link not valid"
-          description="Ask for a new one."
+          description={emailOff ? undefined : "Ask for a new one."}
           footer={footer}
         >
-          <Button
-            nativeButton={false}
-            className={authSubmitClassName}
-            render={<Link to="/forgot-password" search={authSearch} />}
-          >
-            Request a new reset link
-          </Button>
+          {emailOff ? (
+            <NoEmailResetNotice />
+          ) : (
+            <Button
+              nativeButton={false}
+              className={authSubmitClassName}
+              render={<Link to="/forgot-password" search={authSearch} />}
+            >
+              Request a new reset link
+            </Button>
+          )}
         </AuthCard>
       </AuthPageShell>
     );

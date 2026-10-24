@@ -6,6 +6,7 @@ import { authClient, isCpuTimeoutError } from "@/client/auth-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { refetchCollectionsAfterAuth } from "@/client/tanstack-db";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
+import { Address, withAddresses } from "@/client/components/auth/Address";
 import {
   AuthCard,
   AuthDivider,
@@ -25,6 +26,7 @@ import {
   accessSignInErrorMessage,
   mayAutoContinue,
   shouldLinkAfterPasswordSignIn,
+  signInPageParts,
   useSignInMethods,
 } from "@/client/sign-in-methods";
 import { verifyEmailSearch } from "@/client/verify-email";
@@ -77,8 +79,11 @@ export const Route = createFileRoute("/sign-in")({
   validateSearch: searchSchema,
 });
 
+/** What a sign-in attempt came back with; the code tells Access's refusals apart. */
+type SignInError = { code?: string; message: string };
+
 function SignIn() {
-  const [error, setError] = useState("");
+  const [error, setError] = useState<SignInError | null>(null);
   const [redirecting, setRedirecting] = useState(false);
   const [stalled, setStalled] = useState(false);
   const navigate = useNavigate();
@@ -136,7 +141,7 @@ function SignIn() {
 
   const signInWithAccess = async () => {
     if (!accessProvider) return;
-    setError("");
+    setError(null);
     setRedirecting(true);
     // Back to this page either way: it moves on once signed in, and shows
     // what went wrong otherwise.
@@ -147,9 +152,13 @@ function SignIn() {
     });
     if (startError) {
       setRedirecting(false);
-      setError(
-        accessSignInErrorMessage("", accessProvider.label, passwordSignIn),
-      );
+      setError({
+        message: accessSignInErrorMessage(
+          "",
+          accessProvider.label,
+          passwordSignIn,
+        ),
+      });
     }
   };
 
@@ -159,9 +168,9 @@ function SignIn() {
     defaultValues: { email: "", password: "" },
     validators: { onSubmit: signInSchema },
     // Every submit clears the last server error, a refused one included.
-    onSubmitInvalid: () => setError(""),
+    onSubmitInvalid: () => setError(null),
     onSubmit: () => {
-      setError("");
+      setError(null);
       runSignIn();
     },
   });
@@ -218,19 +227,21 @@ function SignIn() {
         return true;
       }
       if (signInError) {
-        setError(
-          signInError.code === "ACCESS_EMAIL_MISMATCH"
-            ? // Behind the outer ring: Access knows this browser by another
-              // email than the account's.
-              accessEmailMismatchMessage(methods?.accessEmail ?? null, email)
-            : signInError.code === "PASSWORD_SIGN_IN_DISABLED" ||
-                signInError.code === "ACCESS_REQUIRED"
-              ? (signInError.message ?? "Password sign-in is turned off.")
-              : getBetterAuthErrorMessage(
-                  signInError,
-                  "Invalid email or password.",
-                ),
-        );
+        setError({
+          code: signInError.code,
+          message:
+            signInError.code === "ACCESS_EMAIL_MISMATCH"
+              ? // Behind the outer ring: Access knows this browser by another
+                // email than the account's.
+                accessEmailMismatchMessage(methods?.accessEmail ?? null, email)
+              : signInError.code === "PASSWORD_SIGN_IN_DISABLED" ||
+                  signInError.code === "ACCESS_REQUIRED"
+                ? (signInError.message ?? "Password sign-in is turned off.")
+                : getBetterAuthErrorMessage(
+                    signInError,
+                    "Invalid email or password.",
+                  ),
+        });
       }
       return true;
     } catch (err) {
@@ -238,9 +249,12 @@ function SignIn() {
       if (isCpuTimeoutError(err)) {
         return false;
       }
-      setError(
-        getServerErrorMessage(err, "Failed to sign in. Please try again."),
-      );
+      setError({
+        message: getServerErrorMessage(
+          err,
+          "Failed to sign in. Please try again.",
+        ),
+      });
       return true;
     }
   });
@@ -271,6 +285,23 @@ function SignIn() {
       : null;
   const isStalled = Boolean(stalled && signedInAs);
   const authSearch = getAuthSearch({ redirect, return_to });
+  // The Access refusal on screen, if any: the one the URL brought (shown
+  // while no attempt has failed since) or a refused password sign-in.
+  const accessErrorCode =
+    accessMessage && accessError
+      ? accessError
+      : error?.code === "ACCESS_EMAIL_MISMATCH"
+        ? error.code
+        : null;
+  const parts = signInPageParts(methods, {
+    signedIn: Boolean(signedInAs),
+    accessErrorCode,
+  });
+  const accessAlert = accessMessage ? (
+    <ErrorAlert signOut={parts.accessSignOut}>
+      {withAddresses(accessMessage)}
+    </ErrorAlert>
+  ) : null;
 
   return (
     <AuthPageShell>
@@ -279,16 +310,18 @@ function SignIn() {
         footer={
           !isStalled && passwordSignIn ? (
             <>
-              <p>
-                Don't have an account?{" "}
-                <Link
-                  to="/sign-up"
-                  search={authSearch}
-                  className={authLinkClassName}
-                >
-                  Sign up
-                </Link>
-              </p>
+              {parts.signUp ? (
+                <p>
+                  Don't have an account?{" "}
+                  <Link
+                    to="/sign-up"
+                    search={authSearch}
+                    className={authLinkClassName}
+                  >
+                    Sign up
+                  </Link>
+                </p>
+              ) : null}
               <p>
                 <Link
                   to="/forgot-password"
@@ -304,15 +337,11 @@ function SignIn() {
       >
         {isStalled ? (
           <>
-            {accessMessage ? (
-              <ErrorAlert>{accessMessage}</ErrorAlert>
-            ) : (
+            {accessAlert ?? (
               <p className="text-sm text-muted-foreground">
                 You're signed in as{" "}
-                <strong className="font-medium text-foreground">
-                  {signedInAs}
-                </strong>
-                , but the page you were going to sent you back here.
+                <Address after=",">{signedInAs ?? ""}</Address> but the page you
+                were going to sent you back here.
               </p>
             )}
             <Button
@@ -324,26 +353,24 @@ function SignIn() {
           </>
         ) : (
           <>
-            {methods?.accessEmail && !signedInAs ? (
+            {parts.accessNote && methods?.accessEmail ? (
               <Alert variant="info">
                 <Info />
                 <AlertDescription>
                   Cloudflare Access says you're{" "}
-                  <strong className="font-medium text-foreground">
-                    {methods.accessEmail}
-                  </strong>
-                  , which doesn't give you an account here by itself.{" "}
+                  <Address after=",">{methods.accessEmail}</Address> which
+                  doesn't give you an account here by itself.{" "}
                   {passwordSignIn
                     ? "If you have an account with this email, sign in below once to connect it; otherwise ask an admin to invite you."
                     : "Ask an admin to invite you."}{" "}
-                  <a href={ACCESS_SIGN_OUT_PATH}>Not you? Sign out of Access</a>
+                  <AccessSignOut />
                 </AlertDescription>
               </Alert>
             ) : null}
 
-            {accessMessage ? <ErrorAlert>{accessMessage}</ErrorAlert> : null}
+            {accessAlert}
 
-            {accessProvider ? (
+            {parts.accessButton && accessProvider ? (
               <Button
                 variant="outline"
                 className="w-full bg-card font-semibold dark:border-border dark:bg-card"
@@ -358,7 +385,7 @@ function SignIn() {
 
             {passwordSignIn ? (
               <>
-                {accessProvider ? <AuthDivider /> : null}
+                {parts.accessButton ? <AuthDivider /> : null}
                 <form.AppForm>
                   <form.Form className="space-y-4">
                     <form.AppField name="email">
@@ -387,7 +414,11 @@ function SignIn() {
                         />
                       )}
                     </form.AppField>
-                    {error ? <ErrorAlert>{error}</ErrorAlert> : null}
+                    {error ? (
+                      <ErrorAlert signOut={parts.accessSignOut}>
+                        {withAddresses(error.message)}
+                      </ErrorAlert>
+                    ) : null}
                     <Button
                       type="submit"
                       className={authSubmitClassName}
@@ -407,7 +438,11 @@ function SignIn() {
               </p>
             ) : null}
 
-            {!passwordSignIn && error ? <ErrorAlert>{error}</ErrorAlert> : null}
+            {!passwordSignIn && error ? (
+              <ErrorAlert signOut={parts.accessSignOut}>
+                {withAddresses(error.message)}
+              </ErrorAlert>
+            ) : null}
           </>
         )}
       </AuthCard>
@@ -415,11 +450,30 @@ function SignIn() {
   );
 }
 
-function ErrorAlert({ children }: { children: ReactNode }) {
+function ErrorAlert({
+  children,
+  signOut = false,
+}: {
+  children: ReactNode;
+  /** End with "Not you? Sign out of Access": the refusal was Access's. */
+  signOut?: boolean;
+}) {
   return (
     <Alert variant="destructive">
       <CircleAlert />
-      <AlertDescription>{children}</AlertDescription>
+      <AlertDescription>
+        {children}
+        {signOut ? (
+          <>
+            {" "}
+            <AccessSignOut />
+          </>
+        ) : null}
+      </AlertDescription>
     </Alert>
   );
+}
+
+function AccessSignOut() {
+  return <a href={ACCESS_SIGN_OUT_PATH}>Not you? Sign out of Access</a>;
 }
