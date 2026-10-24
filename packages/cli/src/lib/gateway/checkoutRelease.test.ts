@@ -7,16 +7,32 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createNdjsonSink } from "@/lib/output/events";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
 import {
+  buildReleaseFromCheckout,
   checkoutSource,
   hashCheckoutTree,
   openCheckoutRelease,
   releaseCacheDir,
 } from "./checkoutRelease";
 import type { GatewayRelease } from "./release";
+
+const mocks = vi.hoisted(() => ({
+  runLogged: vi.fn<
+    (
+      command: string,
+      args: readonly string[],
+      options: { cwd?: string; env?: NodeJS.ProcessEnv; code?: string },
+    ) => Promise<void>
+  >(async () => {}),
+}));
+
+// The checkout build's two pnpm children: what they would run with.
+vi.mock("@/lib/childLog", () => ({
+  runLogged: mocks.runLogged,
+}));
 
 let root: string;
 let builds: number;
@@ -87,6 +103,7 @@ beforeEach(() => {
   checkout();
   builds = 0;
   events = [];
+  mocks.runLogged.mockClear();
 });
 
 afterEach(async () => {
@@ -209,5 +226,46 @@ describe("the Gateway build cache", () => {
 
     expect(builds).toBe(2);
     expect(cached()).toEqual([]);
+  });
+});
+
+describe("the checkout build", () => {
+  it("runs the SDK's build and the Gateway's build:release with the build's NODE_OPTIONS", async () => {
+    // A TanStack Start prerender on Linux needs localhost to resolve to
+    // 127.0.0.1 first (lib/runtime.ts, buildNodeOptions); what the person
+    // set stays.
+    const out = createNdjsonSink((line) => events.push(JSON.parse(line)));
+    const tarball = await buildReleaseFromCheckout(root, out, false, {
+      PATH: process.env["PATH"],
+      NODE_OPTIONS: "--max-old-space-size=4096",
+    });
+
+    expect(tarball).toBe(
+      path.join(root, "apps", "every-app-gateway", "every-app-gateway-release.tar.gz"),
+    );
+    expect(mocks.runLogged.mock.calls.map(([command, args]) => [command, ...args])).toEqual([
+      ["pnpm", "--filter", "@every-app/sdk", "build"],
+      ["pnpm", "run", "build:release"],
+    ]);
+    for (const [, , options] of mocks.runLogged.mock.calls) {
+      expect(options).toMatchObject({
+        code: "GATEWAY_BUILD_FAILED",
+        env: {
+          PATH: process.env["PATH"],
+          NODE_OPTIONS: "--max-old-space-size=4096 --dns-result-order=ipv4first",
+        },
+      });
+    }
+    expect(mocks.runLogged.mock.calls[1]![2]).toMatchObject({
+      cwd: path.join(root, "apps", "every-app-gateway"),
+    });
+  });
+
+  it("adds the build's NODE_OPTIONS when the person set none", async () => {
+    const out = createNdjsonSink((line) => events.push(JSON.parse(line)));
+    await buildReleaseFromCheckout(root, out, false, { PATH: process.env["PATH"] });
+    expect(mocks.runLogged.mock.calls.at(-1)![2]).toMatchObject({
+      env: { NODE_OPTIONS: "--dns-result-order=ipv4first" },
+    });
   });
 });

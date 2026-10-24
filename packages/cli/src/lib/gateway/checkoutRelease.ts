@@ -26,6 +26,7 @@ import { checkoutRoot } from "@/lib/checkout";
 import { runLogged } from "@/lib/childLog";
 import { fileExists } from "@/lib/file-operations";
 import type { EventSink } from "@/lib/output/events";
+import { buildNodeOptions } from "@/lib/runtime";
 import {
   hashFiles,
   newestMigration,
@@ -287,12 +288,14 @@ function openCheckoutGatewayRelease({
 /**
  * A Gateway release from the checkout: the SDK's build, then the
  * Gateway's `build:release`. Their output goes to a log file
- * (lib/childLog.ts).
+ * (lib/childLog.ts). Both run with the build's NODE_OPTIONS
+ * (lib/runtime.ts `buildNodeOptions`): the release build prerenders.
  */
-async function buildReleaseFromCheckout(
+export async function buildReleaseFromCheckout(
   root: string,
   out: EventSink,
   verbose: boolean,
+  env: NodeJS.ProcessEnv = process.env,
 ): Promise<string> {
   const gatewayDir = path.join(root, "apps", "every-app-gateway");
   out.emit({
@@ -305,6 +308,7 @@ async function buildReleaseFromCheckout(
   const build = (args: string[], cwd: string) =>
     runLogged("pnpm", args, {
       cwd,
+      env: { ...env, NODE_OPTIONS: buildNodeOptions(env["NODE_OPTIONS"]) },
       echo: verbose,
       what: "Building the Gateway",
       code: "GATEWAY_BUILD_FAILED",

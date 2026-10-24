@@ -2,6 +2,7 @@ import { devRegistryEnv } from "@/lib/app/localD1";
 import type { CfRunner } from "@/lib/cf/runner";
 import { spawnLongRunning, type LongRunningProcess } from "@/lib/longRunning";
 import type { EveryAppCliManifest } from "@/lib/manifest";
+import { buildNodeOptions } from "@/lib/runtime";
 
 export type AppDevServer = LongRunningProcess;
 
@@ -20,6 +21,8 @@ interface StartAppDevServerOptions {
  * own process group, so stopping it also stops the Vite and workerd
  * processes it starts, and its output is held until it is ready: its
  * startup banner names the internal port, which nobody should open.
+ * Either runs with the build's NODE_OPTIONS (lib/runtime.ts
+ * `buildNodeOptions`; the runner adds them to `cf dev` itself).
  */
 export async function startAppDevServer({
   cwd,
@@ -32,7 +35,11 @@ export async function startAppDevServer({
       command: manifest.dev,
       args: [],
       cwd,
-      env: { ...process.env, PORT: String(port) },
+      env: {
+        ...process.env,
+        PORT: String(port),
+        NODE_OPTIONS: buildNodeOptions(process.env["NODE_OPTIONS"]),
+      },
       shell: true,
       hold: true,
     });

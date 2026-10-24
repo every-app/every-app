@@ -5,6 +5,9 @@
  * everywhere:
  *  - a pinned `cf` run with this Node (never a global `cf`), and this Node
  *    first on its PATH for what cf starts (`pnpm vite …`);
+ *  - project-plane calls (`cf build`, `cf deploy`, `cf dev`) run with the
+ *    build's NODE_OPTIONS (../runtime.ts `buildNodeOptions`), so a
+ *    TanStack Start prerender finds its preview server on Linux;
  *  - piped calls get their own process group and no stdin, so a hung `cf` and
  *    everything it started can be killed together;
  *  - account-plane calls run in an empty private directory, because cf
@@ -34,6 +37,7 @@ import {
 } from "@/lib/longRunning";
 import { handTerminalOver } from "@/lib/output/terminal";
 import { outputTail } from "@/lib/output/text";
+import { buildNodeOptions } from "@/lib/runtime";
 import type { z } from "zod";
 import { resolveCfBinary, type CfBinary } from "./bin";
 import {
@@ -126,6 +130,7 @@ export function createCfRunner(options: CfRunnerOptions = {}): CfRunner {
 
   let nodeBinDir: Promise<string> | undefined;
   async function childEnv(
+    plane: CfPlane,
     mode: CfOutputMode,
     extra: Record<string, string | undefined> = {},
   ): Promise<NodeJS.ProcessEnv> {
@@ -138,6 +143,10 @@ export function createCfRunner(options: CfRunnerOptions = {}): CfRunner {
       ...(mode === "json" ? { CF_QUIET: "1" } : {}),
       ...(options.accountId
         ? { CLOUDFLARE_ACCOUNT_ID: options.accountId }
+        : {}),
+      // What cf builds or serves in the project runs on Node too.
+      ...(plane === "project"
+        ? { NODE_OPTIONS: buildNodeOptions(baseEnv["NODE_OPTIONS"]) }
         : {}),
       ...extra,
     };
@@ -157,7 +166,7 @@ export function createCfRunner(options: CfRunnerOptions = {}): CfRunner {
           typeof call.args === "function"
             ? call.args(files?.paths ?? {})
             : [...call.args];
-        const env = await childEnv(call.mode, call.env);
+        const env = await childEnv(call.plane, call.mode, call.env);
         if (call.plane === "project" && runsPackageManager(args)) {
           await assertToolchainNode(cwd, env);
         }
@@ -180,7 +189,7 @@ export function createCfRunner(options: CfRunnerOptions = {}): CfRunner {
 
     async start(call) {
       const binary = await resolveBinary(call.cwd);
-      const env = await childEnv("interactive", call.env);
+      const env = await childEnv("project", "interactive", call.env);
       if (runsPackageManager(call.args)) {
         await assertToolchainNode(call.cwd, env);
       }

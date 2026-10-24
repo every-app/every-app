@@ -49,6 +49,7 @@ switch (scenario) {
       delegation: process.env.CF_DELEGATION ?? null,
       accountId: process.env.CLOUDFLARE_ACCOUNT_ID ?? null,
       extra: process.env.EXTRA ?? null,
+      nodeOptions: process.env.NODE_OPTIONS ?? null,
     }));
     break;
   case "stdin": {
@@ -167,6 +168,29 @@ describe("createCfRunner", () => {
       accountId: "acct_123",
       extra: "1",
     });
+  });
+
+  it("runs project-plane calls with the build's NODE_OPTIONS, after the person's own", async () => {
+    // A TanStack Start prerender on Linux needs localhost to resolve to
+    // 127.0.0.1 first (lib/runtime.ts, buildNodeOptions).
+    const cf = createCfRunner({
+      ...options,
+      env: { ...process.env, NODE_OPTIONS: "--max-old-space-size=4096" },
+    });
+    const project = (await runCfJson(
+      cf,
+      { args: ["env"], plane: "project", cwd: dir },
+      anyJson,
+    )) as Record<string, string | null>;
+    expect(project["nodeOptions"]).toBe(
+      "--max-old-space-size=4096 --dns-result-order=ipv4first",
+    );
+
+    const account = (await runCfJson(cf, { args: ["env"], plane: "account" }, anyJson)) as Record<
+      string,
+      string | null
+    >;
+    expect(account["nodeOptions"]).toBe("--max-old-space-size=4096");
   });
 
   it("runs project-plane calls in the app root", async () => {

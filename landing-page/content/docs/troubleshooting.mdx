@@ -30,6 +30,10 @@ Cloudflare asks every account to pick this name once. Open the link the terminal
 
 Something on your domain already uses the address you chose. Delete that record in Cloudflare (your domain, then **DNS**), or choose another address.
 
+## The Gateway build fails with `connect ECONNREFUSED 127.0.0.1`
+
+On Linux, setup stopped at **Building the Gateway** with `GATEWAY_BUILD_FAILED` and a line like `connect ECONNREFUSED 127.0.0.1:43739`. Your copy of Every App is older than 2026-10-24: run `git pull` in your every-app folder, then run the command again. If you can't update yet, run it as `NODE_OPTIONS=--dns-result-order=ipv4first pnpm everyapp setup …`. On Linux, `localhost` can mean the IPv6 address first, and the build's preview server and its own client then disagree about where to meet; newer versions of everyapp set this option themselves. Deploying an app can hit the same error, with the same fix.
+
 ## Open the setup link above to create the owner account
 
 Nobody opened the owner link within 15 minutes, so setup stopped waiting. The link still works for about 24 hours: open it to create your owner account. If you've lost it, run `pnpm everyapp setup` again for a new link. That replaces the old one.

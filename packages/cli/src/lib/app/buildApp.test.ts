@@ -22,6 +22,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   await fs.rm(cwd, { recursive: true, force: true });
 });
 
@@ -62,8 +63,9 @@ describe("buildApp", () => {
     );
   });
 
-  it("runs the manifest's build command instead of cf build, with EVERYAPP_BUILD=1", async () => {
+  it("runs the manifest's build command instead of cf build, with EVERYAPP_BUILD=1 and the build's NODE_OPTIONS", async () => {
     const cf = new FakeCf();
+    vi.stubEnv("NODE_OPTIONS", "--max-old-space-size=4096");
 
     await buildApp({
       cwd,
@@ -79,7 +81,11 @@ describe("buildApp", () => {
       expect.objectContaining({
         cwd,
         shell: true,
-        env: expect.objectContaining({ EVERYAPP_BUILD: "1" }),
+        env: expect.objectContaining({
+          EVERYAPP_BUILD: "1",
+          // A TanStack Start prerender on Linux (lib/runtime.ts, buildNodeOptions).
+          NODE_OPTIONS: "--max-old-space-size=4096 --dns-result-order=ipv4first",
+        }),
       }),
     );
   });

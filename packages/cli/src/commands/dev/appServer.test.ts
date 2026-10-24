@@ -1,7 +1,13 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeCf } from "@/lib/cf/fakeCf";
 import { startAppDevServer } from "./appServer";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("startAppDevServer", () => {
   it("runs cf dev on the internal port with this checkout's dev registry", async () => {
@@ -37,4 +43,33 @@ describe("startAppDevServer", () => {
     server.stop();
     await expect(server.exited).resolves.toMatchObject({ signal: "SIGTERM" });
   });
+
+  it.runIf(process.platform !== "win32")(
+    "runs the manifest's dev command with the build's NODE_OPTIONS, after the person's own",
+    async () => {
+      // A TanStack Start dev server resolves localhost like a build's
+      // prerender (lib/runtime.ts, buildNodeOptions).
+      vi.stubEnv("NODE_OPTIONS", "--max-old-space-size=4096");
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "everyapp-dev-app-"));
+      const file = path.join(dir, "env.json");
+      try {
+        const server = await startAppDevServer({
+          cwd: dir,
+          manifest: {
+            id: "todo",
+            dev: `node -e "require('node:fs').writeFileSync(process.argv[1], JSON.stringify({ port: process.env.PORT, nodeOptions: process.env.NODE_OPTIONS }))" ${file}`,
+          },
+          cf: new FakeCf(),
+          port: 41235,
+        });
+        await expect(server.exited).resolves.toMatchObject({ code: 0 });
+        expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({
+          port: "41235",
+          nodeOptions: "--max-old-space-size=4096 --dns-result-order=ipv4first",
+        });
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    },
+  );
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { unsupportedRuntime } from "./runtime";
+import { BUILD_NODE_FLAG, buildNodeOptions, unsupportedRuntime } from "./runtime";
 
 const node = (version: string) =>
   ({ node: version }) as unknown as NodeJS.ProcessVersions;
@@ -31,5 +31,22 @@ describe("unsupportedRuntime", () => {
       message: expect.stringMatching(/^everyapp runs on Node\.js, not Bun\n/),
       rerunNote: "with Node.js 22.18.0 or newer",
     });
+  });
+});
+
+describe("buildNodeOptions", () => {
+  it("puts the IPv4-first DNS order on every build", () => {
+    expect(buildNodeOptions(undefined)).toBe("--dns-result-order=ipv4first");
+    expect(buildNodeOptions("")).toBe(BUILD_NODE_FLAG);
+  });
+
+  it("keeps the options the person already set, and adds the flag once", () => {
+    expect(buildNodeOptions("--max-old-space-size=4096")).toBe(
+      "--max-old-space-size=4096 --dns-result-order=ipv4first",
+    );
+    expect(buildNodeOptions("--dns-result-order=ipv4first")).toBe("--dns-result-order=ipv4first");
+    expect(buildNodeOptions(" --inspect --dns-result-order=ipv4first ")).toBe(
+      "--inspect --dns-result-order=ipv4first",
+    );
   });
 });
