@@ -118,6 +118,7 @@ describe("DataForSEO's account-wide paths", () => {
     "/v3/APPENDIX/user_data%20",
     "/v3/appendix;x/webhook_resend,",
     // A dot segment only decoding reveals.
+    "/v3/serp/google/organic/tasks_fixed",
     "/v3/serp/tasks_ready/%252e%252e",
     // Won't decode, or won't stop decoding.
     "/v3/serp/%E0%A4%A",
@@ -130,7 +131,6 @@ describe("DataForSEO's account-wide paths", () => {
     "/v3/serp/google/organic/task_get/advanced/09271234-1535-0066-0000-5c2f2a1f8d10",
     "/v3/serp/google/organic/task_post",
     "/v3/serp/google/organic/live/advanced",
-    "/v3/serp/google/organic/tasks_fixed",
     "/v3/dataforseo_labs/google/keyword_ideas/live",
     "/v3/appendix/status",
     "/v3/appendix/user_data_example",

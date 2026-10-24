@@ -253,9 +253,11 @@ export const CAPABILITIES = {
     // none changes anything the organization owns.
     readMethods: ["GET", "POST"],
     // Results are fetched by task id, which only the app that posted the
-    // task holds; these list every task, error and setting on the account.
+    // task holds; these list every task (ready, or fixed within the last
+    // week), error and setting on the account.
     accountWidePaths: [
       ["tasks_ready"],
+      ["tasks_fixed"],
       ["id_list"],
       ["errors"],
       ["appendix", "user_data"],

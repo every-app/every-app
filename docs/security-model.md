@@ -405,7 +405,7 @@ in the gateway's Cloudflare account **is** operator authority.
   capability, only to that provider's own https hosts, with no redirect
   followed, and only with the methods the provider reads with. The key is
   shared by every app in every organization, so paths that list or describe
-  the whole provider account (DataForSEO's `tasks_ready`, `id_list`,
+  the whole provider account (DataForSEO's `tasks_ready`, `tasks_fixed`, `id_list`,
   `errors`, `appendix/user_data`, `appendix/webhook_resend`) are refused.
   The upstream request carries none of the app's `Authorization`,
   `x-api-key`, cookies, `x-everyapp-*` or forwarding headers, and the

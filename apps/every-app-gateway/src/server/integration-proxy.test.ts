@@ -334,6 +334,7 @@ describe("AppGateway capabilities", () => {
 
   it.each([
     "/v3/serp/google/organic/tasks_ready",
+    "/v3/serp/google/organic/tasks_fixed",
     "/v3/dataforseo_labs/id_list",
     "/v3/serp/errors",
     "/v3/appendix/errors",

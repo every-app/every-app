@@ -224,7 +224,7 @@ app's private binding (`apps/every-app-gateway/src/server/integration-proxy.ts`)
 3. The host is one of the provider's, over https, with no path that could
    leave it; otherwise `invalid_integration_route` (400).
 4. The path isn't one that lists or describes the whole provider account
-   (DataForSEO's `tasks_ready`, `id_list`, `errors`, `appendix/user_data`,
+   (DataForSEO's `tasks_ready`, `tasks_fixed`, `id_list`, `errors`, `appendix/user_data`,
    `appendix/webhook_resend`): one key serves every app in every
    organization; otherwise `integration_path_not_allowed` (403).
 5. The method is one the provider reads with; otherwise
