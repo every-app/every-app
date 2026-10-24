@@ -58,8 +58,20 @@ Run a single layer:
 `EVERYAPP_CF_DRY_RUN=1 pnpm -C packages/cli exec vitest run src/lib/cfDryRun.test.ts`
 runs `cf deploy --prebuilt --dry-run` on the gateway release and the starter,
 so a cf or Vite plugin bump that changes the Build Output fails here, not in
-a live deploy. `security-review.yml`: Anthropic's security review for Claude
-Code, against `docs/threat-model.md` (#388).
+a live deploy. `built-cli.yml` ("Built CLI"): builds the SDK and the CLI,
+then `pnpm -C packages/cli test:built` runs
+`packages/cli/src/bin/builtCli.test.ts`, the CLI as people run it:
+`bin/everyapp.js` over `dist/` as a child process, against a fresh app in a
+temp directory outside the checkout with no Cloudflare account (help for
+every route, `create`, `db migrate`, `dev` to its first 200 and down on
+SIGINT, the capability manifests the built CLI refused on 2026-10-24 (#543),
+`release`, and `status --json` against the fake account through the
+`EVERYAPP_CF_BINARY` seam in `packages/cli/src/lib/cf/bin.ts`). Every other
+test resolves the workspace packages from source, so only this one sees what
+the tsup bundle does differently. Locally, from the checkout's root,
+`pnpm test:built-cli` builds both and runs it (about a minute; the new app's
+`pnpm install` needs the network). `security-review.yml`: Anthropic's
+security review for Claude Code, against `docs/threat-model.md` (#388).
 
 > **Honest status:** the legacy gateway control plane (iframe embed,
 > `/api/session-token`, postMessage/expo machinery, `app_url`/`dev_url`

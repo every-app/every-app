@@ -6,6 +6,7 @@
     "format:check": "pnpm -r --no-bail run format:check",
     "format:write": "pnpm -r --no-bail run format:write",
     "test": "pnpm -r --no-bail run test",
+    "test:built-cli": "pnpm -C packages/sdk build && pnpm -C packages/cli build && pnpm -C packages/cli test:built",
     "knip": "pnpm -r --no-bail run knip",
     "loop": "pnpm -C packages/onboarding-loop loop",
     "public-copy": "node scripts/public-copy.mjs"
