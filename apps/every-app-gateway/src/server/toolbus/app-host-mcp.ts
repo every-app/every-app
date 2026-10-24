@@ -1,19 +1,22 @@
 /**
  * `https://<app-host>/mcp`, served by the ToolBus from the app's catalog
- * snapshot (the perimeter's `interceptMcp` hook).
+ * snapshot (the perimeter's `interceptMcp` hook), for an app whose
+ * manifest says `mcp: { by: "gateway", why }`. Without the field a host
+ * serves no MCP (the gateway's own `/mcp` is the one connector); with
+ * `by: "app"` the perimeter proxies the path to the app's own server.
  *
  * By the time this runs the perimeter has authenticated the caller (a
  * personal access token, or a same-origin browser session that passed the
- * CSRF check), confirmed access to the app, and ruled out apps that keep
- * their own MCP server (`mcp: "app"`). This finds the snapshot, syncing it
- * on a POST if there is none, it was taken from another version than the
- * app runs now, or a failed one has gone stale, and serves the request.
- * With no snapshot to serve, or when the snapshot can't be read at all (D1
- * before the catalog migration ran, say), it returns null and the request
- * is proxied to the app as before, so apps that still answer /mcp
- * themselves keep working. A connected client learns of a redeploy with
- * other tools the way the ToolBus tells it (a 2025 session's hash, or a
- * held 2026-07-28 `subscriptions/listen` stream re-reading the snapshot
+ * CSRF check), confirmed access to the app, and read the manifest. This
+ * finds the snapshot, syncing it on a POST if there is none, it was taken
+ * from another version than the app runs now, or a failed one has gone
+ * stale, and serves the request. With no snapshot to serve, or when the
+ * snapshot can't be read at all (D1 before the catalog migration ran,
+ * say), it returns null and the perimeter answers 503 `mcp_unavailable`:
+ * the manifest promised the gateway answers here, so the app never gets
+ * the request. A connected client learns of a redeploy with other tools
+ * the way the ToolBus tells it (a 2025 session's hash, or a held
+ * 2026-07-28 `subscriptions/listen` stream re-reading the snapshot
  * through the view's `refresh`).
  */
 import {
@@ -147,8 +150,8 @@ export async function serveAppHostMcp({
   try {
     catalog = await servableCatalog(app, request.method);
   } catch (error) {
-    // Without a readable snapshot the app answers /mcp as it did before
-    // the gateway served it, rather than every request failing with 502.
+    // Without a readable snapshot there is nothing to serve: logged, and
+    // the perimeter answers 503 rather than every request failing with 502.
     logEvent(
       "mcp.catalog.unavailable",
       {

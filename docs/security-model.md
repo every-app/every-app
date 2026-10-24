@@ -553,10 +553,14 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
 
 ## Agent Tools (MCP)
 
-- Two endpoints serve the same tools: the gateway's own `/mcp`, one
+- Two endpoints can serve the same tools: the gateway's own `/mcp`, one
   connector for every app a user reaches (tools named `<app>_<tool>`, plus
-  the read-only built-ins `everyapp_whoami` and `everyapp_list_apps`), and
-  each app host's `/mcp`, for that app alone under its tools' own names.
+  the read-only built-ins `everyapp_whoami` and `everyapp_list_apps`), and,
+  only where an app's manifest sets `mcp: { by: "gateway", why }`, that
+  app host's `/mcp`, for that app alone under its tools' own names. By
+  default an app host serves no MCP: its `/mcp` is a private route like
+  any other, and a token whose scopes are all `mcp:` scopes opens nothing
+  there.
   Both are served by the gateway's ToolBus from the tool catalogs it
   snapshots in D1 when an app is activated, when a hosted deploy goes live,
   when the app's host sees it run a new version, when the consent page
@@ -584,8 +588,9 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   an origin listed in `MCP_ALLOWED_ORIGINS` (empty by default); behind
   Managed OAuth, where Access vouches for a browser's cookie too, that rule
   is checked before anything is read for the person.
-- An app host's `/mcp` needs a personal access token or the user's browser
-  session; it takes no OAuth token and advertises no authorization server
+- An app host's `/mcp`, where the manifest serves it, needs a personal
+  access token or the user's browser session; it takes no OAuth token and
+  advertises no authorization server
   (its `/.well-known/oauth-protected-resource`,
   `/.well-known/oauth-authorization-server` and
   `/.well-known/openid-configuration` paths, the same three under
@@ -604,7 +609,9 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   outdated catalog), so the GETs a sibling page can send with the cookie
   never do.
 - A token whose scopes are all `mcp:` scopes is MCP-only: every app route
-  other than `/mcp` (public ones included) answers it `403 token_scope`, so
+  other than a `/mcp` the host serves as MCP (public ones, every route of a
+  host without `mcp`, and a `/mcp` a public route covers on a `by: "gateway"`
+  host included) answers it `403 token_scope`, so
   an `mcp:read` token stays read only even though apps don't check scopes on
   their own routes. Tokens holding `*` (what a token created without scopes
   gets) or any non-MCP scope keep working on every route.

@@ -397,7 +397,11 @@ beforeEach(async () => {
   hoisted.testDb.current = db;
   organizationId = await seedOrganization(db, "acme");
   ownerId = await seedMember(db, { organizationId, role: "owner" });
-  appRowId = await deployLive("todo", { id: "todo", name: "Todos" });
+  appRowId = await deployLive("todo", {
+    id: "todo",
+    name: "Todos",
+    mcp: { by: "gateway", why: "Scripts drive this app alone." },
+  });
   appRequests.length = 0;
   seen.length = 0;
   hoisted.waitUntil.mockReset();
@@ -833,14 +837,18 @@ describe("app-host /mcp with a personal access token", () => {
     expect(tools.map((tool) => tool.name)).toContain("archive_todos");
   });
 
-  it("leaves /mcp to apps that don't serve agent tools", async () => {
+  it("answers 503 mcp_unavailable for an app that opted in but serves no agent tools", async () => {
     deployApp({ contract: false });
     const response = await mcp(await personalToken(), "tools/list");
-    // Proxied to the app as before, which answers /mcp itself.
-    expect(await response.text()).toBe("todo app page");
+    // The manifest said the gateway answers here: nothing to serve, and the
+    // app never sees the request.
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "mcp_unavailable",
+      app: "todo",
+    });
     expect(appRequests.map((r) => new URL(r.url).pathname)).toEqual([
       "/__everyapp/tools/list",
-      "/mcp",
     ]);
     const [catalog] = await db.select().from(appToolCatalogs);
     expect(catalog?.status).toBe("unsupported");
@@ -848,16 +856,19 @@ describe("app-host /mcp with a personal access token", () => {
 });
 
 describe("syncing on first use", () => {
-  it("proxies to the app while the catalog tables don't exist yet", async () => {
+  it("answers 503 while the catalog tables don't exist yet, never the app", async () => {
     // The gateway's deploy ships its code before it runs the migrations.
     await db.run(sql`DROP TABLE app_tools`);
     await db.run(sql`DROP TABLE app_tool_catalogs`);
     const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const response = await mcp(await personalToken(), "tools/list");
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe("todo app page");
-    expect(appRequests.map((r) => new URL(r.url).pathname)).toEqual(["/mcp"]);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "mcp_unavailable",
+      app: "todo",
+    });
+    expect(appRequests).toHaveLength(0);
     expect(String(consoleWarn.mock.calls[0]?.[0])).toContain(
       '"evt":"mcp.catalog.unavailable"',
     );
@@ -876,8 +887,11 @@ describe("syncing on first use", () => {
     const at = async (offsetMs: number) => {
       vi.setSystemTime(t0 + offsetMs);
       const response = await mcp(token, "tools/list");
-      // Nothing to serve: the app answers /mcp itself, as before.
-      expect(await response.text()).toBe("todo app page");
+      // Nothing to serve: unavailable, and the app never gets the request.
+      expect(response.status).toBe(503);
+      expect(await response.json()).toMatchObject({
+        error: "mcp_unavailable",
+      });
     };
 
     await at(0);
@@ -946,8 +960,8 @@ describe("syncing on first use", () => {
       undefined,
       "GET",
     );
-    // No catalog yet, so the app answers, and nothing was synced.
-    expect(await get.text()).toBe("todo app page");
+    // No catalog yet, so nothing is served, and nothing was synced.
+    expect(get.status).toBe(503);
     expect(listCalls()).toBe(0);
 
     await syncAppTools(syncable());
@@ -1182,7 +1196,7 @@ describe("app-host /mcp with a browser session", () => {
       undefined,
       "GET",
     );
-    expect(await response.text()).toBe("todo app page");
+    expect(response.status).toBe(503);
     expect(listCalls()).toBe(0);
     expect(await db.select().from(appToolCatalogs)).toEqual([]);
   });
@@ -1228,13 +1242,35 @@ describe("credentials on app-host /mcp", () => {
     expect(appRequests).toHaveLength(0);
   });
 
-  it("proxies /mcp to an app whose manifest keeps MCP in the app", async () => {
-    await deployLive("todo", { id: "todo", name: "Todos", mcp: "app" });
+  it("proxies /mcp to an app whose manifest keeps MCP in the app (by: app)", async () => {
+    await deployLive("todo", {
+      id: "todo",
+      name: "Todos",
+      mcp: { by: "app", why: "Runs its own MCP server." },
+    });
     await syncAppTools(syncable()); // even with tools in the catalog
     appRequests.length = 0;
 
     const response = await mcp(await personalToken(), "tools/list");
     expect(await response.text()).toBe("todo app page");
     expect(appRequests.map((r) => new URL(r.url).pathname)).toEqual(["/mcp"]);
+    expect(appRequests[0]?.headers.get("x-everyapp-identity")).toMatch(/^eyJ/);
+  });
+
+  it("proxies /mcp like any private route for an app whose manifest has no mcp", async () => {
+    await deployLive("todo", { id: "todo", name: "Todos" });
+    await syncAppTools(syncable()); // even with tools in the catalog
+    appRequests.length = 0;
+
+    const response = await mcp(await personalToken(), "tools/list");
+    expect(await response.text()).toBe("todo app page");
+    expect(appRequests.map((r) => new URL(r.url).pathname)).toEqual(["/mcp"]);
+
+    // An MCP-only token opens nothing on such a host.
+    appRequests.length = 0;
+    const readOnly = await mcp(await personalToken(["mcp:read"]), "tools/list");
+    expect(readOnly.status).toBe(403);
+    expect(await readOnly.json()).toMatchObject({ reason: "token_scope" });
+    expect(appRequests).toHaveLength(0);
   });
 });

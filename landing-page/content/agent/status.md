@@ -57,4 +57,4 @@ The headline, the command and where each is documented: [What status reports as 
 
 ## What it does not check
 
-It never opens the Gateway or an app over HTTPS: a live row means the registry and Cloudflare agree, not that a request succeeded. To prove an app answers, fetch `https://<app host>/` (a sign-in redirect is the expected answer behind the Gateway; behind Cloudflare Access it is Access's login page) and a public route the deploy printed (`GET /health` for the starter). It does not list MCP apps (`pnpm everyapp mcp list --json`), and it does not read what `everyapp dev` runs locally.
+It never opens the Gateway or an app over HTTPS: a live row means the registry and Cloudflare agree, not that a request succeeded. To prove an app answers, fetch `https://<app host>/` (a sign-in redirect is the expected answer behind the Gateway; behind Cloudflare Access it is Access's login page) and a public route the deploy printed, if it has one (the starter has none; `GET https://<gateway>/health` answers `{"status":"ok"}` without a sign-in). It does not list MCP apps (`pnpm everyapp mcp list --json`), and it does not read what `everyapp dev` runs locally.

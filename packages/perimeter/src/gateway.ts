@@ -7,10 +7,13 @@
  * contract, guard server functions, refuse a request carrying the session
  * cookie twice (cookie tossing), enforce CSRF (and the WebSocket Origin
  * check), decide public-vs-private, authenticate + authorize (an MCP-only
- * token reaches `/mcp` alone), hand `/mcp` to the gateway's ToolBus when it
- * serves the app's tools, strip inbound trust headers, inject a fresh
- * identity JWT (private requests) or the public marker (public routes),
- * proxy via the `getAppFetcher` seam, and stamp security headers.
+ * token reaches `/mcp` alone, and only on a host whose manifest serves
+ * MCP), hand `/mcp` to the gateway's ToolBus where the manifest says
+ * `mcp: { by: "gateway" }` (left out, the host serves no MCP and `/mcp` is
+ * a private route like any other; `by: "app"` proxies it to the app's own
+ * server), strip inbound trust headers, inject a fresh identity JWT
+ * (private requests) or the public marker (public routes), proxy via the
+ * `getAppFetcher` seam, and stamp security headers.
  *
  * It is dependency-injected end to end so it can be unit-tested in isolation and
  * run for real (D1 registry, Better Auth, service bindings) without changes.
@@ -123,12 +126,13 @@ export interface GatewayDeps {
   /** Optional login URL to 302 to for unauthenticated HTML navigations. */
   loginUrl?: string;
   /**
-   * Serve `<app-host>/mcp` from the gateway's ToolBus instead of proxying it.
-   * Called for the exact path `/mcp` once the caller is authenticated and
-   * allowed into the app, unless the manifest keeps MCP in the app
-   * (`mcp: "app"`) or declares `/mcp` public. Return null, without reading
-   * the body, to proxy the request to the app as before (e.g. the app has
-   * no tool catalog).
+   * Serve `<app-host>/mcp` from the gateway's ToolBus. Called for the exact
+   * path `/mcp` once the caller is authenticated and allowed into the app,
+   * only when the manifest says `mcp: { by: "gateway" }` and `/mcp` isn't a
+   * declared public route. Return null, without reading the body, when
+   * there is nothing to serve (no tool catalog): the manifest promised the
+   * gateway answers here, so the caller gets 503 `mcp_unavailable`, never
+   * the app.
    */
   interceptMcp?(input: McpInterceptInput): Promise<Response | null>;
   /**
@@ -478,18 +482,33 @@ export async function handleGatewayRequest(
   );
 
   if (session && allowed) {
-    // An MCP-only token answers at /mcp and nowhere else in the app.
-    if (isMcpOnlyCredential(session.credential) && url.pathname !== "/mcp") {
+    // The host answers /mcp only where the manifest says so, and only on
+    // the exact path: by "gateway", the ToolBus serves it unless a public
+    // route covers it (then nobody the Gateway vouches for would answer);
+    // by "app", the app's own server does. Left out, the gateway's own
+    // /mcp is the one connector and /mcp here is an ordinary private route
+    // (the app answers, usually 404).
+    const mcpBy = app.manifest.mcp?.by;
+    const gatewayServesMcp =
+      mcpBy === "gateway" && url.pathname === "/mcp" && !publicMatch.public;
+    const mcpServedHere =
+      gatewayServesMcp || (mcpBy === "app" && url.pathname === "/mcp");
+    // An MCP-only token answers where MCP is served and nowhere else: apps
+    // don't scope-check their own routes, so its identity never reaches
+    // one, not on a host without `mcp` and not at a /mcp a public route
+    // covers (a pattern, or a row stored before the author-time refusal).
+    if (isMcpOnlyCredential(session.credential) && !mcpServedHere) {
       return json(403, { error: "forbidden", reason: "token_scope" });
     }
-    if (
-      deps.interceptMcp &&
-      url.pathname === "/mcp" &&
-      app.manifest.mcp !== "app" &&
-      !publicMatch.public
-    ) {
-      const served = await deps.interceptMcp({ request, app, session });
+    if (gatewayServesMcp) {
+      const served = deps.interceptMcp
+        ? await deps.interceptMcp({ request, app, session })
+        : null;
       if (served) return withSecurityHeaders(served);
+      // Nothing to serve (no catalog yet, or none readable): the manifest
+      // says the gateway answers here, so say it can't rather than hand
+      // the request, an MCP-only token's included, to the app.
+      return json(503, { error: "mcp_unavailable", app: app.appId });
     }
     const identity = await mintIdentityJwt(deps.privateKeyPem, {
       subject: {

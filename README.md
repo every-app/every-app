@@ -74,7 +74,6 @@ pnpm run deploy                                      # the same as pnpm everyapp
 ```text
 Live          https://my-app.apps.yourcompany.com
 Who can open  Private to you, owners and admins · change it at https://apps.yourcompany.com/admin/apps
-Public        Open to the internet without sign-in: GET /health
 ```
 
 Open `apps/my-app` in Claude Code, Codex or Cursor and say what you want. The `everyapp` skill in every app tells your coding agent the CLI, the manifest and the rules, so it never writes a login page. `apps/my-app` is yours: git in your `every-app` folder neither tracks nor ignores it, and `git pull` leaves it alone. For a repository of its own, run `pnpm everyapp create my-app` from a folder outside `every-app`.

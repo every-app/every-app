@@ -40,8 +40,9 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
                  ┌───────────────────────── your Cloudflare account ─────────────────────────┐
                  │                                                                           │
  browser ──────┐ │  ┌─ Cloudflare Access (optional outer ring) ─┐                           │
- AI client ────┼─┼─►│  bypasses: /mcp, /oauth/token, /oauth/    │                           │
- webhook/API ──┘ │  │  register, /.well-known/*, public routes  │                           │
+ AI client ────┼─┼─►│  bypasses: /health, /mcp, /oauth/token,   │                           │
+ webhook/API ──┘ │  │  /oauth/register, /.well-known/*, public   │                           │
+                 │  │  routes, and /mcp on opted-in app hosts   │                           │
                  │  └──────────────────┬────────────────────────┘                           │
                  │                     ▼                                                     │
                  │     ┌────────── Gateway Worker (the only public Worker) ──────────┐       │
@@ -304,7 +305,7 @@ row being routed.
 | `perimeter.app-access-policy` | An organization's own app opens only for a live, non-banned member of the app's organization with a `user_app_access` row; a session under another of the person's organizations is re-resolved as that membership; a token acts only in its own organization and, when bound, its own app. | `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.ts:55-76` (`resolveLiveOrgRole`) | `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.test.ts` :: opens no app with a deploy key, an owner's included |
 | `perimeter.bearer-never-cookie` | A request carrying any `Authorization` bearer is never authenticated by a cookie: an `epat_` token verifies or yields null, any other bearer yields null, without reading the session cookie. | `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.ts:104-155` | `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.test.ts` :: returns null for epat credentials without falling back (partial: the third-party authenticator has no unit test) |
 | `perimeter.duplicate-session-cookie-refused` | A request whose `Cookie` header(s) name the session cookie more than once, in any order or variant, is refused `401 duplicate_session_cookie` before authentication, public routes included. | `packages/perimeter/src/cookies.ts:29-50` | `packages/perimeter/src/cookies.test.ts` :: refuses the same name twice, in either order; `packages/perimeter/src/integration/e2e.test.ts` :: cookie tossing |
-| `perimeter.mcp-only-token-scope` | A credential whose scopes are all `mcp:*` is served at exactly `/mcp` and answers `403 token_scope` on every other app route, public ones included. | `packages/perimeter/src/session.ts:32-37` (`isMcpOnlyCredential`) | `packages/perimeter/src/gateway.test.ts` :: refuse every app route but /mcp with 403 token_scope |
+| `perimeter.mcp-only-token-scope` | A credential whose scopes are all `mcp:*` is served at exactly `/mcp`, and only where the host's manifest has `mcp` and MCP is served there; it answers `403 token_scope` on every other app route (public ones included), on every route of a host without `mcp` (`/mcp` included) and at a `/mcp` a public route covers on a `by: "gateway"` host. | `packages/perimeter/src/session.ts:32-37` (`isMcpOnlyCredential`); `packages/perimeter/src/gateway.ts` (`mcpServedHere`) | `packages/perimeter/src/gateway.test.ts` :: refuse every app route but /mcp with 403 token_scope; :: open nothing on a host whose manifest serves no MCP, /mcp included; :: open nothing at a /mcp a public route covers, even where the manifest opts in |
 | `perimeter.tools-contract-404` | `/__everyapp/tools` and anything under it answers 404 from outside under any spelling (case, dot segments, encoded separators, double encoding, backslashes), before authentication. | `packages/perimeter/src/gateway.ts:297-299` | `packages/perimeter/src/publicRoutes.test.ts` :: finds the tools contract under any spelling; `packages/perimeter/src/integration/e2e.test.ts` :: (d) |
 | `perimeter.serverfn-guard` | A request whose path (decoded as TanStack Start decodes it) is under the server-function base answers `403 server_fn_denied` unless it is a non-navigation, same-origin call carrying TanStack's client header. | `packages/perimeter/src/gateway.ts:312-320`; `packages/perimeter/src/serverFunctions.ts` | `packages/perimeter/src/serverFunctions.test.ts` :: matches the server-function prefix the way TanStack Start routes it |
 | `perimeter.websocket-origin` | A WebSocket upgrade that carries a cookie and no bearer must present an `Origin` whose host is the app host; bearer-only upgrades are exempt. | `packages/perimeter/src/csrf.ts:68-99` | `packages/perimeter/src/csrf.test.ts` :: allows only the app's own origin |
@@ -816,7 +817,7 @@ out, or escaping the one audit row, which names the inner tool with `via`.
 | `pat.scopes-decide-mcp-access` | On either `/mcp`, `*` or `mcp:write` is read & write, `mcp:read` read only, any other scope set (API scopes, `deploy`) is `403 token_scope`. | `validate.ts:95-151` | `gateway-mcp.e2e.sqlite.test.ts` :: reads only with mcp:read, sees only its app |
 | `pat.bound-to-org-and-app` | A personal token acts only in its own organization, only on its bound app when it has one, and fails when its user is no longer a member, is banned, or the organization is suspended. | `betterAuthAuthenticator.ts:55-76` | `app-host-mcp.sqlite.test.ts` :: refuses a token bound to another app |
 | `pat.deploy-key-opens-nothing` | A deploy key opens no app on any host and is refused on the gateway's `/mcp`. | `betterAuthAuthenticator.ts:120-122`; `validate.ts:95-100` | `betterAuthAuthenticator.test.ts` :: opens no app with a deploy key (partial: the gateway `/mcp` refusal has no test) |
-| `apphost.mcp-session-or-pat-with-csrf` | An app host's `/mcp` serves a browser session only from the app's own origin (a cookie POST needs `Sec-Fetch-Site: same-origin` or an `Origin` on the app's host) or a personal token; it takes no OAuth token. | `packages/perimeter/src/gateway.ts:350-374, 421-429` | `app-host-mcp.sqlite.test.ts` :: runs a tool for the app's own page and audits it |
+| `apphost.mcp-session-or-pat-with-csrf` | An app host serves `/mcp` only when its manifest sets `mcp: { by, why }` (by default it serves none, and the Gateway's `/mcp` is the one connector); where it does, it serves a browser session only from the app's own origin (a cookie POST needs `Sec-Fetch-Site: same-origin` or an `Origin` on the app's host) or a personal token; it takes no OAuth token. | `packages/perimeter/src/gateway.ts` (CSRF, and the `manifest.mcp` checks in handleGatewayRequest) | `app-host-mcp.sqlite.test.ts` :: runs a tool for the app's own page and audits it; :: proxies /mcp like any private route for an app whose manifest has no mcp |
 | `tools.policy-destructive-hidden-write-gated` | Destructive tools are absent from `tools/list` and refused for every caller; write tools, and tools with no declared risk, are hidden from and refused for read-only callers. | `packages/toolbus/src/policy.ts:25-39` | `packages/toolbus/src/policy.test.ts` :: hides destructive tools from everyone and write tools from read-only callers |
 | `tools.per-call-identity` | Each tool call reaches exactly one app with a fresh identity minted for that call: `chan: "mcp"`, explicit `mcp:read`/`mcp:write` (never `*`, never `mcp:destructive`), `act.sub` naming the credential, a `tc` claim naming the tool and call id. | `packages/toolbus/src/execute.ts:69-91, 218-257` | `packages/toolbus/src/execute.test.ts` :: calls the app once with an identity minted for exactly this call |
 | `tools.request-shape-limits` | JSON-RPC batches are refused; bodies over 256 KiB; arguments nested more than 64 levels; arguments with more than 1,000 values and recursive schemas are left to the app's own validation; an app gets 30 seconds to answer. | `packages/toolbus/src/http.ts:60-124`; `validation.ts` | `packages/toolbus/src/http.test.ts` :: refuses JSON-RPC batches, whatever their routing headers say |
@@ -891,7 +892,9 @@ reach the gateway without a login; the gateway answers every spelling of a
 bypassed prefix that its MCP/OAuth router doesn't serve (an unclaimed
 `/.well-known/<name>` included) with a JSON 404, never the control plane's
 shell. No control-plane route, server function or auth endpoint lives under
-`/mcp`, `/oauth/token`, `/oauth/register` or `/.well-known/`; keep it so.
+`/health`, `/mcp`, `/oauth/token`, `/oauth/register` or `/.well-known/`;
+keep it so. `/health` is served before that refusal, exact-case, reads no
+session and says only whether D1 answers (`server/health.ts`).
 
 **Invariants.** The register has 36.
 
@@ -1257,12 +1260,16 @@ means it is on main (every boundary fix from this pass merged on
    `/mcp` itself** (B3, B5, medium; mostly closed by #447, which deleted
    the SDK's `createMcpHandler`, the only in-repo way an app served `/mcp`
    itself; #404, which patched it, closed unmerged). What remains, by
-   Ben's decision to keep it through launch: the manifest's `mcp: "app"`
-   escape hatch and the perimeter branch that skips the ToolBus for it
-   (`packages/perimeter/src/gateway.ts:421-429`) still forward an identity
-   carrying the token's `mcp:read` scopes to whatever handler the app
-   wrote, so the read-only promise there rests on the app honouring the
-   scopes. No in-repo app does this and the starter never did; a
+   Ben's decision to keep it through launch: the manifest's
+   `mcp: { by: "app", why }` escape hatch and the perimeter branch that
+   proxies `/mcp` for it (`packages/perimeter/src/gateway.ts`) still
+   forward an identity carrying the token's `mcp:read` scopes to whatever
+   handler the app wrote, so the read-only promise there rests on the app
+   honouring the scopes. Narrowed by the public-surface swath
+   (2026-10-24): an app host serves `/mcp` only when its manifest sets
+   `mcp` (with a `why` the CLI shows), the string form is refused, and on
+   a host without the field an MCP-only token opens nothing, `/mcp`
+   included. No in-repo app sets it and the starter never did; a
    post-launch perimeter PR may remove the hatch.
 7. **A password reset didn't end existing sessions** (B2, medium; fixed in #405,
    merged). Better Auth's `revokeSessionsOnPasswordReset` was

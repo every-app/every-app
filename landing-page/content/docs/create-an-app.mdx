@@ -63,8 +63,9 @@ When it's done, you'll see:
 ```text
 Live          https://my-app.apps.yourcompany.com
 Who can open  Private to you, owners and admins · change it at https://apps.yourcompany.com/admin/apps
-Public        Open to the internet without sign-in: GET /health
 ```
+
+Every route of the app needs someone the Gateway signed in. If you later list a route under `public` in `everyapp.config.ts` (a webhook a provider calls, say), the deploy adds a `Public` line naming it.
 
 Open your Gateway and the app is in **All apps**.
 

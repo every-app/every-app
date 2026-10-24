@@ -2,8 +2,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { getEveryAppUser } from "@every-app/sdk/server";
 import { env } from "cloudflare:workers";
 
-// Listed under `public` in everyapp.config.ts, so the Gateway lets anyone
-// reach it. A signed-in member still arrives as `user`; anyone else is null.
+// A JSON endpoint without a page. Private, like every route not listed
+// under `public` in everyapp.config.ts: the Gateway answers 401 to anyone it
+// hasn't signed in, so `user` is the member who called (null only on a route
+// made public). An uptime monitor reaches it with a personal access token.
 export const Route = createFileRoute("/health")({
   server: {
     handlers: {

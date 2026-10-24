@@ -314,15 +314,75 @@ describe("access, ai and serverFnGuard manifest fields", () => {
 });
 
 describe("mcp manifest field", () => {
-  it("accepts gateway or app in both schemas", () => {
-    for (const mcp of ["gateway", "app"]) {
-      const input = { id: "todo", mcp };
+  it("takes { by, why } with by gateway or app, in both schemas", () => {
+    for (const by of ["gateway", "app"]) {
+      const input = {
+        id: "todo",
+        mcp: { by, why: "Scripts drive this app alone." },
+      };
       expect(validateManifest(input)).toMatchObject(input);
       expect(validateManifestStrict(input)).toMatchObject(input);
     }
-    expect(() => validateManifest({ id: "todo", mcp: "both" })).toThrow(
+    expect(validateManifest({ id: "todo" }).mcp).toBeUndefined();
+  });
+
+  it("refuses the old string form with the new shape, in both schemas", () => {
+    for (const mcp of ["gateway", "app", "both"]) {
+      for (const validate of [validateManifest, validateManifestStrict]) {
+        expect(() => validate({ id: "todo", mcp })).toThrow(
+          'mcp: mcp is { by: "gateway" | "app", why: "..." }',
+        );
+      }
+    }
+  });
+
+  it("needs a why that is plain text of at most 200 characters", () => {
+    const strict = (mcp: unknown) =>
+      validateManifestStrict({ id: "todo", mcp });
+    expect(() => strict({ by: "gateway" })).toThrow("mcp.why");
+    expect(() => strict({ by: "gateway", why: "" })).toThrow(
+      "say why the app needs /mcp on its own host",
+    );
+    expect(() => strict({ by: "gateway", why: "x".repeat(201) })).toThrow(
+      "mcp.why",
+    );
+    expect(() => strict({ by: "gateway", why: "a\u202eb" })).toThrow(
+      "no control characters",
+    );
+    expect(() => strict({ by: "both", why: "ok" })).toThrow("mcp.by");
+    expect(() => strict({ by: "app", why: "ok", extra: 1 })).toThrow(
       ManifestError,
     );
+    // The stored form tolerates an unknown key, like every other section.
+    expect(
+      validateManifest({ id: "todo", mcp: { by: "app", why: "ok", extra: 1 } })
+        .mcp,
+    ).toMatchObject({ by: "app", why: "ok" });
+  });
+
+  it("refuses a public /mcp route when the manifest is authored", () => {
+    for (const path of ["/mcp", "/mcp/*", "/mcp/sse"]) {
+      expect(() =>
+        validateManifestStrict({ id: "todo", public: [{ path }] }),
+      ).toThrow(`public: ${path} can't be public`);
+    }
+    // A pattern that covers /mcp is the same hole under any of its methods.
+    for (const route of [
+      { path: "/:page" },
+      { path: "/:page", methods: ["POST"] },
+    ]) {
+      expect(() =>
+        validateManifestStrict({ id: "todo", public: [route] }),
+      ).toThrow("public: /:page can't be public (it covers /mcp)");
+    }
+    expect(
+      validateManifestStrict({ id: "todo", public: [{ path: "/share/:id" }] })
+        .public,
+    ).toEqual([{ path: "/share/:id" }]);
+    // A stored manifest with one still parses: the perimeter decides.
+    expect(
+      validateManifest({ id: "todo", public: [{ path: "/mcp" }] }).public,
+    ).toEqual([{ path: "/mcp" }]);
   });
 });
 

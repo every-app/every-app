@@ -276,16 +276,17 @@ login, safe only as long as that cookie stays out of reach of scripts.
 Let through, on each, only the machine endpoints, which check their own
 credentials:
 
-| Path                              | Where            | Why                                                    |
-| --------------------------------- | ---------------- | ------------------------------------------------------ |
-| `/mcp`, `/mcp/*`                  | gateway and apps | MCP clients, with OAuth or a personal access token     |
-| `/oauth/token`, `/oauth/register` | gateway          | The OAuth server's token, revocation and registration  |
-| `/.well-known/*`                  | gateway          | OAuth discovery documents                              |
-| Each app's public routes          | that app's host  | Whatever its `everyapp.config.ts` declares as `public` |
+| Path                              | Where                                              | Why                                                                     |
+| --------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------- |
+| `/mcp`, `/mcp/*`                  | gateway; an app host only when its manifest sets `mcp` | MCP clients, with OAuth or a personal access token; by default an app host serves no MCP |
+| `/health`                         | gateway                                            | Uptime monitors: `GET` answers 200 or 503 after a bounded `SELECT 1`, reading no session |
+| `/oauth/token`, `/oauth/register` | gateway                                            | The OAuth server's token, revocation and registration                   |
+| `/.well-known/*`                  | gateway                                            | OAuth discovery documents                                               |
+| Each app's public routes          | that app's host                                    | Whatever its `everyapp.config.ts` declares as `public` (not a health check: a monitor sends a personal access token) |
 
 With **Managed OAuth** on the gateway's application ("MCP through Access
-too", below), the first three rows go: the gateway's application bypasses
-nothing at all, and the apps' application keeps only each app's public
+too", below), the MCP and OAuth rows go: the gateway's application bypasses
+`/health` alone, and the apps' application keeps only each app's public
 routes. AI apps then pass Access like browsers do. The rows above are for
 the setup without it.
 
@@ -309,6 +310,7 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
   "type": "self_hosted",
   "destinations": [
     {"type": "public", "uri": "apps.acme.com", "overrides": [
+      {"path_pattern": "/health", "behavior": "public"},
       {"path_pattern": "/mcp", "behavior": "public"},
       {"path_pattern": "/mcp/*", "behavior": "public"},
       {"path_pattern": "/oauth/token", "behavior": "public"},
@@ -322,15 +324,14 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
   "enable_binding_cookie": true
 }'
 
-# The apps' hosts: its AUD tag goes in CLOUDFLARE_ACCESS_APPS_AUD.
+# The apps' hosts: its AUD tag goes in CLOUDFLARE_ACCESS_APPS_AUD. The
+# wildcard bypasses nothing: an app host serves no MCP unless its manifest
+# sets `mcp`, and such an app gets a destination of its own (below).
 npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
   "name": "Every App apps",
   "type": "self_hosted",
   "destinations": [
-    {"type": "public", "uri": "*.apps.acme.com", "overrides": [
-      {"path_pattern": "/mcp", "behavior": "public"},
-      {"path_pattern": "/mcp/*", "behavior": "public"}
-    ]}
+    {"type": "public", "uri": "*.apps.acme.com"}
   ],
   "policies": ["<policy id>"],
   "session_duration": "720h",
@@ -343,7 +344,9 @@ Each response's `aud` is that application's AUD tag. For an app's public
 routes, add a destination for that app's host to the apps' application, with
 its paths as overrides (for example `{"type": "public", "uri":
 "crm.apps.acme.com", "overrides": [{"path_pattern": "/hooks/*", "behavior":
-"public"}]}`).
+"public"}]}`); an app whose manifest sets `mcp: { by, why }` gets one with
+`/mcp` and `/mcp/*` first, then its public routes. `everyapp access on` and
+the sync after a deploy compute the same (`packages/cli/src/lib/access/plan.ts`).
 
 In the dashboard: **Access controls → Applications → Create new application
 → Self-hosted**, twice: one with the gateway's hostname, one with
@@ -468,9 +471,11 @@ overrides, and under **Advanced settings** turn on **Managed OAuth** with
 URLs under **Allowed redirect URIs**, and a **Grant session duration** and
 **Access token lifetime**.
 
-On the apps' application, drop the `/mcp` overrides too and keep each app's
-public routes (`everyapp access on`, and the sync after a deploy, do this
-once they see `oauth_configuration.enabled` on the gateway's application). `<app>.<gateway>/mcp` is then reachable by browsers only
+On the apps' application, drop the `/mcp` overrides of the apps that have
+them too and keep each app's public routes (`everyapp access on`, and the
+sync after a deploy, do this once they see `oauth_configuration.enabled` on
+the gateway's application; the gateway's own `/health` stays bypassed). An
+opted-in app's `<app>.<gateway>/mcp` is then reachable by browsers only
 (the perimeter doesn't take the assertion there yet); AI apps use the
 gateway's `/mcp`, which offers every app the member can use. Don't turn
 Managed OAuth on for the apps' application.
@@ -581,6 +586,46 @@ apps**).
 - Signing out of the gateway also signs out of Access
   (`/cdn-cgi/access/logout`); otherwise the outer ring would sign the browser
   straight back in.
+
+### Uptime monitoring
+
+The gateway: `GET https://<gateway>/health` is public and bypassed by
+Access. It answers `200 {"status":"ok"}` when the gateway reaches its D1
+database within two seconds and `503 {"status":"error","database":"down"}`
+otherwise, with `cache-control: no-store`; it reads no session and names no
+version, one probe runs at a time per isolate and its answer is reused for
+five seconds, and other methods get 405
+(`apps/every-app-gateway/src/server/health.ts`). Point the monitor there;
+it needs no credential. Other spellings Access lets through (`/HEALTH`) are
+a JSON 404 from the gateway, never the control plane. The gateway itself
+probes each app's `/__everyapp/health` over its service binding when it
+activates the app (`probeApp`, `apps/every-app-gateway/src/server/app-activation.ts`).
+
+One app: its routes are private (the starter's `/health` is a JSON endpoint
+behind the gateway, not a public route; a health route needs no `public`
+entry), so a monitor sends
+`Authorization: Bearer epat_…` with `GET https://<app>.<base>/health` (or
+whatever the app serves). Say what that token opens before handing it to a
+third-party monitor: everything the app does, as the person it belongs to.
+Apps don't scope-check their own routes, and an `mcp:`-only token is `403
+token_scope` on every route of a host whose manifest has no `mcp`, so the
+token must be **Full access**; make it a dedicated monitoring member who can
+open that one app and nothing else, bind the token to that app (Manage
+workspace → Tokens → Create access token, one app), and note that its expiry
+(90 days by default, a year at most) ends the monitor. Behind the outer ring
+the request also needs an Access **service token** (`CF-Access-Client-Id`
+and `CF-Access-Client-Secret`) from a Service Auth policy on the "Every App
+apps" application. Make it a **reusable** policy: a policy added inline from
+the application's own page makes `access on` skip that application for good
+(`ACCESS_INLINE_POLICIES`), so later public routes never get through. The
+service token alone opens nothing (the perimeter still demands the personal
+token), but it removes the outer ring for its holder on every app host and
+path (Access policies are not path-scoped). This path is **unverified
+live**: the apps' application has the binding cookie on, which Cloudflare's
+authorization-cookie page says to avoid for non-browser tools, and no
+service token has been tried against it. The verified alternative for the
+one app you monitor: keep `public: [{ path: "/health" }]` in its manifest
+and let the monitor fetch it without a credential.
 
 ## Membership settings
 

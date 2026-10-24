@@ -27,6 +27,7 @@ import {
   type CapabilityId,
   type SettingNeedFields,
 } from "@every-app/sdk/internal";
+import { matchPublicRoute } from "../publicRoutes";
 
 /** A single declared public route. Methods default to GET-only when omitted. */
 export const PublicRouteSchema = z.object({
@@ -524,6 +525,45 @@ export const AiPolicySchema = z
   .passthrough();
 export type AiPolicy = z.infer<typeof AiPolicySchema>;
 
+/** What an author who wrote the old string form, or anything else, is told. */
+const MCP_SHAPE =
+  'mcp is { by: "gateway" | "app", why: "..." }: "gateway" serves the app\'s defineTools() at <app-host>/mcp, "app" leaves the path to the app\'s own MCP server; left out, the Gateway\'s own /mcp is the one connector';
+
+/** Operator text shown by `everyapp deploy` and `everyapp status`. */
+const PLAIN_TEXT = /^[^\p{Cc}\p{Cf}\p{Zl}\p{Zp}]*$/u;
+
+/**
+ * Whether, and by whom, the app's own host answers `/mcp`. Left out, it
+ * doesn't: `https://<gateway>/mcp` serves every app the caller can use,
+ * and a second connector per app is one more surface to let through
+ * Cloudflare Access for nothing. An app that needs one says why.
+ */
+export const McpSchema = z
+  .object(
+    {
+      /**
+       * "gateway": the Gateway's ToolBus serves the tools the app defines
+       * with `defineTools()` at `<app-host>/mcp`. "app": the app runs its
+       * own MCP server there, and the perimeter proxies `/mcp` to it with
+       * the identity header, the token's scopes left for the app to read.
+       */
+      by: z.enum(["gateway", "app"]),
+      /** Why this app needs `/mcp` on its own host; shown by the CLI. */
+      why: z
+        .string()
+        .min(1, "say why the app needs /mcp on its own host")
+        .max(200)
+        .regex(PLAIN_TEXT, "why is plain text: no control characters"),
+    },
+    {
+      // A string (the field's old form) or anything else that isn't an
+      // object is told the shape, not "expected object".
+      error: (issue) => (issue.code === "invalid_type" ? MCP_SHAPE : undefined),
+    },
+  )
+  .passthrough();
+export type McpPolicy = z.infer<typeof McpSchema>;
+
 export const ManifestSchema = z
   .object({
     /** Stable app id, kebab-case. Used in the app hostname's first DNS label. */
@@ -635,11 +675,11 @@ export const ManifestSchema = z
     /** Database migration strategy for the app's D1 database. */
     migrations: MigrationsSchema.optional(),
     /**
-     * Who answers `<app-host>/mcp`. "gateway" (the default) serves it from
-     * the tools the app defines with `defineTools()`; "app" leaves the path
-     * to the app's own MCP server.
+     * Whether the app's own host answers `/mcp`, and who does: see
+     * {@link McpSchema}. Left out (the default), the host serves no MCP and
+     * the Gateway's `/mcp` is the one connector.
      */
-    mcp: z.enum(["gateway", "app"]).optional(),
+    mcp: McpSchema.optional(),
   })
   .passthrough();
 export type Manifest = z.infer<typeof ManifestSchema>;
@@ -740,6 +780,7 @@ export const ManifestSchemaStrict = ManifestSchema.extend({
   email: EmailSchemaStrict.optional(),
   database: DatabaseSchema.strict().optional(),
   limits: WorkerLimitsSchema.strict().optional(),
+  mcp: McpSchema.strict().optional(),
 }).strict();
 export type EveryAppManifest = z.infer<typeof ManifestSchemaStrict>;
 
@@ -828,6 +869,23 @@ export function validateManifestStrict(input: unknown): EveryAppManifest {
 
   for (const route of manifest.public ?? []) {
     assertPublicPathIsSafe(route.path);
+    // A public /mcp is served by nobody the Gateway vouches for: the
+    // perimeter skips the ToolBus there and Access lets it through. A
+    // pattern that covers /mcp (`/:page`) under any of the route's
+    // methods is the same hole as the path itself. An app with its own
+    // MCP server says `mcp: { by: "app" }` and gets the identity header
+    // instead.
+    const named = route.path === "/mcp" || route.path.startsWith("/mcp/");
+    const covers =
+      named ||
+      (route.methods ?? ["GET"]).some(
+        (method) => matchPublicRoute([route], method, "/mcp").public,
+      );
+    if (covers) {
+      throw new ManifestError(
+        `Invalid everyapp.config: public: ${route.path} can't be public${named ? "" : " (it covers /mcp)"}; an app that runs its own MCP server sets mcp: { by: "app", why: "..." }`,
+      );
+    }
   }
   assertHelperWorkersAreDeclared(manifest);
   assertDatabaseIsConsistent(manifest);

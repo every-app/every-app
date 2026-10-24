@@ -133,7 +133,13 @@ beforeEach(async () => {
     appSlug: "todo",
     name: "Todos",
     description: "Things to do",
-    manifest: { id: "todo", name: "Todos" },
+    manifest: {
+      id: "todo",
+      name: "Todos",
+      // Its own MCP server answers /mcp, which the outer ring lets through
+      // for it; the perimeter proxies the path with the identity.
+      mcp: { by: "app", why: "Runs its own MCP server." },
+    },
     deployerUserId: owner.userId,
     appBaseDomain: new URL(GATEWAY).host,
   });
@@ -254,9 +260,9 @@ describe("the outer ring on app hosts (SQLite)", () => {
   });
 
   it("checks a cookie session on a path Access lets through, by its CF_Authorization cookie", async () => {
-    // An app host's /mcp is bypassed at Access (MCP clients use tokens), but
-    // the session cookie works there too: browsers send Access's own
-    // CF_Authorization cookie with it.
+    // An app host's /mcp is bypassed at Access where the manifest opts in
+    // (MCP clients use tokens), but the session cookie works there too:
+    // browsers send Access's own CF_Authorization cookie with it.
     const mcp = (headers: Record<string, string>) =>
       server.fetch(
         new Request(`https://${appHost}/mcp`, {

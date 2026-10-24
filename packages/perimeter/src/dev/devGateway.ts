@@ -95,7 +95,23 @@ export function devAuthenticator(): SessionAuthenticator {
  * Host label so each worktree's base host Just Works.
  */
 export function createDevGatewayHandler(config: DevGatewayConfig) {
-  const registry = new InMemoryAppRegistry(config.apps);
+  // `everyapp dev` serves `<app>.localhost/mcp` from the local ToolBus
+  // whatever the manifest says: dev is local only, and that URL is how an
+  // app's tools are tried before it is deployed. An app that runs its own
+  // MCP server (`by: "app"`) keeps it here too.
+  const registry = new InMemoryAppRegistry(
+    config.apps.map((app) =>
+      app.manifest.mcp
+        ? app
+        : {
+            ...app,
+            manifest: {
+              ...app.manifest,
+              mcp: { by: "gateway", why: "everyapp dev serves it locally." },
+            },
+          },
+    ),
+  );
 
   const deps: GatewayDeps = {
     env: config.env,

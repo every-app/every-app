@@ -86,6 +86,11 @@ const NEGATIVE_CAPABILITIES = `capabilities: {
     members: { access: "read", why: "Whom the weekly digest goes to.", scopes: ["anything"] },
   },`;
 
+/** The app's host serves /mcp: an object with a reason. */
+const MCP_OPT_IN = `mcp: { by: "gateway", why: "Scripts drive this app alone." },`;
+/** Refused: the field's old string form. */
+const MCP_OLD_FORM = `mcp: "gateway",`;
+
 /**
  * Stands in for cf under EVERYAPP_CF_BINARY: hands the call (its arguments,
  * the files an `@path` argument names, and which mode and account the
@@ -560,6 +565,19 @@ describe.runIf(process.env["EVERYAPP_BUILT_CLI"] === "1")("the built CLI", { tim
       expect(last).toMatchObject({ type: "error", code: "INVALID_MANIFEST" });
       expect(last.message, describeRun(refused)).toMatch(/capabilities\.members\.scopes/);
       expect(last.message, describeRun(refused)).toMatch(/takes no scopes/);
+
+      // The same split could hide the `mcp` object: accepted as { by, why },
+      // refused as the old string with the new shape named.
+      fs.writeFileSync(configPath, withLastField(starter, MCP_OPT_IN));
+      const optedIn = await everyapp(["db", "migrate", "--json"], { cwd: appDir });
+      expectProtocol(optedIn);
+      expect(optedIn.exitCode, describeRun(optedIn)).toBe(0);
+      fs.writeFileSync(configPath, withLastField(starter, MCP_OLD_FORM));
+      const oldForm = await everyapp(["db", "migrate", "--json"], { cwd: appDir });
+      const oldFormLast = expectProtocol(oldForm);
+      expect(oldForm.exitCode, describeRun(oldForm)).toBe(1);
+      expect(oldFormLast).toMatchObject({ type: "error", code: "INVALID_MANIFEST" });
+      expect(oldFormLast.message, describeRun(oldForm)).toMatch(/mcp is \{ by: "gateway" \| "app", why/);
 
       // The capability manifest stays for release.
       fs.writeFileSync(configPath, withLastField(starter, CAPABILITIES));

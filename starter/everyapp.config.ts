@@ -5,8 +5,9 @@ export default {
   resources: {
     d1: ["DB"],
   },
-  // Reachable without signing in. Everything else needs a member the Gateway signed in.
-  public: [{ path: "/health" }],
+  // Every route needs a member the Gateway signed in. A route something else
+  // must reach (a provider's webhook, an OAuth callback) is listed here:
+  // public: [{ path: "/webhooks/github", methods: ["POST"] }]
   // What the Gateway does for the app with keys it holds. A call for anything not listed is refused.
   capabilities: {
     members: { access: "read", why: "Shows who can open this app." },

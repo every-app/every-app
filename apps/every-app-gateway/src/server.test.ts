@@ -17,6 +17,7 @@ import server, {
   clearHostnameCacheForTests,
   resolveAppByHostname,
 } from "./server";
+import { resetHealthForTests } from "./server/health";
 import { validateManifest } from "@every-app/perimeter/manifest";
 
 const mocks = vi.hoisted(() => ({
@@ -86,6 +87,24 @@ const TODO: RegisteredApp = {
   status: "active",
   manifest: validateManifest({ id: "todo" }),
 };
+
+/** The same app, its manifest asking the gateway to serve /mcp on its host. */
+const TODO_MCP: RegisteredApp = {
+  ...TODO,
+  manifest: validateManifest({
+    id: "todo",
+    mcp: { by: "gateway", why: "Scripts drive this app alone." },
+  }),
+};
+
+/** A signing key for the tests that proxy to an app (the identity is minted). */
+function realSigningKey(): string {
+  return generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+    privateKeyEncoding: { type: "pkcs8", format: "pem" },
+    publicKeyEncoding: { type: "spki", format: "pem" },
+  }).privateKey;
+}
 
 function registryReturning(app: RegisteredApp | null): AppRegistry & {
   findByHostname: ReturnType<typeof vi.fn>;
@@ -727,6 +746,9 @@ describe("gateway host (control plane)", () => {
     // exact lower-case paths. What Access lets through and the router
     // doesn't claim must not reach the control plane's shell.
     for (const [method, path] of [
+      ["GET", "/HEALTH"],
+      ["GET", "/Health"],
+      ["POST", "/HEALTH"],
       ["GET", "/MCP"],
       ["POST", "/MCP"],
       ["GET", "/Mcp"],
@@ -775,6 +797,100 @@ describe("gateway host (control plane)", () => {
     expect(mocks.controlPlaneFetch).toHaveBeenCalledOnce();
   });
 
+  it("serves /health for uptime monitors: a bounded SELECT 1, no session, no version, never cached", async () => {
+    resetHealthForTests();
+    const first = vi.fn(async () => ({ 1: 1 }));
+    mocks.env.DB = { prepare: vi.fn(() => ({ first })) };
+    mocks.authenticate.mockReset();
+
+    const get = await server.fetch(gatewayRequest("/health"));
+    expect(get.status).toBe(200);
+    await expect(get.json()).resolves.toEqual({ status: "ok" });
+    expect(get.headers.get("cache-control")).toBe("no-store");
+    expect(get.headers.get("content-type")).toContain("application/json");
+    // Stamped like the other machine routes on this host.
+    expect(get.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(get.headers.get("x-frame-options")).toBe("DENY");
+    expect(get.headers.get("strict-transport-security")).toBe(
+      "max-age=63072000",
+    );
+    expect(get.headers.get("referrer-policy")).toBe("no-referrer");
+    expect(first).toHaveBeenCalledOnce();
+
+    const head = await server.fetch(
+      gatewayRequest("/health", { method: "HEAD" }),
+    );
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
+    expect(head.headers.get("cache-control")).toBe("no-store");
+
+    const post = await server.fetch(
+      gatewayRequest("/health", { method: "POST", body: "{}" }),
+    );
+    expect(post.status).toBe(405);
+    expect(post.headers.get("allow")).toBe("GET, HEAD");
+
+    // A cookie on the request changes nothing: no session is read.
+    const withCookie = await server.fetch(
+      gatewayRequest("/health", { headers: { cookie: "session=abc" } }),
+    );
+    expect(withCookie.status).toBe(200);
+    expect(mocks.authenticate).not.toHaveBeenCalled();
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+
+    // The database down: 503, three words, still uncached.
+    resetHealthForTests();
+    mocks.env.DB = {
+      prepare: () => ({
+        first: async () => {
+          throw new Error("D1_ERROR");
+        },
+      }),
+    };
+    const down = await server.fetch(gatewayRequest("/health"));
+    expect(down.status).toBe(503);
+    await expect(down.json()).resolves.toEqual({
+      status: "error",
+      database: "down",
+    });
+    expect(down.headers.get("cache-control")).toBe("no-store");
+    expect(mocks.controlPlaneFetch).not.toHaveBeenCalled();
+    resetHealthForTests();
+  });
+
+  it("leaves /health on an app host to the app: a private route like any other", async () => {
+    resetHealthForTests();
+    const appFetch = vi.fn(async () => new Response("the app's own health"));
+    mocks.env["APP__every-todo"] = { fetch: appFetch };
+    mocks.env.JWT_PRIVATE_KEY = realSigningKey();
+    const prepare = vi.fn();
+    mocks.env.DB = { prepare };
+    mocks.findByHostname.mockReset();
+    mocks.findByHostname.mockResolvedValue(TODO);
+    mocks.authenticate.mockReset();
+    mocks.authenticate.mockResolvedValue(null);
+    const appRequest = () =>
+      new Request("https://todo.example.com/health", {
+        headers: { host: "todo.example.com" },
+      });
+
+    const anonymous = await server.fetch(appRequest());
+    expect(anonymous.status).toBe(401);
+    expect(appFetch).not.toHaveBeenCalled();
+
+    mocks.authenticate.mockResolvedValue({
+      sub: "user-1",
+      email: "user@example.com",
+      orgId: "org-1",
+      orgRole: "member",
+    });
+    const signedIn = await server.fetch(appRequest());
+    expect(signedIn.status).toBe(200);
+    expect(await signedIn.text()).toBe("the app's own health");
+    expect(appFetch).toHaveBeenCalledOnce();
+    expect(prepare).not.toHaveBeenCalled();
+  });
+
   it("never reads the session cookie on /mcp, and exempts it from the cookie CSRF check", async () => {
     const response = await server.fetch(
       gatewayRequest("/mcp", {
@@ -791,8 +907,8 @@ describe("gateway host (control plane)", () => {
     expect(response.status).toBe(401);
   });
 
-  it("serves an app host's /mcp from the ToolBus for a personal token", async () => {
-    mocks.findByHostname.mockResolvedValue(TODO);
+  it("serves an app host's /mcp from the ToolBus for a personal token, where the manifest opts in", async () => {
+    mocks.findByHostname.mockResolvedValue(TODO_MCP);
     mocks.authenticate.mockResolvedValue({
       sub: "user-1",
       email: "user@example.com",
@@ -824,10 +940,33 @@ describe("gateway host (control plane)", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ result: { tools: [] } });
     expect(mocks.serveAppHostMcp).toHaveBeenCalledWith(
-      expect.objectContaining({ app: TODO }),
+      expect.objectContaining({ app: TODO_MCP }),
     );
     expectSecurityHeaders(response);
     mocks.serveAppHostMcp.mockReset();
+
+    // Without the field, the ToolBus is never asked: /mcp is the app's.
+    clearHostnameCacheForTests();
+    mocks.findByHostname.mockResolvedValue(TODO);
+    const appFetch = vi.fn(
+      async () => new Response("not found", { status: 404 }),
+    );
+    mocks.env["APP__every-todo"] = { fetch: appFetch };
+    mocks.env.JWT_PRIVATE_KEY = realSigningKey();
+    const plain = await server.fetch(
+      new Request("https://todo.example.com/mcp", {
+        method: "POST",
+        headers: {
+          host: "todo.example.com",
+          authorization: "Bearer epat_x",
+          "content-type": "application/json",
+        },
+        body: "{}",
+      }),
+    );
+    expect(plain.status).toBe(404);
+    expect(mocks.serveAppHostMcp).not.toHaveBeenCalled();
+    expect(appFetch).toHaveBeenCalledOnce();
   });
 
   it("never advertises OAuth on app hosts", async () => {

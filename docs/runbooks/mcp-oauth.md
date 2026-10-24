@@ -18,8 +18,10 @@ The OAuth authorization server lives in the gateway too
 It protects exactly one resource, `<GATEWAY_URL>/mcp`: Claude requires the
 protected resource metadata to name the exact URL the user typed, so there
 is one connector per gateway, not one per app. An app host's own `/mcp`
-(`https://<app-host>/mcp`) takes personal access tokens and the app's own
-pages' session only; it offers no OAuth.
+(`https://<app-host>/mcp`), where the app's manifest sets `mcp` (by default
+an app host serves no MCP; `mcp` on the agent docs' manifest page), takes
+personal access tokens and the app's own pages' session only; it offers no
+OAuth.
 
 ## On by default, with a kill switch
 

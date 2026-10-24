@@ -2,8 +2,10 @@
  * Production worker entry — the "one door".
  *
  * Every request to this worker is dispatched on Host:
- *  - the gateway's own host (from GATEWAY_URL) → its MCP connector (`/mcp`)
- *    and OAuth authorization server (`/oauth/*`, discovery), then the
+ *  - the gateway's own host (from GATEWAY_URL) → `/health` for uptime
+ *    monitors (server/health.ts: public, reads no session), its MCP
+ *    connector (`/mcp`) and OAuth authorization server (`/oauth/*`,
+ *    discovery), then the
  *    control-plane app (launcher, auth, admin) served by TanStack Start, with
  *    static assets served explicitly via the ASSETS binding
  *    (`run_worker_first` is on so app-host requests can never be answered by
@@ -19,9 +21,11 @@
  *    authenticates the Better Auth session, mints the identity JWT, and
  *    proxies to the app's private worker over its service binding. App
  *    hosts reach this Worker as its Workers Custom Domains.
- *    An app host's `/mcp` is served by the ToolBus from the app's tool
- *    catalog instead (server/toolbus/app-host-mcp.ts), loaded with the first
- *    `/mcp` request;
+ *    Where an app's manifest says `mcp: { by: "gateway" }`, its host's
+ *    `/mcp` is served by the ToolBus from the app's tool catalog instead
+ *    (server/toolbus/app-host-mcp.ts), loaded with the first `/mcp`
+ *    request; without the field (every launch app) the host serves no MCP
+ *    and the gateway's own `/mcp` is the one connector;
  *  - on a hosted gateway with a third-party domain, a host one label below
  *    it → the same proxy for a third-party (dispatch) app, authenticated by
  *    the host's own session (or a personal access token), never the Better
@@ -66,6 +70,7 @@ import type { AppCallerProps } from "./server/app-gateway-entrypoint";
 import { appBaseDomain, hostProfile } from "./server/app-hosts";
 import { rateLimitCredentialRequest } from "./server/auth-rate-limit";
 import { serveControlPlane } from "./server/control-plane";
+import { HEALTH_PATH, serveHealth } from "./server/health";
 import {
   guardControlPlaneRequest,
   withControlPlaneHeaders,
@@ -129,9 +134,11 @@ export async function resolveAppByHostname(
 }
 
 /**
- * An app host's `/mcp`, served by the ToolBus from the app's tool catalog.
- * The ToolBus loads with the first `/mcp` request on an isolate; a page
- * request on an app host never evaluates it.
+ * An app host's `/mcp`, served by the ToolBus from the app's tool catalog
+ * where the manifest asks for it (`mcp: { by: "gateway" }`; the perimeter
+ * calls this hook for no other app). The ToolBus loads with the first
+ * `/mcp` request on an isolate; a page request on an app host never
+ * evaluates it.
  */
 const interceptAppHostMcp: NonNullable<GatewayDeps["interceptMcp"]> = async (
   input,
@@ -147,11 +154,17 @@ function isMcpAuthPath(pathname: string): boolean {
 /**
  * The paths Cloudflare Access lets through without a login
  * (packages/cli/src/lib/access/plan.ts), matched as Access matches them:
- * case-insensitively, `*` spanning segments. The MCP/OAuth router above is
- * exact-case, so what it doesn't serve under these prefixes is a JSON 404
- * here, never the control plane's shell (docs/threat-model.md, B6).
+ * case-insensitively, `*` spanning segments. The health and MCP/OAuth
+ * routes above are exact-case, so what they don't serve under these
+ * prefixes (`/HEALTH`, `/MCP`) is a JSON 404 here, never the control
+ * plane's shell (docs/threat-model.md, B6).
  */
-const ACCESS_BYPASSED_EXACT = ["/mcp", "/oauth/token", "/oauth/register"];
+const ACCESS_BYPASSED_EXACT = [
+  HEALTH_PATH,
+  "/mcp",
+  "/oauth/token",
+  "/oauth/register",
+];
 const ACCESS_BYPASSED_PREFIXES = ["/mcp/", "/.well-known/"];
 
 function isAccessBypassedPath(pathname: string): boolean {
@@ -171,14 +184,16 @@ function refuseBypassedPath(): Response {
 }
 
 /**
- * The gateway host: its MCP and OAuth routes, the deploy API (only past
- * the launch gate: without it, its paths are the control plane's like any
- * other), the third-party host handoff (only with a third-party domain:
- * without one, its paths are the control plane's too), else the control
- * plane.
+ * The gateway host: `/health` for uptime monitors (before anything else,
+ * and before the bypass refusal below, which would otherwise 404 it), its
+ * MCP and OAuth routes, the deploy API (only past the launch gate: without
+ * it, its paths are the control plane's like any other), the third-party
+ * host handoff (only with a third-party domain: without one, its paths are
+ * the control plane's too), else the control plane.
  */
 async function serveGatewayHost(request: Request): Promise<Response> {
   const { pathname } = new URL(request.url);
+  if (pathname === HEALTH_PATH) return serveHealth(request, env.DB);
   if (
     pathname.startsWith("/api/v1/") &&
     platformPolicy(env).thirdPartyDeploys
