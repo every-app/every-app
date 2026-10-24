@@ -442,7 +442,7 @@ and how to read a failure. The fake's shapes come from
 
 ### The onboarding loop
 
-`packages/onboarding-loop` proves the home page's setup prompt on a coding
+`packages/onboarding-loop` proves the setup prompt on /docs/gateway on a coding
 agent, from a wiped, dedicated test Cloudflare account: `pnpm loop doctor`
 once, then `pnpm loop run --harness claude --account loop-1` (45 to 75
 minutes; the harnesses, the accounts and what a pass means:
@@ -533,10 +533,10 @@ the gateway-lite listens on 127.0.0.1 unless `--host`.
    curl -s $C -o /dev/null -w '%{http_code}\n' -X POST -H 'Cookie: a=1' \
      http://todo.localhost:8787/anything                                     # 403
 
-   # Unknown app label → 404 from the registry
+   # Another app's label → 421 (this dev server serves one app)
    curl -s -o /dev/null -w '%{http_code}\n' \
      --connect-to nosuch.localhost:8787:127.0.0.1:8787 \
-     http://nosuch.localhost:8787/                                           # 404
+     http://nosuch.localhost:8787/                                           # 421
    ```
 
 3. **WebSockets** (vite HMR, and any the app opens) are raw-piped at the

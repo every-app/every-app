@@ -162,7 +162,7 @@ The deploy creates the config from the origin URL in the app's secrets file `.ev
 
 ## workers
 
-Helper Workers run beside the app's Worker, for work that should not share its memory or CPU budget (Postiz's NestJS backend `api`; a crawler). Each entry:
+Helper Workers run beside the app's Worker, for work that should not share its memory or CPU budget (the Postiz test fixture's NestJS backend `api`; a crawler). Each entry:
 
 | Field                    | Rule                                                                                                                                                                                                                                                      |
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

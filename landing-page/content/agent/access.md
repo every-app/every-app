@@ -83,7 +83,7 @@ Two hostname-based (`type: "self_hosted"`) Access applications, both attached to
 
 Why two (`apps/every-app-gateway/src/auth/cloudflare-access/outer-ring.ts`): the Gateway's host is where sign-in happens, so an app host's Access token, should it ever leak out of a browser, must never be a Gateway login. `verifyOuterRingAssertion()` accepts an assertion whose `aud` is any configured tag, and sets `maySignIn` only when one of its `aud` values is in `CLOUDFLARE_ACCESS_AUD`. One application covering both hosts works (put its AUD in both settings; the CLI finds it as both and warns `ACCESS_ONE_APPLICATION`), knowing any app host's Access cookie is then a Gateway login too.
 
-Use hostname destinations, never "Protect this Worker": Worker-level Access answers WebSocket upgrades with 403, which breaks apps that sync over WebSockets. Keep the `CF_Authorization` cookie HttpOnly (the default) and turn on the binding cookie, so a copied cookie is useless outside the browser it was issued to. An application's session is how long an Access login lasts: `access on` creates applications with `720h` (the most Access allows; `--session` for another), the runbook's hand-written bodies use `24h`.
+Use hostname destinations, never "Protect this Worker": Worker-level Access answers WebSocket upgrades with 403, which breaks apps that sync over WebSockets. Keep the `CF_Authorization` cookie HttpOnly (the default) and turn on the binding cookie, so a copied cookie is useless outside the browser it was issued to. An application's session is how long an Access login lasts: `access on` creates applications with `720h` (the most Access allows; `--session` for another), and the runbook's hand-written bodies use `720h` too.
 
 ### Bypassed paths
 
@@ -307,7 +307,6 @@ From `TODO.md` ("Decide", "MCP through Cloudflare Access (2026-10-20)", and "Clo
 - **Deploys and deletes sync** the apps application under the `access` lease, as a warning on failure; the policy only by `access on`.
 - **`access off`** removes settings first, then applications; `--keep-applications`; asks unless `--yes`.
 - **Not done**: a renamed policy means a second one is created; Cloudflare's answer to `zero-trust organization get` for an account with no team is unverified (`getAccessOrganization()` in `packages/cli/src/lib/cf/access.ts` treats a not-found error as "no team"; every account checked had one); `listAll` pages applications, policies and identity providers 100 × 20 (`PAGE = { perPage: 100, maxPages: 20 }`) without saying when it stops short, so past 2000 of one kind they could be misread; Managed OAuth isn't offered by `access on` (an option for it is a TODO); the apps' application can't take Managed OAuth until the perimeter accepts the assertion on `<app>.<gateway>/mcp`.
-- **everyapp.team next steps, Ben's call**: Carter signs in once with the password through Access (Ben did on 2026-10-24); then `EMAIL_PASSWORD_SIGN_IN=false`.
 
 ## Sources
 

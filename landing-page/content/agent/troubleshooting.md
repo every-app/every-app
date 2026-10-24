@@ -48,26 +48,27 @@ Two things fix most problems: run the same command again (setup and deploys resu
 
 Every entry of the user docs' [Troubleshooting](/docs/troubleshooting) page, in its order, and where it goes deeper here.
 
-| User docs heading                                               | Here                                                                                            |
-| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Subscribe this account to Workers Paid                          | [Workers Paid](#workers-paid)                                                                   |
-| Add a domain to this Cloudflare account                         | [No domain in the account](#no-domain-in-the-account)                                           |
-| Finish activating your domain on Cloudflare                     | [Zone not active](#zone-not-active)                                                             |
-| Choose a workers.dev subdomain for this Cloudflare account      | [Workers subdomain](#workers-subdomain)                                                         |
-| Your address already points somewhere else                      | [Address already points somewhere](#address-already-points-somewhere)                           |
-| Open the setup link above to create the owner account           | [Owner link lost or expired](#owner-link-lost-or-expired)                                       |
-| Use the newer setup link, or get a new one                      | [Owner link lost or expired](#owner-link-lost-or-expired)                                       |
-| A new address doesn't load yet                                  | [A new address does not load](#a-new-address-does-not-load)                                     |
-| An app in your Gateway says Needs deploy, Deploying or Disabled | [App states](#app-states)                                                                       |
-| The schema has changes no migration covers                      | [Schema drift](#schema-drift)                                                                   |
-| This checkout's Gateway is older than the live one              | [Downgrade refused](#downgrade-refused)                                                         |
-| Your every-app folder has a newer Gateway than the one online   | [Gateway outdated or upgrading during a deploy](#gateway-outdated-or-upgrading-during-a-deploy) |
-| everyapp needs Node.js 22.18.0 or newer                         | [Node too old](#node-too-old)                                                                   |
-| ERR_PNPM_LOCKFILE_CONFIG_MISMATCH                               | [Frozen install refused](#frozen-install-refused)                                               |
-| Command "everyapp" not found                                    | [Not in the checkout](#not-in-the-checkout)                                                     |
-| No everyapp.config.ts in this directory                         | [Not in the app directory](#not-in-the-app-directory)                                           |
-| Strange errors after using npx                                  | [npx everyapp](#npx-everyapp)                                                                   |
-| Still stuck                                                     | [When to escalate](#when-to-escalate)                                                           |
+| User docs heading                                                            | Here                                                                                                                 |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Subscribe this account to Workers Paid                                       | [Workers Paid](#workers-paid)                                                                                        |
+| Add a domain to this Cloudflare account                                      | [No domain in the account](#no-domain-in-the-account)                                                                |
+| Finish activating your domain on Cloudflare                                  | [Zone not active](#zone-not-active)                                                                                  |
+| Choose a workers.dev subdomain for this Cloudflare account                   | [Workers subdomain](#workers-subdomain)                                                                              |
+| Your address already points somewhere else                                   | [Address already points somewhere](#address-already-points-somewhere)                                                |
+| The Gateway build fails with `connect ECONNREFUSED 127.0.0.1`                | [Build fails with `connect ECONNREFUSED 127.0.0.1` on Linux](#build-fails-with-connect-econnrefused-127001-on-linux) |
+| Open the setup link above to create the owner account                        | [Owner link lost or expired](#owner-link-lost-or-expired)                                                            |
+| Use the newer setup link, or get a new one                                   | [Owner link lost or expired](#owner-link-lost-or-expired)                                                            |
+| A new address doesn't load yet                                               | [A new address does not load](#a-new-address-does-not-load)                                                          |
+| An app in your Gateway says Needs deploy, Needs setup, Deploying or Disabled | [App states](#app-states)                                                                                            |
+| The schema has changes no migration covers                                   | [Schema drift](#schema-drift)                                                                                        |
+| This checkout's Gateway is older than the live one                           | [Downgrade refused](#downgrade-refused)                                                                              |
+| Your every-app folder has a newer Gateway than the one online                | [Gateway outdated or upgrading during a deploy](#gateway-outdated-or-upgrading-during-a-deploy)                      |
+| everyapp needs Node.js 22.18.0 or newer                                      | [Node too old](#node-too-old)                                                                                        |
+| ERR_PNPM_LOCKFILE_CONFIG_MISMATCH                                            | [Frozen install refused](#frozen-install-refused)                                                                    |
+| Command "everyapp" not found                                                 | [Not in the checkout](#not-in-the-checkout)                                                                          |
+| No everyapp.config.ts in this directory                                      | [Not in the app directory](#not-in-the-app-directory)                                                                |
+| Strange errors after using npx                                               | [npx everyapp](#npx-everyapp)                                                                                        |
+| Still stuck                                                                  | [When to escalate](#when-to-escalate)                                                                                |
 
 ## Setup and login
 

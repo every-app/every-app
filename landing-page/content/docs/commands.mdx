@@ -27,14 +27,14 @@ Run these in a terminal, inside your `every-app` folder. Add `--help` to any com
 
 ## Inside an app's folder
 
-| Command                    | What it does                                            |
-| -------------------------- | ------------------------------------------------------- |
-| `pnpm dev`                 | Runs the app on your computer.                          |
-| `pnpm run deploy`          | Puts the app online, or updates it.                     |
-| `pnpm run db:generate`     | Writes a migration after what the app stores changes.   |
-| `pnpm everyapp db restore` | Puts the app's database back to before the last deploy. |
+| Command                    | What it does                                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------- |
+| `pnpm dev`                 | Runs the app on your computer.                                                            |
+| `pnpm run deploy`          | Puts the app online, or updates it.                                                       |
+| `pnpm run db:generate`     | Writes a migration after what the app stores changes.                                     |
+| `pnpm everyapp db restore` | Puts the app's database back to before its last migration, losing anything written since. |
 
-There's also `email` for the addresses an app sends from and receives at, `secret list` for what an app needs set, `provider on` to offer DataForSEO to AI assistants as an app, `access off` and `access show` for [Cloudflare Access](/docs/access), and `db` for looking inside a database.
+There's also `email` for the addresses an app sends from and receives at, `secret list` and `secret unset` for what an app needs set, `provider on` to offer DataForSEO to AI assistants as an app, `access off` and `access show` for [Cloudflare Access](/docs/access), `db` for looking inside a database, and `teardown`, which empties a Cloudflare account set aside for testing and refuses any other.
 
 ## For coding agents
 

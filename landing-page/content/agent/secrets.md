@@ -1,6 +1,6 @@
 ---
 title: Secrets, Gateway settings and capabilities
-description: Where an app's keys live (a Gateway setting held once for every app, the app's own secret, or a capability the Gateway brokers), how `everyapp secret set NAME` decides where a name goes and what it refuses, how keys work in local development, and the Postgres secrets file.
+description: Where an app's keys live (a Gateway setting held once for every app, the app's own secret, or a capability the Gateway brokers), how everyapp secret set NAME decides where a name goes and what it refuses, how keys work in local development, and the Postgres secrets file.
 ---
 
 ## The three places a value can live

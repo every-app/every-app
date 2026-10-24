@@ -106,7 +106,7 @@ One validator for both lists, `emailListProblems()` in `packages/sdk/src/interna
 ### What set does, in order
 
 1. No `--sender` and no `--inbound`: `EMAIL_NOTHING_TO_SET`, before the manifest or the network is touched.
-2. Each list is validated: `EMAIL_SENDER_INVALID` or `EMAIL_INBOUND_INVALID`, with `data.problems`. One problem is the headline with its rule under it; several are "N problems with --inbound" and a bullet each. When lowercasing alone would fix it, `rerun` is the same command lowercased (`pnpm everyapp email set --sender ben@hi.openseo.so`).
+2. Each list is validated: `EMAIL_SENDER_INVALID` or `EMAIL_INBOUND_INVALID`, with `data.problems`. One problem is the headline with its rule under it; several are "N problems with --inbound" and a bullet each. When lowercasing alone would fix it, `rerun` is the same command lowercased (`pnpm everyapp email set --sender ben@example.com`).
 3. The manifest is loaded (`MANIFEST_NOT_FOUND` with "No everyapp.config.ts in this directory", fix "run this from the app's directory, or pass `--manifest <path>`").
 4. `--sender` with no `capabilities.email` of access `write`: `EMAIL_NOT_DECLARED`. `--inbound` with no `email: { inbound: true }`: `EMAIL_INBOUND_NOT_DECLARED`. Both carry `rerun: pnpm everyapp deploy`, `rerunNote: "then this command again"`.
 5. Connect to the Gateway (cf login, its D1). `--sender` on a Gateway whose install is `deploymentMode: "hosted"`: `EMAIL_SENDERS_HOSTED`.

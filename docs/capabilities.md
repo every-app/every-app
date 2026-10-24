@@ -110,8 +110,8 @@ Everything the gateway holds for apps, in one table:
 | `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
 | `email`                     | `service`           | `EMAIL_FROM` with a display name, from `EMAIL_FROM_NAME` or `EMAIL_FROM="Name <address>"`, and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (or `EMAIL_FROM` alone as `Name <address>`; and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)); an app's own senders with `everyapp email set --sender` | agentic-inbox, OpenAnalytics, and the gateway's own mail |
 | `members`                   | `service`           | none: the gateway reads its own directory                                                                                   | nothing to set                                                                                                 | OpenAnalytics (whom reports go to)                   |
-| 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | Open CRM (`slack`); the other 15 were added for Postiz's port |
-| `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-clients) | Open CRM (mail and calendar capture); OpenSEO (Search Console and Analytics) |
+| 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | OpenCRM (`slack`); the other 15 were added for Postiz's port |
+| `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-clients) | OpenCRM (mail and calendar capture); OpenSEO (Search Console and Analytics) |
 
 X is not in the table: OAuth 1.0a signs every API call with the user's token
 secret, which the gateway never holds, so an app keeps `X_API_KEY` and
@@ -286,14 +286,14 @@ would mint a token for the operator's own application, is refused), putting
 its client on the request; the app builds
 the authorize URL from the client's public id, keeps the access and refresh
 tokens it gets back, and calls the network's API with them itself. The
-client secret never reaches an app. Open CRM uses `slack` (and the two
+client secret never reaches an app. OpenCRM uses `slack` (and the two
 clients below) at launch; the social networks were added for Postiz, which
 is ported but not part of the launch.
 
 Two clients serve mail and calendar rather than a social network:
 `google-workspace` (Gmail, Google Calendar, Search Console and Google
 Analytics, read-only) and `microsoft-365` (Outlook mail and calendar through
-Microsoft Graph, read-only). Open CRM
+Microsoft Graph, read-only). OpenCRM
 reads each member's own mailbox and calendar with them. Gmail's read scope is
 one of Google's restricted scopes: an *Internal* consent screen (every
 mailbox in the operator's Workspace) needs no review, while an *External*
