@@ -50,6 +50,9 @@ function binding(
   };
 }
 
+/** What the fixture's handshake carries: Node has no WebSocketPair. */
+const SOCKET = { accept: () => undefined };
+
 /** The fixture sub-app: a real worker guarded by the real SDK wrapper. */
 function buildFixtureApp(publicKeys: string[]) {
   return everyApp(
@@ -61,6 +64,23 @@ function buildFixtureApp(publicKeys: string[]) {
       }
       if (url.pathname === "/health") {
         return Response.json({ public: true, user: user?.id ?? null });
+      }
+      if (url.pathname === "/ws") {
+        // A Worker answers an upgrade with a 101 carrying its WebSocket.
+        // Node's Response constructor rejects status 101 and has no
+        // WebSocketPair, so shadow both (as gateway.test.ts does). A 101 has
+        // no body: the handshake's headers echo what the app saw.
+        const handshake = new Response(null, {
+          headers: {
+            upgrade: "websocket",
+            connection: "Upgrade",
+            "x-fixture-user": user?.id ?? "none",
+            "x-fixture-cookie": request.headers.get("cookie") ?? "none",
+          },
+        });
+        Object.defineProperty(handshake, "status", { value: 101 });
+        Object.defineProperty(handshake, "webSocket", { value: SOCKET });
+        return handshake;
       }
       return Response.json({
         userId: user?.id ?? null,
@@ -393,5 +413,69 @@ describe("perimeter end-to-end: cookie tossing", () => {
     // @ts-expect-error sessionCookieNames is required
     const authenticator: SessionAuthenticator = forgetful;
     expect(authenticator).toBe(forgetful);
+  });
+});
+
+describe("perimeter end-to-end: WebSocket upgrade", () => {
+  /** The gateway in front of a fresh fixture Worker, recording what it saw. */
+  function wsDeps(seen: string[]): GatewayDeps {
+    return {
+      ...deps,
+      env: {
+        "APP__every-todo-app": binding(
+          buildFixtureApp([keys.publicKeyPem]),
+          TODO.workerName,
+          seen,
+        ),
+      },
+    };
+  }
+  function upgrade(headers: Record<string, string>): Request {
+    return gwReq("/ws", { headers: { upgrade: "websocket", ...headers } });
+  }
+
+  it("a signed-in same-origin upgrade reaches the app and its 101 comes back untouched", async () => {
+    const res = await handleGatewayRequest(
+      upgrade({ ...LOGGED_IN, origin: "https://todo.example.com" }),
+      wsDeps([]),
+    );
+    expect(res.status).toBe(101);
+    expect(res.headers.get("upgrade")).toBe("websocket");
+    // The app saw a verified member ...
+    expect(res.headers.get("x-fixture-user")).toBe("user_1");
+    // ... and its handshake came back as is: same socket, no page headers.
+    expect(res.webSocket).toBe(SOCKET);
+    expect(res.headers.get("x-content-type-options")).toBeNull();
+  });
+
+  it("refuses an upgrade from a foreign Origin before the app sees it", async () => {
+    const seen: string[] = [];
+    const res = await handleGatewayRequest(
+      upgrade({ ...LOGGED_IN, origin: "https://evil.example.net" }),
+      wsDeps(seen),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "csrf_denied" });
+    expect(seen).toEqual([]);
+  });
+
+  it("forwards the upgrade with a minted identity and without the cookie", async () => {
+    const seen: string[] = [];
+    const res = await handleGatewayRequest(
+      upgrade({
+        ...LOGGED_IN,
+        origin: "https://todo.example.com",
+        [IDENTITY_HEADER]: "spoofed.jwt.value",
+      }),
+      wsDeps(seen),
+    );
+    expect(res.status).toBe(101);
+    // The app Worker received a gateway-minted x-everyapp-identity, not the
+    // spoofed one, and no cookie: an upgrade is proxied like any request.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toBeTruthy();
+    expect(seen[0]).not.toBe("spoofed.jwt.value");
+    expect(res.headers.get("x-fixture-user")).toBe("user_1");
+    expect(res.headers.get("x-fixture-cookie")).toBe("none");
   });
 });
