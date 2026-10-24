@@ -29,7 +29,7 @@ const SHIPPED_MIGRATIONS: Record<string, string> = {
   "0002_app_email_config.sql":
     "adbeaccf4cfd4e51a129aad721e0c8811f0438281a0aa63002a32bdcf4870f45",
   // everyapp.team, applied 2026-10-24 (0003 at 03:56Z by the simplify thread's
-  // update; 0004 to 0008 at 22:11Z by the rollout, docs/overnight/2026-10-24.md item 26)
+  // update; 0004 to 0008 at 22:11Z by the rollout, docs/overnight/2026-10-24.md item 27)
   "0003_usage_counters.sql":
     "ac6e018a06877cb2c2257b1c034ceb83c71b7007027e15b58f164fff4180f61c",
   "0004_app_secret_names.sql":
