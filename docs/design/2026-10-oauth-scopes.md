@@ -28,7 +28,9 @@ documentation: the operator's checklist in `docs/capabilities.md` (the
 tables between the `oauth-clients` markers are generated from the registry
 by `capabilitiesDoc.test.ts`). Nothing in the gateway reads them. No
 organization-held accounts exist: the Google design
-([2026-10-google-integration.md](2026-10-google-integration.md)) describes
+([docs/design/2026-10-google-integration.md](https://github.com/every-app/private-every-app/blob/5ef30882/docs/design/2026-10-google-integration.md),
+deleted from main on 2026-10-24 by the simplify work, #433; readable at
+commit `5ef30882`, its rulings kept in [docs/hosted-vision.md](../hosted-vision.md)) describes
 `integration_accounts`, grants and a token broker, and none of it is built
 (the grants table was deferred, TODO.md "Google: the operator holds the
 OAuth client").
@@ -261,8 +263,9 @@ interface OAuthScopePolicy {
 Registry invariants (tested): a policy implies a confidential client;
 `authorize.scopes` equals `alwaysRequested ∪ sets[*].scopes ∪
 sets[*].userScopes`, so the operator's checklist in `docs/capabilities.md`
-cannot drift from what apps may ask; every route host is in `api` and is
-never a token host; no path contains `//`, `\`, `%`, `batch`, `$batch` or
+cannot drift from what apps may ask; every route host is in `api` and no
+set unlocks a token endpoint's path (Slack's API and token endpoint share
+`slack.com`); no path contains `//`, `\`, `%`, `batch`, `$batch` or
 `/beta/`; `posts` regexes are anchored and flagless; set names match
 `identity | <area>.<access>`; no write set on `google-workspace` or
 `microsoft-365`.
@@ -504,7 +507,7 @@ dependents).
 | 4, #412 | SDK status type, `authorizeUrl()`, the dev twin | SDK: merge after #414 (the strict validator `everyapp dev` runs must accept `scopes` first) |
 | 5, #408 | Admin → Apps shows each app's capabilities with their sets and why | Read-only admin UI: auto-merge when green |
 | 6, #393 | This document and TODO.md (merged 2026-10-24); the prose in `docs/capabilities.md` and `docs/security-model.md` rides with PRs 2 and 3 | Docs: auto-merge |
-| 7 | Slack's policy (branch `t3/oauth-scopes-slack`) | Registry; held until Postiz and Open CRM redeploy with `scopes` for slack |
+| 7, #425 | Slack's policy: bot sets `channels.read`, `users.read`, `users.email`, `messages.write`, `channels.join`, `channels.manage`, `files.write` and the user set `user-channels.manage` | Registry; held until Postiz and Open CRM redeploy with `scopes` for slack |
 | 8 | The MCP consent page's per-app reach line | Not built this week; `mcp-auth`, lowest priority |
 
 ## 13. What was built, and where it differs from the design above
@@ -562,7 +565,7 @@ against it will meet.
   percent-encoded byte stays matchable; and it reads `scope` fields in
   any case, as Entra does. The matcher's comment records that the future
   proxy must fetch with `redirect: "manual"`.
-- **Slack's policy** (PR 7) is on its own branch and held: a gateway
+- **Slack's policy** (#425) is held: a gateway
   carrying it and #411 fails Postiz's and Open CRM's Slack exchanges
   closed until both redeploy with `scopes` for slack. The MCP consent
   page line (PR 8) was not built.
