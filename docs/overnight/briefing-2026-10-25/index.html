@@ -1,0 +1,1303 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Every App, the morning after. A briefing for Ben, 2026-10-25</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --ink: #111111;
+    --muted: #6f6f6f;
+    --line: #e6e6e6;
+    --soft: #f6f6f6;
+    --accent: #1f5fd6;
+    --accent-ink: #ffffff;
+    --ok: #2b7a4b;
+    --warn: #9a6400;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111214;
+      --ink: #ececec;
+      --muted: #9a9a9a;
+      --line: #2a2b2e;
+      --soft: #191a1d;
+      --accent: #7ea6ff;
+      --accent-ink: #0f1420;
+      --ok: #6fcf97;
+      --warn: #e2b259;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 18px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code { font-size: .9em; }
+
+  nav.top {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--bg); border-bottom: 1px solid var(--line);
+  }
+  nav.top .in {
+    max-width: 880px; margin: 0 auto; padding: 10px 24px;
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap; font-size: 14px;
+  }
+  nav.top a { color: var(--muted); text-decoration: none; }
+  nav.top a:hover { color: var(--ink); }
+  nav.top .count { margin-left: auto; color: var(--muted); }
+
+  main { max-width: 880px; margin: 0 auto; padding: 24px 24px 100px; }
+
+  header.hero { padding: 40px 0 8px; }
+  .eyebrow { font-size: 13px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  header.hero h1 { font-size: 34px; line-height: 1.15; margin: 0 0 14px; letter-spacing: -.01em; }
+
+  section.sec { padding: 40px 0 0; margin-top: 32px; border-top: 1px solid var(--line); }
+  section.sec > h2 { font-size: 26px; line-height: 1.2; margin: 0 0 10px; letter-spacing: -.01em; }
+
+  .card { margin: 32px 0 0; }
+  .card h3 { font-size: 19px; line-height: 1.3; margin: 0 0 8px; font-weight: 600; }
+  .card h3.tags { margin-bottom: 2px; }
+  ul, ol { margin: 0; padding-left: 20px; }
+  li { margin: 2px 0; }
+  li ul, li ol { margin-top: 2px; }
+  .card p { margin: 6px 0; }
+  .fn { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; }
+  .tag { font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: 10px; font-weight: 600; }
+  .tag.live { color: var(--ok); }
+  .tag.wait { color: var(--warn); }
+
+  figure { margin: 12px 0 0; }
+  figure img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 4px; background: #fff; }
+  figure figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+
+  pre.term {
+    margin: 12px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 4px;
+    background: var(--soft); color: var(--ink); font-size: 13px; line-height: 1.45; overflow-x: auto; white-space: pre;
+  }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 10px; }
+  .cols h4 { margin: 0 0 4px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  @media (max-width: 700px) { .cols { grid-template-columns: 1fr; } }
+
+  .q { border-left: 2px solid var(--accent); padding-left: 18px; }
+  .q-num { display: block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 6px; font-weight: 600; }
+  .opts { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; }
+  .opts button {
+    font: inherit; font-size: 15px; cursor: pointer; line-height: 1.25; text-align: left;
+    background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px;
+  }
+  .opts button:hover { border-color: var(--accent); }
+  .opts button.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .q textarea {
+    font: inherit; font-size: 15px; width: 100%; min-height: 54px; margin-top: 10px;
+    padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--ink); resize: vertical;
+  }
+  .q textarea:focus { outline: none; border-color: var(--accent); }
+  .part { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+  .part h4 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+  .part .opts { margin-top: 8px; }
+  .part .opts button { font-size: 14px; padding: 5px 10px; }
+
+  .settled li { margin: 4px 0; }
+
+  .end { padding: 16px 0 0; }
+  .end .big {
+    font: inherit; font-size: 16px; font-weight: 600; cursor: pointer;
+    background: var(--accent); color: var(--accent-ink); border: 0; padding: 10px 16px; border-radius: 6px;
+  }
+  .end .small { font: inherit; font-size: 14px; color: var(--muted); background: none; border: 0; cursor: pointer; text-decoration: underline; margin-left: 14px; }
+  .end .status { margin-top: 10px; color: var(--muted); font-size: 14px; min-height: 1.4em; }
+  .end pre.out {
+    margin: 16px 0 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 4px; background: var(--soft);
+    font-size: 13px; white-space: pre-wrap; display: none;
+  }
+  .end pre.out.show { display: block; }
+</style>
+</head>
+<body>
+
+<nav class="top" aria-label="Sections">
+  <div class="in">
+    <a href="#s1">1 Where we are</a>
+    <a href="#s2">2 New user</a>
+    <a href="#s3">3 Admin</a>
+    <a href="#s4">4 Developer</a>
+    <a href="#s5">5 Security</a>
+    <a href="#s6">6 Decisions</a>
+    <a href="#s7">7 Copy answers</a>
+    <span class="count" id="count">0 answered</span>
+  </div>
+</nav>
+
+<main>
+
+<header class="hero">
+  <p class="eyebrow">Saturday morning · launch is Monday</p>
+  <h1>Every App, the morning after.</h1>
+  <ul>
+    <li>What changed overnight for users, admins and developers.</li>
+    <li>Each "Question for Ben" block is yours to answer.</li>
+    <li>Say it out loud. Click an option if you like.</li>
+    <li>Clicks save in this browser.</li>
+    <li>The last screen copies them as text.</li>
+  </ul>
+</header>
+
+<!-- ============================================================ 1 -->
+<section class="sec" id="s1">
+  <p class="eyebrow">1 of 7</p>
+  <h2>Where we are</h2>
+  <ul>
+    <li>Nineteen threads ran overnight.</li>
+    <li>About 170 pull requests merged since yesterday evening.</li>
+    <li>everyapp.com was not touched.</li>
+    <li>everyapp.team was updated without your go. See question 12.</li>
+  </ul>
+
+  <div class="card">
+    <h3>Live today</h3>
+    <ul>
+      <li><span class="tag live">Live</span> everyapp.team runs last night's code, from about 23:30.</li>
+      <li>That is before most of the overnight merges.</li>
+      <li>Behind Cloudflare Access, with four apps.</li>
+      <li>OpenSEO, OpenCRM, OpenAnalytics, Agentic Inbox. Postiz is out.</li>
+      <li><span class="tag wait">Not live yet</span> "Needs setup", scopes, groups, caps, provider apps.</li>
+      <li>The rollout is one word from you. Question 12.</li>
+    </ul>
+    <div class="cols">
+      <div>
+        <h4>Merged on main</h4>
+        <ul>
+          <li>Access command, onboarding loop, setup skills</li>
+          <li>Secrets model, "Needs setup", setup dialog</li>
+          <li>OAuth scopes enforced per app</li>
+          <li>Groups, usage, monthly caps, activity</li>
+          <li>Provider apps (DataForSEO)</li>
+          <li>CLI language, simplified repo, new starter</li>
+          <li>Threat model, security review in CI</li>
+          <li>Agent docs, drift test, docs sweep, two UI passes</li>
+          <li>LICENSE, SECURITY.md, public-copy command</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Live on everyapp.team</h4>
+        <ul>
+          <li>Cloudflare Access in front, since yesterday</li>
+          <li>The four apps. Postiz and todo removed</li>
+          <li>The first UI pass: pages look like one product</li>
+          <li>The CLI language and the simplify deletions</li>
+          <li><em>Not yet:</em> "Needs setup", scopes, groups, caps, provider apps, second UI pass</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Only you can do these three today</h3>
+    <ol>
+      <li><strong>Roll the test account's Cloudflare token.</strong> Question 00, section 5.
+        <ul><li>A loop file with it was committed. Still in history.</li></ul>
+      </li>
+      <li><strong>The four app repos the README links.</strong> Question 20, section 5.
+        <ul><li>Three do not exist. The fourth has no Every App port.</li></ul>
+      </li>
+      <li><strong>Say "go" to the rollout.</strong> Question 12, section 6.
+        <ul><li>Everything is merged. The order is written.</li></ul>
+      </li>
+    </ol>
+    <p>Also yours this weekend:</p>
+    <ul>
+      <li>Deploy everyapp.com with the new home page and docs.</li>
+      <li>Push the public copy. Flip the repo public.</li>
+      <li>Deprecate the old npm packages. Question 11e.</li>
+      <li>Close the old Workers' side doors. Question 11d.</li>
+      <li>Two words settle copy: README headline (1), license holder (17).</li>
+      <li>Both ship with a default if you say nothing.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ 2 -->
+<section class="sec" id="s2">
+  <p class="eyebrow">2 of 7</p>
+  <h2>What a new user experiences now</h2>
+  <ul><li>From a prompt in their agent to a live gateway.</li></ul>
+
+  <div class="card">
+    <h3>The setup prompt, their agent, a gateway</h3>
+    <ul>
+      <li>They paste the README prompt into their coding agent.</li>
+      <li>The agent installs the tools and logs in to Cloudflare.</li>
+      <li>It runs setup. About 15 minutes, mostly waiting on them.</li>
+      <li>They open a link and create the owner account.</li>
+      <li><span class="tag live">Proven live</span> The onboarding loop ran it on a wiped test account.</li>
+      <li>Repo pre-cloned. An API token instead of the browser login.</li>
+      <li>Claude Code passed twice, under six minutes.</li>
+      <li>Codex passed with one nudge.</li>
+    </ul>
+    <figure>
+      <picture>
+        <source srcset="images/setup-claim-form-dark-1440.webp" media="(prefers-color-scheme: dark)">
+        <img src="images/setup-claim-form-light-1440.webp" width="1280" height="800" alt="Set up your gateway: the owner account form">
+      </picture>
+      <figcaption>The link setup prints opens this. Four fields, one button.</figcaption>
+    </figure>
+    <p class="fn">Ledger in docs/onboarding-loop. PRs #477 #488–#546.</p>
+  </div>
+
+  <div class="card q" data-card="1" data-title="The README headline and the home page">
+    <span class="q-num">Question 1 for Ben</span>
+    <h3>The README is the voice of the launch. Which headline?</h3>
+    <ul>
+      <li>README rewritten in the launch voice. Merged under your rule.</li>
+      <li>Three headlines were ranked. The first is on main.</li>
+      <li>Re-pick freely.</li>
+    </ul>
+    <div class="opts" data-q="1">
+      <button data-v="Build the tools your business runs on. Keep them yours.">Build the tools your business runs on. Keep them yours.</button>
+      <button data-v="Build apps with your coding agent. Run them in your own Cloudflare account, behind one sign-in.">Build apps with your coding agent. Run them in your own Cloudflare account, behind one sign-in.</button>
+      <button data-v="Open source gateway for the apps your business runs on.">Open source gateway for the apps your business runs on.</button>
+    </div>
+    <div class="part">
+      <h4>Also, question 2: the home page</h4>
+      <ul>
+        <li>Home page copy merged under your rule.</li>
+        <li>The site is not deployed. That stays yours.</li>
+        <li>The README thread left one review comment, not applied:</li>
+        <li>say who it is for, name the four apps, one setup time.</li>
+      </ul>
+      <div class="opts" data-q="2">
+        <button data-v="Leave the home page as merged">Leave the home page as merged</button>
+        <button data-v="Apply the review's edits on main before I deploy">Apply the review's edits before I deploy</button>
+      </div>
+    </div>
+    <textarea data-q="1" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">README #453, home page #380, docs home #454.</p>
+  </div>
+
+  <div class="card">
+    <h3>The first screen after claiming</h3>
+    <ul>
+      <li>An empty home with one card: deploy your first app.</li>
+      <li>Two commands to copy.</li>
+      <li>The sidebar names the organization after the person. See 22a.</li>
+    </ul>
+    <figure>
+      <img src="images/home-empty-org-owner-light-1440.webp" width="1280" height="800" alt="Empty home right after claiming the gateway">
+      <figcaption>Right after the claim: "Deploy your first app".</figcaption>
+    </figure>
+  </div>
+
+  <div class="card q" data-card="19" data-title="The starter app was rewritten">
+    <span class="q-num">Question 19 for Ben</span>
+    <h3>The starter app is now a proof screen. Keep it?</h3>
+    <ul>
+      <li>The first thing every new user builds was rewritten. Without you.</li>
+      <li>Now one screen: who you are, what the app was allowed.</li>
+      <li>Plus its tools for AI clients, and a small todo list.</li>
+      <li>33 files became 15.</li>
+    </ul>
+    <div class="two">
+      <figure>
+        <picture>
+          <source srcset="images/starter-before-desktop-dark.png" media="(prefers-color-scheme: dark)">
+          <img src="images/starter-before-desktop-light.png" width="1280" height="800" alt="The starter before: a todo list with a sidebar">
+        </picture>
+        <figcaption>Before: a todo app with a sidebar and a banner.</figcaption>
+      </figure>
+      <figure>
+        <picture>
+          <source srcset="images/starter-after-desktop-dark.png" media="(prefers-color-scheme: dark)">
+          <img src="images/starter-after-desktop-light.png" width="1280" height="800" alt="The starter after: who you are, what the app was allowed, todos">
+        </picture>
+        <figcaption>After: you, what this app was allowed, the todos.</figcaption>
+      </figure>
+    </div>
+    <div class="opts" data-q="19">
+      <button data-v="Keep the new starter">Keep the new starter</button>
+      <button data-v="Keep it, but bring the todo UI back as the main thing">Keep it, but lead with the todo UI</button>
+      <button data-v="Revert to the old starter">Revert to the old starter</button>
+    </div>
+    <textarea data-q="19" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">#544. Revert is one command on commit 1d5614f1.</p>
+  </div>
+
+  <div class="card">
+    <h3 class="tags"><span class="tag">New</span><span class="tag wait">Live after the rollout</span></h3>
+    <h3>"Needs setup" when a key is missing</h3>
+    <ul>
+      <li>An app missing a key shows "Needs setup", not a broken page.</li>
+      <li>Owners see the settings and one command.</li>
+      <li>Members are told to ask an admin.</li>
+      <li>Its tools stay out of AI clients until it is set.</li>
+    </ul>
+    <div class="two">
+      <figure>
+        <picture>
+          <source srcset="images/home-setup-dialog-research-owner-dark-1440.webp" media="(prefers-color-scheme: dark)">
+          <img src="images/home-setup-dialog-research-owner-light-1440.webp" width="1280" height="800" alt="The setup dialog as an owner sees it">
+        </picture>
+        <figcaption>As an owner: the settings, the command, optional ones folded.</figcaption>
+      </figure>
+      <figure>
+        <img src="images/home-setup-dialog-inbox-member-light-1440.webp" width="1280" height="800" alt="The setup dialog as a member sees it">
+        <figcaption>As a member: "Ask an admin to run:".</figcaption>
+      </figure>
+    </div>
+    <p class="fn">Secrets model #383 #395 #396 #397.</p>
+  </div>
+
+  <div class="card">
+    <h3 class="tags"><span class="tag live">Live since yesterday</span></h3>
+    <h3>Access in front</h3>
+    <ul>
+      <li>Cloudflare asks for a one-time email code first.</li>
+      <li>About once a month.</li>
+      <li>One command turns it on. One shows its state.</li>
+      <li>AI clients and public routes still get through.</li>
+    </ul>
+    <figure>
+      <img src="images/access-ring-login-access-light-1440.webp" width="1280" height="800" alt="The Cloudflare Access login in front of the gateway">
+      <figcaption>The first thing a visitor sees. A local stand-in for Cloudflare's page.</figcaption>
+    </figure>
+    <p class="fn">#379 access on|off|show.</p>
+  </div>
+
+  <div class="card">
+    <h3>Connecting an AI client</h3>
+    <ul>
+      <li>One address connects Claude, ChatGPT, Claude Code and Cursor.</li>
+      <li>A consent page asks: read, or read and write.</li>
+      <li>All apps, or some.</li>
+      <li>Claude Code used to go deaf after fifty minutes. Fixed on main.</li>
+      <li>The fix reaches everyapp.team with the rollout.</li>
+    </ul>
+    <figure>
+      <picture>
+        <source srcset="images/consent-read-owner-dark-1440.webp" media="(prefers-color-scheme: dark)">
+        <img src="images/consent-read-owner-light-1440.webp" width="1280" height="800" alt="The consent page when Claude Desktop asks to connect">
+      </picture>
+      <figcaption>Claude Desktop asking for read access.</figcaption>
+    </figure>
+    <p class="fn">#499 listen hold, #501 #503 #505 #516.</p>
+  </div>
+
+  <div class="card">
+    <h3>What a member sees</h3>
+    <ul>
+      <li>Only the apps granted to them, directly or via a group.</li>
+      <li>No manage buttons.</li>
+      <li>An app that needs setup says so, in their voice.</li>
+    </ul>
+    <figure>
+      <picture>
+        <source srcset="images/home-grid-member-dark-1440.webp" media="(prefers-color-scheme: dark)">
+        <img src="images/home-grid-member-light-1440.webp" width="1280" height="800" alt="The home grid as a member">
+      </picture>
+      <figcaption>A member's home: six apps, granted through groups.</figcaption>
+    </figure>
+  </div>
+
+  <div class="card">
+    <h3>What we judged and left, for users</h3>
+    <ul>
+      <li>Three setup times are quoted: 15, 20, 5 to 20.</li>
+      <li>The headline number is yours. No card asks it. Say it aloud.</li>
+      <li>Docs say a .dev domain is a dollar at first.</li>
+      <li>No Cloudflare page says so. Check Sunday.</li>
+      <li>Consent preselects read and write, even for read-only asks.</li>
+      <li>Forgot password says "Check your email" with no sender set.</li>
+      <li>An Access session lasts 30 days.</li>
+      <li>Deactivating a member in Every App is the real cutoff.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ 3 -->
+<section class="sec" id="s3">
+  <p class="eyebrow">3 of 7</p>
+  <h2>What an admin experiences now</h2>
+  <ul>
+    <li>Six tabs on main: Users, Groups, Apps, Tokens, Usage, Activity.</li>
+    <li>Groups arrives with the rollout.</li>
+    <li>Two UI passes made them look like one product.</li>
+    <li>A designer walked every screen this morning. 25 ranked fixes.</li>
+    <li>Its top five are the questions here, by their screens.</li>
+    <li>So they run out of letter order.</li>
+  </ul>
+
+  <div class="card q" data-card="22c" data-title="Admin, Apps: developer strings and 'Everyone'">
+    <span class="q-num">Question 22c for Ben</span>
+    <h3>Apps: the table talks like a developer</h3>
+    <ul>
+      <li>Rows show developer strings.</li>
+      <li>Like "Deployed by api-token:…" and "tools on /mcp as dataforseo_&lt;tool&gt;".</li>
+      <li>"Everyone" in the table. "3 of 6 users" in the dialog.</li>
+      <li>Proposed: strip the strings. Rename the column "Who can open".</li>
+    </ul>
+    <figure>
+      <img src="images/admin-apps-owner-light-1440.webp" width="1280" height="800" alt="Admin, Apps tab as owner">
+      <figcaption>Apps as the owner sees them.</figcaption>
+    </figure>
+    <figure>
+      <img src="images/admin-apps-manage-access-research-owner-light-1440.webp" width="1280" height="800" alt="Manage access dialog">
+      <figcaption>Manage access: "3 of 6 users will have access".</figcaption>
+    </figure>
+    <div class="opts" data-q="22c">
+      <button data-v="Fix for Monday">Fix for Monday</button>
+      <button data-v="After launch">After launch</button>
+      <button data-v="Leave it">Leave it</button>
+    </div>
+    <textarea data-q="22c" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">Design review #558, UI passes #450–#460, #535–#538.</p>
+  </div>
+
+  <div class="card">
+    <h3>Users</h3>
+    <ul>
+      <li>Invite by email, or copy a one-time link.</li>
+      <li>Newest first, so pending invitations sit near the top.</li>
+      <li>Deactivate, delete, reset a password.</li>
+      <li>After the rollout: a reset ends every session.</li>
+      <li>Removing a member clears groups, grants and tokens at once.</li>
+    </ul>
+    <div class="two">
+      <figure>
+        <picture>
+          <source srcset="images/admin-users-owner-dark-1440.webp" media="(prefers-color-scheme: dark)">
+          <img src="images/admin-users-owner-light-1440-v2.webp" width="1280" height="800" alt="Admin, Users tab">
+        </picture>
+        <figcaption>Users: invitations and people in one list.</figcaption>
+      </figure>
+      <figure>
+        <img src="images/admin-users-invite-link-owner-light-1440.webp" width="1280" height="800" alt="Invite link dialog">
+        <figcaption>After Invite: a link that works once.</figcaption>
+      </figure>
+    </div>
+    <p class="fn">#405 reset ends sessions, #407 reset mail.</p>
+  </div>
+
+  <div class="card">
+    <h3 class="tags"><span class="tag">New</span><span class="tag wait">Live after the rollout</span></h3>
+    <h3>Groups</h3>
+    <ul>
+      <li>Groups of members.</li>
+      <li>Grant an app to a group once, not person by person.</li>
+    </ul>
+    <div class="two">
+      <figure>
+        <img src="images/admin-groups-owner-light-1440.webp" width="1280" height="800" alt="Admin, Groups tab">
+        <figcaption>Groups: members, apps, created, a menu per row.</figcaption>
+      </figure>
+      <figure>
+        <img src="images/admin-groups-apps-engineering-owner-light-1440.webp" width="1280" height="800" alt="Apps for a group">
+        <figcaption>Apps for Engineering: "3 of 9 apps selected".</figcaption>
+      </figure>
+    </div>
+    <p class="fn">#384 #385.</p>
+  </div>
+
+  <div class="card">
+    <h3 class="tags"><span class="tag live">Usage is live</span><span class="tag wait">Caps after the rollout</span></h3>
+    <h3>Usage and monthly caps</h3>
+    <ul>
+      <li>Provider calls counted per app, member and provider, monthly.</li>
+      <li>An owner or admin can cap an app's calls per month.</li>
+      <li>Caps are off by default.</li>
+      <li>A reached cap refuses calls until the month ends.</li>
+      <li>An admin can raise it.</li>
+    </ul>
+    <div class="two">
+      <figure>
+        <img src="images/admin-usage-owner-light-1440.webp" width="1280" height="800" alt="Admin, Usage tab">
+        <figcaption>Usage for October: by app, with caps where set.</figcaption>
+      </figure>
+      <figure>
+        <img src="images/admin-usage-cap-dialog-reached-owner-light-1440.webp" width="1280" height="800" alt="Monthly cap dialog">
+        <figcaption>Editing a reached cap: "1,244 so far this month."</figcaption>
+      </figure>
+    </div>
+    <p class="fn">#381 #382 #416.</p>
+  </div>
+
+  <div class="card">
+    <h3>Activity</h3>
+    <ul>
+      <li>Every agent tool call: when, who, app, tool, allowed or not.</li>
+      <li>New, live after the rollout: which AI client made it.</li>
+    </ul>
+    <figure>
+      <picture>
+        <source srcset="images/admin-activity-owner-dark-1440.webp" media="(prefers-color-scheme: dark)">
+        <img src="images/admin-activity-owner-light-1440.webp" width="1280" height="800" alt="Admin, Activity tab">
+      </picture>
+      <figcaption>Activity: filters by app, decision and risk, then the calls.</figcaption>
+    </figure>
+    <p class="fn">#434 #459 #505 #538.</p>
+  </div>
+
+  <div class="card">
+    <h3 class="tags"><span class="tag">New</span><span class="tag wait">Not live, no spend</span></h3>
+    <h3>Provider apps</h3>
+    <ul>
+      <li>A data provider offered to AI clients as an app.</li>
+      <li>It uses the gateway's own key.</li>
+      <li>DataForSEO first, with 17 curated tools.</li>
+      <li>One CLI command turns it on.</li>
+      <li>Counted and capped like any app.</li>
+    </ul>
+    <figure>
+      <img src="images/home-provider-card-clicked-owner-light-1440.webp" width="1280" height="800" alt="The DataForSEO provider app card on the home grid">
+      <figcaption>A card marked "AI tools". Clicking it does nothing yet.</figcaption>
+    </figure>
+    <p class="fn">#485 #489.</p>
+  </div>
+
+  <div class="card q" data-card="22b" data-title="The setup dialog's gaps">
+    <span class="q-num">Question 22b for Ben</span>
+    <h3>The setup dialog: three small gaps</h3>
+    <ul>
+      <li>The email instruction names one of two email settings.</li>
+      <li>It ends at "copy, then Close". No what-happens-next.</li>
+      <li>A long secret name breaks across lines.</li>
+      <li>Two are copy. The email one makes display name required.</li>
+    </ul>
+    <figure>
+      <img src="images/home-setup-dialog-inbox-owner-light-1440.webp" width="1280" height="800" alt="The Agentic Inbox setup dialog">
+      <figcaption>Agentic Inbox needs setup: email, Slack, one command.</figcaption>
+    </figure>
+    <div class="opts" data-q="22b">
+      <button data-v="Fix for Monday">Fix for Monday</button>
+      <button data-v="After launch">After launch</button>
+      <button data-v="Leave it">Leave it</button>
+    </div>
+    <textarea data-q="22b" placeholder="Anything else, in your words"></textarea>
+  </div>
+
+  <div class="card q" data-card="22a" data-title="The first organization is named after the person">
+    <span class="q-num">Question 22a for Ben</span>
+    <h3>The organization is named after you, forever</h3>
+    <ul>
+      <li>The first organization takes the owner's name.</li>
+      <li>It cannot be renamed. The sidebar reads "Ben Owner" twice.</li>
+      <li>Proposed: an optional Organization field on the claim form.</li>
+      <li>That form is sign-in territory. Your call.</li>
+    </ul>
+    <figure>
+      <img src="images/organizations-owner-light-1440.webp" width="1280" height="800" alt="The organizations page">
+      <figcaption>The organizations page. The first keeps its claim name.</figcaption>
+    </figure>
+    <div class="opts" data-q="22a">
+      <button data-v="Add the field to the claim form">Add the field to the claim form</button>
+      <button data-v="Allow renaming in Manage workspace instead">Allow renaming in Manage workspace instead</button>
+      <button data-v="After launch">After launch</button>
+      <button data-v="Leave it">Leave it</button>
+    </div>
+    <textarea data-q="22a" placeholder="Anything else, in your words"></textarea>
+  </div>
+
+  <div class="card q" data-card="22d" data-title="Sign-in: Sign up offered, and the stacked alerts behind Access">
+    <span class="q-num">Question 22d for Ben</span>
+    <h3>Sign-in offers "Sign up" on an invitation-only gateway</h3>
+    <ul>
+      <li>Behind Access, an unknown person sees two identical alerts.</li>
+      <li>SSO is still offered to them.</li>
+      <li>Proposed: Sign up only when open. One alert behind Access.</li>
+    </ul>
+    <div class="two">
+      <figure>
+        <picture>
+          <source srcset="images/signin-signedout-dark-1440.webp" media="(prefers-color-scheme: dark)">
+          <img src="images/signin-signedout-light-1440.webp" width="1280" height="800" alt="The sign-in page">
+        </picture>
+        <figcaption>Sign-in with no Access in front. Note "Sign up".</figcaption>
+      </figure>
+      <figure>
+        <img src="images/access-unknown-person-access-light-1440.webp" width="1280" height="800" alt="Sign-in behind Access for an unknown person">
+        <figcaption>Behind Access, no account: two alerts, SSO offered.</figcaption>
+      </figure>
+    </div>
+    <div class="opts" data-q="22d">
+      <button data-v="Fix both for Monday">Fix both for Monday</button>
+      <button data-v="After launch">After launch</button>
+      <button data-v="Leave it">Leave it</button>
+    </div>
+    <div class="part">
+      <h4>Question 10: the trimmed auth and consent copy</h4>
+      <ul>
+        <li>Sign-in and consent copy was trimmed overnight.</li>
+        <li>Merged under your rule.</li>
+      </ul>
+      <div class="opts" data-q="10">
+        <button data-v="Keep it">Keep it</button>
+        <button data-v="Revert it">Revert it</button>
+      </div>
+    </div>
+    <textarea data-q="22d" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">#461 auth and consent copy.</p>
+  </div>
+
+  <div class="card q" data-card="22e" data-title="Empty AI connections is a dead end; Documentation points at the home page">
+    <span class="q-num">Question 22e for Ben</span>
+    <h3>"Connect Claude" leads to an empty page with no way in</h3>
+    <ul>
+      <li>A member told to connect Claude lands on an empty page.</li>
+      <li>No address, no docs link.</li>
+      <li>The sidebar's Documentation link opens everyapp.com's home.</li>
+      <li>Proposed: show the address, link the docs.</li>
+    </ul>
+    <figure>
+      <img src="images/settings-connections-empty-owner-light-1440.webp" width="1280" height="800" alt="Empty AI connections page">
+      <figcaption>AI connections, empty. Nothing to click.</figcaption>
+    </figure>
+    <div class="opts" data-q="22e">
+      <button data-v="Fix for Monday">Fix for Monday</button>
+      <button data-v="After launch">After launch</button>
+      <button data-v="Leave it">Leave it</button>
+    </div>
+    <textarea data-q="22e" placeholder="Anything else, in your words"></textarea>
+  </div>
+
+  <div class="card q" data-card="22" data-title="Build the 14 launch-worthy UI fixes today?">
+    <span class="q-num">Question 22 for Ben</span>
+    <h3>Build the 14 launch-worthy fixes today?</h3>
+    <ul>
+      <li>The review ranked 25 fixes. 14 are launch-worthy.</li>
+      <li>Most are copy, links and small states.</li>
+      <li>Five touch sign-in, the claim form, invitations, tokens, passwords.</li>
+      <li>Those would come to you as held PRs.</li>
+      <li>One thread, today.</li>
+    </ul>
+    <div class="opts" data-q="22">
+      <button data-v="Build the 14 today">Build the 14 today</button>
+      <button data-v="Only the five above, 22a to 22e">Only the five above, 22a to 22e</button>
+      <button data-v="After launch">After launch</button>
+    </div>
+    <textarea data-q="22" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">Full list: TODO.md "UI review (2026-10-25)". Review page: docs/design/2026-10-25-ui-review/index.html.</p>
+  </div>
+
+  <div class="card q" data-card="3" data-title="The overnight UI passes: anything to revert?">
+    <span class="q-num">Questions 3 and 9 for Ben</span>
+    <h3>The gateway UI changed overnight in two passes. Anything to undo?</h3>
+    <ul>
+      <li>Pass one: one look, one error shape, one empty state.</li>
+      <li>Also shorter dialogs and a tidier activity table.</li>
+      <li>Pass two: setup dialog, Apps, Groups, Usage, Activity.</li>
+      <li>Each has before and after shots. Each reverts cleanly.</li>
+    </ul>
+    <div class="opts" data-q="3">
+      <button data-v="Keep all of it">Keep all of it</button>
+      <button data-v="Something looks wrong, see my note">Something looks wrong, see my note</button>
+    </div>
+    <textarea data-q="3" placeholder="Name the screen or the change"></textarea>
+    <p class="fn">Pass one #450 #452 #457 #459 #460. Pass two #535–#538. Shots on branch ui-screenshots-2026-10-24.</p>
+  </div>
+
+  <div class="card">
+    <h3>What we judged and left, for admins</h3>
+    <ul>
+      <li>Groups have no levels. No identity-provider sync yet.</li>
+      <li>Caps count AI and provider calls alike.</li>
+      <li>A burst can run a few calls past the cap.</li>
+      <li>Only owners and admins see Usage and Activity.</li>
+      <li>One owner per organization. No co-owner, no handover.</li>
+      <li>Provider apps turn on from the CLI only. No Admin button.</li>
+      <li>Access starts with who turned it on, plus owners and admins.</li>
+      <li>Phone tables still overflow. A card-per-row layout is parked.</li>
+      <li>"Manage workspace" in the gateway, "Admin" in the CLI. Pick one.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ 4 -->
+<section class="sec" id="s4">
+  <p class="eyebrow">4 of 7</p>
+  <h2>What a developer experiences now</h2>
+  <ul><li>Fewer commands, plainer names. Apps that say what they need.</li></ul>
+
+  <div class="card">
+    <h3>The CLI speaks plainly</h3>
+    <ul>
+      <li>Help is grouped by what you are doing.</li>
+      <li><code>update</code> the gateway. <code>install</code> a published app. <code>release</code> packs one.</li>
+      <li>The workflow group and hosted-only commands are gone.</li>
+    </ul>
+<pre class="term">BUILD AN APP
+  create    Create a new app from the starter template
+  dev       Run the app locally behind a dev Gateway
+  deploy    Deploy the app in this directory
+  release   Pack the app in this directory as a release others can install
+  db        Migrate, query and restore an app's D1 database
+
+RUN A GATEWAY
+  login     Log in to Cloudflare
+  setup     Install or repair the Gateway
+  update    Update the Gateway to this checkout (after git pull)
+  install   Install an app someone published, from GitHub or a release file
+  status    Show the Gateway, its apps and anything to fix
+  delete    Remove an app from the Gateway
+  access    Put Cloudflare Access in front of the Gateway and its apps, or take it off
+  secret    Set, remove and list secrets and Gateway settings
+  provider  Offer a data provider (DataForSEO) to members' AI clients as an app
+  email     Manage the addresses an app sends as and receives at
+  teardown  Delete everything Every App created in a test account</pre>
+    <p class="fn">#464 CLI language, #441 hosted surface removed.</p>
+  </div>
+
+  <div class="card">
+    <h3>An app says what it needs</h3>
+    <ul>
+      <li>Each setting is required, optional, or one of a group.</li>
+      <li>The CLI shows what is set, where, and the fix.</li>
+      <li>The deploy prints who can open the app.</li>
+      <li>And its public routes.</li>
+    </ul>
+<pre class="term">$ pnpm everyapp status
+
+APP   STATUS         URL                       DEPLOYED BY      PUBLIC
+crm   ! needs setup  https://crm.example.com   dev@example.com
+todo  ✓ live         https://todo.example.com  dev@example.com
+
+APP  SETTING               WHERE    STATUS
+crm  OPENROUTER_API_KEY    Gateway  ! not set
+crm  CONTEXT_API_KEY       Gateway  not set (optional)
+crm  TOKEN_ENCRYPTION_KEY  crm      ! not set
+
+! crm needs setup
+  OpenRouter: Drafts replies.
+  Get it at https://openrouter.ai/settings/keys
+  Guide: .claude/skills/everyapp/setup/openrouter.md
+  Run: pnpm everyapp secret set OPENROUTER_API_KEY TOKEN_ENCRYPTION_KEY --app crm</pre>
+    <p class="fn">#383 manifest needs, #397 #494 CLI, #424 public routes in the deploy summary.</p>
+  </div>
+
+  <div class="card">
+    <h3>Agent docs and setup skills</h3>
+    <ul>
+      <li>Everything an agent needs is written for everyapp.com/llms.txt.</li>
+      <li>Every command, every error code, what an app receives.</li>
+      <li>Live when you deploy the site.</li>
+      <li>The everyapp skill is copied into each new app.</li>
+      <li>A setup guide per integration walks the agent through keys.</li>
+      <li>A test fails when a doc cites a missing command.</li>
+    </ul>
+    <p class="fn">#420 agent docs, #430 setup skills, #436 MCP skill, #504 #517 drift tests.</p>
+  </div>
+
+  <div class="card">
+    <h3>A repo with less in it</h3>
+    <ul>
+      <li>Gone: example apps, mobile app, hosted-only CLI, Docker path.</li>
+      <li>Gone: research and history docs, per-package lockfiles.</li>
+      <li>One root install. The starter lives in <code>starter/</code>.</li>
+    </ul>
+    <p class="fn">Simplify #427 #433 #441 #442 #447 #448 #449 #464.</p>
+  </div>
+
+  <div class="card">
+    <h3>Security a developer can read and CI can check</h3>
+    <ul>
+      <li>The threat model: what is promised, to whom, where tested.</li>
+      <li>More than 300 promises, most pinned by tests.</li>
+      <li>A security review runs on every PR in CI.</li>
+      <li>It only warns until your API key is set. Question 11b.</li>
+    </ul>
+    <p class="fn">#413 threat model, #388 security-review CI, register kept current through #554.</p>
+  </div>
+
+  <div class="card q" data-card="20b" data-title="Where a new app lives in git">
+    <span class="q-num">Question 20b for Ben, the second half of item 20</span>
+    <h3>Where does a new app live?</h3>
+    <ul>
+      <li>Docs say: create your app inside the Every App checkout.</li>
+      <li>That breaks their next <code>git pull</code>.</li>
+      <li>The new app changes a shared file.</li>
+      <li>Last night's docs explain the recovery.</li>
+      <li>The product decision is yours. The cold read posed three ways.</li>
+    </ul>
+    <div class="opts" data-q="20b">
+      <button data-v="Fork Every App, so the app and the lockfile live in your own copy">Fork Every App, so the app and the lockfile live in your own copy</button>
+      <button data-v="Default to creating outside the clone">Default to creating outside the clone</button>
+      <button data-v="Stop create from rewriting the root lockfile">Stop rewriting the root lockfile</button>
+    </div>
+    <textarea data-q="20b" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">Cold read fix 2, #550. TODO.md onboarding loop finding 4.</p>
+  </div>
+
+  <div class="card" id="dev-judged">
+    <h3>What we judged and left, for developers</h3>
+    <ul>
+      <li>A key never goes through the agent's chat.</li>
+      <li>The person pastes it in a second terminal.</li>
+      <li>Hosted tier parked until after launch. A short vision doc.</li>
+      <li>Its code stays in the gateway, switched off.</li>
+      <li>No code mode for launch.</li>
+      <li>You chose a gateway search tool. Being built as a held PR.</li>
+      <li>Apps shipping skills beside tools is the direction. Not built.</li>
+      <li>Until the site deploys, the skill's doc links redirect home.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ 5 -->
+<section class="sec" id="s5">
+  <p class="eyebrow">5 of 7</p>
+  <h2>Security and trust</h2>
+  <ul><li>Promises written down. Boundaries tighter. One mistake caught.</li></ul>
+
+  <div class="card">
+    <h3>What got tighter this week</h3>
+    <ul>
+      <li><strong>Scopes per app.</strong> Each app lists what it needs from Google, Microsoft, Slack.
+        <ul>
+          <li>The gateway holds it to that list.</li>
+          <li>Live after the rollout. OpenCRM must redeploy first.</li>
+        </ul>
+      </li>
+      <li><strong>Groups and caps.</strong> Grant by group. Cap an app's monthly calls.</li>
+      <li><strong>Six boundary fixes.</strong>
+        <ul>
+          <li>You can only finish your own provider connection.</li>
+          <li>A password reset ends every session.</li>
+          <li>Cookie and path tricks are refused.</li>
+          <li>One DataForSEO route is closed.</li>
+        </ul>
+      </li>
+      <li><strong>Plainer errors.</strong> No internal detail. Unknown paths get a plain 404. Question 21.</li>
+      <li><strong>Setup gate.</strong> An app missing a key is closed. Tools leave the AI surface. Question 8.</li>
+      <li>None of this runs on everyapp.team yet. Question 12 carries it.</li>
+    </ul>
+    <p class="fn">#411 #412 #414 #425 scopes; #387 #402 #403 #405 #406 #407 fixes; #554; #396.</p>
+  </div>
+
+  <div class="card q" data-card="00" data-title="Roll the test account's Cloudflare token">
+    <span class="q-num">Question 00 for Ben</span>
+    <h3>A test account's token was committed for 46 minutes</h3>
+    <ul>
+      <li>A loop file with a test account's token was committed.</li>
+      <li>Removed 46 minutes later. Still in this repo's history.</li>
+      <li>Scoped to the throwaway test account, never your main one.</li>
+      <li>Roll it in that account's dashboard, under API Tokens.</li>
+      <li>Then update the loop's accounts file on your machine.</li>
+      <li>The public copy must start from a fresh commit. It does.</li>
+    </ul>
+    <div class="opts" data-q="00">
+      <button data-v="Rolled it already">Rolled it already</button>
+      <button data-v="Will roll it today, before the public copy">Will roll it today, before the public copy</button>
+      <button data-v="Talk me through it">Talk me through it</button>
+    </div>
+    <textarea data-q="00" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">In with #488, out with #496. Launch doc item A11.</p>
+  </div>
+
+  <div class="card q" data-card="11" data-title="Threat model: five asks">
+    <span class="q-num">Question 11 for Ben</span>
+    <h3>The threat model is final. Five things need your hands.</h3>
+    <div class="part">
+      <h4>a. Where do people report a vulnerability?</h4>
+      <ul>
+        <li>SECURITY.md points at GitHub private reporting.</li>
+        <li>That only works once you switch it on.</li>
+        <li>Or name an address instead.</li>
+      </ul>
+      <div class="opts" data-q="11a">
+        <button data-v="GitHub private vulnerability reporting">GitHub private reporting</button>
+        <button data-v="An email address (see note)">An email address</button>
+        <button data-v="Decide after launch">After launch</button>
+      </div>
+    </div>
+    <div class="part">
+      <h4>b. Let the security review in CI run for real</h4>
+      <ul>
+        <li>Needs an Anthropic API key in Actions secrets.</li>
+        <li>And "require approval for external contributors".</li>
+        <li>Both are public-repo settings. Done at the flip.</li>
+      </ul>
+      <div class="opts" data-q="11b">
+        <button data-v="Yes, I'll add both">Yes, I'll add both</button>
+        <button data-v="Not before launch">Not before launch</button>
+      </div>
+    </div>
+    <div class="part">
+      <h4>c. Browser installs</h4>
+      <ul>
+        <li>With a deploy token, apps install from the browser.</li>
+        <li>Then any owner or admin of any organization can.</li>
+        <li>It installs into your Cloudflare account.</li>
+      </ul>
+      <div class="opts" data-q="11c">
+        <button data-v="Keep, but limit to the install org's owners">Keep, limit to the org's owners</button>
+        <button data-v="Default off everywhere">Default off everywhere</button>
+        <button data-v="A separate deployer Worker, later">Separate deployer Worker, later</button>
+        <button data-v="Leave as is">Leave as is</button>
+      </div>
+    </div>
+    <div class="part">
+      <h4>d. The 17 old Workers still on workers.dev</h4>
+      <ul>
+        <li>Old gateway era. Pre-fix code behind nothing.</li>
+        <li>Three still answer. Nothing links to them.</li>
+      </ul>
+      <div class="opts" data-q="11d">
+        <button data-v="Delete them this weekend">Delete them this weekend</button>
+        <button data-v="Turn off their routes now, delete later">Turn off routes now, delete later</button>
+        <button data-v="After launch">After launch</button>
+      </div>
+    </div>
+    <div class="part">
+      <h4>e. The old npm packages</h4>
+      <ul>
+        <li>npx everyapp still installs the old 0.2.2.</li>
+        <li>Deprecate with a message, or publish 0.3.0.</li>
+      </ul>
+      <div class="opts" data-q="11e">
+        <button data-v="Deprecate the old versions">Deprecate the old versions</button>
+        <button data-v="Publish 0.3.0">Publish 0.3.0</button>
+        <button data-v="Leave it">Leave it</button>
+      </div>
+    </div>
+    <textarea data-q="11" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">docs/threat-model.md and docs/threat-model-invariants.md. Launch doc items A5, A10, B10.</p>
+  </div>
+
+  <div class="card">
+    <h3>What two outsiders found</h3>
+    <ul>
+      <li>Two outside reviewers read everything a stranger can.</li>
+      <li>They poked the live install 154 times.</li>
+      <li>The walls held. No server errors. Everything behind Access.</li>
+      <li>Open paths answered exactly as promised.</li>
+      <li>The problems were words and packaging:
+        <ul>
+          <li>Links to repos that do not exist.</li>
+          <li>Three "what does this do to my account" pages missing.</li>
+          <li>A prompt rule that loops.</li>
+          <li>Prices nobody verified.</li>
+        </ul>
+      </li>
+      <li>Most of that merged last night.</li>
+      <li>Repos are question 20. Domain price has no card. Check Sunday.</li>
+    </ul>
+    <p class="fn">docs/design/2026-10-cold-read.md. Fixes #549–#553 merged, #554 merged under your rule.</p>
+  </div>
+
+  <div class="card q" data-card="20" data-title="The four app repositories the README links to">
+    <span class="q-num">Question 20 for Ben</span>
+    <h3>The README links four repositories. Three do not exist.</h3>
+    <ul>
+      <li>The README links four app repos under every-app on GitHub.</li>
+      <li>Three answer 404.</li>
+      <li>open-seo exists, but has no Every App port.</li>
+      <li>None has a release.</li>
+      <li>The apps still depend on this private repo.</li>
+      <li>A new public repo would not build on its own.</li>
+    </ul>
+    <div class="opts" data-q="20">
+      <button data-v="Create the three repos with READMEs that resolve on their own (3 to 6 hours)">Create the three repos properly, 3 to 6 hours</button>
+      <button data-v="Change the README to not link them (30 minutes)">Change the README to not link them, 30 minutes</button>
+    </div>
+    <textarea data-q="20" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">Cold read fix 1, which also gives a launch-morning check per repo.</p>
+  </div>
+
+  <div class="card q" data-card="21" data-title="A gateway security PR merged under your rule">
+    <span class="q-num">Question 21 for Ben</span>
+    <h3>We merged a held gateway PR under your rule</h3>
+    <ul>
+      <li>Two small security fixes were held for your eyes.</li>
+      <li>Then merged under "merge everything green".</li>
+      <li>Error messages no longer carry internal detail.</li>
+      <li>Unknown addresses get a plain not-found page.</li>
+      <li>Both had tests and one independent review.</li>
+    </ul>
+    <div class="opts" data-q="21">
+      <button data-v="Fine">Fine</button>
+      <button data-v="I want to read it first">I want to read it first</button>
+      <button data-v="Revert it">Revert it</button>
+    </div>
+    <textarea data-q="21" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">#554.</p>
+  </div>
+
+  <div class="card q" data-card="8" data-title="Gate before auth, or auth before gate">
+    <span class="q-num">Question 8 for Ben</span>
+    <h3>An app missing a key answers before the sign-in check</h3>
+    <ul>
+      <li>Visitors to an unready app see its setup dialog.</li>
+      <li>Everything else is refused, public routes included.</li>
+      <li>This happens before sign-in.</li>
+      <li>Why gate first: nobody reaches a half-working app.</li>
+      <li>The cost: a stranger learns an app by that name exists.</li>
+      <li>Access in front hides even that.</li>
+    </ul>
+    <div class="opts" data-q="8">
+      <button data-v="Keep: gate first, as built">Keep: gate first, as built</button>
+      <button data-v="Check sign-in first">Check sign-in first</button>
+      <button data-v="No strong opinion">No strong opinion</button>
+    </div>
+    <textarea data-q="8" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">#396. TODO.md "Secrets model (2026-10-24)".</p>
+  </div>
+
+  <div class="card">
+    <h3>What we judged and left, on security</h3>
+    <ul>
+      <li>Carter must sign in once through Access first.</li>
+      <li>Then passwords can go off on everyapp.team.</li>
+      <li>Apps can read Google and Microsoft, not send mail. Slack can post.</li>
+      <li>A stolen admin session can still take over a member.</li>
+      <li>Access in front is the launch mitigation.</li>
+      <li>Open gaps: owner recovery, narrower tokens, admin re-auth.</li>
+      <li>TODO.md travels to the public repo, scrubbed.</li>
+      <li>It describes everyapp.team's internals and the token incident.</li>
+      <li>Research and launch logs stay home.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ 6 -->
+<section class="sec" id="s6">
+  <p class="eyebrow">6 of 7</p>
+  <h2>Decisions and assumptions</h2>
+  <ul><li>The remaining calls, then what the night settled itself.</li></ul>
+
+  <div class="card q" data-card="7" data-title="Agentic Inbox's default AI provider">
+    <span class="q-num">Question 7 for Ben</span>
+    <h3>Agentic Inbox: OpenRouter as the default AI provider?</h3>
+    <ul>
+      <li>Make OpenRouter the inbox's default AI provider.</li>
+      <li>Then the one gateway key serves it like the others.</li>
+      <li>Held for your yes.</li>
+      <li>Without it, the rollout sets the provider by hand.</li>
+    </ul>
+    <div class="opts" data-q="7">
+      <button data-v="Yes, merge the flip">Yes, merge the flip</button>
+      <button data-v="No, keep its current default">No, keep its current default</button>
+      <button data-v="Later">Later</button>
+    </div>
+    <textarea data-q="7" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">agentic-inbox PR #6.</p>
+  </div>
+
+  <div class="card q" data-card="12" data-title="The rollout to everyapp.team">
+    <span class="q-num">Question 12 for Ben (and item 0)</span>
+    <h3>Say "go" and the rollout runs</h3>
+    <ul>
+      <li>Everything is merged. None of it is live.</li>
+      <li>Say go and four things happen, in order:
+        <ol>
+          <li>The database updates, with a restore point.</li>
+          <li>The four apps redeploy. OpenCRM first.</li>
+          <li>The gateway updates.</li>
+          <li>We check everything still opens.</li>
+        </ol>
+      </li>
+      <li>OpenCRM first: the gateway now checks provider scopes.</li>
+      <li>Out of order, OpenCRM and Agentic Inbox would close.</li>
+      <li>Question 7 above decides how the inbox goes out.</li>
+      <li>For the record: everyapp.team was updated overnight, several times.</li>
+      <li>The last time before the hold landed.</li>
+      <li>Verified healthy. Nothing migrated. Item 13.</li>
+    </ul>
+    <div class="opts" data-q="12">
+      <button data-v="Go, run it">Go, run it</button>
+      <button data-v="I'll run it myself">I'll run it myself</button>
+      <button data-v="Wait, I have a question">Wait, I have a question</button>
+    </div>
+    <textarea data-q="12" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">Order in the notes, item 12.</p>
+  </div>
+
+  <div class="card q" data-card="17" data-title="The license holder">
+    <span class="q-num">Question 17 for Ben</span>
+    <h3>Whose name goes on the MIT license?</h3>
+    <ul>
+      <li>LICENSE and SECURITY.md are on main.</li>
+      <li>The copyright line says "Every App contributors".</li>
+    </ul>
+    <div class="opts" data-q="17">
+      <button data-v="Every App contributors">Every App contributors</button>
+      <button data-v="Ben Senescu">Ben Senescu</button>
+      <button data-v="A company name (see note)">A company name, see note</button>
+    </div>
+    <textarea data-q="17" placeholder="The exact name, if a company"></textarea>
+    <p class="fn">#523.</p>
+  </div>
+
+  <div class="card q" data-card="5" data-title="Carter's managed-addresses PR after the lockfile change">
+    <span class="q-num">Question 5 for Ben</span>
+    <h3>Carter's PR still conflicts. Still want it?</h3>
+    <ul>
+      <li>The one-lockfile change merged on your yes.</li>
+      <li>Carter's managed-addresses PR conflicts with it.</li>
+      <li>The launch doc already puts it after launch.</li>
+    </ul>
+    <div class="opts" data-q="5">
+      <button data-v="Rebase it onto the new lockfile and merge">Rebase it and merge</button>
+      <button data-v="After launch">After launch</button>
+      <button data-v="Ask Carter">Ask Carter</button>
+      <button data-v="Close it">Close it</button>
+    </div>
+    <textarea data-q="5" placeholder="Anything else, in your words"></textarea>
+    <p class="fn">#377, after #448.</p>
+  </div>
+
+  <div class="card settled">
+    <h3>Settled overnight, no action from you</h3>
+    <ul>
+      <li><strong>4.</strong> Review queue: all but one merged under your rule. The last was closed as superseded.</li>
+      <li><strong>6.</strong> The secrets branches merged in order. Done.</li>
+      <li><strong>13.</strong> The unowned gateway deploy: superseded, gateway healthy. Dropped.</li>
+      <li><strong>14.</strong> Code mode: you answered in the thread. Search tool, no per-app caps, current MCP SDK. Compact surface: a held PR, being built.</li>
+      <li><strong>15.</strong> Small MCP fixes launched without waiting. All merged. Say so if you want any out.</li>
+      <li><strong>16.</strong> Onboarding loop control run passed. Claude Code twice, Codex with one nudge. Cursor and OpenCode wait on your keys.</li>
+      <li><strong>18.</strong> A launch-blocking CLI bug: fixed in one line. A CI job now catches that class.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================ 7 -->
+<section class="sec" id="s7">
+  <p class="eyebrow">7 of 7</p>
+  <h2>Copy your answers</h2>
+  <ul>
+    <li>One click copies every choice and note as text.</li>
+    <li>Paste it to us with the recording.</li>
+  </ul>
+  <div class="end">
+    <button class="big" id="copy">Copy my answers</button>
+    <button class="small" id="show">Show as text</button>
+    <button class="small" id="clear">Clear my answers</button>
+    <div class="status" id="status"></div>
+    <pre class="out" id="out"></pre>
+  </div>
+  <div class="card">
+    <h3>What happens next</h3>
+    <ul><li>We prioritise from your recording and these answers.</li></ul>
+  </div>
+</section>
+
+</main>
+
+<script>
+(function () {
+  var KEY = 'ea-briefing-2026-10-25:';
+  function save(id, k, v) { try { if (v) localStorage.setItem(KEY + id + ':' + k, v); else localStorage.removeItem(KEY + id + ':' + k); } catch (e) {} }
+  function load(id, k) { try { return localStorage.getItem(KEY + id + ':' + k) || ''; } catch (e) { return ''; } }
+
+  var cards = Array.prototype.slice.call(document.querySelectorAll('.q[data-card]'));
+
+  Array.prototype.forEach.call(document.querySelectorAll('.opts[data-q]'), function (o) {
+    var id = o.getAttribute('data-q');
+    var cur = load(id, 'choice');
+    var btns = Array.prototype.slice.call(o.querySelectorAll('button'));
+    btns.forEach(function (b) {
+      if (b.getAttribute('data-v') === cur) b.classList.add('on');
+      b.addEventListener('click', function () {
+        var wasOn = b.classList.contains('on');
+        btns.forEach(function (x) { x.classList.remove('on'); });
+        if (!wasOn) { b.classList.add('on'); save(id, 'choice', b.getAttribute('data-v')); }
+        else save(id, 'choice', '');
+        update();
+      });
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('textarea[data-q]'), function (t) {
+    t.value = load(t.getAttribute('data-q'), 'note');
+    t.addEventListener('input', function () { save(t.getAttribute('data-q'), 'note', t.value.trim()); update(); });
+  });
+
+  function cardAnswered(card) {
+    var any = false;
+    Array.prototype.forEach.call(card.querySelectorAll('.opts[data-q]'), function (o) { if (load(o.getAttribute('data-q'), 'choice')) any = true; });
+    Array.prototype.forEach.call(card.querySelectorAll('textarea[data-q]'), function (t) { if (load(t.getAttribute('data-q'), 'note')) any = true; });
+    return any;
+  }
+
+  function update() {
+    var n = cards.filter(cardAnswered).length;
+    document.getElementById('count').textContent = n + ' of ' + cards.length + ' answered';
+  }
+
+  function transcript() {
+    var lines = ['Every App launch briefing, 2026-10-25. Answers from Ben.'];
+    var n = cards.filter(cardAnswered).length;
+    lines.push('Answered ' + n + ' of ' + cards.length + '.', '');
+    cards.forEach(function (card) {
+      var num = card.getAttribute('data-card');
+      var title = card.getAttribute('data-title');
+      lines.push('Q' + num + '. ' + title);
+      var parts = card.querySelectorAll('.part');
+      var topOpts = Array.prototype.filter.call(card.querySelectorAll('.opts[data-q]'), function (o) { return !o.closest('.part'); });
+      topOpts.forEach(function (o) {
+        var c = load(o.getAttribute('data-q'), 'choice');
+        lines.push('  Choice: ' + (c || '(none)'));
+      });
+      Array.prototype.forEach.call(parts, function (p) {
+        var h = p.querySelector('h4');
+        var o = p.querySelector('.opts[data-q]');
+        var c = o ? load(o.getAttribute('data-q'), 'choice') : '';
+        lines.push('  ' + (h ? h.textContent.trim() : o.getAttribute('data-q')) + ': ' + (c || '(none)'));
+      });
+      Array.prototype.forEach.call(card.querySelectorAll('textarea[data-q]'), function (t) {
+        var note = load(t.getAttribute('data-q'), 'note');
+        if (note) lines.push('  Note: ' + note.replace(/\n/g, '\n        '));
+      });
+      lines.push('');
+    });
+    return lines.join('\n');
+  }
+
+  var status = document.getElementById('status');
+  var out = document.getElementById('out');
+
+  document.getElementById('copy').addEventListener('click', function () {
+    var text = transcript();
+    out.textContent = text;
+    function done() { status.textContent = 'Copied. Paste it to us with the recording.'; }
+    function fallback() {
+      out.classList.add('show');
+      var r = document.createRange(); r.selectNodeContents(out);
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+      status.textContent = ok ? 'Copied. Paste it to us with the recording.' : 'Select the text below and copy it.';
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
+  });
+
+  document.getElementById('show').addEventListener('click', function () {
+    out.textContent = transcript();
+    out.classList.toggle('show');
+  });
+
+  document.getElementById('clear').addEventListener('click', function () {
+    if (!confirm('Clear every choice and note on this page?')) return;
+    try {
+      Object.keys(localStorage).forEach(function (k) { if (k.indexOf(KEY) === 0) localStorage.removeItem(k); });
+    } catch (e) {}
+    Array.prototype.forEach.call(document.querySelectorAll('.opts button.on'), function (b) { b.classList.remove('on'); });
+    Array.prototype.forEach.call(document.querySelectorAll('textarea[data-q]'), function (t) { t.value = ''; });
+    out.textContent = ''; out.classList.remove('show'); status.textContent = 'Cleared.';
+    update();
+  });
+
+  update();
+})();
+</script>
+</body>
+</html>
