@@ -9,6 +9,7 @@
  *             two-label base host so the session cookie crosses the
  *             gateway->app subdomain boundary.
  */
+import net from "node:net";
 import { EveryAppError } from "@/lib/errors";
 import { replaceFlag } from "./rerun";
 
@@ -98,4 +99,50 @@ export function classifyHost(host: string, baseHost: string): HostClass {
     }
   }
   return { kind: "invalid" };
+}
+
+/**
+ * Whether a Host names this machine: `localhost` and names under it, a
+ * loopback or any other IP literal (the LAN address when `--host 0.0.0.0`
+ * binds there), or the mirror base host and its subdomains. Any other DNS
+ * name is a page's DNS-rebinding trick: a name the attacker owns, pointed at
+ * 127.0.0.1 once the page has loaded, so the page reads and writes the app
+ * as the seeded owner. The dev gateway answers such a Host 421.
+ */
+export function isDevHost(host: string, baseHost?: string): boolean {
+  let hostname: string;
+  try {
+    hostname = new URL(`http://${host.trim().toLowerCase()}`).hostname;
+  } catch {
+    return false;
+  }
+  if (!hostname) return false;
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) return true;
+  if (net.isIP(hostname.replace(/^\[|\]$/g, ""))) return true;
+  if (baseHost) {
+    const base = stripPort(baseHost).trim().toLowerCase();
+    if (base && (hostname === base || hostname.endsWith(`.${base}`))) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether a request came from a web page rather than a terminal or a
+ * script. Browsers send `Origin`, `Referer` or Fetch Metadata on every
+ * cross-site POST they make, including the simple ones that skip the
+ * preflight; curl and scripts send none unless told to. The dev cron
+ * trigger takes the terminal's POST only.
+ */
+export function isBrowserRequest(headers: {
+  origin?: string | string[] | undefined;
+  referer?: string | string[] | undefined;
+  "sec-fetch-mode"?: string | string[] | undefined;
+  "sec-fetch-site"?: string | string[] | undefined;
+}): boolean {
+  return (
+    headers.origin !== undefined ||
+    headers.referer !== undefined ||
+    headers["sec-fetch-mode"] !== undefined ||
+    headers["sec-fetch-site"] !== undefined
+  );
 }

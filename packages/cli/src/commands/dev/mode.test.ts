@@ -4,6 +4,8 @@ import {
   baseHostLabelCount,
   checkMirrorBaseHost,
   classifyHost,
+  isBrowserRequest,
+  isDevHost,
 } from "./mode";
 
 describe("resolveDevMode", () => {
@@ -86,5 +88,42 @@ describe("classifyHost", () => {
   });
   it("rejects a deeper nested host (not a direct subdomain)", () => {
     expect(classifyHost("a.b.everyapp.localhost", base)).toEqual({ kind: "invalid" });
+  });
+});
+
+describe("isDevHost", () => {
+  it.each([
+    "localhost:8787",
+    "my-app.localhost:8787",
+    "todo.fix-ui.everyapp.localhost",
+    "127.0.0.1:8787",
+    "[::1]:8787",
+    "192.168.1.5:8787",
+  ])("takes %s, a name for this machine", (host) => {
+    expect(isDevHost(host)).toBe(true);
+  });
+
+  it.each(["my-app.attacker.example:8787", "attacker.example", "", "   "])(
+    "refuses %s: a DNS-rebinding page's own name pointed at 127.0.0.1",
+    (host) => {
+      expect(isDevHost(host)).toBe(false);
+    },
+  );
+
+  it("takes the mirror base host and its apps, and nothing beside them", () => {
+    expect(isDevHost("everyapp.localhost:8787", "everyapp.localhost")).toBe(true);
+    expect(isDevHost("todo.dev.example:8787", "dev.example")).toBe(true);
+    expect(isDevHost("dev.example", "dev.example")).toBe(true);
+    expect(isDevHost("todo.other.example:8787", "dev.example")).toBe(false);
+  });
+});
+
+describe("isBrowserRequest", () => {
+  it("tells a page's POST from a terminal's by the headers only browsers send", () => {
+    expect(isBrowserRequest({})).toBe(false);
+    expect(isBrowserRequest({ origin: "https://attacker.example" })).toBe(true);
+    expect(isBrowserRequest({ referer: "https://attacker.example/" })).toBe(true);
+    expect(isBrowserRequest({ "sec-fetch-mode": "no-cors" })).toBe(true);
+    expect(isBrowserRequest({ "sec-fetch-site": "cross-site" })).toBe(true);
   });
 });

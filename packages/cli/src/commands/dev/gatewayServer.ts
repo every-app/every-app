@@ -19,7 +19,7 @@ import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { createDevAppGateway } from "./devAppGateway";
 import { devLauncherHtml } from "./launcherPage";
-import { classifyHost, DevMode } from "./mode";
+import { classifyHost, DevMode, isBrowserRequest, isDevHost } from "./mode";
 import {
   handleUpgrade,
   pipeUpgrade,
@@ -146,7 +146,24 @@ export function serveGateway(
       try {
         const hostHeader = req.headers.host ?? "";
 
+        // Only this machine's names reach the dev gateway: a page on another
+        // site that points its own name at 127.0.0.1 (DNS rebinding) would
+        // otherwise read the app as the seeded owner.
+        if (!isDevHost(hostHeader, gatewayFetcher ? mirrorBaseHost : undefined)) {
+          misdirected(res, hostHeader, `${manifest.id}.localhost`);
+          return;
+        }
+
         if (req.method === "POST" && req.url === CRON_PATH) {
+          if (isBrowserRequest(req.headers)) {
+            // A page can POST here from any origin without a preflight; the
+            // trigger is for the terminal.
+            res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
+            res.end(
+              `The cron trigger takes a terminal's POST (curl -X POST ... -d '<schedule>'), not a web page's.\n`,
+            );
+            return;
+          }
           await writeWebResponse(
             res,
             await runCron(await readBody(req), appPort, app.workerName),
@@ -220,6 +237,12 @@ export function serveGateway(
   // (strip trust headers, inject identity). In mirror mode, bare-base-host
   // upgrades are the gateway's own HMR — forwarded untouched to the gateway.
   server.on("upgrade", (req, socket, head) => {
+    if (!isDevHost(req.headers.host ?? "", gatewayUrl ? mirrorBaseHost : undefined)) {
+      // The same rule as for requests: no rebinding page gets a socket.
+      socket.write("HTTP/1.1 421 Misdirected Request\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
     if (
       gatewayUrl &&
       classifyHost(req.headers.host ?? "", mirrorBaseHost).kind === "launcher"
