@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useState } from "react";
-import { Download } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 import { adminAppsCollection, useQueryFailed } from "@/client/tanstack-db";
 import { AppSetupDialog } from "@/client/components/AppSetupDialog";
 import { ErrorState } from "@/client/components/ErrorState";
@@ -10,8 +10,10 @@ import { AppsTable } from "@/client/components/admin/AppsTable";
 import { EditAppModal } from "@/client/components/admin/EditAppModal";
 import { DeleteAppModal } from "@/client/components/admin/DeleteAppModal";
 import { ManageAppAccessModal } from "@/client/components/admin/ManageAppAccessModal";
+import { AddAppDialog } from "@/client/components/onboarding/AddAppDialog";
 import { Button } from "@/client/components/ui/button";
 import { useAppInstallAvailable } from "@/client/app-install";
+import { FIRST_SCREEN } from "@/client/lib/firstScreen";
 import type { AppWithAccessCount } from "@/types/app";
 import { authClient } from "@/client/auth-client";
 
@@ -33,6 +35,8 @@ function AppsPage() {
   );
   const [accessApp, setAccessApp] = useState<AppWithAccessCount | null>(null);
   const [setupApp, setSetupApp] = useState<AppWithAccessCount | null>(null);
+  // The four apps and Build your own, once the home no longer shows them.
+  const [addingApp, setAddingApp] = useState(false);
 
   const {
     data: apps,
@@ -52,12 +56,22 @@ function AppsPage() {
       <SectionHeader
         title="Apps"
         action={
-          canInstall ? (
-            <Button nativeButton={false} render={<Link to="/install" />}>
-              <Download />
-              Install app
+          <div className="flex items-center gap-2">
+            {canInstall ? (
+              <Button nativeButton={false} render={<Link to="/install" />}>
+                <Download />
+                Install app
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              aria-haspopup="dialog"
+              onClick={() => setAddingApp(true)}
+            >
+              <Plus />
+              {FIRST_SCREEN.addApp.button}
             </Button>
-          ) : undefined
+          </div>
         }
       />
 
@@ -76,8 +90,13 @@ function AppsPage() {
         onManageAccess={setAccessApp}
         onEdit={setEditingApp}
         onDelete={setDeletingApp}
+        onAddApp={() => setAddingApp(true)}
         isOwner={isOwner}
       />
+
+      {addingApp ? (
+        <AddAppDialog canRun={isAdmin} onClose={() => setAddingApp(false)} />
+      ) : null}
 
       {setupApp?.setup ? (
         <AppSetupDialog

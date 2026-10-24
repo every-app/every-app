@@ -5,7 +5,9 @@ import { z } from "zod";
 import { LayoutGrid, List, Search, Settings2, X } from "lucide-react";
 import { cn } from "cn";
 import { PWAInstallModal } from "@/client/components/PWAInstallModal";
-import { OnboardingBanner } from "@/client/components/onboarding/OnboardingBanner";
+import { AppGallery } from "@/client/components/onboarding/AppGallery";
+import { BuildYourOwnDialog } from "@/client/components/onboarding/BuildYourOwnDialog";
+import { FeaturedAppDialog } from "@/client/components/onboarding/FeaturedAppDialog";
 import {
   AppListItem,
   AppListItemSkeleton,
@@ -30,6 +32,8 @@ import { Kbd } from "@/client/components/ui/kbd";
 import { AppLibraryLayout, useAppLibrary } from "@/client/hooks/useAppLibrary";
 import { useSetupParam } from "@/client/hooks/useSetupParam";
 import { useShortcutLabel } from "@/client/hooks/useShortcutLabel";
+import type { FeaturedApp } from "@/client/lib/featuredApps";
+import { FIRST_SCREEN } from "@/client/lib/firstScreen";
 import { authClient } from "@/client/auth-client";
 import type { UserAccessApp } from "@/types/app";
 
@@ -59,6 +63,9 @@ function App() {
   const { pwa: pwaParam, setup: setupParam } = Route.useSearch();
   const [showPWAInstallModal, setShowPWAInstallModal] = useState(false);
   const [setupApp, setSetupApp] = useState<UserAccessApp | null>(null);
+  // The gallery's dialogs: one of the four apps, or Build your own.
+  const [pickedApp, setPickedApp] = useState<FeaturedApp | null>(null);
+  const [buildOpen, setBuildOpen] = useState(false);
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const searchShortcut = useShortcutLabel("K");
@@ -291,20 +298,18 @@ function App() {
         ) : null}
 
         {!isLoading && !isError && !isMemberRolePending && apps.length === 0 ? (
-          activeMemberRole?.role === "owner" ? (
-            <OnboardingBanner />
-          ) : userCanManageApps ? (
-            <EmptyState
-              icon={LayoutGrid}
-              title="No apps yet"
-              description="Deploy your first app with the everyapp CLI to get started."
-              action={manageAppsButton}
+          // An owner or admin can install an app: the four apps and Build
+          // your own. A member waits for one of them.
+          userCanManageApps ? (
+            <AppGallery
+              onPickApp={setPickedApp}
+              onBuild={() => setBuildOpen(true)}
             />
           ) : (
             <EmptyState
               icon={LayoutGrid}
-              title="No apps available"
-              description="Contact your administrator to get access."
+              title={FIRST_SCREEN.empty.memberTitle}
+              description={FIRST_SCREEN.empty.memberDescription}
             />
           )
         ) : null}
@@ -313,6 +318,16 @@ function App() {
         open={showPWAInstallModal}
         onClose={() => setShowPWAInstallModal(false)}
       />
+      {pickedApp ? (
+        <FeaturedAppDialog
+          app={pickedApp}
+          canRun={userCanManageApps}
+          onClose={() => setPickedApp(null)}
+        />
+      ) : null}
+      {buildOpen ? (
+        <BuildYourOwnDialog onClose={() => setBuildOpen(false)} />
+      ) : null}
       {setupApp?.setup ? (
         <AppSetupDialog
           name={setupApp.name}

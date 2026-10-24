@@ -25,6 +25,7 @@ import {
 import type { AppWithAccessCount } from "@/types/app";
 import { AppActionsMenu } from "./AppActionsMenu";
 import { integrationLabel } from "./integrationLabel";
+import { FIRST_SCREEN } from "@/client/lib/firstScreen";
 
 // The search box only shows once the catalog is long enough to need it.
 const SEARCH_THRESHOLD = 3;
@@ -35,6 +36,8 @@ type AppRowActions = {
   onManageAccess: (app: AppWithAccessCount) => void;
   onEdit: (app: AppWithAccessCount) => void;
   onDelete: (app: AppWithAccessCount) => void;
+  /** Opens the Add app chooser, the empty table's one action. */
+  onAddApp?: () => void;
   isOwner: boolean;
 };
 
@@ -228,6 +231,7 @@ export function AppsTable({
   onManageAccess,
   onEdit,
   onDelete,
+  onAddApp,
   isOwner,
 }: AppsTableProps) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -289,9 +293,17 @@ export function AppsTable({
         query
           ? { kind: "filtered", title: `No apps match "${searchQuery.trim()}"` }
           : {
-              title: "No apps yet",
-              description:
-                "Deploy one with the everyapp CLI and it shows up here.",
+              title: FIRST_SCREEN.empty.adminTableTitle,
+              description: FIRST_SCREEN.empty.adminTableDescription,
+              action: onAddApp ? (
+                <Button
+                  variant="outline"
+                  aria-haspopup="dialog"
+                  onClick={onAddApp}
+                >
+                  {FIRST_SCREEN.addApp.button}
+                </Button>
+              ) : undefined,
             }
       }
     />
