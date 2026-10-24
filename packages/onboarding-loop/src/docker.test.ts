@@ -193,6 +193,37 @@ describe("DockerSandbox", () => {
     expect(calls[1]?.args).toEqual(["start", "loop-run1"]);
   });
 
+  it("the event-log tail delivers raw lines, so the claimer can read the owner link's token", async () => {
+    const { docker } = setup((call) =>
+      call.args[0] === "exec"
+        ? {
+            stdout: [
+              `{"url":"https://apps.example.com/setup#token=est_${"a".repeat(43)}"}`,
+              `token=${TOKEN}`,
+            ],
+            stderr: [],
+            code: 0,
+          }
+        : undefined,
+    );
+    const handle = await docker.sandbox.create(spec);
+    const lines: string[] = [];
+    const tail = await docker.sandbox.tailFile(
+      handle,
+      "/loop/everyapp-events.ndjson",
+      (line) => lines.push(line),
+    );
+    await tail.close();
+    expect(lines[0]).toContain(`#token=est_${"a".repeat(43)}`);
+    expect(lines[1]).toBe(`token=${TOKEN}`);
+    // exec without rawLines still redacts.
+    const redacted: string[] = [];
+    await docker.sandbox.exec(handle, ["cat", "x"], {
+      onLine: (line) => redacted.push(line.line),
+    });
+    expect(redacted[1]).toBe("token=[REDACTED:cf_token]");
+  });
+
   it("execs as the sandbox's user in the given cwd under setsid with a pid file, lines stamped and redacted", async () => {
     const { docker, calls } = setup((call) =>
       call.args[0] === "exec"

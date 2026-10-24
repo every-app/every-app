@@ -96,6 +96,15 @@ export interface PreflightOptions {
   now?: () => number;
   /** Take the account lock (default true); false for a check that must not block a running lane. */
   lock?: boolean;
+  /**
+   * Sleep through the 30-minute gap after the account's last wipe instead of
+   * refusing (the lock is held meanwhile). Absent: refuse, as `--no-wait` and
+   * `--dry-run` do.
+   */
+  waitForGap?: {
+    sleep: (ms: number) => Promise<void>;
+    log: (line: string) => void;
+  };
 }
 
 /** The lines of `lsof -nP -iTCP -sTCP:LISTEN`, or [] when lsof is absent. */
@@ -254,22 +263,35 @@ export async function runPreflight(
   }
 
   // 5. The 30-minute gap since the last teardown (Cloudflare's SOA negative TTL is 1800 s).
-  const remaining = teardownGapRemainingMs(
-    readLastTeardownAt(locksDir(options.configDir), account.accountId),
-    now(),
+  const lastWipe = readLastTeardownAt(
+    locksDir(options.configDir),
+    account.accountId,
   );
-  if (remaining > 0) {
+  const remaining = teardownGapRemainingMs(lastWipe, now());
+  if (remaining > 0 && options.waitForGap) {
+    const minutes = Math.ceil(remaining / 60000);
+    options.waitForGap.log(
+      `wait teardown_gap  ${account.name} was wiped at ${lastWipe}; waiting ${minutes} min for the 30-minute gap (--no-wait refuses instead)`,
+    );
+    await options.waitForGap.sleep(remaining);
+    check(
+      "teardown_gap",
+      "ok",
+      `waited ${minutes} min for the 30-minute gap after the wipe at ${lastWipe}`,
+    );
+  } else if (remaining > 0) {
     return fail(
       "teardown_gap",
       `${account.name} was wiped ${Math.ceil(remaining / 60000)} min too recently; wait, or use the other account.`,
       "dns_negative_cache",
     );
+  } else {
+    check(
+      "teardown_gap",
+      "ok",
+      "30 minutes or more since the last wipe, or never wiped",
+    );
   }
-  check(
-    "teardown_gap",
-    "ok",
-    "30 minutes or more since the last wipe, or never wiped",
-  );
 
   // 6. Docker answers; memory recorded; --parallel needs 14 GiB.
   if (!options.docker) {

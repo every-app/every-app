@@ -47,7 +47,9 @@ whether the agent relays the link), `--prompt-variant public` (the verbatim
 prompt, once the public repository exists), `--with-access` (then `access on`
 is verified as a sub-verdict), `--repeat-on-infra 1`, `--keep` (the container
 stays for `docker exec`; `pnpm loop collect <runId>` copies it out later),
-`--dry-run` (preflight only, no network call).
+`--dry-run` (preflight only, no network call), `--no-wait` (refuse when the
+account was wiped under 30 minutes ago; by default the run holds the lock and
+sleeps through the rest of the gap, so runs chain unattended).
 
 While a run is going: `docker logs -f` is useless (the container runs
 `sleep infinity`); read `~/.config/everyapp/onboarding-loop/runs/<runId>/harness.stdout.redacted.log`

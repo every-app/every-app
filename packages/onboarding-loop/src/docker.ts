@@ -169,19 +169,19 @@ export function createDocker(deps: DockerDeps): Docker {
   const redact = deps.redact ?? ((text: string) => text);
   const binDir = path.dirname(deps.binary);
 
-  const docker = (args: string[], options: SpawnOptions = {}) =>
-    spawn(deps.binary, args, {
+  const docker: DockerSpawn = (args, { raw, ...options } = {}) => {
+    const clean = raw ? (line: string) => line : redact;
+    return spawn(deps.binary, args, {
       ...options,
       env: {
         ...process.env,
         ...options.env,
         PATH: `${binDir}${path.delimiter}${process.env["PATH"] ?? ""}`,
       },
-      onStdout:
-        options.onStdout && ((line) => options.onStdout?.(redact(line))),
-      onStderr:
-        options.onStderr && ((line) => options.onStderr?.(redact(line))),
+      onStdout: options.onStdout && ((line) => options.onStdout?.(clean(line))),
+      onStderr: options.onStderr && ((line) => options.onStderr?.(clean(line))),
     });
+  };
 
   /** Runs and keeps the output; a non-zero exit is an error that quotes stderr. */
   const dockerCapture = async (
@@ -206,7 +206,7 @@ export function createDocker(deps: DockerDeps): Docker {
     return { code: result.code, stdout, stderr };
   };
 
-  const sandbox = new DockerSandbox(docker, dockerCapture, redact);
+  const sandbox = new DockerSandbox(docker, dockerCapture);
 
   return {
     binary: deps.binary,
@@ -355,9 +355,10 @@ export function createDocker(deps: DockerDeps): Docker {
   };
 }
 
+/** `raw` skips the redaction of streamed lines; only `exec` with `rawLines` asks for it. */
 type DockerSpawn = (
   args: string[],
-  options?: SpawnOptions,
+  options?: SpawnOptions & { raw?: boolean },
 ) => ReturnType<Spawn>;
 type DockerCapture = (
   args: string[],
@@ -392,7 +393,6 @@ class DockerSandbox implements Sandbox {
   constructor(
     private readonly docker: DockerSpawn,
     private readonly dockerCapture: DockerCapture,
-    private readonly redact: (text: string) => string,
   ) {}
 
   /**
@@ -527,11 +527,12 @@ class DockerSandbox implements Sandbox {
     const stamp = (stream: "stdout" | "stderr") => (line: string) =>
       onLine?.({
         stream,
-        line: this.redact(line),
+        line,
         receivedAt: new Date().toISOString(),
       });
     try {
       const result = await this.docker(args, {
+        raw: options.rawLines === true,
         onStdout: stamp("stdout"),
         onStderr: stamp("stderr"),
       });
@@ -557,6 +558,8 @@ class DockerSandbox implements Sandbox {
     const controller = new AbortController();
     const done = this.exec(handle, ["tail", "-n", "+1", "-F", sandboxPath], {
       signal: controller.signal,
+      // Raw: the claimer reads the owner link's token from these lines; run.ts redacts what it writes.
+      rawLines: true,
       onLine: (line) => {
         if (line.stream === "stdout") onLine(line.line);
       },

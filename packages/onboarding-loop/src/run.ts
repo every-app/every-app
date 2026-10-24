@@ -154,6 +154,8 @@ export interface RunOptions {
   keep: boolean;
   parallel: number;
   dryRun: boolean;
+  /** Sleep through the 30-minute gap after the account's last wipe (default); `--no-wait` refuses instead. */
+  waitForGap: boolean;
   retryOf: string | null;
 }
 
@@ -171,6 +173,7 @@ export const DEFAULT_RUN_OPTIONS: Omit<RunOptions, "harness"> = {
   keep: false,
   parallel: 1,
   dryRun: false,
+  waitForGap: true,
   retryOf: null,
 };
 
@@ -550,6 +553,9 @@ async function runOnce(
     spawn: deps.spawn,
     now: deps.now,
     ...(deps.docsFetch ? { fetch: deps.docsFetch } : {}),
+    ...(options.waitForGap && !options.dryRun
+      ? { waitForGap: { sleep: deps.sleep, log } }
+      : {}),
   });
   for (const line of formatChecks(preflight.checks)) log(line);
   if (options.dryRun) {

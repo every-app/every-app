@@ -203,8 +203,15 @@ export interface ExecOptions {
   env?: Record<string, string>;
   /** Kill after this many milliseconds. */
   timeoutMs?: number;
-  /** Each line as it arrives, already redacted. */
+  /** Each line as it arrives, redacted unless `rawLines`. */
   onLine?: (line: ExecLine) => void;
+  /**
+   * Deliver lines unredacted. Only the event-log tail asks for it: the
+   * claimer must read the owner link's `est_` token, which redaction turns
+   * into `[REDACTED:est_link]` (the first live run waited 15 minutes for a
+   * claim that never came). Whatever persists a raw line redacts it first.
+   */
+  rawLines?: boolean;
   /** Resolves to stop the exec early (the scripted user's kill). */
   signal?: AbortSignal;
 }

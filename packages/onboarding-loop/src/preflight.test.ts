@@ -249,6 +249,34 @@ describe("preflight (dry run: no network)", () => {
     expect(recent.reasonCode).toBe("dns_negative_cache");
     expect(recent.checks.at(-1)?.detail).toMatch(/20 min too recently/);
     expect(fs.existsSync(path.join(locksDir(dir), `${ID}.json`))).toBe(false);
+
+    // With waitForGap the run sleeps the remaining 20 minutes (lock held) and goes on.
+    let clock = NOW;
+    const slept: number[] = [];
+    const logged: string[] = [];
+    const waited = await runPreflight(
+      options(dir, {
+        now: () => clock,
+        waitForGap: {
+          sleep: async (ms) => {
+            slept.push(ms);
+            clock += ms;
+          },
+          log: (line) => logged.push(line),
+        },
+      }),
+    );
+    expect(slept).toEqual([20 * 60 * 1000]);
+    expect(logged).toEqual([
+      expect.stringMatching(
+        /^wait teardown_gap {2}loop-1 was wiped at .*; waiting 20 min/,
+      ),
+    ]);
+    expect(waited.checks.find((c) => c.name === "teardown_gap")).toMatchObject({
+      status: "ok",
+      detail: expect.stringMatching(/^waited 20 min for the 30-minute gap/),
+    });
+    waited.release();
   });
 
   it("records Docker's memory, warns under 8 GiB, refuses --parallel under 14 GiB, removes stopped loop-* containers no live run owns (never under --dry-run)", async () => {

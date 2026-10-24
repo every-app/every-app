@@ -92,7 +92,7 @@ const USAGE = `usage: pnpm loop <command> [options]
   run --harness <${HARNESS_NAMES.join("|")}> [--account <name>] [--model <id>]
       [--ref <commit>] [--tools-ref <commit>] [--mode defaults] [--with-access]
       [--claim-after immediate|turn-end] [--no-event-log] [--prompt-variant checkout-present|public]
-      [--repeat-on-infra <n>] [--keep] [--parallel <n>] [--dry-run]
+      [--repeat-on-infra <n>] [--keep] [--parallel <n>] [--dry-run] [--no-wait]
                           one run: wipe, sandbox, harness, scripted user, claim, verify, wipe, record.
                           --dry-run stops after preflight (a stub account when accounts.json is absent)
   doctor [--rebuild]      build the image if its tag is missing; check every harness's line against --help in it
@@ -169,6 +169,7 @@ export function runOptionsFrom(args: ParsedArgs): RunOptions {
     keep: bool(args, "keep"),
     parallel: number("parallel", DEFAULT_RUN_OPTIONS.parallel),
     dryRun: bool(args, "dry-run"),
+    waitForGap: !bool(args, "no-wait"),
     retryOf: null,
   };
 }
