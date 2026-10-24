@@ -12,7 +12,8 @@
  * command under --json; `create`; `db migrate`; `dev` up to the first 200
  * through the gateway-lite and down on SIGINT; a manifest with members,
  * email, dataforseo, context and a scoped Slack client through `db migrate`
- * (the #543 regression) and one with scopes on members refused; `release`;
+ * (the #543 regression) and one with scopes on members refused; `release`
+ * (a production build, not the development one a stray NODE_ENV makes);
  * and `status --json` against a fake Cloudflare account (lib/cf/bin.ts's
  * EVERYAPP_CF_BINARY seam points cf at a stand-in that answers from
  * src/test/fakeCloudflare.ts over a loopback bridge). Every --json line must
@@ -38,6 +39,7 @@ import { text } from "node:stream/consumers";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { commandPaths } from "@/app";
+import { DEFAULT_WORKER, WORKERS_DIR } from "@/lib/app/buildOutput";
 import { openAppRelease } from "@/lib/app/release";
 import { cfD1Database } from "@/lib/cf/d1";
 import { CfError } from "@/lib/cf/errors";
@@ -150,7 +152,7 @@ interface Timing {
 
 const timings: Timing[] = [];
 const runs: Run[] = [];
-let tmp: string;
+let tmp = "";
 let appDir: string;
 let appReady = false;
 
@@ -164,12 +166,30 @@ function tail(output: string, lines = 40): string {
 /**
  * The environment every run gets: the test's HOME (src/test/setup.ts set
  * it, so nothing touches the real ~/.everyapp), a git identity so create's
- * first commit is deterministic, and no Cloudflare credentials or seam
- * from the machine; `extra` on top.
+ * first commit is deterministic, no Cloudflare credentials or seam from the
+ * machine, and none of vitest's own variables: the CLI never sets NODE_ENV
+ * and Vite honours one already set, so a run that inherited NODE_ENV=test
+ * would `release` a development build and run `cf dev` in test mode, not
+ * what a person gets. `extra` on top; spawn drops the undefined entries.
  */
 function childEnv(extra: Record<string, string | undefined> = {}): NodeJS.ProcessEnv {
+  // VITEST, VITEST_MODE, VITEST_POOL_ID, VITEST_WORKER_ID, VITEST_VM_POOL, ...
+  const vitest = Object.fromEntries(
+    Object.keys(process.env)
+      .filter((key) => key.startsWith("VITEST"))
+      .map((key) => [key, undefined]),
+  );
   return {
     ...process.env,
+    ...vitest,
+    NODE_ENV: undefined,
+    TEST: undefined,
+    // vitest mirrors import.meta.env into process.env too.
+    MODE: undefined,
+    BASE_URL: undefined,
+    DEV: undefined,
+    PROD: undefined,
+    SSR: undefined,
     NO_COLOR: "1",
     GIT_AUTHOR_NAME: "Built CLI test",
     GIT_AUTHOR_EMAIL: "built-cli@example.com",
@@ -184,8 +204,15 @@ function childEnv(extra: Record<string, string | undefined> = {}): NodeJS.Proces
   };
 }
 
-/** Run the built CLI through its launcher with this Node, to the end. */
-function everyapp(
+/**
+ * Run the built CLI through its launcher with this Node, to the end. A
+ * --json run's stdout is parsed once the process is gone, here in the
+ * test's own async stack: thrown from the child's close listener, a
+ * non-JSON line (the protocol violation this test exists to catch) would be
+ * an uncaught exception, and the run would wait out its timeout instead of
+ * failing at once with the line.
+ */
+async function everyapp(
   args: string[],
   {
     cwd,
@@ -194,7 +221,7 @@ function everyapp(
   }: { cwd: string; env?: Record<string, string | undefined>; timeoutMs?: number },
 ): Promise<Run> {
   const began = Date.now();
-  return new Promise<Run>((resolve, reject) => {
+  const exited = await new Promise<Pick<Run, "exitCode" | "signal" | "stdout" | "stderr">>((resolve, reject) => {
     const child = spawn(process.execPath, [LAUNCHER, ...args], {
       cwd,
       env: childEnv(env),
@@ -214,23 +241,21 @@ function everyapp(
     });
     child.once("close", (exitCode, signal) => {
       clearTimeout(deadline);
-      const run: Run = {
-        args,
-        exitCode,
-        signal,
-        stdout,
-        stderr,
-        events: args.includes("--json") ? parseEvents(stdout, args) : [],
-        seconds: (Date.now() - began) / 1000,
-      };
-      runs.push(run);
-      resolve(run);
+      resolve({ exitCode, signal, stdout, stderr });
     });
   });
+  const run: Run = {
+    args,
+    ...exited,
+    events: args.includes("--json") ? parseEvents(exited, args) : [],
+    seconds: (Date.now() - began) / 1000,
+  };
+  runs.push(run);
+  return run;
 }
 
 /** Every stdout line of a --json run as an event, or the line that isn't one. */
-function parseEvents(stdout: string, args: string[]): Event[] {
+function parseEvents({ stdout, stderr }: Pick<Run, "stdout" | "stderr">, args: string[]): Event[] {
   return stdout
     .split("\n")
     .filter((line) => line.length > 0)
@@ -239,7 +264,9 @@ function parseEvents(stdout: string, args: string[]): Event[] {
       try {
         event = JSON.parse(line);
       } catch {
-        throw new Error(`everyapp ${args.join(" ")} wrote a non-JSON line to stdout: ${line}`);
+        throw new Error(
+          `everyapp ${args.join(" ")} wrote a non-JSON line to stdout: ${line}\n--- stderr ---\n${tail(stderr)}`,
+        );
       }
       return event as Event;
     });
@@ -352,7 +379,10 @@ describe.runIf(process.env["EVERYAPP_BUILT_CLI"] === "1")("the built CLI", { tim
   });
 
   afterAll(() => {
-    fs.rmSync(tmp, { recursive: true, force: true });
+    // Without dist/, beforeAll stopped before mkdtemp: nothing to remove,
+    // no timings to show (Math.max of none is -Infinity), only its message.
+    if (tmp) fs.rmSync(tmp, { recursive: true, force: true });
+    if (timings.length === 0) return;
     const width = Math.max(...timings.map((timing) => timing.step.length));
     console.log(
       [
@@ -493,7 +523,16 @@ describe.runIf(process.env["EVERYAPP_BUILT_CLI"] === "1")("the built CLI", { tim
         ]);
         expect(result.code, output()).toBe(130);
       } finally {
-        if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        // Still up on the failure path. Through the CLI's own path first:
+        // `cf dev` leads its own process group (lib/longRunning.ts), and a
+        // SIGKILLed everyapp stops neither vite nor workerd. A first SIGINT
+        // runs the interrupt cleanup, a second one kills the tracked group
+        // without waiting (lib/interrupt.ts); SIGKILL comes last.
+        for (const signal of ["SIGINT", "SIGINT", "SIGKILL"] as const) {
+          if (child.exitCode !== null || child.signalCode !== null) break;
+          child.kill(signal);
+          await Promise.race([exited, sleep(5_000)]);
+        }
         await exited;
       }
       expect(stderr, output()).not.toMatch(REBUILT);
@@ -561,6 +600,19 @@ describe.runIf(process.env["EVERYAPP_BUILT_CLI"] === "1")("the built CLI", { tim
           scopes: ["channels.read", "messages.write"],
         });
         expect(fs.existsSync(path.join(release.dir, "release.json"))).toBe(true);
+        // A production build, not the development one a run that inherited
+        // vitest's NODE_ENV=test would make (a quarter larger, and cf's
+        // config.json calls it "production" either way, so the policy
+        // check can't tell): React's production chunks carry its
+        // minified-error prefix, its development ones the jsxDEV runtime.
+        const chunksDir = path.join(release.dir, WORKERS_DIR, DEFAULT_WORKER, "bundle", "assets");
+        const chunks = fs
+          .readdirSync(chunksDir)
+          .filter((name) => name.endsWith(".js"))
+          .map((name) => ({ name, source: fs.readFileSync(path.join(chunksDir, name), "utf8") }));
+        expect(chunks.length).toBeGreaterThan(0);
+        expect(chunks.some(({ source }) => source.includes("Minified React error"))).toBe(true);
+        expect(chunks.filter(({ source }) => source.includes("jsxDEV")).map(({ name }) => name)).toEqual([]);
       } finally {
         await release.cleanup();
       }
