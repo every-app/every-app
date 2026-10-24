@@ -3,6 +3,11 @@ import { getActiveOrganization } from "@/serverFunctions/organizations";
 
 export const ACTIVE_ORGANIZATION_QUERY_KEY = ["active-organization"] as const;
 
+/** What the query holds: the summary the gateway answers, or null. */
+export type ActiveOrganization = Awaited<
+  ReturnType<typeof getActiveOrganization>
+>;
+
 /**
  * The organization the session acts under: id, name, slug and the caller's
  * role. Read from the gateway, not Better Auth's get-full-organization

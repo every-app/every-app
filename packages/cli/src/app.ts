@@ -32,6 +32,7 @@ import { setupCommand } from "./commands/setup/command";
 import { statusCommand } from "./commands/status/command";
 import { teardownCommand } from "./commands/teardown/command";
 import { updateCommand } from "./commands/update/command";
+import { workspaceRoutes } from "./commands/workspace/command";
 import { errorMessage } from "./lib/errors";
 import { CLI } from "./lib/output/command";
 
@@ -53,6 +54,7 @@ const routes = buildRouteMap({
     secret: secretRoutes,
     mcp: mcpRoutes,
     email: emailRoutes,
+    workspace: workspaceRoutes,
   },
   // `everyapp provider …` was the group's name until 2026-10-24; kept through
   // launch week for documents that still say it.
@@ -91,7 +93,20 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
   ["BUILD AN APP", ["create", "dev", "deploy", "release", "db"]],
   [
     "RUN A GATEWAY",
-    ["login", "setup", "update", "install", "status", "delete", "access", "secret", "mcp", "email", "teardown"],
+    [
+      "login",
+      "setup",
+      "update",
+      "install",
+      "status",
+      "delete",
+      "access",
+      "secret",
+      "mcp",
+      "email",
+      "workspace",
+      "teardown",
+    ],
   ],
 ];
 
@@ -106,6 +121,7 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   email: ["email show", "email set --sender '*@mail.example.com'", "email unset inbound"],
   access: ["access on", "access on --email-domain example.com", "access off"],
   mcp: ["mcp list", "mcp on dataforseo", "mcp off dataforseo"],
+  workspace: ["workspace rename 'Acme Corp'"],
   db: ["db migrate", "db query 'select count(*) from todos'"],
 };
 

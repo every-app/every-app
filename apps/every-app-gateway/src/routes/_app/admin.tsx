@@ -5,17 +5,27 @@ import {
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   Activity as ActivityIcon,
   AppWindow,
   KeyRound,
+  Pencil,
   ScrollText,
   ShieldAlert,
   Users,
   UsersRound,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useSession } from "@/client/hooks/useSession";
+import {
+  ACTIVE_ORGANIZATION_QUERY_KEY,
+  useActiveOrganization,
+  type ActiveOrganization,
+} from "@/client/hooks/useActiveOrganization";
 import { authClient } from "@/client/auth-client";
+import { RenameWorkspaceDialog } from "@/client/components/admin/RenameWorkspaceDialog";
 import { EmptyState } from "@/client/components/EmptyState";
 import { SkeletonPage } from "@/client/components/SkeletonPresets";
 import { StatusScreen } from "@/client/components/StatusScreen";
@@ -27,6 +37,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/client/components/ui/tabs";
+import { renameOrganization } from "@/serverFunctions/organizations";
 
 export const Route = createFileRoute("/_app/admin")({
   component: AdminLayout,
@@ -74,9 +85,16 @@ const adminTabs = [
 function AdminLayout() {
   const pathname = useLocation({ select: (location) => location.pathname });
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { data: session, isPending } = useSession();
   const { data: activeMemberRole, isPending: isRolePending } =
     authClient.useActiveMemberRole();
+  // The workspace's name for the heading; the same query the sidebar's
+  // switcher reads, so a rename updates both at once.
+  const { data: activeOrganization } = useActiveOrganization({
+    enabled: Boolean(session?.user),
+  });
+  const [renaming, setRenaming] = useState(false);
 
   // Show loading while checking session
   if (isPending || isRolePending) {
@@ -110,7 +128,43 @@ function AdminLayout() {
 
   return (
     <Page>
-      <PageHeader title="Manage workspace" />
+      <PageHeader
+        title="Manage workspace"
+        description={activeOrganization?.name}
+        actions={
+          activeOrganization ? (
+            <Button variant="outline" onClick={() => setRenaming(true)}>
+              <Pencil data-icon="inline-start" />
+              Rename
+            </Button>
+          ) : null
+        }
+      />
+      {renaming && activeOrganization ? (
+        <RenameWorkspaceDialog
+          name={activeOrganization.name}
+          onClose={() => setRenaming(false)}
+          onSubmit={async (name) => {
+            const renamed = await renameOrganization({ data: { name } });
+            // The heading and the sidebar's switcher read the gateway's
+            // query: seed it with the name the server wrote, so both show
+            // it the instant the dialog closes, then refetch to be sure.
+            // The switcher's menu lists Better Auth's organizations,
+            // refetched by notifying its $listOrg signal (what its own
+            // /organization/update would do, were it open).
+            queryClient.setQueryData<ActiveOrganization>(
+              ACTIVE_ORGANIZATION_QUERY_KEY,
+              (old) => (old ? { ...old, name: renamed.name } : old),
+            );
+            setRenaming(false);
+            authClient.$store.notify("$listOrg");
+            toast.success("Workspace renamed");
+            await queryClient.invalidateQueries({
+              queryKey: ACTIVE_ORGANIZATION_QUERY_KEY,
+            });
+          }}
+        />
+      ) : null}
       <Tabs
         value={activeTab}
         onValueChange={(value) => {

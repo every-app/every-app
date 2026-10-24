@@ -1136,6 +1136,22 @@ Source: `packages/cli/src/lib/app/installBuildOutput.ts`
 
 Source: `packages/cli/src/commands/deploy/deployApp.ts` (`TAKEOVER_FLAGS` in `packages/cli/src/lib/errors.ts`)
 
+### WORKSPACE_NAME_INVALID
+
+`workspace rename <name>` with a name the shared rule refuses (`validOrganizationName` in `packages/sdk/src/internal/organizationName.ts`, the rule the Gateway's own Manage workspace → Rename applies): empty, over 64 characters, or carrying a control or invisible formatting character (a line break, a bidirectional override, a zero-width character). A name is trimmed and its runs of spaces made one before the check. Refused before any login or network. Headline: `Use 1 to 64 characters with no line breaks`.
+
+**Fix:** `fix`: give the name as one argument, quoted when it has spaces. Not retryable.
+
+Source: `packages/cli/src/commands/workspace/index.ts` (`renameWorkspace`).
+
+### WORKSPACE_NOT_CLAIMED
+
+`workspace rename` on a Gateway nobody has claimed yet: its install organization has no owner (`installOrganization` in `packages/cli/src/lib/gateway/registry.ts` finds no organization with an owner). The setup claim names the workspace after its owner, so a name written before it would be overwritten. Headline: `The Gateway has no owner yet`.
+
+**Fix:** `fix`: open the Gateway in a browser and claim it, then run the command again. Not retryable.
+
+Source: `packages/cli/src/lib/gateway/workspace.ts` (`claimedWorkspace`).
+
 ### ZONE_CUSTOM_DOMAIN_LIMIT
 
 `preflightDomains` before new hostnames are published on the Gateway (setup and the Gateway rebind, step `gateway.domains`; `deploy`, step `app.domain`): the Gateway would publish more than Cloudflare's 100 Custom Domains in the zone: `<zone> would go over Cloudflare's 100 Custom Domains per zone` / `The Gateway alone needs <total> there, before other Workers' domains.` `data.total`, `data.limit: 100`. From 95 on it's the warning `ZONE_CUSTOM_DOMAIN_LIMIT_NEAR`.

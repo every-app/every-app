@@ -37,24 +37,25 @@ USAGE
   pnpm everyapp <command> [flags]
 
 BUILD AN APP
-  create    Create a new app from the starter template
-  dev       Run the app locally behind a dev Gateway
-  deploy    Deploy the app in this directory
-  release   Pack the app in this directory as a release others can install
-  db        Migrate, query and restore an app's D1 database
+  create     Create a new app from the starter template
+  dev        Run the app locally behind a dev Gateway
+  deploy     Deploy the app in this directory
+  release    Pack the app in this directory as a release others can install
+  db         Migrate, query and restore an app's D1 database
 
 RUN A GATEWAY
-  login     Log in to Cloudflare
-  setup     Install or repair the Gateway
-  update    Update the Gateway to this checkout (after git pull)
-  install   Install an app someone published, from GitHub or a release file
-  status    Show the Gateway, its apps and anything to fix
-  delete    Remove an app from the Gateway
-  access    Put Cloudflare Access in front of the Gateway and its apps, or take it off
-  secret    Set, remove and list secrets and Gateway settings
-  mcp       Offer DataForSEO to members' AI clients as an MCP app, with the Gateway's key
-  email     Manage the addresses an app sends as and receives at
-  teardown  Delete everything Every App created in a dedicated test Cloudflare account
+  login      Log in to Cloudflare
+  setup      Install or repair the Gateway
+  update     Update the Gateway to this checkout (after git pull)
+  install    Install an app someone published, from GitHub or a release file
+  status     Show the Gateway, its apps and anything to fix
+  delete     Remove an app from the Gateway
+  access     Put Cloudflare Access in front of the Gateway and its apps, or take it off
+  secret     Set, remove and list secrets and Gateway settings
+  mcp        Offer DataForSEO to members' AI clients as an MCP app, with the Gateway's key
+  email      Manage the addresses an app sends as and receives at
+  workspace  Rename the workspace and set members' roles
+  teardown   Delete everything Every App created in a dedicated test Cloudflare account
 
 FLAGS
   -h, --help      Show help for everyapp or a command
@@ -178,6 +179,23 @@ EXAMPLES
   $ pnpm everyapp email unset inbound
 
 Run pnpm everyapp email <command> --help for its flags.
+```
+
+### `everyapp workspace`
+
+```text
+Rename the workspace and set members' roles.
+
+USAGE
+  pnpm everyapp workspace <command> [flags]
+
+COMMANDS
+  rename  Rename the workspace: the name members see in the organization switcher and in invitations
+
+EXAMPLES
+  $ pnpm everyapp workspace rename 'Acme Corp'
+
+Run pnpm everyapp workspace <command> --help for its flags.
 ```
 
 ## Commands
@@ -1305,4 +1323,48 @@ FLAGS
 
 ARGUMENTS
   senders|inbound...  List to clear: senders or inbound
+```
+
+### `everyapp workspace rename`
+
+Rename the workspace: the name members see in the organization switcher and in invitations.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<name>` | yes | The new name: 1 to 64 characters, no line breaks (quote one with spaces) |
+
+| Flag | Value | Required | Default | What it does |
+| --- | --- | --- | --- | --- |
+| `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
+| `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
+| `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
+| `--verbose` | switch | no |  | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace |
+
+```text
+USAGE
+  pnpm everyapp workspace rename [--gateway value] [--account-id value] [--json] [--verbose] <name>
+  pnpm everyapp workspace rename --help
+
+The workspace is the Gateway's organization: the one the setup claim made, named after
+its owner. This gives it the name you want; the same rename is under Manage workspace in
+the Gateway, for owners and admins. Nothing is built or deployed: the Gateway reads the
+name live, and each member sees it on their next page.
+
+Before the Gateway is claimed there is no workspace to rename (WORKSPACE_NOT_CLAIMED):
+claim it in a browser first.
+
+Examples:
+  pnpm everyapp workspace rename 'Acme Corp'
+  pnpm everyapp workspace rename 'Acme Corp' --json
+
+FLAGS
+     [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
+     [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
+     [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
+     [--verbose/--no-verbose]  Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace
+  -h  --help                   Print help information and exit
+      --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  name  The new name: 1 to 64 characters, no line breaks (quote one with spaces)
 ```

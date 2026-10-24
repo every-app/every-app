@@ -6,6 +6,7 @@ export * from "./gatewaySettings.js";
 export * from "./appSettings.js";
 export * from "./email.js";
 export * from "./members.js";
+export * from "./organizationName.js";
 export * from "./oauthClient.js";
 export * from "./oauthScopes.js";
 export * from "./providerApps.js";

@@ -67,6 +67,7 @@ const SERVER_ERROR_MESSAGES: Record<PublicErrorCode, string> = {
     "This gateway doesn't take third-party deploys, so it makes no deploy keys.",
   GROUP_NOT_FOUND: "That group doesn't exist or was deleted.",
   GROUP_NAME_TAKEN: "A group with this name already exists.",
+  INVALID_ORGANIZATION_NAME: "Use 1 to 64 characters with no line breaks.",
 };
 
 const BETTER_AUTH_ERROR_MESSAGES: Record<string, string> = {

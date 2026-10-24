@@ -1,23 +1,13 @@
 /**
- * Organization names and slugs. A personal organization is named after
- * whoever signed up, so its name is user input that reaches other people:
- * the invitation emails it sends, and every member's organization switcher.
+ * Organization names and slugs. The name rule itself lives in the SDK
+ * (`@every-app/sdk/internal` organizationName.ts) so the CLI's `workspace
+ * rename` and the gateway accept the same names; what is only the
+ * gateway's stays here: what a personal organization is called, and the
+ * slug a new organization gets.
  */
+import { validOrganizationName } from "@every-app/sdk/internal";
 
-const MAX_ORGANIZATION_NAME_LENGTH = 64;
-
-/**
- * The name, trimmed and with its runs of whitespace made single spaces, or
- * null when it is empty, longer than 64 characters, or has a control or
- * invisible formatting character (line breaks, bidirectional overrides,
- * zero-width characters) anywhere in it.
- */
-export function validOrganizationName(raw: string): string | null {
-  if (/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(raw)) return null;
-  const name = raw.trim().replace(/\s+/g, " ");
-  if (!name || [...name].length > MAX_ORGANIZATION_NAME_LENGTH) return null;
-  return name;
-}
+export { validOrganizationName } from "@every-app/sdk/internal";
 
 /**
  * What a personal organization is called: the person's name, else their

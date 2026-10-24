@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { authMiddleware } from "@/middleware/auth";
+import { authMiddleware, organizationAdminMiddleware } from "@/middleware/auth";
 import { publicErrorMiddleware } from "@/middleware/publicError";
+import { renameOrganizationSchema } from "@/schemas/organization";
 import { InvitationService } from "@/server/services/InvitationService";
 import { OrganizationService } from "@/server/services/OrganizationService";
 
@@ -36,3 +37,14 @@ export const acceptInvitation = createServerFn({ method: "POST" })
     const request = getRequest();
     return InvitationService.accept(context.user, request.headers, data.token);
   });
+
+/**
+ * Rename the active organization (Manage workspace → Rename): owners and
+ * admins. The name follows the shared rule, else INVALID_ORGANIZATION_NAME.
+ */
+export const renameOrganization = createServerFn({ method: "POST" })
+  .middleware([publicErrorMiddleware, organizationAdminMiddleware])
+  .validator((data: unknown) => renameOrganizationSchema.parse(data))
+  .handler(async ({ data, context }) =>
+    OrganizationService.rename(context.org, data.name),
+  );

@@ -47,6 +47,7 @@ const PUBLIC_ERROR_CODES = [
   "DEPLOY_KEYS_UNAVAILABLE",
   "GROUP_NOT_FOUND",
   "GROUP_NAME_TAKEN",
+  "INVALID_ORGANIZATION_NAME",
 ] as const;
 
 export type PublicErrorCode = (typeof PUBLIC_ERROR_CODES)[number];

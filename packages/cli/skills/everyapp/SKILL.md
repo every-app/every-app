@@ -159,6 +159,11 @@ MCP apps: pnpm everyapp mcp on dataforseo --json   offers a data provider's
          default): past it a provider tool answers a tool error naming the
          cap, and an app's brokered call gets 429 app_monthly_cap_exceeded
          until the next UTC month.
+Workspace: pnpm everyapp workspace rename "Acme Corp" --json   renames the workspace
+         (the Gateway's organization: the name in the switcher and in invitations;
+         1 to 64 characters, no line breaks). Nothing is deployed; members see it
+         on their next page. Owners and admins can do the same under Manage
+         workspace → Rename. WORKSPACE_NOT_CLAIMED: the Gateway has no owner yet.
 Tools:   an app's AI tools are defineTools() in src/tools.ts; the Gateway
          serves them at https://<gateway>/mcp as <app>_<tool> (dev:
          http://<app-id>.localhost:8787/mcp) and snapshots them at deploy.

@@ -1,4 +1,10 @@
-import { resolveOrgContext } from "@/server/organization/orgContext";
+import { logEvent } from "@every-app/perimeter";
+import { GatewayError, PublicError } from "@/server/errors";
+import {
+  resolveOrgContext,
+  type OrgContext,
+} from "@/server/organization/orgContext";
+import { validOrganizationName } from "@/server/organization/organization-name";
 import { OrganizationRepository } from "../repositories/OrganizationRepository";
 
 /**
@@ -21,6 +27,41 @@ async function getActive(user: {
   return organization ? { ...organization, role: org.role } : null;
 }
 
+/**
+ * Rename the organization (Manage workspace → Rename). Owners and admins
+ * only: the server function's gate, checked here again since the name
+ * reaches every member's switcher and the invitations it sends. The name
+ * follows the shared rule (`validOrganizationName`); the slug stays, since
+ * Better Auth's `/organization/update` is closed and nothing else keys on
+ * it changing.
+ */
+async function rename(
+  ctx: OrgContext,
+  rawName: string,
+): Promise<{ id: string; name: string }> {
+  if (ctx.role !== "owner" && ctx.role !== "admin") {
+    throw new GatewayError(
+      "UNAUTHORIZED",
+      "Unauthorized: Organization admin access required",
+    );
+  }
+  const name = validOrganizationName(rawName);
+  if (!name) {
+    throw new PublicError(
+      "INVALID_ORGANIZATION_NAME",
+      "Use 1 to 64 characters with no line breaks.",
+    );
+  }
+  await OrganizationRepository.rename(ctx.orgId, name);
+  logEvent("organization.renamed", {
+    organizationId: ctx.orgId,
+    by: ctx.userId,
+    name,
+  });
+  return { id: ctx.orgId, name };
+}
+
 export const OrganizationService = {
   getActive,
+  rename,
 } as const;

@@ -98,6 +98,14 @@ async function adoptForOwner(
   ]);
 }
 
+/** Give the organization a new name; its slug and everything else stay. */
+async function rename(organizationId: string, name: string): Promise<void> {
+  await db
+    .update(organizations)
+    .set({ name })
+    .where(eq(organizations.id, organizationId));
+}
+
 /**
  * Whether work no person started may be attributed to the organization (a
  * shared app's `x-everyapp-org`): it exists, is active, and has at least
@@ -140,6 +148,7 @@ export const OrganizationRepository = {
   findAdminSummariesForUser,
   findAwaitingOwner,
   adoptForOwner,
+  rename,
   isAttributable,
   deleteById,
 } as const;
