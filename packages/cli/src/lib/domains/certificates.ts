@@ -18,10 +18,15 @@ import type { EventSink } from "@/lib/output/events";
 const PACK_PAGE_SIZE = 50;
 const MAX_PACK_PAGES = 20;
 
-export function listCertificatePacks(cf: CfRunner, zoneId: string) {
+/**
+ * The zone's packs. cf lists only the active ones unless asked for
+ * `--status all` (`allStatuses`), which the teardown asks for when it
+ * checks whether a pack it was refused is on its way out.
+ */
+export function listCertificatePacks(cf: CfRunner, zoneId: string, options: { allStatuses?: boolean } = {}) {
   return listAll(
     cf,
-    ["ssl", "certificate-packs", "list", "-z", zoneId],
+    ["ssl", "certificate-packs", "list", "-z", zoneId, ...(options.allStatuses ? ["--status", "all"] : [])],
     CertificatePackListOutput,
     { perPage: PACK_PAGE_SIZE, maxPages: MAX_PACK_PAGES },
   );
@@ -99,6 +104,27 @@ export function packsToDelete(
     chosen.push(pack);
   }
   return chosen;
+}
+
+/**
+ * The statuses of a pack Cloudflare is removing or has removed: once a
+ * Workers Custom Domain goes, Cloudflare takes its hostname's pack with it
+ * (seen live on 2026-10-24: a delete answered `[1406] Bad response
+ * certificate service`, and a minute later only the Universal pack was
+ * listed), so a refusal for a pack in one of these isn't a refusal.
+ */
+const GONE_STATUSES = new Set(["pending_deletion", "deleted", "pending_cleanup"]);
+
+/**
+ * Whether `packId` is no longer in the zone's `packs`, or is on its way
+ * out. `packs` must be a listing of every status (`allStatuses`): the
+ * default listing hides what isn't active, which would read every refused
+ * pack as gone. A pack listed in any other status (`deletion_timed_out`,
+ * `pending_validation`, `expired`...) is still there.
+ */
+export function isPackGone(packs: readonly CertificatePack[], packId: string): boolean {
+  const pack = packs.find((candidate) => candidate.id === packId);
+  return !pack || GONE_STATUSES.has((pack.status ?? "").toLowerCase());
 }
 
 /** Delete one pack. cf asks before deleting, and answers no itself when no one can: `--force`. */

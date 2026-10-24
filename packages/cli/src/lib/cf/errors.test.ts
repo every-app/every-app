@@ -75,6 +75,10 @@ describe("parseCfOutput", () => {
       "r2_not_enabled",
       "Please enable R2 through the Cloudflare Dashboard. [code: 10042]",
     ],
+    [
+      "access_not_enabled",
+      "[9999] access.api.error.not_enabled 403 Forbidden · HTTP /accounts/0123/access/organizations",
+    ],
     ["auth", "Authentication error [code: 10000]"],
     ["not_found", 'Database "every-todo" not found'],
     [

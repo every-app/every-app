@@ -73,6 +73,12 @@ interface FakeCertificatePack {
   hosts: string[];
   /** "advanced" (a Custom Domain's) unless a test adds the zone's Universal SSL pack. */
   type?: string;
+  /**
+   * "active" unless a test puts the pack on its way out ("pending_deletion")
+   * or stuck ("deletion_timed_out"); as cf does, the list shows only active
+   * packs unless asked for `--status all`.
+   */
+  status?: string;
 }
 
 interface FakeWorkflow {
@@ -134,12 +140,17 @@ const ORGANIZATION_READ_ONLY = new Set([
   "updated_at",
 ]);
 
-/** An Access API refusal, as cf 1.0.0-beta.14 prints it. */
-function accessApiError(code: number, message: string, status: string, path: string): FakeCfResponse {
+/** A Cloudflare API refusal, as cf 1.0.0-beta.14 prints it: the code, the message, the status and the path. */
+function apiError(code: number, message: string, status: string, path: string): FakeCfResponse {
   return {
     exitCode: 1,
-    stderr: `\n┌ APIError\n│ [${code}] ${message}\n│ ${status} · HTTP /accounts/${ACCOUNT_ID}/access/${path}\n└\n`,
+    stderr: `\n┌ APIError\n│ [${code}] ${message}\n│ ${status} · HTTP /accounts/${ACCOUNT_ID}/${path}\n└\n`,
   };
+}
+
+/** An Access API refusal. */
+function accessApiError(code: number, message: string, status: string, path: string): FakeCfResponse {
+  return apiError(code, message, status, `access/${path}`);
 }
 
 /** The MX records Email Routing adds (and locks) on a domain it routes. */
@@ -326,6 +337,14 @@ export class FakeCloudflare {
   workersDevSubdomain = true;
   /** Email Routing, by zone id; a zone's starts off, its catch-all dropping mail. */
   readonly emailRouting = new Map<string, FakeEmailRouting>();
+  /**
+   * The account never opened Zero Trust: every Access call answers
+   * `[9999] access.api.error.not_enabled` 403, as a fresh account did live
+   * on 2026-10-24 (whatever `zeroTrust` holds).
+   */
+  accessNotEnabled = false;
+  /** The account never enabled R2: every bucket call answers `[10042] Please enable R2 ...` 403 (seen live the same day). */
+  r2NotEnabled = false;
   /** Zero Trust: no organization until one is created (or a test sets one). */
   readonly zeroTrust: FakeZeroTrust = {
     organization: null,
@@ -405,7 +424,8 @@ export class FakeCloudflare {
           flag(call.args, "--page") === "1"
             ? this.certificatePacks
                 .filter((pack) => pack.zoneId === flag(call.args, "-z"))
-                .map(({ id, hosts, type }) => ({ id, type: type ?? "advanced", hosts, status: "active" }))
+                .map(({ id, hosts, type, status }) => ({ id, type: type ?? "advanced", hosts, status: status ?? "active" }))
+                .filter((pack) => pack.status === "active" || flag(call.args, "--status") === "all")
             : [],
         ),
       }))
@@ -746,6 +766,10 @@ export class FakeCloudflare {
    */
   private zeroTrustCommand(call: RecordedCfCall): FakeCfResponse {
     const [, group, second, third, fourth] = call.args;
+    if (this.accessNotEnabled) {
+      const path = group === "organization" ? "organizations" : group === "identity-providers" ? "identity_providers" : (second ?? "apps");
+      return accessApiError(9999, "access.api.error.not_enabled", "403 Forbidden", path);
+    }
     const zt = this.zeroTrust;
     const body = (): Record<string, any> | null => {
       const file = flag(call.args, "--body") ?? "";
@@ -1112,6 +1136,9 @@ export class FakeCloudflare {
    */
   private r2Command(call: RecordedCfCall): FakeCfResponse {
     const action = call.args[2];
+    if (this.r2NotEnabled) {
+      return apiError(10042, "Please enable R2 through the Cloudflare Dashboard.", "403 Forbidden", "r2/buckets");
+    }
     if (action === "list") {
       const contains = flag(call.args, "--name-contains") ?? "";
       return {

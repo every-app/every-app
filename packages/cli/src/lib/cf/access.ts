@@ -42,7 +42,11 @@ export type AccessOrganization = z.infer<typeof OrganizationOutput>;
 /**
  * The account's Zero Trust organization, or null when it has none (the API
  * answers 404; cf's box carries "404 Not Found", which the error parser
- * reads as `not_found`. Not yet seen live: every account checked had one.)
+ * reads as `not_found`). An account that never opened Zero Trust answers
+ * something else: `[9999] access.api.error.not_enabled` 403 (seen live on
+ * a fresh account, 2026-10-24), which is `access_not_enabled` and thrown
+ * here; whether `zero-trust organization create` would work on such an
+ * account without the dashboard's onboarding hasn't been checked.
  */
 export async function getAccessOrganization(cf: CfRunner): Promise<AccessOrganization | null> {
   try {

@@ -40,6 +40,8 @@ interface TeardownOptions {
   askConfirmation?: (accountId: string, planShown: readonly string[]) => Promise<string>;
   /** The environment the guards read (default: the process's); tests. */
   env?: NodeJS.ProcessEnv;
+  /** Waits before the second look at a refused certificate pack (tests answer at once). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 const CHECK = "teardown.check";
@@ -144,7 +146,7 @@ export async function teardownAccount(options: TeardownOptions): Promise<void> {
   }
 
   // 7. The deletions.
-  const result = await executeTeardown({ cf, plan, out });
+  const result = await executeTeardown({ cf, plan, out, ...(options.sleep ? { sleep: options.sleep } : {}) });
   out.emit({ type: "done", ...summary(accountId, plan, result) });
 }
 

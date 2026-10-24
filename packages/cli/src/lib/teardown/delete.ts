@@ -4,12 +4,14 @@
  * then the policy they used), Email Routing (no rule names a Worker that
  * is gone), Workflows, the Workers (apps and helpers, the Gateway's last;
  * each deleted with its references, since they bind each other), the
- * hostnames' certificate packs, the apps' D1, KV, R2, Hyperdrive, the DNS
- * records left at our names once the Custom Domains went with their
- * Workers, and last of all the Gateway's D1: it is where the inventory
- * reads the hostnames, so anything kept by hostname is found again on a
- * second run. A failure on one item is a warning and the item goes to
- * `kept`, with where to delete it by hand; the run goes on.
+ * hostnames' certificate packs (Cloudflare removes a hostname's pack with
+ * its Custom Domain, so a refusal for one it no longer lists is counted as
+ * removed), the apps' D1, KV, R2, Hyperdrive, the DNS records left at our
+ * names once the Custom Domains went with their Workers, and last of all
+ * the Gateway's D1: it is where the inventory reads the hostnames, so
+ * while a DNS record of theirs is kept it stays too, and a second run
+ * finds the record again. A failure on one item is a warning and the item
+ * goes to `kept`, with where to delete it by hand; the run goes on.
  */
 import { deleteAccessApplication, deleteAccessPolicy } from "@/lib/cf/access";
 import {
@@ -25,7 +27,7 @@ import { deleteD1, deleteKv } from "@/lib/cf/resources";
 import type { CfRunner } from "@/lib/cf/runner";
 import { deleteWorker } from "@/lib/cf/workers";
 import { deleteWorkflowIfExists } from "@/lib/cf/workflows";
-import { deleteCertificatePack } from "@/lib/domains/certificates";
+import { deleteCertificatePack, isPackGone, listCertificatePacks } from "@/lib/domains/certificates";
 import { deleteDnsRecord, dnsRecordsAt } from "@/lib/domains/records";
 import { errorMessage } from "@/lib/errors";
 import type { EventSink } from "@/lib/output/events";
@@ -57,6 +59,18 @@ interface TeardownResult {
   kept: Kept[];
 }
 
+/**
+ * What a deletion answers when Cloudflare had already removed the item
+ * along with another (a certificate pack with its Custom Domain): counted
+ * as removed, under this description.
+ */
+interface RemovedAs {
+  removedAs: string;
+}
+
+const isRemovedAs = (value: unknown): value is RemovedAs =>
+  typeof value === "object" && value !== null && "removedAs" in value;
+
 /** What a catch-all goes back to: dropping mail, as a zone starts. */
 const DROP_CATCH_ALL: EmailRoutingRuleBody = {
   name: "",
@@ -67,25 +81,38 @@ const DROP_CATCH_ALL: EmailRoutingRuleBody = {
 
 const STEP = "teardown.delete";
 
+/**
+ * How long to wait before looking a second time for a pack Cloudflare
+ * refused but still listed as active: live, a hostname's pack was gone "a
+ * minute later", and the first look comes right after the refusal.
+ */
+const PACK_SECOND_LOOK_MS = 5_000;
+
 export async function executeTeardown({
   cf,
   plan,
   out,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }: {
   cf: CfRunner;
   plan: TeardownPlan;
   out: EventSink;
+  /** Waits before the second look at a refused certificate pack (tests answer at once). */
+  sleep?: (ms: number) => Promise<void>;
 }): Promise<TeardownResult> {
   const removed: string[] = [];
   const kept: Kept[] = [];
 
   /**
    * One item: deleted, gone already (nothing to say: a thrown not_found,
-   * or a wrapper that answers `false` for one), or kept with a warning.
+   * or a wrapper that answers `false` for one), removed under another
+   * description (`RemovedAs`), or kept with a warning.
    */
   const attempt = async (kind: Kind, described: string, deletion: () => Promise<unknown>): Promise<void> => {
     try {
-      if ((await deletion()) !== false) removed.push(described);
+      const result = await deletion();
+      if (result === false) return;
+      removed.push(isRemovedAs(result) ? result.removedAs : described);
     } catch (error) {
       if (isCfError(error, "not_found")) return;
       const reason = errorMessage(error).split("\n")[0] ?? "";
@@ -171,12 +198,40 @@ export async function executeTeardown({
     }
   });
 
-  // 5. The hostnames' certificate packs.
+  // 5. The hostnames' certificate packs. Cloudflare removes a hostname's
+  // pack with its Custom Domain, which went with its Worker a step ago, and
+  // refuses to delete a pack on its way out (`[1406] Bad response
+  // certificate service`, seen live): a refusal is checked against the
+  // zone's list, read with every status (the default listing shows only
+  // active packs, which would hide the one on its way out and read it as
+  // gone). A pack no longer listed, or in a deleting status, is counted as
+  // removed; one still listed as it was gets a second look after a short
+  // wait, since the first comes right after the refusal. Only a pack still
+  // listed then is kept.
   await kindStep("certificates", plan.certificates.length, async () => {
     for (const pack of plan.certificates) {
-      await attempt("certificates", describe.pack(pack.packId, pack.hostname), () =>
-        deleteCertificatePack(cf, pack.zoneId, pack.packId),
-      );
+      const described = describe.pack(pack.packId, pack.hostname);
+      await attempt("certificates", described, async (): Promise<RemovedAs | undefined> => {
+        try {
+          await deleteCertificatePack(cf, pack.zoneId, pack.packId);
+          return undefined;
+        } catch (error) {
+          if (isCfError(error, "not_found")) throw error;
+          const reason = errorMessage(error).split("\n")[0] ?? "";
+          const listedNow = () => listCertificatePacks(cf, pack.zoneId, { allStatuses: true });
+          let listed = await listedNow().catch(() => null);
+          if (listed && !isPackGone(listed, pack.packId)) {
+            await sleep(PACK_SECOND_LOOK_MS);
+            listed = await listedNow().catch(() => listed);
+          }
+          if (listed && isPackGone(listed, pack.packId)) {
+            return { removedAs: `${described} (gone with its Custom Domain)` };
+          }
+          throw new Error(
+            `${reason}. Cloudflare removes a hostname's pack with its Custom Domain, so it is likely on its way out; if the zone still lists it, finish it in the dashboard`,
+          );
+        }
+      });
     }
   });
 
@@ -242,18 +297,21 @@ export async function executeTeardown({
   });
 
   // 11. The Gateway's D1, last of all: the inventory reads the hostnames
-  // from it, so while a certificate pack or record of theirs is kept, it
-  // stays too, and the next run finds them again (the Custom Domains that
-  // also named them went with the Workers).
+  // from it, so while a DNS record of theirs is kept, it stays too, and the
+  // next run finds the record again (the Custom Domains that also named
+  // them went with the Workers). A kept certificate pack never holds it:
+  // Cloudflare removes a hostname's pack with its Custom Domain, so a pack
+  // it refused is on its way out, and holding the D1 for one would leave a
+  // row the next install resumes from instead of starting fresh.
   await kindStep("d1", gatewayDatabase ? 1 : 0, async () => {
     if (!gatewayDatabase) return;
-    const byHostname = kept.filter((item) => item.kind === "certificates" || item.kind === "dns");
+    const byHostname = kept.filter((item) => item.kind === "dns");
     if (byHostname.length > 0) {
       kept.push({
         kind: "d1",
         described: describe.d1(gatewayDatabase.name),
         place: PLACES.d1,
-        reason: `kept on purpose: the next run reads the hostnames of the ${plural(byHostname.length, "kept item")} above from it`,
+        reason: `kept on purpose: the next run reads the hostnames of the ${plural(byHostname.length, "kept DNS record")} above from it`,
       });
       return;
     }

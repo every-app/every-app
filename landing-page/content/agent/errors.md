@@ -1269,6 +1269,14 @@ Source: `packages/cli/src/lib/cf/errors.ts`, `packages/cli/src/lib/output/report
 
 Source: `packages/cli/src/lib/cf/errors.ts`
 
+### CF_ACCESS_NOT_ENABLED
+
+`access_not_enabled`: the message carries `access.api.error.not_enabled` (API code `9999`, 403): the account never opened Zero Trust, so every Access endpoint refuses (seen on a fresh account on 2026-10-24, on `access/organizations`). `teardown` reads it as a service with nothing of Every App's in it (a skipped `teardown.found` step, see `TEARDOWN_READ_FAILED`). `access on` on such an account fails with it instead of creating the team: whether the create call would work there without the dashboard's onboarding hasn't been checked.
+
+**Fix:** none given. Unverified: opening Zero Trust once in the dashboard (which creates the team) should make the account answer, then run again.
+
+Source: `packages/cli/src/lib/cf/errors.ts`
+
 ### CF_D1_ID_REJECTED
 
 `d1_id_rejected`: the text `Expected a D1 database ID`: cf was given a database name or binding where it wanted an id.
@@ -1865,13 +1873,13 @@ Source: `packages/cli/src/lib/teardown/guards.ts`
 
 ### TEARDOWN_DELETE_FAILED
 
-`teardown`, step `teardown.delete`: one resource couldn't be deleted (Cloudflare refused: an R2 bucket with objects in it, say), or the DNS records at a published name couldn't be read. `Couldn't delete the <kind "name">` / `<Cloudflare's reason>` (`data.kind`, `data.described`, `data.reason`, `data.fix`: `delete it in the Cloudflare dashboard (<place>)`), or `Couldn't read the DNS records at <name>` / `<reason>` (`data.kind: "dns"`, `data.name`, `data.fix`). The resource is listed under `done.data.kept` with its place in the dashboard; the other kinds are still deleted, and a run after the cause is fixed removes it.
+`teardown`, step `teardown.delete`: one resource couldn't be deleted (Cloudflare refused: an R2 bucket with objects in it, say), or the DNS records at a published name couldn't be read. `Couldn't delete the <kind "name">` / `<Cloudflare's reason>` (`data.kind`, `data.described`, `data.reason`, `data.fix`: `delete it in the Cloudflare dashboard (<place>)`), or `Couldn't read the DNS records at <name>` / `<reason>` (`data.kind: "dns"`, `data.name`, `data.fix`). The resource is listed under `done.data.kept` with its place in the dashboard; the other kinds are still deleted, and a run after the cause is fixed removes it. A certificate pack is the exception: Cloudflare removes a hostname's pack together with its Custom Domain (which went with the Worker a step earlier) and refuses to delete one on its way out (`[1406] Bad response certificate service`), so a refused pack is listed again, and one no longer in the zone's list, or pending deletion, is no warning: it is counted under `done.data.removed` as `certificate pack <id> for <host> (gone with its Custom Domain)`. A pack still listed and active is kept, its `reason` ending with the note that Cloudflare removes it with the Custom Domain, so the dashboard finishes it. Only a kept DNS record holds the Gateway's D1 database back (`kept on purpose: the next run reads the hostnames of the <n> kept DNS record(s) above from it`); a kept pack never does, so the next install starts from an empty account.
 
 Source: `packages/cli/src/lib/teardown/delete.ts`
 
 ### TEARDOWN_READ_FAILED
 
-`teardown`, step `teardown.inventory`: one kind of resource couldn't be listed (a permission the token lacks, say). `Couldn't list <what>; whatever is there is kept` / `<reason>`; `data.what`, `data.reason`, `data.fix`: `check the token's permissions (runbook step 5), then run again`. The kind is reported kept; the inventory, the confirmation and the other kinds go on.
+`teardown`, step `teardown.inventory`: one kind of resource couldn't be listed (a permission the token lacks, say). `Couldn't list <what>; whatever is there is kept` / `<reason>`; `data.what`, `data.reason`, `data.fix`: `check the token's permissions (runbook step 5), then run again`. The kind is reported kept; the inventory, the confirmation and the other kinds go on. A service the account never enabled is not a failed read: Cloudflare answers 403 with the service's own code (Access `[9999] access.api.error.not_enabled` on `access/organizations`, R2 `[10042] Please enable R2 through the Cloudflare Dashboard.` on `r2/buckets`, both seen on a fresh account), there is nothing of Every App's in it, and the run says so as a `teardown.found` step with `status: "skip"` (`<Cloudflare Access|R2> isn't enabled in this account: nothing of its to delete`; `data.what`, `data.service`, `data.reason`) and counts zero of that kind, with no warning and nothing under `kept`.
 
 Source: `packages/cli/src/lib/teardown/inventory.ts`
 

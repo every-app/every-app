@@ -25,6 +25,7 @@ type CfErrorKind =
   | "free_plan"
   | "email_unverified"
   | "r2_not_enabled"
+  | "access_not_enabled"
   | "d1_id_rejected"
   | "unknown";
 
@@ -58,6 +59,15 @@ export class CfError extends Error {
 /** `error` is cf's, of `kind` (`not_found`, `already_exists`…). */
 export function isCfError(error: unknown, kind: CfErrorKind): error is CfError {
   return error instanceof CfError && error.kind === kind;
+}
+
+/**
+ * Cloudflare refused because the account hasn't enabled the service at all
+ * (R2 through the dashboard, Zero Trust through its onboarding): there is
+ * nothing of that service's in the account, which isn't a failed read.
+ */
+export function isServiceNotEnabled(error: unknown): error is CfError {
+  return isCfError(error, "r2_not_enabled") || isCfError(error, "access_not_enabled");
 }
 
 /** A cf call that ran past its time limit; its process group was killed. */
@@ -96,6 +106,9 @@ const KIND_RULES: Array<
   ],
   ["email_unverified", (_text, codes) => codes.includes(10034)],
   ["r2_not_enabled", (_text, codes) => codes.includes(10042)],
+  // An account that never opened Zero Trust: `[9999] access.api.error.not_enabled`,
+  // 403, on every Access endpoint (seen live on a fresh account, 2026-10-24).
+  ["access_not_enabled", (text) => /access\.api\.error\.not_enabled/.test(text)],
   ["free_plan", (text) => /Workers Paid|paid plan/i.test(text)],
   [
     "auth",

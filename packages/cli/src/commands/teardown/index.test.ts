@@ -204,8 +204,12 @@ async function populate({ foreignMailRule = true }: { foreignMailRule?: boolean 
   account.createDatabase("customer-data");
   account.createNamespace("customer-cache");
   events = [];
+  sleeps = [];
   account.cf.calls.length = 0;
 }
+
+/** The waits the teardown asked for (its second look at a refused certificate pack). */
+let sleeps: number[] = [];
 
 type RunOptions = Partial<Parameters<typeof teardownAccount>[0]> & {
   accountId?: string;
@@ -234,6 +238,9 @@ function run({
     out: out(),
     createCf: () => account.cf,
     interactive,
+    sleep: async (ms) => {
+      sleeps.push(ms);
+    },
     ...options,
   });
 }
@@ -643,7 +650,56 @@ describe("teardown", () => {
     expect(done()!["message"]).toBe(`Nothing of Every App is left in ${ACCOUNT_ID}.`);
   });
 
-  it("finds a certificate pack it kept again on a second run, since the Gateway's D1 goes last", async () => {
+  it("counts a certificate pack Cloudflare refused but had already removed with its Custom Domain as removed, and the Gateway's D1 goes", async () => {
+    await populate();
+    // The live wipe of 2026-10-24: deleting the hostname's pack answered 1406
+    // while Cloudflare was removing it with the Custom Domain. One pack is gone
+    // from the zone's list by the time it is read again, the other is listed
+    // as pending deletion.
+    const planned = account.certificatePacks.filter((pack) => pack.type !== "universal");
+    expect(planned).toHaveLength(2);
+    account.cf.override(
+      (args) => args[0] === "ssl" && args[1] === "certificate-packs" && args[2] === "delete",
+      (call) => {
+        const index = account.certificatePacks.findIndex((pack) => pack.id === call.args[3]);
+        if (index >= 0) {
+          if (account.certificatePacks[index]!.id === planned[0]!.id) account.certificatePacks.splice(index, 1);
+          else account.certificatePacks[index]!.status = "pending_deletion";
+        }
+        return {
+          exitCode: 1,
+          stderr: `\n┌ APIError\n│ [1406] Bad response certificate service\n│ 400 Bad Request · HTTP /zones/zone-1/ssl/certificate_packs/${call.args[3]}\n└\n`,
+        };
+      },
+    );
+
+    await run({ confirm: ACCOUNT_ID });
+
+    expect(events.find((event) => event["type"] === "error")).toBeUndefined();
+    // Neither pack is kept, and neither is a warning: the only warning is the R2 bucket's.
+    expect(warnings("TEARDOWN_DELETE_FAILED").map((event) => event["data"]["kind"])).toEqual(["r2"]);
+    const removed: string[] = done()!["data"]["removed"];
+    expect(removed.filter((item) => item.startsWith("certificate pack"))).toEqual(
+      planned.map((pack) => expect.stringMatching(new RegExp(`^certificate pack ${pack.id} for .* \\(gone with its Custom Domain\\)$`))),
+    );
+    // The pack listing was read once by the inventory (active packs only, as
+    // cf lists by default), then again once per refusal with every status:
+    // the default listing would hide the pending one and read it as gone.
+    const listings = account.cf.calls.filter((call) => call.args[0] === "ssl" && call.args[2] === "list");
+    expect(listings.map((call) => call.args.includes("--status"))).toEqual([false, true, true]);
+    expect(listings.slice(1).every((call) => call.args[call.args.indexOf("--status") + 1] === "all")).toBe(true);
+    expect(sleeps).toEqual([]);
+    // Nothing held the Gateway's D1 back: the next install starts fresh.
+    expect(removed.at(-1)).toBe(`D1 database "${GATEWAY}"`);
+    expect(dbNames()).toEqual(["customer-data"]);
+    expect(done()!["data"]["kept"]).toEqual([expect.objectContaining({ kind: "r2" })]);
+
+    account.buckets.delete(`${TODO_WORKER}--uploads`);
+    await run();
+    expect(done()!["message"]).toBe(`Nothing of Every App is left in ${ACCOUNT_ID}.`);
+  });
+
+  it("keeps a certificate pack Cloudflare truly refused, with the note, and no longer holds the Gateway's D1 for it", async () => {
     await populate();
     let refusals = 0;
     account.cf.override(
@@ -656,24 +712,103 @@ describe("teardown", () => {
     await run({ confirm: ACCOUNT_ID });
 
     expect(events.find((event) => event["type"] === "error")).toBeUndefined();
+    // Still listed and active after the refusal: kept, with its hostname, the
+    // note, and where to finish it.
     const keptPack = done()!["data"]["kept"].find((item: { described: string }) => item.described.startsWith("certificate pack"));
-    expect(keptPack).toBeDefined();
+    expect(keptPack).toMatchObject({
+      kind: "certificates",
+      described: expect.stringMatching(new RegExp(`^certificate pack pack-\\d+ for (todo\\.)?${HOST.replace(".", "\\.")}$`)),
+      reason: expect.stringMatching(/^\[1000\] Internal error.*Cloudflare removes a hostname's pack with its Custom Domain.*dashboard$/),
+      place: "the zone → SSL/TLS → Edge Certificates",
+    });
     expect(packs()).toHaveLength(before.length - 1);
-    // The D1 the hostnames come from stays with it, on purpose and said so:
-    // the Custom Domains that also named them went with the Workers.
-    expect(done()!["data"]["removed"]).not.toContain(`D1 database "${GATEWAY}"`);
-    expect(done()!["data"]["kept"]).toContainEqual(
-      expect.objectContaining({ described: `D1 database "${GATEWAY}"`, reason: expect.stringContaining("kept on purpose") }),
+    // Still active at the first look right after the refusal: one wait, a
+    // second look with every status, and only then kept.
+    expect(sleeps).toEqual([5_000]);
+    expect(
+      account.cf.calls.filter((call) => call.args[0] === "ssl" && call.args[2] === "list" && call.args.includes("--status")),
+    ).toHaveLength(2);
+    // The Gateway's D1 isn't held for a pack: it goes, last of all.
+    expect(done()!["data"]["removed"].at(-1)).toBe(`D1 database "${GATEWAY}"`);
+    expect(done()!["data"]["kept"].map((item: { kind: string }) => item.kind).sort()).toEqual(["certificates", "r2"]);
+    expect(dbNames()).toEqual(["customer-data"]);
+
+    // The next run has no hostnames to find the pack by: the account reads as
+    // empty, and the pack is the dashboard's (or Cloudflare's own cleanup).
+    account.buckets.delete(`${TODO_WORKER}--uploads`);
+    await run();
+    expect(done()!["message"]).toBe(`Nothing of Every App is left in ${ACCOUNT_ID}.`);
+    expect(packs()).toHaveLength(before.length - 1);
+  });
+
+  it("keeps a certificate pack the re-list shows in a status that isn't deleting (deletion_timed_out)", async () => {
+    await populate();
+    // Cloudflare refused, and the pack is still there: no longer active, so
+    // the default listing hides it, but listed with every status as stuck.
+    let refusals = 0;
+    account.cf.override(
+      (args) => args[0] === "ssl" && args[1] === "certificate-packs" && args[2] === "delete" && refusals++ === 0,
+      (call) => {
+        const pack = account.certificatePacks.find((candidate) => candidate.id === call.args[3]);
+        if (pack) pack.status = "deletion_timed_out";
+        return {
+          exitCode: 1,
+          stderr: `\n┌ APIError\n│ [1406] Bad response certificate service\n│ 400 Bad Request · HTTP /zones/zone-1/ssl/certificate_packs/${call.args[3]}\n└\n`,
+        };
+      },
     );
+    const before = account.certificatePacks.length;
+
+    await run({ confirm: ACCOUNT_ID });
+
+    expect(events.find((event) => event["type"] === "error")).toBeUndefined();
+    const stuck = account.certificatePacks.find((pack) => pack.status === "deletion_timed_out");
+    expect(stuck).toBeDefined();
+    expect(account.certificatePacks).toHaveLength(before - 1);
+    expect(done()!["data"]["removed"].filter((item: string) => item.startsWith("certificate pack"))).toHaveLength(1);
+    expect(done()!["data"]["kept"]).toContainEqual(
+      expect.objectContaining({
+        kind: "certificates",
+        described: expect.stringMatching(new RegExp(`^certificate pack ${stuck!.id} for `)),
+        reason: expect.stringMatching(/^\[1406\] Bad response certificate service.*Cloudflare removes a hostname's pack with its Custom Domain.*dashboard$/),
+      }),
+    );
+    expect(warnings("TEARDOWN_DELETE_FAILED").map((event) => event["data"]["kind"])).toEqual(["certificates", "r2"]);
+    // Looked twice (a wait between), and the D1 went anyway.
+    expect(sleeps).toEqual([5_000]);
+    expect(done()!["data"]["removed"].at(-1)).toBe(`D1 database "${GATEWAY}"`);
+    expect(dbNames()).toEqual(["customer-data"]);
+  });
+
+  it("holds the Gateway's D1 for a kept DNS record, and a second run finds the record again through it", async () => {
+    await populate();
+    let refusals = 0;
+    account.cf.override(
+      (args) => args[0] === "dns" && args[1] === "records" && args[2] === "delete" && refusals++ === 0,
+      { exitCode: 1, stderr: "┌ APIError\n│ [1000] Internal error [code: 1000]\n└\n" },
+    );
+
+    await run({ confirm: ACCOUNT_ID });
+
+    expect(events.find((event) => event["type"] === "error")).toBeUndefined();
+    expect(done()!["data"]["kept"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "dns", described: `DNS A record at todo.${HOST}` }),
+        expect.objectContaining({
+          described: `D1 database "${GATEWAY}"`,
+          reason: "kept on purpose: the next run reads the hostnames of the 1 kept DNS record above from it",
+        }),
+      ]),
+    );
+    expect(done()!["data"]["removed"]).not.toContain(`D1 database "${GATEWAY}"`);
     expect(dbNames()).toEqual(["customer-data", GATEWAY]);
 
-    // The second run finds the pack again, deletes it, and then the D1.
     account.buckets.delete(`${TODO_WORKER}--uploads`);
     await run({ confirm: ACCOUNT_ID });
     expect(events.find((event) => event["type"] === "error")).toBeUndefined();
-    expect(packs()).toEqual(["pack-universal"]);
-    expect(done()!["data"]["removed"]).toEqual([keptPack.described, `D1 database "${GATEWAY}"`]);
+    expect(done()!["data"]["removed"]).toEqual([`DNS A record at todo.${HOST}`, `D1 database "${GATEWAY}"`]);
     expect(dbNames()).toEqual(["customer-data"]);
+    expect(account.dnsRecords.map((record) => `${record.type} ${record.name}`)).not.toContain(`A todo.${HOST}`);
   });
 
   it("cleans an account whose Gateway database is already gone, by name alone", async () => {
@@ -700,6 +835,42 @@ describe("teardown", () => {
     expect(account.zeroTrust.policies.size).toBe(0);
     expect(account.certificatePacks.map((pack) => pack.id)).toEqual(["pack-universal"]);
     expect(account.emailRoutingOf("zone-1").rules.size).toBe(1);
+  });
+
+  it("treats Access and R2 the account never enabled as empty: a skip step each, no warning, nothing kept", async () => {
+    await populate();
+    // A fresh account on 2026-10-24: 403 with the service's own "not enabled"
+    // code on access/organizations and r2/buckets.
+    account.accessNotEnabled = true;
+    account.r2NotEnabled = true;
+
+    await run({ confirm: ACCOUNT_ID });
+
+    expect(events.find((event) => event["type"] === "error")).toBeUndefined();
+    expect(warnings("TEARDOWN_READ_FAILED")).toEqual([]);
+    // In inventory order: R2 (kind 6), then Access (kind 8).
+    expect(events.filter((event) => event["type"] === "step" && event["status"] === "skip")).toEqual([
+      expect.objectContaining({
+        step: "teardown.found",
+        message: "R2 isn't enabled in this account: nothing of its to delete",
+        data: expect.objectContaining({ what: "the R2 buckets", service: "R2", reason: expect.stringContaining("[10042] Please enable R2") }),
+      }),
+      expect.objectContaining({
+        step: "teardown.found",
+        message: "Cloudflare Access isn't enabled in this account: nothing of its to delete",
+        data: expect.objectContaining({ what: "the Zero Trust team", service: "Cloudflare Access", reason: expect.stringContaining("[9999] access.api.error.not_enabled") }),
+      }),
+    ]);
+    const plan = done()!["data"]["plan"];
+    expect(plan.counts).toMatchObject({ access: 0, r2: 0 });
+    expect(plan.access).toEqual({ applications: [], policy: null });
+    expect(plan.kept).not.toContainEqual(expect.stringContaining("couldn't be listed"));
+    expect(plan.kept).not.toContainEqual(expect.stringContaining("Zero Trust team"));
+    // Everything else went, and nothing was kept: the bucket with objects was never in the plan.
+    expect([...account.workers.keys()]).toEqual(["other-worker"]);
+    expect(dbNames()).toEqual(["customer-data"]);
+    expect(done()).toMatchObject({ message: expect.stringMatching(/^Removed \d+ resources from /), data: { kept: [] } });
+    expect(done()!["message"]).not.toContain("kept");
   });
 
   it("goes on when one kind can't be listed, keeps that kind, and says so", async () => {

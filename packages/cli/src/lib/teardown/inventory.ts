@@ -7,8 +7,11 @@
  * and the Custom Domain records (A, AAAA, CNAME) at exactly those names.
  * A missing Gateway D1 or table is fine: the name scan still runs, so a
  * second run finds what a first one left; so is one kind that can't be
- * listed (a warning, and the kind is said kept). Each kind goes out as a
- * `teardown.found` step with its count.
+ * listed (a warning, and the kind is said kept). A service the account
+ * never enabled (Access, R2: Cloudflare answers 403 with its "not enabled"
+ * code) holds nothing of ours: a `teardown.found` step says so and skips
+ * it, no warning. Each kind goes out as a `teardown.found` step with its
+ * count.
  */
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import { APPS_APPLICATION_NAME, GATEWAY_APPLICATION_NAME, POLICY_NAME } from "@/commands/access/index";
@@ -21,6 +24,7 @@ import {
   type AccessApplication,
 } from "@/lib/cf/access";
 import { cfD1Database } from "@/lib/cf/d1";
+import { isCfError, isServiceNotEnabled } from "@/lib/cf/errors";
 import {
   getEmailRoutingCatchAll,
   getEmailRoutingSettings,
@@ -102,13 +106,27 @@ export async function inventoryAccount({
   /**
    * One kind's listing: what it found, or `fallback` with a warning when
    * Cloudflare refused (a permission the token lacks, say), so the other
-   * kinds are still deleted and the kind is said kept.
+   * kinds are still deleted and the kind is said kept. A service the
+   * account hasn't enabled (R2 code 10042, Access
+   * `access.api.error.not_enabled`: 403 on a fresh account) has nothing of
+   * ours in it: `fallback` with a skip step, no warning and nothing kept.
    */
   const read = async <T>(what: string, fallback: T, listing: () => Promise<T>): Promise<T> => {
     try {
       return await listing();
     } catch (error) {
       const reason = errorMessage(error).split("\n")[0] ?? "";
+      if (isServiceNotEnabled(error)) {
+        const service = isCfError(error, "r2_not_enabled") ? "R2" : "Cloudflare Access";
+        out.emit({
+          type: "step",
+          step: "teardown.found",
+          status: "skip",
+          message: `${service} isn't enabled in this account: nothing of its to delete`,
+          data: { what, service, reason },
+        });
+        return fallback;
+      }
       kept.push(`${what} (couldn't be listed: ${reason})`);
       out.emit({
         type: "warning",
