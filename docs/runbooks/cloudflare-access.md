@@ -24,7 +24,7 @@ stolen admin session can't add a way in or change who it lets in.
 
 ## Two ways, and which to use
 
-|                      | OIDC sign-in (recommended)                      | Outer ring                                                                      |
+|                      | OIDC sign-in                                    | Outer ring (recommended)                                                        |
 | -------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------- |
 | What people see      | "Continue with Company SSO" on the sign-in page | Access's login before they reach the gateway at all, then no second login       |
 | What Access protects | The sign-in                                     | Every request to the gateway's and apps' hostnames, except the paths you bypass |
@@ -33,10 +33,10 @@ stolen admin session can't add a way in or change who it lets in.
 | Passwords            | Can stay on, or be turned off                   | Can stay on, or be turned off                                                   |
 | Set up with          | The cf commands below                           | `pnpm everyapp access on` (or the cf commands below)                            |
 
-Use **OIDC sign-in** unless a security team requires Access in front of
-everything. The **outer ring** suits installs where nothing may be reachable
-without passing Access first (deny-by-default zones, device posture on every
-request). Both can be on at once.
+Use the **outer ring**: `pnpm everyapp access on` sets it up, and nothing
+reaches the gateway or an app without passing Access first. **OIDC sign-in**
+suits a team that wants Access only as a button on the sign-in page. Both
+can be on at once.
 
 ## Who gets in
 
@@ -72,8 +72,7 @@ revoke it in Cloudflare (`docs/security-model.md`, "Operator Authority").
 Taking them out of your Access policy isn't enough on its own. It stops new
 Access sign-ins, and behind the outer ring their browser loses the gateway
 once their current Access session runs out (the application's session
-duration: 720 hours from `everyapp access on`, 24 hours in the bodies below,
-unless you set another): the gateway honours a session
+duration: 720 hours unless you set another): the gateway honours a session
 only with Access's word for that person on the request. But personal access
 tokens and AI connections never pass through Access, and keep working until
 you deactivate them; the exception is an AI app connected through Access
@@ -221,7 +220,7 @@ everyapp secret set CLOUDFLARE_ACCESS_OIDC_LABEL
 # Company SSO
 ```
 
-The sign-in page now shows **Continue with Company SSO**. Secrets survive every deploy of the gateway (`everyapp setup`, and the rebinds of `everyapp deploy`).
+The sign-in page now shows **Continue with Company SSO**. Secrets survive every deploy of the gateway (`everyapp setup`, `everyapp update`, and the rebinds of `everyapp deploy`).
 
 The issuer must be on your team domain and end in the client id; anything
 else turns OIDC sign-in off and logs `access.config_problem`.
@@ -318,7 +317,7 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
     ]}
   ],
   "policies": ["<policy id>"],
-  "session_duration": "24h",
+  "session_duration": "720h",
   "http_only_cookie_attribute": true,
   "enable_binding_cookie": true
 }'
@@ -334,7 +333,7 @@ npx cf@1.0.0-beta.14 zero-trust access applications create --body '{
     ]}
   ],
   "policies": ["<policy id>"],
-  "session_duration": "24h",
+  "session_duration": "720h",
   "http_only_cookie_attribute": true,
   "enable_binding_cookie": true
 }'
@@ -369,10 +368,10 @@ everyapp secret set CLOUDFLARE_ACCESS_AUD
 # the gateway application's AUD tag
 ```
 
-Set `CLOUDFLARE_ACCESS_AUD` last. Each setting is a redeploy, and the outer
+Set `CLOUDFLARE_ACCESS_AUD` last. Each setting is live at once, and the outer
 ring starts with it, so the apps' tag must already be there, or app hosts
 send people back to sign in until it is. (`everyapp access on` sets all
-three in one version, so the order doesn't arise.)
+three in one change, so the order doesn't arise.)
 
 Open the gateway: Access asks who you are, and you land signed in. The
 first time, an existing account signs in with its password once (see
@@ -431,7 +430,7 @@ npx cf@1.0.0-beta.14 zero-trust access applications update <app id> --body '{
   "type": "self_hosted",
   "destinations": [{"type": "public", "uri": "apps.acme.com"}],
   "policies": ["<policy id>"],
-  "session_duration": "24h",
+  "session_duration": "720h",
   "http_only_cookie_attribute": true,
   "enable_binding_cookie": false,
   "oauth_configuration": {
@@ -615,8 +614,7 @@ everyapp secret set EMAIL_PASSWORD_SIGN_IN
   on, so have everyone sign in with Access once first.
 - The setup claim on a fresh gateway still works.
 - To turn passwords back on (say Access is down or misconfigured), set it to
-  `true`; it takes effect once the redeploy is live:
-  `everyapp secret set EMAIL_PASSWORD_SIGN_IN`.
+  `true`; it is live at once: `everyapp secret set EMAIL_PASSWORD_SIGN_IN`.
 
 ## Test locally
 

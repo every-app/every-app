@@ -145,6 +145,11 @@ An app that lists `capabilities: { email: { access: "write" } }` in its
 the provider and sender above, so the setup on this page is all an app
 needs; apps get no `send-email` binding of their own.
 
+Until `EMAIL_FROM` is set, an app that lists the capability shows "Needs
+setup" on the app lists and doesn't open; `pnpm everyapp secret list <app>`
+names it. An app that can run without mail marks it `optional: true`
+(`docs/manifest-settings.md`).
+
 - **Which domains to onboard.** The gateway's sender domain (`EMAIL_FROM`'s)
   serves every app that sends without `from`. An app that sends as its own
   addresses has them set on its installation
@@ -220,8 +225,8 @@ only link.
   Cloudflare's MX records for a subdomain): turning it on adds and locks the
   domain's MX and SPF records, so its mail moves to Cloudflare. At a terminal
   the command asks; unattended it stops with `EMAIL_ROUTING_DISABLED` and
-  changes nothing, and `--enable-email-routing` (a flag of `email set` and
-  of `deploy`) turns it on without asking. Routing is turned on only for
+  changes nothing, and `--enable-email-routing` (a flag of `email set`,
+  `deploy` and `install`) turns it on without asking. Routing is turned on only for
   the domains the inbound addresses name.
 - **Then** (at once for `email set`, after the upload for `deploy`) it
   creates a rule per address
@@ -244,8 +249,9 @@ only link.
   of an app that declares inbound with no address yet
   prints one line naming `everyapp email set --inbound`.
 
-Hosted organizations' apps (the dispatch tier) receive no mail: the deploy
-API and the GitHub install refuse `email: { inbound: true }`.
+The browser installer (Admin → Apps → Install app) and the hosted deploy API
+refuse `email: { inbound: true }`: an app that receives mail deploys from the
+CLI (`everyapp deploy`, or `everyapp install` from a release).
 
 By hand, for an app whose addresses aren't set yet (the Worker's name is
 printed by `everyapp deploy` and `everyapp status`):

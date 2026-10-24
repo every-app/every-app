@@ -21,11 +21,11 @@ pnpm test          # runs `pnpm -r --no-bail run test` across all packages
 
 | Package | Suite | Covers |
 |---|---|---|
-| `packages/sdk` | `src/**/*.test.ts` (49) | fail-closed identity verification: alg/kid pinning, `alg:none`, algorithm-confusion (HS256-with-public-key), wrong key, expiry, audience mismatch, missing claims, public-route handling, `everyApp()` handler wrapper |
+| `packages/sdk` | `src/**/*.test.ts` | fail-closed identity verification: alg/kid pinning, `alg:none`, algorithm-confusion (HS256-with-public-key), wrong key, expiry, audience mismatch, missing claims, public-route handling, `everyApp()` handler wrapper |
 | `packages/perimeter` | `src/**/*.test.ts` | public-route glob matching incl. path-traversal + percent-encoding (`/p/%2e%2e/__everyapp/...`), header stripping, security headers, CSRF default-deny, JWT mint, Host parsing, the full `handleGatewayRequest` proxy core, the dev gateway-lite, and an end-to-end perimeter↔real-SDK integration test |
 | `apps/every-app-gateway` | legacy `src/**/*.test.ts` | pre-existing gateway tests (still green), including the platform policy per deployment mode (`src/server/platform-policy.test.ts`, and the hosted and invalid cases next to what each switch governs: Access sign-in, the setup claim, account actions, dynamic registration, app activation) |
 | `apps/every-app-gateway/src/server/deploy/cf-rest` (part of the gateway suite) | `*.test.ts` | the Cloudflare REST client's request shapes against a fetch mock: multipart uploads (boundary, `metadata` JSON part, each module's MIME type), settings and secrets bodies, tag filters and the refusal to delete by tag without a required tag, D1 single and batch queries, Worker pagination, the assets upload session; error envelopes mapped to `CloudflareApiError` (code, message, status), retries on 429 and on 5xx only for idempotent methods |
-| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the Gateway pipeline (`setup`) and the app pipeline (`deploy`) end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1 with the gateway's real migrations, Build Outputs validated with cf's schema; its REST API as a fetch in `src/test/fakeCloudflareApi.ts`, with Workers for Platforms dispatch namespaces, multipart script uploads, bindings, secrets, settings, tags and assets, driven through the gateway's cf-rest client, imported by path, in its own test) and the deployed gateway Worker as far as the CLI meets it (`src/test/gatewayWorker.ts`: hostnames that answer, activation on the first request, the owner claim), the app registry the CLI writes in D1 and the live wait (`lib/gateway/registry.test.ts`), finding the Gateway through the login's accounts (`lib/gateway/discover.test.ts`: one, several, a token scoped to one, none, a wrong `--account-id` or `--gateway`), the Gateway build cache by tree hash and the release order by commit time (`lib/gateway/checkoutRelease.test.ts`, in a scratch git repository with a fake build), the downgrade guard and one upload per bind (`lib/gateway/apply.test.ts`), `setup` (install, upgrade, repair, the owner wait) and `status` (with `upToDate` against a stand-in checkout), `deploy`'s offer to install the Gateway, `secret unset`, the app policy check, leases, remote migrations; what a person sees (`lib/output/events.test.ts`: milestones rendered from event data, problems with their next command) and that `deploy --json` writes nothing but NDJSON to stdout, with a real child's output in its log file (`commands/deploy/stdout.test.ts`), and the everyapp skill `create` copies into a new app (`lib/app/skill.test.ts`) |
+| `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the Gateway pipeline (`setup`) and the app pipeline (`deploy`) end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1 with the gateway's real migrations, Build Outputs validated with cf's schema; its REST API as a fetch in `src/test/fakeCloudflareApi.ts`, with Workers for Platforms dispatch namespaces, multipart script uploads, bindings, secrets, settings, tags and assets, driven through the gateway's cf-rest client, imported by path, in its own test) and the deployed gateway Worker as far as the CLI meets it (`src/test/gatewayWorker.ts`: hostnames that answer, activation on the first request, the owner claim), the app registry the CLI writes in D1 and the live wait (`lib/gateway/registry.test.ts`), finding the Gateway through the login's accounts (`lib/gateway/discover.test.ts`: one, several, a token scoped to one, none, a wrong `--account-id` or `--gateway`), the Gateway build cache by tree hash and the release order by commit time (`lib/gateway/checkoutRelease.test.ts`, in a scratch git repository with a fake build), the downgrade guard and one upload per bind (`lib/gateway/apply.test.ts`), `setup` (install, upgrade, repair, the owner wait) and `status` (with `upToDate` against a stand-in checkout), `deploy`'s offer to install the Gateway, `secret unset`, the app policy check, leases, remote migrations; what a person sees (`lib/output/events.test.ts`: milestones rendered from event data, problems with their next command) and that `deploy --json` writes nothing but NDJSON to stdout, with a real child's output in its log file (`commands/deploy/stdout.test.ts`), and the everyapp skill `create` copies into a new app (`lib/app/skill.test.ts`); `access`, `provider`, `secret`, `status`, `install` and `teardown` against the same fake account (`commands/<name>/*.test.ts`); and the agent docs against the code (`src/docs/agentDocs.test.ts`: a new command, flag, error code, manifest field or Gateway setting fails until it is documented; `pnpm -C packages/cli docs:update` regenerates the generated pages) |
 
 Run a single layer:
 
@@ -47,6 +47,19 @@ Run a single layer:
 ( cd packages/sdk && pnpm run types:check && pnpm run build )   # clean
 ( cd packages/cli && pnpm run types:check )             # clean
 ```
+
+### In CI
+
+`.github/workflows/pr-checks.yml` (every pull request, and pushes to main):
+`pnpm types:check`, the gateway's `auth:check`, the SDK's
+`check:esm-relative-imports`, `pnpm audit --audit-level critical`,
+`pnpm format:check`, `pnpm knip` and `pnpm test`. `cf-dry-run.yml`:
+`pnpm -C apps/every-app-gateway build:release`, then
+`EVERYAPP_CF_DRY_RUN=1 pnpm -C packages/cli exec vitest run src/lib/cfDryRun.test.ts`
+runs `cf deploy --prebuilt --dry-run` on the gateway release and the starter,
+so a cf or Vite plugin bump that changes the Build Output fails here, not in
+a live deploy. `security-review.yml`: Anthropic's security review for Claude
+Code, against `docs/threat-model.md` (#388).
 
 > **Honest status:** the legacy gateway control plane (iframe embed,
 > `/api/session-token`, postMessage/expo machinery, `app_url`/`dev_url`
@@ -111,6 +124,11 @@ It needs the network, so it isn't part of `pnpm test` or CI.
 
 ### Hosted deploy API (third-party apps)
 
+The hosted tier (app.everyapp.com, dispatch apps, deploy keys) is not
+launching and its CLI surface is gone (`docs/hosted-vision.md`); this
+section, the next two and "Hosted sign-up" describe the suites that keep the
+gateway's hosted code honest.
+
 `apps/every-app-gateway/src/server/deploy/deploy-api.sqlite.test.ts` runs
 the real worker entry on SQLite with the launch gate open, and the CLI's
 fake Cloudflare (`packages/cli/src/test/fakeCloudflare.ts`, loaded by path)
@@ -138,7 +156,7 @@ read-back comparison (fields Cloudflare adds pass, changed or missing ones
 don't). The CLI side of the deploy API (deploy-key deploys) was removed on
 2026-10-24 with the hosted-only CLI surface (restorable from `5ef30882`).
 
-`install-api.sqlite.test.ts` covers Admin → Apps → Install from GitHub the
+`install-api.sqlite.test.ts` covers Admin → Apps → Install app the
 same way, calling the admin routes (`src/routes/api/admin/`) with a
 session and a fake GitHub that serves an app release packed in the test
 (`src/test/app-release.ts`: a tiny tar writer and Node's zlib): an admin
@@ -339,14 +357,14 @@ for a live account:
 # The gateway's capability routes: email, members and OAuth clients, unit and on
 # migrated SQLite; Workers AI in the AI proxy (the live SSE captures as
 # fixtures); OPTIONAL_SECRETS covers every setting the registry names
-( cd apps/every-app-gateway && pnpm exec vitest run src/server/capabilities \
+( cd apps/every-app-gateway && pnpm exec vitest run --silent=true src/server/capabilities \
     src/server/email-capability.sqlite.test.ts src/server/app-email.sqlite.test.ts \
     src/server/members-capability.sqlite.test.ts src/server/oauth-client.sqlite.test.ts \
     src/server/ai-proxy.test.ts src/optional-secrets.test.ts )
 # Per-app OAuth scope sets (docs/design/2026-10-oauth-scopes.md): the registry's
 # scope policies, the scope parsers and the route allowlist matcher; the gateway's
 # token-endpoint checks (positive, outside the sets, a background call, a removed
-# set, missing scopes, grant types, the query-string rule) once #411 merges; the
+# set, missing scopes, grant types, the query-string rule) (#411); the
 # manifest field (#414); the admin summary (#408); the SDK helper and dev twin (#412)
 ( cd packages/sdk && pnpm exec vitest run src/internal/capabilities.test.ts \
     src/internal/oauthScopes.test.ts src/server/authorizeUrl.test.ts \
@@ -399,12 +417,26 @@ and how to read a failure. The fake's shapes come from
 `src/lib/output/events.ts` and captures of `status --json` and `secret list
 --json`: change the fake when the CLI's contract changes.
 
+### The onboarding loop
+
+`packages/onboarding-loop` proves the home page's setup prompt on a coding
+agent, from a wiped, dedicated test Cloudflare account: `pnpm loop doctor`
+once, then `pnpm loop run --harness claude --account loop-1` (45 to 75
+minutes; the harnesses, the accounts and what a pass means:
+`packages/onboarding-loop/README.md`, the design
+`docs/design/2026-10-onboarding-loop.md`, the accounts
+`docs/runbooks/onboarding-loop-test-accounts.md`). Its unit tests:
+`pnpm -C packages/onboarding-loop test`. The wipe is
+`pnpm everyapp teardown --account-id <id> [--dry-run]`, tested against the
+fake account in `packages/cli/src/commands/teardown/index.test.ts`; it
+refuses any account outside `EVERYAPP_TEST_ACCOUNTS`.
+
 ## B. Local testing with `everyapp dev`
 
 `everyapp dev` runs the app's own `vite dev` server on an internal loopback
 port and a **gateway-lite Node proxy** in front of it on `$PORT` (default
 8787). The proxy runs the **real** perimeter (`handleGatewayRequest`, imported
-from `every-app-gateway/v2/dev`): real public-route policy, real header
+from `@every-app/perimeter/dev`): real public-route policy, real header
 strip/inject, a real RS256 identity JWT signed by the SDK's well-known dev
 keypair (`@every-app/sdk/dev`), CSRF rules, security headers,
 and a seeded dev user (`dev@everyapp.localhost`, org `dev-org`, role `owner`).
@@ -482,20 +514,12 @@ the gateway-lite listens on 127.0.0.1 unless `--host`.
    curl -s -o /dev/null -w '%{http_code}\n' \
      --connect-to nosuch.localhost:8787:127.0.0.1:8787 \
      http://nosuch.localhost:8787/                                           # 404
-
-   # /api/sync without a WebSocket upgrade → 426 (identity verified, handler hit)
-   curl -s $C -o /dev/null -w '%{http_code}\n' \
-     http://todo.localhost:8787/api/sync                                     # 426
    ```
 
-3. **WebSocket sync (UserSyncDO) through the proxy.** Open the app in two tabs;
-   a change in one appears in the other. WebSocket upgrades (app sync *and*
-   vite HMR) are raw-piped at the socket level with the perimeter contract
-   applied at the upgrade hop: Cookie / Authorization / `x-everyapp-*` stripped,
-   a fresh identity JWT injected. `handleSyncWebSocket` gets the verified user
-   from `everyApp()` and keys the per-user DO from `user.id` — no token in the
-   URL anymore. (Verified: raw 101 handshake through the dev gateway reaches
-   the DO.)
+3. **WebSockets** (vite HMR, and any the app opens) are raw-piped at the
+   upgrade hop with the perimeter contract applied: Cookie / Authorization /
+   `x-everyapp-*` stripped, a fresh identity JWT injected (`pipeUpgrade` in
+   `packages/cli/src/commands/dev/proxy.ts`).
 
 4. **Run the suites** as in section A.
 
@@ -629,14 +653,15 @@ cd apps/every-app-gateway && pnpm dev          # serves on :3000
 
 # Terminal 2 — your app behind the perimeter, mirror auth
 cd apps/todo
-pnpm everyapp dev --mode mirror --baseHost everyapp.localhost
+pnpm everyapp dev --mode mirror --base-host everyapp.localhost
 # (--gateway http://localhost:3000 by default; the CLI fails fast with
 #  guidance if the gateway isn't reachable)
 ```
 
 Open `http://everyapp.localhost:8787` → the **real** gateway launcher/login is
-forwarded through. Sign up (the first user becomes the org owner; later signups
-are invite-only), make sure you have an active organization, then open
+forwarded through. A self-hosted gateway has no sign-up: claim it once with
+`pnpm setup-link` in `apps/every-app-gateway` (it prints the owner link;
+everyone after that is invited), then open
 `http://todo.everyapp.localhost:8787` — you reach the app as your **real**
 logged-in user.
 
@@ -657,12 +682,6 @@ app-registration flow; until then mirror gives you a real *identity*, not real
 *access control*. The dev identity endpoint (`/api/dev/identity`) and the
 cross-subdomain cookie config are both gated to dev builds and 404 / no-op in
 production.
-
-### Known follow-ups
-
-- `everyapp dev` currently targets the monorepo (the CLI bundles the gateway's
-  dev module via a workspace dependency). For the published npm CLI this is
-  fine — tsup inlines it — but keep the gateway export (`./v2/dev`) stable.
 
 ---
 
@@ -699,7 +718,7 @@ production.
 
 ```bash
 # 1. workers.dev must be disabled — expect DNS failure / no such host
-curl -sS https://every-todo.<account>.workers.dev/ ; echo "exit=$?"
+curl -sS https://every-<org>-todo.<account>.workers.dev/ ; echo "exit=$?"
 # => could not resolve host / 404 — there is no public hostname
 
 # 2. A request that bypasses the gateway gets 401 from the SDK (fail-closed):

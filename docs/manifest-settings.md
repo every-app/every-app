@@ -102,8 +102,9 @@ in `setup/README.md`; an agent reads the guide before it asks anyone for
 a value. A provider's or a capability's guide comes from the SDK
 registries (`DEV_AI_PROVIDERS[id].setup`, a capability's `setup`: openai,
 openrouter, workers-ai, dataforseo, context, email, google-workspace,
-microsoft-365 and slack; the AI routes share `setup/openai.md`; `members`
-and the 16 social clients have none), and the manifest can't change it.
+microsoft-365, slack and youtube, which shares `setup/google.md`; the AI
+routes share `setup/openai.md`; `members` and the other 14 social clients
+have none), and the manifest can't change it.
 An app's own secret may name its own guide with
 `setup: "setup/<name>.md"` on its entry; without one it has none.
 
@@ -218,8 +219,9 @@ guide the app adds beside the skill's own,
 
 ### Example: one of several AI providers
 
-An app that reads `/api/ai/<provider>` status at run time and uses
-whichever provider is set declares a group. Email is still required.
+An app that uses whichever of its providers is set (today by trying one and
+falling back on `ai_provider_not_configured`; a status route is left for
+later, §8) declares a group. Email is still required.
 
 ```ts
 export default {
@@ -252,11 +254,15 @@ on either member.
 
 ### The gateway: home, the app library, Admin → Apps
 
-Every app list the gateway serves (`getMyApps`, `/api/me/apps`, Admin →
-Apps' `getApps`) carries `setup: AppSetup | null` per app (§5): null when
-the manifest declares nothing to set, or the app is on the dispatch tier,
-whose providers and capabilities ride the platform's settings, which the
-platform checks at deploy rather than at run time. An app whose
+Every app list the gateway serves (`getMyApps`, Admin → Apps' `getApps`)
+carries `setup: AppSetup | null` per app (§5): null when the manifest
+declares nothing to set, or the app is on the dispatch tier, whose
+providers and capabilities ride the platform's settings, which the
+platform checks at deploy rather than at run time. A provider app
+(`pnpm everyapp provider on dataforseo`: an `apps` row of tier `provider`
+with no Worker) lists its capability in its generated manifest, so it reads
+"Needs setup" until `DATAFORSEO_API_KEY` is set
+([docs/capabilities.md](capabilities.md#provider-apps)). An app whose
 `setup.ready` is false shows a "Needs setup" badge (a warning, placed
 after the active check, so an active, bound app that isn't ready shows it)
 and does not open. The card and the Admin → Apps badge open a dialog: each
@@ -285,9 +291,11 @@ gateway holds is the operator's to know, not a visitor's.
 ### `/mcp`
 
 The gateway's `/mcp` leaves out the tools of an app that needs setup and
-says so in the server instructions. `everyapp_list_apps` carries
-`needsSetup: "<label>: run <command>"` per app, so a client holding a
-listen stream can learn why a tool is gone and ask. The app host's own
+says so in the server instructions. `everyapp_list_apps` lists such an app
+with `available: false` and `reason: "needs setup: an admin runs <command>"`
+(plain `"needs setup"` when the command isn't the caller's to run), so a
+client holding a listen stream can learn why a tool is gone and ask. The
+app host's own
 `/mcp` is behind the perimeter gate above.
 
 ### `everyapp status`
@@ -317,8 +325,8 @@ The STATUS column, on every surface the CLI renders settings:
 Takes an optional app id: by default the app in the current directory;
 from elsewhere with no id, the Gateway's table and then every app's
 settings. The same renderer and vocabulary as `status`. `--json` carries
-`data.app.settings` (every setting with its state) and keeps `next` as the
-one command.
+`data.app.setup` (the `AppSetup` of §5, what the setup skills read) and
+`data.app.settings`, and keeps `next` as the one command.
 
 ### `everyapp secret set|unset NAME... --app <id>`
 
@@ -327,19 +335,20 @@ from anywhere: a release deploy has no checkout, and the setup command the
 gateway shows must work wherever it is pasted. The bare form in the app's
 directory stays. Names route by name: a Gateway setting goes to the
 Gateway, anything else to the app, and one call may mix them. Values come
-from a hidden prompt or `--from-env VAR`; the change is one new version of
-the live Worker, never a deploy. A name the manifest doesn't list is
+from a hidden prompt, stdin or `--from-env VAR`; a plain setting's value
+(`EMAIL_FROM`, a switch such as `EMAIL_PASSWORD_SIGN_IN`) is checked first
+and refused with `SETTING_VALUE_INVALID` (#483); the change is one new
+version of the live Worker, never a deploy. A name the manifest doesn't list is
 refused (`SECRET_NOT_DECLARED`), and the fix line renders the entry to add
 in the manifest's own form.
 
-### `everyapp deploy` and `everyapp register`
+### `everyapp deploy`
 
 After the upload, `deploy` lists the Worker's secrets and records them with
 the deploy (below). When the app then needs setup, it ends with an
 `APP_NEEDS_SETUP` warning ("crm won't open until CONTEXT_API_KEY is set")
 and one `next` entry with the command ("crm opens once these are set").
-`register` records the Worker's names the same way. `everyapp dev`
-enforces nothing: in dev the app reads its own `.dev.vars`.
+`everyapp dev` enforces nothing: in dev the app reads its own `.dev.vars`.
 
 ### How app secret names are recorded
 
@@ -348,7 +357,7 @@ them: `apps.secret_names` (TEXT, a JSON `string[]`, null when never
 recorded) holds the names on the app's own Worker, with everyapp's own
 (`GATEWAY_URL`, `EVERY_APP_ORG_ID` and the rest it sets at deploy) left
 out. Written by `deploy` (listed after the upload, in the same registry
-update as the deploy itself, under the app's lease), `register`, `secret
+update as the deploy itself, under the app's lease), `secret
 set|unset` (after the app's Workers are patched) and `status` (every
 deployed app, each run). Read by the gateway with the rest of the app's
 row. Null never blocks and reads `! not recorded`: a change made outside
@@ -358,7 +367,7 @@ the column heals on the next `pnpm everyapp status`.
 ## 5. `AppSetup`, as agents read it
 
 One shape on every surface: `setup` on the gateway's app lists,
-`data.apps[].setup` in `everyapp status --json`, and
+`data.apps[].setup` in `everyapp status --json`, and `data.app.setup` in
 `everyapp secret list --json`.
 
 ```ts
@@ -517,8 +526,10 @@ sets it; never show the value.
 Nothing about this model needs a value moved or a Worker touched by hand.
 In order:
 
-1. Merge the stack. The gateway build now carries the `setup` field on its
-   app lists, and the gate once the held pull request is in.
+1. The stack is merged (#383, #395, #396, #397, #493): the gateway build
+   carries `setup` on its app lists and the gate. everyapp.team runs a main
+   from before it (docs/launch-2026-10-27.md, A4), so steps 2 to 5 are still
+   to run there, in this order.
 2. `pnpm everyapp setup` upgrades the Gateway and applies migration 0004,
    which adds `apps.secret_names`.
 3. Redeploy every app whose manifest gains needs from its own repository

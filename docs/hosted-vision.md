@@ -44,7 +44,7 @@ readable from git: `git show 5ef30882:<path>` (origin/main on 2026-10-24,
 | 2026-10-16, evening           | Per-organization usage limits are a later feature and are not on by default; the daily caps left the code entirely (#316, `31a85593`). Every provider call is still attributed to an organization and logged, so the wallet can count against it later.                     | `docs/hosted-platform-build.md` §3 "Walked back" (deleted); `TODO.md` Build, "Per-organization usage limits and metering (the wallet) are a later feature" (kept)                                          |
 | Standing, restated 2026-10-16 | Billing and metering happen at the gateway, not in the app. Self-host keeps working from the same code. Every App is a prototype with no backward compatibility.                                                                                                            | `docs/hosted-platform-build.md` §1, "Standing rules from earlier briefs" (deleted)                                                                                                                         |
 | 2026-10-17                    | OpenSEO's `AUTH_MODE=everyapp` is a mode, not a fork. It is prototyped in the scratch repository `bensenescu/open-seo-everyapp` and comes home to open-seo as one PR when Ben says so.                                                                                      | `TODO.md` Decide, "OpenSEO: a mode, not a fork" (kept)                                                                                                                                                     |
-| 2026-10-23                    | The 2026-10-27 launch is self-host only: no `setup --mode hosted`, no `THIRD_PARTY_DEPLOYS=on`, no dispatch namespace, no `app.everyapp.com`. The hosted build's defaults in `TODO.md` stay unconfirmed and harmless.                                                       | `docs/launch-2026-10-27.md`, "Do not start the hosted tier"                                                                                                                                                |
+| 2026-10-23                    | The 2026-10-27 launch is self-host only: no `setup --mode hosted` (removed since), no `THIRD_PARTY_DEPLOYS=on`, no dispatch namespace, no `app.everyapp.com`. The hosted build's defaults in `TODO.md` stay unconfirmed and harmless.                                                       | `docs/launch-2026-10-27.md`, "Do not start the hosted tier"                                                                                                                                                |
 | 2026-10-24                    | The historical hosted documents are deleted and the CLI's hosted-only surface is cut. The gateway's hosted internals stay. This file is the contract future work aligns with.                                                                                               | `docs/simplify-2026-10-24.md` §1 (settled decisions); this file                                                                                                                                            |
 
 Defaults the overnight build took without Ben are not rulings. They are listed, unchecked, under
@@ -85,7 +85,9 @@ check it. Line numbers drift; symbol names less.
 3. **Identity audience is the Worker name.** Every identity JWT, public marker and system token the
    gateway mints has `aud` equal to the registry row's `worker_name`, and an app verifies against
    `EVERYAPP_AUDIENCE` (answering 500 when it is unset). Two organizations' copies of one app id
-   never accept each other's tokens. No mint site uses the app id outside `everyapp dev`.
+   never accept each other's tokens. No mint site uses the app id outside `everyapp dev`. A
+   provider app's row (tier `provider`, #489) has no Worker: its tokens carry `provider:<row id>`
+   (`providerAudience()` in `apps/every-app-gateway/src/server/provider-apps/index.ts`).
    - Enforced by: `audienceOf()` in `packages/perimeter/src/gateway.ts` (returns `app.workerName`);
      `AUDIENCE_ENV` and the minters in `packages/sdk/src/internal/protocol.ts`; `audienceFor()` in
      `packages/sdk/src/server/everyApp.ts`; `verifyForwardedIdentity()` in
@@ -94,8 +96,9 @@ check it. Line numbers drift; symbol names less.
      `toolbus/app-host-mcp.ts` (all `workerName`).
    - Check:
      `grep -rn "audience:" apps/every-app-gateway/src packages/perimeter/src --include='*.ts' | grep -v test`
-     shows only `workerName` sources, apart from the Cloudflare Access OIDC client and the MCP OAuth
-     resource in `mcp-auth/validate.ts` (different tokens). `packages/perimeter/src/gateway.test.ts`
+     shows only `workerName` and `providerAudience(…)` sources, apart from the Cloudflare Access
+     OIDC client, its JWT verifier and the outer ring, and the MCP OAuth resource in
+     `mcp-auth/validate.ts` (different tokens). `packages/perimeter/src/gateway.test.ts`
      :: stamps every token with the app's Worker name as its audience.
 
 4. **`x-everyapp-org` is for shared Workers, and only for them.** An organization's own app (every
@@ -115,16 +118,19 @@ check it. Line numbers drift; symbol names less.
    - Check: `apps/every-app-gateway/src/server/background-org.sqlite.test.ts`;
      `packages/perimeter/src/headers.test.ts` :: removes x-everyapp-org.
 
-5. **Two tiers and two scopes, in the registry and the manifest.** `apps.tier` is `service_binding`
-   or `dispatch`; `apps.scope` is `org` or `shared`. Any other value is unroutable (503), never
+5. **Three tiers and two scopes, in the registry and the manifest.** `apps.tier` is `service_binding`,
+   `dispatch` or `provider` (#485: a provider app's row has no Worker or hostname; the gateway serves
+   it in-process, `providerAppFetcher()` in `apps/every-app-gateway/src/server/provider-apps/index.ts`);
+   `apps.scope` is `org` or `shared`. Any other value is unroutable (503), never
    coerced. A row's tier and scope never change after registration, and a shared app is never
    `dispatch`. `getAppFetcher()` is the only place that knows how a Worker is reached. A first-party
    host admits only service-binding rows; a third-party host only dispatch rows of scope `org`.
    `manifestTierProblems()` is where a dispatch-tier manifest is told what it may not declare
-   (Hyperdrive, R2, inbound mail, secrets of its own). Self-host writes only `service_binding` and
-   `org` rows and must not add a third way to reach a Worker.
+   (Hyperdrive, R2, inbound mail, secrets of its own). Self-host writes `service_binding` and
+   `provider` rows, all of scope `org`, and must not add another way to reach a Worker.
    - Enforced by: `Tier`, `AppScope` and `rowToRegisteredApp` in
-     `packages/perimeter/src/registry/apps.ts`; `apps.tier` and `apps.scope` in
+     `packages/perimeter/src/registry/apps.ts`; `packages/perimeter/src/registry/providerApps.ts`
+     (the provider rows); `apps.tier` and `apps.scope` in
      `apps/every-app-gateway/src/db/apps.schema.ts`; `planRegistration()` in
      `packages/perimeter/src/registry/registration.ts` (`APP_SCOPE_MISMATCH`, `APP_TIER_MISMATCH`,
      `SHARED_APP_NOT_PLATFORM`); `getAppFetcher()` in `packages/perimeter/src/getAppFetcher.ts`;
@@ -211,18 +217,19 @@ several; `status` keeps its mode line, which reads the install row):
 
 | Path (as of `5ef30882`)                                                                                                                                                                                                                                                                         | What it was                                                                  |
 | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `packages/cli/src/commands/setup/command.ts:19-25`, `runSetup.ts` (`assertModeUnchanged()`, the mode plumbing at 320, 392, 639)                                                                                                                                                                 | `everyapp setup --mode self_hosted\|hosted`                                  |
-| `packages/cli/src/commands/deploy/command.ts:54-59`, `deployApp.ts:371-381`, the shared check in `commands/appGateway.ts` ("Shared apps need a hosted Gateway"), the shared scope in `lib/gateway/registry.ts` and `lib/app/installBuildOutput.ts` (`EVERYAPP_SHARED=1`, no `EVERY_APP_ORG_ID`) | `everyapp deploy --shared`                                                   |
-| `packages/cli/src/commands/register/*` (359 lines)                                                                                                                                                                                                                                              | `everyapp register`: a Worker deployed elsewhere put behind a hosted Gateway |
-| `packages/cli/src/commands/deploy/deployToGateway.ts` (+ test), `lib/app/hostedBundle.ts`, `deploy/index.ts:63-66,110-119`, `deploy/command.ts:139-145`, `--no-wait`'s hosted meaning                                                                                                           | `EVERYAPP_DEPLOY_TOKEN` deploys to `/api/v1` with a deploy key               |
+| `packages/cli/src/commands/setup/command.ts:19-25`, `runSetup.ts` (`assertModeUnchanged()`, the mode plumbing at 320, 392, 639)                                                                                                                                                                 | `everyapp setup --mode self_hosted\|hosted` (removed)                        |
+| `packages/cli/src/commands/deploy/command.ts:54-59`, `deployApp.ts:371-381`, the shared check in `commands/appGateway.ts` ("Shared apps need a hosted Gateway"), the shared scope in `lib/gateway/registry.ts` and `lib/app/installBuildOutput.ts` (`EVERYAPP_SHARED=1`, no `EVERY_APP_ORG_ID`) | `everyapp deploy --shared` (removed)                                         |
+| `packages/cli/src/commands/register/*` (359 lines)                                                                                                                                                                                                                                              | `everyapp register` (removed): a Worker deployed elsewhere put behind a hosted Gateway |
+| `packages/cli/src/commands/deploy/deployToGateway.ts` (+ test), `lib/app/hostedBundle.ts`, `deploy/index.ts:63-66,110-119`, `deploy/command.ts:139-145`, `--no-wait`'s hosted meaning                                                                                                           | `EVERYAPP_DEPLOY_TOKEN` deploys to `/api/v1` with a deploy key (removed)     |
 
-The documents deleted, all readable at the same commit: `docs/hosted-platform-build.md`,
-`docs/research/2026-10-hosted-platform/**` (the research round, synthesis, plan H0 to H42, live
-checks; first landed as `beae4bfe`, #299), `docs/research/2026-10-integrations-hub/**`,
-`docs/design/2026-10-google-integration.md`, `docs/design/2026-10-redesign-review.md`,
-`adr/ADR-0002-cli-and-control-plane-auth.md`, `adr/RFC-0001-org-rearchitecture-phase-1.md`, and
-later `landing-page/content/internal/first-party-and-third-party-apps.md` (the first-party versus
-third-party checklist with OpenSEO as the worked example).
+The documents deleted, all readable at `5ef30882`:
+
+- `docs/hosted-platform-build.md` (deleted)
+- `docs/research/2026-10-hosted-platform/**` (deleted; the research round, synthesis, plan H0 to
+  H42, live checks; first landed as `beae4bfe`, #299)
+- `docs/research/2026-10-integrations-hub/**` (deleted)
+- `docs/design/2026-10-google-integration.md` and `docs/design/2026-10-redesign-review.md` (deleted)
+- `adr/ADR-0002-cli-and-control-plane-auth.md` and `adr/RFC-0001-org-rearchitecture-phase-1.md` (deleted)
 
 What stays in the gateway and the packages, untouched this week:
 
@@ -243,7 +250,7 @@ What stays in the gateway and the packages, untouched this week:
   shares that pipeline and is a launch feature. The PAT `deploy` scope and the "Deploy key" kind in
   the tokens UI stay with it.
 - `apps/every-app-gateway/src/server/deploy/cf-rest/`: the Cloudflare REST client the deployer and
-  the browser install use (`packages/cf-rest` until 2026-10-24); it does not go.
+  the browser install use (moved from `packages/cf-rest` on 2026-10-24, #448); it does not go.
 - `_everyapp_install.deployment_mode` and `DEPLOYMENT_MODES` in the CLI (invariant 2);
   `docs/runbooks/hosted-install.md` and the hosted sections of `docs/security-model.md`, each with a
   banner saying the CLI surface is restored from the commit above.

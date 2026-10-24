@@ -31,7 +31,9 @@ below with the gateway's current `JWT_PUBLIC_KEY`.
    then fail at runtime. Replace both of the gateway's secrets,
    `JWT_PRIVATE_KEY` and the matching `JWT_PUBLIC_KEY`, in one change: in the
    Cloudflare dashboard, **Workers & Pages → every-app-gateway → Settings →
-   Variables and Secrets**. Never rotate only one half of the pair.
+   Variables and Secrets**. Never rotate only one half of the pair. The
+   script prints a `BETTER_AUTH_SECRET` too: leave the gateway's as it is;
+   changing it signs everyone out.
 3. Record the new public key in the install row, where the apps' deploys
    read it. Write the request body to a private file (`key.json`, with the
    PEM's line breaks as `\n`):
@@ -60,8 +62,9 @@ below with the gateway's current `JWT_PUBLIC_KEY`.
    or `setup` redeploys it too, since the serving version is no longer the
    one the install row names; `--redeploy` uploads it whatever they find.)
 5. From each registered app's directory, run
-   `pnpm everyapp deploy`. This statically injects the new public key into
-   that app.
+   `pnpm everyapp deploy` (an app installed from a release:
+   `pnpm everyapp install <source>` again). This statically injects the new
+   public key into that app.
 
 ## Verification
 

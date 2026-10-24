@@ -10,7 +10,7 @@ Gateway a customer self-hosts, with the hosted policy
 
 - anyone signs up, into an organization of their own, and verifies their
   email first;
-- first-party apps (OpenSEO, todo, chef, workout) are shared: one Worker per
+- first-party apps (OpenSEO) are shared: one Worker per
   app, owned by the platform organization, opened by members of any active
   organization, each reached over its service binding as on self-host;
 - no Cloudflare Access sign-in (its settings are ignored);
@@ -30,18 +30,20 @@ From a checkout of the repository, logged in to our Cloudflare account
 (`npx cf auth login`, or `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`):
 
 ```sh
-pnpm everyapp setup --domain app.everyapp.com --mode hosted
+pnpm everyapp setup --domain app.everyapp.com --mode hosted   # --mode removed (5ef30882)
 ```
+
+`--mode` was removed on 2026-10-24 (`5ef30882`, `packages/cli/src/commands/setup/`); the paragraph below describes it as it was.
 
 This is the self-host install with one difference: the Gateway's first
 upload sets `GATEWAY_DEPLOYMENT_MODE=hosted`, and the install record keeps
-the mode (`pnpm everyapp status` prints `Mode:     hosted`). The mode never
-changes after the first upload; `setup --mode self_hosted` on this Gateway
+the mode (`pnpm everyapp status` shows `· hosted` after the Gateway's URL). The mode never
+changes after the first upload; `setup --mode self_hosted` (removed) on this Gateway
 stops with `MODE_CHANGE_UNSUPPORTED`. Once the first upload has succeeded,
 later runs need no `--mode`, and a Gateway Worker deleted by hand comes
 back, on the next `setup` or deploy, with the mode the install record keeps.
-Until then, pass `--mode hosted` on every run: a run that resumes an install
-stopped before its first upload, without `--mode`, installs `self_hosted`
+Until then, pass `--mode hosted` (removed) on every run: a run that resumes an install
+stopped before its first upload, without `--mode` (removed), installs `self_hosted`
 and keeps it.
 
 Leave `setup` waiting at the owner step (below) or stop it and run it again
@@ -104,7 +106,7 @@ self-hosted Gateway names it after the owner). Then confirm:
 pnpm everyapp status
 ```
 
-shows `Mode:     hosted` and `Owner:    <email> (Every App)`.
+shows `· hosted` after the Gateway's URL and `Owner  <email> · Every App`.
 
 The owner's email counts as verified (the setup link is ours), so they sign
 in straight away. Open sign-up starts only after the claim.
@@ -116,8 +118,8 @@ organization with `scope='shared'`, at `<appId>.app.everyapp.com`, reached
 over its service binding (`APP__<worker>`) as on self-host, one Worker for
 every organization. Any live member of any active organization opens it,
 and its identity JWT carries that member's `org_id` and `org_role`: the app
-scopes its data by them (todo, chef and workout are per user; OpenSEO scopes
-by organization). Only owners and admins of the platform organization deploy
+scopes its data by them (OpenSEO scopes by organization). Only owners and
+admins of the platform organization deploy
 or register one: a Cloudflare login must be one of them by its verified
 email (sign up on the Gateway with the same email); an API token
 (`CLOUDFLARE_API_TOKEN`, CI) is the account's own authority. Both commands
@@ -127,14 +129,16 @@ refuse a Gateway whose install record isn't `hosted`
 An app the CLI builds, from its directory:
 
 ```sh
-pnpm everyapp deploy --shared
+pnpm everyapp deploy --shared   # --shared removed (5ef30882)
 ```
+
+`--shared` was removed on 2026-10-24 (`5ef30882`, `packages/cli/src/commands/deploy/`); the paragraph below describes it as it was.
 
 It deploys as any app does, with two differences: the row is shared (nobody
 is granted it, and it has no "Available to everyone" switch), and the Worker
 gets no `EVERY_APP_ORG_ID`, since it serves every organization. An app keeps
 the scope it was registered with: later deploys, and `secret set|unset`
-(which redeploy it), keep it shared with or without `--shared`, and still
+(which redeploy it), keep it shared with or without `--shared` (removed), and still
 need a platform owner or admin. An organization app's id can't become a
 shared one (`APP_SCOPE_MISMATCH`; delete it and pick another id). Deleting a
 shared app (`everyapp delete`) cuts every organization off from it, so it
@@ -144,10 +148,12 @@ A Worker deployed by other means (OpenSEO's Alchemy stage, say), in the
 Gateway's account:
 
 ```sh
-pnpm everyapp register openseo --worker every-everyapp-openseo --manifest ../open-seo/everyapp.config.ts
+pnpm everyapp register openseo --worker every-everyapp-openseo --manifest ../open-seo/everyapp.config.ts   # register removed (5ef30882)
 ```
 
-`register` checks the Worker exists, validates the manifest as `deploy`
+`everyapp register` was removed on 2026-10-24 (`5ef30882`, `packages/cli/src/commands/register/`); the paragraph below describes it as it was.
+
+`register` (removed) checks the Worker exists, validates the manifest as `deploy`
 does, registers the app under the Worker name the Gateway gives it
 (`every-<platform org key>-<appId>`, `every-everyapp-<appId>` for the
 "Every App" organization; any other `--worker` stops with
@@ -158,7 +164,7 @@ keeps it. Run it again after the Worker's own pipeline ships a version, so
 the registry records it (the Gateway re-reads the app's tools on a new
 version). A registered app's senders and inbound addresses are set
 afterwards with `pnpm everyapp email set --manifest ../open-seo/everyapp.config.ts …`
-(a hosted Gateway takes no app senders); `register` makes no routes.
+(a hosted Gateway takes no app senders); `register` (removed) makes no routes.
 `--json` prints the same events as `deploy`; the `app.register` event's
 `data.worker` lists what the Worker's own pipeline must give it:
 
@@ -210,8 +216,8 @@ the last one (a new app stays `pending`). Its job reads
 `DEPLOY_ABANDONED` after 5 minutes, and the app can deploy again then. A
 Durable Object or Queue runner is the fix.
 
-What it needs, as Gateway settings (`pnpm everyapp secret set <NAME> --for
-gateway`):
+What it needs, as Gateway settings (`pnpm everyapp secret set <NAME>`, from
+any directory):
 
 - `CF_DEPLOY_TOKEN`: an API token for this account with Workers for
   Platforms (Workers Scripts) edit and D1 edit.
@@ -257,14 +263,15 @@ Create access token → Kind: Deploy key; 30 days by default, optionally
 bound to one app) and deploys from the app's directory, in CI too:
 
 ```sh
-EVERYAPP_DEPLOY_TOKEN=<deploy key> EVERYAPP_GATEWAY_URL=https://app.everyapp.com \
-  pnpm everyapp deploy --json
+EVERYAPP_DEPLOY_TOKEN=<deploy key> EVERYAPP_GATEWAY_URL=https://app.everyapp.com pnpm everyapp deploy --json   # removed (5ef30882)
 ```
+
+Deploy-key deploys from the CLI were removed on 2026-10-24 (`deployToGateway.ts`, `hostedBundle.ts` at `5ef30882`); the `/api/v1` API stays in the gateway.
 
 ### Installing apps from GitHub
 
 With the gate open, an organization's owner or admin can also install an
-app without the CLI: Admin → Apps → **Install from GitHub**, paste
+app without the CLI: Admin → Apps → **Install app**, paste
 `https://github.com/<owner>/<repo>`, Install. The Gateway downloads the
 repository's latest release asset `everyapp-release.tar.gz` (what
 `everyapp` packs for a release: `release.json`, the tenant-neutral Build
@@ -293,8 +300,9 @@ sender.
   (`release-assets.githubusercontent.com` / `objects.githubusercontent.com`)
   from its own Worker: nothing to configure.
 
-On a self-hosted Gateway, or with the gate shut, the button isn't shown and
-the route answers `APP_INSTALL_NOT_AVAILABLE`.
+With the gate shut the route answers `APP_INSTALL_NOT_AVAILABLE`. A
+self-hosted Gateway has the same installer, on by default once
+`CF_DEPLOY_TOKEN` is set: `docs/runbooks/browser-app-install.md`.
 
 ## Checks
 

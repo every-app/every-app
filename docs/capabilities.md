@@ -2,11 +2,11 @@
 
 An app often needs a third-party API that isn't AI: DataForSEO for SEO data,
 Context.dev for rendering pages, a social network's OAuth client, a way to
-send email, later GitHub or Google. The gateway holds the credential once, an
-app lists the capability in its manifest, and the app calls through the
-gateway. No app holds the key; the one per-installation setting, the
-addresses an app sends as and receives at, is set with `everyapp email set`
-(below).
+send email, Google's and Microsoft's mail and calendar, later GitHub. The
+gateway holds the credential once, an app lists the capability in its
+manifest, and the app calls through the gateway. No app holds the key. Per
+installation, an app has its own secrets (`secret set NAME --app <id>`) and
+the addresses it sends as and receives at (`everyapp email set`, below).
 
 This is phase 0 of the integrations design
 ([research/2026-10-integrations-hub/app-integrations.md](https://github.com/every-app/private-every-app/blob/5ef30882/docs/research/2026-10-integrations-hub/app-integrations.md)):
@@ -28,8 +28,8 @@ folds AI providers into this model behind one route and one SDK fetch, and the
 Google design ([docs/design/2026-10-google-integration.md](https://github.com/every-app/private-every-app/blob/5ef30882/docs/design/2026-10-google-integration.md))
 adds organization-held OAuth accounts under an operator-held client. Both were
 re-aligned on 2026-10-16 with the hosted-platform research
-(`docs/research/2026-10-hosted-platform/`, deleted from main on 2026-10-24, git history at 5ef30882; PR
-#299): in hosted, first-party apps share one Worker per app and third-party
+(`docs/research/2026-10-hosted-platform/`, PR #299; all three documents deleted from
+main on 2026-10-24, git history at 5ef30882): in hosted, first-party apps share one Worker per app and third-party
 apps get one Worker per organization on Workers for Platforms, and the gateway
 learns the organization per call. Both documents were written when the
 manifest key was `integrations` with `as` and `background` on each entry; read
@@ -40,7 +40,8 @@ them with this document's `capabilities` and
 
 One registry (`packages/sdk/src/internal/capabilities.ts`) defines every
 capability; its `mode` is the kind. All three take the same manifest entry,
-`capabilities: { <id>: { access, why, docs, optional, anyOf } }` (`access`,
+`capabilities: { <id>: { access, scopes, why, docs, optional, anyOf } }`
+(`access`, `scopes` for a client with scope sets ([OAuth clients](#oauth-clients)),
 and the need fields of [docs/manifest-settings.md](manifest-settings.md)),
 travel the app's private binding to the gateway under
 `/api/integrations/<id>/...`, and answer `GET /api/integrations/<id>`
@@ -62,11 +63,12 @@ lists them in `providers` (and limits them with `ai.models`) and calls
 ## For an operator
 
 Every key, client and the gateway's own sender live in the gateway Worker's
-secrets; an app's senders and inbound addresses are the one thing set per
-installation, with `everyapp email set` in the app's directory. Set the
-gateway's from any directory, as many names at once as you like; the name
-says it is the gateway's (an app's own secrets are the names its
-`everyapp.config.ts` lists under `secrets`, set from the app's directory):
+secrets; an app's senders and inbound addresses are set per installation,
+with `everyapp email set` in the app's directory. Set the gateway's from any
+directory, as many names at once as you like; the name says it is the
+gateway's (an app's own secrets are the names its `everyapp.config.ts` lists
+under `secrets`, set from the app's directory or from anywhere with
+`--app <id>`):
 
 ```bash
 pnpm everyapp secret set DATAFORSEO_API_KEY
@@ -100,21 +102,22 @@ Everything the gateway holds for apps, in one table:
 
 | What                        | Kind                | Gateway settings                                                                                                           | Set with (`pnpm everyapp secret set …`)                                                          | Used by                                              |
 | --------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| `openai`                    | AI provider         | `OPENAI_API_KEY`                                                                                                           | `OPENAI_API_KEY`                                                                                               | none of the launching apps (Postiz: ported, not launching) |
+| `openai`                    | AI provider         | `OPENAI_API_KEY`                                                                                                           | `OPENAI_API_KEY`                                                                                               | none at launch                                       |
 | `openrouter`                | AI provider         | `OPENROUTER_API_KEY`                                                                                                       | `OPENROUTER_API_KEY`                                                                                           | OpenSEO; agentic-inbox with `AI_PROVIDER=openrouter` |
 | `workers-ai`                | AI provider         | `WORKERS_AI_API_TOKEN`, with `CLOUDFLARE_ACCOUNT_ID` (which `everyapp setup` sets)                                         | `WORKERS_AI_API_TOKEN` (the Workers AI page's prefilled token: Workers AI Read; a token made by hand needs Workers AI Read and Edit) | agentic-inbox with `AI_PROVIDER=workers-ai`          |
 | the AI proxy's extra routes | AI provider setting | `AI_PROXY_EXTRA_ROUTES` (optional; OpenAI only, e.g. `/v1/files`)                                                          | `AI_PROXY_EXTRA_ROUTES`                                                                                        |                                                      |
 | `dataforseo`                | `api_key`           | `DATAFORSEO_API_KEY` (`login:password`, or its base64)                                                                     | `DATAFORSEO_API_KEY`                                                                                           | OpenSEO                                              |
 | `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
-| `email`                     | `service`           | `EMAIL_FROM` with a display name, from `EMAIL_FROM_NAME` or `EMAIL_FROM="Name <address>"`, and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (or `EMAIL_FROM` alone as `Name <address>`; and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)); an app's own senders with `everyapp email set --sender` | agentic-inbox, OpenAnalytics, and the gateway's own mail (Postiz: ported, not launching) |
+| `email`                     | `service`           | `EMAIL_FROM` with a display name, from `EMAIL_FROM_NAME` or `EMAIL_FROM="Name <address>"`, and one provider: Cloudflare Email Sending (the `EMAIL` binding; outside Workers `EMAIL_REST_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`) or Resend (`RESEND_API_KEY`); `EMAIL_PROVIDER` picks one when both are set | `EMAIL_FROM EMAIL_FROM_NAME` (or `EMAIL_FROM` alone as `Name <address>`; and `RESEND_API_KEY`, `EMAIL_PROVIDER`), after setting up the sending domain ([runbook](runbooks/email-sending-setup.md)); an app's own senders with `everyapp email set --sender` | agentic-inbox, OpenAnalytics, and the gateway's own mail |
 | `members`                   | `service`           | none: the gateway reads its own directory                                                                                   | nothing to set                                                                                                 | OpenAnalytics (whom reports go to)                   |
-| 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | Open CRM (`slack`); the other 15 were added for Postiz (ported, not launching) |
-| `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-clients) | Open CRM (mail and calendar capture) |
+| 16 social networks          | `oauth_client`      | `<NETWORK>_CLIENT_ID`, `<NETWORK>_CLIENT_SECRET` (Meta's networks: `_APP_ID`, `_APP_SECRET`); Mastodon also `MASTODON_URL` | one line per network, generated [below](#oauth-clients)                                                        | Open CRM (`slack`); the other 15 were added for Postiz's port |
+| `google-workspace`, `microsoft-365` | `oauth_client` | `GOOGLE_WORKSPACE_CLIENT_ID`, `GOOGLE_WORKSPACE_CLIENT_SECRET`; `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET` | generated [below](#oauth-clients) | Open CRM (mail and calendar capture); OpenSEO (Search Console and Analytics) |
 
 X is not in the table: OAuth 1.0a signs every API call with the user's token
 secret, which the gateway never holds, so an app keeps `X_API_KEY` and
 `X_API_SECRET` as its own secrets (`pnpm everyapp secret set X_API_KEY
-X_API_SECRET` in the app's directory, after its first deploy).
+X_API_SECRET` in the app's directory, or anywhere with `--app <id>`, after
+its first deploy).
 
 ### API-key providers
 
@@ -122,6 +125,9 @@ X_API_SECRET` in the app's directory, after its first deploy).
 | ------------ | -------------------- | ---------------------------------------------- | ------ |
 | `dataforseo` | `DATAFORSEO_API_KEY` | `api.dataforseo.com`, `sandbox.dataforseo.com` | `read` |
 | `context`    | `CONTEXT_API_KEY`    | `api.context.dev`                              | `read` |
+
+DataForSEO can also go to members' AI clients directly, with nothing
+deployed: `pnpm everyapp provider on dataforseo` ([Provider apps](#provider-apps)).
 
 ### AI providers
 
@@ -285,8 +291,9 @@ clients below) at launch; the social networks were added for Postiz, which
 is ported but not part of the launch.
 
 Two clients serve mail and calendar rather than a social network:
-`google-workspace` (Gmail and Google Calendar, read-only) and
-`microsoft-365` (Outlook mail through Microsoft Graph, read-only). Open CRM
+`google-workspace` (Gmail, Google Calendar, Search Console and Google
+Analytics, read-only) and `microsoft-365` (Outlook mail and calendar through
+Microsoft Graph, read-only). Open CRM
 reads each member's own mailbox and calendar with them. Gmail's read scope is
 one of Google's restricted scopes: an *Internal* consent screen (every
 mailbox in the operator's Workspace) needs no review, while an *External*
@@ -316,7 +323,7 @@ the user's token secret, which the gateway never holds): an app keeps
 
 **For an app.** List each network for writing (obtaining and refreshing
 tokens with the operator's client writes). A client with scope sets
-(`google-workspace`, `microsoft-365`; the table at the end of this section)
+(`slack`, `google-workspace`, `microsoft-365`; the table at the end of this section)
 requires `scopes`, one or more set names, each once: the validator refuses
 the entry without them, or with a name the client doesn't offer, naming the
 sets it does, and refuses `scopes` on a client without any.
@@ -609,7 +616,8 @@ and `everyapp email set --sender` refuses on a hosted install.
 `rate_limit_counters`, once for each distinct recipient, before it is sent:
 100 per recipient address and 5,000 for the whole gateway a day when
 self-hosted, 20 and 5,000 when hosted, none when the mode is invalid. There
-is no per-organization budget (usage limits are a later feature). A message
+is no per-organization mail budget (the monthly cap in Admin → Usage counts
+provider calls, not mail). A message
 any of whose recipients has had its share is refused whole, with
 `Retry-After` until the next UTC midnight.
 
@@ -713,7 +721,8 @@ const { members } = await listMembers({
 (`hasAppAccess` in `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.ts`):
 members of the organization the call is for, not deactivated, in an active
 organization, and, for an organization's own app, granted it (everyone
-for `access: "everyone"`, otherwise whom admins granted). A shared app
+for `access: "everyone"`, otherwise whom admins granted, directly or through
+a group). A shared app
 lists every live member of the organization its call names. `id` is the
 identity's `sub` (`getEveryAppUser().id`); `name` is empty when the person
 set none.
@@ -762,9 +771,12 @@ The agent docs page is
   limits). Whoever can deploy an app can list any capability, as for AI
   providers (deploying already takes credentials that can change the
   gateway).
-- Calls are logged, not metered, and have no spend caps. App mail is the
-  one capability with budgets (per recipient address and per gateway, not
-  per organization).
+- Calls are counted per organization, app, member and provider, with the
+  provider's reported cost (Admin → Usage; `usage_daily`, `usage_monthly`),
+  and an owner or admin can cap an app's provider calls per month there
+  (off by default; over it, `app_monthly_cap_exceeded`, 429). App mail is
+  the one capability with budgets (per recipient address and per gateway,
+  not per organization).
 - A hosted gateway sends app mail from its own sender only, and apps on the
   dispatch tier declare no inbound mail (the hosted deploy API refuses it).
 - Keys and clients live in gateway Worker secrets, not encrypted in D1 with

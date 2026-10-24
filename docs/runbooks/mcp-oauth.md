@@ -7,6 +7,12 @@ use a personal access token (`epat_…`) instead. Tools are named
 `<app>_<tool>`, plus two built-ins, `everyapp_whoami` and
 `everyapp_list_apps`.
 
+A provider app turned on with `pnpm everyapp provider on dataforseo` is
+served by the gateway itself and appears the same way (`dataforseo_<tool>`).
+An app that still needs setup (a required setting unset:
+`pnpm everyapp secret list <app>`) has no tools here; `everyapp_list_apps`
+names it, with the command that opens it.
+
 The OAuth authorization server lives in the gateway too
 (`@cloudflare/workers-oauth-provider` 1.2, `apps/every-app-gateway/src/server/mcp-auth`).
 It protects exactly one resource, `<GATEWAY_URL>/mcp`: Claude requires the
@@ -19,8 +25,8 @@ pages' session only; it offers no OAuth.
 
 OAuth is on unless the `MCP_OAUTH_ENABLED` secret is `false` (or `0`, `off`,
 `no`). Any value other than those and `true` (`1`, `on`, `yes`) turns it off
-too, and logs `mcp.oauth.flag_unrecognized`. To turn it off (the CLI sends
-the secret with a redeploy of the gateway its checkout builds):
+too, and logs `mcp.oauth.flag_unrecognized`. To turn it off (live at once,
+no deploy):
 
 ```sh
 everyapp secret set MCP_OAUTH_ENABLED
@@ -94,7 +100,9 @@ and `everyapp setup` sets it up; there is nothing to set by hand.
 - An hourly cron trigger (`17 * * * *`). It deletes `mcp_tool_calls` rows
   older than `MCP_AUDIT_RETENTION_DAYS` (default 90), up to 20,000 a run,
   marks connections unused for 31 days as expired, deletes rate limit
-  counters whose day is over, and sweeps expired and
+  counters whose day is over, deletes usage counters past their retention
+  (daily rows after 13 months, monthly after 25; Admin → Usage), and sweeps
+  expired and
   orphaned OAuth records from `OAUTH_KV`, 50 grants and 50 tokens a run,
   resuming from its cursor (after three failed runs in a row it starts a
   new sweep). Each run logs one `mcp.maintenance` line; `audit_behind: true`
