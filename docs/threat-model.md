@@ -23,7 +23,7 @@ Verified against the code at commit `c0f916ad` (main on 2026-10-23, after #379);
   one testable sentence, the code that enforces it (`path:line`) and the
   test that pins it (`file :: test name`). Line numbers drift; the symbol
   names drift less; the ids don't. Each boundary below quotes the ones to
-  try first; the complete register of 318 is
+  try first; the complete register of 313 is
   [docs/threat-model-invariants.md](threat-model-invariants.md).
 - "Pinned" means a test fails if the invariant breaks. "Partial" means a
   test covers some cases. "Unpinned" means the code does it and nothing
@@ -187,8 +187,6 @@ remain the only thing between these and the data:
   Cloudflare's API with the operator's login. Access in front of the
   Gateway says nothing about who can deploy, change a row, or redeploy the
   Gateway. That is the Cloudflare account's membership.
-- **The mobile app** can't sign in behind the outer ring (its requests
-  carry no Access session); it needs the OIDC sign-in mode instead.
 - **The Access session itself.** Its cookie is Cloudflare's: keep
   `HttpOnly` and the binding cookie on (the runbook's defaults), and enable
   only identity providers that verify email addresses, since the Gateway
@@ -248,7 +246,7 @@ Cloudflare's job, some are simply not built.
 ## Trust boundaries
 
 Eight boundaries, each with what crosses it, the attacks it is there to
-stop, the invariants to try first (the complete register, 318 invariants
+stop, the invariants to try first (the complete register, 313 invariants
 with every code pointer and test, is
 [docs/threat-model-invariants.md](threat-model-invariants.md)), what is
 not that boundary's job, and the gaps found in this pass. B1 to B7 are
@@ -418,8 +416,7 @@ misconfigured deployment mode turning anything on.
 | `invite.secrets-hidden-from-members` | Better Auth's accept-invitation, list-invitations and get-full-organization endpoints answer 404 over HTTP; the gateway's own organization view returns no members or invitations to a member. | `apps/every-app-gateway/src/auth/config.ts:242-257, 455` (`DISABLED_AUTH_PATHS`) | `apps/every-app-gateway/src/server/invites-without-email.sqlite.test.ts` :: gives a plain member no way to read an invitation |
 | `ba.admin-plugin-closed` | Every endpoint of Better Auth's admin plugin (ban, impersonate, set password, set role, list and remove users) answers 404 over HTTP in every mode. | `apps/every-app-gateway/src/auth/config.ts:264-278, 455` | `apps/every-app-gateway/src/auth/config.test.ts` :: closes every one of the admin plugin's endpoints over HTTP |
 | `ba.org-creation-closed` | No HTTP client can create an organization: the endpoint is disabled, `allowUserToCreateOrganization` is false, and the before-hook refuses creation while no owner exists. | `apps/every-app-gateway/src/auth/config.ts:242, 469, 538-545` | `apps/every-app-gateway/src/auth/auth.sqlite.test.ts` :: closes organization creation over HTTP, before and after the claim |
-| `ba.expo-proxy-closed-native-origin-exact` | `/api/auth/expo-authorization-proxy` answers 404, and a POST to `/api/auth/*` from a custom-scheme origin other than exactly `everyapp://` is refused before Better Auth's prefix match. | `apps/every-app-gateway/src/auth/config.ts:279-285` | `apps/every-app-gateway/src/auth/cloudflare-access/access-sign-in.sqlite.test.ts` :: closes Better Auth Expo's authorization proxy |
-| `csrf.cookie-state-change-same-origin` | On the gateway host, any non-GET/HEAD/OPTIONS request carrying a cookie needs `Sec-Fetch-Site: same-origin` or an `Origin` on the gateway host, else `403 csrf_denied`; the only exemptions are the token-authenticated `/mcp`, `/oauth/token`, `/oauth/register` and the native shell's exact origin, none of which reads the cookie. | `apps/every-app-gateway/src/server/control-plane-guard.ts:26-50, 63-92` | `apps/every-app-gateway/src/server.test.ts` :: rejects a cookie-carrying cross-site POST to any control-plane route |
+| `csrf.cookie-state-change-same-origin` | On the gateway host, any non-GET/HEAD/OPTIONS request carrying a cookie needs `Sec-Fetch-Site: same-origin` or an `Origin` on the gateway host, else `403 csrf_denied`; the only exemptions are the token-authenticated `/mcp`, `/oauth/token` and `/oauth/register`, none of which reads the cookie. | `apps/every-app-gateway/src/server/control-plane-guard.ts:26-50, 63-92` | `apps/every-app-gateway/src/server.test.ts` :: rejects a cookie-carrying cross-site POST to any control-plane route |
 | `csrf.serverfn-fetch-only` | `/_serverFn/*` is served only to same-origin fetches carrying TanStack's client header that are not navigations; every state-changing server function is a POST. | `apps/every-app-gateway/src/server/control-plane-guard.ts:69-74` | `apps/every-app-gateway/src/server.test.ts` :: rejects a server-function GET reached by navigation |
 | `session.duplicate-cookie-refused` | A control-plane request carrying the session cookie name twice is answered `401 duplicate_session_cookie`, `no-store`, before the guard, the rate limits or any handler run. | `apps/every-app-gateway/src/server.ts:184-197, 210-213` | `apps/every-app-gateway/src/server.test.ts` :: refuses a session cookie tossed in by a sibling subdomain, before anything else |
 | `setup.one-time-link` | A claim succeeds only with an `est_` token whose SHA-256 equals, in constant time, the hash of an unconsumed, unexpired claim row, consumed by a guarded `UPDATE` as the last step. | `apps/every-app-gateway/src/server/services/SetupService.ts:79-88, 111-115` | `apps/every-app-gateway/src/server/services/SetupService.test.ts` :: rejects a wrong token with 403 and creates nothing |
@@ -432,8 +429,8 @@ misconfigured deployment mode turning anything on.
 | `ban.deactivation-revokes-all-credentials` | Deactivating a user bans the account, deletes every session and revokes every personal token in one D1 batch, then revokes their MCP connections; the ban is read on every request. | `apps/every-app-gateway/src/server/repositories/UserRepository.ts:62-85` | `apps/every-app-gateway/src/server/user-management.sqlite.test.ts` :: ends sessions and rejects the user's PAT |
 | `ban.removal-revokes-org-grants` | Removing a member deletes the membership and their `user_app_access` rows, revokes their tokens and MCP grants for that organization, and deletes the account only when they belong to no other organization. | `apps/every-app-gateway/src/server/repositories/OrganizationMembersRepository.ts:171-204` | `apps/every-app-gateway/src/server/user-management.sqlite.test.ts` :: revokes the deleted user's personal access tokens |
 | `org.context-is-verified-membership` | The organization a session acts under is always a members row for that user; an `activeOrganizationId` they aren't a member of resolves to null; without one, only a sole membership is a fallback. | `apps/every-app-gateway/src/server/organization/orgContext.ts:51-120` | `apps/every-app-gateway/src/server/organization/orgContext.test.ts` :: rejects an active organization the user is not a member of |
-| `org.suspended-opens-nothing` | A non-active organization fails the member middleware with `ORGANIZATION_SUSPENDED`, `/api/me/apps` with 403, and is not attributable for background work. | `apps/every-app-gateway/src/middleware/auth.ts:67-72` | `apps/every-app-gateway/src/middleware/auth.test.ts` :: refuses a suspended organization's members |
-| `ratelimit.credential-endpoints` | Sign-in, sign-up, reset, mobile sign-in and the setup claim are counted per client address (IPv6 by /64), per account and per gateway with Workers Rate Limiting bindings. | `apps/every-app-gateway/src/server/auth-rate-limit.ts:30-43, 98-104, 161-201` | `apps/every-app-gateway/src/server/auth-rate-limit.test.ts` :: throttles brute-force sign-in from one IP once its limit is spent |
+| `org.suspended-opens-nothing` | A non-active organization fails the member middleware with `ORGANIZATION_SUSPENDED` and is not attributable for background work. | `apps/every-app-gateway/src/middleware/auth.ts:67-72` | `apps/every-app-gateway/src/middleware/auth.test.ts` :: refuses a suspended organization's members |
+| `ratelimit.credential-endpoints` | Sign-in, sign-up, reset and the setup claim are counted per client address (IPv6 by /64), per account and per gateway with Workers Rate Limiting bindings. | `apps/every-app-gateway/src/server/auth-rate-limit.ts:30-43, 98-104, 161-201` | `apps/every-app-gateway/src/server/auth-rate-limit.test.ts` :: throttles brute-force sign-in from one IP once its limit is spent |
 | `mail.daily-budgets-and-escaping` | Every verification, reset and invitation mail is counted before sending against per-kind daily budgets per recipient (an HMAC of the address) and per gateway; every interpolated value is HTML-escaped and kept to one line. | `apps/every-app-gateway/src/server/email/sendEmail.ts:102-193`; `email/templates.ts:18-32` | `apps/every-app-gateway/src/server/email/sendEmail.test.ts` :: sends a few mails of a kind a day to one address, then refuses |
 | `redirect.sign-in-return-paths-safe` | The sign-in, sign-up, verify-email and reset pages follow `redirect` only as a same-origin path (`/` but not `//` or `/\`, no `://`) and `return_to` only as an http(s) URL on a subdomain of the current host that isn't a server-function URL. | `apps/every-app-gateway/src/utils/auth.ts:5-13, 43-72` | `apps/every-app-gateway/src/utils/auth.test.ts` :: rejects absolute URLs and missing values |
 | `session.cookie-scope-flags-and-ip` | In production the session cookie is `__Secure-`-prefixed and `Secure`, `Domain`-scoped to `APP_BASE_DOMAIN` (never a parent zone), and Better Auth's base URL is pinned to `GATEWAY_URL`, never derived from the request. | `apps/every-app-gateway/src/auth/config.ts:305-322, 340, 367, 373-397` | `apps/every-app-gateway/src/auth/config.test.ts` :: enables rate limiting, secure cookies and app-subdomain cookies in production |
@@ -479,9 +476,8 @@ the session lives in.
   UI and cookie can appear on a `workers.dev` host during that window.
 - *Hosted open sign-up has no bot control beyond mail budgets* (medium,
   known, hosted only; the preview stays invite-only for this reason).
-- *Two invariants have no test*: `/expo-authorization-proxy` in
-  `disabledPaths` is pinned only through the Access suite, and nothing posts
-  `role: "owner"` to `inviteMember` or `updateMemberRole`.
+- *One invariant has no test*: nothing posts `role: "owner"` to
+  `inviteMember` or `updateMemberRole`.
 
 **Docs to fix.** `docs/security-model.md` says a fresh gateway "accepts no
 sign-ups" until claimed: a sign-up carrying a live invitation token is
@@ -850,7 +846,7 @@ exceptions are the bypassed paths. With OIDC sign-in: an OpenID Connect
 code flow between Access and Better Auth. On the other side, Better Auth's
 sessions and the membership tables. The code is
 `apps/every-app-gateway/src/auth/cloudflare-access/` (the plugin, the JWT
-verifier, membership rules, the mobile handoff) and, for Managed OAuth on
+verifier, membership rules) and, for Managed OAuth on
 `/mcp`, `src/server/mcp-auth/access-caller.ts`.
 
 **What it stops.** A forged or foreign assertion signing anyone in. A
@@ -873,18 +869,17 @@ Access cookie, which a cross-site POST could ride.
 | `access.jwks.fail-closed` | When the JWKS can't be fetched, verification returns null: expired cached keys are dropped rather than reused, nobody waits on a fetch longer than 5 seconds, an unknown `kid` triggers a refetch at most every 30 seconds. | `apps/every-app-gateway/src/auth/cloudflare-access/jwt.ts:28-36` | `jwt.test.ts` :: fails closed when the key set can't be fetched |
 | `access.config.two-auds` | Only an assertion whose `aud` includes `CLOUDFLARE_ACCESS_AUD` may sign anyone in; a `CLOUDFLARE_ACCESS_APPS_AUD` assertion only vouches for an existing session; a malformed apps AUD turns the outer ring off. | `apps/every-app-gateway/src/auth/cloudflare-access/config.ts:234-247` | `config.test.ts` :: lets only the gateway application's AUD sign people in |
 | `access.outer-ring.sign-in-only-on-gateway-host-get` | The outer ring creates or swaps a session only during the gateway's own session check on `GATEWAY_URL`'s host; on any other host or method a session is only vouched for, never made. | `apps/every-app-gateway/src/auth/cloudflare-access/plugin.ts:69-82` | `access-sign-in.sqlite.test.ts` :: only acts on the gateway's own host |
-| `access.outer-ring.session-counts-only-when-vouched` | With the outer ring configured, every session read (the perimeter on app hosts, server functions, the OAuth pages, `/api/me/apps`, the host-session handoff) returns null unless the request carries a verified assertion for the session's person. | `apps/every-app-gateway/src/auth/cloudflare-access/plugin.ts:253-288` | `access-sign-in.sqlite.test.ts` :: counts a session only with Access's word for the same person; `outer-ring-perimeter.sqlite.test.ts` |
+| `access.outer-ring.session-counts-only-when-vouched` | With the outer ring configured, every session read (the perimeter on app hosts, server functions, the OAuth pages, the host-session handoff) returns null unless the request carries a verified assertion for the session's person. | `apps/every-app-gateway/src/auth/cloudflare-access/plugin.ts:253-288` | `access-sign-in.sqlite.test.ts` :: counts a session only with Access's word for the same person; `outer-ring-perimeter.sqlite.test.ts` |
 | `access.outer-ring.sessions-made-only-for-vouched-person` | Behind the outer ring, a user or session created by any other flow (password, invite sign-up, OIDC) is refused unless the request's verified assertion names the same email. | `apps/every-app-gateway/src/auth/cloudflare-access/plugin.ts:147-169` | `access-sign-in.sqlite.test.ts` :: won't sign an account in whose email isn't the one Access asserts |
 | `access.outer-ring.someone-elses-session-replaced` | On the gateway's session check, a live session for a different email than the assertion's is deleted and the Access person's own session is made, or the cookie is cleared. | `apps/every-app-gateway/src/auth/cloudflare-access/plugin.ts:290-325` | `access-sign-in.sqlite.test.ts` :: swaps a session that belongs to someone else for the Access person's |
 | `access.assertion.never-a-session-on-app-hosts` | On an app host the assertion alone never authenticates: without a Better Auth session the perimeter redirects to the gateway's sign-in. | `apps/every-app-gateway/src/perimeter/betterAuthAuthenticator.ts:157-171` | `outer-ring-perimeter.sqlite.test.ts` :: never treats the assertion itself as a session |
 | `access.perimeter.strips-cf-access-headers-and-cookie` | Before proxying, the perimeter removes the cookie header and every `cf-access-*` header; apps see only the gateway's identity. | `packages/perimeter/src/headers.ts:27` | `packages/perimeter/src/headers.test.ts` :: removes Cloudflare Access's assertion, email and service-token headers |
 | `access.membership.nothing-before-claim` | Until some organization has an owner, no Access sign-in creates a user or session, whatever the auto-join settings say. | `apps/every-app-gateway/src/auth/cloudflare-access/membership.ts:85-93` | `access-sign-in.sqlite.test.ts` :: creates no account on a gateway nobody has claimed |
 | `access.membership.members-invitees-autojoin-only` | An Access identity gets a session only as an existing member, a person with a live pending invitation for that exact email (claimed atomically, with the invited role), an email whose exact domain is in `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`, or anyone when the outer ring's auto-join is `everyone`; everyone else is refused and nothing is created. | `membership.ts:95-123` | `access-sign-in.sqlite.test.ts` :: makes an invited person a member, with the invited role |
-| `access.membership.deactivated-refused` | A deactivated user is refused at every Access entry (outer ring, OIDC, the mobile finish step, `/mcp`), whatever Access says. | `membership.ts:214` | `access-sign-in.sqlite.test.ts` :: keeps a deactivated member out |
+| `access.membership.deactivated-refused` | A deactivated user is refused at every Access entry (outer ring, OIDC, `/mcp`), whatever Access says. | `membership.ts:214` | `access-sign-in.sqlite.test.ts` :: keeps a deactivated member out |
 | `access.linking.verified-local-email-or-signed-in` | An Access identity is linked to an existing account with the same email only when that account's own email is verified, or while the browser is signed in to it as the same email. | `apps/every-app-gateway/src/auth/config.ts:355-364` | `access-sign-in.sqlite.test.ts` :: asks an account whose email isn't verified to sign in with its password once |
 | `access.oidc.state-pkce-client-secret` | OIDC sign-in uses Better Auth's browser-bound state and PKCE S256 and redeems the code with the client secret; a callback in a browser that didn't start the sign-in fails `state_mismatch`. | `oidc-provider.ts:50-63` | `access-sign-in.sqlite.test.ts` :: sends the browser to Access with state and PKCE, and refuses a callback it didn't start |
 | `access.oidc.id-token-verified-no-posted-tokens` | The ID token is verified in full (signature by the application's JWKS, issuer, audience = client id, expiry, email) before its email is used; posted ID tokens are not a sign-in. | `oidc-provider.ts:76-77` | `access-sign-in.sqlite.test.ts` :: refuses an ID token for another client |
-| `access.mobile.session-for-code-plus-secret-once` | The mobile handoff gives a session only to a finish request presenting a one-time code (2 minutes, consumed on the first attempt) together with a secret the app got on its own request. | `mobile-sign-in.ts:52-54` | `access-sign-in.sqlite.test.ts` :: hands the session to the app for a one-time code and its secret, once |
 | `access.passwords-off.lockout-protection` | `EMAIL_PASSWORD_SIGN_IN=false` closes the password paths only while an Access sign-in method is validly configured and at least one owner holds an Access identity. | `config.ts:288-308` | `config.test.ts` :: turns password sign-in off only with Access sign-in configured and an owner connected |
 | `access.hosted.ignored` | When the mode isn't `self_hosted`, every `CLOUDFLARE_ACCESS_*` setting is ignored with one logged problem and the plugin isn't registered. | `index.ts:19-42` | `access-sign-in.sqlite.test.ts` :: offers passwords alone, and open sign-up, on the hosted gateway |
 | `access.mcp.header-only-origin-first-gateway-aud` | On the gateway's `/mcp` an assertion is read from the header only, never the `CF_Authorization` cookie, only with the outer ring configured, only for the gateway application's AUD, and only after the browser `Origin` rule passed. | `apps/every-app-gateway/src/server/mcp-auth/routes.ts:174-202` | `access-mcp.sqlite.test.ts` :: never reads the CF_Authorization cookie |
@@ -896,8 +891,7 @@ the runbook (two applications, the bypass list, HttpOnly, the binding
 cookie): the gateway neither creates nor checks it, it only fails closed on
 an assertion it can't verify. `everyapp access on` (PR #379) is the
 command that sets it up the runbook's way. Personal tokens and OAuth tokens
-(they never pass through Access). The mobile app behind the outer ring
-(unsupported; OIDC mode instead).
+(they never pass through Access).
 
 **Gaps.**
 
@@ -920,9 +914,6 @@ command that sets it up the runbook's way. Personal tokens and OAuth tokens
   email would let them pick someone else's. The runbook says to enable only
   verifying providers; the gateway could restrict by `idp` claim or the
   operator could pin the identity provider id.
-- *The mobile handoff's network check is weak behind shared NAT* (low).
-  A top-level navigation from the same public address as the app's start
-  request counts as the app's own.
 - *Account identity is the email, so a recycled address inherits the
   predecessor's account* (info). Both paths key the account by lowercased
   email, not Access's `sub`.
@@ -1292,8 +1283,9 @@ means it waits for Ben's review because it touches a boundary.
 15. **Public routes are invisible where the operator looks** (B1, low):
     the deploy summary says "Private to you, owners and admins" whatever
     the manifest makes public, and `everyapp access on` punches those
-    paths through Access. With the onboarding thread: list them at deploy
-    and in `status`.
+    paths through Access. Fixed in #424: the deploy summary lists them
+    ("Open to the internet without sign-in: GET /t/*, …") and
+    `everyapp status` shows a PUBLIC column per app.
 16. **DataForSEO's `tasks_fixed` is account-wide and served** (B4, medium;
     fixed in #402, held).
 17. **No owner recovery and no ownership transfer** (B2, medium, known).
@@ -1330,12 +1322,13 @@ means it waits for Ben's review because it touches a boundary.
     Auth's open `/organization/list-members` and `get-organization` (B2,
     low): emails and roles of the organization. Fine for a four-person
     company; a decision for teams.
-26. **`everyapp://` is a wildcard-authority trusted origin, and
-    verify-email appends the session cookie to custom-scheme redirects**
-    (B2, low; only reachable on the hosted gateway where email
-    verification exists, and only if another app owns the `everyapp:`
-    scheme on the victim's device). The simplify swath is deciding the
-    Expo pieces' future; if they stay, pin the native origin exactly.
+26. **`everyapp://` was a wildcard-authority trusted origin, and
+    verify-email appended the session cookie to custom-scheme redirects**
+    (B2, low; closed by #442). The mobile shell went with #427, and
+    #442 removed the Expo plugin, the `everyapp://` trusted origin, the
+    native-origin exemption in the control-plane guard and the Access
+    mobile handoff, so the control plane's same-origin rule has no
+    exceptions left but the token endpoints.
 27. **An app could publish OAuth authorization-server metadata on its
     host** (`/.well-known/oauth-authorization-server`,
     `openid-configuration`) that legacy MCP discovery honours (B1, low; fixed in #406, held: both paths are reserved like
@@ -1379,7 +1372,8 @@ means it waits for Ben's review because it touches a boundary.
     makes the right shape; a read-back in `status` is the follow-up.
 38. **Hygiene before the public copy** (the launch-review thread's scan):
     no LICENSE file; a personal street address and account identifiers in
-    `docs/research/`; internal notes served at `/docs/internal`; Postiz's
+    `docs/research/` (deleted 2026-10-24); internal notes served at
+    `/docs/internal`; Postiz's
     AGPL schema as an unattributed test fixture; a personal Expo account in
     `apps/mobile-native/app.json` (deleted 2026-10-24). `docs/launch-2026-10-27.md` section G.
 
