@@ -172,6 +172,38 @@ describe("discoverGateway", () => {
     });
   });
 
+
+  it("builds each choice's rerun like a plain rerun: --json once when the run had it", async () => {
+    accounts = await Promise.all([
+      account("acct-1", "Personal", "apps.me.dev"),
+      account("acct-2", "Acme", "apps.acme.com"),
+    ]);
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), "status", "--json"];
+    try {
+      await expect(discover()).rejects.toMatchObject({
+        data: {
+          choices: [
+            expect.objectContaining({ rerun: "pnpm everyapp status --json --account-id acct-1" }),
+            expect.objectContaining({ rerun: "pnpm everyapp status --json --account-id acct-2" }),
+          ],
+        },
+      });
+      // setup names a Gateway by its address: --domain is replaced, --json stays.
+      process.argv = [...argv.slice(0, 2), "setup", "--domain", "apps.old.dev", "--json"];
+      await expect(discover({ hostFlag: "--domain" })).rejects.toMatchObject({
+        data: {
+          choices: [
+            expect.objectContaining({ rerun: "pnpm everyapp setup --json --domain apps.me.dev" }),
+            expect.objectContaining({ rerun: "pnpm everyapp setup --json --domain apps.acme.com" }),
+          ],
+        },
+      });
+    } finally {
+      process.argv = argv;
+    }
+  });
+
   it("takes an account a token can't read as one without a Gateway", async () => {
     // A CI token scoped to acct-2: cf refuses acct-1's databases.
     accounts = await Promise.all([

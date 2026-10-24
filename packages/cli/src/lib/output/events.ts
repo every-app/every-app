@@ -431,8 +431,17 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       if (event.status === "start") {
         const host = text(data["gatewayUrl"])?.replace(/^https:\/\//, "");
         switch (data["change"]) {
-          case GatewayChange.Install:
-            return { line: `Installing the Gateway at ${host} (${name})` };
+          case GatewayChange.Install: {
+            // How long until the owner link, so nobody gives up on it.
+            const minutes = expectedMinutes(data["expectedMinutes"]);
+            return {
+              line: `Installing the Gateway at ${host} (${name})${
+                minutes
+                  ? chalk.dim(` (usually ${minutes.min}–${minutes.max} minutes, then the owner link)`)
+                  : ""
+              }`,
+            };
+          }
           case GatewayChange.Resume:
             return { line: `Resuming the Gateway install at ${host} (${name})` };
           case GatewayChange.Upgrade:
@@ -940,6 +949,13 @@ function factsIn(value: unknown): Fact[] {
     label: fact.label,
     value: `${/^https?:\/\//.test(fact.value) ? chalk.cyan(fact.value) : fact.value}${fact.note ? `  ${chalk.dim(fact.note)}` : ""}`,
   }));
+}
+
+/** A step's `data.expectedMinutes`: `{ min, max }`, how long it usually takes. */
+function expectedMinutes(value: unknown): { min: number; max: number } | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { min, max } = value as { min?: unknown; max?: unknown };
+  return typeof min === "number" && typeof max === "number" ? { min, max } : undefined;
 }
 
 /** A deploy's `data.publicRoutes`: `{ path, methods }` each. */

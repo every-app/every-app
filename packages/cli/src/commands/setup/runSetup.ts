@@ -615,6 +615,11 @@ async function deployOrRepairGateway({
   }
 
   const name = releaseName(source);
+  const change = live
+    ? GatewayChange.Upgrade
+    : install?.gatewayHost === target.domain
+      ? GatewayChange.Resume
+      : GatewayChange.Install;
   // Said before the release is opened: a checkout's build takes a minute or two.
   out.emit({
     type: "step",
@@ -624,16 +629,15 @@ async function deployOrRepairGateway({
       ? `Upgrading the Gateway to ${name}`
       : `Installing the Gateway at ${target.domain} (${name})`,
     data: {
-      change: live
-        ? GatewayChange.Upgrade
-        : install?.gatewayHost === target.domain
-          ? GatewayChange.Resume
-          : GatewayChange.Install,
+      change,
       release: source.version,
       releaseName: name,
       from: live?.releaseVersion ?? null,
       gatewayUrl,
       account: accountName,
+      // A fresh install: the build, the upload and the certificate, before
+      // the owner link; said so an agent gives the run time.
+      ...(change === GatewayChange.Install ? { expectedMinutes: INSTALL_MINUTES } : {}),
     },
   });
   const release = await deps.openRelease();
@@ -863,7 +867,7 @@ async function ensureOwner({
       expiresAt: link.expiresAt.toISOString(),
       replaced: link.replaced,
       waiting: true,
-      waitingFor: "the owner account",
+      waitingFor: "the owner account (up to 15 minutes)",
     },
   });
   if (deps.interactive) await deps.openBrowser(link.url);
@@ -894,7 +898,7 @@ async function ensureOwner({
       `Open the setup link above to create the owner account\nNobody opened it within ${roughly(Date.now() - waitStarted)}. It still works for ${expiresIn()}; running setup before it's opened replaces it.`,
       undefined,
       {
-        rerun: `${CLI} setup`,
+        rerun: setupAgain(flags),
         rerunNote: "to finish",
         data: { setupUrl: link.url, expiresAt: link.expiresAt.toISOString() },
       },
@@ -904,9 +908,20 @@ async function ensureOwner({
     "claim_owner",
     "Use the newer setup link, or get a new one\nThis link stopped working before anyone used it: setup ran again on another machine, or it expired.",
     undefined,
-    { rerun: `${CLI} setup`, rerunNote: "for a new link" },
+    { rerun: setupAgain(flags), rerunNote: "for a new link" },
   );
 }
+
+/**
+ * `setup` again, for the owner link: with `--json` when this run had it, so
+ * the agent that relayed this link reads the next one the same way.
+ */
+function setupAgain(flags: SetupFlags): string {
+  return thisCommand([], { argv: flags.json ? ["setup", "--json"] : ["setup"] });
+}
+
+/** What a fresh install takes before the owner link: the build, the upload, the certificate. */
+const INSTALL_MINUTES = { min: 5, max: 10 } as const;
 
 /** Why a gateway that doesn't answer may not, in a person's words. */
 const unreachableBecause: Record<NoAnswerKind, (host: string, reason: string) => string> = {

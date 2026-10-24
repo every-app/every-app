@@ -305,7 +305,7 @@ Source: `packages/cli/src/commands/setup/deployGateway.ts` (`gatewayTarget`).
 
 `setup` is installing a new Gateway, no `--domain` was given, and nobody is at a terminal to pick one; the account has at least one active zone (with none it is the `add_domain` action). This is also how a `--json` run of the `install_gateway` action's rerun ends when that rerun is `pnpm everyapp setup` with no domain (`status`, `secret`, `email`, `db`: `lib/gateway/connect.ts`). Headline: `Choose the Gateway's address with --domain`, then `It must be under one of this account's domains: <zones>. A subdomain works best.`; `data.zones`.
 
-**Fix:** with one zone: `fix`: `add --domain apps.<zone>, or another name under <zone>`, `rerun`: this same command with `--domain apps.<zone>` appended (`--json` dropped), `rerunNote`: `or another name under <zone>`. With several zones: `fix`: `add --domain apps.<first zone>, or another name under <zone a>, <zone b> or <zone c>`, no `rerun`, and `data.choices`: one `{ label: <zone>, rerun }` per zone (the shape of `choose_account`), so the agent runs one choice's `rerun`, or asks the person which. Not retryable.
+**Fix:** with one zone: `fix`: `add --domain apps.<zone>, or another name under <zone>`, `rerun`: this same command with `--domain apps.<zone>` appended (`--json` included when the run had it: run it as it is), `rerunNote`: `or another name under <zone>`. With several zones: `fix`: `add --domain apps.<first zone>, or another name under <zone a>, <zone b> or <zone c>`, no `rerun`, and `data.choices`: one `{ label: <zone>, rerun }` per zone (the shape of `choose_account`), so the agent runs one choice's `rerun` as it is (built the same way), or asks the person which. Not retryable.
 
 Source: `packages/cli/src/commands/setup/runSetup.ts` (`pickDomain`).
 
@@ -376,7 +376,7 @@ Source: `packages/cli/src/lib/app/emailRoutes.ts` (`planEmailRoutes`).
 
 `email set --inbound <address> …` refused before the manifest is read or anything connects. `assertValidList` runs `emailListProblems("inbound", …)` (`packages/sdk/src/internal/email.ts`) and refuses the list with its problems, each said once: more than 50 addresses (`EMAIL_LIMITS.inbound`: `At most 50 inbound addresses, not <n>.`); an address longer than 90 characters (`EMAIL_LIMITS.inboundAddressChars`, Email Routing's limit on a rule's value: `<x> is longer than Email Routing's 90 characters.`); a value that isn't `*@<domain>` or `<local>@<domain>` in lowercase (`EMAIL_INBOUND_PATTERN`, `/^(\*|[a-z0-9._+-]+)@([a-z0-9-]+\.)+[a-z]{2,}$/`: `"<x>" isn't an inbound address: an inbound address is "*@<domain>" or "<local>@<domain>", in lowercase.`); a value listed twice (`<x> is listed twice.`). One problem: the headline is its text before `: `, and what follows is the next line with its first letter capitalized (`"Foo@example.com" isn't an inbound address` / `An inbound address is "*@<domain>" or "<local>@<domain>", in lowercase.`). Several: `<n> problems with --inbound`, then one `• <problem>` line each. `data.problems` either way.
 
-**Fix:** with one problem, when lowercasing the values is all the list needs, `rerun` is this same command with those values lowercased (and `--json` dropped, as `thisCommand` builds it); otherwise none. Not retryable. `email unset` takes no list and never raises it.
+**Fix:** with one problem, when lowercasing the values is all the list needs, `rerun` is this same command with those values lowercased (`--json` included when the run had it, as `thisCommand` builds it: run it as it is); otherwise none. Not retryable. `email unset` takes no list and never raises it.
 
 Source: `packages/cli/src/commands/email/index.ts` (`assertValidList`, called from `setEmail`), `packages/sdk/src/internal/email.ts` (`emailListProblems`, `EMAIL_LIMITS`, `EMAIL_INBOUND_PATTERN`).
 
@@ -446,7 +446,7 @@ Source: `packages/cli/src/lib/app/emailRoutes.ts` (`emailZone`), `packages/cli/s
 
 ## Error codes F–R
 
-The codes below follow the defaults in `packages/cli/src/lib/errors.ts`: an error event has no `data.rerun` unless its raise site sets one or the error is `retryable: true` (then `data.rerun` is this same command as typed, `--json` dropped, built by `thisCommand()`); `data.authorize: true` is set only for the takeover flags in `TAKEOVER_FLAGS`, and no code in this range is one of them, so none of these reruns needs a person's yes. Each entry says whether the code is `retryable`; a `data.fix` is a remedy in words, `data.rerun` a command to run, `data.rerunNote` what follows it. Angle brackets inside quoted messages stand for values filled in at run time.
+The codes below follow the defaults in `packages/cli/src/lib/errors.ts`: an error event has no `data.rerun` unless its raise site sets one or the error is `retryable: true` (then `data.rerun` is this same command as typed, `--json` included when the run had it, built by `thisCommand()`: run it as it is); `data.authorize: true` is set only for the takeover flags in `TAKEOVER_FLAGS`, and no code in this range is one of them, so none of these reruns needs a person's yes. Each entry says whether the code is `retryable`; a `data.fix` is a remedy in words, `data.rerun` a command to run, `data.rerunNote` what follows it. Angle brackets inside quoted messages stand for values filled in at run time.
 
 ### GATEWAY_NOT_FOUND
 
@@ -1145,7 +1145,7 @@ Source: `packages/cli/src/commands/setup/deployGateway.ts`, `packages/cli/src/li
 
 ## Codes the reporter gives
 
-`reportFailure` in `packages/cli/src/lib/output/report.ts` turns whatever a command threw into its last event. An `ActionRequiredError` is `action_required`; an `EveryAppError` is `error` with its own code (the codes above and in the other sections); everything else gets one of these. A `retryable` one carries `data.rerun` (this command, without `--json`). A failure after a migration appends `The database stays migrated. To roll it back: <restore command>` to the message and `data.rollbackCommand` (cf's `d1 time-travel restore`) to the data.
+`reportFailure` in `packages/cli/src/lib/output/report.ts` turns whatever a command threw into its last event. An `ActionRequiredError` is `action_required`; an `EveryAppError` is `error` with its own code (the codes above and in the other sections); everything else gets one of these. A `retryable` one carries `data.rerun` (this command, `--json` included when the run had it: run it as it is). A failure after a migration appends `The database stays migrated. To roll it back: <restore command>` to the message and `data.rollbackCommand` (cf's `d1 time-travel restore`) to the data.
 
 ### CANCELLED
 

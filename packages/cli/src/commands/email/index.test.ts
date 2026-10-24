@@ -570,10 +570,11 @@ describe("email set refuses before anything is read or changed", () => {
     const argv = process.argv;
     process.argv = [...argv.slice(0, 2), "email", "set", "--inbound", "*@example.com", "--json"];
     try {
+      // The takeover rerun keeps the run's --json: once authorized, the agent runs it as it is.
       await expect(set(dir, { inbound: ["*@example.com"] })).rejects.toMatchObject({
         code: "EMAIL_ROUTING_DISABLED",
         authorize: true,
-        rerun: "pnpm everyapp email set --inbound '*@example.com' --enable-email-routing",
+        rerun: "pnpm everyapp email set --inbound '*@example.com' --json --enable-email-routing",
         data: { domains: ["example.com"] },
       });
     } finally {

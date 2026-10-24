@@ -64,6 +64,14 @@ Not a problem. Run `pnpm everyapp update` to update it, or leave it: the next ne
 
 Install the latest LTS version from [nodejs.org](https://nodejs.org), open a new terminal window, and try again.
 
+## ERR_PNPM_LOCKFILE_CONFIG_MISMATCH
+
+`pnpm install` stopped with **Cannot proceed with the frozen installation**. It was told to keep the lockfile exactly as it is (`--frozen-lockfile`, which a `CI` variable in your shell turns on by itself), and the lockfile doesn't match this copy's settings.
+
+Run `pnpm install` on its own, without `--frozen-lockfile`.
+
+If it still fails, run `pnpm --version`. Every App is built with pnpm 10.34.5, and pnpm 10 switches to that version by itself; an older pnpm doesn't. Run `npm install -g pnpm`, open a new terminal window, and try again.
+
 ## Command "everyapp" not found
 
 You're outside your `every-app` folder, or haven't run `pnpm install` in it yet. Run `cd every-app`, then `pnpm install`, and try again.

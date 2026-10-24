@@ -123,10 +123,11 @@ function assertValidList(kind: "senders" | "inbound", values: readonly string[])
     {
       ...(lowercased
         ? {
-            rerun: thisCommand(
-              [],
-              process.argv.slice(2).map((arg) => (values.includes(arg) ? arg.toLowerCase() : arg)),
-            ),
+            rerun: thisCommand([], {
+              argv: process.argv
+                .slice(2)
+                .map((arg) => (values.includes(arg) ? arg.toLowerCase() : arg)),
+            }),
           }
         : {}),
       data: { problems },

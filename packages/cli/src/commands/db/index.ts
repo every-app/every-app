@@ -251,7 +251,7 @@ export async function queryAppD1({
     throw new EveryAppError(
       "UNKNOWN_D1_BINDING",
       `No D1 binding ${target} in everyapp.config.ts\nIt declares ${bindings.join(", ")}.`,
-      { rerun: thisCommand([], withBinding(process.argv.slice(2), bindings[0]!)) },
+      { rerun: thisCommand([], { argv: withBinding(process.argv.slice(2), bindings[0]!) }) },
     );
   }
 

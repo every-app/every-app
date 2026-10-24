@@ -7,9 +7,11 @@ import {
   CancelledError,
   EveryAppError,
 } from "@/lib/errors";
-import { CLI, invocation, thisCommand, thisCommandWithout } from "./command";
+import { CLI } from "./command";
 import { createNdjsonSink } from "./events";
 import { reportFailure } from "./report";
+
+// `thisCommand`, `thisCommandWithout` and `invocation` are tested in command.test.ts.
 
 function report(error: unknown) {
   const events: Array<Record<string, any>> = [];
@@ -17,44 +19,6 @@ function report(error: unknown) {
   reportFailure(out, error);
   return { event: events[0]!, exitCode: out.exitCode };
 }
-
-describe("thisCommand", () => {
-  it("is the command as given, without --json, to paste into a shell", () => {
-    expect(thisCommand([], ["deploy", "--json", "--verbose"])).toBe(
-      `${CLI} deploy --verbose`,
-    );
-    expect(thisCommand(["--force-dns"], ["deploy", "--json"])).toBe(
-      `${CLI} deploy --force-dns`,
-    );
-    expect(thisCommand(["--yes"], ["delete", "todo", "--yes"])).toBe(
-      `${CLI} delete todo --yes`,
-    );
-    expect(
-      thisCommand([], ["db", "query", "SELECT * FROM t WHERE a = 'x'"]),
-    ).toBe(`${CLI} db query 'SELECT * FROM t WHERE a = '\\''x'\\'''`);
-  });
-});
-
-describe("invocation", () => {
-  it("is how the person ran everyapp: through their package manager, or directly", () => {
-    expect(invocation({ npm_config_user_agent: "pnpm/10.34.5 npm/? node/v24.22.0 darwin arm64" })).toBe(
-      "pnpm everyapp",
-    );
-    expect(invocation({ npm_config_user_agent: "npm/10.9.2 node/v22.18.0 darwin arm64" })).toBe("npx everyapp");
-    expect(invocation({})).toBe("everyapp");
-  });
-});
-
-describe("thisCommandWithout", () => {
-  it("drops a flag and its value, however it was given", () => {
-    expect(thisCommandWithout("--gateway", ["secret", "list", "--gateway", "https://a.dev"])).toBe(
-      `${CLI} secret list`,
-    );
-    expect(thisCommandWithout("--gateway", ["secret", "list", "--gateway=https://a.dev", "--json"])).toBe(
-      `${CLI} secret list`,
-    );
-  });
-});
 
 describe("reportFailure", () => {
   it("never suggests the failing command again where that can't help", () => {

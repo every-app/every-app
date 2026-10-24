@@ -412,12 +412,20 @@ describe("applyGateway", () => {
     // cf says so on stdout, with no error box.
     account.strictAbortNextDeploy = true;
 
-    await expect(deployGateway()).rejects.toMatchObject({
-      action: "rerun_interactive",
-      message: expect.stringContaining("was changed outside everyapp; confirm in a terminal"),
-      rerunNote: "in a terminal, and confirm cf's prompt",
-      data: { needsTerminal: true },
-    });
+    // The rerun is for a person at a terminal: built without the run's --json.
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), "update", "--json"];
+    try {
+      await expect(deployGateway()).rejects.toMatchObject({
+        action: "rerun_interactive",
+        message: expect.stringContaining("was changed outside everyapp; confirm in a terminal"),
+        rerun: "pnpm everyapp update",
+        rerunNote: "in a terminal, and confirm cf's prompt",
+        data: { needsTerminal: true },
+      });
+    } finally {
+      process.argv = argv;
+    }
 
     // At a terminal, cf runs again attached and asks its own question.
     account.strictAbortNextDeploy = true;

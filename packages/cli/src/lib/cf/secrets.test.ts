@@ -49,16 +49,29 @@ describe("patchWorkerSecrets", () => {
     await patchWorkerSecrets(account.cf, "every-acme-todo", { GITHUB_TOKEN: "new" });
     const serving = await getWorkerDeployment(account.cf, "every-acme-todo");
     expect(serving?.versionId).toBe("every-acme-todo-api-1");
-    await expect(
-      assertReplaceable({
-        cf: account.cf,
-        workerName: "every-acme-todo",
-        shownAs: "todo",
-        recordedVersionIds: ["every-acme-todo-version-1"],
-        interactive: false,
-        change: { question: "Set GITHUB_TOKEN on it anyway?", effect: "Setting it makes a new version." },
-      }),
-    ).rejects.toThrow(/^todo was changed outside everyapp; confirm in a terminal/);
+    // The rerun is for a person at a terminal: built without the run's --json.
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), "secret", "set", "GITHUB_TOKEN", "--json"];
+    try {
+      await expect(
+        assertReplaceable({
+          cf: account.cf,
+          workerName: "every-acme-todo",
+          shownAs: "todo",
+          recordedVersionIds: ["every-acme-todo-version-1"],
+          interactive: false,
+          change: { question: "Set GITHUB_TOKEN on it anyway?", effect: "Setting it makes a new version." },
+        }),
+      ).rejects.toMatchObject({
+        action: "rerun_interactive",
+        message: expect.stringMatching(/^todo was changed outside everyapp; confirm in a terminal/),
+        rerun: "pnpm everyapp secret set GITHUB_TOKEN",
+        rerunNote: "in a terminal",
+        data: { needsTerminal: true },
+      });
+    } finally {
+      process.argv = argv;
+    }
     await expect(
       assertReplaceable({
         cf: account.cf,

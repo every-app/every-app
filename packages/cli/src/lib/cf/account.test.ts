@@ -143,6 +143,28 @@ describe("resolveAccount", () => {
     });
   });
 
+
+  it("builds each choice's rerun like a plain rerun: --json once when the run had it", async () => {
+    vi.stubEnv("CLOUDFLARE_ACCOUNT_ID", "");
+    const argv = process.argv;
+    process.argv = [...argv.slice(0, 2), "setup", "--json"];
+    try {
+      await expect(
+        resolveAccount({ whoami: whoami(), interactive: false }),
+      ).rejects.toMatchObject({
+        action: "choose_account",
+        data: {
+          choices: [
+            expect.objectContaining({ rerun: `${CLI} setup --json --account-id acct-1` }),
+            expect.objectContaining({ rerun: `${CLI} setup --json --account-id acct-2` }),
+          ],
+        },
+      });
+    } finally {
+      process.argv = argv;
+    }
+  });
+
   it("refuses an account the login can't use", async () => {
     await expect(
       resolveAccount({ whoami: whoami(), flag: "acct-9", interactive: false }),

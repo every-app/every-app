@@ -144,6 +144,19 @@ describe("everyapp setup", () => {
       "setup.gateway ok",
       "setup.owner ok",
     ]);
+    // A fresh install says how long it takes before the owner link, and the
+    // link's wait how long it lasts, so an agent gives the run the time.
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        step: "setup.gateway",
+        status: "start",
+        data: expect.objectContaining({ change: "install", expectedMinutes: { min: 5, max: 10 } }),
+      }),
+    );
+    expect(links()[0].data).toMatchObject({
+      waiting: true,
+      waitingFor: "the owner account (up to 15 minutes)",
+    });
     expect(result).toEqual({
       gatewayUrl: `https://${GW}`,
       account: expect.any(String),
@@ -449,7 +462,7 @@ describe("everyapp setup", () => {
     expect(out.exitCode).toBe(0);
     expect(plain(stdout)).toEqual([
       "Setting up Every App in Acme (dev@example.com)",
-      "Installing the Gateway at apps.example.com (0.2.0)",
+      "Installing the Gateway at apps.example.com (0.2.0) (usually 5–10 minutes, then the owner link)",
       expect.stringMatching(/^Database created ✓/),
       expect.stringMatching(/^Uploaded ✓/),
     ]);
@@ -514,8 +527,9 @@ describe("everyapp setup", () => {
     expect(links()).toHaveLength(2);
     expect(links()[1]).toMatchObject({
       message: expect.stringMatching(/^Open the setup link above to create the owner account\nNobody opened it within /),
-      // Not shown again: it is on the screen already.
-      data: { setupUrl: links()[0].data.url, rerun: "pnpm everyapp setup", rerunNote: "to finish" },
+      // Not shown again: it is on the screen already. The rerun keeps --json:
+      // the agent that relayed the link runs it as it is.
+      data: { setupUrl: links()[0].data.url, rerun: "pnpm everyapp setup --json", rerunNote: "to finish" },
     });
     expect(links()[1].data.url).toBeUndefined();
     const url = links()[0].data.url;
@@ -531,6 +545,18 @@ describe("everyapp setup", () => {
     );
     expect(() => worker.claim(url)).toThrow("INVALID_OR_EXPIRED_SETUP_LINK");
     expect(steps()).toContain("setup.owner ok");
+  });
+
+  it("tells a person whose link nobody opened to run setup again, without --json", async () => {
+    const { exitCode } = await setup(
+      { json: false, domain: GW },
+      { interactive: true, seams: { ...deps().seams!, owner: nobodyOpensIt } },
+    );
+
+    expect(exitCode).toBe(2);
+    expect(links()[1]).toMatchObject({
+      data: { rerun: "pnpm everyapp setup", rerunNote: "to finish" },
+    });
   });
 
   it("finishes once someone opens the link a run that gave up showed", async () => {

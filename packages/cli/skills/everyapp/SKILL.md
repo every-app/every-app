@@ -41,9 +41,10 @@ State:   pnpm everyapp status --json   (data.fixes says what to run when somethi
          data.apps[].setup says what each app needs set: ready, settings, unmet
          (each with why and docs), and command, the one secret set that opens it)
 Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair;
-         a fresh install runs 10-20 min: build, certificate, then up to 15 min
+         a fresh install runs 5-20 min: build, certificate, then up to 15 min
          waiting for the owner link, so give it a long timeout or background
-         it and keep reading; rerun with --json, data.rerun drops it)
+         it and keep reading; run data.rerun as given (a needsTerminal rerun
+         goes to the person))
 New app: pnpm everyapp create <id> --json   then cd into it and edit src/; the
          manifest is everyapp.config.ts
 Run:     pnpm everyapp dev   (long-running, human-facing: start it in the

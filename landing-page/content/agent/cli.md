@@ -580,6 +580,9 @@ owner, and the one to run when something is off. Run it again any time: it picks
 stopped, and does nothing once everything is there. After a git pull, pnpm everyapp update takes
 the newer Gateway from this checkout (setup does that too, on its way).
 
+A fresh install takes 5 to 20 minutes, most of it waiting for you at the owner link: give it a
+long timeout, or run it in the background and watch its output.
+
   1. Logs in to Cloudflare (cf auth login, or CLOUDFLARE_API_TOKEN) and finds the Gateway in
      the login's accounts; with none, picks the account to install it in
   2. Picks where the Gateway lives (--domain, or asked): any hostname under one of the

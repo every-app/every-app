@@ -21,14 +21,20 @@ const RUNNERS: Readonly<Record<string, string>> = {
 export const CLI = invocation();
 
 /**
- * This run's command, to run again: its arguments as given, without
- * `--json` (an agent adds its own), and with `flags` it doesn't have yet.
+ * This run's command, to run again: its arguments as given (`--json`
+ * included when this run had it, so an agent runs it as it is), and with
+ * `flags` it doesn't have yet. A `terminal` rerun is one only a person at a
+ * terminal can do (every `needsTerminal`): it leaves `--json` out, since
+ * with it the run would stop at the same place again.
  */
 export function thisCommand(
   flags: readonly string[] = [],
-  argv: readonly string[] = process.argv.slice(2),
+  {
+    terminal = false,
+    argv = process.argv.slice(2),
+  }: { terminal?: boolean; argv?: readonly string[] } = {},
 ): string {
-  const args = argv.filter((arg) => arg !== "--json");
+  const args = terminal ? argv.filter((arg) => arg !== "--json") : [...argv];
   for (const flag of flags) {
     if (!args.includes(flag)) args.push(flag);
   }
@@ -46,7 +52,7 @@ export function thisCommandWithout(
     if (arg === flag) i++;
     else if (!arg.startsWith(`${flag}=`)) args.push(arg);
   }
-  return thisCommand([], args);
+  return thisCommand([], { argv: args });
 }
 
 /** An argument as a POSIX shell reads it back. */

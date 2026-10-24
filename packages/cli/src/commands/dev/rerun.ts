@@ -23,5 +23,5 @@ export function replaceFlag(
     if ([...spellings].some((spelling) => arg.startsWith(`${spelling}=`))) continue;
     args.push(arg);
   }
-  return thisCommand([], [...args, flag, value]);
+  return thisCommand([], { argv: [...args, flag, value] });
 }

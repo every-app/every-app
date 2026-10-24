@@ -494,7 +494,14 @@ describe("createHumanSink", () => {
       type: "step",
       step: "setup.gateway",
       status: "start",
-      data: { change: "install", release: "0.4.0", releaseName: "0.4.0", from: null, gatewayUrl: "https://apps.example.com" },
+      data: {
+        change: "install",
+        release: "0.4.0",
+        releaseName: "0.4.0",
+        from: null,
+        gatewayUrl: "https://apps.example.com",
+        expectedMinutes: { min: 5, max: 10 },
+      },
     });
     sink.emit({ type: "step", step: "gateway.migrations", status: "start" });
     now += 400;
@@ -548,7 +555,8 @@ describe("createHumanSink", () => {
 
     expect(lines()).toEqual([
       "Setting up Every App in Example Inc (ben@example.com)",
-      "Installing the Gateway at apps.example.com (0.4.0)",
+      // How long until the owner link, from the step's `data.expectedMinutes`.
+      "Installing the Gateway at apps.example.com (0.4.0) (usually 5–10 minutes, then the owner link)",
       "Database created ✓ 2 migrations",
       "Uploaded ✓ 6.1s",
       "Owner account created for ben@example.com ✓",
@@ -781,6 +789,8 @@ describe("createHumanSink", () => {
       });
     start({ change: "upgrade", from: "0.3.0", release: "0.4.0", releaseName: "0.4.0" });
     start({ change: "upgrade", from: "0.4.0", release: "0.4.0", releaseName: "commit 981c72da" });
+    // An install that doesn't say how long it takes gets no estimate.
+    start({ change: "install", from: null, release: "0.4.0", releaseName: "0.4.0" });
     start({ change: "resume", from: null, release: "0.4.0", releaseName: "0.4.0" });
     start({ change: "redeploy", from: "0.4.0", release: "0.4.0", releaseName: "0.4.0" });
     start({ change: "repair", from: "0.4.0", release: "0.4.0", releaseName: "0.4.0" });
@@ -793,6 +803,7 @@ describe("createHumanSink", () => {
     expect(lines()).toEqual([
       "Upgrading Ben Senescu's Gateway to 0.4.0",
       "Upgrading Ben Senescu's Gateway to commit 981c72da",
+      "Installing the Gateway at apps.example.com (0.4.0)",
       "Resuming the Gateway install at apps.example.com (0.4.0)",
       "Redeploying Ben Senescu's Gateway (0.4.0)",
       "Repairing Ben Senescu's Gateway (0.4.0)",
