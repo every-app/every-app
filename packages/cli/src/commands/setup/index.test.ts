@@ -1,5 +1,5 @@
 /**
- * What `everyapp setup` (and `gateway deploy`) ends with: the `done` event
+ * What `everyapp setup` (and `update`) ends with: the `done` event
  * for each outcome, and what a new Gateway's owner is told to do next.
  */
 import { describe, expect, it } from "vitest";

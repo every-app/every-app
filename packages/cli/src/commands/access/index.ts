@@ -22,7 +22,6 @@
  */
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
 import chalk from "chalk";
-import type { LocalContext } from "@/context";
 import {
   applicationUpdateBody,
   createAccessApplication,
@@ -125,9 +124,7 @@ interface OnOptions extends AccessOptions {
   writeSettings?: boolean;
 }
 
-export async function on(
-  this: LocalContext,
-  flags: GatewayCommandFlags & {
+export async function on(flags: GatewayCommandFlags & {
     email?: string[];
     "email-domain"?: string[];
     team?: string;
@@ -150,14 +147,12 @@ export async function on(
   );
 }
 
-export async function off(
-  this: LocalContext,
-  flags: AccessFlags & { "keep-applications"?: boolean },
+export async function off(flags: AccessFlags & { "keep-applications"?: boolean },
 ): Promise<void> {
   await runCommand(flags, (out) => turnAccessOff({ flags, out, keepApplications: flags["keep-applications"] }));
 }
 
-export async function show(this: LocalContext, flags: GatewayCommandFlags): Promise<void> {
+export async function show(flags: GatewayCommandFlags): Promise<void> {
   await runCommand(flags, (out) => showAccess({ flags, out }));
 }
 

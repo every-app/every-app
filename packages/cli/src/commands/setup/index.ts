@@ -1,5 +1,4 @@
 import chalk from "chalk";
-import type { LocalContext } from "@/context";
 import type { DeploymentMode } from "@/lib/gateway/secretsFile";
 import { checkoutGateway } from "@/lib/gateway/checkoutRelease";
 import { CLI } from "@/lib/output/command";
@@ -16,14 +15,12 @@ import {
   type SetupResult,
 } from "./runSetup";
 
-export async function setup(
-  this: LocalContext,
-  flags: SetupFlags,
+export async function setup(flags: SetupFlags,
 ): Promise<void> {
   await runGatewayCommand(flags, (out, deps) => runSetup(flags, out, deps));
 }
 
-/** `setup` or `gateway deploy`, run with their dependencies, then what it did to the Gateway. */
+/** `setup` or `update`, run with their dependencies, then what it did to the Gateway. */
 export async function runGatewayCommand(
   flags: SetupFlags,
   run: (out: EventSink, deps: SetupDeps) => Promise<SetupResult>,

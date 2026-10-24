@@ -137,11 +137,11 @@ Log in to the Gateway's Cloudflare account there (`pnpm everyapp login`, or the 
 
 ### Upgrading your Gateway
 
-The Gateway is built from this checkout, so upgrading it is `git pull` then `everyapp gateway deploy`, keeping its data, users and apps. `gateway deploy` only updates the Gateway your login finds: it never installs one. Both name what they deploy by its version when the checkout is exactly that release (its `gateway-v<version>` tag), and by commit otherwise. Deploying a new app does it too, since that redeploys the Gateway from the same checkout. The build is kept under `node_modules/.cache/everyapp` by the tree hash of the Gateway's sources (and the SDK, perimeter and toolbus it bundles), so it only happens again after they change. A checkout behind the live Gateway is refused with "run git pull"; `everyapp status` says whether the live Gateway was built from your checkout's sources, and what to run when something is off. The checkout is the only source of the Gateway while publishing is paused (.github/RELEASE.md).
+The Gateway is built from this checkout, so upgrading it is `git pull` then `everyapp update`, keeping its data, users and apps. `update` only updates the Gateway your login finds: it never installs one. Both name what they deploy by its version when the checkout is exactly that release (its `gateway-v<version>` tag), and by commit otherwise. Deploying a new app does it too, since that redeploys the Gateway from the same checkout. The build is kept under `node_modules/.cache/everyapp` by the tree hash of the Gateway's sources (and the SDK, perimeter and toolbus it bundles), so it only happens again after they change. A checkout behind the live Gateway is refused with "run git pull"; `everyapp status` says whether the live Gateway was built from your checkout's sources, and what to run when something is off. The checkout is the only source of the Gateway while publishing is paused (.github/RELEASE.md).
 
 ## Build Your Own App
 
-Every command is on the [Commands](https://everyapp.com/docs/commands) page: `login`, `setup`, `gateway deploy`, `status`, `create`, `dev`, `deploy`, `delete`, `secret`, `email`, `db` and `workflow`.
+Every command is on the [Commands](https://everyapp.com/docs/commands) page: `login`, `setup`, `update`, `install`, `status`, `create`, `dev`, `deploy`, `release`, `delete`, `secret`, `email`, `access` and `db`.
 
 ### An app in its own repository
 

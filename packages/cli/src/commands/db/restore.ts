@@ -1,4 +1,3 @@
-import type { LocalContext } from "@/context";
 import { restoreD1 } from "@/lib/cf/d1";
 import { canPromptInTerminal, confirmUnlessYes, type Confirm } from "@/lib/output/prompt";
 import type { CfRunner } from "@/lib/cf/runner";
@@ -32,9 +31,7 @@ interface RestoreCommandFlags {
  * migrating deploy saved; `--gateway`, the Gateway's, from its last
  * migrating setup or upgrade.
  */
-export async function restore(
-  this: LocalContext,
-  flags: RestoreCommandFlags,
+export async function restore(flags: RestoreCommandFlags,
   appId?: string,
 ): Promise<void> {
   const out = eventSink(flags.json);

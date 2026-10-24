@@ -74,7 +74,7 @@ function usageOf(path: readonly string[], command: Command<CommandContext>): str
 }
 
 /** Within two edits of `input`: a typo worth suggesting, not an unrelated word. */
-export function closeTo(input: string, candidates: readonly string[]): string | undefined {
+function closeTo(input: string, candidates: readonly string[]): string | undefined {
   let best: { candidate: string; distance: number } | undefined;
   for (const candidate of candidates) {
     const distance = editDistance(input.toLowerCase(), candidate.toLowerCase());

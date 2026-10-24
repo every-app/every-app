@@ -81,7 +81,7 @@ The fixture `packages/cli/src/test/fixtures/manifests/agentic-inbox.ts` is the i
 pnpm everyapp email set [--sender <pattern>]... [--inbound <address>]... [--enable-email-routing] [--manifest <path>] [--gateway <url>] [--account-id <id>] [--json] [--verbose]
 ```
 
-Run in the app's directory (its `everyapp.config.ts` names the app), or with `--manifest <path>` to a checkout's `everyapp.config.ts` for an app deployed from a release (`everyapp deploy <url>`). Each flag replaces its whole list; a list not named is kept. Defined in `packages/cli/src/commands/email/command.ts`, run by `setEmail()` in `packages/cli/src/commands/email/index.ts`.
+Run in the app's directory (its `everyapp.config.ts` names the app), or with `--manifest <path>` to a checkout's `everyapp.config.ts` for an app deployed from a release (`everyapp install <url>`). Each flag replaces its whole list; a list not named is kept. Defined in `packages/cli/src/commands/email/command.ts`, run by `setEmail()` in `packages/cli/src/commands/email/index.ts`.
 
 | Flag                     | Value                                      | Meaning                                                                                                                                           |
 | ------------------------ | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |

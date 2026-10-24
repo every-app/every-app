@@ -1,4 +1,3 @@
-import type { LocalContext } from "@/context";
 import { cfWhoami, deviceLoginAction, logIn } from "@/lib/cf/account";
 import { canPromptInTerminal } from "@/lib/output/prompt";
 import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
@@ -13,9 +12,7 @@ interface LoginCommandFlags {
 }
 
 /** `everyapp login`: log cf in to Cloudflare, and say as whom. */
-export async function login(
-  this: LocalContext,
-  flags: LoginCommandFlags,
+export async function login(flags: LoginCommandFlags,
 ): Promise<void> {
   await runCommand(flags, async (out) => {
     await logInToCloudflare({ out, interactive: canPromptInTerminal(flags.json ?? false) });

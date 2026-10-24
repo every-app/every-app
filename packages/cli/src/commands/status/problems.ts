@@ -125,7 +125,7 @@ export interface Unread {
 
 const SETUP = `${CLI} setup`;
 const DEPLOY = `${CLI} deploy`;
-const GATEWAY_DEPLOY = `${CLI} gateway deploy`;
+const UPDATE = `${CLI} update`;
 
 /** The problem of a Gateway database with no install row: setup stopped before writing it. */
 export function notInstalled(): Problem {
@@ -191,8 +191,8 @@ export function problemsFor({
       code: ProblemCode.GatewayOutdated,
       severity: Severity.Info,
       headline: "Your every-app folder has a newer Gateway than the one online",
-      detail: ["Run gateway deploy to update it now, or leave it: the next new app's deploy updates it too."],
-      run: command`${GATEWAY_DEPLOY}`,
+      detail: ["Run update now, or leave it: the next new app's deploy updates it too."],
+      run: command`${UPDATE}`,
       runNote: "updates it now",
     });
   }

@@ -40,7 +40,6 @@ import {
   SETTABLE_GATEWAY_SETTINGS,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
-import type { LocalContext } from "@/context";
 import { readOwnedResources, recordUploadedVersion } from "@/lib/app/ownership";
 import { assertAppSecretName } from "@/lib/app/secrets";
 import type { D1Database } from "@/lib/cf/d1";
@@ -84,9 +83,7 @@ interface SetSecretsOptions extends SecretOptions {
   readValue: (name: string) => Promise<string>;
 }
 
-export async function set(
-  this: LocalContext,
-  flags: GatewayCommandFlags & { "from-env"?: string },
+export async function set(flags: GatewayCommandFlags & { "from-env"?: string },
   ...names: string[]
 ): Promise<void> {
   await runCommand(flags, async (out) => {
@@ -100,15 +97,13 @@ export async function set(
   });
 }
 
-export async function unset(
-  this: LocalContext,
-  flags: GatewayCommandFlags & { yes?: boolean },
+export async function unset(flags: GatewayCommandFlags & { yes?: boolean },
   ...names: string[]
 ): Promise<void> {
   await runCommand(flags, (out) => unsetSecrets({ flags, out, names }));
 }
 
-export async function list(this: LocalContext, flags: GatewayCommandFlags): Promise<void> {
+export async function list(flags: GatewayCommandFlags): Promise<void> {
   await runCommand(flags, (out) => listSecrets({ flags, out }));
 }
 

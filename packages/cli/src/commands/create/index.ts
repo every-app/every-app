@@ -16,7 +16,6 @@
  * Each step is a `create.*` step event with a start and a time.
  */
 import path from "node:path";
-import type { LocalContext } from "@/context";
 import { applyLocalMigrations } from "@/lib/app/localD1";
 import { linkSkill } from "@/lib/app/skill";
 import { copyStarter, newAppDir } from "@/lib/app/starter";
@@ -41,9 +40,7 @@ interface CreateCommandFlags {
   verbose?: boolean;
 }
 
-export default async function create(
-  this: LocalContext,
-  flags: CreateCommandFlags,
+export default async function create(flags: CreateCommandFlags,
   appIdArg?: string,
 ): Promise<void> {
   await runCommand(flags, (out) => createApp({ flags, appIdArg, out }));

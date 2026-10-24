@@ -153,7 +153,7 @@ check it. Line numbers drift; symbol names less.
 
 7. **The hosted deploy protocol and the deploy-key API stay.** `HOSTED_DEPLOY_PROTOCOL`,
    `MIN_HOSTED_DEPLOY_PROTOCOL`, `HOSTED_DEPLOY_PARTS` and `bundleModuleType()` are the one shape
-   the gateway reads a bundle in. The app release tarball (`everyapp deploy <url>`, the browser
+   the gateway reads a bundle in. The app release tarball (`everyapp install <url>`, the browser
    install) is parsed into the same `DeployBundle` and stamped with the same protocol, so the
    constants are load-bearing on self-host too. A change to the bundle shape bumps the protocol and
    the floor together. `/api/v1/*` exists only while `platformPolicy(env).thirdPartyDeploys`; a

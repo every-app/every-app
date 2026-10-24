@@ -28,7 +28,6 @@
  * interrupt handler (lib/interrupt.ts) that also stops a migration's cf.
  */
 import http from "node:http";
-import type { LocalContext } from "@/context";
 import { ManifestError } from "@every-app/perimeter/manifest";
 import type { SessionAuthenticator } from "@every-app/perimeter/dev";
 import { getFreePort, waitForHttp, waitForUrl } from "./proxy";
@@ -69,9 +68,7 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8787;
 const MIRROR_PROBE_MS = 5000;
 
-export default async function dev(
-  this: LocalContext,
-  flags: DevCommandFlags,
+export default async function dev(flags: DevCommandFlags,
 ): Promise<void> {
   const out = eventSink(false);
   await runReported(out, () => runDev(flags, out));

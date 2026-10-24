@@ -1,4 +1,5 @@
 import { buildCommand, buildRouteMap } from "@stricli/core";
+import { CLI } from "@/lib/output/command";
 import { accountFlag, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
 
 const connectFlags = {
@@ -81,12 +82,12 @@ const onCommand = buildCommand({
       "leaves alone what it didn't set up. Deploys keep an app's public routes in step themselves.",
       "",
       "Afterwards each existing member signs in once with their password through Access, which",
-      "links the two. Then passwords can go: everyapp secret set EMAIL_PASSWORD_SIGN_IN (false).",
+      `links the two. Then passwords can go: ${CLI} secret set EMAIL_PASSWORD_SIGN_IN (false).`,
       "",
       "Examples:",
-      "  everyapp access on",
-      "  everyapp access on --email-domain example.com",
-      "  everyapp access on --team acme --json",
+      `  ${CLI} access on`,
+      `  ${CLI} access on --email-domain example.com`,
+      `  ${CLI} access on --team acme --json`,
     ].join("\n"),
   },
 });
@@ -120,7 +121,7 @@ const offCommand = buildCommand({
       "use them. Asks first.",
       "",
       "Example:",
-      "  everyapp access off",
+      `  ${CLI} access off`,
     ].join("\n"),
   },
 });
@@ -139,7 +140,7 @@ const showCommand = buildCommand({
       "(their values can't be read back). Nothing is changed.",
       "",
       "Example:",
-      "  everyapp access show",
+      `  ${CLI} access show`,
     ].join("\n"),
   },
 });

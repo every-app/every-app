@@ -136,45 +136,6 @@ export const WorkflowOutput = z.looseObject({
 export type Workflow = z.infer<typeof WorkflowOutput>;
 export const WorkflowListOutput = z.array(WorkflowOutput);
 
-/** `cf workflows instances list`. */
-export const WorkflowInstanceListOutput = z.array(
-  z.looseObject({
-    id: z.string(),
-    status: z.string().nullish(),
-    created_on: z.string().nullish(),
-  }),
-);
-
-/** `cf workflows instances get`: status, params, steps, output and error. */
-export const WorkflowInstanceOutput = z.looseObject({
-  status: z.string(),
-  params: z.unknown().optional(),
-  output: z.unknown().optional(),
-  error: z.looseObject({ name: z.string().nullish(), message: z.string().nullish() }).nullish(),
-  start: z.string().nullish(),
-  end: z.string().nullish(),
-  steps: z
-    .array(
-      z.looseObject({
-        name: z.string().nullish(),
-        success: z.boolean().nullish(),
-        output: z.unknown().optional(),
-      }),
-    )
-    .nullish(),
-});
-
-/** `cf workflows instances create`. */
-export const WorkflowInstanceCreatedOutput = z.looseObject({
-  id: z.string(),
-  status: z.string().nullish(),
-});
-
-/** `cf workflows instances pause|resume|terminate|restart`: the new status. */
-export const WorkflowStatusOutput = z.looseObject({
-  status: z.string().nullish(),
-});
-
 /** `cf d1 raw`: one result per statement, rows as arrays. */
 export const D1RawOutput = z.array(
   z.looseObject({

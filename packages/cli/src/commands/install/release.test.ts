@@ -1,9 +1,8 @@
 /**
- * App releases end to end: `everyapp deploy --bundle-only` packs the app
- * the fake Cloudflare builds (the SDK's real everyAppWorker(),
- * tenant-neutral), and `everyapp deploy <tarball | github url>` installs
- * the release into a Gateway this CLI deployed, with no checkout of the
- * app. The hosted gateway's own reader of a release
+ * App releases end to end: `everyapp release` packs the app the fake
+ * Cloudflare builds (the SDK's real everyAppWorker(), tenant-neutral), and
+ * `everyapp install <tarball | github url>` installs the release into a
+ * Gateway this CLI deployed, with no checkout of the app. The hosted gateway's own reader of a release
  * (apps/every-app-gateway/src/server/deploy/{tar,release}.ts) reads what
  * the packer writes.
  */
@@ -32,9 +31,8 @@ import { fakeGithubReleases } from "@/test/fakeGithub";
 import { buildGatewayRelease, releaseSource } from "@/test/gatewayRelease";
 import { GatewayWorker } from "@/test/gatewayWorker";
 import { makeTestHome } from "@/test/home";
-import { bundleApp } from "./bundleApp";
-import { deployApp } from "./deployApp";
-import { refuseBundleFlags } from "./index";
+import { deployApp } from "../deploy/deployApp";
+import { bundleApp } from "../release/bundleApp";
 
 // The hosted gateway's release reader, loaded by path: it is another package.
 const GATEWAY_DEPLOY = "../../../../../apps/every-app-gateway/src/server/deploy";
@@ -135,7 +133,7 @@ afterEach(async () => {
   for (const dir of [home, appDir, elsewhere]) fs.rmSync(dir, { recursive: true, force: true });
 });
 
-/** `everyapp deploy --bundle-only` in the app's directory. */
+/** `everyapp release` in the app's directory. */
 function bundle(manifest: EveryAppCliManifest = TODO) {
   account.apps.set(appDir, manifest);
   return bundleApp({
@@ -154,8 +152,8 @@ async function open(tarball: string, options?: Parameters<typeof openAppRelease>
   return release;
 }
 
-/** `everyapp deploy <source>` from a directory with no app in it. */
-function deployRelease(release: AppRelease) {
+/** `everyapp install <source>` from a directory with no app in it. */
+function installRelease(release: AppRelease) {
   return deployApp({
     cwd: elsewhere,
     release,
@@ -173,7 +171,7 @@ const builds = () => account.cf.calls.filter((call) => call.args[0] === "build")
 const upload = (index = -1) =>
   account.deploys.filter((d) => d.workerName === "every-acme-todo").at(index)!;
 
-describe("everyapp deploy --bundle-only", () => {
+describe("everyapp release", () => {
   it("packs a release of the app's tenant-neutral build that the CLI and the hosted gateway both read", async () => {
     const result = await bundle();
     const tarball = path.join(appDir, "everyapp-release.tar.gz");
@@ -259,27 +257,16 @@ describe("everyapp deploy --bundle-only", () => {
     ).rejects.toMatchObject({ code: "RELEASE_MIGRATIONS_UNSUPPORTED" });
     expect(fs.existsSync(outFile)).toBe(false);
   });
-
-  it("packs only the app in this directory: no source, and --out only with it", () => {
-    expect(() => refuseBundleFlags({ "bundle-only": true }, "https://github.com/acme/todo")).toThrow(
-      expect.objectContaining({ code: "BUNDLE_ONLY_WITH_SOURCE" }),
-    );
-    expect(() => refuseBundleFlags({ out: "x.tar.gz" }, undefined)).toThrow(
-      expect.objectContaining({ code: "OUT_WITHOUT_BUNDLE_ONLY" }),
-    );
-    expect(() => refuseBundleFlags({ "bundle-only": true, out: "x.tar.gz" }, undefined)).not.toThrow();
-    expect(() => refuseBundleFlags({}, "https://github.com/acme/todo")).not.toThrow();
-  });
 });
 
-describe("everyapp deploy <release>", () => {
+describe("everyapp install <release>", () => {
   it("installs a release with no checkout of the app, uploading what a deploy from its directory uploads", async () => {
     const { tarball } = await bundle();
     const release = await open(tarball);
     const before = builds();
     events = [];
 
-    const result = await deployRelease(release);
+    const result = await installRelease(release);
 
     expect(result).toMatchObject({ liveUrl: "https://todo.example.com", workerName: "every-acme-todo", live: true });
     // Nothing built or installed; the release's migrations applied.
@@ -336,7 +323,7 @@ describe("everyapp deploy <release>", () => {
     expect(github.requests.every((request) => request.init?.credentials === "omit")).toBe(true);
 
     events = [];
-    await deployRelease(release);
+    await installRelease(release);
     expect(events.find((event) => event["step"] === "app.deploy")?.["data"]).toMatchObject({
       version: "1.4.0",
       origin: "github.com/acme/todo (release v1.4.0)",
@@ -372,7 +359,7 @@ describe("everyapp deploy <release>", () => {
     const { tarball } = await bundle();
     const release = await open(tarball);
     await expect(
-      deployRelease({
+      installRelease({
         ...release,
         manifest: {
           ...release.manifest,

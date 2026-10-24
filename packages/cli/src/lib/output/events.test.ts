@@ -664,7 +664,7 @@ describe("createHumanSink", () => {
     ]);
   });
 
-  it("shows --bundle-only's release, its SHA-256 and how to deploy it", () => {
+  it("shows release's tarball, its SHA-256 and how to install it", () => {
     const { sink, lines } = human();
     sink.emit({
       type: "step",
@@ -674,7 +674,7 @@ describe("createHumanSink", () => {
     });
     sink.emit({
       type: "done",
-      data: { next: [{ command: "pnpm everyapp deploy ./everyapp-release.tar.gz", note: "deploys it" }] },
+      data: { next: [{ command: "pnpm everyapp install ./everyapp-release.tar.gz", note: "installs it" }] },
     });
     expect(lines()).toEqual([
       "Packed analytics 1.4.2 ✓",
@@ -683,7 +683,7 @@ describe("createHumanSink", () => {
       "SHA-256  9f3c1a2e4b5d",
       "",
       "Next:",
-      "  pnpm everyapp deploy ./everyapp-release.tar.gz  deploys it",
+      "  pnpm everyapp install ./everyapp-release.tar.gz  installs it",
     ]);
   });
 

@@ -8,10 +8,6 @@ import {
   type CommandContext,
   type RouteMap,
 } from "@stricli/core";
-import {
-  buildInstallCommand,
-  buildUninstallCommand,
-} from "@stricli/auto-complete";
 import { name, version } from "../package.json";
 import {
   argumentProblem,
@@ -27,43 +23,35 @@ import { deleteCommand } from "./commands/delete/command";
 import { deployCommand } from "./commands/deploy/command";
 import { devCommand } from "./commands/dev/command";
 import { emailRoutes } from "./commands/email/command";
-import { gatewayRoutes } from "./commands/gateway/command";
+import { installCommand } from "./commands/install/command";
 import { loginCommand } from "./commands/login/command";
+import { releaseCommand } from "./commands/release/command";
 import { secretRoutes } from "./commands/secret/command";
 import { setupCommand } from "./commands/setup/command";
 import { statusCommand } from "./commands/status/command";
-import { workflowRoutes } from "./commands/workflow/command";
-import type { LocalContext } from "./context";
+import { updateCommand } from "./commands/update/command";
 import { errorMessage } from "./lib/errors";
-
-const completionRoutes = buildRouteMap({
-  routes: {
-    install: buildInstallCommand("everyapp", { bash: "__everyapp_bash_complete" }),
-    uninstall: buildUninstallCommand("everyapp", { bash: true }),
-  },
-  docs: { brief: "Install or remove bash completion" },
-});
+import { CLI } from "./lib/output/command";
 
 const routes = buildRouteMap({
   routes: {
-    login: loginCommand,
-    setup: setupCommand,
-    gateway: gatewayRoutes,
-    status: statusCommand,
     create: createCommand,
     dev: devCommand,
     deploy: deployCommand,
+    release: releaseCommand,
+    db: dbRoutes,
+    login: loginCommand,
+    setup: setupCommand,
+    update: updateCommand,
+    install: installCommand,
+    status: statusCommand,
     delete: deleteCommand,
+    access: accessRoutes,
     secret: secretRoutes,
     email: emailRoutes,
-    access: accessRoutes,
-    db: dbRoutes,
-    workflow: workflowRoutes,
-    completion: completionRoutes,
   },
   docs: {
     brief: "Deploy and run Every App apps on your own Cloudflare account.",
-    hideRoute: { completion: true },
   },
 });
 
@@ -72,8 +60,8 @@ const routeMap = routes as unknown as RouteMap<CommandContext>;
 
 /**
  * Every path the router answers to ("status", "secret set", "secret ls"),
- * groups, aliases and hidden routes included: what a document may tell
- * someone to run (lib/app/setupSkills.test.ts checks the setup files).
+ * groups and aliases included: what a document may tell someone to run
+ * (lib/app/setupSkills.test.ts checks the setup files).
  */
 export function commandPaths(): string[] {
   const paths: string[] = [];
@@ -88,12 +76,16 @@ export function commandPaths(): string[] {
   return paths;
 }
 
-/** The commands `everyapp --help` lists, in groups. */
+/**
+ * The commands `everyapp --help` lists, by what the person is doing:
+ * building an app of their own, or running the Gateway and the apps on it.
+ */
 const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
-  ["GET STARTED", ["login", "setup", "gateway", "create"]],
-  ["APPS", ["dev", "deploy", "delete"]],
-  ["CONFIGURE", ["secret", "email", "access"]],
-  ["INSPECT", ["status", "db", "workflow"]],
+  ["BUILD AN APP", ["create", "dev", "deploy", "release", "db"]],
+  [
+    "RUN A GATEWAY",
+    ["login", "setup", "update", "install", "status", "delete", "access", "secret", "email"],
+  ],
 ];
 
 /** What `everyapp <group> --help` shows as examples. */
@@ -102,19 +94,13 @@ const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
   email: ["email show", "email set --sender '*@mail.example.com'", "email unset inbound"],
   access: ["access on", "access on --email-domain example.com", "access off"],
   db: ["db migrate", "db query 'select count(*) from todos'"],
-  workflow: [
-    "workflow list",
-    "workflow instances RANK_CHECK --status errored",
-    `workflow start RANK_CHECK --params '{"siteId":"abc"}'`,
-  ],
-  completion: ["completion install"],
 };
 
 /** What a group's help says under its brief, where one line isn't enough. */
 const GROUP_NOTES: Readonly<Record<string, readonly string[]>> = {
   email: [
     "Invites, and apps that don't set their own senders, send as the Gateway's sender.",
-    "Set it with: everyapp secret set EMAIL_FROM EMAIL_FROM_NAME",
+    `Set it with: ${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME`,
   ],
 };
 
@@ -122,13 +108,11 @@ const briefOf = (input: string) => routes.getRoutingTargetForInput(input)!.brief
 
 /**
  * `everyapp`, `everyapp --help`: the commands by group, a few examples,
- * and where flags are. `all` (`--help-all`) adds the hidden ones.
+ * and where flags are. Every command is written as the person runs it
+ * (`pnpm everyapp …` from a checkout).
  */
-export function rootHelp(all: boolean): string {
-  const width = Math.max(
-    ...GROUPS.flatMap(([, names]) => names.map((n) => n.length)),
-    ...(all ? ["completion".length] : []),
-  );
+export function rootHelp(): string {
+  const width = Math.max(...GROUPS.flatMap(([, names]) => names.map((n) => n.length)));
   const section = (title: string, names: readonly string[]) => [
     "",
     chalk.bold(title),
@@ -138,22 +122,21 @@ export function rootHelp(all: boolean): string {
     routes.brief,
     "",
     chalk.bold("USAGE"),
-    "  everyapp <command> [flags]",
+    `  ${CLI} <command> [flags]`,
     ...GROUPS.flatMap(([title, names]) => section(title, names)),
-    ...(all ? section("SHELL COMPLETION", ["completion"]) : []),
     "",
     chalk.bold("FLAGS"),
     "  -h, --help      Show help for everyapp or a command",
-    ...(all ? ["  -H, --help-all  Also show hidden commands and flags"] : []),
     "  -v, --version   Show everyapp's version",
     "      --no-color  Print without colors (also NO_COLOR=1)",
     "",
     chalk.bold("EXAMPLES"),
-    "  $ everyapp setup --domain apps.example.com",
-    "  $ everyapp create todo",
-    "  $ everyapp deploy",
+    `  $ ${CLI} setup --domain apps.example.com`,
+    `  $ ${CLI} create todo`,
+    `  $ ${CLI} deploy`,
+    `  $ ${CLI} install https://github.com/<owner>/<repo>`,
     "",
-    `Run ${chalk.bold("everyapp <command> --help")} for a command's flags.`,
+    `Run ${chalk.bold(`${CLI} <command> --help`)} for a command's flags.`,
     "",
   ].join("\n");
 }
@@ -178,15 +161,15 @@ export function groupHelp(args: readonly string[]): string | null {
     ...(notes.length > 0 ? ["", ...notes] : []),
     "",
     chalk.bold("USAGE"),
-    `  everyapp ${group} <command> [flags]`,
+    `  ${CLI} ${group} <command> [flags]`,
     "",
     chalk.bold("COMMANDS"),
     ...entries.map((entry) => `  ${entry.name.original.padEnd(width)}  ${entry.target.brief}`),
     ...(examples.length > 0
-      ? ["", chalk.bold("EXAMPLES"), ...examples.map((example) => `  $ everyapp ${example}`)]
+      ? ["", chalk.bold("EXAMPLES"), ...examples.map((example) => `  $ ${CLI} ${example}`)]
       : []),
     "",
-    `Run ${chalk.bold(`everyapp ${group} <command> --help`)} for its flags.`,
+    `Run ${chalk.bold(`${CLI} ${group} <command> --help`)} for its flags.`,
     "",
   ].join("\n");
 }
@@ -200,7 +183,8 @@ export function versionLine(): string {
  * The application, with every problem stricli finds in the arguments (an
  * unknown command or flag, a bad value) handed to `report` as an
  * {@link ArgumentProblem} instead of written by stricli; `color` says
- * whether its help may use color.
+ * whether its help may use color. Its name is the invocation the person
+ * used (`CLI`), so usage lines say what to type.
  */
 export function buildApp({
   color,
@@ -211,7 +195,7 @@ export function buildApp({
   /** The arguments it runs with, for what the problems name. */
   args: readonly string[];
   report: (problem: ArgumentProblem) => void;
-}): Application<LocalContext> {
+}): Application<CommandContext> {
   const reported = (problem: ArgumentProblem) => {
     report(problem);
     // stricli writes what this returns; the report said it already.
@@ -224,7 +208,7 @@ export function buildApp({
       data: {},
     });
   return buildApplication(routes, {
-    name,
+    name: CLI,
     versionInfo: { currentVersion: version },
     scanner: {
       allowArgumentEscapeSequence: true,
@@ -244,9 +228,5 @@ export function buildApp({
         commandErrorResult: failed,
       }),
     },
-  });
+  }) as unknown as Application<CommandContext>;
 }
-
-/** For shell completion, which reports nothing. */
-export const completionApp = buildApp({ color: false, args: [], report: () => undefined });
-

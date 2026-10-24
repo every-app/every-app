@@ -1,4 +1,5 @@
 import { buildCommand, buildRouteMap } from "@stricli/core";
+import { CLI } from "@/lib/output/command";
 import { accountFlag, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
 
 /** The lists `email unset` clears. */
@@ -65,9 +66,9 @@ const setCommand = buildCommand({
       "  --inbound  everyapp.config.ts declares email: { inbound: true }; the domain is on Cloudflare DNS",
       "",
       "Examples:",
-      "  everyapp email set --sender '*@mail.example.com'",
-      "  everyapp email set --inbound reports@mail.example.com",
-      "  everyapp email set --inbound '*@example.com' --enable-email-routing",
+      `  ${CLI} email set --sender '*@mail.example.com'`,
+      `  ${CLI} email set --inbound reports@mail.example.com`,
+      `  ${CLI} email set --inbound '*@example.com' --enable-email-routing`,
     ].join("\n"),
   },
 });
@@ -100,8 +101,8 @@ const unsetCommand = buildCommand({
       "back to dropping mail. Nothing is built or deployed.",
       "",
       "Examples:",
-      "  everyapp email unset inbound",
-      "  everyapp email unset senders inbound",
+      `  ${CLI} email unset inbound`,
+      `  ${CLI} email unset senders inbound`,
     ].join("\n"),
   },
 });
@@ -119,8 +120,8 @@ const showCommand = buildCommand({
       "inbound address is routed.",
       "",
       "Examples:",
-      "  everyapp email show",
-      "  everyapp email show --manifest ../analytics/everyapp.config.ts",
+      `  ${CLI} email show`,
+      `  ${CLI} email show --manifest ../analytics/everyapp.config.ts`,
     ].join("\n"),
   },
 });

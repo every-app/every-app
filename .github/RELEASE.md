@@ -8,7 +8,7 @@ How to work this way is in the README, under "Work from This Checkout".
 ## Gateway releases
 
 While publishing is paused, the checkout's Gateway is the only source. Every
-Gateway deploy (`everyapp setup`, `everyapp gateway deploy`, and the rebind
+Gateway deploy (`everyapp setup`, `everyapp update`, and the rebind
 an app's `deploy` or `delete` runs) builds the release from
 `apps/every-app-gateway` in the checkout the CLI runs from
 (`packages/cli/src/lib/gateway/checkoutRelease.ts`), kept under the

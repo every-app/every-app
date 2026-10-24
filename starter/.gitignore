@@ -4,7 +4,7 @@ yarn.lock
 .dev.vars*
 dist/
 .wrangler
-# `everyapp deploy --bundle-only`'s release
+# `everyapp release`'s tarball
 everyapp-release.tar.gz
 
 # cf build output, generated types and local dev state

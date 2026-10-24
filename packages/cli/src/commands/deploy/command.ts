@@ -1,11 +1,6 @@
 import { buildCommand } from "@stricli/core";
-import {
-  accountFlag,
-  forceDnsFlag,
-  gatewayFlag,
-  jsonFlag,
-  verboseFlag,
-} from "../flags";
+import { CLI } from "@/lib/output/command";
+import { accountFlag, appTakeoverFlags, gatewayFlag, jsonFlag, verboseFlag } from "../flags";
 
 export const deployCommand = buildCommand({
   loader: async () => {
@@ -13,44 +8,11 @@ export const deployCommand = buildCommand({
     return deploy;
   },
   parameters: {
-    positional: {
-      kind: "tuple",
-      parameters: [
-        {
-          brief:
-            "An app release to deploy instead of the app in this directory: a GitHub repository URL (its latest release), a release tarball's URL, or a downloaded everyapp-release.tar.gz",
-          parse: String,
-          placeholder: "source",
-          optional: true,
-        },
-      ],
-    },
+    positional: { kind: "tuple", parameters: [] },
     flags: {
       gateway: gatewayFlag,
       "account-id": accountFlag,
-      "allow-delete-durable-object-data": {
-        kind: "boolean",
-        brief:
-          "Deploy even though Durable Object classes were removed, deleting their data",
-        optional: true,
-      },
-      "allow-delete-workflows": {
-        kind: "boolean",
-        brief:
-          "Deploy even though Workflows were removed, deleting them and their instances",
-        optional: true,
-      },
-      "force-dns": {
-        ...forceDnsFlag,
-        brief:
-          "Publish the app's new hostname even where a DNS record answers it (one at the hostname is replaced)",
-      },
-      "enable-email-routing": {
-        kind: "boolean",
-        brief:
-          "Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)",
-        optional: true,
-      },
+      ...appTakeoverFlags,
       "no-wait": {
         kind: "boolean",
         brief:
@@ -63,71 +25,35 @@ export const deployCommand = buildCommand({
           "With no Gateway yet, install one at apps.<zone> without asking (never cf's questions, or the one before replacing a Worker changed outside everyapp)",
         optional: true,
       },
-      "bundle-only": {
-        kind: "boolean",
-        brief:
-          "Build the app in this directory and pack it as a release (everyapp-release.tar.gz) without deploying it: no Gateway or Cloudflare login (CI)",
-        optional: true,
-      },
-      out: {
-        kind: "parsed",
-        parse: String,
-        brief: "With --bundle-only: where to write the release (default: ./everyapp-release.tar.gz)",
-        optional: true,
-      },
       json: jsonFlag,
       verbose: verboseFlag,
     },
     aliases: { y: "yes" },
   },
   docs: {
-    brief: "Deploy the app in this directory, or a release",
+    brief: "Deploy the app in this directory",
     fullDescription: [
       "Deploys the app in this directory as a private Cloudflare Worker defined by cloudflare.config.ts,",
       "with cf and your Cloudflare login (or CLOUDFLARE_API_TOKEN), in the Gateway's account:",
-      "  1. Registers the app in the Gateway's D1 database, which names its Worker, resources and hostname",
-      "     (a new hostname is checked first: no DNS record that answers it, room in the zone)",
+      "  1. Registers the app in the Gateway's database, which names its Worker, resources and hostname",
       "  2. Creates or links the D1 databases and KV namespaces in everyapp.config.ts",
-      "  3. Installs dependencies (the manifest's install setting, or auto-detected)",
-      "  4. Builds with cf build (or the manifest's build command): the same tenant-neutral build for",
-      "     every install, with placeholders for its Worker name, organization, Gateway, identity key",
-      "     and resource ids. Installs it for this deploy (every placeholder rewritten; refused if one",
-      "     survives), checks the installed Worker, and checks that the drizzle migrations still",
-      "     describe the schema",
-      "  5. Bookmarks the production D1 database, then applies its migrations",
-      "  6. Uploads it with cf deploy --prebuilt, its secrets in the same version, and",
-      "     creates or updates its Workflows (refused if another Worker runs one of their names);",
-      "     its helper Workers (everyapp.config.ts workers, <worker>--<name>) go up first; then routes",
-      "     the mail to the addresses its installation lists (everyapp email set --inbound) to it with",
-      "     Email Routing rules (checked before anything is created; turning routing on for a domain",
-      "     asks first, or --enable-email-routing)",
-      "  7. Redeploys the Gateway from this checkout to bind the Worker and publish its hostname (new",
-      "     apps; it upgrades the Gateway too when the checkout is newer), then requests the app's",
-      "     hostname until it is live (a new hostname's certificate included); behind Cloudflare",
-      "     Access, it goes live on its first visit",
+      "  3. Installs dependencies and builds (cf build, or the manifest's build command), then checks",
+      "     the built Worker against the app policy and the drizzle migrations against the schema",
+      "  4. Bookmarks the production D1 database, then applies its migrations",
+      "  5. Uploads the Worker with its secrets, its helper Workers, its Workflows and the Email",
+      "     Routing rules for its inbound addresses (turning routing on for a domain asks first)",
+      "  6. Rebinds the Gateway from this checkout when the app is new (upgrading the Gateway too",
+      "     when the checkout is newer), then waits for the app's hostname to go live",
       "",
       "No Gateway in any account the login sees? At a terminal it offers to install one at",
-      "apps.<zone> (what `everyapp setup` does, owner link included), then deploys; otherwise it",
-      "stops with action_required install_gateway and the setup command to run.",
-      "Nothing else asks first: the first line says where the app goes. Install and build output",
-      "goes to a log file (its last lines and path are shown if it fails), never to stdout.",
-      "Safe to run again: a redeploy of an app the Gateway already serves never touches the Gateway.",
+      `apps.<zone> (what ${CLI} setup does), then deploys; otherwise it stops with action_required`,
+      "install_gateway and the setup command to run. Nothing else asks first. Install and build",
+      "output goes to a log file, never to stdout. Safe to run again: a redeploy of an app the",
+      "Gateway already serves never touches the Gateway.",
       "",
-      "From a release, with no checkout of the app: `everyapp deploy https://github.com/<owner>/<repo>`",
-      "deploys the everyapp-release.tar.gz on the repository's latest release (…/releases/tag/<tag>: that",
-      "one); a tarball's HTTPS URL or a local file works too. The release holds the app's tenant-neutral",
-      "Build Output, migrations and manifest, checked against its SHA-256: steps 3 and 4 install and",
-      "check it instead of building (the publisher's build checked the schema). Postgres migrations need",
-      "the app's source, so their releases are refused. A repository without a release is never built",
-      "from its URL: clone it, then run pnpm install && pnpm everyapp deploy.",
-      "",
-      "--bundle-only [--out <file>] builds the app in this directory, checks its Build Output against the",
-      "app policy and its migrations against its schema, and packs the release (default",
-      "./everyapp-release.tar.gz) without deploying it: no Gateway or Cloudflare login, for CI. Attach it",
-      "to a GitHub release of the app's repository and `everyapp deploy <repository url>` installs it.",
-      "",
-      "--gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway to deploy to when your login sees",
-      "several; it is checked against the one found in your Cloudflare account.",
+      `Someone else's published app: ${CLI} install <url>. To publish this one: ${CLI} release.`,
+      "--gateway <url> (or EVERYAPP_GATEWAY_URL) names the Gateway when your login sees several.",
+      "With --json, each step is an NDJSON event.",
     ].join("\n"),
   },
 });

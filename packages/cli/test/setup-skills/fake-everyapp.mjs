@@ -42,9 +42,8 @@ const FAKE_CF_VERSION = "1.0.0-beta.14";
 const CLAIM_WAIT_MS = Number(process.env["FAKE_EVERYAPP_CLAIM_WAIT_MS"] ?? 5000);
 /** Flags that take a value (so the value isn't read as a positional). */
 const VALUE_FLAGS = new Set([
-  "from-env", "gateway", "account-id", "domain", "mode", "release", "team", "email", "email-domain",
-  "session", "sender", "inbound", "manifest", "worker", "binding", "file", "params", "status", "limit",
-  "name", "template",
+  "from-env", "gateway", "account-id", "domain", "team", "email", "email-domain",
+  "session", "sender", "inbound", "manifest", "worker", "binding", "file", "out", "name", "template",
 ]);
 
 /** An expected failure, reported as an `error` event with its code and next step. */
@@ -111,12 +110,10 @@ async function dispatch() {
   const groups = {
     secret: ["set", "unset", "list"],
     email: ["show", "set", "unset"],
-    gateway: ["deploy"],
     db: ["migrate", "query", "restore"],
-    workflow: ["list", "instances", "get", "start", "pause", "resume", "terminate"],
     ...(accessEnabled ? { access: ["on", "off", "show"] } : {}),
   };
-  const commands = ["login", "setup", "status", "create", "dev", "deploy", "delete", ...Object.keys(groups)];
+  const commands = ["login", "setup", "update", "install", "status", "create", "dev", "deploy", "release", "delete", ...Object.keys(groups)];
   if (!commands.includes(cmd)) return unknownCommand([], cmd, commands);
   if (cmd in groups) {
     if (!sub || help && !sub) {

@@ -5,24 +5,25 @@ description: Every everyapp command, in one place.
 
 Run these in a terminal, inside your `every-app` folder. Add `--help` to any command to see all its options.
 
-## Your Gateway
+## Run a Gateway
 
-| Command                        | What it does                                             |
-| ------------------------------ | -------------------------------------------------------- |
-| `pnpm everyapp login`          | Logs in to Cloudflare.                                   |
-| `pnpm everyapp setup`          | Installs your Gateway. Run it again to resume or repair. |
-| `pnpm everyapp gateway deploy` | Updates your Gateway to the version in your folder.      |
-| `pnpm everyapp status`         | Shows your Gateway and apps, and what to run if needed.  |
+| Command                              | What it does                                               |
+| ------------------------------------ | ---------------------------------------------------------- |
+| `pnpm everyapp login`                | Logs in to Cloudflare.                                     |
+| `pnpm everyapp setup`                | Installs your Gateway. Run it again to resume or repair.   |
+| `pnpm everyapp update`               | Updates your Gateway to the version in your folder.        |
+| `pnpm everyapp install <GitHub URL>` | Installs an app someone published on GitHub.               |
+| `pnpm everyapp status`               | Shows your Gateway and apps, and what to run if needed.    |
+| `pnpm everyapp delete my-app`        | Takes an app off your Gateway. `--purge` deletes its data. |
+| `pnpm everyapp secret set <NAME>`    | Stores a key, like `OPENAI_API_KEY`, without showing it.   |
+| `pnpm everyapp access on`            | Puts Cloudflare Access in front of your Gateway and apps.  |
 
-## Apps
+## Build an app
 
-| Command                             | What it does                                               |
-| ----------------------------------- | ---------------------------------------------------------- |
-| `pnpm everyapp create my-app`       | Makes a new app from the starter, in `apps/my-app`.        |
-| `pnpm everyapp deploy <GitHub URL>` | Installs an app someone published on GitHub.               |
-| `pnpm everyapp delete my-app`       | Takes an app off your Gateway. `--purge` deletes its data. |
-| `pnpm everyapp secret set <NAME>`   | Stores a key, like `OPENAI_API_KEY`, without showing it.   |
-| `pnpm everyapp access on`           | Puts Cloudflare Access in front of your Gateway and apps.  |
+| Command                       | What it does                                        |
+| ----------------------------- | --------------------------------------------------- |
+| `pnpm everyapp create my-app` | Makes a new app from the starter, in `apps/my-app`. |
+| `pnpm everyapp release`       | Packs the app as a release others can install.      |
 
 ## Inside an app's folder
 
@@ -33,7 +34,7 @@ Run these in a terminal, inside your `every-app` folder. Add `--help` to any com
 | `pnpm run db:generate`     | Writes a migration after what the app stores changes.   |
 | `pnpm everyapp db restore` | Puts the app's database back to before the last deploy. |
 
-There's also `email` for the addresses an app sends from and receives at, `access off` and `access show` for [Cloudflare Access](/docs/access), `db` for looking inside a database, and `workflow` for an app's background jobs.
+There's also `email` for the addresses an app sends from and receives at, `access off` and `access show` for [Cloudflare Access](/docs/access), and `db` for looking inside a database.
 
 ## For coding agents
 

@@ -1,11 +1,11 @@
 /**
- * `everyapp deploy --bundle-only`: build the app in this directory as a
+ * `everyapp release`: build the app in this directory as a
  * deploy would (tenant-neutral, lib/app/buildApp.ts), check its Build
  * Output against the app policy with the build's own placeholders
  * (`sentinelDeployTarget()`), check its migrations against its schema, and
  * pack it as an app release (lib/app/release.ts). No Gateway and no
  * Cloudflare login: for CI or by hand. Attach the tarball to a GitHub
- * release of the app's repository, which `everyapp deploy <github url>`
+ * release of the app's repository, which `everyapp install <github url>`
  * installs.
  */
 import path from "node:path";
@@ -18,7 +18,7 @@ import { createCfRunner, type CfRunner } from "@/lib/cf/runner";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import type { EventSink } from "@/lib/output/events";
 import { installDependencies } from "@/lib/package-manager";
-import { checkSchemaDrift } from "./steps/checkSchemaDrift";
+import { checkSchemaDrift } from "../deploy/steps/checkSchemaDrift";
 
 export async function bundleApp({
   cwd,

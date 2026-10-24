@@ -3,7 +3,7 @@
  * that apps/every-app-gateway/scripts/build-release.ts packs. It comes
  * from the checkout the CLI runs in (./checkoutRelease.ts); the CLI checks
  * its SHA-256 before using it. The same tarball format carries app
- * releases (lib/app/release.ts), which `everyapp deploy <url>` downloads.
+ * releases (lib/app/release.ts), which `everyapp install <url>` downloads.
  */
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";

@@ -30,7 +30,6 @@ import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { emailListProblems, type AppEmailConfig } from "@every-app/sdk/internal";
 import chalk from "chalk";
-import type { LocalContext } from "@/context";
 import {
   applyEmailRoutes,
   emailDeclarations,
@@ -78,9 +77,7 @@ interface EmailOptions {
 /** The step a change runs under: its spinner says what it does. */
 const EMAIL_STEP = "email.update";
 
-export async function set(
-  this: LocalContext,
-  flags: EmailFlags & { sender?: string[]; inbound?: string[]; "enable-email-routing"?: boolean },
+export async function set(flags: EmailFlags & { sender?: string[]; inbound?: string[]; "enable-email-routing"?: boolean },
 ): Promise<void> {
   await runCommand(flags, (out) =>
     setEmail({
@@ -93,11 +90,11 @@ export async function set(
   );
 }
 
-export async function unset(this: LocalContext, flags: EmailFlags, ...lists: EmailList[]): Promise<void> {
+export async function unset(flags: EmailFlags, ...lists: EmailList[]): Promise<void> {
   await runCommand(flags, (out) => unsetEmail({ flags, out, lists }));
 }
 
-export async function show(this: LocalContext, flags: EmailFlags): Promise<void> {
+export async function show(flags: EmailFlags): Promise<void> {
   await runCommand(flags, (out) => showEmail({ flags, out }));
 }
 

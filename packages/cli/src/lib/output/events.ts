@@ -578,7 +578,7 @@ const MILESTONES: Readonly<Record<string, Milestone>> =
       if (event.status === "start") return { spin: "Uploading..." };
       return event.status === "ok" ? { done: "Uploaded" } : null;
     },
-    // `deploy --bundle-only`: the release it packed, and where.
+    // `release`: the release it packed, and where.
     "app.release": (event) => {
       if (event.status !== "ok") return null;
       const data = event.data ?? {};

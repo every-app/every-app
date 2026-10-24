@@ -96,7 +96,7 @@ set NAME` there, the value from the person's terminal), never with
    `run` (null without a command), and when it has them `note` (what `run`
    does) and `fix` (a remedy that isn't a command). Only `error` and
    `warning` are something to fix; `info` (`GATEWAY_OUTDATED`: `pnpm
-   everyapp gateway deploy` updates the Gateway now; leave it unless the
+   everyapp update` updates the Gateway now; leave it unless the
    person asks) and `settling` need nothing from you.
 2. `pnpm everyapp secret list --json`: whether the setting is set already
    (`data.gateway.names`). Set already: ask whether to replace it before

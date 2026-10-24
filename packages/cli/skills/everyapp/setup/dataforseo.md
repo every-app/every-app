@@ -53,7 +53,7 @@ payment comes in only at Add Funds.
    first. OpenSEO lives in its own repository, so ask the person for the
    path of their clone (`pnpm install && pnpm everyapp deploy --json`
    there) or, when its repository publishes a release, its URL
-   (`pnpm everyapp deploy <repository or tarball URL> --json` from
+   (`pnpm everyapp install <repository or tarball URL> --json` from
    anywhere; `NO_RELEASE` means it publishes none: clone it). Not
    installed, or no owner: [gateway.md](gateway.md) first.
 2. `pnpm everyapp secret list --json` from the `every-app` checkout:

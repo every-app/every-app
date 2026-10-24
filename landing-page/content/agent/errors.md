@@ -127,14 +127,14 @@ Source: `packages/cli/src/commands/create/steps/appId.ts` (`resolveAppId`).
 
 The app the command acts on has no usable row in the Gateway's registry (never deployed, deleted, or gone mid-run). Each raise site says it its own way:
 
-| Raised by                                                                                                             | Headline                                                                                                   | Next step                                                                                                 |
-| --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| `db query` (production), `db restore`, `workflow …`, `email set`, `email unset` (registry `readApp`, `writeAppEmail`) | `<app> isn't deployed to this Gateway yet`                                                                 | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
-| `deploy` and `email set/unset` reading the row's email lists under the lease (registry `readAppEmail`)                | `The app is no longer registered on this Gateway`                                                          | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
-| `delete <app>` (registry `deleteApp`): no row, or a row with no Worker name                                           | `No app named <app> on this Gateway`                                                                       | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
-| `secret set`, `secret unset` for an app's names, before any value is read                                             | `<app> isn't deployed yet` / `Its secrets can be set after its first deploy. Nothing was changed.`         | `rerun`: `pnpm everyapp deploy`                                                                           |
-| `deploy` recording the upload (`markDeployed`): the row is gone, or is a tombstone                                    | `The app's registry row is gone; deploy it again.` / `No app "<app>" is registered for this organization.` | No fix or rerun; `retryable: false` (a `RegistrationError` with status 404, wrapped by `asEveryAppError`) |
-| `deploy` in step `app.live`: the row was deleted while the run waited for the app to go live                          | `<app> was deleted during this run`                                                                        | `retryable: true`, so `rerun` is this same command; `rerunNote`: `to put it back`                         |
+| Raised by                                                                                               | Headline                                                                                                   | Next step                                                                                                 |
+| ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `db query` (production), `db restore`, `email set`, `email unset` (registry `readApp`, `writeAppEmail`) | `<app> isn't deployed to this Gateway yet`                                                                 | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
+| `deploy` and `email set/unset` reading the row's email lists under the lease (registry `readAppEmail`)  | `The app is no longer registered on this Gateway`                                                          | `rerun`: `pnpm everyapp deploy`, `rerunNote`: `in the app's directory`                                    |
+| `delete <app>` (registry `deleteApp`): no row, or a row with no Worker name                             | `No app named <app> on this Gateway`                                                                       | `rerun`: `pnpm everyapp status`, `rerunNote`: `lists its apps`                                            |
+| `secret set`, `secret unset` for an app's names, before any value is read                               | `<app> isn't deployed yet` / `Its secrets can be set after its first deploy. Nothing was changed.`         | `rerun`: `pnpm everyapp deploy`                                                                           |
+| `deploy` recording the upload (`markDeployed`): the row is gone, or is a tombstone                      | `The app's registry row is gone; deploy it again.` / `No app "<app>" is registered for this organization.` | No fix or rerun; `retryable: false` (a `RegistrationError` with status 404, wrapped by `asEveryAppError`) |
+| `deploy` in step `app.live`: the row was deleted while the run waited for the app to go live            | `<app> was deleted during this run`                                                                        | `retryable: true`, so `rerun` is this same command; `rerunNote`: `to put it back`                         |
 
 **Fix:** as the table says; in every case but the last two, deploy the app first. No takeover.
 
@@ -150,7 +150,7 @@ Source: `packages/cli/src/commands/deploy/steps/waitForLive.ts`, called through 
 
 ### APP_POLICY
 
-The app's Build Output (`.cloudflare/output/v0`) fails the app policy, checked before anything is uploaded: in `deploy` (step `app.build`) and `deploy --bundle-only`. Three headlines:
+The app's Build Output (`.cloudflare/output/v0`) fails the app policy, checked before anything is uploaded: in `deploy` (step `app.build`) and `release`. Three headlines:
 
 - ``The app's Build Output isn't a production build. The manifest's build command must run `cf build` (production by default).``
 - `The app's Build Output has no default Worker. Build it from everyAppWorker() in cloudflare.config.ts.`
@@ -164,23 +164,15 @@ Source: `packages/cli/src/lib/app/policy.ts` (`prepareAppBuildOutput`, `appPolic
 
 ### BUILD_FAILED
 
-The app's production build failed (step `app.build` of `deploy` and `deploy --bundle-only`). The build runs with `EVERYAPP_BUILD=1`: `cf build` by default, or the manifest's `build` command. With `cf build`, the headline is `Build failed`, then `cf build's last lines:` and the tail of what it printed. With a manifest `build` command, the headline is `Build failed`, then `<command> exited with code <n>. Its last lines:`, the tail, and `Full log: <path>` (`$TMPDIR/everyapp/<name>-<time>-<pid>.log`), with `data.command`, `data.exitCode`, `data.tail` and `data.log`. A `cf build` that runs past 10 minutes is a `CfTimeoutError`, reported as `CF_TIMEOUT`, not this code.
+The app's production build failed (step `app.build` of `deploy` and `release`). The build runs with `EVERYAPP_BUILD=1`: `cf build` by default, or the manifest's `build` command. With `cf build`, the headline is `Build failed`, then `cf build's last lines:` and the tail of what it printed. With a manifest `build` command, the headline is `Build failed`, then `<command> exited with code <n>. Its last lines:`, the tail, and `Full log: <path>` (`$TMPDIR/everyapp/<name>-<time>-<pid>.log`), with `data.command`, `data.exitCode`, `data.tail` and `data.log`. A `cf build` that runs past 10 minutes is a `CfTimeoutError`, reported as `CF_TIMEOUT`, not this code.
 
 **Fix:** none offered: fix the build error in the tail or the log. No rerun; not retryable. `--verbose` streams the build's output to stderr.
 
 Source: `packages/cli/src/lib/app/buildApp.ts`, `packages/cli/src/lib/childLog.ts` (`runLogged`).
 
-### BUNDLE_ONLY_WITH_SOURCE
-
-`deploy <source> --bundle-only`: `--bundle-only` packs the app in the current directory as a release, so a release source makes no sense with it. Headline: `--bundle-only packs the app in this directory, not a release URL`. Refused before anything runs.
-
-**Fix:** `rerun`: `pnpm everyapp deploy <source>`, `rerunNote`: `deploys that release`. Not retryable.
-
-Source: `packages/cli/src/commands/deploy/index.ts` (`refuseBundleFlags`).
-
 ### CHECKOUT_MISSING
 
-everyapp isn't running from a checkout of the Every App repository: no directory above the CLI's module holds both `apps/every-app-gateway/scripts/build-release.ts` and `packages/cli/package.json`. Raised by `create` (the starter template it copies comes from the checkout) and by every Gateway deploy (`checkoutGateway` in `lib/gateway/checkoutRelease.ts` builds the Gateway's release from the checkout: `setup`, `gateway deploy`, and the rebind `deploy` and `delete` run). `status` uses the nullable `findCheckoutRoot` and skips the checkout comparison outside one. Headline: `everyapp has to run from a checkout of the Every App repository`, then `This copy is installed in <package dir>, outside any checkout.`
+everyapp isn't running from a checkout of the Every App repository: no directory above the CLI's module holds both `apps/every-app-gateway/scripts/build-release.ts` and `packages/cli/package.json`. Raised by `create` (the starter template it copies comes from the checkout) and by every Gateway deploy (`checkoutGateway` in `lib/gateway/checkoutRelease.ts` builds the Gateway's release from the checkout: `setup`, `update`, and the rebind `deploy` and `delete` run). `status` uses the nullable `findCheckoutRoot` and skips the checkout comparison outside one. Headline: `everyapp has to run from a checkout of the Every App repository`, then `This copy is installed in <package dir>, outside any checkout.`
 
 **Fix:** `fix`: `in your checkout, run pnpm everyapp <the same arguments>`. No rerun; not retryable.
 
@@ -188,7 +180,7 @@ Source: `packages/cli/src/lib/checkout.ts` (`checkoutRoot`, `findCheckoutRoot`),
 
 ### CLI_TOO_OLD
 
-A release's `release.json` names a `minCli` newer than this everyapp (`compareVersions`: dotted parts compared numerically, a leading `v` and prerelease suffixes ignored), so it is refused before anything changes. Headline: `<what> needs everyapp <minCli> or newer (this is <cliVersion>)`, where `<what>` is `Gateway <version>` for a Gateway release and `<appId> <version>` for an app release; `data.minCli`, `data.cliVersion`. Raised by `setup` and `gateway deploy` (the source's `minCli` before anything is asked, then the opened release), by the Gateway rebind that `deploy` and `delete` run (`lib/gateway/reconcile.ts`), and by `deploy <source>` opening an app release (`lib/app/release.ts`; app releases are packed with `minCli: "0.3.0"`).
+A release's `release.json` names a `minCli` newer than this everyapp (`compareVersions`: dotted parts compared numerically, a leading `v` and prerelease suffixes ignored), so it is refused before anything changes. Headline: `<what> needs everyapp <minCli> or newer (this is <cliVersion>)`, where `<what>` is `Gateway <version>` for a Gateway release and `<appId> <version>` for an app release; `data.minCli`, `data.cliVersion`. Raised by `setup` and `update` (the source's `minCli` before anything is asked, then the opened release), by the Gateway rebind that `deploy` and `delete` run (`lib/gateway/reconcile.ts`), and by `install <source>` opening an app release (`lib/app/release.ts`; app releases are packed with `minCli: "0.3.0"`).
 
 **Fix:** `fix`: `update everyapp (in a checkout: git pull), then run this again`. No rerun; not retryable.
 
@@ -224,11 +216,10 @@ A step needs a person's yes, `--yes` wasn't given, and nobody is at a terminal (
 | `db restore`                                            | `Restoring <app>'s database needs a person at a terminal to confirm, or --yes` / `It undoes <n> migration(s) (<names>) applied <time> ago by <who>; anything written to it since is lost too.` (`the Gateway's database` instead of `<app>'s database` with `--gateway`; `<who>` is `an API token` for a restore point an API token saved; `data`: `appId`, `databaseId`, `bookmark`, `migrations`, `createdAt`, `createdBy`) |
 | `delete <app>`                                          | `Deleting an app needs confirmation at a terminal, or --yes`                                                                                                                                                                                                                                                                                                                                                                  |
 | `secret unset`                                          | `Removing secrets needs confirmation, and there's no terminal to ask in`                                                                                                                                                                                                                                                                                                                                                      |
-| `workflow terminate`                                    | `Terminating needs confirmation, and there's no terminal to ask in`                                                                                                                                                                                                                                                                                                                                                           |
 
 **Fix:** takeover: `rerun` is this same command with `--yes`, and `data.authorize: true`. Show the message and ask the person before rerunning with `--yes`. Not retryable.
 
-Source: `packages/cli/src/lib/output/prompt.ts` (`confirmUnlessYes`), called from `packages/cli/src/commands/access/index.ts` (`turnAccessOff`), `packages/cli/src/commands/db/index.ts`, `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/commands/delete/index.ts`, `packages/cli/src/commands/secret/index.ts`, `packages/cli/src/commands/workflow/index.ts`.
+Source: `packages/cli/src/lib/output/prompt.ts` (`confirmUnlessYes`), called from `packages/cli/src/commands/access/index.ts` (`turnAccessOff`), `packages/cli/src/commands/db/index.ts`, `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/commands/delete/index.ts`, `packages/cli/src/commands/secret/index.ts`.
 
 ### D1_NOT_FOUND
 
@@ -248,7 +239,7 @@ Source: `packages/cli/src/lib/app/deploySecrets.ts` (`parseOriginUrl`), called f
 
 ### DEPLOY_NOT_UPLOADED
 
-`cf deploy --prebuilt` exited 0, but Cloudflare reports the Worker's version unchanged: nothing was uploaded. cf does that when a person answers no to one of its own questions (it runs attached to the terminal under `--verbose`, or again attached after a strict-mode conflict) or gives up on a conflict. Headline: `cf finished without uploading a new version of <worker>`, then `Was one of its questions answered no? The version that was serving still is.` Raised wherever everyapp uploads a Worker: `deploy` (steps `app.upload` and `app.helper`), and the Gateway's own upload in `setup`, `gateway deploy` and the rebind.
+`cf deploy --prebuilt` exited 0, but Cloudflare reports the Worker's version unchanged: nothing was uploaded. cf does that when a person answers no to one of its own questions (it runs attached to the terminal under `--verbose`, or again attached after a strict-mode conflict) or gives up on a conflict. Headline: `cf finished without uploading a new version of <worker>`, then `Was one of its questions answered no? The version that was serving still is.` Raised wherever everyapp uploads a Worker: `deploy` (steps `app.upload` and `app.helper`), and the Gateway's own upload in `setup`, `update` and the rebind.
 
 **Fix:** `rerun`: this same command, `rerunNote`: `to deploy again`. `retryable: false`; no takeover.
 
@@ -288,7 +279,7 @@ Source: `packages/cli/src/commands/dev/index.ts` (`waitForAppServer`), `packages
 
 ### DNS_RECORD_CONFLICT
 
-A hostname about to be published as a Workers Custom Domain is already answered in DNS: an `A`, `AAAA`, `CNAME` or `NS` record at the name, or, when the name has no records of its own, a wildcard `*.<parent>` over it. cf would replace the record without asking, so the deploy refuses first. Checked for an app's new `<app>.<base>` (step `app.domain` of `deploy`, before anything is created or uploaded) and for the Gateway's hostnames (step `gateway.domains` of `setup`, `gateway deploy` and the rebind). Headline: `<host> already points somewhere else` (or `<n> hostnames already point somewhere else`), then `Its DNS record: <type> <content>. Publishing it replaces the record.`, plus `A wildcard record stays, and keeps answering every other name.` when a wildcard answers it. Hostnames the Gateway already publishes are never a conflict.
+A hostname about to be published as a Workers Custom Domain is already answered in DNS: an `A`, `AAAA`, `CNAME` or `NS` record at the name, or, when the name has no records of its own, a wildcard `*.<parent>` over it. cf would replace the record without asking, so the deploy refuses first. Checked for an app's new `<app>.<base>` (step `app.domain` of `deploy`, before anything is created or uploaded) and for the Gateway's hostnames (step `gateway.domains` of `setup`, `update` and the rebind). Headline: `<host> already points somewhere else` (or `<n> hostnames already point somewhere else`), then `Its DNS record: <type> <content>. Publishing it replaces the record.`, plus `A wildcard record stays, and keeps answering every other name.` when a wildcard answers it. Hostnames the Gateway already publishes are never a conflict.
 
 **Fix:** `fix`: `delete the record in Cloudflare (<zone> → DNS), or use another name` (`the records` for several). Takeover: `rerun` is this same command with `--force-dns`, `data.authorize: true`; ask before using it. With `--force-dns` the run goes on and warns `DNS_RECORD_REPLACED` instead. Not retryable.
 
@@ -322,7 +313,7 @@ Source: `packages/cli/src/commands/setup/runSetup.ts` (`pickDomain`).
 
 The Gateway this run would deploy is older than the live one. Order is not the version: a release is placed by the `when` of its newest migration, then by when its sources were last committed (`compareReleaseOrder`); the same release (same `sha256`) or a build of the same sources (same tree hash) is never a downgrade. Headline: `This checkout's Gateway (<version>) is older than the live one (<liveVersion>)`, or with equal versions `This checkout's Gateway (<version> from <Mon D>) is older than the live one (from <Mon D>)` (every Gateway deploy builds its release from the checkout, `lib/gateway/checkoutRelease.ts`); `data.live`, `data.candidate`. Two forms:
 
-- `setup` and `gateway deploy` (which take `--allow-downgrade`, a hidden flag): `fix`: `git pull, then run setup again`; `rerun`: this same command with `--allow-downgrade`, with `authorize: true` set by the error itself (`DOWNGRADE_REFUSED` isn't in `TAKEOVER_FLAGS`; only these two commands take the flag).
+- `setup` and `update` (which take `--allow-downgrade`, a hidden flag): `fix`: `git pull, then run setup again`; `rerun`: this same command with `--allow-downgrade`, with `authorize: true` set by the error itself (`DOWNGRADE_REFUSED` isn't in `TAKEOVER_FLAGS`; only these two commands take the flag).
 - `deploy` and `delete`, which rebind the Gateway with the one this checkout builds and so stop before anything changes (`refuseOlderCheckout`), and the rebind's recheck under the Gateway lease: `fix`: `git pull`; `rerun`: this same command, `rerunNote`: `after that`. No takeover.
 
 **Fix:** as above: `git pull`, then the same command; a deliberate rollback is `setup --allow-downgrade`, after asking. Not retryable.
@@ -459,7 +450,7 @@ The codes below follow the defaults in `packages/cli/src/lib/errors.ts`: an erro
 
 ### GATEWAY_NOT_FOUND
 
-`requireGateway()` found no Gateway to act on after probing every Cloudflare account the login lists (`cf auth whoami`, then `cf d1 list --name every-app-gateway` per account; an account cf refuses or doesn't know counts as having none). Raised by every self-host command that connects to the Gateway through `connectToGateway()` (`deploy`, `delete`, `db query` without `--local`, `db restore`, `workflow`, `secret`, `email`, `access on|off|show`), by `status`, and by `gateway deploy`. When the login lists accounts and none has a Gateway, `deploy` offers to install one instead, whether or not `--account-id` named one (at a terminal; otherwise `action_required install_gateway`; `connectToGateway()`'s `onNoGateway`), and `status` emits `install_gateway` unless an account was named (`existingGateway()`); so from `deploy` this code means the login lists no accounts, or the named account has none while another account does; from `status`, also that `--account-id` named an account and no account has one. Three messages:
+`requireGateway()` found no Gateway to act on after probing every Cloudflare account the login lists (`cf auth whoami`, then `cf d1 list --name every-app-gateway` per account; an account cf refuses or doesn't know counts as having none). Raised by every self-host command that connects to the Gateway through `connectToGateway()` (`deploy`, `delete`, `db query` without `--local`, `db restore`, `secret`, `email`, `access on|off|show`), by `status`, and by `update`. When the login lists accounts and none has a Gateway, `deploy` offers to install one instead, whether or not `--account-id` named one (at a terminal; otherwise `action_required install_gateway`; `connectToGateway()`'s `onNoGateway`), and `status` emits `install_gateway` unless an account was named (`existingGateway()`); so from `deploy` this code means the login lists no accounts, or the named account has none while another account does; from `status`, also that `--account-id` named an account and no account has one. Three messages:
 
 | Situation                                                                                                                 | Message                                                                                                                                                                                                              | `data.fix` / `data.rerun`                                                                                          |
 | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -475,10 +466,10 @@ Source: `packages/cli/src/lib/gateway/discover.ts`, `packages/cli/src/lib/gatewa
 
 The Gateway's D1 database exists but its install never finished. Four raise sites:
 
-- `notDeployedByEveryapp()` in `lib/gateway/install.ts`: the database has no `_everyapp_install` row. Message `The Gateway's install didn't finish` then `Setup stopped before it recorded the install.`; `data.rerun` `pnpm everyapp setup`, `data.rerunNote` `asks for the hostname again`. Raised by `connectToGateway()` for every app command, and by `gateway deploy` (which uses this message for a null `live_version_id` too).
+- `notDeployedByEveryapp()` in `lib/gateway/install.ts`: the database has no `_everyapp_install` row. Message `The Gateway's install didn't finish` then `Setup stopped before it recorded the install.`; `data.rerun` `pnpm everyapp setup`, `data.rerunNote` `asks for the hostname again`. Raised by `connectToGateway()` for every app command, and by `update` (which uses this message for a null `live_version_id` too).
 - `requireInstall()` in `lib/gateway/connect.ts`: the row exists with `live_version_id` null (setup stopped before its first upload). Message `The Gateway at https://<host> isn't finished installing` then `Setup stopped before its first upload.`; `data.rerun` `pnpm everyapp setup`. Every command through `connectToGateway()`.
 - `everyapp secret set|unset` of a Gateway setting (step `secrets.gateway`): the install row, re-read under the Gateway's lease, is gone. Message `The Gateway in <account> isn't fully installed` (the account omitted when cf doesn't name it); `data.rerun` `pnpm everyapp setup`.
-- `reconcileGateway()` in `lib/gateway/reconcile.ts` reads the install row again before the rebind (`deploy`, step `app.bind`; `delete`; the repair or `--redeploy` of `setup` and `gateway deploy`) and throws `notDeployedByEveryapp()` when the row is gone by then: the first site's message, `data.rerun` and `data.rerunNote`.
+- `reconcileGateway()` in `lib/gateway/reconcile.ts` reads the install row again before the rebind (`deploy`, step `app.bind`; `delete`; the repair or `--redeploy` of `setup` and `update`) and throws `notDeployedByEveryapp()` when the row is gone by then: the first site's message, `data.rerun` and `data.rerunNote`.
 
 **Fix:** run `pnpm everyapp setup`; it resumes from the row it wrote, or asks for the hostname again when there is none. No `data.fix`, not retryable.
 
@@ -486,7 +477,7 @@ Source: `packages/cli/src/lib/gateway/install.ts`, `packages/cli/src/lib/gateway
 
 ### GATEWAY_URL_MISMATCH
 
-`--gateway` and `EVERYAPP_GATEWAY_URL` only pick among several Gateways; the URL a command uses always comes from the install row. `checkGatewayUrl()` raises this when the host they name (compared lowercase) isn't the found Gateway's `gateway_host`. Raised by every command through `connectToGateway()` (`deploy`, `delete`, `db query`, `db restore`, `workflow`, `secret`, `email`, `access on|off|show`). Message `The Gateway here is <found host>, not <requested host>` then `Found in <account>. For <requested host>, pass its account with --account-id.`
+`--gateway` and `EVERYAPP_GATEWAY_URL` only pick among several Gateways; the URL a command uses always comes from the install row. `checkGatewayUrl()` raises this when the host they name (compared lowercase) isn't the found Gateway's `gateway_host`. Raised by every command through `connectToGateway()` (`deploy`, `delete`, `db query`, `db restore`, `secret`, `email`, `access on|off|show`). Message `The Gateway here is <found host>, not <requested host>` then `Found in <account>. For <requested host>, pass its account with --account-id.`
 
 **Fix:** when the host came from `--gateway` on the command line, `data.rerun` is this command without `--gateway` and its value (`thisCommandWithout()`), `data.rerunNote` `to use <found host>`; when it came from the environment, `data.fix` is `unset EVERYAPP_GATEWAY_URL to use <found host>`. Not retryable.
 
@@ -518,11 +509,11 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/lib/g
 
 ### INSTALL_FAILED
 
-The app's dependency install exited non-zero: the manifest's `install` command (run through a shell) or, without one, the detected package manager's install (`pnpm install`, `npx pnpm install` when pnpm isn't on PATH, `yarn install`, `npm install`; detection: `packageManager` in package.json, then the lockfile, else pnpm). `runLogged()` keeps the child's output in `$TMPDIR/everyapp/<command>-<time>-<pid>.log`, echoed to stderr with `--verbose`. Raised in step `app.install` by `deploy` (unless deploying a release or the manifest sets `install: false`) and `deploy --bundle-only`: message `Installing dependencies failed` (or `Installing dependencies with <pnpm|yarn|npm> failed`), then `<command> exited with code <n>. Its last lines:` (or `… was stopped by <signal>`), the last 20 lines indented, and `Full log: <path>`. `everyapp create` (step `create.install`) rewraps it as `Couldn't install dependencies`, `<command> exited <n>. Its last lines:`, the last 5 lines, `Full log: <path>`, and `<./dir> is created; only the install is left.` Why pnpm installs fail: pnpm 10 and later block dependency build scripts unless approved, pnpm 11 exits 1 with `ERR_PNPM_IGNORED_BUILDS`, and nobody can answer `pnpm approve-builds` in this non-interactive install, so a project must declare its approvals.
+The app's dependency install exited non-zero: the manifest's `install` command (run through a shell) or, without one, the detected package manager's install (`pnpm install`, `npx pnpm install` when pnpm isn't on PATH, `yarn install`, `npm install`; detection: `packageManager` in package.json, then the lockfile, else pnpm). `runLogged()` keeps the child's output in `$TMPDIR/everyapp/<command>-<time>-<pid>.log`, echoed to stderr with `--verbose`. Raised in step `app.install` by `deploy` (unless deploying a release or the manifest sets `install: false`) and `release`: message `Installing dependencies failed` (or `Installing dependencies with <pnpm|yarn|npm> failed`), then `<command> exited with code <n>. Its last lines:` (or `… was stopped by <signal>`), the last 20 lines indented, and `Full log: <path>`. `everyapp create` (step `create.install`) rewraps it as `Couldn't install dependencies`, `<command> exited <n>. Its last lines:`, the last 5 lines, `Full log: <path>`, and `<./dir> is created; only the install is left.` Why pnpm installs fail: pnpm 10 and later block dependency build scripts unless approved, pnpm 11 exits 1 with `ERR_PNPM_IGNORED_BUILDS`, and nobody can answer `pnpm approve-builds` in this non-interactive install, so a project must declare its approvals.
 
 **Fix:** no `data.fix`. From `create`, `data.rerun` is `cd <dir> && pnpm install`; from `deploy`, no rerun. `data` carries `command`, `exitCode` (null when a signal stopped it), `tail` (the last lines) and `log` (the file). Not retryable.
 
-Source: `packages/cli/src/lib/package-manager.ts`, `packages/cli/src/lib/childLog.ts`, `packages/cli/src/commands/create/index.ts`, `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/commands/deploy/bundleApp.ts`
+Source: `packages/cli/src/lib/package-manager.ts`, `packages/cli/src/lib/childLog.ts`, `packages/cli/src/commands/create/index.ts`, `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/commands/release/bundleApp.ts`
 
 ### INSTALL_INPUTS_MISSING
 
@@ -542,7 +533,7 @@ Source: `packages/cli/src/lib/app/installBuildOutput.ts`
 
 ### INVALID_APP_BASE_DOMAIN
 
-Patching the Gateway's Build Output for a Gateway deploy (`setup`, `gateway deploy`, or the rebind an app's `deploy` or `delete` runs): the gateway host and the app base domain differ. The Gateway scopes its session cookie to `APP_BASE_DOMAIN` and apps find the Gateway by dropping their first label, so the base must be the Gateway's own host; one label above would hand the cookie to every other name in the zone. Message `Apps live one label below the gateway host <host>, so APP_BASE_DOMAIN must be <host>, not <base>.` Both values come from `--domain` on an install (`gatewayTarget` in `commands/setup/deployGateway.ts` sets the base to the domain) and from the install row on a rebind (`lib/gateway/reconcile.ts`), so the guard trips only on an install row whose base isn't its host.
+Patching the Gateway's Build Output for a Gateway deploy (`setup`, `update`, or the rebind an app's `deploy` or `delete` runs): the gateway host and the app base domain differ. The Gateway scopes its session cookie to `APP_BASE_DOMAIN` and apps find the Gateway by dropping their first label, so the base must be the Gateway's own host; one label above would hand the cookie to every other name in the zone. Message `Apps live one label below the gateway host <host>, so APP_BASE_DOMAIN must be <host>, not <base>.` Both values come from `--domain` on an install (`gatewayTarget` in `commands/setup/deployGateway.ts` sets the base to the domain) and from the install row on a rebind (`lib/gateway/reconcile.ts`), so the guard trips only on an install row whose base isn't its host.
 
 **Fix:** none offered (no `data.fix`, no rerun); not retryable.
 
@@ -566,7 +557,7 @@ Source: `packages/cli/src/commands/create/steps/appId.ts`, `packages/perimeter/s
 
 ### INVALID_BUILD_OUTPUT
 
-`validateWorkerConfig()` refused a `worker.config.json`. It runs on the Gateway's patched config before `cf` sees it, and on every app Worker's config in the app policy (`prepareAppBuildOutput()`: `deploy`, `deploy --bundle-only`, release deploys). Three messages: `The patched Worker config isn't valid Build Output: <path>: <issue>; …` (`@cloudflare/config`'s `OutputWorkerSchema`, every issue listed); `The Worker config still has a deploy-time placeholder.` (the string `__EVERYAPP_PATCH__` is still in it); and, for the Gateway only, `The gateway has no domain to deploy to.`
+`validateWorkerConfig()` refused a `worker.config.json`. It runs on the Gateway's patched config before `cf` sees it, and on every app Worker's config in the app policy (`prepareAppBuildOutput()`: `deploy`, `release`, release deploys). Three messages: `The patched Worker config isn't valid Build Output: <path>: <issue>; …` (`@cloudflare/config`'s `OutputWorkerSchema`, every issue listed); `The Worker config still has a deploy-time placeholder.` (the string `__EVERYAPP_PATCH__` is still in it); and, for the Gateway only, `The gateway has no domain to deploy to.`
 
 **Fix:** none offered; not retryable.
 
@@ -590,7 +581,7 @@ Source: `packages/cli/src/lib/domains/hostnames.ts`, `packages/cli/src/commands/
 
 ### INVALID_GATEWAY_URL
 
-`--gateway <value>`, or `EVERYAPP_GATEWAY_URL` without the flag, isn't a URL `new URL()` parses (a valid one is normalized: trailing slashes, query and fragment dropped). Raised by every command that reads them (`deploy`, `delete`, `db query`, `db restore`, `workflow`, `secret`, `email`, `access on|off|show`). Messages: `--gateway must be a full URL, not "<value>"` then `For example https://apps.example.com.`; or `EVERYAPP_GATEWAY_URL must be a full URL, not "<value>"`.
+`--gateway <value>`, or `EVERYAPP_GATEWAY_URL` without the flag, isn't a URL `new URL()` parses (a valid one is normalized: trailing slashes, query and fragment dropped). Raised by every command that reads them (`deploy`, `delete`, `db query`, `db restore`, `secret`, `email`, `access on|off|show`). Messages: `--gateway must be a full URL, not "<value>"` then `For example https://apps.example.com.`; or `EVERYAPP_GATEWAY_URL must be a full URL, not "<value>"`.
 
 **Fix:** for the environment variable, `data.fix`: `set it to https://<value without its scheme>, or unset it`; for the flag, nothing beyond the message. No rerun, not retryable.
 
@@ -608,7 +599,7 @@ Source: `packages/cli/src/commands/dev/index.ts`, `packages/cli/src/lib/output/r
 
 ### LEASE_HELD
 
-A deploy lease (a row in the Gateway's D1 table `_everyapp_deploy_lease`, id `gateway`, `app:<workerName>` or `access`) was still held after 5 minutes of waiting (`WAIT_MS`, retried every 5 s; the rebind passes its own `leaseWaitMs`, and the Access sync after `deploy` and `delete` waits 60 s, `SYNC_LEASE_WAIT_MS`). A lease expires 3 minutes after its last renewal and is renewed every 30 s, so a dead holder frees it within 3 minutes; a live one holds it as long as it runs and nothing takes it over. While waiting, `progress` events on the step (`app.lease`, `gateway.lease`, `db.lease`) say who holds it. Takers: `deploy` (the app's lease, then the Gateway's for the rebind), `delete` (the Gateway's, for the rebind that unbinds the app), `secret set|unset`, `email set|unset`, `db restore`, `setup`, `gateway deploy`, and `access on` plus the Access sync after `deploy` and `delete` (the `access` lease, step `gateway.lease`). Message with a holder: `<activity> is still running after 5m`, where `<activity>` is `A deploy of <app>`, `A Gateway upgrade`, `An update of Cloudflare Access`, `A restore of <app>'s database`, … (from the row's `purpose` and `app`) then `It's from <deployer on >machine. If it stopped without cleaning up, it's released within <time>.`; without one: `Couldn't take hold of <the Gateway|app id|this app> after 5m` (`this app` for the `access` lease, whose row names no app). When the Gateway's lease is held during an app's rebind (step `app.bind`), `bindIfNeeded()` rethrows with one more line, `This app's upload is kept; deploying again binds it and makes it live.`, and `data.rerunNote` `once the other deploy finishes`. The Access sync after `deploy` and `delete` catches it and emits the `ACCESS_SYNC_FAILED` warning (step `app.access`, with the message's first line) instead; from `access on` it is this error.
+A deploy lease (a row in the Gateway's D1 table `_everyapp_deploy_lease`, id `gateway`, `app:<workerName>` or `access`) was still held after 5 minutes of waiting (`WAIT_MS`, retried every 5 s; the rebind passes its own `leaseWaitMs`, and the Access sync after `deploy` and `delete` waits 60 s, `SYNC_LEASE_WAIT_MS`). A lease expires 3 minutes after its last renewal and is renewed every 30 s, so a dead holder frees it within 3 minutes; a live one holds it as long as it runs and nothing takes it over. While waiting, `progress` events on the step (`app.lease`, `gateway.lease`, `db.lease`) say who holds it. Takers: `deploy` (the app's lease, then the Gateway's for the rebind), `delete` (the Gateway's, for the rebind that unbinds the app), `secret set|unset`, `email set|unset`, `db restore`, `setup`, `update`, and `access on` plus the Access sync after `deploy` and `delete` (the `access` lease, step `gateway.lease`). Message with a holder: `<activity> is still running after 5m`, where `<activity>` is `A deploy of <app>`, `A Gateway upgrade`, `An update of Cloudflare Access`, `A restore of <app>'s database`, … (from the row's `purpose` and `app`) then `It's from <deployer on >machine. If it stopped without cleaning up, it's released within <time>.`; without one: `Couldn't take hold of <the Gateway|app id|this app> after 5m` (`this app` for the `access` lease, whose row names no app). When the Gateway's lease is held during an app's rebind (step `app.bind`), `bindIfNeeded()` rethrows with one more line, `This app's upload is kept; deploying again binds it and makes it live.`, and `data.rerunNote` `once the other deploy finishes`. The Access sync after `deploy` and `delete` catches it and emits the `ACCESS_SYNC_FAILED` warning (step `app.access`, with the message's first line) instead; from `access on` it is this error.
 
 **Fix:** `retryable: true`: `data.rerun` is this same command, `data.rerunNote` `once it's done (pnpm everyapp status shows it)`. `data.holder`, when there is one, is the row: `id`, `holder`, `purpose` (`app.deploy`, `app.register`, `app.secrets`, `app.email`, `gateway.deploy`, `gateway.upgrade`, `gateway.reconcile`, `gateway.secrets`, `access.sync`, `db.restore`), `acquiredAt`, `expiresAt`, `app`, `deployer`, `machine`. No `data.fix`.
 
@@ -624,7 +615,7 @@ Source: `packages/cli/src/lib/gateway/lease.ts`, `packages/cli/src/lib/access/sy
 
 ### MANIFEST_NOT_FOUND
 
-`loadEveryAppManifestFile()` found no manifest file. From the working directory (`dev`, `deploy`, `deploy --bundle-only`, `db migrate`, `db query`, `db restore` without an app argument or `--gateway`, `workflow`): `No everyapp.config.ts in this directory`, `data.fix` `run this from the app's directory`. `email set|unset|show` without `--manifest`: the same message, `data.fix` `run this from the app's directory, or pass --manifest <path>`; with `--manifest <path>`: `No manifest at <path>`, no fix. `delete` without an app id: `Which app? There's no everyapp.config.ts here`, `data.fix` `run this from the app's directory, or name it: pnpm everyapp delete <id>`. `secret` reads the manifest only when one is there. `dev` raises it like every other command, through `loadEveryAppManifest` (its `loadManifest` in `commands/dev/index.ts` rewraps only an invalid manifest, as `INVALID_MANIFEST`).
+`loadEveryAppManifestFile()` found no manifest file. From the working directory (`dev`, `deploy`, `release`, `db migrate`, `db query`, `db restore` without an app argument or `--gateway`): `No everyapp.config.ts in this directory`, `data.fix` `run this from the app's directory`. `email set|unset|show` without `--manifest`: the same message, `data.fix` `run this from the app's directory, or pass --manifest <path>`; with `--manifest <path>`: `No manifest at <path>`, no fix. `delete` without an app id: `Which app? There's no everyapp.config.ts here`, `data.fix` `run this from the app's directory, or name it: pnpm everyapp delete <id>`. `secret` reads the manifest only when one is there. `dev` raises it like every other command, through `loadEveryAppManifest` (its `loadManifest` in `commands/dev/index.ts` rewraps only an invalid manifest, as `INVALID_MANIFEST`).
 
 **Fix:** as above. No rerun, not retryable.
 
@@ -642,7 +633,7 @@ Source: `packages/cli/src/commands/db/index.ts`, `packages/cli/src/commands/dev/
 
 A production migration failed. Migrations run before the upload, so the version that's serving keeps running. Three raise sites:
 
-- D1, `cf d1 migrations apply` (`lib/migrations/remote.ts`): an app's (`deploy`; step `app.migrations`) or the Gateway's (`setup`, `gateway deploy`, a rebind; step `gateway.migrations`). Message `Database migration failed`, cf's error, `Nothing was uploaded; the version that's serving keeps running.`, and, when a restore point was saved first, `To roll the database back to before this run: pnpm everyapp db restore` (`db restore <appId>` for a release deploy, `db restore --gateway` for the Gateway). A restore point (a Time Travel bookmark recorded in the Gateway's registry) is saved only when the database already held some of the migrations; a fresh database gets none. `data.fix` `correct the migration`; `data.rollbackCommand` is cf's own `d1 time-travel restore` command when a point was saved.
+- D1, `cf d1 migrations apply` (`lib/migrations/remote.ts`): an app's (`deploy`; step `app.migrations`) or the Gateway's (`setup`, `update`, a rebind; step `gateway.migrations`). Message `Database migration failed`, cf's error, `Nothing was uploaded; the version that's serving keeps running.`, and, when a restore point was saved first, `To roll the database back to before this run: pnpm everyapp db restore` (`db restore <appId>` for a release deploy, `db restore --gateway` for the Gateway). A restore point (a Time Travel bookmark recorded in the Gateway's registry) is saved only when the database already held some of the migrations; a fresh database gets none. `data.fix` `correct the migration`; `data.rollbackCommand` is cf's own `d1 time-travel restore` command when a point was saved.
 - Postgres with drizzle (`lib/migrations/postgres.ts`, the app's own `drizzle-kit migrate`): `drizzle-kit couldn't migrate the Postgres database` then `<why>. Nothing was uploaded.`; `data.fix` `check POSTGRES_DATABASE_URL in .everyapp/secrets.env and the migrations`.
 - Postgres with Prisma (`lib/migrations/prisma.ts`, the app's own `prisma migrate deploy`): `prisma migrate deploy couldn't migrate the Postgres database` then `<why>. Nothing was uploaded.`; `data.fix` `check POSTGRES_DATABASE_URL in .everyapp/secrets.env, prisma.config.ts (its datasource reads it) and the migrations`.
 
@@ -686,7 +677,7 @@ Source: `packages/cli/src/commands/create/index.ts`
 
 ### NODE_TOO_OLD
 
-Before `cf build` or `cf dev` (the cf calls that run the project's package manager: `deploy`, `dev`, `deploy --bundle-only`), the runner asks the package manager which Node it runs the project's tools on (`pnpm exec node -p process.versions.node`, `npm exec -- node …`, `yarn node …`). One older than 22.18.0 can't load `cloudflare.config.ts` (the build fails with `Unknown file extension ".ts"`); a Volta `volta.node` pin in package.json or pnpm's `use-node-version` puts another Node first. A probe that fails or prints no version raises nothing (cf reports in its own words). Message `<pm> runs this project's tools on Node.js <version>; cf needs 22.18.0 or newer` then ``everyapp runs on <node>, but something pins this project's (a Volta `volta.node` in package.json, pnpm's use-node-version). cf needs 22.18.0 or newer to load cloudflare.config.ts.``
+Before `cf build` or `cf dev` (the cf calls that run the project's package manager: `deploy`, `dev`, `release`), the runner asks the package manager which Node it runs the project's tools on (`pnpm exec node -p process.versions.node`, `npm exec -- node …`, `yarn node …`). One older than 22.18.0 can't load `cloudflare.config.ts` (the build fails with `Unknown file extension ".ts"`); a Volta `volta.node` pin in package.json or pnpm's `use-node-version` puts another Node first. A probe that fails or prints no version raises nothing (cf reports in its own words). Message `<pm> runs this project's tools on Node.js <version>; cf needs 22.18.0 or newer` then ``everyapp runs on <node>, but something pins this project's (a Volta `volta.node` in package.json, pnpm's use-node-version). cf needs 22.18.0 or newer to load cloudflare.config.ts.``
 
 **Fix:** `data.fix`: raise the pin (`volta pin node@22`, for Volta); `data.rerun` is this same command. Not retryable.
 
@@ -702,7 +693,7 @@ Source: `packages/cli/src/commands/db/index.ts`
 
 ### NO_RELEASE
 
-`everyapp deploy <github.com repository URL>` (the repository, its `/releases` or `/releases/latest`, or `/releases/tag/<tag>`): that release has no `everyapp-release.tar.gz` an anonymous download can get (GitHub answers 404; a private repository looks the same). It is the download's `RELEASE_NOT_FOUND`, rewrapped for a repository; the CLI never builds a repository from source. Message `<owner/repo> publishes no everyapp release` (then ` <tag>` when one was named) then `Its GitHub releases have no everyapp-release.tar.gz.`
+`everyapp install <github.com repository URL>` (the repository, its `/releases` or `/releases/latest`, or `/releases/tag/<tag>`): that release has no `everyapp-release.tar.gz` an anonymous download can get (GitHub answers 404; a private repository looks the same). It is the download's `RELEASE_NOT_FOUND`, rewrapped for a repository; the CLI never builds a repository from source. Message `<owner/repo> publishes no everyapp release` (then ` <tag>` when one was named) then `Its GitHub releases have no everyapp-release.tar.gz.`
 
 **Fix:** `data.fix`: `clone it, then run pnpm install && pnpm everyapp deploy in it`. No rerun, not retryable.
 
@@ -715,22 +706,6 @@ Source: `packages/cli/src/lib/app/release.ts`, `packages/cli/src/lib/release/git
 **Fix:** none offered; not retryable.
 
 Source: `packages/cli/src/commands/db/restore.ts`, `packages/cli/src/lib/migrations/remote.ts`
-
-### NO_WORKFLOWS
-
-Any `everyapp workflow …` subcommand on an app whose manifest declares no `resources.workflows`. Message `<app> declares no Workflows`.
-
-**Fix:** `data.fix`: `add one under resources.workflows in everyapp.config.ts`. No rerun, not retryable.
-
-Source: `packages/cli/src/commands/workflow/index.ts`
-
-### OUT_WITHOUT_BUNDLE_ONLY
-
-`everyapp deploy --out <file>` without `--bundle-only` (`--out` names the tarball `--bundle-only` writes). Message `--out needs --bundle-only`.
-
-**Fix:** `data.fix`: `add --bundle-only, or drop --out`. No rerun, not retryable.
-
-Source: `packages/cli/src/commands/deploy/index.ts`
 
 ### POSTGRES_URL_MISSING
 
@@ -758,7 +733,7 @@ Source: `packages/cli/src/commands/db/index.ts`, `packages/cli/src/lib/cf/d1.ts`
 
 ### RELEASE_CORRUPT
 
-Opening a release (`extractRelease()`): the SHA-256 over the extracted tree (every file except `release.json`: each path and the hash of its contents, in path order) isn't the `sha256` its `release.json` records. Gateway releases (the build from the checkout that every Gateway deploy opens, kept under the checkout's `node_modules/.cache/everyapp/<tree>.tar.gz`; `lib/gateway/checkoutRelease.ts`) and app releases (`deploy <url|tarball>`) alike. Message `<Gateway|App> release <version> doesn't match its checksum` then `The download may be damaged. Download it again.`
+Opening a release (`extractRelease()`): the SHA-256 over the extracted tree (every file except `release.json`: each path and the hash of its contents, in path order) isn't the `sha256` its `release.json` records. Gateway releases (the build from the checkout that every Gateway deploy opens, kept under the checkout's `node_modules/.cache/everyapp/<tree>.tar.gz`; `lib/gateway/checkoutRelease.ts`) and app releases (`install <url|tarball>`) alike. Message `<Gateway|App> release <version> doesn't match its checksum` then `The download may be damaged. Download it again.`
 
 **Fix:** download it again. `data.expected` and `data.actual` carry the two hashes. No `data.fix`, no rerun, not retryable.
 
@@ -766,7 +741,7 @@ Source: `packages/cli/src/lib/gateway/release.ts`
 
 ### RELEASE_DOWNLOAD_FAILED
 
-Downloading a release tarball over HTTPS failed: `deploy <url>` (step `app.release`). Downloads are anonymous (no token, cookie or identifying header), follow at most 5 redirects, HTTPS only, within 5 minutes and 200 MB. Messages: `<url> redirects nowhere.` or `<url> redirects too many times.`; `<href> isn't a URL.`; `<url> isn't an HTTPS URL.` or `<url> redirects to <href>, which isn't an HTTPS URL.`; `Couldn't download <url>: HTTP <status>.` (a 404 is `RELEASE_NOT_FOUND`); `GitHub didn't say which release of <owner/repo> <url> is.` (no redirect named a tag); `Downloading <url> timed out.`; `Couldn't download <url>: <error>`.
+Downloading a release tarball over HTTPS failed: `install <url>` (step `app.release`). Downloads are anonymous (no token, cookie or identifying header), follow at most 5 redirects, HTTPS only, within 5 minutes and 200 MB. Messages: `<url> redirects nowhere.` or `<url> redirects too many times.`; `<href> isn't a URL.`; `<url> isn't an HTTPS URL.` or `<url> redirects to <href>, which isn't an HTTPS URL.`; `Couldn't download <url>: HTTP <status>.` (a 404 is `RELEASE_NOT_FOUND`); `GitHub didn't say which release of <owner/repo> <url> is.` (no redirect named a tag); `Downloading <url> timed out.`; `Couldn't download <url>: <error>`.
 
 **Fix:** `retryable: true` (`data.rerun` is this same command) for a timeout, a thrown request or stream error, and an HTTP 5xx; not for the other messages. No `data.fix`.
 
@@ -782,7 +757,7 @@ Source: `packages/cli/src/lib/gateway/release.ts`, `packages/cli/src/lib/app/rel
 
 ### RELEASE_LOCAL_STATE
 
-`everyapp deploy --bundle-only`: the files staged for the release include local state or secrets: a name starting with `.dev.vars` or `.env`, ending in `.pem`, or a path under `.cloudflare/state`, `.cloudflare/types`, `.wrangler/` or `.everyapp/`. Message `Refusing to pack local state or secrets into the release:` then the files, one per line.
+`everyapp release`: the files staged for the release include local state or secrets: a name starting with `.dev.vars` or `.env`, ending in `.pem`, or a path under `.cloudflare/state`, `.cloudflare/types`, `.wrangler/` or `.everyapp/`. Message `Refusing to pack local state or secrets into the release:` then the files, one per line.
 
 **Fix:** remove them from the Build Output and the migrations directory. No `data.fix`, no rerun, not retryable.
 
@@ -790,7 +765,7 @@ Source: `packages/cli/src/lib/app/release.ts`
 
 ### RELEASE_MIGRATIONS_UNSUPPORTED
 
-A release carries SQL files, which only the D1 migration applies by itself; Postgres migrations run the app's own drizzle-kit or Prisma with its config, which a release doesn't have. Two raise sites: self-host `deploy <release>` of a manifest with `migrations.dialect: "postgresql"` (`deployApp.ts`, before anything else): `<app> can't deploy from a release: its Postgres migrations need the source`, `data.fix` `clone it, then run pnpm install && pnpm everyapp deploy in it`; and `deploy --bundle-only` of a manifest with `migrations.engine: "prisma"` (`lib/app/release.ts`): `<app> migrates with Prisma, which a release can't carry` then `Prisma migrations (migrations.engine "prisma") need the app's source and its Prisma CLI.`, `data.rerun` `pnpm everyapp deploy`, `data.rerunNote` `from the app's checkout`.
+A release carries SQL files, which only the D1 migration applies by itself; Postgres migrations run the app's own drizzle-kit or Prisma with its config, which a release doesn't have. Two raise sites: self-host `install <release>` of a manifest with `migrations.dialect: "postgresql"` (`deployApp.ts`, before anything else): `<app> can't deploy from a release: its Postgres migrations need the source`, `data.fix` `clone it, then run pnpm install && pnpm everyapp deploy in it`; and `release` of a manifest with `migrations.engine: "prisma"` (`lib/app/release.ts`): `<app> migrates with Prisma, which a release can't carry` then `Prisma migrations (migrations.engine "prisma") need the app's source and its Prisma CLI.`, `data.rerun` `pnpm everyapp deploy`, `data.rerunNote` `from the app's checkout`.
 
 **Fix:** as above; not retryable.
 
@@ -798,7 +773,7 @@ Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/lib/a
 
 ### RELEASE_NOT_FOUND
 
-The release `deploy <source>` names isn't there. A source that is neither a URL nor an existing file: `<source> is neither a URL nor a file` then `Pass a GitHub repository URL (https://github.com/<owner>/<repo>), a release tarball's URL, or a downloaded everyapp-release.tar.gz.` An HTTP 404: for a GitHub release asset, `<owner/repo> has no published release with <asset> that can be downloaded without signing in (https://github.com/<owner/repo>/releases).` (or `has no release <tag> with …`); for any other URL, `<url> doesn't exist (404).` For `deploy` with a github.com repository URL the 404 is reported as `NO_RELEASE` instead.
+The release `install <source>` names isn't there. A source that is neither a URL nor an existing file: `<source> is neither a URL nor a file` then `Pass a GitHub repository URL (https://github.com/<owner>/<repo>), a release tarball's URL, or a downloaded everyapp-release.tar.gz.` An HTTP 404: for a GitHub release asset, `<owner/repo> has no published release with <asset> that can be downloaded without signing in (https://github.com/<owner/repo>/releases).` (or `has no release <tag> with …`); for any other URL, `<url> doesn't exist (404).` For `install` with a github.com repository URL the 404 is reported as `NO_RELEASE` instead.
 
 **Fix:** none offered beyond the message; not retryable.
 
@@ -806,7 +781,7 @@ Source: `packages/cli/src/lib/release/fetch.ts`, `packages/cli/src/lib/release/g
 
 ### RELEASE_PACK_FAILED
 
-`everyapp deploy --bundle-only` couldn't pack the app. `.cloudflare/output` doesn't hold exactly `v0`: `Expected the Build Output v0 alone in <dir>, found <entries|none>.`; the Build Output isn't a production build: `The app's Build Output isn't a production build` then `A release ships only one.`, with `data.fix` build with `cf build` (production by default); or tar exited non-zero: `tar couldn't pack the release (exit <code>): <stderr>`.
+`everyapp release` couldn't pack the app. `.cloudflare/output` doesn't hold exactly `v0`: `Expected the Build Output v0 alone in <dir>, found <entries|none>.`; the Build Output isn't a production build: `The app's Build Output isn't a production build` then `A release ships only one.`, with `data.fix` build with `cf build` (production by default); or tar exited non-zero: `tar couldn't pack the release (exit <code>): <stderr>`.
 
 **Fix:** as above; no rerun, not retryable.
 
@@ -872,7 +847,7 @@ Source: `packages/cli/src/commands/db/restore.ts`
 
 ### SCHEMA_CHECK_FAILED
 
-`deploy` and `deploy --bundle-only`, step `app.schema`: `drizzle-kit generate`, run with the app's own drizzle config but its `out` pointed at a copy of the migrations under `.everyapp/`, failed without writing a migration, so whether the schema matches is unknown. Headline `drizzle-kit couldn't compare the schema with the migrations`, then the first `...Error` line of drizzle-kit's stderr (else its last line, else `no answer in 120 s` or `exit <code>`), then `Nothing was migrated or uploaded.` The check runs after the build and before the database or the Worker changes, only for `migrations.engine` `"drizzle"` (the default) with D1 resources or `migrations.dialect` `"postgresql"`; a Prisma app is not checked (its step says so), and a missing drizzle-kit or config is the warning `SCHEMA_CHECK_SKIPPED`, not this error.
+`deploy` and `release`, step `app.schema`: `drizzle-kit generate`, run with the app's own drizzle config but its `out` pointed at a copy of the migrations under `.everyapp/`, failed without writing a migration, so whether the schema matches is unknown. Headline `drizzle-kit couldn't compare the schema with the migrations`, then the first `...Error` line of drizzle-kit's stderr (else its last line, else `no answer in 120 s` or `exit <code>`), then `Nothing was migrated or uploaded.` The check runs after the build and before the database or the Worker changes, only for `migrations.engine` `"drizzle"` (the default) with D1 resources or `migrations.dialect` `"postgresql"`; a Prisma app is not checked (its step says so), and a missing drizzle-kit or config is the warning `SCHEMA_CHECK_SKIPPED`, not this error.
 
 **Fix:** `rerun`: `pnpm db:generate`, `rerunNote`: `in a terminal; it asks about renamed columns and tables`. Not retryable.
 
@@ -1063,22 +1038,6 @@ Source: `packages/cli/src/lib/app/workflows.ts`
 **Fix:** `fix`: `shorten its binding name in everyapp.config.ts`.
 
 Source: `packages/cli/src/lib/app/installBuildOutput.ts`
-
-### WORKFLOW_NOT_DEPLOYED
-
-`workflow instances|get|start|pause|resume|restart|terminate <workflow> …`: the Workflow is declared but not in Cloudflare yet: `<binding> isn't deployed yet` / `It's created when <app> deploys.`; `rerun`: `pnpm everyapp deploy`, `data.workflow` (its full name). Or it exists but runs on a Worker that isn't the app's: `<binding> is attached to another app (<app id>)` / `Cloudflare runs this Workflow on <app id>'s Worker, not <app>'s.` (or `is attached to another Worker`); `fix`: `delete that Workflow, or rename the binding in everyapp.config.ts, then deploy <app>`; `data.workflow`, `data.scriptName`, `data.app`.
-
-**Fix:** as above.
-
-Source: `packages/cli/src/commands/workflow/index.ts`
-
-### WORKFLOW_NOT_FOUND
-
-`workflow … <workflow>`: the name matches no declared Workflow's binding, class name or full name: `No Workflow <name> in everyapp.config.ts` / `It declares <bindings>.` `data.workflow` is the name given, `data.declared` the bindings.
-
-**Fix:** `rerun`: this command with the name replaced by the binding that starts with it (case-insensitive) or is within two edits of it, when there is one.
-
-Source: `packages/cli/src/commands/workflow/index.ts`
 
 ### WORKFLOW_REMOVED
 
@@ -1859,7 +1818,7 @@ Source: `packages/cli/src/commands/status/problems.ts`
 
 ### GATEWAY_OUTDATED
 
-Info. The install row's tree hash isn't this checkout's Gateway sources' and the Gateway has been uploaded: `Your every-app folder has a newer Gateway than the one online` / `Run gateway deploy to update it now, or leave it: the next new app's deploy updates it too.` Run: `pnpm everyapp gateway deploy`, `note`: `updates it now`. Not a problem to fix: it is listed after the others and doesn't count in the summary.
+Info. The install row's tree hash isn't this checkout's Gateway sources' and the Gateway has been uploaded: `Your every-app folder has a newer Gateway than the one online` / `Run update now, or leave it: the next new app's deploy updates it too.` Run: `pnpm everyapp update`, `note`: `updates it now`. Not a problem to fix: it is listed after the others and doesn't count in the summary.
 
 Source: `packages/cli/src/commands/status/problems.ts`
 
@@ -2060,7 +2019,7 @@ Source: `packages/cli/src/lib/git.ts`, `packages/cli/src/lib/childLog.ts`, `pack
 `packages/cli/src/commands/create/steps/appId.ts`
 `packages/cli/src/commands/deploy/index.ts`
 `packages/cli/src/commands/deploy/deployApp.ts`
-`packages/cli/src/commands/deploy/bundleApp.ts`
+`packages/cli/src/commands/release/bundleApp.ts`
 `packages/cli/src/commands/deploy/command.ts`
 `packages/cli/src/commands/deploy/steps/waitForLive.ts`
 `packages/cli/src/commands/deploy/steps/offerGateway.ts`
@@ -2069,7 +2028,6 @@ Source: `packages/cli/src/lib/git.ts`, `packages/cli/src/lib/childLog.ts`, `pack
 `packages/cli/src/commands/secret/index.ts`
 `packages/cli/src/commands/db/index.ts`
 `packages/cli/src/commands/db/restore.ts`
-`packages/cli/src/commands/workflow/index.ts`
 `packages/cli/src/commands/email/index.ts`
 `packages/cli/src/commands/dev/index.ts`
 `packages/cli/src/commands/dev/gatewayServer.ts`
@@ -2078,7 +2036,7 @@ Source: `packages/cli/src/lib/git.ts`, `packages/cli/src/lib/childLog.ts`, `pack
 `packages/cli/src/commands/setup/runSetup.ts`
 `packages/cli/src/commands/setup/deployGateway.ts`
 `packages/cli/src/commands/setup/command.ts`
-`packages/cli/src/commands/gateway/command.ts`
+`packages/cli/src/commands/update/command.ts`
 `packages/cli/src/commands/login/index.ts`
 `packages/cli/src/commands/access/index.ts`
 `packages/sdk/src/internal/email.ts`

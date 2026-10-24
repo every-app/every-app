@@ -1,6 +1,5 @@
 import path from "node:path";
 import chalk from "chalk";
-import type { LocalContext } from "@/context";
 import { gatewayFor, type ReconcileSeams } from "@/commands/appGateway";
 import { removeEmailRoutes } from "@/lib/app/emailRoutes";
 import {
@@ -47,9 +46,7 @@ interface DeleteCommandFlags extends GatewayCommandFlags {
   yes?: boolean;
 }
 
-export async function deleteApp(
-  this: LocalContext,
-  flags: DeleteCommandFlags,
+export async function deleteApp(flags: DeleteCommandFlags,
   appIdArgument?: string,
 ): Promise<void> {
   await runCommand(flags, async (out) => {

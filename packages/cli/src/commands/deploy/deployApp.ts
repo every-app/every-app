@@ -46,7 +46,7 @@
  *      then wait for the app to go live: the gateway activates it on the
  *      first request that reaches it (steps/waitForLive.ts).
  *
- * From an app release (`release`: `everyapp deploy <github url | tarball>`,
+ * From an app release (`release`: `everyapp install <github url | tarball>`,
  * lib/app/release.ts) the pipeline is the same with the extracted release
  * as the Build Output root and its manifest as the app's: nothing is
  * installed or built, and the schema check is left to the publisher's

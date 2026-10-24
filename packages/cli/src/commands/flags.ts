@@ -52,10 +52,49 @@ export const forceDnsFlag = {
   optional: true,
 } as const;
 
+/**
+ * What a deploy of an app may take over, with the person's yes: `deploy`
+ * and `install` declare all four, and each refusal's `rerun` adds the one
+ * it needs (TAKEOVER_FLAGS in lib/errors.ts).
+ */
+export const appTakeoverFlags = {
+  "allow-delete-durable-object-data": {
+    kind: "boolean",
+    brief: "Deploy even though Durable Object classes were removed, deleting their data",
+    optional: true,
+  },
+  "allow-delete-workflows": {
+    kind: "boolean",
+    brief: "Deploy even though Workflows were removed, deleting them and their instances",
+    optional: true,
+  },
+  "force-dns": {
+    ...forceDnsFlag,
+    brief:
+      "Publish the app's new hostname even where a DNS record answers it (one at the hostname is replaced)",
+  },
+  "enable-email-routing": {
+    kind: "boolean",
+    brief:
+      "Turn on Email Routing for the domains the app's inbound addresses (everyapp email set --inbound) name that don't route mail yet (locks their MX and SPF records to Cloudflare)",
+    optional: true,
+  },
+} as const;
+
 /** The flags of a command that acts on the Gateway. */
 export interface GatewayCommandFlags {
   gateway?: string;
   "account-id"?: string;
   json?: boolean;
   verbose?: boolean;
+}
+
+/** `deploy`'s and `install`'s flags: the Gateway's, the takeovers, and the two of their own. */
+export interface AppDeployFlags extends GatewayCommandFlags {
+  yes?: boolean;
+  "allow-delete-durable-object-data"?: boolean;
+  "allow-delete-workflows"?: boolean;
+  "force-dns"?: boolean;
+  "enable-email-routing"?: boolean;
+  "no-wait"?: boolean;
 }

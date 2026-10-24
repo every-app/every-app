@@ -50,12 +50,12 @@ Ship:    pnpm everyapp deploy --json   (from the app directory; safe to repeat;
          also upgrades the Gateway to this checkout when it has to rebind).
          No Gateway yet: action_required install_gateway; ask the user, run
          its data.rerun (setup), then deploy again.
-Release: someone else's app, without a clone: pnpm everyapp deploy
+Release: someone else's app, without a clone: pnpm everyapp install
          https://github.com/<owner>/<repo> --json (its latest release's
          everyapp-release.tar.gz; a tarball URL or file works too). NO_RELEASE:
          the repository publishes none; clone it, then pnpm install && pnpm
          everyapp deploy. Never build a repository from its URL yourself.
-         To publish one: pnpm everyapp deploy --bundle-only, then attach the
+         To publish one: pnpm everyapp release, then attach the
          tarball to a GitHub release of the app's repository.
 Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--local] --json
          (a production write stops with CONFIRMATION_REQUIRED: add --yes only

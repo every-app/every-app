@@ -322,11 +322,11 @@ describe("the command pages", () => {
     expectDocumented("email", "the flags of everyapp email", flagsOf("email"));
     expectDocumented("email", "the email settings", ["EMAIL_FROM", "EMAIL_FROM_NAME", "EMAIL_PROVIDER", "RESEND_API_KEY", "EMAIL_REST_API_TOKEN", "EVERYAPP_EMAIL_SENDERS", "sendEmail", "capabilities.email", "email.inbound"]);
   });
-  it("deploy.md documents every flag of everyapp deploy and delete", () => {
-    expectDocumented("deploy", "the flags of everyapp deploy and delete", flagsOf("deploy", "delete"));
+  it("deploy.md documents every flag of everyapp deploy, install, release and delete", () => {
+    expectDocumented("deploy", "the flags of everyapp deploy, install, release and delete", flagsOf("deploy", "install", "release", "delete"));
   });
-  it("setup.md documents every flag of everyapp setup, login, create and gateway deploy", () => {
-    expectDocumented("setup", "the flags of everyapp setup, login, create and gateway deploy", flagsOf("setup", "login", "create", "gateway"));
+  it("setup.md documents every flag of everyapp setup, login, create and update", () => {
+    expectDocumented("setup", "the flags of everyapp setup, login, create and update", flagsOf("setup", "login", "create", "update"));
     expectDocumented("setup", "the credentials", ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "EVERYAPP_GATEWAY_URL"]);
   });
   it("mcp.md documents the MCP settings and the SDK's tool API", () => {

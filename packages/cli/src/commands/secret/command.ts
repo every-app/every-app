@@ -1,4 +1,5 @@
 import { buildCommand, buildRouteMap } from "@stricli/core";
+import { CLI } from "@/lib/output/command";
 import { accountFlag, gatewayFlag, jsonFlag, resultJsonFlag } from "../flags";
 
 const names = {
@@ -49,11 +50,11 @@ const setCommand = buildCommand({
       "command line. Changes are live at once; no deploy needed.",
       "",
       "Examples:",
-      "  everyapp secret set OPENAI_API_KEY",
-      "  everyapp secret set GITHUB_TOKEN --from-env GITHUB_TOKEN",
-      '  echo "$STRIPE_KEY" | everyapp secret set STRIPE_KEY',
+      `  ${CLI} secret set OPENAI_API_KEY`,
+      `  ${CLI} secret set GITHUB_TOKEN --from-env GITHUB_TOKEN`,
+      `  echo "$STRIPE_KEY" | ${CLI} secret set STRIPE_KEY`,
       "",
-      "See which names you can set: everyapp secret list",
+      `See which names you can set: ${CLI} secret list`,
     ].join("\n"),
   },
 });
@@ -87,7 +88,7 @@ const unsetCommand = buildCommand({
       "Names go where `secret set` sends them. Asks before removing; the change is live at once.",
       "",
       "Example:",
-      "  everyapp secret unset GITHUB_TOKEN",
+      `  ${CLI} secret unset GITHUB_TOKEN`,
     ].join("\n"),
   },
 });

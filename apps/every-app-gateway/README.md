@@ -8,7 +8,7 @@ Install or update it with the CLI from the repository root:
 
 ```sh
 pnpm everyapp setup --domain apps.example.com   # first install, or repair
-pnpm everyapp gateway deploy                    # update after git pull
+pnpm everyapp update                            # update after git pull
 pnpm everyapp status                            # what is live, what to fix
 ```
 

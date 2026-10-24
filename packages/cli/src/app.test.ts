@@ -1,15 +1,16 @@
 import { ExitCode, run } from "@stricli/core";
 import { describe, expect, it } from "vitest";
-import { buildApp, groupHelp, rootHelp, versionLine } from "./app";
+import { buildApp, commandPaths, groupHelp, rootHelp, versionLine } from "./app";
 import type { ArgumentProblem } from "./argumentErrors";
 import { buildContext } from "./context";
+import { CLI } from "./lib/output/command";
 
 /** Run everyapp's parser on `args`: what it reports, and stricli's exit code. */
 async function parse(...args: string[]) {
   const problems: ArgumentProblem[] = [];
   const app = buildApp({ color: false, args, report: (problem) => problems.push(problem) });
   const stricliProcess = { stdout: { write: () => true }, stderr: { write: () => true }, env: {}, exitCode: undefined as number | undefined };
-  await run(app, args, { ...buildContext(process), process: stricliProcess as unknown as NodeJS.Process });
+  await run(app, args, buildContext(stricliProcess as unknown as NodeJS.Process));
   return { problems, exitCode: stricliProcess.exitCode };
 }
 
@@ -49,32 +50,46 @@ describe("argument problems", () => {
       message: '--yes is a switch and takes no value (got "maybe")',
       data: { fix: "use --yes or --no-yes" },
     });
-    expect((await parse("workflow", "instances", "RANK", "--limit", "500")).problems[0]!.message).toBe(
-      "--limit must be a whole number from 1 to 100, not 500",
-    );
-    // Kebab-case values, and no far-fetched suggestion.
-    expect((await parse("workflow", "instances", "RANK", "--status", "nope")).problems[0]).toEqual({
+    expect((await parse("dev", "--port", "many")).problems[0]).toMatchObject({
       code: "INVALID_VALUE",
-      message:
-        '--status can\'t be "nope"\nUse one of: queued, running, paused, waiting, waiting-for-pause, errored, terminated, complete, rolling-back.',
-      data: {},
-    });
-    expect((await parse("workflow", "instances", "RANK", "--status", "runing")).problems[0]!.data).toEqual({
-      didYouMean: "running",
+      message: expect.stringMatching(/^--port can't be "many"\n/),
     });
   });
 
   it("shows where a missing or extra argument goes", async () => {
-    expect((await parse("workflow", "get", "RANK")).problems[0]!.message).toBe("Missing the instance id");
+    expect((await parse("install")).problems[0]).toEqual({
+      code: "MISSING_ARGUMENT",
+      message: "Missing the source",
+      data: { usage: "pnpm everyapp install <source> [flags]" },
+    });
     expect((await parse("create", "a", "b")).problems[0]).toEqual({
       code: "TOO_MANY_ARGUMENTS",
       message: 'create takes one argument, but got another: "b"',
       data: { usage: "pnpm everyapp create [<name>] [flags]" },
     });
+    expect((await parse("deploy", "https://github.com/acme/todo")).problems[0]).toEqual({
+      code: "TOO_MANY_ARGUMENTS",
+      message: 'deploy takes no arguments, but got another: "https://github.com/acme/todo"',
+      data: { usage: "pnpm everyapp deploy [flags]" },
+    });
     expect((await parse("secret", "set", "GITHUB_TOKEN", "--from-env")).problems[0]).toMatchObject({
       code: "MISSING_FLAG_VALUE",
       message: "--from-env needs a value",
     });
+  });
+
+  it("lets install take over what deploy can, so a takeover's rerun parses", async () => {
+    const takeovers = ["--force-dns", "--allow-delete-durable-object-data", "--allow-delete-workflows", "--enable-email-routing"];
+    for (const command of ["deploy", "install"]) {
+      const args = command === "install" ? ["https://github.com/acme/todo"] : [];
+      // The command is loaded (and would run) once the arguments parse; a
+      // bad flag is reported before the loader runs. `--no-wait --yes` alone
+      // exercise the loader's import without the argument check failing.
+      const { problems } = await parse(command, ...args, ...takeovers, "--bogus");
+      expect(problems).toEqual([
+        { code: "UNKNOWN_FLAG", message: `Unknown flag --bogus for ${command}`, data: { help: `pnpm everyapp ${command} --help` } },
+      ]);
+    }
   });
 
   it("asks for at least one of a list of arguments, each checked", async () => {
@@ -94,35 +109,46 @@ describe("argument problems", () => {
       message: '"everything" won\'t do for <senders|inbound>\nUse senders, inbound, or both.',
     });
   });
+});
 
-  it("checks a Workflow's --params before connecting", async () => {
-    expect((await parse("workflow", "start", "RANK_CHECK", "--params", "{bad")).problems[0]).toEqual({
-      code: "INVALID_VALUE",
-      message: `--params can't be "{bad"\nExpected a JSON object, e.g. '{"siteId":"abc"}'.`,
-      data: {},
-    });
+describe("the command tree", () => {
+  it("has the build verbs, the run verbs, and nothing hidden", () => {
+    const paths = commandPaths();
+    for (const route of ["create", "dev", "deploy", "release", "db migrate", "login", "setup", "update", "install", "status", "delete", "access on", "secret set", "email show"]) {
+      expect(paths).toContain(route);
+    }
+    for (const gone of ["gateway", "gateway deploy", "workflow", "completion"]) {
+      expect(paths).not.toContain(gone);
+    }
   });
 });
 
 describe("help", () => {
-  it("lists the commands by group, and completion only with --help-all", () => {
-    expect(rootHelp(false)).toContain("GET STARTED");
-    expect(rootHelp(false)).not.toContain("completion");
-    expect(rootHelp(true)).toContain("SHELL COMPLETION\n  completion  Install or remove bash completion");
+  it("lists the commands by what the person is doing, as they run everyapp", () => {
+    const help = rootHelp();
+    expect(help).toMatch(/\nBUILD AN APP\n  create {2,}Create .*\n  dev /);
+    expect(help).toMatch(/\nRUN A GATEWAY\n  login {2,}Log in .*\n  setup {2,}Install or repair the Gateway\n  update {2,}Update the Gateway to this checkout \(after git pull\)\n  install /);
+    expect(help).toContain(`USAGE\n  ${CLI} <command> [flags]`);
+    expect(help).toContain(`  $ ${CLI} install https://github.com/<owner>/<repo>`);
+    expect(help).not.toContain("completion");
+    expect(help).not.toContain("--help-all");
   });
 
   it("shows a group's commands and examples for the group alone, or with --help", () => {
-    for (const args of [["secret"], ["secret", "--help"], ["db"]]) {
-      expect(groupHelp(args)).toMatch(/^.+\.\n\nUSAGE\n  everyapp \w+ <command> \[flags\]\n\nCOMMANDS\n/);
+    for (const args of [["secret"], ["secret", "--help"], ["db"], ["access"]]) {
+      expect(groupHelp(args)).toMatch(
+        new RegExp(`^.+\\.\\n\\nUSAGE\\n  ${CLI} \\w+ <command> \\[flags\\]\\n\\nCOMMANDS\\n`),
+      );
     }
+    expect(groupHelp(["secret"])).toContain(`  $ ${CLI} secret set GITHUB_TOKEN`);
     expect(groupHelp(["secret", "set"])).toBeNull();
     expect(groupHelp(["create"])).toBeNull();
   });
 
   it("says under email what the Gateway's own sender is, and the command that sets it", () => {
     for (const args of [["email"], ["email", "--help"]]) {
-      expect(groupHelp(args)).toMatch(
-        /^.+\.\n\nInvites, and apps that don't set their own senders, send as the Gateway's sender\.\nSet it with: everyapp secret set EMAIL_FROM EMAIL_FROM_NAME\n\nUSAGE\n  everyapp email <command> \[flags\]\n\nCOMMANDS\n/,
+      expect(groupHelp(args)).toContain(
+        `.\n\nInvites, and apps that don't set their own senders, send as the Gateway's sender.\nSet it with: ${CLI} secret set EMAIL_FROM EMAIL_FROM_NAME\n\nUSAGE\n  ${CLI} email <command> [flags]\n\nCOMMANDS\n`,
       );
     }
   });

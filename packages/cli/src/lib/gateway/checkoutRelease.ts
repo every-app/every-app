@@ -1,6 +1,6 @@
 /**
  * Where the Gateway's code comes from, for every Gateway deploy: `setup`,
- * `gateway deploy`, and the rebind an app's deploy or delete runs. everyapp
+ * `update`, and the rebind an app's deploy or delete runs. everyapp
  * runs from a checkout (lib/checkout.ts; the CLI isn't published while
  * publishing is paused), and every Gateway deploy deploys a release built from it
  * (`openCheckoutGatewayRelease` below: the SDK's build, then the Gateway's

@@ -1,7 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { text } from "node:stream/consumers";
-import type { LocalContext } from "@/context";
 import { localD1Id } from "@every-app/sdk/cloudflare";
 import { workerNameFor } from "@every-app/perimeter/manifest";
 import {
@@ -45,9 +44,7 @@ const MIGRATE_STEP = "db.migrate";
  * database `cf dev` and `everyapp dev` serve. Production migrations run in
  * `everyapp deploy`, after a restore point, and nowhere else.
  */
-export async function migrate(
-  this: LocalContext,
-  flags: MigrateCommandFlags,
+export async function migrate(flags: MigrateCommandFlags,
 ): Promise<void> {
   await runCommand(flags, async (out) => {
     await migrateLocal({ cwd: process.cwd(), out });
@@ -151,9 +148,7 @@ interface QueryCommandFlags extends GatewayCommandFlags {
  * Gateway's account), or with --local against the database `everyapp dev`
  * uses. SQL that changes the production database is confirmed first.
  */
-export async function query(
-  this: LocalContext,
-  flags: QueryCommandFlags,
+export async function query(flags: QueryCommandFlags,
   sql?: string,
 ): Promise<void> {
   await runCommand(flags, async (out) => {

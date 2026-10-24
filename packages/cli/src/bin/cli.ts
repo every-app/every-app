@@ -13,9 +13,10 @@ import { unsupportedRuntime } from "@/lib/runtime";
 
 /**
  * What everyapp reads from the arguments before any command does: `--json`
- * (stays for the command; parse errors are NDJSON then too) and the global
- * `--no-color` (taken out: no command declares it). Arguments after `--`
- * are a command's own.
+ * (stays for the command; parse errors are NDJSON then too), the global
+ * `--no-color` (taken out: no command declares it), and stricli's
+ * `--help-all`/`-H`, read as `--help` so there is one help, not a second
+ * root help in stricli's format. Arguments after `--` are a command's own.
  */
 function globalOptions(argv: readonly string[]): {
   args: string[];
@@ -24,8 +25,11 @@ function globalOptions(argv: readonly string[]): {
 } {
   const end = argv.indexOf("--");
   const options = end < 0 ? argv : argv.slice(0, end);
+  const own = (index: number) => end >= 0 && index > end;
   return {
-    args: argv.filter((arg, index) => arg !== "--no-color" || (end >= 0 && index > end)),
+    args: argv
+      .filter((arg, index) => arg !== "--no-color" || own(index))
+      .map((arg, index) => ((arg === "--help-all" || arg === "-H") && !own(index) ? "--help" : arg)),
     json: options.includes("--json"),
     noColor: options.includes("--no-color"),
   };
@@ -50,9 +54,7 @@ if (runtimeProblem) {
   reportFailure(out, runtimeProblem);
   process.exitCode = out.exitCode;
 } else if (args.length === 0 || (args.length === 1 && helpRequested)) {
-  process.stdout.write(rootHelp(false));
-} else if (args.length === 1 && (args[0] === "--help-all" || args[0] === "-H")) {
-  process.stdout.write(rootHelp(true));
+  process.stdout.write(rootHelp());
 } else if (args.length === 1 && (args[0] === "--version" || args[0] === "-v")) {
   process.stdout.write(versionLine());
 } else {
@@ -85,10 +87,7 @@ async function runCommand(): Promise<void> {
     env: process.env,
     exitCode: undefined as number | undefined,
   };
-  await run(app, args, {
-    ...buildContext(process),
-    process: stricliProcess as unknown as NodeJS.Process,
-  });
+  await run(app, args, buildContext(stricliProcess as unknown as NodeJS.Process));
   const exitCode = requestedExitCode() ?? stricliProcess.exitCode;
   if (exitCode !== undefined) process.exitCode = exitCode;
 }

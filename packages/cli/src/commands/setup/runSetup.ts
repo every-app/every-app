@@ -112,7 +112,7 @@ export interface SetupFlags {
   verbose?: boolean;
 }
 
-/** `gateway deploy` takes setup's flags, but those only a new Gateway needs. */
+/** `update` takes setup's flags, but those only a new Gateway needs. */
 export type GatewayDeployFlags = Omit<SetupFlags, "domain">;
 
 /**
@@ -216,7 +216,7 @@ export async function runSetup(
 }
 
 /**
- * `everyapp gateway deploy`: the Gateway the login finds, deployed from
+ * `everyapp update`: the Gateway the login finds, deployed from
  * this checkout as setup does (or repaired, or left alone when it is up
  * to date), without ever installing one.
  */

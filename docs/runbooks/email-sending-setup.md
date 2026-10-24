@@ -165,7 +165,7 @@ needs; apps get no `send-email` binding of their own.
   starts with a small daily quota that Cloudflare raises over time
   (`email_provider_limited`, 429, when it runs out).
 
-  An app deployed from a release (`everyapp deploy <github url>`) has no
+  An app deployed from a release (`everyapp install <github url>`) has no
   directory here: clone its repository (only `everyapp.config.ts` is read)
   and run `everyapp email set` in it, or pass `--manifest <path>`.
 - **Budgets.** App mail has its own daily budgets: 100 mails per recipient

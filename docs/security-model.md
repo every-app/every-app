@@ -37,7 +37,7 @@
   it couldn't already reach. The origin URL reaches `cf` and drizzle-kit only
   in a private file or the environment, never argv or output. The dispatch
   tier refuses Hyperdrive (`manifestTierProblems`).
-  An app deployed from a release (`everyapp deploy <github url | tarball>`)
+  An app deployed from a release (`everyapp install <github url | tarball>`)
   is held to the same rules: its tenant-neutral Build Output gets the same
   install rewrite and policy check as a local build, and its manifest the
   strict parser. The release's SHA-256 proves only that the tarball is

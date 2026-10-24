@@ -54,11 +54,11 @@ below with the gateway's current `JWT_PUBLIC_KEY`.
    Delete `key.json` afterwards. Until this step is done, the apps' deploys
    keep handing apps the old key.
 4. Because the gateway Worker then changed outside everyapp, its next deploy
-   asks for confirmation: run `pnpm everyapp setup --redeploy` in a terminal
+   asks for confirmation: run `pnpm everyapp update --redeploy` in a terminal
    and confirm cf's prompt, so the version that serves is one everyapp
-   uploaded and later unattended deploys go through again. (Plain `setup`
-   redeploys it too, since the serving version is no longer the one the
-   install row names; `--redeploy` uploads it whatever `setup` finds.)
+   uploaded and later unattended deploys go through again. (Plain `update`
+   or `setup` redeploys it too, since the serving version is no longer the
+   one the install row names; `--redeploy` uploads it whatever they find.)
 5. From each registered app's directory, run
    `pnpm everyapp deploy`. This statically injects the new public key into
    that app.

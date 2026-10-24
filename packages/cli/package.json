@@ -12,8 +12,7 @@
     "skills"
   ],
   "bin": {
-    "everyapp": "./bin/everyapp.js",
-    "__everyapp_bash_complete": "./bin/__everyapp_bash_complete.js"
+    "everyapp": "./bin/everyapp.js"
   },
   "engines": {
     "node": ">=22.18.0"
@@ -30,8 +29,7 @@
   },
   "tsup": {
     "entry": {
-      "index": "src/bin/cli.ts",
-      "bash-complete": "src/bin/bash-complete.ts"
+      "index": "src/bin/cli.ts"
     },
     "format": [
       "esm"
@@ -49,8 +47,7 @@
   "dependencies": {
     "@cloudflare/config": "0.24.1",
     "@inquirer/prompts": "^8.7.3",
-    "@stricli/auto-complete": "^1.2.4",
-    "@stricli/core": "^1.2.4",
+    "@stricli/core": "^1.3.0",
     "cf": "1.0.0-beta.14",
     "chalk": "^5.6.2",
     "cli-cursor": "^5.0.0",

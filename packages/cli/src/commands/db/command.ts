@@ -1,4 +1,5 @@
 import { buildCommand, buildRouteMap } from "@stricli/core";
+import { CLI } from "@/lib/output/command";
 import {
   accountFlag,
   gatewayFlag,
@@ -25,8 +26,8 @@ const migrateCommand = buildCommand({
       "Apply the app's migrations to the local database",
       "",
       "Reads migrations from migrations.dir in everyapp.config.ts (default drizzle/).",
-      "`everyapp dev` runs this on every start. Production migrations run only during",
-      "`everyapp deploy`, after a restore point is saved.",
+      `\`${CLI} dev\` runs this on every start. Production migrations run only during`,
+      `\`${CLI} deploy\`, after a restore point is saved.`,
     ].join("\n"),
   },
 });
@@ -83,9 +84,9 @@ const queryCommand = buildCommand({
       "confirmed first (--yes skips that). Rows print as a table; use --json for machine output.",
       "",
       "EXAMPLES",
-      '  $ everyapp db query "select * from todos limit 5"',
-      '  $ everyapp db query --local "select count(*) from events"',
-      "  $ everyapp db query --file scripts/backfill.sql",
+      `  $ ${CLI} db query "select * from todos limit 5"`,
+      `  $ ${CLI} db query --local "select count(*) from events"`,
+      `  $ ${CLI} db query --file scripts/backfill.sql`,
     ].join("\n"),
   },
 });
@@ -132,8 +133,8 @@ const restoreCommand = buildCommand({
       "written to the database since. --gateway does the same for the Gateway's database.",
       "",
       "EXAMPLES",
-      "  $ everyapp db restore",
-      "  $ everyapp db restore --gateway",
+      `  $ ${CLI} db restore`,
+      `  $ ${CLI} db restore --gateway`,
     ].join("\n"),
   },
 });

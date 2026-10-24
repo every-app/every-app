@@ -11,8 +11,12 @@ import {
   type CommandContext,
   type RouteMap,
 } from "@stricli/core";
-import { completionApp, groupHelp, rootHelp } from "@/app";
+import { buildApp, groupHelp, rootHelp } from "@/app";
+import { CLI } from "@/lib/output/command";
 import { plain } from "./pages";
+
+/** The application as the docs read it: nothing to report, no color. */
+const app = buildApp({ color: false, args: [], report: () => undefined });
 
 type Target = Command<CommandContext> | RouteMap<CommandContext>;
 
@@ -94,10 +98,8 @@ function positionalDocs(command: Command<CommandContext>): PositionalDoc[] {
 /** Every command, depth first, in the order the route maps list them. */
 export function commandDocs(): CommandDoc[] {
   const helpByRoute = new Map(
-    generateHelpTextForAllCommands(
-      completionApp as unknown as Application<CommandContext>,
-    ).map(([route, help]) => [
-      route.replace(/^everyapp ?/, ""),
+    generateHelpTextForAllCommands(app as Application<CommandContext>).map(([route, help]) => [
+      route.replace(new RegExp(`^${CLI} ?`), ""),
       plain(help),
     ]),
   );
@@ -119,7 +121,7 @@ export function commandDocs(): CommandDoc[] {
       help: helpByRoute.get(route) ?? "",
     });
   };
-  visit(completionApp.root as unknown as Target, [], false);
+  visit(app.root as unknown as Target, [], false);
   return docs;
 }
 
@@ -157,7 +159,7 @@ function positionalTable(positional: PositionalDoc[]): string[] {
   ];
 }
 
-const GROUPS = ["gateway", "secret", "email", "db", "workflow", "completion"];
+const GROUPS = ["db", "access", "secret", "email"];
 
 /** The whole page. */
 export function cliReference(): string {
@@ -190,13 +192,13 @@ export function cliReference(): string {
     "| `--json` | Print NDJSON events on stdout and never prompt. Read before any command parses its arguments, so argument errors are events too. |",
     "| `--verbose` | Show every step and progress line, the output of what everyapp runs, and an unexpected error's stack trace. |",
     "| `--no-color` | Print without colors (also `NO_COLOR=1`). |",
-    "| `-h`, `--help` | Help for everyapp or a command; `-H`, `--help-all` also shows hidden commands and flags. |",
+    "| `-h`, `--help` | Help for everyapp or a command. |",
     "| `-v`, `--version` | everyapp's version. |",
     "",
     "## `everyapp --help`",
     "",
     "```text",
-    plain(rootHelp(true)).trimEnd(),
+    plain(rootHelp()).trimEnd(),
     "```",
     "",
     "## Command groups",

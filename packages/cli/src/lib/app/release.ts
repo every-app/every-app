@@ -1,8 +1,8 @@
 /**
  * App releases: an app's tenant-neutral Build Output, its migrations and a
- * release.json, packed by `everyapp deploy --bundle-only` (CI publishes it
+ * release.json, packed by `everyapp release` (CI publishes it
  * on a GitHub release as {@link APP_RELEASE_TARBALL}) and deployed by
- * `everyapp deploy <github url | tarball>` with no checkout of the app:
+ * `everyapp install <github url | tarball>` with no checkout of the app:
  *
  *   release.json                    schema 1, kind "app": the app id, its
  *                                   version, toolchain, sha256, migration
@@ -321,7 +321,7 @@ export async function openAppRelease(
 }
 
 /**
- * The release `source` names (`everyapp deploy <source>`), downloaded and
+ * The release `source` names (`everyapp install <source>`), downloaded and
  * opened: a GitHub repository's latest release (or `/releases/tag/<tag>`),
  * a tarball's HTTPS URL, or a local tarball. A repository that publishes
  * none is never built from its source here: whoever deploys it clones it.

@@ -1,5 +1,4 @@
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
-import type { LocalContext } from "@/context";
 import { readAccessState } from "@/lib/access/settings";
 import { emailRouteProblems } from "@/lib/app/emailRoutes";
 import { readResourcesOfKind } from "@/lib/app/ownership";
@@ -52,9 +51,7 @@ interface StatusFlags {
  * settings, by name), any deploy in progress, and `fixes`: what is off, and
  * what to run about it.
  */
-export async function status(
-  this: LocalContext,
-  flags: StatusFlags,
+export async function status(flags: StatusFlags,
 ): Promise<void> {
   await runCommand(flags, async (out) => {
     const gateway = await existingGateway({
