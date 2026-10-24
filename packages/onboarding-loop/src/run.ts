@@ -159,8 +159,8 @@ export interface RunOptions {
   keep: boolean;
   parallel: number;
   dryRun: boolean;
-  /** Sleep through the 30-minute gap after the account's last wipe (default); `--no-wait` refuses instead. */
-  waitForGap: boolean;
+  /** Wait for a held account lock and through the 30-minute gap after the account's last wipe (default); `--no-wait` refuses instead. */
+  wait: boolean;
   retryOf: string | null;
 }
 
@@ -178,7 +178,7 @@ export const DEFAULT_RUN_OPTIONS: Omit<RunOptions, "harness"> = {
   keep: false,
   parallel: 1,
   dryRun: false,
-  waitForGap: true,
+  wait: true,
   retryOf: null,
 };
 
@@ -558,8 +558,8 @@ async function runOnce(
     spawn: deps.spawn,
     now: deps.now,
     ...(deps.docsFetch ? { fetch: deps.docsFetch } : {}),
-    ...(options.waitForGap && !options.dryRun
-      ? { waitForGap: { sleep: deps.sleep, log } }
+    ...(options.wait && !options.dryRun
+      ? { wait: { sleep: deps.sleep, log } }
       : {}),
   });
   for (const line of formatChecks(preflight.checks)) log(line);
@@ -723,8 +723,8 @@ class RunState {
   ) {
     this.tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-loop-run-"));
     fs.chmodSync(this.tempDir, 0o700);
-    // The sleep through the wipe gap is a phase of the record; durationS leaves it out.
-    if (ctx.preflight.gapWait) this.extraPhases.push(ctx.preflight.gapWait);
+    // The sleeps for a held lock and the wipe gap are phases of the record; durationS leaves them out.
+    this.extraPhases.push(...ctx.preflight.waits);
     this.user = createScriptedUser({
       zone: ctx.account.zone,
       accountName: ctx.account.name,

@@ -169,7 +169,7 @@ export function runOptionsFrom(args: ParsedArgs): RunOptions {
     keep: bool(args, "keep"),
     parallel: number("parallel", DEFAULT_RUN_OPTIONS.parallel),
     dryRun: bool(args, "dry-run"),
-    waitForGap: !bool(args, "no-wait"),
+    wait: !bool(args, "no-wait"),
     retryOf: null,
   };
 }

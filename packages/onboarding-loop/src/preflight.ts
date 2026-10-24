@@ -59,6 +59,9 @@ export interface PreflightCheck {
 
 export type WorkersPlan = "paid" | "free" | "unknown";
 
+/** How often a run asks again for an account lock another run holds. */
+const LOCK_POLL_MS = 15_000;
+
 export interface PreflightResult {
   ok: boolean;
   reasonCode: InfraReasonCode | null;
@@ -73,8 +76,8 @@ export interface PreflightResult {
     subscriptions: unknown[];
     zoneId: string | null;
   };
-  /** The sleep through the 30-minute wipe gap, as a phase for the record (`durationS` leaves it out). */
-  gapWait: Phase | null;
+  /** The sleeps through a held account lock and the 30-minute wipe gap, as phases for the record (`durationS` leaves them out). */
+  waits: Phase[];
   /** Releases the account lock; a no-op when none was taken. */
   release: () => void;
 }
@@ -105,11 +108,11 @@ export interface PreflightOptions {
   /** Take the account lock (default true); false for a check that must not block a running lane. */
   lock?: boolean;
   /**
-   * Sleep through the 30-minute gap after the account's last wipe instead of
-   * refusing (the lock is held meanwhile). Absent: refuse, as `--no-wait` and
-   * `--dry-run` do.
+   * Sleep until a held account lock is released and through the 30-minute gap
+   * after the account's last wipe, instead of refusing (the lock is held while
+   * waiting for the gap). Absent: refuse, as `--no-wait` and `--dry-run` do.
    */
-  waitForGap?: {
+  wait?: {
     sleep: (ms: number) => Promise<void>;
     log: (line: string) => void;
   };
@@ -160,7 +163,7 @@ export async function runPreflight(
   const now = options.now ?? (() => Date.now());
   const checks: PreflightCheck[] = [];
   let release: () => void = () => undefined;
-  let gapWait: Phase | null = null;
+  const waits: Phase[] = [];
   let dockerInfo: DockerInfo | null = null;
   const listeners = { all: [] as string[], allInterfaces: [] as string[] };
   const fixtures: PreflightResult["fixtures"] = {
@@ -180,7 +183,7 @@ export async function runPreflight(
     docker: dockerInfo,
     listeners,
     fixtures,
-    gapWait,
+    waits,
     release,
   });
   const check = (name: string, status: CheckStatus, detail: string): void => {
@@ -253,20 +256,48 @@ export async function runPreflight(
     `${markers.length} rotate marker(s) read, none matches`,
   );
 
-  // 4. The lock, O_EXCL, per account.
+  // 4. The lock, O_EXCL, per account. Held by a live run: wait for it (chained runs on one
+  // account), or refuse without `wait`.
   if (options.lock ?? true) {
-    try {
-      const lock = acquireAccountLock(
-        locksDir(options.configDir),
-        account.accountId,
-        options.runId,
-        { now: now() },
-      );
-      release = lock.release;
-      check("lock", "ok", `locked ${account.name} for ${options.runId}`);
-    } catch (error) {
-      if (error instanceof LockHeldError) return fail("lock", error.message);
-      throw error;
+    let waitStarted: number | null = null;
+    let holder: string | null = null;
+    for (;;) {
+      try {
+        const lock = acquireAccountLock(
+          locksDir(options.configDir),
+          account.accountId,
+          options.runId,
+          { now: now() },
+        );
+        release = lock.release;
+        if (waitStarted !== null) {
+          const durationS = Math.round((now() - waitStarted) / 1000);
+          waits.push({
+            name: "preflight.lock_wait",
+            startedAt: new Date(waitStarted).toISOString(),
+            durationS,
+          });
+          check(
+            "lock",
+            "ok",
+            `locked ${account.name} for ${options.runId} after waiting ${Math.ceil(durationS / 60)} min for run ${holder}`,
+          );
+        } else {
+          check("lock", "ok", `locked ${account.name} for ${options.runId}`);
+        }
+        break;
+      } catch (error) {
+        if (!(error instanceof LockHeldError)) throw error;
+        if (!options.wait) return fail("lock", error.message);
+        if (waitStarted === null) {
+          waitStarted = now();
+          holder = error.holder.runId;
+          options.wait.log(
+            `wait lock  ${account.name} is locked by run ${error.holder.runId} (pid ${error.holder.pid}); waiting for it to finish (--no-wait refuses instead)`,
+          );
+        }
+        await options.wait.sleep(LOCK_POLL_MS);
+      }
     }
   } else {
     skip("lock", "not taken (lock: false)");
@@ -278,18 +309,18 @@ export async function runPreflight(
     account.accountId,
   );
   const remaining = teardownGapRemainingMs(lastWipe, now());
-  if (remaining > 0 && options.waitForGap) {
+  if (remaining > 0 && options.wait) {
     const minutes = Math.ceil(remaining / 60000);
-    options.waitForGap.log(
+    options.wait.log(
       `wait teardown_gap  ${account.name} was wiped at ${lastWipe}; waiting ${minutes} min for the 30-minute gap (--no-wait refuses instead)`,
     );
-    const waitStarted = now();
-    await options.waitForGap.sleep(remaining);
-    gapWait = {
+    const gapStarted = now();
+    await options.wait.sleep(remaining);
+    waits.push({
       name: "preflight.gap_wait",
-      startedAt: new Date(waitStarted).toISOString(),
-      durationS: Math.round((now() - waitStarted) / 1000),
-    };
+      startedAt: new Date(gapStarted).toISOString(),
+      durationS: Math.round((now() - gapStarted) / 1000),
+    });
     check(
       "teardown_gap",
       "ok",

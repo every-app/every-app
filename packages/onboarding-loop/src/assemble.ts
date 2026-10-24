@@ -344,14 +344,15 @@ export function assemble(input: AssembleInput): {
     ...seed,
     startedAt: input.startedAt,
     finishedAt: input.finishedAt,
-    // Wall time less the sleep through the wipe gap: that wait is the loop's, not the harness's.
+    // Wall time less the preflight sleeps (a held lock, the wipe gap): those waits are the loop's, not the harness's.
     durationS: Math.max(
       0,
       Math.round(
         (Date.parse(input.finishedAt) - Date.parse(input.startedAt)) / 1000,
       ) -
-        (phases.find((phase) => phase.name === "preflight.gap_wait")
-          ?.durationS ?? 0),
+        phases
+          .filter((phase) => /^preflight\..*_wait$/.test(phase.name))
+          .reduce((sum, phase) => sum + phase.durationS, 0),
     ),
     terminal_reason: terminalReasonOf(input),
     substrate: { ...seed.substrate, statsPeakMiB: input.statsPeakMiB },

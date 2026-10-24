@@ -250,14 +250,14 @@ describe("preflight (dry run: no network)", () => {
     expect(recent.checks.at(-1)?.detail).toMatch(/20 min too recently/);
     expect(fs.existsSync(path.join(locksDir(dir), `${ID}.json`))).toBe(false);
 
-    // With waitForGap the run sleeps the remaining 20 minutes (lock held) and goes on.
+    // With wait the run sleeps the remaining 20 minutes (lock held) and goes on.
     let clock = NOW;
     const slept: number[] = [];
     const logged: string[] = [];
     const waited = await runPreflight(
       options(dir, {
         now: () => clock,
-        waitForGap: {
+        wait: {
           sleep: async (ms) => {
             slept.push(ms);
             clock += ms;
@@ -277,13 +277,54 @@ describe("preflight (dry run: no network)", () => {
       detail: expect.stringMatching(/^waited 20 min for the 30-minute gap/),
     });
     // The sleep is a phase of the record (durationS leaves it out); none without a wait.
-    expect(waited.gapWait).toEqual({
-      name: "preflight.gap_wait",
-      startedAt: new Date(NOW).toISOString(),
-      durationS: 20 * 60,
-    });
-    expect(recent.gapWait).toBeNull();
+    expect(waited.waits).toEqual([
+      {
+        name: "preflight.gap_wait",
+        startedAt: new Date(NOW).toISOString(),
+        durationS: 20 * 60,
+      },
+    ]);
+    expect(recent.waits).toEqual([]);
     waited.release();
+  });
+
+  it("with wait, a lock another live run holds is waited for (15 s polls) and taken when released; the wait is a phase", async () => {
+    const dir = tempDir();
+    const held = acquireAccountLock(locksDir(dir), ID, "other-run", {
+      now: NOW - 1000,
+    });
+    let clock = NOW;
+    let polls = 0;
+    const logged: string[] = [];
+    const result = await runPreflight(
+      options(dir, {
+        now: () => clock,
+        wait: {
+          sleep: async (ms) => {
+            polls += 1;
+            clock += ms;
+            if (polls === 3) held.release();
+          },
+          log: (line) => logged.push(line),
+        },
+      }),
+    );
+    expect(polls).toBe(3);
+    expect(logged[0]).toMatch(
+      /^wait lock {2}loop-1 is locked by run other-run \(pid \d+\); waiting/,
+    );
+    expect(result.checks.find((c) => c.name === "lock")).toMatchObject({
+      status: "ok",
+      detail: expect.stringMatching(/after waiting 1 min for run other-run$/),
+    });
+    expect(result.waits).toEqual([
+      {
+        name: "preflight.lock_wait",
+        startedAt: new Date(NOW).toISOString(),
+        durationS: 45,
+      },
+    ]);
+    result.release();
   });
 
   it("records Docker's memory, warns under 8 GiB, refuses --parallel under 14 GiB, removes stopped loop-* containers no live run owns (never under --dry-run)", async () => {

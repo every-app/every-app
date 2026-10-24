@@ -2012,7 +2012,7 @@ describe("runLoop", () => {
     });
   });
 
-  it("a failed preflight (the account is locked by another run) writes a fail-infra record and creates nothing", async () => {
+  it("a failed preflight (the account is locked by another run, --no-wait) writes a fail-infra record and creates nothing", async () => {
     const repo = await makeRepo();
     const world = makeWorld(repo, { eventLog: [], harnessLines: [] });
     const held = acquireAccountLock(
@@ -2021,7 +2021,8 @@ describe("runLoop", () => {
       "other-run",
     );
     try {
-      const outcome = await runLoop(options(), world.deps);
+      // Without --no-wait the run would wait for other-run (this process) to release the lock.
+      const outcome = await runLoop({ ...options(), wait: false }, world.deps);
       expect(outcome.exitCode).toBe(1);
       expect(outcome.record?.terminal_reason).toBe("preflight_failed");
       expect(outcome.record?.verdict).toMatchObject({
