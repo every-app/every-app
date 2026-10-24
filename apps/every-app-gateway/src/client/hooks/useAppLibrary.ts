@@ -3,7 +3,11 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useSession } from "@/client/hooks/useSession";
-import { userAppsCollection, useQueryFailed } from "@/client/tanstack-db";
+import {
+  userAppsCollection,
+  useQueryFailed,
+  useQueryPending,
+} from "@/client/tanstack-db";
 
 export enum AppLibraryLayout {
   Grid = "grid",
@@ -73,27 +77,33 @@ export function useAppLibrary() {
   };
 
   const query = useLiveQuery((q) => q.from({ app: userAppsCollection }));
-  // The collection stays "ready" when its fetch fails: ask the query itself.
+  // The collection stays "ready" when its fetch fails, and keeps its rows
+  // while its query is reset by an organization switch: ask the query itself.
   const failed = useQueryFailed(["user-apps"]);
+  const pending = useQueryPending(["user-apps"]);
+  // Until the collection has synced once it is empty, not loading: a count
+  // read then would say 0. While the query is pending the rows are the
+  // previous organization's, so nothing lists them.
+  const isLoading = (!query.isReady && !query.isError) || pending;
   const pinnedIds = useMemo(
     () => new Set(preferences.pinnedIds),
     [preferences.pinnedIds],
   );
   const apps = useMemo(
     () =>
-      [...query.data].sort(
-        (a, b) =>
-          Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id)) ||
-          a.name.localeCompare(b.name),
-      ),
-    [query.data, pinnedIds],
+      isLoading
+        ? []
+        : [...query.data].sort(
+            (a, b) =>
+              Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id)) ||
+              a.name.localeCompare(b.name),
+          ),
+    [isLoading, query.data, pinnedIds],
   );
 
   return {
     apps,
-    // Until the collection has synced once it is empty, not loading: a
-    // count read then would say 0.
-    isLoading: !query.isReady && !query.isError,
+    isLoading,
     isError: query.isError || failed,
     pinnedIds,
     pinnedApps: apps.filter((app) => pinnedIds.has(app.id)),

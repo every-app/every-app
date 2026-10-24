@@ -34,6 +34,9 @@ export function OrganizationSwitcher({
   });
   const setActiveOrganization = useSetActiveOrganization();
   const [isSwitching, setIsSwitching] = useState(false);
+  // With one organization the page lists only it. Someone with none is sent
+  // there by the home page, so the way in stays.
+  const showAllOrganizations = organizations?.length !== 1;
 
   if (isPending) {
     // The loaded switcher's row, so nothing moves when the organization
@@ -84,15 +87,17 @@ export function OrganizationSwitcher({
                 ) : null}
               </DropdownMenuItem>
             ))}
-            <DropdownMenuSeparator />
+            {showAllOrganizations ? <DropdownMenuSeparator /> : null}
           </>
         ) : null}
-        <DropdownMenuItem
-          render={<Link to="/organizations" onClick={onCloseDrawer} />}
-        >
-          <Building2 />
-          Manage organizations
-        </DropdownMenuItem>
+        {showAllOrganizations ? (
+          <DropdownMenuItem
+            render={<Link to="/organizations" onClick={onCloseDrawer} />}
+          >
+            <Building2 />
+            All organizations
+          </DropdownMenuItem>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );

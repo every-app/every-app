@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { CircleAlert } from "lucide-react";
-import { authClient } from "@/client/auth-client";
+import { signOutAndForget } from "@/client/sign-out";
 import { AuthPageShell } from "@/client/components/auth/AuthPageShell";
 import { ConsentForm } from "@/client/components/oauth/ConsentForm";
 import { PageLoading } from "@/client/components/Spinner";
@@ -34,7 +34,7 @@ function signInAndReturn(query: string): void {
 }
 
 async function switchAccount(query: string): Promise<void> {
-  await authClient.signOut();
+  await signOutAndForget();
   signInAndReturn(query);
 }
 

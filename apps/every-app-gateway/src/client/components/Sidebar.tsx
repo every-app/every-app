@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ComponentType } from "react";
 import { ArrowUpRight, LayoutGrid, Settings, User } from "lucide-react";
 import { authClient } from "@/client/auth-client";
+import { signOutAndForget } from "@/client/sign-out";
 import { useSession } from "@/client/hooks/useSession";
 import { useAppLibrary } from "@/client/hooks/useAppLibrary";
 import { AppIcon } from "@/client/components/AppIcon";
@@ -14,6 +15,7 @@ import {
   useSignInMethods,
 } from "@/client/sign-in-methods";
 import { BrandLink } from "@/client/components/BrandLink";
+import { BuildStamp } from "@/client/components/BuildStamp";
 import { OrganizationSwitcher } from "@/client/components/OrganizationSwitcher";
 import { ThemePreferenceRadio } from "@/client/components/ThemePreferenceMenuItems";
 import {
@@ -222,7 +224,7 @@ export function Sidebar() {
 /**
  * The foot of the rail: Manage workspace for owners and admins, then the
  * account block, whose menu holds what is the person's own (their AI
- * connections, the docs, the theme, sign out).
+ * connections, the docs, the theme, sign out), and the build stamp under it.
  */
 function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
   const { data: session } = useSession();
@@ -243,8 +245,7 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
   });
 
   const handleSignOut = async () => {
-    await authClient.signOut();
-    // Hard refresh clears all client state (query cache, session, etc.).
+    await signOutAndForget();
     // Behind the outer ring, sign out of Access too: signing out of the
     // gateway alone would be undone by the next page load.
     window.location.href = methods?.accessEmail
@@ -351,6 +352,7 @@ function AccountFooter({ canManageApps }: { canManageApps: boolean }) {
             </SidebarMenuItem>
           )}
         </SidebarMenu>
+        <BuildStamp className="mt-1 px-3 text-sidebar-foreground/50" />
       </div>
     </UiSidebarFooter>
   );

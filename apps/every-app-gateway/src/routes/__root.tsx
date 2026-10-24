@@ -19,6 +19,7 @@ import {
   useThemePreference,
 } from "@/client/lib/theme";
 import { TooltipProvider } from "@/client/components/ui/tooltip";
+import { FloatingBuildStamp } from "@/client/components/BuildStamp";
 import { Toaster } from "sonner";
 
 const PUBLIC_ROUTES = [
@@ -78,6 +79,7 @@ function RootComponent() {
       <TooltipProvider>
         <AppRouter />
         <ThemedToaster />
+        <FloatingBuildStamp />
         {/* <TanStackRouterDevtools /> */}
       </TooltipProvider>
     </PersistQueryClientProvider>
@@ -145,12 +147,6 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       </head>
       <body>
         <ClientOnly>{children}</ClientOnly>
-        <div
-          className="pointer-events-none fixed right-2 bottom-1.5 z-50 hidden font-mono text-[10px] text-muted-foreground opacity-70 select-none md:block"
-          title="Gateway build"
-        >
-          {__GATEWAY_BUILD__}
-        </div>
         <Scripts />
       </body>
     </html>

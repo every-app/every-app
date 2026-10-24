@@ -16,3 +16,8 @@ export const persister = createSyncStoragePersister({
   storage: typeof window !== "undefined" ? window.localStorage : undefined,
   key: QUERY_CACHE_KEY,
 });
+
+/** Removes the cache's copy from localStorage: nothing stays for the next person at this browser. */
+export function clearPersistedCache(): void {
+  void persister.removeClient();
+}

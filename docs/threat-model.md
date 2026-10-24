@@ -225,11 +225,12 @@ Cloudflare's job, some are simply not built.
   constant-time everywhere).
 - **Which build serves.** The Gateway's build stamp (short commit and build
   time, with a `*` when the tree was dirty;
-  `apps/every-app-gateway/vite.config.ts`, rendered in the root layout) is in
-  the HTML of every control-plane page, the 404 shell included, for anyone
-  who can load one. That is ordinary version disclosure and is accepted: a
-  self-host builds from the public repository, so its commit is public
-  anyway, and the stamp lets an operator match a screen to a commit.
+  `apps/every-app-gateway/vite.config.ts`, rendered by the browser under the
+  sidebar's account row and, on the pages without a sidebar such as sign-in
+  and the 404, in the bottom-right corner) is on every control-plane screen
+  for anyone who can load one. That is ordinary version disclosure and is
+  accepted: a self-host builds from the public repository, so its commit is
+  public anyway, and the stamp lets an operator match a screen to a commit.
 - **Supply chain beyond the floors.** `pnpm-workspace.yaml` pins known-bad
   transitive versions (`jose`, `seroval`, `tinypool`), CI fails on critical
   advisories in the lockfile, and the security-review action is

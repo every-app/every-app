@@ -4,6 +4,7 @@ import { userAppsCollection } from "./userAppsCollection";
 import { onboardingCollection } from "./onboardingCollection";
 import { adminUsersCollection } from "./adminUsersCollection";
 import { adminAppsCollection } from "./adminAppsCollection";
+import { COLLECTION_QUERY_KEYS } from "./forget";
 
 /**
  * Refetches all user-specific collections to ensure fresh data from the server.
@@ -26,10 +27,9 @@ export async function refetchCollectionsAfterAuth() {
   void adminAppsCollection.state;
 
   await Promise.all([
-    queryClient.refetchQueries({ queryKey: ["user-apps"] }),
-    queryClient.refetchQueries({ queryKey: ["admin", "users"] }),
-    queryClient.refetchQueries({ queryKey: ["admin", "apps"] }),
-    queryClient.refetchQueries({ queryKey: ["onboarding"] }),
+    ...COLLECTION_QUERY_KEYS.map((queryKey) =>
+      queryClient.refetchQueries({ queryKey }),
+    ),
     queryClient.invalidateQueries({ queryKey: ACTIVE_ORGANIZATION_QUERY_KEY }),
   ]);
 }

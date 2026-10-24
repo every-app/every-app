@@ -13,7 +13,6 @@ import {
   SkeletonPage,
 } from "@/client/components/SkeletonPresets";
 import { Alert, AlertDescription } from "@/client/components/ui/alert";
-import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 
 export const Route = createFileRoute("/_app/organizations")({
@@ -100,17 +99,13 @@ function OrganizationsPage() {
                   <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm">
                     <Building2 className="size-4" />
                   </span>
-                  <span className="flex min-w-0 flex-col">
-                    <span className="truncate font-medium">
-                      {organization.name}
-                    </span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {organization.slug}
-                    </span>
+                  <span className="truncate font-medium">
+                    {organization.name}
                   </span>
                 </span>
+                {/* The usual state is plain text; the chips are for exceptions. */}
                 {isActive ? (
-                  <Badge variant="success">Active</Badge>
+                  <span className="text-sm text-muted-foreground">Current</span>
                 ) : (
                   <Button
                     variant="outline"

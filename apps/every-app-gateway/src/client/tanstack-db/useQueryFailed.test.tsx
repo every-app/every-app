@@ -34,20 +34,25 @@ afterEach(() => {
   queryClient.removeQueries({ queryKey: KEY });
 });
 
-it("follows the query from fine to failed and back", () => {
+// The cache's notifications reach the hook on the next tick.
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+it("follows the query from fine to failed and back", async () => {
   act(() => root.render(<Harness />));
   expect(container.textContent).toBe("fine");
 
   const query = queryClient.getQueryCache().build(queryClient, {
     queryKey: KEY,
   });
-  act(() => {
+  await act(async () => {
     query.setState({ status: "error", error: new Error("Failed to fetch") });
+    await tick();
   });
   expect(container.textContent).toBe("failed");
 
-  act(() => {
+  await act(async () => {
     query.setState({ status: "success", error: null });
+    await tick();
   });
   expect(container.textContent).toBe("fine");
 });
