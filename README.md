@@ -1,205 +1,124 @@
-# EveryApp
-> Make every app open source
+# Every App
 
-> Own and customize your software. Pay only for what you use.
+> Build the tools your business runs on. Keep them yours.
 
-> Why vibe code something from scratch?
+Every App puts the web apps you build online, in your own Cloudflare account. Each app gets a web address, a database and a sign-in. Open source, alpha, moving fast.
 
-It's so fun making a tool for yourself. But, it's still scary to move it off of localhost. EveryApp gives you piece of mind, with a default private design.
+It's so fun making a tool for yourself. But it's still scary to move it off localhost: a login page, users, hosting, keys, keeping it private. Every App does that part once, for every app.
 
+- One Gateway at `apps.yourcompany.com` signs your people in. No login page in any app.
+- It gives each app only what you allow.
+- Your coding agent does most of the building.
+- A few apps for a small team fit inside Cloudflare's $5 a month Workers Paid plan.
 
+## What you need
 
-The open source personal software platform.
-- Build exactly what you want.
-- Bring your own AI. No credits, no limits.
-- Self-host in your own Cloudflare account, on Workers Paid: $5/month plus usage.
+- Node.js 22.18 or newer, pnpm and git.
+- A Cloudflare account on Workers Paid: $5 a month, then usage.
+- A domain on Cloudflare: a `.com` is about $10 a year, a `.dev` or `.app` $1 the first year.
 
-*Demo shows the Every App Gateway, a todo list optimized for keyboard navigation and an AI cooking assistant*
+Every App is free and open source. The docs are at https://everyapp.com/docs.
 
-https://github.com/user-attachments/assets/7802f9ca-defd-4995-96f0-f46845cb3e83
-
-## Table of Contents
-- [What is Every App?](#what-is-every-app)
-- [What is the Gateway?](#what-is-the-gateway)
-- [Work from This Checkout](#work-from-this-checkout)
-- [Your First App](#your-first-app)
-- [Your Gateway: `setup`](#your-gateway-setup)
-- [Build Your Own App](#build-your-own-app)
-- [Security](#security)
-- [Docs](#docs)
-
-## What is Every App?
-
-Every App is an open source platform for personal web apps.
-
-It's built for solo founders and small teams who build with coding agents and want something with an unlimited ceiling of quality.
-
-Every App is alpha: open source, very powerful, moving fast, and trying not to break things. Expect rough edges. We strongly recommend putting Cloudflare Access in front of your Gateway: see [docs/runbooks/cloudflare-access.md](docs/runbooks/cloudflare-access.md).
-
-- We handle the tedious parts like auth, user management, database setup, and hosting so you can focus on your idea.
-- Your coding agent gets the everyapp skill in every new app (`.agents/skills/everyapp`), with the CLI, setup and tool recipes it needs.
-- Set it up in your own Cloudflare account with one command: `pnpm everyapp setup`
-- Apps run on Cloudflare's serverless platform, so an idle app costs nothing beyond the $5/month Workers Paid plan.
-
-Start by vibe coding an idea, reimplementing an old side project, or trying the [example prompt](https://everyapp.com/docs/create-an-app#tell-your-agent-what-you-want). Once you've built something you love, stay in vibe coding mode forever, or dig deeper and build the best project of your life.
-
-<details>
-<summary><h2>What is the Gateway?</h2></summary>
-
-The Gateway is the parent application where you manage and access your apps.
-
-If you look at normal SaaS or Consumer apps, they each implement the same stuff over and over like authentication and user management.
-
-We simplify building apps by standardizing as much as possible and hoisting what we can into the Gateway.
-
-### Gateway Features:
-- Single URL
-    - Go to your Gateway. Access all your apps.
-- Authentication
-    - Users log into the Gateway. Apps inherit auth from the Gateway. You don't need to worry about screwing up auth or building out frontend flows.
-- User Management
-    - Add other users to the Gateway so that they can use the apps.
-- Mobile Optimized
-    - User adds Gateway to their home screen once. All apps get the benefits of being rendered within the Gateway.
-- LLM Gateway
-    - Configure your LLM provider once on the Gateway instead of once per app. Apps declare which providers they use and never hold a provider key.
-- App Management
-    - Install published apps from the Gateway's Admin page (optional, turned on during setup).
-
-</details>
-
-## Work from This Checkout
-
-Nothing is published right now: no npm packages, and no syncs to the public repository. The CLI, the Gateway and the apps all run from this repository, and a deploy always deploys the code in front of you. Don't use `npx everyapp`: that runs the old 0.2 CLI from npm, which can't deploy this Gateway.
-
-### What you need
-
-1. **Node.js 22.18 or newer** — https://nodejs.org. Run everything with Node, not Bun: the Cloudflare CLI the deploy uses can't load the apps' `cloudflare.config.ts` under Bun.
-
-2. **pnpm** — https://pnpm.io/installation. The repository pins pnpm 10.34.5 (`packageManager` in `package.json`), and a newer pnpm switches to it by itself.
-
-3. **A Cloudflare account on Workers Paid** — the one thing you buy: $5 a month, plus usage above generous included amounts ([costs](https://developers.cloudflare.com/workers/platform/pricing/)). [Sign up](https://dash.cloudflare.com/sign-up), then subscribe under **Workers & Pages → Plans**. The Free plan can't run Every App: D1 stops answering for the rest of the day once an account reaches its daily limits (enforced since September 2026), and the Gateway reads D1 on every request; requests also get only 10 ms of CPU.
-
-4. **A domain on Cloudflare.** Every App lives at a subdomain of it: the Gateway at `apps.your-company.com`, each app one level below (`todo.apps.your-company.com`). Nothing else in the domain changes, so one your company already has on Cloudflare is fine.
-
-   No domain on Cloudflare yet? Buy one in the Cloudflare dashboard (**Domains → Buy a domain**; about $10 a year for a `.com`, at cost, ready in minutes), or add one you own and point its nameservers at Cloudflare.
-
-### Install
+## Your first app
 
 ```bash
+git clone https://github.com/every-app/every-app.git
+cd every-app
 pnpm install
-pnpm everyapp --help
-```
-
-`pnpm install` also builds the SDK, which the apps and the Gateway load from `packages/sdk/dist`. `pnpm everyapp …` runs the CLI from this checkout, anywhere in the repository. It builds itself the first time, and again whenever its source or the SDK's changes (a few seconds). Inside an app, `pnpm dev` and `pnpm run deploy` run it too. Below, `everyapp` means `pnpm everyapp`.
-
-To type `everyapp` from anywhere, link it once: `pnpm -C packages/cli install:global` (an `npm link` of `packages/cli`).
-
-## Your First App
-
-```bash
-pnpm everyapp create my-app
+pnpm everyapp setup --domain apps.yourcompany.com   # installs your Gateway, about 15 minutes; run again to resume or repair
+pnpm everyapp create my-app                          # copies starter/, a simple todo app, to apps/my-app
 cd apps/my-app
-pnpm dev
-```
-
-`create` copies the starter template (`starter/`) to `apps/my-app`, installs it and sets up its local database, without contacting anything in Cloudflare. `pnpm dev` (`everyapp dev`) runs it behind a local Gateway that enforces the same security perimeter as production, signed in as a seeded dev user. Open the URL it prints — hot reload works as normal. When it should go live:
-
-```bash
+pnpm dev                                             # http://my-app.localhost:8787, signed in as a test user
 pnpm run deploy
 ```
 
-The first deploy finds no Gateway in your Cloudflare account and offers to install one at `apps.<your domain>`: it runs `everyapp setup` (below) right there, owner account included, then deploys your app to `https://my-app.apps.your-company.com`. Refresh your Gateway and it's there. Coding agents get a one-page guide to the CLI in the new app's `.agents/skills/everyapp/SKILL.md` (and `.claude/skills/`).
-
-Need inspiration? Try the [example prompt](https://everyapp.com/docs/create-an-app#tell-your-agent-what-you-want) to get started.
-
-## Your Gateway: `setup`
-
-```bash
-pnpm everyapp setup --domain apps.your-company.com
+```text
+Live    https://my-app.apps.yourcompany.com
+Access  Private to you, owners and admins · change it at https://apps.yourcompany.com/admin/apps
 ```
 
-`setup` installs the Gateway where you choose, upgrades it after a `git pull`, and repairs it when `everyapp status` says something is off. It deploys no app. From an empty account to a working Gateway:
+Open `apps/my-app` in Claude Code, Codex or Cursor and say what you want. The skill in `.agents/skills/everyapp` tells your agent the CLI, the manifest and the rules, so it never writes a login page.
 
-1. It logs in to Cloudflare with Cloudflare's own CLI (a link and a code, so it works over SSH), or uses `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`, and checks for Workers Paid.
-2. It builds the Gateway from `apps/every-app-gateway` and deploys it at `--domain` (leave the flag out and it asks, suggesting `apps.<your domain>`). Every address is a Workers Custom Domain: Cloudflare creates its DNS record and certificate. No wildcard records, no DNS to edit by hand.
-3. It opens a one-time setup link and waits for you to create your owner account there. Nobody can sign up before you, and after you only people you invite.
+- One AI key on the Gateway serves every app that declares that provider: `pnpm everyapp secret set OPENROUTER_API_KEY` covers OpenSEO, OpenCRM and Agentic Inbox (OpenAI and Workers AI work too).
+- One MCP address, `https://apps.yourcompany.com/mcp`, connects claude.ai, ChatGPT, Claude Code and Cursor to your apps. Tools that delete data stay hidden from agents.
 
-Your Cloudflare login is the only credential: there is no Gateway token to create or paste. The CLI registers and deploys apps by writing the Gateway's own database with it, so apps deploy before the owner exists too (from CI, say).
+## Four apps on day one
 
-Stopped half-way (a login to approve, a domain to buy, a link you haven't opened yet)? Run it again: it picks up where it left off, and once everything is there it says `<Your account>'s Gateway is up to date with <release> ✓` and changes nothing. Coding agents can drive it with `--json` (NDJSON events).
+Each is open source and runs behind your Gateway.
 
-The [docs](https://everyapp.com/docs) explain what the Gateway promises and what it costs, and [How it works](https://everyapp.com/docs/how-it-works) its limits today; one to know now: deploying apps takes Cloudflare credentials that can also change the Gateway, so only let trusted admins deploy.
+- [OpenSEO](https://github.com/every-app/open-seo) — SEO research, rank tracking, site audits and AI visibility for your sites. Bring your own DataForSEO key for the search data.
+- [OpenCRM](https://github.com/every-app/open-crm) — companies, contacts and deals, kept up to date by a research agent.
+- [OpenAnalytics](https://github.com/every-app/open-analytics) — web analytics for your sites: no cookies, no stored IP addresses, a tracker of about 3 KB gzipped.
+- [Agentic Inbox](https://github.com/every-app/agentic-inbox) — a team inbox with an AI agent: receive, read, draft and send email on your own domain.
 
-### Deploy from another machine
+Clone one, run `pnpm install`, then `pnpm everyapp deploy` in its folder. Once a repository publishes a release, `pnpm everyapp install <GitHub URL>` installs it straight from GitHub; run it again to update.
 
-Log in to the Gateway's Cloudflare account there (`pnpm everyapp login`, or the first `pnpm everyapp` command offers it), then deploy from a checkout of this repository. That's all: nothing is kept on the machine that set the Gateway up, and the CLI finds the Gateway by asking the accounts your login sees (`--account-id` picks when more than one has one). In CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. Each app records who deployed it. To take someone's deploy access away, remove them from the Cloudflare account (or revoke the API token).
-
-### Upgrading your Gateway
-
-The Gateway is built from this checkout, so upgrading it is `git pull` then `everyapp update`, keeping its data, users and apps. `update` only updates the Gateway your login finds: it never installs one. Both name what they deploy by its version when the checkout is exactly that release (its `gateway-v<version>` tag), and by commit otherwise. Deploying a new app does it too, since that redeploys the Gateway from the same checkout. The build is kept under `node_modules/.cache/everyapp` by the tree hash of the Gateway's sources (and the SDK, perimeter and toolbus it bundles), so it only happens again after they change. A checkout behind the live Gateway is refused with "run git pull"; `everyapp status` says whether the live Gateway was built from your checkout's sources, and what to run when something is off. The checkout is the only source of the Gateway while publishing is paused (.github/RELEASE.md).
-
-## Build Your Own App
-
-Every command is on the [Commands](https://everyapp.com/docs/commands) page: `login`, `setup`, `update`, `install`, `status`, `create`, `dev`, `deploy`, `release`, `delete`, `secret`, `email`, `access` and `db`.
-
-### An app in its own repository
-
-An app can live in its own repository, next to this checkout. Its `package.json` links the SDK and the CLI from the checkout by path:
-
-```json
-{
-  "scripts": {
-    "dev": "everyapp dev",
-    "deploy": "everyapp deploy",
-    "db:migrate:local": "everyapp db migrate"
-  },
-  "dependencies": {
-    "@every-app/sdk": "link:../private-every-app/packages/sdk"
-  },
-  "devDependencies": {
-    "everyapp": "link:../private-every-app/packages/cli"
-  }
-}
-```
-
-Then `pnpm install`, `pnpm dev` and `pnpm run deploy` work there as they do in `apps/`. `everyapp create` run outside this repository sets a new app up this way.
-
-### Database Migrations
-
-When you or your coding agent change the database schema:
-
-```bash
-pnpm run db:generate
-```
-
-`everyapp dev` applies pending migrations locally on startup. To push schema changes to production, deploy — `everyapp deploy` runs migrations as part of the deploy.
-
-### App Features
-
-Anything you can build on Cloudflare, you can build in Every App.
-
-- [All Cloudflare Infrastructure](https://developers.cloudflare.com/directory/?product-group=Developer+platform)
-    - Workers, KV, D1, Queues, Serverless Containers, Agents and more. Cloudflare's developer platform gives you everything you need to build amazing full stack web apps.
-- [Tanstack Start](https://tanstack.com/start/latest)
-    - Modern full stack framework built by the react-query team. Focused on type safety and a great DevEx for building applications.
-
-### Patterns
-
-The starter app follows well-defined patterns so that coding agents can help build high-quality apps.
-
-- [How It Works](https://everyapp.com/docs/how-it-works) - How the Gateway, the identity pass and your app fit together
-- [Create an App](https://everyapp.com/docs/create-an-app) - create, describe, `pnpm dev`, deploy
+Fork one and vibe code your own.
 
 ## Security
 
-Every App is open source, alpha, and moving fast. It is also very powerful: an app you deploy runs as a private Worker in your Cloudflare account with everything that account can do, and whoever holds your Cloudflare login can change anything, the Gateway included. Three things to know before you invite anyone:
+The Gateway only gives apps what you allow. [docs/threat-model.md](docs/threat-model.md) says what is promised, to whom, where each promise is enforced and tested, and what is still open.
 
-- **Put the Gateway behind Cloudflare Access.** It is a second sign-in from a company that does nothing else, in front of every page and every app, before any of our code runs. `pnpm everyapp access on` sets it up ([the runbook](docs/runbooks/cloudflare-access.md) explains what it does); the Free plan covers 50 people.
-- **Read the threat model.** [docs/threat-model.md](docs/threat-model.md) says what the Gateway promises, to whom, where each promise is enforced and tested, what is out of scope, and what we know is still open. [docs/security-model.md](docs/security-model.md) describes the mechanisms one by one.
-- **Tell us what you find.** Report a hole privately through the repository's **Security → Report a vulnerability**, not in a public issue; a failing test is the best report. Every pull request here gets Anthropic's security review for Claude Code, and so does every app created with `everyapp create`.
+- Your credential stops at the Gateway. An app never sees a cookie or a token, only a short-lived signed note of who you are, made for that app alone.
+- Your AI keys stay on the Gateway. An app declares what it needs and never holds a key.
+- Apps have no public address of their own: every visit passes the Gateway. The only routes open without a sign-in are the ones an app declares public (a webhook, a tracking script), and the deploy prints them.
+- Each app has its own database.
 
-## Docs
-Reference the full docs to learn more:
-- https://everyapp.com/docs
-- [Troubleshooting](https://everyapp.com/docs/troubleshooting) — when a deploy fails
+Anyone who can sign in to your Cloudflare account can deploy apps and change the Gateway. Only give that access to people you fully trust, and turn on two-factor for that account.
+
+We strongly recommend Cloudflare Access before you invite anyone. `pnpm everyapp access on` puts a second sign-in at Cloudflare's edge in front of the Gateway and your apps: a one-time code by email, or your company's identity provider. MCP and an app's public routes stay reachable, so AI clients keep working. Free for up to 50 people. See [Cloudflare Access](https://everyapp.com/docs/access).
+
+## Alpha
+
+Every App is alpha. It is very powerful, moving fast, and trying not to break things:
+
+- A deploy keeps your data and saves a restore point before it changes an app's database on D1.
+- Updating is `git pull`, `pnpm install`, then `pnpm everyapp update`.
+- When something must change, the release notes say so.
+
+No backwards-compatibility promise yet.
+
+## Let your agent set it up
+
+Paste this into Claude Code, Codex or Cursor:
+
+```text
+Set up Every App for me. Docs: https://everyapp.com/llms.txt (read index.md
+and setup.md there; the everyapp skill in the repo says the same).
+
+1. Clone https://github.com/every-app/every-app.git, run `pnpm install`,
+   and run every command from that folder. Always `pnpm everyapp`, never npx.
+2. Ask me which domain to use, then run
+   `pnpm everyapp setup --domain apps.<my domain> --json`.
+   Setup can run 20 minutes (it builds, deploys and waits for a certificate):
+   give it a long timeout or run it in the background and read its output.
+3. When it is done, create and deploy one app:
+   `pnpm everyapp create hello --json`, then from apps/hello
+   `pnpm everyapp deploy --json`. Tell me its URL.
+
+The --json output is one event per line. "type":"action_required" means I
+have to do something: show me its message, data.url and data.code, then wait
+("waiting": true means keep reading, up to 15 minutes). Exit code 2 means
+stopped for me: run the same command again, with --json, once I say done.
+Exit 1 is an error: show me its code and fix.
+
+Only I can approve the Cloudflare login, create the owner account from the
+setup link, pick a workers.dev name, pay for Workers Paid or buy a domain.
+Keep it short. When everything is done print DONE and the Gateway URL;
+if stuck print BLOCKED: <why> and stop.
+```
+
+Never `npx everyapp`: that runs an old CLI that cannot deploy this Gateway.
+
+## Help
+
+- `pnpm everyapp status` says what is wrong and what to run.
+- If setup or a deploy stops, run it again: it picks up where it left off.
+- [Troubleshooting](https://everyapp.com/docs/troubleshooting): find the message you saw.
+- [Join Discord to chat](https://discord.gg/c9uGs3cFXr)
+- Follow on X: https://x.com/bensenescu
+- Security holes: report them privately, not in a public issue ([how](docs/threat-model.md#reporting-a-problem)). A failing test is the best report. No bounty.
+
+## License
+
+MIT
