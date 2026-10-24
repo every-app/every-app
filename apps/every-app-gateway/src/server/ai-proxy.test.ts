@@ -330,6 +330,75 @@ describe("AI proxy lockdown", () => {
     expect(fetchUpstream).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    "/v1/files/x/..%2F..%2Fbatches",
+    "/v1/files/x%2F..%2Fy",
+    "/v1/chat%2Fcompletions",
+    "/v1/files/x/..%2f..%2fbatches",
+    "/v1/files/x%5C..%5Cy",
+    "/v1/files/x%2E%2E/batches",
+    "/v1/files/%252E%252E/batches",
+  ])(
+    "refuses a percent-encoded path separator (%s) before any route check, with /v1/files opened",
+    async (path) => {
+      const { response, fetchUpstream } = call(
+        path,
+        { method: "GET" },
+        { routes: ["/v1/files"] },
+        "/v1/files",
+      );
+      const result = await response;
+      expect(result.status).toBe(400);
+      expect(result.headers.get("x-everyapp-error")).toBe("ai_request_invalid");
+      await expect(result.json()).resolves.toMatchObject({
+        code: "ai_request_invalid",
+      });
+      expect(fetchUpstream).not.toHaveBeenCalled();
+    },
+  );
+
+  function multipartPost(parts: [name: string, value: string][]): RequestInit {
+    const form = new FormData();
+    for (const [name, value] of parts) form.append(name, value);
+    return { method: "POST", body: form };
+  }
+
+  it("refuses a multipart inference body with two model parts", async () => {
+    const { response, fetchUpstream } = call(
+      "/v1/audio/transcriptions",
+      multipartPost([
+        ["model", "whisper-1"],
+        ["model", "gpt-4o-transcribe"],
+        ["file", "audio"],
+      ]),
+      { models: ["whisper-1"] },
+    );
+    const result = await response;
+    expect(result.status).toBe(400);
+    expect(result.headers.get("x-everyapp-error")).toBe("ai_request_invalid");
+    await expect(result.json()).resolves.toMatchObject({
+      code: "ai_request_invalid",
+    });
+    expect(fetchUpstream).not.toHaveBeenCalled();
+  });
+
+  it("forwards a multipart inference body with one allowed model part", async () => {
+    const { response, fetchUpstream } = call(
+      "/v1/audio/transcriptions",
+      multipartPost([
+        ["model", "whisper-1"],
+        ["file", "audio"],
+      ]),
+      { models: ["whisper-1"] },
+    );
+    expect((await response).status).toBe(200);
+    expect(fetchUpstream).toHaveBeenCalledOnce();
+    const upstream = fetchUpstream.mock.calls[0]![0];
+    const form = await upstream.formData();
+    expect(form.getAll("model")).toEqual(["whisper-1"]);
+    expect(form.get("file")).toBe("audio");
+  });
+
   it("logs an upstream failure without the request it carried", async () => {
     const consoleError = vi
       .spyOn(console, "error")

@@ -393,7 +393,21 @@ async function prepareBody(
     const form = await request.formData();
     headers.delete("content-type");
     headers.delete("content-length");
-    const model = form.get("model");
+    // The whole form goes upstream, so a second model part would reach the
+    // provider too, and which one its parser honours is its choice, not the
+    // allowlist's. One part or none.
+    const models = form.getAll("model");
+    if (models.length > 1) {
+      return {
+        ok: false,
+        response: aiRefusal(
+          "ai_request_invalid",
+          400,
+          "Expected at most one model part in the form body",
+        ),
+      };
+    }
+    const model = models[0];
     return {
       ok: true,
       body: form,
@@ -466,12 +480,26 @@ function matchesProviderRoute(pathname: string, routePrefix: string): boolean {
   return pathname === routePrefix || pathname.startsWith(`${routePrefix}/`);
 }
 
+/**
+ * The route checks read the path as the URL parser left it: dot segments and
+ * doubled slashes resolved, percent-encoding kept. A provider decodes before
+ * it routes, so `/v1/files/x/..%2F..%2Fbatches` would pass a `/v1/files`
+ * opt-in here and land on `/v1/batches` there, with the operator's key. An
+ * encoded slash, backslash, dot or percent sign has no honest use in these
+ * paths, so the gateway refuses it before any route check.
+ */
+const ENCODED_PATH_SEPARATOR = /%(?:2f|5c|2e|25)/i;
+
 function isSafeUpstreamPath(pathname: string): boolean {
   if (!pathname.startsWith("/")) {
     return false;
   }
 
   if (pathname.startsWith("//")) {
+    return false;
+  }
+
+  if (ENCODED_PATH_SEPARATOR.test(pathname)) {
     return false;
   }
 
