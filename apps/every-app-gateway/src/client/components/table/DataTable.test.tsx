@@ -58,3 +58,54 @@ it("settles when the rows are a new empty array on every render", async () => {
   expect(renders).toBeLessThan(5);
   act(() => root.unmount());
 });
+
+// With no rows the empty state stands in for the table: no header row
+// describing nothing, and a way to clear the filters that emptied it.
+function EmptyTable({
+  isFiltered,
+  onClearFilters,
+}: {
+  isFiltered?: boolean;
+  onClearFilters?: () => void;
+}) {
+  const table = useDataTable({ data: [] as Row[], columns, withSorting: true });
+  return (
+    <DataTable
+      table={table}
+      empty={{ title: "No things yet" }}
+      isFiltered={isFiltered}
+      onClearFilters={onClearFilters}
+    />
+  );
+}
+
+it("stands in for the table when there are no rows", async () => {
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  await act(async () => root.render(<EmptyTable />));
+  expect(container.querySelector("table")).toBeNull();
+  expect(container.textContent).toContain("No things yet");
+  act(() => root.unmount());
+});
+
+it("offers to clear the filters that emptied it", async () => {
+  (
+    globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+  ).IS_REACT_ACT_ENVIRONMENT = true;
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  let cleared = 0;
+  await act(async () =>
+    root.render(<EmptyTable isFiltered onClearFilters={() => cleared++} />),
+  );
+  expect(container.querySelector("table")).toBeNull();
+  expect(container.textContent).toContain("Nothing matches these filters");
+  const button = container.querySelector("button");
+  expect(button?.textContent).toBe("Clear filters");
+  await act(async () => button?.click());
+  expect(cleared).toBe(1);
+  act(() => root.unmount());
+});

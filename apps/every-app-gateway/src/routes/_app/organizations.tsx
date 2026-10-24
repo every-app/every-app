@@ -84,8 +84,8 @@ function OrganizationsPage() {
       ) : !hasOrganizations ? (
         <EmptyState
           icon={Building2}
-          title="You are not a member of any organization yet"
-          description="Ask an owner or admin to invite you."
+          title="No organizations yet"
+          description="Ask an admin to invite you."
         />
       ) : (
         <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">

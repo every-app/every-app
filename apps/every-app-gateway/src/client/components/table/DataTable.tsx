@@ -79,6 +79,8 @@ type DataTableFrameProps = {
   /** True when filters are active. An empty table then offers `onClearFilters`. */
   isFiltered?: boolean;
   onClearFilters?: () => void;
+  /** The title of the empty state while filters hide every row. */
+  filteredTitle?: string;
   /**
    * A load failure, for example a `QueryError`. It shows above the rows. With
    * no rows it replaces the table, so a failed load never reads as empty.
@@ -101,6 +103,7 @@ export function DataTable<TData>({
   empty,
   isFiltered = false,
   onClearFilters,
+  filteredTitle = "Nothing matches these filters",
   error,
   toolbar,
   footer,
@@ -130,6 +133,40 @@ export function DataTable<TData>({
   // A load that failed before any row arrived: the failure stands alone.
   if (error && !isLoading && rows.length === 0) {
     return <>{error}</>;
+  }
+
+  // No rows: the empty state stands in for the table, with no header row
+  // describing nothing. A toolbar keeps its card, so the filters that
+  // emptied the table stay where they are.
+  if (!isLoading && rows.length === 0) {
+    const emptyState = isFiltered ? (
+      <EmptyState
+        kind="filtered"
+        variant={toolbar ? "plain" : "dashed"}
+        title={filteredTitle}
+        action={
+          onClearFilters ? (
+            <Button variant="outline" size="sm" onClick={onClearFilters}>
+              Clear filters
+            </Button>
+          ) : undefined
+        }
+      />
+    ) : (
+      <EmptyState variant={toolbar ? "plain" : "dashed"} {...empty} />
+    );
+    return toolbar ? (
+      <TableCard>
+        {toolbar}
+        {emptyState}
+        {footer}
+      </TableCard>
+    ) : (
+      <>
+        {emptyState}
+        {footer}
+      </>
+    );
   }
 
   return (
@@ -162,80 +199,52 @@ export function DataTable<TData>({
             ))}
           </TableHeader>
           <TableBody>
-            {isLoading ? (
-              Array.from({ length: 8 }, (_, index) => (
-                <TableRow key={index} aria-hidden>
-                  {columns.map((column) => (
-                    <TableCell key={column.id}>
-                      <Skeleton
-                        className={
-                          column.id === "select" ? "size-4" : "h-4 w-full"
-                        }
-                      />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : rows.length === 0 ? (
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={columns.length}>
-                  {isFiltered ? (
-                    <EmptyState
-                      kind="filtered"
-                      variant="plain"
-                      title="No rows match these filters"
-                      description="Change or clear the filters to see more rows."
-                      action={
-                        onClearFilters ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={onClearFilters}
-                          >
-                            Clear filters
-                          </Button>
-                        ) : undefined
-                      }
-                    />
-                  ) : (
-                    <EmptyState variant="plain" {...empty} />
-                  )}
-                </TableCell>
-              </TableRow>
-            ) : (
-              rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() ? "selected" : undefined}
-                  data-active={row.id === activeRowId ? "" : undefined}
-                  className={
-                    onRowClick
-                      ? "cursor-pointer data-active:bg-primary/5 data-active:shadow-[inset_2px_0_0_var(--color-primary)]"
-                      : undefined
-                  }
-                  onClick={
-                    onRowClick ? (event) => onRowClick(row, event) : undefined
-                  }
-                >
-                  {row.getVisibleCells().map((cell) => {
-                    const meta = cell.column.columnDef.meta?.cellClassName;
-                    return (
-                      <TableCell
-                        key={cell.id}
-                        className={
-                          typeof meta === "function" ? meta(row) : meta
-                        }
-                      >
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
+            {isLoading
+              ? Array.from({ length: 8 }, (_, index) => (
+                  <TableRow key={index} aria-hidden>
+                    {columns.map((column) => (
+                      <TableCell key={column.id}>
+                        <Skeleton
+                          className={
+                            column.id === "select" ? "size-4" : "h-4 w-full"
+                          }
+                        />
                       </TableCell>
-                    );
-                  })}
-                </TableRow>
-              ))
-            )}
+                    ))}
+                  </TableRow>
+                ))
+              : rows.map((row) => (
+                  <TableRow
+                    key={row.id}
+                    data-state={row.getIsSelected() ? "selected" : undefined}
+                    data-active={row.id === activeRowId ? "" : undefined}
+                    className={
+                      onRowClick
+                        ? "cursor-pointer data-active:bg-primary/5 data-active:shadow-[inset_2px_0_0_var(--color-primary)]"
+                        : undefined
+                    }
+                    onClick={
+                      onRowClick ? (event) => onRowClick(row, event) : undefined
+                    }
+                  >
+                    {row.getVisibleCells().map((cell) => {
+                      const meta = cell.column.columnDef.meta?.cellClassName;
+                      return (
+                        <TableCell
+                          key={cell.id}
+                          className={
+                            typeof meta === "function" ? meta(row) : meta
+                          }
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
+                          )}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                ))}
           </TableBody>
         </Table>
       }

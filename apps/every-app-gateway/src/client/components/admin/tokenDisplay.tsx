@@ -22,7 +22,11 @@ const STATUS_BADGES = {
   revoked: { label: "Revoked", variant: "destructive" },
 } as const;
 
+/** The usual state is plain text; only an exception is a chip. */
 export function TokenStatusBadge({ status }: { status: TokenStatus }) {
+  if (status === "active") {
+    return <span className="text-muted-foreground">Active</span>;
+  }
   const badge = STATUS_BADGES[status];
   return <Badge variant={badge.variant}>{badge.label}</Badge>;
 }

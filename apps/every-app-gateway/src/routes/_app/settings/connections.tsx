@@ -191,7 +191,7 @@ function ConnectionsPage() {
         empty={{
           title: "No AI connections yet",
           description:
-            "When you allow an AI app such as Claude or ChatGPT to use your apps, it shows up here.",
+            "Claude, ChatGPT and other AI apps you allow show up here.",
         }}
       />
 

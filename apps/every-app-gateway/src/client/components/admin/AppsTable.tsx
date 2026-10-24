@@ -246,24 +246,11 @@ export function AppsTable({
       }
       empty={
         query
-          ? {
-              kind: "filtered",
-              title: `No apps match "${searchQuery.trim()}"`,
-              description: "Search by app name, app ID or description.",
-              action: (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSearchQuery("")}
-                >
-                  Clear search
-                </Button>
-              ),
-            }
+          ? { kind: "filtered", title: `No apps match "${searchQuery.trim()}"` }
           : {
               title: "No apps yet",
               description:
-                "Apps show up here once you deploy them with the everyapp CLI.",
+                "Deploy one with the everyapp CLI and it shows up here.",
             }
       }
     />

@@ -49,32 +49,36 @@ function formatRole(role: string) {
 
 function UserCell({ user }: { user: AdminUser }) {
   const { currentUserId } = useUserRowContext();
+  // An invitation is an email address, not a person with a name yet.
+  const name = user.status === "pending" ? user.email : user.name || user.email;
   return (
     <>
       <p className="truncate font-medium">
-        {user.name || user.email}
+        {name}
         {user.id === currentUserId ? (
           <span className="font-normal text-muted-foreground"> (you)</span>
         ) : null}
       </p>
-      {user.name && user.name !== user.email ? (
+      {name !== user.email ? (
         <p className="truncate text-xs text-muted-foreground">{user.email}</p>
       ) : null}
     </>
   );
 }
 
-function StatusBadge({ user }: { user: AdminUser }) {
+const STATUS_LABELS: Record<string, string> = {
+  active: "Active",
+  pending: "Pending",
+};
+
+/** The usual state is plain text; only an exception is a chip. */
+function StatusCell({ user }: { user: AdminUser }) {
   if (user.banned) return <Badge variant="destructive">Deactivated</Badge>;
   const status = user.status || "active";
-  return (
-    <Badge
-      variant={status === "active" ? "secondary" : "warning"}
-      className="capitalize"
-    >
-      {status}
-    </Badge>
-  );
+  if (status === "active") {
+    return <span className="text-muted-foreground">Active</span>;
+  }
+  return <Badge variant="warning">{STATUS_LABELS[status] ?? status}</Badge>;
 }
 
 function ActionsCell({ user }: { user: AdminUser }) {
@@ -93,16 +97,12 @@ const columns: ColumnDef<AdminUser>[] = [
   {
     id: "role",
     header: "Role",
-    cell: ({ row }) => (
-      <Badge variant="secondary">
-        {formatRole(row.original.role || "member")}
-      </Badge>
-    ),
+    cell: ({ row }) => formatRole(row.original.role || "member"),
   },
   {
     id: "status",
     header: "Status",
-    cell: ({ row }) => <StatusBadge user={row.original} />,
+    cell: ({ row }) => <StatusCell user={row.original} />,
   },
   {
     id: "createdAt",
@@ -138,10 +138,7 @@ export function UsersTable({
         table={table}
         isLoading={isLoading}
         error={error}
-        empty={{
-          title: "No users yet",
-          description: "Invite your first user to get started.",
-        }}
+        empty={{ title: "No users yet" }}
       />
     </UserRowContext.Provider>
   );

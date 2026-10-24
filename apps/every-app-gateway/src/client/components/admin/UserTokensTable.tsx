@@ -132,10 +132,7 @@ export function UserTokensTable({
       table={table}
       isLoading={isLoading}
       error={error}
-      empty={{
-        title: "No personal access tokens yet",
-        description: "Create one for Claude Code, Cursor, or an API client.",
-      }}
+      empty={{ title: "No tokens yet" }}
     />
   );
 }

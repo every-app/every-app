@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import {
   InputGroup,
   InputGroupAddon,
+  InputGroupButton,
   InputGroupInput,
 } from "@/client/components/ui/input-group";
 
@@ -49,6 +50,18 @@ export function DataTableSearch({
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
+      {value ? (
+        <InputGroupAddon align="inline-end">
+          <InputGroupButton
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Clear search"
+            onClick={() => onChange("")}
+          >
+            <X aria-hidden />
+          </InputGroupButton>
+        </InputGroupAddon>
+      ) : null}
     </InputGroup>
   );
 }

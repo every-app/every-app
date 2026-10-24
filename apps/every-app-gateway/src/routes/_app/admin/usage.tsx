@@ -99,8 +99,7 @@ function UsagePage() {
       ) : isEmpty ? (
         <EmptyState
           icon={Activity}
-          title={`Nothing counted in ${monthLabel(month)}`}
-          description="Calls apps make through the gateway (AI providers, capabilities and agent tool calls) are counted from now on. Earlier calls were not."
+          title={`No usage in ${monthLabel(month)}`}
         />
       ) : (
         <>
