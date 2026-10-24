@@ -32,7 +32,7 @@ import {
 } from "./index";
 import { DEV_ISSUER, DEV_PUBLIC_KEY_PEM } from "../dev/index";
 import { aiProviderSettings, DEV_AI_PROVIDERS } from "../internal/aiProviders";
-import { devGatewaySettingsFor } from "../internal/devGatewaySettings";
+import { appSettings } from "../internal/appSettings";
 import { isReservedAppSecretName } from "../internal/gatewaySettings";
 import { CAPABILITIES, capabilitySettings } from "../internal/capabilities";
 import { EMAIL_SENDERS_ENV } from "../internal/email";
@@ -624,10 +624,20 @@ describe("everyAppWorker crons and the app's own secrets", () => {
       .filter(([, binding]) => (binding as { type?: string }).type === "secret")
       .map(([name]) => name);
     expect(new Set(declared)).toEqual(keys);
-    // And what `everyapp dev` checks .dev.vars for is the same list.
-    expect(
-      new Set(devGatewaySettingsFor(everything).map((need) => need.name)),
-    ).toEqual(keys);
+    // And the settings model names the same list (what each setting needs
+    // and what it also reads), less the install's CLOUDFLARE_ACCOUNT_ID,
+    // which the Gateway's view leaves out and only the dev fallback asks
+    // for (Workers AI's URL; `everyapp dev` adds it back).
+    const modelled = new Set(
+      appSettings(everything).flatMap((setting) => [
+        ...setting.names,
+        ...setting.alsoReads,
+      ]),
+    );
+    expect([...modelled].filter((name) => !keys.has(name))).toEqual([]);
+    expect([...keys].filter((name) => !modelled.has(name))).toEqual([
+      "CLOUDFLARE_ACCOUNT_ID",
+    ]);
   });
 
   it("declares the email settings in dev when .dev.vars sets them, and the stand-in senders", () => {

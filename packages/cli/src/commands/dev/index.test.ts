@@ -281,7 +281,7 @@ describe("everyapp dev", () => {
     });
 
     it("says nothing when the file sets every name, or the app needs none", async () => {
-      expect(devVarsHint({ id: "todo" }, cwd)).toEqual([]);
+      expect(devVarsHint({}, cwd)).toEqual([]);
       await fs.writeFile(
         path.join(cwd, ".dev.vars"),
         "WORKERS_AI_API_TOKEN=t\nCLOUDFLARE_ACCOUNT_ID=a\nDATAFORSEO_API_KEY=d\nMAIN_SECRET=s\n",
@@ -315,6 +315,56 @@ describe("everyapp dev", () => {
       await fs.writeFile(path.join(cwd, ".dev.vars"), "MASTODON_CLIENT_ID=id\n");
       expect(lines(devVarsHint(poster, cwd))).toEqual([
         "Dev vars  .dev.vars is missing MASTODON_CLIENT_SECRET  (the app's keys for local runs; see pnpm everyapp dev --help)",
+      ]);
+    });
+
+    it("asks for one of an any-of group until a member is set", async () => {
+      // The app picks between the two at run time: either opens it.
+      const chooser = {
+        id: "writer",
+        providers: [
+          { id: "openrouter", anyOf: "AI model" },
+          { id: "workers-ai", anyOf: "AI model" },
+        ],
+        secrets: ["MAIN_SECRET"],
+      } as const;
+      expect(lines(devVarsHint(chooser, cwd))).toEqual([
+        "Dev vars  no .dev.vars yet: add MAIN_SECRET and one of OPENROUTER_API_KEY, WORKERS_AI_API_TOKEN with CLOUDFLARE_ACCOUNT_ID  (the app's keys for local runs; see pnpm everyapp dev --help)",
+      ]);
+      // Workers AI's token alone is no member set: its URL needs the account too.
+      await fs.writeFile(path.join(cwd, ".dev.vars"), "MAIN_SECRET=s\nWORKERS_AI_API_TOKEN=t\n");
+      expect(lines(devVarsHint(chooser, cwd))).toEqual([
+        "Dev vars  .dev.vars is missing one of OPENROUTER_API_KEY, WORKERS_AI_API_TOKEN with CLOUDFLARE_ACCOUNT_ID  (the app's keys for local runs; see pnpm everyapp dev --help)",
+      ]);
+      await fs.writeFile(path.join(cwd, ".dev.vars"), "MAIN_SECRET=s\nOPENROUTER_API_KEY=k\n");
+      expect(devVarsHint(chooser, cwd)).toEqual([]);
+    });
+
+    it("never names an optional setting", async () => {
+      // The app opens without them; the feature says what is missing where it is used.
+      const tokened = {
+        id: "todo",
+        providers: [{ id: "openai", optional: true }],
+        secrets: ["MAIN_SECRET", { name: "GITHUB_TOKEN", optional: true }],
+      } as const;
+      expect(lines(devVarsHint(tokened, cwd))).toEqual([
+        "Dev vars  no .dev.vars yet: add MAIN_SECRET  (the app's keys for local runs; see pnpm everyapp dev --help)",
+      ]);
+      await fs.writeFile(path.join(cwd, ".dev.vars"), "MAIN_SECRET=s\n");
+      expect(devVarsHint(tokened, cwd)).toEqual([]);
+    });
+
+    it("names a required secret whether it is listed by name or as an entry", async () => {
+      const signer = {
+        id: "todo",
+        secrets: [{ name: "MAIN_SECRET", why: "Signs sessions." }, "WEBHOOK_SECRET"],
+      } as const;
+      expect(lines(devVarsHint(signer, cwd))).toEqual([
+        "Dev vars  no .dev.vars yet: add MAIN_SECRET, WEBHOOK_SECRET  (the app's keys for local runs; see pnpm everyapp dev --help)",
+      ]);
+      await fs.writeFile(path.join(cwd, ".dev.vars"), "MAIN_SECRET=s\nWEBHOOK_SECRET=\n");
+      expect(lines(devVarsHint(signer, cwd))).toEqual([
+        "Dev vars  .dev.vars is missing WEBHOOK_SECRET  (the app's keys for local runs; see pnpm everyapp dev --help)",
       ]);
     });
   });

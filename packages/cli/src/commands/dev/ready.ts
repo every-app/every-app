@@ -3,7 +3,16 @@ import path from "node:path";
 import { parseEnv } from "node:util";
 import chalk from "chalk";
 import { DEV_USER } from "@every-app/perimeter/dev";
-import { devGatewaySettingsFor, secretNames } from "@every-app/sdk/internal";
+import {
+  aiProviderSettings,
+  appSettings,
+  CAPABILITIES,
+  devAiProvider,
+  evaluateAppSettings,
+  isCapabilityId,
+  type AppSetting,
+  type SettingsManifestLike,
+} from "@every-app/sdk/internal";
 import type { EveryAppCliManifest } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import { formatFacts, type Fact } from "@/lib/output/table";
@@ -110,40 +119,48 @@ export function emailHint(
 const DEV_VARS = ".dev.vars";
 
 /**
- * What .dev.vars is missing, as one fact: the keys the SDK can't do
- * without for the manifest's `providers` and `capabilities` when there is
- * no Gateway (OPENROUTER_API_KEY for openrouter, DATAFORSEO_API_KEY for
- * dataforseo, an OAuth client's id and secret, ...) and the app's own
- * `secrets`, less what the file sets to something. The optional ones are
- * never named: email's sender and transports (sendEmail() prints until
- * they are set) and an instance with a default (MASTODON_URL). Nothing
- * when the app needs none or the file has them all. Names only, never
- * values; a hint, since the SDK decides what it does without them (an AI
- * call or integration answers that it isn't set up).
+ * What .dev.vars is missing, as one fact: the settings the manifest
+ * declares (`appSettings`: its `providers`, `capabilities` and `secrets`,
+ * each with the need its entry marks) that the app can't run without
+ * locally, less what the file sets to something. A required setting is
+ * named when a name of it is unset (OPENROUTER_API_KEY for openrouter,
+ * DATAFORSEO_API_KEY for dataforseo, an OAuth client's id and secret, the
+ * app's own MAIN_SECRET, ...); an any-of group is met once any member is
+ * set, and until then reads "one of OPENROUTER_API_KEY, OPENAI_API_KEY";
+ * an optional setting is never named. Nothing when the app needs none or
+ * the file has them all. Names only, never values; a hint, since the SDK
+ * decides what it does without them (an AI call or integration answers
+ * that it isn't set up).
  */
 export function devVarsHint(
-  manifest: {
-    readonly id: string;
-    /** Each by name, or as an entry with its need (the settings model). */
-    readonly secrets?: ReadonlyArray<string | { readonly name: string }>;
-    readonly providers?: ReadonlyArray<string | { readonly id: string }>;
-    readonly capabilities?: { readonly [id: string]: unknown };
-  },
+  manifest: SettingsManifestLike,
   cwd: string,
 ): Fact[] {
-  const names = [
-    ...new Set([
-      ...devGatewaySettingsFor(manifest)
-        .filter((need) => need.required)
-        .map((need) => need.name),
-      ...secretNames(manifest),
-    ]),
-  ];
-  if (names.length === 0) return [];
+  const settings = devSettings(manifest);
+  if (settings.length === 0) return [];
   const set = readDevVars(cwd);
-  const missing = set ? names.filter((name) => !set[name]) : names;
-  if (missing.length === 0) return [];
-  const list = missing.join(", ");
+  const report = evaluateAppSettings(settings, (_holder, name) =>
+    Boolean(set?.[name]),
+  );
+  if (report.ready) return [];
+  // The unset names of every required setting, in manifest order, then
+  // each any-of group none of whose members is set.
+  const names: string[] = [];
+  for (const setting of report.unmet) {
+    if (setting.need.kind !== "required") continue;
+    for (const name of setting.names) {
+      if (!set?.[name] && !names.includes(name)) names.push(name);
+    }
+  }
+  const groups = report.groups
+    .filter((group) => !group.met)
+    .map(
+      (group) =>
+        `one of ${group.members.map((member) => member.names.join(" with ")).join(", ")}`,
+    );
+  const list = [...(names.length > 0 ? [names.join(", ")] : []), ...groups].join(
+    " and ",
+  );
   return [
     {
       label: "Dev vars",
@@ -154,6 +171,36 @@ export function devVarsHint(
       }  ${chalk.dim(`(the app's keys for local runs; see ${CLI} dev --help)`)}`,
     },
   ];
+}
+
+/**
+ * The manifest's settings as a local run needs them, where the model is
+ * silent about dev. There is no install, so a provider needs everything
+ * its URL does (Workers AI's CLOUDFLARE_ACCOUNT_ID, which the Gateway's
+ * view leaves out as the install's). A service capability's settings are
+ * not needed, since the SDK's stand-ins work without them (sendEmail()
+ * prints until EMAIL_FROM and a transport are set; listMembers() answers
+ * from the dev identity); nor are the AI proxy's extra routes, which the
+ * direct calls don't go through.
+ */
+function devSettings(manifest: SettingsManifestLike): AppSetting[] {
+  return appSettings(manifest).flatMap((setting): AppSetting[] => {
+    switch (setting.kind) {
+      case "provider": {
+        const spec = devAiProvider(setting.id);
+        return [spec ? { ...setting, names: aiProviderSettings(spec) } : setting];
+      }
+      case "capability":
+        return isCapabilityId(setting.id) &&
+          CAPABILITIES[setting.id].mode === "service"
+          ? []
+          : [setting];
+      case "ai-routes":
+        return [];
+      case "secret":
+        return [setting];
+    }
+  });
 }
 
 /**
