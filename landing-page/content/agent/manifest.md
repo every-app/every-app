@@ -9,7 +9,7 @@ The manifest is the single source of truth for an app's identity, resources and 
 
 The file default-exports a plain object literal ending in `as const`. Every manifest in the repository does this; the test fixtures add `satisfies EveryAppCliManifest` (`packages/cli/src/test/fixtures/manifests/postiz.ts`). `as const` matters: `everyAppWorker<const M>()` infers the Worker's `Env` type from the literal (each D1, KV, R2, Durable Object, Workflow, Hyperdrive and helper-Worker binding name becomes a typed key), so a widened type loses the typed bindings. `defineEveryApp(manifest)` exists in `packages/perimeter/src/manifest/manifest.ts` as an identity helper typed `(EveryAppManifest) => EveryAppManifest`; no app in the repository uses it, and the perimeter is not a package apps depend on.
 
-`cloudflare.config.ts` consumes it like this (`templates/simple-todo/cloudflare.config.ts`):
+`cloudflare.config.ts` consumes it like this (`starter/cloudflare.config.ts`):
 
 ```ts
 import { defineConfig } from "cf/config";
@@ -413,7 +413,7 @@ The deploy checks the Build Output against a policy before `cf deploy --prebuilt
 
 ## Examples
 
-The starter (`templates/simple-todo/everyapp.config.ts`): one D1 database named after the Worker, one KV namespace, no public routes.
+The starter (`starter/everyapp.config.ts`): one D1 database named after the Worker, one KV namespace, no public routes.
 
 ```ts
 export default {
@@ -474,7 +474,7 @@ export default {
 } as const;
 ```
 
-Real manifests in the repository: `templates/simple-todo/everyapp.config.ts` (the starter above: D1 `DB` and KV `KV`, no public routes; `everyapp create` copies it and renames its `id` and `name`), `packages/cli/src/test/fixtures/manifests/postiz.ts` (`database: { provider: "d1" }`, a `d1-sql` migration of Prisma's SQL from `migrations` against `DB`, a helper Worker `api` bound as `API` with `cpuMs: 300_000` defining `PUBLISH_POST` / `PublishPostWorkflow`, `providers: ["openai"]` with `ai.models`, own secrets `JWT_SECRET`, `X_API_KEY`, `X_API_SECRET`, `access: "everyone"`, custom `install`, `build` and `dev` commands) and `packages/cli/src/test/fixtures/manifests/agentic-inbox.ts` (two SQLite Durable Objects, `MAILBOX` / `MailboxDO` and `EMAIL_AGENT` / `EmailAgent`, `providers: ["workers-ai", "openrouter"]` with `ai.models`, `access: "everyone"`). Both fixtures end in `as const satisfies EveryAppCliManifest`, and each carries the `cloudflare.config.ts` equivalent that builds its Workers for production (`postizConfig`, `agenticInboxConfig`).
+Real manifests in the repository: `starter/everyapp.config.ts` (the starter above: D1 `DB` and KV `KV`, no public routes; `everyapp create` copies it and renames its `id` and `name`), `packages/cli/src/test/fixtures/manifests/postiz.ts` (`database: { provider: "d1" }`, a `d1-sql` migration of Prisma's SQL from `migrations` against `DB`, a helper Worker `api` bound as `API` with `cpuMs: 300_000` defining `PUBLISH_POST` / `PublishPostWorkflow`, `providers: ["openai"]` with `ai.models`, own secrets `JWT_SECRET`, `X_API_KEY`, `X_API_SECRET`, `access: "everyone"`, custom `install`, `build` and `dev` commands) and `packages/cli/src/test/fixtures/manifests/agentic-inbox.ts` (two SQLite Durable Objects, `MAILBOX` / `MailboxDO` and `EMAIL_AGENT` / `EmailAgent`, `providers: ["workers-ai", "openrouter"]` with `ai.models`, `access: "everyone"`). Both fixtures end in `as const satisfies EveryAppCliManifest`, and each carries the `cloudflare.config.ts` equivalent that builds its Workers for production (`postizConfig`, `agenticInboxConfig`).
 
 ## Sources
 
@@ -529,7 +529,7 @@ Real manifests in the repository: `templates/simple-todo/everyapp.config.ts` (th
 - `apps/every-app-gateway/src/server/repositories/AppRepository.ts`
 - `apps/every-app-gateway/src/server/services/UserPatService.ts`
 - `apps/every-app-gateway/src/client/components/AppIcon.tsx`
-- `templates/simple-todo/everyapp.config.ts`
-- `templates/simple-todo/cloudflare.config.ts`
+- `starter/everyapp.config.ts`
+- `starter/cloudflare.config.ts`
 - `packages/cli/src/test/fixtures/manifests/postiz.ts`
 - `packages/cli/src/test/fixtures/manifests/agentic-inbox.ts`

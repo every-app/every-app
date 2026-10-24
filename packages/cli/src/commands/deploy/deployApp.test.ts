@@ -1034,7 +1034,7 @@ export const todos = sqliteTable("todos", { id: text("id").primaryKey(), title: 
    * fixture's.
    */
   async function useDrizzle(): Promise<void> {
-    const template = path.join(REPO, "templates/simple-todo/node_modules");
+    const template = path.join(REPO, "starter/node_modules");
     fs.mkdirSync(path.join(appDir, "node_modules"));
     for (const name of ["drizzle-kit", "drizzle-orm"]) {
       fs.symlinkSync(

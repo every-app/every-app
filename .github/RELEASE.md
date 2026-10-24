@@ -34,7 +34,7 @@ Pausing removed what only a published CLI needs. Bring back:
   had `prepack` and `prepublishOnly`. The CLI had `prepack`, which
   type-checked, built, and ran `scripts/bundle-gateway.js` (the gateway
   release tarball, which stays out of the package now: see Gateway releases)
-  and `scripts/bundle-templates.js` (`templates/simple-todo`, into
+  and `scripts/bundle-templates.js` (the starter, now `starter/`, into
   `packages/cli/templates/`, its `.gitignore` shipped as `gitignore`).
 - **A Gateway for a CLI with no checkout:** published Gateway releases
   (the `setup --release` flag, the latest-release fallback and the Gateway

@@ -1,6 +1,6 @@
 /**
  * The Cloudflare REST API of a FakeCloudflare account, as a fetch: what
- * the hosted deployer (through @every-app/cf-rest) calls, answered from the
+ * the hosted deployer (through the gateway's cf-rest client) calls, answered from the
  * same account state the cf-CLI fake uses. Workers for Platforms dispatch
  * namespaces and their scripts are modelled here (uploads parsed from the
  * real multipart body, bindings resolved and stored, secrets, settings,

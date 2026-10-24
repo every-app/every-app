@@ -70,7 +70,7 @@ A rebind (`reconcileGateway`) skips 2 and 10, and does nothing (and builds nothi
 
 ## `everyapp create`
 
-Scaffold-only: it never contacts the gateway. Copy the template (`templates/simple-todo` from the checkout) → rewrite ids/deps → copy the everyapp skill (`packages/cli/skills/everyapp`) into `.claude/skills/everyapp` and `.agents/skills/everyapp`, and point a new `AGENTS.md` at it (an existing one only after a person agrees; never under `--json` or `-y`) → `pnpm install` → Worker types and local migrations (failures warn, don't abort; `everyapp dev` redoes both) → outside the checkout, `git init` + first commit. `--deploy` then runs the full `deployApp()` pipeline below, offer to install the Gateway included. The id comes from the argument (validated); only with none, at a terminal, is it asked for.
+Scaffold-only: it never contacts the gateway. Copy the template (`starter/` from the checkout) → rewrite ids/deps → copy the everyapp skill (`packages/cli/skills/everyapp`) into `.claude/skills/everyapp` and `.agents/skills/everyapp`, and point a new `AGENTS.md` at it (an existing one only after a person agrees; never under `--json` or `-y`) → `pnpm install` → Worker types and local migrations (failures warn, don't abort; `everyapp dev` redoes both) → outside the checkout, `git init` + first commit. `--deploy` then runs the full `deployApp()` pipeline below, offer to install the Gateway included. The id comes from the argument (validated); only with none, at a terminal, is it asked for.
 
 ## The app pipeline: `everyapp deploy` — the interesting one
 

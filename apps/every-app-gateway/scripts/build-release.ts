@@ -40,6 +40,7 @@ const GATEWAY_SOURCES = [
   "packages/perimeter",
   "packages/toolbus",
   "pnpm-workspace.yaml",
+  "pnpm-lock.yaml",
 ];
 
 export interface ReleaseManifest {

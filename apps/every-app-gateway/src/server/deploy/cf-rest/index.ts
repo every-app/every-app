@@ -2,7 +2,9 @@
  * A typed client for the Cloudflare REST API calls the hosted deployer
  * makes: Workers for Platforms namespaces and scripts, D1, the account's
  * Workers, and static assets. Pure fetch, so it runs in a Worker as well
- * as in Node; no wrangler, no cf CLI.
+ * as in Node; no wrangler, no cf CLI. Two runtimes use it: Node (the
+ * CLI's fake-Cloudflare test imports this folder by path, and any Node
+ * caller) and Workers (the hosted deployer).
  *
  *   const cf = createCloudflareRest({ apiToken, accountId });
  *   await cf.dispatchScripts.upload("every-app-apps", "acme--todo", { metadata, modules });

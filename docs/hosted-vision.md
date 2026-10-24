@@ -242,8 +242,8 @@ What stays in the gateway and the packages, untouched this week:
   pipeline, `cfRestDeployer.ts` and the browser install (`install.ts`, `browser-install.ts`), which
   shares that pipeline and is a launch feature. The PAT `deploy` scope and the "Deploy key" kind in
   the tokens UI stay with it.
-- `packages/cf-rest`: the Cloudflare REST client the deployer and the browser install use. It may
-  move into the gateway; it does not go.
+- `apps/every-app-gateway/src/server/deploy/cf-rest/`: the Cloudflare REST client the deployer and
+  the browser install use (`packages/cf-rest` until 2026-10-24); it does not go.
 - `_everyapp_install.deployment_mode` and `DEPLOYMENT_MODES` in the CLI (invariant 2);
   `docs/runbooks/hosted-install.md` and the hosted sections of `docs/security-model.md`, each with a
   banner saying the CLI surface is restored from the commit above.

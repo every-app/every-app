@@ -162,8 +162,8 @@ From `packages/cli/src/commands/create/index.ts`, `command.ts` and `steps/appId.
 
 - The name becomes the app id and part of its address, `<name>.<app base domain>`. Rules: `^[a-z]([a-z0-9-]*[a-z0-9])?$`, 64 characters or fewer, no `--`, not reserved for the platform. A bad name is `error` `INVALID_APP_ID` with a `data.fix` that suggests a slug ("Analytics_App" becomes `analytics-app`). Under `--json` the name is required: `APP_ID_REQUIRED`.
 - Inside the checkout the app goes in `apps/<name>`; anywhere else in `./<name>` with its own git repository. Run from inside an app: `NESTED_APP`. The directory exists: `APP_DIR_EXISTS`.
-- Steps: `create.copy` (the starter, `templates/simple-todo`), `create.skill` (the everyapp skill copied to `.claude/skills/everyapp` and `.agents/skills/everyapp`, and `AGENTS.md` pointing at it: "Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md`"), `create.install` (a failure is `INSTALL_FAILED` with rerun `cd <dir> && pnpm install`: the app exists, only the install is left), `create.types` (warning `WORKER_TYPES_FAILED`; `pnpm dev` tries again), `migrations.local` (warning `MIGRATIONS_FAILED`), and outside the checkout `create.git` (warning `GIT_FAILED`).
-- `done.data`: `appId`, `dir`, `next` (`cd <dir>`, `pnpm dev` "run it locally", and without `--deploy` `pnpm run deploy` "put it live"; the app's `package.json` scripts `dev` and `deploy` run `everyapp dev` and `everyapp deploy`, `templates/simple-todo/package.json`). With `--deploy` the deploy line is dropped and `done.data` adds `url`, the live URL `app.live` showed.
+- Steps: `create.copy` (the starter, `starter`), `create.skill` (the everyapp skill copied to `.claude/skills/everyapp` and `.agents/skills/everyapp`, and `AGENTS.md` pointing at it: "Before running everyapp, read the everyapp skill: `.agents/skills/everyapp/SKILL.md`"), `create.install` (a failure is `INSTALL_FAILED` with rerun `cd <dir> && pnpm install`: the app exists, only the install is left), `create.types` (warning `WORKER_TYPES_FAILED`; `pnpm dev` tries again), `migrations.local` (warning `MIGRATIONS_FAILED`), and outside the checkout `create.git` (warning `GIT_FAILED`).
+- `done.data`: `appId`, `dir`, `next` (`cd <dir>`, `pnpm dev` "run it locally", and without `--deploy` `pnpm run deploy` "put it live"; the app's `package.json` scripts `dev` and `deploy` run `everyapp dev` and `everyapp deploy`, `starter/package.json`). With `--deploy` the deploy line is dropped and `done.data` adds `url`, the live URL `app.live` showed.
 - `--deploy` deploys right after (the same pipeline as `deploy`). If that fails the error says the app was created but isn't deployed, and its `data.rerun` deploys from the app's directory. With `--deploy`: `--gateway` is the Gateway's URL (default `EVERYAPP_GATEWAY_URL`) and `--account-id` the Cloudflare account when the login sees several. `--yes` asks nothing (a name is then required) and, with `--deploy`, installs a missing Gateway at `apps.<zone>` without asking: not without the person's word. `--verbose` streams the install and git output to stderr.
 
 Then work in the app's `src/`; the manifest is `everyapp.config.ts`. The Gateway handles sign-in: never add a login page.
@@ -397,6 +397,6 @@ From `packages/cli/skills/everyapp/SKILL.md`:
 - `packages/cli/src/argumentErrors.ts`
 - `packages/cli/src/lib/output/time.ts`
 - `packages/sdk/src/internal/email.ts`
-- `templates/simple-todo/package.json`
+- `starter/package.json`
 - `landing-page/content/docs/access.mdx`
 - `landing-page/content/docs/connect-ai.mdx`

@@ -43,6 +43,7 @@ const GATEWAY_SOURCES = [
   "packages/perimeter",
   "packages/toolbus",
   "pnpm-workspace.yaml",
+  "pnpm-lock.yaml",
 ];
 
 /** How many builds the cache keeps: the latest, and a few to switch back to. */

@@ -27,7 +27,7 @@ import { newGatewaySecrets } from "@/lib/gateway/secretsFile";
 
 const REPO = fileURLToPath(new URL("../../../../", import.meta.url));
 const RELEASE = path.join(REPO, "apps/every-app-gateway/every-app-gateway-release.tar.gz");
-const TEMPLATE = path.join(REPO, "templates/simple-todo");
+const TEMPLATE = path.join(REPO, "starter");
 // A stand-in account: a dry run never calls the API.
 const ACCOUNT_ID = "0123456789abcdef0123456789abcdef";
 const PUBLIC_KEY =

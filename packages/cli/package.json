@@ -60,7 +60,6 @@
     "zod": "^4.2.0"
   },
   "devDependencies": {
-    "@every-app/cf-rest": "workspace:*",
     "@every-app/perimeter": "workspace:*",
     "@every-app/sdk": "workspace:*",
     "@every-app/toolbus": "workspace:*",

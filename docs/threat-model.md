@@ -131,7 +131,7 @@ What an attacker would want, roughly in the order it would hurt.
 | **An AI client over MCP** | An OAuth access token the Gateway issued (bound to `${GATEWAY_URL}/mcp`), a personal access token, or (behind Managed OAuth) a verified Access assertion | List and call the tools of the apps the person can open, within the connection's apps and the token's scopes; read-only callers see no write tools; nobody sees destructive tools | Use the token on an app route; call a tool with a scope it lacks; connect accounts or mint tokens at a social network; page through the directory |
 | **A third-party app** (hosted only, behind the launch gate) | A Worker in the dispatch namespace, uploaded by a deploy key or an admin's install, reached on `<app>-<org>.<THIRD_PARTY_DOMAIN>` | Serve its organization's members with the per-host session; call the Gateway's proxies as any app | Reach the internet except through the `Outbound` allowlist (empty today); bind anything the deployer didn't rewrite; see the first-party session cookie; run without limits |
 | **Cloudflare** | Runs everything | Trusted completely: the runtime, D1, KV, Access, the edge TLS, Email Sending | Out of scope (see below) |
-| **A dependency** (npm packages, GitHub Actions) | Runs in the build, the CLI, the Worker, CI | Trusted as installed; floors on known-bad versions in `pnpm-workspace.yaml`, lockfiles audited in CI | Out of scope beyond that (see below) |
+| **A dependency** (npm packages, GitHub Actions) | Runs in the build, the CLI, the Worker, CI | Trusted as installed; floors on known-bad versions in `pnpm-workspace.yaml`, the lockfile audited in CI | Out of scope beyond that (see below) |
 
 Two actors deserve a sentence each. The **operator** is root by design:
 ADR-0003 chose one credential (the Cloudflare login) over a second Gateway
@@ -227,7 +227,7 @@ Cloudflare's job, some are simply not built.
   constant-time everywhere).
 - **Supply chain beyond the floors.** `pnpm-workspace.yaml` pins known-bad
   transitive versions (`jose`, `seroval`, `tinypool`), CI fails on critical
-  advisories in committed lockfiles, and the security-review action is
+  advisories in the lockfile, and the security-review action is
   pinned to a commit; nothing verifies package provenance or reviews each
   dependency's code.
 - **The browser.** Extensions, a malware-ridden machine, a shared computer
@@ -1415,8 +1415,8 @@ scope narrowing is the OAuth-scopes design (`docs/design/2026-10-oauth-scopes.md
   repository's additions to its prompt are in `.github/security-review/`),
   and `.github/workflows/security-review.yml` runs the same review on
   every pull request once `ANTHROPIC_API_KEY` is in the repository's
-  secrets. New apps get it too (`templates/simple-todo/.github/`).
-- **Dependency audit.** `pnpm audit` runs in CI on every committed lockfile
+  secrets. New apps get it too (`starter/.github/`).
+- **Dependency audit.** `pnpm audit` runs in CI on the lockfile
   and fails on critical advisories (`.github/workflows/pr-checks.yml`).
 - **A live Gateway.** `everyapp status` says whether the live Gateway was
   built from the checkout's sources; `docs/runbooks/mcp-oauth.md` and

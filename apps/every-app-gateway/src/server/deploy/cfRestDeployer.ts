@@ -1,5 +1,5 @@
 /**
- * The DeployerPort over Cloudflare's REST API (@every-app/cf-rest): one
+ * The DeployerPort over Cloudflare's REST API (`./cf-rest`): one
  * account and the Gateway's CF_DEPLOY_TOKEN. Hosted apps stay in their
  * dispatch namespace. Self-hosted installs use private account
  * Workers and the same service-binding/hostname topology as the CLI.
@@ -8,7 +8,7 @@ import {
   createCloudflareRest,
   isCloudflareNotFound,
   type CloudflareRest,
-} from "@every-app/cf-rest";
+} from "@/server/deploy/cf-rest";
 import { DeployError } from "./errors";
 import type { DeployerPort } from "./port";
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";

@@ -39,7 +39,7 @@ import type {
   WorkerBinding,
   WorkerMetadata,
   WorkerMigrations,
-} from "@every-app/cf-rest";
+} from "@/server/deploy/cf-rest";
 import { bundleRefused } from "./errors";
 
 type Binding = Record<string, unknown> & { type?: unknown };

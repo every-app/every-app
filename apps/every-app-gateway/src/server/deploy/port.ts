@@ -9,7 +9,7 @@ import type {
   ListedWorkerBinding,
   WorkerMetadata,
   WorkerModule,
-} from "@every-app/cf-rest";
+} from "@/server/deploy/cf-rest";
 
 interface DeployStatement {
   sql: string;

@@ -15,7 +15,7 @@ export const MISSING_CLOUDFLARE_CONFIG = [
   "    worker: everyAppWorker({ manifest, entrypoint, ctx }),",
   "  }));",
   "",
-  "templates/simple-todo has the full setup (package.json, vite.config.ts).",
+  "starter/ has the full setup (package.json, vite.config.ts).",
 ].join("\n");
 
 /**

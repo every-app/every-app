@@ -13,7 +13,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const simpleTodoTemplatePath = path.resolve(
   __dirname,
-  "../../../../../../templates/simple-todo",
+  "../../../../../../starter",
 );
 
 const dirs: string[] = [];

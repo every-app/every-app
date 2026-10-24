@@ -3,7 +3,7 @@ title: The deploy pipeline
 description: What `pnpm everyapp deploy` does from its first line to `Live`, in order, with every check that can stop it, what the app policy refuses, every flag, release deploys, `--bundle-only`, hosted deploys through the deploy API, `register`, `delete`, and what a redeploy keeps.
 ---
 
-`pnpm everyapp deploy` deploys the app in the current directory (or an app release) as a private Cloudflare Worker behind the Gateway. The one-sentence model (`landing-page/content/internal/gateway/cli-deployment.md`): Cloudflare's own CLI, `cf`, does everything in the Cloudflare account with your Cloudflare login, including writing the app registry in the Gateway's own D1 with the rules in `@every-app/perimeter/registry`; binding an app is a redeploy of the Gateway this run builds, and the Gateway makes a bound app live itself on the first request that reaches it. The entry point is `packages/cli/src/commands/deploy/index.ts`; the self-hosted pipeline is `packages/cli/src/commands/deploy/deployApp.ts`; the hosted path is `packages/cli/src/commands/deploy/deployToGateway.ts`. In an app, `pnpm run deploy` runs the same command (the template's `package.json` script is `everyapp deploy`, `templates/simple-todo/package.json`; the user docs spell it that way); an agent runs `pnpm everyapp deploy --json` from the app directory.
+`pnpm everyapp deploy` deploys the app in the current directory (or an app release) as a private Cloudflare Worker behind the Gateway. The one-sentence model (`landing-page/content/internal/gateway/cli-deployment.md`): Cloudflare's own CLI, `cf`, does everything in the Cloudflare account with your Cloudflare login, including writing the app registry in the Gateway's own D1 with the rules in `@every-app/perimeter/registry`; binding an app is a redeploy of the Gateway this run builds, and the Gateway makes a bound app live itself on the first request that reaches it. The entry point is `packages/cli/src/commands/deploy/index.ts`; the self-hosted pipeline is `packages/cli/src/commands/deploy/deployApp.ts`; the hosted path is `packages/cli/src/commands/deploy/deployToGateway.ts`. In an app, `pnpm run deploy` runs the same command (the template's `package.json` script is `everyapp deploy`, `starter/package.json`; the user docs spell it that way); an agent runs `pnpm everyapp deploy --json` from the app directory.
 
 Error codes on this page link to [the errors page](/docs/agent/errors); event shapes (`step`, `progress`, `warning`, `action_required`, `error`, `done`) are on [the JSON page](/docs/agent/json). Trust boundaries are in `docs/security-model.md` ("Trust Zones", "Operator Authority (Self-Host)", "Hosted Deploy API"), mirrored at [/docs/agent/repo/security-model](/docs/agent/repo/security-model), and in `docs/threat-model.md` (assets, actors, trust boundaries, one testable invariant per boundary), mirrored at [/docs/agent/repo/threat-model](/docs/agent/repo/threat-model) (the register behind it, `docs/threat-model-invariants.md`, is not mirrored and stays on GitHub); this page links there rather than repeating them.
 
@@ -392,7 +392,7 @@ What is never done twice by itself: deleting a Worker (never done by `deploy` at
 - [`RELEASE_LOCAL_STATE`](/docs/agent/errors#release_local_state) refuses to pack `.dev.vars*`, `.env*`, `*.pem`, `.cloudflare/state`, `.cloudflare/types`, `.wrangler/` or `.everyapp/` ("Refusing to pack local state or secrets into the release").
 - A Prisma app is refused before staging: `RELEASE_MIGRATIONS_UNSUPPORTED` ("migrates with Prisma, which a release can't carry").
 
-`app.release` `ok`: `Packed <app> <version> (<sha256 prefix>) into <path>.`, `data`: `tarball`, `shown`, `appId`, `version`, `sha256`; `done.data` adds `next: [{ command: "pnpm everyapp deploy ./everyapp-release.tar.gz", note: "deploys it" }]`. New apps get `.github/workflows/release.yml` (`templates/simple-todo/.github/workflows/release.yml`), which on every `v*` tag (and by hand) runs `pnpm install`, `pnpm everyapp deploy --bundle-only --out everyapp-release.tar.gz`, and `gh release create|upload` with the tarball.
+`app.release` `ok`: `Packed <app> <version> (<sha256 prefix>) into <path>.`, `data`: `tarball`, `shown`, `appId`, `version`, `sha256`; `done.data` adds `next: [{ command: "pnpm everyapp deploy ./everyapp-release.tar.gz", note: "deploys it" }]`. New apps get `.github/workflows/release.yml` (`starter/.github/workflows/release.yml`), which on every `v*` tag (and by hand) runs `pnpm install`, `pnpm everyapp deploy --bundle-only --out everyapp-release.tar.gz`, and `gh release create|upload` with the tarball.
 
 ## Hosted deploys: the deploy API
 
@@ -555,8 +555,8 @@ Without `--purge` the Worker and data are kept: "its Worker and data are kept, a
 `apps/every-app-gateway/src/server/deploy/registry.ts`
 `apps/every-app-gateway/src/server/repositories/DeployJobRepository.ts`
 `apps/every-app-gateway/src/server/platform-policy.ts`
-`templates/simple-todo/.github/workflows/release.yml`
-`templates/simple-todo/package.json`
+`starter/.github/workflows/release.yml`
+`starter/package.json`
 `docs/security-model.md`
 `docs/runbooks/hosted-install.md`
 `docs/runbooks/browser-app-install.md`

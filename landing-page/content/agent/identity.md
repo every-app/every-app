@@ -147,7 +147,7 @@ export default everyApp<Env>(
 );
 ```
 
-A TanStack Start app hands the request to Start's server entry and reads the user in a server-function middleware (`templates/simple-todo/src/entry.worker.ts`, `templates/simple-todo/src/middleware/ensureUser.ts`):
+A TanStack Start app hands the request to Start's server entry and reads the user in a server-function middleware (`starter/src/entry.worker.ts`, `starter/src/middleware/ensureUser.ts`):
 
 ```ts
 // src/entry.worker.ts
@@ -486,11 +486,11 @@ Three zones (`docs/security-model.md`): the **client zone** (browsers, API clien
 - `packages/cli/src/commands/access/index.ts`
 - `packages/cli/src/test/fixtures/manifests/postiz.ts`
 - `apps/every-app-gateway/src/routes/api/dev/identity.ts`
-- `templates/simple-todo/src/entry.worker.ts`
-- `templates/simple-todo/src/middleware/ensureUser.ts`
-- `templates/simple-todo/src/tools.ts`
-- `templates/simple-todo/everyapp.config.ts`
-- `templates/simple-todo/cloudflare.config.ts`
+- `starter/src/entry.worker.ts`
+- `starter/src/middleware/ensureUser.ts`
+- `starter/src/tools.ts`
+- `starter/everyapp.config.ts`
+- `starter/cloudflare.config.ts`
 - `docs/security-model.md`
 - `docs/capabilities.md`
 - `packages/cli/skills/everyapp/mcp.md`

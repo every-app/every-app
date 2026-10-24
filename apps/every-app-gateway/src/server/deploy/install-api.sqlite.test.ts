@@ -58,7 +58,7 @@ vi.mock("@tanstack/react-start/server-entry", () => ({
 
 import { generateKeyPairSync } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { createCloudflareRest } from "@every-app/cf-rest";
+import { createCloudflareRest } from "@/server/deploy/cf-rest";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
 import { apps, deployJobs, members, organizations, users } from "@/db/schema";
 import { Route as InstallRoute } from "@/routes/api/admin/apps/install";

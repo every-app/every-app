@@ -10,7 +10,7 @@ checkout landing-page/content/agent/mcp.md); the person's steps: https://everyap
 
 ## Define tools: src/tools.ts
 
-The starter's shape (templates/simple-todo/src/tools.ts, shortened):
+The starter's shape (starter/src/tools.ts, shortened):
 
 ```ts
 import { ToolError, defineTools } from "@every-app/sdk/server";
@@ -225,4 +225,4 @@ in a browser once (else `403 not_connected`), gets read & write to every app, no
 - apps/every-app-gateway/src/server/toolbus/catalog-sync.ts, gateway-mcp.ts, app-host-mcp.ts; src/server/app-activation.ts, deploy/run.ts; src/server/mcp-auth/routes.ts, config.ts, validate.ts, consent.ts, registration-limit.ts
 - apps/every-app-gateway/src/routes/_app/admin/tokens.tsx, settings/connections.tsx; src/client/components/Sidebar.tsx, oauth/ConsentForm.tsx, admin/CreateUserTokenModal.tsx
 - packages/perimeter/src/gateway.ts; packages/cli/src/commands/dev/devAppGateway.ts, ready.ts; packages/cli/src/commands/deploy/deployApp.ts; packages/cli/src/lib/app/skill.ts
-- templates/simple-todo/src/tools.ts, entry.worker.ts, server/todoService.ts, server/todoErrors.ts, README.md; docs/runbooks/mcp-oauth.md; landing-page/content/agent/mcp.md; landing-page/content/docs/connect-ai.mdx
+- starter/src/tools.ts, entry.worker.ts, server/todoService.ts, server/todoErrors.ts, README.md; docs/runbooks/mcp-oauth.md; landing-page/content/agent/mcp.md; landing-page/content/docs/connect-ai.mdx

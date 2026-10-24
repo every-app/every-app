@@ -103,7 +103,7 @@ cd apps/my-app
 pnpm dev
 ```
 
-`create` copies the starter template (`templates/simple-todo`) to `apps/my-app`, installs it and sets up its local database, without contacting anything in Cloudflare. `pnpm dev` (`everyapp dev`) runs it behind a local Gateway that enforces the same security perimeter as production, signed in as a seeded dev user. Open the URL it prints — hot reload works as normal. When it should go live:
+`create` copies the starter template (`starter/`) to `apps/my-app`, installs it and sets up its local database, without contacting anything in Cloudflare. `pnpm dev` (`everyapp dev`) runs it behind a local Gateway that enforces the same security perimeter as production, signed in as a seeded dev user. Open the URL it prints — hot reload works as normal. When it should go live:
 
 ```bash
 pnpm run deploy

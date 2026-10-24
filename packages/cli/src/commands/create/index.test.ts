@@ -25,7 +25,7 @@ function fakeCheckout(): string {
   const root = tmp();
   fs.cpSync(
     starterTemplateDir(checkoutRoot()),
-    path.join(root, "templates", "simple-todo"),
+    path.join(root, "starter"),
     {
       recursive: true,
       filter: (source) =>

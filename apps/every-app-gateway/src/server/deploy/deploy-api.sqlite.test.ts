@@ -50,7 +50,7 @@ vi.mock("@tanstack/react-start/server-entry", () => ({
 import { generateKeyPairSync } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { decodeJwt } from "jose";
-import { createCloudflareRest } from "@every-app/cf-rest";
+import { createCloudflareRest } from "@/server/deploy/cf-rest";
 import { everyAppWorker } from "@every-app/sdk/cloudflare";
 import {
   apps,

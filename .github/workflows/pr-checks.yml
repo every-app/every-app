@@ -51,17 +51,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '^22.18.0'
-      # Every project below commits its own lockfile; the cloneable apps and
-      # template don't, so there is nothing stable to audit for them yet.
-      - name: Fail on critical advisories in committed lockfiles
-        run: |
-          failed=0
-          for project in apps/every-app-gateway landing-page packages/cf-rest packages/cli packages/perimeter packages/sdk packages/toolbus; do
-            echo "::group::$project"
-            pnpm -C "$project" audit --audit-level critical || failed=1
-            echo "::endgroup::"
-          done
-          exit $failed
+      # One lockfile covers every workspace project, the starter included.
+      - name: Fail on critical advisories in the lockfile
+        run: pnpm audit --audit-level critical
   prettier-check:
     name: Prettier Check
     runs-on: ubuntu-latest

@@ -104,7 +104,7 @@ export async function runDev(
         "No cloudflare.config.ts in this directory",
         "Every App apps build their Worker in cloudflare.config.ts with everyAppWorker() from @every-app/sdk/cloudflare.",
       ].join("\n"),
-      { data: { fix: "copy cloudflare.config.ts from templates/simple-todo" } },
+      { data: { fix: "copy cloudflare.config.ts from starter/" } },
     );
   }
 

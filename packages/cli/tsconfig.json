@@ -1,21 +1,13 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "noEmit": true,
-    "rootDir": ".",
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     },
     "types": ["node"],
-    "resolveJsonModule": true,
     "target": "esnext",
-    "module": "esnext",
-    "moduleResolution": "bundler",
     "lib": ["esnext"],
-    "skipLibCheck": true,
-    "strict": true,
-    "isolatedModules": true,
-    "forceConsistentCasingInFileNames": true,
     "noImplicitOverride": true,
     "noPropertyAccessFromIndexSignature": true,
     "noUncheckedIndexedAccess": true,

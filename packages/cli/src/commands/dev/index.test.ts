@@ -335,7 +335,7 @@ describe("everyapp dev", () => {
     await fs.rm(path.join(cwd, "cloudflare.config.ts"));
     await expect(runDev({}, out, { cwd, cf })).rejects.toMatchObject({
       code: "MISSING_CLOUDFLARE_CONFIG",
-      data: { fix: "copy cloudflare.config.ts from templates/simple-todo" },
+      data: { fix: "copy cloudflare.config.ts from starter/" },
     });
     await fs.rm(path.join(cwd, "everyapp.config.ts"));
     // The same error every other command raises for a missing manifest.

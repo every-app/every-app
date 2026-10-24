@@ -22,7 +22,7 @@ afterEach(() => {
  */
 function fakeCheckout(): string {
   const root = tmp();
-  const template = path.join(root, "templates", "simple-todo");
+  const template = path.join(root, "starter");
   fs.cpSync(starterTemplateDir(checkoutRoot()), template, {
     recursive: true,
     filter: (source) => !source.includes("node_modules"),
@@ -50,7 +50,7 @@ describe("the starter template", () => {
     const elsewhere = tmp();
 
     expect(newAppDir({ appId: "my-app", cwd: root, root })).toBe(path.join(root, "apps", "my-app"));
-    expect(newAppDir({ appId: "my-app", cwd: path.join(root, "templates"), root })).toBe(
+    expect(newAppDir({ appId: "my-app", cwd: path.join(root, "starter"), root })).toBe(
       path.join(root, "apps", "my-app"),
     );
     expect(newAppDir({ appId: "my-app", cwd: elsewhere, root })).toBe(path.join(elsewhere, "my-app"));

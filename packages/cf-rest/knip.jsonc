@@ -1,4 +1,0 @@
-{
-  // The entry is package.json's export; consumers bundle the source.
-  "project": ["src/**/*.ts"],
-}

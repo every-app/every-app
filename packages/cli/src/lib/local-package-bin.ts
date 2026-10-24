@@ -1,5 +1,4 @@
 import fs from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
 
 interface LocalPackage {
@@ -57,9 +56,11 @@ export async function resolveLocalPackage(
  * Deliberately not `require.resolve("<pkg>/package.json")`: a package whose
  * `exports` map omits "./package.json" makes that throw
  * ERR_PACKAGE_PATH_NOT_EXPORTED even though the file is right there —
- * drizzle-kit is one, so every drizzle app hit it. Falls back to module
- * resolution for layouts where the package isn't under an ancestor's
- * node_modules.
+ * drizzle-kit is one, so every drizzle app hit it. And deliberately not
+ * Node's global folders (NODE_PATH, `~/.node_modules`): the walk already
+ * covers every ancestor's node_modules, and a binary found only through
+ * NODE_PATH is not the project's (pnpm's command shims set NODE_PATH to the
+ * workspace's hoisted store, which has the gateway's cf in it).
  */
 async function findPackageJsonPath(
   projectRoot: string,
@@ -82,7 +83,7 @@ async function findPackageJsonPath(
     if (parent === dir) break;
     dir = parent;
   }
-
-  const projectRequire = createRequire(path.join(projectRoot, "package.json"));
-  return projectRequire.resolve(`${packageName}/package.json`);
+  throw new Error(
+    `${packageName} is not installed under ${projectRoot} or any directory above it.`,
+  );
 }

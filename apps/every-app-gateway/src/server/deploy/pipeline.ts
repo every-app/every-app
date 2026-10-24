@@ -26,7 +26,7 @@ import {
   parseStoredManifest,
   type AppRow,
 } from "@every-app/perimeter/registry";
-import type { WorkerModule } from "@every-app/cf-rest";
+import type { WorkerModule } from "@/server/deploy/cf-rest";
 import type { DeployBundle } from "./bundle";
 import { bundleRefused, DeployError } from "./errors";
 import { ensureAppDatabase } from "./ledger";

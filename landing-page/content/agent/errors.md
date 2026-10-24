@@ -678,9 +678,9 @@ Source: `packages/cli/src/commands/dev/index.ts`
 
 ### MISSING_CLOUDFLARE_CONFIG
 
-The app has no `cloudflare.config.ts`. Self-host `deploy` of the app in the directory (not of a release) raises it with the headline `No cloudflare.config.ts in this app`, a sample config (`defineConfig` from `cf/config`, `everyAppWorker` from `@every-app/sdk/cloudflare`, the entrypoint imported `with { type: "cf-worker" }`, the manifest from `./everyapp.config.ts`) and `templates/simple-todo has the full setup (package.json, vite.config.ts).` `everyapp dev` raises it only when the manifest has no `dev` command either: `No cloudflare.config.ts in this directory` then `Every App apps build their Worker in cloudflare.config.ts with everyAppWorker() from @every-app/sdk/cloudflare.`
+The app has no `cloudflare.config.ts`. Self-host `deploy` of the app in the directory (not of a release) raises it with the headline `No cloudflare.config.ts in this app`, a sample config (`defineConfig` from `cf/config`, `everyAppWorker` from `@every-app/sdk/cloudflare`, the entrypoint imported `with { type: "cf-worker" }`, the manifest from `./everyapp.config.ts`) and `starter/ has the full setup (package.json, vite.config.ts).` `everyapp dev` raises it only when the manifest has no `dev` command either: `No cloudflare.config.ts in this directory` then `Every App apps build their Worker in cloudflare.config.ts with everyAppWorker() from @every-app/sdk/cloudflare.`
 
-**Fix:** from `dev`, `data.fix`: `copy cloudflare.config.ts from templates/simple-todo`; from `deploy`, the sample in the message. No rerun, not retryable.
+**Fix:** from `dev`, `data.fix`: `copy cloudflare.config.ts from starter/`; from `deploy`, the sample in the message. No rerun, not retryable.
 
 Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/lib/app/cloudflareConfig.ts`, `packages/cli/src/commands/dev/index.ts`
 

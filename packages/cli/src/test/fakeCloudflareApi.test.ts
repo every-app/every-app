@@ -1,6 +1,7 @@
 /**
- * The fake Cloudflare's REST API, driven through @every-app/cf-rest as the
- * hosted deployer will drive the real one: if the client and the fake
+ * The fake Cloudflare's REST API, driven through the gateway's cf-rest client
+ * (apps/every-app-gateway/src/server/deploy/cf-rest, imported by path) as the
+ * hosted deployer drives the real one: if the client and the fake
  * disagree about a path or a body, these fail.
  */
 import { beforeEach, describe, expect, it } from "vitest";
@@ -11,7 +12,7 @@ import {
   type CloudflareRest,
   type WorkerMetadata,
   type WorkerModule,
-} from "@every-app/cf-rest";
+} from "../../../../apps/every-app-gateway/src/server/deploy/cf-rest";
 import { FakeCloudflare } from "./fakeCloudflare";
 import { FAKE_API_TOKEN } from "./fakeCloudflareApi";
 

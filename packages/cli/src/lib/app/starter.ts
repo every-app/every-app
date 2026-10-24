@@ -1,5 +1,5 @@
 /**
- * The starter app, `templates/simple-todo` in the checkout this CLI runs
+ * The starter app, `starter/` in the checkout this CLI runs
  * from, and where `everyapp create` puts a copy of it: apps/<id> in the
  * checkout, as a workspace package, when it runs inside the checkout;
  * ./<id> in the current directory anywhere else.
@@ -35,7 +35,7 @@ const LOCAL_ONLY = [
 
 /** The starter template's directory in the checkout. */
 export function starterTemplateDir(root: string): string {
-  return path.join(root, "templates", "simple-todo");
+  return path.join(root, "starter");
 }
 
 /** Where app create puts app `appId` when run from `cwd`. */

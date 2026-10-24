@@ -2,15 +2,14 @@ packages:
   - 'apps/*'
   - 'landing-page'
   - 'packages/*'
-  - 'templates/*'
-sharedWorkspaceLockfile: false
+  - 'starter'
 allowBuilds:
   "@prisma/client": false
   better-sqlite3: false
   esbuild: true
   sharp: true
   workerd: true
-# Security floors for transitive dependencies, applied to every per-project
+# Security floors for transitive dependencies, applied to the shared
 # lockfile: jose 6.2.5 fixes JWT claim validation, and seroval 1.6.7 clears the
 # deserialization advisories (CVE-2026-59940, CVE-2026-23736) that TanStack
 # Start's server-function handler is exposed to. tinypool 2.1.2 clears the

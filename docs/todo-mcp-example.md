@@ -12,7 +12,7 @@ user's ID.
 
 1. The app describes its tools with `defineTools()` from
    `@every-app/sdk/server` (`apps/todo-app/src/tools.ts`,
-   `templates/simple-todo/src/tools.ts`) and passes them to
+   `starter/src/tools.ts`) and passes them to
    `everyApp(handler, { tools })`.
 2. The gateway snapshots the tool catalog when the deploy activates the app:
    it fetches it once, over the app's private service binding, and stores

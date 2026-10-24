@@ -2,7 +2,7 @@
  * `everyapp create [name]`: a new app from the starter template, ready
  * for `everyapp dev`, without contacting the Gateway.
  *
- * 1. Copy `templates/simple-todo` from this checkout: to apps/<name> inside
+ * 1. Copy `starter/` from this checkout: to apps/<name> inside
  *    the checkout, or ./<name> anywhere else (lib/app/starter.ts), named
  *    after the app in package.json, everyapp.config.ts and README.md.
  * 2. Put the everyapp skill where coding agents look (lib/app/skill.ts).

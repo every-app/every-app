@@ -6,7 +6,12 @@
  */
 
 export type WorkerModuleType =
-  "esm" | "cjs" | "text" | "data" | "wasm" | "sourcemap";
+  | "esm"
+  | "cjs"
+  | "text"
+  | "data"
+  | "wasm"
+  | "sourcemap";
 
 export interface WorkerModule {
   /** The part name and filename; `main_module` names one of these. */

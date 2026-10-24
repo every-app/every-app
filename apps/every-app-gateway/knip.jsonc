@@ -11,6 +11,10 @@
     "scripts/*.{js,mjs,ts}",
     // shadcn components are copied in whole; pages use only some exports
     "src/client/components/ui/**",
+    // The Cloudflare REST client (packages/cf-rest until 2026-10-24): the
+    // deployer uses part of its surface, the CLI's fake-Cloudflare test
+    // imports the rest by path.
+    "src/server/deploy/cf-rest/index.ts",
   ],
   "project": ["**/*.{js,mjs,ts,tsx}", "!src/routeTree.gen.ts"],
   "ignore": ["src/routeTree.gen.ts", "src/auth/cli-config.ts"],
@@ -19,7 +23,6 @@
     // (unused) `cloudflare` npm package.
     "cloudflare",
     // Workspace source imports are followed by Knip but not credited as package usage.
-    "@every-app/cf-rest",
     "@every-app/perimeter",
     "@every-app/sdk",
     "@every-app/toolbus",

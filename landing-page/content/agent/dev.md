@@ -25,7 +25,7 @@ Sources: `packages/cli/src/commands/dev/command.ts`, `packages/cli/src/commands/
 
 1. **Mode.** `resolveDevMode(flags.mode, env.EVERYAPP_DEV_MODE)`. In `mirror` mode the base host is checked first: fewer than two DNS labels (port ignored) is `MIRROR_BASE_HOST` before anything else runs.
 2. **Manifest.** `everyapp.config.ts` must exist in the current directory (`MANIFEST_NOT_FOUND`, `No everyapp.config.ts in this directory`, `data.fix` `run this from the app's directory`: the same code every command raises, from `loadEveryAppManifest` in `packages/cli/src/lib/manifest.ts`) and validate (`INVALID_MANIFEST`, message `everyapp.config.ts isn't valid` plus the schema's message). Only a `ManifestError` from the strict schema becomes `INVALID_MANIFEST`: a file that fails to load at all (a syntax error, a failing import, a default export jiti cannot evaluate) is rethrown as is, with no `EveryAppError` code (`loadManifest` in `index.ts`, `loadEveryAppManifestFile` in `packages/cli/src/lib/manifest.ts`). It is loaded once: a later edit needs a restart (see Pitfalls).
-3. **Worker config.** `cloudflare.config.ts` is read textually (`packages/cli/src/lib/app/cloudflareConfig.ts`: whether it contains `everyAppWorker` and whether `/\bcrons\s*:/` matches). With neither a manifest `dev` command nor a `cloudflare.config.ts`: `MISSING_CLOUDFLARE_CONFIG` (fix: `copy cloudflare.config.ts from templates/simple-todo`).
+3. **Worker config.** `cloudflare.config.ts` is read textually (`packages/cli/src/lib/app/cloudflareConfig.ts`: whether it contains `everyAppWorker` and whether `/\bcrons\s*:/` matches). With neither a manifest `dev` command nor a `cloudflare.config.ts`: `MISSING_CLOUDFLARE_CONFIG` (fix: `copy cloudflare.config.ts from starter/`).
 4. **Port check.** The gateway port is probed before anything starts: `EADDRINUSE` is `DEV_PORT_IN_USE` (`Port 8787 is already in use`, with `data.free` the next free port above it and a rerun `pnpm everyapp dev … --port <free>`); any other listen error is `DEV_PORT_UNAVAILABLE` (`Can't listen on <host>:<port>`, fix: `pass another --port or --host`). The real listen happens later and fails the same way if the port was taken meanwhile.
 5. **cf binary** (`resolveCfBinary` in `packages/cli/src/lib/cf/bin.ts`). The app's own `cf` (its `node_modules`) is used when it has one, because it is pinned next to the app's Vite plugin, so `cf dev` and `cf d1 … --local` run the same Miniflare against `.cloudflare/state`. With no `cf` in the app, the CLI's own pinned `cf` runs (`dependencies.cf` in `packages/cli/package.json`, `1.0.0-beta.14`, resolved from the installed `everyapp` package; a global `cf` is never used). An app `cf` whose version differs from the pin warns `CF_VERSION_DIFFERS`: `Using the app's cf <version>; everyapp is tested with <pinned>`, and runs.
 6. **Mirror probe** (mirror mode only): a `HEAD` to the `--gateway` URL, up to 5000 ms, else `MIRROR_GATEWAY_UNREACHABLE` (`No local Gateway at <url>`, fix: `run pnpm dev in apps/every-app-gateway, or pass --gateway <url>`). Step `dev.gateway`.
@@ -288,7 +288,7 @@ Codes the local `db` commands raise (`packages/cli/src/commands/db/index.ts`):
 - `"production"`: only with `EVERYAPP_BUILD=1` in the process environment, which `everyapp deploy` sets around the build. Without it, the config throws: ``Every App Workers are built for production only by `everyapp deploy` (`pnpm run deploy`), which sets EVERYAPP_BUILD=1 and installs the build: a bare `cf build` or `cf deploy` would ship a Worker whose name, identity keys, gateway binding and resources are placeholders. For a local build, run Vite in development mode (`vite build --mode development`).`` With it, every install-specific value is a placeholder from `packages/sdk/src/cloudflare/sentinel.ts` (`every-hosted--sentinel`, `https://every-hosted--sentinel.invalid`, …) that the installer rewrites and refuses to leave in place; production builds are tenant-neutral and declare none of the manifest's `secrets` (the only secret bindings a production build declares are the deploy's own `GATEWAY_URL` and `EVERY_APP_ORG_ID`, `{ type: "secret" }`, sent through `cf deploy --secrets-file`).
 - Any other mode: `everyAppWorker() builds in the "development" or "production" mode, not "<mode>".`
 
-So in the template (`templates/simple-todo/package.json`):
+So in the template (`starter/package.json`):
 
 | Script             | Runs                                            | Purpose                                                                                                                       |
 | ------------------ | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -438,15 +438,15 @@ Warnings (not errors): `CF_VERSION_DIFFERS`, `LEGACY_LOCAL_STATE`, `DEV_EXPOSED`
 - `apps/every-app-gateway/src/routes/api/dev/identity.ts`
 - `apps/every-app-gateway/src/server.ts`
 - `apps/every-app-gateway/src/server/toolbus/catalog-sync.ts`
-- `templates/simple-todo/package.json`
-- `templates/simple-todo/README.md`
-- `templates/simple-todo/AGENTS.md`
-- `templates/simple-todo/cloudflare.config.ts`
-- `templates/simple-todo/vite.config.ts`
-- `templates/simple-todo/everyapp.config.ts`
-- `templates/simple-todo/drizzle.config.ts`
-- `templates/simple-todo/tsconfig.json`
-- `templates/simple-todo/.gitignore`
-- `templates/simple-todo/src/entry.worker.ts`
+- `starter/package.json`
+- `starter/README.md`
+- `starter/AGENTS.md`
+- `starter/cloudflare.config.ts`
+- `starter/vite.config.ts`
+- `starter/everyapp.config.ts`
+- `starter/drizzle.config.ts`
+- `starter/tsconfig.json`
+- `starter/.gitignore`
+- `starter/src/entry.worker.ts`
 - `docs/TESTING.md`
 - `TODO.md`
