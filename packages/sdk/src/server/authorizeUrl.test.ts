@@ -80,9 +80,53 @@ describe("authorizeUrl", () => {
     expect(url.searchParams.has("access_type")).toBe(false);
   });
 
-  // Slack's comma-joined scope and user_scope are built by the helper now
-  // that its sets shipped (#425); Mastodon and LinkedIn have none, so the
-  // helper refuses them below.
+  it("builds Slack's with comma-joined scope and user_scope, and nothing else of its own", () => {
+    const url = authorizeUrl({
+      provider: "slack",
+      status: {
+        ...READY,
+        scopeSets: ["channels.read", "user-channels.manage"],
+        scopes: ["channels:read", "groups:read"],
+        userScopes: [
+          "channels:read",
+          "channels:write",
+          "groups:read",
+          "groups:write",
+        ],
+      },
+      redirectUri: CALLBACK,
+      state: "st-3",
+    });
+    expect(url.origin + url.pathname).toBe(
+      "https://slack.com/oauth/v2/authorize",
+    );
+    expect(query(url)).toEqual([
+      ["client_id", "client-123"],
+      ["response_type", "code"],
+      ["redirect_uri", CALLBACK],
+      ["state", "st-3"],
+      ["scope", "channels:read,groups:read"],
+      ["user_scope", "channels:read,channels:write,groups:read,groups:write"],
+    ]);
+  });
+
+  it("leaves user_scope off Slack's URL when the sets ask for no user scopes", () => {
+    const url = authorizeUrl({
+      provider: "slack",
+      status: {
+        ...READY,
+        scopeSets: ["channels.read"],
+        scopes: ["channels:read", "groups:read"],
+        userScopes: [],
+      },
+      redirectUri: CALLBACK,
+      state: "st-4",
+    });
+    expect(url.searchParams.get("scope")).toBe("channels:read,groups:read");
+    expect(url.searchParams.has("user_scope")).toBe(false);
+  });
+
+  // Mastodon and LinkedIn have no scope sets, so the helper refuses them.
   it.each([
     ["mastodon", { ...READY, origin: "https://fosstodon.org" }],
     ["linkedin", READY],

@@ -740,6 +740,57 @@ describe("OAuth clients with scope sets", () => {
     });
   });
 
+  it("in local dev, Slack answers the person's user scopes beside the bot's", async () => {
+    await expect(
+      integrationStatus({
+        env: {
+          EVERYAPP_DEV: "1",
+          SLACK_CLIENT_ID: "dev-slack-id",
+          SLACK_CLIENT_SECRET: "dev-slack-secret",
+          EVERYAPP_DEV_CAPABILITIES: JSON.stringify({
+            slack: {
+              access: "write",
+              scopes: ["channels.read", "user-channels.manage"],
+            },
+          }),
+        },
+        provider: "slack",
+      }),
+    ).resolves.toEqual({
+      requested: true,
+      configured: true,
+      ready: true,
+      clientId: "dev-slack-id",
+      scopeSets: ["channels.read", "user-channels.manage"],
+      scopes: ["channels:read", "groups:read"],
+      userScopes: [
+        "channels:read",
+        "channels:write",
+        "groups:read",
+        "groups:write",
+      ],
+    });
+    // Listed for writing but without its sets, Slack is configured and not ready, as Google is.
+    await expect(
+      integrationStatus({
+        env: {
+          EVERYAPP_DEV: "1",
+          SLACK_CLIENT_ID: "dev-slack-id",
+          SLACK_CLIENT_SECRET: "dev-slack-secret",
+          EVERYAPP_DEV_CAPABILITIES: JSON.stringify({
+            slack: { access: "write" },
+          }),
+        },
+        provider: "slack",
+      }),
+    ).resolves.toEqual({
+      requested: true,
+      configured: true,
+      ready: false,
+      scopeSets: [],
+    });
+  });
+
   it("in local dev, a void grant is not ready and hides the client id, as on the gateway", async () => {
     const voided = {
       requested: true,
