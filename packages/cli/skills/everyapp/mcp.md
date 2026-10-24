@@ -115,8 +115,9 @@ Calls:   `tools/list` never calls the app. `tools/call` checks the arguments
          against the snapshot, mints a 120 s identity JWT for that one call
          (`chan: "mcp"`, explicit scopes, `tc: { id, name }`), makes one
          `POST /__everyapp/tools/call` (30 s) and audits one `mcp_tool_calls` row.
-Built-ins (Gateway connector only, read-only, no input): `everyapp_list_apps`
-         (the apps this connection can use), `everyapp_whoami` (user, org, access).
+Built-ins (Gateway connector only, read-only, no input; always loaded in Claude
+         Code): `everyapp_list_apps` (the apps this connection can use),
+         `everyapp_whoami` (user, org, access).
 Changes: 2026-07-28 clients (Claude Code) hold a `subscriptions/listen` stream
          re-read every 30 s, so a change reaches them within about half a
          minute; 2025-era clients get `notifications/tools/list_changed` and a

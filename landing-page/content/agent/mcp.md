@@ -190,7 +190,7 @@ Without a credential, `POST /mcp` answers 401 with `WWW-Authenticate: Bearer rea
 
 ### Built-in tools
 
-`packages/toolbus/src/builtins.ts`. Answered by the Gateway without calling any app, audited like any call, read-only (`readOnlyHint: true`, `idempotentHint: true`, `openWorldHint: false`), input `{}` with `additionalProperties: false`, result as JSON text and `structuredContent`. Gateway connector only.
+`packages/toolbus/src/builtins.ts`. Answered by the Gateway without calling any app, audited like any call, read-only (`readOnlyHint: true`, `idempotentHint: true`, `openWorldHint: false`), input `{}` with `additionalProperties: false`, result as JSON text and `structuredContent`. Gateway connector only. Each carries `_meta["anthropic/alwaysLoad"]: true`, so Claude Code (2.1.285 and later) keeps them loaded ahead of its tool search while app tools stay deferred; a server-level `alwaysLoad: false` in a person's Claude Code configuration keeps them deferred anyway, and other clients ignore the key.
 
 | Tool                 | Result                                                                                                                                                                                                           |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

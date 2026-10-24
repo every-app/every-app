@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { listBuiltinTools } from "./builtins";
 import { createToolBusHttp, MAX_REQUEST_BODY_BYTES } from "./http";
 import {
   ISSUER,
@@ -119,7 +120,28 @@ async function listenRequest(
   return { request, id };
 }
 
-function initializeRequest(version = "2025-11-25", headers = {}) {
+/**
+ * The built-ins carry Claude Code's always-load hint through the era codec
+ * and app tools carry no `_meta` at all. `tools` is a tools/list result.
+ */
+function expectAlwaysLoadOnBuiltinsOnly(
+  tools: { name: string; _meta?: unknown }[],
+) {
+  const builtins = listBuiltinTools().map((tool) => tool.name);
+  expect(builtins.length).toBeGreaterThan(0);
+  const listed = tools.filter((tool) => builtins.includes(tool.name));
+  expect(listed.map((tool) => tool.name)).toEqual(builtins);
+  for (const tool of listed) {
+    expect(tool._meta, tool.name).toEqual({ "anthropic/alwaysLoad": true });
+  }
+  const appTools = tools.filter((tool) => !builtins.includes(tool.name));
+  expect(appTools.length).toBeGreaterThan(0);
+  for (const tool of appTools) {
+    expect(tool, tool.name).not.toHaveProperty("_meta");
+  }
+}
+
+function initializeRequest(version = "2025-11-25", headers = {}, url?: string) {
   return legacyRequest(
     "initialize",
     {
@@ -127,7 +149,7 @@ function initializeRequest(version = "2025-11-25", headers = {}) {
       capabilities: {},
       clientInfo: { name: "claude-code", version: "1" },
     },
-    { version, headers },
+    { version, headers, ...(url ? { url } : {}) },
   );
 }
 
@@ -504,6 +526,17 @@ describe("2026-07-28 (modern) era", () => {
     });
   });
 
+  it("carries anthropic/alwaysLoad on the built-ins and on nothing else", async () => {
+    const { serve } = toolBus();
+    const { result } = await rpcBody(
+      await serve(
+        modernRequest("tools/list", {}, {}, "https://home.example.com/mcp"),
+        gatewayView([todoApp(), chef]),
+      ),
+    );
+    expectAlwaysLoadOnBuiltinsOnly(result.tools);
+  });
+
   it("answers the built-in tools on the gateway without calling an app", async () => {
     const { serve, appCalls } = toolBus();
     const view = gatewayView([todoApp(), chef], {
@@ -721,6 +754,29 @@ describe("2025 (legacy) eras", () => {
       expect(appCalls).toEqual(["todo.list_todos"]);
     });
   }
+
+  it("carries anthropic/alwaysLoad on the built-ins through the 2025-11-25 codec", async () => {
+    const { serve } = toolBus();
+    const view = gatewayView([todoApp(), chef]);
+    const url = "https://home.example.com/mcp";
+    const init = await serve(initializeRequest("2025-11-25", {}, url), view);
+    expect(init.status).toBe(200);
+    const list = await rpcBody(
+      await serve(
+        legacyRequest(
+          "tools/list",
+          {},
+          {
+            version: "2025-11-25",
+            headers: { "mcp-session-id": init.headers.get("mcp-session-id")! },
+            url,
+          },
+        ),
+        view,
+      ),
+    );
+    expectAlwaysLoadOnBuiltinsOnly(list.result.tools);
+  });
 
   it("sends tools/list_changed before the result once the session's tool list changed", async () => {
     const { serve } = toolBus();

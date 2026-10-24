@@ -1,8 +1,8 @@
 /**
  * Tools the gateway answers itself on its multi-app surface, without calling
  * any app: who the caller is, and which apps they reach. They are named under
- * `everyapp`, an app id no manifest may take, are read-only, and are listed
- * before every app's tools.
+ * `everyapp`, an app id no manifest may take, are read-only, are listed
+ * before every app's tools, and are marked to stay loaded in Claude Code.
  */
 import type { Tool } from "@modelcontextprotocol/server";
 import type { ToolCallResultV1 } from "@every-app/sdk/internal";
@@ -12,6 +12,15 @@ import type { ToolBusApp, ToolBusTool, ToolBusView } from "./types";
 
 /** The reserved app id the built-in tools are namespaced under. */
 export const BUILTIN_APP_ID = "everyapp";
+
+/**
+ * Claude Code (2.1.285 and later) defers every MCP tool behind its tool
+ * search unless the server sets this key in the tool's `_meta`. The
+ * built-ins are how a model finds its way in (which apps exist, who it acts
+ * as), so they stay loaded while app tools stay deferred. A person's
+ * server-level `alwaysLoad: false` still wins; other clients ignore the key.
+ */
+const ALWAYS_LOAD_META_KEY = "anthropic/alwaysLoad";
 
 interface BuiltinTool extends ToolBusTool {
   run(view: ToolBusView): Record<string, unknown>;
@@ -94,6 +103,7 @@ export function listBuiltinTools(): Tool[] {
       idempotentHint: true,
       openWorldHint: false,
     },
+    _meta: { [ALWAYS_LOAD_META_KEY]: true },
   }));
 }
 
