@@ -1235,13 +1235,17 @@ means it waits for Ben's review because it touches a boundary.
    buggy loop in any app runs on the operator's OpenAI or DataForSEO
    account until the operator notices. The teams slice's usage counters
    and per-app caps are the first answer (`docs/design/2026-10-teams.md`).
-6. **A read-only MCP token runs write tools on an app that answers `/mcp`
-   itself** (B3, B5, medium; fixed in #404, held). The perimeter
-   admits an `mcp:read` token to `/mcp`, skips the ToolBus for a manifest
-   with `mcp: "app"` (or when the app-host ToolBus declines), and the
-   app's own MCP server applies whatever read/write policy it chooses
-   (the SDK's deprecated `createMcpHandler`, which applied none, is gone
-   since stage 2b), so every tool without a declared scope runs.
+6. **A read-only MCP token could run write tools on an app that answers
+   `/mcp` itself** (B3, B5, medium; mostly closed by #447, which deleted
+   the SDK's `createMcpHandler`, the only in-repo way an app served `/mcp`
+   itself; #404, which patched it, closed unmerged). What remains, by
+   Ben's decision to keep it through launch: the manifest's `mcp: "app"`
+   escape hatch and the perimeter branch that skips the ToolBus for it
+   (`packages/perimeter/src/gateway.ts:421-429`) still forward an identity
+   carrying the token's `mcp:read` scopes to whatever handler the app
+   wrote, so the read-only promise there rests on the app honouring the
+   scopes. No in-repo app does this and the starter never did; a
+   post-launch perimeter PR may remove the hatch.
 7. **A password reset doesn't end existing sessions** (B2, medium; fixed in #405,
    held). Better Auth's `revokeSessionsOnPasswordReset` is
    unset, so the standard remedy for a stolen session does nothing to it
