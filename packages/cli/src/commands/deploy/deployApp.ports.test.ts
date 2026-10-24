@@ -137,7 +137,7 @@ const appRow = (slug: string) =>
     .database("every-app-gateway")
     .all("SELECT status, worker_name, version_id FROM apps WHERE app_slug = ?", slug)[0];
 
-describe("deploy of Postiz (two Workers, D1 with Prisma's SQL, a Workflow and a cron)", () => {
+describe("deploy of Postiz (two Workers, D1 with d1-sql migrations, a Workflow and a cron)", () => {
   beforeEach(() => {
     fs.cpSync(POSTIZ_MIGRATIONS_DIR, path.join(appDir, "migrations"), { recursive: true });
   });
@@ -145,8 +145,8 @@ describe("deploy of Postiz (two Workers, D1 with Prisma's SQL, a Workflow and a 
   it("validates as written, the build command included", () => {
     expect(validateManifestStrict(postiz)).toEqual(postiz);
     const sql = fs.readFileSync(path.join(POSTIZ_MIGRATIONS_DIR, "0001_init.sql"), "utf8");
-    // Prisma's init: 171 statements, 170 markers between them.
-    expect(sql.split("--> statement-breakpoint")).toHaveLength(171);
+    // The fixture's init: 9 statements, 8 markers between them.
+    expect(sql.split("--> statement-breakpoint")).toHaveLength(9);
   });
 
   it("registers, provisions D1, builds, checks, migrates and uploads the helper before the app", async () => {
@@ -184,15 +184,15 @@ describe("deploy of Postiz (two Workers, D1 with Prisma's SQL, a Workflow and a 
       expect(JSON.stringify(upload.config)).not.toContain("sentinel");
     }
 
-    // Migrate: Prisma's 171 statements on D1, before any upload.
+    // Migrate: the fixture's 9 statements on D1, before any upload.
     const db = account.database(POSTIZ_WORKER);
     expect(db.all("SELECT name FROM d1_migrations")).toEqual([{ name: "0001_init.sql" }]);
     const objects = db.all(
       "SELECT type, count(*) AS n FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE 'd1_%' GROUP BY type ORDER BY type",
     );
     expect(objects).toEqual([
-      { type: "index", n: 128 },
-      { type: "table", n: 43 },
+      { type: "index", n: 2 },
+      { type: "table", n: 7 },
     ]);
     expect(firstCall("d1", "migrations", "apply")).toBeGreaterThan(-1);
     expect(firstCall("d1", "migrations", "apply")).toBeLessThan(firstCall("deploy"));

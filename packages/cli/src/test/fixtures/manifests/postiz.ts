@@ -8,11 +8,11 @@
  * (the NestJS backend on D1, which defines PublishPostWorkflow and runs the
  * reconcile cron every ten minutes).
  *
- * `migrations/0001_init.sql` beside this file is Prisma's 171-statement
- * init for the converted schema (43 tables, 18 unique and 110 other
- * indexes) with `--> statement-breakpoint` between statements: the copy
- * `scripts/prisma/to-d1-migration.mjs` writes, byte for byte the one the
- * prisma-d1 spike applied with `cf d1 migrations apply`.
+ * `migrations/0001_init.sql` beside this file is SQL of our own in the
+ * shape `scripts/prisma/to-d1-migration.mjs` writes (seven tables and two
+ * indexes, nine statements with `--> statement-breakpoint` between them),
+ * applied with `cf d1 migrations apply`. It stands in for the app's
+ * schema; it is not the product's.
  */
 import { fileURLToPath } from "node:url";
 import { bindings } from "@cloudflare/config";

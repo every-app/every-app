@@ -335,7 +335,7 @@ for a live account:
 
 ```bash
 # Both ports' manifests through register → provision → build → policy →
-# migrate (Postiz's 171-statement Prisma init on SQLite) → upload, in the
+# migrate (the fixture's nine-statement d1-sql init on SQLite) → upload, in the
 # fake account; and inbound mail routes, `everyapp email set` included, in
 # the same fake account
 ( cd packages/cli && pnpm exec vitest run src/commands/deploy/deployApp.ports.test.ts \
