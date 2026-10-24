@@ -199,12 +199,18 @@ export function appFrom(traces: CommandTrace[]): {
  * need not wait its windows for it.
  */
 export function gatewayUploadedFrom(traces: CommandTrace[]): boolean {
+  // A finished upload counts; so does one that started in a CLI that then died without a word
+  // (killed mid-upload: the Worker may exist). An upload that started and then reported an
+  // error did not happen: run 19's `gateway.deploy` start was followed by CF_NOT_FOUND and the
+  // verifier waited 15 minutes for a Worker that never existed.
   return traces.some((trace) =>
     trace.events.steps.some(
       (s) =>
         (s.step === "setup.gateway" &&
           (s.status === "ok" || s.status === "skip")) ||
-        s.step === "gateway.deploy",
+        (s.step === "gateway.deploy" &&
+          (s.status === "ok" ||
+            (s.status === "start" && trace.events.errors.length === 0))),
     ),
   );
 }

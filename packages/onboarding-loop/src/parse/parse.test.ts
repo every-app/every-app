@@ -160,7 +160,7 @@ describe("event log", () => {
     expect(ownerNotClaimedCause(ci)).toBe("ci_set_by_harness");
     expect(ownerNotClaimedCause(traces)).toBeNull();
   });
-  it("sees a Gateway upload in setup.gateway ok or skip or a gateway.deploy step, and none in a setup that died in the build", () => {
+  it("sees a Gateway upload in setup.gateway ok or skip, a finished gateway.deploy, or one that started in a CLI that then died silently; none in a setup that died in the build or whose upload reported an error", () => {
     expect(gatewayUploadedFrom(traces)).toBe(true);
     const died = (step: string, status: string) =>
       everyappCommandsFrom(
@@ -175,8 +175,20 @@ describe("event log", () => {
         ),
       );
     expect(gatewayUploadedFrom(died("gateway.release", "start"))).toBe(false);
-    expect(gatewayUploadedFrom(died("gateway.deploy", "start"))).toBe(true);
+    // An upload that started and then reported an error did not happen (run 19: CF_NOT_FOUND).
+    expect(gatewayUploadedFrom(died("gateway.deploy", "start"))).toBe(false);
     expect(gatewayUploadedFrom(died("setup.gateway", "skip"))).toBe(true);
+    // Killed mid-upload, no error and no exit: the Worker may exist, so the verifier keeps waiting.
+    const killed = everyappCommandsFrom(
+      parseEventLog(
+        [
+          LOG.split("\n")[0]!,
+          '{"v":1,"ts":"2026-10-25T14:07:00.000Z","type":"step","step":"setup.gateway","status":"start","pid":41}',
+          '{"v":1,"ts":"2026-10-25T14:07:01.000Z","type":"step","step":"gateway.deploy","status":"start","pid":41}',
+        ].join("\n"),
+      ),
+    );
+    expect(gatewayUploadedFrom(killed)).toBe(true);
     expect(gatewayUploadedFrom([])).toBe(false);
   });
   it("derives phases from the CLI's own timestamps", () => {
