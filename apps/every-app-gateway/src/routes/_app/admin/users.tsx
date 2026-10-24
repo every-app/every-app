@@ -4,7 +4,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { MailWarning, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import { adminUsersCollection } from "@/client/tanstack-db";
+import { adminUsersCollection, useQueryFailed } from "@/client/tanstack-db";
 import {
   cancelInvitation,
   createPasswordResetLink,
@@ -45,8 +45,10 @@ function UsersPage() {
   const {
     data: users,
     isLoading,
-    isError,
+    isError: isCollectionError,
   } = useLiveQuery((q) => q.from({ user: adminUsersCollection }));
+  // A failed fetch leaves the collection "ready" and empty: ask the query.
+  const isError = isCollectionError || useQueryFailed(["admin", "users"]);
 
   const emailStatus = useQuery({
     queryKey: ["admin", "emailStatus"],
@@ -178,8 +180,8 @@ function UsersPage() {
         error={
           isError ? (
             <ErrorState
-              title="Failed to load users"
-              message="Please try again."
+              message="Couldn't load users."
+              onRetry={() => void adminUsersCollection.utils.refetch()}
             />
           ) : undefined
         }

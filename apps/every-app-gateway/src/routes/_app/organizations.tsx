@@ -6,6 +6,7 @@ import { useActiveOrganization } from "@/client/hooks/useActiveOrganization";
 import { useSession } from "@/client/hooks/useSession";
 import { useSetActiveOrganization } from "@/client/hooks/useSetActiveOrganization";
 import { EmptyState } from "@/client/components/EmptyState";
+import { ErrorState } from "@/client/components/ErrorState";
 import { Page, PageHeader } from "@/client/components/PageHeader";
 import {
   SkeletonCard,
@@ -22,8 +23,12 @@ export const Route = createFileRoute("/_app/organizations")({
 function OrganizationsPage() {
   const navigate = useNavigate();
   const session = useSession();
-  const { data: organizations, isPending: isListPending } =
-    authClient.useListOrganizations();
+  const {
+    data: organizations,
+    isPending: isListPending,
+    error: listError,
+    refetch: refetchList,
+  } = authClient.useListOrganizations();
   const { data: activeOrganization } = useActiveOrganization({
     enabled: Boolean(session.data?.user),
   });
@@ -70,6 +75,12 @@ function OrganizationsPage() {
 
       {isListPending && !organizations ? (
         <SkeletonCard />
+      ) : listError ? (
+        <ErrorState
+          message="Couldn't load your organizations."
+          onRetry={() => void refetchList()}
+          isRetrying={isListPending}
+        />
       ) : !hasOrganizations ? (
         <EmptyState
           icon={Building2}

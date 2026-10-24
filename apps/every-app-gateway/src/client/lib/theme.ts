@@ -105,6 +105,17 @@ function subscribeToThemePreference(onStoreChange: () => void) {
   };
 }
 
+/** The theme on the page right now: the preference, with "system" resolved. */
+export function useResolvedTheme(): "light" | "dark" {
+  const { themePreference } = useThemePreference();
+  return React.useSyncExternalStore(
+    subscribeToThemePreference,
+    () =>
+      resolveThemeName(themePreference) === DARK_THEME_NAME ? "dark" : "light",
+    () => "light",
+  );
+}
+
 export function useThemePreference() {
   const themePreference = React.useSyncExternalStore<ThemePreference>(
     subscribeToThemePreference,

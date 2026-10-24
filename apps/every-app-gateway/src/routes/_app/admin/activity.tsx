@@ -163,7 +163,7 @@ function ActivityPage() {
         error={
           query.isError && calls.length === 0 ? (
             <ErrorState
-              message="Failed to load agent activity."
+              message="Couldn't load agent activity."
               onRetry={() => void query.refetch()}
               isRetrying={query.isFetching}
             />

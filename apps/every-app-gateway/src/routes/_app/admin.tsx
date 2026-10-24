@@ -82,7 +82,8 @@ function AdminLayout() {
     return (
       <StatusScreen>
         <EmptyState
-          variant="card"
+          variant="plain"
+          size="lg"
           icon={ShieldAlert}
           title="You don't have access to this page"
           description="Only owners and admins can manage the workspace."

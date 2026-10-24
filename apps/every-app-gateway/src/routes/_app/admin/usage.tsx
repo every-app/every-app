@@ -49,7 +49,7 @@ function UsagePage() {
 
   const error = usageQuery.isError ? (
     <ErrorState
-      message="Failed to load usage."
+      message="Couldn't load usage."
       onRetry={() => void usageQuery.refetch()}
       isRetrying={usageQuery.isFetching}
     />
@@ -86,13 +86,17 @@ function UsagePage() {
               pending={usageQuery.isFetching && !usageQuery.isLoading}
               onClick={() => void refresh()}
             >
-              <RefreshCw />
+              {usageQuery.isFetching && !usageQuery.isLoading ? null : (
+                <RefreshCw />
+              )}
             </Button>
           </div>
         }
       />
 
-      {isEmpty ? (
+      {usageQuery.isError ? (
+        error
+      ) : isEmpty ? (
         <EmptyState
           icon={Activity}
           title={`Nothing counted in ${monthLabel(month)}`}
@@ -105,7 +109,6 @@ function UsagePage() {
             <UsageByAppTable
               rows={summary?.byApp ?? []}
               isLoading={usageQuery.isLoading}
-              error={error}
             />
           </section>
           <section className="space-y-3">
@@ -113,7 +116,6 @@ function UsagePage() {
             <UsageByMemberTable
               rows={summary?.byMember ?? []}
               isLoading={usageQuery.isLoading}
-              error={error}
             />
           </section>
           <section className="space-y-3">
@@ -121,7 +123,6 @@ function UsagePage() {
             <UsageByTargetTable
               rows={summary?.byTarget ?? []}
               isLoading={usageQuery.isLoading}
-              error={error}
             />
           </section>
         </>

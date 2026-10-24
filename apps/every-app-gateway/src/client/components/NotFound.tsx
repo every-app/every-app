@@ -1,30 +1,26 @@
 import { Link } from "@tanstack/react-router";
+import { EmptyState } from "@/client/components/EmptyState";
 import { StatusScreen } from "@/client/components/StatusScreen";
 import { Button } from "@/client/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/client/components/ui/card";
 
-export function NotFound({ children }: { children?: React.ReactNode }) {
+/**
+ * The 404 page: the same centered block as every other whole-page state,
+ * with the logo, since it renders outside the app shell.
+ */
+export function NotFound() {
   return (
-    <StatusScreen>
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>404</CardTitle>
-        </CardHeader>
-        <CardContent className="text-muted-foreground">
-          {children || <p>The page you are looking for does not exist.</p>}
-        </CardContent>
-        <CardFooter>
+    <StatusScreen logo>
+      <EmptyState
+        variant="plain"
+        size="lg"
+        icon={null}
+        title="Page not found"
+        action={
           <Button nativeButton={false} render={<Link to="/" />}>
-            Home
+            Go home
           </Button>
-        </CardFooter>
-      </Card>
+        }
+      />
     </StatusScreen>
   );
 }

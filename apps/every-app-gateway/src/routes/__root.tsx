@@ -13,7 +13,11 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import * as React from "react";
 import appCss from "@/client/styles/app.css?url";
 import { queryClient, persister, CACHE_BUSTER } from "@/client/tanstack-db";
-import { themePreferenceInitScript } from "@/client/lib/theme";
+import {
+  themePreferenceInitScript,
+  useResolvedTheme,
+  useThemePreference,
+} from "@/client/lib/theme";
 import { TooltipProvider } from "@/client/components/ui/tooltip";
 import { Toaster } from "sonner";
 
@@ -36,6 +40,9 @@ function AppRouter() {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: session, isPending } = useSession();
+  // Keeps data-theme in step with the OS and the account menu's pick on
+  // every page, not only while the menu is open.
+  useThemePreference();
 
   useEffect(() => {
     const isPublicRoute = PUBLIC_ROUTES.includes(location.pathname);
@@ -70,11 +77,16 @@ function RootComponent() {
     >
       <TooltipProvider>
         <AppRouter />
-        <Toaster position="bottom-right" />
+        <ThemedToaster />
         {/* <TanStackRouterDevtools /> */}
       </TooltipProvider>
     </PersistQueryClientProvider>
   );
+}
+
+/** The toasts follow the page's theme, not only the OS appearance. */
+function ThemedToaster() {
+  return <Toaster position="bottom-right" theme={useResolvedTheme()} />;
 }
 
 function RootDocument({ children }: { children: React.ReactNode }) {
@@ -134,7 +146,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body>
         <ClientOnly>{children}</ClientOnly>
         <div
-          className="pointer-events-none fixed right-2 bottom-1.5 z-50 font-mono text-[10px] text-muted-foreground opacity-70 select-none"
+          className="pointer-events-none fixed right-2 bottom-1.5 z-50 hidden font-mono text-[10px] text-muted-foreground opacity-70 select-none md:block"
           title="Gateway build"
         >
           {__GATEWAY_BUILD__}

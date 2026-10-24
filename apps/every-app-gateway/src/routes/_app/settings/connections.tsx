@@ -63,7 +63,7 @@ function connectionColumns({
               </>
             ) : (
               <span className="truncate">
-                {connection.clientDomain ?? "unverified"} · sends to{" "}
+                {connection.clientDomain ?? "Unverified"} · sends to{" "}
                 {connection.redirectHost}
               </span>
             )}
@@ -182,7 +182,7 @@ function ConnectionsPage() {
         error={
           connectionsQuery.isError ? (
             <ErrorState
-              message="Failed to load your connections."
+              message="Couldn't load your connections."
               onRetry={() => void connectionsQuery.refetch()}
               isRetrying={connectionsQuery.isFetching}
             />
@@ -209,8 +209,7 @@ function ConnectionsPage() {
             )
           }
         >
-          It loses access on its next request, and has to be connected again to
-          use your apps.
+          It loses access on its next request.
         </ConfirmDialog>
       ) : null}
     </Page>

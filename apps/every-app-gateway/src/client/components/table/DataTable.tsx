@@ -127,11 +127,16 @@ export function DataTable<TData>({
   const columns = table.getVisibleLeafColumns();
   const rows = table.getRowModel().rows;
 
+  // A load that failed before any row arrived: the failure stands alone.
+  if (error && !isLoading && rows.length === 0) {
+    return <>{error}</>;
+  }
+
   return (
     <TableCard>
       {toolbar}
       {error ? <div className="p-4">{error}</div> : null}
-      {error && !isLoading && rows.length === 0 ? null : (
+      {
         <Table containerClassName={scrollClassName}>
           <TableHeader
             className={
@@ -233,7 +238,7 @@ export function DataTable<TData>({
             )}
           </TableBody>
         </Table>
-      )}
+      }
       {footer}
     </TableCard>
   );

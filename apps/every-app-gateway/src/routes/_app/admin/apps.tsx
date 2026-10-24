@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useLiveQuery } from "@tanstack/react-db";
 import { useState } from "react";
 import { Download } from "lucide-react";
-import { adminAppsCollection } from "@/client/tanstack-db";
+import { adminAppsCollection, useQueryFailed } from "@/client/tanstack-db";
 import { ErrorState } from "@/client/components/ErrorState";
 import { SectionHeader } from "@/client/components/PageHeader";
 import { AppsTable } from "@/client/components/admin/AppsTable";
@@ -34,9 +34,11 @@ function AppsPage() {
 
   const {
     data: apps,
-    isError,
+    isError: isCollectionError,
     isLoading,
   } = useLiveQuery((q) => q.from({ app: adminAppsCollection }));
+  // A failed fetch leaves the collection "ready" and empty: ask the query.
+  const isError = isCollectionError || useQueryFailed(["admin", "apps"]);
 
   const confirmDelete = (app: AppWithAccessCount) => {
     adminAppsCollection.delete(app.id);
@@ -63,8 +65,8 @@ function AppsPage() {
         error={
           isError ? (
             <ErrorState
-              title="Failed to load apps"
-              message="Please try again."
+              message="Couldn't load apps."
+              onRetry={() => void adminAppsCollection.utils.refetch()}
             />
           ) : undefined
         }

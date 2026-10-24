@@ -4,3 +4,4 @@ export { userAppsCollection } from "./userAppsCollection";
 export { adminUsersCollection } from "./adminUsersCollection";
 export { adminAppsCollection } from "./adminAppsCollection";
 export { refetchCollectionsAfterAuth } from "./cache-utils";
+export { useQueryFailed } from "./useQueryFailed";

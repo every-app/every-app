@@ -3,7 +3,7 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { z } from "zod";
 import { toast } from "sonner";
 import { useSession } from "@/client/hooks/useSession";
-import { userAppsCollection } from "@/client/tanstack-db";
+import { userAppsCollection, useQueryFailed } from "@/client/tanstack-db";
 
 export enum AppLibraryFilter {
   All = "all",
@@ -80,6 +80,8 @@ export function useAppLibrary() {
   };
 
   const query = useLiveQuery((q) => q.from({ app: userAppsCollection }));
+  // The collection stays "ready" when its fetch fails: ask the query itself.
+  const failed = useQueryFailed(["user-apps"]);
   const apps = useMemo(
     () => [...query.data].sort((a, b) => a.name.localeCompare(b.name)),
     [query.data],
@@ -92,7 +94,7 @@ export function useAppLibrary() {
   return {
     apps,
     isLoading: query.isLoading,
-    isError: query.isError,
+    isError: query.isError || failed,
     pinnedIds,
     pinnedApps: apps.filter((app) => pinnedIds.has(app.id)),
     layout: preferences.layout,

@@ -99,7 +99,7 @@ function TokensPage() {
           error={
             userTokensQuery.isError ? (
               <ErrorState
-                message="Failed to load personal access tokens."
+                message="Couldn't load tokens."
                 onRetry={() => void userTokensQuery.refetch()}
                 isRetrying={userTokensQuery.isFetching}
               />
