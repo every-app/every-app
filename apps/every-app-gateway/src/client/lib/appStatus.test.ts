@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { UserAccessApp } from "@/types/app";
-import { appNeedsSetup, appStatus, AppStatusLabel } from "./appStatus";
+import {
+  appNeedsSetup,
+  appStatus,
+  appStatusLabel,
+  AppStatusLabel,
+} from "./appStatus";
 
 const READY: UserAccessApp["setup"] = {
   ready: true,
@@ -67,5 +72,18 @@ describe("appStatus", () => {
     expect(appNeedsSetup(app({ status: "disabled", setup: UNREADY }))).toBe(
       false,
     );
+  });
+});
+
+describe("appStatusLabel", () => {
+  it("says the same word as appStatus for a status alone", () => {
+    for (const status of ["active", "binding", "pending", "disabled"]) {
+      expect(appStatusLabel(status)).toBe(appStatus(app({ status })).label);
+    }
+    expect(appStatusLabel("binding")).toBe(AppStatusLabel.Deploying);
+    expect(appStatusLabel("pending")).toBe(AppStatusLabel.NeedsDeploy);
+    // A status this gateway doesn't know shows as it is, there too.
+    expect(appStatusLabel("archived")).toBe("archived");
+    expect(appStatus(app({ status: "archived" })).label).toBe("archived");
   });
 });

@@ -79,6 +79,26 @@ export function appStatus(
   }
 }
 
+/**
+ * The deploy state in a word from the status alone, for a list that
+ * carries no more about the app (a group's apps): the same words as
+ * {@link appStatus}, without whether it opens.
+ */
+export function appStatusLabel(status: string): AppStatusLabel | string {
+  switch (status) {
+    case "active":
+      return AppStatusLabel.Active;
+    case "binding":
+      return AppStatusLabel.Deploying;
+    case "pending":
+      return AppStatusLabel.NeedsDeploy;
+    case "disabled":
+      return AppStatusLabel.Disabled;
+    default:
+      return status;
+  }
+}
+
 /** The app shows "Needs setup": where it would open, the setup dialog opens. */
 export function appNeedsSetup(
   app: Pick<UserAccessApp, "hostname" | "status" | "setup" | "tier">,

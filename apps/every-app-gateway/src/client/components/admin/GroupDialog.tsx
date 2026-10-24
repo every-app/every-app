@@ -7,7 +7,6 @@ import { Button } from "@/client/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -63,11 +62,6 @@ export function GroupDialog({ group, onSubmit, onClose }: GroupDialogProps) {
           <form.Form className="flex flex-col gap-4">
             <DialogHeader>
               <DialogTitle>{group ? "Edit group" : "New group"}</DialogTitle>
-              <DialogDescription>
-                {group
-                  ? "Rename the group or change its description."
-                  : "A named set of members. Grant apps to the group and everyone in it can open them."}
-              </DialogDescription>
             </DialogHeader>
             <form.AppField name="name">
               {(field) => (
@@ -83,7 +77,6 @@ export function GroupDialog({ group, onSubmit, onClose }: GroupDialogProps) {
               {(field) => (
                 <field.TextareaField
                   label="Description"
-                  description="Optional. Who is in it, or what it is for."
                   placeholder="Everyone on the sales team"
                 />
               )}

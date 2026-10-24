@@ -13,6 +13,7 @@ import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import { getServerErrorMessage } from "@/client/errors";
 import { useSession } from "@/client/hooks/useSession";
+import { appStatusLabel } from "@/client/lib/appStatus";
 import { adminAppsCollection } from "@/client/tanstack-db";
 import {
   createGroup,
@@ -180,7 +181,8 @@ function GroupMembersDialog({
       items={users.map((user) => ({
         id: user.id,
         label: user.name || user.email.split("@")[0] || user.email,
-        detail: user.name ? user.email : undefined,
+        // The email once: a person whose name is their email reads it above.
+        detail: user.name && user.name !== user.email ? user.email : undefined,
         badges: (
           <>
             {user.id === currentUserId ? (
@@ -239,16 +241,18 @@ function GroupAppsDialog({
   return (
     <ChecklistDialog
       title={`Apps for ${group.name}`}
-      description="Every member of the group can open the apps checked here. Shared apps are everyone's already."
+      description="Every member of the group can open the apps checked here."
       noun="app"
       items={apps.map((app) => ({
         id: app.id,
         label: app.name,
         detail: app.appId,
+        // The usual state is plain; a deploy state short of it is a chip,
+        // in the word the launcher and Admin → Apps use for it.
         badges:
           app.status !== "active" ? (
-            <Badge variant="warning" size="sm" className="capitalize">
-              {app.status}
+            <Badge variant="warning" size="sm">
+              {appStatusLabel(app.status)}
             </Badge>
           ) : null,
       }))}

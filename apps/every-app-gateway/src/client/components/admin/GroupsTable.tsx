@@ -159,7 +159,7 @@ export function GroupsTable({
         empty={{
           title: "No groups yet",
           description:
-            "Make a group, add members to it, and grant it apps. Everyone in the group can open them.",
+            "Grant apps to a group and everyone in it can open them.",
           action: createAction,
         }}
       />

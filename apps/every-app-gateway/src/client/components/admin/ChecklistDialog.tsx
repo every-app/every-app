@@ -251,28 +251,31 @@ export function ChecklistDialog({
           </div>
         )}
 
-        <div className="space-y-1 text-sm">
-          {hasChanges ? (
-            <div className="flex flex-wrap gap-3">
-              {adding > 0 ? (
-                <span className="text-success">+{adding} adding</span>
-              ) : null}
-              {removing > 0 ? (
-                <span className="text-destructive">-{removing} removing</span>
+        {/* The count is of a list that is in. */}
+        {isLoading || isError ? null : (
+          <div className="space-y-1 text-sm">
+            {hasChanges ? (
+              <div className="flex flex-wrap gap-3">
+                {adding > 0 ? (
+                  <span className="text-success">+{adding} adding</span>
+                ) : null}
+                {removing > 0 ? (
+                  <span className="text-destructive">-{removing} removing</span>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="flex items-center justify-between gap-3 text-muted-foreground">
+              <span>
+                {selected.size} of {plural(items.length)} selected
+              </span>
+              {searchQuery && filtered.length !== items.length ? (
+                <span className="text-xs tabular-nums">
+                  Showing {filtered.length} of {items.length}
+                </span>
               ) : null}
             </div>
-          ) : null}
-          <div className="flex items-center justify-between gap-3 text-muted-foreground">
-            <span>
-              {selected.size} of {plural(items.length)} selected
-            </span>
-            {searchQuery && filtered.length !== items.length ? (
-              <span className="text-xs tabular-nums">
-                Showing {filtered.length} of {items.length}
-              </span>
-            ) : null}
           </div>
-        </div>
+        )}
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose} disabled={isSaving}>
