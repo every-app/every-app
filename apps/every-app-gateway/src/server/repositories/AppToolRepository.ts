@@ -67,6 +67,9 @@ type VisibleCatalog = {
   workerName: string;
   tier: string;
   versionId: string | null;
+  /** The stored manifest's JSON and recorded secret names: whether the app needs setup. */
+  manifest: string | null;
+  secretNames: string | null;
   catalogHash: string;
   instructions: string | null;
   tools: ToolBusTool[];
@@ -253,6 +256,8 @@ async function findVisibleCatalogs(
         workerName: apps.workerName,
         tier: apps.tier,
         versionId: apps.versionId,
+        manifest: apps.manifest,
+        secretNames: apps.secretNames,
         catalogHash: appToolCatalogs.catalogHash,
         instructions: appToolCatalogs.instructions,
       })

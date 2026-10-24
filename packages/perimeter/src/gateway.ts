@@ -2,7 +2,8 @@
  * The gateway proxy core — `handleGatewayRequest`.
  *
  * Composes the perimeter: resolve app from Host (activating one whose Worker
- * was just uploaded, through `deps.activate`), refuse the internal tools
+ * was just uploaded, through `deps.activate`), refuse to open an app that
+ * needs setup (through `deps.needsSetup`), refuse the internal tools
  * contract, guard server functions, refuse a request carrying the session
  * cookie twice (cookie tossing), enforce CSRF (and the WebSocket Origin
  * check), decide public-vs-private, authenticate + authorize (an MCP-only
@@ -70,6 +71,16 @@ export interface McpInterceptInput {
   session: AuthenticatedSession;
 }
 
+/** What {@link GatewayDeps.needsSetup} receives. */
+export interface NeedsSetupInput {
+  /** The app, `active` by now. */
+  app: RegisteredApp;
+  /** The original request; its body is still unread. */
+  request: Request;
+  /** Whether the manifest declares the request's route public. */
+  publicRoute: boolean;
+}
+
 /** What {@link GatewayDeps.thirdParty} needs: see hostSession.ts. */
 export interface ThirdPartyHostDeps {
   /**
@@ -127,6 +138,18 @@ export interface GatewayDeps {
    * leaves it "deploying", as does omitting the hook.
    */
   activate?(app: RegisteredApp): Promise<boolean>;
+  /**
+   * Refuse to open an app that needs setup: a required setting of its
+   * manifest (a provider's key, a capability's settings, a secret of the
+   * app's own) isn't set yet. Called for every path once the app is active,
+   * before the reserved paths and authentication, with whether the manifest
+   * declares the route public. A Response is returned as is: the gateway's
+   * answers a private HTML GET navigation with a 302 to the launcher's setup
+   * dialog, and anything else (public routes, API calls, other methods) with
+   * a 503 `app_needs_setup`, never naming a setting. Null opens the app;
+   * omitting the hook gates nothing.
+   */
+  needsSetup?(input: NeedsSetupInput): Promise<Response | null>;
   /**
    * Set on a third-party host (hostRoutes.ts): sign-in is the per-host
    * session handoff, and app responses lose credentialed CORS and the
@@ -296,6 +319,23 @@ export async function handleGatewayRequest(
     response.headers.set("retry-after", "5");
     return response;
   }
+  // Decided once, here: the setup gate needs it before the auth logic does.
+  const publicMatch = matchPublicRoute(
+    app.manifest.public,
+    request.method,
+    url.pathname,
+  );
+  // An app whose required settings aren't set doesn't open, on any path:
+  // its public routes close with it (the manifest weighs `required` against
+  // them), and nothing below reads a credential for it.
+  if (deps.needsSetup) {
+    const refused = await deps.needsSetup({
+      app,
+      request,
+      publicRoute: publicMatch.public,
+    });
+    if (refused) return refused;
+  }
   // The tools contract is for the ToolBus over the service binding only (and
   // the SDK demands gateway-minted tokens anyway). Refuse it from outside.
   if (isReservedToolsPath(url.pathname)) {
@@ -339,12 +379,6 @@ export async function handleGatewayRequest(
 
   const bearerPresent = hasBearerCredential(request.headers);
   const reservedBearerPresent = hasEveryAppBearer(request.headers);
-
-  const publicMatch = matchPublicRoute(
-    app.manifest.public,
-    request.method,
-    url.pathname,
-  );
 
   // CSRF forgery needs an ambient credential to ride; a cookieless request
   // has none, and denying it here would turn the 401 + WWW-Authenticate

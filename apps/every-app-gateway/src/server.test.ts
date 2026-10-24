@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   runMcpMaintenance: vi.fn(),
   activateApp: vi.fn(),
   followAppVersion: vi.fn(),
+  refuseUnreadyApp: vi.fn(),
 }));
 
 vi.mock("cloudflare:workers", () => ({
@@ -59,6 +60,12 @@ vi.mock("./server/toolbus/app-host-mcp", () => ({
 vi.mock("./server/app-activation", () => ({
   activateApp: mocks.activateApp,
   followAppVersion: mocks.followAppVersion,
+}));
+
+// The gate itself is covered by server/app-needs-setup.test.ts; here it is
+// a stand-in, so what is pinned is that server.ts wires it.
+vi.mock("./server/app-needs-setup", () => ({
+  refuseUnreadyApp: mocks.refuseUnreadyApp,
 }));
 
 vi.mock("./perimeter/betterAuthAuthenticator", () => ({
@@ -883,6 +890,125 @@ describe("activating an app on its first request", () => {
     const response = await appRequest();
     expect(response.status).toBe(503);
     expect(mocks.activateApp).not.toHaveBeenCalled();
+  });
+});
+
+describe("the setup gate on both classes of host", () => {
+  const ACTIVE_TODO: RegisteredApp = { ...TODO, rowId: "row-1" };
+  /** Acme's dispatch app, one label below the third-party domain. */
+  const DISPATCH_TODO: RegisteredApp = {
+    ...TODO,
+    hostname: "todo-acme.everyapp.dev",
+    workerName: "every-acme-todo",
+    tier: "dispatch",
+    rowId: "row-2",
+  };
+  const appPage = vi.fn(async () => new Response("todo page"));
+  const refusal = () =>
+    new Response(JSON.stringify({ error: "app_needs_setup", app: "todo" }), {
+      status: 503,
+      headers: { "content-type": "application/json" },
+    });
+
+  beforeAll(() => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    mocks.env.JWT_PRIVATE_KEY = privateKey;
+  });
+
+  beforeEach(() => {
+    clearHostnameCacheForTests();
+    for (const key of Object.keys(mocks.env)) {
+      if (key !== "JWT_PRIVATE_KEY") delete mocks.env[key];
+    }
+    // A hosted gateway with a third-party domain serves both host classes.
+    Object.assign(mocks.env, {
+      DB: {},
+      GATEWAY_URL: "https://example.com",
+      GATEWAY_DEPLOYMENT_MODE: "hosted",
+      THIRD_PARTY_DOMAIN: "everyapp.dev",
+      BETTER_AUTH_SECRET: "test-secret-0123456789abcdefghijklmnopqrstuv",
+      "APP__every-todo": { fetch: appPage },
+    });
+    mocks.findByHostname.mockReset();
+    mocks.followAppVersion.mockReset();
+    mocks.authenticate.mockReset();
+    mocks.authenticate.mockResolvedValue({
+      sub: "user-1",
+      email: "user@example.com",
+      orgId: "org-1",
+      orgRole: "member",
+    });
+    mocks.refuseUnreadyApp.mockReset();
+    appPage.mockClear();
+  });
+
+  afterEach(() => {
+    mocks.refuseUnreadyApp.mockReset();
+  });
+
+  const open = (host: string) =>
+    server.fetch(
+      new Request(`https://${host}/`, {
+        headers: { host, accept: "text/html" },
+      }),
+    );
+
+  it("asks the gate on a first-party host, before any credential is read", async () => {
+    mocks.findByHostname.mockResolvedValue(ACTIVE_TODO);
+    mocks.refuseUnreadyApp.mockResolvedValue(refusal());
+
+    const response = await open("todo.example.com");
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "app_needs_setup",
+      app: "todo",
+    });
+    expect(mocks.refuseUnreadyApp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        app: ACTIVE_TODO,
+        request: expect.any(Request),
+        publicRoute: false,
+      }),
+    );
+    expect(mocks.authenticate).not.toHaveBeenCalled();
+    expect(appPage).not.toHaveBeenCalled();
+  });
+
+  it("asks it on a third-party host the same way", async () => {
+    mocks.findByHostname.mockResolvedValue(DISPATCH_TODO);
+    mocks.refuseUnreadyApp.mockResolvedValue(refusal());
+
+    const response = await open("todo-acme.everyapp.dev");
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({
+      error: "app_needs_setup",
+      app: "todo",
+    });
+    expect(mocks.refuseUnreadyApp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        app: DISPATCH_TODO,
+        request: expect.any(Request),
+        publicRoute: false,
+      }),
+    );
+    expect(mocks.authenticate).not.toHaveBeenCalled();
+  });
+
+  it("opens the app once the gate answers null, then authenticates", async () => {
+    mocks.findByHostname.mockResolvedValue(ACTIVE_TODO);
+    mocks.refuseUnreadyApp.mockResolvedValue(null);
+
+    const response = await open("todo.example.com");
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("todo page");
+    expect(mocks.refuseUnreadyApp).toHaveBeenCalledOnce();
+    expect(mocks.refuseUnreadyApp.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.authenticate.mock.invocationCallOrder[0]!,
+    );
   });
 });
 

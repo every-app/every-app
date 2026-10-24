@@ -6,6 +6,7 @@ import {
   TOOLS_CALL_PATH,
 } from "@every-app/sdk/internal";
 import { executeToolCall, MAX_RESULT_BYTES } from "./execute";
+import { listTools } from "./server";
 import {
   ISSUER,
   PRINCIPAL,
@@ -14,7 +15,7 @@ import {
   testKeys,
   todoApp,
 } from "./test-fixtures";
-import type { ToolBusDeps, ToolCallAuditEvent } from "./types";
+import type { ToolBusDeps, ToolBusView, ToolCallAuditEvent } from "./types";
 
 let keys: Awaited<ReturnType<typeof testKeys>>;
 beforeAll(async () => {
@@ -132,6 +133,48 @@ describe("executeToolCall", () => {
         outcome: "ok",
       }),
     ]);
+  });
+
+  it("lists an app that needs setup as unavailable, with why", async () => {
+    const { deps } = harness(() => ok());
+    const view: ToolBusView = {
+      ...gatewayView([todoApp()]),
+      unavailable: [
+        {
+          appId: "openseo",
+          name: "OpenSEO",
+          reason:
+            "needs setup: an admin runs pnpm everyapp secret set OPENROUTER_API_KEY",
+        },
+      ],
+    };
+
+    const resolution = await executeToolCall(
+      view,
+      { name: "everyapp_list_apps", arguments: {} },
+      deps,
+    );
+    expect(resolution).toMatchObject({
+      kind: "result",
+      result: {
+        structuredContent: {
+          apps: [
+            { id: "todo", tools: 2 },
+            {
+              id: "openseo",
+              name: "OpenSEO",
+              available: false,
+              reason:
+                "needs setup: an admin runs pnpm everyapp secret set OPENROUTER_API_KEY",
+            },
+          ],
+        },
+      },
+    });
+    // Its tools aren't listed, and a call to one is an unknown tool.
+    expect(listTools(view).map((tool) => tool.name)).not.toContain(
+      "openseo_audit",
+    );
   });
 
   it("audits the built-in tools, which never call an app", async () => {

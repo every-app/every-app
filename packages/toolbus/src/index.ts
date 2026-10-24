@@ -51,4 +51,5 @@ export type {
   ToolBusView,
   ToolCallAuditEvent,
   ToolCallOutcome,
+  UnavailableApp,
 } from "./types";

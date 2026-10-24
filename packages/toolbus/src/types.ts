@@ -40,6 +40,18 @@ export interface ToolBusApp {
   tools: ToolBusTool[];
 }
 
+/**
+ * An app the caller reaches whose tools aren't served right now, and why
+ * (it needs setup): named in the gateway's instructions and by
+ * `everyapp_list_apps`, so a connected client can say what to do.
+ */
+export interface UnavailableApp {
+  appId: string;
+  name: string;
+  /** Plain words for the client's user, e.g. the command an admin runs. */
+  reason: string;
+}
+
 export type McpAccess = "read" | "write";
 
 /** Who is calling, as the host (gateway or `everyapp dev`) resolved it. */
@@ -74,6 +86,8 @@ export interface ToolBusView {
   surface: "app" | "gateway";
   principal: McpPrincipal;
   apps: ToolBusApp[];
+  /** Gateway surface: the apps left out of `apps` because they need setup. */
+  unavailable?: UnavailableApp[];
   /** What initialize and server/discover report. */
   serverInfo: { name: string; title?: string };
   instructions?: string;

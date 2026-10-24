@@ -1,5 +1,10 @@
 import { BUILTIN_APP_ID } from "./builtins";
-import type { McpPrincipal, ToolBusApp, ToolBusView } from "./types";
+import type {
+  McpPrincipal,
+  ToolBusApp,
+  ToolBusView,
+  UnavailableApp,
+} from "./types";
 
 /** Each app's own instructions are cut to this on the gateway surface. */
 const MAX_APP_INSTRUCTIONS = 1024;
@@ -32,13 +37,23 @@ function clip(text: string, max: number): string {
 function gatewayInstructions(
   principal: McpPrincipal,
   apps: ToolBusApp[],
+  unavailable: UnavailableApp[],
 ): string {
-  const sorted = [...apps].sort((a, b) => (a.appId < b.appId ? -1 : 1));
+  const byAppId = <T extends { appId: string }>(a: T, b: T) =>
+    a.appId < b.appId ? -1 : 1;
+  const sorted = [...apps].sort(byAppId);
   const lines = [
     `Tools for ${principal.organizationName ?? "your organization"} on Every App. Each tool is named \`<app>_<tool>\`; call ${BUILTIN_APP_ID}_list_apps to see what each app is for.`,
     sorted.length
       ? `Apps: ${sorted.map((app) => `${app.appId} (${app.name})`).join(", ")}.`
       : "No apps are available to this connection yet.",
+    // An app that needs setup has no tools here; the client can still tell
+    // its user what to do, since the reason carries the command.
+    ...[...unavailable]
+      .sort(byAppId)
+      .map(
+        (app) => `${app.appId} (${app.name}) is not available: ${app.reason}.`,
+      ),
   ];
   let text = lines.join("\n");
   for (const app of sorted) {
@@ -52,24 +67,32 @@ function gatewayInstructions(
 
 /**
  * The view for the gateway's own `/mcp`: every app the caller may reach,
- * under `<appId>_<tool>` names, with the built-in `everyapp_*` tools.
+ * under `<appId>_<tool>` names, with the built-in `everyapp_*` tools. The
+ * apps the caller reaches but can't use yet (`unavailable`: they need
+ * setup) serve no tools; the instructions and `everyapp_list_apps` say why.
  */
 export function gatewaySurfaceView(
   principal: McpPrincipal,
   apps: ToolBusApp[],
-  options: { requestId?: string; allowedOrigins?: readonly string[] } = {},
+  options: {
+    requestId?: string;
+    allowedOrigins?: readonly string[];
+    unavailable?: UnavailableApp[];
+  } = {},
 ): ToolBusView {
+  const unavailable = options.unavailable ?? [];
   return {
     surface: "gateway",
     principal,
     apps,
+    ...(unavailable.length ? { unavailable } : {}),
     serverInfo: {
       name: "every-app",
       title: principal.organizationName
         ? `${principal.organizationName} · Every App`
         : "Every App",
     },
-    instructions: gatewayInstructions(principal, apps),
+    instructions: gatewayInstructions(principal, apps, unavailable),
     ...(options.requestId ? { requestId: options.requestId } : {}),
     ...(options.allowedOrigins?.length
       ? { allowedOrigins: options.allowedOrigins }

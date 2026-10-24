@@ -10,7 +10,13 @@
  * apps of their organization they have access to and, on the hosted
  * gateway, the shared apps, narrowed to the connection's chosen apps or the
  * token's app. `tools/call` reaches exactly one app over its service
- * binding, with an identity minted for that call.
+ * binding, with an identity minted for that call. An app that needs setup
+ * (a required setting of its manifest isn't set: server/app-setup.ts)
+ * serves no tools here, as its host serves nothing; the instructions and
+ * `everyapp_list_apps` name it, with the command that opens it when the
+ * app is the caller's organization's own (a shared app seen from another
+ * organization is the platform's to fix), so a connected client can tell
+ * its user.
  *
  * /mcp keeps nothing between requests, so the tools are fetched before the
  * answer, never after it. The snapshots are normally taken when an app is
@@ -26,8 +32,19 @@
  */
 import { env } from "cloudflare:workers";
 import { extractBearerCredential, logEvent } from "@every-app/perimeter";
-import { MCP_READ_SCOPE, MCP_WRITE_SCOPE } from "@every-app/sdk/internal";
-import type { McpPrincipal, ToolBusView } from "@every-app/toolbus";
+import { parseSecretNames } from "@every-app/perimeter/registry";
+import {
+  MCP_READ_SCOPE,
+  MCP_WRITE_SCOPE,
+  type AppSetup,
+} from "@every-app/sdk/internal";
+import type {
+  McpPrincipal,
+  ToolBusApp,
+  ToolBusView,
+  UnavailableApp,
+} from "@every-app/toolbus";
+import { appSetupFor } from "@/server/app-setup";
 import { platformPolicy } from "@/server/platform-policy";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
 import { resolveAccessCaller } from "@/server/mcp-auth/access-caller";
@@ -214,6 +231,17 @@ function recheckFor(request: Request, caller: McpCaller): () => Promise<void> {
 }
 
 /**
+ * Why an app serves no tools, for its user: the one command that opens it,
+ * or plain "needs setup" for a caller who can't run it (`canFix`: a shared
+ * app seen from another organization is the platform's to fix).
+ */
+function needsSetupReason(setup: AppSetup): string {
+  if (!setup.command) return "needs setup";
+  const { command, note } = setup.command;
+  return `needs setup: an admin runs ${command}${note ? ` (${note})` : ""}`;
+}
+
+/**
  * The caller's view of the catalogs as they are now. A held
  * `subscriptions/listen` stream re-reads it through `refresh` (after the
  * caller is rechecked), so an app that appears, goes or is redeployed
@@ -227,38 +255,71 @@ async function gatewayView(
   recheck: () => Promise<void>,
 ): Promise<ToolBusView> {
   const catalogs = await AppToolRepository.findVisibleCatalogs(scope);
-  const apps = catalogs.map((catalog) =>
-    servedApp(
-      {
+  // Each app's setup, read together: one cached report per row, version
+  // and recorded names (app-setup.ts), so this costs nothing per request.
+  const setups = await Promise.all(
+    catalogs.map((catalog) =>
+      appSetupFor({
         rowId: catalog.appRowId,
-        appId: catalog.appSlug,
-        audience: catalog.workerName,
-        name: catalog.name,
-        ...(catalog.description ? { description: catalog.description } : {}),
-        baseUrl: `https://${catalog.hostname}`,
-        catalogHash: catalog.catalogHash,
-        ...(catalog.instructions ? { instructions: catalog.instructions } : {}),
-        tools: catalog.tools,
-      },
-      {
-        // The app row's own organization, where its catalog is kept; the
-        // call's identity carries the caller's (principal).
-        rowId: catalog.appRowId,
-        organizationId: catalog.organizationId,
-        appSlug: catalog.appSlug,
-        hostname: catalog.hostname,
-        workerName: catalog.workerName,
-        tier: catalog.tier,
         versionId: catalog.versionId,
-      },
+        secretNames: parseSecretNames(catalog.secretNames),
+        appId: catalog.appSlug,
+        tier: catalog.tier,
+        manifest: catalog.manifest,
+        // The command is for the app's own organization; a shared app seen
+        // from another is named without one, as the app lists do.
+        canFix: catalog.organizationId === principal.organizationId,
+      }),
     ),
   );
+  const apps: ToolBusApp[] = [];
+  const unavailable: UnavailableApp[] = [];
+  catalogs.forEach((catalog, index) => {
+    const setup = setups[index];
+    if (setup && !setup.ready) {
+      unavailable.push({
+        appId: catalog.appSlug,
+        name: catalog.name,
+        reason: needsSetupReason(setup),
+      });
+      return;
+    }
+    apps.push(
+      servedApp(
+        {
+          rowId: catalog.appRowId,
+          appId: catalog.appSlug,
+          audience: catalog.workerName,
+          name: catalog.name,
+          ...(catalog.description ? { description: catalog.description } : {}),
+          baseUrl: `https://${catalog.hostname}`,
+          catalogHash: catalog.catalogHash,
+          ...(catalog.instructions
+            ? { instructions: catalog.instructions }
+            : {}),
+          tools: catalog.tools,
+        },
+        {
+          // The app row's own organization, where its catalog is kept; the
+          // call's identity carries the caller's (principal).
+          rowId: catalog.appRowId,
+          organizationId: catalog.organizationId,
+          appSlug: catalog.appSlug,
+          hostname: catalog.hostname,
+          workerName: catalog.workerName,
+          tier: catalog.tier,
+          versionId: catalog.versionId,
+        },
+      ),
+    );
+  });
 
   const { gatewaySurfaceView } = await import("@every-app/toolbus");
   return {
     ...gatewaySurfaceView(principal, apps, {
       ...(requestId ? { requestId } : {}),
       allowedOrigins: allowedOrigins(),
+      unavailable,
     }),
     refresh: async () => {
       await recheck();

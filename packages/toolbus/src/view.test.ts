@@ -48,4 +48,44 @@ describe("gatewaySurfaceView", () => {
       "No apps are available to this connection yet.",
     );
   });
+
+  it("names each app that needs setup with why, and keeps it out of the apps", () => {
+    const view = gatewaySurfaceView(
+      { ...PRINCIPAL, organizationName: "Acme" },
+      [todoApp({ appId: "todo", name: "Todos", instructions: undefined })],
+      {
+        unavailable: [
+          {
+            appId: "openseo",
+            name: "OpenSEO",
+            reason:
+              "needs setup: an admin runs pnpm everyapp secret set OPENROUTER_API_KEY",
+          },
+          {
+            appId: "crm",
+            name: "CRM",
+            reason: "needs setup",
+          },
+        ],
+      },
+    );
+
+    expect(view.apps.map((app) => app.appId)).toEqual(["todo"]);
+    expect(view.unavailable?.map((app) => app.appId)).toEqual([
+      "openseo",
+      "crm",
+    ]);
+    expect(view.instructions).toBe(
+      [
+        "Tools for Acme on Every App. Each tool is named `<app>_<tool>`; call everyapp_list_apps to see what each app is for.",
+        "Apps: todo (Todos).",
+        "crm (CRM) is not available: needs setup.",
+        "openseo (OpenSEO) is not available: needs setup: an admin runs pnpm everyapp secret set OPENROUTER_API_KEY.",
+      ].join("\n"),
+    );
+    // No entry, no field: the app surface and a ready gateway read as before.
+    expect(
+      gatewaySurfaceView(PRINCIPAL, [], { unavailable: [] }),
+    ).not.toHaveProperty("unavailable");
+  });
 });

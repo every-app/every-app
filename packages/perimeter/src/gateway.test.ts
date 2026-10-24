@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, afterEach, vi } from "vitest";
 import { importSPKI, jwtVerify } from "jose";
-import { handleGatewayRequest, type GatewayDeps } from "./gateway";
+import {
+  handleGatewayRequest,
+  type GatewayDeps,
+  type NeedsSetupInput,
+} from "./gateway";
 import {
   InMemoryAppRegistry,
   rowToRegisteredApp,
@@ -1487,6 +1491,117 @@ describe("handleGatewayRequest", () => {
     expect(entry.ms).toEqual(expect.any(Number));
     expect(entry).not.toHaveProperty("path");
     consoleLog.mockRestore();
+  });
+});
+
+describe("the setup gate", () => {
+  const refusal = () =>
+    Response.json({ error: "app_needs_setup", app: "todo" }, { status: 503 });
+
+  it("answers with the hook's response after the app is active and before anything reads a credential", async () => {
+    const needsSetup = vi.fn(async () => refusal());
+    const authenticate = vi.fn(async () => SESSION);
+    const fetcher = vi.fn();
+    const res = await handleGatewayRequest(
+      req("/tasks", { headers: { cookie: "every-app.session_token=x" } }),
+      deps({
+        needsSetup,
+        authenticator: {
+          sessionCookieNames: [],
+          authenticate,
+          hasAppAccess: async () => true,
+        },
+        fetcherFor: () => ({ fetch: fetcher }),
+      }),
+    );
+
+    expect(res.status).toBe(503);
+    await expect(res.json()).resolves.toEqual({
+      error: "app_needs_setup",
+      app: "todo",
+    });
+    // Returned as is: the hook stamps what it wants on it.
+    expect(res.headers.get("strict-transport-security")).toBeNull();
+    expect(needsSetup).toHaveBeenCalledWith({
+      app: TODO,
+      request: expect.any(Request),
+      publicRoute: false,
+    });
+    expect(authenticate).not.toHaveBeenCalled();
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it("tells the hook when the manifest declares the route public, and gates it too", async () => {
+    const needsSetup = vi.fn(async (_input: NeedsSetupInput) => refusal());
+    for (const [path, init] of [
+      ["/health", {}],
+      ["/webhook", { method: "POST", body: "{}" }],
+    ] as const) {
+      const res = await handleGatewayRequest(
+        req(path, init),
+        deps({ needsSetup }),
+      );
+      expect(res.status).toBe(503);
+    }
+    expect(needsSetup.mock.calls.map(([input]) => input.publicRoute)).toEqual([
+      true,
+      true,
+    ]);
+    // The ToolBus never sees it either: the gate comes before /mcp.
+    const interceptMcp = vi.fn();
+    const res = await handleGatewayRequest(
+      req("/mcp", { method: "POST", body: "{}" }),
+      deps({ needsSetup, interceptMcp }),
+    );
+    expect(res.status).toBe(503);
+    expect(interceptMcp).not.toHaveBeenCalled();
+  });
+
+  it("still answers 'deploying' for a pending or binding app, without asking", async () => {
+    const needsSetup = vi.fn(async () => refusal());
+    for (const status of ["pending", "binding"] as const) {
+      const res = await handleGatewayRequest(
+        req("/tasks"),
+        deps({
+          needsSetup,
+          registry: new InMemoryAppRegistry([{ ...TODO, status }]),
+        }),
+      );
+      expect(res.status).toBe(503);
+      await expect(res.json()).resolves.toEqual({
+        error: "app_deploying",
+        status,
+      });
+    }
+    expect(needsSetup).not.toHaveBeenCalled();
+  });
+
+  it("asks once a binding app is activated, and passes it on as active", async () => {
+    const needsSetup = vi.fn(async () => null);
+    const res = await handleGatewayRequest(
+      req("/tasks"),
+      deps({
+        needsSetup,
+        activate: async () => true,
+        registry: new InMemoryAppRegistry([{ ...TODO, status: "binding" }]),
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(needsSetup).toHaveBeenCalledWith(
+      expect.objectContaining({
+        app: expect.objectContaining({ appId: "todo", status: "active" }),
+      }),
+    );
+  });
+
+  it("opens the app when the hook answers null, and gates nothing without the hook", async () => {
+    const opened = await handleGatewayRequest(
+      req("/tasks"),
+      deps({ needsSetup: async () => null }),
+    );
+    expect(opened.status).toBe(200);
+    const ungated = await handleGatewayRequest(req("/tasks"), deps());
+    expect(ungated.status).toBe(200);
   });
 });
 

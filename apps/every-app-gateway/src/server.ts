@@ -57,6 +57,7 @@ import { SESSION_COOKIE_NAMES } from "./auth/session-cookie";
 import { createProdAuthenticator } from "./perimeter/betterAuthAuthenticator";
 import { createHostSessionAuthenticator } from "./perimeter/hostSessionAuthenticator";
 import { activateApp, followAppVersion } from "./server/app-activation";
+import { refuseUnreadyApp } from "./server/app-needs-setup";
 import { DrizzleAppRegistry } from "./perimeter/drizzleAppRegistry";
 import {
   handleAppGatewayRequest,
@@ -399,6 +400,9 @@ export default {
         if (active) hostnameCache.delete(requestHost);
         return active;
       },
+      // An app whose required settings aren't set doesn't open, on either
+      // class of host (server/app-needs-setup.ts).
+      needsSetup: refuseUnreadyApp,
     };
     try {
       if (route.kind === "third_party") {
