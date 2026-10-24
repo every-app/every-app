@@ -11,7 +11,8 @@
  *    credential rate limits first, and every response gets the control-plane
  *    security headers (server/control-plane-guard.ts,
  *    server/auth-rate-limit.ts). The MCP and OAuth code loads with the first
- *    request that needs it (server/mcp-auth/routes.ts);
+ *    request that needs it (server/mcp-auth/routes.ts), as does the TanStack
+ *    Start entry itself (server/control-plane.ts);
  *  - a host in the app registry → the perimeter proxy
  *    (`handleGatewayRequest`), which activates an app whose Worker was just
  *    uploaded and follows the version it runs (server/app-activation.ts),
@@ -19,14 +20,16 @@
  *    proxies to the app's private worker over its service binding. App
  *    hosts reach this Worker as its Workers Custom Domains.
  *    An app host's `/mcp` is served by the ToolBus from the app's tool
- *    catalog instead (server/toolbus/app-host-mcp.ts);
+ *    catalog instead (server/toolbus/app-host-mcp.ts), loaded with the first
+ *    `/mcp` request;
  *  - on a hosted gateway with a third-party domain, a host one label below
  *    it → the same proxy for a third-party (dispatch) app, authenticated by
  *    the host's own session (or a personal access token), never the Better
  *    Auth cookie (perimeter/hostSessionAuthenticator.ts,
- *    server/host-session.ts); the control plane hands the session off at
- *    `/app-session`. Host classes are decided first (@every-app/perimeter's
- *    hostRoutes.ts): a row on the wrong class of host is never served;
+ *    server/host-session.ts, loaded with the first such request); the
+ *    control plane hands the session off at `/app-session`. Host classes
+ *    are decided first (@every-app/perimeter's hostRoutes.ts): a row on the
+ *    wrong class of host is never served;
  *  - any other host → 404 (local dev serves the control plane there too).
  *
  * When GATEWAY_URL is not set on a fresh deploy (before secrets, local vite
@@ -59,19 +62,10 @@ import { createHostSessionAuthenticator } from "./perimeter/hostSessionAuthentic
 import { activateApp, followAppVersion } from "./server/app-activation";
 import { refuseUnreadyApp } from "./server/app-needs-setup";
 import { DrizzleAppRegistry } from "./perimeter/drizzleAppRegistry";
-import {
-  handleAppGatewayRequest,
-  type AppCallerProps,
-} from "./server/app-gateway-entrypoint";
+import type { AppCallerProps } from "./server/app-gateway-entrypoint";
 import { appBaseDomain, hostProfile } from "./server/app-hosts";
 import { rateLimitCredentialRequest } from "./server/auth-rate-limit";
 import { serveControlPlane } from "./server/control-plane";
-import {
-  exchangeHostSession,
-  hostSessionKey,
-  serveAppSessionRoute,
-  startHostSession,
-} from "./server/host-session";
 import {
   guardControlPlaneRequest,
   withControlPlaneHeaders,
@@ -81,7 +75,6 @@ import { platformPolicy } from "./server/platform-policy";
 import { OrganizationRepository } from "./server/repositories/OrganizationRepository";
 import { OrgAppSettingsRepository } from "./server/repositories/OrgAppSettingsRepository";
 import { UsageRepository } from "./server/repositories/UsageRepository";
-import { serveAppHostMcp } from "./server/toolbus/app-host-mcp";
 
 const HOST_CACHE_MAX_ENTRIES = 500;
 const HOST_CACHE_HIT_TTL_MS = 30_000;
@@ -135,6 +128,15 @@ export async function resolveAppByHostname(
   return app;
 }
 
+/**
+ * An app host's `/mcp`, served by the ToolBus from the app's tool catalog.
+ * The ToolBus loads with the first `/mcp` request on an isolate; a page
+ * request on an app host never evaluates it.
+ */
+const interceptAppHostMcp: NonNullable<GatewayDeps["interceptMcp"]> = async (
+  input,
+) => (await import("./server/toolbus/app-host-mcp")).serveAppHostMcp(input);
+
 /** The gateway's MCP connector and OAuth paths, served before TanStack. */
 function isMcpAuthPath(pathname: string): boolean {
   return (
@@ -186,6 +188,9 @@ async function serveGatewayHost(request: Request): Promise<Response> {
   }
   if (pathname === "/app-session" || pathname === "/app-session/start") {
     const profile = hostProfile(env, ownGatewayHost());
+    const { hostSessionKey, serveAppSessionRoute } = await import(
+      "./server/host-session"
+    );
     const key = hostSessionKey(env);
     if (profile.thirdPartyDomain && key) {
       const served = await serveAppSessionRoute(request, {
@@ -260,6 +265,12 @@ export class AppGateway extends WorkerEntrypoint<
   AppCallerProps
 > {
   async fetch(request: Request): Promise<Response> {
+    // The capability proxy (AI, integrations, email) and its usage
+    // accounting load with the first app-to-gateway call on an isolate; a
+    // request on an app host never evaluates them.
+    const { handleAppGatewayRequest } = await import(
+      "./server/app-gateway-entrypoint"
+    );
     return handleAppGatewayRequest({
       request,
       props: this.ctx.props,
@@ -290,6 +301,8 @@ async function serveThirdPartyHost(
   deps: Omit<GatewayDeps, "authenticator">,
   app: RegisteredApp,
 ): Promise<Response> {
+  const { exchangeHostSession, hostSessionKey, startHostSession } =
+    await import("./server/host-session");
   const keyPromise = hostSessionKey(env);
   if (!keyPromise) return notFound("gateway_misconfigured");
   const key = await keyPromise;
@@ -309,7 +322,7 @@ async function serveThirdPartyHost(
       key,
       tokens: createProdAuthenticator(platformPolicy(env)),
     }),
-    interceptMcp: serveAppHostMcp,
+    interceptMcp: interceptAppHostMcp,
     thirdParty: {
       startSession: (navigation) =>
         startHostSession(navigation, host, env.GATEWAY_URL),
@@ -439,7 +452,7 @@ export default {
         ...deps,
         authenticator: createProdAuthenticator(platformPolicy(env)),
         loginUrl: `${env.GATEWAY_URL}/sign-in`,
-        interceptMcp: serveAppHostMcp,
+        interceptMcp: interceptAppHostMcp,
       });
     } catch (error) {
       // The perimeter must never leak an uncaught exception (Cloudflare's
