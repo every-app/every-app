@@ -202,8 +202,8 @@ capabilities: {
 },
 ```
 
-The strict validator (`everyapp deploy`, `register --manifest`, a release
-opened by the CLI) refuses a capability with a policy that lists no
+The strict validator (`everyapp deploy` and
+`everyapp release`) refuses a capability with a policy that lists no
 `scopes`, an empty list, a duplicate, or a name the registry doesn't
 define, naming the sets offered
 (`capabilities.google-workspace.scopes.1: unknown scope set (Google
@@ -214,7 +214,7 @@ scopes`). The lenient schema the gateway reads a stored row with keeps the
 field as `string[] | undefined` and reads a malformed value as undeclared
 (`.catch(undefined)`, the `email.inbound` precedent), so a newer CLI's
 manifest never bricks a row on an older gateway: the gateway refuses the
-token call instead, with a message that says to deploy the gateway again
+token call instead, with a message that says to update the gateway (`everyapp update`)
 if it is the newer one. The hosted deploy API, which runs only the lenient
 validator, adds the same two cases to `manifestProblems` so a hand-crafted
 bundle is `BUNDLE_REFUSED` before any row is written. Set names are short
