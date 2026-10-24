@@ -193,7 +193,7 @@ From the app's directory; an agent runs `pnpm everyapp deploy --json` there. `pn
 - After the upload, step `app.secrets` warns `APP_NEEDS_SETUP` ("`<app>` won't open until `<names>` is set", the first unmet setting's `why` under it, `data.setup`) when a required setting is unset, and `next` gets the one `pnpm everyapp secret set <names> [--app <id>]` that opens it (note "`<app>` opens once these are set"). The run goes on; the app is live but answers its setup gate until then ([/docs/agent/manifest](/docs/agent/manifest#required-optional-or-one-of-a-group)).
 - `done.data`: `url`, `workerName`, `versionId`, `live` (boolean), `organization`, `publicRoutes` (`[{ path, methods }]`, what the manifest opens to the internet), `next`.
 - Safe to repeat; a redeploy of an app the Gateway already serves never touches the Gateway.
-- Someone else's app from GitHub, no clone: `pnpm everyapp install https://github.com/<owner>/<repo> --json` deploys its latest release's `everyapp-release.tar.gz`. `NO_RELEASE`: clone it, `pnpm install`, deploy from the directory. Never build a repository from its URL yourself.
+- Someone else's app from GitHub, no clone: `pnpm everyapp install https://github.com/<owner>/<repo> --json` deploys its latest release's `everyapp-release.tar.gz`. `NO_RELEASE`: clone it, `pnpm install` in it, then this checkout's `pnpm everyapp deploy` from its directory (a clone's own CLI copy can't deploy: a deploy updates the Gateway, which only a checkout builds). Never build a repository from its URL yourself.
 
 ### What to tell the person after a deploy
 

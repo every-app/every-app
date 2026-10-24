@@ -2,10 +2,10 @@
  * An app's Worker, D1 databases and KV namespaces, under the names its
  * registration assigned (`every-<orgKey>-<appId>[--<binding>]`), and its
  * Hyperdrive configs, named `<worker>--<binding>` after its Worker. Its R2
- * buckets (`resources.r2`) only get their assigned names here: creating
- * one is left to cf's prebuilt deploy, which should create a bucket a
- * Worker binds (unconfirmed on a live account), and recording and purging
- * them is a later change.
+ * buckets (`resources.r2`) only get their assigned names here: the ones
+ * the built Workers bind are made after the Build Output is installed
+ * (./buckets.ts; cf's prebuilt deploy creates none), never recorded, and
+ * purging them is a later change.
  *
  * An existing one is used only when the gateway's D1 records it as the
  * app's (./ownership.ts): anything else under the app's name may belong to

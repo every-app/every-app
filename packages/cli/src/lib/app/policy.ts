@@ -357,6 +357,8 @@ export async function prepareAppBuildOutput({
 }): Promise<{
   workflows: string[];
   helperWorkflows: Record<string, string[]>;
+  /** The R2 buckets the Workers bind, by name (lib/app/buckets.ts makes the missing ones). */
+  r2Buckets: string[];
 }> {
   if (!(await isProductionBuild(path.join(cwd, BUILD_OUTPUT_DIR)))) {
     throw new EveryAppError(
@@ -428,7 +430,16 @@ export async function prepareAppBuildOutput({
   return {
     workflows: definedWorkflows(app.config, inputs.workerName),
     helperWorkflows,
+    r2Buckets: [...new Set([...built.values()].flatMap(({ config }) => boundR2Buckets(config)))].sort(),
   };
+}
+
+/** The names of the R2 buckets a built Worker's bindings name. */
+function boundR2Buckets(config: BuiltWorkerConfig): string[] {
+  const env = (config as { env?: Record<string, { type?: unknown; name?: unknown }> }).env ?? {};
+  return Object.values(env)
+    .filter((binding) => binding?.type === "r2" && typeof binding.name === "string")
+    .map((binding) => binding.name as string);
 }
 
 /**

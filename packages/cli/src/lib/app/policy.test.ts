@@ -365,6 +365,7 @@ describe("prepareAppBuildOutput", () => {
     ).resolves.toEqual({
       workflows: ["every-acme-todo--rank-check"],
       helperWorkflows: {},
+      r2Buckets: [],
     });
 
     const written = JSON.parse(
@@ -485,6 +486,7 @@ describe("helper Workers", () => {
     ).resolves.toEqual({
       workflows: [],
       helperWorkflows: { [HELPER]: ["every-acme-todo--site-audit"] },
+      r2Buckets: [],
     });
 
     writeHelper({ ...helper, name: "every-acme-todo--crawler" }, "crawler");

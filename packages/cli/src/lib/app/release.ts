@@ -346,7 +346,7 @@ export async function fetchAppRelease(
       throw new EveryAppError(
         "NO_RELEASE",
         `${repo.repo} publishes no everyapp release${repo.tag ? ` ${repo.tag}` : ""}\nIts GitHub releases have no ${APP_RELEASE_TARBALL}.`,
-        { fix: `clone it, then run pnpm install && ${CLI} deploy in it` },
+        { fix: `clone it, then run pnpm install in it and this checkout's ${CLI} deploy from its directory` },
       );
     }
     throw error;

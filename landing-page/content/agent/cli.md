@@ -710,9 +710,9 @@ again later to update the app. Its secrets are set with pnpm everyapp secret set
 .everyapp/secrets.env in this directory is the deploy's own file, read only for a Hyperdrive
 app's database URL.
 
-A repository without a release is never built from its URL: clone it, then run
-pnpm install && pnpm everyapp deploy in it. Postgres migrations need the app's source, so their
-releases are refused.
+A repository without a release is never built from its URL: clone it, then run pnpm
+install in it and this checkout's pnpm everyapp deploy from its directory. Postgres migrations
+need the app's source, so their releases are refused.
 
 No Gateway in any account the login sees? At a terminal it offers to install one at
 apps.<zone> (what pnpm everyapp setup does, owner link included), then installs the app; otherwise

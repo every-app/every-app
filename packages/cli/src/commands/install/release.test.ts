@@ -335,7 +335,7 @@ describe("everyapp install <release>", () => {
       code: "NO_RELEASE",
       message:
         "acme/notes publishes no everyapp release\nIts GitHub releases have no everyapp-release.tar.gz.",
-      fix: "clone it, then run pnpm install && pnpm everyapp deploy in it",
+      fix: "clone it, then run pnpm install in it and this checkout's pnpm everyapp deploy from its directory",
     });
   });
 

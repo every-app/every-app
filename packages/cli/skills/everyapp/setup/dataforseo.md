@@ -76,11 +76,13 @@ payment comes in only at Add Funds.
    carries the path as the entry's `setup` (in the checkout the file is
    `packages/cli/skills/everyapp/setup/dataforseo.md`). The error
    `APP_NOT_FOUND` ("openseo isn't deployed to this Gateway yet", exit 1):
-   deploy it first. OpenSEO lives in its own repository, so ask the person
-   for the path of their clone (`pnpm install && pnpm everyapp deploy --json`
-   there) or, when its repository publishes a release, its URL
-   (`pnpm everyapp install <repository or tarball URL> --json` from
-   anywhere; `NO_RELEASE` means it publishes none: clone it). The key can
+   deploy it first. OpenSEO lives in its own repository, which publishes a
+   release on every push: `pnpm everyapp install
+   https://github.com/every-app/open-seo --json` from this checkout installs
+   it (any repository or tarball URL works; `NO_RELEASE` means that one
+   publishes none). From a clone instead: `pnpm install` there, then this
+   checkout's `pnpm everyapp deploy --json` from that directory (a clone's
+   own CLI copy can't deploy; its `pnpm everyapp` is for dev). The key can
    be set before that deploy all the same (step 5's root list is then the
    check; so is `pnpm everyapp secret list --json` in OpenSEO's directory,
    which reads its `everyapp.config.ts` instead of the registry).

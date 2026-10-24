@@ -1,7 +1,6 @@
 /**
- * R2 buckets through cf, for the teardown: everyapp never creates one
- * (an app's buckets get their assigned names and are made in the
- * dashboard), so only listing by name and deleting an empty one are here.
+ * R2 buckets through cf: listing by name and creating one for an app's
+ * deploy (lib/app/buckets.ts), deleting an empty one for the teardown.
  * Checked against cf@1.0.0-beta.14 on 2026-10-24.
  */
 import { runCfJson, type CfRunner } from "./runner";
@@ -23,6 +22,20 @@ export function listR2Buckets(cf: CfRunner, contains: string): Promise<string[]>
     },
     R2BucketListOutput,
   ).then((buckets) => buckets.map((bucket) => bucket.name));
+}
+
+/** Whether a bucket named exactly `name` exists. */
+export async function findR2Bucket(cf: CfRunner, name: string): Promise<boolean> {
+  return (await listR2Buckets(cf, name)).includes(name);
+}
+
+/** Create a bucket; fails (`already_exists`) when the name is taken. */
+export async function createR2Bucket(cf: CfRunner, name: string): Promise<void> {
+  await cf.run({
+    plane: "account",
+    mode: "json",
+    args: ["r2", "buckets", "create", "--name", name],
+  });
 }
 
 /**

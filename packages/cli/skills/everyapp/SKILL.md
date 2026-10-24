@@ -81,10 +81,14 @@ Ship:    pnpm everyapp deploy --json   (from the app directory; safe to repeat;
 Release: someone else's app, without a clone: pnpm everyapp install
          https://github.com/<owner>/<repo> --json (its latest release's
          everyapp-release.tar.gz; a tarball URL or file works too). NO_RELEASE:
-         the repository publishes none; clone it, then pnpm install && pnpm
-         everyapp deploy. Never build a repository from its URL yourself.
+         the repository publishes none; clone it, pnpm install in it, then
+         this checkout's pnpm everyapp deploy from its directory. Never
+         build a repository from its URL yourself.
          To publish one: pnpm everyapp release, then attach the
-         tarball to a GitHub release of the app's repository.
+         tarball to a GitHub release of the app's repository, or give
+         the repository the Release workflow that does it on every push
+         (pnpm pack-for-app <app> --workflow from this checkout;
+         docs/runbooks/app-releases.md).
 Data:    pnpm everyapp db migrate (local)   pnpm everyapp db query "<sql>" [--local] --json
          (a production write stops with CONFIRMATION_REQUIRED: add --yes only
          if the user said so). pnpm everyapp db restore --json undoes the last

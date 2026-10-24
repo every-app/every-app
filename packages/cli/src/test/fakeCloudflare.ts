@@ -1130,9 +1130,10 @@ export class FakeCloudflare {
   }
 
   /**
-   * `cf r2 buckets list|delete`, as cf 1.0.0-beta.14 prints them: a list is
-   * `{ buckets: [{ name, creation_date }] }` (filtered by `--name-contains`),
-   * and a delete refuses a bucket with objects in it.
+   * `cf r2 buckets list|create|delete`, as cf 1.0.0-beta.14 prints them: a
+   * list is `{ buckets: [{ name, creation_date }] }` (filtered by
+   * `--name-contains`), a create (`--name`) refuses a name that is taken
+   * (`[code: 10004]`), and a delete refuses a bucket with objects in it.
    */
   private r2Command(call: RecordedCfCall): FakeCfResponse {
     const action = call.args[2];
@@ -1149,6 +1150,15 @@ export class FakeCloudflare {
             .map((name) => ({ name, creation_date: "2026-10-12T00:00:00.000Z" })),
         }),
       };
+    }
+    if (action === "create") {
+      const name = flag(call.args, "--name") ?? "";
+      if (!name) return cfError("Missing required argument: name");
+      if (this.buckets.has(name)) {
+        return cfError("The bucket you tried to create already exists, and you own it. [code: 10004]");
+      }
+      this.buckets.set(name, { objects: 0 });
+      return { stdout: JSON.stringify({ name, creation_date: "2026-10-24T00:00:00.000Z" }) };
     }
     if (action === "delete") {
       const declined = unconfirmed(call, "This permanently deletes the R2 bucket.");

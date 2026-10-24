@@ -92,6 +92,7 @@ import {
   readAppSecrets,
   type AppSecrets,
 } from "@/lib/app/deploySecrets";
+import { ensureR2Buckets } from "@/lib/app/buckets";
 import { prepareAppBuildOutput } from "@/lib/app/policy";
 import { publicRoutesOf, type PublicRouteSummary } from "@/lib/app/publicRoutes";
 import { describeAppOrigin, type AppRelease } from "@/lib/app/release";
@@ -557,10 +558,11 @@ async function deploySteps(
       });
     }
     await installAppBuildOutput({ cwd: root, target });
-    const { workflows, helperWorkflows } = await prepareAppBuildOutput({
+    const { workflows, helperWorkflows, r2Buckets } = await prepareAppBuildOutput({
       cwd: root,
       inputs: target,
     });
+    await ensureR2Buckets({ cf, names: r2Buckets, appId: manifest.id, out });
     for (const worker of [
       { workerName, names: workflows },
       ...helpers.map((helper) => ({
@@ -972,7 +974,7 @@ function refuseReleaseMigrations(manifest: EveryAppCliManifest): void {
   throw new EveryAppError(
     "RELEASE_MIGRATIONS_UNSUPPORTED",
     `${manifest.id} can't deploy from a release: its Postgres migrations need the source`,
-    { fix: `clone it, then run pnpm install && ${CLI} deploy in it` },
+    { fix: `clone it, then run pnpm install in it and this checkout's ${CLI} deploy from its directory` },
   );
 }
 
