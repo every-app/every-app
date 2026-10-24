@@ -21,3 +21,9 @@ overrides:
   jose: ^6.2.5
   seroval: ^1.6.7
   tinypool: ^2.1.2
+  # One @types/react (and so one csstype) across the workspace: @base-ui/react resolves
+  # csstype through hoisting, and with two @types/react versions in one lockfile the
+  # hoisted copy varied between installs, failing the gateway's type-check on CI only.
+  "@types/react": ^19.2.14
+  "@types/react-dom": ^19.2.3
+  csstype: ^3.2.3
