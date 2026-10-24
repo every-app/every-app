@@ -39,6 +39,13 @@ export type ToolCallRow = {
     kind: string;
     /** The connected AI app's own name, when the credential has one. */
     clientName: string | null;
+    /**
+     * What the client called itself in the MCP handshake, `<name> <version>`
+     * (at most 200 characters), so a token or Access caller still shows
+     * which AI app called. Self-asserted, never verified; null when the
+     * client sent none.
+     */
+    clientInfo: string | null;
   };
   app: Omit<ToolCallApp, "rowId"> & {
     /** Null for a call on no app, or on an app with no row (a dev registry). */

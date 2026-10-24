@@ -40,6 +40,7 @@ async function insert(event: ToolCallAuditEvent): Promise<void> {
     credentialKind: event.credentialKind,
     credentialId: event.credentialId,
     clientName: event.clientName ?? null,
+    clientInfo: event.clientInfo ?? null,
     surface: event.surface,
     appRowId: event.appRowId ?? null,
     appSlug: event.appId ?? null,
@@ -110,6 +111,7 @@ async function listForOrganization(
       userEmail: users.email,
       credentialKind: mcpToolCalls.credentialKind,
       clientName: mcpToolCalls.clientName,
+      clientInfo: mcpToolCalls.clientInfo,
       appRowId: mcpToolCalls.appRowId,
       appSlug: mcpToolCalls.appSlug,
       appName: apps.name,
@@ -165,7 +167,11 @@ async function listForOrganization(
       id: row.id,
       createdAt: row.createdAt.getTime(),
       user: { id: row.userId, name: row.userName, email: row.userEmail },
-      credential: { kind: row.credentialKind, clientName: row.clientName },
+      credential: {
+        kind: row.credentialKind,
+        clientName: row.clientName,
+        clientInfo: row.clientInfo,
+      },
       app: {
         rowId: row.appRowId,
         slug: row.appSlug,

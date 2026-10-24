@@ -13,7 +13,9 @@
  *
  *  - 2025 eras: `initialize` issues an `Mcp-Session-Id` whose last part is a
  *    hash of the caller's tool list (spec: a server MAY assign a session id
- *    at initialization, and the client then sends it on every request). A
+ *    at initialization, and the client then sends it on every request), and
+ *    whose middle part, when the client named itself in `initialize`, is
+ *    that name for the audit row (nothing else keeps it between requests). A
  *    later request carrying a hash other than the current one is answered
  *    as an SSE stream, `notifications/tools/list_changed` before the result
  *    (the spec lets a server send notifications related to the request
@@ -54,7 +56,14 @@ import {
 } from "@modelcontextprotocol/server";
 import { scopesForAccess } from "./execute";
 import { isPlainObject } from "./io";
-import { createToolBusServer, toolListHash, TOOLBUS_VERSION } from "./server";
+import {
+  cleanClientText,
+  createToolBusServer,
+  describeClient,
+  MAX_CLIENT_INFO_LENGTH,
+  toolListHash,
+  TOOLBUS_VERSION,
+} from "./server";
 import type { ToolBusDeps, ToolBusView } from "./types";
 
 export const MAX_REQUEST_BODY_BYTES = 256 * 1024;
@@ -67,6 +76,10 @@ const LISTEN_MAX_MS = 10 * 60_000;
  * more are refused in-band like the SDK refuses past its own limit.
  */
 const LISTEN_STREAMS_PER_CALLER = 8;
+/** Longest client part of a 2025 session id, base64url characters. */
+const MAX_SESSION_CLIENT_LENGTH = 128;
+/** The bytes of client text that encode to at most that many. */
+const MAX_SESSION_CLIENT_BYTES = (MAX_SESSION_CLIENT_LENGTH / 4) * 3;
 const MODERN_PROTOCOL_VERSION = "2026-07-28";
 const VIEW_KEY = "everyapp.toolbus.view";
 const SUBSCRIPTION_ID_KEY = "io.modelcontextprotocol/subscriptionId";
@@ -265,9 +278,18 @@ async function serveLegacy(
   }
 
   const method = isPlainObject(body) ? body["method"] : undefined;
+  const params =
+    isPlainObject(body) && isPlainObject(body["params"]) ? body["params"] : {};
   const hash = await toolListHash(view);
-  const sessionHash = toolsHashOfSession(request.headers.get("mcp-session-id"));
+  const session = request.headers.get("mcp-session-id");
+  const sessionHash = toolsHashOfSession(session);
   const changed = sessionHash !== undefined && sessionHash !== hash;
+  // The client named at initialize: minted into that session, read back
+  // from every later request on it, and carried into a rotated session.
+  const client =
+    method === "initialize"
+      ? describeClient(params["clientInfo"])
+      : clientOfSession(session);
   // The session was issued for another tool list. Its tools/list ends the
   // session (spec: the server MAY terminate a session at any time, and the
   // client MUST then initialize again), so the new session carries the
@@ -280,13 +302,13 @@ async function serveLegacy(
     view,
     deps,
     request.headers.get("mcp-protocol-version") ?? undefined,
-    { listChanged: true },
+    { listChanged: true, ...(client ? { clientInfo: client } : {}) },
   );
   const transport = new WebStandardStreamableHTTPServerTransport({
     // Only initialize mints a session; later requests validate nothing, so
     // a client without one, or with one from before a deploy, is served.
     sessionIdGenerator:
-      method === "initialize" ? () => sessionIdFor(hash) : undefined,
+      method === "initialize" ? () => sessionIdFor(hash, client) : undefined,
     enableJsonResponse: true,
   });
   try {
@@ -299,7 +321,7 @@ async function serveLegacy(
       isJsonRpcRequest(body) &&
       method !== "initialize" &&
       acceptsEventStream(request)
-      ? await withListChanged(response, hash)
+      ? await withListChanged(response, hash, client)
       : response;
   } finally {
     await Promise.all([
@@ -309,9 +331,64 @@ async function serveLegacy(
   }
 }
 
-/** `<uuid>.<tool list hash>`: visible ASCII, unguessable, self-describing. */
-function sessionIdFor(hash: string): string {
-  return `${crypto.randomUUID()}.${hash}`;
+/**
+ * `<uuid>.<client>.<tool list hash>`, or `<uuid>.<tool list hash>` when the
+ * client gave no `clientInfo`: visible ASCII, unguessable (the uuid),
+ * self-describing. The client part is the client's own description
+ * (`describeClient`), base64url without padding and bounded, so later
+ * calls on the session are audited with the name given once at initialize.
+ */
+function sessionIdFor(hash: string, client?: string): string {
+  const encoded = client ? encodeSessionClient(client) : "";
+  return encoded
+    ? `${crypto.randomUUID()}.${encoded}.${hash}`
+    : `${crypto.randomUUID()}.${hash}`;
+}
+
+function encodeSessionClient(client: string): string {
+  const encoder = new TextEncoder();
+  // Cut by character, never mid-byte, until the encoding fits.
+  let text = client;
+  let bytes = encoder.encode(text);
+  while (bytes.length > MAX_SESSION_CLIENT_BYTES) {
+    text = Array.from(text).slice(0, -1).join("");
+    bytes = encoder.encode(text);
+  }
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * The client a session id carries: undefined for the two-part form, for a
+ * middle part that isn't base64url or doesn't decode as UTF-8, and for one
+ * that decodes to nothing visible. The header is the client's to tamper
+ * with, so what comes out is cleaned and bounded like a fresh description.
+ */
+function clientOfSession(header: string | null): string | undefined {
+  const parts = header?.split(".") ?? [];
+  const encoded = parts.length === 3 ? parts[1] : undefined;
+  if (
+    !encoded ||
+    encoded.length > MAX_SESSION_CLIENT_LENGTH ||
+    !/^[A-Za-z0-9_-]+$/.test(encoded)
+  ) {
+    return undefined;
+  }
+  try {
+    const padded =
+      encoded.replace(/-/g, "+").replace(/_/g, "/") +
+      "=".repeat((4 - (encoded.length % 4)) % 4);
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(
+      Uint8Array.from(atob(padded), (char) => char.charCodeAt(0)),
+    );
+    return cleanClientText(text, MAX_CLIENT_INFO_LENGTH) || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function toolsHashOfSession(header: string | null): string | undefined {
@@ -335,12 +412,14 @@ function sseEvent(message: unknown): string {
 
 /**
  * The JSON-mode response as an SSE stream, `notifications/tools/list_changed`
- * before the result. The new session id is for clients that take one from
- * any response; the others reach the 404 above on their next tools/list.
+ * before the result. The new session id (the same client, the current
+ * hash) is for clients that take one from any response; the others reach
+ * the 404 above on their next tools/list.
  */
 async function withListChanged(
   response: Response,
   hash: string,
+  client: string | undefined,
 ): Promise<Response> {
   if (
     response.status !== 200 ||
@@ -352,7 +431,7 @@ async function withListChanged(
   for (const [name, value] of Object.entries(SSE_HEADERS)) {
     headers.set(name, value);
   }
-  headers.set("mcp-session-id", sessionIdFor(hash));
+  headers.set("mcp-session-id", sessionIdFor(hash, client));
   return new Response(
     `${sseEvent(LIST_CHANGED)}event: message\ndata: ${await response.text()}\n\n`,
     { status: 200, headers },

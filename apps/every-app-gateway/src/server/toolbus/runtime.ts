@@ -62,6 +62,7 @@ function auditToolCall(event: ToolCallAuditEvent): void {
     call_id: event.callId,
     cred_kind: event.credentialKind,
     cred_id: credentialId,
+    client: event.clientInfo,
     org: event.organizationId,
     user_id: event.userId,
   });

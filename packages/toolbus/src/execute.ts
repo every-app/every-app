@@ -58,6 +58,8 @@ export interface ToolCallRequest {
   name: string;
   arguments: unknown;
   protocolVersion?: string;
+  /** The client's self-description for the audit event (`describeClient`). */
+  clientInfo?: string;
 }
 
 export type ToolCallResolution =
@@ -120,6 +122,7 @@ export async function executeToolCall(
       ...(call.protocolVersion
         ? { protocolVersion: call.protocolVersion }
         : {}),
+      ...(call.clientInfo ? { clientInfo: call.clientInfo } : {}),
       ...(view.requestId ? { requestId: view.requestId } : {}),
       ...event,
       durationMs: Date.now() - startedAt,

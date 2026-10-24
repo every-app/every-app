@@ -930,6 +930,7 @@ describe("a DCR client (Codex-style)", () => {
       credentialKind: "oauth",
       credentialId: connection!.id,
       clientName: "Codex",
+      clientInfo: "test 1",
       appSlug: "todo",
       appRowId: todoRowId,
       toolName: "todo_create_todo",
@@ -967,7 +968,11 @@ describe("a DCR client (Codex-style)", () => {
       clientId: client.client_id,
       redirectUri: CODEX_REDIRECT,
     });
-    const legacy = (body: Record<string, unknown>, version?: string) =>
+    const legacy = (
+      body: Record<string, unknown>,
+      version?: string,
+      headers: Record<string, string> = {},
+    ) =>
       send("/mcp", {
         method: "POST",
         headers: {
@@ -975,6 +980,7 @@ describe("a DCR client (Codex-style)", () => {
           "content-type": "application/json",
           accept: "application/json, text/event-stream",
           ...(version ? { "mcp-protocol-version": version } : {}),
+          ...headers,
         },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, ...body }),
       });
@@ -987,9 +993,11 @@ describe("a DCR client (Codex-style)", () => {
         clientInfo: { name: "claude-ai", version: "1" },
       },
     });
-    // `<uuid>.<tool list hash>`: the ToolBus compares later requests' hash.
-    expect(init.headers.get("mcp-session-id")).toMatch(
-      /^[0-9a-f-]{36}\.[0-9a-f]{16}$/,
+    // `<uuid>.<client>.<tool list hash>`: the ToolBus compares later
+    // requests' hash, and audits them with the client named here.
+    const sessionId = init.headers.get("mcp-session-id")!;
+    expect(sessionId).toMatch(
+      /^[0-9a-f-]{36}\.[A-Za-z0-9_-]{1,128}\.[0-9a-f]{16}$/,
     );
     expect(((await init.json()) as { result: unknown }).result).toMatchObject({
       protocolVersion: "2025-06-18",
@@ -1004,6 +1012,7 @@ describe("a DCR client (Codex-style)", () => {
         params: { name: "todo_create_todo", arguments: { title: "legacy" } },
       },
       "2025-06-18",
+      { "mcp-session-id": sessionId },
     );
     const { result } = (await call.json()) as {
       result: { content: { text: string }[] };
@@ -1012,6 +1021,13 @@ describe("a DCR client (Codex-style)", () => {
       todo: { id: "t1", title: "legacy" },
     });
     await settle();
+    const [audit] = await db.select().from(mcpToolCalls);
+    expect(audit).toMatchObject({
+      credentialKind: "oauth",
+      toolName: "todo_create_todo",
+      protocolVersion: "2025-06-18",
+      clientInfo: "claude-ai 1",
+    });
   });
 
   it("answers a user who declines with access_denied, state and iss", async () => {
@@ -2716,6 +2732,8 @@ describe("personal access tokens on the gateway's /mcp", () => {
     const [audit] = await db.select().from(mcpToolCalls);
     expect(audit).toMatchObject({
       credentialKind: "pat",
+      clientName: null,
+      clientInfo: "test 1",
       surface: "gateway",
       toolName: "notes_add_note",
       outcome: "ok",

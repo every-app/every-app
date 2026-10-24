@@ -47,8 +47,22 @@ const chef = todoApp({
   instructions: undefined,
 });
 
-/** `<uuid>.<16 hex>`: the tool list hash is the last part. */
-const SESSION_ID = /^[0-9a-f-]{36}\.[0-9a-f]{16}$/;
+/**
+ * `<uuid>.<client>.<16 hex>` or `<uuid>.<16 hex>`: the tool list hash is the
+ * last part; the middle one, when the client named itself at initialize,
+ * is its description in base64url.
+ */
+const SESSION_ID = /^[0-9a-f-]{36}\.(?:[A-Za-z0-9_-]{1,128}\.)?[0-9a-f]{16}$/;
+
+/** The client a three-part session id carries, decoded. */
+function sessionClient(sessionId: string): string | undefined {
+  const parts = sessionId.split(".");
+  if (parts.length !== 3) return undefined;
+  const base64 = parts[1]!.replace(/-/g, "+").replace(/_/g, "/");
+  return new TextDecoder().decode(
+    Uint8Array.from(atob(base64), (char) => char.charCodeAt(0)),
+  );
+}
 
 /** The todo app after a redeploy that added a tool. */
 const todoAppWithArchive = () =>
@@ -154,6 +168,23 @@ function initializeRequest(version = "2025-11-25", headers = {}, url?: string) {
 }
 
 describe("2026-07-28 (modern) era", () => {
+  it("audits a call with the client its envelope names", async () => {
+    const events: ToolCallAuditEvent[] = [];
+    const { serve } = toolBus({ audit: (event) => events.push(event) });
+    const response = await serve(
+      modernRequest("tools/call", { name: "list_todos", arguments: {} }),
+      appView(),
+    );
+    expect(response.status).toBe(200);
+    expect(events).toEqual([
+      expect.objectContaining({
+        tool: "list_todos",
+        protocolVersion: "2026-07-28",
+        clientInfo: "test 1",
+      }),
+    ]);
+  });
+
   it("holds subscriptions/listen and pushes tools/list_changed when the re-read view differs", async () => {
     const { serve } = toolBus({ listenPollMs: 10, listenMaxMs: 300 });
     let current = appView();
@@ -840,9 +871,12 @@ describe("2025 (legacy) eras", () => {
       after,
     );
     expect(again.headers.get("content-type")).toContain("application/json");
-    expect(again.headers.get("mcp-session-id")!.split(".")[1]).toBe(
-      rotated.split(".")[1],
-    );
+    // The hash is the last part, after the client part the fixture always
+    // carries; the re-initialized session names the same list and client
+    // as the rotated one.
+    const againSession = again.headers.get("mcp-session-id")!;
+    expect(againSession.split(".").at(-1)).toBe(rotated.split(".").at(-1));
+    expect(sessionClient(againSession)).toBe(sessionClient(rotated));
   });
 
   it("answers plain JSON while the session's tool list is unchanged", async () => {
@@ -971,6 +1005,147 @@ describe("2025 (legacy) eras", () => {
       }),
     ]);
     expect(appCalls).toEqual([]);
+  });
+
+  it("carries the client named at initialize in the session, and audits calls on it with that name", async () => {
+    const events: ToolCallAuditEvent[] = [];
+    const { serve } = toolBus({ audit: (event) => events.push(event) });
+    const init = await serve(initializeRequest(), appView());
+    const sessionId = init.headers.get("mcp-session-id")!;
+    expect(sessionId).toMatch(SESSION_ID);
+    expect(sessionClient(sessionId)).toBe("claude-code 1");
+
+    const onSession = await serve(
+      legacyRequest(
+        "tools/call",
+        { name: "list_todos", arguments: {} },
+        { headers: { "mcp-session-id": sessionId } },
+      ),
+      appView(),
+    );
+    expect((await rpcBody(onSession)).result.content).toEqual([
+      { type: "text", text: "ran list_todos" },
+    ]);
+    // A blocked call on the session names the client too; a call with no
+    // session names none: nothing else keeps it between requests.
+    await serve(
+      legacyRequest(
+        "tools/call",
+        { name: "delete_todo", arguments: { id: "1" } },
+        { headers: { "mcp-session-id": sessionId } },
+      ),
+      appView(),
+    );
+    await serve(
+      legacyRequest("tools/call", { name: "list_todos", arguments: {} }),
+      appView(),
+    );
+    expect(events.map((event) => [event.decision, event.clientInfo])).toEqual([
+      ["allowed", "claude-code 1"],
+      ["blocked", "claude-code 1"],
+      ["allowed", undefined],
+    ]);
+
+    // A rotated session (the tool list changed) keeps the client.
+    const rotated = await serve(
+      legacyRequest(
+        "tools/call",
+        { name: "list_todos", arguments: {} },
+        { headers: { "mcp-session-id": sessionId } },
+      ),
+      appView(todoAppWithArchive()),
+    );
+    expect(rotated.headers.get("content-type")).toBe("text/event-stream");
+    expect(sessionClient(rotated.headers.get("mcp-session-id")!)).toBe(
+      "claude-code 1",
+    );
+  });
+
+  it("mints the two-part session when initialize names no visible client", async () => {
+    const { serve } = toolBus();
+    const init = await serve(
+      legacyRequest("initialize", {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: { name: " \u0000\t ", version: "1" },
+      }),
+      appView(),
+    );
+    expect(init.status).toBe(200);
+    expect(init.headers.get("mcp-session-id")).toMatch(
+      /^[0-9a-f-]{36}\.[0-9a-f]{16}$/,
+    );
+  });
+
+  it("bounds the client's text in the session: cut by character to 128 base64url characters, control characters gone", async () => {
+    const events: ToolCallAuditEvent[] = [];
+    const { serve } = toolBus({ audit: (event) => events.push(event) });
+    const init = await serve(
+      legacyRequest("initialize", {
+        protocolVersion: "2025-11-25",
+        capabilities: {},
+        clientInfo: {
+          name: `\u0007${"é".repeat(300)}`,
+          version: `1\u0000\n${"2".repeat(80)}`,
+        },
+      }),
+      appView(),
+    );
+    const sessionId = init.headers.get("mcp-session-id")!;
+    expect(sessionId).toMatch(SESSION_ID);
+    const encoded = sessionId.split(".")[1]!;
+    expect(encoded.length).toBeLessThanOrEqual(128);
+    // The name is cut to 100 "é" (200 bytes), more than the 96 bytes a
+    // session part holds, so the session keeps the first 48 whole
+    // characters; none is split.
+    expect(sessionClient(sessionId)).toBe("é".repeat(48));
+
+    await serve(
+      legacyRequest(
+        "tools/call",
+        { name: "list_todos", arguments: {} },
+        { headers: { "mcp-session-id": sessionId } },
+      ),
+      appView(),
+    );
+    expect(events[0]?.clientInfo).toBe("é".repeat(48));
+  });
+
+  it("serves a session whose client part was tampered with, the hash check intact", async () => {
+    const events: ToolCallAuditEvent[] = [];
+    const { serve } = toolBus({ audit: (event) => events.push(event) });
+    const init = await serve(initializeRequest(), appView());
+    const [uuid, , hash] = init.headers.get("mcp-session-id")!.split(".");
+    // Not base64url; a byte that isn't UTF-8; too long; empty.
+    const middles = ["!!!not-base64url!!!", "_w", "A".repeat(400), ""];
+    for (const middle of middles) {
+      const call = await serve(
+        legacyRequest(
+          "tools/call",
+          { name: "list_todos", arguments: {} },
+          { headers: { "mcp-session-id": `${uuid}.${middle}.${hash}` } },
+        ),
+        appView(),
+      );
+      expect(call.status).toBe(200);
+      expect(call.headers.get("content-type")).toContain("application/json");
+      expect((await rpcBody(call)).result.content).toEqual([
+        { type: "text", text: "ran list_todos" },
+      ]);
+    }
+    expect(events.map((event) => event.clientInfo)).toEqual(
+      middles.map(() => undefined),
+    );
+    // The hash is still what tells a changed list.
+    const changed = await serve(
+      legacyRequest(
+        "tools/list",
+        {},
+        { headers: { "mcp-session-id": `${uuid}.garbage.${hash}` } },
+      ),
+      appView(todoAppWithArchive()),
+    );
+    expect(changed.status).toBe(404);
   });
 
   it("answers ping", async () => {

@@ -1011,7 +1011,10 @@ describe("syncing a new version", () => {
       "legacy",
     );
     const sessionId = init.headers.get("mcp-session-id")!;
-    expect(sessionId).toMatch(/^[0-9a-f-]{36}\.[0-9a-f]{16}$/);
+    // `<uuid>.<client>.<tool list hash>`; the client part is "cursor 1".
+    expect(sessionId).toMatch(
+      /^[0-9a-f-]{36}\.[A-Za-z0-9_-]{1,128}\.[0-9a-f]{16}$/,
+    );
     const same = await mcpRaw(
       { authorization: `Bearer ${token}`, "mcp-session-id": sessionId },
       {
@@ -1063,7 +1066,7 @@ describe("syncing a new version", () => {
       "legacy",
     );
     const fresh = again.headers.get("mcp-session-id")!;
-    expect(fresh.split(".")[1]).not.toBe(sessionId.split(".")[1]);
+    expect(fresh.split(".").at(-1)).not.toBe(sessionId.split(".").at(-1));
     const listed = await mcpRaw(
       { authorization: `Bearer ${token}`, "mcp-session-id": fresh },
       { jsonrpc: "2.0", id: 5, method: "tools/list", params: {} },

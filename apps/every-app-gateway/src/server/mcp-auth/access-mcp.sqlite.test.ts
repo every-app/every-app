@@ -428,10 +428,14 @@ describe("a Cloudflare Access assertion on the gateway's /mcp (SQLite)", () => {
       toolCall: { name: "create_todo" },
     });
     const [audit] = await db.select().from(mcpToolCalls);
+    // An Access caller has no connection row to name the AI app, so the
+    // row keeps what the client called itself in the handshake.
     expect(audit).toMatchObject({
       surface: "gateway",
       credentialKind: "access",
       credentialId: MEMBER_EMAIL,
+      clientName: null,
+      clientInfo: "test 1",
       appSlug: "todo",
       toolName: "todo_create_todo",
       risk: "write",

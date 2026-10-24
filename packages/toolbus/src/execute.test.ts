@@ -135,6 +135,31 @@ describe("executeToolCall", () => {
     ]);
   });
 
+  it("audits the client the request names, on allowed and blocked calls alike", async () => {
+    const { deps, events } = harness(() => ok());
+    const clientInfo = "claude-code 1";
+    await executeToolCall(
+      appView(),
+      { name: "list_todos", arguments: {}, clientInfo },
+      deps,
+    );
+    await executeToolCall(
+      appView(),
+      { name: "delete_todo", arguments: { id: "1" }, clientInfo },
+      deps,
+    );
+    await executeToolCall(
+      appView(),
+      { name: "list_todos", arguments: {} },
+      deps,
+    );
+    expect(events.map((event) => [event.decision, event.clientInfo])).toEqual([
+      ["allowed", "claude-code 1"],
+      ["blocked", "claude-code 1"],
+      ["allowed", undefined],
+    ]);
+  });
+
   it("lists an app that needs setup as unavailable, with why", async () => {
     const { deps } = harness(() => ok());
     const view: ToolBusView = {

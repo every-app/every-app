@@ -139,6 +139,13 @@ export interface ToolCallAuditEvent {
   credentialId: string;
   /** The connected AI app's display name, when the credential has one. */
   clientName?: string;
+  /**
+   * The client's own description of itself from the MCP handshake, as
+   * `<name> <version>`: the 2026-07-28 per-request `clientInfo`, or the
+   * 2025 `initialize` one carried in the session id. At most 200
+   * characters, never verified.
+   */
+  clientInfo?: string;
 }
 
 /** Signing material for the tokens the ToolBus mints for app calls. */

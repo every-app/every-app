@@ -160,6 +160,11 @@ export const mcpToolCalls = sqliteTable(
     // The connection or PAT id ("session" for a browser session).
     credentialId: text("credential_id").notNull(),
     clientName: text("client_name"),
+    // The client's own description from the MCP handshake, "<name>
+    // <version>" (at most 200 characters): the 2026-07-28 per-request
+    // clientInfo, or the 2025 initialize one carried in the session id.
+    // Self-asserted, never verified; null when the client sent none.
+    clientInfo: text("client_info"),
     // "gateway" | "app"
     surface: text("surface").notNull(),
     appRowId: text("app_row_id"),

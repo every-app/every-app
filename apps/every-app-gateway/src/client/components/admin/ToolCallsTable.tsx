@@ -86,15 +86,25 @@ function formatDuration(ms: number | null): string {
 }
 
 function WhoCell({ call }: { call: ToolCallRow }) {
-  const { user } = call;
+  const { user, credential } = call;
   // No membership in this organization any more: by id, never by the
   // profile they keep elsewhere.
   const former = user.name === null && user.email === null;
-  const secondary = former
+  const who = former
     ? user.id
     : user.name && user.name !== user.email
       ? user.email
       : null;
+  const label = credentialLabel(credential);
+  // What the AI app called itself in the MCP handshake (never verified):
+  // for a token or Access caller the badge only names the credential's
+  // kind, so this is what says which app called. Shown when it adds to
+  // the badge, and in full on the badge's hover.
+  const client =
+    credential.clientInfo && credential.clientInfo !== label
+      ? credential.clientInfo
+      : null;
+  const secondary = [who, client].filter(Boolean).join(" · ");
   return (
     <>
       <div className="flex min-w-0 items-center gap-1.5">
@@ -106,12 +116,19 @@ function WhoCell({ call }: { call: ToolCallRow }) {
         >
           {former ? "Former member" : user.name || user.email}
         </p>
-        <Badge variant="outline" size="sm" className="shrink-0">
-          {credentialLabel(call.credential)}
+        <Badge
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          title={credential.clientInfo ?? undefined}
+        >
+          {label}
         </Badge>
       </div>
       {secondary ? (
-        <p className="truncate text-xs text-muted-foreground">{secondary}</p>
+        <p className="truncate text-xs text-muted-foreground" title={secondary}>
+          {secondary}
+        </p>
       ) : null}
     </>
   );

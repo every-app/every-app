@@ -18,6 +18,7 @@ import {
 import { canonicalJson } from "@every-app/sdk/internal";
 import { listBuiltinTools } from "./builtins";
 import { executeToolCall } from "./execute";
+import { isPlainObject } from "./io";
 import { displayedToolName, exposedToolName } from "./names";
 import { evaluateToolPolicy } from "./policy";
 import type {
@@ -31,6 +32,43 @@ import { jsonSchemaValidator } from "./validation";
 export const TOOLBUS_VERSION = "0.1.0";
 /** Clients may cache tools/list this long (2026-07-28 `ttlMs`). */
 const TOOLS_LIST_TTL_MS = 60_000;
+/** How much of a client's name and version the audit row keeps. */
+const MAX_CLIENT_NAME_LENGTH = 100;
+const MAX_CLIENT_VERSION_LENGTH = 50;
+/** The whole description (both parts and a space fit well inside it). */
+export const MAX_CLIENT_INFO_LENGTH = 200;
+
+/**
+ * One line of visible text from a value a client sent: control characters
+ * removed, whitespace collapsed, cut to `max` characters. Empty for
+ * anything that isn't a string.
+ */
+export function cleanClientText(value: unknown, max: number): string {
+  if (typeof value !== "string") return "";
+  const visible = value
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return Array.from(visible).slice(0, max).join("").trim();
+}
+
+/**
+ * The client's description of itself for the audit row, `<name> <version>`,
+ * from the `Implementation` it sent in the handshake (the 2026-07-28
+ * envelope's `clientInfo`, or a 2025 `initialize`'s). Never verified: a
+ * client calls itself what it likes, so the text is only cleaned and
+ * bounded. Undefined when there is no name.
+ */
+export function describeClient(implementation: unknown): string | undefined {
+  if (!isPlainObject(implementation)) return undefined;
+  const name = cleanClientText(implementation["name"], MAX_CLIENT_NAME_LENGTH);
+  if (!name) return undefined;
+  const version = cleanClientText(
+    implementation["version"],
+    MAX_CLIENT_VERSION_LENGTH,
+  );
+  return version ? `${name} ${version}` : name;
+}
 
 function byKey<T>(key: (item: T) => string) {
   return (a: T, b: T) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0);
@@ -104,7 +142,14 @@ export function createToolBusServer(
   view: ToolBusView,
   deps: ToolBusDeps,
   protocolVersion?: string,
-  options: { listChanged?: boolean } = {},
+  options: {
+    listChanged?: boolean;
+    /**
+     * The client as a 2025 session carries it (`describeClient` of the
+     * `initialize` it was minted for), for calls whose request names none.
+     */
+    clientInfo?: string;
+  } = {},
 ): Server {
   const server = new Server(
     {
@@ -127,12 +172,20 @@ export function createToolBusServer(
   }));
 
   server.setRequestHandler("tools/call", async (request) => {
+    // Who the client says it is. A 2026-07-28 request carries it in its
+    // envelope, which the SDK writes onto the server before the handler
+    // runs (it deprecates this accessor for the handler context's
+    // `envelope`, whose type is empty in 2.3.1); a 2025 client said it
+    // once at initialize, and only its session carries it here.
+    const clientInfo =
+      describeClient(server.getClientVersion()) ?? options.clientInfo;
     const resolution = await executeToolCall(
       view,
       {
         name: request.params.name,
         arguments: request.params.arguments,
         ...(protocolVersion ? { protocolVersion } : {}),
+        ...(clientInfo ? { clientInfo } : {}),
       },
       deps,
     );
