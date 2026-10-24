@@ -119,12 +119,12 @@ describe("toolCallAppLabel", () => {
         name: "Chef",
         removed: true,
       }),
-    ).toBe("Chef (removed)");
+    ).toBe("Chef · removed");
     expect(
       toolCallAppLabel({ rowId: "a", slug: "gone", name: null, removed: true }),
-    ).toBe("gone (removed)");
+    ).toBe("gone · removed");
     expect(
       toolCallAppLabel({ rowId: "a", slug: null, name: null, removed: true }),
-    ).toBe("a (removed)");
+    ).toBe("a · removed");
   });
 });

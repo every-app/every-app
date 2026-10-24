@@ -83,8 +83,8 @@ export function toolCallsInfiniteQuery(
   };
 }
 
-/** The App filter's label: the name, else the slug, and "(removed)" once it is gone. */
+/** The App filter's label: the name, else the slug, and "· removed" once it is gone. */
 export function toolCallAppLabel(app: ToolCallApp): string {
   const name = app.name ?? app.slug ?? app.rowId;
-  return app.removed ? `${name} (removed)` : name;
+  return app.removed ? `${name} · removed` : name;
 }

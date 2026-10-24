@@ -29,7 +29,7 @@ interface ToolCallsTableProps {
 
 const CREDENTIAL_LABELS: Record<string, string> = {
   oauth: "OAuth",
-  pat: "PAT",
+  pat: "Token",
   session: "Session",
   access: "Access",
   dev: "Dev",
@@ -50,14 +50,11 @@ const RISK_VARIANTS: Record<string, BadgeVariant> = {
 };
 
 const OUTCOMES: Record<string, { label: string; className: string }> = {
-  ok: { label: "OK", className: "text-muted-foreground" },
-  tool_error: {
-    label: "Tool error",
-    className: "text-warning-foreground dark:text-warning",
-  },
+  ok: { label: "OK", className: "text-foreground" },
+  tool_error: { label: "Tool error", className: "text-destructive" },
   invalid_arguments: {
     label: "Invalid arguments",
-    className: "text-warning-foreground dark:text-warning",
+    className: "text-destructive",
   },
   app_error: { label: "App error", className: "text-destructive" },
   timeout: { label: "Timed out", className: "text-destructive" },
@@ -65,23 +62,27 @@ const OUTCOMES: Record<string, { label: string; className: string }> = {
   not_run: { label: "Not run", className: "text-muted-foreground" },
 };
 
-/** "read_only_caller" reads as "Read only caller". */
+/** Why a call was blocked, in plain words. */
+const REASON_LABELS: Record<string, string> = {
+  destructive_tools_hidden: "Destructive tools are never available to AI apps",
+  read_only_caller: "This connection is read-only",
+  unknown_tool: "No such tool",
+};
+
+/** A reason with no label: "some_reason" reads as "Some reason". */
 function humanize(code: string): string {
   const words = code.replace(/_/g, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+function reasonLabel(reason: string): string {
+  return REASON_LABELS[reason] ?? humanize(reason);
 }
 
 function formatDuration(ms: number | null): string {
   if (ms === null) return "—";
   if (ms < 1000) return `${ms} ms`;
   return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
-}
-
-function formatBytes(bytes: number | null): string {
-  if (bytes === null) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function WhoCell({ call }: { call: ToolCallRow }) {
@@ -138,7 +139,9 @@ function AppCell({ app }: { app: ToolCallRow["app"] }) {
 function ToolCell({ tool }: { tool: ToolCallRow["tool"] }) {
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      <p className="truncate font-mono text-xs">{tool.name}</p>
+      <p className="truncate font-mono text-xs" title={tool.name}>
+        {tool.name}
+      </p>
       {tool.risk ? (
         <Badge
           variant={RISK_VARIANTS[tool.risk] ?? "outline"}
@@ -160,16 +163,17 @@ function DecisionCell({ call }: { call: ToolCallRow }) {
     </Badge>
   );
   if (!call.reason) return badge;
+  const reason = reasonLabel(call.reason);
   return (
     <Tooltip>
       <TooltipTrigger
         delay={150}
-        aria-label={`${allowed ? "Allowed" : "Blocked"}: ${humanize(call.reason)}`}
+        aria-label={`${allowed ? "Allowed" : "Blocked"}: ${reason}`}
         className="cursor-help rounded-4xl"
       >
         {badge}
       </TooltipTrigger>
-      <TooltipContent>{humanize(call.reason)}</TooltipContent>
+      <TooltipContent>{reason}</TooltipContent>
     </Tooltip>
   );
 }
@@ -185,6 +189,11 @@ function OutcomeCell({ outcome }: { outcome: string }) {
 
 // The list is ordered on the server (newest first, across pages), so the
 // columns don't sort: sorting one loaded page would mislead.
+//
+// The when, decision, outcome and duration cells never wrap, so they take
+// what their text needs (about 470 px); the who, app and tool cells are
+// capped so the table fits a 942 px card at a 1280 px viewport and their
+// text truncates rather than pushing the last column out of view.
 const columns: ColumnDef<ToolCallRow>[] = [
   {
     id: "when",
@@ -195,19 +204,19 @@ const columns: ColumnDef<ToolCallRow>[] = [
   {
     id: "who",
     header: "Who",
-    meta: { cellClassName: "max-w-[240px]" },
+    meta: { cellClassName: "max-w-[192px]" },
     cell: ({ row }) => <WhoCell call={row.original} />,
   },
   {
     id: "app",
     header: "App",
-    meta: { cellClassName: "max-w-[200px]" },
+    meta: { cellClassName: "max-w-[116px]" },
     cell: ({ row }) => <AppCell app={row.original.app} />,
   },
   {
     id: "tool",
     header: "Tool",
-    meta: { cellClassName: "max-w-[280px]" },
+    meta: { cellClassName: "max-w-[167px]" },
     cell: ({ row }) => <ToolCell tool={row.original.tool} />,
   },
   {
@@ -218,6 +227,7 @@ const columns: ColumnDef<ToolCallRow>[] = [
   {
     id: "outcome",
     header: "Outcome",
+    meta: { cellClassName: "whitespace-nowrap" },
     cell: ({ row }) => <OutcomeCell outcome={row.original.outcome} />,
   },
   {
@@ -229,16 +239,6 @@ const columns: ColumnDef<ToolCallRow>[] = [
         "whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground",
     },
     cell: ({ row }) => formatDuration(row.original.durationMs),
-  },
-  {
-    id: "resultBytes",
-    header: "Result size",
-    meta: {
-      headerClassName: "text-right",
-      cellClassName:
-        "whitespace-nowrap text-right text-xs tabular-nums text-muted-foreground",
-    },
-    cell: ({ row }) => formatBytes(row.original.resultBytes),
   },
 ];
 
@@ -268,13 +268,8 @@ export function ToolCallsTable({
       onClearFilters={onClearFilters}
       empty={{
         title: "No agent tool calls yet",
-        description: (
-          <>
-            Calls your AI apps make through the gateway&apos;s MCP are listed
-            here, kept for <code>MCP_AUDIT_RETENTION_DAYS</code> (90 by
-            default).
-          </>
-        ),
+        description:
+          "Tool calls AI apps make through the gateway show up here.",
       }}
     />
   );

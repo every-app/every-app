@@ -36,12 +36,12 @@ type Decision = typeof ANY | "allowed" | "blocked";
 type Risk = typeof ANY | "read" | "write" | "destructive";
 
 const DECISION_ITEMS: { value: Decision; label: string }[] = [
-  { value: ANY, label: "Any decision" },
+  { value: ANY, label: "All decisions" },
   { value: "allowed", label: "Allowed" },
   { value: "blocked", label: "Blocked" },
 ];
 const RISK_ITEMS: { value: Risk; label: string }[] = [
-  { value: ANY, label: "Any risk" },
+  { value: ANY, label: "All risks" },
   { value: "read", label: "Read" },
   { value: "write", label: "Write" },
   { value: "destructive", label: "Destructive" },
