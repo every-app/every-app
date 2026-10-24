@@ -8,6 +8,7 @@
     "sync:agent-docs": "node scripts/sync-agent-docs.js",
     "build": "node scripts/sync-agent-docs.js && wrangler types && vite build && node scripts/generate-sitemap.js",
     "sitemap": "node scripts/generate-sitemap.js",
+    "preflight": "node scripts/preflight.js",
     "types:check": "wrangler types && tsc --noEmit",
     "cf-typegen": "wrangler types",
     "db:migrate": "wrangler d1 migrations apply DB --local",
