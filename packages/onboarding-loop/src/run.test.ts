@@ -1844,6 +1844,11 @@ describe("runLoop", () => {
     expect(record.terminal_reason).toBe("blocked");
     expect(record.everyappCommands).toEqual([]);
     expect(record.verify.phaseReached).toBe("none");
+    // The harness's BLOCKED is the reason; a dead G1 with no setup attempted is not "infra".
+    expect(record.verdict).toMatchObject({
+      value: "fail-onboarding",
+      reasonCode: "blocked",
+    });
     const verifyJson = JSON.parse(
       fs.readFileSync(
         path.join(world.runsRoot, outcome.runId, RUN_FILES.verify),

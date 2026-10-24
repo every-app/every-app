@@ -286,7 +286,22 @@ export function assemble(input: AssembleInput): {
   const lastProcess = input.processes.at(-1) ?? [];
   const g1 = input.verify?.rows.G1;
   const g1Evidence = g1?.evidence as { status?: number | null } | null;
+  // Unreachable is an infra reason only when a Gateway was meant to exist: with no setup or
+  // update attempted (the harness stopped first, run 16), a dead G1 is the expected state and
+  // the harness's own BLOCKED or exit is the reason.
+  const setupAttempted =
+    traces.some(
+      (trace) => trace.argv[0] === "setup" || trace.argv[0] === "update",
+    ) ||
+    input.processes
+      .flat()
+      .some(
+        (event) =>
+          event.kind === "tool_call" &&
+          /\beveryapp\s+(setup|update)\b/.test(event.text ?? ""),
+      );
   const gatewayUnreachable =
+    setupAttempted &&
     g1?.status === "fail" &&
     !!g1Evidence &&
     typeof g1Evidence === "object" &&

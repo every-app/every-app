@@ -1643,10 +1643,21 @@ class RunState {
     const wildcard = await this.wildcardAppsRecord();
     // The log speaks about an upload only once a setup or update ran under the seam. None (the npx
     // trap: a published pre-seam CLI; or everyapp run with the env stripped): the full windows.
-    // With the seam, the event log is the authority: no setup or update invocation at all (the
-    // harness stopped before it, run 16) means no upload, as surely as a setup that stopped
-    // early does, so the verifier probes once instead of waiting its 15-minute windows.
-    const logSpeaks = this.eventLogSeam;
+    // With the seam, the event log speaks when it saw a setup or update, or when the harness ran
+    // none at all (it stopped first, run 16): then no upload happened and the verifier probes once
+    // instead of waiting its 15-minute windows. A harness that ran `npx everyapp setup` outside
+    // the seam (the npx trap) leaves the log empty without saying the Gateway is absent.
+    const harnessRanSetup = (this.turns?.processes ?? [])
+      .flat()
+      .some(
+        (event) =>
+          event.kind === "tool_call" &&
+          /\beveryapp\s+(setup|update)\b/.test(event.text ?? ""),
+      );
+    const logSpeaks =
+      this.eventLogSeam &&
+      (traces.some((t) => t.argv[0] === "setup" || t.argv[0] === "update") ||
+        !harnessRanSetup);
     this.noteTempDir("at verify start");
     try {
       await this.ensureBundle(this.testBundle, this.options.ref, "verifier");
