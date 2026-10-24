@@ -32,7 +32,14 @@ interface ManageAppAccessModalProps {
   onClose: () => void;
 }
 
-/** Picks who can open an app. Render it only while it is open. */
+/**
+ * Picks who can open an app directly. Someone a group grants it to is shown
+ * with the group's name; when that is their only grant the box is checked
+ * and disabled, since only Admin -> Groups changes it, and when they hold
+ * both, unchecking removes the direct grant while the group's keeps them
+ * in. Saving sends the direct list alone and never touches what a group
+ * grants. Render it only while it is open.
+ */
 export function ManageAppAccessModal({
   app,
   onClose,
@@ -56,7 +63,7 @@ export function ManageAppAccessModal({
     queryFn: () => getAppAccessState({ data: { id: app.id } }),
   });
 
-  // Initialize selected users when data loads
+  // Initialize selected users when data loads: the direct grants.
   useEffect(() => {
     if (data?.users) {
       const usersWithAccess = data.users
@@ -68,6 +75,28 @@ export function ManageAppAccessModal({
       setHasChanges(false);
     }
   }, [data]);
+
+  const users = useMemo(() => data?.users ?? [], [data]);
+  /** Users a group grants the app: they keep it whatever the direct list says. */
+  const viaGroup = useMemo(
+    () =>
+      new Set(
+        users
+          .filter((u: UserAccessState) => u.viaGroups.length)
+          .map((u: UserAccessState) => u.id),
+      ),
+    [users],
+  );
+  /** Users whose only grant comes through a group: shown checked, not editable here. */
+  const viaGroupOnly = useMemo(
+    () =>
+      new Set(
+        users
+          .filter((u: UserAccessState) => !u.hasAccess && u.viaGroups.length)
+          .map((u: UserAccessState) => u.id),
+      ),
+    [users],
+  );
 
   const toggleUser = (userId: string) => {
     // Prevent toggling your own access
@@ -85,20 +114,28 @@ export function ManageAppAccessModal({
     setHasChanges(true);
   };
 
+  // A direct grant for everyone not already granted through a group.
   const handleGrantAll = () => {
     if (data?.users) {
-      setSelectedUserIds(new Set(data.users.map((u: UserAccessState) => u.id)));
+      setSelectedUserIds(
+        new Set(
+          data.users
+            .filter((u: UserAccessState) => !viaGroupOnly.has(u.id))
+            .map((u: UserAccessState) => u.id),
+        ),
+      );
       setHasChanges(true);
     }
   };
 
+  // Every direct grant but the current user's own, which can't be changed
+  // here (and is never added: an admin let in by a group alone stays so).
   const handleRevokeAll = () => {
-    // Keep current user selected when revoking all
-    if (currentUserId) {
-      setSelectedUserIds(new Set([currentUserId]));
-    } else {
-      setSelectedUserIds(new Set());
-    }
+    setSelectedUserIds(
+      currentUserId && originalUserIds.has(currentUserId)
+        ? new Set([currentUserId])
+        : new Set(),
+    );
     setHasChanges(true);
   };
 
@@ -124,8 +161,6 @@ export function ManageAppAccessModal({
     }
   };
 
-  const users = data?.users ?? [];
-
   // Filter users based on search query
   const filteredUsers = useMemo(() => {
     if (!searchQuery) return users;
@@ -137,10 +172,12 @@ export function ManageAppAccessModal({
     );
   }, [users, searchQuery]);
 
-  // Calculate what's changing
+  // What's changing: who gains access, who loses it, and whose direct
+  // grant goes while a group keeps them in.
   const changes = useMemo(() => {
     const granting: string[] = [];
     const revoking: string[] = [];
+    const keptByGroup: string[] = [];
 
     for (const userId of selectedUserIds) {
       if (!originalUserIds.has(userId)) {
@@ -149,18 +186,34 @@ export function ManageAppAccessModal({
     }
     for (const userId of originalUserIds) {
       if (!selectedUserIds.has(userId)) {
-        revoking.push(userId);
+        (viaGroup.has(userId) ? keptByGroup : revoking).push(userId);
       }
     }
 
-    return { granting, revoking };
-  }, [selectedUserIds, originalUserIds]);
+    return { granting, revoking, keptByGroup };
+  }, [selectedUserIds, originalUserIds, viaGroup]);
+
+  // Who opens the app once saved: the direct list, and everyone a group
+  // grants it to; of those, how many through a group alone.
+  const outcome = useMemo(() => {
+    const withAccess = users.filter(
+      (u: UserAccessState) => selectedUserIds.has(u.id) || viaGroup.has(u.id),
+    );
+    return {
+      withAccess: withAccess.length,
+      throughGroups: withAccess.filter((u) => !selectedUserIds.has(u.id))
+        .length,
+    };
+  }, [users, selectedUserIds, viaGroup]);
 
   // Determine if bulk actions would have any effect
   const canGrantAll = useMemo(() => {
     // Grant All is useful if at least one user doesn't have access originally
-    return users.some((u: UserAccessState) => !originalUserIds.has(u.id));
-  }, [users, originalUserIds]);
+    return users.some(
+      (u: UserAccessState) =>
+        !originalUserIds.has(u.id) && !viaGroupOnly.has(u.id),
+    );
+  }, [users, originalUserIds, viaGroupOnly]);
 
   const canRevokeAll = useMemo(() => {
     // Revoke All is useful if at least one user (other than current user) has access originally
@@ -266,10 +319,18 @@ export function ManageAppAccessModal({
               <ul className="divide-y divide-border">
                 {filteredUsers.map((user: UserAccessState) => {
                   const isCurrentUser = user.id === currentUserId;
-                  const isSelected = selectedUserIds.has(user.id);
+                  const isViaGroup = viaGroup.has(user.id);
+                  const isViaGroupOnly = viaGroupOnly.has(user.id);
+                  const isSelected =
+                    selectedUserIds.has(user.id) || isViaGroupOnly;
                   const hadAccess = originalUserIds.has(user.id);
-                  const isGranting = isSelected && !hadAccess;
-                  const isRevoking = !isSelected && hadAccess;
+                  const isGranting =
+                    isSelected && !hadAccess && !isViaGroupOnly;
+                  // The direct grant goes: access with it, unless a group
+                  // keeps them in.
+                  const isRevoking = !isSelected && hadAccess && !isViaGroup;
+                  const isKeptByGroup = !isSelected && hadAccess && isViaGroup;
+                  const hasAccessAfter = isSelected || isViaGroup;
                   const displayName = user.name || user.email.split("@")[0];
 
                   return (
@@ -277,7 +338,8 @@ export function ManageAppAccessModal({
                       <label
                         className={cn(
                           "flex cursor-pointer items-center gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-muted",
-                          isCurrentUser && "cursor-not-allowed opacity-75",
+                          (isCurrentUser || isViaGroupOnly) &&
+                            "cursor-not-allowed opacity-75",
                           isGranting && "bg-success/10 hover:bg-success/15",
                           isRevoking &&
                             "bg-destructive/10 hover:bg-destructive/15",
@@ -286,7 +348,7 @@ export function ManageAppAccessModal({
                         <Checkbox
                           checked={isSelected}
                           onCheckedChange={() => toggleUser(user.id)}
-                          disabled={isSaving || isCurrentUser}
+                          disabled={isSaving || isCurrentUser || isViaGroupOnly}
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex min-w-0 items-center gap-2">
@@ -307,6 +369,15 @@ export function ManageAppAccessModal({
                                 {user.status}
                               </Badge>
                             ) : null}
+                            {user.viaGroups.length ? (
+                              <Badge
+                                variant="info"
+                                size="sm"
+                                title={`Granted through ${user.viaGroups.join(", ")}`}
+                              >
+                                via {user.viaGroups.join(", ")}
+                              </Badge>
+                            ) : null}
                           </div>
                           {user.name ? (
                             <p className="truncate text-xs text-muted-foreground">
@@ -324,14 +395,22 @@ export function ManageAppAccessModal({
                             <Minus />
                             Revoking
                           </Badge>
+                        ) : isKeptByGroup ? (
+                          <Badge
+                            variant="secondary"
+                            title={`Keeps access through ${user.viaGroups.join(", ")}`}
+                          >
+                            <Minus />
+                            Direct grant removed
+                          </Badge>
                         ) : (
                           <span
                             className={cn(
                               "shrink-0 text-xs text-muted-foreground",
-                              !isSelected && "opacity-70",
+                              !hasAccessAfter && "opacity-70",
                             )}
                           >
-                            {isSelected ? "Has access" : "No access"}
+                            {hasAccessAfter ? "Has access" : "No access"}
                           </span>
                         )}
                       </label>
@@ -346,7 +425,9 @@ export function ManageAppAccessModal({
         {/* Summary */}
         <div className="space-y-1 text-sm">
           {hasChanges &&
-          (changes.granting.length > 0 || changes.revoking.length > 0) ? (
+          (changes.granting.length > 0 ||
+            changes.revoking.length > 0 ||
+            changes.keptByGroup.length > 0) ? (
             <div className="flex flex-wrap gap-3">
               {changes.granting.length > 0 ? (
                 <span className="text-success">
@@ -358,12 +439,20 @@ export function ManageAppAccessModal({
                   -{changes.revoking.length} losing access
                 </span>
               ) : null}
+              {changes.keptByGroup.length > 0 ? (
+                <span className="text-muted-foreground">
+                  {changes.keptByGroup.length} kept through groups
+                </span>
+              ) : null}
             </div>
           ) : null}
           <div className="flex items-center justify-between gap-3 text-muted-foreground">
             <span>
-              {selectedUserIds.size} of {users.length} user
+              {outcome.withAccess} of {users.length} user
               {users.length !== 1 ? "s" : ""} will have access
+              {outcome.throughGroups
+                ? ` (${outcome.throughGroups} through groups)`
+                : null}
             </span>
             {searchQuery && filteredUsers.length !== users.length ? (
               <span className="text-xs tabular-nums">

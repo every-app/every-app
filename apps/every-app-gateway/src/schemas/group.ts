@@ -7,11 +7,11 @@ export const groupFormSchema = z.object({
     .trim()
     .min(1, "Name is required")
     .max(60, "Name is at most 60 characters"),
+  // Empty means none; the service stores null.
   description: z
     .string()
     .trim()
-    .max(500, "Description is at most 500 characters")
-    .optional(),
+    .max(500, "Description is at most 500 characters"),
 });
 
 const groupIdSchema = z.string().regex(/^grp_[0-9a-f]{16}$/, "Invalid group");
@@ -29,3 +29,5 @@ export const setGroupAppsSchema = z.object({
   id: groupIdSchema,
   appRowIds: z.array(z.string().uuid("Invalid app ID")),
 });
+
+export type GroupFormData = z.infer<typeof groupFormSchema>;

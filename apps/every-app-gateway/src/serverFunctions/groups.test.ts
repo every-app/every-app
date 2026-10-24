@@ -75,17 +75,20 @@ describe("group server functions", () => {
       name: "Sales",
       description: "team",
     });
-    expect(() => create({ name: "   " })).toThrow("Name is required");
-    expect(() => create({ name: "x".repeat(61) })).toThrow("at most 60");
+    expect(() => create({ name: "   ", description: "" })).toThrow(
+      "Name is required",
+    );
+    expect(() => create({ name: "x".repeat(61), description: "" })).toThrow(
+      "at most 60",
+    );
 
     const update = serverFns["updateGroup"]!.validatorFn!;
-    expect(() => update({ id: "not-a-group", name: "Sales" })).toThrow(
-      "Invalid group",
-    );
-    expect(update({ id: "grp_0123456789abcdef", name: "Sales" })).toEqual({
-      id: "grp_0123456789abcdef",
-      name: "Sales",
-    });
+    expect(() =>
+      update({ id: "not-a-group", name: "Sales", description: "" }),
+    ).toThrow("Invalid group");
+    expect(
+      update({ id: "grp_0123456789abcdef", name: "Sales", description: "" }),
+    ).toEqual({ id: "grp_0123456789abcdef", name: "Sales", description: "" });
 
     const setMembers = serverFns["setGroupMembers"]!.validatorFn!;
     expect(() =>

@@ -12,6 +12,7 @@ import {
   ScrollText,
   ShieldAlert,
   Users,
+  UsersRound,
 } from "lucide-react";
 import { useSession } from "@/client/hooks/useSession";
 import { authClient } from "@/client/auth-client";
@@ -33,6 +34,7 @@ export const Route = createFileRoute("/_app/admin")({
 
 enum AdminTab {
   Users = "users",
+  Groups = "groups",
   Apps = "apps",
   Tokens = "tokens",
   Usage = "usage",
@@ -41,6 +43,12 @@ enum AdminTab {
 
 const adminTabs = [
   { value: AdminTab.Users, label: "Users", to: "/admin/users", icon: Users },
+  {
+    value: AdminTab.Groups,
+    label: "Groups",
+    to: "/admin/groups",
+    icon: UsersRound,
+  },
   { value: AdminTab.Apps, label: "Apps", to: "/admin/apps", icon: AppWindow },
   {
     value: AdminTab.Tokens,
