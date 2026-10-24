@@ -13,6 +13,9 @@ import type { EventSink, RequiredAction } from "./events";
 const WORKERS_PLANS_URL =
   "https://dash.cloudflare.com/?to=/:account/workers/plans";
 
+/** The login's own profile, where its email address gets verified. */
+const CLOUDFLARE_PROFILE_URL = "https://dash.cloudflare.com/profile";
+
 /** Node's codes for a request the network failed under. */
 const NETWORK_CODES = new Set([
   "ECONNREFUSED",
@@ -105,6 +108,7 @@ export function reportFailure(
   const known = knownFailure(error);
   if (known) {
     fail(known.code, known.message, known.retryable, {
+      ...known.data,
       ...(known.retryable ? { rerun: thisCommand() } : {}),
     });
     return;
@@ -123,11 +127,25 @@ export function reportFailure(
   );
 }
 
-/** A failure that isn't everyapp's own but isn't a bug either: cf's, the network's, a manifest's. */
+/**
+ * A failure that isn't everyapp's own but isn't a bug either: cf's, the
+ * network's, a manifest's. Where Cloudflare's words leave no way on, ours
+ * say it: an account whose email isn't verified yet (API code 10034) can't
+ * create anything until it is, and then the same command runs.
+ */
 function knownFailure(
   error: unknown,
-): { code: string; message: string; retryable: boolean } | null {
+): { code: string; message: string; retryable: boolean; data?: Record<string, unknown> } | null {
   if (!(error instanceof Error)) return null;
+  if (isCfError(error, "email_unverified")) {
+    return {
+      code: "CF_EMAIL_UNVERIFIED",
+      message:
+        "Verify your Cloudflare account's email address first\nCloudflare refuses to create anything until the address on the account is verified. Open the message Cloudflare sent you, then run this command again.",
+      retryable: true,
+      data: { url: CLOUDFLARE_PROFILE_URL, cloudflare: error.message },
+    };
+  }
   if (error instanceof CfError) {
     return { code: `CF_${error.kind.toUpperCase()}`, message: error.message, retryable: false };
   }

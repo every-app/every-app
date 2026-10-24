@@ -206,6 +206,29 @@ describe("reportFailure", () => {
     expect(exitCode).toBe(2);
   });
 
+  it("tells an account whose email isn't verified to verify it, then run the command again", () => {
+    const refused = new CfError(
+      parseCfOutput(
+        "┌ Error\n│ A request to the Cloudflare API failed. Please verify your email address [code: 10034]\n└\n",
+      ),
+      { exitCode: 1, stderr: "" },
+    );
+    const { event, exitCode } = report(refused);
+    expect(event).toMatchObject({
+      type: "error",
+      code: "CF_EMAIL_UNVERIFIED",
+      message:
+        "Verify your Cloudflare account's email address first\nCloudflare refuses to create anything until the address on the account is verified. Open the message Cloudflare sent you, then run this command again.",
+      retryable: true,
+      data: {
+        url: "https://dash.cloudflare.com/profile",
+        rerun: expect.stringMatching(new RegExp(`^${CLI}`)),
+        cloudflare: expect.stringContaining("[code: 10034]"),
+      },
+    });
+    expect(exitCode).toBe(1);
+  });
+
   it("ends an action with the command to run once it is done", () => {
     const { event } = report(
       new ActionRequiredError(

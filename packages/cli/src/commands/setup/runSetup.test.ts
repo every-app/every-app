@@ -155,6 +155,7 @@ describe("everyapp setup", () => {
       releaseName: "0.2.0",
       gateway: "installed",
       ownerCreated: true,
+      mode: "self_hosted",
     });
 
     // The gateway, its own Custom Domain in the zone; no app yet.
@@ -798,18 +799,48 @@ describe("everyapp setup", () => {
     expect(account.databases.size).toBe(0);
   });
 
-  it("names the zones to choose from when unattended without --domain", async () => {
+  it("says the command to run when unattended without --domain and the account has one zone", async () => {
     const { exitCode } = await setup();
 
     expect(exitCode).toBe(1);
-    expect(events.at(-1)).toMatchObject({
+    const error = events.at(-1);
+    expect(error).toMatchObject({
       type: "error",
       code: "DOMAIN_REQUIRED",
       message: expect.stringMatching(/^Choose the Gateway's address with --domain\n.*: example\.com\./),
-      data: expect.objectContaining({
-        fix: "add --domain apps.example.com, or another name under example.com",
-      }),
+      data: {
+        zones: ["example.com"],
+        rerun: expect.stringMatching(/^pnpm everyapp\b.* --domain apps\.example\.com$/),
+        rerunNote: "or another name under example.com",
+      },
     });
+    // The rerun says it all: an agent sent here by install_gateway isn't stuck.
+    expect(error.data["fix"]).toBe("add --domain apps.example.com, or another name under example.com");
+    expect(error.data).not.toHaveProperty("choices");
+  });
+
+  it("offers one command per zone when unattended without --domain and the account has several", async () => {
+    account.zones.push({ id: "zone-2", name: "other.dev", status: "active" });
+
+    const { exitCode } = await setup();
+
+    expect(exitCode).toBe(1);
+    const error = events.at(-1);
+    expect(error).toMatchObject({
+      type: "error",
+      code: "DOMAIN_REQUIRED",
+      message: expect.stringMatching(/: example\.com, other\.dev\./),
+      data: {
+        zones: ["example.com", "other.dev"],
+        fix: "add --domain apps.example.com, or another name under example.com or other.dev",
+        choices: [
+          { label: "example.com", rerun: expect.stringMatching(/ --domain apps\.example\.com$/) },
+          { label: "other.dev", rerun: expect.stringMatching(/ --domain apps\.other\.dev$/) },
+        ],
+      },
+    });
+    // No single command fits: the choices are the way on.
+    expect(error.data).not.toHaveProperty("rerun");
   });
 
   it("warns about Workers Paid it can't confirm, never asks, and stops when Cloudflare refuses for the plan", async () => {
@@ -953,5 +984,34 @@ describe("everyapp setup", () => {
     );
     expect(opened).toEqual([expect.stringMatching(/^https:\/\/tools\.example\.com\/setup#token=est_/)]);
     expect(account.gatewayDomains()).toEqual(["tools.example.com"]);
+  });
+
+  it("asks a person at a terminal about browser installs once the Gateway is up, unless --yes", async () => {
+    let asked = 0;
+    const prompts: SetupDeps["prompts"] = {
+      browserDeploymentToken: async () => {
+        asked += 1;
+        return null;
+      },
+      pickZone: async () => {
+        throw new Error("asked for a zone");
+      },
+      gatewayAddress: async () => {
+        throw new Error("asked for an address");
+      },
+    };
+
+    // --yes answers everyapp's own question with a No, and nothing else changes.
+    const first = await setup({ json: false, domain: GW, yes: true }, { interactive: true, prompts });
+    expect(first.exitCode).toBe(0);
+    expect(first.result).toMatchObject({ gateway: "installed", ownerCreated: true });
+    expect(asked).toBe(0);
+    expect(account.workers.get("every-app-gateway")!.secrets).not.toHaveProperty("CF_DEPLOY_TOKEN");
+
+    // Without it, the question is asked (and declined here).
+    const second = await setup({ json: false, domain: GW }, { interactive: true, prompts });
+    expect(second.exitCode).toBe(0);
+    expect(asked).toBe(1);
+    expect(account.workers.get("every-app-gateway")!.secrets).not.toHaveProperty("CF_DEPLOY_TOKEN");
   });
 });

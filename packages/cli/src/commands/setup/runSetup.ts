@@ -39,7 +39,8 @@
  *                link's own row in D1. In CI the run ends without one, with
  *                a warning: apps deploy without an owner
  *    browser     at a terminal, optionally store a Cloudflare deploy token
- *                for browser installs (No by default; existing tokens stay)
+ *                for browser installs (No by default, and with --yes;
+ *                existing tokens stay)
  *
  * What can be set up next (AI, email) is the command's `done.data.next`.
  * With --json, each step is an NDJSON event and what only a person can do
@@ -92,7 +93,7 @@ import {
   waitForSetupLink,
   type GatewayOwner,
 } from "@/lib/gateway/setup-link";
-import { CLI, thisCommandWithout } from "@/lib/output/command";
+import { CLI, thisCommand, thisCommandWithout } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { askSecret, askText, choose, confirmAtTerminal } from "@/lib/output/prompt";
 import { deployGatewayRelease, gatewayTarget } from "./deployGateway";
@@ -110,6 +111,7 @@ export interface SetupFlags {
   /** Upload the Gateway even when it is up to date (hidden; key rotation). */
   redeploy?: boolean;
   json?: boolean;
+  /** Skip everyapp's own confirmations: the browser-install question is a No. */
   yes?: boolean;
   verbose?: boolean;
 }
@@ -179,6 +181,8 @@ export interface SetupResult {
   gateway: GatewayOutcome;
   /** This run made the owner (with the setup link it handed out). */
   ownerCreated: boolean;
+  /** What the Gateway is: an operator's own install, or the hosted one. */
+  mode: DeploymentMode;
 }
 
 /** setup's own dependencies, deploying `gateway`'s release. */
@@ -387,9 +391,13 @@ export async function installGateway({
     deps,
   });
 
+  // Browser installs need a deploy token on a self-hosted Gateway: asked
+  // for once, at a terminal; --yes answers No, and a token set stays.
+  const mode = live?.deploymentMode ?? flags.mode ?? "self_hosted";
   if (
     deps.interactive &&
-    (live?.deploymentMode ?? flags.mode ?? "self_hosted") === "self_hosted" &&
+    !flags.yes &&
+    mode === "self_hosted" &&
     !(await listWorkerSecrets(cf, GATEWAY_WORKER_NAME)).includes("CF_DEPLOY_TOKEN")
   ) {
     const token = await deps.prompts.browserDeploymentToken();
@@ -413,6 +421,7 @@ export async function installGateway({
     releaseName: releaseName(source),
     gateway: gateway.outcome,
     ownerCreated: created,
+    mode,
   };
 }
 
@@ -506,7 +515,13 @@ export async function activeZones(cf: CfRunner, accountId: string): Promise<stri
   );
 }
 
-/** The gateway's address, typed at the terminal under one of the account's zones. */
+/**
+ * The gateway's address, typed at the terminal under one of the account's
+ * zones. Unattended, DOMAIN_REQUIRED says the command to run: this one with
+ * `--domain apps.<zone>` when the account has one zone, else one such
+ * command per zone (`data.choices`, as choose_account's), so an agent sent
+ * here by `install_gateway` has a way on.
+ */
 async function pickDomain(
   cf: CfRunner,
   accountId: string,
@@ -514,13 +529,25 @@ async function pickDomain(
 ): Promise<string> {
   const zones = await activeZones(cf, accountId);
   if (!deps.interactive) {
+    const under = (zone: string) => thisCommand(["--domain", `apps.${zone}`]);
+    const [first] = zones;
     throw new EveryAppError(
       "DOMAIN_REQUIRED",
       `Choose the Gateway's address with --domain\nIt must be under one of this account's domains: ${zones.join(", ")}. A subdomain works best.`,
-      {
-        fix: `add --domain apps.${zones[0]!}, or another name under ${orList(zones)}`,
-        data: { zones },
-      },
+      zones.length === 1
+        ? {
+            fix: `add --domain apps.${first!}, or another name under ${first}`,
+            rerun: under(first!),
+            rerunNote: `or another name under ${first}`,
+            data: { zones },
+          }
+        : {
+            fix: `add --domain apps.${first!}, or another name under ${orList(zones)}`,
+            data: {
+              zones,
+              choices: zones.map((zone) => ({ label: zone, rerun: under(zone) })),
+            },
+          },
     );
   }
   return normalizeHostname(await deps.prompts.gatewayAddress(zones));

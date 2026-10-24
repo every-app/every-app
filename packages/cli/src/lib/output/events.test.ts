@@ -495,9 +495,21 @@ describe("createHumanSink", () => {
           { label: "Gateway", value: "https://apps.example.com" },
           { label: "Admin", value: "https://apps.example.com/admin", note: "invite people" },
         ],
+        // What setup says next (commands/setup/index.ts).
         next: [
           { command: "pnpm everyapp create my-app", note: "start your first app" },
-          { command: "pnpm everyapp secret set OPENAI_API_KEY", note: "turn on AI for apps" },
+          {
+            command: "pnpm everyapp access on",
+            note: "put Cloudflare Access in front of your Gateway (recommended)",
+          },
+          {
+            command: "pnpm everyapp secret set OPENAI_API_KEY",
+            note: "AI for apps (or OPENROUTER_API_KEY, WORKERS_AI_API_TOKEN)",
+          },
+          {
+            command: "pnpm everyapp secret set EMAIL_FROM EMAIL_FROM_NAME",
+            note: "email invites and password resets; needs Cloudflare Email Sending",
+          },
         ],
       },
     });
@@ -514,8 +526,10 @@ describe("createHumanSink", () => {
       "Done in 37s",
       "",
       "Next:",
-      "  pnpm everyapp create my-app              start your first app",
-      "  pnpm everyapp secret set OPENAI_API_KEY  turn on AI for apps",
+      "  pnpm everyapp create my-app                          start your first app",
+      "  pnpm everyapp access on                              put Cloudflare Access in front of your Gateway (recommended)",
+      "  pnpm everyapp secret set OPENAI_API_KEY              AI for apps (or OPENROUTER_API_KEY, WORKERS_AI_API_TOKEN)",
+      "  pnpm everyapp secret set EMAIL_FROM EMAIL_FROM_NAME  email invites and password resets; needs Cloudflare Email Sending",
     ]);
   });
 
