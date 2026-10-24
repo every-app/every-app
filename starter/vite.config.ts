@@ -4,9 +4,12 @@ import tsConfigPaths from "vite-tsconfig-paths";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { cloudflare } from "@cloudflare/vite-plugin";
+import manifest from "./everyapp.config";
 
 export default defineConfig({
-  envPrefix: ["VITE_"],
+  // The manifest, for the app to show what it was allowed: the Worker can't
+  // import everyapp.config.ts itself (the Cloudflare plugin hides it in dev).
+  define: { __EVERYAPP_MANIFEST__: JSON.stringify(manifest) },
   server: {
     // `cf dev` forwards no port flag; `everyapp dev` passes the port in PORT.
     host: "127.0.0.1",

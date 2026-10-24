@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+html {
+  color-scheme: light dark;
+}

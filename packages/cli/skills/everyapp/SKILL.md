@@ -5,7 +5,8 @@ description: Create, run, deploy and manage private web apps on Cloudflare with 
 
 everyapp: self-hosted platform for private web apps on Cloudflare. While
 publishing is paused the command is `pnpm everyapp` (never `npx everyapp`),
-run from the Every App checkout.
+run from the Every App checkout or from an app's directory (its package.json
+links the CLI).
 
 Docs: two worlds. The user docs (https://everyapp.com/docs) are short and
 for the person. The agent docs are yours: https://everyapp.com/llms.txt
@@ -26,9 +27,11 @@ with the exact command or manifest field, naming the page. A failed
 command: look its code up on errors (anchor: the code, lowercased) before
 trying anything else. Never guess a flag: cli has them all.
 Building an app: the Gateway signs people in, so never build a login page
-or auth; read the user with the SDK (identity page). A new app edits
-everyapp.config.ts for name, resources, secrets, public and email
-(manifest page); an OAuth client with scope sets (google-workspace,
+or auth; read the user with the SDK (identity page), and scope every query
+by user.id: the Gateway admits every member of the organization. A new app
+edits everyapp.config.ts for name, resources, public, providers,
+capabilities, secrets and email (manifest page), and the Gateway gives it
+nothing it doesn't declare there; an OAuth client with scope sets (google-workspace,
 microsoft-365, slack) is listed with scopes: [...] and held to them;
 after a schema change run pnpm run db:generate; a value
 only dev needs goes in .dev.vars, never in git (dev page).

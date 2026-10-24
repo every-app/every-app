@@ -10,49 +10,47 @@ checkout landing-page/content/agent/mcp.md); the person's steps: https://everyap
 
 ## Define tools: src/tools.ts
 
-The starter's shape (starter/src/tools.ts, shortened):
+The starter's shape (starter/src/tools.ts, shortened; the queries and their zod
+schemas live in starter/src/server/todos.ts, shared with the server functions):
 
 ```ts
 import { ToolError, defineTools } from "@every-app/sdk/server";
 import { z } from "zod";
-import { TodoError } from "@/server/todoErrors";
-import { TodoService } from "@/server/todoService";
+import * as todos from "@/server/todos";
 
 export const tools = defineTools(
   {
     list_todos: {
-      description: "List all todos belonging to the authenticated user.",
+      description: "List the user's todos, completed ones included.",
       risk: "read",
       input: z.object({}).strict(),
-      handler: async (_input, { user }) => ({
-        todos: await TodoService.list(user.id),
-      }),
+      handler: (_input, { user }) => todos.listTodos(user.id),
     },
     create_todo: {
-      description: "Create a new active todo. The server generates its ID.",
+      description: "Add a todo. The server assigns its id.",
       risk: "write",
       idempotent: false,
-      input: z.object({ title: z.string().trim().min(1).max(255) }).strict(),
-      handler: async ({ title }, { user }) => ({
-        todo: await TodoService.create(user, { id: crypto.randomUUID(), title }),
-      }),
+      input: todos.createTodoInput,
+      handler: (input, { user }) => todos.createTodo(user.id, input),
     },
     delete_todo: {
-      description: "Permanently delete one todo belonging to the user.",
+      description: "Delete one todo for good.",
       risk: "destructive",
-      input: z.object({ id: z.string().uuid("Invalid todo ID") }).strict(),
-      handler: async (input, { user }) => {
-        try {
-          return { deleted: await TodoService.delete(user.id, input) };
-        } catch (error) {
-          if (error instanceof TodoError) throw new ToolError(error.message);
-          throw error;
-        }
-      },
+      input: todos.deleteTodoInput,
+      handler: async (input, { user }) =>
+        (await todos.deleteTodo(user.id, input)) ?? raise("No todo with that id"),
     },
   },
-  { instructions: "Never guess todo IDs; call list_todos first." },
+  {
+    instructions:
+      "Never guess todo ids: call list_todos first when an id isn't already known.",
+  },
 );
+
+/** A message the model may read; any other error reaches it as "Internal error". */
+function raise(message: string): never {
+  throw new ToolError(message);
+}
 ```
 
 Register them once, in src/entry.worker.ts:
@@ -237,4 +235,4 @@ in a browser once (else `403 not_connected`), gets read & write to every app, no
 - apps/every-app-gateway/src/server/toolbus/catalog-sync.ts, gateway-mcp.ts, app-host-mcp.ts; src/server/app-activation.ts, deploy/run.ts; src/server/mcp-auth/routes.ts, config.ts, validate.ts, consent.ts, registration-limit.ts
 - apps/every-app-gateway/src/routes/_app/admin/tokens.tsx, settings/connections.tsx; src/client/components/Sidebar.tsx, oauth/ConsentForm.tsx, admin/CreateUserTokenModal.tsx
 - packages/perimeter/src/gateway.ts; packages/cli/src/commands/dev/devAppGateway.ts, ready.ts; packages/cli/src/commands/deploy/deployApp.ts; packages/cli/src/lib/app/skill.ts
-- starter/src/tools.ts, entry.worker.ts, server/todoService.ts, server/todoErrors.ts, README.md; docs/runbooks/mcp-oauth.md; landing-page/content/agent/mcp.md; landing-page/content/docs/connect-ai.mdx
+- starter/src/tools.ts, entry.worker.ts, server/todos.ts, README.md; docs/runbooks/mcp-oauth.md; landing-page/content/agent/mcp.md; landing-page/content/docs/connect-ai.mdx

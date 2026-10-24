@@ -450,18 +450,22 @@ The deploy checks the Build Output against a policy before `cf deploy --prebuilt
 
 ## Examples
 
-The starter (`starter/everyapp.config.ts`): one D1 database named after the Worker, one KV namespace, no public routes.
+The starter (`starter/everyapp.config.ts`): one D1 database named after the Worker, one public route and one capability; everything else is private and refused.
 
 ```ts
 export default {
   id: "simple-todo-template",
   name: "Simple Todo",
-  description: "A simple todo list backed by D1 and KV.",
+  description: "A todo list that shows who you are and what it was allowed.",
   resources: {
     d1: ["DB"],
-    kv: ["KV"],
   },
-  public: [],
+  // Reachable without signing in. Everything else needs a member the Gateway signed in.
+  public: [{ path: "/health" }],
+  // What the Gateway does for the app with keys it holds. A call for anything not listed is refused.
+  capabilities: {
+    members: { access: "read", why: "Shows who can open this app." },
+  },
 } as const;
 ```
 
@@ -511,7 +515,7 @@ export default {
 } as const;
 ```
 
-Real manifests in the repository: `starter/everyapp.config.ts` (the starter above: D1 `DB` and KV `KV`, no public routes; `everyapp create` copies it and renames its `id` and `name`), `packages/cli/src/test/fixtures/manifests/postiz.ts` (`database: { provider: "d1" }`, a `d1-sql` migration from `migrations` against `DB` (nine statements of our own separated by `--> statement-breakpoint`), a helper Worker `api` bound as `API` with `cpuMs: 300_000` defining `PUBLISH_POST` / `PublishPostWorkflow`, `providers: ["openai"]` with `ai.models`, own secrets `JWT_SECRET`, `X_API_KEY`, `X_API_SECRET`, `access: "everyone"`, custom `install`, `build` and `dev` commands) and `packages/cli/src/test/fixtures/manifests/agentic-inbox.ts` (two SQLite Durable Objects, `MAILBOX` / `MailboxDO` and `EMAIL_AGENT` / `EmailAgent`, `providers: ["workers-ai", "openrouter"]` with `ai.models`, `access: "everyone"`). Both fixtures end in `as const satisfies EveryAppCliManifest`, and each carries the `cloudflare.config.ts` equivalent that builds its Workers for production (`postizConfig`, `agenticInboxConfig`).
+Real manifests in the repository: `starter/everyapp.config.ts` (the starter above: D1 `DB`, the public route `/health` and the `members` capability; `everyapp create` copies it and renames its `id` and `name`), `packages/cli/src/test/fixtures/manifests/postiz.ts` (`database: { provider: "d1" }`, a `d1-sql` migration from `migrations` against `DB` (nine statements of our own separated by `--> statement-breakpoint`), a helper Worker `api` bound as `API` with `cpuMs: 300_000` defining `PUBLISH_POST` / `PublishPostWorkflow`, `providers: ["openai"]` with `ai.models`, own secrets `JWT_SECRET`, `X_API_KEY`, `X_API_SECRET`, `access: "everyone"`, custom `install`, `build` and `dev` commands) and `packages/cli/src/test/fixtures/manifests/agentic-inbox.ts` (two SQLite Durable Objects, `MAILBOX` / `MailboxDO` and `EMAIL_AGENT` / `EmailAgent`, `providers: ["workers-ai", "openrouter"]` with `ai.models`, `access: "everyone"`). Both fixtures end in `as const satisfies EveryAppCliManifest`, and each carries the `cloudflare.config.ts` equivalent that builds its Workers for production (`postizConfig`, `agenticInboxConfig`).
 
 ## Sources
 

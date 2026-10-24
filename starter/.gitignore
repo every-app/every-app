@@ -1,40 +1,23 @@
 node_modules
-package-lock.json
-yarn.lock
-.dev.vars*
-dist/
-.wrangler
-# `everyapp release`'s tarball
-everyapp-release.tar.gz
+.DS_Store
 
 # cf build output, generated types and local dev state
 .cloudflare/
-
+.wrangler/
 .output/
 .tanstack/
-.DS_Store
-.cache
+
+# everyapp's local state: the dev registry and the app's secrets file
+.everyapp/
+
+# local secrets, never committed
+.dev.vars*
 .env
 .env.local
 .env.production
-.vercel
-.output
-.nitro
-/build/
-/api/
-/server/build
-/public/build# Sentry Config File
-.env.sentry-build-plugin
-/test-results/
-/playwright-report/
-/blob-report/
-/playwright/.cache/
-.tanstack
 
-# everyapp's local state: the dev registry, the app's secrets file and the
-# schema check's scratch copy
-.everyapp/
+# `everyapp release`'s tarball
+everyapp-release.tar.gz
 
-# Regenerated on install; would contain link: entries pointing into the
-# monorepo, which are broken for anyone who clones this directory alone.
+# Regenerated on install; would hold link: entries pointing into the checkout
 pnpm-lock.yaml

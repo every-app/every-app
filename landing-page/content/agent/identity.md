@@ -174,7 +174,7 @@ export const ensureUserMiddleware = createMiddleware({
   type: "function",
 }).server(async ({ next }) => {
   const user = await requireEveryAppUser(getRequest(), env);
-  return next({ context: { userId: user.id, user } });
+  return next({ context: { user } });
 });
 ```
 

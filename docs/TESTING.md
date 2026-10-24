@@ -488,8 +488,8 @@ the gateway-lite listens on 127.0.0.1 unless `--host`.
 
    `pnpm dev` runs this checkout's CLI, which builds itself first when its
    source or the SDK's changed. Local D1 migrations are applied before the
-   app starts, with `cf d1 migrations apply --local`; `pnpm run
-   db:migrate:local` applies new ones without a restart.
+   app starts, with `cf d1 migrations apply --local`; `pnpm everyapp db
+   migrate` applies new ones without a restart.
 
    The dev gateway parses the Host header dynamically (first label = app,
    remainder = base host), so all of these route to the same app with no

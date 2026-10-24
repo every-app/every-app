@@ -20,7 +20,7 @@ Each of these shipped with a default. Confirm it or change it.
 - [ ] **RepoLens access.** Set `access: "everyone"` in its manifest before its first deploy if the whole org should see it (`--access` went with the flat command tree).
 - [ ] **RepoLens retry backfill.** Left out of its MCP tools, because it deletes fetched history.
 - [ ] **TanStack Start 1.169.** The platform's apps are pinned to Start 1.168.61, because 1.169 needs Vite 8. RepoLens already runs 1.169 on Vite 8, so the upgrade looks safe.
-- [ ] **Gateway UI scope.** Only the gateway moved to OpenSEO's shadcn design system. The starter (`starter/`) and the landing page still use daisyUI or their own styles (the example apps were deleted on 2026-10-24).
+- [ ] **Gateway UI scope.** Only the gateway moved to OpenSEO's shadcn design system. The starter (`starter/`) uses plain Tailwind utilities since #544; the landing page still uses daisyUI or its own styles (the example apps were deleted on 2026-10-24).
 - [ ] **Gateway look.** Every App's metallic primary buttons and neutral accents, on OpenSEO's surfaces. Dark mode uses OpenSEO's dark greys, with a lighter metallic so the buttons stand out on them. Check the dark-mode buttons.
 - [x] **Gateway layout.** A sidebar (OpenSEO's app shell) replaces the top header and the admin tabs. Admin pages now open on phones too, where the old UI showed "not supported on mobile".
 - [ ] **When the schema check runs.** `deploy` checks an app's drizzle migrations against its schema after the build, so under the app's lease: the build needs resources created under the lease, and the check needs the dependencies the deploy installs. The redesign's step 7 asked for it before the lease as well.
@@ -560,7 +560,7 @@ The loop that proves the home-page setup prompt on any coding agent, from nothin
 - [ ] **A run sleeps through the 30-minute wipe gap by default** (`--no-wait` refuses as before), so chained runs on one account need no babysitting; the sleep is a `preflight.gap_wait` phase outside `durationS`.
 - [ ] **G3 probes `/mcp` without a token** (401 unauthenticated) as "the gateway refuses an unauthenticated API call"; `/api/me/apps` is gone.
 - [ ] **Harness rows need keys Ben supplies**: CURSOR_API_KEY and OPENCODE_API_KEY are absent from providers.env; Claude Code and Codex run on the keys given. A second test account would halve the wall time per harness (the gap is per account).
-- [ ] **A3 stays `perimeter-only` for now**: with the owner cookie the app host answers 200 with the app's HTML, but the marker `Todos` is not in the server-rendered page (the index route renders after its data loads), so the row cannot tell the signed-in page from the shell. Pick a server-rendered marker, or have the starter render its heading on the server, before reading A3 as a pass.
+- [x] **A3 stays `perimeter-only` for now**: the marker is the `apple-mobile-web-app-capable` meta in the starter's server-rendered head (run.ts `TEMPLATE_MARKER`), and since the starter rewrite (#544) the signed-in page also server-renders the email and the Allowed card, so the row can assert on text too. It stays `perimeter-only` until the cookie domain covers `*.apps.<zone>`.
 
 ### README and launch copy (2026-10-24)
 

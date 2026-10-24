@@ -1,30 +1,20 @@
 {
   "entry": [
-    // Every App manifest, Worker config and Worker entry point
     "everyapp.config.ts",
     "cloudflare.config.ts",
     "src/entry.worker.ts",
-    "src/types/index.ts",
-    // Detect Tanstack Start Routes
     "src/router.tsx",
-    "src/routes/**/*.tsx",
-    // Drizzle config (plugin disabled due to cloudflare:workers import issues)
-    "drizzle.config.ts",
-    // DB index re-exports schema for convenience
-    "src/db/index.ts",
+    "src/routes/**/*.{ts,tsx}",
   ],
-  "project": ["**/*.{js,ts,tsx}", "!src/routeTree.gen.ts"],
-  // Disable Drizzle plugin - it tries to load drizzle.config.ts which imports cloudflare:workers
-  "drizzle": false,
+  "project": ["**/*.{ts,tsx}", "!src/routeTree.gen.ts"],
   "ignoreDependencies": [
-    // `cloudflare:workers` is a Workers runtime module that Knip reads as the
-    // (unused) `cloudflare` npm package.
-    "cloudflare",
-    // Runtime Worker entry import; jose fulfills the SDK's required peer dependency.
+    // Imported as @every-app/sdk/server, a subpath knip doesn't resolve in a linked package.
     "@every-app/sdk",
+    // `cloudflare:workers` is the runtime's module, not the `cloudflare` package.
+    "cloudflare",
+    // The SDK's required peer dependency.
     "jose",
-    // Tailwindcss used via @tailwindcss/vite plugin
+    // Loaded by @tailwindcss/vite from src/styles/app.css.
     "tailwindcss",
-    "daisyui",
   ],
 }

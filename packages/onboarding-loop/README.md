@@ -167,7 +167,8 @@ first-run`; whether `setup` really stops on `register_workers_subdomain`
 6. **The verifier's fingerprints** against the real gateway and app host:
    `403 ORIGIN_NOT_ALLOWED`, `404 unknown_app_host`, the `302` to
    `/sign-in?return_to=`, the `401 unauthenticated`, Better Auth's
-   `set-cookie` and `get-session`, the template marker `Todos` on the
+   `set-cookie` and `get-session`, the template marker (the
+   `apple-mobile-web-app-capable` meta in the starter's server-rendered head) on the
    signed-in page (A3 stays `perimeter-only` until the cookie domain covers
    `*.apps.<zone>`), and `status --json`'s `claimed`, `apps[].status/bound`,
    `upToDate` and `fixes[].severity`.

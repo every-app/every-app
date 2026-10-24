@@ -1,43 +1,24 @@
 import { createServerFn } from "@tanstack/react-start";
 import { ensureUserMiddleware } from "@/middleware/ensureUser";
-import { TodoService } from "@/server/todoService";
-import {
-  createTodoSchema,
-  updateTodoSchema,
-  deleteTodoSchema,
-} from "@/types/schemas/todos";
+import * as todos from "@/server/todos";
 
-export const getAllTodos = createServerFn()
-  // TODO Global middlewares don't seem to work right now in tanstack-start. We should move to this once this is resolved.
-  // https://github.com/TanStack/router/issues/3869
+// Each server function runs behind ensureUserMiddleware: `context.user` is
+// the person the Gateway signed in, and every query takes their id.
+export const getTodos = createServerFn()
   .middleware([ensureUserMiddleware])
-  .handler(async ({ context }) => {
-    return { todos: await TodoService.list(context.userId) };
-  });
+  .handler(({ context }) => todos.listTodos(context.user.id));
 
 export const createTodo = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .validator((data: unknown) => createTodoSchema.parse(data))
-  .handler(async ({ data, context }) => {
-    await TodoService.create(context.user, data);
-
-    return { success: true };
-  });
+  .validator((data: unknown) => todos.createTodoInput.parse(data))
+  .handler(({ data, context }) => todos.createTodo(context.user.id, data));
 
 export const updateTodo = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .validator((data: unknown) => updateTodoSchema.parse(data))
-  .handler(async ({ data, context }) => {
-    await TodoService.update(context.userId, data);
-
-    return { success: true };
-  });
+  .validator((data: unknown) => todos.updateTodoInput.parse(data))
+  .handler(({ data, context }) => todos.updateTodo(context.user.id, data));
 
 export const deleteTodo = createServerFn({ method: "POST" })
   .middleware([ensureUserMiddleware])
-  .validator((data: unknown) => deleteTodoSchema.parse(data))
-  .handler(async ({ data, context }) => {
-    await TodoService.delete(context.userId, data);
-
-    return { success: true };
-  });
+  .validator((data: unknown) => todos.deleteTodoInput.parse(data))
+  .handler(({ data, context }) => todos.deleteTodo(context.user.id, data));

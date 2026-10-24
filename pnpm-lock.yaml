@@ -439,45 +439,24 @@ importers:
       '@every-app/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
-      '@tanstack/query-sync-storage-persister':
-        specifier: ^5.90.14
-        version: 5.90.14
-      '@tanstack/react-query':
-        specifier: ^5.90.9
-        version: 5.90.9(react@19.2.4)
-      '@tanstack/react-query-persist-client':
-        specifier: ^5.90.14
-        version: 5.90.14(@tanstack/react-query@5.90.9(react@19.2.4))(react@19.2.4)
       '@tanstack/react-router':
         specifier: 1.170.42
         version: 1.170.42(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@tanstack/react-router-devtools':
-        specifier: ^1.167.2
-        version: 1.167.2(@tanstack/react-router@1.170.42(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@tanstack/router-core@1.171.35)(csstype@3.2.3)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/react-start':
         specifier: 1.168.61
         version: 1.168.61(crossws@0.4.4(srvx@0.11.22))(esbuild@0.28.2)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(rollup@4.64.5)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.46.0)(tsx@4.23.15)(yaml@2.9.1))
-      daisyui:
-        specifier: ^5.5.5
-        version: 5.7.50
       drizzle-orm:
         specifier: ^0.45.3
         version: 0.45.3(@cloudflare/workers-types@4.20260702.1)(@libsql/client@0.15.15)(@prisma/client@5.22.0)(@types/pg@8.16.0)(better-sqlite3@12.5.0)(kysely@0.28.17)(pg@8.16.3)
       jose:
         specifier: ^6.2.5
         version: 6.2.12
-      lucide-react:
-        specifier: ^0.542.0
-        version: 0.542.0(react@19.2.4)
       react:
         specifier: ^19.0.0
         version: 19.2.4
       react-dom:
         specifier: ^19.0.0
         version: 19.2.4(react@19.2.4)
-      sonner:
-        specifier: ^2.0.7
-        version: 2.0.7(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       tailwindcss:
         specifier: ^4.1.16
         version: 4.3.3
@@ -533,6 +512,9 @@ importers:
       vite-tsconfig-paths:
         specifier: ^5.1.4
         version: 5.1.4(typescript@5.9.3)(vite@7.3.7(@types/node@22.20.5)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.46.0)(tsx@4.23.15)(yaml@2.9.1))
+      vitest:
+        specifier: ^3.2.7
+        version: 3.2.7(@types/debug@4.1.12)(@types/node@22.20.5)(happy-dom@20.14.6)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.46.0)(tsx@4.23.15)(yaml@2.9.1)
 
 packages:
 
@@ -6061,9 +6043,6 @@ packages:
   csstype@3.2.3:
     resolution: {integrity: sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ==}
 
-  daisyui@5.7.50:
-    resolution: {integrity: sha512-+/LRqnTCoc7s/bJEKKwtJSwzeXCVdAmRdNmZeZzgHCaQ9PJyl7j+2V2U32GQDMyD+VDkP9e/+JGoC72Y1hLk7w==}
-
   data-uri-to-buffer@4.0.1:
     resolution: {integrity: sha512-0R9ikRb668HB7QDxT1vkpuUBtqc53YyAwMwGeUFKRojY/NWKvdZ+9UYtRfGmhqNbRkTSVpMbmyhXipFFv2cb/A==}
     engines: {node: '>= 12'}
@@ -7583,11 +7562,6 @@ packages:
 
   lucide-react@0.540.0:
     resolution: {integrity: sha512-armkCAqQvO62EIX4Hq7hqX/q11WSZu0Jd23cnnqx0/49yIxGXyL/zyZfBxNN9YDx0ensPTb4L+DjTh3yQXUxtQ==}
-    peerDependencies:
-      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
-
-  lucide-react@0.542.0:
-    resolution: {integrity: sha512-w3hD8/SQB7+lzU2r4VdFyzzOzKnUjTZIF/MQJGSSvni7Llewni4vuViRppfRAa2guOsY5k4jZyxw/i9DQHv+dw==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
@@ -13471,36 +13445,14 @@ snapshots:
       '@tanstack/react-query': 5.90.9(react@19.2.0)
       react: 19.2.0
 
-  '@tanstack/react-query-persist-client@5.90.14(@tanstack/react-query@5.90.9(react@19.2.4))(react@19.2.4)':
-    dependencies:
-      '@tanstack/query-persist-client-core': 5.91.11
-      '@tanstack/react-query': 5.90.9(react@19.2.4)
-      react: 19.2.4
-
   '@tanstack/react-query@5.90.9(react@19.2.0)':
     dependencies:
       '@tanstack/query-core': 5.90.9
       react: 19.2.0
 
-  '@tanstack/react-query@5.90.9(react@19.2.4)':
-    dependencies:
-      '@tanstack/query-core': 5.90.9
-      react: 19.2.4
-
   '@tanstack/react-router-devtools@1.167.2(@tanstack/react-router@1.170.41(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@tanstack/router-core@1.171.35)(csstype@3.2.3)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
     dependencies:
       '@tanstack/react-router': 1.170.41(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      '@tanstack/router-devtools-core': 1.168.2(@tanstack/router-core@1.171.35)(csstype@3.2.3)
-      react: 19.2.4
-      react-dom: 19.2.4(react@19.2.4)
-    optionalDependencies:
-      '@tanstack/router-core': 1.171.35
-    transitivePeerDependencies:
-      - csstype
-
-  '@tanstack/react-router-devtools@1.167.2(@tanstack/react-router@1.170.42(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(@tanstack/router-core@1.171.35)(csstype@3.2.3)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
-    dependencies:
-      '@tanstack/react-router': 1.170.42(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@tanstack/router-devtools-core': 1.168.2(@tanstack/router-core@1.171.35)(csstype@3.2.3)
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
@@ -14982,8 +14934,6 @@ snapshots:
   cssesc@3.0.0: {}
 
   csstype@3.2.3: {}
-
-  daisyui@5.7.50: {}
 
   data-uri-to-buffer@4.0.1: {}
 
@@ -16621,10 +16571,6 @@ snapshots:
   lucide-react@0.540.0(react@19.2.0):
     dependencies:
       react: 19.2.0
-
-  lucide-react@0.542.0(react@19.2.4):
-    dependencies:
-      react: 19.2.4
 
   lucide-react@0.563.0(react@19.2.4):
     dependencies:
@@ -18438,11 +18384,6 @@ snapshots:
     dependencies:
       react: 19.2.0
       react-dom: 19.2.0(react@19.2.0)
-
-  sonner@2.0.7(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
-    dependencies:
-      react: 19.2.4
-      react-dom: 19.2.4(react@19.2.4)
 
   sorted-btree@1.8.1: {}
 

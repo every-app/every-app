@@ -85,7 +85,9 @@ describe("updateEveryappManifest", () => {
     expect(manifest).toContain('id: "my-new-app"');
     expect(manifest).toContain('name: "My New App"');
     expect(manifest).not.toContain("Simple Todo");
-    expect(manifest).toContain('description: "A simple todo list backed by D1 and KV."');
+    expect(manifest).toContain(
+      'description: "A todo list that shows who you are and what it was allowed."',
+    );
     await expect(fs.access(path.join(targetDir, "wrangler.jsonc"))).rejects.toMatchObject({
       code: "ENOENT",
     });

@@ -104,7 +104,6 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
               id: "11111111-2222-4333-8444-555555555555",
             },
           },
-          kv: { KV: { id: "0123456789abcdef0123456789abcdef" } },
         },
       };
 
@@ -125,7 +124,6 @@ describe.runIf(process.env["EVERYAPP_CF_DRY_RUN"] === "1")(
 
       for (const binding of [
         "env.DB (every-acme-simple-todo)",
-        "env.KV (0123456789abcdef0123456789abcdef)",
         "env.EVERY_APP_GATEWAY (every-app-gateway#AppGateway)",
         "--dry-run: exiting now.",
       ]) {
