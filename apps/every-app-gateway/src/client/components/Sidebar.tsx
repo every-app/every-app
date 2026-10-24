@@ -1,4 +1,4 @@
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import type { LinkOptions } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import type { ComponentType } from "react";
@@ -9,13 +9,12 @@ import {
   LayoutGrid,
   Link2,
   LogOut,
-  Pin,
   Settings,
   User,
 } from "lucide-react";
 import { authClient } from "@/client/auth-client";
 import { useSession } from "@/client/hooks/useSession";
-import { AppLibraryFilter, useAppLibrary } from "@/client/hooks/useAppLibrary";
+import { useAppLibrary } from "@/client/hooks/useAppLibrary";
 import { AppIcon } from "@/client/components/AppIcon";
 import { appNeedsSetup, appStatus } from "@/client/lib/appStatus";
 import {
@@ -57,13 +56,11 @@ function SidebarNavLink({
   label,
   linkProps,
   count,
-  active,
 }: {
   icon: ComponentType<{ className?: string }>;
   label: string;
   linkProps: LinkOptions;
   count?: number;
-  active?: boolean;
 }) {
   const { setOpenMobile } = useSidebar();
   const contents = (
@@ -83,7 +80,6 @@ function SidebarNavLink({
     <SidebarMenuItem>
       <Link
         {...linkProps}
-        aria-current={active ? "page" : undefined}
         activeOptions={{
           exact: false,
           includeSearch: false,
@@ -91,12 +87,12 @@ function SidebarNavLink({
         }}
         onClick={() => setOpenMobile(false)}
       >
-        {({ isActive: linkIsActive }) => (
+        {({ isActive }) => (
           <SidebarMenuButton
             render={<span />}
-            isActive={active ?? linkIsActive}
+            isActive={isActive}
             className={navButtonClass}
-            aria-current={(active ?? linkIsActive) ? "page" : undefined}
+            aria-current={isActive ? "page" : undefined}
           >
             {contents}
           </SidebarMenuButton>
@@ -110,7 +106,6 @@ export function Sidebar() {
   const { data: session } = useSession();
   const { setOpenMobile } = useSidebar();
   const signedIn = Boolean(session?.user);
-  const location = useLocation();
   const { apps, pinnedApps, isLoading, isError } = useAppLibrary();
   // Same check as the admin layout's gate.
   const { data: activeMemberRole } = authClient.useActiveMemberRole();
@@ -141,42 +136,21 @@ export function Sidebar() {
                 <SidebarNavLink
                   icon={LayoutGrid}
                   label="All apps"
-                  active={
-                    location.pathname === "/" &&
-                    location.search.filter !== AppLibraryFilter.Pinned
-                  }
                   count={!isLoading && !isError ? apps.length : undefined}
                   linkProps={{
                     to: "/",
-                    search: { filter: undefined },
-                    activeOptions: { exact: true, includeSearch: true },
-                  }}
-                />
-                <SidebarNavLink
-                  icon={Pin}
-                  label="Pinned"
-                  active={
-                    location.pathname === "/" &&
-                    location.search.filter === AppLibraryFilter.Pinned
-                  }
-                  count={
-                    !isLoading && !isError && pinnedApps.length > 0
-                      ? pinnedApps.length
-                      : undefined
-                  }
-                  linkProps={{
-                    to: "/",
-                    search: { filter: AppLibraryFilter.Pinned },
-                    activeOptions: { exact: true, includeSearch: true },
+                    activeOptions: { exact: true },
                   }}
                 />
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
+          {/* The pinned apps: one click from any page. Pinning also puts
+              them first in the library. */}
           {pinnedApps.length > 0 ? (
             <SidebarGroup className="mt-3 px-3 py-0">
               <SidebarGroupLabel className="h-6 px-3 text-xs font-medium text-sidebar-foreground/50">
-                Pinned apps
+                Pinned
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>

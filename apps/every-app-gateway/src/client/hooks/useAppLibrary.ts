@@ -5,25 +5,15 @@ import { toast } from "sonner";
 import { useSession } from "@/client/hooks/useSession";
 import { userAppsCollection, useQueryFailed } from "@/client/tanstack-db";
 
-export enum AppLibraryFilter {
-  All = "all",
-  Pinned = "pinned",
-}
-
 export enum AppLibraryLayout {
   Grid = "grid",
   List = "list",
 }
 
-export enum AppLibrarySort {
-  Name = "name",
-  Pinned = "pinned",
-}
-
+// Unknown keys (the sort preference of earlier builds) are dropped.
 const preferencesSchema = z.object({
   pinnedIds: z.array(z.string()),
   layout: z.nativeEnum(AppLibraryLayout),
-  sort: z.nativeEnum(AppLibrarySort),
 });
 
 type LibraryPreferences = z.infer<typeof preferencesSchema>;
@@ -31,7 +21,6 @@ type LibraryPreferences = z.infer<typeof preferencesSchema>;
 const defaultPreferences: LibraryPreferences = {
   pinnedIds: [],
   layout: AppLibraryLayout.Grid,
-  sort: AppLibrarySort.Name,
 };
 
 function subscribe(onChange: () => void) {
@@ -39,7 +28,11 @@ function subscribe(onChange: () => void) {
   return () => window.removeEventListener("storage", onChange);
 }
 
-/** Browser-local preferences are isolated by both user and organization. */
+/**
+ * The apps the person can open, pinned ones first and then by name: the one
+ * order the library and the sidebar share. Browser-local preferences are
+ * isolated by both user and organization.
+ */
 export function useAppLibrary() {
   const { data: session } = useSession();
   const storageKey =
@@ -82,25 +75,30 @@ export function useAppLibrary() {
   const query = useLiveQuery((q) => q.from({ app: userAppsCollection }));
   // The collection stays "ready" when its fetch fails: ask the query itself.
   const failed = useQueryFailed(["user-apps"]);
-  const apps = useMemo(
-    () => [...query.data].sort((a, b) => a.name.localeCompare(b.name)),
-    [query.data],
-  );
   const pinnedIds = useMemo(
     () => new Set(preferences.pinnedIds),
     [preferences.pinnedIds],
   );
+  const apps = useMemo(
+    () =>
+      [...query.data].sort(
+        (a, b) =>
+          Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id)) ||
+          a.name.localeCompare(b.name),
+      ),
+    [query.data, pinnedIds],
+  );
 
   return {
     apps,
-    isLoading: query.isLoading,
+    // Until the collection has synced once it is empty, not loading: a
+    // count read then would say 0.
+    isLoading: !query.isReady && !query.isError,
     isError: query.isError || failed,
     pinnedIds,
     pinnedApps: apps.filter((app) => pinnedIds.has(app.id)),
     layout: preferences.layout,
-    sort: preferences.sort,
     setLayout: (layout: AppLibraryLayout) => updatePreferences({ layout }),
-    setSort: (sort: AppLibrarySort) => updatePreferences({ sort }),
     togglePin: (appId: string) =>
       updatePreferences({
         pinnedIds: pinnedIds.has(appId)

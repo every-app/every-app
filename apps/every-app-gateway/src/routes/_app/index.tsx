@@ -1,16 +1,8 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useSession } from "@/client/hooks/useSession";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { z } from "zod";
-import {
-  ArrowDownAZ,
-  LayoutGrid,
-  List,
-  Pin,
-  Search,
-  Settings2,
-  X,
-} from "lucide-react";
+import { LayoutGrid, List, Search, Settings2, X } from "lucide-react";
 import { cn } from "cn";
 import { PWAInstallModal } from "@/client/components/PWAInstallModal";
 import { OnboardingBanner } from "@/client/components/onboarding/OnboardingBanner";
@@ -29,25 +21,13 @@ import {
 import { Badge } from "@/client/components/ui/badge";
 import { Button } from "@/client/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/client/components/ui/dropdown-menu";
-import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
 } from "@/client/components/ui/input-group";
 import { Kbd } from "@/client/components/ui/kbd";
-import {
-  AppLibraryFilter,
-  AppLibraryLayout,
-  AppLibrarySort,
-  useAppLibrary,
-} from "@/client/hooks/useAppLibrary";
+import { AppLibraryLayout, useAppLibrary } from "@/client/hooks/useAppLibrary";
 import { useSetupParam } from "@/client/hooks/useSetupParam";
 import { useShortcutLabel } from "@/client/hooks/useShortcutLabel";
 import { authClient } from "@/client/auth-client";
@@ -63,7 +43,6 @@ const searchSchema = z.object({
     .transform((val) => val === true || val === "true")
     .optional()
     .catch(undefined),
-  filter: z.nativeEnum(AppLibraryFilter).optional(),
   // The app id of a setup dialog to open: where the perimeter sends someone
   // who tried to open an app that needs setup, and the sidebar's pinned
   // apps link.
@@ -77,11 +56,7 @@ export const Route = createFileRoute("/_app/")({
 
 function App() {
   const session = useSession();
-  const {
-    pwa: pwaParam,
-    setup: setupParam,
-    filter = AppLibraryFilter.All,
-  } = Route.useSearch();
+  const { pwa: pwaParam, setup: setupParam } = Route.useSearch();
   const [showPWAInstallModal, setShowPWAInstallModal] = useState(false);
   const [setupApp, setSetupApp] = useState<UserAccessApp | null>(null);
   const [search, setSearch] = useState("");
@@ -93,17 +68,8 @@ function App() {
     authClient.useActiveMemberRole();
   const userCanManageApps =
     activeMemberRole?.role === "owner" || activeMemberRole?.role === "admin";
-  const {
-    apps,
-    isLoading,
-    isError,
-    pinnedIds,
-    layout,
-    sort,
-    togglePin,
-    setLayout,
-    setSort,
-  } = useAppLibrary();
+  const { apps, isLoading, isError, pinnedIds, layout, togglePin, setLayout } =
+    useAppLibrary();
 
   useEffect(() => {
     if (
@@ -120,20 +86,14 @@ function App() {
     session.isPending,
   ]);
 
-  // The URL after a one-shot param is stripped: the filter stays only
-  // when it isn't the default, so the launcher's home is "/".
-  const keptSearch = useMemo(
-    () => (filter === AppLibraryFilter.All ? {} : { filter }),
-    [filter],
-  );
-
+  // One-shot params are stripped, so the launcher's home is "/".
   useEffect(() => {
     if (pwaParam && !hasStrippedPwaParam.current) {
       setShowPWAInstallModal(true);
       hasStrippedPwaParam.current = true;
-      void navigate({ to: "/", search: keptSearch, replace: true });
+      void navigate({ to: "/", search: {}, replace: true });
     }
-  }, [pwaParam, navigate, keptSearch]);
+  }, [pwaParam, navigate]);
 
   // `?setup=<appId>`: once the list is in, open that app's setup dialog if
   // it still needs setup, and strip the param either way.
@@ -142,7 +102,7 @@ function App() {
     apps,
     loaded: !isLoading && !isError,
     open: setSetupApp,
-    strip: () => void navigate({ to: "/", search: keptSearch, replace: true }),
+    strip: () => void navigate({ to: "/", search: {}, replace: true }),
   });
 
   useEffect(() => {
@@ -164,20 +124,10 @@ function App() {
     return null;
 
   const query = search.trim().toLocaleLowerCase();
-  const visibleApps = apps.filter(
-    (app) =>
-      (filter !== AppLibraryFilter.Pinned || pinnedIds.has(app.id)) &&
-      `${app.name} ${app.description}`.toLocaleLowerCase().includes(query),
+  // Already pinned first, then by name.
+  const visibleApps = apps.filter((app) =>
+    `${app.name} ${app.description}`.toLocaleLowerCase().includes(query),
   );
-  if (sort === AppLibrarySort.Pinned) {
-    visibleApps.sort(
-      (a, b) =>
-        Number(pinnedIds.has(b.id)) - Number(pinnedIds.has(a.id)) ||
-        a.name.localeCompare(b.name),
-    );
-  }
-  const heading = filter === AppLibraryFilter.Pinned ? "Pinned" : "All apps";
-  const SortIcon = sort === AppLibrarySort.Name ? ArrowDownAZ : Pin;
   const gridClassName = cn(
     "grid gap-4",
     layout === AppLibraryLayout.Grid && "md:grid-cols-2 xl:grid-cols-3",
@@ -202,15 +152,15 @@ function App() {
         <PageHeader
           title={
             <>
-              {heading}
+              All apps
               {!isLoading && !isError && apps.length > 0 ? (
+                // Everything this person can open, the sidebar's number too;
+                // a search narrows the grid, not the count.
                 <Badge
                   variant="outline"
                   className="rounded-md px-1.5 text-xs font-medium text-muted-foreground"
-                  aria-live="polite"
-                  aria-atomic="true"
                 >
-                  {visibleApps.length}
+                  {apps.length}
                   <span className="sr-only"> apps</span>
                 </Badge>
               ) : null}
@@ -272,35 +222,6 @@ function App() {
                 ) : null}
               </InputGroup>
               <div className="ml-auto hidden items-center gap-3 md:flex">
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        className="text-muted-foreground"
-                        aria-label="Sort apps"
-                      />
-                    }
-                  >
-                    <SortIcon data-icon="inline-start" aria-hidden />
-                    {sort === AppLibrarySort.Name ? "Name A–Z" : "Pinned first"}
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuRadioGroup
-                      value={sort}
-                      onValueChange={(value) =>
-                        setSort(z.nativeEnum(AppLibrarySort).parse(value))
-                      }
-                    >
-                      <DropdownMenuRadioItem value={AppLibrarySort.Name}>
-                        Name A–Z
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value={AppLibrarySort.Pinned}>
-                        Pinned first
-                      </DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
                 <SegmentedToggle
                   size={SegmentedToggleSize.Toolbar}
                   value={layout}
@@ -320,8 +241,14 @@ function App() {
                 />
               </div>
             </div>
+            {/* The count a screen reader hears as a search narrows the grid. */}
+            <p role="status" className="sr-only">
+              {query
+                ? `${visibleApps.length} ${visibleApps.length === 1 ? "app" : "apps"} found`
+                : ""}
+            </p>
             <section
-              aria-label={query ? "Search results" : heading}
+              aria-label={query ? "Search results" : "All apps"}
               aria-busy={isLoading}
             >
               {isLoading ? (
@@ -346,27 +273,15 @@ function App() {
               ) : (
                 <EmptyState
                   kind="filtered"
-                  icon={
-                    filter === AppLibraryFilter.Pinned && !query
-                      ? Pin
-                      : undefined
-                  }
-                  title={query ? "No apps found" : "No pinned apps yet"}
-                  description={
-                    query
-                      ? "Try another app name or description."
-                      : "Pin an app to keep it in your sidebar."
-                  }
+                  title="No apps found"
+                  description="Try another app name or description."
                   action={
                     <Button
                       variant="outline"
                       className={cardButtonClass}
-                      onClick={() => {
-                        setSearch("");
-                        void navigate({ to: "/", search: {} });
-                      }}
+                      onClick={() => setSearch("")}
                     >
-                      Show all apps
+                      Clear search
                     </Button>
                   }
                 />
