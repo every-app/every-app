@@ -19,6 +19,7 @@ import {
   appTools,
   mcpConnectionApps,
 } from "@/db/schema";
+import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import type { ToolBusTool } from "@every-app/toolbus";
 import { accessToApp } from "./effective-access";
 
@@ -63,8 +64,9 @@ type VisibleCatalog = {
   appSlug: string;
   name: string;
   description: string;
-  hostname: string;
-  workerName: string;
+  /** Null for a provider app (tier "provider"), which the gateway serves itself. */
+  hostname: string | null;
+  workerName: string | null;
   tier: string;
   versionId: string | null;
   /** The stored manifest's JSON and recorded secret names: whether the app needs setup. */
@@ -206,8 +208,11 @@ function reachableApps(scope: VisibilityScope): SQL[] {
   return [
     scope.sharedApps ? or(own, eq(apps.scope, "shared"))! : own,
     eq(apps.status, "active"),
-    isNotNull(apps.hostname),
-    isNotNull(apps.workerName),
+    // Routable, or a provider app the gateway serves itself.
+    or(
+      and(isNotNull(apps.hostname), isNotNull(apps.workerName)),
+      eq(apps.tier, PROVIDER_APP_TIER),
+    )!,
     ...(scope.connectionId
       ? [
           inArray(
@@ -285,12 +290,11 @@ async function findVisibleCatalogs(
   ]);
 
   return appRows.flatMap((app) =>
-    app.hostname && app.workerName && app.catalogHash
+    app.catalogHash &&
+    (app.tier === PROVIDER_APP_TIER || (app.hostname && app.workerName))
       ? [
           {
             ...app,
-            hostname: app.hostname,
-            workerName: app.workerName,
             catalogHash: app.catalogHash,
             // As in findByOrgApp: rows from another sync are skipped.
             tools: toolRows
@@ -399,8 +403,9 @@ export type UnsyncedApp = {
   rowId: string;
   organizationId: string;
   appSlug: string;
-  hostname: string;
-  workerName: string;
+  /** Null for a provider app (tier "provider"). */
+  hostname: string | null;
+  workerName: string | null;
   tier: string;
   versionId: string | null;
   /** The snapshot row's status, or null without a row. */
@@ -423,7 +428,20 @@ export type UnsyncedApp = {
  */
 async function findVisibleUnsyncedApps(
   scope: VisibilityScope,
-  { failedBefore, limit }: { failedBefore: Date; limit: number },
+  {
+    failedBefore,
+    limit,
+    providerCatalogVersion,
+  }: {
+    failedBefore: Date;
+    limit: number;
+    /**
+     * The gateway's provider catalog version (server/provider-apps): a
+     * provider row's snapshot from another is out of date, as an app's
+     * from another Worker version is.
+     */
+    providerCatalogVersion: string;
+  },
 ): Promise<UnsyncedApp[]> {
   const rows = await db
     .select({
@@ -445,10 +463,18 @@ async function findVisibleUnsyncedApps(
         or(
           isNull(appToolCatalogs.appRowId),
           and(
+            ne(apps.tier, PROVIDER_APP_TIER),
             isNotNull(apps.versionId),
             or(
               isNull(appToolCatalogs.versionId),
               ne(appToolCatalogs.versionId, apps.versionId),
+            ),
+          ),
+          and(
+            eq(apps.tier, PROVIDER_APP_TIER),
+            or(
+              isNull(appToolCatalogs.versionId),
+              ne(appToolCatalogs.versionId, providerCatalogVersion),
             ),
           ),
           and(
@@ -460,10 +486,8 @@ async function findVisibleUnsyncedApps(
     )
     .orderBy(asc(apps.appSlug))
     .limit(limit);
-  return rows.flatMap((row) =>
-    row.hostname && row.workerName
-      ? [{ ...row, hostname: row.hostname, workerName: row.workerName }]
-      : [],
+  return rows.filter(
+    (row) => row.tier === PROVIDER_APP_TIER || (row.hostname && row.workerName),
   );
 }
 

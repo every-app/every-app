@@ -907,7 +907,7 @@ Source: `packages/cli/src/commands/secret/index.ts`
 
 ### SECRET_NOT_SETTABLE
 
-`secret set|unset` of a Gateway setting the command doesn't change. Outside an app directory, an install-owned setting (`GATEWAY_URL`, `APP_BASE_DOMAIN`, `BETTER_AUTH_SECRET`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `GATEWAY_DEPLOYMENT_MODE`, `CLOUDFLARE_ACCOUNT_ID`, `THIRD_PARTY_DEPLOYS`): `<name> can't be changed with secret <set|unset>` / `It's one of the Gateway's own keys, written once by setup.` (for `THIRD_PARTY_DEPLOYS`: `It's the hosted Gateway's launch gate, opened by hand.`), with no fix. A dev-only setting (`MCP_ACCESS_TOKEN_TTL`): `<name> only works in local development` / `A deployed Gateway doesn't read it.`
+`secret set|unset` of a Gateway setting the command doesn't change. Outside an app directory, an install-owned setting (`GATEWAY_URL`, `APP_BASE_DOMAIN`, `BETTER_AUTH_SECRET`, `JWT_PRIVATE_KEY`, `JWT_PUBLIC_KEY`, `GATEWAY_DEPLOYMENT_MODE`, `CLOUDFLARE_ACCOUNT_ID`, `THIRD_PARTY_DEPLOYS`): `<name> can't be changed with secret <set|unset>` / `It's one of the Gateway's own keys, written once by setup.` (for `THIRD_PARTY_DEPLOYS`: `It's the hosted Gateway's launch gate, opened by hand.`), with no fix. A dev-only setting (`MCP_ACCESS_TOKEN_TTL`, `DATAFORSEO_SANDBOX`): `<name> only works in local development` / `A deployed Gateway doesn't read it.`
 
 **Fix:** dev-only: `fix`: `set it in the Gateway's .dev.vars`. Install-owned: none (run `setup`).
 

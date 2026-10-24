@@ -42,6 +42,7 @@ import {
   isInstallOwnedGatewaySetting,
   isReservedAppSecretName,
   isSettableGatewaySetting,
+  PROVIDER_APP_TIER,
   secretEntries,
   secretNames,
   SETTABLE_GATEWAY_SETTINGS,
@@ -291,8 +292,16 @@ export async function listSecrets(options: ListSecretsOptions): Promise<void> {
     // one Worker never fails the whole list.
     const unlisted: Array<{ id: string; reason: string }> = [];
     for (const app of registered) {
-      // A dispatch-tier app's settings the platform doesn't gate.
-      if (!app.manifest || !declaresSettings(app.manifest) || app.tier === "dispatch") continue;
+      // A dispatch-tier app's settings the platform doesn't gate; a provider
+      // app has no Worker of its own (its key is a Gateway setting, listed
+      // above, and `provider list` says whether it is set).
+      if (
+        !app.manifest ||
+        !declaresSettings(app.manifest) ||
+        app.tier === "dispatch" ||
+        app.tier === PROVIDER_APP_TIER
+      )
+        continue;
       const secretNames =
         app.status === "pending"
           ? null

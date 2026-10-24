@@ -21,6 +21,7 @@ function app(overrides: Partial<UserAccessApp>): UserAccessApp {
     name: "OpenSEO",
     description: "Keyword research.",
     hostname: "seo.apps.example.com",
+    tier: "service_binding",
     status: "active",
     isDefault: true,
     createdAt: new Date(0),

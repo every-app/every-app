@@ -24,6 +24,7 @@ import { logEvent } from "@every-app/perimeter";
 import type { ConsentDecision } from "@/schemas/consent-decision";
 import { resolvePrimaryOrganizationRole } from "@/server/org-roles";
 import { platformPolicy } from "@/server/platform-policy";
+import { providerCatalogVersion } from "@/server/provider-apps";
 import {
   AppToolRepository,
   type UnsyncedApp,
@@ -169,6 +170,7 @@ async function syncUnknownCatalogs(
         {
           failedBefore: new Date(Date.now() - RETRY_FAILED_SYNC_MS),
           limit: INLINE_SYNCS_MAX,
+          providerCatalogVersion: await providerCatalogVersion(),
         },
       );
       for (const app of apps) {

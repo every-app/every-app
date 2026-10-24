@@ -6,6 +6,7 @@ import {
   type AppRegistryRow,
   type RegisteredApp,
 } from "@every-app/perimeter";
+import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { apps } from "@/db/apps.schema";
 
 type RegistryRow = {
@@ -46,11 +47,19 @@ export class DrizzleAppRegistry implements AppRegistry {
   }
 
   private async query(where: SQL): Promise<RegisteredApp | null> {
-    // A deleted app's tombstone is never routed: it is "no app" here.
+    // A deleted app's tombstone is never routed: it is "no app" here. So
+    // is a provider app (no hostname, no Worker): the gateway serves its
+    // tools itself (server/provider-apps).
     const [row] = await this.db
       .select(registryColumns)
       .from(apps)
-      .where(and(where, ne(apps.status, "deleted")))
+      .where(
+        and(
+          where,
+          ne(apps.status, "deleted"),
+          ne(apps.tier, PROVIDER_APP_TIER),
+        ),
+      )
       .limit(1);
     if (!row) return null;
     return rowToRegisteredApp(toRegistryRow(row));

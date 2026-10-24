@@ -4,8 +4,11 @@
  * the key's state as a warning and in the list, and the way back.
  */
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
+import { existingGateway } from "@/lib/gateway/connect";
 import { applyGateway } from "@/lib/gateway/apply";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
@@ -13,6 +16,8 @@ import { createNdjsonSink } from "@/lib/output/events";
 import { ACCOUNT_ID, FakeCloudflare } from "@/test/fakeCloudflare";
 import { buildGatewayRelease } from "@/test/gatewayRelease";
 import { makeTestHome } from "@/test/home";
+import { listSecrets } from "../secret";
+import { reportStatus } from "../status";
 import { listProviders, turnOff, turnOn } from "./index";
 
 const GATEWAY = "every-app-gateway";
@@ -64,11 +69,21 @@ beforeEach(async () => {
   events = [];
 });
 
+const dirs: string[] = [];
+
 afterEach(async () => {
   await release.cleanup();
   vi.unstubAllEnvs();
   fs.rmSync(home, { recursive: true, force: true });
+  for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
 });
+
+/** A directory with no app in it. */
+function emptyDir(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-provider-none-"));
+  dirs.push(dir);
+  return dir;
+}
 
 const rows = async () =>
   (
@@ -176,5 +191,29 @@ describe("provider list", () => {
       data: { providers: [{ id: "dataforseo", on: true, key: { set: true } }] },
     });
     expect(done()!["data"]["next"]).toBeUndefined();
+  });
+});
+
+describe("a provider row and the other commands", () => {
+  it("is left out of status and secret list, which have no Worker to read for it", async () => {
+    gatewayWorker().secrets["DATAFORSEO_API_KEY"] = "login:password";
+    await turnOn({ flags, out: out(), createCf }, "dataforseo");
+    events = [];
+
+    await reportStatus({
+      gateway: await existingGateway({ json: true, out: out(), createCf }),
+      out: out(),
+      checkout: null,
+    });
+    const status = done()!;
+    expect(status["data"]["apps"]).toEqual([]);
+    expect((status["data"]["fixes"] as Array<{ code: string }>).map((fix) => fix.code)).not.toContain(
+      "SETTINGS_UNKNOWN",
+    );
+
+    events = [];
+    await listSecrets({ flags, out: out(), cwd: emptyDir(), createCf });
+    expect(done()).toMatchObject({ data: { apps: [], gateway: { names: expect.arrayContaining(["DATAFORSEO_API_KEY"]) } } });
+    expect(done()!["message"]).not.toContain("couldn't");
   });
 });

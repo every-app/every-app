@@ -185,7 +185,11 @@ export function isInstallOwnedGatewaySetting(name: string): boolean {
 }
 
 /** Gateway settings for local testing only, set in the gateway's `.dev.vars`, never deployed. */
-export const DEV_ONLY_GATEWAY_SETTINGS = ["MCP_ACCESS_TOKEN_TTL"] as const;
+export const DEV_ONLY_GATEWAY_SETTINGS = [
+  "MCP_ACCESS_TOKEN_TTL",
+  // "true" sends the DataForSEO provider app's calls to the free sandbox.
+  "DATAFORSEO_SANDBOX",
+] as const;
 
 export function isDevOnlyGatewaySetting(name: string): boolean {
   return (DEV_ONLY_GATEWAY_SETTINGS as readonly string[]).includes(name);

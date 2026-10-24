@@ -20,6 +20,7 @@ import {
   organizations,
   users,
 } from "@/db/schema";
+import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { accessToAppInItsOrganization } from "./effective-access";
 
 type McpConnectionAccess = "read" | "write";
@@ -203,10 +204,13 @@ async function findActiveWithMembership(id: string) {
  * serve.
  */
 async function listChoicesForUser(userId: string) {
+  // Routable, or a provider app the gateway serves itself.
   const usable = and(
     eq(apps.status, "active"),
-    isNotNull(apps.hostname),
-    isNotNull(apps.workerName),
+    or(
+      and(isNotNull(apps.hostname), isNotNull(apps.workerName)),
+      eq(apps.tier, PROVIDER_APP_TIER),
+    ),
   );
   const [memberships, accessibleApps, shared] = await db.batch([
     db

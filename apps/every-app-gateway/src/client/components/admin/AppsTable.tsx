@@ -15,6 +15,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/client/components/ui/tooltip";
+import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { appEmail } from "@/client/lib/appEmail";
 import { appNeedsSetup, appStatus } from "@/client/lib/appStatus";
 import type { AppWithAccessCount } from "@/types/app";
@@ -61,7 +62,11 @@ function AppNameCell({ app }: { app: AppWithAccessCount }) {
       </div>
       <p className="truncate text-xs text-muted-foreground">
         {app.appId}
-        {app.hostname ? ` · ${app.hostname}` : null}
+        {app.hostname
+          ? ` · ${app.hostname}`
+          : app.tier === PROVIDER_APP_TIER
+            ? ` · tools on /mcp as ${app.appId}_<tool>`
+            : null}
       </p>
       {app.deployedByActor ? (
         <p className="truncate text-xs text-muted-foreground">

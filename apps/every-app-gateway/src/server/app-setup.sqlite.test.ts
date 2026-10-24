@@ -115,10 +115,12 @@ describe("app setup on the app lists (SQLite)", () => {
       docs: "https://app.dataforseo.com/api-access",
     });
     expect(unset.setup!.command).toEqual({ command: SET_DATAFORSEO });
-    // The registry columns the evaluation read stay server-side.
-    for (const column of ["manifest", "secretNames", "tier", "versionId"]) {
+    // The registry columns the evaluation read stay server-side; the tier
+    // is listed, since a provider app shows as its tools, not a page.
+    for (const column of ["manifest", "secretNames", "versionId"]) {
       expect(unset).not.toHaveProperty(column);
     }
+    expect(unset).toHaveProperty("tier", "service_binding");
 
     // The CLI recorded the Worker's secrets: none. Now the app's own
     // secret is unmet too, and the command sets it from anywhere.

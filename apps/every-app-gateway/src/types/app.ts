@@ -66,6 +66,7 @@ export type UserAccessApp = Pick<
   | "name"
   | "description"
   | "hostname"
+  | "tier"
   | "status"
   | "isDefault"
   | "createdAt"

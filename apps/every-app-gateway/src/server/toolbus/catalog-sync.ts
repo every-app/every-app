@@ -21,7 +21,14 @@ import {
   logEvent,
   type AppFetcher,
 } from "@every-app/perimeter";
+import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import type { CatalogSnapshot } from "@every-app/toolbus";
+import {
+  providerAppFetcher,
+  providerAudience,
+  providerBaseUrl,
+  providerCatalogVersion,
+} from "@/server/provider-apps";
 import {
   AppToolRepository,
   type CatalogStatus,
@@ -35,13 +42,16 @@ const INLINE_SYNC_BUDGET_MS = 3_000;
 /** At most this many apps are synced within one request; the rest later. */
 export const INLINE_SYNCS_MAX = 20;
 
-/** The registry facts a sync needs about an app. */
+/**
+ * The registry facts a sync needs about an app. A provider app (tier
+ * "provider", served in-process) has no hostname and no Worker name.
+ */
 export type SyncableApp = {
   rowId: string;
   organizationId: string;
   appSlug: string;
-  hostname: string;
-  workerName: string;
+  hostname: string | null;
+  workerName: string | null;
   tier: string;
   /** The app's `version_id` when the sync started. */
   versionId: string | null;
@@ -70,14 +80,55 @@ export class BindingNotReadyError extends Error {
   }
 }
 
-/** Reach an app's Worker through the one seam, whatever its tier. */
+/**
+ * Reach an app through the one seam, whatever its tier: its Worker over
+ * the service binding or the dispatch namespace, or for a provider app
+ * the gateway's own in-process app (server/provider-apps).
+ */
 export function appFetcherFor(app: SyncableApp): AppFetcher {
+  if (app.tier === PROVIDER_APP_TIER) return providerAppFetcher(app);
+  if (!app.workerName) {
+    throw new AppUnreachableError(
+      `App "${app.appSlug}" has no Worker to reach.`,
+    );
+  }
   return getAppFetcher(env as unknown as Record<string, unknown>, {
     appId: app.appSlug,
     organizationId: app.organizationId,
     workerName: app.workerName,
     tier: app.tier === "dispatch" ? "dispatch" : "service_binding",
   });
+}
+
+/** What a snapshot is taken from: the Worker, or the provider app's own origin. */
+function catalogTarget(app: SyncableApp): {
+  appId: string;
+  audience: string;
+  baseUrl: string;
+} {
+  if (app.tier === PROVIDER_APP_TIER) {
+    return {
+      appId: app.appSlug,
+      audience: providerAudience(app.rowId),
+      baseUrl: providerBaseUrl(),
+    };
+  }
+  return {
+    appId: app.appSlug,
+    audience: app.workerName ?? "",
+    baseUrl: `https://${app.hostname ?? ""}`,
+  };
+}
+
+/**
+ * The version a snapshot records: the app's Worker version, or for a
+ * provider app the gateway's provider catalog version, so a gateway whose
+ * provider tools changed re-syncs on first use.
+ */
+async function snapshotVersion(app: SyncableApp): Promise<string | null> {
+  return app.tier === PROVIDER_APP_TIER
+    ? providerCatalogVersion()
+    : app.versionId;
 }
 
 export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
@@ -93,22 +144,16 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
 
   // Loaded on demand: the MCP SDK stays out of control-plane cold starts.
   const { fetchAppCatalog } = await import("@every-app/toolbus");
+  const versionId = await snapshotVersion(app);
   let snapshot: CatalogSnapshot;
   try {
-    snapshot = await fetchAppCatalog(
-      {
-        appId: app.appSlug,
-        audience: app.workerName,
-        baseUrl: `https://${app.hostname}`,
+    snapshot = await fetchAppCatalog(catalogTarget(app), {
+      signing: {
+        privateKeyPem: env.JWT_PRIVATE_KEY,
+        issuer: env.GATEWAY_URL,
       },
-      {
-        signing: {
-          privateKeyPem: env.JWT_PRIVATE_KEY,
-          issuer: env.GATEWAY_URL,
-        },
-        invoke: (request) => fetcher.fetch(request),
-      },
-    );
+      invoke: (request) => fetcher.fetch(request),
+    });
   } catch (error) {
     snapshot = {
       status: "error",
@@ -122,7 +167,7 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
       await AppToolRepository.replace({
         appRowId: app.rowId,
         organizationId: app.organizationId,
-        versionId: app.versionId,
+        versionId,
         status: "unsupported",
         catalogHash: null,
         instructions: null,
@@ -135,7 +180,7 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
       await AppToolRepository.recordError({
         appRowId: app.rowId,
         organizationId: app.organizationId,
-        versionId: app.versionId,
+        versionId,
         message: snapshot.error,
       });
     }
@@ -152,7 +197,7 @@ export async function syncAppTools(app: SyncableApp): Promise<ToolSyncResult> {
   await AppToolRepository.replace({
     appRowId: app.rowId,
     organizationId: app.organizationId,
-    versionId: app.versionId,
+    versionId,
     status: snapshot.status,
     catalogHash: snapshot.hash,
     instructions: snapshot.instructions ?? null,

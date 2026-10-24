@@ -56,9 +56,10 @@ async function getAppsForUser(ctx: OrgContext) {
   ];
   const apps = await Promise.all(
     listed.map(async ({ app, grantedAt, via }) => {
-      // The registry columns the evaluation read stay server-side.
+      // The registry columns the evaluation read stay server-side; the
+      // tier is listed, since a provider app (tier "provider") is shown
+      // as its tools rather than a page.
       const {
-        tier: _tier,
         manifest: _manifest,
         secretNames: _secretNames,
         versionId: _versionId,

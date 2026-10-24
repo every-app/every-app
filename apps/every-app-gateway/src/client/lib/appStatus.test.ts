@@ -22,6 +22,7 @@ function app(
 ) {
   return {
     hostname: "seo.apps.example.com",
+    tier: "service_binding",
     status: "active",
     setup: null,
     ...overrides,

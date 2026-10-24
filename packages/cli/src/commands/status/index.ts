@@ -23,6 +23,7 @@ import type { InstallRecord } from "@/lib/gateway/install";
 import type { CandidateRelease } from "@/lib/gateway/release";
 import { readLiveLeases } from "@/lib/gateway/lease";
 import { gatewayDomains } from "@/lib/gateway/patchBuildOutput";
+import { PROVIDER_APP_TIER } from "@every-app/sdk/internal";
 import { listApps, writeAppSecretNames, type RegisteredAppInfo } from "@/lib/gateway/registry";
 import { readOwner } from "@/lib/gateway/setup-link";
 import type { EventSink } from "@/lib/output/events";
@@ -130,7 +131,8 @@ export async function reportStatus({
   const accessApplies = install.deploymentMode !== "hosted" && install.liveVersionId !== null;
   const [desired, registered, leases, owner, serving, emailRoutes, access] = await Promise.all([
     readDesiredState(db, workerExistence(cf)),
-    listApps(db),
+    // A provider app has no Worker or host to report on; `provider list` is its command.
+    listApps(db).then((apps) => apps.filter((app) => app.tier !== PROVIDER_APP_TIER)),
     readLiveLeases(db),
     readOwner(db),
     getWorkerDeployment(cf, GATEWAY_WORKER_NAME),

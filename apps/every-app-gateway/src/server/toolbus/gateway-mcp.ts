@@ -36,6 +36,7 @@ import { parseSecretNames } from "@every-app/perimeter/registry";
 import {
   MCP_READ_SCOPE,
   MCP_WRITE_SCOPE,
+  PROVIDER_APP_TIER,
   type AppSetup,
 } from "@every-app/sdk/internal";
 import type {
@@ -46,6 +47,11 @@ import type {
 } from "@every-app/toolbus";
 import { appSetupFor } from "@/server/app-setup";
 import { platformPolicy } from "@/server/platform-policy";
+import {
+  providerAudience,
+  providerBaseUrl,
+  providerCatalogVersion,
+} from "@/server/provider-apps";
 import { AppToolRepository } from "@/server/repositories/AppToolRepository";
 import { resolveAccessCaller } from "@/server/mcp-auth/access-caller";
 import {
@@ -289,10 +295,18 @@ async function gatewayView(
         {
           rowId: catalog.appRowId,
           appId: catalog.appSlug,
-          audience: catalog.workerName,
+          // A provider app's identities are minted for its row, never a
+          // Worker name, and its tools live on the gateway itself.
+          audience:
+            catalog.tier === PROVIDER_APP_TIER
+              ? providerAudience(catalog.appRowId)
+              : (catalog.workerName ?? ""),
           name: catalog.name,
           ...(catalog.description ? { description: catalog.description } : {}),
-          baseUrl: `https://${catalog.hostname}`,
+          baseUrl:
+            catalog.tier === PROVIDER_APP_TIER
+              ? providerBaseUrl()
+              : `https://${catalog.hostname ?? ""}`,
           catalogHash: catalog.catalogHash,
           ...(catalog.instructions
             ? { instructions: catalog.instructions }
@@ -342,6 +356,7 @@ async function syncUnsyncedApps(
     const unsynced = await AppToolRepository.findVisibleUnsyncedApps(scope, {
       failedBefore: new Date(Date.now() - RETRY_FAILED_SYNC_MS),
       limit: INLINE_SYNCS_MAX,
+      providerCatalogVersion: await providerCatalogVersion(),
     });
     await syncUnsyncedCatalogs(unsynced, "first_use");
   } catch (error) {

@@ -47,6 +47,11 @@ declare namespace Cloudflare {
     // honored only when GATEWAY_URL is http://localhost or 127.0.0.1.
     MCP_ACCESS_TOKEN_TTL?: string;
 
+    // LOCAL TESTING ONLY: "true" sends the DataForSEO provider app's calls to
+    // sandbox.dataforseo.com (free, made-up data), honored only when
+    // GATEWAY_URL is http:// (server/provider-apps/dataforseo.ts).
+    DATAFORSEO_SANDBOX?: string;
+
     // Cloudflare Access sign-in (all optional; set as secrets so deploys keep
     // them). See src/auth/cloudflare-access/config.ts and
     // docs/runbooks/cloudflare-access.md.

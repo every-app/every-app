@@ -91,6 +91,11 @@ A bad definition throws at module load (`defineTools: tool "<name>" needs a risk
 so the Worker fails rather than serving a catalog without the tool; a schema with
 no object JSON Schema form only skips that tool with a warning (`TOOLS_CATALOG` in dev).
 
+Provider apps: the Gateway also serves a data provider's tools of its own
+(DataForSEO: `dataforseo_<tool>`) once the operator runs
+`pnpm everyapp provider on dataforseo` and sets DATAFORSEO_API_KEY; nothing
+to deploy, same /mcp, same access rules (SKILL.md "Providers").
+
 ## What the Gateway does with them
 
 Snapshot: the Gateway stores each app's catalog in D1 with the app version it
