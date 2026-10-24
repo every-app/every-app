@@ -80,10 +80,10 @@ describe("authorizeUrl", () => {
     expect(url.searchParams.has("access_type")).toBe(false);
   });
 
-  // Slack's comma-joined scope and user_scope are in the helper for when
-  // its sets ship (today it has none, so the helper refuses it below).
+  // Slack's comma-joined scope and user_scope are built by the helper now
+  // that its sets shipped (#425); Mastodon and LinkedIn have none, so the
+  // helper refuses them below.
   it.each([
-    ["slack", { ...READY, scopes: ["channels:read"] }],
     ["mastodon", { ...READY, origin: "https://fosstodon.org" }],
     ["linkedin", READY],
   ] as const)(
@@ -93,7 +93,7 @@ describe("authorizeUrl", () => {
         authorizeUrl({ provider, status, redirectUri: CALLBACK, state: "st" });
       expect(build).toThrow(TypeError);
       expect(build).toThrow(
-        `clients with scope sets (google-workspace, microsoft-365); build ${CAPABILITIES[provider].label}'s authorize URL yourself from the status's clientId`,
+        `clients with scope sets (slack, google-workspace, microsoft-365); build ${CAPABILITIES[provider].label}'s authorize URL yourself from the status's clientId`,
       );
     },
   );

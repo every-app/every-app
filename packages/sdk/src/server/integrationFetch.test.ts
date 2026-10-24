@@ -622,7 +622,12 @@ describe("OAuth clients", () => {
         env: { EVERYAPP_DEV: "1", SLACK_CLIENT_ID: "id" },
         provider: "slack",
       }),
-    ).resolves.toEqual({ requested: true, configured: false, ready: false });
+    ).resolves.toEqual({
+      requested: true,
+      configured: false,
+      ready: false,
+      scopeSets: [],
+    });
   });
 });
 
