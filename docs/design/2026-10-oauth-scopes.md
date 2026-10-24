@@ -28,9 +28,9 @@ documentation: the operator's checklist in `docs/capabilities.md` (the
 tables between the `oauth-clients` markers are generated from the registry
 by `capabilitiesDoc.test.ts`). Nothing in the gateway reads them. No
 organization-held accounts exist: the Google design
-([docs/design/2026-10-google-integration.md](https://github.com/every-app/private-every-app/blob/5ef30882/docs/design/2026-10-google-integration.md),
-deleted from main on 2026-10-24 by the simplify work, #433; readable at
-commit `5ef30882`, its rulings kept in [docs/hosted-vision.md](../hosted-vision.md)) describes
+(`docs/design/2026-10-google-integration.md`, deleted from main on
+2026-10-24 by the simplify work, #433, and kept in the maintainers' history
+at `5ef30882`; its rulings kept in [docs/hosted-vision.md](../hosted-vision.md)) describes
 `integration_accounts`, grants and a token broker, and none of it is built
 (the grants table was deferred, TODO.md "Google: the operator holds the
 OAuth client").

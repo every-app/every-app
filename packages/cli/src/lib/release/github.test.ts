@@ -88,11 +88,11 @@ describe("fetchGithubReleaseAsset", () => {
     // A private repository's releases are a 404 to an anonymous client.
     const github = fakeGithubReleases({});
     await expect(
-      fetchGithubReleaseAsset({ repo: "every-app/private-every-app", asset: ASSET, fetch: github.fetch }),
+      fetchGithubReleaseAsset({ repo: "every-app/a-private-repository", asset: ASSET, fetch: github.fetch }),
     ).rejects.toMatchObject({
       code: "RELEASE_NOT_FOUND",
       message: expect.stringContaining(
-        `every-app/private-every-app has no published release with ${ASSET} that can be downloaded without signing in`,
+        `every-app/a-private-repository has no published release with ${ASSET} that can be downloaded without signing in`,
       ),
     });
   });

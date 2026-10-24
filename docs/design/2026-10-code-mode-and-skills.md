@@ -33,10 +33,10 @@ The facts a decision rests on, from the code at `main` (`40afd187`, 2026-10-24; 
 
 | App | Tools in the catalog | Listed to a read & write caller | Source (checkout commit) |
 | --- | --- | --- | --- |
-| OpenSEO (port) | 77 | 72 | `open-seo-everyapp/src/server/everyapp/tools.ts` wraps every tool `registerOpenSeoTools` registers (`src/server/mcp/server.ts`; `c431a84c`); the hosted OpenSEO MCP server exposes 81, the four Google-connection tools are absent from the port |
+| OpenSEO (port) | 77 | 72 | OpenSEO's `src/server/everyapp/tools.ts` wraps every tool `registerOpenSeoTools` registers (`src/server/mcp/server.ts`; `c431a84c`); the hosted OpenSEO MCP server exposes 81, the four Google-connection tools are absent from the port |
 | Open CRM | 96 | 90 | `open-crm/src/server/everyapp/tools.ts`, sixteen feature modules of `crmTool()` entries (`effb579`); four short of the 100-per-app cap |
 | OpenAnalytics | 15 | 11 | `open-analytics/src/lib/mcp/tools.ts` (`20bdf211`) |
-| agentic-inbox | 13 | 12 | `agentic-inbox-everyapp/workers/everyapp/tools.ts` (`9644021`) |
+| agentic-inbox | 13 | 12 | agentic-inbox's `workers/everyapp/tools.ts` (`9644021`) |
 | todo (starter) | 4 | 3 | `starter/src/tools.ts` |
 
 The five catalogs hold 205 tools; 17 are destructive and hidden from every AI client; a read & write caller is listed 188 app tools plus the two built-ins, 190 entries, before any third-party MCP server is fronted. **Measured on 2026-10-24** by running the four real apps' `defineTools()` catalogs through the SDK's own `/__everyapp/tools/list` handler and the Gateway's normalization (the starter excluded): the `tools/list` a read & write caller receives has 187 entries and is 419,932 bytes, about 105,000 tokens at four characters a token. Output schemas, which Open CRM and OpenSEO declare on every tool, are 43% of that, and no model-facing tool definition carries them (Anthropic's and OpenAI's tool definitions take an input schema only; clients keep output schemas for validating structured results), so what a model can be shown is nearer 237,797 bytes, about 59,000 tokens; a read-only caller's list is 200,933 bytes on the wire; the names alone are 5,220 bytes (about 1,300 tokens); the Gateway's combined instructions are 1,498 characters. Two apps are 95% of the bytes: OpenSEO (72 listed, 218 KB, descriptions totalling 34,349 characters) and Open CRM (90 listed, 180 KB). How much of the response claude.ai hands the model is unmeasured (section 7).
