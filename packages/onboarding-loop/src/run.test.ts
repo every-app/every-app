@@ -1,0 +1,1250 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { createCfApi, createFakeCfFetch, type FakeCfCall } from "./cf";
+import type { Docker, DockerInfo } from "./docker";
+import {
+  answerMain,
+  findingsMain,
+  gcMain,
+  recomputeMain,
+  reportMain,
+} from "./maintenance";
+import { readRunRecord, RUN_FILES } from "./record";
+import {
+  containerName,
+  DEFAULT_RUN_OPTIONS,
+  describeRef,
+  redactTree,
+  runLoop,
+  type RunDeps,
+  type RunOptions,
+} from "./run";
+import { FakeSandbox, type FakeExecAnswer, type FakeExecCall } from "./sandbox";
+import { capture, createFakeSpawn, spawnProcess, type Spawn } from "./spawn";
+import { createRedactor } from "./redact";
+import { acquireAccountLock } from "./lock";
+import type { FetchLike, HarnessAdapter, NormalizedEvent } from "./types";
+
+const ID = "0123456789abcdef0123456789abcdef";
+const ZONE = "everyapp-loop1.com";
+const TOKEN = "fake-token-abcdefghijklmnopqrstuv";
+const PROVIDER_KEY = "sk-ant-fake-provider-key-0123456789";
+const ORIGIN = `https://apps.${ZONE}`;
+const APP_HOST = `hello.apps.${ZONE}`;
+const EST = `est_${"b".repeat(43)}`;
+const COOKIE = "better-auth.session_token=abc; Path=/; HttpOnly";
+const GIB = 1024 ** 3;
+
+const dirs: string[] = [];
+const tempDir = (prefix: string): string => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  dirs.push(dir);
+  return dir;
+};
+afterEach(() => {
+  for (const dir of dirs.splice(0))
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+/** A git repository with the three things describeRef looks for, one commit. */
+async function makeRepo(
+  options: { seam: boolean } = { seam: true },
+): Promise<string> {
+  const repo = tempDir("loop-run-repo-");
+  const git = (args: string[]) =>
+    capture(spawnProcess, "git", args, { cwd: repo });
+  await git(["init", "-q", "-b", "main"]);
+  await git(["config", "user.email", "loop@example.com"]);
+  await git(["config", "user.name", "loop"]);
+  fs.mkdirSync(path.join(repo, "packages/cli/src"), { recursive: true });
+  fs.mkdirSync(path.join(repo, "landing-page/content/agent"), {
+    recursive: true,
+  });
+  fs.writeFileSync(
+    path.join(repo, "packages/cli/package.json"),
+    '{"name":"everyapp","version":"0.3.0"}\n',
+  );
+  fs.writeFileSync(
+    path.join(repo, "packages/cli/src/eventLog.ts"),
+    options.seam
+      ? 'const name = "EVERYAPP_EVENT_LOG";\n'
+      : "const name = 'nothing';\n",
+  );
+  fs.writeFileSync(
+    path.join(repo, "landing-page/content/agent/index.md"),
+    "# agent docs\n",
+  );
+  await git(["add", "."]);
+  await git(["commit", "-q", "-m", "fixture"]);
+  return repo;
+}
+
+function makeConfigDir(): string {
+  const dir = tempDir("loop-run-config-");
+  fs.writeFileSync(
+    path.join(dir, "accounts.json"),
+    JSON.stringify({
+      accounts: [
+        {
+          name: "loop-1",
+          accountId: ID,
+          zone: ZONE,
+          email: `owner@${ZONE}`,
+          token: TOKEN,
+        },
+      ],
+    }),
+    { mode: 0o600 },
+  );
+  fs.writeFileSync(
+    path.join(dir, "providers.env"),
+    `ANTHROPIC_API_KEY=${PROVIDER_KEY}\n`,
+    { mode: 0o600 },
+  );
+  fs.writeFileSync(
+    path.join(dir, `confirm-${ID}`),
+    `delete everything in ${ID}\n`,
+    { mode: 0o600 },
+  );
+  return dir;
+}
+
+const cliEvent = (event: Record<string, unknown>) =>
+  JSON.stringify({ v: 1, ts: "2026-10-25T14:10:00.000Z", ...event });
+
+const teardownDone = cliEvent({
+  type: "done",
+  data: {
+    accountId: ID,
+    removed: [],
+    kept: [],
+    plan: {
+      accountId: ID,
+      total: 0,
+      workers: [],
+      d1: [],
+      kv: [],
+      access: { applications: [], policy: null },
+      email: [],
+      certificates: [],
+      dns: [],
+      r2: [],
+      hyperdrive: [],
+      workflows: [],
+    },
+  },
+});
+const statusDone = (owner: string) =>
+  cliEvent({
+    type: "done",
+    data: {
+      claimed: true,
+      owner: { email: owner },
+      apps: [
+        { id: "hello", status: "active", bound: true, hostname: APP_HOST },
+      ],
+      upToDate: true,
+      fixes: [],
+    },
+  });
+
+/** The event log lines `setup`, `create` and `deploy` write when everything goes right. */
+function happyEventLog(): string[] {
+  const t = (s: number) =>
+    `2026-10-25T14:${String(10 + s).padStart(2, "0")}:00.000Z`;
+  return [
+    JSON.stringify({
+      type: "invocation",
+      pid: 11,
+      ts: t(0),
+      argv: [
+        "node",
+        "/work/every-app/packages/cli/dist/cli.js",
+        "setup",
+        "--domain",
+        `apps.${ZONE}`,
+        "--json",
+      ],
+      cwd: "/work/every-app",
+      json: true,
+      isatty: { stdin: false, stdout: false, stderr: false },
+      ci: false,
+    }),
+    cliEvent({
+      pid: 11,
+      ts: t(1),
+      type: "step",
+      step: "setup.gateway",
+      status: "start",
+    }),
+    cliEvent({
+      pid: 11,
+      ts: t(5),
+      type: "step",
+      step: "setup.gateway",
+      status: "ok",
+    }),
+    cliEvent({
+      pid: 11,
+      ts: t(6),
+      type: "action_required",
+      action: "claim_owner",
+      message: "Open this link",
+      data: { url: `${ORIGIN}/setup#token=${EST}`, waiting: true },
+    }),
+    cliEvent({
+      pid: 11,
+      ts: t(7),
+      type: "step",
+      step: "setup.owner",
+      status: "ok",
+    }),
+    cliEvent({ pid: 11, ts: t(8), type: "done", data: { gatewayUrl: ORIGIN } }),
+    JSON.stringify({ type: "exit", pid: 11, ts: t(8), code: 0, ms: 480000 }),
+    JSON.stringify({
+      type: "invocation",
+      pid: 12,
+      ts: t(9),
+      argv: ["node", "cli.js", "create", "hello", "--json"],
+      cwd: "/work/every-app",
+      json: true,
+      isatty: { stdin: false, stdout: false, stderr: false },
+      ci: false,
+    }),
+    cliEvent({ pid: 12, ts: t(10), type: "done", data: { appId: "hello" } }),
+    JSON.stringify({ type: "exit", pid: 12, ts: t(10), code: 0, ms: 60000 }),
+    JSON.stringify({
+      type: "invocation",
+      pid: 13,
+      ts: t(11),
+      argv: ["node", "cli.js", "deploy", "--json"],
+      cwd: "/work/every-app/apps/hello",
+      json: true,
+      isatty: { stdin: false, stdout: false, stderr: false },
+      ci: false,
+    }),
+    cliEvent({
+      pid: 13,
+      ts: t(13),
+      type: "done",
+      data: { url: `https://${APP_HOST}` },
+    }),
+    JSON.stringify({ type: "exit", pid: 13, ts: t(13), code: 0, ms: 120000 }),
+  ];
+}
+
+const happyScriptLines = [
+  "LOOP_CMD pnpm install",
+  "LOOP_EXIT 0",
+  `LOOP_CMD pnpm everyapp setup --domain apps.${ZONE} --json`,
+  "LOOP_EXIT 0",
+  "LOOP_CMD pnpm everyapp create hello --json",
+  "LOOP_EXIT 0",
+  "LOOP_CMD pnpm everyapp deploy --json",
+  "LOOP_EXIT 0",
+  `DONE ${ORIGIN}`,
+];
+
+interface World {
+  deps: RunDeps;
+  sandbox: FakeSandbox;
+  cfCalls: FakeCfCall[];
+  gatewayCalls: string[];
+  /** Execs and gateway calls in the order they happened. */
+  timeline: string[];
+  logs: string[];
+  configDir: string;
+  runsRoot: string;
+}
+
+function makeWorld(
+  repo: string,
+  script: {
+    eventLog: string[];
+    harnessLines: string[];
+    harnessExit?: number;
+    statusOwner?: string;
+    gateway?: Record<string, (init: RequestInit) => Response>;
+    /** Answers an exec before the defaults do (a harness other than the control script). */
+    exec?: (
+      call: FakeExecCall,
+      sandbox: FakeSandbox,
+    ) => FakeExecAnswer | undefined;
+    /** Rows the fake D1 returns for the claimer's SELECT on owner_setup_tokens. */
+    d1Rows?: Array<Record<string, unknown>>;
+  },
+): World {
+  const configDir = makeConfigDir();
+  const runsRoot = path.join(configDir, "runs");
+  const logs: string[] = [];
+  const timeline: string[] = [];
+  const sandbox: FakeSandbox = new FakeSandbox(
+    (call: FakeExecCall): FakeExecAnswer | undefined => {
+      const argv = call.argv.join(" ");
+      timeline.push(`exec ${argv}`);
+      const custom: FakeExecAnswer | undefined = script.exec?.(call, sandbox);
+      if (custom) return custom;
+      if (argv.includes("everyapp teardown")) return { stdout: [teardownDone] };
+      if (argv.includes("everyapp status"))
+        return { stdout: [statusDone(script.statusOwner ?? `owner@${ZONE}`)] };
+      if (argv === "bash --version")
+        return { stdout: ["GNU bash, version 5.2.15"] };
+      if (argv.startsWith("bash -c tr"))
+        return { stdout: ["TERM=dumb", "SHELL=/bin/bash"] };
+      if (argv === "bash /loop/script.sh") {
+        // The CLI writes its event log while the script runs; the tail delivers it as it is written.
+        for (const line of script.eventLog)
+          sandbox.pushTail("/loop/everyapp-events.ndjson", line);
+        return { stdout: script.harnessLines, code: script.harnessExit ?? 0 };
+      }
+      return { code: 0 };
+    },
+  );
+  const info: DockerInfo = {
+    engine: "29.8.2",
+    memBytes: 16 * GIB,
+    ncpu: 18,
+    os: "linux",
+    arch: "aarch64",
+  };
+  const docker: Docker = {
+    binary: "/fake/docker",
+    info: async () => info,
+    listContainers: async () => [],
+    removeContainers: async () => undefined,
+    imageExists: async () => true,
+    imageSizeBytes: async () => 7_710_000_000,
+    build: async () => ({ ms: 1 }),
+    run: async () => ({ code: 0, stdout: [], stderr: [] }),
+    clockSkewSeconds: async () => 0.2,
+    memoryMiB: async () => 1500,
+    sandbox,
+  };
+  const cf = createFakeCfFetch([
+    {
+      method: "GET",
+      path: /^\/user\/tokens\/verify$/,
+      reply: () => ({ result: { id: "t", status: "active" } }),
+    },
+    {
+      method: "GET",
+      path: /^\/accounts$/,
+      reply: () => ({ result: [{ id: ID, name: "Loop 1" }] }),
+    },
+    {
+      method: "GET",
+      path: /^\/zones$/,
+      reply: () => ({ result: [{ id: "z1", name: ZONE, status: "active" }] }),
+    },
+    {
+      method: "GET",
+      path: new RegExp(`^/accounts/${ID}/subscriptions$`),
+      reply: () => ({
+        result: [
+          {
+            state: "Paid",
+            rate_plan: { id: "workers_paid", public_name: "Workers Paid" },
+          },
+        ],
+      }),
+    },
+    {
+      method: "GET",
+      path: new RegExp(`^/accounts/${ID}/workers/subdomain$`),
+      reply: () => ({
+        status: 404,
+        success: false,
+        errors: [{ code: 10007, message: "no subdomain" }],
+      }),
+    },
+    {
+      method: "PUT",
+      path: new RegExp(`^/accounts/${ID}/workers/subdomain$`),
+      reply: (_m, call) => ({
+        result: { subdomain: (call.body as { subdomain: string }).subdomain },
+      }),
+    },
+    {
+      method: "GET",
+      path: new RegExp(`^/accounts/${ID}/d1/database$`),
+      reply: () => ({ result: [{ uuid: "db-gw", name: "every-app-gateway" }] }),
+    },
+    {
+      method: "POST",
+      path: new RegExp(`^/accounts/${ID}/d1/database/db-gw/query$`),
+      reply: (_m, call) => ({
+        result: [
+          {
+            results: String((call.body as { sql: string }).sql).startsWith(
+              "SELECT id, expires_at",
+            )
+              ? (script.d1Rows ?? [])
+              : [],
+            success: true,
+          },
+        ],
+      }),
+    },
+    {
+      method: "GET",
+      path: new RegExp(`^/accounts/${ID}/storage/kv/namespaces$`),
+      reply: () => ({ result: [] }),
+    },
+    {
+      method: "POST",
+      path: new RegExp(`^/accounts/${ID}/storage/kv/namespaces$`),
+      reply: (_m, call) => ({
+        result: {
+          id: "kv-marker",
+          title: (call.body as { title: string }).title,
+        },
+      }),
+    },
+    {
+      method: "GET",
+      path: /^\/zones\/z1\/dns_records$/,
+      reply: () => ({ result: [] }),
+    },
+  ]);
+  const gatewayCalls: string[] = [];
+  const routes: Record<string, (init: RequestInit) => Response> = {
+    [`POST ${ORIGIN}/api/setup/claim`]: (init) => {
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      if (!headers["origin"])
+        return new Response('{"error":"ORIGIN_NOT_ALLOWED"}', { status: 403 });
+      const body = JSON.parse(String(init.body)) as { token: string };
+      return body.token === EST
+        ? new Response('{"ok":true,"organizationId":"org1"}', { status: 200 })
+        : new Response('{"error":"INVALID_OR_EXPIRED_SETUP_LINK"}', {
+            status: 403,
+          });
+    },
+    [`GET ${ORIGIN}/sign-in`]: () =>
+      new Response("<html>sign in</html>", { status: 200 }),
+    [`GET ${ORIGIN}/api/me/apps`]: () =>
+      new Response('{"error":"unauthenticated"}', { status: 401 }),
+    [`POST ${ORIGIN}/api/auth/sign-in/email`]: () =>
+      new Response('{"token":"x"}', {
+        status: 200,
+        headers: { "set-cookie": COOKIE },
+      }),
+    [`GET ${ORIGIN}/api/auth/get-session`]: () =>
+      new Response(JSON.stringify({ user: { email: `owner@${ZONE}` } }), {
+        status: 200,
+      }),
+    [`GET https://${APP_HOST}/`]: (init) => {
+      const headers = (init.headers ?? {}) as Record<string, string>;
+      if (headers["cookie"])
+        return new Response("<html><h1>Todos</h1></html>", { status: 200 });
+      if (headers["accept"] === "text/html")
+        return new Response("", {
+          status: 302,
+          headers: { location: `${ORIGIN}/sign-in?return_to=x` },
+        });
+      return new Response('{"error":"unauthenticated"}', { status: 401 });
+    },
+    ...script.gateway,
+  };
+  const gatewayFetch: FetchLike = async (url, init = {}) => {
+    const key = `${init.method ?? "GET"} ${url}`;
+    gatewayCalls.push(key);
+    timeline.push(`gateway ${key}`);
+    if (/^GET https:\/\/nope-[0-9a-f]+\.apps\./.test(key))
+      return new Response('{"error":"unknown_app_host"}', { status: 404 });
+    const route = routes[key];
+    if (!route) return new Response("no route", { status: 599 });
+    return route(init);
+  };
+  const fakeHost = createFakeSpawn(() => ({
+    stdout: [
+      "COMMAND PID",
+      "node 1 ben 20u IPv4 0 0t0 TCP 127.0.0.1:3000 (LISTEN)",
+    ],
+  }));
+  const spawn: Spawn = (bin, args, options) =>
+    bin === "git"
+      ? spawnProcess(bin, args, options)
+      : fakeHost.spawn(bin, args, options);
+  const deps: RunDeps = {
+    configDir,
+    runsRoot,
+    repoRoot: repo,
+    dockerfile: path.join(repo, "Dockerfile.fake"),
+    docker,
+    spawn,
+    createCf: (account) =>
+      createCfApi({
+        token: account.token,
+        accountId: account.accountId,
+        fetch: cf.fetch,
+      }),
+    createFetch: () => gatewayFetch,
+    docsFetch: async () =>
+      new Response("", {
+        status: 302,
+        headers: { location: "https://everyapp.com/" },
+      }),
+    now: () => Date.now(),
+    sleep: async () => undefined,
+    log: (line) => logs.push(line),
+    statsIntervalMs: 5,
+    caffeinate: false,
+  };
+  fs.writeFileSync(deps.dockerfile, "FROM node:22\n");
+  return {
+    deps,
+    sandbox,
+    cfCalls: cf.calls,
+    gatewayCalls,
+    timeline,
+    logs,
+    configDir,
+    runsRoot,
+  };
+}
+
+/** A claim route that takes any est_ token (the D1-side claimer mints its own). */
+const anyTokenClaim = (init: RequestInit): Response => {
+  const headers = (init.headers ?? {}) as Record<string, string>;
+  if (!headers["origin"])
+    return new Response('{"error":"ORIGIN_NOT_ALLOWED"}', { status: 403 });
+  const body = JSON.parse(String(init.body)) as { token: string };
+  return /^est_[A-Za-z0-9_-]{20,}$/.test(body.token)
+    ? new Response('{"ok":true,"organizationId":"org1"}', { status: 200 })
+    : new Response('{"error":"INVALID_OR_EXPIRED_SETUP_LINK"}', {
+        status: 403,
+      });
+};
+
+/**
+ * A two-process harness like Claude Code's `-p` runs: `TEXT`/`RESULT` lines
+ * out, resumed with `--resume <session>`. The CLI event log is pushed by the
+ * world's exec hook, as the CLI would write it while the harness runs.
+ */
+function fakeTurnsAdapter(): HarnessAdapter {
+  return {
+    name: "claude",
+    version: "x",
+    status: "measured",
+    providerVar: "ANTHROPIC_API_KEY",
+    defaultModel: "m",
+    signal: {
+      toolCalls: "full",
+      toolOutput: "full",
+      exitCodes: true,
+      cost: "harness",
+      resume: "native",
+    },
+    permissionBypass: true,
+    command: () => ({ argv: ["fake", "--turn", "1"] }),
+    resume: (sessionId, replyPath) =>
+      sessionId ? { argv: ["fake", "--resume", sessionId, replyPath] } : null,
+    normalize: (line, _stream, receivedAt): NormalizedEvent[] => {
+      if (line.startsWith("TEXT "))
+        return [
+          {
+            receivedAt,
+            kind: "assistant_text",
+            text: line.slice(5),
+            sessionId: "s1",
+            raw: line,
+          },
+        ];
+      if (line === "RESULT")
+        return [
+          { receivedAt, kind: "result", text: "", sessionId: "s1", raw: line },
+        ];
+      return [];
+    },
+    collectPaths: [],
+    fixture: null,
+  };
+}
+
+/** A clock that jumps a minute per read: the verifier's retry windows close at once when a probe keeps failing. */
+const advancingClock = () => {
+  let t = Date.now();
+  return () => (t += 60_000);
+};
+
+const options = (overrides: Partial<RunOptions> = {}): RunOptions => ({
+  ...DEFAULT_RUN_OPTIONS,
+  harness: "script",
+  account: "loop-1",
+  ...overrides,
+});
+
+/** Every file under the run directory, read as text. */
+function runFiles(dir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  const walk = (current: string) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const file = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(file);
+      else out[path.relative(dir, file)] = fs.readFileSync(file, "utf8");
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+describe("describeRef", () => {
+  it("names the commit, the CLI version, the agent docs and the event-log seam", async () => {
+    const repo = await makeRepo();
+    const described = await describeRef(spawnProcess, repo, "HEAD");
+    expect(described.commit).toMatch(/^[0-9a-f]{40}$/);
+    expect(described).toMatchObject({
+      cliVersion: "0.3.0",
+      agentDocs: true,
+      eventLogSeam: true,
+    });
+    const noSeam = await describeRef(
+      spawnProcess,
+      await makeRepo({ seam: false }),
+      "HEAD",
+    );
+    expect(noSeam.eventLogSeam).toBe(false);
+  });
+});
+
+describe("redactTree", () => {
+  it("rewrites every file under a collected directory through the redactor", () => {
+    const dir = tempDir("loop-redact-");
+    fs.mkdirSync(path.join(dir, "a/b"), { recursive: true });
+    fs.writeFileSync(path.join(dir, "a/b/env.txt"), `TOKEN=${TOKEN}\nOK=1\n`);
+    fs.writeFileSync(path.join(dir, "a/plain.txt"), "nothing here\n");
+    const redactor = createRedactor([{ name: "cf_token", value: TOKEN }]);
+    expect(redactTree(dir, redactor)).toBe(2);
+    expect(fs.readFileSync(path.join(dir, "a/b/env.txt"), "utf8")).toBe(
+      "TOKEN=[REDACTED:cf_token]\nOK=1\n",
+    );
+    expect(redactor.exposure().cf_token).toBe(1);
+  });
+});
+
+describe("runLoop", () => {
+  it("--dry-run goes through preflight with the stub account when accounts.json is absent and makes no call", async () => {
+    const repo = await makeRepo();
+    const world = makeWorld(repo, { eventLog: [], harnessLines: [] });
+    fs.rmSync(path.join(world.configDir, "accounts.json"));
+    const outcome = await runLoop(
+      options({ account: "stub", dryRun: true }),
+      world.deps,
+    );
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.record).toBeNull();
+    expect(world.logs.join("\n")).toContain("using the stub account");
+    expect(world.logs.join("\n")).toContain("preflight ok (dry run");
+    expect(world.logs.join("\n")).toContain("skip token");
+    expect(world.cfCalls).toEqual([]);
+    expect(world.gatewayCalls).toEqual([]);
+    expect(world.sandbox.created).toEqual([]);
+    expect(fs.existsSync(world.runsRoot)).toBe(false);
+  });
+
+  it("runs the control harness end to end on fakes: wipe, sandbox, claim from the event log, verify, wipe, a passing record with no secret in it", async () => {
+    const repo = await makeRepo();
+    const world = makeWorld(repo, {
+      eventLog: happyEventLog(),
+      harnessLines: happyScriptLines,
+    });
+    const outcome = await runLoop(options(), world.deps);
+    const text = world.logs.join("\n");
+    expect(outcome.exitCode, text).toBe(0);
+    const record = outcome.record!;
+    expect(record.verdict).toEqual({
+      value: "pass",
+      reasonCode: null,
+      falseDone: false,
+      tainted: false,
+      shortcut: false,
+      reportedUrl: ORIGIN,
+    });
+    expect(record.terminal_reason).toBe("completed");
+    expect(record.harness).toMatchObject({
+      name: "script",
+      version: "bash",
+      mode: null,
+    });
+    expect(record.steps.claim).toMatchObject({
+      how: "event-log",
+      linkEmittedAt: "2026-10-25T14:16:00.000Z",
+      linkSurfacedToPerson: false,
+    });
+    expect(record.steps.setup).toEqual({ status: "done", reruns: 0 });
+    expect(record.steps.app).toEqual({
+      by: "harness",
+      id: "hello",
+      url: `https://${APP_HOST}`,
+    });
+    expect(record.everyappCommands.map((c) => c.argv[0])).toEqual([
+      "setup",
+      "create",
+      "deploy",
+    ]);
+    expect(record.everyappCommands[0]).toMatchObject({
+      json: true,
+      ci: false,
+      exit: 0,
+      ms: 480000,
+      events: { actions: ["claim_owner"] },
+    });
+    expect(record.verify.rows).toEqual({
+      G1: "pass",
+      G2: "pass",
+      G3: "pass",
+      O1: "pass",
+      A1: "pass",
+      A2: "pass",
+      A3: "pass",
+      S1: "pass",
+      T1: "pass",
+      X1: "skipped",
+    });
+    expect(record.verify.phaseReached).toBe("app-live");
+    expect(record.deviations).toEqual([
+      "checkout_preplaced",
+      "api_token_auth",
+      "event_log",
+      "claim_immediate",
+    ]);
+    expect(record.fixtures).toMatchObject({
+      workers_subdomain: "first-run",
+      cert_packs: "deleted",
+      preRunPlanTotal: 0,
+      docs_url: { status: 302 },
+    });
+    expect(record.cli).toEqual({
+      commit: expect.stringMatching(/^[0-9a-f]{40}$/),
+      version: "0.3.0",
+    });
+    expect(record.agentDocs).toEqual({
+      present: true,
+      commit: record.cli.commit,
+    });
+    expect(record.toolEnv).toEqual({
+      CI: null,
+      TERM: "dumb",
+      SHELL: "/bin/bash",
+    });
+    expect(record.phases.map((p) => p.name)).toEqual([
+      "install",
+      "setup",
+      "setup.gateway",
+      "setup.owner",
+      "create",
+      "deploy",
+      "teardown.before",
+      "harness",
+      "verify",
+      "teardown.after",
+    ]);
+    expect(record.handoffs.exercised).toEqual(["claim_owner"]);
+    expect(record.interventions).toEqual([]);
+    expect(record.substrate).toMatchObject({
+      kind: "docker",
+      engine: "29.8.2",
+      vmMemoryGiB: 16,
+      statsPeakMiB: 1500,
+    });
+    expect(record.secret_exposure).toEqual({
+      cf_token: 0,
+      provider_key: 0,
+      est_link: 1,
+      owner_password: 0,
+      bearer: 0,
+    });
+
+    // The container: created with exactly the secrets, the bundle and the prompt in, the script in, destroyed.
+    const main = world.sandbox.created.find(
+      (spec) => spec.name === containerName(outcome.runId),
+    )!;
+    expect(Object.keys(main.env).sort()).toEqual([
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CLOUDFLARE_API_TOKEN",
+      "EVERYAPP_EVENT_LOG",
+    ]);
+    expect(main).toMatchObject({
+      cpus: 4,
+      memory: "6g",
+      user: "dev",
+      workdir: "/work",
+      image: expect.stringMatching(/^everyapp-loop:/),
+    });
+    expect(
+      world.sandbox.copiedIn
+        .filter((c) => c.name === main.name)
+        .map((c) => c.sandboxPath),
+    ).toEqual(["/loop/launch.bundle", "/loop/prompt.txt", "/loop/script.sh"]);
+    expect(world.sandbox.destroyed).toContain(main.name);
+    const harnessExec = world.sandbox.execs.find(
+      (e) => e.argv.join(" ") === "bash /loop/script.sh",
+    )!;
+    expect(harnessExec.options.cwd).toBe("/work/every-app");
+    // Two sibling containers for the teardown (allowlist set), one for the verifier (not set).
+    const siblings = world.sandbox.created.filter((spec) =>
+      spec.name.startsWith("loop-sib-"),
+    );
+    expect(siblings.map((s) => "EVERYAPP_TEST_ACCOUNTS" in s.env)).toEqual([
+      true,
+      false,
+      true,
+    ]);
+    expect(
+      world.sandbox.execs.filter((e) =>
+        e.argv.join(" ").includes("everyapp teardown"),
+      ).length,
+    ).toBe(2);
+    // The marker went in, the links were expired through D1, the claim carried the Origin header.
+    expect(
+      world.cfCalls.find(
+        (c) => c.method === "POST" && c.path.endsWith("/storage/kv/namespaces"),
+      )?.body,
+    ).toEqual({ title: `every-loop-run-${outcome.runId}` });
+    expect(
+      world.cfCalls.some(
+        (c) =>
+          c.path.endsWith("/query") &&
+          String((c.body as { sql: string }).sql).includes("expires_at = 0"),
+      ),
+    ).toBe(true);
+    expect(
+      world.gatewayCalls.filter((c) => c === `POST ${ORIGIN}/api/setup/claim`)
+        .length,
+    ).toBeGreaterThanOrEqual(2);
+
+    // The run directory: every artifact, mode 600, and never the token, the key, the password or the link.
+    const dir = path.join(world.runsRoot, outcome.runId);
+    const files = runFiles(dir);
+    for (const name of [
+      RUN_FILES.record,
+      RUN_FILES.events,
+      RUN_FILES.eventLog,
+      RUN_FILES.verify,
+      RUN_FILES.inventoryBefore,
+      RUN_FILES.inventoryAfter,
+      RUN_FILES.diff,
+      RUN_FILES.prompt,
+      RUN_FILES.assembleInput,
+      RUN_FILES.decideInput,
+      RUN_FILES.harnessRaw,
+      RUN_FILES.stats,
+    ])
+      expect(Object.keys(files), name).toContain(name);
+    expect(fs.statSync(path.join(dir, RUN_FILES.record)).mode & 0o077).toBe(0);
+    expect(fs.statSync(dir).mode & 0o077).toBe(0);
+    for (const [name, content] of Object.entries(files)) {
+      expect(content, name).not.toContain(TOKEN);
+      expect(content, name).not.toContain(PROVIDER_KEY);
+      expect(content, name).not.toContain(EST);
+    }
+    expect(files[RUN_FILES.eventLog]).toContain("[REDACTED:est_link]");
+    expect(text).not.toContain(TOKEN);
+    expect(text).not.toContain(EST);
+    expect(readRunRecord(world.runsRoot, outcome.runId).runId).toBe(
+      outcome.runId,
+    );
+    expect(text).toContain("pass: phase app-live");
+  });
+
+  it("a fixture action_required (upgrade_workers_paid) is fail-infra and the harness is not answered", async () => {
+    const repo = await makeRepo();
+    const t = "2026-10-25T14:10:00.000Z";
+    const world = makeWorld(repo, {
+      eventLog: [
+        JSON.stringify({
+          type: "invocation",
+          pid: 21,
+          ts: t,
+          argv: [
+            "node",
+            "cli.js",
+            "setup",
+            "--domain",
+            `apps.${ZONE}`,
+            "--json",
+          ],
+          cwd: "/work/every-app",
+          json: true,
+          isatty: { stdin: false, stdout: false, stderr: false },
+          ci: false,
+        }),
+        cliEvent({
+          pid: 21,
+          type: "action_required",
+          action: "upgrade_workers_paid",
+          message: "Workers Paid is needed",
+          data: { url: "https://dash.cloudflare.com/" },
+        }),
+        JSON.stringify({ type: "exit", pid: 21, ts: t, code: 2, ms: 9000 }),
+      ],
+      harnessLines: [
+        "LOOP_CMD pnpm install",
+        "LOOP_EXIT 0",
+        `LOOP_CMD pnpm everyapp setup --domain apps.${ZONE} --json`,
+        "LOOP_EXIT 2",
+        "BLOCKED: setup stopped for a person three times",
+      ],
+      harnessExit: 1,
+      gateway: {
+        [`GET ${ORIGIN}/sign-in`]: () => new Response("", { status: 530 }),
+      },
+    });
+    const outcome = await runLoop(options(), {
+      ...world.deps,
+      now: advancingClock(),
+    });
+    const record = outcome.record!;
+    expect(outcome.exitCode).toBe(1);
+    expect(record.verdict.value).toBe("fail-infra");
+    expect(record.verdict.reasonCode).toBe("fixture_upgrade_workers_paid");
+    expect(record.terminal_reason).toBe("fixture_error");
+    expect(record.steps.setup).toEqual({
+      status: "action_required",
+      reruns: 0,
+    });
+    expect(record.scriptedUserTurns).toEqual([]);
+    expect(record.steps.claim.how).toBe("none");
+    expect(world.sandbox.destroyed.length).toBeGreaterThan(0);
+    expect(
+      world.sandbox.execs.filter((e) =>
+        e.argv.join(" ").includes("everyapp teardown"),
+      ).length,
+    ).toBe(2);
+  });
+
+  it("without the event-log seam in the commit under test, the log stays empty, the claim runs D1-side, the app comes from status --json, and the record is still a pass", async () => {
+    const repo = await makeRepo({ seam: false });
+    const world = makeWorld(repo, {
+      // A CLI without the seam writes nothing to the event log.
+      eventLog: [],
+      harnessLines: happyScriptLines,
+      d1Rows: [{ id: "row-1", expires_at: Date.now() + 86_400_000 }],
+      gateway: { [`POST ${ORIGIN}/api/setup/claim`]: anyTokenClaim },
+    });
+    const outcome = await runLoop(options(), world.deps);
+    const record = outcome.record!;
+    const text = world.logs.join("\n");
+    expect(record.deviations).toContain("d1_claim");
+    expect(record.deviations).not.toContain("event_log");
+    expect(text).toContain(
+      "WARNING: the commit under test has no EVERYAPP_EVENT_LOG seam",
+    );
+    expect(
+      world.cfCalls.some(
+        (c) =>
+          c.path.endsWith("/query") &&
+          String((c.body as { sql: string }).sql).includes(
+            "UPDATE owner_setup_tokens SET token_hash",
+          ),
+      ),
+    ).toBe(true);
+    expect(record.steps.claim.how, text).toBe("d1");
+    expect(record.everyappCommands).toEqual([]);
+    // The script's own tool calls say it deployed; status --json names the app; the verifier never deployed.
+    expect(record.steps.app).toEqual({
+      by: "harness",
+      id: "hello",
+      url: `https://${APP_HOST}`,
+    });
+    expect(
+      world.sandbox.execs.some((e) =>
+        e.argv.join(" ").includes("create hello"),
+      ),
+    ).toBe(false);
+    expect(record.verdict.value, text).toBe("pass");
+  });
+
+  it("--claim-after turn-end claims when the turn that showed the link ends, before the next process starts, with no intervention", async () => {
+    const repo = await makeRepo();
+    const t = (s: number) =>
+      `2026-10-25T14:${String(10 + s).padStart(2, "0")}:00.000Z`;
+    const inv = (pid: number, ts: string, argv: string[], cwd: string) =>
+      JSON.stringify({
+        type: "invocation",
+        pid,
+        ts,
+        argv: ["node", "cli.js", ...argv],
+        cwd,
+        json: true,
+        isatty: { stdin: false, stdout: false, stderr: false },
+        ci: false,
+      });
+    const exit = (pid: number, ts: string) =>
+      JSON.stringify({ type: "exit", pid, ts, code: 0, ms: 1000 });
+    const push = (sandbox: FakeSandbox, lines: string[]) => {
+      for (const line of lines)
+        sandbox.pushTail("/loop/everyapp-events.ndjson", line);
+    };
+    const world = makeWorld(repo, {
+      eventLog: [],
+      harnessLines: [],
+      exec: (call, sandbox) => {
+        const argv = call.argv.join(" ");
+        if (argv === "fake --turn 1") {
+          push(sandbox, [
+            inv(
+              11,
+              t(0),
+              ["setup", "--domain", `apps.${ZONE}`, "--json"],
+              "/work/every-app",
+            ),
+            cliEvent({
+              pid: 11,
+              ts: t(6),
+              type: "action_required",
+              action: "claim_owner",
+              message: "Open this link",
+              data: { url: `${ORIGIN}/setup#token=${EST}`, waiting: true },
+            }),
+            cliEvent({
+              pid: 11,
+              ts: t(7),
+              type: "step",
+              step: "setup.owner",
+              status: "ok",
+            }),
+            cliEvent({
+              pid: 11,
+              ts: t(8),
+              type: "done",
+              data: { gatewayUrl: ORIGIN },
+            }),
+            exit(11, t(8)),
+          ]);
+          return {
+            stdout: [
+              "TEXT Open the setup link I printed and tell me when you have.",
+              "RESULT",
+            ],
+            code: 0,
+          };
+        }
+        if (argv.startsWith("fake --resume s1")) {
+          push(sandbox, [
+            inv(12, t(9), ["create", "hello", "--json"], "/work/every-app"),
+            cliEvent({
+              pid: 12,
+              ts: t(10),
+              type: "done",
+              data: { appId: "hello" },
+            }),
+            exit(12, t(10)),
+            inv(13, t(11), ["deploy", "--json"], "/work/every-app/apps/hello"),
+            cliEvent({
+              pid: 13,
+              ts: t(13),
+              type: "done",
+              data: { url: `https://${APP_HOST}` },
+            }),
+            exit(13, t(13)),
+          ]);
+          return { stdout: [`TEXT DONE ${ORIGIN}`, "RESULT"], code: 0 };
+        }
+        return undefined;
+      },
+    });
+    const outcome = await runLoop(
+      options({ harness: "claude", claimAfter: "turn-end" }),
+      { ...world.deps, createHarness: () => fakeTurnsAdapter() },
+    );
+    const text = world.logs.join("\n");
+    const record = outcome.record!;
+    const turn1 = world.timeline.findIndex((e) => e === "exec fake --turn 1");
+    const claim = world.timeline.findIndex(
+      (e) => e === `gateway POST ${ORIGIN}/api/setup/claim`,
+    );
+    const turn2 = world.timeline.findIndex((e) =>
+      e.startsWith("exec fake --resume s1"),
+    );
+    expect(turn1, text).toBeGreaterThanOrEqual(0);
+    expect(claim, world.timeline.join("\n")).toBeGreaterThan(turn1);
+    expect(turn2).toBeGreaterThan(claim);
+    expect(record.steps.claim.how).toBe("event-log");
+    expect(record.deviations).not.toContain("claim_immediate");
+    expect(record.interventions).toEqual([]);
+    expect(record.scriptedUserTurns.map((turn) => turn.trigger)).toEqual([
+      "create_app",
+    ]);
+    expect(record.verdict.value, text).toBe("pass");
+  });
+
+  it("register_workers_subdomain in the event log is answered by the REST PUT and a queued reply; the control cannot be resumed", async () => {
+    const repo = await makeRepo();
+    const t = "2026-10-25T14:10:00.000Z";
+    const world = makeWorld(repo, {
+      eventLog: [
+        JSON.stringify({
+          type: "invocation",
+          pid: 31,
+          ts: t,
+          argv: [
+            "node",
+            "cli.js",
+            "setup",
+            "--domain",
+            `apps.${ZONE}`,
+            "--json",
+          ],
+          cwd: "/work/every-app",
+          json: true,
+          isatty: { stdin: false, stdout: false, stderr: false },
+          ci: false,
+        }),
+        cliEvent({
+          pid: 31,
+          type: "action_required",
+          action: "register_workers_subdomain",
+          message: "Pick a workers.dev name",
+          data: { url: "https://dash.cloudflare.com/" },
+        }),
+        JSON.stringify({ type: "exit", pid: 31, ts: t, code: 2, ms: 9000 }),
+      ],
+      harnessLines: [
+        "LOOP_CMD pnpm install",
+        "LOOP_EXIT 0",
+        `LOOP_CMD pnpm everyapp setup --domain apps.${ZONE} --json`,
+        "LOOP_EXIT 2",
+        "LOOP_CMD pnpm everyapp setup --domain apps.${ZONE} --json",
+        "LOOP_EXIT 2",
+        "Setup keeps stopping",
+      ],
+      harnessExit: 0,
+      gateway: {
+        [`GET ${ORIGIN}/sign-in`]: () => new Response("", { status: 530 }),
+      },
+    });
+    const outcome = await runLoop(options(), {
+      ...world.deps,
+      now: advancingClock(),
+    });
+    const record = outcome.record!;
+    const put = world.cfCalls.find(
+      (c) => c.method === "PUT" && c.path.endsWith("/workers/subdomain"),
+    );
+    expect(put?.body).toEqual({ subdomain: "everyapp-loop1" });
+    expect(record.fixtures.workers_subdomain).toBe("first-run");
+    expect(record.handoffs.exercised).toEqual(["register_workers_subdomain"]);
+    expect(record.scriptedUserTurns.map((t) => t.trigger)).toEqual([
+      "register_workers_subdomain",
+    ]);
+    expect(record.terminal_reason).toBe("harness_exit");
+    expect(record.verdict.value).toBe("fail-onboarding");
+    expect(world.logs.join("\n")).toContain(
+      "registering the workers.dev subdomain everyapp-loop1",
+    );
+  });
+
+  it("a failed preflight (the account is locked by another run) writes a fail-infra record and creates nothing", async () => {
+    const repo = await makeRepo();
+    const world = makeWorld(repo, { eventLog: [], harnessLines: [] });
+    const held = acquireAccountLock(
+      path.join(world.configDir, "locks"),
+      ID,
+      "other-run",
+    );
+    try {
+      const outcome = await runLoop(options(), world.deps);
+      expect(outcome.exitCode).toBe(1);
+      expect(outcome.record?.terminal_reason).toBe("preflight_failed");
+      expect(outcome.record?.verdict).toMatchObject({
+        value: "fail-infra",
+        reasonCode: "preflight_failed",
+      });
+      expect(outcome.record?.errors[0]?.message).toMatch(
+        /locked by run other-run/,
+      );
+      expect(world.sandbox.created).toEqual([]);
+      expect(world.cfCalls).toEqual([]);
+    } finally {
+      held.release();
+    }
+  });
+
+  it("the commands over a finished run: reparse and replay keep the verdict, report writes whitelisted files, findings renders the hand-off, answer refuses, gc removes", async () => {
+    const repo = await makeRepo();
+    const world = makeWorld(repo, {
+      eventLog: happyEventLog(),
+      harnessLines: happyScriptLines,
+    });
+    const outcome = await runLoop(options(), world.deps);
+    const logs: string[] = [];
+    const log = (line: string) => logs.push(line);
+    const common = { runsRoot: world.runsRoot, runId: outcome.runId, log };
+    expect(recomputeMain({ ...common, renormalize: true })).toBe(0);
+    expect(recomputeMain({ ...common, renormalize: false })).toBe(0);
+    expect(logs.filter((l) => l.includes("verdict pass -> pass"))).toHaveLength(
+      2,
+    );
+    expect(
+      readRunRecord(world.runsRoot, outcome.runId).everyappCommands,
+    ).toHaveLength(3);
+
+    const docsRepo = tempDir("loop-report-repo-");
+    expect(
+      reportMain({ runsRoot: world.runsRoot, repoRoot: docsRepo, log }),
+    ).toBe(0);
+    const reportDir = path.join(docsRepo, "docs/onboarding-loop");
+    const written = fs.readdirSync(reportDir).sort();
+    expect(written).toEqual([
+      "README.md",
+      "findings.json",
+      "findings.md",
+      "runs",
+    ]);
+    const everything = Object.values(runFiles(reportDir)).join("\n");
+    expect(everything).not.toContain(ZONE);
+    expect(everything).not.toContain(ID);
+    expect(everything).not.toContain("@");
+    expect(everything).not.toContain("est_");
+    expect(
+      fs.readFileSync(path.join(reportDir, "README.md"), "utf8"),
+    ).toContain("| script bash |");
+
+    expect(
+      findingsMain({
+        runsRoot: world.runsRoot,
+        repoRoot: docsRepo,
+        configDir: world.configDir,
+        runId: null,
+        threadIds: {},
+        log,
+      }),
+    ).toBe(0);
+    expect(logs.join("\n")).toContain(`# Hand-off for run ${outcome.runId}`);
+    expect(
+      fs.existsSync(
+        path.join(world.configDir, "handoff", `${outcome.runId}.md`),
+      ),
+    ).toBe(true);
+
+    expect(answerMain({ ...common, text: "hello" })).toBe(1);
+    expect(logs.at(-1)).toMatch(/has finished/);
+
+    expect(
+      await gcMain({
+        runsRoot: world.runsRoot,
+        configDir: world.configDir,
+        docker: null,
+        days: 0,
+        now: Date.now() + 1000,
+        log,
+      }),
+    ).toBe(0);
+    expect(fs.existsSync(path.join(world.runsRoot, outcome.runId))).toBe(false);
+  });
+
+  it("refuses mode raised (not built) and a harness whose provider key is missing", async () => {
+    const repo = await makeRepo();
+    const world = makeWorld(repo, { eventLog: [], harnessLines: [] });
+    await expect(
+      runLoop(options({ harness: "claude", mode: "raised" }), world.deps),
+    ).rejects.toThrow(/raised/);
+    await expect(
+      runLoop(options({ harness: "codex" }), world.deps),
+    ).rejects.toThrow(/CODEX_API_KEY/);
+    expect(world.sandbox.created).toEqual([]);
+  });
+});

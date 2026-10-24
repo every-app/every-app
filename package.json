@@ -6,7 +6,8 @@
     "format:check": "pnpm -r --no-bail run format:check",
     "format:write": "pnpm -r --no-bail run format:write",
     "test": "pnpm -r --no-bail run test",
-    "knip": "pnpm -r --no-bail run knip"
+    "knip": "pnpm -r --no-bail run knip",
+    "loop": "pnpm -C packages/onboarding-loop loop"
   },
   "devDependencies": {
     "everyapp": "workspace:*"

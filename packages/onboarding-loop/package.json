@@ -1,0 +1,29 @@
+{
+  "name": "@every-app/onboarding-loop",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Runs the pasteable setup prompt on a coding agent in a throwaway container against a wiped test Cloudflare account, verifies the result from outside, and records it (docs/design/2026-10-onboarding-loop.md).",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "loop": "tsx src/cli.ts",
+    "test": "vitest run --silent=true",
+    "types:check": "tsc --noEmit",
+    "knip": "knip",
+    "format:check": "prettier --check .",
+    "format:write": "prettier . --write"
+  },
+  "dependencies": {
+    "zod": "^4.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.13",
+    "knip": "^5.66.4",
+    "prettier": "^3.6.2",
+    "tsx": "^4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "^3.2.6"
+  }
+}

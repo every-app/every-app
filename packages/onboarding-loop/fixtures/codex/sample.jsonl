@@ -1,0 +1,7 @@
+{"type":"thread.started","thread_id":"01a16c42-f473-7253-90db-b1e70bffc358"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I\u2019ll print the current directory."}}
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"/run/current-system/sw/bin/zsh -lc pwd","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"/run/current-system/sw/bin/zsh -lc pwd","aggregated_output":"/work/codex\n","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"DONE"}}
+{"type":"turn.completed","usage":{"input_tokens":37242,"cached_input_tokens":31616,"cache_write_input_tokens":0,"output_tokens":52,"reasoning_output_tokens":0}}

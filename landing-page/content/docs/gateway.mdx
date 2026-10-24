@@ -88,24 +88,9 @@ Back in the terminal, setup asks **Configure browser app installs?** Press Enter
 
 Paste this into Claude Code, Codex or Cursor and it runs the steps above for you:
 
-```text
-Set up Every App for me. Docs: https://everyapp.com/llms.txt
+<include lang="text">./setup-prompt.txt</include>
 
-1. Clone https://github.com/every-app/every-app.git, run `pnpm install`,
-   and run every command from that folder. Always use `pnpm everyapp`,
-   never npx.
-2. Ask me which domain to use, then run
-   `pnpm everyapp setup --domain apps.<my domain> --json`.
-
-The --json output has one event per line. When an event has
-"type":"action_required", show me its message, data.url and data.code.
-If it says "waiting": true, keep reading. If the command exits with
-code 2, run its data.rerun once I'm done.
-
-Keep it short and tell me exactly what to do when you need me.
-```
-
-It stops when it needs you to approve the Cloudflare login (step 3) and create your owner account (step 6).
+It stops when it needs you to approve the Cloudflare login (step 3) and create your owner account (step 6), then creates and deploys a first app called hello.
 
 ## When it's done
 
