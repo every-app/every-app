@@ -22,7 +22,7 @@ pnpm test          # runs `pnpm -r --no-bail run test` across all packages
 | Package | Suite | Covers |
 |---|---|---|
 | `packages/sdk` | `src/**/*.test.ts` (49) | fail-closed identity verification: alg/kid pinning, `alg:none`, algorithm-confusion (HS256-with-public-key), wrong key, expiry, audience mismatch, missing claims, public-route handling, `everyApp()` handler wrapper |
-| `apps/every-app-gateway` | `src/v2/**/*.test.ts` (70) | public-route glob matching incl. path-traversal + percent-encoding (`/p/%2e%2e/__everyapp/...`), header stripping, security headers, CSRF default-deny, JWT mint, Host parsing, the full `handleGatewayRequest` proxy core, the dev gateway-lite, and an end-to-end perimeter↔real-SDK integration test |
+| `packages/perimeter` | `src/**/*.test.ts` | public-route glob matching incl. path-traversal + percent-encoding (`/p/%2e%2e/__everyapp/...`), header stripping, security headers, CSRF default-deny, JWT mint, Host parsing, the full `handleGatewayRequest` proxy core, the dev gateway-lite, and an end-to-end perimeter↔real-SDK integration test |
 | `apps/every-app-gateway` | legacy `src/**/*.test.ts` | pre-existing gateway tests (still green), including the platform policy per deployment mode (`src/server/platform-policy.test.ts`, and the hosted and invalid cases next to what each switch governs: Access sign-in, the setup claim, account actions, dynamic registration, app activation) |
 | `packages/cf-rest` | `src/**/*.test.ts` | the Cloudflare REST client's request shapes against a fetch mock: multipart uploads (boundary, `metadata` JSON part, each module's MIME type), settings and secrets bodies, tag filters and the refusal to delete by tag without a required tag, D1 single and batch queries, Worker pagination, the assets upload session; error envelopes mapped to `CloudflareApiError` (code, message, status), retries on 429 and on 5xx only for idempotent methods |
 | `packages/cli` | `src/**/*.test.ts` | the `cf` runner, the Gateway pipeline (`setup`) and the app pipeline (`deploy`) end to end against a fake Cloudflare account (`src/test/fakeCloudflare.ts`: SQLite D1 with the gateway's real migrations, Build Outputs validated with cf's schema; its REST API as a fetch in `src/test/fakeCloudflareApi.ts`, with Workers for Platforms dispatch namespaces, multipart script uploads, bindings, secrets, settings, tags and assets, driven through `@every-app/cf-rest` in its own test) and the deployed gateway Worker as far as the CLI meets it (`src/test/gatewayWorker.ts`: hostnames that answer, activation on the first request, the owner claim), the app registry the CLI writes in D1 and the live wait (`lib/gateway/registry.test.ts`), finding the Gateway through the login's accounts (`lib/gateway/discover.test.ts`: one, several, a token scoped to one, none, a wrong `--account-id` or `--gateway`), the Gateway build cache by tree hash and the release order by commit time (`lib/gateway/checkoutRelease.test.ts`, in a scratch git repository with a fake build), the downgrade guard and one upload per bind (`lib/gateway/apply.test.ts`), `setup` (install, upgrade, repair, the owner wait) and `status` (with `upToDate` against a stand-in checkout), `deploy`'s offer to install the Gateway, `secret unset`, the app policy check, leases, remote migrations; what a person sees (`lib/output/events.test.ts`: milestones rendered from event data, problems with their next command) and that `deploy --json` writes nothing but NDJSON to stdout, with a real child's output in its log file (`commands/deploy/stdout.test.ts`), and the everyapp skill `create` copies into a new app (`lib/app/skill.test.ts`) |
@@ -30,8 +30,8 @@ pnpm test          # runs `pnpm -r --no-bail run test` across all packages
 Run a single layer:
 
 ```bash
-# Perimeter + integration (gateway)
-( cd apps/every-app-gateway && pnpm exec vitest run src/v2 )
+# Perimeter + integration
+( cd packages/perimeter && pnpm test )
 
 # SDK identity verifier
 ( cd packages/sdk && pnpm test )
@@ -58,11 +58,11 @@ Run a single layer:
 > follow-up: migrate `apps/workout-tracker`, `apps/chef`, and `templates/*` to
 > the v2 SDK/manifest (todo-app is migrated), per Phase 3 of
 > `docs/architecture-v2-recommendation.md §6`. The v2 model is proven
-> end-to-end by `apps/every-app-gateway/src/v2/integration/e2e.test.ts`.
+> end-to-end by `packages/perimeter/src/integration/e2e.test.ts`.
 
 ### The end-to-end perimeter test (the headline)
 
-`src/v2/integration/e2e.test.ts` wires the **real** gateway proxy core to a
+`packages/perimeter/src/integration/e2e.test.ts` wires the **real** gateway proxy core to a
 **real** sub-app built with the **real** `@every-app/sdk` `everyApp()` over an
 in-process service binding, and asserts:
 
@@ -327,8 +327,10 @@ To try it by hand against a local gateway, `scripts/access-local.mjs` runs a
 mock Access with an outer-ring proxy: `docs/runbooks/cloudflare-access.md`,
 "Test locally".
 
-### The platform side of the Postiz and agentic-inbox ports
+### The platform side of the agentic-inbox and Postiz ports
 
+Postiz is ported but not part of the launch (Ben, 2026-10-23); it stays
+here as a test fixture for helper Workers, Workflows and the OAuth clients.
 The ports (#322 to #327) run Postiz as two Workers (a TanStack Start
 frontend, built with vinext until 2026-10-18, and a NestJS helper with a
 Workflow and a cron) and agentic-inbox as one Worker with two Durable

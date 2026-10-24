@@ -20,8 +20,9 @@
   Worker) and refuses a built Worker the manifest doesn't declare.
   Helpers verify no identities: the gateway never calls one, so the app's
   Worker verifies the request and hands the helper what it needs (ids as
-  headers, RPC arguments or Workflow params; Postiz's API helper reads the
-  app's `x-postiz-identity` header). The rule that only the app's own Worker
+  headers, RPC arguments or Workflow params; Postiz's API helper, a port
+  that is not part of the launch, reads the app's `x-postiz-identity`
+  header). The rule that only the app's own Worker
   may bind a helper is what makes that safe, and a helper's `scheduled` and
   Workflow code runs with no identity, as an app's does.
   A Hyperdrive binding is allowed only to a config the deploy provisioned
