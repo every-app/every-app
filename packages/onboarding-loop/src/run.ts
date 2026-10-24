@@ -120,8 +120,13 @@ export const DOCKERFILE = path.join(PACKAGE_DIR, "Dockerfile");
 const LOOP_DIR = "/loop";
 const EVENT_LOG_PATH = `${LOOP_DIR}/everyapp-events.ndjson`;
 const PROMPT_PATH = `${LOOP_DIR}/prompt.txt`;
-/** A string the template's signed-in page contains (templates/simple-todo, routes/index.tsx). */
-export const TEMPLATE_MARKER = "Todos";
+/**
+ * A string the starter's server-rendered HTML always carries (starter/src/routes/__root.tsx
+ * `head.meta`), and the gateway's pages never do. The index route's heading ("Todos") is
+ * not it: the route returns null while its query loads, so it is absent from what a fetch
+ * with the owner cookie gets back (run 9 saw 200 HTML without it).
+ */
+export const TEMPLATE_MARKER = "apple-mobile-web-app-capable";
 const CONTAINER_MEMORY = "6g";
 const CONTAINER_MEMORY_MIB = 6 * 1024;
 const STATS_INTERVAL_MS = 30_000;

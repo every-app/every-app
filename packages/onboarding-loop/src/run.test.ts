@@ -552,7 +552,12 @@ function makeWorld(
     [`GET https://${APP_HOST}/`]: (init) => {
       const headers = (init.headers ?? {}) as Record<string, string>;
       if (headers["cookie"])
-        return new Response("<html><h1>Todos</h1></html>", { status: 200 });
+        // The starter's server-rendered head, as a fetch with the owner cookie gets it (the
+        // index heading is withheld while the route's query loads).
+        return new Response(
+          '<html><head><meta name="apple-mobile-web-app-capable" content="yes"/></head><body></body></html>',
+          { status: 200 },
+        );
       if (headers["accept"] === "text/html")
         return new Response("", {
           status: 302,
