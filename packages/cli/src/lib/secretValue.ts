@@ -1,7 +1,27 @@
+/**
+ * Where `secret set` gets a value, and the check a plain Gateway setting
+ * gets before anything is written. A credential is typed at a hidden
+ * prompt, piped in, or read from `--from-env`, and never shown. A plain
+ * setting (`PLAIN_GATEWAY_SETTINGS` in the SDK: a sender, a switch, a
+ * list of domains) is typed at a visible prompt under a line saying what
+ * it takes, and a value the Gateway would ignore or misread (EMAIL_FROM
+ * without an address, a switch that is neither on nor off) is refused
+ * here, where it can be fixed, instead of in the Worker's logs. The
+ * checks (`PLAIN_SETTINGS`) follow how the Gateway reads each setting;
+ * a plain name with no check takes anything.
+ */
 import { text } from "node:stream/consumers";
+import {
+  CAPABILITIES,
+  EMAIL_PROVIDER_IDS,
+  isPlainGatewaySetting,
+  oauthClientOrigin,
+  parseEmailSender,
+  type PLAIN_GATEWAY_SETTINGS,
+} from "@every-app/sdk/internal";
 import { EveryAppError } from "@/lib/errors";
 import { CLI } from "@/lib/output/command";
-import { askSecret, canPromptInTerminal } from "@/lib/output/prompt";
+import { askSecret, askText, canPromptInTerminal } from "@/lib/output/prompt";
 
 /** Where `secret set` reads its values: never the command line. */
 enum SecretSource {
@@ -9,7 +29,7 @@ enum SecretSource {
   Env = "env",
   /** Piped in: stdin isn't a terminal. */
   Stdin = "stdin",
-  /** A hidden prompt at the terminal. */
+  /** A prompt at the terminal: hidden for a credential, visible for a plain setting. */
   Prompt = "prompt",
 }
 
@@ -39,30 +59,280 @@ export function assertOneValueEnough(names: readonly string[], fromEnv: string |
   );
 }
 
+/** What a plain Gateway setting takes, as the prompt says it and the check enforces it. */
+interface PlainSetting {
+  /** Completes "<NAME> takes …": the prompt's context line and the refusal's fix. */
+  takes: string;
+  /** Why a trimmed, non-empty value won't do (one sentence), or null when it will. */
+  check?: (value: string) => string | null;
+}
+
+/** `a, b or c`. */
+function either(values: readonly string[]): string {
+  return values.length < 2 ? (values[0] ?? "") : `${values.slice(0, -1).join(", ")} or ${values.at(-1)}`;
+}
+
+/** One of `values`; any case unless `exact` (the Gateway compares BROWSER_APP_INSTALLS as typed). */
+function oneOf(values: readonly string[], { exact = false } = {}): (value: string) => string | null {
+  return (value) =>
+    values.includes(exact ? value : value.toLowerCase())
+      ? null
+      : `Not ${values.length > 2 ? "one of " : ""}${either(values)}.`;
+}
+
+/** Each entry of a comma or space separated list passes `entry`, and there is one. */
+function listOf(
+  entry: (value: string) => boolean,
+  what: string,
+): (value: string) => string | null {
+  return (value) => {
+    const entries = value.split(/[\s,]+/).filter(Boolean);
+    const wrong = entries.find((candidate) => !entry(candidate));
+    if (wrong !== undefined) return `"${wrong}" isn't ${what}.`;
+    return entries.length > 0 ? null : `Name ${what}.`;
+  };
+}
+
+/**
+ * The spellings the Gateway's switches honour (its ON_VALUES and
+ * OFF_VALUES): anything else turns MCP's switches off and leaves password
+ * sign-in on, each with only a log line to say so.
+ */
+const SWITCH_VALUES = ["true", "false", "1", "0", "on", "off", "yes", "no"] as const;
+/** An address the provider will take: one `@`, a dotted domain, no spaces or brackets. */
+const ADDRESS = /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/;
+/** An email domain, as the Gateway's `readAutoJoinDomains` accepts it (lowercased, a leading `@` dropped). */
+const DOMAIN = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9-]{2,63}$/;
+/**
+ * A DNS name, as the Gateway's `thirdPartyDomain` reads THIRD_PARTY_DOMAIN
+ * (`DNS_NAME_PATTERN` in server/app-hosts.ts: lowercased, one trailing `.`
+ * dropped, no `@`; the last label may be one character).
+ */
+const DNS_NAME =
+  /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+const TEAM_DOMAIN = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.cloudflareaccess\.com$/;
+/** An Access application's AUD tag (`audienceList` in the Gateway). */
+const AUD_TAG = /^[A-Za-z0-9._:-]{1,256}$/;
+/** A path the AI proxy forwards beyond inference (`AI_ROUTE_PATTERN` in the Gateway). */
+const AI_ROUTE = /^\/v1(\/[a-z0-9_-]+)+$/;
+const MAX_AUDIT_RETENTION_DAYS = 3650;
+
+const isDomain = (value: string): boolean => DOMAIN.test(value.toLowerCase().replace(/^@/, ""));
+const isDnsName = (value: string): boolean => DNS_NAME.test(value.toLowerCase().replace(/\.$/, ""));
+
+function httpUrl(value: string): URL | null {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A URL on a Cloudflare Access team domain, as the Gateway's `accessUrl`
+ * (auth/cloudflare-access/config.ts) takes one: https on
+ * `<team>.cloudflareaccess.com`, and nothing it refuses (user info, a
+ * query, a fragment); null otherwise. Without the Gateway's loopback
+ * allowance, which is for local dev only.
+ */
+function accessUrl(value: string): URL | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.username || url.password || url.search || url.hash) return null;
+  return url.protocol === "https:" && TEAM_DOMAIN.test(url.hostname.toLowerCase()) ? url : null;
+}
+
+/** `<team>.cloudflareaccess.com`, with or without `https://`, as the Gateway's outer ring reads it. */
+function isTeamDomain(value: string): boolean {
+  const url = accessUrl(/^[a-z]+:\/\//i.test(value) ? value : `https://${value}`);
+  return url !== null && (url.pathname === "/" || url.pathname === "");
+}
+
+/**
+ * What each plain Gateway setting takes, keyed by name, as the Gateway
+ * reads it (apps/every-app-gateway/src: cloudflare-access/config.ts,
+ * oauth-flag.ts, platform-policy.ts, deploy/browser-install.ts,
+ * mcp-auth/maintenance.ts, toolbus/gateway-mcp.ts, ai-proxy.ts,
+ * server/app-hosts.ts). A name left out is a plain setting that takes
+ * anything.
+ */
+const PLAIN_SETTINGS: Partial<Record<(typeof PLAIN_GATEWAY_SETTINGS)[number], PlainSetting>> = {
+  EMAIL_FROM: {
+    takes: "an address, or Name <address> (with EMAIL_FROM_NAME set, unless the name is in it)",
+    check: (value) => {
+      const sender = parseEmailSender(value, "sender");
+      return sender && ADDRESS.test(sender.address)
+        ? null
+        : `"${value}" isn't an address or Name <address>.`;
+    },
+  },
+  EMAIL_FROM_NAME: { takes: "the sender's display name, e.g. Acme Support" },
+  EMAIL_PROVIDER: {
+    takes: `${either(EMAIL_PROVIDER_IDS)}: which provider sends when both are set up`,
+    check: oneOf(EMAIL_PROVIDER_IDS),
+  },
+  EMAIL_PASSWORD_SIGN_IN: {
+    takes:
+      "true or false; false turns password sign-in off (only while Cloudflare Access sign-in is on)",
+    check: oneOf(SWITCH_VALUES),
+  },
+  MASTODON_URL: {
+    takes: "the Mastodon instance's https origin, e.g. https://mastodon.social",
+    check: (value) =>
+      oauthClientOrigin(CAPABILITIES.mastodon, { MASTODON_URL: value })
+        ? null
+        : `"${value}" isn't an https origin (no path).`,
+  },
+  AI_PROXY_EXTRA_ROUTES: {
+    takes: "/v1 paths beyond inference the AI proxy may forward, comma separated, e.g. /v1/files",
+    check: listOf((route) => AI_ROUTE.test(route), "a /v1/... path"),
+  },
+  MCP_OAUTH_ENABLED: {
+    takes: "true or false; false turns the OAuth server for MCP clients off",
+    check: oneOf(SWITCH_VALUES),
+  },
+  MCP_DCR_ENABLED: {
+    takes: "true or false; false turns dynamic client registration off",
+    check: oneOf(SWITCH_VALUES),
+  },
+  MCP_ALLOWED_ORIGINS: {
+    takes: "browser origins allowed to call /mcp, comma separated, e.g. http://localhost:6274",
+    check: listOf((origin) => httpUrl(origin) !== null, "an http or https URL"),
+  },
+  MCP_AUDIT_RETENTION_DAYS: {
+    takes: `days of MCP tool-call audit rows to keep: a whole number from 1 to ${MAX_AUDIT_RETENTION_DAYS}`,
+    check: (value) =>
+      /^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= MAX_AUDIT_RETENTION_DAYS
+        ? null
+        : `Not a whole number from 1 to ${MAX_AUDIT_RETENTION_DAYS}.`,
+  },
+  CLOUDFLARE_ACCESS_OIDC_ISSUER: {
+    takes: "https://<team>.cloudflareaccess.com/cdn-cgi/access/sso/oidc/<client id>",
+    check: (value) => {
+      const url = accessUrl(value);
+      return url && /^\/cdn-cgi\/access\/sso\/oidc\/[^/]+\/?$/.test(url.pathname)
+        ? null
+        : `"${value}" isn't an Access for SaaS issuer URL.`;
+    },
+  },
+  CLOUDFLARE_ACCESS_OIDC_CLIENT_ID: { takes: "the Access for SaaS application's client id" },
+  CLOUDFLARE_ACCESS_OIDC_LABEL: {
+    takes: 'the sign-in button\'s label ("Continue with <label>"), at most 40 characters',
+  },
+  CLOUDFLARE_ACCESS_TEAM_DOMAIN: {
+    takes: "<team>.cloudflareaccess.com",
+    check: (value) => (isTeamDomain(value) ? null : `"${value}" isn't <team>.cloudflareaccess.com.`),
+  },
+  CLOUDFLARE_ACCESS_AUD: {
+    takes: "the AUD tag of the Access application on the Gateway's host (several: comma separated)",
+    check: listOf((tag) => AUD_TAG.test(tag), "an AUD tag"),
+  },
+  CLOUDFLARE_ACCESS_APPS_AUD: {
+    takes: "the AUD tag of the Access application on the apps' hosts (several: comma separated)",
+    check: listOf((tag) => AUD_TAG.test(tag), "an AUD tag"),
+  },
+  CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS: {
+    takes: "email domains whose people join without an invitation, comma separated, e.g. example.com",
+    check: listOf(isDomain, "a domain like example.com"),
+  },
+  CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN: {
+    takes: `everyone (anyone the outer ring admits joins); to turn it off: ${CLI} secret unset CLOUDFLARE_ACCESS_OUTER_RING_AUTO_JOIN`,
+    check: oneOf(["everyone"]),
+  },
+  HOSTED_OPEN_SIGNUP: {
+    takes: "true or false; false keeps a hosted Gateway's sign-up invite-only",
+    check: oneOf(["true", "false"]),
+  },
+  BROWSER_APP_INSTALLS: {
+    takes: "on or off, in lowercase; off turns browser app installs off",
+    check: oneOf(["on", "off"], { exact: true }),
+  },
+  DISPATCH_NAMESPACE: {
+    takes: "the Workers for Platforms namespace third-party Workers go into (hosted Gateway only)",
+  },
+  THIRD_PARTY_DOMAIN: {
+    takes: "the registrable domain third-party apps are named on (hosted Gateway only)",
+    check: (value) => (isDnsName(value) ? null : `"${value}" isn't a domain like example.com.`),
+  },
+};
+
+function plainSetting(name: string): PlainSetting | undefined {
+  return (PLAIN_SETTINGS as Partial<Record<string, PlainSetting>>)[name];
+}
+
+/** The lines above a plain setting's prompt: what it takes. */
+function plainContext(name: string): string[] {
+  const setting = plainSetting(name);
+  return setting ? [`Takes ${setting.takes}`] : [];
+}
+
+/**
+ * Why `value`, as typed, won't do for the plain setting `name`: one
+ * sentence to re-ask with, or null when the Gateway will read it.
+ */
+function plainValueProblem(name: string, value: string): string | null {
+  if (!value.trim()) return "Enter a value.";
+  return plainSetting(name)?.check?.(value.trim()) ?? null;
+}
+
+/**
+ * A plain setting's value from --from-env or stdin, trimmed, refused with
+ * SETTING_VALUE_INVALID when the Gateway wouldn't read it: the headline
+ * names the setting and the value (a plain value is nothing to hide), the
+ * detail says what's wrong with it, and the fix what it takes.
+ */
+function checkedPlainValue(name: string, value: string): string {
+  const trimmed = value.trim();
+  const problem = plainValueProblem(name, trimmed);
+  if (problem === null) return trimmed;
+  const setting = plainSetting(name);
+  const shown = trimmed.replace(/\s+/g, " ").slice(0, 64);
+  throw new EveryAppError(
+    "SETTING_VALUE_INVALID",
+    `${name} can't be "${shown}"\n${problem}`,
+    {
+      ...(setting ? { fix: `use ${setting.takes}` } : {}),
+      data: { name },
+    },
+  );
+}
+
 /**
  * A secret's value from `--from-env <VAR>`, stdin when something is piped
- * in, or a hidden prompt at a terminal: never from the command line, where
- * it would land in shell history and the process list.
+ * in, or a prompt at a terminal: never from the command line, where it
+ * would land in shell history and the process list. A credential's prompt
+ * is hidden; a plain Gateway setting's (`isPlainGatewaySetting`) shows what
+ * is typed under a line saying what the setting takes, and every source's
+ * value for one is trimmed and checked before anything is written.
  */
 export async function readSecretValue(
   name: string,
   options: { fromEnv?: string; json?: boolean },
 ): Promise<string> {
+  const plain = isPlainGatewaySetting(name);
   const variable = options.fromEnv;
   const source = secretSource(variable);
   if (source === SecretSource.Env) {
-    const value = process.env[variable!];
+    const raw = process.env[variable!];
+    // A plain value is read trimmed, so blank counts as unset, as for a credential.
+    const value = plain ? raw?.trim() : raw;
     if (!value) {
       throw new EveryAppError("SECRET_EMPTY", `$${variable} is empty or not set`, {
         fix: `export ${variable} first, or name another variable with --from-env`,
       });
     }
-    return value;
+    return plain ? checkedPlainValue(name, value) : value;
   }
   if (source === SecretSource.Stdin) {
     // One value, its trailing newline (echo's) dropped.
-    const value = (await text(process.stdin)).replace(/\r?\n$/, "");
-    if (value) return value;
+    const raw = (await text(process.stdin)).replace(/\r?\n$/, "");
+    const value = plain ? raw.trim() : raw;
+    if (value) return plain ? checkedPlainValue(name, value) : value;
   }
   if (source === SecretSource.Stdin || !canPromptInTerminal(options.json ?? false)) {
     throw new EveryAppError(
@@ -70,6 +340,13 @@ export async function readSecretValue(
       `Can't ask for ${name}'s value without a terminal\nOr pipe it in: echo "$${name}" | ${CLI} secret set ${name}`,
       { rerun: `${CLI} secret set ${name} --from-env ${name}` },
     );
+  }
+  if (plain) {
+    const value = await askText(name, {
+      context: plainContext(name),
+      validate: (typed) => plainValueProblem(name, typed),
+    });
+    return value.trim();
   }
   return (await askSecret(`Value for ${name}`)).trim();
 }

@@ -929,6 +929,14 @@ Source: `packages/cli/src/lib/secretValue.ts`
 
 Source: `packages/cli/src/lib/secretValue.ts`
 
+### SETTING_VALUE_INVALID
+
+`secret set <name>` of a plain Gateway setting (a name `isPlainGatewaySetting` knows, such as `EMAIL_FROM`, `EMAIL_PASSWORD_SIGN_IN` or `CLOUDFLARE_ACCESS_AUTO_JOIN_DOMAINS`) with a `--from-env` or piped value the Gateway wouldn't read, checked after the value is trimmed and before anything is written. Message: `<name> can't be "<value>"` (the value as typed, on one line, at most 64 characters: a plain value is never hidden), then one line saying what is wrong, such as `Not one of true, false, 1, 0, on, off, yes or no.` or `"hello" isn't an address or Name <address>.`; `data.name` is the setting. At a terminal the same check re-asks the visible prompt with that line instead of failing; a credential (any other name) is never checked or trimmed. Each setting's rule, as the Gateway parses it, is listed in secrets.md under "Plain settings are shown and checked".
+
+**Fix:** `fix`: `use <what the setting takes>`, the line the prompt shows as `Takes …`: e.g. `use true or false; false turns password sign-in off (only while Cloudflare Access sign-in is on)`, `use an address, or Name <address>`, `use email domains whose people join without an invitation, comma separated, e.g. example.com`. A validation error: no rerun.
+
+Source: `packages/cli/src/lib/secretValue.ts`
+
 ### SHARED_APP_FORBIDDEN
 
 A Cloudflare login whose verified email isn't an owner or admin of the platform organization tried to `deploy` or `delete` a shared app (a row whose scope is `shared`; a redeploy keeps the row's scope), or to change its email lists with `email set|unset`: `Only <organization> owners and admins can <deploy|delete|change the email of> shared apps` / `<email> isn't an owner or admin of <organization>, the platform organization.` An API token (`CLOUDFLARE_API_TOKEN` set, so the deployer has no email) is the account's own authority and is never checked.
