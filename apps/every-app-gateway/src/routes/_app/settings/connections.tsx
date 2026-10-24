@@ -6,7 +6,7 @@ import { BadgeCheck, Unplug } from "lucide-react";
 import { toast } from "sonner";
 import { ConfirmDialog } from "@/client/components/ConfirmDialog";
 import { ErrorState } from "@/client/components/ErrorState";
-import { PageHeader } from "@/client/components/PageHeader";
+import { Page, PageHeader } from "@/client/components/PageHeader";
 import { RowActionsMenu } from "@/client/components/RowActionsMenu";
 import { domainCoversRedirect } from "@/client/components/oauth/clientSite";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
@@ -173,51 +173,46 @@ function ConnectionsPage() {
   });
 
   return (
-    <div className="h-full overflow-auto px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <PageHeader
-          title="AI connections"
-          description="Manage the AI assistants you have allowed to access your apps."
-        />
+    <Page>
+      <PageHeader title="AI connections" />
 
-        <DataTable
-          table={table}
-          isLoading={connectionsQuery.isLoading}
-          error={
-            connectionsQuery.isError ? (
-              <ErrorState
-                message="Failed to load your connections."
-                onRetry={() => void connectionsQuery.refetch()}
-                isRetrying={connectionsQuery.isFetching}
-              />
-            ) : undefined
+      <DataTable
+        table={table}
+        isLoading={connectionsQuery.isLoading}
+        error={
+          connectionsQuery.isError ? (
+            <ErrorState
+              message="Failed to load your connections."
+              onRetry={() => void connectionsQuery.refetch()}
+              isRetrying={connectionsQuery.isFetching}
+            />
+          ) : undefined
+        }
+        empty={{
+          title: "No AI connections yet",
+          description:
+            "When you allow an AI app such as Claude or ChatGPT to use your apps, it shows up here.",
+        }}
+      />
+
+      {revoking ? (
+        <ConfirmDialog
+          title={`Revoke ${revoking.clientName}?`}
+          confirmLabel="Revoke"
+          destructive
+          pending={revokeMutation.isPending}
+          onClose={() => setRevoking(null)}
+          onConfirm={() =>
+            revokeMutation.mutate(
+              { data: { connectionId: revoking.id } },
+              { onSettled: () => setRevoking(null) },
+            )
           }
-          empty={{
-            title: "No AI connections yet",
-            description:
-              "When you allow an AI app such as Claude or ChatGPT to use your apps, it shows up here.",
-          }}
-        />
-
-        {revoking ? (
-          <ConfirmDialog
-            title={`Revoke ${revoking.clientName}?`}
-            confirmLabel="Revoke"
-            destructive
-            pending={revokeMutation.isPending}
-            onClose={() => setRevoking(null)}
-            onConfirm={() =>
-              revokeMutation.mutate(
-                { data: { connectionId: revoking.id } },
-                { onSettled: () => setRevoking(null) },
-              )
-            }
-          >
-            It loses access on its next request, and has to be connected again
-            to use your apps.
-          </ConfirmDialog>
-        ) : null}
-      </div>
-    </div>
+        >
+          It loses access on its next request, and has to be connected again to
+          use your apps.
+        </ConfirmDialog>
+      ) : null}
+    </Page>
   );
 }

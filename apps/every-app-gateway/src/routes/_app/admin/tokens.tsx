@@ -83,10 +83,8 @@ function TokensPage() {
         {/* TODO: move to a member-accessible settings page (admin layout is owner/admin-gated) */}
         <SectionHeader
           title="Personal access tokens"
-          hint="Bearer tokens for MCP and HTTP API clients."
           action={
             <Button
-              size="sm"
               onClick={() => setShowCreateUserTokenModal(true)}
               disabled={isAppsLoading}
             >

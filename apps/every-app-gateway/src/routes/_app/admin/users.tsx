@@ -154,7 +154,6 @@ function UsersPage() {
     <div className="space-y-6">
       <SectionHeader
         title="Users"
-        hint="Manage user accounts and invitations."
         action={
           <Button onClick={() => setShowInviteModal(true)}>
             <UserPlus data-icon="inline-start" />

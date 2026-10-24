@@ -59,7 +59,6 @@ function UsagePage() {
     <div className="space-y-6">
       <SectionHeader
         title="Usage"
-        hint="What this organization's apps spent through the gateway: AI provider calls and tokens, capability calls and their cost, and agent tool calls."
         action={
           <div className="flex items-center gap-2">
             <Select
@@ -102,10 +101,7 @@ function UsagePage() {
       ) : (
         <>
           <section className="space-y-3">
-            <SectionHeader
-              title="By app"
-              hint="A shared app's calls count for this organization."
-            />
+            <SectionHeader title="By app" />
             <UsageByAppTable
               rows={summary?.byApp ?? []}
               isLoading={usageQuery.isLoading}
@@ -113,10 +109,7 @@ function UsagePage() {
             />
           </section>
           <section className="space-y-3">
-            <SectionHeader
-              title="By member"
-              hint="Background is work the apps did on their own, with nobody signed in."
-            />
+            <SectionHeader title="By member" />
             <UsageByMemberTable
               rows={summary?.byMember ?? []}
               isLoading={usageQuery.isLoading}
@@ -124,10 +117,7 @@ function UsagePage() {
             />
           </section>
           <section className="space-y-3">
-            <SectionHeader
-              title="By provider"
-              hint="Tokens are what the AI provider reported; cost is what a capability's provider reported."
-            />
+            <SectionHeader title="By provider" />
             <UsageByTargetTable
               rows={summary?.byTarget ?? []}
               isLoading={usageQuery.isLoading}

@@ -1,4 +1,5 @@
 import { cn } from "cn";
+import { Page } from "@/client/components/PageHeader";
 import { Card, CardContent } from "@/client/components/ui/card";
 import { Skeleton } from "@/client/components/ui/skeleton";
 
@@ -48,24 +49,19 @@ export function SkeletonCard({ className }: { className?: string }) {
 }
 
 /**
- * A whole page whose data has not arrived: the standard page frame with a
- * header and one card, so the real page replaces it without a jump.
+ * A whole page whose data has not arrived: the page frame with a title line
+ * and one card, so the real page replaces it without a jump.
  */
 export function SkeletonPage() {
   return (
-    <div className="px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-8" aria-busy>
-      <div className="mx-auto max-w-7xl space-y-4">
-        {/* Line boxes the size of PageHeader's title and description. */}
-        <div className="space-y-1">
-          <div className="flex h-10 items-center">
-            <Skeleton className="h-6 w-48" />
-          </div>
-          <div className="flex h-5 items-center">
-            <Skeleton className="h-3.5 w-72 max-w-full" />
-          </div>
+    <div aria-busy>
+      <Page>
+        {/* A line box the size of PageHeader's title. */}
+        <div className="flex h-10 items-center">
+          <Skeleton className="h-6 w-48" />
         </div>
         <SkeletonCard />
-      </div>
+      </Page>
     </div>
   );
 }

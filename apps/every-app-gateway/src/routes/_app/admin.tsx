@@ -19,7 +19,7 @@ import { EmptyState } from "@/client/components/EmptyState";
 import { SkeletonPage } from "@/client/components/SkeletonPresets";
 import { StatusScreen } from "@/client/components/StatusScreen";
 import { Button } from "@/client/components/ui/button";
-import { PageHeader } from "@/client/components/PageHeader";
+import { Page, PageHeader } from "@/client/components/PageHeader";
 import {
   Tabs,
   TabsContent,
@@ -85,7 +85,7 @@ function AdminLayout() {
           variant="card"
           icon={ShieldAlert}
           title="You don't have access to this page"
-          description="Only owners and admins of this organization can manage users, apps, tokens and usage, and follow what AI apps call."
+          description="Only owners and admins can manage the workspace."
           action={
             <Button nativeButton={false} render={<Link to="/" />}>
               Go home
@@ -100,45 +100,41 @@ function AdminLayout() {
     adminTabs.find((tab) => tab.to === pathname)?.value ?? AdminTab.Users;
 
   return (
-    <div className="px-5 py-7 pb-safe md:px-10 md:py-10 lg:px-12">
-      <div className="mx-auto max-w-7xl space-y-7">
-        <PageHeader
-          title="Manage workspace"
-          description="Manage your organization's users, apps, access tokens and usage, and follow what AI apps call."
-        />
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => {
-            const tab = adminTabs.find((tab) => tab.value === value);
-            if (tab) void navigate({ to: tab.to });
-          }}
-          className="gap-6"
-        >
-          <div className="border-b border-border pb-1">
-            <TabsList
-              variant="line"
-              className="h-10 gap-5"
-              aria-label="Manage workspace"
-            >
-              {adminTabs.map(({ value, label, icon: Icon }) => (
-                <TabsTrigger
-                  key={value}
-                  value={value}
-                  className="gap-2 px-1 pb-2"
-                >
-                  <Icon className="size-4" aria-hidden />
-                  {label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </div>
-          {adminTabs.map((tab) => (
-            <TabsContent key={tab.value} value={tab.value}>
-              {activeTab === tab.value ? <Outlet /> : null}
-            </TabsContent>
-          ))}
-        </Tabs>
-      </div>
-    </div>
+    <Page>
+      <PageHeader title="Manage workspace" />
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          const tab = adminTabs.find((tab) => tab.value === value);
+          if (tab) void navigate({ to: tab.to });
+        }}
+        className="gap-6"
+      >
+        {/* The tabs scroll sideways on a phone instead of being cut off. */}
+        <div className="scrollbar-hidden overflow-x-auto border-b border-border pb-1">
+          <TabsList
+            variant="line"
+            className="h-10 gap-5"
+            aria-label="Manage workspace"
+          >
+            {adminTabs.map(({ value, label, icon: Icon }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className="gap-2 px-1 pb-2"
+              >
+                <Icon className="size-4" aria-hidden />
+                {label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
+        {adminTabs.map((tab) => (
+          <TabsContent key={tab.value} value={tab.value}>
+            {activeTab === tab.value ? <Outlet /> : null}
+          </TabsContent>
+        ))}
+      </Tabs>
+    </Page>
   );
 }

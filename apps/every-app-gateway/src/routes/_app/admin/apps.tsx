@@ -47,11 +47,6 @@ function AppsPage() {
     <div className="space-y-6">
       <SectionHeader
         title="Apps"
-        hint={
-          canInstall
-            ? "Manage the app catalog and user access. Apps are added by installing them from GitHub or deploying them with the everyapp CLI."
-            : "Manage the app catalog and user access. Apps are added by deploying them with the everyapp CLI."
-        }
         action={
           canInstall ? (
             <Button nativeButton={false} render={<Link to="/install" />}>

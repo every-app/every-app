@@ -6,7 +6,7 @@ import { useActiveOrganization } from "@/client/hooks/useActiveOrganization";
 import { useSession } from "@/client/hooks/useSession";
 import { useSetActiveOrganization } from "@/client/hooks/useSetActiveOrganization";
 import { EmptyState } from "@/client/components/EmptyState";
-import { PageHeader, SectionHeader } from "@/client/components/PageHeader";
+import { Page, PageHeader } from "@/client/components/PageHeader";
 import {
   SkeletonCard,
   SkeletonPage,
@@ -58,75 +58,67 @@ function OrganizationsPage() {
   }
 
   return (
-    <div className="h-full overflow-auto px-4 py-4 pb-24 md:px-6 md:py-6 md:pb-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <PageHeader
-          title="Organizations"
-          description="Pick your active workspace."
+    <Page>
+      <PageHeader title="Organizations" />
+
+      {error ? (
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
+
+      {isListPending && !organizations ? (
+        <SkeletonCard />
+      ) : !hasOrganizations ? (
+        <EmptyState
+          icon={Building2}
+          title="You are not a member of any organization yet"
+          description="Ask an owner or admin to invite you."
         />
-
-        {error ? (
-          <Alert variant="destructive">
-            <CircleAlert />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : null}
-
-        {isListPending && !organizations ? (
-          <SkeletonCard />
-        ) : !hasOrganizations ? (
-          <EmptyState
-            icon={Building2}
-            title="You are not a member of any organization yet"
-            description="Ask an owner or admin to invite you."
-          />
-        ) : (
-          <section className="space-y-3">
-            <SectionHeader title="Your organizations" />
-            <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
-              {organizations?.map((organization) => {
-                const isActive = activeOrganization?.id === organization.id;
-                return (
-                  <li
-                    key={organization.id}
-                    className="flex items-center justify-between gap-3 p-3"
-                  >
-                    <span className="flex min-w-0 items-center gap-3">
-                      <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm">
-                        <Building2 className="size-4" />
-                      </span>
-                      <span className="flex min-w-0 flex-col">
-                        <span className="truncate font-medium">
-                          {organization.name}
-                        </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {organization.slug}
-                        </span>
-                      </span>
+      ) : (
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+          {organizations?.map((organization) => {
+            const isActive = activeOrganization?.id === organization.id;
+            return (
+              <li
+                key={organization.id}
+                className="flex items-center justify-between gap-3 p-3"
+              >
+                <span className="flex min-w-0 items-center gap-3">
+                  <span className="grid size-8 shrink-0 place-items-center rounded-lg border border-border bg-card text-muted-foreground shadow-sm">
+                    <Building2 className="size-4" />
+                  </span>
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate font-medium">
+                      {organization.name}
                     </span>
-                    {isActive ? (
-                      <Badge variant="success">Active</Badge>
-                    ) : (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        aria-label={`Switch to ${organization.name}`}
-                        pending={switchingId === organization.id}
-                        disabled={switchingId !== null}
-                        onClick={() =>
-                          void handleSetActiveOrganization(organization.id)
-                        }
-                      >
-                        Switch
-                      </Button>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
-        )}
-      </div>
-    </div>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {organization.slug}
+                    </span>
+                  </span>
+                </span>
+                {isActive ? (
+                  <Badge variant="success">Active</Badge>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Switch to ${organization.name}`}
+                    pending={switchingId === organization.id}
+                    disabled={switchingId !== null}
+                    onClick={() =>
+                      void handleSetActiveOrganization(organization.id)
+                    }
+                  >
+                    Switch
+                  </Button>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Page>
   );
 }

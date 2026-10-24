@@ -1,6 +1,20 @@
 import type { ReactNode } from "react";
 
 /**
+ * The frame of every page in the app shell: the same inset on every page,
+ * one reading width, and one gap between the header and what follows. The
+ * page starts 20px down, like the sidebar's brand row, so a page title and
+ * the brand share a center line.
+ */
+export function Page({ children }: { children: ReactNode }) {
+  return (
+    <div className="px-5 py-5 pb-safe md:px-10 lg:px-12">
+      <div className="mx-auto max-w-7xl space-y-6">{children}</div>
+    </div>
+  );
+}
+
+/**
  * The page title, with an optional subtitle and actions on the right. The
  * title line is a control's height (40px), so the actions center on the
  * title whether or not a subtitle follows it.

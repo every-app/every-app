@@ -154,7 +154,7 @@ function ActivityPage() {
     <div className="space-y-6">
       <SectionHeader
         title="Agent activity"
-        hint="Every tool call an AI app made through MCP, allowed or blocked. Arguments and results are never stored."
+        hint="Arguments and results are never stored."
       />
 
       <ToolCallsTable
