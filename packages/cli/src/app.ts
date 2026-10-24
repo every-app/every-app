@@ -92,7 +92,12 @@ const GROUPS: ReadonlyArray<readonly [string, readonly string[]]> = [
 
 /** What `everyapp <group> --help` shows as examples. */
 const GROUP_EXAMPLES: Readonly<Record<string, readonly string[]>> = {
-  secret: ["secret set GITHUB_TOKEN", "secret set GITHUB_TOKEN --from-env GH_TOKEN"],
+  secret: [
+    "secret set GITHUB_TOKEN",
+    "secret set GITHUB_TOKEN --from-env GH_TOKEN",
+    "secret set MAIN_SECRET --app analytics",
+    "secret list crm",
+  ],
   email: ["email show", "email set --sender '*@mail.example.com'", "email unset inbound"],
   access: ["access on", "access on --email-domain example.com", "access off"],
   db: ["db migrate", "db query 'select count(*) from todos'"],

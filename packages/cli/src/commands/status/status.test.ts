@@ -1,7 +1,8 @@
 /**
  * `everyapp status`, all from the gateway's D1 and cf in a fake
  * account: the install row, the registry, the owner, certificates, running
- * deploys, and what to run when they disagree. Nothing goes to the gateway.
+ * deploys, each app's settings against the Workers' secret names, and what
+ * to run when they disagree. Nothing goes to the gateway.
  */
 import fs from "node:fs";
 import { stripVTControlCharacters } from "node:util";
@@ -15,7 +16,7 @@ import { discoverGateway } from "@/lib/gateway/discover";
 import { LeasePurpose } from "@/lib/gateway/lease";
 import { holdLease } from "@/test/holdLease";
 import { reconcileGateway } from "@/lib/gateway/reconcile";
-import { markDeployed, register, writeAppEmail } from "@/lib/gateway/registry";
+import { markDeployed, readApp, register, writeAppEmail } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import { mintSetupLink } from "@/lib/gateway/setup-link";
@@ -428,6 +429,146 @@ describe("everyapp status", () => {
         "  Run either from inbox's directory.",
       ].join("\n"),
     );
+  });
+
+  it("lists each app's settings, says which app needs setup and what to run, and records the Workers' secret names", async () => {
+    // Two required settings unset (one the Gateway's, one the app's), an optional one.
+    const crm = await deployed("crm", {
+      manifest: {
+        id: "crm",
+        providers: [{ id: "openrouter", why: "Drafts replies." }],
+        capabilities: { context: { access: "read", optional: true } },
+        secrets: ["TOKEN_ENCRYPTION_KEY"],
+      },
+    });
+    // Nothing to set: no rows, no setup.
+    await deployed("todo");
+    await new GatewayWorker(account).fetch("https://crm.example.com/");
+
+    const done = await status();
+
+    expect(done["data"]["apps"]).toContainEqual(
+      expect.objectContaining({
+        id: "crm",
+        status: "active",
+        setup: expect.objectContaining({
+          ready: false,
+          unmet: [
+            expect.objectContaining({ id: "openrouter", set: false }),
+            expect.objectContaining({ id: "TOKEN_ENCRYPTION_KEY", set: false }),
+          ],
+          command: { command: "pnpm everyapp secret set OPENROUTER_API_KEY TOKEN_ENCRYPTION_KEY --app crm" },
+        }),
+      }),
+    );
+    expect(done["data"]["apps"]).toContainEqual(expect.objectContaining({ id: "todo", setup: null }));
+    expect(done["data"]["fixes"]).toContainEqual({
+      code: "APP_NEEDS_SETUP",
+      severity: "warning",
+      message:
+        "crm needs setup\nOpenRouter: Drafts replies.\nGet it at https://openrouter.ai/settings/keys\nGuide: .claude/skills/everyapp/setup/openrouter.md\nTOKEN_ENCRYPTION_KEY",
+      run: "pnpm everyapp secret set OPENROUTER_API_KEY TOKEN_ENCRYPTION_KEY --app crm",
+    });
+    // todo goes live on its first visit; the setup problem counts with the missing owner.
+    expect(done["message"]).toBe("Gateway https://example.com: 1 app live, 2 problems to fix");
+    // The Worker's names are on record now (none yet).
+    expect((await readApp(db(), "crm")).secretNames).toEqual([]);
+    const report = await shown();
+    expect(report).toMatch(/\ncrm +! needs setup +https:\/\/crm\.example\.com/);
+    expect(report).toContain(
+      [
+        "APP  SETTING               WHERE    STATUS",
+        "crm  OPENROUTER_API_KEY    Gateway  ! not set",
+        "crm  CONTEXT_API_KEY       Gateway  not set (optional)",
+        "crm  TOKEN_ENCRYPTION_KEY  crm      ! not set",
+      ].join("\n"),
+    );
+    expect(report).toContain(
+      [
+        "! crm needs setup",
+        "  OpenRouter: Drafts replies.",
+        "  Get it at https://openrouter.ai/settings/keys",
+        "  Guide: .claude/skills/everyapp/setup/openrouter.md",
+        "  TOKEN_ENCRYPTION_KEY",
+        "  Run: pnpm everyapp secret set OPENROUTER_API_KEY TOKEN_ENCRYPTION_KEY --app crm",
+      ].join("\n"),
+    );
+
+    // Set outside everyapp: the next status sees it, records it, and the app is live.
+    account.workers.get("every-app-gateway")!.secrets["OPENROUTER_API_KEY"] = "sk-or";
+    account.workers.get(crm.workerName!)!.secrets["TOKEN_ENCRYPTION_KEY"] = "tek";
+    const ready = await status();
+    expect(fixCodes(ready)).not.toContain("APP_NEEDS_SETUP");
+    expect(ready["data"]["apps"]).toContainEqual(
+      expect.objectContaining({ id: "crm", setup: expect.objectContaining({ ready: true, command: null }) }),
+    );
+    expect((await readApp(db(), "crm")).secretNames).toEqual(["TOKEN_ENCRYPTION_KEY"]);
+    const live = await shown();
+    expect(live).toMatch(/\ncrm +✓ live +https:\/\/crm\.example\.com/);
+    expect(live).toContain("crm  TOKEN_ENCRYPTION_KEY  crm      ✓ set");
+  });
+
+  it("says once when the Workers' secrets can't be listed, blocks on nothing, and records nothing", async () => {
+    const crm = await deployed("crm", {
+      manifest: { id: "crm", providers: ["openrouter"], secrets: ["TOKEN_ENCRYPTION_KEY"] },
+    });
+    account.workers.get(crm.workerName!)!.secrets["TOKEN_ENCRYPTION_KEY"] = "tek";
+    account.cf.override(["workers", "secrets", "list"], {
+      exitCode: 1,
+      stderr: "┌ Error\n│ Authentication error [code: 10000]\n└\n",
+    });
+
+    const done = await status();
+
+    expect(events.filter((event) => event["type"] === "warning")).toEqual([]);
+    expect(fixCodes(done)).toContain("SETTINGS_UNKNOWN");
+    expect(fixCodes(done)).not.toContain("APP_NEEDS_SETUP");
+    expect(done["data"]["apps"]).toContainEqual(
+      expect.objectContaining({
+        id: "crm",
+        setup: expect.objectContaining({
+          ready: true,
+          settings: [
+            expect.objectContaining({ id: "openrouter", set: null }),
+            expect.objectContaining({ id: "TOKEN_ENCRYPTION_KEY", set: null }),
+          ],
+        }),
+      }),
+    );
+    expect((await readApp(db(), "crm")).secretNames).toBeNull();
+    const report = await shown();
+    expect(report).toContain("crm  OPENROUTER_API_KEY    Gateway  ! couldn't check");
+    expect(report).toContain("crm  TOKEN_ENCRYPTION_KEY  crm      ! not recorded");
+    expect(report).toContain(
+      "! Couldn't list the Workers' secrets\n  Cloudflare said: Authentication error [code: 10000]. Whether the apps' settings are set isn't known.",
+    );
+    expect(report.match(/Couldn't list the Workers' secrets/g)).toHaveLength(1);
+  });
+
+  it("evaluates nothing for an app that was never uploaded, whose Worker is gone, or on the dispatch tier", async () => {
+    await register(db(), {
+      appSlug: "notes",
+      name: "notes",
+      description: "notes",
+      manifest: { id: "notes", secrets: ["MAIN_SECRET"] },
+      appBaseDomain: "example.com",
+      deployer: { actor: "dev@example.com", email: "dev@example.com" },
+      organizationName: "Acme",
+    });
+    await deployed("chef", { manifest: { id: "chef", providers: ["openai"] } });
+    account.workers.delete("every-acme-chef");
+    // A third-party app on the hosted Gateway's dispatch tier: the platform doesn't gate its settings.
+    await deployed("shop", { manifest: { id: "shop", providers: ["openai"] } });
+    await db().run([{ sql: "UPDATE apps SET tier = 'dispatch' WHERE app_slug = ?", params: ["shop"] }]);
+
+    const done = await status();
+
+    expect(done["data"]["apps"]).toContainEqual(expect.objectContaining({ id: "notes", setup: null }));
+    expect(done["data"]["apps"]).toContainEqual(expect.objectContaining({ id: "chef", setup: null }));
+    expect(done["data"]["apps"]).toContainEqual(expect.objectContaining({ id: "shop", setup: null }));
+    expect(fixCodes(done)).not.toContain("APP_NEEDS_SETUP");
+    expect(fixCodes(done)).not.toContain("SETTINGS_UNKNOWN");
+    expect(await shown()).not.toContain("SETTING");
   });
 
   it("prints the deployment mode the install recorded", async () => {

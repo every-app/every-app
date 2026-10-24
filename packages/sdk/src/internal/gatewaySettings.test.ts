@@ -3,7 +3,6 @@ import { aiProviderSettings, DEV_AI_PROVIDERS } from "./aiProviders";
 import { CAPABILITIES, capabilitySettings } from "./capabilities";
 import {
   gatewaySettingOwner,
-  gatewaySettingsFor,
   HOSTED_ONLY_GATEWAY_SETTINGS,
   isHostedOnlyGatewaySetting,
   isPlainGatewaySetting,
@@ -121,49 +120,5 @@ describe("plain and hosted-only settings", () => {
     expect(isHostedOnlyGatewaySetting("THIRD_PARTY_DOMAIN")).toBe(true);
     // The browser deployer's token serves self-hosted installs too.
     expect(isHostedOnlyGatewaySetting("CF_DEPLOY_TOKEN")).toBe(false);
-  });
-});
-
-describe("gatewaySettingsFor", () => {
-  it("lists what the manifest's providers and capabilities read, in order, once, required first where both say so", () => {
-    expect(
-      gatewaySettingsFor({
-        providers: ["workers-ai", "openai"],
-        capabilities: {
-          email: { access: "write" },
-          mastodon: { access: "write" },
-          dataforseo: { access: "read" },
-        },
-        ai: { routes: ["/v1/files"] },
-      }),
-    ).toEqual([
-      // Workers AI's CLOUDFLARE_ACCOUNT_ID is the install's: left out.
-      { name: "WORKERS_AI_API_TOKEN", required: true },
-      { name: "OPENAI_API_KEY", required: true },
-      { name: "EMAIL_FROM", required: true },
-      // The sender's display name, another transport, and the provider
-      // choice: the Gateway sends through its EMAIL binding without them.
-      { name: "EMAIL_FROM_NAME", required: false },
-      { name: "EMAIL_REST_API_TOKEN", required: false },
-      { name: "RESEND_API_KEY", required: false },
-      { name: "EMAIL_PROVIDER", required: false },
-      { name: "MASTODON_CLIENT_ID", required: true },
-      { name: "MASTODON_CLIENT_SECRET", required: true },
-      // The instance has a default.
-      { name: "MASTODON_URL", required: false },
-      { name: "DATAFORSEO_API_KEY", required: true },
-      { name: "AI_PROXY_EXTRA_ROUTES", required: true },
-    ]);
-  });
-
-  it("is empty for a manifest that uses nothing, or names what the gateway doesn't offer", () => {
-    expect(gatewaySettingsFor({})).toEqual([]);
-    expect(
-      gatewaySettingsFor({
-        providers: ["anthropic"],
-        capabilities: { github: { access: "read" } },
-        ai: { routes: [] },
-      }),
-    ).toEqual([]);
   });
 });

@@ -17,6 +17,15 @@ const connectFlags = {
   "account-id": accountFlag,
 } as const;
 
+/** `set` and `unset`: which app a name that isn't a Gateway setting belongs to. */
+const appFlag = {
+  kind: "parsed",
+  parse: String,
+  brief: "The app whose secret this is (default: the app in this directory)",
+  placeholder: "id",
+  optional: true,
+} as const;
+
 const setCommand = buildCommand({
   loader: async () => {
     const { set } = await import(".");
@@ -32,6 +41,7 @@ const setCommand = buildCommand({
         placeholder: "VAR",
         optional: true,
       },
+      app: appFlag,
       ...connectFlags,
       json: jsonFlag,
       verbose: {
@@ -45,16 +55,18 @@ const setCommand = buildCommand({
     brief: "Set secrets on your app or your Gateway",
     fullDescription: [
       "Gateway settings (AI provider keys, EMAIL_FROM, sign-in clients) go to the Gateway, from any",
-      "directory. Other names go to the app in this directory, which must list them under secrets",
-      "in everyapp.config.ts. Values come from a hidden prompt, --from-env or stdin, never the",
-      "command line. Changes are live at once; no deploy needed.",
+      "directory. Other names go to the app in this directory, or with --app <id> to that app from",
+      "anywhere; the app's everyapp.config.ts must list them under secrets. Values come from a",
+      "hidden prompt, --from-env or stdin, never the command line. Changes are live at once; no",
+      "deploy needed.",
       "",
       "Examples:",
       `  ${CLI} secret set OPENAI_API_KEY`,
       `  ${CLI} secret set GITHUB_TOKEN --from-env GITHUB_TOKEN`,
       `  echo "$STRIPE_KEY" | ${CLI} secret set STRIPE_KEY`,
+      `  ${CLI} secret set MAIN_SECRET --app analytics`,
       "",
-      `See which names you can set: ${CLI} secret list`,
+      `See what an app needs and what is set: ${CLI} secret list [<app>]`,
     ].join("\n"),
   },
 });
@@ -68,6 +80,7 @@ const unsetCommand = buildCommand({
     positional: names,
     flags: {
       yes: { kind: "boolean", brief: "Remove without asking", optional: true },
+      app: appFlag,
       ...connectFlags,
       json: {
         kind: "boolean",
@@ -85,7 +98,8 @@ const unsetCommand = buildCommand({
   docs: {
     brief: "Remove secrets from your app or your Gateway",
     fullDescription: [
-      "Names go where `secret set` sends them. Asks before removing; the change is live at once.",
+      "Names go where `secret set` sends them (--app <id> names the app from anywhere). Asks before",
+      "removing; the change is live at once.",
       "",
       "Example:",
       `  ${CLI} secret unset GITHUB_TOKEN`,
@@ -99,7 +113,17 @@ const listCommand = buildCommand({
     return list;
   },
   parameters: {
-    positional: { kind: "tuple", parameters: [] },
+    positional: {
+      kind: "tuple",
+      parameters: [
+        {
+          brief: "An app id (default: the app in this directory; elsewhere, every app)",
+          parse: String,
+          placeholder: "app",
+          optional: true,
+        },
+      ],
+    },
     flags: {
       ...connectFlags,
       json: resultJsonFlag,
@@ -111,9 +135,14 @@ const listCommand = buildCommand({
     },
   },
   docs: {
-    brief: "List secrets: the app's in its directory, the Gateway's anywhere else",
-    fullDescription:
-      "In an app's directory: its secrets and the Gateway settings it uses, with what's missing.\nElsewhere: the Gateway's, and the settings you can set on it.",
+    brief: "List what an app needs set and what is: its own secrets and the Gateway's settings",
+    fullDescription: [
+      "For one app (the app in this directory, or <app> from anywhere): every setting its manifest",
+      "declares, where it is held (the Gateway, or the app's Worker), whether it is set, and the one",
+      "secret set command that opens the app when something required is missing. Elsewhere with no",
+      "app named: the Gateway's names and who set them, then every app's settings. Names only, never",
+      "values.",
+    ].join("\n"),
   },
 });
 

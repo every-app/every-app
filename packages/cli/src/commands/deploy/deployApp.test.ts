@@ -1230,6 +1230,7 @@ describe("deploy of an app without helper Workers", () => {
           "workers deployments list --worker every-acme-todo --per-page 10",
           "deploy --prebuilt --mode production --message everyapp 0.3.0 todo --secrets-file /fake-cf-files/secrets.json",
           "workers deployments list --worker every-acme-todo --per-page 10",
+          "workers secrets list --worker every-acme-todo",
           "workers deployments list --worker every-app-gateway --per-page 10",
           "workers deployments list --worker every-acme-todo --per-page 10",
           "dns records list -z zone-1 --name-exact todo.example.com --per-page 100",

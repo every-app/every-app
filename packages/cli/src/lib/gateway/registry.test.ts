@@ -25,6 +25,7 @@ import {
   readAppEmail,
   register,
   writeAppEmail,
+  writeAppSecretNames,
   type Deployer,
   type RegisterInput,
 } from "./registry";
@@ -68,7 +69,7 @@ function registerApp(appSlug: string, overrides: Partial<RegisterInput> = {}) {
 
 const app = (appSlug: string) =>
   sqlite.all(
-    "SELECT organization_id, app_slug, hostname, worker_name, status, manifest, version_id, deployed_at, deployed_by_actor, is_default, email_senders, email_inbound FROM apps WHERE app_slug = ?",
+    "SELECT organization_id, app_slug, hostname, worker_name, status, manifest, version_id, deployed_at, deployed_by_actor, is_default, email_senders, email_inbound, secret_names FROM apps WHERE app_slug = ?",
     appSlug,
   )[0];
 const grantees = (appSlug: string) =>
@@ -269,6 +270,12 @@ describe("markDeployed", () => {
       deployed_at: 1_700_000_000_000,
       deployed_by_actor: "dev@example.com",
       manifest: JSON.stringify({ id: "todo", public: [{ path: "/health" }] }),
+      // No deploy listed the Worker's secrets yet.
+      secret_names: null,
+    });
+    await expect(readApp(db(), "todo")).resolves.toMatchObject({
+      manifest: { id: "todo", public: [{ path: "/health" }] },
+      secretNames: null,
     });
 
     // An app an admin switched off stays off.
@@ -286,6 +293,49 @@ describe("markDeployed", () => {
     await expect(
       markDeployed(db(), plan.app.id, { versionId: "v1", manifest: { id: "todo" }, actor: "x" }),
     ).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
+  });
+
+  it("records the Worker's secret names when the deploy listed them, and keeps them when it didn't", async () => {
+    const { plan } = await registerApp("todo");
+
+    await markDeployed(db(), plan.app.id, {
+      versionId: "v1",
+      manifest: { id: "todo", secrets: ["MAIN_SECRET"] },
+      actor: "x",
+      secretNames: ["MAIN_SECRET", "GITHUB_TOKEN", "MAIN_SECRET"],
+    });
+    expect(app("todo")).toMatchObject({ secret_names: '["GITHUB_TOKEN","MAIN_SECRET"]' });
+    await expect(readApp(db(), "todo")).resolves.toMatchObject({
+      secretNames: ["GITHUB_TOKEN", "MAIN_SECRET"],
+    });
+
+    // A deploy that couldn't list them leaves the record as it was.
+    await markDeployed(db(), plan.app.id, { versionId: "v2", manifest: { id: "todo" }, actor: "x" });
+    expect(app("todo")).toMatchObject({ version_id: "v2", secret_names: '["GITHUB_TOKEN","MAIN_SECRET"]' });
+  });
+});
+
+describe("writeAppSecretNames", () => {
+  it("records the names on the row, sorted and each once, and a deleted app's go with it", async () => {
+    const { plan } = await registerApp("todo");
+
+    await writeAppSecretNames(db(), plan.app.id, ["STRIPE_KEY", "GITHUB_TOKEN"]);
+    expect(app("todo")).toMatchObject({ secret_names: '["GITHUB_TOKEN","STRIPE_KEY"]' });
+    await expect(listApps(db())).resolves.toEqual([
+      expect.objectContaining({ secretNames: ["GITHUB_TOKEN", "STRIPE_KEY"] }),
+    ]);
+
+    await writeAppSecretNames(db(), plan.app.id, []);
+    expect(app("todo")).toMatchObject({ secret_names: "[]" });
+
+    await writeAppSecretNames(db(), plan.app.id, ["GITHUB_TOKEN"]);
+    await deleteApp(db(), "todo", DEPLOYER);
+    expect(app("todo")).toMatchObject({ status: "deleted", secret_names: null });
+    // A tombstone keeps none: the write is a no-op, and a revived app starts unrecorded.
+    await writeAppSecretNames(db(), plan.app.id, ["GITHUB_TOKEN"]);
+    expect(app("todo")).toMatchObject({ secret_names: null });
+    await registerApp("todo");
+    await expect(readApp(db(), "todo")).resolves.toMatchObject({ secretNames: null });
   });
 });
 

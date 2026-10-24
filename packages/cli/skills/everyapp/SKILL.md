@@ -37,7 +37,9 @@ command, unless it names another); exit 1 = show the error; if data.authorize
 is set, ask before using data.rerun. waiting: true = keep reading (up to 15
 min: device login, owner link).
 
-State:   pnpm everyapp status --json   (data.fixes says what to run when something is off)
+State:   pnpm everyapp status --json   (data.fixes says what to run when something is off;
+         data.apps[].setup says what each app needs set: ready, settings, unmet
+         (each with why and docs), and command, the one secret set that opens it)
 Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair;
          a fresh install runs 10-20 min: build, certificate, then up to 15 min
          waiting for the owner link, so give it a long timeout or background
@@ -69,15 +71,27 @@ Postgres: an app with resources.hyperdrive or migrations.dialect "postgresql"
          .everyapp/secrets.env, which the user writes; never print, commit or
          ask for its values in chat. deploy runs drizzle-kit migrate before
          the upload.
-Secrets: pnpm everyapp secret set NAME --from-env VAR --json   (live at once, no deploy)
+Secrets: pnpm everyapp secret set NAME... [--app <id>] --json   (live at once, no deploy;
+         the value from a hidden prompt, stdin, or --from-env VAR, never the command line)
          The name decides where it goes. A Gateway setting (OPENAI_API_KEY,
          EMAIL_FROM, GOOGLE_WORKSPACE_CLIENT_ID, …) is set on the Gateway from any
          directory. An app's own secret must be listed under `secrets` in
-         its everyapp.config.ts and is set from the app's directory after
-         its first deploy (SECRET_NOT_DECLARED: add it there first). Never
-         put a value on the command line. secret unset NAME; secret list
-         (in an app directory: the app's secrets and the Gateway settings it
-         needs, set or not; elsewhere: the Gateway's).
+         its everyapp.config.ts and is set after its first deploy, from the
+         app's directory or from anywhere with --app <id> (SECRET_NOT_DECLARED:
+         add it there first). secret unset NAME [--app <id>]; secret list [<app>]
+         --json (one app's settings, where each is held and whether it is set,
+         with data.app.setup; elsewhere with no app named: the Gateway's names
+         and every app's settings).
+Needs setup: read data.apps[].setup; for each unmet setting show its why and docs
+         and read its setup guide (.claude/skills/everyapp/<setup>); get the value
+         in without it passing through the chat: tell the person to run
+         `pnpm everyapp secret set <names>` in their own terminal (hidden prompt)
+         and say when done; or pipe a value that came from a command or a file
+         straight in; or --from-env VAR only for a variable the person exported
+         before starting the agent. Never ask for, print or repeat a value; never
+         invent one. An app whose setup.ready is false doesn't open (status shows
+         "needs setup"; deploy warns APP_NEEDS_SETUP and puts the command under
+         next); an any-of group (setup.groups) needs one member set, not all.
 Email:   pnpm everyapp email set --sender "*@<domain>" --inbound <address> --json
          In the app's directory, after its first deploy; nothing is deployed. --sender
          replaces the From addresses the Gateway lets the app name (everyapp.config.ts

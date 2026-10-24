@@ -4,9 +4,11 @@
  * command (`run`) or remedy (`fix`). Each has a stable code for scripts
  * (`data.fixes`); people see them as blocks under the report.
  */
+import type { AppSetup } from "@every-app/sdk/internal";
 import chalk from "chalk";
 import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
 import type { PublicRouteSummary } from "@/lib/app/publicRoutes";
+import { describeUnmetSettings } from "@/lib/app/settings";
 import type { DesiredState } from "@/lib/gateway/desiredState";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { describeLeaseHolder, type LeaseHolder } from "@/lib/gateway/lease";
@@ -26,6 +28,8 @@ export enum ProblemCode {
   AppNotBound = "APP_NOT_BOUND",
   AppNotUploaded = "APP_NOT_UPLOADED",
   AppBinding = "APP_BINDING",
+  AppNeedsSetup = "APP_NEEDS_SETUP",
+  SettingsUnknown = "SETTINGS_UNKNOWN",
   EmailRoutesUnknown = "EMAIL_ROUTES_UNKNOWN",
   EmailInboundUndeclared = "EMAIL_INBOUND_UNDECLARED",
   EmailRoutePending = "EMAIL_ROUTE_PENDING",
@@ -104,6 +108,21 @@ export interface AppState {
   email: { senders: string[]; inbound: string[]; routed: string[]; declaresInbound: boolean };
   /** The routes its deployed manifest opens to anyone on the internet (`public` in everyapp.config.ts). */
   publicRoutes: PublicRouteSummary[];
+  /**
+   * What its manifest needs set and whether it is (lib/app/settings.ts):
+   * null when it declares nothing to set.
+   */
+  setup: AppSetup | null;
+}
+
+/** An app that is up, as far as the registry and the live Gateway know, and so would open if ready. */
+function isServed(app: Pick<AppState, "status" | "bound">): boolean {
+  return app.bound && (app.status === "active" || app.status === "binding");
+}
+
+/** A served app whose required settings aren't all set: it doesn't open. */
+export function needsSetup(app: Pick<AppState, "status" | "bound" | "setup">): boolean {
+  return isServed(app) && app.setup !== null && !app.setup.ready;
 }
 
 /** This checkout against the live release, by the install row. */
@@ -153,6 +172,7 @@ export function problemsFor({
   leases,
   checkout,
   emailProblems,
+  settings,
 }: {
   install: InstallRecord;
   desired: DesiredState;
@@ -169,6 +189,8 @@ export function problemsFor({
   leases: LeaseHolder[];
   checkout: CheckoutState;
   emailProblems: EmailRouteProblem[] | Unread;
+  /** Why the Workers' secrets couldn't be listed, when they couldn't. */
+  settings: Unread | null;
 }): Problem[] {
   const problems: Problem[] = [];
   const live = install.releaseVersion;
@@ -267,6 +289,17 @@ export function problemsFor({
       });
     }
   }
+  if (settings) {
+    problems.push({
+      code: ProblemCode.SettingsUnknown,
+      severity: Severity.Warning,
+      headline: "Couldn't list the Workers' secrets",
+      detail: [`Cloudflare said: ${settings.error}. Whether the apps' settings are set isn't known.`],
+    });
+  }
+  for (const app of apps) {
+    if (needsSetup(app)) problems.push(appNeedsSetup(app.id, app.setup!));
+  }
   if ("error" in emailProblems) {
     problems.push({
       code: ProblemCode.EmailRoutesUnknown,
@@ -316,6 +349,27 @@ export function problemsFor({
     ...problems.filter((problem) => problem.severity !== Severity.Info),
     ...problems.filter((problem) => problem.severity === Severity.Info),
   ];
+}
+
+/**
+ * An app that doesn't open until something is set: each unmet setting
+ * with why it is needed, where its key comes from and the skill's setup
+ * guide for it, then the one `secret set` that opens it (an unmet any-of
+ * group's alternatives in the note).
+ */
+function appNeedsSetup(appId: string, setup: AppSetup): Problem {
+  return {
+    code: ProblemCode.AppNeedsSetup,
+    severity: Severity.Warning,
+    headline: `${appId} needs setup`,
+    detail: describeUnmetSettings(setup.unmet),
+    ...(setup.command
+      ? {
+          run: command`${setup.command.command}`,
+          ...(setup.command.note ? { runNote: setup.command.note } : {}),
+        }
+      : {}),
+  };
 }
 
 /** The live Gateway binds or publishes other apps than its registry lists. */

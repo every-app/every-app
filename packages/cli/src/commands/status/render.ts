@@ -1,19 +1,28 @@
 /**
- * `everyapp status` for a person: the Gateway's facts, its apps and their
- * mail as tables, then each problem as a block (a glyph-led headline, why,
- * dim, and what to run). Problems one command fixes share one block; those
- * that settle by themselves show only in the rows.
+ * `everyapp status` for a person: the Gateway's facts, its apps, their
+ * mail and their settings as tables, then each problem as a block (a
+ * glyph-led headline, why, dim, and what to run). Problems one command
+ * fixes share one block; those that settle by themselves show only in the
+ * rows.
  */
 import chalk from "chalk";
 import type { AccessState } from "@/lib/access/settings";
 import type { EmailRouteProblem } from "@/lib/app/emailRoutes";
+import { renderSettingsTable, settingsRows } from "@/lib/app/settings";
 import type { InstallRecord } from "@/lib/gateway/install";
 import { describeLeaseHolder, type LeaseHolder } from "@/lib/gateway/lease";
 import type { GatewayOwner } from "@/lib/gateway/setup-link";
 import { CLI } from "@/lib/output/command";
 import { formatFacts, formatTable, type Fact } from "@/lib/output/table";
 import { capitalize, plural } from "@/lib/output/text";
-import { Severity, type AppState, type CheckoutState, type Problem, type Unread } from "./problems";
+import {
+  needsSetup,
+  Severity,
+  type AppState,
+  type CheckoutState,
+  type Problem,
+  type Unread,
+} from "./problems";
 
 const GLYPHS: Readonly<Record<Exclude<Severity, Severity.Settling>, string>> = {
   [Severity.Error]: chalk.red("✗"),
@@ -101,6 +110,8 @@ export function renderStatus({
   const mailing = apps.filter(
     (app) => app.email.senders.length > 0 || app.email.inbound.length > 0 || app.email.routed.length > 0,
   );
+  // Each app's settings, for the apps that declare any.
+  const settings = apps.flatMap((app) => (app.setup ? settingsRows(app.id, app.setup.settings) : []));
   return [
     ...formatFacts(facts),
     "",
@@ -122,6 +133,7 @@ export function renderStatus({
             : chalk.dim("No apps yet."),
         ]),
     ...(mailing.length > 0 ? ["", ...emailTable(mailing, emailProblems)] : []),
+    ...(settings.length > 0 ? ["", ...renderSettingsTable(settings)] : []),
     ...renderProblems(problems),
   ].join("\n");
 }
@@ -169,7 +181,11 @@ function publicCell(app: AppState): string {
   return app.publicRoutes.length > 0 ? plural(app.publicRoutes.length, "route") : "";
 }
 
-/** An app's STATUS cell: a glyph (✓ live, ! to do, ✗ broken, ○ settling by itself) and a few words. */
+/**
+ * An app's STATUS cell: a glyph (✓ live, ! to do, ✗ broken, ○ settling by
+ * itself) and a few words. A served app whose required settings aren't
+ * set says so instead of live: it doesn't open until they are.
+ */
 function appStatus(
   app: AppState,
   {
@@ -187,11 +203,13 @@ function appStatus(
         ? `${chalk.yellow("!")} never deployed`
         : !app.bound
           ? `${chalk.yellow("!")} not bound`
-          : app.status === "active"
-            ? `${chalk.green("✓")} live`
-            : app.status === "binding"
-              ? `${chalk.dim("○")} ${waitingCertificate ? "waiting for certificate" : "live on first visit"}`
-              : chalk.dim(app.status === "disabled" ? "switched off" : app.status);
+          : needsSetup(app)
+            ? `${chalk.yellow("!")} needs setup`
+            : app.status === "active"
+              ? `${chalk.green("✓")} live`
+              : app.status === "binding"
+                ? `${chalk.dim("○")} ${waitingCertificate ? "waiting for certificate" : "live on first visit"}`
+                : chalk.dim(app.status === "disabled" ? "switched off" : app.status);
   return deploying ? `${state} · deploying` : state;
 }
 

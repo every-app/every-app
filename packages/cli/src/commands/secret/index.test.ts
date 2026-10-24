@@ -1,17 +1,21 @@
 /**
  * `everyapp secret set|unset|list` end to end, in a fake Cloudflare
  * account with a deployed gateway and apps (as deployApp.test.ts): each
- * name goes where it belongs with no flag, refusals come before a value is
- * read or a Worker changes, and `list` says what each side holds and lacks.
+ * name goes where it belongs with no flag (or to the app `--app` names,
+ * from anywhere, by the manifest its deploy stored), refusals come before
+ * a value is read or a Worker changes, each change records the app
+ * Worker's secret names on its row, and `list` says what each app needs
+ * and what is set, in the settings model's words.
  */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { isHostedOnlyGatewaySetting, SETTABLE_GATEWAY_SETTINGS } from "@every-app/sdk/internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cfD1Database } from "@/lib/cf/d1";
 import { applyGateway } from "@/lib/gateway/apply";
-import { readInstall } from "@/lib/gateway/install";
-import { readApp } from "@/lib/gateway/registry";
+import { readInstall, writeInstall } from "@/lib/gateway/install";
+import { readApp, register } from "@/lib/gateway/registry";
 import { openRelease, type GatewayRelease } from "@/lib/gateway/release";
 import { ensureGatewayResources } from "@/lib/gateway/resources";
 import type { EveryAppCliManifest } from "@/lib/manifest";
@@ -45,11 +49,33 @@ const SEO: EveryAppCliManifest = {
 /** An app with no secrets of its own and nothing that needs a Gateway setting. */
 const NOTES: EveryAppCliManifest = { id: "notes", resources: { d1: ["DB"] } };
 
+/**
+ * An app that says what each setting is for and which it can do without
+ * (object entries), and picks its AI provider among the set ones.
+ */
+const CRM: EveryAppCliManifest = {
+  id: "crm",
+  resources: { d1: ["DB"] },
+  providers: [
+    { id: "openai", anyOf: "AI model" },
+    { id: "openrouter", anyOf: "AI model", why: "Any model through one key." },
+  ],
+  capabilities: {
+    context: { access: "read", optional: true, why: "Renders JavaScript pages in audits." },
+  },
+  secrets: [
+    { name: "TOKEN_ENCRYPTION_KEY", why: "Encrypts the OAuth tokens it stores." },
+    { name: "GITHUB_TOKEN", optional: true, why: "Raises the GitHub rate limit." },
+  ],
+};
+
 const VALUES: Record<string, string> = {
   GITHUB_TOKEN: "ghp_token",
   STRIPE_KEY: "sk_live",
   OPENAI_API_KEY: "sk-openai",
+  OPENROUTER_API_KEY: "sk-or",
   EMAIL_FROM: "hello@example.com",
+  TOKEN_ENCRYPTION_KEY: "tek",
 };
 
 let account: FakeCloudflare;
@@ -165,9 +191,18 @@ function set(cwd: string, ...names: string[]) {
 function unset(cwd: string, ...names: string[]) {
   return unsetSecrets({ flags: { ...flags, yes: true }, out: out(), cwd, createCf, names });
 }
-function list(cwd: string) {
-  return listSecrets({ flags, out: out(), cwd, createCf });
+function list(cwd: string, appId?: string) {
+  return listSecrets({ flags, out: out(), cwd, createCf, appId });
 }
+/** `--app <id>`: the app named, from wherever the command runs. */
+function setFor(appId: string, cwd: string, ...names: string[]) {
+  return setSecrets({ flags: { ...flags, app: appId }, out: out(), cwd, createCf, names, readValue: read });
+}
+function unsetFor(appId: string, cwd: string, ...names: string[]) {
+  return unsetSecrets({ flags: { ...flags, yes: true, app: appId }, out: out(), cwd, createCf, names });
+}
+/** The app's secret names as its row records them (`secret_names`), or null when never recorded. */
+const recorded = async (appId: string) => (await readApp(db(), appId)).secretNames;
 const progress = (step: string) =>
   events.filter((event) => event["type"] === "progress" && event["step"] === step).map((event) => event["message"]);
 
@@ -315,8 +350,17 @@ describe("secret set refuses a name that goes nowhere, before a value is read", 
     await expect(set(emptyDir(), "GITHUB_TOKEN")).rejects.toMatchObject({
       code: "SECRET_NOT_DECLARED",
       message:
-        "GITHUB_TOKEN isn't a Gateway setting, and there's no app here\nAn app's own secrets are set from the app's directory (where everyapp.config.ts is).\nGateway settings: pnpm everyapp secret list",
-      fix: "cd into the app's directory and run this again",
+        "GITHUB_TOKEN isn't a Gateway setting, and there's no app here\nAn app's own secrets are set from the app's directory (where everyapp.config.ts is), or from anywhere with --app <id>.\nGateway settings: pnpm everyapp secret list",
+      fix: "cd into the app's directory and run this again, or add --app <id>",
+    });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("renders the line to add in the manifest's own form when its entries are objects", async () => {
+    const dir = appDir(CRM);
+    await expect(set(dir, "SENDGRID_KEY")).rejects.toMatchObject({
+      code: "SECRET_NOT_DECLARED",
+      fix: 'add it to secrets in everyapp.config.ts: secrets: [{ name: "TOKEN_ENCRYPTION_KEY", why: "Encrypts the OAuth tokens it stores." }, { name: "GITHUB_TOKEN", why: "Raises the GitHub rate limit.", optional: true }, { name: "SENDGRID_KEY" }],',
     });
     expect(read).not.toHaveBeenCalled();
   });
@@ -491,28 +535,211 @@ describe("secret unset", () => {
   });
 });
 
-describe("secret list", () => {
-  it("outside an app directory, names the Gateway's secrets, who set them, and what else can be set", async () => {
-    await set(emptyDir(), "OPENAI_API_KEY");
+describe("secret set --app", () => {
+  it("sets and removes an app's secret from anywhere, by the manifest its deploy stored, recording the names", async () => {
+    const dir = appDir(CRM);
+    const workerName = await deploy(dir, CRM);
+    expect(await recorded("crm")).toEqual([]);
+    const elsewhere = emptyDir();
+
+    await setFor("crm", elsewhere, "TOKEN_ENCRYPTION_KEY", "OPENROUTER_API_KEY");
+
+    expect(account.workers.get(workerName)!.secrets["TOKEN_ENCRYPTION_KEY"]).toBe("tek");
+    expect(gatewayWorker().secrets["OPENROUTER_API_KEY"]).toBe("sk-or");
+    expect(done()).toMatchObject({
+      message: "Set OPENROUTER_API_KEY on the Gateway, and TOKEN_ENCRYPTION_KEY on crm",
+      data: { app: { id: "crm", workerName, names: ["TOKEN_ENCRYPTION_KEY"] } },
+    });
+    expect(await recorded("crm")).toEqual(["TOKEN_ENCRYPTION_KEY"]);
+
     events = [];
+    await setFor("crm", elsewhere, "GITHUB_TOKEN");
+    expect(await recorded("crm")).toEqual(["GITHUB_TOKEN", "TOKEN_ENCRYPTION_KEY"]);
+
+    events = [];
+    await unsetFor("crm", elsewhere, "GITHUB_TOKEN");
+    expect(done()).toMatchObject({ message: "Removed GITHUB_TOKEN from crm" });
+    expect(account.workers.get(workerName)!.secrets["GITHUB_TOKEN"]).toBeUndefined();
+    expect(await recorded("crm")).toEqual(["TOKEN_ENCRYPTION_KEY"]);
+  });
+
+  it("wins over the app in the directory, and never reads its manifest", async () => {
+    const todoDir = appDir(TODO);
+    const todoWorker = await deploy(todoDir, TODO);
+    const crmWorker = await deploy(appDir(CRM), CRM);
+    fs.writeFileSync(path.join(todoDir, "everyapp.config.ts"), "export default { id: 1 };\n");
+
+    await setFor("crm", todoDir, "TOKEN_ENCRYPTION_KEY");
+
+    expect(account.workers.get(crmWorker)!.secrets["TOKEN_ENCRYPTION_KEY"]).toBe("tek");
+    expect(account.workers.get(todoWorker)!.secrets["TOKEN_ENCRYPTION_KEY"]).toBeUndefined();
+  });
+
+  it("refuses a name the stored manifest doesn't list, saying so, and an app that isn't deployed, before a value is read", async () => {
+    read.mockClear();
+    await deploy(appDir(CRM), CRM);
+    const elsewhere = emptyDir();
+
+    await expect(setFor("crm", elsewhere, "SENDGRID_KEY")).rejects.toMatchObject({
+      code: "SECRET_NOT_DECLARED",
+      message:
+        "crm doesn't list SENDGRID_KEY as a secret\nIts deployed manifest (what --app crm reads) doesn't list it, and it isn't a Gateway setting either.",
+      fix: expect.stringMatching(/^add it to secrets in everyapp\.config\.ts: secrets: \[.*\{ name: "SENDGRID_KEY" \}\], and deploy crm again$/),
+      rerun: "pnpm everyapp secret set SENDGRID_KEY --app crm",
+    });
+    await expect(setFor("crm", elsewhere, "github_token")).rejects.toMatchObject({
+      code: "SECRET_NOT_DECLARED",
+      rerun: "pnpm everyapp secret set GITHUB_TOKEN --app crm",
+      data: { didYouMean: "GITHUB_TOKEN" },
+    });
+    await expect(setFor("nope", elsewhere, "GITHUB_TOKEN")).rejects.toMatchObject({
+      code: "APP_NOT_FOUND",
+      message: expect.stringContaining("nope isn't deployed to this Gateway"),
+    });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("records the names after a change in the app's directory too", async () => {
+    const dir = appDir(TODO);
+    await deploy(dir, TODO);
+    await set(dir, "GITHUB_TOKEN", "STRIPE_KEY", "OPENAI_API_KEY");
+    expect(await recorded("todo")).toEqual(["GITHUB_TOKEN", "STRIPE_KEY"]);
+    await unset(dir, "STRIPE_KEY");
+    expect(await recorded("todo")).toEqual(["GITHUB_TOKEN"]);
+  });
+});
+
+describe("secret list", () => {
+  it("outside an app directory, names the Gateway's secrets, who set them, what else can be set, and every app's settings", async () => {
+    await set(emptyDir(), "OPENAI_API_KEY");
+    const todoDir = appDir(TODO);
+    await deploy(todoDir, TODO);
+    await set(todoDir, "GITHUB_TOKEN");
+    await deploy(appDir(CRM), CRM);
+    // An app with nothing to set has no rows.
+    await deploy(appDir({ id: "plain", resources: { d1: ["DB"] } }), { id: "plain", resources: { d1: ["DB"] } });
+    events = [];
+
     await list(emptyDir());
+
     const names = Object.keys(gatewayWorker().secrets).sort();
     const lines = (done()!["message"] as string).split("\n");
     expect(lines.slice(0, 3)).toEqual(["Gateway secrets · example.com", "", expect.stringMatching(/^NAME +SET BY$/)]);
     expect(lines).toContainEqual(expect.stringMatching(/^OPENAI_API_KEY +you$/));
     expect(lines).toContainEqual(expect.stringMatching(/^BETTER_AUTH_SECRET +setup$/));
-    expect(lines).toContainEqual(expect.stringMatching(/^OPENROUTER_API_KEY +not set$/));
-    // Yours, then setup's, then what you could set.
+    // Yours, then setup's, then, of what you could set, only what some app
+    // reads (crm's other provider, todo's capabilities and what email also
+    // reads), in the Gateway's order.
     const at = (name: string) => lines.findIndex((line) => line.startsWith(`${name} `));
     expect(at("OPENAI_API_KEY")).toBeLessThan(at("BETTER_AUTH_SECRET"));
     expect(at("BETTER_AUTH_SECRET")).toBeLessThan(at("OPENROUTER_API_KEY"));
+    const unset = lines.filter((line) => / {2}not set$/.test(line)).map((line) => line.split(" ")[0]);
+    expect(unset).toEqual([
+      "OPENROUTER_API_KEY",
+      "DATAFORSEO_API_KEY",
+      "CONTEXT_API_KEY",
+      "EMAIL_REST_API_TOKEN",
+      "RESEND_API_KEY",
+      "EMAIL_PROVIDER",
+      "EMAIL_FROM",
+      "EMAIL_FROM_NAME",
+    ]);
+    // The rest (the OAuth clients nobody uses, the Gateway's own switches)
+    // are one line; the hosted Gateway's own don't count on this install.
+    const relevant = SETTABLE_GATEWAY_SETTINGS.filter(
+      (name) => !isHostedOnlyGatewaySetting(name) && name !== "OPENAI_API_KEY",
+    );
+    expect(lines).toContain(`${relevant.length - unset.length} more can be set; see docs/capabilities.md`);
+    expect(lines).not.toContainEqual(expect.stringMatching(/^(LINKEDIN_CLIENT_ID|HOSTED_OPEN_SIGNUP|THIRD_PARTY_DOMAIN) /));
+    // Then each app's settings, in manifest order, the Gateway's first.
+    const table = lines.indexOf(lines.find((line) => /^APP +SETTING +WHERE +STATUS$/.test(line))!);
+    expect(lines.slice(table)).toEqual([
+      "APP   SETTING               WHERE    STATUS",
+      "crm   OPENAI_API_KEY        Gateway  ✓ set",
+      "crm   OPENROUTER_API_KEY    Gateway  not set (one of: AI model)",
+      "crm   CONTEXT_API_KEY       Gateway  not set (optional)",
+      "crm   TOKEN_ENCRYPTION_KEY  crm      ! not set",
+      "crm   GITHUB_TOKEN          crm      not set (optional)",
+      "todo  OPENAI_API_KEY        Gateway  ✓ set",
+      "todo  DATAFORSEO_API_KEY    Gateway  ! not set",
+      "todo  EMAIL_FROM            Gateway  ! not set",
+      "todo  GITHUB_TOKEN          todo     ✓ set",
+      "todo  STRIPE_KEY            todo     ! not set",
+    ]);
+    // The JSON keeps every settable name.
     expect(done()!["data"]).toMatchObject({
-      gateway: { workerName: GATEWAY, names, settable: expect.arrayContaining(["OPENAI_API_KEY", "EMAIL_FROM"]) },
+      gateway: { workerName: GATEWAY, names, settable: [...SETTABLE_GATEWAY_SETTINGS] },
+      apps: [
+        {
+          id: "crm",
+          setup: {
+            ready: false,
+            groups: [{ group: "AI model", met: true, members: ["openai", "openrouter"] }],
+            command: { command: "pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm" },
+          },
+        },
+        {
+          id: "todo",
+          setup: {
+            ready: false,
+            command: { command: "pnpm everyapp secret set DATAFORSEO_API_KEY EMAIL_FROM STRIPE_KEY --app todo" },
+          },
+        },
+      ],
     });
     expect(done()!["data"]["app"]).toBeUndefined();
   });
 
-  it("in an app's directory, lists each Worker's names, what the manifest lists but nobody set, and the Gateway settings it uses", async () => {
+  it("outside an app directory, keeps going when one app's Worker is gone, and leaves a dispatch-tier app out", async () => {
+    const todoDir = appDir(TODO);
+    const todoWorker = await deploy(todoDir, TODO);
+    await set(todoDir, "GITHUB_TOKEN");
+    const crmWorker = await deploy(appDir(CRM), CRM);
+    // A third-party app on the hosted Gateway's dispatch tier: the platform doesn't gate its settings.
+    await db().run([{ sql: "UPDATE apps SET tier = 'dispatch' WHERE app_slug = ?", params: ["crm"] }]);
+    // todo's Worker deleted by hand: its names can't be listed.
+    account.workers.delete(todoWorker);
+    events = [];
+    const before = account.cf.calls.length;
+
+    await list(emptyDir());
+
+    const lines = (done()!["message"] as string).split("\n");
+    const table = lines.findIndex((line) => /^APP +SETTING +WHERE +STATUS$/.test(line));
+    expect(lines.slice(table)).toEqual([
+      "APP   SETTING             WHERE    STATUS",
+      "todo  OPENAI_API_KEY      Gateway  ! not set",
+      "todo  DATAFORSEO_API_KEY  Gateway  ! not set",
+      "todo  EMAIL_FROM          Gateway  ! not set",
+      "todo  GITHUB_TOKEN        todo     ! not recorded",
+      "todo  STRIPE_KEY          todo     ! not recorded",
+      "Couldn't list todo's secrets. Cloudflare said: This Worker does not exist on your account. [code: 10007]. They show as not recorded.",
+    ]);
+    // Its own names unknown, which never blocks: the command sets the Gateway's.
+    expect(done()!["data"]["apps"]).toEqual([
+      {
+        id: "todo",
+        setup: expect.objectContaining({
+          ready: false,
+          settings: expect.arrayContaining([expect.objectContaining({ id: "GITHUB_TOKEN", set: null })]),
+          command: { command: "pnpm everyapp secret set OPENAI_API_KEY DATAFORSEO_API_KEY EMAIL_FROM" },
+        }),
+      },
+    ]);
+    expect(account.cf.calls.slice(before).filter((call) => call.args.includes(crmWorker))).toEqual([]);
+  });
+
+  it("on a hosted Gateway, lists its own unset switches too", async () => {
+    await writeInstall(db(), { ...(await readInstall(db()))!, deploymentMode: "hosted" });
+    await list(emptyDir());
+    const lines = (done()!["message"] as string).split("\n");
+    for (const name of ["HOSTED_OPEN_SIGNUP", "DISPATCH_NAMESPACE", "THIRD_PARTY_DOMAIN"]) {
+      expect(lines).toContainEqual(expect.stringMatching(new RegExp(`^${name} +not set$`)));
+    }
+    expect(lines).toContain(`${SETTABLE_GATEWAY_SETTINGS.length - 3} more can be set; see docs/capabilities.md`);
+  });
+
+  it("in an app's directory, lists each setting with where it is held and whether it is set, and the one command that opens the app", async () => {
     const dir = appDir(TODO);
     const workerName = await deploy(dir, TODO);
     await set(dir, "GITHUB_TOKEN", "OPENAI_API_KEY");
@@ -523,16 +750,12 @@ describe("secret list", () => {
     // everyapp's own names (EVERY_APP_ORG_ID, GATEWAY_URL) only with --verbose.
     expect(done()!["message"]).toBe(
       [
-        "NAME                  WHERE    STATUS",
-        "GITHUB_TOKEN          todo     set",
-        "STRIPE_KEY            todo     not set",
-        "OPENAI_API_KEY        Gateway  set",
-        "DATAFORSEO_API_KEY    Gateway  not set",
-        "EMAIL_FROM            Gateway  not set",
-        "EMAIL_FROM_NAME       Gateway  not set (optional)",
-        "EMAIL_REST_API_TOKEN  Gateway  not set (optional)",
-        "RESEND_API_KEY        Gateway  not set (optional)",
-        "EMAIL_PROVIDER        Gateway  not set (optional)",
+        "SETTING             WHERE    STATUS",
+        "OPENAI_API_KEY      Gateway  ✓ set",
+        "DATAFORSEO_API_KEY  Gateway  ! not set",
+        "EMAIL_FROM          Gateway  ! not set",
+        "GITHUB_TOKEN        todo     ✓ set",
+        "STRIPE_KEY          todo     ! not set",
       ].join("\n"),
     );
     expect(done()!["data"]).toMatchObject({
@@ -541,25 +764,114 @@ describe("secret list", () => {
         deployed: true,
         workerName,
         declared: ["GITHUB_TOKEN", "STRIPE_KEY"],
+        // The Worker's names as they are (everyapp's own included), and
+        // what it lacks: the shape the setup skills read.
         workers: [
           {
             workerName,
-            names: ["EVERY_APP_ORG_ID", "GATEWAY_URL", "GITHUB_TOKEN"],
+            names: expect.arrayContaining(["GITHUB_TOKEN", "EVERY_APP_ORG_ID", "GATEWAY_URL"]),
             missing: ["STRIPE_KEY"],
           },
         ],
+        secretNames: ["GITHUB_TOKEN"],
+        settings: expect.arrayContaining([
+          expect.objectContaining({ id: "openai", set: true, blocking: false }),
+          expect.objectContaining({ id: "dataforseo", set: false, blocking: true }),
+          expect.objectContaining({ id: "STRIPE_KEY", holder: "app", set: false, blocking: true }),
+        ]),
+        setup: {
+          ready: false,
+          command: { command: "pnpm everyapp secret set DATAFORSEO_API_KEY EMAIL_FROM STRIPE_KEY --app todo" },
+        },
       },
       gateway: {
         workerName: GATEWAY,
-        needed: expect.arrayContaining([
+        // Each Gateway name the app reads: required unless only read when set.
+        needed: [
           { name: "OPENAI_API_KEY", required: true, set: true },
+          { name: "DATAFORSEO_API_KEY", required: true, set: false },
+          { name: "EMAIL_FROM", required: true, set: false },
+          { name: "EMAIL_FROM_NAME", required: false, set: false },
+          { name: "EMAIL_REST_API_TOKEN", required: false, set: false },
           { name: "RESEND_API_KEY", required: false, set: false },
-        ]),
+          { name: "EMAIL_PROVIDER", required: false, set: false },
+        ],
         missing: ["DATAFORSEO_API_KEY", "EMAIL_FROM"],
       },
-      // The Gateway's first, as `set` applies them; the sender's name is optional.
-      next: ["pnpm everyapp secret set DATAFORSEO_API_KEY EMAIL_FROM STRIPE_KEY"],
+      next: ["pnpm everyapp secret set DATAFORSEO_API_KEY EMAIL_FROM STRIPE_KEY --app todo"],
     });
+    expect(done()!["data"]["app"]["workers"]).toHaveLength(1);
+
+    events = [];
+    await listSecrets({ flags: { ...flags, verbose: true }, out: out(), cwd: dir, createCf });
+    expect(done()!["message"]).toContain("EVERY_APP_ORG_ID    todo     ✓ set");
+  });
+
+  it("says which setting is optional, which is one of a group, and when a group is met, by name from anywhere", async () => {
+    await deploy(appDir(CRM), CRM);
+    const elsewhere = emptyDir();
+    events = [];
+    await list(elsewhere, "crm");
+    expect(done()!["message"]).toBe(
+      [
+        "SETTING               WHERE    STATUS",
+        "OPENAI_API_KEY        Gateway  ! not set",
+        "OPENROUTER_API_KEY    Gateway  ! not set",
+        "CONTEXT_API_KEY       Gateway  not set (optional)",
+        "TOKEN_ENCRYPTION_KEY  crm      ! not set",
+        "GITHUB_TOKEN          crm      not set (optional)",
+      ].join("\n"),
+    );
+    // One of the group is enough: the command names the first after what
+    // is required, the note the other.
+    expect(done()!["data"]).toMatchObject({
+      app: {
+        setup: {
+          ready: false,
+          groups: [{ group: "AI model", met: false }],
+          command: {
+            command: "pnpm everyapp secret set TOKEN_ENCRYPTION_KEY OPENAI_API_KEY --app crm",
+            note: "OPENROUTER_API_KEY instead of OPENAI_API_KEY is fine too: one AI model is enough",
+          },
+        },
+      },
+      next: [
+        {
+          command: "pnpm everyapp secret set TOKEN_ENCRYPTION_KEY OPENAI_API_KEY --app crm",
+          note: "OPENROUTER_API_KEY instead of OPENAI_API_KEY is fine too: one AI model is enough",
+        },
+      ],
+    });
+
+    await setFor("crm", elsewhere, "OPENROUTER_API_KEY", "TOKEN_ENCRYPTION_KEY");
+    events = [];
+    await list(elsewhere, "crm");
+    expect(done()!["message"]).toBe(
+      [
+        "SETTING               WHERE    STATUS",
+        "OPENAI_API_KEY        Gateway  not set (one of: AI model)",
+        "OPENROUTER_API_KEY    Gateway  ✓ set",
+        "CONTEXT_API_KEY       Gateway  not set (optional)",
+        "TOKEN_ENCRYPTION_KEY  crm      ✓ set",
+        "GITHUB_TOKEN          crm      not set (optional)",
+      ].join("\n"),
+    );
+    expect(done()!["data"]).toMatchObject({
+      app: { setup: { ready: true, command: null } },
+      // A member of a met group is still one the app can't do without
+      // (required), but its absence keeps nothing closed (not missing).
+      gateway: {
+        needed: [
+          { name: "OPENAI_API_KEY", required: true, set: false },
+          { name: "OPENROUTER_API_KEY", required: true, set: true },
+          { name: "CONTEXT_API_KEY", required: false, set: false },
+        ],
+        missing: [],
+      },
+    });
+    expect(done()!["data"]["next"]).toBeUndefined();
+
+    await expect(list(elsewhere, "nope")).rejects.toMatchObject({ code: "APP_NOT_FOUND" });
   });
 
   it("shows a helper that lacks a secret the app's Worker has", async () => {
@@ -574,37 +886,89 @@ describe("secret list", () => {
 
     expect(done()!["message"]).toBe(
       [
-        "NAME          WHERE         STATUS",
-        "GITHUB_TOKEN  seo           set",
-        "GITHUB_TOKEN  audit helper  not set",
+        "SETTING       WHERE         STATUS",
+        "GITHUB_TOKEN  seo           ✓ set",
+        "GITHUB_TOKEN  audit helper  ! not set",
       ].join("\n"),
     );
+    expect(done()!["data"]["app"]["workers"]).toEqual([
+      { workerName, names: expect.arrayContaining(["GITHUB_TOKEN"]), missing: [] },
+      { workerName: helper, names: expect.not.arrayContaining(["GITHUB_TOKEN"]), missing: ["GITHUB_TOKEN"] },
+    ]);
     expect(done()!["data"]["next"]).toBeUndefined();
+  });
+
+  it("says what a helper lacks in the app's own words: needed, optional, or one of a group", async () => {
+    const manifest: EveryAppCliManifest = {
+      ...SEO,
+      secrets: [
+        "GITHUB_TOKEN",
+        { name: "SLACK_TOKEN", optional: true },
+        { name: "PRIMARY_MODEL_KEY", anyOf: "AI key" },
+        { name: "FALLBACK_MODEL_KEY", anyOf: "AI key" },
+      ],
+    };
+    const dir = appDir(manifest);
+    const workerName = await deploy(dir, manifest);
+    const helper = account.workers.get(`${workerName}--audit`)!;
+    // Set by hand on the app's Worker; the helper got only the one AI key.
+    const own = account.workers.get(workerName)!;
+    own.secrets = { ...own.secrets, GITHUB_TOKEN: "ghp", SLACK_TOKEN: "xoxb", PRIMARY_MODEL_KEY: "k1" };
+    helper.secrets = { ...helper.secrets, PRIMARY_MODEL_KEY: "k1" };
+    events = [];
+    const row = (setting: string, where: string, status: string) =>
+      `${setting.padEnd(18)}  ${where.padEnd(12)}  ${status}`;
+
+    await list(dir);
+
+    expect(done()!["message"]).toBe(
+      [
+        row("SETTING", "WHERE", "STATUS"),
+        row("GITHUB_TOKEN", "seo", "✓ set"),
+        row("SLACK_TOKEN", "seo", "✓ set"),
+        row("PRIMARY_MODEL_KEY", "seo", "✓ set"),
+        row("FALLBACK_MODEL_KEY", "seo", "not set (one of: AI key)"),
+        row("GITHUB_TOKEN", "audit helper", "! not set"),
+        row("SLACK_TOKEN", "audit helper", "not set (optional)"),
+        row("PRIMARY_MODEL_KEY", "audit helper", "✓ set"),
+        row("FALLBACK_MODEL_KEY", "audit helper", "not set (one of: AI key)"),
+      ].join("\n"),
+    );
+    // What the helper lacks of every declared name, as the setup skills read it.
+    expect(done()!["data"]["app"]["workers"][1]).toMatchObject({
+      missing: ["GITHUB_TOKEN", "SLACK_TOKEN", "FALLBACK_MODEL_KEY"],
+    });
+    expect(done()!["data"]["next"]).toBeUndefined();
+
+    // With no AI key on the helper at all, each member of the group is needed there.
+    delete helper.secrets["PRIMARY_MODEL_KEY"];
+    events = [];
+    await list(dir);
+    expect(done()!["message"]).toContain(row("PRIMARY_MODEL_KEY", "audit helper", "! not set"));
+    expect(done()!["message"]).toContain(row("FALLBACK_MODEL_KEY", "audit helper", "! not set"));
   });
 
   it("in an app's directory before its first deploy, says so, and names the Gateway settings to set (from anywhere) before the deploy", async () => {
     await list(appDir(TODO));
     expect(done()!["message"]).toBe(
       [
-        "NAME                  WHERE    STATUS",
-        "GITHUB_TOKEN          todo     after first deploy",
-        "STRIPE_KEY            todo     after first deploy",
-        "OPENAI_API_KEY        Gateway  not set",
-        "DATAFORSEO_API_KEY    Gateway  not set",
-        "EMAIL_FROM            Gateway  not set",
-        "EMAIL_FROM_NAME       Gateway  not set (optional)",
-        "EMAIL_REST_API_TOKEN  Gateway  not set (optional)",
-        "RESEND_API_KEY        Gateway  not set (optional)",
-        "EMAIL_PROVIDER        Gateway  not set (optional)",
+        "SETTING             WHERE    STATUS",
+        "OPENAI_API_KEY      Gateway  ! not set",
+        "DATAFORSEO_API_KEY  Gateway  ! not set",
+        "EMAIL_FROM          Gateway  ! not set",
+        "GITHUB_TOKEN        todo     after first deploy",
+        "STRIPE_KEY          todo     after first deploy",
         "",
         "todo isn't deployed yet; its own secrets can be set after that.",
       ].join("\n"),
     );
     // The app's own names wait for the deploy: `secret set STRIPE_KEY` would fail with APP_NOT_FOUND.
     expect(done()!["data"]).toMatchObject({
-      app: { id: "todo", deployed: false, workerName: null, workers: [] },
+      app: { id: "todo", deployed: false, workerName: null, secretNames: null, workers: [] },
+      gateway: { missing: ["OPENAI_API_KEY", "DATAFORSEO_API_KEY", "EMAIL_FROM"] },
       next: [
-        // The sender's display name is optional, so it isn't among the names to set.
+        // The Gateway's names first, settable before the deploy; the sender's
+        // display name is optional, so it isn't among them.
         "pnpm everyapp secret set OPENAI_API_KEY DATAFORSEO_API_KEY EMAIL_FROM",
         "pnpm everyapp deploy",
       ],
@@ -615,7 +979,7 @@ describe("secret list", () => {
     await list(appDir(SEO));
     expect(done()!["message"]).toBe(
       [
-        "NAME          WHERE  STATUS",
+        "SETTING       WHERE  STATUS",
         "GITHUB_TOKEN  seo    after first deploy",
         "",
         "seo isn't deployed yet; its own secrets can be set after that.",
@@ -639,5 +1003,23 @@ describe("secret list", () => {
     await list(dir);
     expect(done()).toMatchObject({ message, data: { app: { id: "notes", deployed: true, workerName } } });
     expect(done()!["data"]["next"]).toBeUndefined();
+  });
+
+  it("treats a registered app whose deploy never finished as undeployed", async () => {
+    await register(db(), {
+      appSlug: "todo",
+      name: "todo",
+      description: "todo",
+      manifest: TODO,
+      appBaseDomain: "example.com",
+      deployer: { actor: "dev@example.com", email: "dev@example.com" },
+      organizationName: "Acme",
+    });
+    await list(emptyDir(), "todo");
+    expect(done()!["message"]).toContain("GITHUB_TOKEN        todo     after first deploy");
+    expect(done()!["data"]).toMatchObject({
+      app: { deployed: false },
+      next: ["pnpm everyapp secret set OPENAI_API_KEY DATAFORSEO_API_KEY EMAIL_FROM", "pnpm everyapp deploy"],
+    });
   });
 });

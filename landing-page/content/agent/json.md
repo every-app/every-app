@@ -115,6 +115,23 @@ The run's last event on success. `data` always has `durationMs`, the millisecond
 
 The rest is the command's result (see the commands below).
 
+Two commands carry an app's setup state as `setup`, an `AppSetup` (`packages/sdk/src/internal/appSettings.ts`; null when the app declares nothing to set): `status` as `data.apps[].setup`, `secret list` as `data.app.setup`.
+
+```ts
+{ ready: boolean,
+  settings: Setting[],            // every setting, manifest order
+  unmet: Setting[],               // the ones that keep the app closed
+  groups: [{ group, met, members: string[] }],
+  command: { command, note? } | null }   // "pnpm everyapp secret set <names> [--app <id>]"
+Setting = { kind: "provider" | "capability" | "secret" | "ai-routes", id, label,
+  holder: "gateway" | "app", names: string[],
+  need: { kind: "required" | "optional" | "anyOf", group? },
+  set: true | false | null,       // null: the app Worker's names were never recorded; never blocks
+  blocking: boolean, why?, docs?, setup? }   // setup: the guide, "setup/<name>.md" in the everyapp skill
+```
+
+An agent reads `unmet`, shows each setting's `why`, `docs` and `setup` guide, and gets the value in without it passing through the chat (the person runs the command in their own terminal, a value from a command or a file is piped in, or `--from-env VAR` for a variable exported before the agent started); it never asks for, prints or repeats a value. `deploy` ends with one `next` entry carrying the same command when the app it deployed needs setup, beside its `APP_NEEDS_SETUP` warning.
+
 ## Exit codes
 
 | Code  | When                                                                                                                                                              |

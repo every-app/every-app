@@ -5,12 +5,15 @@
  * A name that is one of the Gateway's settings (`SETTABLE_GATEWAY_SETTINGS`
  * in `@every-app/sdk/internal`: OPENAI_API_KEY, EMAIL_FROM, the OAuth
  * clients, …) goes to the Gateway Worker, from any directory, and the
- * app's manifest is never read for it. Any other name goes to the app
- * whose everyapp.config.ts is in the current directory, when that manifest
- * lists it under `secrets` (`unset` takes any name the app could have, so
- * a secret dropped from the manifest can still be removed). Anything else
- * is refused before anything is read. One call may mix the two; each name
- * goes where it belongs, the Gateway's first.
+ * app's manifest is never read for it. Any other name goes to an app, when
+ * its manifest lists it under `secrets` (`unset` takes any name the app
+ * could have, so a secret dropped from the manifest can still be removed):
+ * the app whose everyapp.config.ts is in the current directory, or with
+ * `--app <id>`, the app by that id, whose manifest is the one its last
+ * deploy stored in the registry, so the command runs from anywhere (a
+ * release deploy has no checkout). Anything else is refused before
+ * anything is read. One call may mix the two; each name goes where it
+ * belongs, the Gateway's first.
  *
  * The Gateway is reached and the app found (it must be deployed) before a
  * value is read, so a refusal never costs a typed value. A value comes from
@@ -22,27 +25,45 @@
  * version with the change, under the Worker's lease, and that version is
  * recorded as everyapp's own (the app's Worker record, or the install row's
  * `live_version_id`), so the next `deploy` or `setup` replaces it
- * unattended. The secret is live at once. `unset` asks first (`--yes`
- * doesn't), and a name nobody holds is no change. `list` prints names,
- * never values: the app's Workers' (with the names its manifest lists but
- * nobody set yet) and the Gateway settings its providers and capabilities
- * need, or outside an app directory, the Gateway's and what can be set
- * there.
+ * unattended. After a change to an app's Worker its secret names are
+ * recorded on the app's row (`secret_names`), so the gateway knows what is
+ * set. The secret is live at once. `unset` asks first (`--yes` doesn't),
+ * and a name nobody holds is no change. `list` prints names, never values:
+ * one app's settings (the app here, or `list <app>`) as the settings model
+ * sees them, set or not, with the one command that opens the app; or
+ * outside an app directory, the Gateway's names (what is set, and of the
+ * rest only what some app reads) and every app's settings.
  */
 import { stripVTControlCharacters } from "node:util";
-import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { GATEWAY_WORKER_NAME, validateManifest, type Manifest } from "@every-app/perimeter/manifest";
 import {
-  gatewaySettingsFor,
   isDevOnlyGatewaySetting,
+  isHostedOnlyGatewaySetting,
   isInstallOwnedGatewaySetting,
   isReservedAppSecretName,
   isSettableGatewaySetting,
+  secretEntries,
   secretNames,
   SETTABLE_GATEWAY_SETTINGS,
+  type AppSetup,
+  type SecretEntry,
 } from "@every-app/sdk/internal";
 import chalk from "chalk";
 import { readOwnedResources, recordUploadedVersion } from "@/lib/app/ownership";
 import { assertAppSecretName } from "@/lib/app/secrets";
+import {
+  appSetupFrom,
+  declaresSettings,
+  gatewayMissing,
+  gatewayNamesRead,
+  gatewayNeeds,
+  helperRows,
+  listAppSecretNames,
+  listGatewaySecretNames,
+  renderSettingsTable,
+  settingsRows,
+  type SettingsRow,
+} from "@/lib/app/settings";
 import type { D1Database } from "@/lib/cf/d1";
 import { assertReplaceable } from "@/lib/cf/deploy";
 import type { CfRunner } from "@/lib/cf/runner";
@@ -52,8 +73,14 @@ import { errorMessage, EveryAppError } from "@/lib/errors";
 import { connectToGateway, requestedGatewayUrl } from "@/lib/gateway/connect";
 import { readInstall, writeInstall } from "@/lib/gateway/install";
 import { acquireAppLease, acquireGatewayLease, LeasePurpose } from "@/lib/gateway/lease";
-import { findRegisteredApp } from "@/lib/gateway/registry";
-import { loadEveryAppManifestIfPresent, type EveryAppCliManifest } from "@/lib/manifest";
+import {
+  findRegisteredApp,
+  listApps,
+  readApp,
+  writeAppSecretNames,
+  type RegisteredAppInfo,
+} from "@/lib/gateway/registry";
+import { loadEveryAppManifestIfPresent } from "@/lib/manifest";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal, confirmUnlessYes, type Confirm } from "@/lib/output/prompt";
@@ -68,9 +95,15 @@ enum SecretAction {
   Unset = "unset",
 }
 
+/** The flags `set` and `unset` share: where the Gateway is, and which app a name is for. */
+interface SecretFlags extends GatewayCommandFlags {
+  /** The app whose secret a name is (default: the app in this directory). */
+  app?: string;
+}
+
 /** What the handlers take from the command line, and the seams tests use. */
 interface SecretOptions {
-  flags: GatewayCommandFlags;
+  flags: SecretFlags;
   out: EventSink;
   /** The directory whose everyapp.config.ts names the app (default: the working directory). */
   cwd?: string;
@@ -84,7 +117,8 @@ interface SetSecretsOptions extends SecretOptions {
   readValue: (name: string) => Promise<string>;
 }
 
-export async function set(flags: GatewayCommandFlags & { "from-env"?: string },
+export async function set(
+  flags: SecretFlags & { "from-env"?: string },
   ...names: string[]
 ): Promise<void> {
   await runCommand(flags, async (out) => {
@@ -98,14 +132,15 @@ export async function set(flags: GatewayCommandFlags & { "from-env"?: string },
   });
 }
 
-export async function unset(flags: GatewayCommandFlags & { yes?: boolean },
+export async function unset(
+  flags: SecretFlags & { yes?: boolean },
   ...names: string[]
 ): Promise<void> {
   await runCommand(flags, (out) => unsetSecrets({ flags, out, names }));
 }
 
-export async function list(flags: GatewayCommandFlags): Promise<void> {
-  await runCommand(flags, (out) => listSecrets({ flags, out }));
+export async function list(flags: GatewayCommandFlags, appId?: string): Promise<void> {
+  await runCommand(flags, (out) => listSecrets({ flags, out, appId }));
 }
 
 /** `secret set`: every name routed, the Gateway reached and the app found, then each value read, then the changes applied. */
@@ -123,8 +158,7 @@ export async function setSecrets(options: SetSecretsOptions): Promise<void> {
 
 /** Reuse the secret command's checks, leases and version recording inside setup. */
 export async function applySecretValues(options: SetSecretsOptions) {
-  const route = await routeNames(options.names, options.cwd ?? process.cwd(), SecretAction.Set);
-  const reached = await reach(route, options);
+  const reached = await resolve(options.names, options, SecretAction.Set);
   const changes: Record<string, string> = {};
   for (const name of options.names) changes[name] = await options.readValue(name);
   const applied = (await apply(reached, changes, options, SecretAction.Set))!;
@@ -172,8 +206,8 @@ export async function unsetSecrets(
   },
 ): Promise<void> {
   const { names, out } = options;
-  const route = await routeNames(names, options.cwd ?? process.cwd(), SecretAction.Unset);
-  const reached = await reach(route, options);
+  const reached = await resolve(names, options, SecretAction.Unset);
+  const { route } = reached;
   const nothing = () => {
     const message = `${listed(names)} ${names.length === 1 ? "isn't" : "aren't"} set on ${destinationsOf(route).join(" or ")}. Nothing changed.`;
     out.emit({ type: "done", message, display: chalk.dim(message), data: { removed: false } });
@@ -195,7 +229,11 @@ export async function unsetSecrets(
       "from",
     )}?`,
     unattended: "Removing secrets needs confirmation, and there's no terminal to ask in",
-    context: route.undeclared.map((name) => `${name} isn't listed in everyapp.config.ts.`),
+    context: route.undeclared.map((name) =>
+      route.app?.source === ManifestSource.Registry
+        ? `${name} isn't listed in ${route.app.manifest.id}'s deployed manifest.`
+        : `${name} isn't listed in everyapp.config.ts.`,
+    ),
   });
   const changes = Object.fromEntries(names.map((name) => [name, null]));
   const applied = await apply(reached, changes, options, SecretAction.Unset);
@@ -211,20 +249,66 @@ export async function unsetSecrets(
   });
 }
 
-/** `secret list`: the app's Workers' names and the Gateway settings it needs, or the Gateway's names and what can be set there. */
-export async function listSecrets(options: SecretOptions): Promise<void> {
+/** What `secret list [<app>]` takes beyond the shared options. */
+interface ListSecretsOptions extends SecretOptions {
+  /** The app whose settings to list (default: the app in this directory, else every app). */
+  appId?: string;
+}
+
+/**
+ * `secret list`: one app's settings (the app in this directory, or
+ * `<app>`) with what each is set to, and the one command that opens the
+ * app; or outside an app directory, the Gateway's names and every app's
+ * settings.
+ */
+export async function listSecrets(options: ListSecretsOptions): Promise<void> {
   const { out } = options;
-  const manifest = await loadEveryAppManifestIfPresent(options.cwd ?? process.cwd());
-  const { cf, db, gatewayUrl } = await connect(options);
-  const gatewayNames = await listWorkerSecrets(cf, GATEWAY_WORKER_NAME);
+  const local = options.appId ? null : await loadEveryAppManifestIfPresent(options.cwd ?? process.cwd());
+  const { cf, db, gatewayUrl, install } = await connect(options);
+  const gatewayNames = await listGatewaySecretNames(cf);
   const settable = [...SETTABLE_GATEWAY_SETTINGS];
   const shown = (display: string, data: Record<string, unknown>) =>
     out.emit({ type: "done", message: stripVTControlCharacters(display), display, data });
-  if (!manifest) {
-    // What you set, then what setup did, then what you could set.
+
+  if (!options.appId && !local) {
+    // What you set, then what setup did, then, of what you could set, only
+    // what some app here reads (the Gateway has dozens of settings; most
+    // installs need a few); then each app's settings, for the apps that
+    // have any.
     const yours = gatewayNames.filter((name) => !isInstallOwnedGatewaySetting(name));
     const setups = gatewayNames.filter((name) => isInstallOwnedGatewaySetting(name));
-    const unset = settable.filter((name) => !gatewayNames.includes(name));
+    const registered = await listApps(db);
+    const read = new Set(registered.flatMap((app) => (app.manifest ? gatewayNamesRead(app.manifest) : [])));
+    // The hosted Gateway's own switches: nothing on a self-hosted install reads them.
+    const hosted = install.deploymentMode === "hosted";
+    const relevant = settable.filter((name) => hosted || !isHostedOnlyGatewaySetting(name));
+    const unset = relevant.filter((name) => !gatewayNames.includes(name));
+    const listed = unset.filter((name) => read.has(name) || (hosted && isHostedOnlyGatewaySetting(name)));
+    const more = unset.length - listed.length;
+    const apps: Array<{ id: string; setup: AppSetup; rows: SettingsRow[] }> = [];
+    // An app whose Worker's secrets can't be listed (deleted by hand, say)
+    // keeps its rows, its own as not recorded, and is named once below:
+    // one Worker never fails the whole list.
+    const unlisted: Array<{ id: string; reason: string }> = [];
+    for (const app of registered) {
+      // A dispatch-tier app's settings the platform doesn't gate.
+      if (!app.manifest || !declaresSettings(app.manifest) || app.tier === "dispatch") continue;
+      const secretNames =
+        app.status === "pending"
+          ? null
+          : await listAppSecretNames(cf, app.workerName).catch((error: unknown) => {
+              unlisted.push({ id: app.appSlug, reason: errorMessage(error).split("\n")[0]! });
+              return null;
+            });
+      const { report, setup } = appSetupFrom({
+        manifest: app.manifest,
+        appId: app.appSlug,
+        gatewayNames,
+        secretNames,
+      });
+      apps.push({ id: app.appSlug, setup, rows: settingsRows(app.appSlug, report.settings) });
+    }
+    const rows = apps.flatMap((app) => app.rows);
     shown(
       [
         chalk.dim(`Gateway secrets · ${gatewayUrl.replace(/^https:\/\//, "")}`),
@@ -234,24 +318,31 @@ export async function listSecrets(options: SecretOptions): Promise<void> {
           [
             ...yours.map((name) => [name, "you"]),
             ...setups.map((name) => [name, chalk.dim("setup")]),
-            ...unset.map((name) => [name, chalk.dim("not set")]),
+            ...listed.map((name) => [name, chalk.dim("not set")]),
           ],
         ),
+        ...(more > 0 ? [chalk.dim(`${more} more can be set; see docs/capabilities.md`)] : []),
+        ...(rows.length > 0 ? ["", ...renderSettingsTable(rows)] : []),
+        ...(unlisted.length > 0 ? [chalk.dim(unlistedNote(unlisted))] : []),
       ].join("\n"),
-      { gateway: { workerName: GATEWAY_WORKER_NAME, names: gatewayNames, settable } },
+      {
+        gateway: { workerName: GATEWAY_WORKER_NAME, names: gatewayNames, settable },
+        apps: apps.map(({ id, setup }) => ({ id, setup })),
+      },
     );
     return;
   }
 
+  // One app: by id from the registry (its deployed manifest), or the one here.
+  const registered = options.appId
+    ? await readApp(db, options.appId)
+    : await findRegisteredApp(db, local!.id);
+  const manifest = options.appId ? storedManifestOf(registered!) : local!;
+  const workerName = registered && registered.status !== "pending" ? registered.workerName : null;
   const declared = secretNames(manifest);
-  const needs = gatewaySettingsFor(manifest).map((need) => ({
-    ...need,
-    set: gatewayNames.includes(need.name),
-  }));
-  const gatewayMissing = needs.filter((need) => need.required && !need.set).map((need) => need.name);
-
-  // The app's Workers, once it is deployed: its own, then each helper.
-  const workerName = (await findRegisteredApp(db, manifest.id))?.workerName ?? null;
+  // The app's Workers, once it is deployed: its own, then each helper, with
+  // every name each holds (everyapp's own included) and the declared names
+  // it lacks: `data.app.workers`, as the setup skills have read it.
   const workers: Array<{ workerName: string; names: string[]; missing: string[] }> = [];
   if (workerName) {
     const helpers = (await appWorkerRecords(db, workerName))
@@ -259,73 +350,96 @@ export async function listSecrets(options: SecretOptions): Promise<void> {
       .map((record) => record.name);
     for (const name of [workerName, ...helpers]) {
       const names = await listWorkerSecrets(cf, name);
-      workers.push({
-        workerName: name,
-        names,
-        missing: declared.filter((secret) => !names.includes(secret)),
-      });
+      workers.push({ workerName: name, names, missing: declared.filter((secret) => !names.includes(secret)) });
     }
   }
-
-  // One row per name: the app's own (everyapp's, with --verbose), then the
-  // Gateway settings it uses.
-  const notSet = chalk.yellow("not set");
-  const rows: string[][] = [];
-  workers.forEach((worker, index) => {
-    // A helper Worker is named `<app's Worker>--<helper>`.
-    const where = index === 0 ? manifest.id : `${worker.workerName.split("--").at(-1)} helper`;
-    for (const name of worker.names) {
-      if (options.flags.verbose || !isReservedAppSecretName(name)) rows.push([name, where, "set"]);
+  const own = workers[0] ? workers[0].names.filter((name) => !isReservedAppSecretName(name)) : null;
+  const { report, setup } = appSetupFrom({ manifest, appId: manifest.id, gatewayNames, secretNames: own });
+  const rows = settingsRows(manifest.id, report.settings).map((row) =>
+    // Before the first deploy there is no Worker to hold the app's own.
+    !workerName && row.where === manifest.id ? { ...row, status: chalk.dim("after first deploy") } : row,
+  );
+  // Each helper Worker shares the app's secrets: after the app's own rows,
+  // the app's own settings against what the helper holds, in the same
+  // words (an optional one it lacks is "not set (optional)" there too).
+  // everyapp's own names only with --verbose.
+  for (const helper of workers.slice(1)) {
+    const held = helper.names.filter((name) => !isReservedAppSecretName(name));
+    const { report: onHelper } = appSetupFrom({ manifest, appId: manifest.id, gatewayNames, secretNames: held });
+    rows.push(...helperRows(manifest.id, helper.workerName.split("--").at(-1)!, onHelper.settings));
+  }
+  const set = `${chalk.green("✓")} set`;
+  if (options.flags.verbose && workers[0]) {
+    for (const name of workers[0].names.filter(isReservedAppSecretName)) {
+      rows.push({ app: manifest.id, setting: name, where: manifest.id, status: set });
     }
-    for (const name of worker.missing) rows.push([name, where, notSet]);
-  });
-  if (!workerName) {
-    for (const name of declared) rows.push([name, manifest.id, chalk.dim("after first deploy")]);
   }
-  for (const need of needs) {
-    rows.push([
-      need.name,
-      "Gateway",
-      need.set ? "set" : need.required ? notSet : chalk.dim("not set (optional)"),
-    ]);
-  }
-  // What to run: the Gateway's settings can be set from any directory at any
-  // time, the app's own only once it is deployed, so an app that lists
-  // secrets and isn't deployed yet gets the deploy as its next command.
-  const toSet = [
-    ...new Set([...gatewayMissing, ...(workerName ? (workers[0]?.missing ?? []) : [])]),
-  ];
-  const next = [
-    ...(toSet.length > 0 ? [`${CLI} secret set ${toSet.join(" ")}`] : []),
-    ...(!workerName && declared.length > 0 ? [`${CLI} deploy`] : []),
-  ];
+  // What to run. The Gateway's settings can be set from anywhere at any
+  // time, the app's own only once its Worker exists (`--app` looks the app
+  // up), so before the first deploy the command names the Gateway's unset
+  // ones, then the deploy: the app's own read as unknown until then, which
+  // never blocks, so the model's command already leaves them out. After it,
+  // the model's one command as it is.
+  const command = setup.command
+    ? [setup.command.note ? { command: setup.command.command, note: setup.command.note } : setup.command.command]
+    : [];
+  const next = workerName ? command : [...command, `${CLI} deploy`];
   shown(
     rows.length > 0
       ? [
-          ...formatTable(["NAME", "WHERE", "STATUS"], rows),
+          ...renderSettingsTable(rows, { app: false }),
           ...(!workerName && declared.length > 0
             ? ["", chalk.dim(`${manifest.id} isn't deployed yet; its own secrets can be set after that.`)]
             : []),
         ].join("\n")
       : chalk.dim(`${manifest.id} declares no secrets and needs no Gateway settings.`),
     {
-      app: { id: manifest.id, deployed: workerName !== null, workerName, declared, workers },
+      app: {
+        id: manifest.id,
+        deployed: workerName !== null,
+        workerName,
+        declared,
+        workers,
+        secretNames: own,
+        settings: report.settings,
+        setup,
+      },
       gateway: {
         workerName: GATEWAY_WORKER_NAME,
         names: gatewayNames,
-        needed: needs,
-        missing: gatewayMissing,
+        needed: gatewayNeeds(report.settings, gatewayNames),
+        missing: gatewayMissing(report.settings, gatewayNames),
         settable,
       },
-      ...(next.length > 0 ? { next } : {}),
+      ...(rows.length > 0 && next.length > 0 ? { next } : {}),
     },
   );
+}
+
+/** The apps whose Worker's secrets cf couldn't list, once, with what it said the first time. */
+function unlistedNote(unlisted: ReadonlyArray<{ id: string; reason: string }>): string {
+  const whose = listed(unlisted.map((app) => `${app.id}'s`));
+  return `Couldn't list ${whose} secrets. Cloudflare said: ${unlisted[0]!.reason}. They show as not recorded.`;
+}
+
+/** Where an app's manifest came from, for what a refusal says about it. */
+enum ManifestSource {
+  /** everyapp.config.ts in the working directory. */
+  Directory = "directory",
+  /** The registry row's, as the app's last deploy stored it (`--app <id>`). */
+  Registry = "registry",
+}
+
+/** What the secret command reads of a manifest: the app's id and its own secrets. */
+interface SecretsManifest {
+  id: string;
+  secrets?: ReadonlyArray<string | SecretEntry>;
 }
 
 /** Where a call's names go, decided from the name list and the manifest alone. */
 interface Route {
   gateway: string[];
-  app: { manifest: EveryAppCliManifest; names: string[] } | null;
+  app: { manifest: SecretsManifest; names: string[]; source: ManifestSource } | null;
   /** `unset` names the manifest doesn't list (removed anyway). */
   undeclared: string[];
 }
@@ -347,25 +461,28 @@ interface Applied {
 }
 
 /**
- * Route every name without the network: a Gateway setting goes to the
- * Gateway; anything else needs the manifest in `cwd` (read only then, so a
- * Gateway-only call never evaluates it), which must list the name for
- * `set`. A name that goes nowhere is refused here, before anything is read.
+ * Route every name: a Gateway setting goes to the Gateway; anything else
+ * needs the app's manifest (read only then, so a Gateway-only call never
+ * evaluates it), which must list the name for `set`. A name that goes
+ * nowhere is refused here, before anything is read.
  */
-async function routeNames(names: string[], cwd: string, action: SecretAction): Promise<Route> {
+function routeNames(
+  names: string[],
+  manifest: SecretsManifest | null,
+  source: ManifestSource,
+  action: SecretAction,
+): Route {
   const gateway = names.filter((name) => isSettableGatewaySetting(name));
   const rest = names.filter((name) => !isSettableGatewaySetting(name));
   if (rest.length === 0) return { gateway, app: null, undeclared: [] };
-
-  const manifest = await loadEveryAppManifestIfPresent(cwd);
   const declared = manifest ? secretNames(manifest) : [];
   const undeclared: string[] = [];
   for (const name of rest) {
-    const refusal = notRoutable(name, names, manifest, action);
+    const refusal = notRoutable(name, names, manifest, source, action);
     if (refusal) throw refusal;
     if (!declared.includes(name)) undeclared.push(name);
   }
-  return { gateway, app: { manifest: manifest!, names: rest }, undeclared };
+  return { gateway, app: { manifest: manifest!, names: rest, source }, undeclared };
 }
 
 /**
@@ -375,11 +492,13 @@ async function routeNames(names: string[], cwd: string, action: SecretAction): P
 function notRoutable(
   name: string,
   names: readonly string[],
-  manifest: EveryAppCliManifest | null,
+  manifest: SecretsManifest | null,
+  source: ManifestSource,
   action: SecretAction,
 ): EveryAppError | null {
   const declared = manifest ? secretNames(manifest) : [];
   if (manifest && declared.includes(name)) return null;
+  const appFlag = source === ManifestSource.Registry && manifest ? ` --app ${manifest.id}` : "";
   // A Gateway setting typed differently: the command with it.
   const match = closeName(name, [...SETTABLE_GATEWAY_SETTINGS, ...declared]);
   if (match) {
@@ -387,7 +506,7 @@ function notRoutable(
       "SECRET_NOT_DECLARED",
       `${name} isn't a Gateway setting${manifest ? ` or one of ${manifest.id}'s secrets` : ""}`,
       {
-        rerun: `${CLI} secret ${action} ${names.map((each) => (each === name ? match : each)).join(" ")}`,
+        rerun: `${CLI} secret ${action} ${names.map((each) => (each === name ? match : each)).join(" ")}${appFlag}`,
         data: { didYouMean: match },
       },
     );
@@ -413,8 +532,8 @@ function notRoutable(
   if (!manifest) {
     return new EveryAppError(
       "SECRET_NOT_DECLARED",
-      `${name} isn't a Gateway setting, and there's no app here\nAn app's own secrets are ${action === SecretAction.Set ? "set" : "removed"} from the app's directory (where everyapp.config.ts is).\nGateway settings: ${CLI} secret list`,
-      { fix: "cd into the app's directory and run this again" },
+      `${name} isn't a Gateway setting, and there's no app here\nAn app's own secrets are ${action === SecretAction.Set ? "set" : "removed"} from the app's directory (where everyapp.config.ts is), or from anywhere with --app <id>.\nGateway settings: ${CLI} secret list`,
+      { fix: "cd into the app's directory and run this again, or add --app <id>" },
     );
   }
   // `unset` takes a name the manifest no longer lists: it may still be set.
@@ -423,15 +542,38 @@ function notRoutable(
     "SECRET_NOT_DECLARED",
     [
       `${manifest.id} doesn't list ${name} as a secret`,
-      isInstallOwnedGatewaySetting(name)
-        ? `It's one of the Gateway's own keys; listing it under secrets gives ${manifest.id} a secret of its own.`
-        : "It isn't a Gateway setting either.",
+      source === ManifestSource.Registry
+        ? `Its deployed manifest (what --app ${manifest.id} reads) doesn't list it, and it isn't a Gateway setting either.`
+        : isInstallOwnedGatewaySetting(name)
+          ? `It's one of the Gateway's own keys; listing it under secrets gives ${manifest.id} a secret of its own.`
+          : "It isn't a Gateway setting either.",
     ].join("\n"),
     {
-      fix: `add it to secrets in everyapp.config.ts: secrets: ${JSON.stringify([...declared, name]).replaceAll(",", ", ")},`,
-      rerun: `${CLI} secret set ${name}`,
+      fix: `add it to secrets in everyapp.config.ts: ${secretsLine(manifest, name)}${
+        source === ManifestSource.Registry ? ` and deploy ${manifest.id} again` : ""
+      }`,
+      rerun: `${CLI} secret set ${name}${appFlag}`,
     },
   );
+}
+
+/**
+ * `secrets: ["A", { name: "B", optional: true }, "X"],` as everyapp.config.ts
+ * would read it: each entry in its own form, the new one a bare string
+ * when every entry is one, else `{ name: "X" }`.
+ */
+function secretsLine(manifest: SecretsManifest, name: string): string {
+  const entries = manifest.secrets ?? [];
+  const entry = (each: string | SecretEntry): string =>
+    typeof each === "string"
+      ? JSON.stringify(each)
+      : `{ ${Object.entries(each)
+          .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+          .join(", ")} }`;
+  const added = entries.every((each) => typeof each === "string")
+    ? JSON.stringify(name)
+    : `{ name: ${JSON.stringify(name)} }`;
+  return `secrets: [${[...entries.map(entry), added].join(", ")}],`;
 }
 
 /** A known name that differs from `name` in case or underscores only. */
@@ -455,6 +597,30 @@ async function appWorkerRecords(db: D1Database, workerName: string) {
   return (await readOwnedResources(db, workerName)).filter((resource) => resource.kind === "worker");
 }
 
+/**
+ * The manifest a registered app's row stores, validated as the gateway
+ * validates a registration (the lenient schema: a newer CLI's fields pass
+ * through), for a command that acts on the app from anywhere.
+ */
+function storedManifestOf(app: RegisteredAppInfo): Manifest {
+  if (!app.manifest) {
+    throw new EveryAppError(
+      "MANIFEST_NOT_FOUND",
+      `${app.appSlug}'s registry row holds no manifest\nDeploying it again stores one.`,
+      { rerun: `${CLI} deploy`, rerunNote: "in the app's directory" },
+    );
+  }
+  try {
+    return validateManifest(app.manifest);
+  } catch (error) {
+    throw new EveryAppError(
+      "INVALID_MANIFEST",
+      `${app.appSlug}'s deployed manifest can't be read\n${errorMessage(error)}`,
+      { rerun: `${CLI} deploy`, rerunNote: "in the app's directory" },
+    );
+  }
+}
+
 /** The Gateway reached, and the app's Worker found, for a call's names. */
 interface Reached {
   route: Route;
@@ -464,26 +630,70 @@ interface Reached {
   accountName: string | null;
   /** "apps.example.com". */
   gatewayHost: string;
-  app: { manifest: EveryAppCliManifest; names: string[]; workerName: string } | null;
+  app: {
+    manifest: SecretsManifest;
+    names: string[];
+    workerName: string;
+    /** The app's registry row, where its secret names are recorded. */
+    rowId: string;
+  } | null;
 }
 
-/** Connect, and find the app the names go to: refused when it isn't deployed, before any value is read. */
-async function reach(route: Route, options: SecretOptions): Promise<Reached> {
-  const { cf, db, deployer, accountName, gatewayUrl } = await connect(options);
-  let app: Reached["app"] = null;
-  if (route.app) {
-    const { id } = route.app.manifest;
-    const found = await findRegisteredApp(db, id);
+/**
+ * Route the names and reach what they go to, every refusal before a value
+ * is read: a Gateway-only call connects and routes without a manifest;
+ * `--app <id>` connects first and routes by the manifest the registry
+ * stores for that app (refused when it isn't deployed); otherwise the
+ * manifest here routes before anything connects, and the app must be
+ * deployed. Given both, `--app` wins and the directory is never read.
+ */
+async function resolve(names: string[], options: SecretOptions, action: SecretAction): Promise<Reached> {
+  const gatewayOnly = names.every((name) => isSettableGatewaySetting(name));
+  const appId = options.flags.app;
+  const reached = (connected: Awaited<ReturnType<typeof connect>>, route: Route, app: Reached["app"]) => ({
+    route,
+    cf: connected.cf,
+    db: connected.db,
+    deployer: connected.deployer,
+    accountName: connected.accountName,
+    gatewayHost: connected.gatewayUrl.replace(/^https:\/\//, ""),
+    app,
+  });
+  if (gatewayOnly) {
+    return reached(await connect(options), routeNames(names, null, ManifestSource.Directory, action), null);
+  }
+  if (appId) {
+    const connected = await connect(options);
+    const found = await findRegisteredApp(connected.db, appId);
     if (!found) {
       throw new EveryAppError(
         "APP_NOT_FOUND",
-        `${id} isn't deployed yet\nIts secrets can be set after its first deploy. Nothing was changed.`,
-        { rerun: `${CLI} deploy` },
+        `${appId} isn't deployed to this Gateway\nAn app's secrets can be set after its first deploy. Nothing was changed.`,
+        { rerun: `${CLI} status`, rerunNote: "lists its apps" },
       );
     }
-    app = { ...route.app, workerName: found.workerName };
+    const stored = storedManifestOf(found);
+    const route = routeNames(
+      names,
+      { id: stored.id, secrets: secretEntries(stored) },
+      ManifestSource.Registry,
+      action,
+    );
+    return reached(connected, route, { ...route.app!, workerName: found.workerName, rowId: found.id });
   }
-  return { route, cf, db, deployer, accountName, gatewayHost: gatewayUrl.replace(/^https:\/\//, ""), app };
+  const manifest = await loadEveryAppManifestIfPresent(options.cwd ?? process.cwd());
+  const route = routeNames(names, manifest, ManifestSource.Directory, action);
+  const connected = await connect(options);
+  const { id } = route.app!.manifest;
+  const found = await findRegisteredApp(connected.db, id);
+  if (!found) {
+    throw new EveryAppError(
+      "APP_NOT_FOUND",
+      `${id} isn't deployed yet\nIts secrets can be set after its first deploy. Nothing was changed.`,
+      { rerun: `${CLI} deploy` },
+    );
+  }
+  return reached(connected, route, { ...route.app!, workerName: found.workerName, rowId: found.id });
 }
 
 /** Whether any Worker the names go to holds one of them. */
@@ -681,7 +891,10 @@ async function apply(
           });
         }
         if (destination.step === "secrets.gateway") applied.gateway = { names, versions };
-        else applied.app = { id: app!.manifest.id, workerName: app!.workerName, names, versions };
+        else {
+          applied.app = { id: app!.manifest.id, workerName: app!.workerName, names, versions };
+          await recordSecretNames(cf, db, app!, out);
+        }
         out.emit({
           type: "step",
           step: destination.step,
@@ -696,6 +909,29 @@ async function apply(
     }
   } finally {
     await gatewayLease?.release();
+  }
+}
+
+/**
+ * Record the app Worker's secret names on its row once they changed, so
+ * the gateway can tell what is set. The change itself is live already: a
+ * record that fails is said with --verbose and left to the next `status`,
+ * which re-reads every Worker.
+ */
+async function recordSecretNames(
+  cf: CfRunner,
+  db: D1Database,
+  app: NonNullable<Reached["app"]>,
+  out: EventSink,
+): Promise<void> {
+  try {
+    await writeAppSecretNames(db, app.rowId, await listAppSecretNames(cf, app.workerName));
+  } catch (error) {
+    out.emit({
+      type: "progress",
+      step: "secrets.record",
+      message: `Couldn't record ${app.manifest.id}'s secret names (${errorMessage(error).split("\n")[0]}); ${CLI} status records them`,
+    });
   }
 }
 

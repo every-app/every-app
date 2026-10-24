@@ -333,11 +333,12 @@ describe("deploy of an app that receives mail", () => {
   });
 
   it("ends with how to route mail on a deploy of an app that declares inbound with no addresses", async () => {
+    // With EMAIL_FROM unset the app needs setup too: that entry has its own test.
     await expect(deploy()).resolves.toMatchObject({
-      next: [
+      next: expect.arrayContaining([
         { command: "pnpm everyapp email set --inbound <address>", note: "routes mail to inbox" },
         { command: "pnpm everyapp email set --sender '*@<domain>'", note: "lets inbox send as your domain" },
-      ],
+      ]),
     });
     const hints = events.filter((event) => event["step"] === "app.email");
     expect(hints).toEqual([
@@ -358,19 +359,23 @@ describe("deploy of an app that receives mail", () => {
       command: "pnpm everyapp email set --sender '*@<domain>'",
       note: "lets inbox send as your domain",
     };
+    // With EMAIL_FROM unset the app needs setup too (its own entry, its own
+    // test); only the mail hints are at issue here.
+    const mailHints = async (manifest: EveryAppCliManifest) =>
+      (await deploy(manifest)).next.filter((entry) => entry.command.startsWith("pnpm everyapp email "));
     // An app that only sends: the one hint, until a sender is stored.
     const mailer: EveryAppCliManifest = { ...INBOX, email: {} };
-    await expect(deploy(mailer)).resolves.toMatchObject({ next: [sender] });
+    await expect(mailHints(mailer)).resolves.toEqual([sender]);
     await setEmail({ senders: ["*@example.com"] });
-    await expect(deploy(mailer)).resolves.toMatchObject({ next: [] });
+    await expect(mailHints(mailer)).resolves.toEqual([]);
 
     // An app that doesn't declare sending takes no senders, so no hint names them.
     await setEmail({});
-    await expect(deploy({ ...mailer, capabilities: {} })).resolves.toMatchObject({ next: [] });
+    await expect(mailHints({ ...mailer, capabilities: {} })).resolves.toEqual([]);
 
     // Nor does a hosted Gateway, which sends all app mail from its own sender.
     await registry().run([{ sql: "UPDATE _everyapp_install SET deployment_mode = 'hosted'" }]);
-    await expect(deploy(mailer)).resolves.toMatchObject({ next: [] });
+    await expect(mailHints(mailer)).resolves.toEqual([]);
   });
 
   it("stops unattended before anything is uploaded when routing is off, and turns it on with --enable-email-routing", async () => {

@@ -123,11 +123,13 @@ USAGE
 COMMANDS
   set    Set secrets on your app or your Gateway
   unset  Remove secrets from your app or your Gateway
-  list   List secrets: the app's in its directory, the Gateway's anywhere else
+  list   List what an app needs set and what is: its own secrets and the Gateway's settings
 
 EXAMPLES
   $ pnpm everyapp secret set GITHUB_TOKEN
   $ pnpm everyapp secret set GITHUB_TOKEN --from-env GH_TOKEN
+  $ pnpm everyapp secret set MAIN_SECRET --app analytics
+  $ pnpm everyapp secret list crm
 
 Run pnpm everyapp secret <command> --help for its flags.
 ```
@@ -916,6 +918,7 @@ Set secrets on your app or your Gateway.
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
 | `--from-env` | `<VAR>` | no |  | Read the value from this environment variable |
+| `--app` | `<id>` | no |  | The app whose secret this is (default: the app in this directory) |
 | `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
 | `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
 | `--json` | switch | no |  | Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments) |
@@ -923,23 +926,26 @@ Set secrets on your app or your Gateway.
 
 ```text
 USAGE
-  pnpm everyapp secret set [--from-env VAR] [--gateway value] [--account-id value] [--json] [--verbose] <name>...
+  pnpm everyapp secret set [--from-env VAR] [--app id] [--gateway value] [--account-id value] [--json] [--verbose] <name>...
   pnpm everyapp secret set --help
 
 Gateway settings (AI provider keys, EMAIL_FROM, sign-in clients) go to the Gateway, from any
-directory. Other names go to the app in this directory, which must list them under secrets
-in everyapp.config.ts. Values come from a hidden prompt, --from-env or stdin, never the
-command line. Changes are live at once; no deploy needed.
+directory. Other names go to the app in this directory, or with --app <id> to that app from
+anywhere; the app's everyapp.config.ts must list them under secrets. Values come from a
+hidden prompt, --from-env or stdin, never the command line. Changes are live at once; no
+deploy needed.
 
 Examples:
   pnpm everyapp secret set OPENAI_API_KEY
   pnpm everyapp secret set GITHUB_TOKEN --from-env GITHUB_TOKEN
   echo "$STRIPE_KEY" | pnpm everyapp secret set STRIPE_KEY
+  pnpm everyapp secret set MAIN_SECRET --app analytics
 
-See which names you can set: pnpm everyapp secret list
+See what an app needs and what is set: pnpm everyapp secret list [<app>]
 
 FLAGS
      [--from-env]              Read the value from this environment variable
+     [--app]                   The app whose secret this is (default: the app in this directory)
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
      [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
      [--json/--no-json]        Print NDJSON events on stdout and never prompt (exit 0 done, 1 error, 2 action required, 251/252 bad command or arguments)
@@ -962,6 +968,7 @@ Remove secrets from your app or your Gateway.
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
 | `--yes` | switch | no |  | Remove without asking |
+| `--app` | `<id>` | no |  | The app whose secret this is (default: the app in this directory) |
 | `--gateway` | `<value>` | no |  | The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL) |
 | `--account-id` | `<value>` | no |  | The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID) |
 | `--json` | switch | no |  | Print NDJSON events on stdout (never asks) |
@@ -969,16 +976,18 @@ Remove secrets from your app or your Gateway.
 
 ```text
 USAGE
-  pnpm everyapp secret unset [--yes] [--gateway value] [--account-id value] [--json] [--verbose] <name>...
+  pnpm everyapp secret unset [--yes] [--app id] [--gateway value] [--account-id value] [--json] [--verbose] <name>...
   pnpm everyapp secret unset --help
 
-Names go where `secret set` sends them. Asks before removing; the change is live at once.
+Names go where `secret set` sends them (--app <id> names the app from anywhere). Asks before
+removing; the change is live at once.
 
 Example:
   pnpm everyapp secret unset GITHUB_TOKEN
 
 FLAGS
   -y [--yes/--no-yes]          Remove without asking
+     [--app]                   The app whose secret this is (default: the app in this directory)
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
      [--account-id]            The Cloudflare account of the Gateway, when your login sees several (default: CLOUDFLARE_ACCOUNT_ID)
      [--json/--no-json]        Print NDJSON events on stdout (never asks)
@@ -992,7 +1001,11 @@ ARGUMENTS
 
 ### `everyapp secret list`
 
-List secrets: the app's in its directory, the Gateway's anywhere else.
+List what an app needs set and what is: its own secrets and the Gateway's settings.
+
+| Argument | Required | What it is |
+| --- | --- | --- |
+| `<app>` | no | An app id (default: the app in this directory; elsewhere, every app) |
 
 | Flag | Value | Required | Default | What it does |
 | --- | --- | --- | --- | --- |
@@ -1003,11 +1016,14 @@ List secrets: the app's in its directory, the Gateway's anywhere else.
 
 ```text
 USAGE
-  pnpm everyapp secret list [--gateway value] [--account-id value] [--json] [--verbose]
+  pnpm everyapp secret list [--gateway value] [--account-id value] [--json] [--verbose] [<app>]
   pnpm everyapp secret list --help
 
-In an app's directory: its secrets and the Gateway settings it uses, with what's missing.
-Elsewhere: the Gateway's, and the settings you can set on it.
+For one app (the app in this directory, or <app> from anywhere): every setting its manifest
+declares, where it is held (the Gateway, or the app's Worker), whether it is set, and the one
+secret set command that opens the app when something required is missing. Elsewhere with no
+app named: the Gateway's names and who set them, then every app's settings. Names only, never
+values.
 
 FLAGS
      [--gateway]               The Gateway's URL, checked against the Gateway in your Cloudflare account (default: EVERYAPP_GATEWAY_URL)
@@ -1016,6 +1032,9 @@ FLAGS
      [--verbose/--no-verbose]  Also list the names everyapp sets itself
   -h  --help                   Print help information and exit
       --                       All subsequent inputs should be interpreted as arguments
+
+ARGUMENTS
+  [app]  An app id (default: the app in this directory; elsewhere, every app)
 ```
 
 ### `everyapp email show`

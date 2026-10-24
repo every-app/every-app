@@ -1,7 +1,15 @@
 import { GATEWAY_WORKER_NAME } from "@every-app/perimeter/manifest";
+import { storedSecretNames } from "@every-app/perimeter/registry";
+import type { AppSetup } from "@every-app/sdk/internal";
 import { readAccessState } from "@/lib/access/settings";
 import { emailRouteProblems } from "@/lib/app/emailRoutes";
 import { readResourcesOfKind } from "@/lib/app/ownership";
+import {
+  appSetupFrom,
+  declaresSettings,
+  listAppSecretNames,
+  listGatewaySecretNames,
+} from "@/lib/app/settings";
 import { getWorkerDeployment } from "@/lib/cf/workers";
 import { certificateStatus } from "@/lib/domains/certificates";
 import { isOneLabelBelow } from "@/lib/domains/hostnames";
@@ -15,7 +23,7 @@ import type { InstallRecord } from "@/lib/gateway/install";
 import type { CandidateRelease } from "@/lib/gateway/release";
 import { readLiveLeases } from "@/lib/gateway/lease";
 import { gatewayDomains } from "@/lib/gateway/patchBuildOutput";
-import { listApps } from "@/lib/gateway/registry";
+import { listApps, writeAppSecretNames, type RegisteredAppInfo } from "@/lib/gateway/registry";
 import { readOwner } from "@/lib/gateway/setup-link";
 import type { EventSink } from "@/lib/output/events";
 import { existingGateway } from "@/lib/gateway/connect";
@@ -46,10 +54,12 @@ interface StatusFlags {
  * hash, nothing built), its owner, the apps its registry lists and whether the live version binds
  * them, what each installation sends as and receives at (`everyapp email
  * set`), whether every stored address has its route and Email Routing
- * still delivers it, each published hostname's certificate (Cloudflare's certificate
- * packs), whether Cloudflare Access is in front (the Gateway Worker's
- * settings, by name), any deploy in progress, and `fixes`: what is off, and
- * what to run about it.
+ * still delivers it, what each app's manifest needs set and whether it is
+ * (the Gateway Worker's secret names and each app Worker's, which it
+ * records on the app's row for the gateway), each published hostname's
+ * certificate (Cloudflare's certificate packs), whether Cloudflare Access
+ * is in front (the Gateway Worker's settings, by name), any deploy in
+ * progress, and `fixes`: what is off, and what to run about it.
  */
 export async function status(flags: StatusFlags,
 ): Promise<void> {
@@ -129,11 +139,13 @@ export async function reportStatus({
   ]);
   const accessState = access && "value" in access ? access.value : null;
   const accessUnread = access && "error" in access ? access : null;
-  const [certificates, emailProblems] = await Promise.all([
+  const missingWorkers = new Set(desired.missing.map((row) => row.workerName));
+  const [certificates, emailProblems, settings] = await Promise.all([
     readOrUnread(() => certificateStatus(cf, install.zoneId, install.liveDomains)),
     readOrUnread(async () =>
       emailRoutes.length === 0 ? [] : emailRouteProblems(cf, emailRoutes),
     ),
+    readSettings(cf, db, registered, missingWorkers),
   ]);
 
   const gatewayUrl = `https://${install.gatewayHost}`;
@@ -175,6 +187,7 @@ export async function reportStatus({
       declaresInbound: app.declaresInbound,
     },
     publicRoutes: app.publicRoutes,
+    setup: settings.setups.get(app.appSlug) ?? null,
   }));
   const readCertificates = "error" in certificates ? null : certificates.value;
   const waiting = (readCertificates ?? []).filter((c) => !c.ready).map((c) => c.host);
@@ -193,6 +206,7 @@ export async function reportStatus({
     leases,
     checkout: source,
     emailProblems: "error" in emailProblems ? emailProblems : emailProblems.value,
+    settings: settings.unread,
   });
   const display = renderStatus({
     install,
@@ -205,7 +219,7 @@ export async function reportStatus({
     access: accessUnread ?? accessState,
     leases,
     apps,
-    missingWorkers: new Set(desired.missing.map((row) => row.workerName)),
+    missingWorkers,
     skippedWorkers: new Set(desired.skipped.map((row) => row.workerName)),
     emailProblems: "error" in emailProblems ? [] : emailProblems.value,
     problems,
@@ -252,6 +266,57 @@ function summary(gatewayUrl: string, apps: AppState[], problems: Problem[]): str
   const live = apps.filter((app) => app.status === "active" && app.bound).length;
   const toFix = problems.filter(needsFixing).length;
   return `Gateway ${gatewayUrl}: ${plural(live, "app")} live, ${toFix === 0 ? "nothing to fix" : `${plural(toFix, "problem")} to fix`}`;
+}
+
+/**
+ * Each deployed app's settings against what is set: the Gateway Worker's
+ * secret names, and the app Worker's, recorded on the app's row when they
+ * differ from what it holds, so an out-of-band change or a row from before
+ * the column heals here. A `pending` app or one whose Worker no longer
+ * exists has nothing to evaluate yet (its own problem says so), and a
+ * dispatch-tier app's settings the platform doesn't gate, so it is left
+ * out too (`setup: null`). A list that fails leaves its names unknown
+ * (`set: null`, which never blocks) and is said once, as SETTINGS_UNKNOWN.
+ */
+async function readSettings(
+  cf: FoundGateway["cf"],
+  db: FoundGateway["db"],
+  apps: RegisteredAppInfo[],
+  missingWorkers: Set<string>,
+): Promise<{ setups: Map<string, AppSetup>; unread: Unread | null }> {
+  const setups = new Map<string, AppSetup>();
+  const declaring = apps.filter(
+    (app) =>
+      app.manifest &&
+      declaresSettings(app.manifest) &&
+      app.tier !== "dispatch" &&
+      app.status !== "pending" &&
+      !missingWorkers.has(app.workerName),
+  );
+  if (declaring.length === 0) return { setups, unread: null };
+  let unread: Unread | null = null;
+  const gateway = await readOrUnread(() => listGatewaySecretNames(cf));
+  if ("error" in gateway) unread = gateway;
+  for (const app of declaring) {
+    const own = await readOrUnread(() => listAppSecretNames(cf, app.workerName));
+    if ("error" in own) unread ??= own;
+    const secretNames = "error" in own ? null : own.value;
+    if (
+      secretNames &&
+      (app.secretNames === null ||
+        storedSecretNames(secretNames) !== storedSecretNames(app.secretNames))
+    ) {
+      await writeAppSecretNames(db, app.id, secretNames);
+    }
+    const { setup } = appSetupFrom({
+      manifest: app.manifest!,
+      appId: app.appSlug,
+      gatewayNames: "error" in gateway ? null : gateway.value,
+      secretNames,
+    });
+    setups.set(app.appSlug, setup);
+  }
+  return { setups, unread };
 }
 
 /** What cf says, or why it couldn't say: the rest of the report goes on. */

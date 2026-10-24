@@ -41,13 +41,14 @@ A failure after one destination already changed is `SECRETS_PARTIALLY_APPLIED` (
 
 ### Flags of `secret set`
 
-| Flag              | Effect                                                                                                                |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `--from-env VAR`  | Read the value from the environment variable `VAR`. One name per call.                                                |
-| `--gateway URL`   | The Gateway to reach, as on every Gateway command.                                                                    |
-| `--account-id ID` | The Cloudflare account.                                                                                               |
-| `--json`          | NDJSON events on stdout and never a prompt: the value must come from `--from-env` or stdin.                           |
-| `--verbose`       | Show which Worker each secret goes to and its new version (the `secrets.route` and `secrets.version` progress lines). |
+| Flag              | Effect                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--from-env VAR`  | Read the value from the environment variable `VAR`. One name per call.                                                                                                                                                                                                                                                                                                             |
+| `--app <id>`      | The app whose secret this is, by its id, with its manifest read from the Gateway's registry, so the command runs from any directory (default: the app in this directory; given both, `--app` wins). `secret unset` takes it too. A name the stored manifest doesn't list is refused (`SECRET_NOT_DECLARED`); a row whose stored manifest doesn't parse answers `INVALID_MANIFEST`. |
+| `--gateway URL`   | The Gateway to reach, as on every Gateway command.                                                                                                                                                                                                                                                                                                                                 |
+| `--account-id ID` | The Cloudflare account.                                                                                                                                                                                                                                                                                                                                                            |
+| `--json`          | NDJSON events on stdout and never a prompt: the value must come from `--from-env` or stdin.                                                                                                                                                                                                                                                                                        |
+| `--verbose`       | Show which Worker each secret goes to and its new version (the `secrets.route` and `secrets.version` progress lines).                                                                                                                                                                                                                                                              |
 
 ## How a value is read: never the command line
 
@@ -87,18 +88,18 @@ Under the leases, each target keeps only the names it holds (a merge patch of `n
 
 ## `secret list`
 
-`pnpm everyapp secret list` prints names, never values. Flags: `--gateway`, `--account-id`, `--json`, `--verbose`.
+`pnpm everyapp secret list [<app>]` prints names, never values. Flags: `--gateway`, `--account-id`, `--json`, `--verbose`. The optional `<app>` is an app id: the table for that app from any directory (its manifest from the registry); without it, the app in this directory, or outside one the Gateway's table and then every registered app's settings.
 
-Outside an app's directory it lists the Gateway Worker's secrets as a `NAME` / `SET BY` table under `Gateway secrets · <host>`: every name that is not install-owned as `you`, each install-owned name present as `setup`, and every settable name not set as `not set`. The `done` event's `data` is `{ gateway: { workerName: "every-app-gateway", names, settable } }` (`names`: the Worker's secrets, sorted; `settable`: `SETTABLE_GATEWAY_SETTINGS`).
+Outside an app's directory it lists the Gateway Worker's secrets as a `NAME` / `SET BY` table under `Gateway secrets · <host>`: every name that is not install-owned as `you`, each install-owned name present as `setup`, and of the settable names not set only those some registered app's manifest reads (hosted-only names only on a hosted install), the rest as one dim line, `N more can be set`. Then each registered app's settings table (below). The `done` event's `data` is `{ gateway: { workerName: "every-app-gateway", names, settable } }` (`names`: the Worker's secrets, sorted; `settable`: `SETTABLE_GATEWAY_SETTINGS`).
 
 In an app's directory it is a `NAME` / `WHERE` / `STATUS` table:
 
 - Once the app is deployed, one row per secret on its Worker (`WHERE` is the app id) and on each helper Worker (`WHERE` is `<helper> helper`), `set`; reserved names (`GATEWAY_URL`, `EVERY_APP_ORG_ID`) only with `--verbose`. Each name the manifest lists that a Worker lacks is `not set`.
 - Before the first deploy, every declared name is `after first deploy`, with the note `<id> isn't deployed yet; its own secrets can be set after that.`
-- Then one row per Gateway setting the manifest needs (`gatewaySettingsFor`, below), `WHERE` `Gateway`: `set`, `not set` (required) or `not set (optional)`.
+- Then one row per Gateway setting the manifest needs (the settings model, [`/docs/agent/manifest`](/docs/agent/manifest#required-optional-or-one-of-a-group)), `WHERE` `Gateway`, with the SETTINGS vocabulary `status` shares: `✓ set`, `! not set` (required, or every member of an unmet any-of group), `not set (optional)`, `not set (one of: <group>)` when another member is set, `! not recorded` for an app secret whose names the CLI never recorded, `! couldn't check` when cf couldn't list a Worker.
 - No rows at all: `<id> has no secrets yet. Add one: list it under secrets in everyapp.config.ts, then pnpm everyapp secret set <name>` (shown whether or not the app is deployed; before the first deploy that `secret set` fails `APP_NOT_FOUND`).
 
-Its `data`: `{ app: { id, deployed, workerName, declared, workers: [{ workerName, names, missing }] }, gateway: { workerName, names, needed: [{ name, required, set }], missing, settable }, next? }`. `next` is `["pnpm everyapp secret set A B"]` listing the app Worker's missing secrets and the required Gateway settings not set, or `["pnpm everyapp deploy"]` when the app is not deployed.
+Its `data`: `{ app: { id, deployed, workerName, declared, workers: [{ workerName, names, missing }], settings, setup }, gateway: { workerName, names, needed: [{ name, required, set }], missing, settable }, next? }`. `settings` is every setting with its state and `setup` the `AppSetup` summary ([`/docs/agent/json`](/docs/agent/json#done)); `needed[].required` is true for a required setting or an any-of member. `next` is the one command that opens the app, `pnpm everyapp secret set <names> [--app <id>]` (`--app` only when a name of the app's own is in it), or for an undeployed app the unset Gateway names first and then `pnpm everyapp deploy`.
 
 ## Gateway settings
 

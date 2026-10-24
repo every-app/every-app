@@ -1719,6 +1719,12 @@ Source: `packages/cli/src/commands/deploy/steps/waitForLive.ts`
 
 Source: `packages/cli/src/commands/deploy/deployApp.ts`, `packages/cli/src/lib/gateway/apply.ts`
 
+### APP_NEEDS_SETUP
+
+`deploy`, after the upload: the app's manifest declares a required provider, capability or secret that isn't set (the settings model, [`/docs/agent/manifest`](/docs/agent/manifest#required-optional-or-one-of-a-group)), so the Gateway won't open it: `<app> won't open until <names> is set` (or `are set`), the second line the first unmet setting's `why`. The one command that opens it is the `done` event's `next` entry (`pnpm everyapp secret set <names> [--app <id>]`), not `data.rerun`. `data.unmet`: the unmet settings' ids.
+
+Source: `packages/cli/src/commands/deploy/deployApp.ts`
+
 ### APP_NOT_BOUND
 
 The Gateway rebind (any command that redeploys the Gateway: `setup`, and `deploy`/`delete` when they rebind), for each registered app whose Worker exists but isn't the one everyapp registered (`desired.skipped`): `Skipping <app>: its Worker isn't the one everyapp registered` / `So the Gateway won't route to it.` `data.appId`, `data.workerName`, `data.fix`: `deploy <app> again, or remove it with pnpm everyapp delete <app>`. `status` reports the same as the fix `APP_NOT_BOUND (status)` below.
@@ -1918,6 +1924,12 @@ Warning. The Gateway is uploaded but nobody has claimed it: `No owner yet, so no
 
 Source: `packages/cli/src/commands/status/problems.ts`
 
+### APP_NEEDS_SETUP (status)
+
+Warning. A served app (active, or binding and bound) whose required settings aren't all set, so it doesn't open; its APP cell reads `! needs setup` and the SETTINGS table shows each setting: `<app> needs setup`, one detail line per unmet setting (`<NAME>: <why>`, then `Get it at <docs>` and `Guide: .claude/skills/everyapp/<setup>` once per distinct guide). Run: `pnpm everyapp secret set <names> [--app <id>]` (`runNote` carries an unmet any-of group's alternatives). The same report is `data.apps[].setup` ([`/docs/agent/json`](/docs/agent/json#done)).
+
+Source: `packages/cli/src/commands/status/problems.ts`
+
 ### GATEWAY_NOT_INSTALLED (status)
 
 Warning. The Gateway's D1 database exists but there is no install row: `Setup stopped before it recorded the Gateway's install` / `The Gateway's database exists, but nothing else was recorded.` Run: `pnpm everyapp setup`, `note`: `asks for the hostname again`. (The error of the same name is documented above.)
@@ -2011,6 +2023,12 @@ Source: `packages/cli/src/commands/status/problems.ts`, `packages/cli/src/lib/ac
 ### DEPLOY_RUNNING
 
 Settling. A live lease: `<Holder's activity> is running` (as `describeLeaseHolder` words it). Nothing to run; wait.
+
+Source: `packages/cli/src/commands/status/problems.ts`
+
+### SETTINGS_UNKNOWN (status)
+
+Warning. cf couldn't list a Worker's secrets, so the SETTINGS table can't say whether those settings are set: `Couldn't list the Workers' secrets` / `Cloudflare said: <reason>`; the affected rows read `! couldn't check` (the Gateway's) or `! not recorded` (an app's own), and nothing is recorded for them. The rest of the report stands.
 
 Source: `packages/cli/src/commands/status/problems.ts`
 

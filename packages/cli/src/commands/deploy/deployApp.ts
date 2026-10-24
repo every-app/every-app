@@ -102,6 +102,14 @@ import {
 } from "@/lib/app/ownership";
 import { claimAppWorker, provisionAppResources } from "@/lib/app/resources";
 import {
+  appSetupFrom,
+  declaresSettings,
+  describeUnmet,
+  listAppSecretNames,
+  listGatewaySecretNames,
+  namesToSet,
+} from "@/lib/app/settings";
+import {
   applyEmailRoutes,
   describeMailRoutes,
   emailDeclarations,
@@ -119,7 +127,7 @@ import { assertReplaceable, cfDeploy } from "@/lib/cf/deploy";
 import type { CfRunner } from "@/lib/cf/runner";
 import { deleteWorkflowIfExists } from "@/lib/cf/workflows";
 import { preflightAppHost } from "@/lib/domains/preflight";
-import { afterMigration, EveryAppError, type Rollback } from "@/lib/errors";
+import { afterMigration, errorMessage, EveryAppError, type Rollback } from "@/lib/errors";
 import { directoryExists } from "@/lib/file-operations";
 import { connectToGateway } from "@/lib/gateway/connect";
 import { refuseOlderCheckout } from "@/lib/gateway/apply";
@@ -148,6 +156,7 @@ import { appRestoreTarget } from "@/lib/gateway/restorePoints";
 import { CLI } from "@/lib/output/command";
 import type { EventSink } from "@/lib/output/events";
 import { canPromptInTerminal, type Confirm } from "@/lib/output/prompt";
+import { listed } from "@/lib/output/text";
 import { installDependencies } from "@/lib/package-manager";
 
 interface DeployAppOptions {
@@ -798,11 +807,26 @@ async function deploySteps(
         data: { fix: "delete that Worker in the Cloudflare dashboard" },
       });
     }
+    // The Worker's own secret names, recorded with the version so the
+    // gateway knows what is set. The upload stands when cf can't list them:
+    // the next `status` records them.
+    const secretNames = await listAppSecretNames(cf, workerName).catch((error: unknown) => {
+      out.emit({
+        type: "progress",
+        step: "app.secrets",
+        message: `Couldn't list ${workerName}'s secrets: ${errorMessage(error).split("\n")[0]}`,
+      });
+      return null;
+    });
     status = await markDeployed(registry, plan.app.id, {
       versionId,
       manifest,
       actor: deployer.actor,
+      ...(secretNames ? { secretNames } : {}),
     });
+    // What the app still needs set, once its upload is on record: a
+    // warning with the one command, said again under Next.
+    await warnIfNeedsSetup({ cf, manifest, appId: manifest.id, secretNames, out, next });
   } finally {
     await lease.release();
   }
@@ -885,6 +909,53 @@ async function deploySteps(
     publicRoutes,
     next,
   };
+}
+
+/**
+ * After the upload is recorded: the manifest's settings against the
+ * Gateway's names and the Worker's own. An app that needs setup gets an
+ * APP_NEEDS_SETUP warning ("crm won't open until CONTEXT_API_KEY is set",
+ * the first unmet setting's why under it) and one `next` entry with the
+ * command that opens it. Nothing when the app declares nothing to set
+ * (the Gateway's secrets aren't listed then). A list that fails leaves
+ * its names unknown, which never blocks: with the Gateway's unlisted, a
+ * secret of the app's own that is known to be unset still warns.
+ */
+async function warnIfNeedsSetup({
+  cf,
+  manifest,
+  appId,
+  secretNames,
+  out,
+  next,
+}: {
+  cf: CfRunner;
+  manifest: EveryAppCliManifest;
+  appId: string;
+  secretNames: string[] | null;
+  out: EventSink;
+  next: DeployAppResult["next"];
+}): Promise<void> {
+  if (!declaresSettings(manifest)) return;
+  const gatewayNames = await listGatewaySecretNames(cf).catch(() => null);
+  const { setup } = appSetupFrom({ manifest, appId, gatewayNames, secretNames });
+  if (setup.ready || !setup.command) return;
+  const names = namesToSet(setup);
+  const why = setup.unmet.find((setting) => setting.why);
+  out.emit({
+    type: "warning",
+    code: "APP_NEEDS_SETUP",
+    step: "app.secrets",
+    message: [
+      `${appId} won't open until ${listed(names)} ${names.length === 1 ? "is" : "are"} set`,
+      ...(why ? [describeUnmet(why)[0]!] : []),
+    ].join("\n"),
+    data: { setup },
+  });
+  next.push({
+    command: setup.command.command,
+    note: `${appId} opens once these are set${setup.command.note ? `; ${setup.command.note}` : ""}`,
+  });
 }
 
 /**

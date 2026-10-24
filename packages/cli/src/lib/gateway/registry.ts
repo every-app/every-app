@@ -25,15 +25,22 @@ import {
   deleteUpdate,
   markDeployedUpdate,
   orgKeyCandidates,
+  parseSecretNames,
   planRegistration,
   RegistrationError,
+  storedSecretNames,
   type AppNameOwner,
   type AppResources,
   type AppRow,
   type AppScope,
   type RegistrationPlan,
 } from "@every-app/perimeter/registry";
-import { parseEmailList, storedEmailList, type AppEmailConfig } from "@every-app/sdk/internal";
+import {
+  parseEmailList,
+  storedEmailList,
+  type AppEmailConfig,
+  type SettingsManifestLike,
+} from "@every-app/sdk/internal";
 import { storedPublicRoutes, type PublicRouteSummary } from "@/lib/app/publicRoutes";
 import type { D1Database, D1Statement } from "@/lib/cf/d1";
 import { EveryAppError } from "@/lib/errors";
@@ -90,13 +97,20 @@ async function registryCall<T>(call: () => Promise<T>): Promise<T> {
 }
 
 const APP_COLUMNS =
-  "id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, is_default, email_senders, email_inbound";
+  "id, organization_id, app_slug, name, description, hostname, worker_name, tier, scope, manifest, status, version_id, deployed_at, deployed_by_actor, is_default, email_senders, email_inbound, secret_names";
 
 const text = (value: unknown): string | null =>
   value === null || value === undefined ? null : String(value);
 
-/** An `apps` row with its email configuration columns (JSON string[] or null). */
-type StoredAppRow = AppRow & { emailSenders: string | null; emailInbound: string | null };
+/**
+ * An `apps` row with its email configuration columns and the app Worker's
+ * recorded secret names (each a JSON string[] or null).
+ */
+type StoredAppRow = AppRow & {
+  emailSenders: string | null;
+  emailInbound: string | null;
+  secretNames: string | null;
+};
 
 function toAppRow(row: D1Row): StoredAppRow {
   return {
@@ -117,6 +131,7 @@ function toAppRow(row: D1Row): StoredAppRow {
     isDefault: Boolean(Number(row["is_default"])),
     emailSenders: text(row["email_senders"]),
     emailInbound: text(row["email_inbound"]),
+    secretNames: text(row["secret_names"]),
   };
 }
 
@@ -506,11 +521,12 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
 
 /**
  * What goes with a deleted app (deleteUpdate's companions): its email
- * configuration (`email_senders`, `email_inbound`), everyone's access to
- * it (direct and through groups), the personal access tokens bound to it
- * (revoked), its agent tools snapshot, its place in AI connections, and
- * every organization's settings on it (a monthly cap). The same writes as
- * the gateway's own delete (AppRepository.tombstone).
+ * configuration (`email_senders`, `email_inbound`), its recorded secret
+ * names, everyone's access to it (direct and through groups), the personal
+ * access tokens bound to it (revoked), its agent tools snapshot, its place
+ * in AI connections, and every organization's settings on it (a monthly
+ * cap). The same writes as the gateway's own delete
+ * (AppRepository.tombstone).
  */
 function withoutAppData(
   app: Pick<AppRow, "id" | "organizationId">,
@@ -519,7 +535,7 @@ function withoutAppData(
   const scoped = [app.id, app.organizationId];
   return [
     {
-      sql: "UPDATE apps SET email_senders = NULL, email_inbound = NULL WHERE id = ? AND organization_id = ?",
+      sql: "UPDATE apps SET email_senders = NULL, email_inbound = NULL, secret_names = NULL WHERE id = ? AND organization_id = ?",
       params: scoped,
     },
     {
@@ -566,14 +582,22 @@ const MARK_DEPLOYED_ATTEMPTS = 3;
 
 /**
  * The app's new Worker version is uploaded: record it, with the manifest it
- * was built from (its route policy goes live now) and who deployed it. A
- * new app moves on to `binding`, for the gateway to activate. Returns the
- * app's status now.
+ * was built from (its route policy goes live now), who deployed it and,
+ * when the deploy listed them, the names of the secrets on the app's
+ * Worker (`secret_names`; left as they were otherwise). A new app moves on
+ * to `binding`, for the gateway to activate. Returns the app's status now.
  */
 export function markDeployed(
   db: D1Database,
   appRowId: string,
-  deployed: { versionId: string; manifest: unknown; actor: string; now?: number },
+  deployed: {
+    versionId: string;
+    manifest: unknown;
+    actor: string;
+    now?: number;
+    /** The app Worker's own secret names, everyapp's left out, as `secret set` and `status` record them. */
+    secretNames?: readonly string[];
+  },
 ): Promise<string> {
   return registryCall(async () => {
     for (let attempt = 1; ; attempt += 1) {
@@ -587,11 +611,12 @@ export function markDeployed(
       }
       const update = markDeployedUpdate(app, deployed);
       // Only over the status it was read with: an admin switching the app
-      // off meanwhile keeps it off.
+      // off meanwhile keeps it off. A null for the names keeps the column.
       const [changed = []] = await db.run([
         {
           sql: `UPDATE apps SET manifest = ?, version_id = ?, deployed_at = ?, deployed_by_actor = ?,
-  status = ?, updated_at = ? WHERE id = ? AND status = ? RETURNING status`,
+  status = ?, updated_at = ?, secret_names = COALESCE(?, secret_names)
+WHERE id = ? AND status = ? RETURNING status`,
           params: [
             update.manifest,
             update.versionId,
@@ -599,6 +624,7 @@ export function markDeployed(
             update.deployedByActor,
             update.status,
             update.deployedAt,
+            deployed.secretNames ? storedSecretNames(deployed.secretNames) : null,
             appRowId,
             app.status,
           ],
@@ -639,7 +665,30 @@ export interface RegisteredAppInfo {
    * everyapp.config.ts), in its order; none until a deploy uploads them.
    */
   publicRoutes: PublicRouteSummary[];
+  /**
+   * The manifest the app was registered or last deployed from, as stored
+   * (parsed, not validated: `secret set --app` validates it before it
+   * routes a name by it); null when the row holds none that parses.
+   */
+  manifest: StoredManifest | null;
+  /**
+   * The names of the secrets on the app's own Worker, as the CLI last
+   * recorded them (`deploy`, `register`, `secret set|unset`, `status`),
+   * everyapp's own left out; null when never recorded, which the settings
+   * model reads as unknown and never blocks on.
+   */
+  secretNames: string[] | null;
+  /**
+   * How the gateway reaches the app: `dispatch` for a third-party app in
+   * the hosted gateway's dispatch namespace, whose settings the platform
+   * doesn't gate at run time (the settings model leaves it out), otherwise
+   * a service binding.
+   */
+  tier: string;
 }
+
+/** A stored manifest as JSON parses it: the settings model reads its fields as they are. */
+type StoredManifest = SettingsManifestLike & { id?: unknown };
 
 function info(app: StoredAppRow): RegisteredAppInfo {
   return {
@@ -653,7 +702,23 @@ function info(app: StoredAppRow): RegisteredAppInfo {
     email: { senders: parseEmailList(app.emailSenders), inbound: parseEmailList(app.emailInbound) },
     declaresInbound: declaresInbound(app.manifest),
     publicRoutes: storedPublicRoutes(app.manifest),
+    manifest: parsedManifest(app.manifest),
+    secretNames: parseSecretNames(app.secretNames),
+    tier: app.tier,
   };
+}
+
+/** The stored manifest's JSON as an object, or null when it isn't one. */
+function parsedManifest(stored: string | null): StoredManifest | null {
+  if (!stored) return null;
+  try {
+    const manifest: unknown = JSON.parse(stored);
+    return manifest && typeof manifest === "object" && !Array.isArray(manifest)
+      ? (manifest as StoredManifest)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -782,6 +847,28 @@ WHERE id = ? AND status != '${DELETED_APP_STATUS}' RETURNING id`,
     if (changed.length === 0) throw notRegistered(appSlug);
     return info({ ...app, emailSenders, emailInbound });
   });
+}
+
+/**
+ * Record the names of the secrets on the app's own Worker (`secret_names`),
+ * as `secret set|unset` and `status` list them after a change, so the
+ * gateway can tell whether the app's own settings are set without reaching
+ * Cloudflare. By row id, under whatever lease the caller holds; a deleted
+ * app is left alone.
+ */
+export async function writeAppSecretNames(
+  db: D1Database,
+  appRowId: string,
+  names: readonly string[],
+  now = Date.now(),
+): Promise<void> {
+  await db.run([
+    {
+      sql: `UPDATE apps SET secret_names = ?, updated_at = ?
+WHERE id = ? AND status != '${DELETED_APP_STATUS}'`,
+      params: [storedSecretNames(names), now, appRowId],
+    },
+  ]);
 }
 
 /**

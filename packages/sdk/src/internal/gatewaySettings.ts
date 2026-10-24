@@ -2,25 +2,16 @@
  * The Gateway's settings and the app's own secrets, by name: the Gateway
  * settings an operator changes with `everyapp secret set <NAME>` (plain
  * secrets on the Gateway Worker, read on its next request), the ones the
- * install writes once, which of the first kind an app's manifest needs,
- * and the names an app's own secret can never take. One registry serves
+ * install writes once, and the names an app's own secret can never take.
+ * What an app's manifest needs of them is appSettings.ts. One registry serves
  * the CLI (a Gateway name goes to the Gateway, any other to the app in the
  * current directory), the manifest validator (an app's `secrets` may not
  * take a Gateway name, since the app reaches those through `providers` and
  * `capabilities`) and the Gateway's dev config, which a test keeps
  * declaring every settable one.
  */
-import {
-  aiProviderSettings,
-  DEV_AI_PROVIDERS,
-  devAiProvider,
-} from "./aiProviders.js";
-import {
-  CAPABILITIES,
-  capabilitySettings,
-  isCapabilityId,
-  type Capability,
-} from "./capabilities.js";
+import { aiProviderSettings, DEV_AI_PROVIDERS } from "./aiProviders.js";
+import { CAPABILITIES, capabilitySettings } from "./capabilities.js";
 
 /** The Gateway's optional settings `everyapp secret set` changes. */
 export const SETTABLE_GATEWAY_SETTINGS = [
@@ -249,80 +240,4 @@ export function gatewaySettingOwner(name: string): GatewaySettingOwner | null {
     }
   }
   return null;
-}
-
-/** One Gateway setting an app's manifest needs, and whether it can do without. */
-export interface GatewaySettingNeed {
-  name: SettableGatewaySetting;
-  /**
-   * Required: an AI provider's key, an `api_key` capability's key, an OAuth
-   * client's id and secret, a service's `settings`, and the AI proxy's extra
-   * routes when the manifest asks for any. Optional: a service's
-   * `optionalSettings` (another transport) and a host setting with a default.
-   */
-  required: boolean;
-}
-
-/**
- * The settable Gateway settings an app's manifest needs: the keys of its
- * AI `providers`, the keys, clients, senders and transports of its
- * `capabilities`, and AI_PROXY_EXTRA_ROUTES when `ai.routes` asks for
- * paths beyond inference; in the manifest's order, each once (required
- * wins). Settings the install owns (Workers AI's and email's
- * CLOUDFLARE_ACCOUNT_ID) are left out: they are set already. An unknown
- * provider or capability contributes nothing; the manifest validator
- * refuses it elsewhere.
- */
-export function gatewaySettingsFor(manifest: {
-  readonly providers?: ReadonlyArray<string | { readonly id: string }>;
-  readonly capabilities?: { readonly [id: string]: unknown };
-  readonly ai?: { readonly routes?: readonly string[] };
-}): GatewaySettingNeed[] {
-  const needs: Array<{ name: string; required: boolean }> = [];
-  for (const entry of manifest.providers ?? []) {
-    // A provider is listed by id, or as an entry with its need (appSettings.ts).
-    const spec = devAiProvider(typeof entry === "string" ? entry : entry.id);
-    if (!spec) continue;
-    for (const name of aiProviderSettings(spec))
-      needs.push({ name, required: true });
-  }
-  for (const id of Object.keys(manifest.capabilities ?? {})) {
-    if (!isCapabilityId(id)) continue;
-    const capability: Capability = CAPABILITIES[id];
-    switch (capability.mode) {
-      case "api_key":
-        needs.push({ name: capability.secret, required: true });
-        break;
-      case "service":
-        for (const name of capability.settings)
-          needs.push({ name, required: true });
-        for (const name of capability.optionalSettings) {
-          needs.push({ name, required: false });
-        }
-        break;
-      case "oauth_client":
-        needs.push({ name: capability.secrets.clientId, required: true });
-        if (capability.secrets.clientSecret) {
-          needs.push({ name: capability.secrets.clientSecret, required: true });
-        }
-        if (capability.hostSetting) {
-          needs.push({
-            name: capability.hostSetting,
-            required: !capability.defaultOrigin,
-          });
-        }
-        break;
-    }
-  }
-  if (manifest.ai?.routes?.length) {
-    needs.push({ name: "AI_PROXY_EXTRA_ROUTES", required: true });
-  }
-  const byName = new Map<string, GatewaySettingNeed>();
-  for (const need of needs) {
-    if (!isSettableGatewaySetting(need.name)) continue;
-    const seen = byName.get(need.name);
-    if (seen) seen.required ||= need.required;
-    else byName.set(need.name, { name: need.name, required: need.required });
-  }
-  return [...byName.values()];
 }
