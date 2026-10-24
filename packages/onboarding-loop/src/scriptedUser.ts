@@ -319,7 +319,10 @@ export function createScriptedUser(options: ScriptedUserOptions): ScriptedUser {
           return null;
         case "turn_end": {
           const blocked = parseBlocked(input.text);
-          if (blocked) {
+          // "BLOCKED: Waiting for your domain. Which domain should I use?" (Codex on gpt-6.1-sol,
+          // run 16) is the domain question wearing the prompt's BLOCKED prefix; a person would
+          // answer it. Only a BLOCKED with no recognised question stops the run.
+          if (blocked && !(isDomainQuestion(input.text) && !state.setupDone)) {
             state.blocked = blocked;
             return { type: "stop", reason: "blocked" };
           }

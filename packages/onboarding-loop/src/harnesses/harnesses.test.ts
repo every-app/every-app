@@ -211,7 +211,7 @@ describe("codex adapter", () => {
     for (const flag of [
       "codex exec -",
       "--json",
-      "-m gpt-5.3-codex",
+      "-m gpt-6.1-sol",
       "--dangerously-bypass-approvals-and-sandbox",
       "--skip-git-repo-check",
       "-o /loop/last-message.txt",

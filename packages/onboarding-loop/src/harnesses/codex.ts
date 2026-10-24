@@ -20,7 +20,9 @@ import {
 } from "./shared";
 
 const CODEX_VERSION = "0.163.0";
-const CODEX_DEFAULT_MODEL = "gpt-5.3-codex";
+// Codex CLI 0.163.0's own default (its session log names it when no -m is given); the stream
+// never names the model, so this pin must follow the CLI's default, not the design-time one.
+const CODEX_DEFAULT_MODEL = "gpt-6.1-sol";
 
 const FLAGS = [
   "--json",

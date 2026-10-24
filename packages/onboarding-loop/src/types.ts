@@ -421,6 +421,8 @@ export interface Resume {
 /** A hesitation kind the detectors name (4.9). */
 export type HesitationKind =
   | "asked_user"
+  /** The agent wrote BLOCKED in front of an ordinary question (the domain); answered like the question. */
+  | "blocked_for_question"
   | "ended_turn_without_done"
   | "repeated_command"
   | "dropped_json_flag"

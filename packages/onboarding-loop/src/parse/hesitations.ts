@@ -14,7 +14,7 @@ import type {
   Hesitation,
   NormalizedEvent,
 } from "../types";
-import { parseBlocked, parseDone } from "../scriptedUser";
+import { isDomainQuestion, parseBlocked, parseDone } from "../scriptedUser";
 import { everyappArgv } from "./eventLog";
 
 export const RULES_VERSION = 1;
@@ -151,6 +151,15 @@ export function detectHesitations(
           .reverse()
           .find((e) => e.kind === "assistant_text")?.text ?? "";
       const turnText = `${lastText}\n${text}`;
+      // "BLOCKED: Waiting for your domain. Which domain…?": the prompt's stop word in front of an
+      // ordinary question (Codex on gpt-6.1-sol, run 16); the scripted user answers it.
+      if (parseBlocked(turnText) && isDomainQuestion(turnText))
+        push(
+          "blocked_for_question",
+          index,
+          turnText.match(/\bBLOCKED:.{0,120}/)?.[0],
+          "prompt",
+        );
       if (
         !parseDone(turnText).done &&
         !parseBlocked(turnText) &&

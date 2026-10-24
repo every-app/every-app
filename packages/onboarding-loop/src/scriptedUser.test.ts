@@ -163,6 +163,16 @@ describe("turn ends", () => {
       }),
     ).toEqual({ type: "stop", reason: "blocked" });
     expect(blocked.state.blocked).toBe("no Cloudflare token");
+    // BLOCKED in front of the domain question is the domain question (Codex on gpt-6.1-sol, run 16).
+    const asked = user();
+    const action = asked.onInput({
+      kind: "turn_end",
+      text: "Dependencies installed.\n\nBLOCKED: Waiting for your domain. Which domain should I use for `apps.<your domain>`?",
+      hadResultEvent: true,
+    });
+    expect(action).toMatchObject({ type: "reply" });
+    expect(asked.state.blocked).toBeNull();
+    expect(asked.state.exercised).toContain("domain_question");
   });
   it("waits while a setup is in flight in the event log, whatever the harness did", () => {
     const u = user();

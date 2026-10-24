@@ -321,6 +321,7 @@ const runRecordSchema = z.object({
     z.object({
       kind: z.enum([
         "asked_user",
+        "blocked_for_question",
         "ended_turn_without_done",
         "repeated_command",
         "dropped_json_flag",
