@@ -43,6 +43,30 @@ const SETUP: AppSetup = {
 };
 SETUP.unmet = [SETUP.settings[0]!];
 
+/** An app whose own secret is unset: the Worker's, which `status` re-reads. */
+const SETUP_OWN_SECRET: AppSetup = {
+  ready: false,
+  settings: [
+    {
+      kind: "secret",
+      id: "MAIN_SECRET",
+      label: "MAIN_SECRET",
+      holder: "app",
+      names: ["MAIN_SECRET"],
+      need: { kind: "required" },
+      why: "Signs share links.",
+      set: false,
+      blocking: true,
+    },
+  ],
+  unmet: [],
+  groups: [],
+  command: {
+    command: "pnpm everyapp secret set MAIN_SECRET --app research",
+  },
+};
+SETUP_OWN_SECRET.unmet = [SETUP_OWN_SECRET.settings[0]!];
+
 (
   globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
 ).IS_REACT_ACT_ENVIRONMENT = true;
@@ -61,12 +85,12 @@ afterEach(() => {
   container.remove();
 });
 
-function render(canRun: boolean) {
+function render(canRun: boolean, setup: AppSetup = SETUP) {
   act(() =>
     root.render(
       <AppSetupDialog
         name="OpenSEO"
-        setup={SETUP}
+        setup={setup}
         canRun={canRun}
         onClose={() => undefined}
       />,
@@ -76,25 +100,45 @@ function render(canRun: boolean) {
   return document.body.textContent ?? "";
 }
 
+function closeButtons() {
+  return [...document.body.querySelectorAll("button")].filter(
+    (button) => button.textContent?.trim() === "Close",
+  );
+}
+
 it("mounts with the unmet setting, its link, the command and the optional section", () => {
   const text = render(true);
   expect(text).toContain("OpenSEO needs setup");
+  expect(text).toContain("Set these before anyone can open it.");
   expect(text).toContain("DataForSEO");
+  expect(text).toContain("DATAFORSEO_API_KEY");
   expect(text).toContain("Keyword data.");
   expect(text).toContain("Get it at app.dataforseo.com/api-access");
   expect(text).toContain("pnpm everyapp secret set DATAFORSEO_API_KEY");
   expect(text).not.toContain("Ask an admin to run:");
   expect(text).toContain("Optional (1)");
-  expect(text).toContain("pnpm everyapp status");
+  // Gateway settings are read live: nothing for `status` to re-read.
+  expect(text).not.toContain("pnpm everyapp status");
   const link = document.body.querySelector<HTMLAnchorElement>(
     'a[href="https://app.dataforseo.com/api-access"]',
   );
   expect(link?.target).toBe("_blank");
+  // One way to close, in the footer, like every other dialog.
+  expect(closeButtons()).toHaveLength(1);
 });
 
 it("tells a member to ask an admin", () => {
   const text = render(false);
+  expect(text).toContain("It opens once these are set.");
   expect(text).toContain("Ask an admin to run:");
   expect(text).toContain("pnpm everyapp secret set DATAFORSEO_API_KEY");
   expect(text).not.toContain("Optional (");
+  expect(text).not.toContain("pnpm everyapp status");
+});
+
+it("names an app's own secret once and says status re-reads the Worker", () => {
+  const text = render(true, SETUP_OWN_SECRET);
+  expect(text.split("MAIN_SECRET").length - 1).toBe(2); // the row, the command
+  expect(text).toContain("pnpm everyapp secret set MAIN_SECRET --app research");
+  expect(text).toContain("pnpm everyapp status");
 });

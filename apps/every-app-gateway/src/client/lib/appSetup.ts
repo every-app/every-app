@@ -19,7 +19,10 @@ interface SetupDocsLink {
 export interface SetupDialogRow {
   id: string;
   label: string;
-  /** The setting names, every one of which must be set. */
+  /**
+   * The setting names, every one of which must be set; the label itself
+   * left out, so an app's own secret (labelled by its name) reads once.
+   */
   names: string[];
   why: string | null;
   docs: SetupDocsLink | null;
@@ -35,6 +38,7 @@ interface SetupDialogCommand {
 
 interface SetupDialogModel {
   title: string;
+  /** What the reader does about it: sets it, or waits for an admin to. */
   intro: string;
   /** The settings that keep the app closed, in manifest order. */
   unmet: SetupDialogRow[];
@@ -46,10 +50,19 @@ interface SetupDialogModel {
   platformNote: string | null;
   /** Unset settings the app works without, for whoever can set them. */
   optional: SetupDialogRow[];
+  /**
+   * Whether to say that `everyapp status` re-reads the app Worker's
+   * secrets: only when a setting that keeps the app closed is the app's
+   * own (the Gateway's are read live) and the reader can run it.
+   */
+  statusHint: boolean;
 }
 
 export const PLATFORM_NOTE = "Every App is still setting this up.";
 const ASK_AN_ADMIN = "Ask an admin to run:";
+const INTRO_CAN_RUN = "Set these before anyone can open it.";
+// The command's heading says who; the intro doesn't say "admin" twice.
+const INTRO_ASK = "It opens once these are set.";
 
 function docsLink(docs: string | undefined): SetupDocsLink | null {
   if (!docs) return null;
@@ -63,7 +76,7 @@ function row(setting: AppSetupSetting): SetupDialogRow {
   return {
     id: setting.id,
     label: setting.label,
-    names: setting.names,
+    names: setting.names.filter((name) => name !== setting.label),
     why: setting.why ?? null,
     docs: docsLink(setting.docs),
   };
@@ -106,7 +119,7 @@ export function setupDialogModel(
     : [];
   return {
     title: `${name} needs setup`,
-    intro: "Set these before anyone can open it.",
+    intro: canRun ? INTRO_CAN_RUN : INTRO_ASK,
     unmet: setup.unmet.map(row),
     anyOf,
     command: setup.command
@@ -118,5 +131,7 @@ export function setupDialogModel(
       : null,
     platformNote: setup.command ? null : PLATFORM_NOTE,
     optional: optional.map(row),
+    statusHint:
+      canRun && setup.unmet.some((setting) => setting.holder === "app"),
   };
 }

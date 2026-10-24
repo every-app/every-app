@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useSession } from "@/client/hooks/useSession";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { z } from "zod";
 import {
   ArrowDownAZ,
@@ -120,13 +120,20 @@ function App() {
     session.isPending,
   ]);
 
+  // The URL after a one-shot param is stripped: the filter stays only
+  // when it isn't the default, so the launcher's home is "/".
+  const keptSearch = useMemo(
+    () => (filter === AppLibraryFilter.All ? {} : { filter }),
+    [filter],
+  );
+
   useEffect(() => {
     if (pwaParam && !hasStrippedPwaParam.current) {
       setShowPWAInstallModal(true);
       hasStrippedPwaParam.current = true;
-      void navigate({ to: "/", search: { filter }, replace: true });
+      void navigate({ to: "/", search: keptSearch, replace: true });
     }
-  }, [pwaParam, navigate, filter]);
+  }, [pwaParam, navigate, keptSearch]);
 
   // `?setup=<appId>`: once the list is in, open that app's setup dialog if
   // it still needs setup, and strip the param either way.
@@ -135,7 +142,7 @@ function App() {
     apps,
     loaded: !isLoading && !isError,
     open: setSetupApp,
-    strip: () => void navigate({ to: "/", search: { filter }, replace: true }),
+    strip: () => void navigate({ to: "/", search: keptSearch, replace: true }),
   });
 
   useEffect(() => {

@@ -28,6 +28,16 @@ const INBOX: SettingsManifestLike & { id: string } = {
   ],
 };
 
+/** An app with a secret of its own, which the CLI records on its Worker. */
+const RESEARCH: SettingsManifestLike & { id: string } = {
+  id: "research",
+  providers: ["openrouter"],
+  secrets: [
+    { name: "MAIN_SECRET", why: "Signs share links." },
+    { name: "WEBHOOK_SECRET", optional: true },
+  ],
+};
+
 /** The app's setup as the gateway lists it, with these names set. */
 function setupOf(
   manifest: SettingsManifestLike & { id: string },
@@ -75,6 +85,46 @@ describe("setupDialogModel", () => {
     expect(model.optional.map((row) => [row.label, row.why])).toEqual([
       ["Context.dev", "JS rendering in audits."],
     ]);
+    // Every setting here is the Gateway's, read live: nothing to re-read.
+    expect(model.statusHint).toBe(false);
+  });
+
+  it("names an app's own secret once, and says status re-reads the Worker", () => {
+    const admin = setupDialogModel(setupOf(RESEARCH, ["OPENROUTER_API_KEY"]), {
+      name: "Research Desk",
+      canRun: true,
+    });
+    expect(admin.unmet).toEqual([
+      {
+        id: "MAIN_SECRET",
+        label: "MAIN_SECRET",
+        names: [],
+        why: "Signs share links.",
+        docs: null,
+      },
+    ]);
+    expect(admin.command?.command).toBe(
+      "pnpm everyapp secret set MAIN_SECRET --app research",
+    );
+    expect(admin.optional.map((row) => row.label)).toEqual(["WEBHOOK_SECRET"]);
+    expect(admin.statusHint).toBe(true);
+    // A member can't run status: no hint.
+    const member = setupDialogModel(setupOf(RESEARCH, ["OPENROUTER_API_KEY"]), {
+      name: "Research Desk",
+      canRun: false,
+    });
+    expect(member.statusHint).toBe(false);
+    // Only a Gateway setting keeps it closed: the optional app secret under
+    // the fold doesn't make the footer talk about the Worker.
+    const gatewayOnly = setupDialogModel(setupOf(RESEARCH, ["MAIN_SECRET"]), {
+      name: "Research Desk",
+      canRun: true,
+    });
+    expect(gatewayOnly.unmet.map((row) => row.label)).toEqual(["OpenRouter"]);
+    expect(gatewayOnly.optional.map((row) => row.label)).toEqual([
+      "WEBHOOK_SECRET",
+    ]);
+    expect(gatewayOnly.statusHint).toBe(false);
   });
 
   it("tells a member to ask an admin, and keeps the optional settings for whoever can set them", () => {
@@ -82,6 +132,7 @@ describe("setupDialogModel", () => {
       name: "OpenSEO",
       canRun: false,
     });
+    expect(model.intro).toBe("It opens once these are set.");
     expect(model.unmet.map((row) => row.label)).toEqual(["DataForSEO"]);
     expect(model.command).toEqual({
       heading: "Ask an admin to run:",

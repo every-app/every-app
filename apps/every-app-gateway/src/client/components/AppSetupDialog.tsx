@@ -1,4 +1,5 @@
 import { ChevronRight, ExternalLink } from "lucide-react";
+import { cn } from "cn";
 import type { AppSetup } from "@every-app/sdk/internal";
 import { CodeBlock } from "@/client/components/CodeBlock";
 import {
@@ -31,7 +32,8 @@ interface AppSetupDialogProps {
 /**
  * What an app needs set before it opens, and the one command that sets it
  * (`everyapp secret set`), for whoever can run it; a member is told to
- * ask an admin. Render it only while it is open.
+ * ask an admin. Closes from the footer alone, like every other dialog.
+ * Render it only while it is open.
  */
 export function AppSetupDialog({
   name,
@@ -47,7 +49,7 @@ export function AppSetupDialog({
         if (!open) onClose();
       }}
     >
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent showCloseButton={false} className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{model.title}</DialogTitle>
           <DialogDescription>{model.intro}</DialogDescription>
@@ -101,26 +103,38 @@ export function AppSetupDialog({
           </Collapsible>
         ) : null}
         <DialogFooter showCloseButton>
-          <p className="text-xs text-muted-foreground sm:mr-auto sm:self-center">
-            Already set it another way?{" "}
-            <span className="font-mono">{STATUS_COMMAND}</span> re-reads the
-            Worker.
-          </p>
+          {model.statusHint ? (
+            <p className="text-xs text-muted-foreground sm:mr-auto sm:self-center">
+              Already set it another way?{" "}
+              <span className="font-mono">{STATUS_COMMAND}</span> re-reads the
+              Worker.
+            </p>
+          ) : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-/** One setting: its label and names, why the app needs it, where it comes from. */
+/**
+ * One setting: its label and names, why the app needs it, where it comes
+ * from. An app's own secret is labelled by its name, so the label is set
+ * in the same type as a name.
+ */
 function SettingRow({ row }: { row: SetupDialogRow }) {
   return (
     <li className="flex flex-col gap-0.5">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-        <span className="font-medium">{row.label}</span>
-        <span className="font-mono text-xs text-muted-foreground">
-          {row.names.join(" ")}
+        <span
+          className={cn("font-medium", row.names.length === 0 && "font-mono")}
+        >
+          {row.label}
         </span>
+        {row.names.length > 0 ? (
+          <span className="font-mono text-xs text-muted-foreground">
+            {row.names.join(" ")}
+          </span>
+        ) : null}
       </div>
       {row.why ? (
         <p className="text-sm text-muted-foreground">{row.why}</p>
