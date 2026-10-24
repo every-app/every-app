@@ -1823,6 +1823,41 @@ describe("runLoop", () => {
     );
   });
 
+  it("a harness that stops before any everyapp command (BLOCKED, empty event log) gets one verifier probe, not a 15-minute window (run 16)", async () => {
+    const repo = await makeRepo();
+    const sleeps: number[] = [];
+    const world = makeWorld(repo, {
+      eventLog: [],
+      harnessLines: ["LOOP_CMD pnpm install", "BLOCKED: no domain given"],
+      harnessExit: 1,
+      gateway: unreachableGateway(),
+      exec: gatewayNotFoundStatus,
+    });
+    const outcome = await runLoop(options(), {
+      ...world.deps,
+      now: advancingClock(),
+      sleep: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+    const record = outcome.record!;
+    expect(record.terminal_reason).toBe("blocked");
+    expect(record.everyappCommands).toEqual([]);
+    expect(record.verify.phaseReached).toBe("none");
+    const verifyJson = JSON.parse(
+      fs.readFileSync(
+        path.join(world.runsRoot, outcome.runId, RUN_FILES.verify),
+        "utf8",
+      ),
+    ) as { rows: Record<string, { attempts: number }> };
+    for (const [id, row] of Object.entries(verifyJson.rows))
+      expect(row.attempts, id).toBeLessThanOrEqual(1);
+    expect(
+      world.gatewayCalls.filter((c) => c === `GET ${ORIGIN}/sign-in`),
+    ).toHaveLength(1);
+    expect(sleeps.filter((ms) => ms >= 10_000)).toEqual([]);
+  });
+
   it("setup's GATEWAY_BUILD_FAILED decides fail-onboarding with the code, and the verifier probes a Gateway that was never uploaded once instead of waiting its windows", async () => {
     const repo = await makeRepo();
     const sleeps: number[] = [];
