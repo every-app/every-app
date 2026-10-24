@@ -588,7 +588,7 @@ what the app does with a verified user.
   principals* (info, known): only tokens and OAuth connections can be
   read-only; roles never narrow tool access.
 
-**Docs to fix.** ADR-0002 and RFC-0001 say the SDK verifies that the
+**Docs to fix.** ADR-0002 and RFC-0001 (both deleted 2026-10-24) said the SDK verifies that the
 token's organization matches the deployed Worker's organization; it
 doesn't compare `org_id` with `EVERY_APP_ORG_ID`. The guarantee comes from
 the audience: each organization's copy has its own Worker name, and the
@@ -1071,7 +1071,7 @@ defaults to No.
 
 Not what launches. Our own install of the same code runs in `hosted` mode;
 third-party deploys stay behind `THIRD_PARTY_DEPLOYS=on` until the launch
-gate in `docs/hosted-platform-build.md` §1 passes, and the Gateway's release
+gate in `docs/hosted-vision.md` passes, and the Gateway's release
 config declares no `DISPATCHER`, so every dispatch row answers 503 today.
 The boundaries are built and tested against a fake namespace, unverified
 live. A self-hoster is affected by none of this except where a code path

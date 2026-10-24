@@ -12,10 +12,9 @@ Cloudflare Email Sending has two transports:
 - **Workers binding (default):** deployed Workers use the `EMAIL` binding
   declared in `apps/every-app-gateway/cloudflare.config.ts`. It does not use
   an API token.
-- **REST:** Docker self-hosting uses the Email Sending REST API because its local
-  `EMAIL` binding only writes `.eml` files. Set both `EMAIL_REST_API_TOKEN` and
-  `CLOUDFLARE_ACCOUNT_ID` to select REST explicitly. When both are present, REST
-  takes precedence over the binding.
+- **REST:** set both `EMAIL_REST_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` to send
+  through the Email Sending REST API instead of the binding. When both are
+  present, REST takes precedence over the binding.
 
 Resend sends through its API with the gateway's `RESEND_API_KEY`
 ([Resend](#resend)).
@@ -67,8 +66,7 @@ With Resend, verify the domain in Resend instead ([Resend](#resend)).
 ## Sender configuration
 
 Set these sender values on the gateway Worker (`pnpm everyapp secret set
-EMAIL_FROM EMAIL_FROM_NAME`; a Gateway setting's name says where it goes) or
-in the Docker gateway `.env`:
+EMAIL_FROM EMAIL_FROM_NAME`; a Gateway setting's name says where it goes):
 
 - `EMAIL_FROM`: the sender address, for example `noreply@example.com`
 - `EMAIL_FROM_NAME`: the display name, for example `Every App`
@@ -76,8 +74,8 @@ in the Docker gateway `.env`:
 The previous combined format, `Every App <noreply@example.com>`, is also
 accepted in `EMAIL_FROM`; in that case `EMAIL_FROM_NAME` is optional.
 
-For Docker self-hosting with Cloudflare, also create a Cloudflare API token
-for the account with **Email Sending** permission and set:
+To send through the REST API instead of the binding, create a Cloudflare API
+token for the account with **Email Sending** permission and set:
 
 - `EMAIL_REST_API_TOKEN`: the Cloudflare API token
 - `CLOUDFLARE_ACCOUNT_ID`: the account that owns the onboarded sending domain
@@ -101,9 +99,7 @@ unless you intentionally want REST to take precedence over its binding.
    pnpm everyapp secret set EMAIL_FROM EMAIL_FROM_NAME
    ```
 
-   For Docker, set `RESEND_API_KEY` (and the sender) in the gateway's
-   `.env`; the container keeps it across restarts. In local dev, put it in
-   `apps/every-app-gateway/.dev.vars`.
+   In local dev, put it in `apps/every-app-gateway/.dev.vars`.
 4. Optionally pin the choice, for example while both providers are set up:
    `pnpm everyapp secret set EMAIL_PROVIDER` and answer the
    hidden prompt with `resend` (or `cloudflare`). `pnpm everyapp secret
@@ -129,8 +125,7 @@ answers an id, not per-recipient queues).
    email-sending subdomains dns get <id> -z example.com` the records it
    expects; in Resend, the domain shows **Verified**.
 2. `everyapp secret set …` changes the live gateway Worker, which reads each
-   value on its next request; for Docker, restart the gateway after setting the
-   sender and provider values in `.env`.
+   value on its next request.
 3. Request a password reset and send an organization invitation to addresses
    you control.
 4. Confirm both messages arrive and check Worker logs for

@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-10-15
-- Supersedes: ADR-0002 Decisions 2 and 3
+- Supersedes: ADR-0002 Decisions 2 and 3 (ADR-0002 was deleted on 2026-10-24; git history at 5ef30882)
 
 ## Context
 
@@ -94,5 +94,5 @@ Negative, accepted for self-host:
 - `docs/security-model.md`: replace the deploy-token sections with this
   model; drop `/api/setup/deploy-token` and `/api/deploy/*` from the
   Cloudflare Access bypass list.
-- The hosted control plane design in `docs/architecture-v2-*.md` names the
+- The hosted control plane design in `docs/architecture-v2-*.md` (deleted 2026-10-24; git history at 5ef30882) names the
   perimeter registry rules as its write path.

@@ -8,7 +8,6 @@ dist/
 **/.output/
 **/.tanstack/
 **/.env*
-!apps/every-app-gateway/.env.example
 .wrangler
 .dev.vars*
 *.db

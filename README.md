@@ -203,7 +203,3 @@ Every App is open source, alpha, and moving fast. It is also very powerful: an a
 Reference the full docs to learn more:
 - https://everyapp.com/docs
 - [Troubleshooting](https://everyapp.com/docs/troubleshooting) — when a deploy fails
-
-### Self-Hosting with Docker
-
-To run the local Cloudflare-compatible runtime in containers instead of deploying to Cloudflare, see `SELF_HOSTING_DOCKER.md`. This is a local emulation path — it covers the Gateway and owner setup, not deploying apps. If you expose ports beyond localhost, you are responsible for hardening access (reverse proxy, firewall rules, VPN/Zero Trust, etc.).

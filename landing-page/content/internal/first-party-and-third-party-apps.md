@@ -25,7 +25,7 @@ On the hosted platform (everyapp.com) there are two kinds of apps.
 | What it may use                     | Everything: helper Workers, Workflows, crons, KV, R2, Hyperdrive                        | D1, up to 2 Durable Object classes, static assets. No KV, Workflows, crons, helpers, Hyperdrive or inbound mail; no R2 yet |
 
 Ben settled the split on 2026-10-15 and 2026-10-16
-([hosted-platform-build.md §1](https://github.com/every-app/private-every-app/blob/main/docs/hosted-platform-build.md), "The rulings the
+([hosted-platform-build.md §1](https://github.com/every-app/private-every-app/blob/5ef30882/docs/hosted-platform-build.md), "The rulings the
 build follows"). First-party apps are deployed by us and are multi-tenant on
 the back end. Third-party apps are the only thing deployed to Workers for
 Platforms. app.openseo.so is a separate product and is never touched by any of
@@ -59,7 +59,7 @@ keeping organizations apart. Most of this doc is about doing that right.
   through Hyperdrive (#309) are merged.
 - **Third-party deploys** are built (#304, #311, #313, #314) and switched off.
   They open only when every row of the launch gate in
-  [hosted-platform-build.md §1](https://github.com/every-app/private-every-app/blob/main/docs/hosted-platform-build.md) holds.
+  [hosted-platform-build.md §1](https://github.com/every-app/private-every-app/blob/5ef30882/docs/hosted-platform-build.md) holds.
 - **No usage limits** at the gateway in any mode (#316). Every provider call
   is attributed to an organization and logged; the wallet will meter it later.
 
@@ -265,7 +265,7 @@ they are. None of these limits apply to it.
 - **Metering.** Calls are attributed and logged per organization; nothing
   bounds spend until the wallet exists. The hosted preview stays invite-only.
 - **Third-party launch gate.** The rows still open in
-  [hosted-platform-build.md §1](https://github.com/every-app/private-every-app/blob/main/docs/hosted-platform-build.md), among them the
+  [hosted-platform-build.md §1](https://github.com/every-app/private-every-app/blob/5ef30882/docs/hosted-platform-build.md), among them the
   `everyapp.dev` zone, the Public Suffix List entry, and checking a dispatched
   Worker's name against its row's organization.
 - **R2 on the dispatch tier.** Refused until the hosted deployer accepts R2
@@ -273,12 +273,12 @@ they are. None of these limits apply to it.
 
 ## Read next
 
-- [hosted-platform-build.md](https://github.com/every-app/private-every-app/blob/main/docs/hosted-platform-build.md): how the hosted
+- [hosted-platform-build.md](https://github.com/every-app/private-every-app/blob/5ef30882/docs/hosted-platform-build.md): how the hosted
   platform was built, every decision and its walk-back.
 - [security-model.md](https://github.com/every-app/private-every-app/blob/main/docs/security-model.md): "Organizations and Shared Apps",
   "Dispatch Tier and Egress", "Third-Party Hosts and Per-Host Sessions",
   "Hosted Deploy API".
-- [research/2026-10-hosted-platform/README.md](https://github.com/every-app/private-every-app/blob/main/docs/research/2026-10-hosted-platform/README.md):
+- [research/2026-10-hosted-platform/README.md](https://github.com/every-app/private-every-app/blob/5ef30882/docs/research/2026-10-hosted-platform/README.md):
   the research behind it, with the end-state diagram.
 - [gateway/cli-deployment.md](/docs/internal/gateway/cli-deployment): what
   `everyapp deploy` does step by step.
