@@ -1074,8 +1074,11 @@ class RunState {
     const claimer = this.eventLogSeam
       ? createEventLogClaimer(claimerOptions)
       : null;
-    // --claim-after turn-end: lines are held until the turn that showed the link ends (onTurnEnd),
-    // so the record measures whether the agent relayed the link and waited; immediate: no holding.
+    // --claim-after turn-end: lines are held until the turn that showed the link ends, so the
+    // record measures whether the agent relayed the link and waited; immediate: no holding. A
+    // turn ends for the person at the harness's result event (its final message): Claude Code
+    // keeps the process alive while a background setup runs, so run 13's exit came only when
+    // setup gave up 15 minutes later. The gate closes again when the next process starts.
     let claimGateOpen = this.options.claimAfter === "immediate";
     const heldLines: string[] = [];
     const tail = await sandbox.tailFile(handle, EVENT_LOG_PATH, (line) => {
@@ -1173,8 +1176,10 @@ class RunState {
           );
           if (event.kind === "tool_call" && event.text)
             log(`${adapter.name} ran: ${event.text.slice(0, 160)}`);
-          if (event.kind === "result")
+          if (event.kind === "result") {
             log(`${adapter.name} turn ended (${event.stopReason ?? "result"})`);
+            if (!claimGateOpen) void openClaimGate();
+          }
         },
         onRawLine: (line: ExecLine, processIndex) => {
           const redacted = this.ctx.redactor.redact(line.line);
@@ -1189,12 +1194,13 @@ class RunState {
           );
         },
         takePersonAnswer: () => this.takePersonAnswer(),
-        onTurnEnd: async () => {
-          if (!claimGateOpen) await openClaimGate();
-          // turn-end mode: closed again for the next turn, so a link that appears during it
-          // waits for that turn's end. Run 12 opened the gate at the domain question's turn
-          // end and claimed the later link at once, which is the immediate mode by another name.
+        onTurnStart: () => {
+          // A new turn: in turn-end mode the gate is closed until this turn's final message.
           claimGateOpen = this.options.claimAfter === "immediate";
+        },
+        onTurnEnd: async () => {
+          // A process that exited without a result event (a crash, a kill): the turn is over.
+          if (!claimGateOpen) await openClaimGate();
         },
         onWaitPoll: () => this.checkSetupAlive(),
         deadlineAt,

@@ -94,6 +94,8 @@ export interface FakeExecAnswer {
   stdout?: string[];
   stderr?: string[];
   delayMs?: number;
+  /** Wait this long before emitting stdout/stderr (then `delayMs` before exiting): a turn whose final message comes late. */
+  emitAfterDelayMs?: number;
   /** Never exits on its own: ends only through the exec's AbortSignal or timeout. */
   hang?: boolean;
 }
@@ -175,6 +177,11 @@ export class FakeSandbox implements Sandbox {
         });
       }
     };
+    if (answer.emitAfterDelayMs) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, answer.emitAfterDelayMs),
+      );
+    }
     emit("stdout", answer.stdout);
     emit("stderr", answer.stderr);
     if (answer.delayMs) {

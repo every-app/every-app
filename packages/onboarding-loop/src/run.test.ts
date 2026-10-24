@@ -1538,7 +1538,7 @@ describe("runLoop", () => {
     expect(record.verdict.value, text).toBe("pass");
   });
 
-  it("--claim-after turn-end: a link that appears in a later turn waits for that turn's end, not the first turn's (run 12 claimed it at once)", async () => {
+  it("--claim-after turn-end: a link that appears in a later turn waits for that turn's final message, not the first turn's end (run 12) and not the process exit (run 13)", async () => {
     const repo = await makeRepo();
     const t = (s: number) =>
       `2026-10-25T14:${String(10 + s).padStart(2, "0")}:00.000Z`;
@@ -1560,10 +1560,11 @@ describe("runLoop", () => {
         sandbox.pushTail("/loop/everyapp-events.ndjson", line);
     };
     let resumes = 0;
-    // When turn 2 ended, in real time: the claim must come after it. The fake exec keeps the
-    // turn running for 40 ms after the link appears; with the gate open the claim lands within
-    // a millisecond of the link, before this marker.
-    let turn2EndedAt = 0;
+    // Real-time markers: turn 2's final message (the result) is emitted 40 ms in and the process
+    // exits 40 ms after that. The claim must land between them: after the person saw the final
+    // message, before the process exit (which Claude Code delays while a background setup runs).
+    let resultAt = 0;
+    let exitAt = 0;
     const world = makeWorld(repo, {
       eventLog: [],
       harnessLines: [],
@@ -1610,14 +1611,18 @@ describe("runLoop", () => {
               exit(11, t(8)),
             ]);
             setTimeout(() => {
-              turn2EndedAt = Date.now();
+              resultAt = Date.now();
             }, 25);
+            setTimeout(() => {
+              exitAt = Date.now();
+            }, 70);
             return {
               stdout: [
                 "TEXT Open the setup link I printed and tell me when you have.",
                 "RESULT",
               ],
               code: 0,
+              emitAfterDelayMs: 40,
               delayMs: 40,
             };
           }
@@ -1661,10 +1666,10 @@ describe("runLoop", () => {
     // Claimed after turn 2 started (the link's turn) and before turn 3, never between turns 1 and 2.
     expect(claim, timeline.join("\n")).toBeGreaterThan(execs[1]!);
     expect(claim).toBeLessThan(execs[2]!);
-    expect(turn2EndedAt).toBeGreaterThan(0);
-    expect(
-      Date.parse(outcome.record!.steps.claim.claimedAt!),
-    ).toBeGreaterThanOrEqual(turn2EndedAt);
+    expect(resultAt).toBeGreaterThan(0);
+    const claimedAt = Date.parse(outcome.record!.steps.claim.claimedAt!);
+    expect(claimedAt).toBeGreaterThanOrEqual(resultAt);
+    expect(claimedAt).toBeLessThanOrEqual(exitAt);
     expect(outcome.record!.steps.claim.how).toBe("event-log");
     expect(outcome.record!.verdict.value, text).toBe("pass");
     expect(

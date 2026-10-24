@@ -69,6 +69,8 @@ export interface TurnsDeps {
   onRawLine?(line: ExecLine, processIndex: number): void;
   /** A person's answer waiting (`pnpm loop answer`), consumed once per turn end. */
   takePersonAnswer?(): string | null;
+  /** Right before a process starts (the first, or a resume): `--claim-after turn-end` closes its gate here. */
+  onTurnStart?(processIndex: number): void;
   /** Right after a process exits and before the scripted user decides: `--claim-after turn-end` claims here. */
   onTurnEnd?(): Promise<void>;
   /** Each poll while a reply is held for a running setup: the driver checks the setup's pid is still alive. */
@@ -137,6 +139,7 @@ export async function runHarnessTurns(deps: TurnsDeps): Promise<TurnsResult> {
       };
     }
     const processIndex = index;
+    deps.onTurnStart?.(processIndex);
     const result = await deps.sandbox.exec(deps.handle, command.argv, {
       cwd: deps.cwd,
       env: { ...deps.env, ...command.env },
