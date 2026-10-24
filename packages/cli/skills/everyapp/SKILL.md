@@ -1,10 +1,35 @@
 ---
 name: everyapp
-description: Create, run, deploy and manage private web apps on Cloudflare with everyapp (Every App). Use before running any everyapp command, to deploy an app, set a secret, query its database or check the Gateway.
+description: Create, run, deploy and manage private web apps on Cloudflare with everyapp (Every App). Use before running any everyapp command, to deploy an app, set a secret, query its database, check the Gateway, or answer any "how do I" question about Every App.
 ---
 
 everyapp: self-hosted platform for private web apps on Cloudflare. While
-publishing is paused the command is `pnpm everyapp` (never `npx everyapp`).
+publishing is paused the command is `pnpm everyapp` (never `npx everyapp`),
+run from the Every App checkout.
+
+Docs: two worlds. The user docs (https://everyapp.com/docs) are short and
+for the person. The agent docs are yours: https://everyapp.com/llms.txt
+lists every page with a one-line summary; a page is Markdown at its URL
+plus .md (https://everyapp.com/docs/agent/manifest.md); in a checkout they
+are landing-page/content/agent/*.md. Pages: setup (driving setup for a
+person, every handoff), cli (every command and flag), json (the --json
+protocol), errors (every code and its fix), troubleshooting (by symptom),
+manifest (everyapp.config.ts), identity (headers, token, env, SDK), secrets
+(secrets vs Gateway settings vs capabilities), dev (dev vs production),
+email, mcp (tools, connector, OAuth), deploy (the pipeline, what the policy
+check refuses), access (Cloudflare Access), repo/* (security model,
+capabilities, runbooks). Step-by-step setup of each integration (the
+Gateway, Access, email, DataForSEO, Context, OpenRouter, OpenAI, Workers
+AI, Google, Microsoft 365, Slack): setup/README.md beside this file.
+Answering "how do I": fetch the page for the subject and answer from it
+with the exact command or manifest field, naming the page. A failed
+command: look its code up on errors (anchor: the code, lowercased) before
+trying anything else. Never guess a flag: cli has them all.
+Building an app: the Gateway signs people in, so never build a login page
+or auth; read the user with the SDK (identity page). A new app edits
+everyapp.config.ts for name, resources, secrets, public and email
+(manifest page); after a schema change run pnpm run db:generate; a value
+only dev needs goes in .dev.vars, never in git (dev page).
 
 Pass --json. One JSON event per line; "done" = success; exit 2 = show the
 user the last action_required (url, code), then run its data.rerun (the same
@@ -18,7 +43,10 @@ Gateway: pnpm everyapp setup --domain <host> --json   (install, upgrade, repair;
 New app: pnpm everyapp create <id> --json   then cd into it and edit src/; the
          manifest is everyapp.config.ts
 Run:     pnpm everyapp dev   (long-running, human-facing: start it in the
-         background and read the printed URL; no --json)
+         background and read the printed URL; no --json; --port when 8787 is
+         taken; stop it with Ctrl-C/SIGINT to the everyapp process, never a
+         pattern kill of vite or workerd; a pnpm install or deploy meanwhile
+         rebuilds the SDK and breaks dev for a few seconds)
 Ship:    pnpm everyapp deploy --json   (from the app directory; safe to repeat;
          also upgrades the Gateway to this checkout when it has to rebind).
          No Gateway yet: action_required install_gateway; ask the user, run
@@ -97,4 +125,13 @@ a workers.dev subdomain, pay for Workers Paid, buy a domain. Interactive
 setup optionally offers browser deployment: a Yes/No prompt (default No),
 then a hidden Cloudflare API token prompt. Never ask for its value in chat.
 Otherwise, only a hosted Gateway's deploy key is supplied.
-Full reference: https://everyapp.com/docs/commands
+Handing off: stop, tell the person in one or two lines what to do (the
+action's url and code, what to click, what to come back with), and resume
+with data.rerun when they say it is done. Two more only a person can do:
+pick the account (choose_account: data.choices, each with its rerun) and
+confirm in a terminal a Worker changed outside everyapp (rerun_interactive,
+data.needsTerminal: true: hand them the command without --json; adding it
+back loops). https://everyapp.com/docs/agent/setup.md has the words for
+each handoff and the order of a whole setup.
+Full reference: https://everyapp.com/docs/agent/cli.md (every command and flag),
+https://everyapp.com/llms.txt (every page).

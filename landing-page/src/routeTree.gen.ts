@@ -19,7 +19,8 @@ import { Route as BlogsIndexRouteImport } from './routes/blogs/index'
 import { Route as BlogsSplatRouteImport } from './routes/blogs/$'
 import { Route as DocsSplatRouteImport } from './routes/docs/$'
 import { Route as DocsChar123Char125DotmdRouteImport } from './routes/docs/{$}[.]md'
-import { Route as DocsInternalSplatRouteImport } from './routes/docs/internal/$'
+import { Route as DocsAgentSplatRouteImport } from './routes/docs/agent/$'
+import { Route as DocsAgentChar123Char125DotmdRouteImport } from './routes/docs/agent/{$}[.]md'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -71,11 +72,17 @@ const DocsChar123Char125DotmdRoute = DocsChar123Char125DotmdRouteImport.update({
   path: '/docs/{$}.md',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DocsInternalSplatRoute = DocsInternalSplatRouteImport.update({
-  id: '/docs/internal/$',
-  path: '/docs/internal/$',
+const DocsAgentSplatRoute = DocsAgentSplatRouteImport.update({
+  id: '/docs/agent/$',
+  path: '/docs/agent/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DocsAgentChar123Char125DotmdRoute =
+  DocsAgentChar123Char125DotmdRouteImport.update({
+    id: '/docs/agent/{$}.md',
+    path: '/docs/agent/{$}.md',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -88,7 +95,8 @@ export interface FileRoutesByFullPath {
   '/docs/$': typeof DocsSplatRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/blogs/': typeof BlogsIndexRoute
-  '/docs/internal/$': typeof DocsInternalSplatRoute
+  '/docs/agent/$': typeof DocsAgentSplatRoute
+  '/docs/agent/{$}.md': typeof DocsAgentChar123Char125DotmdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -101,7 +109,8 @@ export interface FileRoutesByTo {
   '/docs/$': typeof DocsSplatRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/blogs': typeof BlogsIndexRoute
-  '/docs/internal/$': typeof DocsInternalSplatRoute
+  '/docs/agent/$': typeof DocsAgentSplatRoute
+  '/docs/agent/{$}.md': typeof DocsAgentChar123Char125DotmdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -115,7 +124,8 @@ export interface FileRoutesById {
   '/docs/$': typeof DocsSplatRoute
   '/docs/{$}.md': typeof DocsChar123Char125DotmdRoute
   '/blogs/': typeof BlogsIndexRoute
-  '/docs/internal/$': typeof DocsInternalSplatRoute
+  '/docs/agent/$': typeof DocsAgentSplatRoute
+  '/docs/agent/{$}.md': typeof DocsAgentChar123Char125DotmdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -130,7 +140,8 @@ export interface FileRouteTypes {
     | '/docs/$'
     | '/docs/{$}.md'
     | '/blogs/'
-    | '/docs/internal/$'
+    | '/docs/agent/$'
+    | '/docs/agent/{$}.md'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -143,7 +154,8 @@ export interface FileRouteTypes {
     | '/docs/$'
     | '/docs/{$}.md'
     | '/blogs'
-    | '/docs/internal/$'
+    | '/docs/agent/$'
+    | '/docs/agent/{$}.md'
   id:
     | '__root__'
     | '/'
@@ -156,7 +168,8 @@ export interface FileRouteTypes {
     | '/docs/$'
     | '/docs/{$}.md'
     | '/blogs/'
-    | '/docs/internal/$'
+    | '/docs/agent/$'
+    | '/docs/agent/{$}.md'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -170,7 +183,8 @@ export interface RootRouteChildren {
   DocsSplatRoute: typeof DocsSplatRoute
   DocsChar123Char125DotmdRoute: typeof DocsChar123Char125DotmdRoute
   BlogsIndexRoute: typeof BlogsIndexRoute
-  DocsInternalSplatRoute: typeof DocsInternalSplatRoute
+  DocsAgentSplatRoute: typeof DocsAgentSplatRoute
+  DocsAgentChar123Char125DotmdRoute: typeof DocsAgentChar123Char125DotmdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -245,11 +259,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DocsChar123Char125DotmdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/docs/internal/$': {
-      id: '/docs/internal/$'
-      path: '/docs/internal/$'
-      fullPath: '/docs/internal/$'
-      preLoaderRoute: typeof DocsInternalSplatRouteImport
+    '/docs/agent/$': {
+      id: '/docs/agent/$'
+      path: '/docs/agent/$'
+      fullPath: '/docs/agent/$'
+      preLoaderRoute: typeof DocsAgentSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/docs/agent/{$}.md': {
+      id: '/docs/agent/{$}.md'
+      path: '/docs/agent/{$}.md'
+      fullPath: '/docs/agent/{$}.md'
+      preLoaderRoute: typeof DocsAgentChar123Char125DotmdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -266,7 +287,8 @@ const rootRouteChildren: RootRouteChildren = {
   DocsSplatRoute: DocsSplatRoute,
   DocsChar123Char125DotmdRoute: DocsChar123Char125DotmdRoute,
   BlogsIndexRoute: BlogsIndexRoute,
-  DocsInternalSplatRoute: DocsInternalSplatRoute,
+  DocsAgentSplatRoute: DocsAgentSplatRoute,
+  DocsAgentChar123Char125DotmdRoute: DocsAgentChar123Char125DotmdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -37,6 +37,4 @@ There's also `email` for the addresses an app sends from and receives at, `acces
 
 ## For coding agents
 
-Add `--json` to get one event per line. An event with `"type":"action_required"` needs a person: show them its message, `data.url` and `data.code`. If the command exits with code 2, run the event's `data.rerun` once they're done.
-
-In CI, set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` instead of logging in.
+Your coding agent has its own docs, with every command and flag, the `--json` output it reads, and what each error means. Give it `https://everyapp.com/llms.txt`, or ask it. [Docs for coding agents](/docs/agent)

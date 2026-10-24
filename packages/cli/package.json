@@ -25,7 +25,8 @@
     "dev": "tsup --watch",
     "install:global": "pnpm run build && npm link --ignore-scripts",
     "knip": "knip",
-    "test": "vitest run --silent"
+    "test": "vitest run --silent",
+    "docs:update": "UPDATE_DOCS=1 vitest run src/docs --silent"
   },
   "tsup": {
     "entry": {

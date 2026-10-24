@@ -7,3 +7,5 @@ dist
 source.generated.ts
 src/routeTree.gen.ts
 pnpm-lock.yaml
+content/agent/repo/
+content/agent/cli.md

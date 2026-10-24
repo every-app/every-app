@@ -4,9 +4,10 @@
   "type": "module",
   "sideEffects": false,
   "scripts": {
-    "dev": "vite dev",
-    "build": "vite build && node scripts/generate-sitemap.js",
-    "build:app": "vite build",
+    "dev": "node scripts/sync-agent-docs.js && vite dev",
+    "sync:agent-docs": "node scripts/sync-agent-docs.js",
+    "build": "node scripts/sync-agent-docs.js && vite build && node scripts/generate-sitemap.js",
+    "build:app": "node scripts/sync-agent-docs.js && vite build",
     "sitemap": "node scripts/generate-sitemap.js",
     "verify:seo": "node scripts/verify-seo.js",
     "start": "wrangler dev",

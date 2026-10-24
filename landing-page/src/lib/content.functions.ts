@@ -1,9 +1,10 @@
 import { notFound } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import {
+  agentSource,
   blogSource,
+  getAgentPageMarkdownUrl,
   getPageMarkdownUrl,
-  internalSource,
   source,
 } from "@/lib/source";
 
@@ -23,10 +24,10 @@ export const getDocsPage = createServerFn({ method: "GET" })
     };
   });
 
-export const getInternalPage = createServerFn({ method: "GET" })
+export const getAgentPage = createServerFn({ method: "GET" })
   .validator((slugs: string[]) => slugs)
   .handler(async ({ data: slugs }) => {
-    const page = internalSource.getPage(slugs);
+    const page = agentSource.getPage(slugs);
     if (!page) throw notFound();
 
     return {
@@ -34,9 +35,8 @@ export const getInternalPage = createServerFn({ method: "GET" })
       title: page.data.title,
       description: page.data.description,
       url: page.url,
-      pageTree: await internalSource.serializePageTree(
-        internalSource.getPageTree(),
-      ),
+      markdownUrl: getAgentPageMarkdownUrl(page.slugs),
+      pageTree: await agentSource.serializePageTree(agentSource.getPageTree()),
     };
   });
 

@@ -71,4 +71,4 @@ pnpm everyapp access off
 
 - Deploying an app keeps its public routes reachable: `pnpm run deploy` tells Access about them.
 - An Access sign-in lasts 30 days by default. For a daily code, run `pnpm everyapp access on --session 24h` before anything exists, or change the two applications in the Cloudflare dashboard under **Zero Trust → Access controls → Applications**.
-- The mobile app can't sign in behind Access. If your team uses it, use Access as a sign-in button instead: see the runbook in `docs/runbooks/cloudflare-access.md` in your `every-app` folder.
+- The mobile app can't sign in behind Access. If your team uses it, use Access as a sign-in button instead. Ask your agent, or see [Cloudflare Access in the agent docs](/docs/agent/access).

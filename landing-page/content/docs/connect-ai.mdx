@@ -1,0 +1,36 @@
+---
+title: Use your apps from Claude or ChatGPT
+description: Connect Claude, ChatGPT, Claude Code or Cursor to your Gateway once, and they can use every app you can open.
+---
+
+Your Gateway has one address for AI assistants, and it covers all your apps:
+
+```text
+https://apps.yourcompany.com/mcp
+```
+
+Connect it once. The assistant signs in to your Gateway as you, asks which apps it may use, and from then on it can read and change things in those apps the way you can. An app only offers what its builder made available, and nothing that deletes data.
+
+## Claude and ChatGPT
+
+In Claude (claude.ai or the desktop app) or ChatGPT, add a custom connector and paste the address above. Your Gateway's sign-in page opens: sign in, choose the apps and whether the assistant may change things or only read, and allow it.
+
+## Claude Code
+
+In a terminal, run:
+
+```bash
+claude mcp add --transport http everyapp https://apps.yourcompany.com/mcp
+```
+
+Then type `/mcp` in Claude Code, choose **everyapp** and **Authenticate**. Allow it in the page that opens.
+
+## Cursor and other tools
+
+Add an MCP server with the address above. Tools that can't sign in on their own take a personal access token instead: in your Gateway, open **Admin**, then **Tokens**, select **Create access token**, and give the token to the tool as the `Authorization: Bearer` header.
+
+## Disconnect
+
+Open your account menu in the Gateway and select **Connected AI apps** to see every connection and revoke one. Deactivating a person disconnects all of theirs.
+
+This works behind [Cloudflare Access](/docs/access) too. For how tools, sign-in and tokens work underneath, ask your agent or see the [agent docs](/docs/agent/mcp).

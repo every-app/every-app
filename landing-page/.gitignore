@@ -21,3 +21,6 @@ dist
 .tanstack
 
 .source
+
+# Mirrored from the repository's docs/ by scripts/sync-agent-docs.js
+content/agent/repo/

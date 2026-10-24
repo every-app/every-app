@@ -9,13 +9,14 @@ const __dirname = dirname(__filename);
 
 const DIST_DIR = join(__dirname, "../dist/client");
 const DOCS_CONTENT_DIR = join(__dirname, "../content/docs");
+const AGENT_CONTENT_DIR = join(__dirname, "../content/agent");
 const BLOG_CONTENT_DIR = join(__dirname, "../content/blog");
 
 const DEFAULT_SITE_URL = "https://everyapp.com";
 const SITE_URL = (process.env.SITE_URL ?? DEFAULT_SITE_URL).replace(/\/+$/, "");
 
 const DOC_EXTENSIONS = new Set([".md", ".mdx"]);
-const STATIC_PATHS = new Set(["/", "/docs"]);
+const STATIC_PATHS = new Set(["/", "/docs", "/docs/agent"]);
 
 function walkMarkdownFiles(directory) {
   if (!existsSync(directory)) return [];
@@ -80,6 +81,7 @@ function main() {
   const urlPaths = new Set(STATIC_PATHS);
 
   addContentPaths(urlPaths, "/docs", DOCS_CONTENT_DIR);
+  addContentPaths(urlPaths, "/docs/agent", AGENT_CONTENT_DIR);
   addContentPaths(urlPaths, "/blogs", BLOG_CONTENT_DIR);
 
   const urls = Array.from(urlPaths)

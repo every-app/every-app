@@ -39,16 +39,18 @@ type EventData = Record<string, unknown>;
 
 type StepStatus = "start" | "ok" | "skip" | "fail";
 
-/** Something only a person can do before the command can continue. */
-export type RequiredAction =
-  | "cloudflare_login"
-  | "register_workers_subdomain"
-  | "claim_owner"
-  | "upgrade_workers_paid"
-  | "rerun_interactive"
-  | "add_domain"
-  | "choose_account"
-  | "install_gateway";
+/** Something only a person can do before the command can continue (the agent docs list each). */
+export const REQUIRED_ACTIONS = [
+  "cloudflare_login",
+  "register_workers_subdomain",
+  "claim_owner",
+  "upgrade_workers_paid",
+  "rerun_interactive",
+  "add_domain",
+  "choose_account",
+  "install_gateway",
+] as const;
+export type RequiredAction = (typeof REQUIRED_ACTIONS)[number];
 
 interface ActionData extends EventData {
   url?: string;

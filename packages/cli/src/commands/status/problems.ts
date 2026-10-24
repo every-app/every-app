@@ -14,7 +14,7 @@ import type { GatewayOwner } from "@/lib/gateway/setup-link";
 import { CLI } from "@/lib/output/command";
 import { capitalize, listed } from "@/lib/output/text";
 
-enum ProblemCode {
+export enum ProblemCode {
   CheckoutBehind = "CHECKOUT_BEHIND",
   GatewayOutdated = "GATEWAY_OUTDATED",
   NoOwner = "NO_OWNER",

@@ -11,10 +11,11 @@
     "update",
     "people",
     "access",
+    "connect-ai",
     "---Help---",
     "how-it-works",
     "troubleshooting",
     "commands",
-    "external:[Docs for your coding agent](/llms-full.txt)"
+    "external:[Docs for your coding agent](/docs/agent)"
   ]
 }

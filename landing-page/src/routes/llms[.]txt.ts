@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { docsLlms } from "@/lib/source";
+import { llmsIndex } from "@/lib/source";
 
 export const Route = createFileRoute("/llms.txt")({
   server: {
     handlers: {
       GET: async () =>
-        new Response(await docsLlms.index(), {
+        new Response(await llmsIndex(), {
           headers: { "content-type": "text/plain; charset=utf-8" },
         }),
     },
