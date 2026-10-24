@@ -16,7 +16,7 @@ import {
   TooltipTrigger,
 } from "@/client/components/ui/tooltip";
 import { appEmail } from "@/client/lib/appEmail";
-import { appStatus } from "@/client/lib/appStatus";
+import { appNeedsSetup, appStatus } from "@/client/lib/appStatus";
 import type { AppWithAccessCount } from "@/types/app";
 import { AppActionsMenu } from "./AppActionsMenu";
 import { integrationLabel } from "./integrationLabel";
@@ -25,6 +25,8 @@ import { integrationLabel } from "./integrationLabel";
 const SEARCH_THRESHOLD = 3;
 
 type AppRowActions = {
+  /** Opens the setup dialog, for an app that needs setup. */
+  onSetup: (app: AppWithAccessCount) => void;
   onManageAccess: (app: AppWithAccessCount) => void;
   onEdit: (app: AppWithAccessCount) => void;
   onDelete: (app: AppWithAccessCount) => void;
@@ -90,6 +92,7 @@ function AppNameCell({ app }: { app: AppWithAccessCount }) {
 }
 
 function buildColumns({
+  onSetup,
   onManageAccess,
   onEdit,
   onDelete,
@@ -109,6 +112,21 @@ function buildColumns({
       header: ({ column }) => <SortableHeader column={column} label="Status" />,
       cell: ({ row }) => {
         const status = appStatus(row.original);
+        // "Needs setup" opens the dialog that says what, even for a shared
+        // app this organization can't fix (it says who does).
+        if (appNeedsSetup(row.original)) {
+          return (
+            <Badge
+              variant={status.variant}
+              render={<button type="button" />}
+              aria-haspopup="dialog"
+              className="cursor-pointer hover:bg-warning/25"
+              onClick={() => onSetup(row.original)}
+            >
+              {status.label}
+            </Badge>
+          );
+        }
         return <Badge variant={status.variant}>{status.label}</Badge>;
       },
     },
@@ -166,6 +184,11 @@ function buildColumns({
         row.original.readOnly ? null : (
           <AppActionsMenu
             appName={row.original.name}
+            onSetup={
+              appNeedsSetup(row.original)
+                ? () => onSetup(row.original)
+                : undefined
+            }
             onManageAccess={
               row.original.scope === "shared"
                 ? undefined
@@ -184,6 +207,7 @@ export function AppsTable({
   apps,
   isLoading,
   error,
+  onSetup,
   onManageAccess,
   onEdit,
   onDelete,
@@ -209,8 +233,8 @@ export function AppsTable({
 
   // Stable columns and data keep TanStack Table from resetting every render.
   const columns = useMemo(
-    () => buildColumns({ onManageAccess, onEdit, onDelete, isOwner }),
-    [onManageAccess, onEdit, onDelete, isOwner],
+    () => buildColumns({ onSetup, onManageAccess, onEdit, onDelete, isOwner }),
+    [onSetup, onManageAccess, onEdit, onDelete, isOwner],
   );
 
   const table = useDataTable({

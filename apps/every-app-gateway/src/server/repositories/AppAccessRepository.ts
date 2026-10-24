@@ -18,6 +18,9 @@ type CreateAccess = {
  * The apps a user opens in an organization (the launcher), with how:
  * `via` names the group for a grant that comes through one, null for a
  * direct grant. A user granted an app both ways gets it once, as direct.
+ * The registry columns the settings model reads (tier, manifest, recorded
+ * secret names, version) come along for the service to evaluate the
+ * app's setup; it keeps them server-side.
  */
 async function findAllByUserId(userId: string, organizationId: string) {
   const access = effectiveAccess(organizationId);
@@ -40,6 +43,10 @@ async function findAllByUserId(userId: string, organizationId: string) {
         isDefault: apps.isDefault,
         createdAt: apps.createdAt,
         updatedAt: apps.updatedAt,
+        tier: apps.tier,
+        manifest: apps.manifest,
+        secretNames: apps.secretNames,
+        versionId: apps.versionId,
       },
     })
     .from(access)

@@ -1,4 +1,5 @@
 import type { InferSelectModel } from "drizzle-orm";
+import type { AppSetup } from "@every-app/sdk/internal";
 import { apps } from "@/db/schema";
 
 /**
@@ -32,6 +33,15 @@ export type AppCapabilitySummary = {
 };
 
 /**
+ * What the app still needs set before it opens (server/app-setup.ts): its
+ * manifest's providers, capabilities and secrets against the Gateway's
+ * settings and the app Worker's recorded secret names, and the one
+ * command that sets the rest. Null when the manifest declares nothing to
+ * set, or the platform's settings don't gate the app (the dispatch tier).
+ */
+type ListedAppSetup = AppSetup | null;
+
+/**
  * App with access count for admin views. `readOnly`: a shared app another
  * organization (the platform's) owns, listed for what it is. `capabilities`
  * is computed from the stored manifest on the server, where the registry is.
@@ -40,6 +50,7 @@ export type AppWithAccessCount = App & {
   accessCount: number;
   readOnly: boolean;
   capabilities: AppCapabilitySummary[];
+  setup: ListedAppSetup;
 };
 
 /**
@@ -65,6 +76,7 @@ export type UserAccessApp = Pick<
   via: { groupId: string; name: string } | null;
   /** The path of the launcher icon the app's manifest names (`icon`), or null. */
   icon: string | null;
+  setup: ListedAppSetup;
 };
 
 /**

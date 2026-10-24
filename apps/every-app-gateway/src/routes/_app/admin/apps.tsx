@@ -3,6 +3,7 @@ import { useLiveQuery } from "@tanstack/react-db";
 import { useState } from "react";
 import { Download } from "lucide-react";
 import { adminAppsCollection, useQueryFailed } from "@/client/tanstack-db";
+import { AppSetupDialog } from "@/client/components/AppSetupDialog";
 import { ErrorState } from "@/client/components/ErrorState";
 import { SectionHeader } from "@/client/components/PageHeader";
 import { AppsTable } from "@/client/components/admin/AppsTable";
@@ -31,6 +32,7 @@ function AppsPage() {
     null,
   );
   const [accessApp, setAccessApp] = useState<AppWithAccessCount | null>(null);
+  const [setupApp, setSetupApp] = useState<AppWithAccessCount | null>(null);
 
   const {
     data: apps,
@@ -70,11 +72,23 @@ function AppsPage() {
             />
           ) : undefined
         }
+        onSetup={setSetupApp}
         onManageAccess={setAccessApp}
         onEdit={setEditingApp}
         onDelete={setDeletingApp}
         isOwner={isOwner}
       />
+
+      {setupApp?.setup ? (
+        <AppSetupDialog
+          name={setupApp.name}
+          setup={setupApp.setup}
+          // Another organization's shared app is listed, never set up here:
+          // the dialog says who does, and leaves out what else could be set.
+          canRun={!setupApp.readOnly}
+          onClose={() => setSetupApp(null)}
+        />
+      ) : null}
 
       {editingApp ? (
         <EditAppModal app={editingApp} onClose={() => setEditingApp(null)} />

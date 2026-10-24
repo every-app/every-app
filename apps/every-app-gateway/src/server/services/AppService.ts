@@ -6,6 +6,7 @@ import { PublicError } from "@/server/errors";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
 import { appCapabilities } from "./appCapabilities";
+import { listedAppSetup } from "./listedAppSetup";
 
 // Types for service operations.
 // Apps are registered by `everyapp deploy` writing the gateway's D1, never by
@@ -23,7 +24,9 @@ type UpdateAppInput = {
  * owns, read-only (`readOnly`): only the platform organization's owners and
  * admins edit or delete a shared app, and nobody manages its access. Each
  * app carries its manifest's capabilities read against the registry, which
- * lives here and not on the client.
+ * lives here and not on the client, and its `setup`: what it still needs
+ * set before it opens, with the command for an app this organization can
+ * fix.
  */
 async function getAllWithAccessCounts(ctx: OrgContext) {
   const [own, shared] = await Promise.all([
@@ -32,38 +35,45 @@ async function getAllWithAccessCounts(ctx: OrgContext) {
       ? AppRepository.findAllShared(ctx.orgId)
       : [],
   ]);
-  return {
-    apps: [
-      ...own.map((app) => ({
-        ...app,
-        capabilities: appCapabilities(app.manifest),
-        readOnly: false,
-      })),
-      ...shared.map((app) => ({
-        id: app.id,
-        organizationId: app.organizationId,
-        appId: app.appSlug,
-        name: app.name,
-        description: app.description,
-        hostname: app.hostname,
-        workerName: app.workerName,
-        tier: app.tier,
-        scope: app.scope,
-        manifest: app.manifest,
-        emailSenders: app.emailSenders,
-        emailInbound: app.emailInbound,
-        secretNames: app.secretNames,
-        status: app.status,
-        deployedByActor: app.deployedByActor,
-        isDefault: app.isDefault,
-        createdAt: app.createdAt,
-        updatedAt: app.updatedAt,
-        accessCount: 0,
-        capabilities: appCapabilities(app.manifest),
-        readOnly: true,
-      })),
-    ],
-  };
+  const listed = [
+    ...own.map((app) => ({
+      ...app,
+      capabilities: appCapabilities(app.manifest),
+      readOnly: false,
+    })),
+    ...shared.map((app) => ({
+      id: app.id,
+      organizationId: app.organizationId,
+      appId: app.appSlug,
+      name: app.name,
+      description: app.description,
+      hostname: app.hostname,
+      workerName: app.workerName,
+      tier: app.tier,
+      scope: app.scope,
+      manifest: app.manifest,
+      emailSenders: app.emailSenders,
+      emailInbound: app.emailInbound,
+      secretNames: app.secretNames,
+      versionId: app.versionId,
+      status: app.status,
+      deployedByActor: app.deployedByActor,
+      isDefault: app.isDefault,
+      createdAt: app.createdAt,
+      updatedAt: app.updatedAt,
+      accessCount: 0,
+      capabilities: appCapabilities(app.manifest),
+      readOnly: true,
+    })),
+  ];
+  const apps = await Promise.all(
+    // The version only keys the evaluation's cache; it stays server-side.
+    listed.map(async ({ versionId, ...app }) => ({
+      ...app,
+      setup: await listedAppSetup({ ...app, versionId }, !app.readOnly),
+    })),
+  );
+  return { apps };
 }
 
 /**

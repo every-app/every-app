@@ -57,7 +57,9 @@ async function findAll(organizationId: string) {
 
 /**
  * Find all apps with access counts in a single query: how many distinct
- * members open each, directly or through a group.
+ * members open each, directly or through a group. The version comes
+ * along for the setup evaluation's cache key; the service keeps it
+ * server-side.
  */
 async function findAllWithAccessCounts(organizationId: string) {
   const access = effectiveAccess(organizationId);
@@ -76,6 +78,7 @@ async function findAllWithAccessCounts(organizationId: string) {
       emailSenders: apps.emailSenders,
       emailInbound: apps.emailInbound,
       secretNames: apps.secretNames,
+      versionId: apps.versionId,
       status: apps.status,
       deployedByActor: apps.deployedByActor,
       isDefault: apps.isDefault,

@@ -18,6 +18,7 @@ import {
   AppListItem,
   AppListItemSkeleton,
 } from "@/client/components/AppListItem";
+import { AppSetupDialog } from "@/client/components/AppSetupDialog";
 import { EmptyState } from "@/client/components/EmptyState";
 import { ErrorState } from "@/client/components/ErrorState";
 import { PageHeader } from "@/client/components/PageHeader";
@@ -47,8 +48,10 @@ import {
   AppLibrarySort,
   useAppLibrary,
 } from "@/client/hooks/useAppLibrary";
+import { useSetupParam } from "@/client/hooks/useSetupParam";
 import { useShortcutLabel } from "@/client/hooks/useShortcutLabel";
 import { authClient } from "@/client/auth-client";
+import type { UserAccessApp } from "@/types/app";
 
 // An outline button on the card surface (white in light mode), so it stands
 // out from the page and the empty state's background.
@@ -61,6 +64,10 @@ const searchSchema = z.object({
     .optional()
     .catch(undefined),
   filter: z.nativeEnum(AppLibraryFilter).optional(),
+  // The app id of a setup dialog to open: where the perimeter sends someone
+  // who tried to open an app that needs setup, and the sidebar's pinned
+  // apps link.
+  setup: z.string().optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/_app/")({
@@ -70,8 +77,13 @@ export const Route = createFileRoute("/_app/")({
 
 function App() {
   const session = useSession();
-  const { pwa: pwaParam, filter = AppLibraryFilter.All } = Route.useSearch();
+  const {
+    pwa: pwaParam,
+    setup: setupParam,
+    filter = AppLibraryFilter.All,
+  } = Route.useSearch();
   const [showPWAInstallModal, setShowPWAInstallModal] = useState(false);
+  const [setupApp, setSetupApp] = useState<UserAccessApp | null>(null);
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
   const searchShortcut = useShortcutLabel("K");
@@ -115,6 +127,16 @@ function App() {
       void navigate({ to: "/", search: { filter }, replace: true });
     }
   }, [pwaParam, navigate, filter]);
+
+  // `?setup=<appId>`: once the list is in, open that app's setup dialog if
+  // it still needs setup, and strip the param either way.
+  useSetupParam({
+    setupParam,
+    apps,
+    loaded: !isLoading && !isError,
+    open: setSetupApp,
+    strip: () => void navigate({ to: "/", search: { filter }, replace: true }),
+  });
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -309,6 +331,7 @@ function App() {
                       app={app}
                       pinned={pinnedIds.has(app.id)}
                       onTogglePin={() => togglePin(app.id)}
+                      onOpenSetup={() => setSetupApp(app)}
                       layout={layout}
                     />
                   ))}
@@ -368,6 +391,21 @@ function App() {
         open={showPWAInstallModal}
         onClose={() => setShowPWAInstallModal(false)}
       />
+      {setupApp?.setup ? (
+        <AppSetupDialog
+          name={setupApp.name}
+          setup={setupApp.setup}
+          // An owner or admin runs the command for their own organization's
+          // app; a shared app of another organization is the platform's to
+          // set, optional settings included.
+          canRun={
+            userCanManageApps &&
+            setupApp.organizationId ===
+              session.data?.session.activeOrganizationId
+          }
+          onClose={() => setSetupApp(null)}
+        />
+      ) : null}
     </div>
   );
 }

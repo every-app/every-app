@@ -11,7 +11,7 @@ import {
   TooltipTrigger,
 } from "@/client/components/ui/tooltip";
 import { AppLibraryLayout } from "@/client/hooks/useAppLibrary";
-import { appStatus } from "@/client/lib/appStatus";
+import { appNeedsSetup, appStatus } from "@/client/lib/appStatus";
 import type { UserAccessApp } from "@/types/app";
 
 /**
@@ -27,18 +27,26 @@ interface AppListItemProps {
   app: UserAccessApp;
   pinned: boolean;
   onTogglePin: () => void;
+  /** Opens the setup dialog, for an app that needs setup. */
+  onOpenSetup: () => void;
   layout: AppLibraryLayout;
 }
 
-/** The app is a normal link; pinning is a separate, keyboard-accessible action. */
+/**
+ * The app is a normal link; pinning is a separate, keyboard-accessible
+ * action. An app that needs setup is no link: the card (its badge
+ * included) opens the setup dialog instead.
+ */
 export function AppListItem({
   app,
   pinned,
   onTogglePin,
+  onOpenSetup,
   layout,
 }: AppListItemProps) {
   const status = appStatus(app);
   const routable = status.opens;
+  const needsSetup = appNeedsSetup(app);
   const list = layout === AppLibraryLayout.List;
   const pinLabel = `${pinned ? "Unpin" : "Pin"} ${app.name}`;
   const PinIcon = pinned ? PinOff : Pin;
@@ -158,6 +166,7 @@ export function AppListItem({
           "group relative gap-0 py-0 transition-colors motion-reduce:transition-none",
           cardHeightClass(list),
           routable ? "hover:border-foreground/25" : "bg-card/60",
+          needsSetup && "hover:border-foreground/25",
         )}
       >
         <div className={cn(bodyClass, "pointer-events-none")}>{body}</div>
@@ -166,6 +175,14 @@ export function AppListItem({
             href={`//${app.hostname}`}
             aria-label={`Open ${app.name}`}
             className="absolute inset-0 rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
+          />
+        ) : needsSetup ? (
+          <button
+            type="button"
+            aria-label={`Set up ${app.name}`}
+            aria-haspopup="dialog"
+            onClick={onOpenSetup}
+            className="absolute inset-0 cursor-pointer rounded-xl outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/50"
           />
         ) : null}
       </Card>

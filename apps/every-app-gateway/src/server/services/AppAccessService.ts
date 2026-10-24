@@ -5,12 +5,15 @@ import { OrganizationMembersRepository } from "../repositories/OrganizationMembe
 import { PublicError } from "@/server/errors";
 import type { OrgContext } from "@/server/organization/orgContext";
 import { platformPolicy } from "@/server/platform-policy";
+import { listedAppSetup } from "./listedAppSetup";
 
 /**
  * Get all apps a user has access to: the organization's own they have
  * installed (directly or through a group, `via`), and on the hosted
  * gateway the shared apps, which every member of every organization may
- * open.
+ * open. Each carries its `setup`: what it still needs set before it
+ * opens, with the command for an app of the reader's own organization (a
+ * shared app is the platform's to fix).
  */
 async function getAppsForUser(ctx: OrgContext) {
   const [accessRecords, shared] = await Promise.all([
@@ -18,17 +21,17 @@ async function getAppsForUser(ctx: OrgContext) {
     platformPolicy(env).sharedApps ? AppRepository.findAllShared() : [],
   ]);
   const own = accessRecords.map((record) => ({
-    ...record.app,
+    app: record.app,
     grantedAt: record.grantedAt,
     via: record.via,
   }));
-  const ownIds = new Set(own.map((app) => app.id));
-  return {
-    apps: [
-      ...own,
-      ...shared
-        .filter((app) => !ownIds.has(app.id))
-        .map((app) => ({
+  const ownIds = new Set(own.map(({ app }) => app.id));
+  const listed = [
+    ...own,
+    ...shared
+      .filter((app) => !ownIds.has(app.id))
+      .map((app) => ({
+        app: {
           id: app.id,
           organizationId: app.organizationId,
           appId: app.appSlug,
@@ -41,12 +44,35 @@ async function getAppsForUser(ctx: OrgContext) {
           isDefault: app.isDefault,
           createdAt: app.createdAt,
           updatedAt: app.updatedAt,
-          // Nobody is granted a shared app: it is everyone's from the start.
-          grantedAt: app.createdAt,
-          via: null,
-        })),
-    ],
-  };
+          tier: app.tier,
+          manifest: app.manifest,
+          secretNames: app.secretNames,
+          versionId: app.versionId,
+        },
+        // Nobody is granted a shared app: it is everyone's from the start.
+        grantedAt: app.createdAt,
+        via: null,
+      })),
+  ];
+  const apps = await Promise.all(
+    listed.map(async ({ app, grantedAt, via }) => {
+      // The registry columns the evaluation read stay server-side.
+      const {
+        tier: _tier,
+        manifest: _manifest,
+        secretNames: _secretNames,
+        versionId: _versionId,
+        ...listedApp
+      } = app;
+      return {
+        ...listedApp,
+        grantedAt,
+        via,
+        setup: await listedAppSetup(app, app.organizationId === ctx.orgId),
+      };
+    }),
+  );
+  return { apps };
 }
 
 /** Who opens a shared app is no admin's choice: every member of every organization. */

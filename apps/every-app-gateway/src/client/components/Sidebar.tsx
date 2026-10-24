@@ -17,7 +17,7 @@ import { authClient } from "@/client/auth-client";
 import { useSession } from "@/client/hooks/useSession";
 import { AppLibraryFilter, useAppLibrary } from "@/client/hooks/useAppLibrary";
 import { AppIcon } from "@/client/components/AppIcon";
-import { appStatus } from "@/client/lib/appStatus";
+import { appNeedsSetup, appStatus } from "@/client/lib/appStatus";
 import {
   ACCESS_SIGN_OUT_PATH,
   useSignInMethods,
@@ -182,15 +182,24 @@ export function Sidebar() {
                 <SidebarMenu>
                   {pinnedApps.map((app) => {
                     const status = appStatus(app);
+                    // An app that needs setup leads to its setup dialog on
+                    // the home page, where the launcher opens it.
+                    const needsSetup = appNeedsSetup(app);
                     return (
                       <SidebarMenuItem key={app.id}>
                         <SidebarMenuButton
                           className={navButtonClass}
-                          disabled={!status.opens}
+                          disabled={!status.opens && !needsSetup}
                           render={
                             status.opens ? (
                               <a
                                 href={`//${app.hostname}`}
+                                onClick={() => setOpenMobile(false)}
+                              />
+                            ) : needsSetup ? (
+                              <Link
+                                to="/"
+                                search={{ setup: app.appId }}
                                 onClick={() => setOpenMobile(false)}
                               />
                             ) : undefined
