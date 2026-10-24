@@ -3,13 +3,14 @@ import { useEffect, useState } from "react";
 import { toCanonicalUrl } from "@/lib/seo";
 import { joinWaitlist } from "@/lib/waitlist.functions";
 
-const homeTitle = "Every App - Make every app open source";
+const homeTitle =
+  "Every App - Your apps, online, in your own Cloudflare account";
 const homeDescription =
-  "Make every app open source. Join the waitlist to hear when Every App is ready.";
+  "Open source and alpha. Every App puts the web apps you build online, in your own Cloudflare account, each with an address, a database and a sign-in.";
 
 const openSeoRepo = "every-app/open-seo";
 // Seed value so the badge never renders empty; refreshed from the GitHub API on load.
-const openSeoStarsFallback = 4159;
+const openSeoStarsFallback = 24693;
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -86,7 +87,7 @@ function WaitlistForm() {
     return (
       <div className="flex min-h-12 items-center">
         <p className="text-base text-stone-200">
-          You&apos;re on the list. We&apos;ll be in touch.
+          Thanks. We&apos;ll keep you posted.
         </p>
       </div>
     );
@@ -112,7 +113,7 @@ function WaitlistForm() {
           disabled={status === "submitting"}
           className="h-12 shrink-0 rounded-md bg-stone-100 px-5 text-sm font-medium text-[#0a0f0d] transition-colors hover:bg-white disabled:opacity-60"
         >
-          {status === "submitting" ? "Joining…" : "Join the waitlist"}
+          {status === "submitting" ? "Sending…" : "Keep me posted"}
         </button>
       </form>
       {status === "error" ? (
@@ -165,24 +166,66 @@ function Home() {
               EVERY APP
             </h1>
             <p
-              className="landing-reveal mb-12 text-[clamp(1.5rem,3vw,2rem)] font-normal text-white"
+              className="landing-reveal mb-6 text-[clamp(1.5rem,3vw,2rem)] font-normal text-white"
               style={{ animationDelay: "100ms" }}
             >
               Make every app open source
             </p>
+            <p
+              className="landing-reveal mb-10 max-w-xl text-base text-stone-400"
+              style={{ animationDelay: "150ms" }}
+            >
+              Every App puts the apps you build online, in your own Cloudflare
+              account. Each app gets an address, a database and a sign-in. Open
+              source and very powerful. Alpha: moving fast, and trying not to
+              introduce breaking changes. Made for a solo founder or a
+              three-person startup shipping tools with a coding agent.
+            </p>
 
-            <div className="landing-reveal" style={{ animationDelay: "200ms" }}>
-              <WaitlistForm />
-              <p className="mt-4 text-sm text-stone-400">
-                Want to set it up yourself today?{" "}
-                <Link
-                  to="/docs/$"
-                  params={{ _splat: "" }}
-                  className="text-stone-300 underline decoration-stone-600 underline-offset-4 transition-colors hover:text-white hover:decoration-stone-400"
-                >
-                  Read the docs
-                </Link>
+            <div
+              className="landing-reveal flex flex-wrap items-center gap-3"
+              style={{ animationDelay: "200ms" }}
+            >
+              <Link
+                to="/docs/$"
+                params={{ _splat: "" }}
+                className="inline-flex h-12 items-center rounded-md bg-stone-100 px-5 text-sm font-medium text-[#0a0f0d] transition-colors hover:bg-white"
+              >
+                Get started
+              </Link>
+              <a
+                href="https://github.com/every-app/every-app"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-12 items-center rounded-md border border-stone-700 px-5 text-sm font-medium text-stone-200 transition-colors hover:border-stone-500 hover:text-white"
+              >
+                View on GitHub
+              </a>
+            </div>
+            <p
+              className="landing-reveal mt-4 text-sm text-stone-400"
+              style={{ animationDelay: "250ms" }}
+            >
+              Runs on Cloudflare&apos;s $5-a-month Workers Paid plan. We
+              strongly recommend putting your Gateway behind{" "}
+              <Link
+                to="/docs/$"
+                params={{ _splat: "access" }}
+                className="text-stone-300 underline decoration-stone-600 underline-offset-4 transition-colors hover:text-white hover:decoration-stone-400"
+              >
+                Cloudflare Access
+              </Link>
+              : one command, free for up to 50 people.
+            </p>
+
+            <div
+              className="landing-reveal mt-12"
+              style={{ animationDelay: "300ms" }}
+            >
+              <p className="mb-3 text-sm text-stone-400">
+                Hear about releases and breaking changes:
               </p>
+              <WaitlistForm />
             </div>
 
             <div
