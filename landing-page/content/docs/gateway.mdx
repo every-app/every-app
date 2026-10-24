@@ -5,6 +5,8 @@ description: Install the Gateway in your Cloudflare account and create your owne
 
 The Gateway is where you and the people you invite sign in and open your apps. Before you start, you need a [Cloudflare account on Workers Paid](/docs/cloudflare) and a [domain on Cloudflare](/docs/domain).
 
+Using Claude Code, Codex or Cursor? It can run these steps for you. [Or let your coding agent do it](#or-let-your-coding-agent-do-it)
+
 ## Install the tools
 
 1. **Node.js.** Download the LTS version from [nodejs.org](https://nodejs.org) and run the installer. You need version 22.18 or newer.
@@ -50,6 +52,10 @@ The terminal says **Log in to Cloudflare to continue**, then **Starting Cloudfla
 
 If you have more than one Cloudflare account, the terminal asks which one to use.
 
+What you're approving is Cloudflare's own sign-in for its `cf` command line tool, which Every App runs for you. Like `wrangler login`, it gives `cf` on this computer broad access to the Cloudflare accounts you belong to, not only the one you pick. Every App uses it for the Gateway, your apps and what you turn on later, like Cloudflare Access, and leaves everything else alone; setup stops rather than replace a DNS record that already exists. [What Every App puts in your account](/docs/cloudflare#what-every-app-puts-in-your-account)
+
+If you'd rather not grant that, run setup with an API token instead. For setup, a token needs Account > Workers Scripts > Edit, Account > D1 > Edit, Account > Workers KV Storage > Edit, Zone > Zone > Read and Zone > DNS > Read, limited to this account and your domain; set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` before the command.
+
 </Step>
 <Step>
 
@@ -62,7 +68,7 @@ The terminal asks for the **Gateway address** and suggests `apps.yourcompany.com
 
 ### Wait a few minutes
 
-Setup builds the Gateway and puts it online. This usually takes 5 to 10 minutes.
+Setup builds the Gateway and puts it online. This step usually takes 5 to 10 minutes; the whole setup about 15, most of the rest waiting for you at the owner link.
 
 </Step>
 <Step>
@@ -71,7 +77,7 @@ Setup builds the Gateway and puts it online. This usually takes 5 to 10 minutes.
 
 Your browser opens a page called **Set up your gateway**. Enter your name, email and a password of at least 8 characters (twice), then select **Create owner account**.
 
-Back in the terminal, setup asks **Configure browser app installs?** Press Enter to skip it. In a script, add `--yes` and setup answers No for you. You can turn it on later by running setup again.
+Back in the terminal, setup asks **Configure browser app installs?** Yes lets owners and admins install published apps from the Gateway's Admin page instead of the terminal; it asks for a Cloudflare API token (it tells you which permissions) and stores it as a secret on your Gateway, `CF_DEPLOY_TOKEN`. Press Enter to skip it for now. In a script, add `--yes` and setup answers No for you. You can turn it on later by running setup again.
 
 </Step>
 </Steps>
@@ -88,7 +94,7 @@ Paste this into Claude Code, Codex or Cursor and it runs the steps above for you
 
 <include lang="text">./setup-prompt.txt</include>
 
-It stops when it needs you to approve the Cloudflare login (step 3) and create your owner account (step 6), then creates and deploys a first app called hello.
+It stops where the steps above need you: to approve the Cloudflare login, to pick the Cloudflare account if you have several, to pick a workers.dev name the first time this account runs a Worker (your apps never use it), and to create your owner account. Then it creates and deploys a first app called hello.
 
 ## When it's done
 

@@ -64,7 +64,7 @@ const DOCUMENTS = [
     from: "docs/hosted-vision.md",
     to: "hosted-vision",
     description:
-      "The hosted tier: the end state, the rulings that stand, and the invariants every self-host change keeps.",
+      "The hosted tier, which comes after the self-host-only launch: its end state, the rulings that stand (self-hosting keeps working from the same code), and the invariants every self-host change keeps.",
   },
   {
     from: "docs/runbooks/cloudflare-access.md",

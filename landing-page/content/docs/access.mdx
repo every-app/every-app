@@ -3,7 +3,7 @@ title: Sign in through Cloudflare Access
 description: Put Cloudflare Access in front of your Gateway, so people sign in with a code emailed to them (or your company login) before they reach it.
 ---
 
-Optional. Your Gateway already has its own sign-in. Cloudflare Access adds a second door in front of it, at Cloudflare's edge: nobody reaches the Gateway or its apps until Access has checked who they are, with a one-time code emailed to them or with your company's identity provider. It takes one command and uses Cloudflare's free Zero Trust plan, which covers 50 people.
+Optional. Your Gateway already has its own sign-in, and while Every App is alpha we strongly recommend a second one in front of it. Cloudflare Access is that second door, at Cloudflare's edge, from a company that does nothing else: nobody reaches the Gateway or its apps until Access has checked who they are, with a one-time code emailed to them or with your company's identity provider. A bug in the Gateway's sign-in pages then needs someone Access already let in, and a stolen session cookie gets nothing on its own. It takes one command and uses Cloudflare's free Zero Trust plan, which covers 50 people; Cloudflare still asks for payment details the first time, and says it won't charge for the Free plan.
 
 ## Turn it on
 
@@ -15,7 +15,7 @@ pnpm everyapp access on
 
 If your Cloudflare account has no Zero Trust team yet, the terminal asks for a team name. People will sign in at `<name>.cloudflareaccess.com`, and the name can't be changed later, so pick something like your company's name.
 
-The first time, Cloudflare may ask you to pick a Zero Trust plan and enter payment details in its dashboard, even for the Free plan, before the command can create the team. If it does, open **Zero Trust** in the Cloudflare dashboard, finish that, and run the command again.
+If Cloudflare asks you to pick a Zero Trust plan and enter those payment details in its dashboard before the command can create the team, open **Zero Trust** in the Cloudflare dashboard, finish that, and run the command again.
 
 The command then sets everything up and says what it did:
 
@@ -44,7 +44,7 @@ Once everyone has done that, you can turn passwords off:
 pnpm everyapp secret set EMAIL_PASSWORD_SIGN_IN
 ```
 
-Enter `false`. Nothing changes until an owner has signed in through Access, so it can't lock you out.
+Enter `false`: Gateway settings like this one are set with the same command as secrets, and the prompt says what each takes. Nothing changes until an owner has signed in through Access, so it can't lock you out.
 
 ## When you invite someone
 

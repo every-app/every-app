@@ -16,7 +16,7 @@ It's for a solo founder or a team of three or four, building the tools their bus
 ## What you can count on
 
 - **Private by default.** Nobody can open an app until they've signed in and you've given them access. An app can declare public routes, like a tracking script or a webhook, and the deploy prints them.
-- **An app only gets what you allow.** The Gateway tells it who the person is, for that app only and for about two minutes, plus the app's own secrets you've set. AI and integration keys stay on the Gateway, which makes those calls for the app. It never sees your password or your session.
+- **An app only gets what you allow.** The Gateway tells it who the person is in a signed note that works for that app only and expires after about two minutes; you stay signed in, and every request gets a fresh note. The app also gets its own secrets you've set. AI and integration keys stay on the Gateway, which makes those calls for the app. It never sees your password or your session.
 - **One sign-in for every app.** You never build a login page.
 - **Each app keeps its own data.** Removing one app never touches another.
 - **Updates keep your data.** Before a deploy changes an app's database, it saves a restore point.
@@ -45,22 +45,24 @@ Each runs behind your Gateway.
 - **OpenAnalytics**: web analytics for your sites with no cookies, no stored IP addresses and a tracker of about 3 KB gzipped.
 - **Agentic Inbox**: a team inbox with an AI agent that receives, reads, drafts and sends email on your domain.
 
-Clone one, run `pnpm install`, then `pnpm everyapp deploy` in its folder. Once a repository publishes a release, `pnpm everyapp install <GitHub URL>` installs it; run it again to update.
+Clone one, run `pnpm install`, then `pnpm everyapp deploy` in its folder. None of the four publishes a release yet. Once one does (its author runs `pnpm everyapp release` and attaches the file to a GitHub release of the repository), `pnpm everyapp install <GitHub URL>` installs it; run it again to update.
 
 ## What it costs
 
-| What                           | Cost                   |
-| ------------------------------ | ---------------------- |
-| Cloudflare's Workers Paid plan | $5 a month, then usage |
-| A `.com` domain                | About $10 a year       |
-| A `.dev` or `.app` domain      | $1 for the first year  |
-| Every App                      | Free and open source   |
+| What                            | Cost                                                                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Cloudflare's Workers Paid plan  | $5 a month, then usage                                                                                                |
+| A `.com` domain                 | About $10 a year                                                                                                      |
+| A `.dev` or `.app` domain       | $1 for the first year                                                                                                 |
+| An AI key, for apps that use AI | Billed by use by OpenAI or OpenRouter, on your own account with them; Workers AI goes on your Cloudflare bill instead |
+| A DataForSEO key, for OpenSEO   | Pay as you go, billed by DataForSEO                                                                                   |
+| Every App                       | Free and open source                                                                                                  |
 
-A few apps for a small team fit inside the $5. Full details are on Cloudflare's [pricing page](https://developers.cloudflare.com/workers/platform/pricing/).
+The $5 includes 10 million requests a month and far more database reads and writes than a few apps for a small team use, so they fit inside it; an app adds no fixed cost. Past that, Cloudflare bills by use; the rates are on its [pricing page](https://developers.cloudflare.com/workers/platform/pricing/). Cloudflare is the only bill Every App itself causes: an AI or DataForSEO key comes from an account you open with that company, which bills you for what your apps use. [Apps that use AI](/docs/create-an-app#apps-that-use-ai)
 
 ## What you need
 
 1. A Cloudflare account on Workers Paid. [Set up Cloudflare](/docs/cloudflare)
 2. A domain on Cloudflare. [Get a domain](/docs/domain)
-3. Node.js, pnpm and git. [Install the tools](/docs/gateway#install-the-tools)
-4. A Mac, Windows or Linux computer, and about 30 minutes.
+3. Node.js, pnpm and git. [Install the tools](/docs/gateway#install-the-tools), or [let your coding agent do it](/docs/gateway#or-let-your-coding-agent-do-it)
+4. A Mac, Windows or Linux computer, and about 30 minutes for all of this. Setting up the Gateway itself is about 15 of them.

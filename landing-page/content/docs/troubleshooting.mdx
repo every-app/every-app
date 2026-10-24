@@ -87,10 +87,19 @@ You're outside your `every-app` folder, or haven't run `pnpm install` in it yet.
 
 This command runs inside an app's folder. Run `cd apps/my-app` and try again.
 
+## ELIFECYCLE Command failed with exit code 2 or 130
+
+`pnpm dev` and `pnpm run deploy` are scripts in the app's `package.json` that run `everyapp dev` and `everyapp deploy`. When everyapp stops on purpose, pnpm adds this line after it. The line is pnpm's; nothing failed, and the lines above it are the message that matters.
+
+- **exit code 2:** everyapp stopped for you to do something. The lines above say what, and the command to run again.
+- **exit code 130:** you pressed Ctrl+C, and the app stopped.
+
+`pnpm everyapp dev` and `pnpm everyapp deploy` run the same commands without the line.
+
 ## Strange errors after using npx
 
-`npx everyapp` downloads an old version that doesn't work. A copy installed with `npm install -g` runs from outside your folder and says **everyapp has to run from a checkout of the Every App repository**. Always run `pnpm everyapp` from your `every-app` folder.
+`npx everyapp` downloads an old version that doesn't work: publishing to npm is paused, and the copy on npm is from before this Gateway. A copy installed with `npm install -g` runs from outside your folder and says **everyapp has to run from a checkout of the Every App repository**. Always run `pnpm everyapp` from your `every-app` folder.
 
 ## Still stuck
 
-Run the command again with `--verbose` at the end, and bring the output to our [Discord](https://discord.gg/c9uGs3cFXr) or email it to [support@everyapp.dev](mailto:support@everyapp.dev).
+Run the command again with `--verbose` at the end, and bring the output to our [Discord](https://discord.gg/c9uGs3cFXr) or email it to [support@everyapp.dev](mailto:support@everyapp.dev) (everyapp.dev is ours too). Expect a fast, informal reply from a very small team. There's no status page: your Gateway runs in your Cloudflare account, so if every app is down at once, check [Cloudflare's status](https://www.cloudflarestatus.com) first.

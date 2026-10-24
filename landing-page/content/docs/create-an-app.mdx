@@ -15,7 +15,9 @@ pnpm everyapp create my-app
 cd apps/my-app
 ```
 
-This copies the starter app, a simple todo list, into `apps/my-app`.
+This copies the starter app, a simple todo list, into `apps/my-app`. Each person sees only their own todos. What an app shares between people is up to the app (the Gateway only decides who can open it), so ask your agent for sharing, as the example below does.
+
+`apps/my-app` is yours: git in your `every-app` folder neither tracks nor ignores it, and `git pull` leaves it alone. For a repository of its own, run `pnpm everyapp create my-app` from any folder outside `every-app`: it goes in `./my-app` with its own git repository, linked to your `every-app` folder, so don't move either one.
 
 The name becomes part of the app's address: `my-app.apps.yourcompany.com`. Use lowercase letters, numbers and dashes, starting with a letter and ending with a letter or number.
 
@@ -43,7 +45,7 @@ You don't need to ask for a login page. The Gateway handles sign-in, and the app
 pnpm dev
 ```
 
-Open `http://my-app.localhost:8787`. You're signed in as a test user, and changes show up as your agent makes them. Press Ctrl+C in the terminal to stop it.
+Open `http://my-app.localhost:8787`. If that port is taken, the terminal stops and prints the `pnpm everyapp dev --port <n>` command to run instead, with the next free port. You're signed in as the dev user, `dev@everyapp.localhost`, and changes show up as your agent makes them. Press Ctrl+C in the terminal to stop it; the `ELIFECYCLE Command failed with exit code 130` line pnpm prints then is pnpm's, not a failure.
 
 </Step>
 <Step>
@@ -54,11 +56,14 @@ Open `http://my-app.localhost:8787`. You're signed in as a test user, and change
 pnpm run deploy
 ```
 
+`pnpm run deploy` runs `everyapp deploy`, the same as `pnpm everyapp deploy`. If it stops for something only you can do, the lines it printed say what; the `ELIFECYCLE Command failed with exit code 2` line after them is pnpm's. [Troubleshooting](/docs/troubleshooting#elifecycle-command-failed-with-exit-code-2-or-130)
+
 When it's done, you'll see:
 
 ```text
-Live    https://my-app.apps.yourcompany.com
-Access  Private to you, owners and admins · change it at https://apps.yourcompany.com/admin/apps
+Live          https://my-app.apps.yourcompany.com
+Who can open  Private to you, owners and admins · change it at https://apps.yourcompany.com/admin/apps
+Public        Open to the internet without sign-in: GET /health
 ```
 
 Open your Gateway and the app is in **All apps**.
@@ -82,7 +87,11 @@ To publish yours, run `pnpm everyapp release` in its folder and attach the file 
 
 ## Apps that use AI
 
-Add your AI key to the Gateway once, and every app that uses AI can use it:
+Apps that use AI call OpenAI, OpenRouter or Workers AI through your Gateway, with a key you add once. A key is a long code you create in your own account at OpenAI ([platform.openai.com/api-keys](https://platform.openai.com/api-keys)) or OpenRouter ([openrouter.ai/settings/keys](https://openrouter.ai/settings/keys)). That account bills you for what your apps use, separately from Cloudflare; both sell prepaid credits. Workers AI runs in your Cloudflare account instead and goes on your Cloudflare bill after a free daily allowance.
+
+Your coding agent can set this up with you step by step: ask it to follow `setup/openai.md` or `setup/openrouter.md` in the everyapp skill (in your app, `.claude/skills/everyapp/setup/`).
+
+Add the key to the Gateway once, and every app that uses AI can use it:
 
 ```bash
 pnpm everyapp secret set OPENAI_API_KEY
@@ -90,7 +99,15 @@ pnpm everyapp secret set OPENAI_API_KEY
 
 Paste the key when asked. For OpenRouter, use `OPENROUTER_API_KEY`. For Workers AI, use `WORKERS_AI_API_TOKEN`.
 
-In an app's folder, `pnpm everyapp secret list` shows which keys it needs and which are set. Until every key it requires is set, the app shows **Needs setup** on your Gateway and won't open.
+In an app's folder, `pnpm everyapp secret list` shows which keys it needs, which are set, and where to get each one. Until every key it requires is set, the app shows **Needs setup** on your Gateway and won't open.
+
+An app you build says which provider it uses in its `everyapp.config.ts`:
+
+```ts
+providers: ["openai"],
+```
+
+Use `"openrouter"` or `"workers-ai"` for the other two. Your agent takes it from there: the app calls the provider through the Gateway with the SDK's `createGatewayFetch()`, the Gateway adds the key, and the app never holds one. A provider the manifest doesn't list is refused. [AI providers](/docs/agent/secrets#ai-providers)
 
 ## Keys only one app uses
 

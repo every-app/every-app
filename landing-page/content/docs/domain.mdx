@@ -3,7 +3,9 @@ title: Get a domain
 description: Every App needs a domain on Cloudflare. Buy one there, or bring one you already own.
 ---
 
-Your Gateway and apps live under one address on your domain, like `apps.yourcompany.com`. Your website and email keep working as they are.
+Your Gateway and apps live under one address on your domain, like `apps.yourcompany.com`.
+
+Don't want to touch the domain your website and email run on? [Buy a new domain](#buy-a-new-domain) just for your apps; it takes a minute. Using a domain you already own means changing its nameservers where you bought it, so that Cloudflare serves its DNS. Your website and email keep working when step 4 below copies their records first.
 
 ## Buy a new domain
 
@@ -34,7 +36,7 @@ If you bought it elsewhere, like GoDaddy or Namecheap, keep it there and point i
 
 ## You don't touch DNS
 
-Every App creates the DNS records and HTTPS certificates it needs. A new address usually starts working within five minutes.
+Every App creates the DNS records and HTTPS certificates it needs. A new address usually starts working within five minutes, up to ten.
 
 If something already uses the address, setup stops instead of replacing it. Delete that record in Cloudflare (your domain, then **DNS**) or choose another address.
 
@@ -42,4 +44,4 @@ If something already uses the address, setup stops instead of replacing it. Dele
 
 Setup suggests `apps.yourcompany.com`, but any name under your domain works, like `tools.yourcompany.com`. Apps go one level below it: `todo.tools.yourcompany.com`.
 
-Pick carefully. The Gateway can't move once it's set up.
+Pick carefully. The Gateway can't move once it's set up. To start again at another address, [remove everything](/docs/update#remove-everything) first.

@@ -7,6 +7,8 @@ description: Where your apps run, how they stay private, and who can change them
 
 Everything runs in your Cloudflare account. The Gateway and each app are separate programs on Cloudflare (Workers), each with its own database.
 
+To sign you in to Cloudflare and upload each app, everyapp uses `cf`, Cloudflare's own command line tool. It brings its own copy and runs it for you; there's nothing to install or set up, and the login it keeps stays on your computer. If you've used Wrangler: `cf` is Cloudflare's newer tool, and everyapp runs it instead. The one file of yours everyapp reads for a secret is `.everyapp/secrets.env` in an app's folder, and only for an app with its own Postgres database: the address and password it needs to run the app's migrations and to connect Cloudflare's Hyperdrive to it. Nothing in it goes into the app's Worker; an app's keys are set with `pnpm everyapp secret set`.
+
 ## How apps stay private
 
 Apps have no public address of their own. Every visit goes through the Gateway first.
@@ -23,6 +25,8 @@ So even if an app has a bug, only people you've given access to can reach it.
 
 Each app has its own database, so one app can't read or change another's data. Deploys save a restore point before changing a database. [Undo a database change](/docs/update#undo-a-database-change)
 
+Nothing is sent to us. The CLI and the Gateway have no telemetry and never check in with Every App. They talk to Cloudflare, to GitHub when you install a published app, and to the services you connect: the AI provider you add a key for, your email sender, the integrations you turn on. Your members' email addresses, your keys and your apps' data stay in your account; we can't see them. This website counts page views with analytics we host ourselves: [Privacy](/privacy).
+
 ## Who can change things
 
 Anyone who can sign in to your Cloudflare account can deploy apps and change the Gateway. Only give that access to people you fully trust.
@@ -37,4 +41,4 @@ Every App is alpha software, and powerful: your apps run in your Cloudflare acco
 
 - You update apps from the terminal. The Gateway can install published apps for you if you turn browser installs on during setup.
 - When you remove someone, it can take up to two minutes before every app stops letting them in.
-- The Gateway can't move to a different address once it's set up.
+- The Gateway can't move to a different address once it's set up. To change it, [remove everything](/docs/update#remove-everything) and set it up again.

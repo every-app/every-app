@@ -15,7 +15,7 @@ Your Gateway is invite-only: nobody can sign up unless you invite them. Everythi
 
 If your Gateway can't send email, it shows an **Invite link** instead. Copy it and send it to them yourself. It expires after 72 hours. [Set up email](#send-email)
 
-Behind [Cloudflare Access](/docs/access), run `pnpm everyapp access on` again after inviting someone, so Access lets them in.
+Behind [Cloudflare Access](/docs/access), run `pnpm everyapp access on` again after inviting someone. Access keeps its own list of who may pass, and only your Cloudflare login can change it, so the Gateway can't add them for you. To stop doing this for people at your company, let your whole domain through once: `pnpm everyapp access on --email-domain yourcompany.com`. [When you invite someone](/docs/access#when-you-invite-someone)
 
 ## Choose who can open an app
 

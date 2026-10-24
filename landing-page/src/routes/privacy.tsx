@@ -28,9 +28,10 @@ function PrivacyPolicy() {
           <Section title="Analytics">
             <p>
               This site loads its own analytics script from
-              analytics.everyapp.team, which we host ourselves. It records page
-              views without cookies; nothing is shared with a third-party
-              tracker or ad network.
+              analytics.everyapp.team: our own OpenAnalytics, running behind our
+              own Gateway at everyapp.team. It records page views without
+              cookies; nothing is shared with a third-party tracker or ad
+              network.
             </p>
           </Section>
 
@@ -66,9 +67,10 @@ function PrivacyPolicy() {
                 className="text-fd-primary hover:underline"
               >
                 support@everyapp.dev
-              </a>
-              . If we change it, the new version appears here with a new
-              effective date.
+              </a>{" "}
+              (everyapp.dev is ours too; it redirects to this site). Expect a
+              fast, informal reply from a very small team. If we change it, the
+              new version appears here with a new effective date.
             </p>
           </Section>
         </div>
