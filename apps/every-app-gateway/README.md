@@ -1,28 +1,34 @@
-# Todo Example App
+# Every App Gateway
+
+The Gateway is the one public Worker: it signs people in, holds the organization
+and its members, proxies every app's hostname through the perimeter, serves the
+apps' tools to MCP clients at `/mcp`, and deploys apps from the browser.
+
+Install or update it with the CLI from the repository root:
+
+```sh
+pnpm everyapp setup --domain apps.example.com   # first install, or repair
+pnpm everyapp gateway deploy                    # update after git pull
+pnpm everyapp status                            # what is live, what to fix
+```
 
 ## Development
 
-From your terminal:
-
 ```sh
-pnpm install
-pnpm dev
+pnpm dev                    # cf dev on http://localhost:8787
+pnpm db:migrate:local       # apply drizzle/ to the local D1
+pnpm setup-link             # mint a one-time owner link for the local gateway
+pnpm test                   # vitest (SQLite-backed)
+pnpm auth:generate          # regenerate src/db/auth.schema.ts after an auth config change
 ```
 
-## Auth Email Configuration
+`cloudflare.config.ts` defines the Worker; `drizzle/` holds the D1 migrations
+(one baseline, then appended); `src/server.ts` is the production entry.
 
-This gateway now uses Better Auth email flows for organization invites and
-password resets. Email delivery uses the Worker's `EMAIL` binding. Configure:
+## Docs
 
-- `EMAIL_FROM` (example: `noreply@example.com`)
-- `EMAIL_FROM_NAME` (example: `Every App`)
-
-For compatibility, `EMAIL_FROM` may instead contain both values as
-`Every App <noreply@example.com>`. See
-[`docs/runbooks/email-sending-setup.md`](../../docs/runbooks/email-sending-setup.md)
-for domain onboarding and verification.
-
-## Helpful Resources
-
-https://developers.cloudflare.com/workers/framework-guides/web-apps/tanstack/
-https://orm.drizzle.team/docs/connect-cloudflare-d1
+- [Security model](../../docs/security-model.md)
+- [Capabilities the gateway holds](../../docs/capabilities.md)
+- [Runbooks](../../docs/runbooks/): Cloudflare Access, email sending, the MCP
+  connector and its OAuth server, key rotation, browser app installs
+- [Testing](../../docs/TESTING.md)

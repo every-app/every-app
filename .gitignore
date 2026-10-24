@@ -8,11 +8,9 @@ dist/
 **/.output/
 **/.tanstack/
 **/.env*
-!apps/chef/.env.example
 !apps/every-app-gateway/.env.example
 .wrangler
 .dev.vars*
-!apps/chef/.dev.vars.example
 *.db
 *.db-wal
 *.db-shm

@@ -24,7 +24,6 @@ https://github.com/user-attachments/assets/7802f9ca-defd-4995-96f0-f46845cb3e83
 - [Work from This Checkout](#work-from-this-checkout)
 - [Your First App](#your-first-app)
 - [Your Gateway: `setup`](#your-gateway-setup)
-- [Deploy an Example App](#deploy-an-example-app)
 - [Build Your Own App](#build-your-own-app)
 - [Security](#security)
 - [Docs](#docs)
@@ -38,7 +37,7 @@ It's built for solo founders and small teams who build with coding agents and wa
 Every App is alpha: open source, very powerful, moving fast, and trying not to break things. Expect rough edges. We strongly recommend putting Cloudflare Access in front of your Gateway: see [docs/runbooks/cloudflare-access.md](docs/runbooks/cloudflare-access.md).
 
 - We handle the tedious parts like auth, user management, database setup, and hosting so you can focus on your idea.
-- Your agent can reference example apps via our MCP server, with patterns that scale as your codebase grows.
+- Your coding agent gets the everyapp skill in every new app (`.agents/skills/everyapp`), with the CLI, setup and tool recipes it needs.
 - Set it up in your own Cloudflare account with one command: `pnpm everyapp setup`
 - Apps run on Cloudflare's serverless platform, so an idle app costs nothing beyond the $5/month Workers Paid plan.
 
@@ -140,25 +139,6 @@ Log in to the Gateway's Cloudflare account there (`pnpm everyapp login`, or the 
 
 The Gateway is built from this checkout, so upgrading it is `git pull` then `everyapp gateway deploy`, keeping its data, users and apps. `gateway deploy` only updates the Gateway your login finds: it never installs one. Both name what they deploy by its version when the checkout is exactly that release (its `gateway-v<version>` tag), and by commit otherwise. Deploying a new app does it too, since that redeploys the Gateway from the same checkout. The build is kept under `node_modules/.cache/everyapp` by the tree hash of the Gateway's sources (and the SDK, perimeter and toolbus it bundles), so it only happens again after they change. A checkout behind the live Gateway is refused with "run git pull"; `everyapp status` says whether the live Gateway was built from your checkout's sources, and what to run when something is off. `everyapp setup --release <file|url>` installs a published Gateway release instead, and a CLI with no checkout takes the latest release of `every-app/every-app` (.github/RELEASE.md).
 
-## Deploy an Example App
-
-The example apps live in `apps/`. Deploy one from its directory:
-
-```bash
-cd apps/todo-app
-pnpm run deploy
-```
-
-Refresh your Gateway — the app appears, live at the URL the deploy prints (`https://todo.apps.your-company.com`). You're already logged in.
-
-- **Todo App** (`apps/todo-app`) — a minimal todo list with keyboard navigation.
-- **Workout Tracker** (`apps/workout-tracker`) — track your workouts and programs.
-- **Cooking Assistant** (`apps/chef`) — an AI cooking assistant and recipe manager. Chat needs an OpenAI key, which goes on your **Gateway**, not the app: the Gateway holds provider keys and proxies AI calls for every app that declares the provider.
-
-  ```bash
-  pnpm everyapp secret set OPENAI_API_KEY
-  ```
-
 ## Build Your Own App
 
 Every command is on the [Commands](https://everyapp.com/docs/commands) page: `login`, `setup`, `gateway deploy`, `status`, `create`, `dev`, `deploy`, `delete`, `secret`, `email`, `db` and `workflow`.
@@ -206,7 +186,7 @@ Anything you can build on Cloudflare, you can build in Every App.
 
 ### Patterns
 
-Our example apps follow well-defined patterns so that coding agents can help build high-quality apps.
+The starter app follows well-defined patterns so that coding agents can help build high-quality apps.
 
 - [How It Works](https://everyapp.com/docs/how-it-works) - How the Gateway, the identity pass and your app fit together
 - [Create an App](https://everyapp.com/docs/create-an-app) - create, describe, `pnpm dev`, deploy

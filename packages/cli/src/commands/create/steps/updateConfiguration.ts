@@ -4,7 +4,7 @@ import { isInCheckout } from "@/lib/checkout";
 
 interface UpdatePackageJsonOptions {
   targetDir: string;
-  /** The unprefixed app ID (e.g., "todo-app") */
+  /** The unprefixed app ID (e.g., "my-app") */
   appId: string;
 }
 

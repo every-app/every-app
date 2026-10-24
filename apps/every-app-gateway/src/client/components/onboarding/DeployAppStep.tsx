@@ -15,7 +15,7 @@ export function DeployAppStep() {
         <div className="min-w-0 flex-1">
           <h3 className="font-medium">Deploy your first app</h3>
           <p className="mt-1 text-foreground/80">
-            Start with the Todo App included in this repository.
+            Create an app from the starter and deploy it.
           </p>
         </div>
       </div>
@@ -40,18 +40,19 @@ export function DeployAppStep() {
 
           <ol className="list-decimal space-y-4 pl-5 marker:font-medium marker:text-foreground">
             <li>
-              In your checkout of the Every App repository, go to the Todo App
+              In your checkout of the Every App repository, create an app from
+              the starter
               <div className="mt-2">
-                <CodeBlock code="cd apps/todo-app" />
+                <CodeBlock code="pnpm everyapp create my-app" />
               </div>
               <p className="mt-2 text-sm text-foreground/80">
                 Apps deploy from the repository, with the CLI in it
               </p>
             </li>
             <li>
-              Deploy the app
+              Deploy it
               <div className="mt-2">
-                <CodeBlock code="pnpm run deploy" />
+                <CodeBlock code="cd apps/my-app && pnpm run deploy" />
               </div>
             </li>
             <li>Refresh this page and your app will appear in the list.</li>

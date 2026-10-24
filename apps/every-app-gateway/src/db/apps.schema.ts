@@ -21,7 +21,7 @@ export const apps = sqliteTable(
     organizationId: text("organization_id")
       .notNull()
       .references(() => organizations.id, { onDelete: "cascade" }),
-    appSlug: text("app_slug").notNull(), // e.g., "todo-app"
+    appSlug: text("app_slug").notNull(), // e.g., "crm"
     name: text("name").notNull(),
     description: text("description").notNull(),
     // --- perimeter routing + policy registry columns ---

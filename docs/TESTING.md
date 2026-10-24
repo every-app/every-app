@@ -54,10 +54,7 @@ Run a single layer:
 > (`apps/every-app-gateway/src/server.ts`) now routes app subdomains through
 > the v2 perimeter; `everyapp deploy` ships private workers and
 > `everyapp setup --domain` publishes the gateway host and each app host as
-> Workers Custom Domains. Remaining
-> follow-up: migrate `apps/workout-tracker`, `apps/chef`, and `templates/*` to
-> the v2 SDK/manifest (todo-app is migrated), per Phase 3 of
-> `docs/architecture-v2-recommendation.md §6`. The v2 model is proven
+> Workers Custom Domains. The v2 model is proven
 > end-to-end by `packages/perimeter/src/integration/e2e.test.ts`.
 
 ### The end-to-end perimeter test (the headline)
@@ -319,8 +316,7 @@ checks the client secret, the redirect URI and PKCE):
   on its bypassed `/mcp` only with the `CF_Authorization` cookie, and a
   personal access token there as always.
 
-The app's side of the mobile handoff is tested in
-`apps/mobile-native/src/lib/access-sign-in.test.ts`. The perimeter's own
+The perimeter's own
 tests (`packages/perimeter/src/headers.test.ts`, `gateway.test.ts`) check
 that every `cf-access-*` header is stripped.
 To try it by hand against a local gateway, `scripts/access-local.mjs` runs a
@@ -405,12 +401,13 @@ SDK accepts as the audience only under `EVERYAPP_DEV`. The dev key is public;
 the SDK trusts it only behind `EVERYAPP_DEV` and only from the dev issuer, and
 the gateway-lite listens on 127.0.0.1 unless `--host`.
 
-### Walkthrough (verified end-to-end on `apps/todo-app`)
+### Walkthrough (verified end-to-end on an app made with `everyapp create`)
 
 1. **Run dev** from the app directory:
 
    ```bash
-   cd apps/todo-app
+   pnpm everyapp create todo   # once
+   cd apps/todo
    pnpm dev   # everyapp dev; honors $PORT (portless assigns it); --port works too
    ```
 
@@ -434,7 +431,7 @@ the gateway-lite listens on 127.0.0.1 unless `--host`.
 
 2. **You are already “logged in”** as the seeded dev user — every proxied
    request carries a freshly-minted identity JWT. The perimeter probes (all
-   verified against the running todo-app):
+   verified against the running starter app):
 
    ```bash
    C="--connect-to todo.localhost:8787:127.0.0.1:8787"
@@ -453,7 +450,7 @@ the gateway-lite listens on 127.0.0.1 unless `--host`.
    curl -s $C -o /dev/null -w '%{http_code}\n' \
      -X POST http://todo.localhost:8787/anything                             # 401
 
-   # The same POST with the app's Origin → reaches the app (todo-app: 404)
+   # The same POST with the app's Origin → reaches the app (the starter: 404)
    curl -s $C -o /dev/null -w '%{http_code}\n' -X POST \
      -H 'Origin: http://todo.localhost:8787' http://todo.localhost:8787/anything  # 404
 
@@ -486,7 +483,7 @@ the gateway-lite listens on 127.0.0.1 unless `--host`.
 
 Browsers send what the perimeter needs on their own; curl and scripts don't.
 Three things to add (checked with `pnpm everyapp dev --port 9080` in
-`apps/todo-app`, curl 8.7.1 and Node 24 on macOS):
+`apps/todo`, curl 8.7.1 and Node 24 on macOS):
 
 - **Pin `*.localhost` to 127.0.0.1.** The gateway-lite listens on
   127.0.0.1 only, and the system resolver answers `::1` first for
@@ -611,7 +608,7 @@ The CLI refuses a one-label base with setup guidance.
 cd apps/every-app-gateway && pnpm dev          # serves on :3000
 
 # Terminal 2 — your app behind the perimeter, mirror auth
-cd apps/todo-app
+cd apps/todo
 pnpm everyapp dev --mode mirror --baseHost everyapp.localhost
 # (--gateway http://localhost:3000 by default; the CLI fails fast with
 #  guidance if the gateway isn't reachable)

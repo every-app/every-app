@@ -21,7 +21,7 @@ describe("the checkout this CLI runs from", () => {
   it("holds the directories below its root, and no others", () => {
     const root = checkoutRoot();
     expect(isInCheckout(root, root)).toBe(true);
-    expect(isInCheckout(path.join(root, "apps", "todo-app"), root)).toBe(true);
+    expect(isInCheckout(path.join(root, "apps", "my-app"), root)).toBe(true);
     expect(isInCheckout(path.join(root, "apps", "not-yet-created"), root)).toBe(true);
     expect(isInCheckout(path.dirname(root), root)).toBe(false);
     expect(isInCheckout(`${root}-other`, root)).toBe(false);

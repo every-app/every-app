@@ -1376,7 +1376,7 @@ means it waits for Ben's review because it touches a boundary.
     no LICENSE file; a personal street address and account identifiers in
     `docs/research/`; internal notes served at `/docs/internal`; Postiz's
     AGPL schema as an unattributed test fixture; a personal Expo account in
-    `apps/mobile-native/app.json`. `docs/launch-2026-10-27.md` section G.
+    `apps/mobile-native/app.json` (deleted 2026-10-24). `docs/launch-2026-10-27.md` section G.
 
 **Hosted only** (nothing here reaches a self-hosted gateway)
 

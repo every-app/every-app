@@ -1,4 +1,0 @@
-.env.local
-.dev.vars
-.cloudflare/state
-node_modules/
