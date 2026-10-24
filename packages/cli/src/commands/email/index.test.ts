@@ -456,12 +456,12 @@ describe("email set refuses before anything is read or changed", () => {
     });
     // Only the case is wrong: the command again, lowercased.
     const argv = process.argv;
-    process.argv = [...argv.slice(0, 2), "email", "set", "--sender", "Ben@hi.openseo.so"];
+    process.argv = [...argv.slice(0, 2), "email", "set", "--sender", "Ben@mail.example.com"];
     try {
-      await expect(set(dir, { senders: ["Ben@hi.openseo.so"] })).rejects.toMatchObject({
+      await expect(set(dir, { senders: ["Ben@mail.example.com"] })).rejects.toMatchObject({
         code: "EMAIL_SENDER_INVALID",
-        message: '"Ben@hi.openseo.so" isn\'t a sender\nA sender is "*@<domain>" or "<local>@<domain>", in lowercase.',
-        rerun: "pnpm everyapp email set --sender ben@hi.openseo.so",
+        message: '"Ben@mail.example.com" isn\'t a sender\nA sender is "*@<domain>" or "<local>@<domain>", in lowercase.',
+        rerun: "pnpm everyapp email set --sender ben@mail.example.com",
       });
     } finally {
       process.argv = argv;

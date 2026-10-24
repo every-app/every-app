@@ -6,8 +6,8 @@
  * usage. No timestamps, no USD. Progress and MCP noise go to stderr. Resume
  * is `codex exec resume <thread_id>` with the reply as the prompt argument.
  *
- * Shapes checked against /tmp/ea-loop/harness-probe/codex/out.jsonl
- * (0.163.0, 2026-10-23).
+ * Shapes checked against a local probe run (Codex CLI 0.163.0,
+ * 2026-10-23).
  */
 import type { HarnessAdapter, HarnessCommand, NormalizedEvent } from "../types";
 import {

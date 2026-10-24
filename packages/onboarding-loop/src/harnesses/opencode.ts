@@ -6,8 +6,8 @@
  * tokens). Each step is one model call; the harness's cost is the sum of
  * the steps. Resume is `-s <sessionID>`.
  *
- * Shapes checked against /tmp/ea-loop/harness-probe/opencode/out.jsonl
- * (2.1.3, 2026-10-23). `--standalone` keeps the server inside the exec.
+ * Shapes checked against a local probe run (OpenCode 2.1.3, 2026-10-23).
+ * `--standalone` keeps the server inside the exec.
  */
 import type { HarnessAdapter, HarnessCommand, NormalizedEvent } from "../types";
 import {

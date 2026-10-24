@@ -33,7 +33,7 @@ The drafts are in `/tmp/ea-loop/design/candidates/` and the 24 adversarial revie
 | Survives a laptop sleep | no (caffeinate) | sandbox yes, driver no | yes | yes |
 | Resume after a harness exit | native, same container | native, same sandbox | none on platform restart | session resume |
 
-(The three judging passes are saved beside the reviews as `/tmp/ea-loop/design/judges/judge-{1,2,3}.json`; their scores, 0 to 10, were (a) 8, 6, 8; (b) 7, 7, 7; (c) 4, 3, 4; (d) 2, 1.5, 2. Two judges picked (a) and one picked (b) on blast radius alone.)
+(The three judging passes are saved beside the reviews, in `/tmp/ea-loop/design/judges/judge-{1,2,3}.json`; their scores, 0 to 10, were (a) 8, 6, 8; (b) 7, 7, 7; (c) 4, 3, 4; (d) 2, 1.5, 2. Two judges picked (a) and one picked (b) on blast radius alone.)
 
 ## 3. The decision
 
@@ -65,7 +65,7 @@ The drafts are in `/tmp/ea-loop/design/candidates/` and the 24 adversarial revie
 
 ### 4.1 Components
 
-`packages/onboarding-loop` (root script `pnpm loop`, `tsx` entry), TypeScript, its own package with **no imports from `packages/cli`'s source** (`/tmp/ea-loop/design/LOOP_BUILD_SPEC.md`, decision 1, which wins over this doc where they disagree): it shells out to the CLI (`pnpm everyapp … --json` from a checkout inside a container) and to `docker`, talks to Cloudflare through small typed `fetch` calls against `https://api.cloudflare.com/client/v4` with the account token (`src/cf.ts`: D1 query, D1 list, the workers.dev subdomain PUT), never runs `cf` on the host (it can fall back to Ben's Keychain login), resolves hostnames with `node:dns/promises` pointed at the zone's NS records (`src/dns.ts`), and parses the teardown's `--json` NDJSON with its own zod schema. The CLI's `lib/cf`, `lib/domains/*` and the FakeCf fixtures stay the house pattern to copy, not to import.
+`packages/onboarding-loop` (root script `pnpm loop`, `tsx` entry), TypeScript, its own package with **no imports from `packages/cli`'s source** (decision 1 of the build spec at `/tmp/ea-loop/design/LOOP_BUILD_SPEC.md`, which wins over this doc where they disagree): it shells out to the CLI (`pnpm everyapp … --json` from a checkout inside a container) and to `docker`, talks to Cloudflare through small typed `fetch` calls against `https://api.cloudflare.com/client/v4` with the account token (`src/cf.ts`: D1 query, D1 list, the workers.dev subdomain PUT), never runs `cf` on the host (it can fall back to Ben's Keychain login), resolves hostnames with `node:dns/promises` pointed at the zone's NS records (`src/dns.ts`), and parses the teardown's `--json` NDJSON with its own zod schema. The CLI's `lib/cf`, `lib/domains/*` and the FakeCf fixtures stay the house pattern to copy, not to import.
 
 ```
 Ben's Mac                                                          test account loop-<n> (separate CF user)

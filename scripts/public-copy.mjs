@@ -622,7 +622,11 @@ function which(name) {
  * string per secret shape the generic rules know, with values that no
  * allowlist excuses; every one of them must be refused, and a clean file
  * must pass. The private names are not part of it (the public repository
- * has no list of them), so this proves the generic checks, not the list.
+ * has no list of them), so this proves the generic checks, not the list. A
+ * made-up private-name rule with a wildcard tail (`every-acme-*`, the shape
+ * TODO.md uses for a family of Workers) proves the rule file's shape: the
+ * loader accepts it, the scrub rewrites the wildcard form and its backticks,
+ * and the deny pass refuses it.
  */
 function selfTest() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "every-app-public-selftest-"));
@@ -660,6 +664,7 @@ function selfTest() {
       fs.writeFileSync(path.join(tree, "docs", `${rule.replace(/[^a-z]+/gi, "-")}.md`), `# ${rule}\n\n${value}\n`);
     }
     fs.writeFileSync(path.join(tree, "docs", "clean.md"), "# Clean\n\nNothing to see: support@everyapp.dev, a D1 id 11111111-2222-4333-8444-555555555555.\n");
+    fs.writeFileSync(path.join(tree, "docs", "wildcard.md"), "# Wildcard\n\nNot `every-acme-openseo` or the `every-acme-*` Workers.\n");
     const files = walk(tree);
     const denied = deniedNames(files);
     const leaks = contentLeaks(tree, files, contentRules(null));
@@ -675,9 +680,19 @@ function selfTest() {
     if (!/me@somewhere\.example/.test(scrubbed) || !/git@github\.com:x\/y\.git/.test(scrubbed) || /ben@hi\.somewhere\.net/.test(scrubbed)) {
       problems.push(`e-mail scrub wrong: ${scrubbed}`);
     }
+    // A private-name rule in private.txt's shape, with a wildcard in the class:
+    // `every-acme-*` and `every-acme-openseo` both go, backticks included, and
+    // the deny pass refuses the file that still holds them.
+    const rulesFile = path.join(tmp, "private.txt");
+    fs.writeFileSync(rulesFile, "# made up\n/`?every-acme-[a-z0-9*-]+`?/g\ta Worker of the test account\ta Worker of the test account\n");
+    const wildcardRules = loadPrivateNames(rulesFile);
+    const wildcard = scrub(fs.readFileSync(path.join(tree, "docs", "wildcard.md"), "utf8"), wildcardRules).text;
+    if (/every-acme|`/.test(wildcard)) problems.push(`wildcard private-name scrub wrong: ${JSON.stringify(wildcard)}`);
+    const wildcardLeaks = contentLeaks(tree, files, contentRules(wildcardRules)).filter((l) => l.startsWith("docs/wildcard.md:"));
+    if (wildcardLeaks.length !== 2) problems.push(`wildcard private-name deny wrong: ${JSON.stringify(wildcardLeaks)}`);
     const plain = plainCitations("See [the log](../docs/launch-2026-10-27.md) and `docs/launch-2026-10-27.md`.\n```\ncat docs/launch-2026-10-27.md\n```\n", ["docs/launch-2026-10-27.md"]);
     if (plain.count !== 3 || /\[the log\]|`docs\/launch|cat docs\//.test(plain.text)) problems.push(`citation rewrite wrong: ${JSON.stringify(plain)}`);
-    console.log(`self-test: ${names.length} deny-listed names refused, ${Object.keys(shapes).length} secret shapes refused, the clean file passed${problems.length ? "" : "."}`);
+    console.log(`self-test: ${names.length} deny-listed names refused, ${Object.keys(shapes).length} secret shapes refused, the clean file passed, a wildcard private-name rule scrubbed and refused${problems.length ? "" : "."}`);
     for (const problem of problems) console.log(`  FAIL ${problem}`);
     return problems.length ? 1 : 0;
   } finally {

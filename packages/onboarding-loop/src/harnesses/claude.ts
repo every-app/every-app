@@ -8,8 +8,8 @@
  * with `--resume <session_id>`; mode `raised` is a long-lived
  * `--input-format stream-json` process and is built by the driver, not here.
  *
- * Shapes checked against /tmp/ea-loop/harness-probe/claude/out2.jsonl
- * (2.1.309, 2026-10-23).
+ * Shapes checked against a local probe run (Claude Code 2.1.309,
+ * 2026-10-23).
  */
 import type {
   HarnessAdapter,

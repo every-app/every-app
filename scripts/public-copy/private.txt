@@ -10,6 +10,7 @@
 /https:\/\/github\.com\/every-app\/private-every-app[^\s)`"']*/g	the maintainers' private repository	a link into the private repository
 /`?~\/workspaces\/[^\s`)\]]+`?/g	a local checkout	a path on the maintainer's machine
 /`?\/Users\/bensenescu[^\s`)\]]*`?/g	a local path	a path on the maintainer's machine
+/`?\/(?:private\/)?tmp\/ea-[a-z0-9-]+(?:\/[^\s`)\]]*)?`?/g	a local path	a scratch path on the maintainer's machine
 /`?(?:\.\.\/)?every-app\/private-every-app(?:\/[^\s`)\]]*)?`?/g	the maintainers' private repository	the private repository's name
 /`?(?:\.\.\/)?private-every-app(?:\/[^\s`)\]]*)?`?/g	the maintainers' private repository	the private repository's name
 /`?bensenescu\/open-seo-everyapp(?:\/[^\s`)\]]*)?`?/g	a private scratch copy of OpenSEO	the OpenSEO scratch repository
@@ -19,8 +20,10 @@
 /`?private-open-crm(?:\/[^\s`)\]]*)?`?/g	the OpenCRM port	the OpenCRM port's checkout name
 /`?private-open-analytics(?:\/[^\s`)\]]*)?`?/g	the OpenAnalytics port	the OpenAnalytics port's checkout name
 /`?[a-z0-9.-]*bensenescu\.workers\.dev`?/g	a workers.dev hostname of the maintainers' account	a hostname of the maintainers' account
-/`?every-bensenescu-[a-z0-9-]+`?/g	an old Worker of the maintainers' account	a Worker of the maintainers' account
+/`?agents\.everyapp\.team`?/g	the maintainers' background-agent host	a live host of the maintainers' account outside the launch apps
+/`?every-bensenescu-[a-z0-9*-]+`?/g	an old Worker of the maintainers' account	a Worker of the maintainers' account
 /`?thecomeup\.cc`?/g	the old dogfood domain	the maintainers' old dogfood domain
+/hi\.openseo\.so/g	<domain>	the live agentic-inbox's mail domain
 /\bCarter\b/g	a teammate	a teammate's name
 /`(?:66f98c9e|8f4956ad|a19108d7)…`/g	`<id>`	an Access application or policy id of the maintainers' gateway
 /\(every-every-workout-tracker[^)]*\)/g	(a list the maintainers keep)	the inventory of the maintainers' old Workers
