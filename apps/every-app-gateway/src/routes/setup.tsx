@@ -29,11 +29,11 @@ const claimSchema = z
   .object({
     name: z.string().trim().min(1, "Enter your name."),
     email: z.string().trim().email("Enter a valid email address."),
-    password: z.string().min(8, "Password must be at least 8 characters"),
+    password: z.string().min(8, "Password must be at least 8 characters."),
     confirmPassword: z.string(),
   })
   .refine((value) => value.password === value.confirmPassword, {
-    message: "Passwords do not match",
+    message: "Passwords don't match.",
     path: ["confirmPassword"],
   });
 
@@ -211,7 +211,6 @@ function ClaimForm({ token }: { token: string }) {
               {(field) => (
                 <field.TextField
                   label="Password"
-                  description="Password must be at least 8 characters"
                   type="password"
                   placeholder="Create a password"
                   autoComplete="new-password"
@@ -248,7 +247,7 @@ function ClaimForm({ token }: { token: string }) {
               className={authSubmitClassName}
               pending={isRunning}
             >
-              {isRunning ? "Setting up..." : "Create owner account"}
+              Create owner account
             </Button>
           </form.Form>
         </form.AppForm>

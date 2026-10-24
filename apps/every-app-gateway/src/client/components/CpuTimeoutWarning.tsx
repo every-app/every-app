@@ -17,8 +17,9 @@ interface CpuTimeoutWarningProps {
 }
 
 /**
- * Full-page warning component displayed when retrying due to Cloudflare Worker CPU timeout.
- * Explains the retry state and the Cloudflare CPU limit that caused it.
+ * The page while a sign-in, sign-up or claim is retried after a Cloudflare
+ * Worker CPU timeout (hashing a password can exceed the free plan's limit),
+ * and what follows: a way on once it worked, or the fix once it didn't.
  */
 export function CpuTimeoutWarning({
   attemptCount,
@@ -33,44 +34,30 @@ export function CpuTimeoutWarning({
       {isSuccess ? (
         <Alert variant="success">
           <CheckCircle />
-          <AlertTitle>You're signed in!</AlertTitle>
-          <AlertDescription>
-            Your sign in was successful. Continue when you're ready.
-          </AlertDescription>
+          <AlertTitle>You're signed in</AlertTitle>
         </Alert>
       ) : hasExhaustedRetries ? (
         <Alert variant="destructive">
           <XCircle />
-          <AlertTitle>Max Retries Reached</AlertTitle>
+          <AlertTitle>Still timing out after {maxRetries} tries</AlertTitle>
           <AlertDescription>
-            <p>
-              We tried {maxRetries} times but the request keeps timing out.
-              Please wait a few minutes before trying again.
-            </p>
-            <p>
-              Upgrading to the $5/month paid plan will resolve this. Go to
-              Cloudflare: Compute & AI &gt; Workers Plans
-            </p>
+            Wait a few minutes and try again. Upgrading the Cloudflare plan
+            ($5/month, under Compute &amp; AI → Workers Plans) and redeploying
+            the gateway stops this for good.
           </AlertDescription>
         </Alert>
       ) : (
         <Alert variant="warning">
           <AlertTriangle />
           <AlertTitle>
-            {secondsUntilRetry && secondsUntilRetry > 0
-              ? `Retrying in ${secondsUntilRetry} seconds (${attemptCount} of ${maxRetries})...`
-              : `Retrying request (${attemptCount} of ${maxRetries})...`}
+            {secondsUntilRetry > 0
+              ? `Retrying in ${secondsUntilRetry}s (${attemptCount} of ${maxRetries})`
+              : `Retrying (${attemptCount} of ${maxRetries})`}
           </AlertTitle>
           <AlertDescription>
-            <p>
-              Hashing passwords sometimes takes more CPU time than the
-              Cloudflare Free Plan allows. We're automatically retrying your
-              request.
-            </p>
-            <p>
-              Upgrading to the $5/month Cloudflare paid plan and redeploying the
-              Every App Gateway will fix this problem.
-            </p>
+            Hashing a password can take more CPU time than the Cloudflare free
+            plan allows. Upgrading the plan and redeploying the gateway fixes
+            it.
           </AlertDescription>
         </Alert>
       )}

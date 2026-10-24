@@ -25,11 +25,13 @@ import { getSafeRedirect, getSafeReturnTo, isWorkerRoute } from "@/utils/auth";
  * back here, signed in, on its way to where they were going. Better Auth
  * adds `error` when the link was expired or invalid.
  */
+// Each value falls back rather than failing the route: a stray `?error=1`
+// (a number to the router) used to crash the page.
 const searchSchema = z.object({
-  email: z.string().optional(),
-  redirect: z.string().optional(),
-  return_to: z.string().optional(),
-  error: z.string().optional(),
+  email: z.string().optional().catch(undefined),
+  redirect: z.string().optional().catch(undefined),
+  return_to: z.string().optional().catch(undefined),
+  error: z.string().optional().catch("invalid"),
 });
 
 const resendSchema = z.object({
@@ -107,13 +109,19 @@ function VerifyEmail() {
   return (
     <AuthPageShell>
       <AuthCard
-        title={error ? "Link not valid" : "Check your email"}
+        title={
+          error
+            ? "Link not valid"
+            : email
+              ? "Check your email"
+              : "Verify your email"
+        }
         description={
           error
-            ? "That verification link has expired or was already replaced. Ask for a new one below."
+            ? "That link expired or was replaced. Ask for a new one."
             : email
-              ? `We sent a link to ${email}. Open it to verify your email and sign in.`
-              : "Open the link we emailed you to verify your email and sign in."
+              ? `We sent a link to ${email}. Open it to sign in.`
+              : undefined
         }
         footer={
           <p>
@@ -189,19 +197,22 @@ function ResendForm({
   return (
     <form.AppForm>
       <form.Form className="space-y-4">
-        <form.AppField name="email">
-          {(field) => (
-            <field.TextField
-              label="Email"
-              type="email"
-              placeholder="you@example.com"
-              autoComplete="email"
-              className={authInputClassName}
-              disabled={sending}
-              required
-            />
-          )}
-        </form.AppField>
+        {/* The address is in the title's line when it is known. */}
+        {email ? null : (
+          <form.AppField name="email">
+            {(field) => (
+              <field.TextField
+                label="Email"
+                type="email"
+                placeholder="you@example.com"
+                autoComplete="email"
+                className={authInputClassName}
+                disabled={sending}
+                required
+              />
+            )}
+          </form.AppField>
+        )}
         {sent ? (
           <Alert variant="success">
             <CircleCheck />
@@ -222,11 +233,7 @@ function ResendForm({
           pending={sending}
           disabled={cooldown > 0}
         >
-          {cooldown > 0
-            ? `Send a new link (${cooldown}s)`
-            : sending
-              ? "Sending..."
-              : "Send a new link"}
+          {cooldown > 0 ? `Send a new link (${cooldown}s)` : "Send a new link"}
         </Button>
       </form.Form>
     </form.AppForm>

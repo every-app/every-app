@@ -31,16 +31,9 @@ import { useDeliberateAllow } from "./useDeliberateAllow";
 type Context = Extract<ConsentContext, { ok: true }>;
 type ToolState = Context["organizations"][number]["apps"][number]["tools"];
 
-/** Beside an app that can't serve tools yet, or may not be able to. */
+/** Beside an app that can't be chosen because it serves no tools. */
 function toolHint(tools: ToolState): string | undefined {
-  switch (tools) {
-    case "none":
-      return "(no AI tools yet)";
-    case "unknown":
-      return "(tools load on first use)";
-    default:
-      return undefined;
-  }
+  return tools === "none" ? "(no AI tools yet)" : undefined;
 }
 
 function initials(name: string): string {
@@ -130,7 +123,9 @@ export function ConsentForm({
             />
           </div>
           <CardTitle className="mt-4 text-xl">
-            <h1 className="break-words">Connect {client.name} to Every App</h1>
+            <h1 className="line-clamp-3 break-words" title={client.name}>
+              Connect {client.name} to Every App
+            </h1>
           </CardTitle>
           {verified ? (
             <p className="mt-1 flex items-center justify-center gap-1.5 text-sm text-muted-foreground">
@@ -149,9 +144,9 @@ export function ConsentForm({
                 size="sm"
                 className="mr-1.5 align-middle"
               >
-                unverified
+                Unverified
               </Badge>
-              This app named itself; its name is not verified.
+              Named by the app itself.
             </p>
           )}
         </CardHeader>
@@ -169,11 +164,12 @@ export function ConsentForm({
           ) : null}
 
           <div className="divide-y divide-border rounded-lg border border-border bg-muted/50 text-sm">
-            <div className="flex items-center gap-3 px-3 py-2">
+            {/* On a phone the button goes under the address, which must stay readable. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2">
               <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted">
                 <User className="size-4" />
               </div>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 basis-40">
                 <div className="text-xs text-muted-foreground">
                   Signed in as
                 </div>
@@ -183,6 +179,7 @@ export function ConsentForm({
                 type="button"
                 variant="ghost"
                 size="xs"
+                className="ml-10 sm:ml-0"
                 onClick={onSwitchAccount}
               >
                 Use another account
@@ -311,8 +308,7 @@ export function ConsentForm({
                 </div>
                 <FieldDescription className="flex items-start gap-1.5">
                   <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
-                  Deleting and other destructive actions are never available to
-                  connected AI apps yet.
+                  Destructive actions are never allowed.
                 </FieldDescription>
               </FieldSet>
             </>
@@ -349,10 +345,6 @@ export function ConsentForm({
               Allow
             </button>
           </div>
-
-          <p className="text-center text-xs text-muted-foreground">
-            You can disconnect it at any time from AI connections.
-          </p>
         </CardContent>
       </Card>
     </form>

@@ -18,19 +18,19 @@ import { useCpuTimeoutRetry } from "@/client/hooks/useCpuTimeoutRetry";
 import { getServerErrorMessage } from "@/client/errors";
 
 const searchSchema = z.object({
-  token: z.string().default(""),
-  error: z.string().default(""),
-  redirect: z.string().optional(),
-  return_to: z.string().optional(),
+  token: z.string().optional().catch(undefined),
+  error: z.string().optional().catch("invalid"),
+  redirect: z.string().optional().catch(undefined),
+  return_to: z.string().optional().catch(undefined),
 });
 
 const resetPasswordSchema = z
   .object({
-    newPassword: z.string().min(8, "Password must be at least 8 characters"),
+    newPassword: z.string().min(8, "Password must be at least 8 characters."),
     confirmPassword: z.string(),
   })
   .refine((value) => value.newPassword === value.confirmPassword, {
-    message: "Passwords do not match",
+    message: "Passwords don't match.",
     path: ["confirmPassword"],
   });
 
@@ -51,17 +51,9 @@ function getAuthSearch({
   return redirect || return_to ? search : undefined;
 }
 
-/** Why this reset link can't be used, or null when it carries a token. */
-function getLinkError(token: string, urlError: string) {
-  if (urlError) {
-    return urlError === "INVALID_TOKEN"
-      ? "Invalid or expired reset link. Please request a new one."
-      : "An error occurred. Please try again.";
-  }
-  if (!token) {
-    return "Invalid reset link. Please request a new password reset.";
-  }
-  return null;
+/** Whether the link can be used at all: it carries a token and no error. */
+function isLinkUsable(token: string | undefined, urlError: string | undefined) {
+  return Boolean(token) && !urlError;
 }
 
 export const Route = createFileRoute("/reset-password")({
@@ -73,9 +65,11 @@ function ResetPassword() {
   const { token, error: urlError, redirect, return_to } = Route.useSearch();
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  // The server refused the token: the form can't succeed, so it gives way.
+  const [tokenRefused, setTokenRefused] = useState(false);
   const navigate = useNavigate();
   const authSearch = getAuthSearch({ redirect, return_to });
-  const linkError = getLinkError(token, urlError);
+  const linkUsable = isLinkUsable(token, urlError) && !tokenRefused;
 
   // The form only renders when the link carries a token and no error.
   const form = useAppForm({
@@ -101,12 +95,16 @@ function ResetPassword() {
   } = useCpuTimeoutRetry(async () => {
     try {
       const { error: resetError } = await authClient.resetPassword({
-        token,
+        token: token ?? "",
         newPassword: form.state.values.newPassword,
       });
 
       if (resetError) {
-        setError(resetError.message || "Failed to reset password.");
+        if (resetError.code === "INVALID_TOKEN") {
+          setTokenRefused(true);
+          return true;
+        }
+        setError("Couldn't reset your password. Please try again.");
         return true;
       }
 
@@ -131,7 +129,7 @@ function ResetPassword() {
       setError(
         getServerErrorMessage(
           err,
-          "Failed to reset password. Please try again.",
+          "Couldn't reset your password. Please try again.",
         ),
       );
       return true;
@@ -172,7 +170,7 @@ function ResetPassword() {
           <Alert variant="success">
             <CircleCheck />
             <AlertDescription>
-              Password reset successful! Redirecting to sign in...
+              Your password is updated. Taking you to sign in…
             </AlertDescription>
           </Alert>
         </AuthCard>
@@ -180,12 +178,12 @@ function ResetPassword() {
     );
   }
 
-  if (linkError) {
+  if (!linkUsable) {
     return (
       <AuthPageShell>
         <AuthCard
-          title="Reset link invalid"
-          description={linkError}
+          title="Reset link not valid"
+          description="Ask for a new one."
           footer={footer}
         >
           <Button
@@ -202,18 +200,13 @@ function ResetPassword() {
 
   return (
     <AuthPageShell>
-      <AuthCard
-        title="Reset password"
-        description="Enter your new password below."
-        footer={footer}
-      >
+      <AuthCard title="Reset password" footer={footer}>
         <form.AppForm>
           <form.Form className="space-y-4">
             <form.AppField name="newPassword">
               {(field) => (
                 <field.TextField
                   label="New password"
-                  description="Password must be at least 8 characters"
                   type="password"
                   placeholder="Enter new password"
                   autoComplete="new-password"
@@ -248,7 +241,7 @@ function ResetPassword() {
               className={authSubmitClassName}
               pending={isRunning}
             >
-              {isRunning ? "Resetting..." : "Reset password"}
+              Reset password
             </Button>
           </form.Form>
         </form.AppForm>

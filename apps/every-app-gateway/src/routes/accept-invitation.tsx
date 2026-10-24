@@ -7,7 +7,6 @@ import { isCpuTimeoutError } from "@/client/auth-client";
 import {
   AuthCard,
   AuthPageShell,
-  authLinkClassName,
   authSubmitClassName,
 } from "@/client/components/auth/AuthPageShell";
 import { CpuTimeoutWarning } from "@/client/components/CpuTimeoutWarning";
@@ -56,7 +55,7 @@ function AcceptInvitation() {
   } = useCpuTimeoutRetry(async () => {
     try {
       if (!token) {
-        setError("Missing invitation link.");
+        setError("This invitation link is not valid.");
         return true;
       }
 
@@ -81,28 +80,28 @@ function AcceptInvitation() {
           // publicErrorMiddleware lets only public messages through.
           err instanceof Error && err.message
             ? err.message
-            : "Failed to accept invitation. Please try again.",
+            : "Couldn't accept the invitation. Please try again.",
         ),
       );
       return true;
     }
   });
 
+  // Links from before invite links had their own secret are refused the
+  // same way: either way the person needs a new one.
   if (!token) {
     return (
       <AuthPageShell>
-        <AuthCard title="Invalid invitation">
-          <p className="text-sm text-muted-foreground">
-            {invitationId
-              ? "This invitation link no longer works: invite links changed in a gateway update. Ask the person who invited you to send you a new link."
-              : "This invitation link is invalid or incomplete. Please request a new invitation from the administrator."}
-          </p>
+        <AuthCard
+          title="Invitation link not valid"
+          description="Ask the person who invited you for a new one."
+        >
           <Button
             nativeButton={false}
             className={authSubmitClassName}
             render={<Link to="/sign-in" />}
           >
-            Go to sign in
+            Back to sign in
           </Button>
         </AuthCard>
       </AuthPageShell>
@@ -116,11 +115,10 @@ function AcceptInvitation() {
   if (!session.data?.user) {
     return (
       <AuthPageShell>
-        <AuthCard title="Sign in required">
-          <p className="text-sm text-muted-foreground">
-            Please sign in or create an account with your invited email to
-            accept this invitation.
-          </p>
+        <AuthCard
+          title="Sign in to accept"
+          description="Use the email address that was invited."
+        >
           <div className="space-y-2">
             <Button
               nativeButton={false}
@@ -131,7 +129,7 @@ function AcceptInvitation() {
             </Button>
             <Button
               nativeButton={false}
-              variant="ghost"
+              variant="outline"
               className="w-full"
               render={<Link to="/sign-up" search={{ redirect: redirectTo }} />}
             >
@@ -147,15 +145,12 @@ function AcceptInvitation() {
     return (
       <AuthPageShell>
         <AuthCard title="Invitation accepted">
-          <p className="text-sm text-muted-foreground">
-            You have joined the organization successfully.
-          </p>
           <Button
             nativeButton={false}
             className={authSubmitClassName}
             render={<Link to="/" />}
           >
-            Go to gateway
+            Continue
           </Button>
         </AuthCard>
       </AuthPageShell>
@@ -185,15 +180,7 @@ function AcceptInvitation() {
     <AuthPageShell>
       <AuthCard
         title="Accept invitation"
-        description="Join your organization workspace."
-        footer={
-          <p>
-            Already have an account?{" "}
-            <Link to="/sign-in" className={authLinkClassName}>
-              Sign in
-            </Link>
-          </p>
-        }
+        description={`Signed in as ${session.data.user.email}`}
       >
         {error ? (
           <Alert variant="destructive">
@@ -206,7 +193,7 @@ function AcceptInvitation() {
           pending={isRunning}
           onClick={handleJoin}
         >
-          {isRunning ? "Joining..." : "Join organization"}
+          Join organization
         </Button>
       </AuthCard>
     </AuthPageShell>

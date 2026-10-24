@@ -39,7 +39,7 @@ const createAccountSchema = z
     confirmPassword: z.string(),
   })
   .refine((value) => value.password === value.confirmPassword, {
-    message: "Passwords do not match",
+    message: "Passwords don't match.",
     path: ["confirmPassword"],
   });
 
@@ -140,6 +140,8 @@ function CreateAccountForm({
   emailVerification: boolean;
 }) {
   const [error, setError] = useState("");
+  // The invite link was refused: the form can't succeed, so it gives way.
+  const [invitationRefused, setInvitationRefused] = useState(false);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const safeRedirect = getSafeRedirect(redirect);
@@ -200,7 +202,15 @@ function CreateAccountForm({
       );
 
       if (signUpError) {
-        setError(signUpError.message || "Failed to create account.");
+        if (
+          invitationToken &&
+          (signUpError.code === "INVITATION_TOKEN_INVALID" ||
+            signUpError.code === "INVITATION_TOKEN_EXPIRED")
+        ) {
+          setInvitationRefused(true);
+          return true;
+        }
+        setError(signUpError.message || "Couldn't create your account.");
         return true;
       }
 
@@ -229,11 +239,21 @@ function CreateAccountForm({
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to create account. Please try again.",
+          : "Couldn't create your account. Please try again.",
       );
       return true;
     }
   });
+
+  if (invitationRefused) {
+    return (
+      <InvitationNotValid
+        redirect={redirect}
+        return_to={return_to}
+        signInSearch={getAuthSearch({ redirect, return_to })}
+      />
+    );
+  }
 
   if (showWarning || isRetrySuccess) {
     return (
@@ -254,8 +274,8 @@ function CreateAccountForm({
         title="Create account"
         description={
           invitationToken
-            ? "Create your account to join the invited organization."
-            : "Create your Every App account. You'll get an organization of your own, and can invite people to it."
+            ? undefined
+            : "You'll get an organization of your own."
         }
         footer={<SignInInstead redirect={redirect} return_to={return_to} />}
       >
@@ -313,7 +333,7 @@ function CreateAccountForm({
               className={authSubmitClassName}
               pending={isRunning}
             >
-              {isRunning ? "Creating account..." : "Create account"}
+              Create account
             </Button>
           </form.Form>
         </form.AppForm>
@@ -405,10 +425,7 @@ function SignInWithAccessInstead({
   );
 }
 
-/**
- * Message shown when an owner already exists.
- * Users must be invited to create an account.
- */
+/** An owner exists and sign-up is closed: accounts come from invitations. */
 function InvitationRequired({
   redirect,
   return_to,
@@ -420,12 +437,46 @@ function InvitationRequired({
     <AuthPageShell>
       <AuthCard
         title="Invitation required"
-        footer={<SignInInstead redirect={redirect} return_to={return_to} />}
+        description="Accounts are created by invitation. Ask an admin for one."
       >
-        <p className="text-sm text-muted-foreground">
-          This gateway uses invite-only registration. Please contact the
-          administrator to request an invitation email.
-        </p>
+        <Button
+          className={authSubmitClassName}
+          nativeButton={false}
+          render={
+            <Link
+              to="/sign-in"
+              search={getAuthSearch({ redirect, return_to })}
+            />
+          }
+        >
+          Sign in
+        </Button>
+      </AuthCard>
+    </AuthPageShell>
+  );
+}
+
+/** The invite link the person signed up with was refused. */
+function InvitationNotValid({
+  signInSearch,
+}: {
+  redirect?: string;
+  return_to?: string;
+  signInSearch: ReturnType<typeof getAuthSearch>;
+}) {
+  return (
+    <AuthPageShell>
+      <AuthCard
+        title="Invitation link not valid"
+        description="Ask the person who invited you for a new one."
+      >
+        <Button
+          className={authSubmitClassName}
+          nativeButton={false}
+          render={<Link to="/sign-in" search={signInSearch} />}
+        >
+          Back to sign in
+        </Button>
       </AuthCard>
     </AuthPageShell>
   );

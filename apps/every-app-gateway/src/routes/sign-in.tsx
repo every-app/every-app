@@ -276,11 +276,6 @@ function SignIn() {
     <AuthPageShell>
       <AuthCard
         title="Sign in"
-        description={
-          !isStalled && passwordSignIn && !accessProvider
-            ? "Enter your email and password to sign in."
-            : undefined
-        }
         footer={
           !isStalled && passwordSignIn ? (
             <>
@@ -357,9 +352,7 @@ function SignIn() {
                 pending={redirecting}
               >
                 {redirecting ? null : <ShieldCheck data-icon="inline-start" />}
-                {redirecting
-                  ? "Redirecting..."
-                  : `Continue with ${accessProvider.label}`}
+                Continue with {accessProvider.label}
               </Button>
             ) : null}
 
@@ -401,7 +394,7 @@ function SignIn() {
                       pending={isRunning}
                       disabled={redirecting}
                     >
-                      {isRunning ? "Signing in..." : "Sign in"}
+                      Sign in
                     </Button>
                   </form.Form>
                 </form.AppForm>

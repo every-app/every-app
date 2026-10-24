@@ -164,9 +164,10 @@ describe("what the consent form posts", () => {
     // An app without tools can't be chosen.
     expect(input("app_ids", "app-chef").disabled).toBe(true);
     expect(hint("app-chef")).toBe("(no AI tools yet)");
-    // One whose tools aren't known yet can: they load on first use.
+    // One whose tools aren't known yet can: they load on first use, and
+    // the form says nothing about it.
     expect(input("app_ids", "app-crm").disabled).toBe(false);
-    expect(hint("app-crm")).toBe("(tools load on first use)");
+    expect(hint("app-crm")).toBeNull();
     expect(hint("app-todo")).toBeNull();
     expect(hint("app-notes")).toBeNull();
     act(() => input("app_ids", "app-notes").click());
@@ -380,10 +381,8 @@ describe("who the page says the client is", () => {
 
   it("calls a registered client unverified", () => {
     render();
-    expect(text()).toContain("unverified");
-    expect(text()).toContain(
-      "This app named itself; its name is not verified.",
-    );
+    expect(text()).toContain("Unverified");
+    expect(text()).toContain("Named by the app itself.");
     expect(text()).not.toContain("Published");
   });
 });

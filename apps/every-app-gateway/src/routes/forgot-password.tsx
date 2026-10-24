@@ -148,9 +148,7 @@ function ForgotPassword() {
       <AuthCard
         title={success ? "Check your email" : "Forgot password"}
         description={
-          success
-            ? undefined
-            : "Enter your email address and we'll send you a link to reset your password."
+          success ? undefined : "We'll email you a link to reset it."
         }
         footer={
           success ? undefined : (
@@ -212,7 +210,7 @@ function ForgotPassword() {
                 className={authSubmitClassName}
                 pending={isRunning}
               >
-                {isRunning ? "Sending..." : "Send reset link"}
+                Send reset link
               </Button>
             </form.Form>
           </form.AppForm>
