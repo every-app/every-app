@@ -379,6 +379,32 @@ the first live deploy", under the ports.
 
 ---
 
+### The setup skills
+
+The everyapp skill's setup files (`packages/cli/skills/everyapp/setup/*.md`,
+one per integration a Gateway holds for apps) have two checks:
+
+```bash
+# Static, in CI: every file in setup/README.md's table exists and is listed,
+# every `secret set NAME` is a Gateway setting the CLI accepts, every
+# `pnpm everyapp …` is a route the CLI has (commandPaths() in src/app.ts),
+# no file asks for a value in the chat or puts one on a command line, and
+# each file has the sections the README's contract requires
+( cd packages/cli && pnpm exec vitest run src/lib/app/setupSkills.test.ts )
+
+# End to end, by hand: `claude -p` in a scratch checkout against a fake
+# everyapp that speaks the CLI's NDJSON contract, with the person scripted;
+# needs the claude CLI logged in, spends a few cents a scenario on sonnet
+node packages/cli/test/setup-skills/run.mjs dataforseo
+node packages/cli/test/setup-skills/run.mjs all --keep-going
+```
+
+`packages/cli/test/setup-skills/README.md` says what a pass means, where a
+run's transcript and report land (`/tmp/setup-skills-runs/<scenario>-<n>/`)
+and how to read a failure. The fake's shapes come from
+`src/lib/output/events.ts` and captures of `status --json` and `secret list
+--json`: change the fake when the CLI's contract changes.
+
 ## B. Local testing with `everyapp dev`
 
 `everyapp dev` runs the app's own `vite dev` server on an internal loopback

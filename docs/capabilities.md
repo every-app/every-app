@@ -77,13 +77,18 @@ which of the gateway settings its manifest needs are set. A capability you skip 
 status answers `configured: false`, and calls `integration_not_configured`
 (AI: `ai_provider_not_configured`), naming the command.
 
+A coding agent sets each of these up end to end, the provider's side
+included, from the everyapp skill's setup files:
+[`packages/cli/skills/everyapp/setup/README.md`](../packages/cli/skills/everyapp/setup/README.md)
+(one file per integration; copied into every new app's `.claude/skills/everyapp/`).
+
 Everything the gateway holds for apps, in one table:
 
 | What                        | Kind                | Gateway settings                                                                                                           | Set with (`pnpm everyapp secret set …`)                                                          | Used by                                              |
 | --------------------------- | ------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
 | `openai`                    | AI provider         | `OPENAI_API_KEY`                                                                                                           | `OPENAI_API_KEY`                                                                                               | none of the launching apps (Postiz: ported, not launching) |
 | `openrouter`                | AI provider         | `OPENROUTER_API_KEY`                                                                                                       | `OPENROUTER_API_KEY`                                                                                           | OpenSEO; agentic-inbox with `AI_PROVIDER=openrouter` |
-| `workers-ai`                | AI provider         | `WORKERS_AI_API_TOKEN`, with `CLOUDFLARE_ACCOUNT_ID` (which `everyapp setup` sets)                                         | `WORKERS_AI_API_TOKEN` (a "Workers AI" template token: Read and Edit)                                          | agentic-inbox                                        |
+| `workers-ai`                | AI provider         | `WORKERS_AI_API_TOKEN`, with `CLOUDFLARE_ACCOUNT_ID` (which `everyapp setup` sets)                                         | `WORKERS_AI_API_TOKEN` (the Workers AI page's prefilled token: Workers AI Read; a token made by hand needs Workers AI Read and Edit) | agentic-inbox with `AI_PROVIDER=workers-ai`          |
 | the AI proxy's extra routes | AI provider setting | `AI_PROXY_EXTRA_ROUTES` (optional; OpenAI only, e.g. `/v1/files`)                                                          | `AI_PROXY_EXTRA_ROUTES`                                                                                        |                                                      |
 | `dataforseo`                | `api_key`           | `DATAFORSEO_API_KEY` (`login:password`, or its base64)                                                                     | `DATAFORSEO_API_KEY`                                                                                           | OpenSEO                                              |
 | `context`                   | `api_key`           | `CONTEXT_API_KEY`                                                                                                          | `CONTEXT_API_KEY`                                                                                              | OpenSEO                                              |
@@ -117,8 +122,11 @@ models it may ask for.
 | `workers-ai` | `WORKERS_AI_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | `api.cloudflare.com/client/v4/accounts/<account>/ai` | `/v1/chat/completions`, `/v1/embeddings`, `/v1/responses` |
 
 Workers AI runs in the gateway's own account (`CLOUDFLARE_ACCOUNT_ID`, which
-`everyapp setup` sets) with an API token made from the "Workers AI"
-template (Workers AI Read and Edit):
+`everyapp setup` sets) with an API token from the dashboard's Workers AI
+page, **Use REST API** → **Create a Workers AI API Token**. The prefilled
+token grants Workers AI Read, which is what every
+`/accounts/<account>/ai/*` call needs; a token made by hand needs Workers
+AI Read and Edit (Cloudflare's REST guide):
 
 ```bash
 pnpm everyapp secret set WORKERS_AI_API_TOKEN
