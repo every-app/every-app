@@ -51,8 +51,8 @@ provider sends.
 
 ## One-time domain onboarding
 
-Ben must onboard the domain used by `EMAIL_FROM` before production sends will
-work. With Cloudflare Email Sending:
+The operator onboards the domain used by `EMAIL_FROM` before production sends
+will work. With Cloudflare Email Sending:
 
 ```sh
 npx cf email-sending subdomains create -z example.com --name example.com

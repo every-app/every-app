@@ -14,12 +14,13 @@ The workspace appears above the source. One eligible workspace is shown read-onl
 
 Browser installation is on by default. Interactive `pnpm everyapp setup` offers **Configure browser app installs?** (Yes/No, default No), explaining: "Install apps on this Gateway through your browser, without running deployment commands." Enter accepts No and continues setup without changing credentials. Yes opens a hidden Cloudflare API token prompt. The instructions link to [Cloudflare API tokens](https://dash.cloudflare.com/profile/api-tokens), explain how to create a custom token, and list the required permissions and resource scopes. The token is stored as `CF_DEPLOY_TOKEN` on the Gateway. Existing tokens and hosted Gateways are left alone; unattended setup does not prompt. Run setup again later to configure it if skipped.
 
-For unattended configuration, use the matching CLI with values already in your local environment:
+For unattended configuration, use the matching CLI with the token already in your local environment:
 
 ```sh
 pnpm everyapp secret set CF_DEPLOY_TOKEN --from-env CF_DEPLOY_TOKEN --json
-pnpm everyapp secret set CLOUDFLARE_ACCOUNT_ID --from-env CLOUDFLARE_ACCOUNT_ID --json
 ```
+
+Setup already set `CLOUDFLARE_ACCOUNT_ID`. It is one of the Gateway's own keys, so `secret set` refuses it (`SECRET_NOT_SETTABLE`).
 
 `CF_DEPLOY_TOKEN` needs Workers Scripts Edit and D1 Edit for the Gateway's account, plus DNS Read for its domain's zone. Keep it on the Gateway; neither the installing site nor the browser receives it. The Gateway must already have its normal `GATEWAY_URL`, `APP_BASE_DOMAIN`, identity keys, and Custom Domain in that account.
 

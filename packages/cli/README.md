@@ -104,8 +104,9 @@ everyapp setup --domain apps.example.com
 ```
 
 From an empty Cloudflare account (on Workers Paid, with a domain) to a working
-gateway and its owner, and the command to run after a `git pull` or when
-`status` says something is off. It builds the gateway from
+gateway and its owner, and the command to run when `status` says something is
+off. After a `git pull`, `pnpm everyapp gateway deploy` updates the gateway
+(`setup` does too, and repairs it). It builds the gateway from
 `apps/every-app-gateway` in this checkout (once per change to its sources, the
 SDK's, perimeter's or toolbus's: the build is kept by their tree hash under
 `node_modules/.cache/everyapp/`, so a later run or an app's rebind takes
@@ -199,4 +200,5 @@ does the same for the gateway's own database after a migrating `setup`.
 ## Documentation
 
 For full documentation, visit [everyapp.com/docs](https://everyapp.com/docs);
-every command and flag is on the [CLI reference](https://everyapp.com/docs/commands).
+every command is on the [Commands](https://everyapp.com/docs/commands) page, and
+`--help` on any command lists its flags.

@@ -52,13 +52,17 @@ Your app stores something new but has no migration for it. In the app's folder, 
 
 Someone updated your Gateway from a newer copy of Every App. In your `every-app` folder, run `git pull` and `pnpm install`, then try again.
 
+## Your every-app folder has a newer Gateway than the one online
+
+Not a problem. Run `pnpm everyapp gateway deploy` to update it, or leave it: the next new app you deploy updates it too.
+
 ## everyapp needs Node.js 22.18.0 or newer
 
 Install the latest LTS version from [nodejs.org](https://nodejs.org), open a new terminal window, and try again.
 
-## everyapp has to run from a checkout of the Every App repository
+## Command "everyapp" not found
 
-You're outside the `every-app` folder. Run `cd every-app` and try again.
+You're outside your `every-app` folder, or haven't run `pnpm install` in it yet. Run `cd every-app`, then `pnpm install`, and try again.
 
 ## No everyapp.config.ts in this directory
 
@@ -66,7 +70,7 @@ This command runs inside an app's folder. Run `cd apps/my-app` and try again.
 
 ## Strange errors after using npx
 
-`npx everyapp` downloads an old version that doesn't work. Always run `pnpm everyapp` from your `every-app` folder.
+`npx everyapp` downloads an old version that doesn't work. A copy installed with `npm install -g` runs from outside your folder and says **everyapp has to run from a checkout of the Every App repository**. Always run `pnpm everyapp` from your `every-app` folder.
 
 ## Still stuck
 

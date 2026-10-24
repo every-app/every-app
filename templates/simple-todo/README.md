@@ -34,6 +34,9 @@ claude mcp add --transport http todos https://<app-host>/mcp \
   --header "Authorization: Bearer $EVERYAPP_TOKEN"
 ```
 
+`$EVERYAPP_TOKEN` is a personal access token from your Gateway: **Manage
+workspace → Tokens → Create access token**.
+
 Add a tool by adding an entry to `defineTools()` and redeploying; the deploy
 syncs the gateway's copy. The contract is described in
 [`docs/todo-mcp-example.md`](https://github.com/every-app/every-app/blob/main/docs/todo-mcp-example.md).
@@ -63,6 +66,9 @@ to build for production. `pnpm build` makes a
 development build to check that the app compiles.
 
 ## Publish a release
+
+Not yet: the workflow runs the everyapp CLI from npm, and the CLI isn't
+published there yet. Once it is, this works without changes to the app.
 
 Push a tag like `v1.0.0` and `.github/workflows/release.yml` builds the app
 with `everyapp deploy --bundle-only` and attaches `everyapp-release.tar.gz`

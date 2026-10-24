@@ -17,7 +17,7 @@ cd apps/my-app
 
 This copies the starter app, a simple todo list, into `apps/my-app`.
 
-The name becomes part of the app's address: `my-app.apps.yourcompany.com`. Use lowercase letters, numbers and dashes.
+The name becomes part of the app's address: `my-app.apps.yourcompany.com`. Use lowercase letters, numbers and dashes, starting with a letter and ending with a letter or number.
 
 </Step>
 <Step>
@@ -58,7 +58,7 @@ When it's done, you'll see:
 
 ```text
 Live    https://my-app.apps.yourcompany.com
-Access  Private to you, owners and admins · change it at https://apps.yourcompany.com/admin/apps
+Access  Private to owners and admins · change it at https://apps.yourcompany.com/admin/apps
 ```
 
 Open your Gateway and the app is in **All apps**.
@@ -101,7 +101,9 @@ Add your AI key to the Gateway once, and every app that uses AI can use it:
 pnpm everyapp secret set OPENAI_API_KEY
 ```
 
-Paste the key when asked. For OpenRouter, use `OPENROUTER_API_KEY`.
+Paste the key when asked. For OpenRouter, use `OPENROUTER_API_KEY`. For Workers AI, use `WORKERS_AI_API_TOKEN`.
+
+In an app's folder, `pnpm everyapp secret list` shows which keys it needs and which are set.
 
 ## Keys only one app uses
 
@@ -111,26 +113,16 @@ Some apps need a key of their own, like a `GITHUB_TOKEN`. List it in the app's `
 secrets: ["GITHUB_TOKEN"],
 ```
 
-Deploy the app, then run this in its folder and paste the key when asked:
+Deploy the app, then run this in its folder:
 
 ```bash
 pnpm everyapp secret set GITHUB_TOKEN
 ```
 
-Only that app gets the key, and later deploys keep it. To use it with `pnpm dev`, put it in the app's `.dev.vars` file as `GITHUB_TOKEN=...`.
+Paste the key at **Value for GITHUB_TOKEN**. It isn't shown as you type. Only that app gets the key, and later deploys keep it. To use it with `pnpm dev`, put it in the app's `.dev.vars` file as `GITHUB_TOKEN=...`.
 
 ## Share your app on GitHub
 
 {/* TODO(publishing): this needs the SDK and CLI on npm. Until then the app's workspace:* dependencies don't install outside the every-app checkout, so the release workflow fails */}
 
-Once your app is on GitHub, anyone with a Gateway can [install it](#install-an-app-from-github).
-
-1. Put the app's folder in its own GitHub repository.
-2. Tag a version and push the tag:
-
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-
-Every app comes with a GitHub workflow that builds it and publishes a release for the tag. To share an update, push a new tag, like `v1.1.0`.
+Not yet. The release workflow that comes with every app needs the everyapp CLI from npm, and it isn't published there yet. Once it is, this works without changes to your app, and anyone with a Gateway can [install it](#install-an-app-from-github).

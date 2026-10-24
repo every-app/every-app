@@ -22,7 +22,9 @@ https://github.com/user-attachments/assets/7802f9ca-defd-4995-96f0-f46845cb3e83
 
 Every App is an open source platform for personal web apps.
 
-It's built for experienced engineers who want to use their favorite AI tooling to build something with an unlimited ceiling of quality.
+It's built for solo founders and small teams who build with coding agents and want something with an unlimited ceiling of quality.
+
+Every App is alpha: open source, very powerful, moving fast, and trying not to break things. Expect rough edges. We strongly recommend putting Cloudflare Access in front of your Gateway: see [docs/runbooks/cloudflare-access.md](docs/runbooks/cloudflare-access.md).
 
 - We handle the tedious parts like auth, user management, database setup, and hosting so you can focus on your idea.
 - Your agent can reference example apps via our MCP server, with patterns that scale as your codebase grows.
@@ -51,8 +53,8 @@ We simplify building apps by standardizing as much as possible and hoisting what
     - User adds Gateway to their home screen once. All apps get the benefits of being rendered within the Gateway.
 - LLM Gateway
     - Configure your LLM provider once on the Gateway instead of once per app. Apps declare which providers they use and never hold a provider key.
-- App Management (Coming soon)
-    - Deploy and update apps via the UI instead of by running CLI commands to deploy.
+- App Management
+    - Install published apps from the Gateway's Admin page (optional, turned on during setup).
 
 </details>
 
@@ -115,9 +117,9 @@ pnpm everyapp setup --domain apps.your-company.com
 
 Your Cloudflare login is the only credential: there is no Gateway token to create or paste. The CLI registers and deploys apps by writing the Gateway's own database with it, so apps deploy before the owner exists too (from CI, say).
 
-Stopped half-way (a login to approve, a domain to buy, a link you haven't opened yet)? Run it again: it picks up where it left off, and once everything is there it says `Gateway 0.4.0 at https://apps.your-company.com is up to date.` and changes nothing. Coding agents can drive it with `--json` (NDJSON events).
+Stopped half-way (a login to approve, a domain to buy, a link you haven't opened yet)? Run it again: it picks up where it left off, and once everything is there it says `<Your account>'s Gateway is up to date with <release> ✓` and changes nothing. Coding agents can drive it with `--json` (NDJSON events).
 
-[What the Gateway does](https://everyapp.com/docs/gateway) explains, on one page, what it promises, what it costs, and its limits today; one to know now: deploying apps takes Cloudflare credentials that can also change the Gateway, so only let trusted admins deploy.
+The [docs](https://everyapp.com/docs) explain what the Gateway promises and what it costs, and [How it works](https://everyapp.com/docs/how-it-works) its limits today; one to know now: deploying apps takes Cloudflare credentials that can also change the Gateway, so only let trusted admins deploy.
 
 ### Deploy from another machine
 
@@ -152,7 +154,7 @@ Every command is on the [Commands](https://everyapp.com/docs/commands) page: `lo
 
 ### An app in its own repository
 
-An app can live in its own repository, next to this checkout (RepoLens does). Its `package.json` links the SDK and the CLI from the checkout by path:
+An app can live in its own repository, next to this checkout. Its `package.json` links the SDK and the CLI from the checkout by path:
 
 ```json
 {
