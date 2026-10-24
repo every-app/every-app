@@ -29,6 +29,10 @@ Anyone who can sign in to your Cloudflare account can deploy apps and change the
 
 To let someone else deploy, add them to your Cloudflare account. To stop them, remove them.
 
+## How safe is it
+
+Every App is alpha software, and powerful: your apps run in your Cloudflare account with everything it can do, and anyone who can sign in to that account can change anything. Put the Gateway behind Cloudflare Access before you invite people (`pnpm everyapp access on`): a second sign-in, in front of everything, from a company that does nothing else. What the Gateway promises and what it doesn't is written down in the [threat model](https://github.com/every-app/every-app/blob/main/docs/threat-model.md); if you find a hole, [report it privately](https://github.com/every-app/every-app/security/advisories/new).
+
 ## Limits today
 
 - You update apps from the terminal. The Gateway can install published apps for you if you turn browser installs on during setup.

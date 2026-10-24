@@ -16,6 +16,7 @@ https://github.com/user-attachments/assets/7802f9ca-defd-4995-96f0-f46845cb3e83
 - [Your Gateway: `setup`](#your-gateway-setup)
 - [Deploy an Example App](#deploy-an-example-app)
 - [Build Your Own App](#build-your-own-app)
+- [Security](#security)
 - [Docs](#docs)
 
 ## What is Every App?
@@ -199,6 +200,14 @@ Our example apps follow well-defined patterns so that coding agents can help bui
 
 - [How It Works](https://everyapp.com/docs/how-it-works) - How the Gateway, the identity pass and your app fit together
 - [Create an App](https://everyapp.com/docs/create-an-app) - create, describe, `pnpm dev`, deploy
+
+## Security
+
+Every App is open source, alpha, and moving fast. It is also very powerful: an app you deploy runs as a private Worker in your Cloudflare account with everything that account can do, and whoever holds your Cloudflare login can change anything, the Gateway included. Three things to know before you invite anyone:
+
+- **Put the Gateway behind Cloudflare Access.** It is a second sign-in from a company that does nothing else, in front of every page and every app, before any of our code runs. `pnpm everyapp access on` sets it up ([the runbook](docs/runbooks/cloudflare-access.md) explains what it does); the Free plan covers 50 people.
+- **Read the threat model.** [docs/threat-model.md](docs/threat-model.md) says what the Gateway promises, to whom, where each promise is enforced and tested, what is out of scope, and what we know is still open. [docs/security-model.md](docs/security-model.md) describes the mechanisms one by one.
+- **Tell us what you find.** Report a hole privately through the repository's **Security → Report a vulnerability**, not in a public issue; a failing test is the best report. Every pull request here gets Anthropic's security review for Claude Code, and so does every app created with `everyapp create`.
 
 ## Docs
 Reference the full docs to learn more:

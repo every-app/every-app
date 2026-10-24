@@ -1,5 +1,10 @@
 # Security Model
 
+> The model behind this document, with its assets, actors, trust
+> boundaries, the invariant each boundary holds and the test that pins it,
+> is [docs/threat-model.md](threat-model.md). This document describes the
+> mechanisms.
+
 ## Trust Zones
 
 - **Client zone:** untrusted browser, API, and webhook traffic.
@@ -247,8 +252,17 @@ in the gateway's Cloudflare account **is** operator authority.
   `organization_keys`), the install row, the deploy lease, the resource
   ledger and the owner setup link with `cf d1 query`, under the operator's
   own Cloudflare login or API token. The gateway issues no deploy
-  credential and has no deploy API: nothing on the public Worker accepts a
-  registration, a deploy or a delete.
+  credential and serves no deploy API; the one deploy path on the public
+  Worker is the browser install (`POST /api/admin/apps/install`, #371):
+  once the operator has given the gateway a `CF_DEPLOY_TOKEN` and
+  `CLOUDFLARE_ACCOUNT_ID` (`everyapp setup` asks; default off) and
+  `BROWSER_APP_INSTALLS` isn't `off`, any signed-in owner or admin of an
+  active organization can have the gateway download a public GitHub or
+  oss.new release and upload it as an account Worker with that token,
+  under the same release intake and policy subset as the hosted install
+  (docs/runbooks/browser-app-install.md). That makes an admin session plus
+  the gateway's token a second deploy authority; docs/threat-model.md B7
+  records it, and the token's account-wide reach, as open.
 - The registration rules live once, as pure functions in
   `@every-app/perimeter/registry`, and the CLI runs them before every write:
   reserved and malformed app ids, the Worker name `every-<orgKey>-<appId>`
@@ -417,8 +431,10 @@ in the gateway's Cloudflare account **is** operator authority.
 
 ## Sign-in with Cloudflare Access
 
-Optional (`docs/runbooks/cloudflare-access.md`), and only on a self-hosted
-gateway: elsewhere the plugin is not registered and the Access settings are
+Optional in the code, strongly recommended in front of every self-hosted
+gateway at launch (`docs/runbooks/cloudflare-access.md`, `everyapp access
+on`; docs/threat-model.md says what it adds and what it doesn't cover),
+and only on a self-hosted gateway: elsewhere the plugin is not registered and the Access settings are
 ignored (passwords alone, no outer ring). Better Auth stays the only
 session system: Cloudflare Access, as an OIDC provider or as an outer ring in
 front of the gateway's hostnames, only proves who someone is, and a Better
@@ -450,8 +466,11 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
   (`/mcp*`, `/oauth/token`, `/oauth/register`, `/.well-known/*`, apps'
   public routes), never `/oauth/authorize` or
   the consent pages. Bearer credentials (personal access and OAuth tokens)
-  never pass through Access: offboarding is deactivation. The CLI never
-  calls the gateway, so nothing is bypassed for it.
+  never pass through Access: offboarding is deactivation. The CLI's deploys never go
+  through the gateway (it reads and writes D1 and Cloudflare's API), so
+  nothing is bypassed for it; `setup` and `deploy` only probe a hostname
+  over HTTPS to see that it answers, and take Access's login page as an
+  answer.
 - OIDC sign-in goes through Better Auth's own state and PKCE (S256) with the
   client secret; the ID token is verified in full (signature by the
   application's JWKS, issuer, audience = client id, expiry); posted ID tokens
@@ -504,7 +523,10 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
 - The gateway's `/mcp` takes an OAuth access token issued by the gateway
   (see below) or a personal access token, never a cookie; a self-hosted
   gateway behind Cloudflare Access's Managed OAuth also takes a verified
-  Access assertion for the person (`docs/runbooks/cloudflare-access.md`).
+  Access assertion for the person (`docs/runbooks/cloudflare-access.md`;
+  checked in tests, not yet against a live Managed OAuth application, and
+  the service-token path that keeps personal tokens working there is
+  unverified live: TODO.md, "MCP through Cloudflare Access").
   It serves the active apps of the caller's organization they have access
   to, narrowed to the apps an OAuth connection chose or the one app a token
   is bound to. A browser may call it only from the gateway's own origin or
@@ -635,7 +657,8 @@ into an ordinary Better Auth session. Everything downstream is unchanged.
 ## App Verification Contract
 
 - Apps verify the signature, issuer, audience, token type, and key id before
-  using identity. The production identity key id is `everyapp-identity`.
+  using identity (a public marker's issuer is checked when
+  `EVERYAPP_IDENTITY_ISSUER` is set, which every deploy sets). The production identity key id is `everyapp-identity`.
 - **The audience is the Worker name.** Every token the gateway mints for an
   app (user identities and public markers in the perimeter, ToolBus call
   identities and catalog system tokens) carries `aud` = the registry row's
@@ -890,8 +913,11 @@ an admin's install from GitHub.
   deploy key's is; the organization not suspended) can also deploy from
   Admin → Apps: `POST /api/admin/apps/install` with a session, a
   control-plane route behind its CSRF guard, behind the same launch gate
-  (`APP_INSTALL_NOT_AVAILABLE` otherwise, and on every self-hosted
-  gateway). The gateway downloads `https://github.com/<owner>/<repo>/releases/latest/download/everyapp-release.tar.gz`
+  on a hosted gateway (`APP_INSTALL_NOT_AVAILABLE` otherwise); on a
+  self-hosted gateway the same route is the browser install described
+  under "Operator Authority", available once the operator configured its
+  deployer. It also accepts an immutable oss.new release URL
+  (`https://oss.new/apps/<64 hex>`, no redirects, a 15-second timeout). The gateway downloads `https://github.com/<owner>/<repo>/releases/latest/download/everyapp-release.tar.gz`
   with no credentials (https redirects only, 100 MB compressed and again
   unpacked), reads the tar itself (regular files and directories only: a
   link, a device, an absolute or `..` path, a bad header checksum or a
@@ -914,8 +940,12 @@ an admin's install from GitHub.
 
 ## Response Contract
 
-- The gateway removes `Domain` from app `Set-Cookie` headers so apps cannot set
-  parent-domain cookies.
+- The gateway removes `Domain` from app `Set-Cookie` headers so an app's
+  responses cannot set parent-domain cookies (a page's own script still
+  can, through `document.cookie`, which is why a second session cookie is
+  refused rather than trusted: see cookie tossing), except on a first-party WebSocket 101 handshake,
+  which passes through untouched (a 101 can't be rewrapped; the
+  third-party path rebuilds it): TODO.md, Build.
 - HTML responses receive the perimeter CSP floor (`frame-ancestors 'none'`,
   `base-uri 'self'`, `object-src 'none'`) without a blanket `default-src`.
   An app may keep `frame-ancestors 'self'` (then `X-Frame-Options` is

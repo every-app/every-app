@@ -3,7 +3,7 @@ title: "Gateway: security boundary"
 description: Where trust is established, what apps receive, and what is deliberately not protected.
 ---
 
-> Internal notes for tracking the prototype as it grows — not polished user docs. Verified against code on 2026-07-15.
+> Internal notes from 2026-07-15, kept for history. They predate the cookie-tossing refusal, the server-function guard, MCP-only token scopes, the ToolBus, third-party hosts, Cloudflare Access and the audience change (tokens now carry `aud` = the Worker name, not the app id). The current model is [docs/threat-model.md](https://github.com/every-app/every-app/blob/main/docs/threat-model.md) and [docs/security-model.md](https://github.com/every-app/every-app/blob/main/docs/security-model.md) in the repository.
 
 **The boundary in one sentence:** the browser's session cookie terminates at the gateway; user identity reaches an app only as a 120-second RS256 JWT that the gateway mints and the SDK verifies fail-closed. (Anonymous public traffic carries a signed public marker instead — reused up to ~60s — and public routes may additionally run their own `Authorization`-based auth.)
 
