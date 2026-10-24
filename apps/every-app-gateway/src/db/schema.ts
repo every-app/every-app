@@ -11,3 +11,4 @@ export * from "./rate-limit.schema";
 export * from "./deploy-jobs.schema";
 export * from "./usage.schema";
 export * from "./groups.schema";
+export * from "./org-app-settings.schema";

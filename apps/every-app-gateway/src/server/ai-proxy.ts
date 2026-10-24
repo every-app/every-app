@@ -536,9 +536,10 @@ export function aiRefusal(
   code: string,
   status: number,
   message: string,
+  headers: Record<string, string> = {},
 ): Response {
   return Response.json(
     { error: { message, code, type: "gateway_refusal" }, code, message },
-    { status, headers: { [GATEWAY_ERROR_HEADER]: code } },
+    { status, headers: { ...headers, [GATEWAY_ERROR_HEADER]: code } },
   );
 }

@@ -20,7 +20,13 @@ vi.mock("cloudflare:workers", () => ({
   WorkerEntrypoint: class {},
 }));
 
-import { apps, mcpToolCalls, usageDaily, usageMonthly } from "@/db/schema";
+import {
+  apps,
+  mcpToolCalls,
+  orgAppSettings,
+  usageDaily,
+  usageMonthly,
+} from "@/db/schema";
 import { runMcpMaintenance } from "@/server/mcp-auth/maintenance";
 import { UsageRepository } from "@/server/repositories/UsageRepository";
 import type { UsageEvent } from "@/server/usage-event";
@@ -299,6 +305,8 @@ describe("UsageRepository (SQLite)", () => {
           outputTokens: 2,
           costMicros: 1_200,
           toolCalls: 2,
+          monthlyCallCap: null,
+          callable: true,
         },
         {
           appRowId: "app-gone",
@@ -310,6 +318,8 @@ describe("UsageRepository (SQLite)", () => {
           outputTokens: 0,
           costMicros: 0,
           toolCalls: 0,
+          monthlyCallCap: null,
+          callable: false,
         },
       ]);
       expect(summary.byMember).toEqual([
@@ -443,6 +453,217 @@ describe("UsageRepository (SQLite)", () => {
         expect.objectContaining({ userId: owner, calls: 0, toolCalls: 1 }),
       ]);
       expect(summary.byTarget).toEqual([]);
+    });
+
+    it("carries each app's monthly cap, and lists a capped app that made no call", async () => {
+      const other = await seedOrganization(db, "other");
+      await db.insert(apps).values({
+        id: "app-quiet",
+        organizationId: acme,
+        appSlug: "quiet",
+        name: "Quiet",
+        description: "",
+      });
+      await db.insert(orgAppSettings).values([
+        {
+          organizationId: acme,
+          appRowId: "app-chef",
+          monthlyCallCap: 5_000,
+          updatedAt: AT,
+          updatedBy: owner,
+        },
+        {
+          organizationId: acme,
+          appRowId: "app-quiet",
+          monthlyCallCap: 10,
+          updatedAt: AT,
+          updatedBy: owner,
+        },
+        // Another organization's cap on the same app row is not this one's.
+        {
+          organizationId: other,
+          appRowId: "app-chef",
+          monthlyCallCap: 1,
+          updatedAt: AT,
+          updatedBy: null,
+        },
+      ]);
+      await UsageRepository.record(event({ organizationId: acme, at: AT }));
+      const summary = await UsageRepository.summarize({
+        organizationId: acme,
+        month: "2026-10",
+      });
+      expect(summary.byApp).toEqual([
+        expect.objectContaining({
+          appRowId: "app-chef",
+          calls: 1,
+          monthlyCallCap: 5_000,
+        }),
+        {
+          appRowId: "app-quiet",
+          name: "Quiet",
+          appSlug: "quiet",
+          calls: 0,
+          failures: 0,
+          inputTokens: 0,
+          outputTokens: 0,
+          costMicros: 0,
+          toolCalls: 0,
+          monthlyCallCap: 10,
+          callable: true,
+        },
+      ]);
+      // Caps are not the month's: a past month shows the same cap.
+      const past = await UsageRepository.summarize({
+        organizationId: acme,
+        month: "2026-09",
+      });
+      expect(
+        past.byApp.map((row) => [row.appRowId, row.monthlyCallCap]),
+      ).toEqual([
+        ["app-chef", 5_000],
+        ["app-quiet", 10],
+      ]);
+    });
+
+    it("lists every app the organization can call, with zeros before it spends", async () => {
+      const platform = await seedOrganization(db, "every-app");
+      const other = await seedOrganization(db, "other");
+      await db.insert(apps).values([
+        // The organization's own apps, one not deployed yet.
+        {
+          id: "app-quiet",
+          organizationId: acme,
+          appSlug: "quiet",
+          name: "Quiet",
+          description: "",
+          status: "pending",
+        },
+        // A shared app, the platform organization's row.
+        {
+          id: "app-openseo",
+          organizationId: platform,
+          appSlug: "openseo",
+          name: "OpenSEO",
+          description: "",
+          scope: "shared",
+        },
+        // Another organization's own app: not this organization's to see.
+        {
+          id: "app-theirs",
+          organizationId: other,
+          appSlug: "theirs",
+          name: "Theirs",
+          description: "",
+        },
+      ]);
+      await db.insert(orgAppSettings).values({
+        organizationId: acme,
+        appRowId: "app-openseo",
+        monthlyCallCap: 300,
+        updatedAt: AT,
+        updatedBy: owner,
+      });
+      await UsageRepository.record(event({ organizationId: acme, at: AT }));
+      const summary = await UsageRepository.summarize({
+        organizationId: acme,
+        month: "2026-10",
+      });
+      // The app that spent first, then the rest by name.
+      expect(
+        summary.byApp.map((row) => [
+          row.appRowId,
+          row.calls,
+          row.monthlyCallCap,
+          row.callable,
+        ]),
+      ).toEqual([
+        ["app-chef", 1, null, true],
+        ["app-openseo", 0, 300, true],
+        ["app-quiet", 0, null, true],
+      ]);
+      // Nothing of the other tables: the zero rows are not usage.
+      expect(summary.byMember).toHaveLength(1);
+      expect(summary.byTarget).toHaveLength(1);
+      // The same apps in a month nothing was counted.
+      const past = await UsageRepository.summarize({
+        organizationId: acme,
+        month: "2026-09",
+      });
+      expect(past.byApp.map((row) => [row.appRowId, row.calls])).toEqual([
+        ["app-chef", 0],
+        ["app-openseo", 0],
+        ["app-quiet", 0],
+      ]);
+      expect(past.byMember).toEqual([]);
+    });
+
+    it("drops a deleted app from the list, and never shows a cap on one", async () => {
+      await db.insert(apps).values({
+        id: "app-old",
+        organizationId: acme,
+        appSlug: "old",
+        name: "Old",
+        description: "",
+        status: "deleted",
+      });
+      // A stale row (the delete paths remove it; the view never trusts that).
+      await db.insert(orgAppSettings).values({
+        organizationId: acme,
+        appRowId: "app-old",
+        monthlyCallCap: 100,
+        updatedAt: AT,
+        updatedBy: owner,
+      });
+      const quiet = await UsageRepository.summarize({
+        organizationId: acme,
+        month: "2026-10",
+      });
+      expect(quiet.byApp.map((row) => row.appRowId)).toEqual(["app-chef"]);
+
+      // In a month it spent, it shows as not callable, with no cap to clear.
+      await UsageRepository.record(
+        event({ organizationId: acme, appRowId: "app-old", at: AT }),
+      );
+      const spent = await UsageRepository.summarize({
+        organizationId: acme,
+        month: "2026-10",
+      });
+      expect(spent.byApp).toEqual([
+        expect.objectContaining({
+          appRowId: "app-old",
+          name: "Old",
+          calls: 1,
+          monthlyCallCap: null,
+          callable: false,
+        }),
+        expect.objectContaining({ appRowId: "app-chef", callable: true }),
+      ]);
+    });
+
+    it("reads the month's calls for a cap from the one monthly row", async () => {
+      await UsageRepository.record(event({ organizationId: acme, at: AT }));
+      await UsageRepository.record(
+        event({ organizationId: acme, at: AT, userId: "", status: 500 }),
+      );
+      await UsageRepository.record(
+        event({
+          organizationId: acme,
+          at: new Date("2026-09-30T23:59:59.000Z"),
+        }),
+      );
+      await expect(
+        UsageRepository.monthlyCalls(acme, "app-chef", "2026-10"),
+      ).resolves.toBe(2);
+      await expect(
+        UsageRepository.monthlyCalls(acme, "app-chef", "2026-09"),
+      ).resolves.toBe(1);
+      await expect(
+        UsageRepository.monthlyCalls(acme, "app-chef", "2026-08"),
+      ).resolves.toBe(0);
+      await expect(
+        UsageRepository.monthlyCalls("org-other", "app-chef", "2026-10"),
+      ).resolves.toBe(0);
     });
 
     it("is empty for another organization and refuses a malformed month", async () => {

@@ -43,6 +43,13 @@
       "when": 1792823772943,
       "tag": "0005_groups",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792824224656,
+      "tag": "0006_org_app_settings",
+      "breakpoints": true
     }
   ]
 }

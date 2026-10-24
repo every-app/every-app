@@ -508,8 +508,9 @@ WHERE id = ? AND status = '${DELETED_APP_STATUS}'`,
  * What goes with a deleted app (deleteUpdate's companions): its email
  * configuration (`email_senders`, `email_inbound`), everyone's access to
  * it (direct and through groups), the personal access tokens bound to it
- * (revoked), its agent tools snapshot, and its place in AI connections.
- * The same writes as the gateway's own delete (AppRepository.tombstone).
+ * (revoked), its agent tools snapshot, its place in AI connections, and
+ * every organization's settings on it (a monthly cap). The same writes as
+ * the gateway's own delete (AppRepository.tombstone).
  */
 function withoutAppData(
   app: Pick<AppRow, "id" | "organizationId">,
@@ -544,6 +545,10 @@ WHERE app_row_id = ?2 AND organization_id = ?3 AND revoked_at IS NULL`,
     },
     {
       sql: "DELETE FROM mcp_connection_apps WHERE app_row_id = ?",
+      params: [app.id],
+    },
+    {
+      sql: "DELETE FROM org_app_settings WHERE app_row_id = ?",
       params: [app.id],
     },
   ];

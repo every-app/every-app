@@ -658,8 +658,9 @@ export function markDeployedUpdate(
  * and recorded secret names gone, so a revived app starts without them. Null for an app that already
  * is one, so a resumed delete writes nothing. With it go, in the same
  * batch: everyone's `user_app_access` to it, the `user_access_tokens`
- * bound to it (revoked), its `app_tools` and `app_tool_catalogs` rows, and
- * its `mcp_connection_apps` rows.
+ * bound to it (revoked), its `app_tools` and `app_tool_catalogs` rows, its
+ * `mcp_connection_apps` rows, and every organization's `org_app_settings`
+ * row on it (a monthly cap), so a revived app starts uncapped.
  */
 export function deleteUpdate(app: Pick<AppRow, "status">): {
   status: typeof DELETED_APP_STATUS;

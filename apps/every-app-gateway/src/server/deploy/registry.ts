@@ -257,7 +257,7 @@ async function register(
       ),
     ]);
   } else if (plan.kind === "revived") {
-    // The delete took its access, tokens, tools and AI connections
+    // The delete took its access, tokens, tools, AI connections and caps
     // (AppRepository.tombstone); it comes back as new.
     await db.batch([
       db

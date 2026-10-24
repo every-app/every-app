@@ -3,11 +3,17 @@ import {
   IDENTITY_HEADER,
   ORG_HEADER,
   providerIds,
+  parseIntegrationProxyPath,
   verifyIdentityJwt,
   type EveryAppUser,
 } from "@every-app/sdk/internal";
 import type { AppRegistry, RegisteredApp } from "@every-app/perimeter";
 import { aiRefusal, handleAuthenticatedAiProxyRequest } from "./ai-proxy";
+import {
+  checkMonthlyCap,
+  clearAppCapCache,
+  type AppCapSources,
+} from "./app-cap";
 import type { GatewayMail } from "./capabilities/email";
 import {
   handleIntegrationProxyRequest,
@@ -69,6 +75,13 @@ interface HandleAppGatewayRequestOptions {
   usage?: UsageRecorder;
   /** Runs the count after the response is sent (`ctx.waitUntil`). */
   waitUntil?: (task: Promise<unknown>) => void;
+  /**
+   * The organizations' monthly caps and the month's counts (app-cap.ts;
+   * OrgAppSettingsRepository and UsageRepository in the Worker). Checked
+   * after attribution, before a provider is called; only for an app with
+   * a registry row, since only those are counted.
+   */
+  caps?: AppCapSources;
 }
 
 type AppGatewayErrorCode =
@@ -81,6 +94,7 @@ type AppGatewayErrorCode =
   | "caller_org_mismatch"
   | "caller_org_not_attributable"
   | "provider_not_allowed"
+  | "app_monthly_cap_exceeded"
   | "invalid_gateway_route"
   | "caller_registry_unavailable"
   | "internal_error";
@@ -88,8 +102,10 @@ type AppGatewayErrorCode =
 class AppGatewayError extends Error {
   constructor(
     readonly code: AppGatewayErrorCode,
-    readonly status: 401 | 403 | 404 | 500,
+    readonly status: 401 | 403 | 404 | 429 | 500,
     message: string,
+    /** Extra response headers (a 429's `Retry-After`). */
+    readonly headers: Record<string, string> = {},
   ) {
     super(message);
     this.name = "AppGatewayError";
@@ -109,6 +125,7 @@ const organizationCache = new Map<
 export function clearAppCallerCacheForTests(): void {
   callerCache.clear();
   organizationCache.clear();
+  clearAppCapCache();
 }
 
 export async function handleAppGatewayRequest({
@@ -121,6 +138,7 @@ export async function handleAppGatewayRequest({
   mail,
   usage,
   waitUntil,
+  caps,
 }: HandleAppGatewayRequestOptions): Promise<Response> {
   try {
     const policy = platformPolicy(env);
@@ -198,8 +216,35 @@ export async function handleAppGatewayRequest({
       if (waitUntil) waitUntil(task);
     };
     const appRowId = app.rowId;
+    // The organization's monthly cap on this app's provider calls, once
+    // the call is attributed and before a provider is called. Only calls
+    // that are counted are capped: the gateway's own services (email,
+    // members) are neither. A refused call is not counted.
+    const enforceCap = async (organizationId: string) => {
+      if (!caps || !appRowId) return;
+      const check = await checkMonthlyCap(caps, organizationId, appRowId);
+      if (!check.exceeded) return;
+      console.warn("App gateway monthly cap reached", {
+        event: "usage.cap_exceeded",
+        organizationId,
+        appId: props.appId,
+        appRowId,
+        cap: check.cap,
+        calls: check.calls,
+        month: check.month,
+      });
+      throw new AppGatewayError(
+        "app_monthly_cap_exceeded",
+        429,
+        `${props.appId} has reached its monthly cap of ${check.cap.toLocaleString("en-US")} provider calls for this organization; an owner or admin raises it in Admin → Usage.`,
+        { "retry-after": String(check.retryAfterSeconds) },
+      );
+    };
 
     if (route.kind === "integration") {
+      const url = new URL(request.url);
+      const providerCall =
+        parseIntegrationProxyPath(url.pathname, url.search)?.kind !== "service";
       // Awaited so a refusal `admit` throws is answered below.
       return await handleIntegrationProxyRequest({
         request,
@@ -214,6 +259,7 @@ export async function handleAppGatewayRequest({
             env,
             organizations,
           );
+          if (providerCall) await enforceCap(organizationId);
           attributed = { organizationId, orgSource, user };
           return {
             caller: {
@@ -278,6 +324,7 @@ export async function handleAppGatewayRequest({
       env,
       organizations,
     );
+    await enforceCap(organizationId);
     attributed = { organizationId, orgSource, user };
     console.info("AI gateway request", {
       event: "ai.proxy.request",
@@ -599,7 +646,7 @@ async function resolveAttribution(
 function errorResponse(error: AppGatewayError, request: Request): Response {
   // On AI routes, OpenAI's error shape: the app's OpenAI client shows it.
   if (new URL(request.url).pathname.startsWith("/api/ai/")) {
-    return aiRefusal(error.code, error.status, error.message);
+    return aiRefusal(error.code, error.status, error.message, error.headers);
   }
   const errorLabel =
     error.status === 401
@@ -608,7 +655,9 @@ function errorResponse(error: AppGatewayError, request: Request): Response {
         ? "Forbidden"
         : error.status === 404
           ? "Not Found"
-          : "Internal Server Error";
+          : error.status === 429
+            ? "Too Many Requests"
+            : "Internal Server Error";
   return Response.json(
     {
       error: errorLabel,
@@ -617,7 +666,7 @@ function errorResponse(error: AppGatewayError, request: Request): Response {
     },
     {
       status: error.status,
-      headers: { [GATEWAY_ERROR_HEADER]: error.code },
+      headers: { ...error.headers, [GATEWAY_ERROR_HEADER]: error.code },
     },
   );
 }

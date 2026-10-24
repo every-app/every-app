@@ -5,10 +5,14 @@ import { cn } from "cn";
 
 function Progress({
   className,
+  indicatorClassName,
   children,
   value,
   ...props
-}: ProgressPrimitive.Root.Props) {
+}: ProgressPrimitive.Root.Props & {
+  /** Classes on the filled part of the track (a colour for a reached limit). */
+  indicatorClassName?: string;
+}) {
   return (
     <ProgressPrimitive.Root
       value={value}
@@ -18,7 +22,7 @@ function Progress({
     >
       {children}
       <ProgressTrack>
-        <ProgressIndicator />
+        <ProgressIndicator className={indicatorClassName} />
       </ProgressTrack>
     </ProgressPrimitive.Root>
   );

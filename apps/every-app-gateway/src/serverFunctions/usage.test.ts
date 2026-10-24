@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   publicErrorMiddleware: { name: "publicErrorMiddleware" },
   organizationAdminMiddleware: { name: "organizationAdminMiddleware" },
   summarize: vi.fn(),
+  setMonthlyCap: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-start", () => ({
@@ -39,18 +40,33 @@ vi.mock("@/server/repositories/UsageRepository", () => ({
   },
 }));
 
-import { getUsage } from "./usage";
+vi.mock("@/server/services/AppCapService", () => ({
+  AppCapService: {
+    setMonthlyCap: (...args: unknown[]) => mocks.setMonthlyCap(...args),
+  },
+  MONTHLY_CALL_CAP_MIN: 1,
+  MONTHLY_CALL_CAP_MAX: 1_000_000_000,
+}));
 
-type ServerFnBuilder = {
+import { getUsage, setAppMonthlyCap } from "./usage";
+
+type ServerFnBuilder<TData> = {
   middlewares: unknown[];
   validatorFn: (data: unknown) => unknown;
   serverHandler: (input: {
-    data: { month: string };
+    data: TData;
     context: { org: Record<string, unknown> };
   }) => Promise<unknown>;
 };
 
-const getUsageServerFn = getUsage as unknown as ServerFnBuilder;
+const getUsageServerFn = getUsage as unknown as ServerFnBuilder<{
+  month: string;
+}>;
+const setAppMonthlyCapServerFn =
+  setAppMonthlyCap as unknown as ServerFnBuilder<{
+    appRowId: string;
+    cap: number | null;
+  }>;
 
 describe("getUsage server function", () => {
   beforeEach(() => {
@@ -87,6 +103,63 @@ describe("getUsage server function", () => {
     expect(mocks.summarize).toHaveBeenCalledWith({
       organizationId: "org-1",
       month: "2026-10",
+    });
+  });
+});
+
+describe("setAppMonthlyCap server function", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("uses the public error and organization admin gate", () => {
+    expect(setAppMonthlyCapServerFn.middlewares).toEqual([
+      mocks.publicErrorMiddleware,
+      mocks.organizationAdminMiddleware,
+    ]);
+  });
+
+  it("takes a whole cap from 1 to a billion, or null to clear it", () => {
+    const validate = setAppMonthlyCapServerFn.validatorFn;
+    expect(validate({ appRowId: "app-1", cap: 5000 })).toEqual({
+      appRowId: "app-1",
+      cap: 5000,
+    });
+    expect(validate({ appRowId: "app-1", cap: 1 })).toEqual({
+      appRowId: "app-1",
+      cap: 1,
+    });
+    expect(validate({ appRowId: "app-1", cap: 1_000_000_000 })).toEqual({
+      appRowId: "app-1",
+      cap: 1_000_000_000,
+    });
+    expect(validate({ appRowId: "app-1", cap: null })).toEqual({
+      appRowId: "app-1",
+      cap: null,
+    });
+    for (const cap of [0, -1, 1.5, 1_000_000_001, "5000", undefined, NaN]) {
+      expect(() => validate({ appRowId: "app-1", cap })).toThrow();
+    }
+    expect(() => validate({ appRowId: "", cap: 10 })).toThrow(
+      "App is required",
+    );
+  });
+
+  it("sets the cap for the active organization through the service", async () => {
+    mocks.setMonthlyCap.mockResolvedValue({
+      appRowId: "app-1",
+      monthlyCallCap: 5000,
+    });
+    const org = { orgId: "org-1", userId: "admin-1", role: "admin" };
+    await expect(
+      setAppMonthlyCapServerFn.serverHandler({
+        data: { appRowId: "app-1", cap: 5000 },
+        context: { org },
+      }),
+    ).resolves.toEqual({ appRowId: "app-1", monthlyCallCap: 5000 });
+    expect(mocks.setMonthlyCap).toHaveBeenCalledWith(org, {
+      appRowId: "app-1",
+      cap: 5000,
     });
   });
 });

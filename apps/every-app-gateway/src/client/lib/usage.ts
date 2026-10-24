@@ -17,6 +17,11 @@ export function formatCostMicros(micros: number): string {
   return `$${dollars.toFixed(dollars < 1 ? 4 : 2)}`;
 }
 
+/** How far into a monthly cap an app is: "1,240 of 5,000". */
+export function formatCapProgress(calls: number, cap: number): string {
+  return `${formatCount(calls)} of ${formatCount(cap)}`;
+}
+
 const MONTH = /^(\d{4})-(\d{2})$/;
 
 /** "October 2026" for "2026-10". */

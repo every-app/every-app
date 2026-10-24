@@ -5,6 +5,7 @@ import {
   appTools,
   groupAppAccess,
   mcpConnectionApps,
+  orgAppSettings,
   userAccessTokens,
   userAppAccess,
 } from "@/db/schema";
@@ -21,6 +22,8 @@ import {
   isNull,
   ne,
   not,
+  notExists,
+  or,
   sql,
 } from "drizzle-orm";
 import { anyAccessToApp, effectiveAccess } from "./effective-access";
@@ -123,6 +126,21 @@ async function findById(id: string, organizationId: string) {
 }
 
 /**
+ * Find an app the organization's members can call, by its primary key: the
+ * organization's own, or a shared app another organization (the platform's)
+ * owns. What a per-organization setting on the app (a monthly cap) may name.
+ */
+async function findCallableById(id: string, organizationId: string) {
+  return db.query.apps.findFirst({
+    where: and(
+      eq(apps.id, id),
+      or(eq(apps.organizationId, organizationId), eq(apps.scope, "shared")),
+      notDeleted,
+    ),
+  });
+}
+
+/**
  * Find an app by its routing slug, including a deleted app's tombstone (its
  * slug stays reserved, and a redeploy by the same org restores it).
  */
@@ -207,9 +225,10 @@ async function activate(id: string, organizationId: string) {
  * organization. (Dropping the row would let another org register the same
  * slug, and the old Worker would accept identity tokens minted for it.)
  * Everyone's access (direct and through groups), any personal access
- * tokens bound to it, its agent tools snapshot and its place in AI
- * connections go with it: the writes the CLI's `delete` makes
- * (`deleteUpdate` in the perimeter), plus the group grants.
+ * tokens bound to it, its agent tools snapshot, its place in AI
+ * connections and every organization's settings on it (a monthly cap)
+ * go with it: the writes the CLI's `delete` makes (`deleteUpdate` in
+ * the perimeter), plus the group grants and the cap.
  */
 async function tombstone(
   app: Pick<AppRow, "id" | "organizationId" | "status">,
@@ -276,6 +295,18 @@ async function tombstone(
           .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId))),
       ),
     ),
+    // And every organization's settings on it (a shared app is capped per
+    // organization): a cap on an app nobody can call could not be cleared,
+    // and must not bind a later deploy under the same slug.
+    db.delete(orgAppSettings).where(
+      inArray(
+        orgAppSettings.appRowId,
+        db
+          .select({ id: apps.id })
+          .from(apps)
+          .where(and(eq(apps.id, id), eq(apps.organizationId, organizationId))),
+      ),
+    ),
   ]);
 }
 
@@ -284,6 +315,7 @@ export const AppRepository = {
   findAllWithAccessCounts,
   findAllShared,
   findById,
+  findCallableById,
   findByAppSlug,
   findAllDefault,
   findAllWithoutAccess,

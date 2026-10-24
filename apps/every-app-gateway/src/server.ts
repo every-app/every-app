@@ -78,6 +78,7 @@ import {
 import { isOauthPath } from "./server/oauth-flag";
 import { platformPolicy } from "./server/platform-policy";
 import { OrganizationRepository } from "./server/repositories/OrganizationRepository";
+import { OrgAppSettingsRepository } from "./server/repositories/OrgAppSettingsRepository";
 import { UsageRepository } from "./server/repositories/UsageRepository";
 import { serveAppHostMcp } from "./server/toolbus/app-host-mcp";
 
@@ -239,6 +240,10 @@ export class AppGateway extends WorkerEntrypoint<
       organizations: OrganizationRepository,
       usage: UsageRepository,
       waitUntil: (task) => this.ctx.waitUntil(task),
+      caps: {
+        monthlyCallCap: OrgAppSettingsRepository.getMonthlyCap,
+        monthlyCalls: UsageRepository.monthlyCalls,
+      },
     });
   }
 }

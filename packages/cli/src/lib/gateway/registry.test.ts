@@ -306,7 +306,7 @@ describe("deployerFor", () => {
 describe("deleteApp", () => {
   /**
    * An owner, a member with access (directly and through a group) and a
-   * token, its tools and an AI connection.
+   * token, its tools, an AI connection and a cap.
    */
   function withAppData(appRowId: string, organizationId: string): void {
     addUser("member", { organization: organizationId });
@@ -323,6 +323,7 @@ describe("deleteApp", () => {
       INSERT INTO mcp_connections (id, user_id, organization_id, client_id, client_name, redirect_uri, redirect_host, app_scope, access, created_at)
         VALUES ('conn-1', 'member', '${organizationId}', 'c', 'Claude', 'https://claude.ai/cb', 'claude.ai', 'selected', 'read', 0);
       INSERT INTO mcp_connection_apps (connection_id, app_row_id) VALUES ('conn-1', '${appRowId}');
+      INSERT INTO org_app_settings (organization_id, app_row_id, monthly_call_cap, updated_at) VALUES ('${organizationId}', '${appRowId}', 500, 0);
     `);
   }
   const appData = () => ({
@@ -332,6 +333,7 @@ describe("deleteApp", () => {
     catalogs: sqlite.all("SELECT app_row_id FROM app_tool_catalogs"),
     tools: sqlite.all("SELECT name FROM app_tools"),
     connections: sqlite.all("SELECT connection_id FROM mcp_connection_apps"),
+    caps: sqlite.all("SELECT monthly_call_cap FROM org_app_settings"),
   });
   const nothing = {
     access: [],
@@ -340,9 +342,10 @@ describe("deleteApp", () => {
     catalogs: [],
     tools: [],
     connections: [],
+    caps: [],
   };
 
-  it("leaves a tombstone, with nothing of the app's access, tokens, tools, connections or email configuration", async () => {
+  it("leaves a tombstone, with nothing of the app's access, tokens, tools, connections, cap or email configuration", async () => {
     const { plan, organization } = await registerApp("todo");
     withAppData(plan.app.id, organization.id);
     await writeAppEmail(db(), "todo", { senders: ["*@example.com"], inbound: ["hi@example.com"] }, DEPLOYER);

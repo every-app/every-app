@@ -1,9 +1,15 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { DataTable, useDataTable } from "@/client/components/table/DataTable";
 import { SortableHeader } from "@/client/components/table/SortableHeader";
 import { Badge } from "@/client/components/ui/badge";
-import { formatCostMicros, formatCount } from "@/client/lib/usage";
+import { Button } from "@/client/components/ui/button";
+import { Progress } from "@/client/components/ui/progress";
+import {
+  formatCapProgress,
+  formatCostMicros,
+  formatCount,
+} from "@/client/lib/usage";
 import type {
   UsageAppRow,
   UsageMemberRow,
@@ -101,9 +107,108 @@ function toolCallsColumn<
   };
 }
 
-// The columns are module-level arrays: TanStack Table renders each `cell`
-// as a component, and columns rebuilt on every render would remount them.
-const appColumns: ColumnDef<UsageAppRow>[] = [
+/**
+ * The organization's monthly cap on the app's provider calls: how far
+ * into it the app is this month, or the cap alone for a past month (the
+ * cap is on the current month), or "Unlimited". The button opens the
+ * set/clear dialog. An app the organization can no longer call (deleted)
+ * has no cap and no button.
+ */
+function MonthlyCapCell({
+  row,
+  isCurrentMonth,
+  onSetCap,
+}: {
+  row: UsageAppRow;
+  isCurrentMonth: boolean;
+  onSetCap: (row: UsageAppRow) => void;
+}) {
+  const cap = row.monthlyCallCap;
+  if (!row.callable) return null;
+  const button = (label: string) => (
+    <Button
+      variant="ghost"
+      size="xs"
+      className="-mr-2"
+      aria-label={`${label} monthly cap for ${row.name ?? row.appRowId}`}
+      onClick={() => onSetCap(row)}
+    >
+      {label}
+    </Button>
+  );
+  if (cap === null) {
+    return (
+      <div className="flex items-center justify-end gap-2">
+        <span className="text-muted-foreground">Unlimited</span>
+        {button("Set cap")}
+      </div>
+    );
+  }
+  if (!isCurrentMonth) {
+    return (
+      <div className="flex items-center justify-end gap-2">
+        <span>{formatCount(cap)}</span>
+        {button("Edit")}
+      </div>
+    );
+  }
+  const reached = row.calls >= cap;
+  return (
+    <div className="flex flex-col items-end gap-1">
+      <div className="flex items-center gap-2">
+        <span className={reached ? "text-destructive" : undefined}>
+          {formatCapProgress(row.calls, cap)}
+        </span>
+        {button("Edit")}
+      </div>
+      <Progress
+        value={Math.min(row.calls, cap)}
+        max={cap}
+        aria-label={`${row.name ?? row.appRowId}: ${formatCapProgress(row.calls, cap)} provider calls this month`}
+        className="w-28"
+        indicatorClassName={reached ? "bg-destructive" : undefined}
+      />
+    </div>
+  );
+}
+
+interface AppColumnOptions {
+  /** The month shown is the current UTC month: progress toward the cap applies. */
+  isCurrentMonth: boolean;
+  /** Opens the set/clear dialog for the row's app. */
+  onSetCap: (row: UsageAppRow) => void;
+}
+
+// TanStack Table renders each `cell` as a component, and columns rebuilt
+// on every render would remount them: the member and provider columns are
+// module-level arrays, and the app columns are memoized on their options.
+function buildAppColumns({
+  isCurrentMonth,
+  onSetCap,
+}: AppColumnOptions): ColumnDef<UsageAppRow>[] {
+  return [
+    ...appNameColumns,
+    ...providerColumns<UsageAppRow>(),
+    toolCallsColumn<UsageAppRow>(),
+    {
+      id: "monthlyCap",
+      accessorFn: (row) => row.monthlyCallCap ?? Number.POSITIVE_INFINITY,
+      header: ({ column }) => (
+        <SortableHeader column={column} label="Monthly cap" />
+      ),
+      meta: { headerClassName: NUMERIC, cellClassName: NUMERIC },
+      cell: ({ row }) => (
+        <MonthlyCapCell
+          row={row.original}
+          isCurrentMonth={isCurrentMonth}
+          onSetCap={onSetCap}
+        />
+      ),
+    },
+  ];
+}
+
+const appNameColumns: ColumnDef<UsageAppRow>[] = [
   {
     id: "app",
     accessorFn: (row) => row.name ?? row.appRowId,
@@ -112,12 +217,21 @@ const appColumns: ColumnDef<UsageAppRow>[] = [
     cell: ({ row }) =>
       row.original.name ? (
         <>
-          <p className="truncate font-medium">{row.original.name}</p>
-          {row.original.appSlug ? (
-            <p className="truncate text-xs text-muted-foreground">
-              {row.original.appSlug}
-            </p>
-          ) : null}
+          <p
+            className={
+              row.original.callable
+                ? "truncate font-medium"
+                : "truncate font-medium text-muted-foreground"
+            }
+          >
+            {row.original.name}
+          </p>
+          <p className="truncate text-xs text-muted-foreground">
+            {row.original.callable
+              ? row.original.appSlug
+              : // Its tombstone keeps the name: the app itself was deleted.
+                [row.original.appSlug, "deleted"].filter(Boolean).join(", ")}
+          </p>
         </>
       ) : (
         <>
@@ -130,8 +244,6 @@ const appColumns: ColumnDef<UsageAppRow>[] = [
         </>
       ),
   },
-  ...providerColumns<UsageAppRow>(),
-  toolCallsColumn<UsageAppRow>(),
 ];
 
 const memberColumns: ColumnDef<UsageMemberRow>[] = [
@@ -205,10 +317,16 @@ export function UsageByAppTable({
   rows,
   isLoading,
   error,
-}: UsageTableProps<UsageAppRow>) {
+  isCurrentMonth,
+  onSetCap,
+}: UsageTableProps<UsageAppRow> & AppColumnOptions) {
+  const columns = useMemo(
+    () => buildAppColumns({ isCurrentMonth, onSetCap }),
+    [isCurrentMonth, onSetCap],
+  );
   const table = useDataTable({
     data: rows,
-    columns: appColumns,
+    columns,
     getRowId: (row) => row.appRowId,
     withSorting: true,
   });
@@ -218,8 +336,9 @@ export function UsageByAppTable({
       isLoading={isLoading}
       error={error}
       empty={{
-        title: "No app usage this month",
-        description: "No app called a provider or served an agent tool call.",
+        title: "No apps",
+        description:
+          "Apps this organization can call are listed here, with what they spent in the month.",
       }}
     />
   );

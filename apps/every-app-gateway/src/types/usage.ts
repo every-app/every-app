@@ -16,6 +16,19 @@ export interface UsageAppRow extends UsageTotals {
   appSlug: string | null;
   /** Allowed MCP tool calls on the app in the month (`mcp_tool_calls`). */
   toolCalls: number;
+  /**
+   * The organization's cap on the app's provider calls per UTC month
+   * (`org_app_settings`), or null for unlimited; always null on an app
+   * that is not callable.
+   */
+  monthlyCallCap: number | null;
+  /**
+   * The organization can call the app today (its own live app, or a shared
+   * one), so a cap can be set on it. Every callable app is listed, with
+   * zeros in a month it made no call; a deleted app shows only in a month
+   * it spent in, and cannot be capped.
+   */
+  callable: boolean;
 }
 
 export interface UsageMemberRow extends UsageTotals {

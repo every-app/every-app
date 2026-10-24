@@ -1,21 +1,24 @@
-import { and, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
+import { and, eq, gte, inArray, lt, ne, or, sql, type SQL } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import { db } from "@/db";
 import {
   apps,
   mcpToolCalls,
   members,
+  orgAppSettings,
   usageDaily,
   usageMonthly,
   users,
 } from "@/db/schema";
+import { DELETED_APP_STATUS } from "@every-app/perimeter/registry";
 import {
   utcDay,
   utcMonth,
   type UsageEvent,
   type UsageRecorder,
 } from "@/server/usage-event";
-import type { UsageSummary, UsageTotals } from "@/types/usage";
+import type { MonthlyCallCounter } from "@/server/app-cap";
+import type { UsageAppRow, UsageSummary, UsageTotals } from "@/types/usage";
 
 /** Daily rows are kept this many months, monthly rows this many. */
 const DAILY_RETENTION_MONTHS = 13;
@@ -114,6 +117,29 @@ function whole(value: number | undefined): number {
   return Number.isFinite(value) ? Math.max(0, Math.round(value!)) : 0;
 }
 
+/**
+ * Provider calls counted for (organization, app) in the UTC month: the one
+ * `usage_monthly` row a monthly cap reads; 0 without one.
+ */
+async function monthlyCalls(
+  organizationId: string,
+  appRowId: string,
+  month: string,
+): Promise<number> {
+  const [row] = await db
+    .select({ calls: usageMonthly.calls })
+    .from(usageMonthly)
+    .where(
+      and(
+        eq(usageMonthly.organizationId, organizationId),
+        eq(usageMonthly.appRowId, appRowId),
+        eq(usageMonthly.month, month),
+      ),
+    )
+    .limit(1);
+  return row?.calls ?? 0;
+}
+
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 /** The first day of the month `months` after `month` ("YYYY-MM"). */
@@ -185,66 +211,94 @@ async function summarize({
   );
   const toolCallCount = sql<number>`count(*)`.mapWith(Number);
 
-  const [byApp, byMember, byTarget, toolCallsByApp, toolCallsByMember] =
-    await db.batch([
-      db
-        .select({
-          appRowId: usageDaily.appRowId,
-          name: apps.name,
-          appSlug: apps.appSlug,
-          ...totals,
-        })
-        .from(usageDaily)
-        .leftJoin(apps, eq(apps.id, usageDaily.appRowId))
-        .where(inMonth)
-        .groupBy(usageDaily.appRowId, apps.name, apps.appSlug),
-      db
-        .select({
-          userId: usageDaily.userId,
-          name: users.name,
-          email: users.email,
-          ...totals,
-        })
-        .from(usageDaily)
-        .leftJoin(
-          members,
-          memberOf(usageDaily.userId, usageDaily.organizationId),
-        )
-        .leftJoin(users, eq(users.id, members.userId))
-        .where(inMonth)
-        .groupBy(usageDaily.userId, users.name, users.email),
-      db
-        .select({ kind: usageDaily.kind, target: usageDaily.target, ...totals })
-        .from(usageDaily)
-        .where(inMonth)
-        .groupBy(usageDaily.kind, usageDaily.target),
-      db
-        .select({
-          appRowId: mcpToolCalls.appRowId,
-          name: apps.name,
-          appSlug: apps.appSlug,
-          toolCalls: toolCallCount,
-        })
-        .from(mcpToolCalls)
-        .leftJoin(apps, eq(apps.id, mcpToolCalls.appRowId))
-        .where(toolCallsInMonth)
-        .groupBy(mcpToolCalls.appRowId, apps.name, apps.appSlug),
-      db
-        .select({
-          userId: mcpToolCalls.userId,
-          name: users.name,
-          email: users.email,
-          toolCalls: toolCallCount,
-        })
-        .from(mcpToolCalls)
-        .leftJoin(
-          members,
-          memberOf(mcpToolCalls.userId, mcpToolCalls.organizationId),
-        )
-        .leftJoin(users, eq(users.id, members.userId))
-        .where(toolCallsInMonth)
-        .groupBy(mcpToolCalls.userId, users.name, users.email),
-    ]);
+  const [
+    byApp,
+    byMember,
+    byTarget,
+    toolCallsByApp,
+    toolCallsByMember,
+    callable,
+  ] = await db.batch([
+    db
+      .select({
+        appRowId: usageDaily.appRowId,
+        name: apps.name,
+        appSlug: apps.appSlug,
+        ...totals,
+      })
+      .from(usageDaily)
+      .leftJoin(apps, eq(apps.id, usageDaily.appRowId))
+      .where(inMonth)
+      .groupBy(usageDaily.appRowId, apps.name, apps.appSlug),
+    db
+      .select({
+        userId: usageDaily.userId,
+        name: users.name,
+        email: users.email,
+        ...totals,
+      })
+      .from(usageDaily)
+      .leftJoin(members, memberOf(usageDaily.userId, usageDaily.organizationId))
+      .leftJoin(users, eq(users.id, members.userId))
+      .where(inMonth)
+      .groupBy(usageDaily.userId, users.name, users.email),
+    db
+      .select({ kind: usageDaily.kind, target: usageDaily.target, ...totals })
+      .from(usageDaily)
+      .where(inMonth)
+      .groupBy(usageDaily.kind, usageDaily.target),
+    db
+      .select({
+        appRowId: mcpToolCalls.appRowId,
+        name: apps.name,
+        appSlug: apps.appSlug,
+        toolCalls: toolCallCount,
+      })
+      .from(mcpToolCalls)
+      .leftJoin(apps, eq(apps.id, mcpToolCalls.appRowId))
+      .where(toolCallsInMonth)
+      .groupBy(mcpToolCalls.appRowId, apps.name, apps.appSlug),
+    db
+      .select({
+        userId: mcpToolCalls.userId,
+        name: users.name,
+        email: users.email,
+        toolCalls: toolCallCount,
+      })
+      .from(mcpToolCalls)
+      .leftJoin(
+        members,
+        memberOf(mcpToolCalls.userId, mcpToolCalls.organizationId),
+      )
+      .leftJoin(users, eq(users.id, members.userId))
+      .where(toolCallsInMonth)
+      .groupBy(mcpToolCalls.userId, users.name, users.email),
+    // Every app the organization can call today (its own, and the shared
+    // ones; never a deleted app's tombstone), with the organization's cap
+    // on it: an app shows in the month before it made a call, so a cap
+    // can be set before the first call and is always visible to clear.
+    db
+      .select({
+        appRowId: apps.id,
+        name: apps.name,
+        appSlug: apps.appSlug,
+        monthlyCallCap: orgAppSettings.monthlyCallCap,
+      })
+      .from(apps)
+      .leftJoin(
+        orgAppSettings,
+        and(
+          eq(orgAppSettings.appRowId, apps.id),
+          eq(orgAppSettings.organizationId, organizationId),
+        ),
+      )
+      .where(
+        and(
+          or(eq(apps.organizationId, organizationId), eq(apps.scope, "shared")),
+          ne(apps.status, DELETED_APP_STATUS),
+        ),
+      ),
+  ]);
 
   const none: UsageTotals = {
     calls: 0,
@@ -253,15 +307,48 @@ async function summarize({
     outputTokens: 0,
     costMicros: 0,
   };
+  // Usage rows first (an app that spent, callable today or not), then the
+  // callable apps: their cap, and a zero row for one that made no call. A
+  // cap only ever shows on a callable app, where it can be set and cleared.
   const appRows = new Map(
-    byApp.map((row) => [row.appRowId, { ...row, toolCalls: 0 }]),
+    byApp.map((row) => [
+      row.appRowId,
+      {
+        ...row,
+        toolCalls: 0,
+        monthlyCallCap: null as number | null,
+        callable: false,
+      },
+    ]),
   );
   for (const row of toolCallsByApp) {
     // A gateway-surface call on no app has no app to show under.
     if (!row.appRowId) continue;
     const existing = appRows.get(row.appRowId);
     if (existing) existing.toolCalls = row.toolCalls;
-    else appRows.set(row.appRowId, { ...none, ...row, appRowId: row.appRowId });
+    else {
+      appRows.set(row.appRowId, {
+        ...none,
+        ...row,
+        appRowId: row.appRowId,
+        monthlyCallCap: null,
+        callable: false,
+      });
+    }
+  }
+  for (const row of callable) {
+    const existing = appRows.get(row.appRowId);
+    if (existing) {
+      existing.callable = true;
+      existing.monthlyCallCap = row.monthlyCallCap;
+    } else {
+      appRows.set(row.appRowId, {
+        ...none,
+        ...row,
+        toolCalls: 0,
+        callable: true,
+      });
+    }
   }
   const memberRows = new Map(
     byMember.map((row) => [row.userId, { ...row, toolCalls: 0 }]),
@@ -275,9 +362,12 @@ async function summarize({
     a: T,
     b: T,
   ) => b.calls - a.calls || b.toolCalls - a.toolCalls;
+  // Apps that spent the same (the zero rows, mostly) in name order.
+  const byCallsThenName = (a: UsageAppRow, b: UsageAppRow) =>
+    byCalls(a, b) || (a.name ?? a.appRowId).localeCompare(b.name ?? b.appRowId);
   return {
     month,
-    byApp: [...appRows.values()].sort(byCalls),
+    byApp: [...appRows.values()].sort(byCallsThenName),
     byMember: [...memberRows.values()].sort(byCalls),
     byTarget: byTarget.sort((a, b) => b.calls - a.calls),
   };
@@ -345,11 +435,13 @@ async function deleteOlderThan(
   };
 }
 
-export const UsageRepository: UsageRecorder & {
-  summarize: typeof summarize;
-  deleteOlderThan: typeof deleteOlderThan;
-} = {
+export const UsageRepository: UsageRecorder &
+  MonthlyCallCounter & {
+    summarize: typeof summarize;
+    deleteOlderThan: typeof deleteOlderThan;
+  } = {
   record,
+  monthlyCalls,
   summarize,
   deleteOlderThan,
 } as const;
