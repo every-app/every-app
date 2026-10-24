@@ -105,24 +105,34 @@ assessment.
 
 ## Before you start
 
-1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true;
-   `data.appBaseDomain` is `<app base domain>`; `data.apps[]` has an entry
-   with `id: "crm"`, `status: "active"` and `bound: true`. Without it, deploy
-   Open CRM first (its callback must answer before anyone connects).
-2. In Open CRM's directory (its checkout: `secret list` has no flag for
-   another app's manifest), `pnpm everyapp secret list --json`, one call
-   for all of this, before any Google step. Are `GOOGLE_WORKSPACE_CLIENT_ID`
-   and `GOOGLE_WORKSPACE_CLIENT_SECRET` in `data.gateway.names`? Set
-   already: ask before replacing (a new secret for the same client is
-   harmless, see Rotate; a different client id makes every member reconnect
-   Gmail and Calendar). Both must be in `data.gateway.needed` with
-   `required: true` (and in `data.gateway.missing` until set).
-   `TOKEN_ENCRYPTION_KEY`, the CRM's own secret that connecting needs, must
-   not be in `data.app.workers[0].missing`: if it is, the CRM's admin sets
-   it in the CRM's directory after its first deploy, 32 or more random
-   characters (the CRM refuses shorter). Without the CRM's checkout the
-   same command from the every-app checkout answers only the first
-   question: say so (a missing key shows at step 9, the table's last row).
+1. `pnpm everyapp secret list crm --json`, from any directory (the id reads
+   the manifest Open CRM's last deploy stored; in its directory the id can
+   be left off), one call, before any Google step. The rule: read
+   `data.app.setup.unmet` and `data.app.setup.command`. The client is one
+   setting there, `id: "google-workspace"`, `kind: "capability"`, `holder:
+   "gateway"`, `names: ["GOOGLE_WORKSPACE_CLIENT_ID",
+   "GOOGLE_WORKSPACE_CLIENT_SECRET"]` (an OAuth client's id and secret are
+   the two names of one setting, set only when both are), `need.kind:
+   "required"`, `setup: "setup/google.md"` (this file). While it is in
+   `unmet` this file applies, and `command` is the one `secret set` that
+   opens the CRM (both names in it; `--app crm` added only when a secret
+   of the CRM's own is missing too). The same entry in
+   `data.app.setup.settings` with `set: true`: ask before replacing (a new
+   secret for the same client is harmless, see Rotate; a different client
+   id makes every member reconnect Gmail and Calendar).
+   `TOKEN_ENCRYPTION_KEY`, the CRM's own secret that connecting needs, is
+   in `unmet` too while unset (`holder: "app"`): the CRM's admin sets it
+   after the CRM's first deploy, from anywhere with `--app crm`, at the
+   hidden prompt, 32 or more random characters (the CRM refuses shorter);
+   a missing key shows at step 9, the table's last row. `APP_NOT_FOUND`:
+   deploy Open CRM first (its callback must answer before anyone
+   connects).
+2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true,
+   `data.appBaseDomain` is `<app base domain>` (step 1 builds the redirect
+   URI from it), and `data.apps[]` has `id: "crm"` with `status: "active"`
+   and `bound: true`. Its `setup` is 1's `data.app.setup` again and says
+   what else the CRM needs; not installed, or no owner:
+   [gateway.md](gateway.md) first.
 3. Ask whether a Cloud project or a Web client exists for this already:
    then step 6 adds the redirect URI to it. Never reuse OpenSEO's verified
    client (the design doc's rule). The sets the apps declare decide steps
@@ -233,7 +243,12 @@ before step 8.
    Alternative, the person types it: in their own terminal in the every-app
    folder, `pnpm everyapp secret set GOOGLE_WORKSPACE_CLIENT_ID GOOGLE_WORKSPACE_CLIENT_SECRET`
    (two hidden prompts), then they tell you.
-9. **Person:** open https://crm.<app base domain>/settings/connections/google
+9. **Person,** once `data.app.setup.ready` is true: while another required
+   setting of the CRM is unmet, the Gateway shows the CRM as "Needs setup"
+   and opens its setup dialog instead of the app, so finish those first
+   (each `unmet` entry's `setup` names its file); the Google client itself
+   is verified by Verify 1 meanwhile. Then open
+   https://crm.<app base domain>/settings/connections/google
    (Settings → Connections → Google Workspace) → Connect → choose the
    account → (Testing: "Google hasn't verified this app" → Advanced → Go to
    Every App (unsafe)) → Allow. Done when the page shows the "Connected"
@@ -241,14 +256,25 @@ before step 8.
 
 ## Verify
 
-1. `pnpm everyapp secret list --json`: both names in `data.gateway.names`.
-   In Open CRM's directory: their `data.gateway.needed` entries have
-   `"set": true` and `data.gateway.missing` no longer lists them.
-2. Smoke check, in the person's browser, signed in as an owner or admin
-   (no secret involved): Open CRM's Settings → Connections → Google
-   Workspace shows a Connect button and the "Not connected" badge instead
-   of "Not configured" with the "Redirect URI" and "Command" rows (a plain
-   member never sees those rows). The button means the Gateway answered
+1. `pnpm everyapp secret list crm --json`, from anywhere: the
+   `google-workspace` setting has `set: true` and is out of
+   `data.app.setup.unmet` (`data.app.setup.ready: true` and `command` null
+   once nothing else is missing); both names in `data.gateway.names`,
+   their `data.gateway.needed` entries `"set": true`, and
+   `data.gateway.missing` no longer lists them. Then
+   `pnpm everyapp status --json`: the `crm` entry's `setup.ready` is true
+   and `data.fixes` has no `APP_NEEDS_SETUP` for it (the Gateway opens the
+   CRM again).
+2. Smoke check, in the person's browser. 2 and 3 need the CRM open: 1's
+   `data.app.setup.ready` true. While another required setting is unmet,
+   the Gateway sends a browser to its setup dialog instead of the CRM
+   (anything else gets 503 `app_needs_setup`): finish those first (each
+   `unmet` entry's `setup` names its file); until then 1 is the check of
+   the Google client. Then, signed in as an owner or admin (no secret
+   involved): Open CRM's Settings → Connections → Google Workspace shows a
+   Connect button and the "Not connected" badge instead of "Not
+   configured" with the "Redirect URI" and "Command" rows (a plain member
+   never sees those rows). The button means the Gateway answered
    `ready: true` with the client id for `google-workspace`.
 3. App check: step 9. Google's account chooser means the client id and
    redirect URI match; the "Connected" badge means the Gateway completed
@@ -286,7 +312,7 @@ before step 8.
 | Sync stops after 7 days, `invalid_grant` | *External* in Testing: consent expired | Reconnect; publish and verify to stop it |
 | `403 accessNotConfigured` ("has not been used in project") | Gmail or Calendar API not enabled in that project | Step 3 in the project the error names; wait a minute |
 | Google "Error 401: deleted_client" | The client was deleted (30-day restore window) | Restore it under Deleted credentials, or make a new one |
-| Connect fails before Google opens | Open CRM's `TOKEN_ENCRYPTION_KEY` unset | Set it in the app's directory, after its first deploy |
+| Connect fails before Google opens | Open CRM's `TOKEN_ENCRYPTION_KEY` unset | Set it after the CRM's first deploy: `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm` from anywhere (in the CRM's directory the flag can be left off), the value in one of README's three ways, 32 or more random characters; connect again |
 
 ## Rerun, rotate, remove
 

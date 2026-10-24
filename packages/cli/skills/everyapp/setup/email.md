@@ -25,9 +25,12 @@ address and a name (`parseEmailSender` in `packages/sdk/src/internal/email.ts`;
 the Gateway's `configuredSender()` uses it): a bare address with no name
 anywhere counts as no sender, so the Gateway says "Email is not configured"
 and an app's send gets `integration_not_configured` (503). `secret list`
-counts `EMAIL_FROM_NAME` as required whatever `EMAIL_FROM` holds, so with
-the combined form it stays in an app directory's `data.gateway.missing`
-while the Gateway sends: not a fault.
+and `status` read names, not values: an app's `email` setting counts as set
+once `EMAIL_FROM` is on the Gateway (`EMAIL_FROM_NAME` is read when set:
+`required: false` in `data.gateway.needed`, never in `missing`), so a bare
+address with no name anywhere is `set: true` there while the Gateway, which
+reads the values (`isEmailConfigured`), still keeps the app closed as "Needs
+setup". Verify 2 is the check that counts.
 
 How the provider is picked: `EMAIL_PROVIDER` when set (and it must be set up;
 it never falls back); else Cloudflare when `EMAIL_REST_API_TOKEN` is set, else
@@ -65,13 +68,30 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 
 ## Before you start
 
+- `pnpm everyapp secret list agentic-inbox --json` (the app that lists
+  `email`; from anywhere once it is deployed, else `pnpm everyapp secret list
+  --json` in its directory): this file applies when `data.app.setup.unmet`
+  has the entry `id: "email"` (`kind: "capability"`, `holder: "gateway"`,
+  `names: ["EMAIL_FROM"]`, `need.kind: "required"`, `setup: "setup/email.md"`:
+  the path `status` prints as `Guide: .claude/skills/everyapp/setup/email.md`
+  under "<app> needs setup", and `secret list --json` carries per unmet
+  setting; how an agent lands here), and `data.app.setup.command` is the one
+  `secret set` that opens the app, `EMAIL_FROM` among its names. The older
+  `data.gateway.needed` (each `{ name, required, set }`) and
+  `data.gateway.missing` still say the same of `EMAIL_FROM`; `EMAIL_FROM_NAME`,
+  `RESEND_API_KEY`, `EMAIL_PROVIDER` and `EMAIL_REST_API_TOKEN` are read when
+  set (`required: false`), never in `unmet` or `missing`. The entry `set:
+  true`: `EMAIL_FROM` is on the Gateway already; ask before replacing it.
 - `pnpm everyapp status --json`: `data.installed` and `data.claimed` true,
   `data.gatewayUrl` gives `<gateway host>`, `data.accountId` is `<account id>`
-  (the sending domain's zone must be in this account), and each
-  `data.apps[].email.senders` says which apps already send as their own.
-- `pnpm everyapp secret list --json`: whether `EMAIL_FROM`, `EMAIL_FROM_NAME`,
-  `RESEND_API_KEY`, `EMAIL_PROVIDER` or `EMAIL_REST_API_TOKEN` are in
-  `data.gateway.names`. Any set: ask before replacing. `EMAIL_REST_API_TOKEN`
+  (the sending domain's zone must be in this account), `data.apps[].setup`
+  says which apps still need setup (an `APP_NEEDS_SETUP` fix each, severity
+  `warning`), and each `data.apps[].email.senders` says which apps already
+  send as their own.
+- `pnpm everyapp secret list --json` from the checkout root: whether
+  `EMAIL_FROM`, `EMAIL_FROM_NAME`, `RESEND_API_KEY`, `EMAIL_PROVIDER` or
+  `EMAIL_REST_API_TOKEN` are in `data.gateway.names` (the one place the last
+  four show as set). Any set: ask before replacing. `EMAIL_REST_API_TOKEN`
   set on a deployed Gateway: it outranks the binding; ask whether that is meant.
 - Every `cf …` below is the CLI's pinned cf, the one `pnpm everyapp login
   --json` signs in: README's "Where you are" says how to run it.
@@ -220,12 +240,17 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 
 ## Verify
 
-1. `pnpm everyapp secret list --json`: `EMAIL_FROM` and `EMAIL_FROM_NAME` in
-   `data.gateway.names` (`RESEND_API_KEY` too for Resend). In an app's
-   directory their entries in `data.gateway.needed` have `"set": true` and
-   `data.gateway.missing` lists none of them. The combined form: `EMAIL_FROM`
-   alone, and `EMAIL_FROM_NAME` stays in `data.gateway.missing` (Settings);
-   Verify 2 is the check that counts.
+1. `pnpm everyapp secret list agentic-inbox --json` (or the app that brought
+   you here, from anywhere): the `email` entry in `data.app.setup.settings` is
+   `set: true` and out of `data.app.setup.unmet`, `data.app.setup.ready` true
+   once nothing else is missing, `EMAIL_FROM` out of `data.gateway.missing`
+   (`EMAIL_FROM_NAME` was never in it). From the checkout root with no app
+   named: `EMAIL_FROM` and `EMAIL_FROM_NAME` in `data.gateway.names`
+   (`EMAIL_FROM` alone with the combined form; `RESEND_API_KEY` too for
+   Resend). Then `pnpm everyapp status --json`: `data.apps[].setup.ready` true
+   for that app and no `APP_NEEDS_SETUP` fix naming it. All of this reads
+   names: a bare address with no name passes here and fails Verify 2, which
+   is the check that counts.
 2. Smoke check, by the person (`GET /api/integrations/email` is for apps, not
    operators): on `https://<gateway host>/`, **Manage workspace** (bottom of
    the sidebar) > **Users** > **Invite user** > an address they control >
@@ -281,6 +306,7 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 | `CONFIRMATION_REQUIRED` from `secret unset --json`                                | it needs `--yes`                                                                    | ask the person, then rerun with it                                                                      |
 | **Copy invite link** with "Email is not configured on this gateway." (the Users page says so too); app gets `integration_not_configured` (503) | no sender (an `EMAIL_FROM` with no name in it and no `EMAIL_FROM_NAME` counts as none), or no provider is set up, or `EMAIL_PROVIDER` names one that isn't | set `EMAIL_FROM` and `EMAIL_FROM_NAME`, or `EMAIL_FROM` in the combined form (step 8); set that provider's setting or unset `EMAIL_PROVIDER` |
 | **Copy invite link** with "Sending the invitation email failed."                  | configured, but the provider refused the send                                       | Verify 5's `email.send.failed` line, then the provider rows below                                       |
+| the app's host answers 503 `app_needs_setup`, or a browser lands on `https://<gateway host>/?setup=<app id>`; `status` has `APP_NEEDS_SETUP` naming `EMAIL_FROM`, or the Gateway's app list says "Needs setup" while `secret list` says `set: true` | the Gateway keeps an app that lists `email` closed until it can send: a sender with a name and a provider (Settings) | step 8 (both settings, or the combined form), then the provider's steps; Verify 2 |
 | log: `EMAIL_PROVIDER is "…", which isn't an email provider`                       | a value other than `cloudflare` or `resend`                                         | `echo cloudflare \| pnpm everyapp secret set EMAIL_PROVIDER --json`, or unset it                        |
 | `email_sender_not_verified` (422); `E_SENDER_NOT_VERIFIED`, `E_SENDER_DOMAIN_NOT_AVAILABLE`, `E_RECIPIENT_NOT_ALLOWED` (before onboarding, only verified destination addresses are allowed); Resend 403 naming the domain; mail reaches only verified addresses | the sender's domain isn't onboarded or Verified with the provider | steps 2 to 3 (Cloudflare) or 4 to 5 (Resend) for that domain; `dns status` or Resend's Records tab |
 | `email_provider_limited` (429); `E_DAILY_LIMIT_EXCEEDED`, `E_RATE_LIMIT_EXCEEDED`, `10004`; Resend `daily_quota_exceeded`, `monthly_quota_exceeded`, `rate_limit_exceeded` | the provider's quota or rate | wait; `cf email-sending limits get`, Cloudflare's limit increase form; Resend Pro |
@@ -320,4 +346,4 @@ recipient address (20 on a hosted Gateway) and 5,000 a day per Gateway.
 
 - Cloudflare: https://developers.cloudflare.com/email-service/ (beta, Workers Paid, verified destinations free), https://developers.cloudflare.com/email-service/configuration/domains/ (onboarding, the records it adds), https://developers.cloudflare.com/email-service/get-started/send-emails/ (the dashboard path and deep link, the `EMAIL` binding), https://developers.cloudflare.com/api/resources/email_sending/subresources/subdomains/ (the subdomain's `tag`), https://developers.cloudflare.com/email-service/api/send-emails/workers-api/ (the `E_*` codes), https://developers.cloudflare.com/email-service/api/send-emails/rest-api/ (the numeric codes), https://developers.cloudflare.com/email-service/platform/limits/ (quota, verified destination addresses, 50 recipients, 5 MiB), https://developers.cloudflare.com/email-service/platform/pricing/ (Workers Paid, 3,000 a month, $0.35 per 1,000), https://developers.cloudflare.com/workers/platform/pricing/ ($5 a month), https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ (Logs > Live), https://developers.cloudflare.com/workers/wrangler/commands/workers/ (`wrangler tail`)
 - Resend: https://resend.com/pricing, https://resend.com/docs/api-reference/rate-limit (10 a second per team), https://resend.com/docs/api-reference/errors (error names), https://resend.com/docs/add-a-domain, https://resend.com/docs/dashboard/domains/manage-domains (statuses), https://resend.com/docs/knowledge-base/cloudflare (Sign in to Cloudflare, record names, DNS only, Verify DNS Records), https://resend.com/docs/create-an-api-key, https://resend.com/docs/api-reference/api-keys/create-api-key (Sending access, domain restriction, shown once), https://resend.com/docs/dashboard/api-keys/introduction (permission and domain editable in the Dashboard)
-- Local, 2026-10-23: `cf email-sending subdomains {create,preview,delete,dns status,dns fix} --help`, `cf email-sending limits get` (its fields), `cf dns records create --help` and `cf workers --help` of cf 1.0.0-beta.14 (`packages/cli/package.json` pins it, `lib/cf/bin.ts` runs it, `pnpm --filter everyapp exec cf --version` prints it); docs/runbooks/email-sending-setup.md, docs/capabilities.md and the CLI's error paths (`commands/secret`, `commands/email`, `lib/gateway/registry.ts`, `commands/status/problems.ts`) in the checkout; 2026-10-24: `packages/sdk/src/internal/email.ts` (`parseEmailSender`: the combined form, a name required) and the Gateway's `server/email/sendEmail.ts` (`configuredSender`, `isEmailConfigured`), `commands/deploy/deployApp.ts` and `commands/email/index.ts` (the `email set --sender` next step), the runbook's "Sender configuration" as of #389
+- Local, 2026-10-23: `cf email-sending subdomains {create,preview,delete,dns status,dns fix} --help`, `cf email-sending limits get` (its fields), `cf dns records create --help` and `cf workers --help` of cf 1.0.0-beta.14 (`packages/cli/package.json` pins it, `lib/cf/bin.ts` runs it, `pnpm --filter everyapp exec cf --version` prints it); docs/runbooks/email-sending-setup.md, docs/capabilities.md and the CLI's error paths (`commands/secret`, `commands/email`, `lib/gateway/registry.ts`, `commands/status/problems.ts`) in the checkout; 2026-10-24: `packages/sdk/src/internal/email.ts` (`parseEmailSender`: the combined form, a name required) and the Gateway's `server/email/sendEmail.ts` (`configuredSender`, `isEmailConfigured`), `commands/deploy/deployApp.ts` and `commands/email/index.ts` (the `email set --sender` next step), the runbook's "Sender configuration" as of #389; `packages/sdk/src/internal/capabilities.ts` (the `email` entry: `settings: ["EMAIL_FROM"]`, the rest `optionalSettings`) and `appSettings.ts`, `packages/cli/src/lib/app/settings.ts` (`gatewayNeeds`, `gatewayMissing`) and `commands/secret/index.ts` (`secret list <app>`), the Gateway's `server/app-setup.ts` (readiness from `isEmailConfigured`) and `server/app-needs-setup.ts` (the closed app), after #383, #395, #396 and #397 merged

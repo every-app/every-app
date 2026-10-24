@@ -77,7 +77,8 @@
       "CONTEXT_API_KEY"
     ],
     "commands": [
-      "^status\\b"
+      "^status\\b",
+      "^secret list openseo\\b"
     ],
     "mustMention": [
       "context.dev/signup",

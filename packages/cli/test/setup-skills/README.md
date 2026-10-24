@@ -58,7 +58,26 @@ For each scenario, under `/tmp/setup-skills-runs/<scenario>-<n>/`:
 2. Writes the scenario's initial state to `state.json` (what the Gateway
    holds, which apps are deployed, whether `access` exists yet). The fake
    reads and writes it, so a `secret set` shows up in the next
-   `secret list`. With `installed: false` there is no Gateway anywhere:
+   `secret list`. The settings model is the real one: the fake evaluates
+   each app's manifest with the built SDK (`appSettings`,
+   `evaluateAppSettings`, `appSetupOf` from `@every-app/sdk/internal`, the
+   registries' `setup` guide pointers included) against
+   `state.gatewayNames` (plus the install's own names) and the app's
+   `secretsSet`, so `secret list [<app>] --json` answers `data.app.setup`
+   (`ready`, `settings`, `groups`, `unmet`, `command`) for the app named
+   from anywhere or the one in the directory, with the kept
+   `data.app.declared`/`workers`, `data.gateway.needed`/`missing` and
+   `next`; from the root with no app, `data.apps[] { id, setup }` beside
+   the Gateway's names. `status --json` carries `data.apps[].setup` and an
+   `APP_NEEDS_SETUP` fix (severity `warning`, "<app> needs setup", `run`
+   the one `secret set`) per app with unmet required settings, its
+   `message` listing each unmet setting with `Guide:
+   .claude/skills/everyapp/setup/<name>.md`, which the human `status`
+   prints as the real one does. `secret set NAME --app <id>` and `secret
+   unset --app <id>` reach an app's own secret from anywhere; an app with
+   `deployed: false` is registered but never uploaded (`status` says
+   `pending`, its own secrets read as unknown and "after first deploy").
+   With `installed: false` there is no Gateway anywhere:
    `status` stops on `install_gateway` (exit 2), `secret list` and
    `secret set` on `GATEWAY_NOT_FOUND`, and `setup --domain <host>`
    installs one under `zone`, then stops on `claim_owner` with the owner
@@ -144,11 +163,13 @@ Every expectation in the scenario's `expect` held:
   were met), the message before them counts as the closing.
 - `mustMention`: strings (the provider's console URL, a redirect path)
   that must appear in the assistant's text.
-- `commands`: regexps that must match some fake-everyapp invocation; an
-  entry `{ "pattern": "^secret list", "cwd": "apps/crm" }` also says in
-  which directory (relative to `every-app`), and `"phase": "after"` (or
-  `"before"`) that it came after the last set (a file's Verify step) or
-  before the first.
+- `commands`: regexps that must match some fake-everyapp invocation
+  (`^secret list crm\b`: the setup files read `secret list <app id> --json`
+  from anywhere, so the app-scoped scenarios expect the id, not a
+  directory); an entry `{ "pattern": "^secret list crm\\b", "phase":
+  "after" }` says it came after the last set (a file's Verify step; or
+  `"before"` the first), and `"cwd": "apps/crm"` in which directory
+  (relative to `every-app`) when that matters.
 - `notCommands`: regexps no fake-everyapp invocation may match (the
   access scenario: `^secret set\b`, since its file pipes
   `EMAIL_PASSWORD_SIGN_IN` or the membership settings only when the
@@ -203,10 +224,14 @@ tool call: `grep '"name":"Bash"' events.jsonl` shows what the agent ran,
 and the `result` events carry the cost.
 
 The fake's shapes come from `packages/cli/src/lib/output/events.ts`, the
-secret command (`src/commands/secret/index.ts`), the real `--help` texts
-in `help/everyapp-help.txt`, and captures of `status --json` and
-`secret list --json` from a live Gateway. When the CLI's contract changes,
-change the fake with it.
+secret command (`src/commands/secret/index.ts`), the settings model
+(`src/lib/app/settings.ts` over the SDK's `appSettings.ts`; the status
+fixes in `src/commands/status/problems.ts`), the real `--help` texts in
+`help/everyapp-help.txt` (captured by running `packages/cli/bin/everyapp.js`
+directly, so they say `everyapp …` where a run under pnpm says `pnpm
+everyapp …`), and captures of `status --json` and `secret list --json`
+from a live Gateway. When the CLI's contract changes, change the fake
+with it.
 
 ## Quirks worth knowing
 

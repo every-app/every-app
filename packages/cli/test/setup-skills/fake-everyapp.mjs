@@ -11,8 +11,14 @@
  *
  * FAKE_EVERYAPP_RUN names the run directory (state.json, invocations.jsonl);
  * the bin shim run.mjs writes sets it. The Gateway's settable names and the
- * settings an app's manifest needs come from the built SDK
- * (@every-app/sdk/internal), so they never drift from the registry.
+ * settings model (what an app's manifest needs set, evaluated against the
+ * Gateway's names and the app's own: `appSettings`, `evaluateAppSettings`,
+ * `appSetupOf`, the registries' `setup` guide pointers) come from the built
+ * SDK (@every-app/sdk/internal), so `data.app.setup`, `data.apps[].setup`
+ * and the APP_NEEDS_SETUP fix never drift from the real CLI's. What is set:
+ * `state.gatewayNames` (plus the install's own once installed) for the
+ * Gateway, each app's `secretsSet` for its Worker (unknown, never blocking,
+ * before its first deploy: `deployed: false`).
  */
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -42,9 +48,11 @@ const FAKE_CF_VERSION = "1.0.0-beta.14";
 const CLAIM_WAIT_MS = Number(process.env["FAKE_EVERYAPP_CLAIM_WAIT_MS"] ?? 5000);
 /** Flags that take a value (so the value isn't read as a positional). */
 const VALUE_FLAGS = new Set([
-  "from-env", "gateway", "account-id", "domain", "team", "email", "email-domain",
+  "from-env", "app", "gateway", "account-id", "domain", "team", "email", "email-domain",
   "session", "sender", "inbound", "manifest", "worker", "binding", "file", "out", "name", "template",
 ]);
+/** Where the real CLI says a setup guide lives, in an app that has the skill (lib/app/settings.ts SKILL_DIR). */
+const SKILL_DIR = ".claude/skills/everyapp";
 
 /** An expected failure, reported as an `error` event with its code and next step. */
 class FakeError extends Error {
@@ -135,7 +143,7 @@ async function dispatch() {
     case "setup":
       return setup(state);
     case "secret":
-      return sub === "set" ? secretSet(state, rest) : sub === "unset" ? secretUnset(state, rest) : secretList(state);
+      return sub === "set" ? secretSet(state, rest) : sub === "unset" ? secretUnset(state, rest) : secretList(state, rest[0]);
     case "email":
       return sub === "show" ? emailShow(state) : sub === "set" ? emailSet(state) : emailUnset(state, rest);
     case "access":
@@ -174,23 +182,33 @@ function status(state) {
     return 2;
   }
   const host = gatewayHost(state);
-  const apps = state.apps.map((app) => ({
-    id: app.id,
-    hostname: `${app.id}.${state.appBaseDomain}`,
-    workerName: workerNameOf(state, app),
-    status: "active",
-    bound: true,
-    deployedBy: state.cloudflareEmail,
-    email: {
-      senders: app.email?.senders ?? [],
-      inbound: app.email?.inbound ?? [],
-      routed: app.email?.inbound ?? [],
-      declaresInbound: Boolean(app.manifest?.email?.inbound),
-    },
-  }));
+  // Each app as commands/status/index.ts's AppState has it. `setup` is the
+  // settings model's AppSetup (lib/app/settings.ts appSetupFrom) for a
+  // deployed app whose manifest declares anything to set; null otherwise
+  // (a `pending` app has nothing to evaluate yet).
+  const apps = state.apps.map((app) => {
+    const deployed = app.deployed !== false;
+    return {
+      id: app.id,
+      hostname: `${app.id}.${state.appBaseDomain}`,
+      workerName: workerNameOf(state, app),
+      status: deployed ? "active" : "pending",
+      bound: deployed,
+      deployedBy: state.cloudflareEmail,
+      email: {
+        senders: app.email?.senders ?? [],
+        inbound: app.email?.inbound ?? [],
+        routed: app.email?.inbound ?? [],
+        declaresInbound: Boolean(app.manifest?.email?.inbound),
+      },
+      publicRoutes: [],
+      setup: deployed && declaresSettings(app.manifest) ? appSetupFrom(state, app).setup : null,
+    };
+  });
   // `fixes[]` as commands/status/index.ts's fixData gives them (#400): code,
   // severity (error | warning | info | settling), message, run, and `note`
-  // only when the problem has a runNote (NO_OWNER has none).
+  // only when the problem has a runNote (NO_OWNER has none). The order is
+  // problems.ts's: the install's, then each app's, then APP_NEEDS_SETUP.
   const fixes = [];
   if (!state.claimed) {
     fixes.push({
@@ -198,6 +216,29 @@ function status(state) {
       severity: "warning",
       message: "No owner yet, so nobody can sign in\nApps still deploy. Setup prints a one-time link that creates the owner account.",
       run: `${CLI} setup`,
+    });
+  }
+  for (const app of apps) {
+    if (app.status === "pending") {
+      fixes.push({
+        code: "APP_NOT_UPLOADED",
+        severity: "warning",
+        message: `${app.id} was registered, but none of its deploys finished`,
+        run: `${CLI} deploy from the app's directory, or ${CLI} delete ${app.id}`,
+      });
+    }
+  }
+  // A served app whose required settings aren't all set doesn't open
+  // (problems.ts needsSetup → appNeedsSetup): each unmet setting with why,
+  // where its key comes from and its guide, then the one `secret set`.
+  for (const app of apps) {
+    if (!app.setup || app.setup.ready) continue;
+    fixes.push({
+      code: "APP_NEEDS_SETUP",
+      severity: "warning",
+      message: [`${app.id} needs setup`, ...describeUnmetSettings(app.setup.unmet)].join("\n"),
+      run: app.setup.command?.command ?? null,
+      ...(app.setup.command?.note ? { note: app.setup.command.note } : {}),
     });
   }
   // `data.access` (#400): `{ on, teamDomain }` from the Worker's secret
@@ -208,10 +249,12 @@ function status(state) {
   const accessOn = ACCESS_SETTINGS.every((name) => (state.gatewayNames ?? []).includes(name));
   const access = { on: accessOn, teamDomain: accessOn && state.access?.team ? `${state.access.team}.cloudflareaccess.com` : null };
   const toFix = fixes.filter((fix) => fix.severity === "error" || fix.severity === "warning").length;
+  const live = apps.filter((app) => app.status === "active" && app.bound).length;
   const domains = [host, ...apps.map((app) => app.hostname)];
   out.emit({
     type: "done",
-    message: `Gateway ${state.gatewayUrl}: ${apps.length} ${apps.length === 1 ? "app" : "apps"} live, ${toFix === 0 ? "nothing to fix" : `${toFix} ${toFix === 1 ? "problem" : "problems"} to fix`}`,
+    message: `Gateway ${state.gatewayUrl}: ${live} ${live === 1 ? "app" : "apps"} live, ${toFix === 0 ? "nothing to fix" : `${toFix} ${toFix === 1 ? "problem" : "problems"} to fix`}`,
+    display: renderStatus(state, apps, access, domains, fixes),
     data: {
       deployed: true,
       installed: true,
@@ -408,49 +451,108 @@ function requireGateway(state) {
   );
 }
 
-function secretList(state) {
+/**
+ * `secret list [<app>]` as commands/secret/index.ts's listSecrets: one app's
+ * settings (the app named, from anywhere, by the manifest its deploy stored;
+ * or the app whose everyapp.config.ts is here) with `data.app.setup`, the
+ * kept `data.app.declared`/`workers` and `data.gateway.needed`/`missing`,
+ * and `next`; elsewhere with no app named, the Gateway's names and every
+ * app's settings (`data.apps[] { id, setup }`).
+ */
+function secretList(state, appId) {
   requireGateway(state);
-  const app = appHere(state);
   const gatewayNames = gatewayNamesOf(state);
   const settable = [...sdk.SETTABLE_GATEWAY_SETTINGS];
+  let app = null;
+  if (appId) {
+    // The registry's row (readApp in lib/gateway/registry.ts); an app with `deployed: false` has one (status
+    // pending, no Worker yet), an id the state doesn't know has none.
+    app = appById(state, appId);
+    if (!app) {
+      throw new FakeError("APP_NOT_FOUND", `${appId} isn't deployed to this Gateway yet`, { rerun: `${CLI} deploy`, rerunNote: "in the app's directory" });
+    }
+  } else {
+    app = appHere(state);
+  }
   if (!app) {
+    // What you set, then what setup did, then, of what you could set, only
+    // what some app here reads (this fake is self-hosted: the hosted
+    // Gateway's own switches never show); then each app's settings, for
+    // the apps that declare any.
     const yours = gatewayNames.filter((name) => !INSTALL_OWNED.includes(name));
     const setups = gatewayNames.filter((name) => INSTALL_OWNED.includes(name));
-    const unset = settable.filter((name) => !gatewayNames.includes(name));
-    const rows = [...yours.map((n) => [n, "you"]), ...setups.map((n) => [n, "setup"]), ...unset.map((n) => [n, "not set"])];
+    const read = new Set(state.apps.flatMap((each) => gatewayNamesRead(each.manifest ?? {})));
+    const relevant = settable.filter((name) => !sdk.isHostedOnlyGatewaySetting(name));
+    const unset = relevant.filter((name) => !gatewayNames.includes(name));
+    const listed = unset.filter((name) => read.has(name));
+    const more = unset.length - listed.length;
+    const apps = [];
+    for (const each of state.apps) {
+      if (!declaresSettings(each.manifest)) continue;
+      const { report, setup } = appSetupFrom(state, each);
+      apps.push({ id: each.id, setup, rows: settingsRows(each.id, report.settings) });
+    }
+    const rows = apps.flatMap((each) => each.rows);
     out.emit({
       type: "done",
-      message: [`Gateway secrets · ${gatewayHost(state)}`, "", ...table(["NAME", "SET BY"], rows)].join("\n"),
-      data: { gateway: { workerName: GATEWAY_WORKER_NAME, names: gatewayNames, settable }, durationMs: 2900 },
+      message: [
+        `Gateway secrets · ${gatewayHost(state)}`,
+        "",
+        ...table(["NAME", "SET BY"], [...yours.map((n) => [n, "you"]), ...setups.map((n) => [n, "setup"]), ...listed.map((n) => [n, "not set"])]),
+        ...(more > 0 ? [`${more} more can be set; see docs/capabilities.md`] : []),
+        ...(rows.length ? ["", ...table(["APP", "SETTING", "WHERE", "STATUS"], rows)] : []),
+      ].join("\n"),
+      data: {
+        gateway: { workerName: GATEWAY_WORKER_NAME, names: gatewayNames, settable },
+        apps: apps.map(({ id, setup }) => ({ id, setup })),
+        durationMs: 2900,
+      },
     });
     return 0;
   }
   const manifest = app.manifest ?? {};
-  const declared = [...(manifest.secrets ?? [])];
-  const needs = sdk.gatewaySettingsFor(manifest).map((need) => ({ ...need, set: gatewayNames.includes(need.name) }));
-  const missing = needs.filter((need) => need.required && !need.set).map((need) => need.name);
+  const declared = sdk.secretNames(manifest);
   const workerName = app.deployed === false ? null : workerNameOf(state, app);
-  const own = app.secretsSet ?? [];
+  // The app's Workers, once it is deployed: its own, with every name it
+  // holds (everyapp's own included) and the declared names it lacks.
+  const own = workerName ? [...(app.secretsSet ?? [])] : null;
   const workers = workerName
-    ? [{ workerName, names: ["EVERY_APP_ORG_ID", "GATEWAY_URL", ...own], missing: declared.filter((n) => !own.includes(n)) }]
+    ? [{ workerName, names: ["EVERY_APP_ORG_ID", "GATEWAY_URL", ...own], missing: declared.filter((name) => !own.includes(name)) }]
     : [];
-  const rows = [];
-  for (const name of own) rows.push([name, app.id, "set"]);
-  for (const name of workers[0]?.missing ?? []) rows.push([name, app.id, "not set"]);
-  if (!workerName) for (const name of declared) rows.push([name, app.id, "after first deploy"]);
-  for (const need of needs) rows.push([need.name, "Gateway", need.set ? "set" : need.required ? "not set" : "not set (optional)"]);
-  const toSet = [...new Set([...(workers[0]?.missing ?? []), ...missing])];
-  // As secret/index.ts after #410: the missing Gateway names first, then deploy when the app isn't deployed and declares secrets.
-  const next = [
-    ...(toSet.length ? [`${CLI} secret set ${toSet.join(" ")}`] : []),
-    ...(!workerName && declared.length ? [`${CLI} deploy`] : []),
-  ];
+  const { report, setup } = appSetupFrom(state, app);
+  // Before the first deploy there is no Worker to hold the app's own.
+  const rows = settingsRows(app.id, report.settings).map((row) => (!workerName && row[2] === app.id ? [row[0], row[1], row[2], "after first deploy"] : row));
+  // What to run: the model's one command (its any-of note beside it), and
+  // the deploy when the app has no Worker yet (its own read as unknown
+  // until then, which never blocks, so the command leaves them out).
+  const command = setup.command ? [setup.command.note ? { command: setup.command.command, note: setup.command.note } : setup.command.command] : [];
+  const next = workerName ? command : [...command, `${CLI} deploy`];
   out.emit({
     type: "done",
-    message: rows.length ? table(["NAME", "WHERE", "STATUS"], rows).join("\n") : `${app.id} has no secrets yet.`,
+    message: rows.length
+      ? [
+          ...table(["SETTING", "WHERE", "STATUS"], rows.map((row) => row.slice(1))),
+          ...(!workerName && declared.length ? ["", `${app.id} isn't deployed yet; its own secrets can be set after that.`] : []),
+        ].join("\n")
+      : `${app.id} declares no secrets and needs no Gateway settings.`,
     data: {
-      app: { id: app.id, deployed: workerName !== null, workerName, declared, workers },
-      gateway: { workerName: GATEWAY_WORKER_NAME, names: gatewayNames, needed: needs, missing, settable },
+      app: {
+        id: app.id,
+        deployed: workerName !== null,
+        workerName,
+        declared,
+        workers,
+        secretNames: own,
+        settings: report.settings,
+        setup,
+      },
+      gateway: {
+        workerName: GATEWAY_WORKER_NAME,
+        names: gatewayNames,
+        needed: gatewayNeeds(report.settings, gatewayNames),
+        missing: gatewayMissing(report.settings, gatewayNames),
+        settable,
+      },
       ...(rows.length && next.length ? { next } : {}),
       durationMs: 5100,
     },
@@ -483,6 +585,7 @@ async function secretSet(state, names) {
   if (route.gateway.length) requireGateway(state);
   const app = route.app;
   if (app && app.deployed === false) {
+    // Found in the directory (`--app` on an undeployed app is refused in routeNames, as the registry has no row).
     throw new FakeError("APP_NOT_FOUND", `${app.id} isn't deployed yet\nIts secrets can be set after its first deploy. Nothing was changed.`, { rerun: `${CLI} deploy` });
   }
   // The values, read as the real CLI does: --from-env, else stdin when
@@ -512,6 +615,9 @@ async function secretSet(state, names) {
   for (const name of route.gateway) {
     out.emit({ type: "progress", step: "secrets.route", message: `${name} is a Gateway setting → Worker ${GATEWAY_WORKER_NAME}` });
   }
+  for (const name of route.appNames) {
+    out.emit({ type: "progress", step: "secrets.route", message: `${name} is ${app.id}'s secret → Worker ${workerNameOf(state, app)}` });
+  }
   const applied = {};
   if (route.gateway.length) {
     out.emit({ type: "step", step: "secrets.gateway", status: "start", message: "Updating the Gateway..." });
@@ -523,17 +629,23 @@ async function secretSet(state, names) {
   }
   if (app && route.appNames.length) {
     out.emit({ type: "step", step: "secrets.app", status: "start", message: `Updating ${app.id}...` });
+    // The app Worker's new version, and its secret names recorded on its row (`secretsSet` is both here).
     app.secretsSet = [...new Set([...(app.secretsSet ?? []), ...route.appNames])];
-    out.emit({ type: "step", step: "secrets.app", status: "ok", message: `Set ${listed(route.appNames)} on ${app.id}` });
-    applied.app = { id: app.id, workerName: workerNameOf(state, app), names: route.appNames, versions: { [workerNameOf(state, app)]: nextVersion(state.versionId) } };
+    const versions = { [workerNameOf(state, app)]: nextVersion(state.versionId) };
+    out.emit({ type: "step", step: "secrets.app", status: "ok", message: `Set ${listed(route.appNames)} on ${app.id}`, data: { action: "set", names: route.appNames, versions } });
+    applied.app = { id: app.id, workerName: workerNameOf(state, app), names: route.appNames, versions };
   }
   writeState(state);
-  const said = [
-    ...(applied.gateway ? [`${listed(applied.gateway.names)} on the Gateway`] : []),
-    ...(applied.app ? [`${listed(applied.app.names)} on ${applied.app.id}`] : []),
-  ].join(" and ");
-  out.emit({ type: "done", message: `Set ${said}`, data: { ...applied, durationMs: 2400 } });
+  out.emit({ type: "done", message: `Set ${describeApplied(applied, "on")}`, data: { ...applied, durationMs: 2400 } });
   return 0;
+}
+
+/** "OPENAI_API_KEY on the Gateway, and GITHUB_TOKEN on analytics" (secret/index.ts describe). */
+function describeApplied(applied, preposition) {
+  return [
+    ...(applied.gateway ? [`${listed(applied.gateway.names)} ${preposition} the Gateway`] : []),
+    ...(applied.app ? [`${listed(applied.app.names)} ${preposition} ${applied.app.id}`] : []),
+  ].join(", and ");
 }
 
 function secretUnset(state, names) {
@@ -555,11 +667,21 @@ function secretUnset(state, names) {
       authorize: true,
     });
   }
-  state.gatewayNames = (state.gatewayNames ?? []).filter((name) => !route.gateway.includes(name));
-  if (route.app) route.app.secretsSet = (route.app.secretsSet ?? []).filter((name) => !route.appNames.includes(name));
-  state.versionId = nextVersion(state.versionId);
+  // Only the names a Worker holds are removed (keepHeldNames), each destination a new version.
+  const applied = {};
+  const gatewayHeld = route.gateway.filter((name) => gatewayNamesOf(state).includes(name));
+  if (gatewayHeld.length) {
+    state.gatewayNames = (state.gatewayNames ?? []).filter((name) => !gatewayHeld.includes(name));
+    state.versionId = nextVersion(state.versionId);
+    applied.gateway = { names: gatewayHeld, versions: { [GATEWAY_WORKER_NAME]: state.versionId } };
+  }
+  const appHeld = route.appNames.filter((name) => (route.app?.secretsSet ?? []).includes(name));
+  if (route.app && appHeld.length) {
+    route.app.secretsSet = (route.app.secretsSet ?? []).filter((name) => !appHeld.includes(name));
+    applied.app = { id: route.app.id, workerName: workerNameOf(state, route.app), names: appHeld, versions: { [workerNameOf(state, route.app)]: nextVersion(state.versionId) } };
+  }
   writeState(state);
-  out.emit({ type: "done", message: `Removed ${listed(held)} from ${where}`, data: { gateway: { names: route.gateway, versions: { [GATEWAY_WORKER_NAME]: state.versionId } }, durationMs: 2100 } });
+  out.emit({ type: "done", message: `Removed ${describeApplied(applied, "from")}`, data: { ...applied, durationMs: 2100 } });
   return 0;
 }
 
@@ -850,19 +972,42 @@ function notSimulated(cmd, sub) {
 
 // ---------------------------------------------------------------- routing
 
-/** Where names go, as the real `routeNames` decides: a settable name to the Gateway, else the app here. */
+/**
+ * Where names go, as the real `routeNames` and `resolve` decide: a settable
+ * name to the Gateway; anything else to the app, which must list it under
+ * `secrets`: with `--app <id>` the app by that id, by the manifest its
+ * deploy stored (from anywhere; the directory is never read), else the app
+ * whose everyapp.config.ts is here.
+ */
 function routeNames(state, names, action) {
   const gateway = names.filter((name) => sdk.isSettableGatewaySetting(name));
   const rest = names.filter((name) => !sdk.isSettableGatewaySetting(name));
   if (rest.length === 0) return { gateway, app: null, appNames: [] };
-  const app = appHere(state);
-  const declared = app?.manifest?.secrets ?? [];
+  const appId = parsed.values.get("app");
+  let app = null;
+  if (appId) {
+    requireGateway(state);
+    app = appById(state, appId);
+    if (!app || app.deployed === false) {
+      throw new FakeError(
+        "APP_NOT_FOUND",
+        `${appId} isn't deployed to this Gateway\nAn app's secrets can be set after its first deploy. Nothing was changed.`,
+        { rerun: `${CLI} status`, rerunNote: "lists its apps" },
+      );
+    }
+  } else {
+    app = appHere(state);
+  }
+  // With --app the manifest is the registry's: a refusal says so, and the rerun keeps the flag.
+  const registry = Boolean(appId);
+  const appFlag = registry ? ` --app ${app.id}` : "";
+  const declared = app ? sdk.secretNames(app.manifest ?? {}) : [];
   for (const name of rest) {
     if (app && declared.includes(name)) continue;
     const match = closeName(name, [...sdk.SETTABLE_GATEWAY_SETTINGS, ...declared]);
     if (match) {
       throw new FakeError("SECRET_NOT_DECLARED", `${name} isn't a Gateway setting${app ? ` or one of ${app.id}'s secrets` : ""}`, {
-        rerun: `${CLI} secret ${action} ${names.map((each) => (each === name ? match : each)).join(" ")}`,
+        rerun: `${CLI} secret ${action} ${names.map((each) => (each === name ? match : each)).join(" ")}${appFlag}`,
         data: { didYouMean: match },
       });
     }
@@ -875,18 +1020,171 @@ function routeNames(state, names, action) {
     if (!app) {
       throw new FakeError(
         "SECRET_NOT_DECLARED",
-        `${name} isn't a Gateway setting, and there's no app here\nAn app's own secrets are ${action === "set" ? "set" : "removed"} from the app's directory (where everyapp.config.ts is).\nGateway settings: ${CLI} secret list`,
-        { fix: "cd into the app's directory and run this again" },
+        `${name} isn't a Gateway setting, and there's no app here\nAn app's own secrets are ${action === "set" ? "set" : "removed"} from the app's directory (where everyapp.config.ts is), or from anywhere with --app <id>.\nGateway settings: ${CLI} secret list`,
+        { fix: "cd into the app's directory and run this again, or add --app <id>" },
       );
     }
+    // `unset` takes a name the manifest no longer lists: it may still be set.
     if (action === "unset") continue;
     throw new FakeError(
       "SECRET_NOT_DECLARED",
-      `${app.id} doesn't list ${name} as a secret\nIt isn't a Gateway setting either.`,
-      { fix: `add it to secrets in everyapp.config.ts: secrets: ${JSON.stringify([...declared, name]).replaceAll(",", ", ")},`, rerun: `${CLI} secret set ${name}` },
+      [
+        `${app.id} doesn't list ${name} as a secret`,
+        registry
+          ? `Its deployed manifest (what --app ${app.id} reads) doesn't list it, and it isn't a Gateway setting either.`
+          : INSTALL_OWNED.includes(name)
+            ? `It's one of the Gateway's own keys; listing it under secrets gives ${app.id} a secret of its own.`
+            : "It isn't a Gateway setting either.",
+      ].join("\n"),
+      {
+        fix: `add it to secrets in everyapp.config.ts: secrets: ${JSON.stringify([...declared, name]).replaceAll(",", ", ")},${registry ? ` and deploy ${app.id} again` : ""}`,
+        rerun: `${CLI} secret set ${name}${appFlag}`,
+      },
     );
   }
   return { gateway, app, appNames: rest };
+}
+
+/** The app the registry knows by this id (its `status` row), from the state; null when there's none. */
+function appById(state, id) {
+  return state.apps.find((candidate) => candidate.id === id) ?? null;
+}
+
+// ---------------------------------------------------------------- the settings model (lib/app/settings.ts, over the SDK's appSettings)
+
+/**
+ * The manifest's settings against what is set, as appSetupFrom does it:
+ * the Gateway's names, and the app Worker's own (`secretsSet`; null before
+ * its first deploy, which reads as unknown and never blocks). The report
+ * is the SDK's (every setting with `set` and `blocking`, the any-of
+ * groups, `unmet`); `setup` the AppSetup every surface returns.
+ */
+function appSetupFrom(state, app) {
+  const gatewayNames = gatewayNamesOf(state);
+  const own = app.deployed === false ? null : (app.secretsSet ?? []);
+  const report = sdk.evaluateAppSettings(sdk.appSettings(app.manifest ?? {}), (holder, name) =>
+    holder === "gateway" ? gatewayNames.includes(name) : own === null ? null : own.includes(name),
+  );
+  return { report, setup: sdk.appSetupOf(report, { cli: CLI, appId: app.id }) };
+}
+
+/** Whether the manifest declares anything to set (a capability with no setting doesn't count). */
+function declaresSettings(manifest) {
+  return sdk.appSettings(manifest ?? {}).some((setting) => setting.names.length > 0);
+}
+
+/** Every Gateway name the manifest reads: each setting's names and what it also reads when set. */
+function gatewayNamesRead(manifest) {
+  const names = new Set();
+  for (const setting of sdk.appSettings(manifest)) {
+    if (setting.holder !== "gateway") continue;
+    for (const name of [...setting.names, ...setting.alsoReads]) names.add(name);
+  }
+  return [...names];
+}
+
+/** `data.gateway.needed`: each Gateway name once, in manifest order, `required` unless only optional settings read it, `set` whether the Gateway holds it. */
+function gatewayNeeds(settings, gatewayNames) {
+  const needs = new Map();
+  const add = (name, required) => {
+    const need = needs.get(name);
+    if (need) need.required ||= required;
+    else needs.set(name, { name, required, set: gatewayNames.includes(name) });
+  };
+  for (const setting of settings) {
+    if (setting.holder !== "gateway") continue;
+    for (const name of setting.names) add(name, setting.need.kind !== "optional");
+    for (const name of setting.alsoReads) add(name, false);
+  }
+  return [...needs.values()];
+}
+
+/** `data.gateway.missing`: the unset Gateway names that keep the app from opening. */
+function gatewayMissing(settings, gatewayNames) {
+  return settings
+    .filter((setting) => setting.holder === "gateway" && setting.blocking)
+    .flatMap((setting) => setting.names)
+    .filter((name, index, names) => !gatewayNames.includes(name) && names.indexOf(name) === index);
+}
+
+/** A setting's state in the real CLI's words (settingStatus), without its colors. */
+function settingStatus(setting) {
+  if (setting.set === true) return "✓ set";
+  if (setting.set === null) return setting.holder === "app" ? "! not recorded" : "! couldn't check";
+  switch (setting.need.kind) {
+    case "required":
+      return "! not set";
+    case "optional":
+      return "not set (optional)";
+    default:
+      return setting.blocking ? "! not set" : `not set (one of: ${setting.need.group})`;
+  }
+}
+
+/** The rows of one app's settings, in manifest order (settingsRows): APP, SETTING (names joined with +), WHERE, STATUS. */
+function settingsRows(appId, settings) {
+  return settings
+    .filter((setting) => setting.names.length > 0)
+    .map((setting) => [appId, setting.names.join("+"), setting.holder === "gateway" ? "Gateway" : appId, settingStatus(setting)]);
+}
+
+/**
+ * Each unmet setting for whoever sets it (describeUnmetSettings): "<label>:
+ * <why>" (the names when there is no why and the label doesn't name them),
+ * "Get it at <docs>", and under the first that has one, its guide
+ * ("Guide: .claude/skills/everyapp/setup/dataforseo.md"), once per guide.
+ */
+function describeUnmetSettings(unmet) {
+  const guides = new Set();
+  return unmet.flatMap((setting) => {
+    const names = setting.names.join(" and ");
+    const what = setting.why ?? (setting.label === names ? undefined : names);
+    const lines = [what ? `${setting.label}: ${what}` : setting.label, ...(setting.docs ? [`Get it at ${setting.docs}`] : [])];
+    if (!setting.setup || guides.has(setting.setup)) return lines;
+    guides.add(setting.setup);
+    return [...lines, `Guide: ${SKILL_DIR}/${setting.setup}`];
+  });
+}
+
+/**
+ * `status` for a person, as commands/status/render.ts draws it: the facts,
+ * the apps table, their settings table, then each problem as a block (its
+ * headline, the detail lines, the command to run) with the glyphs and
+ * without the colors.
+ */
+function renderStatus(state, apps, access, domains, fixes) {
+  const owner = state.claimed ? state.owner : null;
+  const facts = [
+    ["Gateway", `${state.gatewayUrl} · self-hosted`],
+    ["Cloudflare", state.accountName],
+    ["Owner", owner ? `${owner.email}${owner.organizationName ? ` · ${owner.organizationName}` : ""}` : "none yet"],
+    ["Access", access.on ? "on · everyone signs in through Cloudflare Access first" : `off · ${CLI} access on puts Cloudflare Access in front (recommended)`],
+    ["Release", "0.2.0 · matches this checkout"],
+    ["TLS", `ready on ${domains.length} hostname${domains.length === 1 ? "" : "s"}`],
+  ];
+  const labels = Math.max(...facts.map(([label]) => label.length));
+  const needsSetup = (app) => app.bound && app.status === "active" && app.setup !== null && !app.setup.ready;
+  const cell = (app) => (app.status === "pending" ? "! never deployed" : needsSetup(app) ? "! needs setup" : "✓ live");
+  const settings = apps.flatMap((app) => (app.setup ? settingsRows(app.id, app.setup.settings) : []));
+  const glyph = { error: "✗", warning: "!", info: "i" };
+  return [
+    ...facts.map(([label, value]) => `${label.padEnd(labels)}  ${value}`),
+    "",
+    ...(apps.length
+      ? table(["APP", "STATUS", "URL", "DEPLOYED BY", "PUBLIC"], apps.map((app) => [app.id, cell(app), `https://${app.hostname}`, app.deployedBy ?? "", ""]))
+      : [`No apps yet. Deploy one from its directory: ${CLI} deploy`]),
+    ...(settings.length ? ["", ...table(["APP", "SETTING", "WHERE", "STATUS"], settings)] : []),
+    ...(fixes.length ? [""] : []),
+    ...fixes.flatMap((fix) => {
+      const [headline, ...detail] = fix.message.split("\n");
+      return [
+        `${glyph[fix.severity] ?? "!"} ${headline}`,
+        ...detail.map((line) => `  ${line}`),
+        ...(fix.fix ? [`  Fix: ${fix.fix}`] : []),
+        ...(fix.run ? [`  Run: ${fix.run}${fix.note ? `  ${fix.note}` : ""}`] : []),
+      ];
+    }),
+  ].join("\n");
 }
 
 /** The app whose everyapp.config.ts is in the working directory, from the state; null elsewhere. */
@@ -983,7 +1281,8 @@ function editDistance(a, b) {
 function sink(ndjson) {
   const emit = (event) => {
     if (ndjson) {
-      process.stdout.write(`${JSON.stringify({ v: 1, ts: new Date().toISOString(), ...event })}\n`);
+      const { display: _display, ...line } = event;
+      process.stdout.write(`${JSON.stringify({ v: 1, ts: new Date().toISOString(), ...line })}\n`);
       return;
     }
     switch (event.type) {
@@ -1002,9 +1301,12 @@ function sink(ndjson) {
       case "error":
         process.stderr.write(`✗ ${event.message}\n${event.data?.fix ? `  ${event.data.fix}\n` : ""}${event.data?.rerun ? `  Run: ${event.data.rerun}\n` : ""}${event.data?.help ? `  Run: ${event.data.help}\n` : ""}`);
         return;
-      case "done":
-        if (event.message) process.stdout.write(`${event.message}\n`);
+      case "done": {
+        // `display` is drawn for a person (the real sink never puts it in --json); `message` otherwise.
+        const shown = event.display ?? event.message;
+        if (shown) process.stdout.write(`${shown}\n`);
         return;
+      }
     }
   };
   return {

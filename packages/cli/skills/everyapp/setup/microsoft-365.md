@@ -67,18 +67,23 @@ a `429` carries `Retry-After`, which Open CRM honors.
 
 ## Before you start
 
-1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true; `data.appBaseDomain` is `<app base domain>`;
-   `data.apps[]` has `"id": "crm"` with `"status": "active"` and `"bound": true`, and its `hostname` is the host the
-   redirect URI goes on. No `crm`: deploy Open CRM first (from its directory, `pnpm everyapp deploy --json`); the
-   registration can be made first, but a connect only completes once `crm.<app base domain>` serves
-   `/integrations/microsoft/callback`, so deploy before anyone clicks **Connect**.
-2. In Open CRM's directory (its checkout; `secret list` reads the manifest of the directory it runs in):
-   `pnpm everyapp secret list --json`, one call, before any Microsoft step. `data.gateway.needed` lists both names
-   with `"required": true`; `data.gateway.missing` names the ones to set. Already set (`"set": true`): ask before
+1. `pnpm everyapp secret list crm --json`, from any directory (the id reads the manifest Open CRM's last deploy
+   stored; in its directory the id can be left off), one call, before any Microsoft step. The rule: read
+   `data.app.setup.unmet` and `data.app.setup.command`. The client is one setting there, `id: "microsoft-365"`,
+   `kind: "capability"`, `holder: "gateway"`, `names: ["MICROSOFT_365_CLIENT_ID", "MICROSOFT_365_CLIENT_SECRET"]`
+   (an OAuth client's id and secret are the two names of one setting, set only when both are), `need.kind:
+   "required"`, `setup: "setup/microsoft-365.md"` (this file). While it is in `unmet` this file applies, and
+   `command` is the one `secret set` that opens the CRM (both names in it; `--app crm` added only when a secret
+   of the CRM's own is missing too). The same entry in `data.app.setup.settings` with `set: true`: ask before
    replacing; a value can't be read back, so replacing means a new secret in Entra. The same answer says whether
-   the CRM's own `TOKEN_ENCRYPTION_KEY` is in `data.app.workers[].names`: it must be before anyone can connect (set
-   from the CRM's directory after its first deploy), so settle it now, not after the set. Without the CRM's
-   checkout, the command from the every-app checkout gives only `data.gateway.names`: say so.
+   the CRM's own `TOKEN_ENCRYPTION_KEY` is in `unmet` too (`holder: "app"`): it must be set before anyone can
+   connect (after the CRM's first deploy, from anywhere with `--app crm`, at the hidden prompt, 32 or more random
+   characters), so settle it now, not after the set.
+2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` true; `data.appBaseDomain` is `<app base domain>`;
+   `data.apps[]` has `"id": "crm"` with `"status": "active"`, `"bound": true`, the `hostname` the redirect URI
+   goes on (step 1) and, as `setup`, 1's `data.app.setup` again: what else the CRM needs. No `crm`: deploy Open
+   CRM first (from its directory, `pnpm everyapp deploy --json`); the registration can be made before that, but
+   a connect only completes once `crm.<app base domain>` serves `/integrations/microsoft/callback`.
 3. An existing registration: the person opens
    https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade and looks for one named
    for the CRM. Reuse it (steps 3 to 5 check its settings) rather than registering twice.
@@ -144,8 +149,11 @@ secret exists.
 
 ## Verify
 
-1. In Open CRM's directory, `pnpm everyapp secret list --json`: both have `"set": true` in `data.gateway.needed`
-   and `data.gateway.missing` no longer lists them (from any other directory: both in `data.gateway.names`).
+1. `pnpm everyapp secret list crm --json`, from anywhere: the `microsoft-365` setting has `set: true` and is out
+   of `data.app.setup.unmet` (`data.app.setup.ready: true` and `command` null once nothing else is missing); both
+   names in `data.gateway.names`, `"set": true` in `data.gateway.needed`, and gone from `data.gateway.missing`.
+   Then `pnpm everyapp status --json`: the `crm` entry's `setup.ready` is true and `data.fixes` has no
+   `APP_NEEDS_SETUP` for it (the Gateway opens the CRM again).
 2. Smoke check, only if the person still has the secret in a variable they exported in their own terminal
    (README's third way) and says so; otherwise skip to 3. Never ask them to copy the secret again for this: the
    **Value** was shown once, at step 5, and 3 exercises the pair through the Gateway anyway. (They `unset` the
@@ -160,7 +168,10 @@ secret exists.
    command line (the process list would show it). Expected: JSON with `access_token` (the pair is right; this token carries no permissions and is thrown away).
    `error_description` starting `AADSTS7000215`: wrong secret; `AADSTS7000222`: expired; `AADSTS700016`: the id
    isn't a registration in that tenant; `AADSTS7000229`: no service principal yet (the If-it-fails row).
-3. The app: a member opens Open CRM → **Settings → Connections → Microsoft 365** and clicks **Connect**. Microsoft
+3. The app, open: 1's `data.app.setup.ready` true. While another required setting of the CRM is unmet, the Gateway
+   sends a browser to its setup dialog instead of the CRM (anything else gets 503 `app_needs_setup`): finish those
+   first (each `unmet` entry's `setup` names its file); until then 1 and 2 are the checks of the client. Then a
+   member opens Open CRM → **Settings → Connections → Microsoft 365** and clicks **Connect**. Microsoft
    signs them in, shows a consent screen for Open CRM with its permissions in Microsoft's words (reading mail,
    signing in and reading the profile, and **Maintain access to data you have given it access to**; the scope names
    don't appear, and the publisher shows as **Unverified**, which is expected), and returns them to the page, which
@@ -207,6 +218,7 @@ secret exists.
 | `invalid_grant` on refresh: `AADSTS70008` / `AADSTS700082` (unused 90 days), `AADSTS50173` (password reset or tokens revoked), `AADSTS65001` (consent withdrawn); `AADSTS70000` is another refresh-token failure | The refresh token stopped working | The CRM marks the connection NEEDS_RECONNECT; the member connects again |
 | CRM: `email_doesn't_match`                                                       | The mailbox's address isn't the member's Gateway email                                         | Sign in to Microsoft with the matching account                                                               |
 | CRM: "confirm this is an active Exchange Online mailbox"                         | The account has no mailbox (no mail license)                                                   | A licensed mailbox or an outlook.com account                                                                 |
+| CRM: **Connect** fails before Microsoft opens: "Connections aren't set up on this CRM yet" | The CRM's own `TOKEN_ENCRYPTION_KEY` is unset, or under 32 characters (the one key its Google, Microsoft and Slack connects share) | Set it after the CRM's first deploy: `pnpm everyapp secret set TOKEN_ENCRYPTION_KEY --app crm` from anywhere (in the CRM's directory the flag can be left off), the value in one of README's three ways; connect again |
 
 ## Rerun, rotate, remove
 

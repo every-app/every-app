@@ -2,7 +2,19 @@
   "prompt": "Set up email so my Gateway can send invitations and password resets. I already have a Resend account, and my domain is example.com.",
   "state": {
     "gatewayNames": [],
-    "apps": []
+    "apps": [
+      {
+        "id": "agentic-inbox",
+        "name": "Agentic Inbox",
+        "manifest": {
+          "capabilities": {
+            "email": {
+              "access": "write"
+            }
+          }
+        }
+      }
+    ]
   },
   "rules": [
     {
@@ -75,7 +87,8 @@
       "EMAIL_FROM_NAME"
     ],
     "commands": [
-      "^status --json$"
+      "^status --json$",
+      "^secret list agentic-inbox\\b"
     ],
     "mustMention": [
       "resend.com/domains",

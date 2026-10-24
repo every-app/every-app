@@ -93,6 +93,10 @@
       "openrouter.ai/sign-in",
       "openrouter.ai/settings/credits",
       "openrouter.ai/settings/keys"
+    ],
+    "commands": [
+      "^status\\b",
+      "^secret list openseo\\b"
     ]
   }
 }

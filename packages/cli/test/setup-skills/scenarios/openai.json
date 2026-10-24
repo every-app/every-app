@@ -76,7 +76,7 @@
     ],
     "commands": [
       "^status --json$",
-      "^secret list --json$"
+      "^secret list writer\\b"
     ]
   }
 }

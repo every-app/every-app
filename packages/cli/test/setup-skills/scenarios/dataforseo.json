@@ -88,8 +88,11 @@
     "commands": [
       "^status\\b",
       {
-        "pattern": "^secret list\\b",
-        "cwd": "apps/openseo",
+        "pattern": "^secret list openseo\\b",
+        "phase": "before"
+      },
+      {
+        "pattern": "^secret list openseo\\b",
         "phase": "after"
       }
     ],

@@ -2,7 +2,8 @@
  * The setup files of the everyapp skill (skills/everyapp/setup/*.md) stay
  * honest about the CLI they describe: every file the index names exists
  * and every file is indexed; every `secret set NAME` names a Gateway
- * setting the CLI accepts; every `pnpm everyapp …` is a route the CLI has;
+ * setting the CLI accepts (or, with `--app <id>`, an app's own secret);
+ * every `pnpm everyapp …` is a route the CLI has;
  * no file asks for a value through the chat or puts one on a command
  * line; and each file has the sections the README's contract requires.
  * The end-to-end harness in test/setup-skills/ (not run here) drives
@@ -50,14 +51,19 @@ function isPlaceholder(token: string): boolean {
   return /^<.*>$/.test(token) || /^NAMES?(?:…|\.\.\.)?$/.test(token) || token.includes("…");
 }
 
-/** Every `secret set|unset` in `text`, with the names given before any flag. */
-function secretCalls(text: string): Array<{ action: string; names: string[]; line: number }> {
-  const calls: Array<{ action: string; names: string[]; line: number }> = [];
+/**
+ * Every `secret set|unset` in `text`, with the names given before any flag,
+ * and whether `--app <id>` follows on the same command (then the names are
+ * that app's own secrets, which the Gateway registry doesn't list).
+ */
+function secretCalls(text: string): Array<{ action: string; names: string[]; app: boolean; line: number }> {
+  const calls: Array<{ action: string; names: string[]; app: boolean; line: number }> = [];
   const lines = text.split("\n");
   lines.forEach((line, index) => {
     for (const match of line.matchAll(/(?:pnpm |npx )?everyapp secret (set|unset)((?:\s+(?:[A-Z][A-Z0-9_]*|<[^>]+>|NAMES?…?))*)/g)) {
       const names = match[2]!.trim().split(/\s+/).filter(Boolean);
-      calls.push({ action: match[1]!, names, line: index + 1 });
+      const rest = line.slice(match.index! + match[0].length).split(/[`|;)&]/)[0]!;
+      calls.push({ action: match[1]!, names, app: /(?:^|\s)--app\b/.test(rest), line: index + 1 });
     }
   });
   return calls;
@@ -75,7 +81,7 @@ function valueAfterSecretSet(line: string): string | null {
       const token = tokens[i]!;
       if (token.startsWith("--")) {
         // A flag and, when it takes one, its value.
-        if (!token.includes("=") && /^--(?:from-env|gateway|account-id)$/.test(token)) i++;
+        if (!token.includes("=") && /^--(?:from-env|gateway|account-id|app)$/.test(token)) i++;
         continue;
       }
       if (/^["'].*|.*=.*$/.test(token)) return token;
@@ -101,7 +107,7 @@ describe("every setup file", () => {
     for (const file of allFiles) {
       for (const call of secretCalls(file.text)) {
         for (const name of call.names) {
-          if (isPlaceholder(name) || settable.has(name)) continue;
+          if (isPlaceholder(name) || settable.has(name) || call.app) continue;
           problems.push(`${file.name}:${call.line} secret ${call.action} ${name}: not a settable Gateway setting`);
         }
       }

@@ -98,10 +98,7 @@
     ],
     "commands": [
       "^status --json",
-      {
-        "pattern": "^secret list",
-        "cwd": "apps/agentic-inbox"
-      }
+      "^secret list agentic-inbox\\b"
     ]
   }
 }

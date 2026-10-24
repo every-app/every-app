@@ -51,29 +51,45 @@ payment comes in only at Add Funds.
 
 ## Before you start
 
-1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` are
-   true; `data.gatewayUrl` is `https://<gateway host>`; `data.appBaseDomain`
-   is `<app base domain>`. Look for an entry in `data.apps` with
-   `"id": "openseo"` (a fork may have changed the manifest's `id`),
-   `"status": "active"` and `"bound": true`. No OpenSEO there: deploy it
-   first. OpenSEO lives in its own repository, so ask the person for the
-   path of their clone (`pnpm install && pnpm everyapp deploy --json`
+1. `pnpm everyapp secret list openseo --json`, from any directory (the app
+   id is `openseo`; a fork may have changed the manifest's `id`): the
+   `DATAFORSEO_API_KEY` entry in `data.app.setup.unmet` (`names`,
+   `need.kind` `required`, `holder` `gateway`, `setup`
+   `setup/dataforseo.md`) means this file applies, and OpenSEO doesn't open
+   until it is set: the Gateway lists it as needing setup, sends a browser
+   opening `https://openseo.<app base domain>` to its setup dialog and
+   answers anything else 503 `app_needs_setup`. `data.app.setup.command` is
+   the one `pnpm everyapp secret set …` naming every missing Gateway
+   setting (`data.next` repeats it; the OpenRouter and Context keys are in
+   it too while they are missing: [openrouter.md](openrouter.md),
+   [context.md](context.md)). The same entry in `data.app.setup.settings`
+   with `"set": true` means it is set already: ask before replacing; a
+   value can't be read back, so "replace" means the person fetches the
+   credential again. The older fields still say the same:
+   `data.gateway.needed` has `{ "name": "DATAFORSEO_API_KEY", "required":
+   true, "set": … }` and `data.gateway.missing` names it while unset. This
+   is how an agent lands here: `status` prints `Guide:
+   .claude/skills/everyapp/setup/dataforseo.md` under "openseo needs
+   setup", and `secret list --json` carries the path as the entry's
+   `setup` (in the checkout the file is
+   `packages/cli/skills/everyapp/setup/dataforseo.md`). The error
+   `APP_NOT_FOUND` ("openseo isn't deployed to this Gateway yet", exit 1):
+   deploy it first. OpenSEO lives in its own repository, so ask the person
+   for the path of their clone (`pnpm install && pnpm everyapp deploy --json`
    there) or, when its repository publishes a release, its URL
    (`pnpm everyapp install <repository or tarball URL> --json` from
-   anywhere; `NO_RELEASE` means it publishes none: clone it). Not
-   installed, or no owner: [gateway.md](gateway.md) first.
-2. `pnpm everyapp secret list --json` from the `every-app` checkout:
-   `DATAFORSEO_API_KEY` in `data.gateway.names` means it is set already. Ask
-   before replacing; a value can't be read back, so "replace" means the
-   person fetches the credential again.
-3. The same command in OpenSEO's directory, the one with its
-   `everyapp.config.ts` (`apps/openseo` in a checkout that has it; otherwise
-   ask where the clone is): `data.gateway.needed` has
-   `{ "name": "DATAFORSEO_API_KEY", "required": true, "set": … }`;
-   `set: false` and the name in `data.gateway.missing` means it is what
-   stands between OpenSEO and its data. Deployed from a release, with no clone: skip this
-   and the same half of Verify 1; `DATAFORSEO_API_KEY` in the root list's
-   `data.gateway.names` (2) is the check.
+   anywhere; `NO_RELEASE` means it publishes none: clone it). The key can
+   be set before that deploy all the same (step 5's root list is then the
+   check; so is `pnpm everyapp secret list --json` in OpenSEO's directory,
+   which reads its `everyapp.config.ts` instead of the registry).
+2. `pnpm everyapp status --json`: `data.installed` and `data.claimed` are
+   true; `data.gatewayUrl` is `https://<gateway host>`; `data.appBaseDomain`
+   is `<app base domain>`. The entry in `data.apps` with `"id": "openseo"`
+   has `"status": "active"`, `"bound": true` and the same `setup` as 1;
+   while a required setting is missing `data.fixes` has `APP_NEEDS_SETUP`
+   for it (severity `warning`, headline "openseo needs setup", `run` the
+   same command). Not installed, or no owner: [gateway.md](gateway.md)
+   first.
 
 ## Steps
 
@@ -129,10 +145,17 @@ value is set.
 
 ## Verify
 
-1. `pnpm everyapp secret list --json` in OpenSEO's directory (Before you
-   start 3): the `DATAFORSEO_API_KEY` entry in `data.gateway.needed` has
-   `"set": true`, and the name left `data.gateway.missing`. No directory
-   (deployed from a release): step 5's root list is the check.
+1. `pnpm everyapp secret list openseo --json`, from anywhere: the
+   `DATAFORSEO_API_KEY` entry in `data.app.setup.settings` has `"set": true`
+   and has left `data.app.setup.unmet`; `data.app.setup.ready` is true once
+   nothing else of OpenSEO's is missing (its OpenRouter and Context keys
+   count too; until then `command` and `data.next` name only what is
+   left). In the older fields, its `data.gateway.needed` entry has
+   `"set": true` and the name left `data.gateway.missing`. Then
+   `pnpm everyapp status --json`: the `openseo` entry's `setup.ready` is
+   true and `data.fixes` has no `APP_NEEDS_SETUP` for it, once everything
+   else is set. OpenSEO not deployed yet (`APP_NOT_FOUND`): step 5's root
+   list is the check until it is.
 2. Smoke check, in the person's terminal (the endpoint is account-wide, so
    the Gateway refuses it for apps; from the terminal it is the right check).
    It needs the variable in that shell, holding the same form they pasted
@@ -154,11 +177,15 @@ value is set.
    `data.apps`, usually `openseo`), open a project, then **Keyword Research**
    (under Research in the sidebar; the URL ends in `/keywords`), and search
    one keyword. Search volume and difficulty appear; each lookup costs a few
-   cents. OpenSEO shows one message for a missing key and a rejected one
-   alike: "DataForSEO isn't set up on your Every App gateway, or rejected its
-   key". Tell them apart with `pnpm everyapp secret list --json`:
-   `DATAFORSEO_API_KEY` absent from `data.gateway.names` means step 4 did not
-   land; present means the value is wrong (Verify 2 says which way). The
+   cents. A browser that lands on the Gateway's setup dialog instead
+   (`https://<gateway host>/?setup=openseo`) means a required setting is
+   still unset: Verify 1 says which. OpenSEO shows one message for a
+   missing key and a rejected one alike: "DataForSEO isn't set up on your
+   Every App gateway, or rejected its key". Tell them apart with
+   `pnpm everyapp secret list --json`: `DATAFORSEO_API_KEY` absent from
+   `data.gateway.names` means step 4 did not land (behind the Gateway's
+   setup gate the app doesn't open in that state, so expect the second);
+   present means the value is wrong (Verify 2 says which way). The
    Gateway's log tells them apart too (4).
 4. Logs, if that helps: `cf` has no Worker tail (`cf workers --help` lists
    none). In the Cloudflare dashboard, README's path:
@@ -181,7 +208,8 @@ value is set.
 | `SECRET_VALUE_REQUIRED` from `secret set --json`                                   | Nothing was piped and there is no terminal to prompt in                                                                | One of the README's three ways: the person's own terminal, or `--from-env`                                                    |
 | `SECRET_SEVERAL_NAMES`                                                             | `--from-env` or a pipe with more than one name                                                                         | One name per call                                                                                                             |
 | `SECRET_EMPTY`                                                                     | The `--from-env` variable is empty or not exported in that shell                                                       | The hidden read (README's third way) in that same terminal first, then rerun                                                  |
-| `integration_not_configured` (503, header `x-everyapp-error`)                      | The Gateway holds no `DATAFORSEO_API_KEY`; OpenSEO shows it as "DataForSEO isn't set up on your Every App gateway, or rejected its key" | Steps 4 and 5; check the name's spelling in `data.gateway.names`                                                 |
+| A browser opening OpenSEO is sent to `https://<gateway host>/?setup=openseo`; any other request gets 503 with the body `{"error":"app_needs_setup","app":"openseo"}` | The Gateway's setup gate: a required setting of OpenSEO is still unset (this key, or the OpenRouter or Context one) | `pnpm everyapp secret list openseo --json`: set what `data.app.setup.command` names; Verify 1                        |
+| `integration_not_configured` (503, header `x-everyapp-error`)                      | The Gateway holds no `DATAFORSEO_API_KEY`; OpenSEO shows it as "DataForSEO isn't set up on your Every App gateway, or rejected its key" (behind the setup gate the app doesn't open in this state) | Steps 4 and 5; check the name's spelling in `data.gateway.names`                                                 |
 | OpenSEO's message says `everyapp secret set DATAFORSEO_API_KEY --for gateway`      | The app's text predates the CLI; there is no `--for` flag (a bad-arguments exit)                                       | `pnpm everyapp secret set DATAFORSEO_API_KEY` as in step 4; the name alone routes it to the Gateway. OpenSEO's text needs fixing |
 | `capability_not_requested` (403)                                                   | The deployed manifest does not list `capabilities.dataforseo`                                                          | OpenSEO's does; a fork must add it to `everyapp.config.ts` and deploy again                                                   |
 | `integration_path_not_allowed` (403)                                               | The app called an account-wide path (`appendix/user_data`, `appendix/webhook_resend`, `tasks_ready`, `id_list`, `errors`) | By design: one key serves every app. Check balance and limits from the terminal (Verify 2)                                 |
@@ -212,9 +240,10 @@ value is set.
   compromised: rotate it, then set it one of the three ways.
 - **Remove.** `pnpm everyapp secret unset DATAFORSEO_API_KEY --json`. Without
   `--yes` it exits 1 with `CONFIRMATION_REQUIRED`: that is the ask; rerun
-  with `--yes` only once the person has said yes. OpenSEO's data features
-  then show "DataForSEO isn't set up on your Every App gateway, or rejected
-  its key". Then revoke on DataForSEO's side: change the API login (or have
+  with `--yes` only once the person has said yes. OpenSEO then needs setup
+  again: the Gateway closes it until the key is back (its manifest marks
+  `dataforseo` required; `status` says so, with this file's path). Then
+  revoke on DataForSEO's side: change the API login (or have
   support issue a new password), or close the account if nothing else uses
   it.
 
@@ -237,3 +266,4 @@ value is set.
 - https://dataforseo.com/contact (form and phone; "support available 24/7"; no support@ address anywhere on it)
 - https://developers.cloudflare.com/workers/observability/logs/real-time-logs/ (Workers & Pages, Overview, Worker, Logs, Live; `npx wrangler tail`) and https://developers.cloudflare.com/workers/observability/logs/workers-logs/ (Observability tab; JSON log keys are indexed as fields)
 - https://app.dataforseo.com/register and https://app.dataforseo.com/api-access (the pages the person opens; both load a signed-in app, so their text was not read)
+- In code: `packages/sdk/src/internal/appSettings.ts` (`AppSetup`: `unmet`, `settings`, `groups`, `command`; `setup/dataforseo.md` from the capability registry, `packages/sdk/src/internal/capabilities.ts`), `packages/cli/src/commands/secret/index.ts` (`secret list <app>` from anywhere, `data.app.setup`, the kept `data.gateway.needed` and `missing`, `APP_NOT_FOUND`), `packages/cli/src/lib/app/settings.ts` (the `Guide:` line), `packages/cli/src/commands/status/problems.ts` (`APP_NEEDS_SETUP`), `apps/every-app-gateway/src/server/app-needs-setup.ts` (the setup gate: the redirect to `/?setup=<app id>` and 503 `app_needs_setup`); OpenSEO's `everyapp.config.ts` (`dataforseo` required, with its `why`)

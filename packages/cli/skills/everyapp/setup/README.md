@@ -24,12 +24,40 @@ click when they have to do something themselves.
 | Microsoft 365 (Outlook mail and calendar)     | [microsoft-365.md](microsoft-365.md)   | `MICROSOFT_365_CLIENT_ID`, `MICROSOFT_365_CLIENT_SECRET`                        | Open CRM                                                                |
 | Slack (OAuth client)                          | [slack.md](slack.md)                   | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`                                        | Open CRM                                                                |
 
-Which integrations a person needs: the apps they deploy decide. In an app's
-directory, `pnpm everyapp secret list --json` lists the Gateway settings its
-manifest needs (`data.gateway.needed`, each with `required` and `set`) and
-the required ones still missing (`data.gateway.missing`). Set up those, in
-the order the person wants; skip the rest. A setting nobody needs is simply
-not offered to apps.
+Which integrations a person needs: the apps they deploy decide. From any
+directory, `pnpm everyapp secret list <app id> --json` (the id as `status`
+lists it in `data.apps[].id`; in the app's directory it can be left out)
+reports the app's setup state as `data.app.setup`: `ready` (the app
+opens), `unmet` (the settings keeping it closed), `settings` (every
+setting, set or not), `groups` (each any-of group, `met` once one member
+is set) and `command`, the one `secret set` that sets everything missing
+(`{ command, note? }`, the note an any-of group's alternatives; null once
+ready). A setting has `names` (all must be set), `holder` (`gateway`, or
+`app` for the app's own secret), `need.kind` (`required`, `optional`, or
+`anyOf` with its `group`), `set` (true, false, or null when the app
+Worker's names were never recorded, which never blocks), `blocking`, and
+when known `why`, `docs` (where the key comes from) and `setup`: the file
+here that sets it up, relative to the everyapp skill (`setup/dataforseo.md`;
+in an app `.claude/skills/everyapp/setup/dataforseo.md`, in this checkout
+`packages/cli/skills/everyapp/setup/dataforseo.md`). An unset optional
+setting is in `settings` with `set: false`, never in `unmet`. The older
+fields still hold: `data.gateway.needed` (each Gateway name with `required`
+and `set`) and `data.gateway.missing` (the required ones unset); from the
+checkout root with no app named, `data.apps[]` has every app's `id` and
+`setup`. `pnpm everyapp status --json` carries the same per app as
+`data.apps[].setup`, and a deployed app whose `ready` is false gets the
+`data.fixes` entry `APP_NEEDS_SETUP` (a warning, `<app> needs setup`,
+`run` the command above). Under each unmet setting that has a guide,
+`status` prints `Guide: .claude/skills/everyapp/setup/<name>.md` (once per
+guide; the same lines are in `data.fixes[].message`), and `secret list
+--json` names it as the setting's `setup`: that is how an agent lands on
+one of these files. On the Gateway's home such an app shows
+"Needs setup" and opens its setup dialog instead of the app (a browser
+visit to the app's own host lands in that dialog too; any other request
+gets a 503 `app_needs_setup`), and its tools stay out of the Gateway's
+`/mcp`. Set up what is unmet, in the order the person wants; an optional
+setting when they want its feature. A setting nobody needs is simply not
+offered to apps.
 
 ## The rules every setup follows
 
@@ -41,6 +69,8 @@ done), exit 1 an error (show it; its `data.fix` or `data.rerun` says what
 to do). An event with `"waiting": true` is being waited for: keep reading.
 A Gateway setting is set from any directory; an app's own secret (a name
 its `everyapp.config.ts` lists under `secrets`) from the app's directory,
+or from anywhere with `--app <id>` (against the manifest its last deploy
+stored; `setup.command` carries the flag when it sets one), either way
 after its first deploy. Every `cf …` in these files is the CLI's pinned
 `cf` (1.0.0-beta.14, which `pnpm install` puts under `packages/cli`, not
 on PATH): from the `every-app` folder, run it as `pnpm --filter everyapp
@@ -72,7 +102,9 @@ Actions secrets such as `ANTHROPIC_API_KEY`, which a new app's
 set NAME` there, the value from the person's terminal), never with
 `everyapp secret set`, which refuses names it doesn't know.
 
-**Preconditions, checked, not assumed.** Before the provider's side:
+**Preconditions, checked, not assumed.** Before the provider's side, both,
+in either order (the integration files lead with 2, which says whether
+the file applies):
 
 1. `pnpm everyapp status --json`: `data.installed` and `data.claimed` are
    true, `data.gatewayUrl` is the Gateway (its host is `<gateway host>`
@@ -98,10 +130,17 @@ set NAME` there, the value from the person's terminal), never with
    `warning` are something to fix; `info` (`GATEWAY_OUTDATED`: `pnpm
    everyapp update` updates the Gateway now; leave it unless the
    person asks) and `settling` need nothing from you.
-2. `pnpm everyapp secret list --json`: whether the setting is set already
-   (`data.gateway.names`). Set already: ask whether to replace it before
-   doing anything on the provider's side; a value can't be read back, so
-   "replace" means a new key.
+2. `pnpm everyapp secret list <app id> --json`, from anywhere (the app's
+   directory is no longer required): this file applies when its setting
+   is in `data.app.setup.unmet` (each entry's `names`, `need.kind`,
+   `holder` and `setup` say what goes where and which file), or, for an
+   optional one, in `settings` with `set: false`; `data.app.setup.command`
+   is the one command that sets what is missing. For a setting no app
+   declares (the Gateway's own, Cloudflare Access's), from the checkout
+   root `pnpm everyapp secret list --json`: `data.gateway.names` is what
+   is set. Set already (`set: true`, or the name in `data.gateway.names`):
+   ask whether to replace it before doing anything on the provider's side;
+   a value can't be read back, so "replace" means a new key.
 
 **The value never goes through the chat.** A key or client secret is never
 asked for in the conversation, never shown, never put on a command line
@@ -157,9 +196,16 @@ or a file they save, not through you.
 
 **Verify, every time.** After `secret set`:
 
-1. `pnpm everyapp secret list --json`: the name is in `data.gateway.names`
-   (in an app's directory, its entry in `data.gateway.needed` has
-   `"set": true` and it left `data.gateway.missing`).
+1. `pnpm everyapp secret list <app id> --json`: in `data.app.setup` the
+   setting has `set: true` and is out of `unmet` (`ready: true` and
+   `command: null` once nothing else is missing); the older fields agree
+   (the name in `data.gateway.names`, its `data.gateway.needed` entry
+   `set: true`, out of `data.gateway.missing`). For the app as a whole,
+   `pnpm everyapp status --json`: `data.apps[].setup.ready` is true for it
+   and `data.fixes` has no `APP_NEEDS_SETUP` for it (a `SETTINGS_UNKNOWN`
+   warning means cf couldn't list a Worker's secrets, so those rows read
+   as unknown: run it again rather than trust them). For a setting no app
+   declares, `data.gateway.names` alone.
 2. The file's smoke check: a call that uses the value, made where the
    value is (the person's terminal, with the variable they exported) or
    through the app that uses it, and what its failure means.

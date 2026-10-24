@@ -104,10 +104,7 @@
     ],
     "commands": [
       "^status",
-      {
-        "pattern": "^secret list",
-        "cwd": "apps/crm"
-      }
+      "^secret list crm\\b"
     ]
   }
 }
