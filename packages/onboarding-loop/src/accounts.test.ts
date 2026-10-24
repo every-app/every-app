@@ -122,9 +122,11 @@ describe("accounts", () => {
         'ANTHROPIC_API_KEY="sk-ant-fake-0000000000"',
         "export OPENCODE_API_KEY=zen-fake-1111",
         "CURSOR_API_KEY=",
+        "CODEX_API_KEY=REPLACE_ME",
         "",
       ].join("\n"),
     );
+    // An empty value and the runbook's REPLACE_ME placeholder are both unset.
     expect(providers).toEqual({
       ANTHROPIC_API_KEY: "sk-ant-fake-0000000000",
       OPENCODE_API_KEY: "zen-fake-1111",

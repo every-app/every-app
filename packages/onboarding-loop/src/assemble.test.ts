@@ -3,7 +3,7 @@ import { assemble, verdictErrorCodes } from "./assemble";
 import { everyappCommandsFrom } from "./parse/eventLog";
 import { parseEventLogLine } from "./claim";
 import { sampleRecord } from "./testing/sampleRecord";
-import type { EventLogLine } from "./types";
+import type { EventLogLine, Phase } from "./types";
 
 const invocation = (pid: number, argv: string[]) =>
   JSON.stringify({
@@ -61,7 +61,7 @@ describe("verdictErrorCodes", () => {
 });
 
 /** The record and decision from an event log alone: a run that ended on the harness's BLOCKED, no verifier. */
-function assembleFrom(lines: string[]) {
+function assembleFrom(lines: string[], extraPhases: Phase[] = []) {
   return assemble({
     seed: sampleRecord(),
     startedAt: "2026-10-25T14:02:00.000Z",
@@ -100,11 +100,34 @@ function assembleFrom(lines: string[]) {
     gatewayOrigin: "https://apps.x.com",
     verifierInconclusive: false,
     dnsNegativeCache: false,
-    extraPhases: [],
+    extraPhases,
     toolEnv: null,
     driverFailure: null,
   });
 }
+
+describe("durationS is the harness's time", () => {
+  it("leaves the sleep through the wipe gap out: an 8-minute wall with a 5-minute preflight.gap_wait phase is 180 s", () => {
+    const lines = [
+      invocation(1, ["setup", "--domain", "apps.x.com", "--json"]),
+      exit(1, 1),
+    ];
+    expect(assembleFrom(lines).record.durationS).toBe(480);
+    const { record } = assembleFrom(lines, [
+      {
+        name: "preflight.gap_wait",
+        startedAt: "2026-10-25T13:57:00.000Z",
+        durationS: 300,
+      },
+    ]);
+    expect(record.durationS).toBe(180);
+    expect(record.phases).toContainEqual({
+      name: "preflight.gap_wait",
+      startedAt: "2026-10-25T13:57:00.000Z",
+      durationS: 300,
+    });
+  });
+});
 
 describe("assemble reads the CLI's error message, not only its code", () => {
   const setupFailed = (message: string) => [

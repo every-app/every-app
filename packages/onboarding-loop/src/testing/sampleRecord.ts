@@ -183,6 +183,7 @@ export function sampleRecord(overrides: Partial<RunRecord> = {}): RunRecord {
     resumes: [],
     verify: {
       phaseReached: "app-live",
+      gatewayUpToDate: true,
       rows: {
         G1: "pass",
         G2: "pass",

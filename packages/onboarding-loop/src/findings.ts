@@ -185,6 +185,19 @@ export function findingsFrom(record: RunRecord): RawFinding[] {
     }
   }
   if (
+    record.verify.gatewayUpToDate === false &&
+    record.steps.app.by === "harness"
+  ) {
+    add({
+      area: "cli",
+      key: "status|GATEWAY_OUTDATED",
+      excerpt:
+        "status from a fresh clone of the same commit calls the Gateway outdated: an app created inside the checkout rewrites pnpm-lock.yaml, which the Gateway's tree hash covers",
+      proposedFix:
+        "give an app created inside the checkout its own workspace (as one outside it has), or hash only the Gateway's lockfile importers",
+    });
+  }
+  if (
     record.steps.app.by === "harness" &&
     record.steps.app.id &&
     record.steps.app.id !== "hello"

@@ -504,6 +504,8 @@ export interface VerifyResult {
   ownerNotCreatedByLoop: boolean;
   /** O1's email differs from the loop's, or the loop's claim answered ALREADY_CLAIMED. */
   harnessSelfClaimed: boolean;
+  /** S1's `upToDate` from status: false is a finding (run 8), null when S1 did not run or status could not hash. */
+  gatewayUpToDate: boolean | null;
   /** X1's sub-verdict, never folded into the main one. */
   access: "pass" | "fail" | "skipped";
   /** The verifier's own create + deploy, run only when the harness deployed no app. */
@@ -803,6 +805,8 @@ export interface RunRecord {
   verify: {
     phaseReached: PhaseReached;
     rows: Record<VerifyRowId, VerifyRowStatus>;
+    /** S1's `upToDate`; false is the lockfile finding, null when unknown. */
+    gatewayUpToDate: boolean | null;
     /** The file in the run directory with the raw evidence. */
     evidence: string;
   };
@@ -1032,6 +1036,7 @@ export interface PublicRunRecord {
   verify: {
     phaseReached: PhaseReached;
     rows: Record<VerifyRowId, VerifyRowStatus>;
+    gatewayUpToDate: boolean | null;
   };
   verdict: Omit<VerdictRecord, "reportedUrl"> & {
     reportedUrlMatched: boolean | null;

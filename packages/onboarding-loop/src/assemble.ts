@@ -344,11 +344,14 @@ export function assemble(input: AssembleInput): {
     ...seed,
     startedAt: input.startedAt,
     finishedAt: input.finishedAt,
+    // Wall time less the sleep through the wipe gap: that wait is the loop's, not the harness's.
     durationS: Math.max(
       0,
       Math.round(
         (Date.parse(input.finishedAt) - Date.parse(input.startedAt)) / 1000,
-      ),
+      ) -
+        (phases.find((phase) => phase.name === "preflight.gap_wait")
+          ?.durationS ?? 0),
     ),
     terminal_reason: terminalReasonOf(input),
     substrate: { ...seed.substrate, statsPeakMiB: input.statsPeakMiB },
@@ -397,6 +400,7 @@ export function assemble(input: AssembleInput): {
     resumes: input.resumes,
     verify: {
       phaseReached: input.verify?.phaseReached ?? "none",
+      gatewayUpToDate: input.verify?.gatewayUpToDate ?? null,
       rows: input.verify ? rowStatuses(input.verify) : seed.verify.rows,
       evidence: seed.verify.evidence,
     },

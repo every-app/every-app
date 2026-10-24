@@ -41,8 +41,16 @@ function healthyRoutes(): Record<string, Route> {
         ? new Response('{"error":"INVALID_INPUT"}', { status: 400 })
         : new Response('{"error":"ORIGIN_NOT_ALLOWED"}', { status: 403 });
     },
-    [`GET ${origin}/api/me/apps`]: () =>
-      new Response('{"error":"unauthenticated"}', { status: 401 }),
+    // The OAuth resource server's challenge: 401, empty body, Bearer. Tokens-only mode answers
+    // `{"error":"unauthenticated"}` with its own Bearer challenge; both pass G3.
+    [`GET ${origin}/mcp`]: () =>
+      new Response("", {
+        status: 401,
+        headers: {
+          "www-authenticate":
+            'Bearer realm="OAuth", resource_metadata="https://apps.example.com/.well-known/oauth-protected-resource"',
+        },
+      }),
     [`GET https://nope-cafe0000.apps.${zone}/`]: () =>
       new Response('{"error":"unknown_app_host"}', { status: 404 }),
     [`POST ${origin}/api/auth/sign-in/email`]: (init) => {
@@ -62,16 +70,30 @@ function healthyRoutes(): Record<string, Route> {
     },
     [`GET ${origin}/api/auth/get-session`]: (init) => {
       const headers = (init.headers ?? {}) as Record<string, string>;
+      // Better Auth's real answer is well past the evidence excerpt's 500 characters.
       return headers["cookie"]?.includes("better-auth.session_token=abc")
-        ? new Response(JSON.stringify({ user: { email: owner.email } }), {
-            status: 200,
-          })
+        ? new Response(
+            JSON.stringify({
+              session: {
+                id: "s".repeat(32),
+                token: "t".repeat(32),
+                userAgent: "u".repeat(400),
+                ipAddress: "203.0.113.9",
+              },
+              user: { id: "u1", email: owner.email, name: "Owner" },
+            }),
+            { status: 200 },
+          )
         : new Response("null", { status: 200 });
     },
     [`GET https://${appHost}/`]: (init) => {
       const headers = (init.headers ?? {}) as Record<string, string>;
       if (headers["cookie"])
-        return new Response("<html>Simple Todo</html>", { status: 200 });
+        // The page is longer than the evidence excerpt; the marker sits past it.
+        return new Response(
+          `<html><head>${"<meta>".repeat(120)}</head><body><h1>Simple Todo</h1></body></html>`,
+          { status: 200 },
+        );
       if (headers["accept"] === "text/html")
         return new Response("", {
           status: 302,
@@ -231,7 +253,7 @@ describe("verify: what each row catches", () => {
     expect(result.rows.G3.status).toBe("fail");
     expect(result.rows.G2.attempts).toBe(1);
   });
-  it("G3 skips the unknown-host probe when no *.apps.<zone> record exists (the host is NXDOMAIN; setup creates no wildcard) and passes on /api/me/apps alone", async () => {
+  it("G3 skips the unknown-host probe when no *.apps.<zone> record exists (the host is NXDOMAIN; setup creates no wildcard) and passes on /mcp alone", async () => {
     const routes = healthyRoutes();
     delete routes[`GET https://nope-cafe0000.apps.${zone}/`];
     const { fetchImpl, calls } = fakeFetch(routes);
@@ -489,7 +511,8 @@ describe("verify: what each row catches", () => {
         healthyStatus({ upToDate: false }),
       ),
     );
-    expect(result.rows.S1.status).toBe("fail");
+    // upToDate=false is a finding on a passing row, not a failure (run 8: `create` changes the lockfile).
+    expect(result.rows.S1.status).toBe("pass");
     expect(result.rows.S1.note).toContain("upToDate=false");
   });
   it("S1 notes an app not named hello", async () => {

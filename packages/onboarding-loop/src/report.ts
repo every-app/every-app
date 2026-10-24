@@ -137,6 +137,7 @@ export function toPublicRun(
     verify: {
       phaseReached: record.verify.phaseReached,
       rows: record.verify.rows,
+      gatewayUpToDate: record.verify.gatewayUpToDate,
     },
     verdict: {
       value: record.verdict.value,

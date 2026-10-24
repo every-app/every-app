@@ -381,6 +381,7 @@ const runRecordSchema = z.object({
       "access",
     ]),
     rows: rowsSchema,
+    gatewayUpToDate: z.boolean().nullable(),
     evidence: z.string(),
   }),
   verdict: z.object({
@@ -564,7 +565,12 @@ export function emptyRunRecord(seed: {
     harnessTimeouts: [],
     errors: [],
     resumes: [],
-    verify: { phaseReached: "none", rows, evidence: RUN_FILES.verify },
+    verify: {
+      phaseReached: "none",
+      rows,
+      gatewayUpToDate: null,
+      evidence: RUN_FILES.verify,
+    },
     verdict: {
       value: "fail-infra",
       reasonCode: "inconclusive",

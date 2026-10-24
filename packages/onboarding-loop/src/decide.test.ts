@@ -48,6 +48,7 @@ function verifyResult(
   return {
     version: 1,
     phaseReached: "app-live",
+    gatewayUpToDate: true,
     rows,
     tainted: false,
     shortcut: false,

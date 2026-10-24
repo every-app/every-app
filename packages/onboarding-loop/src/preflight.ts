@@ -34,7 +34,13 @@ import {
 } from "./lock";
 import { containerOwnedByRun } from "./sandbox";
 import { capture, spawnProcess, type Spawn } from "./spawn";
-import type { Account, InfraReasonCode, ProviderVar, RunRecord } from "./types";
+import type {
+  Account,
+  InfraReasonCode,
+  Phase,
+  ProviderVar,
+  RunRecord,
+} from "./types";
 
 const DOCS_URL = "https://everyapp.com/llms.txt";
 /** Below this, `--parallel` is refused: two 6 GiB containers plus the siblings. */
@@ -67,6 +73,8 @@ export interface PreflightResult {
     subscriptions: unknown[];
     zoneId: string | null;
   };
+  /** The sleep through the 30-minute wipe gap, as a phase for the record (`durationS` leaves it out). */
+  gapWait: Phase | null;
   /** Releases the account lock; a no-op when none was taken. */
   release: () => void;
 }
@@ -152,6 +160,7 @@ export async function runPreflight(
   const now = options.now ?? (() => Date.now());
   const checks: PreflightCheck[] = [];
   let release: () => void = () => undefined;
+  let gapWait: Phase | null = null;
   let dockerInfo: DockerInfo | null = null;
   const listeners = { all: [] as string[], allInterfaces: [] as string[] };
   const fixtures: PreflightResult["fixtures"] = {
@@ -171,6 +180,7 @@ export async function runPreflight(
     docker: dockerInfo,
     listeners,
     fixtures,
+    gapWait,
     release,
   });
   const check = (name: string, status: CheckStatus, detail: string): void => {
@@ -273,7 +283,13 @@ export async function runPreflight(
     options.waitForGap.log(
       `wait teardown_gap  ${account.name} was wiped at ${lastWipe}; waiting ${minutes} min for the 30-minute gap (--no-wait refuses instead)`,
     );
+    const waitStarted = now();
     await options.waitForGap.sleep(remaining);
+    gapWait = {
+      name: "preflight.gap_wait",
+      startedAt: new Date(waitStarted).toISOString(),
+      durationS: Math.round((now() - waitStarted) / 1000),
+    };
     check(
       "teardown_gap",
       "ok",

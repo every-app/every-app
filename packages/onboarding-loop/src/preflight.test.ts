@@ -276,6 +276,13 @@ describe("preflight (dry run: no network)", () => {
       status: "ok",
       detail: expect.stringMatching(/^waited 20 min for the 30-minute gap/),
     });
+    // The sleep is a phase of the record (durationS leaves it out); none without a wait.
+    expect(waited.gapWait).toEqual({
+      name: "preflight.gap_wait",
+      startedAt: new Date(NOW).toISOString(),
+      durationS: 20 * 60,
+    });
+    expect(recent.gapWait).toBeNull();
     waited.release();
   });
 

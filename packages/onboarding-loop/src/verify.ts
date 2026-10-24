@@ -112,6 +112,8 @@ interface ProbeEvidence {
   location: string | null;
   contentType: string | null;
   setCookie: boolean;
+  /** The WWW-Authenticate challenge, when the answer carried one (G3 reads it). */
+  wwwAuthenticate: string | null;
   body: string;
   error: string | null;
 }
@@ -130,11 +132,17 @@ function excerpt(text: string): string {
 const sameEmail = (a: string | null, b: string): boolean =>
   a !== null && a.trim().toLowerCase() === b.trim().toLowerCase();
 
-async function probe(
+/**
+ * One request: the evidence (body as a redacted excerpt for verify.json) and
+ * the whole body text for the rows that parse or search it. Run 8 failed O1
+ * and A3 on the excerpt alone: a get-session JSON and a page are longer than
+ * BODY_LIMIT, so the JSON did not parse and the marker was cut off.
+ */
+async function probeText(
   fetchImpl: FetchLike,
   url: string,
   init: RequestInit = {},
-): Promise<ProbeEvidence> {
+): Promise<{ evidence: ProbeEvidence; text: string }> {
   try {
     const response = await fetchImpl(url, { redirect: "manual", ...init });
     let body = "";
@@ -144,13 +152,17 @@ async function probe(
       body = "";
     }
     return {
-      url,
-      status: response.status,
-      location: response.headers.get("location"),
-      contentType: response.headers.get("content-type"),
-      setCookie: response.headers.has("set-cookie"),
-      body: excerpt(body),
-      error: null,
+      evidence: {
+        url,
+        status: response.status,
+        location: response.headers.get("location"),
+        contentType: response.headers.get("content-type"),
+        setCookie: response.headers.has("set-cookie"),
+        wwwAuthenticate: response.headers.get("www-authenticate"),
+        body: excerpt(body),
+        error: null,
+      },
+      text: body,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -159,15 +171,52 @@ async function probe(
         ? ` (${error.cause.message})`
         : "";
     return {
-      url,
-      status: null,
-      location: null,
-      contentType: null,
-      setCookie: false,
-      body: "",
-      error: `${message}${cause}`.slice(0, 200),
+      evidence: {
+        url,
+        status: null,
+        location: null,
+        contentType: null,
+        setCookie: false,
+        wwwAuthenticate: null,
+        body: "",
+        error: `${message}${cause}`.slice(0, 200),
+      },
+      text: "",
     };
   }
+}
+
+async function probe(
+  fetchImpl: FetchLike,
+  url: string,
+  init: RequestInit = {},
+): Promise<ProbeEvidence> {
+  return (await probeText(fetchImpl, url, init)).evidence;
+}
+
+/** The cookie names a Set-Cookie header (several joined with commas) sets: names only, never a value. */
+function cookieNames(header: string | null): string[] {
+  if (!header) return [];
+  return header
+    .split(/,(?=[^;]+?=)/)
+    .map((part) => part.split(";")[0]!.split("=")[0]!.trim())
+    .filter(Boolean);
+}
+
+/** The shape of a JSON body for the evidence: its top-level keys and the keys of `user`, no values. */
+function jsonShape(parsed: Record<string, unknown> | null): {
+  keys: string[];
+  userKeys: string[];
+} | null {
+  if (!parsed) return null;
+  const user = parsed["user"];
+  return {
+    keys: Object.keys(parsed),
+    userKeys:
+      typeof user === "object" && user !== null
+        ? Object.keys(user as Record<string, unknown>)
+        : [],
+  };
 }
 
 /** A transport failure or an edge status that the window retries. */
@@ -432,14 +481,18 @@ export async function verify(
     laterWindow,
   );
 
-  // G3: /api/me/apps is 401. An unknown app host is 404 unknown_app_host only when a `*.apps.<zone>`
-  // record exists; setup creates none (app hosts are per-app Custom Domains), so without one the
-  // host is NXDOMAIN and the probe is skipped, not failed.
+  // G3: the gateway's own /mcp without a token is 401 with a `WWW-Authenticate: Bearer` challenge
+  // (the OAuth resource server's, empty body, by default; `{"error":"unauthenticated"}` with
+  // MCP_OAUTH_ENABLED=false). The launcher's app list is a server function now; /api/me/apps, the
+  // probe until run 8, is 404. An unknown app host is 404
+  // unknown_app_host only when a `*.apps.<zone>` record exists; setup creates none (app hosts are
+  // per-app Custom Domains), so without one the host is NXDOMAIN and the probe is skipped, not failed.
   await row(
     "G3",
     async () => {
-      const me = await probe(deps.fetchImpl, `${origin}/api/me/apps`);
-      const meOk = me.status === 401;
+      const me = await probe(deps.fetchImpl, `${origin}/mcp`);
+      const meOk =
+        me.status === 401 && /^bearer\b/i.test(me.wwwAuthenticate ?? "");
       if (!ctx.wildcardAppsRecord) {
         return {
           pass: meOk,
@@ -479,6 +532,8 @@ export async function verify(
   // is never kept; only its error code is, when there is one.
   let cookie: string | null = null;
   let harnessSelfClaimed = false;
+  /** S1's upToDate, for the record and the findings ledger; null until S1 ran or when status could not hash. */
+  let gatewayUpToDate: boolean | null = null;
   await row(
     "O1",
     async () => {
@@ -517,6 +572,7 @@ export async function verify(
           location: response.headers.get("location"),
           contentType: response.headers.get("content-type"),
           setCookie: setCookie !== null,
+          wwwAuthenticate: null,
           body: "[sign-in body not kept]",
           error: null,
         };
@@ -528,6 +584,7 @@ export async function verify(
           location: null,
           contentType: null,
           setCookie: false,
+          wwwAuthenticate: null,
           body: "",
           error: message,
         };
@@ -546,12 +603,12 @@ export async function verify(
         .split(/,(?=[^;]+?=)/)
         .map((part) => part.split(";")[0]!.trim())
         .join("; ");
-      const session = await probe(
+      const { evidence: session, text: sessionText } = await probeText(
         deps.fetchImpl,
         `${origin}/api/auth/get-session`,
         { headers: { cookie, accept: "application/json" } },
       );
-      const parsed = parseJson(session.body);
+      const parsed = parseJson(sessionText);
       const user =
         parsed && typeof parsed["user"] === "object" && parsed["user"] !== null
           ? (parsed["user"] as Record<string, unknown>)
@@ -567,7 +624,9 @@ export async function verify(
         retry: !pass && retryable(session),
         evidence: {
           signIn,
+          setCookieNames: cookieNames(setCookie),
           session: { ...session, body: "[session body not kept]" },
+          sessionShape: jsonShape(parsed),
           emailMatched: matched,
         },
         note: pass
@@ -677,10 +736,10 @@ export async function verify(
             status: "perimeter-only",
             note: "no owner cookie (O1 failed)",
           };
-        const e = await probe(deps.fetchImpl, appUrl, {
+        const { evidence: e, text } = await probeText(deps.fetchImpl, appUrl, {
           headers: { accept: "text/html", cookie },
         });
-        const pass = e.status === 200 && e.body.includes(ctx.templateMarker);
+        const pass = e.status === 200 && text.includes(ctx.templateMarker);
         return {
           pass,
           retry: !pass && retryable(e, [503]),
@@ -731,6 +790,7 @@ export async function verify(
       );
       const ownerMatched = sameEmail(status.ownerEmail, ctx.owner.email);
       const ownerOk = status.claimed && ownerMatched;
+      gatewayUpToDate = status.upToDate;
       const problems: string[] = [];
       if (!status.claimed) problems.push("claimed=false");
       else if (!ownerMatched) {
@@ -740,8 +800,9 @@ export async function verify(
       }
       if (status.blocking.length > 0) problems.push(...status.blocking);
       if (live.length === 0) problems.push("no app active && bound");
-      if (status.upToDate !== true)
-        problems.push(`upToDate=${status.upToDate}`);
+      // upToDate is recorded, not required: run 8 showed `create` changing pnpm-lock.yaml, so the
+      // verifier's fresh clone hashes differently from the Gateway the harness's deploy published
+      // (a product finding, routed), and the same would hold for a person's second clone.
       const nonHello = live
         .filter((app) => app.id !== "hello")
         .map((app) => app.id);
@@ -772,9 +833,19 @@ export async function verify(
           ),
         evidence,
         note: pass
-          ? nonHello.length
-            ? `app named ${nonHello.join(", ")}, not hello (finding)`
-            : undefined
+          ? [
+              ...(nonHello.length
+                ? [`app named ${nonHello.join(", ")}, not hello (finding)`]
+                : []),
+              ...(status.upToDate === false
+                ? [
+                    "upToDate=false: status in a fresh clone of the same commit calls the Gateway outdated (finding)",
+                  ]
+                : []),
+              ...(status.upToDate === null
+                ? ["upToDate unknown: status could not hash the checkout"]
+                : []),
+            ].join("; ") || undefined
           : problems.join("; "),
       };
     },
@@ -879,6 +950,7 @@ export async function verify(
     shortcut,
     ownerNotCreatedByLoop,
     harnessSelfClaimed,
+    gatewayUpToDate,
     access,
     appDeploy,
   };

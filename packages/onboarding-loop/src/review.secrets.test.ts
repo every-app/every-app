@@ -180,8 +180,14 @@ describe("the verifier's evidence never holds a credential", () => {
         new Response("<html>sign in</html>", { status: 200 }),
       [`POST ${ORIGIN}/api/setup/claim`]: () =>
         new Response('{"error":"ORIGIN_NOT_ALLOWED"}', { status: 403 }),
-      [`GET ${ORIGIN}/api/me/apps`]: () =>
-        new Response('{"error":"unauthenticated"}', { status: 401 }),
+      [`GET ${ORIGIN}/mcp`]: () =>
+        new Response("", {
+          status: 401,
+          headers: {
+            "www-authenticate":
+              'Bearer realm="OAuth", resource_metadata="https://apps.example.com/.well-known/oauth-protected-resource"',
+          },
+        }),
       [`GET https://nope-cafe0000.apps.${ZONE}/`]: () =>
         new Response('{"error":"unknown_app_host"}', { status: 404 }),
       // Better Auth's real shape: { redirect, token, user } with the session token in the body.
@@ -620,8 +626,14 @@ function makeWorld(repo: string, harnessLines: string[]) {
     },
     [`GET ${ORIGIN}/sign-in`]: () =>
       new Response("<html>sign in</html>", { status: 200 }),
-    [`GET ${ORIGIN}/api/me/apps`]: () =>
-      new Response('{"error":"unauthenticated"}', { status: 401 }),
+    [`GET ${ORIGIN}/mcp`]: () =>
+      new Response("", {
+        status: 401,
+        headers: {
+          "www-authenticate":
+            'Bearer realm="OAuth", resource_metadata="https://apps.example.com/.well-known/oauth-protected-resource"',
+        },
+      }),
     [`POST ${ORIGIN}/api/auth/sign-in/email`]: () =>
       new Response('{"token":"x"}', {
         status: 200,

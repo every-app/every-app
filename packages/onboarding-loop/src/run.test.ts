@@ -316,7 +316,7 @@ function unreachableGateway(): Record<string, (init: RequestInit) => Response> {
   return {
     [`GET ${ORIGIN}/sign-in`]: noAddress,
     [`POST ${ORIGIN}/api/setup/claim`]: noAddress,
-    [`GET ${ORIGIN}/api/me/apps`]: noAddress,
+    [`GET ${ORIGIN}/mcp`]: noAddress,
     [`POST ${ORIGIN}/api/auth/sign-in/email`]: noAddress,
   };
 }
@@ -532,8 +532,14 @@ function makeWorld(
     },
     [`GET ${ORIGIN}/sign-in`]: () =>
       new Response("<html>sign in</html>", { status: 200 }),
-    [`GET ${ORIGIN}/api/me/apps`]: () =>
-      new Response('{"error":"unauthenticated"}', { status: 401 }),
+    [`GET ${ORIGIN}/mcp`]: () =>
+      new Response("", {
+        status: 401,
+        headers: {
+          "www-authenticate":
+            'Bearer realm="OAuth", resource_metadata="https://apps.example.com/.well-known/oauth-protected-resource"',
+        },
+      }),
     [`POST ${ORIGIN}/api/auth/sign-in/email`]: () =>
       new Response('{"token":"x"}', {
         status: 200,

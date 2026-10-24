@@ -718,6 +718,8 @@ class RunState {
   ) {
     this.tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "everyapp-loop-run-"));
     fs.chmodSync(this.tempDir, 0o700);
+    // The sleep through the wipe gap is a phase of the record; durationS leaves it out.
+    if (ctx.preflight.gapWait) this.extraPhases.push(ctx.preflight.gapWait);
     this.user = createScriptedUser({
       zone: ctx.account.zone,
       accountName: ctx.account.name,

@@ -204,7 +204,11 @@ export function parseProvidersEnv(
         `${file} line ${index + 1}: ${name} is not a provider variable (${PROVIDER_VARS.join(", ")}).`,
       );
     }
-    if (value.length > 0) providers[name as ProviderVar] = value;
+    // A value still reading REPLACE… is the placeholder from the files the
+    // runbook has Ben fill in: unset, so `accounts` says so and a run
+    // refuses at preflight instead of handing a harness a fake key.
+    if (value.length > 0 && !/^REPLACE/i.test(value))
+      providers[name as ProviderVar] = value;
   }
   return providers;
 }
