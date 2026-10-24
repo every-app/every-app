@@ -83,6 +83,7 @@ function TokensPage() {
         {/* TODO: move to a member-accessible settings page (admin layout is owner/admin-gated) */}
         <SectionHeader
           title="Personal access tokens"
+          hint="For scripts and tools that can't sign in on their own."
           action={
             <Button
               onClick={() => setShowCreateUserTokenModal(true)}
